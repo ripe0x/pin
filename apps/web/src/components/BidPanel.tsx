@@ -95,25 +95,6 @@ export function BidPanel({ data }: { data: TokenPageData }) {
     hash: finalizeTxHash,
   })
 
-  // Simulate buy now
-  const { data: simulateBuyNow } = useSimulateContract({
-    address: NFT_MARKET[chainId as keyof typeof NFT_MARKET],
-    abi: nftMarketAbi,
-    functionName: "buyV2",
-    args:
-      buyNow && contract
-        ? [
-            contract as `0x${string}`,
-            BigInt(tokenId),
-            buyNow.price,
-          ]
-        : undefined,
-    value: buyNow?.price,
-    query: {
-      enabled: isConnected && !!buyNow && !auction && !!contract,
-    },
-  })
-
   const {
     writeContract: writeBuyNow,
     data: buyTxHash,
@@ -135,8 +116,14 @@ export function BidPanel({ data }: { data: TokenPageData }) {
   }
 
   function handleBuyNow() {
-    if (!simulateBuyNow?.request) return
-    writeBuyNow(simulateBuyNow.request)
+    if (!buyNow || !contract) return
+    writeBuyNow({
+      address: NFT_MARKET[chainId as keyof typeof NFT_MARKET],
+      abi: nftMarketAbi,
+      functionName: "buyV2",
+      args: [contract as `0x${string}`, BigInt(tokenId), buyNow.price, "0x0000000000000000000000000000000000000000"],
+      value: buyNow.price,
+    })
   }
 
   return (
@@ -243,10 +230,7 @@ export function BidPanel({ data }: { data: TokenPageData }) {
           </div>
           <button
             onClick={isConnected ? handleBuyNow : openConnectModal}
-            disabled={
-              isConnected &&
-              (!simulateBuyNow?.request || isBuyPending || isBuyConfirming)
-            }
+            disabled={isBuyPending || isBuyConfirming}
             className="w-full rounded-lg bg-black py-3 text-base font-medium text-white transition-colors hover:bg-gray-800 disabled:bg-gray-200 disabled:text-gray-400"
           >
             {!isConnected

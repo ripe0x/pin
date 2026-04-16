@@ -119,6 +119,7 @@ export const nftMarketAbi = [
       { name: "nftContract", type: "address", internalType: "address" },
       { name: "tokenId", type: "uint256", internalType: "uint256" },
       { name: "maxPrice", type: "uint256", internalType: "uint256" },
+      { name: "referrer", type: "address", internalType: "address payable" },
     ],
     outputs: [],
     stateMutability: "payable",
