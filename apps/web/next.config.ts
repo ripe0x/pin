@@ -1,7 +1,7 @@
 import type { NextConfig } from "next"
 
 const nextConfig: NextConfig = {
-  transpilePackages: ["@commonground/abi", "@commonground/addresses", "@commonground/shared"],
+  transpilePackages: ["@pin/abi", "@pin/addresses", "@pin/shared"],
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "**.ipfs.w3s.link" },

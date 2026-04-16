@@ -1,7 +1,7 @@
 import { ponder } from "@/generated"
 import { graphql } from "@ponder/core"
-import { erc721Abi } from "@commonground/abi"
-import { ipfsToHttp } from "@commonground/shared"
+import { erc721Abi } from "@pin/abi"
+import { ipfsToHttp } from "@pin/shared"
 import * as schema from "../ponder.schema"
 
 // ─── GraphQL API ──────────────────────────────────────────────────────────────

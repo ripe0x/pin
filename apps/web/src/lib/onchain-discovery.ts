@@ -14,14 +14,14 @@ import {
   type Address,
 } from "viem"
 import { mainnet } from "viem/chains"
-import { foundationNftAbi, collectionFactoryAbi, erc721Abi } from "@commonground/abi"
+import { foundationNftAbi, collectionFactoryAbi, erc721Abi } from "@pin/abi"
 import {
   FOUNDATION_NFT,
   COLLECTION_FACTORY_V1,
   COLLECTION_FACTORY_V2,
   MAINNET_CHAIN_ID,
-} from "@commonground/addresses"
-import { extractCid, ipfsToHttp } from "@commonground/shared"
+} from "@pin/addresses"
+import { extractCid, ipfsToHttp } from "@pin/shared"
 
 const FOUNDATION_NFT_ADDRESS = FOUNDATION_NFT[MAINNET_CHAIN_ID]
 const FACTORY_V1 = COLLECTION_FACTORY_V1[MAINNET_CHAIN_ID]

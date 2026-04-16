@@ -1,5 +1,5 @@
 {
-  "name": "commonground",
+  "name": "pin",
   "private": true,
   "workspaces": [
     "apps/*",

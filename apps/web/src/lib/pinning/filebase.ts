@@ -37,7 +37,7 @@ export class FilebaseProvider implements PinningProvider {
       headers: this.headers(),
       body: JSON.stringify({
         cid: hash,
-        name: name ?? `CommonGround: ${hash.slice(0, 12)}`,
+        name: name ?? `pin: ${hash.slice(0, 12)}`,
       }),
     })
 

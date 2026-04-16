@@ -8,7 +8,7 @@ import { createPublicClient, http, type Address } from "viem"
 import { mainnet } from "viem/chains"
 import { normalize } from "viem/ens"
 import { discoverArtistTokens, type DiscoveredToken } from "./onchain-discovery"
-import { ipfsToHttp } from "@commonground/shared"
+import { ipfsToHttp } from "@pin/shared"
 
 const client = createPublicClient({
   chain: mainnet,

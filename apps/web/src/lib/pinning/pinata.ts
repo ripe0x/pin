@@ -37,7 +37,7 @@ export class PinataProvider implements PinningProvider {
       headers: this.headers(),
       body: JSON.stringify({
         hashToPin: hash,
-        pinataMetadata: { name: name ?? `CommonGround: ${hash.slice(0, 12)}` },
+        pinataMetadata: { name: name ?? `pin: ${hash.slice(0, 12)}` },
       }),
     })
 

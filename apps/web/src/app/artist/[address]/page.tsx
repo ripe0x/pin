@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
-import { SITE_TITLE } from "@commonground/shared"
+import { SITE_TITLE } from "@pin/shared"
 import {
   getArtistPortfolio,
   resolveEnsAddress,

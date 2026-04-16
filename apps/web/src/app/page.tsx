@@ -4,7 +4,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { useAccount } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
-import { SITE_TITLE, SITE_DESCRIPTION } from "@commonground/shared"
+import { SITE_TITLE, SITE_DESCRIPTION } from "@pin/shared"
 
 export default function HomePage() {
   const { address } = useAccount()

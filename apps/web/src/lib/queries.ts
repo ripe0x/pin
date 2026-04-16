@@ -1,5 +1,5 @@
 import { ponderQuery } from "./ponder"
-import { ipfsToHttp } from "@commonground/shared"
+import { ipfsToHttp } from "@pin/shared"
 
 // ─── Types matching Ponder schema ─────────────────────────────────────────────
 

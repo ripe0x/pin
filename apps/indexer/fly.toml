@@ -1,4 +1,4 @@
-app = "commonground-indexer"
+app = "pin-indexer"
 primary_region = "ewr"
 
 [build]

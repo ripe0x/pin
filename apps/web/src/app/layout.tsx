@@ -1,5 +1,5 @@
 import type { Metadata } from "next"
-import { SITE_TITLE, SITE_DESCRIPTION } from "@commonground/shared"
+import { SITE_TITLE, SITE_DESCRIPTION } from "@pin/shared"
 import { Providers } from "@/components/Providers"
 import { Navbar } from "@/components/Navbar"
 import "./globals.css"

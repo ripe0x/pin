@@ -1,7 +1,7 @@
 import { createConfig } from "@ponder/core"
 import { http } from "viem"
-import { nftMarketAbi } from "@commonground/abi"
-import { erc721Abi } from "@commonground/abi"
+import { nftMarketAbi } from "@pin/abi"
+import { erc721Abi } from "@pin/abi"
 
 /**
  * Foundation Indexer — Ponder Configuration

@@ -1,5 +1,5 @@
 {
-  "name": "@commonground/web",
+  "name": "@pin/web",
   "version": "0.0.1",
   "private": true,
   "scripts": {
@@ -9,9 +9,9 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@commonground/abi": "*",
-    "@commonground/addresses": "*",
-    "@commonground/shared": "*",
+    "@pin/abi": "*",
+    "@pin/addresses": "*",
+    "@pin/shared": "*",
     "@rainbow-me/rainbowkit": "^2.2.0",
     "@tanstack/react-query": "^5.62.0",
     "next": "^15.1.0",

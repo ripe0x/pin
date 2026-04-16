@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createPublicClient, http } from "viem"
 import { mainnet } from "viem/chains"
-import { erc721Abi } from "@commonground/abi"
-import { ipfsToHttp } from "@commonground/shared"
+import { erc721Abi } from "@pin/abi"
+import { ipfsToHttp } from "@pin/shared"
 
 const client = createPublicClient({
   chain: mainnet,

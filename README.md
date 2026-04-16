@@ -1,24 +1,34 @@
-# CommonGround
+# pin
 
-An independent, open-source frontend for the [Foundation](https://foundation.app) NFT marketplace smart contracts on Ethereum and Base.
+Discover Foundation artists, explore their work, and preserve art on IPFS.
 
-Foundation's contracts are immutable and remain fully functional on-chain. CommonGround provides a community-operated interface to browse artwork, place bids, buy, make offers, list, and settle auctions — interacting directly with the same NFTMarket contracts.
+Foundation.app is shutting down — both the frontend and IPFS pinning for all minted tokens. **pin** helps artists preserve their work before it disappears: discover all tokens an artist minted on Foundation, pin them to IPFS with a few clicks, and share a permanent portfolio page.
 
 ## Architecture
 
 ```
 apps/
   web/         Next.js 15 frontend (React 19, Tailwind v4, wagmi v2, RainbowKit)
-  indexer/     Ponder indexer (on-chain event processing, GraphQL API)
+  indexer/     Ponder indexer (optional — on-chain event processing, GraphQL API)
 packages/
   abi/         Hand-written ABI exports (as const, for viem type inference)
   addresses/   Contract addresses per chain
-  shared/      Site config, shared types
+  shared/      Site config, IPFS utilities, shared types
 ```
 
-**Indexer** — [Ponder](https://ponder.sh) processes on-chain events from the NFTMarket proxy and FoundationNFT contracts, storing token metadata, auctions, listings, bids, offers, sales, and transfers. Exposes a GraphQL API consumed by the frontend.
+**No indexer dependency** — The core features (artist pages, token discovery, IPFS preservation) work entirely from on-chain RPC calls and IPFS fetches. The Ponder indexer is optional and only needed for enhanced token detail pages.
 
-**Frontend** — Next.js app router with server components for data fetching and client components for wallet interactions. On-demand IPFS metadata resolution for tokens not yet indexed.
+**BYOK pinning** — Artists bring their own API key from Pinata, web3.storage, or Filebase. Keys stay in the browser and are sent directly to the provider — never stored on any server.
+
+## Features
+
+- **Artist discovery** — Enter an Ethereum address or ENS name to view any Foundation artist's portfolio
+- **On-chain token discovery** — Scans the FoundationNFT shared contract and per-artist collection contracts (via NFTCollectionFactory V1/V2) to find all tokens an artist minted
+- **IPFS preservation** — Pin metadata and media CIDs to a pinning provider with a few clicks
+- **Artist micro-site** — Server-rendered portfolio page at `/artist/[address]` with ENS resolution, OG tags, and shareable URLs
+- **Token detail pages** — RPC-based creator, owner, and transfer history resolution
+- **Video NFT support** (mp4, mov, webm)
+- **Wallet connection** via RainbowKit (MetaMask, Rainbow, WalletConnect, etc.)
 
 ## Prerequisites
 
@@ -30,53 +40,38 @@ packages/
 ## Setup
 
 ```bash
-# Clone and install
-git clone <repo-url> && cd commonground
+git clone <repo-url> && cd pin
 npm install
 
 # Configure environment
-cp apps/indexer/.env.example apps/indexer/.env.local
 cp apps/web/.env.example apps/web/.env.local
-# Edit both .env.local files with your API keys
+# Edit .env.local with your API keys
 ```
 
 ## Development
 
-You need two terminals — one for the indexer, one for the frontend:
-
 ```bash
-# Terminal 1: Start the Ponder indexer
-npm run dev:indexer
-# Syncs on-chain data from Ethereum mainnet. First run takes ~15 min to backfill.
-# GraphQL playground available at http://localhost:42069/graphql
-
-# Terminal 2: Start the Next.js dev server
+# Start the Next.js dev server
 npm run dev
-# Frontend available at http://localhost:3000
-```
+# Available at http://localhost:3000
 
-The indexer uses embedded PGlite by default — no Postgres install needed for development. Set `DATABASE_URL` in the indexer's `.env.local` for production use with Postgres.
+# Optional: Start the Ponder indexer (for enhanced token detail pages)
+npm run dev:indexer
+# GraphQL playground at http://localhost:42069/graphql
+```
 
 ## Contracts
 
-CommonGround reads from and writes to Foundation's deployed contracts:
+pin reads from Foundation's deployed contracts on Ethereum mainnet:
 
-| Contract | Mainnet Address |
-|----------|----------------|
+| Contract | Address |
+|----------|---------|
+| FoundationNFT (shared) | `0x3B3ee1931Dc30C1957379FAc9aba94D1C48a5405` |
+| NFTCollectionFactory V1 | `0x3B612a5B49e025a6e4bA4eE4FB1EF46D13588059` |
+| NFTCollectionFactory V2 | `0x612E2DadDc89d91409e40f946f9f7CfE422e777E` |
 | NFTMarket (proxy) | `0xcDA72070E455bb31C7690a170224Ce43623d0B6f` |
-| FoundationNFT | `0x3B3ee1931Dc30C1957379FAc9aba94D1C48a5405` |
 
 Source: [f8n/fnd-protocol](https://github.com/f8n/fnd-protocol)
-
-## Features
-
-- Browse NFTs with on-chain metadata resolution via IPFS
-- View live auctions with countdown timers
-- Place bids on reserve auctions
-- Buy Now listings
-- Token detail pages with bid history and provenance
-- Video NFT support (mp4, mov, webm)
-- Wallet connection via RainbowKit (MetaMask, Rainbow, WalletConnect, etc.)
 
 ## Stack
 
@@ -85,8 +80,7 @@ Source: [f8n/fnd-protocol](https://github.com/f8n/fnd-protocol)
 - **Tailwind CSS v4**
 - **wagmi v2** + **viem v2** (contract interactions)
 - **RainbowKit v2** (wallet UI)
-- **TanStack Query v5** (data fetching)
-- **Ponder** (on-chain indexer)
+- **Ponder** (optional on-chain indexer)
 
 ## License
 

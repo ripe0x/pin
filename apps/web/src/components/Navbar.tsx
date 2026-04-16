@@ -4,7 +4,7 @@ import { useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
-import { SITE_TITLE } from "@commonground/shared"
+import { SITE_TITLE } from "@pin/shared"
 import { useAccount } from "wagmi"
 
 export function Navbar() {

@@ -3,7 +3,7 @@ import { getArtistIdentity } from "@/lib/artist-queries"
 import { discoverArtistTokens } from "@/lib/onchain-discovery"
 
 export const runtime = "edge"
-export const alt = "Artist portfolio on CommonGround"
+export const alt = "Artist portfolio on pin"
 export const size = { width: 1200, height: 630 }
 export const contentType = "image/png"
 
@@ -82,7 +82,7 @@ export default async function OGImage({
               marginTop: "24px",
             }}
           >
-            CommonGround
+            pin
           </div>
         </div>
 

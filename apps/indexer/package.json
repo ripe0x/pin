@@ -1,5 +1,5 @@
 {
-  "name": "@commonground/indexer",
+  "name": "@pin/indexer",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -9,9 +9,9 @@
     "codegen": "ponder codegen"
   },
   "dependencies": {
-    "@commonground/abi": "*",
-    "@commonground/addresses": "*",
-    "@commonground/shared": "*",
+    "@pin/abi": "*",
+    "@pin/addresses": "*",
+    "@pin/shared": "*",
     "@ponder/core": "^0.7.17",
     "react": "^18.3.1",
     "viem": "^2.21.0"

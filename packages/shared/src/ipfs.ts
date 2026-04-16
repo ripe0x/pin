@@ -1,5 +1,5 @@
 /**
- * Shared IPFS utilities for CommonGround.
+ * Shared IPFS utilities for pin.
  *
  * Consolidates IPFS URI handling that was previously duplicated across
  * the web app, indexer, and API routes.

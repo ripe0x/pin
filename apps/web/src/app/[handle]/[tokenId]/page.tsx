@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
-import { SITE_TITLE, ipfsToHttp } from "@commonground/shared"
-import { FOUNDATION_NFT, MAINNET_CHAIN_ID } from "@commonground/addresses"
+import { SITE_TITLE, ipfsToHttp } from "@pin/shared"
+import { FOUNDATION_NFT, MAINNET_CHAIN_ID } from "@pin/addresses"
 import { Provenance, type ProvenanceEntry } from "@/components/Provenance"
 import { getTokenPageData } from "@/lib/queries"
 import { getTokenOnChainData } from "@/lib/onchain-discovery"
