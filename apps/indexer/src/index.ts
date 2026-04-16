@@ -1,23 +1,12 @@
 import { ponder } from "@/generated"
 import { graphql } from "@ponder/core"
 import { erc721Abi } from "@commonground/abi"
+import { ipfsToHttp } from "@commonground/shared"
 import * as schema from "../ponder.schema"
 
 // ─── GraphQL API ──────────────────────────────────────────────────────────────
 
 ponder.use("/graphql", graphql())
-
-// ─── Metadata resolver ───────────────────────────────────────────────────────
-
-function ipfsToHttp(uri: string): string {
-  if (uri.startsWith("ipfs://")) {
-    let cid = uri.replace("ipfs://", "")
-    // Fix Foundation's double-prefix bug: ipfs://ipfs/Qm...
-    if (cid.startsWith("ipfs/")) cid = cid.replace("ipfs/", "")
-    return `https://nftstorage.link/ipfs/${cid}`
-  }
-  return uri
-}
 
 async function resolveMetadata(
   client: any,

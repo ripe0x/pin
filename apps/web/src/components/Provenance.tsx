@@ -52,7 +52,7 @@ export function Provenance({ entries }: { entries: ProvenanceEntry[] }) {
                   {formatDate(entry.timestamp)}
                 </p>
                 <a
-                  href={`https://etherscan.io/tx/${entry.txHash}`}
+                  href={`https://evm.now/tx/${entry.txHash}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-xs text-gray-400 hover:text-black transition-colors"

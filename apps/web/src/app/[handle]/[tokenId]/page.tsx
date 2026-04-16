@@ -1,25 +1,15 @@
 import type { Metadata } from "next"
-import { SITE_TITLE } from "@commonground/shared"
+import { SITE_TITLE, ipfsToHttp } from "@commonground/shared"
 import { FOUNDATION_NFT, MAINNET_CHAIN_ID } from "@commonground/addresses"
-import { BidPanel } from "@/components/BidPanel"
-import { BidHistory, type BidEntry } from "@/components/BidHistory"
 import { Provenance, type ProvenanceEntry } from "@/components/Provenance"
 import { getTokenPageData } from "@/lib/queries"
+import { getTokenOnChainData } from "@/lib/onchain-discovery"
 import Link from "next/link"
 
 type Params = Promise<{ handle: string; tokenId: string }>
 
 function truncateAddress(addr: string): string {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`
-}
-
-function ipfsToHttp(uri: string): string {
-  if (uri.startsWith("ipfs://")) {
-    let cid = uri.replace("ipfs://", "")
-    if (cid.startsWith("ipfs/")) cid = cid.replace("ipfs/", "")
-    return `https://nftstorage.link/ipfs/${cid}`
-  }
-  return uri
 }
 
 async function resolveMetadataOnDemand(
@@ -40,8 +30,6 @@ async function resolveMetadataOnDemand(
 }
 
 async function resolveTokenPage(handle: string, tokenId: string) {
-  // If handle looks like an address, use it directly as the contract
-  // Otherwise, assume it's for the shared FoundationNFT contract
   const isAddress = handle.startsWith("0x") && handle.length === 42
   const contract = isAddress
     ? handle
@@ -51,7 +39,7 @@ async function resolveTokenPage(handle: string, tokenId: string) {
     const data = await getTokenPageData(contract, tokenId)
     if (!data) return null
 
-    let { token, auction, listing, bids, transfers, imageUrl } = data
+    let { token, transfers, imageUrl } = data
 
     // Resolve metadata on-demand if indexer hasn't populated it yet
     if (!token.metadata) {
@@ -68,36 +56,12 @@ async function resolveTokenPage(handle: string, tokenId: string) {
       title: token.metadata?.name ?? `#${tokenId}`,
       description: token.metadata?.description ?? "",
       creator: token.creator ?? "",
-      creatorHandle: token.creator ? truncateAddress(token.creator) : handle,
+      creatorHandle: token.creator ? truncateAddress(token.creator) : "",
       owner: token.owner ?? "",
       ownerHandle: token.owner ? truncateAddress(token.owner) : "",
       contract: token.contract,
       tokenId,
       imageUrl,
-      chainId: token.chainId,
-      auction: auction
-        ? {
-            auctionId: auction.id,
-            seller: auction.seller,
-            reservePrice: auction.reservePrice,
-            highestBid: auction.highestBid,
-            highestBidder: auction.highestBidder ?? "",
-            endTime: Number(auction.endTime),
-            status: auction.status as "live" | "settled" | "available",
-          }
-        : undefined,
-      buyNow: listing
-        ? { seller: listing.seller, price: listing.price }
-        : undefined,
-      bids: bids.map(
-        (b): BidEntry => ({
-          bidder: b.bidder,
-          bidderHandle: truncateAddress(b.bidder),
-          amount: BigInt(b.amount),
-          timestamp: Number(b.blockTime),
-          txHash: b.txHash,
-        })
-      ),
       provenance: transfers.map(
         (t): ProvenanceEntry => ({
           event:
@@ -118,29 +82,50 @@ async function resolveTokenPage(handle: string, tokenId: string) {
   }
 }
 
-// Fallback: resolve metadata directly from the chain when Ponder has no data
+// Fallback: resolve all data directly from the chain when Ponder has no data
 async function getChainFallback(handle: string, tokenId: string) {
   const isAddress = handle.startsWith("0x") && handle.length === 42
   const contract = isAddress ? handle : FOUNDATION_NFT[MAINNET_CHAIN_ID]
 
-  const meta = await resolveMetadataOnDemand(contract, tokenId)
-  const imageUrl = meta?.image ? ipfsToHttp(meta.image) : "https://placehold.co/1200x1500/F2F2F2/999999?text=Artwork"
+  // Fetch metadata and on-chain data in parallel
+  const [meta, onChainData] = await Promise.all([
+    resolveMetadataOnDemand(contract, tokenId),
+    getTokenOnChainData(contract, tokenId).catch(() => null),
+  ])
+
+  const imageUrl = meta?.image
+    ? ipfsToHttp(meta.image)
+    : "https://placehold.co/1200x1500/F2F2F2/999999?text=Artwork"
+
+  const creator = onChainData?.creator ?? ""
+  const owner = onChainData?.owner ?? ""
+
+  const provenance: ProvenanceEntry[] = (onChainData?.transfers ?? [])
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .map((t) => ({
+      event:
+        t.from === "0x0000000000000000000000000000000000000000"
+          ? "Minted"
+          : "Transferred",
+      from: t.from,
+      fromHandle: truncateAddress(t.from),
+      to: t.to,
+      toHandle: truncateAddress(t.to),
+      timestamp: t.timestamp,
+      txHash: t.txHash,
+    }))
 
   return {
     title: meta?.name ?? `#${tokenId}`,
     description: meta?.description ?? "",
-    creator: "",
-    creatorHandle: isAddress ? truncateAddress(handle) : handle,
-    owner: "",
-    ownerHandle: "",
+    creator,
+    creatorHandle: creator ? truncateAddress(creator) : "",
+    owner,
+    ownerHandle: owner ? truncateAddress(owner) : "",
     contract,
     tokenId,
     imageUrl,
-    chainId: 1,
-    auction: undefined,
-    buyNow: undefined,
-    bids: [] as BidEntry[],
-    provenance: [] as ProvenanceEntry[],
+    provenance,
   }
 }
 
@@ -152,10 +137,10 @@ export async function generateMetadata({
   const { handle, tokenId } = await params
   const data = (await resolveTokenPage(handle, tokenId)) ?? (await getChainFallback(handle, tokenId))
   return {
-    title: `${data.title} by ${data.creatorHandle}`,
+    title: `${data.title} by ${data.creatorHandle || "Unknown"}`,
     description: data.description,
     openGraph: {
-      title: `${data.title} by ${data.creatorHandle} | ${SITE_TITLE}`,
+      title: `${data.title} by ${data.creatorHandle || "Unknown"} | ${SITE_TITLE}`,
       description: data.description,
       images: [data.imageUrl],
     },
@@ -184,12 +169,14 @@ export default async function TokenPage({
           <div className="p-6 lg:p-12 space-y-8">
             {/* Creator */}
             <div className="space-y-1">
-              <Link
-                href={`/${data.creatorHandle}`}
-                className="text-sm text-gray-600 hover:text-black transition-colors"
-              >
-                {data.creatorHandle}
-              </Link>
+              {data.creator && (
+                <Link
+                  href={`/artist/${data.creator}`}
+                  className="text-sm text-gray-600 hover:text-black transition-colors"
+                >
+                  {data.creatorHandle}
+                </Link>
+              )}
               <h1 className="text-3xl font-semibold tracking-tight">
                 {data.title}
               </h1>
@@ -203,35 +190,17 @@ export default async function TokenPage({
             )}
 
             {/* Ownership */}
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-gray-400">Owned by</span>
-              <Link
-                href={`/${data.ownerHandle}`}
-                className="font-medium hover:underline"
-              >
-                {data.ownerHandle}
-              </Link>
-            </div>
-
-            {/* Divider */}
-            <div className="border-t border-gray-200" />
-
-            {/* Bid / Buy panel */}
-            <BidPanel
-              data={{
-                contract: data.contract,
-                tokenId: data.tokenId,
-                auction: data.auction,
-                buyNow: data.buyNow,
-                chainId: data.chainId,
-              }}
-            />
-
-            {/* Divider */}
-            <div className="border-t border-gray-200" />
-
-            {/* Bid history */}
-            <BidHistory bids={data.bids} />
+            {data.owner && (
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-gray-400">Owned by</span>
+                <Link
+                  href={`/artist/${data.owner}`}
+                  className="font-medium hover:underline"
+                >
+                  {data.ownerHandle}
+                </Link>
+              </div>
+            )}
 
             {/* Divider */}
             <div className="border-t border-gray-200" />
@@ -247,7 +216,7 @@ export default async function TokenPage({
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <span className="text-gray-400">Contract</span>
                 <a
-                  href={`https://etherscan.io/address/${data.contract}`}
+                  href={`https://evm.now/address/${data.contract}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="font-mono text-xs truncate hover:underline"
@@ -256,10 +225,6 @@ export default async function TokenPage({
                 </a>
                 <span className="text-gray-400">Token ID</span>
                 <span className="font-mono text-xs">{data.tokenId}</span>
-                <span className="text-gray-400">Chain</span>
-                <span className="text-xs">
-                  {data.chainId === 1 ? "Ethereum" : "Base"}
-                </span>
               </div>
             </div>
           </div>

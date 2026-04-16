@@ -29,9 +29,14 @@ export const FETH: Record<number, Address> = {
   [BASE_CHAIN_ID]: "0x0000000000000000000000000000000000000000", // TODO: confirm
 }
 
-// Collection factory (creator-deployed collections)
-export const COLLECTION_FACTORY: Record<number, Address> = {
-  [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000", // TODO: confirm from fnd-protocol
+// Collection factory V1 (creator-deployed collections)
+export const COLLECTION_FACTORY_V1: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x3B612a5B49e025a6e4bA4eE4FB1EF46D13588059",
+}
+
+// Collection factory V2 (creator-deployed collections, drops, editions)
+export const COLLECTION_FACTORY_V2: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x612E2DadDc89d91409e40f946f9f7CfE422e777E",
 }
 
 // Helper to get address or throw

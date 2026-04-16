@@ -2,21 +2,12 @@ import { NextRequest, NextResponse } from "next/server"
 import { createPublicClient, http } from "viem"
 import { mainnet } from "viem/chains"
 import { erc721Abi } from "@commonground/abi"
+import { ipfsToHttp } from "@commonground/shared"
 
 const client = createPublicClient({
   chain: mainnet,
   transport: http(process.env.NEXT_PUBLIC_ALCHEMY_MAINNET_URL),
 })
-
-function ipfsToHttp(uri: string): string {
-  if (uri.startsWith("ipfs://")) {
-    let cid = uri.replace("ipfs://", "")
-    // Fix Foundation's double-prefix bug: ipfs://ipfs/Qm...
-    if (cid.startsWith("ipfs/")) cid = cid.replace("ipfs/", "")
-    return `https://nftstorage.link/ipfs/${cid}`
-  }
-  return uri
-}
 
 export async function GET(
   _req: NextRequest,

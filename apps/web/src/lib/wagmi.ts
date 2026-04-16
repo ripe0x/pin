@@ -1,5 +1,5 @@
 import { getDefaultConfig } from "@rainbow-me/rainbowkit"
-import { mainnet, base } from "wagmi/chains"
+import { mainnet } from "wagmi/chains"
 import { http } from "wagmi"
 
 // WalletConnect requires a projectId. Get one free at https://cloud.walletconnect.com
@@ -10,15 +10,11 @@ const projectId =
 export const config = getDefaultConfig({
   appName: "CommonGround",
   projectId,
-  chains: [mainnet, base],
+  chains: [mainnet],
   transports: {
     [mainnet.id]: http(
       process.env.NEXT_PUBLIC_ALCHEMY_MAINNET_URL ??
         "https://eth.llamarpc.com"
-    ),
-    [base.id]: http(
-      process.env.NEXT_PUBLIC_ALCHEMY_BASE_URL ??
-        "https://base.llamarpc.com"
     ),
   },
   ssr: true,
