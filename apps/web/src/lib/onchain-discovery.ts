@@ -177,24 +177,40 @@ async function findArtistCollections(
 ): Promise<CollectionInfo[]> {
   const collections: CollectionInfo[] = []
 
-  // Scan both factory versions for NFTCollectionCreated events
+  // Modern 1/1 collection event
   const nftCollectionEvent = parseAbiItem(
     "event NFTCollectionCreated(address indexed collection, address indexed creator, uint256 indexed version, string name, string symbol, uint256 nonce)",
+  )
+
+  // Legacy pre-rename 1/1 collection event — identical layout, different name.
+  // Foundation's V1 factory originally emitted `CollectionCreated`; early
+  // collections still show up under this topic0 and would otherwise be missed.
+  const legacyCollectionEvent = parseAbiItem(
+    "event CollectionCreated(address indexed collection, address indexed creator, uint256 indexed version, string name, string symbol, uint256 nonce)",
   )
 
   const dropCollectionEvent = parseAbiItem(
     "event NFTDropCollectionCreated(address indexed collection, address indexed creator, address indexed approvedMinter, string name, string symbol, string baseURI, bool isRevealed, uint256 maxTokenId, address paymentAddress, uint256 version, uint256 nonce)",
   )
 
-  // Scan V1 and V2 factories in parallel
-  const [v1Collections, v1Drops, v2Collections, v2Drops] = await Promise.all([
+  // Scan V1 and V2 factories in parallel for modern, legacy, and drop events.
+  const [
+    v1Collections,
+    v1Legacy,
+    v1Drops,
+    v2Collections,
+    v2Legacy,
+    v2Drops,
+  ] = await Promise.all([
     getLogs(client, FACTORY_V1, nftCollectionEvent, { creator: artist }, FACTORY_V1_DEPLOY_BLOCK, latestBlock),
+    getLogs(client, FACTORY_V1, legacyCollectionEvent, { creator: artist }, FACTORY_V1_DEPLOY_BLOCK, latestBlock),
     getLogs(client, FACTORY_V1, dropCollectionEvent, { creator: artist }, FACTORY_V1_DEPLOY_BLOCK, latestBlock),
     getLogs(client, FACTORY_V2, nftCollectionEvent, { creator: artist }, FACTORY_V2_DEPLOY_BLOCK, latestBlock),
+    getLogs(client, FACTORY_V2, legacyCollectionEvent, { creator: artist }, FACTORY_V2_DEPLOY_BLOCK, latestBlock),
     getLogs(client, FACTORY_V2, dropCollectionEvent, { creator: artist }, FACTORY_V2_DEPLOY_BLOCK, latestBlock),
   ])
 
-  for (const log of [...v1Collections, ...v2Collections]) {
+  for (const log of [...v1Collections, ...v1Legacy, ...v2Collections, ...v2Legacy]) {
     const args = (log as { args: { collection: Address; name: string } }).args
     collections.push({ address: args.collection, name: args.name })
   }
@@ -204,7 +220,15 @@ async function findArtistCollections(
     collections.push({ address: args.collection, name: args.name })
   }
 
-  return collections
+  // Dedupe by collection address — a contract theoretically could surface in
+  // both the legacy and modern event streams (very unlikely, but cheap to guard).
+  const seen = new Set<string>()
+  return collections.filter((c) => {
+    const key = c.address.toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 // ── Shared helpers ───────────────────────────────────────────────────────────

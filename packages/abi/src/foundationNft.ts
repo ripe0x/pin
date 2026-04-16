@@ -52,6 +52,21 @@ export const collectionFactoryAbi = [
       { name: "nonce", type: "uint256", indexed: false },
     ],
   },
+  // Legacy pre-rename event — V1 factory originally emitted this name.
+  // Identical indexed layout; only the event name (and therefore topic0)
+  // differs. Early collections (before Foundation's rename) emit this one.
+  {
+    type: "event",
+    name: "CollectionCreated",
+    inputs: [
+      { name: "collection", type: "address", indexed: true },
+      { name: "creator", type: "address", indexed: true },
+      { name: "version", type: "uint256", indexed: true },
+      { name: "name", type: "string", indexed: false },
+      { name: "symbol", type: "string", indexed: false },
+      { name: "nonce", type: "uint256", indexed: false },
+    ],
+  },
   // Emitted when an artist deploys a drop collection
   {
     type: "event",
