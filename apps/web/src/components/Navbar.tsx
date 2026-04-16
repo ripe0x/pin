@@ -61,10 +61,12 @@ export function Navbar() {
               Profile
             </Link>
           )}
-          <ConnectButton
-            showBalance={false}
-            accountStatus="avatar"
-          />
+          <div className="rk-compact">
+            <ConnectButton
+              showBalance={false}
+              accountStatus="address"
+            />
+          </div>
         </div>
       </nav>
     </header>

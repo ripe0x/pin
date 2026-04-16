@@ -3,30 +3,13 @@ import { SITE_TITLE, ipfsToHttp } from "@pin/shared"
 import { FOUNDATION_NFT, MAINNET_CHAIN_ID } from "@pin/addresses"
 import { Provenance, type ProvenanceEntry } from "@/components/Provenance"
 import { getTokenPageData } from "@/lib/queries"
-import { getTokenOnChainData } from "@/lib/onchain-discovery"
+import { getTokenOnChainData, resolveTokenMetadataDirect } from "@/lib/onchain-discovery"
 import Link from "next/link"
 
 type Params = Promise<{ handle: string; tokenId: string }>
 
 function truncateAddress(addr: string): string {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`
-}
-
-async function resolveMetadataOnDemand(
-  contract: string,
-  tokenId: string,
-): Promise<{ name?: string; description?: string; image?: string } | null> {
-  try {
-    const base = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"
-    const res = await fetch(`${base}/api/meta/${contract}/${tokenId}`, {
-      next: { revalidate: 3600 },
-    })
-    if (!res.ok) return null
-    const data = await res.json()
-    return data.metadata
-  } catch {
-    return null
-  }
 }
 
 async function resolveTokenPage(handle: string, tokenId: string) {
@@ -43,7 +26,7 @@ async function resolveTokenPage(handle: string, tokenId: string) {
 
     // Resolve metadata on-demand if indexer hasn't populated it yet
     if (!token.metadata) {
-      const meta = await resolveMetadataOnDemand(contract, tokenId)
+      const meta = await resolveTokenMetadataDirect(contract, tokenId)
       if (meta) {
         token = { ...token, metadata: meta }
         if (meta.image) {
@@ -89,7 +72,7 @@ async function getChainFallback(handle: string, tokenId: string) {
 
   // Fetch metadata and on-chain data in parallel
   const [meta, onChainData] = await Promise.all([
-    resolveMetadataOnDemand(contract, tokenId),
+    resolveTokenMetadataDirect(contract, tokenId),
     getTokenOnChainData(contract, tokenId).catch(() => null),
   ])
 

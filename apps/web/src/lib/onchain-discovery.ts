@@ -388,7 +388,7 @@ export async function getTokenOnChainData(
   ])
 
   const owner = ownerResult ? (ownerResult as string) : null
-  const creator = creatorResult ? (creatorResult as string) : null
+  let creator = creatorResult ? (creatorResult as string) : null
 
   // Fetch transfer history
   const latestBlock = await client.getBlockNumber()
@@ -426,5 +426,42 @@ export async function getTokenOnChainData(
     }),
   )
 
+  // Derive creator from mint event if tokenCreator() is unavailable (custom collections)
+  if (!creator && transfers.length > 0) {
+    const mint = transfers.find(
+      (t) => t.from === "0x0000000000000000000000000000000000000000",
+    )
+    if (mint) creator = mint.to
+  }
+
   return { owner, creator, transfers }
+}
+
+/**
+ * Resolve metadata for a single token directly via RPC + IPFS.
+ * Used by the token detail page instead of self-fetching the API route.
+ */
+export async function resolveTokenMetadataDirect(
+  contractAddress: string,
+  tokenId: string,
+): Promise<{ name?: string; description?: string; image?: string } | null> {
+  try {
+    const client = getClient()
+    const tokenUri = await client.readContract({
+      address: contractAddress as Address,
+      abi: erc721Abi,
+      functionName: "tokenURI",
+      args: [BigInt(tokenId)],
+    })
+
+    if (!tokenUri) return null
+
+    const httpUrl = ipfsToHttp(tokenUri as string)
+    const res = await fetch(httpUrl, { signal: AbortSignal.timeout(10_000) })
+    if (!res.ok) return null
+
+    return await res.json()
+  } catch {
+    return null
+  }
 }

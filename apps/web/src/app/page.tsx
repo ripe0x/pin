@@ -3,11 +3,12 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { useAccount } from "wagmi"
-import { ConnectButton } from "@rainbow-me/rainbowkit"
+import { useConnectModal } from "@rainbow-me/rainbowkit"
 import { SITE_TITLE, SITE_DESCRIPTION } from "@pin/shared"
 
 export default function HomePage() {
   const { address } = useAccount()
+  const { openConnectModal } = useConnectModal()
   const router = useRouter()
   const [query, setQuery] = useState("")
 
@@ -59,15 +60,12 @@ export default function HomePage() {
             View my artist page
           </button>
         ) : (
-          <div className="flex flex-col items-center gap-2 pt-4">
-            <p className="text-sm text-gray-400">
-              Or connect your wallet to view your own page
-            </p>
-            <ConnectButton
-              showBalance={false}
-              accountStatus="avatar"
-            />
-          </div>
+          <button
+            onClick={openConnectModal}
+            className="text-sm text-gray-400 hover:text-black transition-colors pt-4"
+          >
+            Or connect your wallet to view your own page
+          </button>
         )}
       </section>
 
