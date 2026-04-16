@@ -89,7 +89,7 @@ export default async function ArtistPage({
       />
 
       <div className="mt-12">
-        <ArtistGallery items={displayItems} />
+        <ArtistGallery items={displayItems} artistAddress={address} />
       </div>
     </div>
   )
