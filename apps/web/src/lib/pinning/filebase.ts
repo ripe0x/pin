@@ -32,28 +32,46 @@ export class FilebaseProvider implements PinningProvider {
 
   async pinByCid(cid: string, name?: string): Promise<PinResult> {
     const hash = baseCid(cid)
-    const res = await fetch(`${FILEBASE_API}/pins`, {
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify({
-        cid: hash,
-        name: name ?? `pin: ${hash.slice(0, 12)}`,
-      }),
-    })
 
-    if (!res.ok) {
+    // Retry up to 3 times with backoff for rate limits
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const res = await fetch(`${FILEBASE_API}/pins`, {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify({
+          cid: hash,
+          name: name ?? `pin: ${hash.slice(0, 12)}`,
+        }),
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        return { cid, status: mapStatus(data.status) }
+      }
+
       const text = await res.text().catch(() => "")
       if (res.status === 409) {
         return { cid, status: "pinned" }
       }
-      throw new Error(`Filebase pin failed (${res.status}): ${text}`)
+
+      // Rate limited — wait and retry
+      if (res.status === 429 && attempt < 2) {
+        const wait = (attempt + 1) * 2000
+        await new Promise((r) => setTimeout(r, wait))
+        continue
+      }
+
+      if (res.status === 401 || res.status === 403) {
+        throw new Error("Filebase API key is invalid or lacks permissions. Check your access token.")
+      }
+      if (res.status === 429) {
+        throw new Error("Filebase rate limit exceeded. Wait a minute and try again.")
+      }
+
+      throw new Error(`Filebase pin failed (${res.status}): ${text.slice(0, 200)}`)
     }
 
-    const data = await res.json()
-    return {
-      cid,
-      status: mapStatus(data.status),
-    }
+    throw new Error("Filebase pin failed after retries")
   }
 
   async checkPin(cid: string): Promise<PinStatus> {

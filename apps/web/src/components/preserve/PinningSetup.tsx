@@ -34,8 +34,8 @@ export function PinningSetup({
       } else {
         setError("Invalid API key. Please check and try again.")
       }
-    } catch {
-      setError("Could not validate key. Please try again.")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not validate key. Please try again.")
     } finally {
       setValidating(false)
     }

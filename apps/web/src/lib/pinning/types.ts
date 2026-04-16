@@ -21,6 +21,7 @@ export type ProviderInfo = {
   freeTier: string
   keyPlaceholder: string
   keyGuide: string
+  disabled?: boolean
 }
 
 export type ProviderType = "pinata" | "web3storage" | "filebase"
@@ -52,11 +53,12 @@ export const PROVIDER_INFO: Record<ProviderType, ProviderInfo> = {
   web3storage: {
     id: "web3storage",
     name: "web3.storage",
-    description: "Free decentralized storage backed by Filecoin.",
+    description: "Currently unavailable — web3.storage's legacy API is in maintenance mode.",
     signupUrl: "https://web3.storage",
     freeTier: "5 GB free",
     keyPlaceholder: "web3.storage API token",
-    keyGuide: "Create an API token from your web3.storage account. The default token has all the permissions needed.",
+    keyGuide: "web3.storage's pinning API is currently offline. Please use Pinata or Filebase instead.",
+    disabled: true,
   },
   filebase: {
     id: "filebase",

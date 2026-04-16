@@ -6,6 +6,8 @@ export type PinStats = {
   pinning: number
   failed: number
   queued: number
+  /** First error message encountered — shown to help users diagnose failures. */
+  lastError?: string
 }
 
 export function PinProgress({
@@ -54,10 +56,23 @@ export function PinProgress({
 
       {/* Completion message */}
       {!isRunning && done === stats.total && stats.total > 0 && (
-        <div className="rounded-lg bg-green-50 border border-green-200 p-4 text-sm text-green-800">
-          {stats.failed === 0
-            ? `All ${stats.pinned} files pinned successfully.`
-            : `${stats.pinned} of ${stats.total} files pinned. ${stats.failed} failed — you can retry those below.`}
+        <div
+          className={`rounded-lg border p-4 text-sm ${
+            stats.failed === 0
+              ? "bg-green-50 border-green-200 text-green-800"
+              : "bg-red-50 border-red-200 text-red-800"
+          }`}
+        >
+          <p>
+            {stats.failed === 0
+              ? `All ${stats.pinned} files pinned successfully.`
+              : `${stats.pinned} of ${stats.total} files pinned. ${stats.failed} failed — you can retry those below.`}
+          </p>
+          {stats.lastError && (
+            <p className="mt-2 text-xs opacity-80">
+              Error: {stats.lastError}
+            </p>
+          )}
         </div>
       )}
     </div>

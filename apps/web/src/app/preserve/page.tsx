@@ -37,6 +37,7 @@ export default function PreservePage() {
     pinning: 0,
     failed: 0,
     queued: 0,
+    lastError: undefined,
   })
 
   // The address to discover — custom or connected wallet
@@ -174,57 +175,78 @@ export default function PreservePage() {
     const updatedTokens = [...tokens]
     let pinned = 0
     let failed = 0
+    let lastError: string | undefined
+
+    // Helper to pin a single CID with delay between requests
+    async function pinOne(
+      cid: string,
+      name: string,
+    ): Promise<"pinned" | "queued" | "failed"> {
+      // Delay between each API call to respect rate limits
+      await new Promise((r) => setTimeout(r, 350))
+
+      try {
+        const result = await pinner!.pinByCid(cid, name)
+        return result.status === "pinned" ? "pinned" : "queued"
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Unknown error"
+        console.error(`Pin failed for ${cid.slice(0, 16)}...: ${msg}`)
+        if (!lastError) lastError = msg
+        return "failed"
+      }
+    }
 
     for (let i = 0; i < updatedTokens.length; i++) {
       const ts = updatedTokens[i]
+      const label = ts.token.metadata?.name ?? `Token #${ts.token.tokenId}`
 
-      // Skip already-pinned CIDs
+      // Stop early if we get auth/permission errors — no point continuing
+      if (lastError && (lastError.includes("API key") || lastError.includes("invalid"))) {
+        // Mark remaining as failed
+        if (ts.token.metadataCid && ts.metadataStatus !== "pinned") {
+          ts.metadataStatus = "failed"
+          failed++
+        }
+        if (ts.token.mediaCid && ts.mediaStatus !== "pinned") {
+          ts.mediaStatus = "failed"
+          failed++
+        }
+        setTokens([...updatedTokens])
+        setStats({ total: stats.total, pinned, failed, pinning: 0, queued: 0, lastError })
+        continue
+      }
+
+      // Pin metadata CID
       if (ts.token.metadataCid && ts.metadataStatus !== "pinned") {
         ts.metadataStatus = "pinning"
         setTokens([...updatedTokens])
         setStats((s) => ({ ...s, pinning: s.pinning + 1 }))
 
-        try {
-          const result = await pinner.pinByCid(
-            ts.token.metadataCid,
-            `${ts.token.metadata?.name ?? `Token #${ts.token.tokenId}`} (metadata)`,
-          )
-          ts.metadataStatus = result.status === "pinned" ? "pinned" : "queued"
-          pinned++
-        } catch {
-          ts.metadataStatus = "failed"
-          failed++
-        }
+        const status = await pinOne(ts.token.metadataCid, `${label} (metadata)`)
+        ts.metadataStatus = status === "failed" ? "failed" : "pinned"
+        if (status === "failed") failed++
+        else pinned++
+
         setTokens([...updatedTokens])
-        setStats({ total: stats.total, pinned, failed, pinning: 0, queued: 0 })
+        setStats({ total: stats.total, pinned, failed, pinning: 0, queued: 0, lastError })
       } else if (ts.metadataStatus === "pinned") {
         pinned++
       }
 
+      // Pin media CID
       if (ts.token.mediaCid && ts.mediaStatus !== "pinned") {
         ts.mediaStatus = "pinning"
         setTokens([...updatedTokens])
 
-        try {
-          const result = await pinner.pinByCid(
-            ts.token.mediaCid,
-            `${ts.token.metadata?.name ?? `Token #${ts.token.tokenId}`} (media)`,
-          )
-          ts.mediaStatus = result.status === "pinned" ? "pinned" : "queued"
-          pinned++
-        } catch {
-          ts.mediaStatus = "failed"
-          failed++
-        }
+        const status = await pinOne(ts.token.mediaCid, `${label} (media)`)
+        ts.mediaStatus = status === "failed" ? "failed" : "pinned"
+        if (status === "failed") failed++
+        else pinned++
+
         setTokens([...updatedTokens])
-        setStats({ total: stats.total, pinned, failed, pinning: 0, queued: 0 })
+        setStats({ total: stats.total, pinned, failed, pinning: 0, queued: 0, lastError })
       } else if (ts.mediaStatus === "pinned") {
         pinned++
-      }
-
-      // Small delay between tokens to respect rate limits
-      if (i < updatedTokens.length - 1) {
-        await new Promise((r) => setTimeout(r, 500))
       }
     }
 
@@ -239,44 +261,49 @@ export default function PreservePage() {
     setPinning(true)
 
     const updatedTokens = [...tokens]
-    let { pinned, failed } = stats
-    failed = 0
+    let { pinned } = stats
+    let failed = 0
+    let lastError: string | undefined
 
     for (const ts of updatedTokens) {
       if (ts.metadataStatus === "failed" && ts.token.metadataCid) {
         ts.metadataStatus = "pinning"
         setTokens([...updatedTokens])
+        await new Promise((r) => setTimeout(r, 350))
 
         try {
           const result = await pinner.pinByCid(ts.token.metadataCid)
           ts.metadataStatus = result.status === "pinned" ? "pinned" : "queued"
           pinned++
-        } catch {
+        } catch (err) {
           ts.metadataStatus = "failed"
           failed++
+          const msg = err instanceof Error ? err.message : "Unknown error"
+          if (!lastError) lastError = msg
         }
         setTokens([...updatedTokens])
-        await new Promise((r) => setTimeout(r, 500))
       }
 
       if (ts.mediaStatus === "failed" && ts.token.mediaCid) {
         ts.mediaStatus = "pinning"
         setTokens([...updatedTokens])
+        await new Promise((r) => setTimeout(r, 350))
 
         try {
           const result = await pinner.pinByCid(ts.token.mediaCid)
           ts.mediaStatus = result.status === "pinned" ? "pinned" : "queued"
           pinned++
-        } catch {
+        } catch (err) {
           ts.mediaStatus = "failed"
           failed++
+          const msg = err instanceof Error ? err.message : "Unknown error"
+          if (!lastError) lastError = msg
         }
         setTokens([...updatedTokens])
-        await new Promise((r) => setTimeout(r, 500))
       }
     }
 
-    setStats((s) => ({ ...s, pinned, failed }))
+    setStats((s) => ({ ...s, pinned, failed, lastError }))
     setPinning(false)
   }
 

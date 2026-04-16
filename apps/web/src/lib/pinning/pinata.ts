@@ -32,25 +32,52 @@ export class PinataProvider implements PinningProvider {
 
   async pinByCid(cid: string, name?: string): Promise<PinResult> {
     const hash = baseCid(cid)
-    const res = await fetch(`${PINATA_API}/pinning/pinByHash`, {
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify({
-        hashToPin: hash,
-        pinataMetadata: { name: name ?? `pin: ${hash.slice(0, 12)}` },
-      }),
-    })
 
-    if (!res.ok) {
+    // Retry up to 3 times with backoff for rate limits
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const res = await fetch(`${PINATA_API}/pinning/pinByHash`, {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify({
+          hashToPin: hash,
+          pinataMetadata: { name: name ?? `pin: ${hash.slice(0, 12)}` },
+        }),
+      })
+
+      if (res.ok) {
+        return { cid, status: "queued" }
+      }
+
       const text = await res.text().catch(() => "")
+
       // Pinata returns 400 if already pinned — treat as success
       if (res.status === 400 && text.includes("DUPLICATE_OBJECT")) {
         return { cid, status: "pinned" }
       }
-      throw new Error(`Pinata pin failed (${res.status}): ${text}`)
+
+      // Rate limited — wait and retry
+      if (res.status === 429 && attempt < 2) {
+        const wait = (attempt + 1) * 2000 // 2s, 4s
+        await new Promise((r) => setTimeout(r, wait))
+        continue
+      }
+
+      // Provide clear error messages for common issues
+      if (res.status === 401 || res.status === 403) {
+        throw new Error("Pinata API key is invalid or missing 'pinByHash' permission. Regenerate your key with pinByHash enabled under Legacy Endpoints.")
+      }
+      if (res.status === 429) {
+        throw new Error("Pinata rate limit exceeded. Wait a minute and try again, or upgrade to a paid plan.")
+      }
+      if (res.status === 402) {
+        throw new Error("Pinata pin limit reached. Free tier allows 500 pins — upgrade your plan or unpin unused CIDs.")
+      }
+
+      throw new Error(`Pinata pin failed (${res.status}): ${text.slice(0, 200)}`)
     }
 
-    return { cid, status: "queued" }
+    // Should not reach here, but satisfy TypeScript
+    throw new Error("Pinata pin failed after retries")
   }
 
   async checkPin(cid: string): Promise<PinStatus> {
