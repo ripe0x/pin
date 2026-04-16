@@ -103,5 +103,7 @@ export function tokenToDisplayData(token: DiscoveredToken) {
     description: token.metadata?.description ?? "",
     imageUrl,
     creator: token.creator,
+    metadataCid: token.metadataCid,
+    mediaCid: token.mediaCid,
   }
 }
