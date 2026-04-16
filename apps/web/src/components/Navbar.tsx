@@ -64,7 +64,7 @@ export function Navbar() {
           <div className="rk-compact">
             <ConnectButton
               showBalance={false}
-              accountStatus="address"
+              accountStatus="avatar"
             />
           </div>
         </div>

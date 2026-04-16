@@ -77,12 +77,28 @@ export default function HomePage() {
           </p>
           <div className="flex gap-6 text-sm text-gray-400">
             <a
+              href="https://x.com/ripe0x"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-black transition-colors"
+            >
+              Created by ripe
+            </a>
+            <a
+              href="https://github.com/ripe0x/pin"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-black transition-colors"
+            >
+              GitHub
+            </a>
+            <a
               href="https://evm.now/address/0xcDA72070E455bb31C7690a170224Ce43623d0B6f"
               target="_blank"
               rel="noopener noreferrer"
               className="hover:text-black transition-colors"
             >
-              NFTMarket ↗
+              NFTMarket
             </a>
             <a
               href="https://github.com/f8n/fnd-protocol"
@@ -90,7 +106,7 @@ export default function HomePage() {
               rel="noopener noreferrer"
               className="hover:text-black transition-colors"
             >
-              Contracts ↗
+              Contracts
             </a>
           </div>
         </div>
