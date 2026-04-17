@@ -510,7 +510,7 @@ export default function PreservePage() {
                           onClick={handleResetProvider}
                           className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
                         >
-                          Use a different provider or API key
+                          Use a different API key
                         </button>
                       </div>
                     </>
@@ -566,7 +566,7 @@ export default function PreservePage() {
                 onClick={handleResetProvider}
                 className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
               >
-                Use a different provider or API key
+                Use a different API key
               </button>
             </div>
           )}
