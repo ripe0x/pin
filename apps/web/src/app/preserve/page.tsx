@@ -173,6 +173,39 @@ export default function PreservePage() {
     setStep("pin")
   }
 
+  /**
+   * Clear the saved provider + key so the user can pick a different one
+   * or paste a fresh key. Used when the current key is failing (e.g. Pinata
+   * free-tier account hitting the Pin-by-CID paywall).
+   */
+  function handleResetProvider() {
+    providerRef.current = null
+    setProviderType(null)
+    try {
+      localStorage.removeItem("cg_pin_provider")
+      localStorage.removeItem("cg_pin_key")
+    } catch {
+      // Ignore storage errors
+    }
+    // Reset pin-related state so the fresh key starts clean.
+    setStats((s) => ({
+      total: s.total,
+      pinned: 0,
+      pinning: 0,
+      failed: 0,
+      queued: 0,
+      lastError: undefined,
+    }))
+    setTokens((prev) =>
+      prev.map((ts) => ({
+        ...ts,
+        metadataStatus: "unknown",
+        mediaStatus: "unknown",
+      })),
+    )
+    setStep("setup")
+  }
+
   // Step 4: Pin all CIDs
   async function pinAll() {
     const pinner = providerRef.current
@@ -463,14 +496,24 @@ export default function PreservePage() {
             <>
               <PreserveGrid tokens={tokens} />
               {unpinnedCount > 0 ? (
-                <div className="border-t border-gray-200 pt-6">
+                <div className="border-t border-gray-200 pt-6 space-y-3">
                   {providerRef.current ? (
-                    <button
-                      onClick={() => setStep("pin")}
-                      className="w-full bg-black text-white py-3 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors"
-                    >
-                      Pin {unpinnedCount} remaining {unpinnedCount === 1 ? "file" : "files"} to {providerType === "pinata" ? "Pinata" : providerType === "web3storage" ? "web3.storage" : "Filebase"}
-                    </button>
+                    <>
+                      <button
+                        onClick={() => setStep("pin")}
+                        className="w-full bg-black text-white py-3 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors"
+                      >
+                        Pin {unpinnedCount} remaining {unpinnedCount === 1 ? "file" : "files"} to {providerType === "pinata" ? "Pinata" : providerType === "web3storage" ? "web3.storage" : "Filebase"}
+                      </button>
+                      <div className="text-center">
+                        <button
+                          onClick={handleResetProvider}
+                          className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                          Use a different provider or API key
+                        </button>
+                      </div>
+                    </>
                   ) : (
                     <PinningSetup onReady={handleProviderReady} />
                   )}
@@ -513,6 +556,19 @@ export default function PreservePage() {
             >
               Retry {stats.failed} failed pins
             </button>
+          )}
+
+          {/* Always-available escape hatch to switch providers when pinning
+              is failing (e.g. Pinata free-tier key silently paywalled). */}
+          {!pinning && (
+            <div className="text-center">
+              <button
+                onClick={handleResetProvider}
+                className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                Use a different provider or API key
+              </button>
+            </div>
           )}
 
           <PreserveGrid tokens={tokens} />
