@@ -46,11 +46,11 @@ export const PROVIDER_INFO: Record<ProviderType, ProviderInfo> = {
   filebase: {
     id: "filebase",
     name: "Filebase",
-    description: "Free, S3-compatible IPFS pinning. Recommended for most artists.",
+    description: "Free, decentralized IPFS pinning. Recommended for most artists.",
     signupUrl: "https://console.filebase.com/signup",
     freeTier: "5 GB free",
-    keyPlaceholder: "Filebase access token",
-    keyGuide: "Sign up at filebase.com, then go to Access Keys in your dashboard and create a new key. The default permissions are sufficient — no special scopes needed.",
+    keyPlaceholder: "Filebase IPFS Pinning Service token",
+    keyGuide: "Important: you need the IPFS Pinning Service token, NOT a regular S3 access key. Steps: (1) Sign up at filebase.com. (2) Create a new bucket — make sure the Network is set to IPFS (not S3). (3) Go to console.filebase.com/keys and scroll to the \"IPFS Pinning Service API Endpoint\" section. (4) In the \"Choose Bucket to Generate Token\" dropdown, pick the IPFS bucket you just created. (5) Copy the generated token and paste it here.",
   },
   pinata: {
     id: "pinata",
