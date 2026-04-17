@@ -24,7 +24,7 @@ export type ProviderInfo = {
   disabled?: boolean
 }
 
-export type ProviderType = "pinata" | "web3storage" | "filebase"
+export type ProviderType = "pinata" | "web3storage" | "filebase" | "4everland"
 
 export interface PinningProvider {
   readonly name: string
@@ -41,6 +41,15 @@ export interface PinningProvider {
 }
 
 export const PROVIDER_INFO: Record<ProviderType, ProviderInfo> = {
+  "4everland": {
+    id: "4everland",
+    name: "4EVERLAND",
+    description: "Free IPFS pinning with pin-by-CID support on the free tier. Recommended for most artists.",
+    signupUrl: "https://www.4everland.org/",
+    freeTier: "6 GB/month free",
+    keyPlaceholder: "4EVERLAND access token",
+    keyGuide: "Sign up at 4everland.org, then open the 4EVER Pin dashboard (under Storage in the sidebar). An access token is generated automatically on first visit — copy it and paste it here. Do NOT use the S3 \"Access Keys\" from the Bucket section; those won't work for pinning.",
+  },
   pinata: {
     id: "pinata",
     name: "Pinata",
@@ -53,9 +62,9 @@ export const PROVIDER_INFO: Record<ProviderType, ProviderInfo> = {
   filebase: {
     id: "filebase",
     name: "Filebase",
-    description: "Not currently offered — guide is kept for future use.",
+    description: "Filebase's Pinning Service API is paid-only — free accounts get a 403 on every pin request. Disabled for now.",
     signupUrl: "https://console.filebase.com/signup",
-    freeTier: "5 GB free",
+    freeTier: "Paid plan required",
     keyPlaceholder: "Filebase IPFS Pinning Service token",
     keyGuide: "Filebase is not currently exposed in the UI.",
     disabled: true,

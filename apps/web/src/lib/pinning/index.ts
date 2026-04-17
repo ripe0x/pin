@@ -2,6 +2,7 @@ import type { PinningProvider, ProviderType } from "./types"
 import { PinataProvider } from "./pinata"
 import { Web3StorageProvider } from "./web3storage"
 import { FilebaseProvider } from "./filebase"
+import { FourEverlandProvider } from "./4everland"
 
 export type { PinningProvider, PinResult, PinStatus, ProviderType } from "./types"
 export { PROVIDER_INFO } from "./types"
@@ -20,5 +21,7 @@ export function createProvider(
       return new Web3StorageProvider(apiKey)
     case "filebase":
       return new FilebaseProvider(apiKey)
+    case "4everland":
+      return new FourEverlandProvider(apiKey)
   }
 }

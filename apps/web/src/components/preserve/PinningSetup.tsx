@@ -3,22 +3,31 @@
 import { useState } from "react"
 import { PROVIDER_INFO, type ProviderType } from "@/lib/pinning"
 import { createProvider } from "@/lib/pinning"
+import { ProviderSelect } from "./ProviderSelect"
 
-// Pinata-only for now. Other providers (Filebase, web3.storage) remain in
-// PROVIDER_INFO / the provider factory so they can be re-enabled later, but
-// the UI only offers Pinata.
-const PROVIDER: ProviderType = "pinata"
+/** First non-disabled provider in PROVIDER_INFO order — acts as the default. */
+const DEFAULT_PROVIDER: ProviderType =
+  Object.values(PROVIDER_INFO).find((p) => !p.disabled)?.id ?? "pinata"
 
 export function PinningSetup({
   onReady,
 }: {
   onReady: (provider: ProviderType, apiKey: string) => void
 }) {
+  const [provider, setProvider] = useState<ProviderType>(DEFAULT_PROVIDER)
   const [apiKey, setApiKey] = useState("")
   const [validating, setValidating] = useState(false)
   const [error, setError] = useState("")
 
-  const info = PROVIDER_INFO[PROVIDER]
+  const info = PROVIDER_INFO[provider]
+
+  function handleProviderChange(next: ProviderType) {
+    setProvider(next)
+    // Clear any prior key/errors so a key for one provider isn't accidentally
+    // sent to another's endpoint.
+    setApiKey("")
+    setError("")
+  }
 
   async function handleValidate() {
     if (!apiKey.trim()) {
@@ -30,11 +39,11 @@ export function PinningSetup({
     setError("")
 
     try {
-      const pinner = createProvider(PROVIDER, apiKey.trim())
+      const pinner = createProvider(provider, apiKey.trim())
       const valid = await pinner.validateKey()
 
       if (valid) {
-        onReady(PROVIDER, apiKey.trim())
+        onReady(provider, apiKey.trim())
       } else {
         setError("Invalid API key. Please check and try again.")
       }
@@ -48,7 +57,7 @@ export function PinningSetup({
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <h3 className="text-lg font-medium">Pin to {info.name}</h3>
+        <h3 className="text-lg font-medium">Choose a pinning provider</h3>
         <p className="text-sm text-gray-500">
           Pinning keeps your art permanently available on IPFS. Think of it like
           backing up your files to the cloud — without it, your art could
@@ -56,7 +65,9 @@ export function PinningSetup({
         </p>
       </div>
 
-      <div className="space-y-3">
+      <ProviderSelect selected={provider} onSelect={handleProviderChange} />
+
+      <div className="space-y-3 border-t border-gray-200 pt-6">
         <div className="flex items-center justify-between">
           <label className="text-sm font-medium">{info.name} API Key</label>
           <a

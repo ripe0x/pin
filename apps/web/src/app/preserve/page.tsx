@@ -503,7 +503,7 @@ export default function PreservePage() {
                         onClick={() => setStep("pin")}
                         className="w-full bg-black text-white py-3 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors"
                       >
-                        Pin {unpinnedCount} remaining {unpinnedCount === 1 ? "file" : "files"} to {providerType === "pinata" ? "Pinata" : providerType === "web3storage" ? "web3.storage" : "Filebase"}
+                        Pin {unpinnedCount} remaining {unpinnedCount === 1 ? "file" : "files"} to {providerType ? PROVIDER_INFO[providerType].name : ""}
                       </button>
                       <div className="text-center">
                         <button
@@ -545,7 +545,7 @@ export default function PreservePage() {
               onClick={pinAll}
               className="w-full bg-black text-white py-3 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors"
             >
-              Pin {unpinnedCount > 0 ? `${unpinnedCount} files` : "All"} to {providerType === "pinata" ? "Pinata" : providerType === "web3storage" ? "web3.storage" : "Filebase"}
+              Pin {unpinnedCount > 0 ? `${unpinnedCount} files` : "All"} to {providerType ? PROVIDER_INFO[providerType].name : ""}
             </button>
           )}
 
