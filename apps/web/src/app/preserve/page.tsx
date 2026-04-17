@@ -128,7 +128,8 @@ export default function PreservePage() {
       try {
         const savedType = localStorage.getItem("cg_pin_provider") as ProviderType | null
         const savedKey = localStorage.getItem("cg_pin_key")
-        if (savedType && savedKey && !PROVIDER_INFO[savedType]?.disabled) {
+        const savedInfo = savedType ? PROVIDER_INFO[savedType] : undefined
+        if (savedType && savedKey && savedInfo && !savedInfo.disabled) {
           savedProvider = createProvider(savedType, savedKey)
           const valid = await savedProvider.validateKey()
           if (valid) {
@@ -138,8 +139,9 @@ export default function PreservePage() {
           } else {
             savedProvider = null
           }
-        } else if (savedType && PROVIDER_INFO[savedType]?.disabled) {
-          // Clear the disabled saved provider so the user gets a fresh setup.
+        } else if (savedType) {
+          // Clear the saved provider when it's missing from PROVIDER_INFO
+          // (removed type) or disabled, so the user gets a fresh setup.
           localStorage.removeItem("cg_pin_provider")
           localStorage.removeItem("cg_pin_key")
         }

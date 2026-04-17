@@ -24,7 +24,7 @@ export type ProviderInfo = {
   disabled?: boolean
 }
 
-export type ProviderType = "pinata" | "web3storage" | "filebase" | "4everland"
+export type ProviderType = "pinata" | "web3storage" | "4everland"
 
 export interface PinningProvider {
   readonly name: string
@@ -58,16 +58,6 @@ export const PROVIDER_INFO: Record<ProviderType, ProviderInfo> = {
     freeTier: "Paid plan required for Pin by CID",
     keyPlaceholder: "Pinata JWT token",
     keyGuide: "Heads up: Pinata's Free plan does NOT support Pin by CID — you'll get errors even with admin permissions. You need the Picnic plan ($20/mo) or higher. To create the key: in your Pinata dashboard create a new API key. Use an Admin key, or customize permissions: under Legacy Endpoints, enable \"pinByHash\" (in Pinning) and \"pinList\" (in Data).",
-  },
-  filebase: {
-    id: "filebase",
-    name: "Filebase",
-    description: "Filebase's Pinning Service API is paid-only — free accounts get a 403 on every pin request. Disabled for now.",
-    signupUrl: "https://console.filebase.com/signup",
-    freeTier: "Paid plan required",
-    keyPlaceholder: "Filebase IPFS Pinning Service token",
-    keyGuide: "Filebase is not currently exposed in the UI.",
-    disabled: true,
   },
   web3storage: {
     id: "web3storage",

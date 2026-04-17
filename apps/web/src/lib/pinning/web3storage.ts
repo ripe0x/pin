@@ -49,7 +49,7 @@ export class Web3StorageProvider implements PinningProvider {
       }
       // web3.storage legacy API is in maintenance mode
       if (text.includes("MAINTENANCE") || text.includes("maintenance")) {
-        throw new Error("web3.storage API is currently offline (maintenance mode). Please use Pinata or Filebase instead.")
+        throw new Error("web3.storage API is currently offline (maintenance mode). Please use 4EVERLAND or Pinata instead.")
       }
       throw new Error(`web3.storage pin failed (${res.status}): ${text.slice(0, 200)}`)
     }
@@ -85,7 +85,7 @@ export class Web3StorageProvider implements PinningProvider {
       if (!res.ok) {
         const text = await res.text().catch(() => "")
         if (text.includes("MAINTENANCE") || text.includes("maintenance")) {
-          throw new Error("web3.storage API is currently offline (maintenance mode). Please use Pinata or Filebase instead.")
+          throw new Error("web3.storage API is currently offline (maintenance mode). Please use 4EVERLAND or Pinata instead.")
         }
       }
       return res.ok
