@@ -40,15 +40,26 @@ export interface PinningProvider {
   validateKey(): Promise<boolean>
 }
 
+// Order matters — ProviderSelect renders these in object-key order,
+// and PinningSetup defaults to the first non-disabled entry.
 export const PROVIDER_INFO: Record<ProviderType, ProviderInfo> = {
+  filebase: {
+    id: "filebase",
+    name: "Filebase",
+    description: "Free, S3-compatible IPFS pinning. Recommended for most artists.",
+    signupUrl: "https://console.filebase.com/signup",
+    freeTier: "5 GB free",
+    keyPlaceholder: "Filebase access token",
+    keyGuide: "Sign up at filebase.com, then go to Access Keys in your dashboard and create a new key. The default permissions are sufficient — no special scopes needed.",
+  },
   pinata: {
     id: "pinata",
     name: "Pinata",
-    description: "The most popular IPFS pinning service. Easy to use, reliable.",
+    description: "Reliable, but requires the Picnic plan ($20/mo) or higher for Pin by CID. Free plan cannot pin existing IPFS content.",
     signupUrl: "https://app.pinata.cloud/register",
-    freeTier: "500 pins / 1 GB free",
+    freeTier: "Paid plan required",
     keyPlaceholder: "Pinata JWT token",
-    keyGuide: "Create a new API key in your Pinata dashboard. You can use an Admin key, or customize permissions: under Legacy Endpoints, enable \"pinByHash\" (in Pinning) and \"pinList\" (in Data). V3 Resources are not needed.",
+    keyGuide: "Heads up: Pinata's Free plan does NOT support Pin by CID (you'll get errors even with admin permissions). You need the Picnic plan ($20/mo) or higher. If you'd rather not pay, use Filebase instead. To create the key: in your Pinata dashboard create a new API key. Use an Admin key, or customize permissions: under Legacy Endpoints, enable \"pinByHash\" (in Pinning) and \"pinList\" (in Data).",
   },
   web3storage: {
     id: "web3storage",
@@ -57,16 +68,7 @@ export const PROVIDER_INFO: Record<ProviderType, ProviderInfo> = {
     signupUrl: "https://web3.storage",
     freeTier: "5 GB free",
     keyPlaceholder: "web3.storage API token",
-    keyGuide: "web3.storage's pinning API is currently offline. Please use Pinata or Filebase instead.",
+    keyGuide: "web3.storage's pinning API is currently offline. Please use Filebase or Pinata instead.",
     disabled: true,
-  },
-  filebase: {
-    id: "filebase",
-    name: "Filebase",
-    description: "S3-compatible IPFS pinning with a generous free tier.",
-    signupUrl: "https://filebase.com",
-    freeTier: "5 GB free",
-    keyPlaceholder: "Filebase access token",
-    keyGuide: "Go to Access Keys in your Filebase dashboard and create a new key. The default key permissions are sufficient.",
   },
 }

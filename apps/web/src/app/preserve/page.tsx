@@ -5,7 +5,7 @@ import { useAccount } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import type { DiscoveredToken } from "@/lib/onchain-discovery"
 import type { PinStatus, ProviderType, PinningProvider } from "@/lib/pinning"
-import { createProvider } from "@/lib/pinning"
+import { createProvider, PROVIDER_INFO } from "@/lib/pinning"
 import { PinningSetup } from "@/components/preserve/PinningSetup"
 import { PreserveGrid } from "@/components/preserve/PreserveGrid"
 import { PinProgress, type PinStats } from "@/components/preserve/PinProgress"
@@ -120,12 +120,15 @@ export default function PreservePage() {
       }
       setStats((s) => ({ ...s, total: totalCids }))
 
-      // If we have a saved provider, check what's already pinned
+      // If we have a saved provider, check what's already pinned.
+      // Skip if the saved provider has since been disabled (e.g. web3.storage
+      // API moved to maintenance mode), so users don't get stuck on a broken
+      // choice they made days ago.
       let savedProvider: PinningProvider | null = null
       try {
         const savedType = localStorage.getItem("cg_pin_provider") as ProviderType | null
         const savedKey = localStorage.getItem("cg_pin_key")
-        if (savedType && savedKey) {
+        if (savedType && savedKey && !PROVIDER_INFO[savedType]?.disabled) {
           savedProvider = createProvider(savedType, savedKey)
           const valid = await savedProvider.validateKey()
           if (valid) {
@@ -135,6 +138,10 @@ export default function PreservePage() {
           } else {
             savedProvider = null
           }
+        } else if (savedType && PROVIDER_INFO[savedType]?.disabled) {
+          // Clear the disabled saved provider so the user gets a fresh setup.
+          localStorage.removeItem("cg_pin_provider")
+          localStorage.removeItem("cg_pin_key")
         }
       } catch {
         // No saved provider or invalid — that's fine

@@ -9,7 +9,8 @@ export function ProviderSelect({
   selected: ProviderType
   onSelect: (provider: ProviderType) => void
 }) {
-  const providers = Object.values(PROVIDER_INFO)
+  // Hide disabled providers (e.g. web3.storage is in maintenance mode)
+  const providers = Object.values(PROVIDER_INFO).filter((p) => !p.disabled)
 
   return (
     <div className="space-y-3">
