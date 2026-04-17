@@ -8,7 +8,7 @@ const projectId =
   process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "PLACEHOLDER_DEV_ID"
 
 export const config = getDefaultConfig({
-  appName: "pin",
+  appName: "PND",
   projectId,
   chains: [mainnet],
   transports: {
