@@ -39,6 +39,24 @@ export const COLLECTION_FACTORY_V2: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x612E2DadDc89d91409e40f946f9f7CfE422e777E",
 }
 
+// PND auction house factory (deploys per-artist BeaconProxy auction houses).
+// TODO: replace with real address after the mainnet deploy lands.
+export const PND_AUCTION_HOUSE_FACTORY: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+  [BASE_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+}
+
+// Helper for the address-or-null pattern: returns null when no factory is
+// configured for the chain (instead of throwing like getAddress).
+export function getAddressOrNull(
+  addresses: Record<number, Address>,
+  chainId: number,
+): Address | null {
+  const addr = addresses[chainId]
+  if (!addr || addr === "0x0000000000000000000000000000000000000000") return null
+  return addr
+}
+
 // Helper to get address or throw
 export function getAddress(
   addresses: Record<number, Address>,

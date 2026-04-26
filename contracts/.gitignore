@@ -1,0 +1,7 @@
+# Foundry build outputs
+out/
+cache/
+broadcast/
+
+# Forge-installed dependencies (reinstall with `forge install` per README).
+lib/

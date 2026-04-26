@@ -4,15 +4,13 @@ import { useEffect, useMemo, useState } from "react"
 import { formatEther, parseEther } from "viem"
 import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
-import { nftMarketAbi } from "@pin/abi"
-import { NFT_MARKET, MAINNET_CHAIN_ID } from "@pin/addresses"
+import { nftMarketAbi, pndAuctionHouseAbi } from "@pin/abi"
 import type {
   AuctionFees,
+  AuctionState,
   BidHistoryEntry,
-  FoundationAuctionState,
 } from "@/lib/auctions"
 
-const MARKET_ADDRESS = NFT_MARKET[MAINNET_CHAIN_ID]
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
 function truncateAddress(addr: string): string {
@@ -73,16 +71,16 @@ function Countdown({ endTime }: { endTime: bigint }) {
 
 type Phase = "live" | "no-bids" | "ended-unsettled"
 
-function getPhase(auction: FoundationAuctionState, nowSec: number): Phase {
+function getPhase(auction: AuctionState, nowSec: number): Phase {
   if (auction.awaitingFirstBid) return "no-bids"
   if (Number(auction.endTime) <= nowSec) return "ended-unsettled"
   return "live"
 }
 
-export function FoundationAuctionPanel({
+export function AuctionPanel({
   auction,
 }: {
-  auction: FoundationAuctionState
+  auction: AuctionState
 }) {
   const [nowSec, setNowSec] = useState(() => Math.floor(Date.now() / 1000))
   useEffect(() => {
@@ -138,6 +136,8 @@ export function FoundationAuctionPanel({
         ) : (
           <BidSection auction={auction} />
         )}
+
+        {auction.awaitingFirstBid && <SellerActions auction={auction} />}
       </div>
 
       {bidHistory.length > 0 && <BidHistory bids={bidHistory} />}
@@ -209,7 +209,7 @@ function FeesBreakdown({ fees }: { fees: AuctionFees }) {
   )
 }
 
-function BidSection({ auction }: { auction: FoundationAuctionState }) {
+function BidSection({ auction }: { auction: AuctionState }) {
   const { address } = useAccount()
   const minBidWei = auction.minBidWei
   const minBidEth = formatEther(minBidWei)
@@ -246,17 +246,27 @@ function BidSection({ auction }: { auction: FoundationAuctionState }) {
 
   function handleBid() {
     if (!validation.ok) return
-    writeContract({
-      address: MARKET_ADDRESS,
-      abi: nftMarketAbi,
-      functionName: "placeBidV2",
-      args: [
-        BigInt(auction.auctionId),
-        validation.amount,
-        ZERO_ADDRESS as `0x${string}`,
-      ],
-      value: validation.amount,
-    })
+    if (auction.source === "foundation") {
+      writeContract({
+        address: auction.marketAddress,
+        abi: nftMarketAbi,
+        functionName: "placeBidV2",
+        args: [
+          BigInt(auction.auctionId),
+          validation.amount,
+          ZERO_ADDRESS as `0x${string}`,
+        ],
+        value: validation.amount,
+      })
+    } else {
+      writeContract({
+        address: auction.marketAddress,
+        abi: pndAuctionHouseAbi,
+        functionName: "createBid",
+        args: [BigInt(auction.auctionId)],
+        value: validation.amount,
+      })
+    }
   }
 
   if (isSuccess) {
@@ -344,7 +354,7 @@ function BidSection({ auction }: { auction: FoundationAuctionState }) {
   )
 }
 
-function SettleSection({ auction }: { auction: FoundationAuctionState }) {
+function SettleSection({ auction }: { auction: AuctionState }) {
   const { address } = useAccount()
   const {
     writeContract,
@@ -360,12 +370,21 @@ function SettleSection({ auction }: { auction: FoundationAuctionState }) {
   const isPending = isWritePending || isTxPending
 
   function handleSettle() {
-    writeContract({
-      address: MARKET_ADDRESS,
-      abi: nftMarketAbi,
-      functionName: "finalizeReserveAuction",
-      args: [BigInt(auction.auctionId)],
-    })
+    if (auction.source === "foundation") {
+      writeContract({
+        address: auction.marketAddress,
+        abi: nftMarketAbi,
+        functionName: "finalizeReserveAuction",
+        args: [BigInt(auction.auctionId)],
+      })
+    } else {
+      writeContract({
+        address: auction.marketAddress,
+        abi: pndAuctionHouseAbi,
+        functionName: "endAuction",
+        args: [BigInt(auction.auctionId)],
+      })
+    }
   }
 
   if (isSuccess) {
@@ -424,6 +443,175 @@ function SettleSection({ auction }: { auction: FoundationAuctionState }) {
           {writeError.message.includes("User rejected")
             ? "Transaction rejected"
             : `Settle failed: ${writeError.message.split("\n")[0]}`}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Cancel + Edit-reserve actions for the auction seller. Only renders when the
+ * connected wallet is the seller AND no bids have been placed yet — both
+ * actions revert on-chain after the first bid.
+ */
+function SellerActions({ auction }: { auction: AuctionState }) {
+  const { address } = useAccount()
+  const isSeller =
+    !!address && address.toLowerCase() === auction.seller.toLowerCase()
+  const [editing, setEditing] = useState(false)
+  const [reserveInput, setReserveInput] = useState("")
+
+  const {
+    writeContract: writeCancel,
+    data: cancelHash,
+    isPending: cancelPending,
+    error: cancelError,
+    reset: resetCancel,
+  } = useWriteContract()
+  const { isLoading: cancelMining, isSuccess: cancelSuccess } =
+    useWaitForTransactionReceipt({ hash: cancelHash })
+
+  const {
+    writeContract: writeUpdate,
+    data: updateHash,
+    isPending: updatePending,
+    error: updateError,
+    reset: resetUpdate,
+  } = useWriteContract()
+  const { isLoading: updateMining, isSuccess: updateSuccess } =
+    useWaitForTransactionReceipt({ hash: updateHash })
+
+  if (!isSeller) return null
+
+  if (cancelSuccess || updateSuccess) {
+    return (
+      <button
+        onClick={() => {
+          resetCancel()
+          resetUpdate()
+          window.location.reload()
+        }}
+        className="text-xs text-emerald-700 hover:underline"
+      >
+        Saved. Refresh to see updated state.
+      </button>
+    )
+  }
+
+  function handleCancel() {
+    if (auction.source === "foundation") {
+      writeCancel({
+        address: auction.marketAddress,
+        abi: nftMarketAbi,
+        functionName: "cancelReserveAuction",
+        args: [BigInt(auction.auctionId)],
+      })
+    } else {
+      writeCancel({
+        address: auction.marketAddress,
+        abi: pndAuctionHouseAbi,
+        functionName: "cancelAuction",
+        args: [BigInt(auction.auctionId)],
+      })
+    }
+  }
+
+  function handleUpdate() {
+    let parsed: bigint
+    try {
+      parsed = parseEther(reserveInput.trim() as `${number}`)
+    } catch {
+      return
+    }
+    if (parsed === 0n) return
+    if (auction.source === "foundation") {
+      writeUpdate({
+        address: auction.marketAddress,
+        abi: nftMarketAbi,
+        functionName: "updateReserveAuction",
+        args: [BigInt(auction.auctionId), parsed],
+      })
+    } else {
+      writeUpdate({
+        address: auction.marketAddress,
+        abi: pndAuctionHouseAbi,
+        functionName: "setAuctionReservePrice",
+        args: [BigInt(auction.auctionId), parsed],
+      })
+    }
+  }
+
+  const busy = cancelPending || cancelMining || updatePending || updateMining
+
+  return (
+    <div className="pt-2 border-t border-gray-100 space-y-2">
+      {editing ? (
+        <div className="space-y-2">
+          <div className="flex items-stretch border border-gray-200 focus-within:border-gray-400 transition-colors rounded">
+            <input
+              type="text"
+              inputMode="decimal"
+              placeholder={formatEther(auction.amount > 0n ? auction.amount : auction.minBidWei)}
+              value={reserveInput}
+              onChange={(e) => setReserveInput(e.target.value)}
+              disabled={busy}
+              className="flex-1 px-3 py-2 text-sm font-medium outline-none disabled:opacity-40 bg-transparent"
+            />
+            <span className="flex items-center px-3 text-xs text-gray-400 border-l border-gray-200">
+              ETH
+            </span>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={handleUpdate}
+              disabled={busy || !reserveInput.trim()}
+              className="flex-1 text-xs font-medium py-2 bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed rounded"
+            >
+              {updatePending
+                ? "Confirm…"
+                : updateMining
+                  ? "Updating…"
+                  : "Save reserve"}
+            </button>
+            <button
+              onClick={() => {
+                setEditing(false)
+                setReserveInput("")
+              }}
+              disabled={busy}
+              className="text-xs text-gray-500 px-3 hover:text-black transition-colors disabled:opacity-40"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between">
+          <button
+            onClick={() => setEditing(true)}
+            disabled={busy}
+            className="text-xs text-gray-500 hover:text-black transition-colors disabled:opacity-40"
+          >
+            Edit reserve
+          </button>
+          <button
+            onClick={handleCancel}
+            disabled={busy}
+            className="text-xs text-gray-500 hover:text-red-600 transition-colors disabled:opacity-40"
+          >
+            {cancelPending
+              ? "Confirm…"
+              : cancelMining
+                ? "Cancelling…"
+                : "Cancel auction"}
+          </button>
+        </div>
+      )}
+      {(cancelError || updateError) && (
+        <p className="text-xs text-red-500 break-words">
+          {(cancelError || updateError)!.message.includes("User rejected")
+            ? "Transaction rejected"
+            : (cancelError || updateError)!.message.split("\n")[0]}
         </p>
       )}
     </div>

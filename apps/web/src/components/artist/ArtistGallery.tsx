@@ -8,6 +8,9 @@ import { nftMarketAbi } from "@pin/abi"
 import { NFT_MARKET, MAINNET_CHAIN_ID } from "@pin/addresses"
 import { createProvider, type PinStatus } from "@/lib/pinning"
 import { TokenPinStatus } from "@/components/preserve/TokenPinStatus"
+import { DeployHouseCTA } from "@/components/auction/DeployHouseCTA"
+import { CreateAuctionModal } from "@/components/auction/CreateAuctionModal"
+import { useArtistHouse } from "@/components/auction/useArtistHouse"
 
 const MARKET_ADDRESS = NFT_MARKET[MAINNET_CHAIN_ID]
 
@@ -39,6 +42,8 @@ export function ArtistGallery({
   const isOwner =
     !!connectedAddress &&
     connectedAddress.toLowerCase() === artistAddress.toLowerCase()
+
+  const { houseAddress } = useArtistHouse(artistAddress)
 
   const [pinStatuses, setPinStatuses] = useState<Map<string, PinStatus>>(
     new Map(),
@@ -91,16 +96,24 @@ export function ArtistGallery({
   }
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-      {items.map((item) => (
-        <GalleryCard
-          key={`${item.contract}:${item.tokenId}`}
-          item={item}
-          pinStatuses={pinStatuses}
-          hasProvider={hasProvider}
-          isOwner={isOwner}
-        />
-      ))}
+    <div className="space-y-6">
+      {isOwner && (
+        <div className="max-w-xl">
+          <DeployHouseCTA artistAddress={artistAddress} />
+        </div>
+      )}
+      <div className="columns-1 sm:columns-2 lg:columns-3 gap-6 [&>*]:mb-6 [&>*]:break-inside-avoid">
+        {items.map((item) => (
+          <GalleryCard
+            key={`${item.contract}:${item.tokenId}`}
+            item={item}
+            pinStatuses={pinStatuses}
+            hasProvider={hasProvider}
+            isOwner={isOwner}
+            houseAddress={houseAddress}
+          />
+        ))}
+      </div>
     </div>
   )
 }
@@ -130,34 +143,55 @@ function GalleryCard({
   pinStatuses,
   hasProvider,
   isOwner,
+  houseAddress,
 }: {
   item: GalleryItem
   pinStatuses: Map<string, PinStatus>
   hasProvider: boolean
   isOwner: boolean
+  houseAddress: `0x${string}` | null
 }) {
   const href = `/${item.contract}/${item.tokenId}`
   const isVideo = isVideoUrl(item.imageUrl)
   const pinStatus = hasProvider ? getItemPinStatus(item, pinStatuses) : null
+  const [showCreate, setShowCreate] = useState(false)
+  // Holds the media's natural ratio once the browser knows it; until then we
+  // keep the box square so the grid doesn't flicker into 0-height tiles.
+  const [ratio, setRatio] = useState<number | null>(null)
 
   return (
     <div className="group border border-gray-200 transition-colors hover:border-gray-400">
       <Link href={href}>
-        <div className="relative overflow-hidden bg-gray-100 aspect-[4/5]">
+        <div
+          className="relative overflow-hidden bg-gray-100"
+          style={{ aspectRatio: ratio ?? 1 }}
+        >
           {isVideo ? (
             <video
               src={item.imageUrl}
-              className="w-full h-full object-cover"
+              className="block w-full h-auto"
               muted
               playsInline
               preload="metadata"
+              onLoadedMetadata={(e) => {
+                const v = e.currentTarget
+                if (v.videoWidth && v.videoHeight) {
+                  setRatio(v.videoWidth / v.videoHeight)
+                }
+              }}
             />
           ) : (
             <img
               src={item.imageUrl}
               alt={item.title}
-              className="w-full h-full object-cover"
+              className="block w-full h-auto"
               loading="lazy"
+              onLoad={(e) => {
+                const img = e.currentTarget
+                if (img.naturalWidth && img.naturalHeight) {
+                  setRatio(img.naturalWidth / img.naturalHeight)
+                }
+              }}
             />
           )}
         </div>
@@ -172,6 +206,25 @@ function GalleryCard({
         <BuyPriceSection
           nftContract={item.contract}
           tokenId={item.tokenId}
+        />
+      )}
+      {isOwner && houseAddress && (
+        <div className="px-4 pb-4">
+          <button
+            onClick={() => setShowCreate(true)}
+            className="w-full text-xs font-medium py-2 border border-gray-200 rounded hover:border-gray-400 transition-colors"
+          >
+            Start auction
+          </button>
+        </div>
+      )}
+      {showCreate && houseAddress && (
+        <CreateAuctionModal
+          houseAddress={houseAddress}
+          nftContract={item.contract as `0x${string}`}
+          tokenId={item.tokenId}
+          tokenTitle={item.title}
+          onClose={() => setShowCreate(false)}
         />
       )}
     </div>

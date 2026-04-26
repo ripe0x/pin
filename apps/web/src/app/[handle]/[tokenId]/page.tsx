@@ -2,10 +2,11 @@ import type { Metadata } from "next"
 import { SITE_TITLE, ipfsToHttp } from "@pin/shared"
 import { FOUNDATION_NFT, MAINNET_CHAIN_ID } from "@pin/addresses"
 import { Provenance, type ProvenanceEntry } from "@/components/Provenance"
-import { FoundationAuctionPanel } from "@/components/auction/FoundationAuctionPanel"
+import { AuctionPanel } from "@/components/auction/AuctionPanel"
+import { StartAuctionCTA } from "@/components/auction/StartAuctionCTA"
 import { getTokenPageData } from "@/lib/queries"
 import { getTokenOnChainData, resolveTokenMetadataDirect } from "@/lib/onchain-discovery"
-import { getFoundationAuction } from "@/lib/auctions"
+import { getAuctionForToken } from "@/lib/auctions"
 import { resolveDisplayNames } from "@/lib/artist-queries"
 import Link from "next/link"
 
@@ -140,7 +141,7 @@ export default async function TokenPage({
 }) {
   const { handle, tokenId } = await params
   const data = (await resolveTokenPage(handle, tokenId)) ?? (await getChainFallback(handle, tokenId))
-  const auction = await getFoundationAuction(data.contract, tokenId).catch(() => null)
+  const auction = await getAuctionForToken(data.contract, tokenId).catch(() => null)
 
   // Upgrade truncated 0x… handles to ENS where available.
   const addressesForEns = [data.creator, data.owner].filter(Boolean) as string[]
@@ -190,8 +191,15 @@ export default async function TokenPage({
               </p>
             )}
 
-            {/* Live Foundation auction */}
-            {auction && <FoundationAuctionPanel auction={auction} />}
+            {/* Live auction (Foundation or PND) */}
+            {auction && <AuctionPanel auction={auction} />}
+            {!auction && (
+              <StartAuctionCTA
+                nftContract={data.contract as `0x${string}`}
+                tokenId={tokenId}
+                tokenTitle={data.title}
+              />
+            )}
 
             {/* Ownership */}
             {data.owner && (
