@@ -34,7 +34,15 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
 
   const [load, setLoad] = useState<LoadState>({ kind: "idle" })
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const { run, stop, reset, status, perItemStatus } = useSequentialCancel()
+  const {
+    run,
+    stop,
+    reset,
+    status,
+    perItemStatus,
+    mode,
+    walletLabel,
+  } = useSequentialCancel()
 
   const refresh = useCallback(async () => {
     setLoad({ kind: "loading" })
@@ -190,25 +198,41 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
       <footer className="mt-5 flex items-center justify-between gap-3 border-t border-gray-100 pt-4">
         <p className="text-xs text-gray-500">
           {selected.size} selected
-          {isRunning && " — sign each transaction in your wallet"}
+          {isRunning &&
+            (mode === "batched"
+              ? " — sign the bundle in your wallet"
+              : " — sign each cancel in your wallet")}
         </p>
         {isRunning ? (
-          <button
-            onClick={stop}
-            className="text-sm font-medium px-4 py-2 border border-gray-300 hover:border-gray-500 transition-colors"
-          >
-            Stop
-          </button>
+          mode === "batched" ? (
+            // Once a bundle is submitted to a smart wallet there's no
+            // client-side cancel — hiding Stop avoids implying otherwise.
+            <span className="text-xs text-gray-400">Working…</span>
+          ) : (
+            <button
+              onClick={stop}
+              className="text-sm font-medium px-4 py-2 border border-gray-300 hover:border-gray-500 transition-colors"
+            >
+              Stop
+            </button>
+          )
         ) : (
           <button
             onClick={handleCancel}
             disabled={selected.size === 0}
             className="text-sm font-medium px-4 py-2 bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            Cancel {selected.size || ""} {selected.size === 1 ? "listing" : "listings"}
+            {cancelButtonLabel(selected.size, mode)}
           </button>
         )}
       </footer>
+
+      <ModeExplainer
+        mode={mode}
+        walletLabel={walletLabel}
+        selectedCount={selected.size}
+        isRunning={isRunning}
+      />
 
       {status === "done" && (
         <button
@@ -219,6 +243,53 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
         </button>
       )}
     </Section>
+  )
+}
+
+function cancelButtonLabel(count: number, mode: "loading" | "batched" | "sequential"): string {
+  const noun = count === 1 ? "listing" : "listings"
+  if (count === 0) return "Cancel listings"
+  if (mode === "batched") return `Cancel ${count} ${noun}`
+  // For sequential, signal up-front that they'll see N popups so it isn't
+  // a surprise after they click.
+  return `Cancel ${count} ${noun} (${count} ${count === 1 ? "signature" : "signatures"})`
+}
+
+function ModeExplainer({
+  mode,
+  walletLabel,
+  selectedCount,
+  isRunning,
+}: {
+  mode: "loading" | "batched" | "sequential"
+  walletLabel: string | null
+  selectedCount: number
+  isRunning: boolean
+}) {
+  // Don't add chrome until there's a reason to: skip the explainer when no
+  // listings are selected (the button is disabled anyway), when capabilities
+  // are still loading, or while a run is in flight (the footer copy already
+  // describes what's happening).
+  if (mode === "loading" || selectedCount < 2 || isRunning) return null
+
+  if (mode === "batched") {
+    return (
+      <p className="mt-2 text-[11px] text-gray-400">
+        {walletLabel
+          ? `${walletLabel} can cancel all selected listings in one signature.`
+          : "Your wallet can cancel all selected listings in one signature."}
+      </p>
+    )
+  }
+
+  return (
+    <p className="mt-2 text-[11px] text-gray-400 leading-relaxed">
+      {walletLabel
+        ? `${walletLabel} signs each cancel separately, so you'll see ${selectedCount} wallet popups in a row. `
+        : `Your wallet signs each cancel separately, so you'll see ${selectedCount} wallet popups in a row. `}
+      Smart wallets like Coinbase Smart Wallet or Safe can do this in one
+      signature.
+    </p>
   )
 }
 
