@@ -434,7 +434,68 @@ async function enumerateTokensViaAlchemyNft(
     pageKey = json.pageKey
   } while (pageKey)
 
+  // Alchemy occasionally returns a token with no `name` / `image` even though
+  // the underlying tokenURI resolves fine — this is cache state, not a
+  // permanent gap. For each such token, fetch the metadata directly from
+  // IPFS/Arweave/etc as a one-shot rescue. Bounded concurrency keeps us from
+  // hammering gateways when a contract has many incomplete entries.
+  await enrichIncompleteTokens(tokens)
+
   return tokens
+}
+
+const FALLBACK_CONCURRENCY = 5
+
+async function enrichIncompleteTokens(tokens: DiscoveredToken[]): Promise<void> {
+  const incomplete = tokens.filter(needsFallback)
+  if (incomplete.length === 0) return
+
+  for (let i = 0; i < incomplete.length; i += FALLBACK_CONCURRENCY) {
+    const batch = incomplete.slice(i, i + FALLBACK_CONCURRENCY)
+    await Promise.all(batch.map(rescueFromTokenUri))
+  }
+}
+
+function needsFallback(t: DiscoveredToken): boolean {
+  // We only attempt fallback if the tokenURI is known — otherwise there's
+  // nothing to fetch. "Incomplete" = no display name AND no image.
+  if (!t.tokenUri) return false
+  const name = t.metadata?.name
+  const hasName = typeof name === "string" && name.trim().length > 0
+  const hasImage = !!t.mediaHttpUrl
+  return !hasName || !hasImage
+}
+
+async function rescueFromTokenUri(t: DiscoveredToken): Promise<void> {
+  if (!t.tokenUri) return
+  try {
+    const httpUrl = ipfsToHttp(t.tokenUri)
+    const res = await fetch(httpUrl, { signal: AbortSignal.timeout(8_000) })
+    if (!res.ok) return
+    const meta = (await res.json()) as {
+      name?: string
+      description?: string
+      image?: string
+      image_url?: string
+      animation_url?: string
+    }
+
+    // Mutate in place — these tokens are already in the array we returned to
+    // the caller. Only fill blanks; don't overwrite anything Alchemy gave us.
+    const image = meta.image ?? meta.image_url ?? null
+    const existingMeta = t.metadata ?? {}
+    t.metadata = {
+      name: existingMeta.name ?? meta.name,
+      description: existingMeta.description ?? meta.description,
+      image: existingMeta.image ?? image ?? undefined,
+    }
+    if (!t.mediaHttpUrl && image) {
+      t.mediaHttpUrl = ipfsToHttp(image)
+      if (!t.mediaCid) t.mediaCid = extractCid(image)
+    }
+  } catch {
+    // Fallback is best-effort — leave the original (incomplete) record alone.
+  }
 }
 
 function mapAlchemyNftToDiscovered(
