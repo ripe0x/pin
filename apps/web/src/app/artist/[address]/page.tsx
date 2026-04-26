@@ -8,6 +8,7 @@ import {
 } from "@/lib/artist-queries"
 import { ArtistHeader } from "@/components/artist/ArtistHeader"
 import { ArtistGallery } from "@/components/artist/ArtistGallery"
+import { BulkDelistPanel } from "@/components/listings/BulkDelistPanel"
 
 type Params = Promise<{ address: string }>
 
@@ -87,6 +88,10 @@ export default async function ArtistPage({
         identity={portfolio.identity}
         totalWorks={portfolio.totalWorks}
       />
+
+      <div className="mt-8">
+        <BulkDelistPanel artistAddress={address} />
+      </div>
 
       <div className="mt-12">
         <ArtistGallery items={displayItems} artistAddress={address} />
