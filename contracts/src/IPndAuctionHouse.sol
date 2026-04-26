@@ -4,7 +4,11 @@ pragma solidity ^0.8.20;
 /// @title PND Auction House interface
 /// @notice ETH-denominated reserve auctions for ERC721 tokens. Adapted from
 ///         Zora's AuctionHouse (audited 2021), ported to Solidity 0.8 and
-///         restructured for the beacon-proxy + per-artist clone pattern.
+///         restructured for per-artist EIP-1167 minimal-proxy clones.
+/// @dev No protocol-level admin or upgrade path. Protocol fee + recipient are
+///      fixed at initialize. The artist (owner()) can transfer ownership of
+///      their own house. To change protocol fee or recipient, deploy a new
+///      factory.
 interface IPndAuctionHouse {
     struct Auction {
         uint256 tokenId;
@@ -66,9 +70,6 @@ interface IPndAuctionHouse {
 
     event AuctionCanceled(uint256 indexed auctionId);
 
-    event ProtocolFeeUpdated(uint16 newBps);
-    event FeeRecipientUpdated(address newRecipient);
-    event ProtocolFeeAdminUpdated(address newAdmin);
     event RefundCredited(address indexed to, uint256 amount);
     event RefundWithdrawn(address indexed to, uint256 amount);
 
@@ -103,10 +104,4 @@ interface IPndAuctionHouse {
     function bulkCancelAuctions(uint256[] calldata auctionIds) external;
 
     function withdrawRefund() external;
-
-    function setProtocolFeeBps(uint16 newBps) external;
-
-    function setFeeRecipient(address payable newRecipient) external;
-
-    function setProtocolFeeAdmin(address newAdmin) external;
 }

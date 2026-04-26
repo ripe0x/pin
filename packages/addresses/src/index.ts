@@ -39,7 +39,7 @@ export const COLLECTION_FACTORY_V2: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x612E2DadDc89d91409e40f946f9f7CfE422e777E",
 }
 
-// PND auction house factory (deploys per-artist BeaconProxy auction houses).
+// PND auction house factory (deploys per-artist EIP-1167 minimal proxies).
 // TODO: replace with real address after the mainnet deploy lands.
 export const PND_AUCTION_HOUSE_FACTORY: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",

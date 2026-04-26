@@ -18,10 +18,7 @@ contract PndAuctionHouseForkTest is Test {
 
     address internal artist; // current owner of the NFT (impersonated)
     address internal alice = address(0xA1);
-    address internal pndAdmin = address(0xAD);
     address payable internal pndTreasury = payable(address(0xFEE));
-    address internal beaconOwner = address(0xBEAC);
-    address internal factoryOwner = address(0xFAC);
 
     PndAuctionHouseFactory internal factory;
     PndAuctionHouse internal house;
@@ -39,14 +36,13 @@ contract PndAuctionHouseForkTest is Test {
         PndAuctionHouse impl = new PndAuctionHouse();
         factory = new PndAuctionHouseFactory(
             address(impl),
-            beaconOwner,
-            factoryOwner,
-            pndAdmin,
             pndTreasury,
-            250 // 2.5% protocol fee
+            250 // 2.5% protocol fee, locked for this factory
         );
 
-        house = PndAuctionHouse(payable(factory.createAuctionHouse(artist)));
+        // Artist deploys their own house — createAuctionHouse uses msg.sender.
+        vm.prank(artist);
+        house = PndAuctionHouse(payable(factory.createAuctionHouse()));
 
         // Artist approves the house to escrow the NFT.
         vm.prank(artist);

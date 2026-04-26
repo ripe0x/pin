@@ -53,6 +53,17 @@ function friendlyError(err: unknown): string {
   return msg.split("\n")[0]
 }
 
+/**
+ * Match viem's WaitForCallsStatusTimeoutError. We don't import the class so
+ * the bundler doesn't pull viem error types into this client module — the
+ * message and `name` checks are the documented identification path.
+ */
+function isTimeoutError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false
+  if (err.name === "WaitForCallsStatusTimeoutError") return true
+  return /Timed out while waiting for call bundle/i.test(err.message)
+}
+
 function encodeCancelCall(item: SellerListing): { to: `0x${string}`; data: `0x${string}` } {
   if (item.kind === "auction") {
     return {
@@ -182,7 +193,15 @@ export function useSequentialCancel() {
       for (const item of items) updateItem(item.id, { state: "mining" })
 
       try {
-        const result = await waitForCallsStatus(config, { id: bundleId })
+        // viem's default timeout is 60s, which isn't enough for wallets like
+        // MetaMask that implement EIP-5792 by submitting N sequential txs
+        // under one signature flow — 5 cancels at ~15s/block = ~75s before
+        // the bundle reports "confirmed". Five minutes covers slow mainnet
+        // gas conditions with comfortable headroom.
+        const result = await waitForCallsStatus(config, {
+          id: bundleId,
+          timeout: 5 * 60 * 1000,
+        })
         const receipts = result.receipts ?? []
         items.forEach((item, i) => {
           const receipt = receipts[i]
@@ -208,8 +227,21 @@ export function useSequentialCancel() {
           }
         })
       } catch (err) {
-        const reason = friendlyError(err)
-        for (const item of items) updateItem(item.id, { state: "failed", error: reason })
+        // Timeouts are inconclusive — the bundle was submitted, the wallet
+        // accepted it, we just stopped waiting. Tell the user that explicitly
+        // so they don't retry and double-spend gas; a refresh shows the real
+        // on-chain state.
+        if (isTimeoutError(err)) {
+          for (const item of items) {
+            updateItem(item.id, {
+              state: "failed",
+              error: "Submitted — refresh to see status",
+            })
+          }
+        } else {
+          const reason = friendlyError(err)
+          for (const item of items) updateItem(item.id, { state: "failed", error: reason })
+        }
       }
     },
     [config, updateItem],

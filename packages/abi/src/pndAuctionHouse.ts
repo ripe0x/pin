@@ -25,19 +25,6 @@ export const pndAuctionHouseAbi = [
   },
   {
     "type": "function",
-    "name": "PROTOCOL_FEE_CAP_BPS",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "TIME_BUFFER",
     "inputs": [],
     "outputs": [
@@ -273,7 +260,7 @@ export const pndAuctionHouseAbi = [
   },
   {
     "type": "function",
-    "name": "getAuctionIdFor",
+    "name": "getAuctionFor",
     "inputs": [
       {
         "name": "tokenContract",
@@ -288,7 +275,12 @@ export const pndAuctionHouseAbi = [
     ],
     "outputs": [
       {
-        "name": "",
+        "name": "exists",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "auctionId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -348,17 +340,12 @@ export const pndAuctionHouseAbi = [
         "internalType": "address"
       },
       {
-        "name": "protocolFeeAdmin_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
         "name": "feeRecipient_",
         "type": "address",
         "internalType": "address payable"
       },
       {
-        "name": "initialProtocolFeeBps",
+        "name": "protocolFeeBps_",
         "type": "uint16",
         "internalType": "uint16"
       }
@@ -378,40 +365,6 @@ export const pndAuctionHouseAbi = [
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "onERC721Received",
-    "inputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes4",
-        "internalType": "bytes4"
-      }
-    ],
-    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -441,19 +394,6 @@ export const pndAuctionHouseAbi = [
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "protocolFeeAdmin",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
       }
     ],
     "stateMutability": "view"
@@ -509,45 +449,6 @@ export const pndAuctionHouseAbi = [
         "name": "reservePrice",
         "type": "uint256",
         "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setFeeRecipient",
-    "inputs": [
-      {
-        "name": "newRecipient",
-        "type": "address",
-        "internalType": "address payable"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setProtocolFeeAdmin",
-    "inputs": [
-      {
-        "name": "newAdmin",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setProtocolFeeBps",
-    "inputs": [
-      {
-        "name": "newBps",
-        "type": "uint16",
-        "internalType": "uint16"
       }
     ],
     "outputs": [],
@@ -786,19 +687,6 @@ export const pndAuctionHouseAbi = [
   },
   {
     "type": "event",
-    "name": "FeeRecipientUpdated",
-    "inputs": [
-      {
-        "name": "newRecipient",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "Initialized",
     "inputs": [
       {
@@ -825,32 +713,6 @@ export const pndAuctionHouseAbi = [
         "type": "address",
         "indexed": true,
         "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "ProtocolFeeAdminUpdated",
-    "inputs": [
-      {
-        "name": "newAdmin",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "ProtocolFeeUpdated",
-    "inputs": [
-      {
-        "name": "newBps",
-        "type": "uint16",
-        "indexed": false,
-        "internalType": "uint16"
       }
     ],
     "anonymous": false
@@ -892,6 +754,51 @@ export const pndAuctionHouseAbi = [
       }
     ],
     "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "AuctionAlreadyStarted",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AuctionDoesNotExist",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AuctionExpired",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AuctionHasNoBids",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AuctionNotApproved",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AuctionNotEnded",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "BidBelowMinimum",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "BidBelowReserve",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "BidMustBePositive",
+    "inputs": []
   },
   {
     "type": "error",

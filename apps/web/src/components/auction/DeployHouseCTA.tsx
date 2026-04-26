@@ -72,11 +72,13 @@ export function DeployHouseCTA({ artistAddress }: { artistAddress: string }) {
 
   function handleDeploy() {
     if (!factoryAddress || !connected) return
+    // createAuctionHouse takes no args — the factory uses msg.sender as the
+    // artist, so a stranger can't squat someone else's slot.
     writeContract({
       address: factoryAddress,
       abi: pndAuctionHouseFactoryAbi,
       functionName: "createAuctionHouse",
-      args: [connected],
+      args: [],
     })
   }
 

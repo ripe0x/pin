@@ -10,21 +10,6 @@ export const pndAuctionHouseFactoryAbi = [
         "internalType": "address"
       },
       {
-        "name": "beaconOwner",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "factoryOwner",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "defaultProtocolFeeAdmin_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
         "name": "defaultFeeRecipient_",
         "type": "address",
         "internalType": "address payable"
@@ -58,27 +43,8 @@ export const pndAuctionHouseFactoryAbi = [
   },
   {
     "type": "function",
-    "name": "beacon",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "contract UpgradeableBeacon"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "createAuctionHouse",
-    "inputs": [
-      {
-        "name": "artist",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
+    "inputs": [],
     "outputs": [
       {
         "name": "house",
@@ -97,19 +63,6 @@ export const pndAuctionHouseFactoryAbi = [
         "name": "",
         "type": "address",
         "internalType": "address payable"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "defaultProtocolFeeAdmin",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
       }
     ],
     "stateMutability": "view"
@@ -148,6 +101,19 @@ export const pndAuctionHouseFactoryAbi = [
   },
   {
     "type": "function",
+    "name": "implementation",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "isHouse",
     "inputs": [
       {
@@ -167,65 +133,6 @@ export const pndAuctionHouseFactoryAbi = [
   },
   {
     "type": "function",
-    "name": "owner",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "renounceOwnership",
-    "inputs": [],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setDefaultFeeRecipient",
-    "inputs": [
-      {
-        "name": "newRecipient",
-        "type": "address",
-        "internalType": "address payable"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setDefaultProtocolFeeAdmin",
-    "inputs": [
-      {
-        "name": "newAdmin",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setDefaultProtocolFeeBps",
-    "inputs": [
-      {
-        "name": "newBps",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "totalHouses",
     "inputs": [],
     "outputs": [
@@ -236,19 +143,6 @@ export const pndAuctionHouseFactoryAbi = [
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "transferOwnership",
-    "inputs": [
-      {
-        "name": "newOwner",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
   },
   {
     "type": "event",
@@ -263,44 +157,17 @@ export const pndAuctionHouseFactoryAbi = [
       {
         "name": "house",
         "type": "address",
-        "indexed": false,
+        "indexed": true,
         "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "DefaultFeeRecipientUpdated",
-    "inputs": [
+      },
       {
-        "name": "newRecipient",
+        "name": "feeRecipient",
         "type": "address",
         "indexed": false,
         "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "DefaultProtocolFeeAdminUpdated",
-    "inputs": [
+      },
       {
-        "name": "newAdmin",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "DefaultProtocolFeeBpsUpdated",
-    "inputs": [
-      {
-        "name": "newBps",
+        "name": "protocolFeeBps",
         "type": "uint16",
         "indexed": false,
         "internalType": "uint16"
@@ -309,43 +176,23 @@ export const pndAuctionHouseFactoryAbi = [
     "anonymous": false
   },
   {
-    "type": "event",
-    "name": "OwnershipTransferred",
+    "type": "error",
+    "name": "FailedDeployment",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InsufficientBalance",
     "inputs": [
       {
-        "name": "previousOwner",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
+        "name": "balance",
+        "type": "uint256",
+        "internalType": "uint256"
       },
       {
-        "name": "newOwner",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "error",
-    "name": "OwnableInvalidOwner",
-    "inputs": [
-      {
-        "name": "owner",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "OwnableUnauthorizedAccount",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
+        "name": "needed",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ]
   }

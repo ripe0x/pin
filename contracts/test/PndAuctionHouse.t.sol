@@ -5,9 +5,9 @@ import {Test} from "forge-std/Test.sol";
 import {PndAuctionHouse} from "../src/PndAuctionHouse.sol";
 import {PndAuctionHouseFactory} from "../src/PndAuctionHouseFactory.sol";
 import {IPndAuctionHouse} from "../src/IPndAuctionHouse.sol";
-import {UpgradeableBeacon} from "openzeppelin-contracts/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import {MockERC721} from "./MockERC721.sol";
 import {RevertingReceiver} from "./RevertingReceiver.sol";
+import {NonReceivingBidder} from "./NonReceivingBidder.sol";
 
 contract PndAuctionHouseTest is Test {
     PndAuctionHouse internal house;
@@ -18,10 +18,7 @@ contract PndAuctionHouseTest is Test {
     address internal alice = address(0xA1);
     address internal bob = address(0xB0B);
     address internal carol = address(0xCA01);
-    address internal pndAdmin = address(0xAD);
     address payable internal pndTreasury = payable(address(0xFEE));
-    address internal beaconOwner = address(0xBEAC);
-    address internal factoryOwner = address(0xFAC);
 
     uint256 internal constant TOKEN_ID = 1;
     uint256 internal constant DURATION = 24 hours;
@@ -31,19 +28,18 @@ contract PndAuctionHouseTest is Test {
         nft = new MockERC721();
         nft.mint(artist, TOKEN_ID);
 
-        // Deploy implementation + factory.
+        // Deploy implementation + factory (fully immutable, no admin).
         PndAuctionHouse impl = new PndAuctionHouse();
         factory = new PndAuctionHouseFactory(
             address(impl),
-            beaconOwner,
-            factoryOwner,
-            pndAdmin,
             pndTreasury,
-            0 // 0% fee at launch
+            0 // 0% fee, locked forever for this factory
         );
 
-        // Artist deploys their auction house.
-        address houseAddr = factory.createAuctionHouse(artist);
+        // Artist deploys their auction house. createAuctionHouse uses
+        // msg.sender as the artist, so prank.
+        vm.prank(artist);
+        address houseAddr = factory.createAuctionHouse();
         house = PndAuctionHouse(payable(houseAddr));
 
         // Artist approves their house to escrow the NFT.
@@ -60,28 +56,43 @@ contract PndAuctionHouseTest is Test {
 
     function test_Initialize_SetsState() public view {
         assertEq(house.owner(), artist);
-        assertEq(house.protocolFeeAdmin(), pndAdmin);
         assertEq(house.feeRecipient(), pndTreasury);
         assertEq(house.protocolFeeBps(), 0);
     }
 
     function test_Initialize_CannotBeCalledAgain() public {
         vm.expectRevert();
-        house.initialize(artist, pndAdmin, pndTreasury, 0);
+        house.initialize(artist, pndTreasury, 0);
     }
 
-    function test_Initialize_RejectsFeeAboveCap() public {
-        // Factory constructor's defaultProtocolFeeBps cap (500) catches it first.
+    function test_FactoryConstructor_RejectsFeeAboveCap() public {
         PndAuctionHouse impl = new PndAuctionHouse();
-        vm.expectRevert("Above cap");
-        new PndAuctionHouseFactory(
-            address(impl),
-            beaconOwner,
-            factoryOwner,
-            pndAdmin,
-            pndTreasury,
-            501
+        vm.expectRevert("fee above cap");
+        new PndAuctionHouseFactory(address(impl), pndTreasury, 501);
+    }
+
+    // ─── Immutability — no setters exist on the impl ─────────────────────
+
+    function test_Immutability_NoFeeSetter() public {
+        // setProtocolFeeBps is gone — calling its old selector reverts with no match.
+        (bool ok, ) = address(house).call(
+            abi.encodeWithSignature("setProtocolFeeBps(uint16)", 100)
         );
+        assertFalse(ok);
+    }
+
+    function test_Immutability_NoFeeRecipientSetter() public {
+        (bool ok, ) = address(house).call(
+            abi.encodeWithSignature("setFeeRecipient(address)", address(0xC0FFEE))
+        );
+        assertFalse(ok);
+    }
+
+    function test_Immutability_NoAdminSetter() public {
+        (bool ok, ) = address(house).call(
+            abi.encodeWithSignature("setProtocolFeeAdmin(address)", address(0xC0FFEE))
+        );
+        assertFalse(ok);
     }
 
     // ─── Create auction ──────────────────────────────────────────────────
@@ -171,7 +182,7 @@ contract PndAuctionHouseTest is Test {
 
     function test_Bid_RejectsBelowReserve() public {
         uint256 id = _createAuction();
-        vm.expectRevert("Below reserve price");
+        vm.expectRevert(PndAuctionHouse.BidBelowReserve.selector);
         vm.prank(alice);
         house.createBid{value: RESERVE - 1}(id);
     }
@@ -193,7 +204,7 @@ contract PndAuctionHouseTest is Test {
 
         // 5% increment over RESERVE = RESERVE * 1.05
         uint256 tooLow = RESERVE + (RESERVE * 499) / 10000; // < 5% bump
-        vm.expectRevert("Below min bid increment");
+        vm.expectRevert(PndAuctionHouse.BidBelowMinimum.selector);
         vm.prank(bob);
         house.createBid{value: tooLow}(id);
     }
@@ -233,7 +244,7 @@ contract PndAuctionHouseTest is Test {
 
         vm.warp(block.timestamp + DURATION + 1);
         uint256 minNext = RESERVE + (RESERVE * 500) / 10000;
-        vm.expectRevert("Auction expired");
+        vm.expectRevert(PndAuctionHouse.AuctionExpired.selector);
         vm.prank(bob);
         house.createBid{value: minNext}(id);
     }
@@ -248,7 +259,7 @@ contract PndAuctionHouseTest is Test {
             payable(carol), // Curator set, so not auto-approved
             500
         );
-        vm.expectRevert("Auction not approved");
+        vm.expectRevert(PndAuctionHouse.AuctionNotApproved.selector);
         vm.prank(alice);
         house.createBid{value: RESERVE}(id);
     }
@@ -308,30 +319,54 @@ contract PndAuctionHouseTest is Test {
         uint256 id = _createAuction();
         vm.prank(alice);
         house.createBid{value: RESERVE}(id);
-        vm.expectRevert("Auction not yet ended");
+        vm.expectRevert(PndAuctionHouse.AuctionNotEnded.selector);
         house.endAuction(id);
     }
 
     function test_EndAuction_RejectsWithoutBids() public {
         uint256 id = _createAuction();
         vm.warp(block.timestamp + DURATION + 1);
-        vm.expectRevert("Auction has no bids");
+        vm.expectRevert(PndAuctionHouse.AuctionHasNoBids.selector);
         house.endAuction(id);
     }
 
-    function test_EndAuction_PaysProtocolFee() public {
-        // PND admin sets fee to 2.5%
-        vm.prank(pndAdmin);
-        house.setProtocolFeeBps(250);
+    /// @dev Spin up a fresh fee-charging factory + house to test the fee path.
+    ///      The default `house` is at 0% (locked). Per immutable design, a new
+    ///      factory is the only way to vary protocol fee.
+    function _newHouseWithFee(uint16 feeBps) internal returns (PndAuctionHouse h, uint256 nftTokenId) {
+        PndAuctionHouse impl = new PndAuctionHouse();
+        PndAuctionHouseFactory feeFactory = new PndAuctionHouseFactory(
+            address(impl),
+            pndTreasury,
+            feeBps
+        );
+        vm.prank(artist);
+        h = PndAuctionHouse(payable(feeFactory.createAuctionHouse()));
+        nftTokenId = uint256(uint160(address(h))) % 1_000_000 + 10_000;
+        nft.mint(artist, nftTokenId);
+        vm.prank(artist);
+        nft.setApprovalForAll(address(h), true);
+    }
 
-        uint256 id = _createAuction();
+    function test_EndAuction_PaysProtocolFee() public {
+        (PndAuctionHouse h, uint256 tokenId) = _newHouseWithFee(250); // 2.5%
+
+        vm.prank(artist);
+        uint256 id = h.createAuction(
+            tokenId,
+            address(nft),
+            DURATION,
+            RESERVE,
+            payable(address(0)),
+            0
+        );
         vm.prank(alice);
-        house.createBid{value: RESERVE}(id);
+        h.createBid{value: RESERVE}(id);
         vm.warp(block.timestamp + DURATION + 1);
 
         uint256 sellerBefore = artist.balance;
         uint256 feeRecipientBefore = pndTreasury.balance;
-        house.endAuction(id);
+        h.endAuction(id);
 
         uint256 expectedFee = (RESERVE * 250) / 10000;
         assertEq(pndTreasury.balance - feeRecipientBefore, expectedFee);
@@ -366,13 +401,12 @@ contract PndAuctionHouseTest is Test {
     }
 
     function test_EndAuction_PaysProtocolThenCurator() public {
-        // Both fees: protocol 5%, curator 10% (of remainder)
-        vm.prank(pndAdmin);
-        house.setProtocolFeeBps(500);
+        // Protocol 5% (locked at factory), curator 10% (per-auction)
+        (PndAuctionHouse h, uint256 tokenId) = _newHouseWithFee(500);
 
         vm.prank(artist);
-        uint256 id = house.createAuction(
-            TOKEN_ID,
+        uint256 id = h.createAuction(
+            tokenId,
             address(nft),
             DURATION,
             RESERVE,
@@ -380,10 +414,10 @@ contract PndAuctionHouseTest is Test {
             1000
         );
         vm.prank(carol);
-        house.setAuctionApproval(id, true);
+        h.setAuctionApproval(id, true);
 
         vm.prank(alice);
-        house.createBid{value: RESERVE}(id);
+        h.createBid{value: RESERVE}(id);
         vm.warp(block.timestamp + DURATION + 1);
 
         uint256 protocolFee = (RESERVE * 500) / 10000; // 5% of total
@@ -394,7 +428,7 @@ contract PndAuctionHouseTest is Test {
         uint256 sellerBefore = artist.balance;
         uint256 carolBefore = carol.balance;
         uint256 treasuryBefore = pndTreasury.balance;
-        house.endAuction(id);
+        h.endAuction(id);
 
         assertEq(pndTreasury.balance - treasuryBefore, protocolFee);
         assertEq(carol.balance - carolBefore, curatorFee);
@@ -416,7 +450,7 @@ contract PndAuctionHouseTest is Test {
         uint256 id = _createAuction();
         vm.prank(alice);
         house.createBid{value: RESERVE}(id);
-        vm.expectRevert("Auction already started");
+        vm.expectRevert(PndAuctionHouse.AuctionAlreadyStarted.selector);
         vm.prank(artist);
         house.cancelAuction(id);
     }
@@ -438,45 +472,9 @@ contract PndAuctionHouseTest is Test {
         vm.prank(alice);
         house.createBid{value: 2 ether}(id);
 
-        vm.expectRevert("Auction already started");
+        vm.expectRevert(PndAuctionHouse.AuctionAlreadyStarted.selector);
         vm.prank(artist);
         house.setAuctionReservePrice(id, 3 ether);
-    }
-
-    // ─── Protocol fee admin ──────────────────────────────────────────────
-
-    function test_SetProtocolFee_OnlyAdmin() public {
-        vm.expectRevert("Not protocol fee admin");
-        vm.prank(artist);
-        house.setProtocolFeeBps(100);
-    }
-
-    function test_SetProtocolFee_RespectsCap() public {
-        vm.expectRevert("Above cap");
-        vm.prank(pndAdmin);
-        house.setProtocolFeeBps(501);
-    }
-
-    function test_SetProtocolFee_AcceptsAtCap() public {
-        vm.prank(pndAdmin);
-        house.setProtocolFeeBps(500);
-        assertEq(house.protocolFeeBps(), 500);
-    }
-
-    function test_SetProtocolFeeAdmin_TransfersControl() public {
-        address newAdmin = address(0xBEEF);
-        vm.prank(pndAdmin);
-        house.setProtocolFeeAdmin(newAdmin);
-
-        // Old admin can no longer set
-        vm.expectRevert("Not protocol fee admin");
-        vm.prank(pndAdmin);
-        house.setProtocolFeeBps(100);
-
-        // New admin can
-        vm.prank(newAdmin);
-        house.setProtocolFeeBps(100);
-        assertEq(house.protocolFeeBps(), 100);
     }
 
     // ─── Refund fallback ─────────────────────────────────────────────────
@@ -511,11 +509,13 @@ contract PndAuctionHouseTest is Test {
 
     function test_Factory_RejectsDuplicateForArtist() public {
         vm.expectRevert("House already exists");
-        factory.createAuctionHouse(artist);
+        vm.prank(artist);
+        factory.createAuctionHouse();
     }
 
     function test_Factory_TracksAllHouses() public {
-        address bob_house = factory.createAuctionHouse(bob);
+        vm.prank(bob);
+        address bob_house = factory.createAuctionHouse();
         assertEq(factory.totalHouses(), 2);
         assertEq(factory.houseOf(bob), bob_house);
         assertEq(factory.allHouses(0), address(house));
@@ -532,7 +532,9 @@ contract PndAuctionHouseTest is Test {
     function test_TokenLookup_ReturnsAuctionId() public {
         uint256 id = _createAuction();
         assertTrue(house.hasAuctionFor(address(nft), TOKEN_ID));
-        assertEq(house.getAuctionIdFor(address(nft), TOKEN_ID), id);
+        (bool exists, uint256 auctionId) = house.getAuctionFor(address(nft), TOKEN_ID);
+        assertTrue(exists);
+        assertEq(auctionId, id);
     }
 
     function test_TokenLookup_ClearedOnCancel() public {
@@ -553,7 +555,24 @@ contract PndAuctionHouseTest is Test {
 
     function test_TokenLookup_NoneByDefault() public view {
         assertFalse(house.hasAuctionFor(address(nft), 999));
-        assertEq(house.getAuctionIdFor(address(nft), 999), 0);
+        (bool exists, uint256 auctionId) = house.getAuctionFor(address(nft), 999);
+        assertFalse(exists);
+        assertEq(auctionId, 0);
+    }
+
+    /// @dev With auctionId 0 being a real, valid id, the old single-uint
+    ///      getter couldn't disambiguate "no auction" from "auction 0" without
+    ///      another check. The new tuple makes the distinction explicit.
+    function test_TokenLookup_AuctionIdZeroIsDistinctFromMissing() public {
+        uint256 id0 = _createAuction(); // first auction is id 0
+        assertEq(id0, 0);
+        (bool exists, uint256 auctionId) = house.getAuctionFor(address(nft), TOKEN_ID);
+        assertTrue(exists);
+        assertEq(auctionId, 0);
+
+        (bool missingExists, uint256 missingId) = house.getAuctionFor(address(nft), 9999);
+        assertFalse(missingExists);
+        assertEq(missingId, 0);
     }
 
     // ─── Bulk cancel ─────────────────────────────────────────────────────
@@ -604,7 +623,7 @@ contract PndAuctionHouseTest is Test {
         vm.prank(alice);
         house.createBid{value: RESERVE}(ids[1]);
 
-        vm.expectRevert("Auction already started");
+        vm.expectRevert(PndAuctionHouse.AuctionAlreadyStarted.selector);
         vm.prank(artist);
         house.bulkCancelAuctions(ids);
 
@@ -619,7 +638,7 @@ contract PndAuctionHouseTest is Test {
         ids[0] = _createAuction();
         ids[1] = 99999; // doesn't exist
 
-        vm.expectRevert("Auction does not exist");
+        vm.expectRevert(PndAuctionHouse.AuctionDoesNotExist.selector);
         vm.prank(artist);
         house.bulkCancelAuctions(ids);
 
@@ -728,5 +747,115 @@ contract PndAuctionHouseTest is Test {
             0
         );
         assertEq(result.length, 0);
+    }
+
+    // ─── Security fixes from the pre-deploy review ────────────────────────
+
+    /// #1 — Direct safeTransferFrom into the house must revert. The contract
+    /// no longer implements IERC721Receiver, so any ERC721 sent outside the
+    /// auction-creation flow is rejected at the source. NFTs cannot get stuck.
+    function test_DirectSafeTransfer_Reverts() public {
+        nft.mint(alice, 777);
+        vm.prank(alice);
+        vm.expectRevert(); // ERC721InvalidReceiver
+        nft.safeTransferFrom(alice, address(house), 777);
+    }
+
+    /// #2 — A contract bidder without IERC721Receiver no longer aborts
+    /// settlement. The previous design used safeTransferFrom + try/catch and
+    /// silently cancelled the auction (refunding the winner's bid) when the
+    /// transfer failed — a griefing path. Now plain transferFrom lands the
+    /// NFT on the contract regardless of whether the recipient implements the
+    /// receiver hook; the auction settles, the seller is paid, and the
+    /// bidder owns an NFT they can't easily move. Their problem, not the
+    /// seller's.
+    function test_BidderCantReceiveNFT_StillSettles() public {
+        NonReceivingBidder bidder = new NonReceivingBidder();
+        vm.deal(address(bidder), 10 ether);
+
+        uint256 id = _createAuction();
+        bidder.bid(payable(address(house)), id, RESERVE);
+
+        vm.warp(block.timestamp + DURATION + 1);
+
+        uint256 sellerBefore = artist.balance;
+        house.endAuction(id);
+
+        // NFT delivered to the contract bidder via plain transferFrom.
+        assertEq(nft.ownerOf(TOKEN_ID), address(bidder));
+        // Seller paid in full (no protocol fee on the default 0%-fee house).
+        assertEq(artist.balance - sellerBefore, RESERVE);
+        // Auction record cleared.
+        assertFalse(house.hasAuctionFor(address(nft), TOKEN_ID));
+    }
+
+    /// #3 — Zero-value bids are rejected with BidMustBePositive even when
+    /// reservePrice is 0. Closes the "free auction at reserve=0" gap.
+    function test_Bid_RejectsZeroValueWithZeroReserve() public {
+        // Use a fresh token for a zero-reserve auction.
+        nft.mint(artist, 555);
+        vm.prank(artist);
+        uint256 id = house.createAuction(
+            555,
+            address(nft),
+            DURATION,
+            0, // zero reserve
+            payable(address(0)),
+            0
+        );
+
+        vm.expectRevert(PndAuctionHouse.BidMustBePositive.selector);
+        vm.prank(alice);
+        house.createBid{value: 0}(id);
+    }
+
+    /// #10 — Curator fee with no curator is rejected at create time.
+    function test_CreateAuction_RejectsCuratorFeeWithoutCurator() public {
+        vm.prank(artist);
+        vm.expectRevert("curator fee without curator");
+        house.createAuction(
+            TOKEN_ID,
+            address(nft),
+            DURATION,
+            RESERVE,
+            payable(address(0)), // no curator
+            500 // but a fee is set — invalid
+        );
+    }
+
+    /// #7 — Direct ETH sends are rejected so accidental transfers don't get
+    /// stuck in the contract.
+    function test_DirectETHTransfer_Reverts() public {
+        vm.deal(alice, 5 ether);
+        vm.prank(alice);
+        (bool ok, ) = address(house).call{value: 1 ether}("");
+        assertFalse(ok);
+    }
+
+    /// #8 — Factory rejects an EOA-or-empty implementation.
+    function test_FactoryConstructor_RejectsEOAImplementation() public {
+        // alice is an EOA (no code).
+        vm.expectRevert("implementation has no code");
+        new PndAuctionHouseFactory(alice, pndTreasury, 0);
+    }
+
+    /// #8 — Factory rejects address(0) explicitly with the impl-required check.
+    function test_FactoryConstructor_RejectsZeroImpl() public {
+        vm.expectRevert("impl required");
+        new PndAuctionHouseFactory(address(0), pndTreasury, 0);
+    }
+
+    /// Factory event includes immutable fee terms.
+    function test_Factory_EmitsFeeTermsInEvent() public {
+        // Topics: artist, house. Data: feeRecipient, protocolFeeBps.
+        vm.expectEmit(true, false, false, true);
+        emit PndAuctionHouseFactory.AuctionHouseCreated(
+            bob,
+            address(0), // we don't predict house addr; second indexed not strict
+            pndTreasury,
+            0
+        );
+        vm.prank(bob);
+        factory.createAuctionHouse();
     }
 }

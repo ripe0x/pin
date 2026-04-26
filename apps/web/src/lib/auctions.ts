@@ -337,19 +337,22 @@ async function readPndAuction(
   contract: Address,
   tokenIdBig: bigint,
 ): Promise<AuctionState | null> {
+  // getAuctionFor returns (bool exists, uint256 auctionId). Tuple shape
+  // disambiguates "no auction" from "auction id 0" — id 0 is a valid id.
   let auctionId: bigint
   try {
-    auctionId = await client.readContract({
+    const [exists, id] = (await client.readContract({
       address: houseAddress,
       abi: pndAuctionHouseAbi,
-      functionName: "getAuctionIdFor",
+      functionName: "getAuctionFor",
       args: [contract, tokenIdBig],
-    })
+    })) as readonly [boolean, bigint]
+    if (!exists) return null
+    auctionId = id
   } catch {
     return null
   }
 
-  // The house uses 0 as a valid auctionId, so we also check existence below.
   let auction: readonly [
     bigint, Address, boolean, bigint, bigint, bigint, bigint, number, Address, Address, Address,
   ]

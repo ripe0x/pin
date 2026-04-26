@@ -2,7 +2,6 @@
 pragma solidity ^0.8.20;
 
 import {IERC721, IERC165} from "openzeppelin-contracts/contracts/token/ERC721/IERC721.sol";
-import {IERC721Receiver} from "openzeppelin-contracts/contracts/token/ERC721/IERC721Receiver.sol";
 import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 import {Initializable} from "openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from "openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
@@ -11,17 +10,31 @@ import {IPndAuctionHouse} from "./IPndAuctionHouse.sol";
 
 /// @title PND Auction House (per-artist clone)
 /// @notice ETH-only reserve auctions for ERC721 tokens. Deployed once as the
-///         beacon implementation; per-artist BeaconProxy clones share this
-///         logic but hold isolated storage.
-/// @dev Upgrade-safe: storage layout is append-only and reserves a __gap.
-///      ReentrancyGuard uses ERC-7201 namespaced storage so it's proxy-safe
-///      without the dedicated upgradeable variant (removed in OZ 5.x).
+///         implementation; per-artist EIP-1167 clones (minimal proxies) share
+///         this logic but hold isolated storage.
+/// @dev No protocol-level admin or upgrade path. Protocol fee + recipient are
+///      written once at initialize and have no setters. The artist (owner())
+///      can still transfer ownership of their own house via transferOwnership
+///      from OwnableUpgradeable.
+///
+///      ReentrancyGuard uses ERC-7201 namespaced storage (a fixed slot computed
+///      from a unique label, not layout slot 0+offset), so the constructor's
+///      one-time write to that slot doesn't conflict with proxy storage. The
+///      dedicated upgradeable variant was removed in OZ 5.x in favor of this
+///      design — verified against openzeppelin-contracts 5.5.x.
+///
+///      Direct safeTransferFrom(_, house, tokenId, "") is rejected: this
+///      contract intentionally does NOT implement IERC721Receiver, so any NFT
+///      sent outside createAuction reverts at the source. This prevents NFTs
+///      from getting permanently stuck in the contract.
+///
+///      Direct ETH sends are rejected via receive(). Selfdestruct/coinbase
+///      forced ETH is outside our control.
 contract PndAuctionHouse is
     IPndAuctionHouse,
     Initializable,
     ReentrancyGuard,
-    OwnableUpgradeable,
-    IERC721Receiver
+    OwnableUpgradeable
 {
     /// @notice ERC721 interface id (EIP-721)
     bytes4 private constant ERC721_INTERFACE_ID = 0x80ac58cd;
@@ -32,16 +45,24 @@ contract PndAuctionHouse is
     /// @notice Min bid increment over current high bid, in basis points (5%).
     uint16 public constant MIN_BID_INCREMENT_BPS = 500;
 
-    /// @notice Hard cap for the protocol fee. Can never be raised above this without
-    ///         a new implementation deployed via beacon upgrade.
-    uint16 public constant PROTOCOL_FEE_CAP_BPS = 500; // 5%
+    // ─── Custom errors (hot-path reverts) ───────────────────────────────────
+
+    error AuctionDoesNotExist();
+    error AuctionAlreadyStarted();
+    error AuctionExpired();
+    error AuctionNotApproved();
+    error AuctionNotEnded();
+    error AuctionHasNoBids();
+    error BidBelowReserve();
+    error BidBelowMinimum();
+    error BidMustBePositive();
 
     /// @notice Per-auction state.
     mapping(uint256 => Auction) public auctions;
 
-    /// @notice Reverse index: (tokenContract, tokenId) -> auctionId. Stores
-    ///         auctionId+1 so the zero default unambiguously means "none";
-    ///         consumers should subtract 1. Cleared on settle/cancel.
+    /// @notice Reverse index: (tokenContract, tokenId) -> auctionId+1. Stores
+    ///         auctionId+1 so the zero default unambiguously means "none".
+    ///         Cleared on settle/cancel. Read via getAuctionFor.
     mapping(address => mapping(uint256 => uint256)) private _auctionIdByToken;
 
     /// @notice Pending refunds for bidders whose direct ETH refund failed
@@ -49,31 +70,22 @@ contract PndAuctionHouse is
     ///         at any time via withdrawRefund().
     mapping(address => uint256) public pendingRefunds;
 
-    /// @notice Active protocol fee in basis points. Settable by protocolFeeAdmin only,
-    ///         capped at PROTOCOL_FEE_CAP_BPS.
+    /// @notice Protocol fee in basis points, set once at initialize. Immutable
+    ///         after that — no setter exists.
     uint16 public protocolFeeBps;
 
-    /// @notice Recipient for the protocol fee. Settable by protocolFeeAdmin only.
+    /// @notice Recipient for the protocol fee, set once at initialize.
     address payable public feeRecipient;
-
-    /// @notice Address authorized to change protocol fee config. Distinct from
-    ///         the artist owner so PND can adjust platform economics without
-    ///         taking control of the artist's auctions.
-    address public protocolFeeAdmin;
 
     uint256 private _nextAuctionId;
 
-    /// @dev Reserved storage for future upgrades. Must shrink when adding new
-    ///      state to keep the layout stable across beacon upgrades.
-    uint256[43] private __gap;
+    /// @dev Reserved storage for future upgrades. Unused today (no upgrade
+    ///      path), kept so a future migration to an upgradeable variant could
+    ///      append fields without storage drift.
+    uint256[44] private __gap;
 
     modifier auctionExists(uint256 auctionId) {
-        require(_exists(auctionId), "Auction does not exist");
-        _;
-    }
-
-    modifier onlyProtocolFeeAdmin() {
-        require(msg.sender == protocolFeeAdmin, "Not protocol fee admin");
+        if (!_exists(auctionId)) revert AuctionDoesNotExist();
         _;
     }
 
@@ -83,31 +95,29 @@ contract PndAuctionHouse is
         _disableInitializers();
     }
 
-    /// @notice Initializer for each per-artist clone.
-    /// @param artistOwner          The artist who owns this auction house and
-    ///                             can run/cancel/update auctions on it.
-    /// @param protocolFeeAdmin_    Address authorized to set protocol fee + recipient.
+    /// @notice Initializer for each per-artist clone. Sets the artist as the
+    ///         owner, locks the protocol fee + recipient, and disables further
+    ///         init via Initializable. There are no setters for any of these
+    ///         after this call.
+    /// @param artistOwner          The artist who owns this auction house.
     /// @param feeRecipient_        Where the protocol fee is paid to.
-    /// @param initialProtocolFeeBps Initial fee in basis points (must be <= cap).
+    /// @param protocolFeeBps_      Protocol fee in basis points. Capped at 500
+    ///                             (5%) at the impl level as a sanity check.
     function initialize(
         address artistOwner,
-        address protocolFeeAdmin_,
         address payable feeRecipient_,
-        uint16 initialProtocolFeeBps
+        uint16 protocolFeeBps_
     ) external initializer {
         require(artistOwner != address(0), "artist owner required");
-        require(protocolFeeAdmin_ != address(0), "fee admin required");
-        require(initialProtocolFeeBps <= PROTOCOL_FEE_CAP_BPS, "initial fee above cap");
+        require(protocolFeeBps_ <= 500, "fee above cap");
         require(
-            initialProtocolFeeBps == 0 || feeRecipient_ != address(0),
+            protocolFeeBps_ == 0 || feeRecipient_ != address(0),
             "fee recipient required when fee > 0"
         );
 
         __Ownable_init(artistOwner);
-
-        protocolFeeAdmin = protocolFeeAdmin_;
         feeRecipient = feeRecipient_;
-        protocolFeeBps = initialProtocolFeeBps;
+        protocolFeeBps = protocolFeeBps_;
     }
 
     // ─── Auction lifecycle ──────────────────────────────────────────────────
@@ -173,6 +183,11 @@ contract PndAuctionHouse is
         );
         require(curatorFeeBps < 10000, "curator fee >= 100%");
         require(duration > 0, "duration zero");
+        // A non-zero curator fee with no curator is meaningless and would
+        // produce a misleading event payload. Reject the inconsistent input.
+        if (curator == address(0)) {
+            require(curatorFeeBps == 0, "curator fee without curator");
+        }
 
         address tokenOwner = IERC721(tokenContract).ownerOf(tokenId);
         require(
@@ -225,7 +240,7 @@ contract PndAuctionHouse is
         auctionExists(auctionId)
     {
         require(msg.sender == auctions[auctionId].curator, "Not auction curator");
-        require(auctions[auctionId].firstBidTime == 0, "Auction already started");
+        if (auctions[auctionId].firstBidTime != 0) revert AuctionAlreadyStarted();
         _approveAuction(auctionId, approved);
     }
 
@@ -239,7 +254,7 @@ contract PndAuctionHouse is
             msg.sender == a.tokenOwner || msg.sender == a.curator,
             "Not token owner or curator"
         );
-        require(a.firstBidTime == 0, "Auction already started");
+        if (a.firstBidTime != 0) revert AuctionAlreadyStarted();
 
         a.reservePrice = reservePrice;
         emit AuctionReservePriceUpdated(auctionId, reservePrice);
@@ -256,17 +271,20 @@ contract PndAuctionHouse is
         address payable lastBidder = a.bidder;
         uint256 amount = msg.value;
 
-        require(a.approved, "Auction not approved");
-        require(
-            a.firstBidTime == 0 ||
-                block.timestamp < a.firstBidTime + a.duration,
-            "Auction expired"
-        );
-        require(amount >= a.reservePrice, "Below reserve price");
-        require(
-            amount >= a.amount + (a.amount * MIN_BID_INCREMENT_BPS) / 10000,
-            "Below min bid increment"
-        );
+        // Reject zero-value bids explicitly. Otherwise reserve = 0 + amount = 0
+        // would slip past the reserve and increment checks below and start an
+        // auction "for free", which we do not consider a feature.
+        if (amount == 0) revert BidMustBePositive();
+
+        if (!a.approved) revert AuctionNotApproved();
+        if (
+            a.firstBidTime != 0 &&
+            block.timestamp >= a.firstBidTime + a.duration
+        ) revert AuctionExpired();
+        if (amount < a.reservePrice) revert BidBelowReserve();
+        if (
+            amount < a.amount + (a.amount * MIN_BID_INCREMENT_BPS) / 10000
+        ) revert BidBelowMinimum();
 
         bool firstBid = a.firstBidTime == 0;
         if (firstBid) {
@@ -275,7 +293,7 @@ contract PndAuctionHouse is
             // Refund the previous bidder. If the direct send fails (contract
             // wallets that revert on receive), credit a withdrawable balance
             // instead so the auction never gets bricked.
-            _refund(lastBidder, a.amount);
+            _sendOrCredit(lastBidder, a.amount);
         }
 
         a.amount = amount;
@@ -304,22 +322,15 @@ contract PndAuctionHouse is
         nonReentrant
     {
         Auction storage a = auctions[auctionId];
-        require(a.firstBidTime != 0, "Auction has no bids");
-        require(
-            block.timestamp >= a.firstBidTime + a.duration,
-            "Auction not yet ended"
-        );
+        if (a.firstBidTime == 0) revert AuctionHasNoBids();
+        if (block.timestamp < a.firstBidTime + a.duration) revert AuctionNotEnded();
 
-        // Try transferring the NFT to the winner. If the transfer fails (e.g.
-        // winner is a contract that doesn't implement onERC721Received), refund
-        // the winner's bid and cancel the auction so the seller gets the NFT back.
-        try
-            IERC721(a.tokenContract).safeTransferFrom(address(this), a.bidder, a.tokenId)
-        {} catch {
-            _refund(a.bidder, a.amount);
-            _cancelAuction(auctionId);
-            return;
-        }
+        // Plain transferFrom (not safeTransferFrom): a contract bidder that
+        // can't receive ERC721s is the bidder's own problem, not a free
+        // auction-griefing vector. The bidder locked capital to win — if they
+        // can't take delivery, they've burned ETH for nothing, but the auction
+        // does still settle on chain (NFT transfers, fees pay out).
+        IERC721(a.tokenContract).transferFrom(address(this), a.bidder, a.tokenId);
 
         // Compute payout: protocol fee → curator fee → seller.
         uint256 grossAmount = a.amount;
@@ -328,18 +339,18 @@ contract PndAuctionHouse is
 
         if (protocolFeeBps > 0 && feeRecipient != address(0)) {
             protocolFee = (grossAmount * protocolFeeBps) / 10000;
-            _refund(feeRecipient, protocolFee);
+            _sendOrCredit(feeRecipient, protocolFee);
         }
 
         uint256 afterProtocol = grossAmount - protocolFee;
 
         if (a.curator != address(0) && a.curatorFeeBps > 0) {
             curatorFee = (afterProtocol * a.curatorFeeBps) / 10000;
-            _refund(a.curator, curatorFee);
+            _sendOrCredit(a.curator, curatorFee);
         }
 
         uint256 sellerProceeds = afterProtocol - curatorFee;
-        _refund(payable(a.tokenOwner), sellerProceeds);
+        _sendOrCredit(payable(a.tokenOwner), sellerProceeds);
 
         emit AuctionEnded(
             auctionId,
@@ -366,7 +377,7 @@ contract PndAuctionHouse is
             a.tokenOwner == msg.sender || a.curator == msg.sender,
             "Not auction creator or curator"
         );
-        require(a.firstBidTime == 0, "Auction already started");
+        if (a.firstBidTime != 0) revert AuctionAlreadyStarted();
         _cancelAuction(auctionId);
     }
 
@@ -382,11 +393,8 @@ contract PndAuctionHouse is
     {
         for (uint256 i = 0; i < auctionIds.length; i++) {
             uint256 auctionId = auctionIds[i];
-            require(_exists(auctionId), "Auction does not exist");
-            require(
-                auctions[auctionId].firstBidTime == 0,
-                "Auction already started"
-            );
+            if (!_exists(auctionId)) revert AuctionDoesNotExist();
+            if (auctions[auctionId].firstBidTime != 0) revert AuctionAlreadyStarted();
             _cancelAuction(auctionId);
         }
     }
@@ -402,44 +410,21 @@ contract PndAuctionHouse is
         emit RefundWithdrawn(msg.sender, amount);
     }
 
-    // ─── Protocol fee admin ─────────────────────────────────────────────────
-
-    function setProtocolFeeBps(uint16 newBps) external override onlyProtocolFeeAdmin {
-        require(newBps <= PROTOCOL_FEE_CAP_BPS, "Above cap");
-        require(newBps == 0 || feeRecipient != address(0), "Recipient unset");
-        protocolFeeBps = newBps;
-        emit ProtocolFeeUpdated(newBps);
-    }
-
-    function setFeeRecipient(address payable newRecipient)
-        external
-        override
-        onlyProtocolFeeAdmin
-    {
-        feeRecipient = newRecipient;
-        emit FeeRecipientUpdated(newRecipient);
-    }
-
-    function setProtocolFeeAdmin(address newAdmin) external override onlyProtocolFeeAdmin {
-        require(newAdmin != address(0), "Zero address");
-        protocolFeeAdmin = newAdmin;
-        emit ProtocolFeeAdminUpdated(newAdmin);
-    }
-
     // ─── Views ──────────────────────────────────────────────────────────────
 
-    /// @notice Returns the active auctionId for (tokenContract, tokenId), or 0
-    ///         if no active auction. Note: the contract uses 0 as a valid
-    ///         auctionId internally; callers should also check that the auction
-    ///         exists via auctions(id).tokenOwner != address(0) before using it.
-    function getAuctionIdFor(address tokenContract, uint256 tokenId)
+    /// @notice Returns whether an active auction exists for a token, and its
+    ///         auctionId if so. The tuple shape removes the ambiguity that the
+    ///         old single-uint return had — auctionId 0 is a valid id, so a
+    ///         caller couldn't tell "no auction" from "auction 0" without an
+    ///         extra check. Use this getter exclusively.
+    function getAuctionFor(address tokenContract, uint256 tokenId)
         external
         view
-        returns (uint256)
+        returns (bool exists, uint256 auctionId)
     {
         uint256 stored = _auctionIdByToken[tokenContract][tokenId];
-        if (stored == 0) return 0;
-        return stored - 1;
+        if (stored == 0) return (false, 0);
+        return (true, stored - 1);
     }
 
     /// @notice True iff there's an active auction for (tokenContract, tokenId).
@@ -464,7 +449,12 @@ contract PndAuctionHouse is
 
     // ─── Internal ───────────────────────────────────────────────────────────
 
-    function _refund(address to, uint256 amount) internal {
+    /// @dev Push ETH to `to` if possible; if the recipient rejects (contract
+    ///      wallets, reverting fallbacks), credit a withdrawable balance
+    ///      instead. Called for bid refunds, protocol fees, curator fees, and
+    ///      seller payouts so a single failing recipient never bricks the
+    ///      auction's settlement.
+    function _sendOrCredit(address to, uint256 amount) internal {
         if (amount == 0) return;
         (bool sent, ) = to.call{value: amount, gas: 30000}("");
         if (!sent) {
@@ -478,7 +468,7 @@ contract PndAuctionHouse is
         address tokenOwner = a.tokenOwner;
         address tokenContract = a.tokenContract;
         uint256 tokenId = a.tokenId;
-        IERC721(tokenContract).safeTransferFrom(address(this), tokenOwner, tokenId);
+        IERC721(tokenContract).transferFrom(address(this), tokenOwner, tokenId);
         emit AuctionCanceled(auctionId);
         delete _auctionIdByToken[tokenContract][tokenId];
         delete auctions[auctionId];
@@ -493,14 +483,10 @@ contract PndAuctionHouse is
         return auctions[auctionId].tokenOwner != address(0);
     }
 
-    function onERC721Received(
-        address,
-        address,
-        uint256,
-        bytes calldata
-    ) external pure override returns (bytes4) {
-        return IERC721Receiver.onERC721Received.selector;
+    /// @notice Reject direct ETH sends so accidental transfers don't get
+    ///         stuck. Selfdestruct/coinbase forced ETH bypasses this; that's
+    ///         outside our control.
+    receive() external payable {
+        revert("Direct ETH not accepted");
     }
-
-    receive() external payable {}
 }
