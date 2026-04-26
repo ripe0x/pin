@@ -2,8 +2,10 @@ import type { Metadata } from "next"
 import { SITE_TITLE, ipfsToHttp } from "@pin/shared"
 import { FOUNDATION_NFT, MAINNET_CHAIN_ID } from "@pin/addresses"
 import { Provenance, type ProvenanceEntry } from "@/components/Provenance"
+import { FoundationAuctionPanel } from "@/components/auction/FoundationAuctionPanel"
 import { getTokenPageData } from "@/lib/queries"
 import { getTokenOnChainData, resolveTokenMetadataDirect } from "@/lib/onchain-discovery"
+import { getFoundationAuction } from "@/lib/auctions"
 import Link from "next/link"
 
 type Params = Promise<{ handle: string; tokenId: string }>
@@ -137,6 +139,7 @@ export default async function TokenPage({
 }) {
   const { handle, tokenId } = await params
   const data = (await resolveTokenPage(handle, tokenId)) ?? (await getChainFallback(handle, tokenId))
+  const auction = await getFoundationAuction(data.contract, tokenId).catch(() => null)
 
   return (
     <div className="mx-auto max-w-[2000px]">
@@ -171,6 +174,9 @@ export default async function TokenPage({
                 {data.description}
               </p>
             )}
+
+            {/* Live Foundation auction */}
+            {auction && <FoundationAuctionPanel auction={auction} />}
 
             {/* Ownership */}
             {data.owner && (
