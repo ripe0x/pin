@@ -124,6 +124,49 @@ contract PndAuctionHouse is
         address payable curator,
         uint16 curatorFeeBps
     ) external override nonReentrant onlyOwner returns (uint256) {
+        return _createAuction(
+            tokenId,
+            tokenContract,
+            duration,
+            reservePrice,
+            curator,
+            curatorFeeBps
+        );
+    }
+
+    /// @notice Create many auctions in one tx. All share the same duration,
+    ///         reserve, curator, and curator fee — call individually if pieces
+    ///         need different settings. Atomic: any failure (token not owned,
+    ///         not approved, etc.) reverts the whole batch.
+    function bulkCreateAuctions(
+        address tokenContract,
+        uint256[] calldata tokenIds,
+        uint256 reservePrice,
+        uint256 duration,
+        address payable curator,
+        uint16 curatorFeeBps
+    ) external override nonReentrant onlyOwner returns (uint256[] memory auctionIds) {
+        auctionIds = new uint256[](tokenIds.length);
+        for (uint256 i = 0; i < tokenIds.length; i++) {
+            auctionIds[i] = _createAuction(
+                tokenIds[i],
+                tokenContract,
+                duration,
+                reservePrice,
+                curator,
+                curatorFeeBps
+            );
+        }
+    }
+
+    function _createAuction(
+        uint256 tokenId,
+        address tokenContract,
+        uint256 duration,
+        uint256 reservePrice,
+        address payable curator,
+        uint16 curatorFeeBps
+    ) internal returns (uint256) {
         require(
             IERC165(tokenContract).supportsInterface(ERC721_INTERFACE_ID),
             "tokenContract is not ERC721"
@@ -325,6 +368,27 @@ contract PndAuctionHouse is
         );
         require(a.firstBidTime == 0, "Auction already started");
         _cancelAuction(auctionId);
+    }
+
+    /// @notice Cancel many auctions in one tx. Restricted to the house owner
+    ///         (the artist) so a stranger can't grief active listings. Reverts
+    ///         the whole batch if any auctionId is invalid or has bids — atomic
+    ///         so the caller knows exactly which auctions still exist after.
+    function bulkCancelAuctions(uint256[] calldata auctionIds)
+        external
+        override
+        nonReentrant
+        onlyOwner
+    {
+        for (uint256 i = 0; i < auctionIds.length; i++) {
+            uint256 auctionId = auctionIds[i];
+            require(_exists(auctionId), "Auction does not exist");
+            require(
+                auctions[auctionId].firstBidTime == 0,
+                "Auction already started"
+            );
+            _cancelAuction(auctionId);
+        }
     }
 
     // ─── Refunds ────────────────────────────────────────────────────────────

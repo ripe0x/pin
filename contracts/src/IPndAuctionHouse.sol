@@ -81,6 +81,15 @@ interface IPndAuctionHouse {
         uint16 curatorFeeBps
     ) external returns (uint256);
 
+    function bulkCreateAuctions(
+        address tokenContract,
+        uint256[] calldata tokenIds,
+        uint256 reservePrice,
+        uint256 duration,
+        address payable curator,
+        uint16 curatorFeeBps
+    ) external returns (uint256[] memory);
+
     function setAuctionApproval(uint256 auctionId, bool approved) external;
 
     function setAuctionReservePrice(uint256 auctionId, uint256 reservePrice) external;
@@ -90,6 +99,8 @@ interface IPndAuctionHouse {
     function endAuction(uint256 auctionId) external;
 
     function cancelAuction(uint256 auctionId) external;
+
+    function bulkCancelAuctions(uint256[] calldata auctionIds) external;
 
     function withdrawRefund() external;
 

@@ -555,4 +555,178 @@ contract PndAuctionHouseTest is Test {
         assertFalse(house.hasAuctionFor(address(nft), 999));
         assertEq(house.getAuctionIdFor(address(nft), 999), 0);
     }
+
+    // ─── Bulk cancel ─────────────────────────────────────────────────────
+
+    function _createBulkAuctions(uint256 count) internal returns (uint256[] memory ids) {
+        ids = new uint256[](count);
+        for (uint256 i = 0; i < count; i++) {
+            uint256 tokenId = 100 + i;
+            nft.mint(artist, tokenId);
+            vm.prank(artist);
+            ids[i] = house.createAuction(
+                tokenId,
+                address(nft),
+                DURATION,
+                RESERVE,
+                payable(address(0)),
+                0
+            );
+        }
+    }
+
+    function test_BulkCancel_ReturnsAllNftsToOwner() public {
+        uint256[] memory ids = _createBulkAuctions(3);
+        // All NFTs are now in the house contract.
+        for (uint256 i = 0; i < ids.length; i++) {
+            assertEq(nft.ownerOf(100 + i), address(house));
+        }
+
+        vm.prank(artist);
+        house.bulkCancelAuctions(ids);
+
+        for (uint256 i = 0; i < ids.length; i++) {
+            assertEq(nft.ownerOf(100 + i), artist);
+            assertFalse(house.hasAuctionFor(address(nft), 100 + i));
+        }
+    }
+
+    function test_BulkCancel_RejectsNonOwner() public {
+        uint256[] memory ids = _createBulkAuctions(2);
+        vm.expectRevert(); // OwnableUnauthorizedAccount
+        vm.prank(alice);
+        house.bulkCancelAuctions(ids);
+    }
+
+    function test_BulkCancel_RevertsIfAnyHasBid() public {
+        uint256[] memory ids = _createBulkAuctions(3);
+        // Bid on the middle one, ruining the batch.
+        vm.prank(alice);
+        house.createBid{value: RESERVE}(ids[1]);
+
+        vm.expectRevert("Auction already started");
+        vm.prank(artist);
+        house.bulkCancelAuctions(ids);
+
+        // Atomicity: nothing was cancelled even though ids[0] could have been.
+        for (uint256 i = 0; i < ids.length; i++) {
+            assertTrue(house.hasAuctionFor(address(nft), 100 + i));
+        }
+    }
+
+    function test_BulkCancel_RevertsOnNonexistentId() public {
+        uint256[] memory ids = new uint256[](2);
+        ids[0] = _createAuction();
+        ids[1] = 99999; // doesn't exist
+
+        vm.expectRevert("Auction does not exist");
+        vm.prank(artist);
+        house.bulkCancelAuctions(ids);
+
+        // Atomicity preserved.
+        assertTrue(house.hasAuctionFor(address(nft), TOKEN_ID));
+    }
+
+    function test_BulkCancel_EmptyArrayIsNoOp() public {
+        uint256[] memory ids = new uint256[](0);
+        vm.prank(artist);
+        house.bulkCancelAuctions(ids); // should not revert
+    }
+
+    // ─── Bulk create ─────────────────────────────────────────────────────
+
+    function _bulkMintTokens(uint256 count) internal returns (uint256[] memory ids) {
+        ids = new uint256[](count);
+        for (uint256 i = 0; i < count; i++) {
+            ids[i] = 200 + i;
+            nft.mint(artist, ids[i]);
+        }
+    }
+
+    function test_BulkCreate_EscrowsAllAndReturnsIds() public {
+        uint256[] memory tokenIds = _bulkMintTokens(3);
+
+        vm.prank(artist);
+        uint256[] memory auctionIds = house.bulkCreateAuctions(
+            address(nft),
+            tokenIds,
+            RESERVE,
+            DURATION,
+            payable(address(0)),
+            0
+        );
+
+        assertEq(auctionIds.length, 3);
+        for (uint256 i = 0; i < tokenIds.length; i++) {
+            assertEq(nft.ownerOf(tokenIds[i]), address(house));
+            assertTrue(house.hasAuctionFor(address(nft), tokenIds[i]));
+            (
+                ,
+                ,
+                bool approved,
+                ,
+                ,
+                ,
+                uint256 reserve,
+                ,
+                address tokenOwner,
+                ,
+
+            ) = house.auctions(auctionIds[i]);
+            assertTrue(approved); // no curator => auto-approved
+            assertEq(reserve, RESERVE);
+            assertEq(tokenOwner, artist);
+        }
+    }
+
+    function test_BulkCreate_RejectsNonOwner() public {
+        uint256[] memory tokenIds = _bulkMintTokens(2);
+        vm.expectRevert(); // OwnableUnauthorizedAccount
+        vm.prank(alice);
+        house.bulkCreateAuctions(
+            address(nft),
+            tokenIds,
+            RESERVE,
+            DURATION,
+            payable(address(0)),
+            0
+        );
+    }
+
+    function test_BulkCreate_RevertsIfArtistDoesntOwnOne() public {
+        uint256[] memory tokenIds = new uint256[](2);
+        tokenIds[0] = 300;
+        tokenIds[1] = 301;
+        nft.mint(artist, 300);
+        nft.mint(alice, 301); // artist doesn't own this one
+
+        vm.expectRevert("Not token owner or approved");
+        vm.prank(artist);
+        house.bulkCreateAuctions(
+            address(nft),
+            tokenIds,
+            RESERVE,
+            DURATION,
+            payable(address(0)),
+            0
+        );
+
+        // Atomicity: token 300 should still be with artist, no auction created.
+        assertEq(nft.ownerOf(300), artist);
+        assertFalse(house.hasAuctionFor(address(nft), 300));
+    }
+
+    function test_BulkCreate_EmptyArrayIsNoOp() public {
+        uint256[] memory tokenIds = new uint256[](0);
+        vm.prank(artist);
+        uint256[] memory result = house.bulkCreateAuctions(
+            address(nft),
+            tokenIds,
+            RESERVE,
+            DURATION,
+            payable(address(0)),
+            0
+        );
+        assertEq(result.length, 0);
+    }
 }
