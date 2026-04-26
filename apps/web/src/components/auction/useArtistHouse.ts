@@ -14,6 +14,11 @@ const ZERO = "0x0000000000000000000000000000000000000000"
 /**
  * Look up the PND auction house address for an artist. Returns null when no
  * house has been deployed for that artist or the factory isn't live yet.
+ *
+ * IMPORTANT: callers must gate this hook behind a mounted check because
+ * useReadContract calls useConfig internally, which throws if it runs during
+ * SSR before WagmiProvider is in scope. The hook itself can't defer that —
+ * it runs unconditionally. See ArtistHeader for the gating pattern.
  */
 export function useArtistHouse(artistAddress: string | undefined) {
   const enabled = !!FACTORY && !!artistAddress

@@ -6,6 +6,8 @@ export type ProvenanceEntry = {
   toHandle?: string
   timestamp: number
   txHash: string
+  /** ERC1155 transfer amount (number of copies). Omitted/1 for ERC721. */
+  amount?: bigint
 }
 
 function formatDate(timestamp: number): string {
@@ -38,6 +40,9 @@ export function Provenance({ entries }: { entries: ProvenanceEntry[] }) {
             <div className="flex-1 pb-2">
               <p className="text-sm">
                 <span className="font-medium">{entry.event}</span>
+                {entry.amount !== undefined && entry.amount > 1n && (
+                  <span className="text-gray-400"> ×{entry.amount.toString()}</span>
+                )}
                 <span className="text-gray-400"> by </span>
                 <span className="font-medium">{entry.fromHandle}</span>
                 {entry.toHandle && (

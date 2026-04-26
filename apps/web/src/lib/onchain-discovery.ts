@@ -22,6 +22,7 @@ import {
   MAINNET_CHAIN_ID,
 } from "@pin/addresses"
 import { extractCid, ipfsToHttp } from "@pin/shared"
+import { discoverManifoldTokens } from "./manifold-discovery"
 
 const FOUNDATION_NFT_ADDRESS = FOUNDATION_NFT[MAINNET_CHAIN_ID]
 const FACTORY_V1 = COLLECTION_FACTORY_V1[MAINNET_CHAIN_ID]
@@ -76,9 +77,11 @@ const transferEvent = parseAbiItem(
 /**
  * Discover all tokens minted by an artist on Foundation.
  *
- * Scans two sources:
+ * Scans three sources:
  * 1. The shared FoundationNFT contract (Minted event filtered by creator)
  * 2. Per-artist collection contracts (found via NFTCollectionFactory events)
+ * 3. Manifold Creator Core contracts deployed by the artist (Etherscan +
+ *    ERC-165 supportsInterface filter; only runs when ETHERSCAN_API_KEY is set)
  */
 export async function discoverArtistTokens(
   artistAddress: string,
@@ -87,13 +90,14 @@ export async function discoverArtistTokens(
   const artist = artistAddress.toLowerCase() as Address
   const latestBlock = await client.getBlockNumber()
 
-  // Run shared contract scan and collection factory scan in parallel
-  const [sharedTokens, collectionTokens] = await Promise.all([
+  // Run all three sources in parallel — they don't share work.
+  const [sharedTokens, collectionTokens, manifoldTokens] = await Promise.all([
     discoverSharedContractTokens(client, artist, latestBlock),
     discoverCollectionTokens(client, artist, latestBlock),
+    discoverManifoldTokens(artist),
   ])
 
-  return [...sharedTokens, ...collectionTokens]
+  return [...sharedTokens, ...collectionTokens, ...manifoldTokens]
 }
 
 // ── Shared contract discovery ────────────────────────────────────────────────
@@ -461,29 +465,226 @@ export async function getTokenOnChainData(
   return { owner, creator, transfers }
 }
 
+const erc1155UriAbi = [
+  {
+    type: "function",
+    name: "uri",
+    inputs: [{ name: "id", type: "uint256" }],
+    outputs: [{ type: "string" }],
+    stateMutability: "view",
+  },
+] as const
+
+const supportsInterfaceAbi = [
+  {
+    type: "function",
+    name: "supportsInterface",
+    inputs: [{ name: "iid", type: "bytes4" }],
+    outputs: [{ type: "bool" }],
+    stateMutability: "view",
+  },
+] as const
+
+const transferSingleEvent = parseAbiItem(
+  "event TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value)",
+)
+
+export type Erc1155Stats = {
+  creator: Address | null
+  totalSupply: bigint
+  ownerCount: number
+  transfers: Array<{
+    from: Address
+    to: Address
+    amount: bigint
+    timestamp: number
+    txHash: string
+  }>
+}
+
+const ERC1155_INTERFACE_ID = "0xd9b67a26" as const
+const ZERO_ADDR = "0x0000000000000000000000000000000000000000" as Address
+
 /**
- * Resolve metadata for a single token directly via RPC + IPFS.
- * Used by the token detail page instead of self-fetching the API route.
+ * Fetch ERC1155-specific stats for a token: edition supply, holder count,
+ * creator (the recipient of the first mint), and full transfer history with
+ * per-transfer amounts. Returns null if the contract isn't ERC1155.
+ *
+ * Implementation note: TransferSingle's `id` is non-indexed, so we can't filter
+ * by topic. We fetch all TransferSingle events on the contract and filter in
+ * memory by token ID. For collections with many tokens this can be a lot of
+ * logs — acceptable for v1, would benefit from indexer caching long-term.
+ * TransferBatch is intentionally skipped (rare in practice; can add later).
+ */
+export async function getErc1155TokenStats(
+  contractAddress: string,
+  tokenId: string,
+): Promise<Erc1155Stats | null> {
+  const client = getClient()
+  const contract = contractAddress as Address
+  const tokenIdBig = BigInt(tokenId)
+
+  const isErc1155 = await client
+    .readContract({
+      address: contract,
+      abi: supportsInterfaceAbi,
+      functionName: "supportsInterface",
+      args: [ERC1155_INTERFACE_ID],
+    })
+    .catch(() => false)
+
+  if (!isErc1155) return null
+
+  const latestBlock = await client.getBlockNumber()
+  const logs = await client
+    .getLogs({
+      address: contract,
+      event: transferSingleEvent,
+      fromBlock: SHARED_DEPLOY_BLOCK,
+      toBlock: latestBlock,
+    })
+    .catch(() => [])
+
+  const matching = logs.filter(
+    (l) => (l.args as { id?: bigint }).id === tokenIdBig,
+  )
+
+  if (matching.length === 0) {
+    return { creator: null, totalSupply: 0n, ownerCount: 0, transfers: [] }
+  }
+
+  // Sort chronologically so we can replay transfers into a balance map.
+  matching.sort((a, b) =>
+    Number((a.blockNumber ?? 0n) - (b.blockNumber ?? 0n)),
+  )
+
+  const uniqueBlocks = Array.from(
+    new Set(
+      matching.map((l) => l.blockNumber).filter((b): b is bigint => b !== null),
+    ),
+  )
+  const blockTimes = new Map<bigint, number>()
+  await Promise.all(
+    uniqueBlocks.map(async (bn) => {
+      try {
+        const block = await client.getBlock({ blockNumber: bn })
+        blockTimes.set(bn, Number(block.timestamp))
+      } catch {
+        blockTimes.set(bn, 0)
+      }
+    }),
+  )
+
+  const balances = new Map<string, bigint>()
+  let totalSupply = 0n
+  let creator: Address | null = null
+  const transfers: Erc1155Stats["transfers"] = []
+
+  for (const log of matching) {
+    const args = log.args as {
+      from?: Address
+      to?: Address
+      value?: bigint
+    }
+    const from = args.from!
+    const to = args.to!
+    const value = args.value ?? 0n
+
+    if (from === ZERO_ADDR) {
+      totalSupply += value
+      if (creator === null) creator = to
+    } else {
+      const fromBal = balances.get(from.toLowerCase()) ?? 0n
+      balances.set(from.toLowerCase(), fromBal - value)
+    }
+    if (to === ZERO_ADDR) {
+      totalSupply -= value
+    } else {
+      const toBal = balances.get(to.toLowerCase()) ?? 0n
+      balances.set(to.toLowerCase(), toBal + value)
+    }
+
+    transfers.push({
+      from,
+      to,
+      amount: value,
+      timestamp: blockTimes.get(log.blockNumber!) ?? 0,
+      txHash: log.transactionHash!,
+    })
+  }
+
+  let ownerCount = 0
+  for (const bal of balances.values()) {
+    if (bal > 0n) ownerCount++
+  }
+
+  // Newest-first for display.
+  transfers.reverse()
+
+  return { creator, totalSupply, ownerCount, transfers }
+}
+
+/**
+ * Resolve metadata for a single token directly via RPC + IPFS. Tries ERC721's
+ * `tokenURI(id)` first; if that reverts (the contract is ERC1155 or doesn't
+ * implement the call), falls back to ERC1155's `uri(id)`. ERC1155 URIs may
+ * contain a `{id}` placeholder per the spec which we substitute with the
+ * lowercase hex token ID padded to 64 chars.
  */
 export async function resolveTokenMetadataDirect(
   contractAddress: string,
   tokenId: string,
 ): Promise<{ name?: string; description?: string; image?: string } | null> {
-  try {
-    const client = getClient()
-    const tokenUri = await client.readContract({
-      address: contractAddress as Address,
+  const client = getClient()
+  const id = BigInt(tokenId)
+  const contract = contractAddress as Address
+
+  const uriString = await client
+    .readContract({
+      address: contract,
       abi: erc721Abi,
       functionName: "tokenURI",
-      args: [BigInt(tokenId)],
+      args: [id],
     })
+    .catch(() =>
+      client
+        .readContract({
+          address: contract,
+          abi: erc1155UriAbi,
+          functionName: "uri",
+          args: [id],
+        })
+        .catch(() => null),
+    )
 
-    if (!tokenUri) return null
+  if (!uriString) return null
 
-    const httpUrl = ipfsToHttp(tokenUri as string)
-    const res = await fetch(httpUrl, { signal: AbortSignal.timeout(10_000) })
+  // ERC1155 spec: substitute {id} with hex-padded token id (lowercase, 64 chars).
+  const idHex = id.toString(16).padStart(64, "0")
+  const resolvedUri = (uriString as string).replace(/\{id\}/g, idHex)
+  const httpUrl = ipfsToHttp(resolvedUri)
+
+  try {
+    const res = await fetch(httpUrl, {
+      signal: AbortSignal.timeout(10_000),
+      // Some metadata CDNs (Arweave gateway via CDN77) block bare server-side
+      // fetches and serve an HTML error page. A standard browser UA + JSON
+      // accept header gets through.
+      headers: {
+        Accept: "application/json",
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+      },
+      // Bypass Next.js's default fetch cache so a previously-failed fetch
+      // doesn't keep returning null after we fix the request.
+      cache: "no-store",
+    })
     if (!res.ok) return null
-
+    const contentType = res.headers.get("content-type") ?? ""
+    if (!contentType.includes("json") && !contentType.includes("text/plain")) {
+      // The CDN error page returns text/html; bail rather than try to JSON.parse.
+      return null
+    }
     return await res.json()
   } catch {
     return null

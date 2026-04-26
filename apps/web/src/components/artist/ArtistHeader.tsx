@@ -1,6 +1,8 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import type { ArtistIdentity } from "@/lib/artist-queries"
+import { useArtistHouse } from "@/components/auction/useArtistHouse"
 
 export function ArtistHeader({
   identity,
@@ -9,6 +11,13 @@ export function ArtistHeader({
   identity: ArtistIdentity
   totalWorks: number
 }) {
+  // Gate the wagmi hook behind a mount check — useReadContract throws during
+  // SSR if WagmiProvider isn't reachable, and we want this header to render
+  // server-side without errors. Pre-mount the pill simply isn't shown.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => {
+    setMounted(true)
+  }, [])
   return (
     <div className="flex flex-col sm:flex-row items-start gap-6">
       {/* Avatar */}
@@ -45,7 +54,7 @@ export function ArtistHeader({
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-3 pt-1">
+        <div className="flex items-center flex-wrap gap-2 pt-1">
           <a
             href={`https://evm.now/address/${identity.address}`}
             target="_blank"
@@ -54,9 +63,32 @@ export function ArtistHeader({
           >
             evm.now ↗
           </a>
+          {mounted && <HouseLinkPill artistAddress={identity.address} />}
         </div>
       </div>
     </div>
+  )
+}
+
+/** Subcomponent so the wagmi hook only runs on the client (parent gates render). */
+function HouseLinkPill({ artistAddress }: { artistAddress: string }) {
+  const { houseAddress } = useArtistHouse(artistAddress)
+  if (!houseAddress) return null
+  return (
+    <a
+      href={`https://etherscan.io/address/${houseAddress}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={houseAddress}
+      className="inline-flex items-center gap-1.5 text-xs border border-gray-200 px-3 py-1.5 rounded-full hover:border-gray-400 transition-colors"
+    >
+      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden />
+      <span>Auction house</span>
+      <span className="font-mono text-gray-400">
+        {houseAddress.slice(0, 6)}…{houseAddress.slice(-4)}
+      </span>
+      <span aria-hidden>↗</span>
+    </a>
   )
 }
 

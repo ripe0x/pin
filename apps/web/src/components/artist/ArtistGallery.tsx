@@ -9,8 +9,6 @@ import { NFT_MARKET, MAINNET_CHAIN_ID } from "@pin/addresses"
 import { createProvider, type PinStatus } from "@/lib/pinning"
 import { TokenPinStatus } from "@/components/preserve/TokenPinStatus"
 import { DeployHouseCTA } from "@/components/auction/DeployHouseCTA"
-import { CreateAuctionModal } from "@/components/auction/CreateAuctionModal"
-import { useArtistHouse } from "@/components/auction/useArtistHouse"
 
 const MARKET_ADDRESS = NFT_MARKET[MAINNET_CHAIN_ID]
 
@@ -42,8 +40,6 @@ export function ArtistGallery({
   const isOwner =
     !!connectedAddress &&
     connectedAddress.toLowerCase() === artistAddress.toLowerCase()
-
-  const { houseAddress } = useArtistHouse(artistAddress)
 
   const [pinStatuses, setPinStatuses] = useState<Map<string, PinStatus>>(
     new Map(),
@@ -110,7 +106,6 @@ export function ArtistGallery({
             pinStatuses={pinStatuses}
             hasProvider={hasProvider}
             isOwner={isOwner}
-            houseAddress={houseAddress}
           />
         ))}
       </div>
@@ -143,18 +138,15 @@ function GalleryCard({
   pinStatuses,
   hasProvider,
   isOwner,
-  houseAddress,
 }: {
   item: GalleryItem
   pinStatuses: Map<string, PinStatus>
   hasProvider: boolean
   isOwner: boolean
-  houseAddress: `0x${string}` | null
 }) {
   const href = `/${item.contract}/${item.tokenId}`
   const isVideo = isVideoUrl(item.imageUrl)
   const pinStatus = hasProvider ? getItemPinStatus(item, pinStatuses) : null
-  const [showCreate, setShowCreate] = useState(false)
   // Holds the media's natural ratio once the browser knows it; until then we
   // keep the box square so the grid doesn't flicker into 0-height tiles.
   const [ratio, setRatio] = useState<number | null>(null)
@@ -206,25 +198,6 @@ function GalleryCard({
         <BuyPriceSection
           nftContract={item.contract}
           tokenId={item.tokenId}
-        />
-      )}
-      {isOwner && houseAddress && (
-        <div className="px-4 pb-4">
-          <button
-            onClick={() => setShowCreate(true)}
-            className="w-full text-xs font-medium py-2 border border-gray-200 rounded hover:border-gray-400 transition-colors"
-          >
-            Start auction
-          </button>
-        </div>
-      )}
-      {showCreate && houseAddress && (
-        <CreateAuctionModal
-          houseAddress={houseAddress}
-          nftContract={item.contract as `0x${string}`}
-          tokenId={item.tokenId}
-          tokenTitle={item.title}
-          onClose={() => setShowCreate(false)}
         />
       )}
     </div>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useAccount, useReadContract } from "wagmi"
 import { erc721Abi } from "@pin/abi"
 import { useArtistHouse } from "./useArtistHouse"
@@ -15,6 +15,33 @@ import { CreateAuctionModal } from "./CreateAuctionModal"
  * exists for the token (the page already gates on `auction === null`).
  */
 export function StartAuctionCTA({
+  nftContract,
+  tokenId,
+  tokenTitle,
+}: {
+  nftContract: `0x${string}`
+  tokenId: string
+  tokenTitle?: string
+}) {
+  // Wagmi hooks call useConfig() which throws when WagmiProvider isn't yet in
+  // scope during SSR. Render nothing until mount; the inner component runs the
+  // hooks safely on the client.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+  if (!mounted) return null
+
+  return (
+    <StartAuctionCTAClient
+      nftContract={nftContract}
+      tokenId={tokenId}
+      tokenTitle={tokenTitle}
+    />
+  )
+}
+
+function StartAuctionCTAClient({
   nftContract,
   tokenId,
   tokenTitle,
@@ -57,10 +84,6 @@ export function StartAuctionCTA({
           tokenId={tokenId}
           tokenTitle={tokenTitle}
           onClose={() => setShowModal(false)}
-          onSuccess={() => {
-            // Reload after success so the auction panel renders.
-            setTimeout(() => window.location.reload(), 500)
-          }}
         />
       )}
     </>

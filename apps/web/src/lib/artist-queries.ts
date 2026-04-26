@@ -7,8 +7,12 @@
 import { createPublicClient, http, type Address } from "viem"
 import { mainnet } from "viem/chains"
 import { normalize } from "viem/ens"
-import { discoverArtistTokens, type DiscoveredToken } from "./onchain-discovery"
-import { ipfsToHttp } from "@pin/shared"
+import {
+  discoverArtistTokens,
+  resolveTokenMetadataDirect,
+  type DiscoveredToken,
+} from "./onchain-discovery"
+import { extractCid, ipfsToHttp } from "@pin/shared"
 
 const client = createPublicClient({
   chain: mainnet,
@@ -107,16 +111,71 @@ export async function getArtistIdentity(
 export async function getArtistPortfolio(
   address: string,
 ): Promise<ArtistPortfolio> {
-  const [identity, tokens] = await Promise.all([
+  const [identity, rawTokens] = await Promise.all([
     getArtistIdentity(address),
     discoverArtistTokens(address),
   ])
+
+  const tokens = await enrichMissingMetadata(rawTokens)
 
   return {
     identity,
     tokens,
     totalWorks: tokens.length,
   }
+}
+
+/**
+ * Backfill metadata for tokens whose discovery source returned no name/image.
+ * Most relevant for ERC1155 tokens where the discovery sometimes can't reach
+ * `uri()` (Manifold tokens not yet indexed by Alchemy, etc.). Falls back to a
+ * direct on-chain read which tries `tokenURI` then `uri` automatically.
+ */
+async function enrichMissingMetadata(
+  tokens: DiscoveredToken[],
+): Promise<DiscoveredToken[]> {
+  // Enrich any token that's missing a real name or image. Some upstream
+  // sources (Alchemy NFT API) substitute a `#<tokenId>` placeholder for the
+  // name when they don't have the real metadata — treat that as missing too.
+  const isPlaceholderName = (t: DiscoveredToken) =>
+    !t.metadata?.name || t.metadata.name === `#${t.tokenId}`
+
+  const needsEnrichment = tokens
+    .map((t, idx) => ({ t, idx }))
+    .filter(({ t }) => isPlaceholderName(t) || !t.mediaHttpUrl)
+
+  if (needsEnrichment.length === 0) return tokens
+
+  const filled = [...tokens]
+  await Promise.all(
+    needsEnrichment.map(async ({ t, idx }) => {
+      const meta = await resolveTokenMetadataDirect(t.contract, t.tokenId)
+      if (!meta) return
+      // For each field, prefer the existing value only if it's "real". A
+      // `#<tokenId>` name is a placeholder, treat as missing.
+      const existingNameIsReal =
+        t.metadata?.name && t.metadata.name !== `#${t.tokenId}`
+      const mergedMeta = {
+        name: existingNameIsReal ? t.metadata!.name : meta.name,
+        description: t.metadata?.description || meta.description,
+        image: t.metadata?.image || meta.image,
+      }
+      const newMediaUrl =
+        t.mediaHttpUrl || (mergedMeta.image ? ipfsToHttp(mergedMeta.image) : null)
+      filled[idx] = {
+        ...t,
+        metadata:
+          mergedMeta.name || mergedMeta.description || mergedMeta.image
+            ? mergedMeta
+            : t.metadata,
+        mediaHttpUrl: newMediaUrl,
+        mediaCid: mergedMeta.image
+          ? t.mediaCid ?? extractCid(mergedMeta.image)
+          : t.mediaCid,
+      }
+    }),
+  )
+  return filled
 }
 
 /**

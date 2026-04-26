@@ -5,7 +5,12 @@ import { Provenance, type ProvenanceEntry } from "@/components/Provenance"
 import { AuctionPanel } from "@/components/auction/AuctionPanel"
 import { StartAuctionCTA } from "@/components/auction/StartAuctionCTA"
 import { getTokenPageData } from "@/lib/queries"
-import { getTokenOnChainData, resolveTokenMetadataDirect } from "@/lib/onchain-discovery"
+import {
+  getErc1155TokenStats,
+  getTokenOnChainData,
+  resolveTokenMetadataDirect,
+  type Erc1155Stats,
+} from "@/lib/onchain-discovery"
 import { getAuctionForToken } from "@/lib/auctions"
 import { resolveDisplayNames } from "@/lib/artist-queries"
 import Link from "next/link"
@@ -63,6 +68,10 @@ async function resolveTokenPage(handle: string, tokenId: string) {
           txHash: t.txHash,
         })
       ),
+      // Ponder path is ERC721-only today.
+      isErc1155: false,
+      edition: null as bigint | null,
+      ownerCount: null as number | null,
     }
   } catch {
     return null
@@ -74,33 +83,51 @@ async function getChainFallback(handle: string, tokenId: string) {
   const isAddress = handle.startsWith("0x") && handle.length === 42
   const contract = isAddress ? handle : FOUNDATION_NFT[MAINNET_CHAIN_ID]
 
-  // Fetch metadata and on-chain data in parallel
-  const [meta, onChainData] = await Promise.all([
+  // Fetch metadata, ERC721 on-chain data, and ERC1155 stats in parallel.
+  // ERC1155 returns null on ERC721 contracts (and vice-versa for the ERC721
+  // path), so we naturally end up with whichever standard the token uses.
+  const [meta, onChainData, erc1155] = await Promise.all([
     resolveTokenMetadataDirect(contract, tokenId),
     getTokenOnChainData(contract, tokenId).catch(() => null),
+    getErc1155TokenStats(contract, tokenId).catch(() => null),
   ])
 
   const imageUrl = meta?.image
     ? ipfsToHttp(meta.image)
     : "https://placehold.co/1200x1500/F2F2F2/999999?text=Artwork"
 
-  const creator = onChainData?.creator ?? ""
-  const owner = onChainData?.owner ?? ""
+  const isErc1155 = !!erc1155 && erc1155.transfers.length > 0
+  const creator = (onChainData?.creator || erc1155?.creator) ?? ""
+  const owner = onChainData?.owner ?? "" // n/a for ERC1155
 
-  const provenance: ProvenanceEntry[] = (onChainData?.transfers ?? [])
-    .sort((a, b) => b.timestamp - a.timestamp)
-    .map((t) => ({
-      event:
-        t.from === "0x0000000000000000000000000000000000000000"
-          ? "Minted"
-          : "Transferred",
-      from: t.from,
-      fromHandle: truncateAddress(t.from),
-      to: t.to,
-      toHandle: truncateAddress(t.to),
-      timestamp: t.timestamp,
-      txHash: t.txHash,
-    }))
+  const provenance: ProvenanceEntry[] = isErc1155
+    ? erc1155!.transfers.map((t) => ({
+        event:
+          t.from === "0x0000000000000000000000000000000000000000"
+            ? "Minted"
+            : "Transferred",
+        from: t.from,
+        fromHandle: truncateAddress(t.from),
+        to: t.to,
+        toHandle: truncateAddress(t.to),
+        timestamp: t.timestamp,
+        txHash: t.txHash,
+        amount: t.amount,
+      }))
+    : (onChainData?.transfers ?? [])
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .map((t) => ({
+          event:
+            t.from === "0x0000000000000000000000000000000000000000"
+              ? "Minted"
+              : "Transferred",
+          from: t.from,
+          fromHandle: truncateAddress(t.from),
+          to: t.to,
+          toHandle: truncateAddress(t.to),
+          timestamp: t.timestamp,
+          txHash: t.txHash,
+        }))
 
   return {
     title: meta?.name ?? `#${tokenId}`,
@@ -113,6 +140,9 @@ async function getChainFallback(handle: string, tokenId: string) {
     tokenId,
     imageUrl,
     provenance,
+    isErc1155,
+    edition: isErc1155 ? erc1155!.totalSupply : null,
+    ownerCount: isErc1155 ? erc1155!.ownerCount : null,
   }
 }
 
@@ -143,10 +173,18 @@ export default async function TokenPage({
   const data = (await resolveTokenPage(handle, tokenId)) ?? (await getChainFallback(handle, tokenId))
   const auction = await getAuctionForToken(data.contract, tokenId).catch(() => null)
 
-  // Upgrade truncated 0x… handles to ENS where available.
-  const addressesForEns = [data.creator, data.owner].filter(Boolean) as string[]
-  if (addressesForEns.length > 0) {
-    const names = await resolveDisplayNames(addressesForEns).catch(
+  // Upgrade truncated 0x… handles to ENS where available — for the creator,
+  // the owner, AND every distinct address in the provenance timeline so the
+  // history reads as `alice.eth → bob.eth ×3` instead of raw 0x….
+  const addressSet = new Set<string>()
+  if (data.creator) addressSet.add(data.creator.toLowerCase())
+  if (data.owner) addressSet.add(data.owner.toLowerCase())
+  for (const entry of data.provenance) {
+    addressSet.add(entry.from.toLowerCase())
+    if (entry.to) addressSet.add(entry.to.toLowerCase())
+  }
+  if (addressSet.size > 0) {
+    const names = await resolveDisplayNames(Array.from(addressSet)).catch(
       () => new Map<string, string>(),
     )
     if (data.creator) {
@@ -155,6 +193,13 @@ export default async function TokenPage({
     if (data.owner) {
       data.ownerHandle = names.get(data.owner.toLowerCase()) ?? data.ownerHandle
     }
+    data.provenance = data.provenance.map((entry) => ({
+      ...entry,
+      fromHandle: names.get(entry.from.toLowerCase()) ?? entry.fromHandle,
+      toHandle: entry.to
+        ? names.get(entry.to.toLowerCase()) ?? entry.toHandle
+        : entry.toHandle,
+    }))
   }
 
   return (
@@ -191,9 +236,10 @@ export default async function TokenPage({
               </p>
             )}
 
-            {/* Live auction (Foundation or PND) */}
+            {/* Live auction (Foundation or PND). PND auctions are ERC721-only
+                so we suppress the start CTA for ERC1155 tokens. */}
             {auction && <AuctionPanel auction={auction} />}
-            {!auction && (
+            {!auction && !data.isErc1155 && (
               <StartAuctionCTA
                 nftContract={data.contract as `0x${string}`}
                 tokenId={tokenId}
@@ -201,17 +247,44 @@ export default async function TokenPage({
               />
             )}
 
-            {/* Ownership */}
-            {data.owner && (
-              <div className="flex items-center gap-2 text-sm">
-                <span className="text-gray-400">Owned by</span>
-                <Link
-                  href={`/artist/${data.owner}`}
-                  className="font-medium hover:underline"
-                >
-                  {data.ownerHandle}
-                </Link>
+            {/* Ownership / edition stats */}
+            {data.isErc1155 ? (
+              <div className="flex items-center gap-6 text-sm">
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wider">
+                    Edition
+                  </p>
+                  <p className="font-medium tabular-nums">
+                    {(data.edition ?? 0n).toString()}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wider">
+                    Holders
+                  </p>
+                  <p className="font-medium tabular-nums">
+                    {data.ownerCount ?? 0}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wider">
+                    Standard
+                  </p>
+                  <p className="font-medium">ERC1155</p>
+                </div>
               </div>
+            ) : (
+              data.owner && (
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-gray-400">Owned by</span>
+                  <Link
+                    href={`/artist/${data.owner}`}
+                    className="font-medium hover:underline"
+                  >
+                    {data.ownerHandle}
+                  </Link>
+                </div>
+              )
             )}
 
             {/* Divider */}

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { parseEther } from "viem"
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from "wagmi"
 import { erc721Abi, pndAuctionHouseAbi } from "@pin/abi"
+import { TxLink } from "./tx"
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
@@ -62,8 +63,12 @@ export function CreateAuctionModal({
     isPending: isApprovePending,
     error: approveError,
   } = useWriteContract()
-  const { isLoading: isApproveMining, isSuccess: isApproveSuccess } =
-    useWaitForTransactionReceipt({ hash: approveHash })
+  const {
+    isLoading: isApproveMining,
+    isSuccess: isApproveSuccess,
+    data: approveReceipt,
+  } = useWaitForTransactionReceipt({ hash: approveHash })
+  const approveReverted = approveReceipt?.status === "reverted"
   useEffect(() => {
     if (isApproveSuccess) refetchApproval()
   }, [isApproveSuccess, refetchApproval])
@@ -75,21 +80,29 @@ export function CreateAuctionModal({
     isPending: isCreatePending,
     error: createError,
   } = useWriteContract()
-  const { isLoading: isCreateMining, isSuccess: isCreateSuccess } =
-    useWaitForTransactionReceipt({ hash: createHash })
+  const {
+    isLoading: isCreateMining,
+    isSuccess: isCreateSuccess,
+    data: createReceipt,
+  } = useWaitForTransactionReceipt({ hash: createHash })
+  const createReverted = createReceipt?.status === "reverted"
   useEffect(() => {
     if (isCreateSuccess && onSuccess) onSuccess()
   }, [isCreateSuccess, onSuccess])
 
+  // Reserve = 0 is valid ("no reserve" auctions). Empty input or non-numeric
+  // is invalid; negative values are caught by parseEther.
   const reserveValid = useMemo(() => {
     if (!reserveInput.trim()) return false
     try {
       const v = parseEther(reserveInput.trim() as `${number}`)
-      return v > 0n
+      return v >= 0n
     } catch {
       return false
     }
   }, [reserveInput])
+
+  const isNoReserve = reserveInput.trim() === "0"
 
   function handleApprove() {
     writeApprove({
@@ -141,11 +154,20 @@ export function CreateAuctionModal({
 
         {isCreateSuccess ? (
           <div className="px-5 py-6 space-y-4">
-            <p className="text-sm text-emerald-700">
-              Auction created. Refresh the token page to see it live.
-            </p>
+            <div className="rounded border border-emerald-200 bg-emerald-50 p-3 space-y-2">
+              <p className="text-sm font-medium text-emerald-900">
+                Auction created ✓
+              </p>
+              {createHash && <TxLink hash={createHash} label="Create tx:" />}
+            </div>
             <button
-              onClick={onClose}
+              onClick={() => {
+                onClose()
+                // Reload so the auction panel renders on the token page (or
+                // the gallery refreshes its state). Closing alone wouldn't
+                // refetch SSR'd auction data.
+                window.location.reload()
+              }}
               className="block w-full text-center text-sm font-medium py-3 bg-black text-white hover:bg-gray-800 transition-colors"
             >
               Done
@@ -174,7 +196,9 @@ export function CreateAuctionModal({
                 </div>
               </label>
               <p className="text-xs text-gray-400">
-                Auction starts on the first bid at or above this price.
+                {isNoReserve
+                  ? "No reserve — any bid wins. Timer starts on first bid."
+                  : "Auction starts on the first bid at or above this price."}
               </p>
             </div>
 
@@ -217,6 +241,17 @@ export function CreateAuctionModal({
                       ? "Approving…"
                       : "Approve auction house"}
                 </button>
+                {approveHash && isApproveMining && (
+                  <TxLink hash={approveHash} label="Pending tx:" />
+                )}
+                {approveReverted && approveHash && (
+                  <div className="rounded border border-red-200 bg-red-50 p-2.5 space-y-1">
+                    <p className="text-xs font-medium text-red-700">
+                      Approve reverted on-chain
+                    </p>
+                    <TxLink hash={approveHash} label="Reverted tx:" />
+                  </div>
+                )}
                 {approveError && (
                   <p className="text-xs text-red-500 break-words">
                     {approveError.message.includes("User rejected")
@@ -227,6 +262,14 @@ export function CreateAuctionModal({
               </div>
             ) : (
               <div className="space-y-2">
+                {isApproveSuccess && approveHash && (
+                  <div className="rounded border border-emerald-200 bg-emerald-50 p-2.5 flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-emerald-900">
+                      Approved ✓
+                    </span>
+                    <TxLink hash={approveHash} label="Approve tx:" />
+                  </div>
+                )}
                 <button
                   onClick={handleCreate}
                   disabled={createBusy || !reserveValid}
@@ -238,6 +281,20 @@ export function CreateAuctionModal({
                       ? "Creating auction…"
                       : "Start auction"}
                 </button>
+                {createHash && isCreateMining && (
+                  <TxLink hash={createHash} label="Pending tx:" />
+                )}
+                {createReverted && createHash && (
+                  <div className="rounded border border-red-200 bg-red-50 p-2.5 space-y-1">
+                    <p className="text-xs font-medium text-red-700">
+                      Create reverted on-chain
+                    </p>
+                    <p className="text-xs text-red-700/80">
+                      Likely cause: you don&apos;t own this token, or the house isn&apos;t approved.
+                    </p>
+                    <TxLink hash={createHash} label="Reverted tx:" />
+                  </div>
+                )}
                 {createError && (
                   <p className="text-xs text-red-500 break-words">
                     {createError.message.includes("User rejected")

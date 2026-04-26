@@ -1,14 +1,18 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { pndAuctionHouseFactoryAbi } from "@pin/abi"
 import { useArtistHouse } from "./useArtistHouse"
+import { AddressLink, TxLink } from "./tx"
 
 /**
  * One-time per-artist CTA: deploys the artist's PND auction house clone via
- * the factory. Renders nothing if the connected wallet is not the artist, if
- * the factory isn't deployed yet, or if a house already exists.
+ * the factory. Renders nothing if the connected wallet is not the artist or
+ * if the factory isn't deployed yet. After a successful deploy it shows a
+ * confirmation card with the new contract address + tx link until the user
+ * acknowledges it.
  */
 export function DeployHouseCTA({ artistAddress }: { artistAddress: string }) {
   const { address: connected } = useAccount()
@@ -16,22 +20,55 @@ export function DeployHouseCTA({ artistAddress }: { artistAddress: string }) {
     !!connected && connected.toLowerCase() === artistAddress.toLowerCase()
 
   const { factoryAddress, houseAddress, refetch } = useArtistHouse(artistAddress)
+  const [acknowledged, setAcknowledged] = useState(false)
 
   const { writeContract, data: txHash, isPending, error, reset } = useWriteContract()
   const { isLoading: isMining, isSuccess } = useWaitForTransactionReceipt({
     hash: txHash,
   })
 
+  // Refetch the house address as soon as the deploy tx confirms so the success
+  // card can show the new contract address.
+  useEffect(() => {
+    if (isSuccess) refetch()
+  }, [isSuccess, refetch])
+
   if (!isArtist) return null
   if (!factoryAddress) return null
-  if (houseAddress) return null
 
-  if (isSuccess) {
-    // Refresh state so the CTA disappears and create-auction options unlock.
-    refetch()
-    reset()
-    return null
+  // Show success state right after deploy so the user sees what happened.
+  if (isSuccess && houseAddress && txHash && !acknowledged) {
+    return (
+      <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-5 space-y-3">
+        <div>
+          <h3 className="text-base font-semibold tracking-tight text-emerald-900">
+            Auction house deployed ✓
+          </h3>
+          <p className="text-sm text-emerald-800/80 mt-1">
+            Your auction contract is live. You can now start auctions on
+            tokens you own.
+          </p>
+        </div>
+        <div className="flex flex-col gap-1">
+          <AddressLink address={houseAddress} label="Contract:" />
+          <TxLink hash={txHash} label="Deploy tx:" />
+        </div>
+        <button
+          onClick={() => {
+            setAcknowledged(true)
+            reset()
+          }}
+          className="text-xs font-medium text-emerald-900 hover:underline"
+        >
+          Continue →
+        </button>
+      </div>
+    )
   }
+
+  // Standard "no house yet" state — already-deployed artists hit this branch's
+  // early-out below.
+  if (houseAddress) return null
 
   function handleDeploy() {
     if (!factoryAddress || !connected) return
@@ -58,6 +95,8 @@ export function DeployHouseCTA({ artistAddress }: { artistAddress: string }) {
     )
   }
 
+  const busy = isPending || isMining
+
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-5 space-y-4">
       <div>
@@ -71,7 +110,7 @@ export function DeployHouseCTA({ artistAddress }: { artistAddress: string }) {
       </div>
       <button
         onClick={handleDeploy}
-        disabled={isPending || isMining}
+        disabled={busy}
         className="block w-full text-center text-sm font-medium py-3 bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
       >
         {isPending
@@ -80,6 +119,9 @@ export function DeployHouseCTA({ artistAddress }: { artistAddress: string }) {
             ? "Deploying…"
             : "Deploy auction house"}
       </button>
+      {txHash && isMining && (
+        <TxLink hash={txHash} label="Pending tx:" />
+      )}
       {error && (
         <p className="text-xs text-red-500 break-words">
           {error.message.includes("User rejected")
