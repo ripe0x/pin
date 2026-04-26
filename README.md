@@ -9,14 +9,13 @@ Foundation.app is shutting down — both the frontend and IPFS pinning for all m
 ```
 apps/
   web/         Next.js 15 frontend (React 19, Tailwind v4, wagmi v2, RainbowKit)
-  indexer/     Ponder indexer (optional — on-chain event processing, GraphQL API)
 packages/
   abi/         Hand-written ABI exports (as const, for viem type inference)
   addresses/   Contract addresses per chain
   shared/      Site config, IPFS utilities, shared types
 ```
 
-**No indexer dependency** — The core features (artist pages, token discovery, IPFS preservation) work entirely from on-chain RPC calls and IPFS fetches. The Ponder indexer is optional and only needed for enhanced token detail pages.
+**No indexer dependency** — Everything (artist pages, token detail pages, IPFS preservation) works entirely from on-chain RPC calls and IPFS fetches.
 
 **BYOK pinning** — Artists bring their own API key from Pinata, web3.storage, or Filebase. Keys stay in the browser and are sent directly to the provider — never stored on any server.
 
@@ -54,10 +53,6 @@ cp apps/web/.env.example apps/web/.env.local
 # Start the Next.js dev server
 npm run dev
 # Available at http://localhost:3000
-
-# Optional: Start the Ponder indexer (for enhanced token detail pages)
-npm run dev:indexer
-# GraphQL playground at http://localhost:42069/graphql
 ```
 
 ## Contracts
@@ -80,7 +75,6 @@ Source: [f8n/fnd-protocol](https://github.com/f8n/fnd-protocol)
 - **Tailwind CSS v4**
 - **wagmi v2** + **viem v2** (contract interactions)
 - **RainbowKit v2** (wallet UI)
-- **Ponder** (optional on-chain indexer)
 
 ## License
 

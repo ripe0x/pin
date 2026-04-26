@@ -384,7 +384,6 @@ export type TokenOnChainData = {
 
 /**
  * Resolve owner, creator, and transfer history for a single token via RPC.
- * Used by the token detail page when Ponder data is unavailable.
  */
 export async function getTokenOnChainData(
   contractAddress: string,
@@ -662,6 +661,15 @@ export async function resolveTokenMetadataDirect(
   // ERC1155 spec: substitute {id} with hex-padded token id (lowercase, 64 chars).
   const idHex = id.toString(16).padStart(64, "0")
   const resolvedUri = (uriString as string).replace(/\{id\}/g, idHex)
+
+  // On-chain renderers (e.g. zorbs) return inline `data:application/json,…`
+  // URIs. Don't hand these to fetch() — Node's fetch treats `#` as a URL
+  // fragment delimiter and silently truncates the body, which trips on
+  // common cases like `"name":"foo #2"`.
+  if (resolvedUri.startsWith("data:")) {
+    return parseDataUriJson(resolvedUri)
+  }
+
   const httpUrl = ipfsToHttp(resolvedUri)
 
   try {
@@ -687,6 +695,41 @@ export async function resolveTokenMetadataDirect(
     }
     return await res.json()
   } catch {
+    return null
+  }
+}
+
+/**
+ * Parse a `data:` URI containing JSON metadata. Handles the common encodings:
+ *   data:application/json,{...}
+ *   data:application/json;utf8,{...}        ← Foundation's zorb contract
+ *   data:application/json;charset=utf-8,{...}
+ *   data:application/json;base64,<b64>
+ * Body content is URL-decoded for the non-base64 forms.
+ */
+function parseDataUriJson(
+  uri: string,
+): { name?: string; description?: string; image?: string } | null {
+  const comma = uri.indexOf(",")
+  if (comma < 0) return null
+  const meta = uri.slice(5, comma) // strip "data:"
+  const body = uri.slice(comma + 1)
+  const isBase64 = /;\s*base64\b/i.test(meta)
+  try {
+    const decoded = isBase64
+      ? Buffer.from(body, "base64").toString("utf8")
+      : decodeURIComponent(body)
+    return JSON.parse(decoded)
+  } catch {
+    // Some renderers emit unencoded JSON containing `%` characters that
+    // decodeURIComponent rejects. Fall back to the raw body.
+    if (!isBase64) {
+      try {
+        return JSON.parse(body)
+      } catch {
+        return null
+      }
+    }
     return null
   }
 }

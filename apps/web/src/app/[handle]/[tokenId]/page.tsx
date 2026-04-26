@@ -4,12 +4,10 @@ import { FOUNDATION_NFT, MAINNET_CHAIN_ID } from "@pin/addresses"
 import { Provenance, type ProvenanceEntry } from "@/components/Provenance"
 import { AuctionPanel } from "@/components/auction/AuctionPanel"
 import { StartAuctionCTA } from "@/components/auction/StartAuctionCTA"
-import { getTokenPageData } from "@/lib/queries"
 import {
   getErc1155TokenStats,
   getTokenOnChainData,
   resolveTokenMetadataDirect,
-  type Erc1155Stats,
 } from "@/lib/onchain-discovery"
 import { getAuctionForToken } from "@/lib/auctions"
 import { resolveDisplayNames } from "@/lib/artist-queries"
@@ -21,65 +19,7 @@ function truncateAddress(addr: string): string {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`
 }
 
-async function resolveTokenPage(handle: string, tokenId: string) {
-  const isAddress = handle.startsWith("0x") && handle.length === 42
-  const contract = isAddress
-    ? handle
-    : FOUNDATION_NFT[MAINNET_CHAIN_ID]
-
-  try {
-    const data = await getTokenPageData(contract, tokenId)
-    if (!data) return null
-
-    let { token, transfers, imageUrl } = data
-
-    // Resolve metadata on-demand if indexer hasn't populated it yet
-    if (!token.metadata) {
-      const meta = await resolveTokenMetadataDirect(contract, tokenId)
-      if (meta) {
-        token = { ...token, metadata: meta }
-        if (meta.image) {
-          imageUrl = ipfsToHttp(meta.image)
-        }
-      }
-    }
-
-    return {
-      title: token.metadata?.name ?? `#${tokenId}`,
-      description: token.metadata?.description ?? "",
-      creator: token.creator ?? "",
-      creatorHandle: token.creator ? truncateAddress(token.creator) : "",
-      owner: token.owner ?? "",
-      ownerHandle: token.owner ? truncateAddress(token.owner) : "",
-      contract: token.contract,
-      tokenId,
-      imageUrl,
-      provenance: transfers.map(
-        (t): ProvenanceEntry => ({
-          event:
-            t.from === "0x0000000000000000000000000000000000000000"
-              ? "Minted"
-              : "Transferred",
-          from: t.from,
-          fromHandle: truncateAddress(t.from),
-          to: t.to,
-          toHandle: truncateAddress(t.to),
-          timestamp: Number(t.blockTime),
-          txHash: t.txHash,
-        })
-      ),
-      // Ponder path is ERC721-only today.
-      isErc1155: false,
-      edition: null as bigint | null,
-      ownerCount: null as number | null,
-    }
-  } catch {
-    return null
-  }
-}
-
-// Fallback: resolve all data directly from the chain when Ponder has no data
-async function getChainFallback(handle: string, tokenId: string) {
+async function getTokenPageData(handle: string, tokenId: string) {
   const isAddress = handle.startsWith("0x") && handle.length === 42
   const contract = isAddress ? handle : FOUNDATION_NFT[MAINNET_CHAIN_ID]
 
@@ -152,7 +92,7 @@ export async function generateMetadata({
   params: Params
 }): Promise<Metadata> {
   const { handle, tokenId } = await params
-  const data = (await resolveTokenPage(handle, tokenId)) ?? (await getChainFallback(handle, tokenId))
+  const data = await getTokenPageData(handle, tokenId)
   return {
     title: `${data.title} by ${data.creatorHandle || "Unknown"}`,
     description: data.description,
@@ -170,7 +110,7 @@ export default async function TokenPage({
   params: Params
 }) {
   const { handle, tokenId } = await params
-  const data = (await resolveTokenPage(handle, tokenId)) ?? (await getChainFallback(handle, tokenId))
+  const data = await getTokenPageData(handle, tokenId)
   const auction = await getAuctionForToken(data.contract, tokenId).catch(() => null)
 
   // Upgrade truncated 0x… handles to ENS where available — for the creator,
