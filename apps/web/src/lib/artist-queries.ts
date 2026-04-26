@@ -45,6 +45,38 @@ export type ArtistPortfolio = {
   totalWorks: number
 }
 
+function truncateAddress(address: string): string {
+  return `${address.slice(0, 6)}…${address.slice(-4)}`
+}
+
+/**
+ * Resolve a display name for one address (ENS if set, else truncated 0x…).
+ */
+export async function resolveDisplayName(address: string): Promise<string> {
+  try {
+    const ensName = await client.getEnsName({ address: address as Address })
+    if (ensName) return ensName
+  } catch {
+    // ignore
+  }
+  return truncateAddress(address)
+}
+
+/**
+ * Resolve display names for many addresses in parallel.
+ * Deduplicates and caches per-call. Always returns a value per input address.
+ */
+export async function resolveDisplayNames(
+  addresses: readonly string[],
+): Promise<Map<string, string>> {
+  const lower = addresses.map((a) => a.toLowerCase())
+  const unique = Array.from(new Set(lower))
+  const entries = await Promise.all(
+    unique.map(async (a) => [a, await resolveDisplayName(a)] as const),
+  )
+  return new Map(entries)
+}
+
 /**
  * Resolve an artist's identity (ENS name + avatar).
  */

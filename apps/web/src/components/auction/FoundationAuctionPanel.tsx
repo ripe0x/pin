@@ -6,13 +6,38 @@ import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagm
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { nftMarketAbi } from "@pin/abi"
 import { NFT_MARKET, MAINNET_CHAIN_ID } from "@pin/addresses"
-import type { AuctionFees, FoundationAuctionState } from "@/lib/auctions"
+import type {
+  AuctionFees,
+  BidHistoryEntry,
+  FoundationAuctionState,
+} from "@/lib/auctions"
 
 const MARKET_ADDRESS = NFT_MARKET[MAINNET_CHAIN_ID]
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
 function truncateAddress(addr: string): string {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`
+}
+
+/** Display strings come back as either an ENS name or a 0x… truncation; this
+ *  decides whether to render them with a mono font. */
+function isAddress(display: string): boolean {
+  return display.startsWith("0x")
+}
+
+function formatRelativeTime(unixSec: number): string {
+  if (unixSec === 0) return ""
+  const diffSec = Math.max(0, Math.floor(Date.now() / 1000) - unixSec)
+  if (diffSec < 60) return `${diffSec}s ago`
+  const m = Math.floor(diffSec / 60)
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h ago`
+  const d = Math.floor(h / 24)
+  if (d < 30) return `${d}d ago`
+  const mo = Math.floor(d / 30)
+  if (mo < 12) return `${mo}mo ago`
+  return `${Math.floor(mo / 12)}y ago`
 }
 
 function formatRemaining(secondsLeft: number): string {
@@ -66,7 +91,7 @@ export function FoundationAuctionPanel({
   }, [])
   const phase = getPhase(auction, nowSec)
 
-  const { amount, bidder, endTime, fees } = auction
+  const { amount, bidderDisplay, endTime, fees, bidHistory } = auction
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
@@ -86,9 +111,9 @@ export function FoundationAuctionPanel({
             <p className="text-3xl font-semibold tracking-tight tabular-nums leading-none">
               {formatEther(amount)} <span className="text-base font-normal text-gray-500">ETH</span>
             </p>
-            {phase !== "no-bids" && (
-              <p className="text-xs text-gray-500 mt-2 font-mono">
-                by {truncateAddress(bidder)}
+            {phase !== "no-bids" && bidderDisplay && (
+              <p className="text-xs text-gray-500 mt-2">
+                by <span className={isAddress(bidderDisplay) ? "font-mono" : ""}>{bidderDisplay}</span>
               </p>
             )}
           </div>
@@ -115,7 +140,45 @@ export function FoundationAuctionPanel({
         )}
       </div>
 
+      {bidHistory.length > 0 && <BidHistory bids={bidHistory} />}
       {fees && <FeesBreakdown fees={fees} />}
+    </div>
+  )
+}
+
+function BidHistory({ bids }: { bids: BidHistoryEntry[] }) {
+  return (
+    <div className="px-5 py-4 border-t border-gray-100">
+      <p className="text-[11px] uppercase tracking-[0.08em] text-gray-400 mb-3">
+        Bid history
+      </p>
+      <ol className="space-y-2.5">
+        {bids.map((bid) => (
+          <li
+            key={`${bid.txHash}-${bid.bidder}`}
+            className="flex items-baseline justify-between text-xs"
+          >
+            <a
+              href={`https://etherscan.io/tx/${bid.txHash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-baseline gap-2 min-w-0 hover:opacity-70 transition-opacity"
+            >
+              <span
+                className={`truncate ${isAddress(bid.bidderDisplay) ? "font-mono" : "font-medium"} text-gray-700`}
+              >
+                {bid.bidderDisplay}
+              </span>
+              <span className="text-gray-400 shrink-0">
+                {formatRelativeTime(bid.blockTime)}
+              </span>
+            </a>
+            <span className="font-medium tabular-nums text-gray-900 shrink-0 ml-3">
+              {formatEther(bid.amount)} ETH
+            </span>
+          </li>
+        ))}
+      </ol>
     </div>
   )
 }

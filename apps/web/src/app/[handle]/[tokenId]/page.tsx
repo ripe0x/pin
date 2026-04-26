@@ -6,6 +6,7 @@ import { FoundationAuctionPanel } from "@/components/auction/FoundationAuctionPa
 import { getTokenPageData } from "@/lib/queries"
 import { getTokenOnChainData, resolveTokenMetadataDirect } from "@/lib/onchain-discovery"
 import { getFoundationAuction } from "@/lib/auctions"
+import { resolveDisplayNames } from "@/lib/artist-queries"
 import Link from "next/link"
 
 type Params = Promise<{ handle: string; tokenId: string }>
@@ -140,6 +141,20 @@ export default async function TokenPage({
   const { handle, tokenId } = await params
   const data = (await resolveTokenPage(handle, tokenId)) ?? (await getChainFallback(handle, tokenId))
   const auction = await getFoundationAuction(data.contract, tokenId).catch(() => null)
+
+  // Upgrade truncated 0x… handles to ENS where available.
+  const addressesForEns = [data.creator, data.owner].filter(Boolean) as string[]
+  if (addressesForEns.length > 0) {
+    const names = await resolveDisplayNames(addressesForEns).catch(
+      () => new Map<string, string>(),
+    )
+    if (data.creator) {
+      data.creatorHandle = names.get(data.creator.toLowerCase()) ?? data.creatorHandle
+    }
+    if (data.owner) {
+      data.ownerHandle = names.get(data.owner.toLowerCase()) ?? data.ownerHandle
+    }
+  }
 
   return (
     <div className="mx-auto max-w-[2000px]">
