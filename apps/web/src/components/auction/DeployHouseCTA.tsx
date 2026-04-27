@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect } from "react"
 import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { sovereignAuctionHouseFactoryAbi } from "@pin/abi"
@@ -20,9 +20,8 @@ export function DeployHouseCTA({ artistAddress }: { artistAddress: string }) {
     !!connected && connected.toLowerCase() === artistAddress.toLowerCase()
 
   const { factoryAddress, houseAddress, refetch } = useArtistHouse(artistAddress)
-  const [acknowledged, setAcknowledged] = useState(false)
 
-  const { writeContract, data: txHash, isPending, error, reset } = useWriteContract()
+  const { writeContract, data: txHash, isPending, error } = useWriteContract()
   const { isLoading: isMining, isSuccess } = useWaitForTransactionReceipt({
     hash: txHash,
   })
@@ -37,7 +36,10 @@ export function DeployHouseCTA({ artistAddress }: { artistAddress: string }) {
   if (!factoryAddress) return null
 
   // Show success state right after deploy so the user sees what happened.
-  if (isSuccess && houseAddress && txHash && !acknowledged) {
+  // Self-dismisses on the next page load: isSuccess + txHash are reset, and
+  // the houseAddress early-out below returns null when the wallet already
+  // has a house.
+  if (isSuccess && houseAddress && txHash) {
     return (
       <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-5 space-y-3">
         <div>
@@ -53,15 +55,6 @@ export function DeployHouseCTA({ artistAddress }: { artistAddress: string }) {
           <AddressLink address={houseAddress} label="Contract:" />
           <TxLink hash={txHash} label="Deploy tx:" />
         </div>
-        <button
-          onClick={() => {
-            setAcknowledged(true)
-            reset()
-          }}
-          className="text-xs font-medium text-emerald-900 hover:underline"
-        >
-          Continue →
-        </button>
       </div>
     )
   }
