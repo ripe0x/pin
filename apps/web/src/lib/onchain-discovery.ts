@@ -118,6 +118,27 @@ export async function discoverArtistTokens(
 }
 
 /**
+ * Discover only the tokens Foundation was pinning: shared FoundationNFT
+ * contract + per-artist collection contracts deployed via NFTCollectionFactory.
+ * Used by /preserve, where the goal is to take over pinning from Foundation.
+ * Manifold tokens are intentionally excluded — Foundation never pinned those.
+ */
+export async function discoverFoundationPinnedTokens(
+  artistAddress: string,
+): Promise<DiscoveredToken[]> {
+  const client = getClient()
+  const artist = artistAddress.toLowerCase() as Address
+  const latestBlock = await client.getBlockNumber()
+
+  const [sharedTokens, collectionTokens] = await Promise.all([
+    discoverSharedContractTokens(client, artist, latestBlock),
+    discoverCollectionTokens(client, artist, latestBlock),
+  ])
+
+  return [...sharedTokens, ...collectionTokens]
+}
+
+/**
  * Cheap discovery: scan event logs across all three sources and return a
  * deduped, sort-stable list of `TokenRef`s. No `tokenURI`, no `ownerOf`,
  * no IPFS — those happen later in `enrichTokens` for the visible page.

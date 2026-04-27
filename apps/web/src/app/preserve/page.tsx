@@ -97,7 +97,7 @@ export default function PreservePage() {
     setDiscoverError("")
 
     try {
-      const res = await fetch(`/api/artist/${targetAddress}/tokens`, { cache: "no-store" })
+      const res = await fetch(`/api/artist/${targetAddress}/preserve-tokens`, { cache: "no-store" })
       if (!res.ok) throw new Error("Failed to discover tokens")
       const data = await res.json()
 
