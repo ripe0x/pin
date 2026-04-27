@@ -45,8 +45,8 @@ export function DeployHouseCTA({ artistAddress }: { artistAddress: string }) {
             Sovereign auction house deployed ✓
           </h3>
           <p className="text-sm text-emerald-800/80 mt-1">
-            Your contract is live and locked to your address. You can now run
-            ETH reserve auctions on any ERC721 you own.
+            Your contract is live. You can now run ETH reserve auctions on any
+            ERC721 you own.
           </p>
         </div>
         <div className="flex flex-col gap-1">
@@ -103,12 +103,11 @@ export function DeployHouseCTA({ artistAddress }: { artistAddress: string }) {
     <div className="rounded-lg border border-gray-200 bg-white p-5 space-y-4">
       <div>
         <h3 className="text-base font-semibold tracking-tight">
-          Deploy your own sovereign auction house
+          Sovereign auction house
         </h3>
         <p className="text-sm text-gray-500 mt-1">
-          One time deploy of your own auction contract. Locked to your address
-          forever. No admin, no upgrades, zero fee. Once live, run ETH reserve
-          auctions on any ERC721 you hold.
+          Deploy your own auction contract and list ETH reserve auctions on
+          any ERC721 you hold. Immutable and zero platform fees.
         </p>
       </div>
       <button
