@@ -36,6 +36,17 @@ export interface PinningProvider {
   /** Check if a CID is already pinned by this provider. */
   checkPin(cid: string): Promise<PinStatus>
 
+  /**
+   * Bulk-check pin status for many CIDs at once. Returns a map keyed by
+   * the *input* CID (preserving any /path suffix). CIDs not in the map
+   * should be treated as "unknown" by callers.
+   *
+   * Implementations must retry on 429 and throw on terminal failure so
+   * the UI can surface a real error instead of silently misreporting
+   * everything as unpinned.
+   */
+  checkManyPins?(cids: string[]): Promise<Map<string, PinStatus>>
+
   /** Validate that the API key is correct. */
   validateKey(): Promise<boolean>
 }

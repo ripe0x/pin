@@ -52,29 +52,55 @@ export default function PreservePage() {
     pinner: PinningProvider,
   ) {
     const updated = [...tokenStates]
-    let pinned = 0
     let total = 0
-
+    const cids: string[] = []
     for (const ts of updated) {
       if (ts.token.metadataCid) {
         total++
-        try {
-          const status = await pinner.checkPin(ts.token.metadataCid)
-          ts.metadataStatus = status === "pinned" || status === "queued" ? "pinned" : "unknown"
-          if (ts.metadataStatus === "pinned") pinned++
-        } catch {
-          // Leave as unknown
-        }
+        cids.push(ts.token.metadataCid)
       }
       if (ts.token.mediaCid) {
         total++
-        try {
-          const status = await pinner.checkPin(ts.token.mediaCid)
-          ts.mediaStatus = status === "pinned" || status === "queued" ? "pinned" : "unknown"
-          if (ts.mediaStatus === "pinned") pinned++
-        } catch {
-          // Leave as unknown
+        cids.push(ts.token.mediaCid)
+      }
+    }
+
+    let statuses = new Map<string, PinStatus>()
+    try {
+      if (pinner.checkManyPins) {
+        statuses = await pinner.checkManyPins(cids)
+      } else {
+        for (const cid of cids) {
+          try {
+            statuses.set(cid, await pinner.checkPin(cid))
+          } catch {
+            // Leave absent → "unknown"
+          }
         }
+      }
+    } catch (err) {
+      // Surface the failure instead of silently reporting "0 pinned"
+      // when a transient rate-limit or auth blip wipes out the result.
+      const lastError =
+        err instanceof Error ? err.message : "Failed to check pin status"
+      setTokens([...updated])
+      setStats((s) => ({ ...s, total, pinned: 0, lastError }))
+      return { total, pinned: 0 }
+    }
+
+    let pinned = 0
+    for (const ts of updated) {
+      if (ts.token.metadataCid) {
+        const s = statuses.get(ts.token.metadataCid)
+        ts.metadataStatus =
+          s === "pinned" || s === "queued" ? "pinned" : "unknown"
+        if (ts.metadataStatus === "pinned") pinned++
+      }
+      if (ts.token.mediaCid) {
+        const s = statuses.get(ts.token.mediaCid)
+        ts.mediaStatus =
+          s === "pinned" || s === "queued" ? "pinned" : "unknown"
+        if (ts.mediaStatus === "pinned") pinned++
       }
     }
 

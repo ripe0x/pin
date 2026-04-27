@@ -82,27 +82,101 @@ export class PinataProvider implements PinningProvider {
 
   async checkPin(cid: string): Promise<PinStatus> {
     const hash = baseCid(cid)
-    const res = await fetch(
-      `${PINATA_API}/data/pinList?status=pinned&hashContains=${hash}&pageLimit=1`,
-      { headers: this.headers() },
-    )
+    try {
+      const data = await this.fetchJsonWithRetry(
+        `${PINATA_API}/data/pinList?status=pinned&hashContains=${hash}&pageLimit=1`,
+      )
+      if (data.rows?.length > 0) return "pinned"
 
-    if (!res.ok) return "unknown"
-
-    const data = await res.json()
-    if (data.rows?.length > 0) return "pinned"
-
-    // Check if queued
-    const queueRes = await fetch(
-      `${PINATA_API}/data/pinList?status=searching&hashContains=${hash}&pageLimit=1`,
-      { headers: this.headers() },
-    )
-    if (queueRes.ok) {
-      const queueData = await queueRes.json()
+      const queueData = await this.fetchJsonWithRetry(
+        `${PINATA_API}/data/pinList?status=searching&hashContains=${hash}&pageLimit=1`,
+      )
       if (queueData.rows?.length > 0) return "queued"
+
+      return "unknown"
+    } catch {
+      return "unknown"
+    }
+  }
+
+  /**
+   * Bulk pin-status lookup. Pinata's `pinList` doesn't accept a
+   * CID-IN filter, so we walk the account's pin set in 1000-row pages
+   * (once for `pinned`, once for `searching`) and look up locally.
+   * Cheaper than 2 × N hashContains queries for any artist with a few
+   * hundred works.
+   */
+  async checkManyPins(cids: string[]): Promise<Map<string, PinStatus>> {
+    const result = new Map<string, PinStatus>()
+    if (cids.length === 0) return result
+
+    const inputsByHash = new Map<string, string[]>()
+    for (const cid of cids) {
+      const h = baseCid(cid)
+      const list = inputsByHash.get(h)
+      if (list) list.push(cid)
+      else inputsByHash.set(h, [cid])
     }
 
-    return "unknown"
+    for (const status of ["pinned", "searching"] as const) {
+      let pageOffset = 0
+      while (true) {
+        const url =
+          `${PINATA_API}/data/pinList?status=${status}` +
+          `&pageLimit=1000&pageOffset=${pageOffset}`
+        const data = await this.fetchJsonWithRetry(url)
+        const rows = (data.rows ?? []) as Array<{ ipfs_pin_hash?: string }>
+        for (const row of rows) {
+          const hash = row.ipfs_pin_hash
+          if (!hash) continue
+          const inputs = inputsByHash.get(hash)
+          if (!inputs) continue
+          const mapped: PinStatus = status === "pinned" ? "pinned" : "queued"
+          for (const original of inputs) {
+            // Don't downgrade an already-found "pinned" with a later "queued" pass.
+            if (result.get(original) !== "pinned") result.set(original, mapped)
+          }
+        }
+        if (rows.length < 1000) break
+        pageOffset += rows.length
+      }
+    }
+
+    return result
+  }
+
+  /**
+   * GET helper that retries 429s with backoff and throws actionable
+   * errors for auth / quota issues. Mirrors `pinByCid`'s retry policy.
+   */
+  private async fetchJsonWithRetry(url: string): Promise<any> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const res = await fetch(url, { headers: this.headers() })
+      if (res.ok) return res.json()
+
+      if (res.status === 429 && attempt < 2) {
+        const wait = (attempt + 1) * 2000
+        await new Promise((r) => setTimeout(r, wait))
+        continue
+      }
+
+      if (res.status === 401 || res.status === 403) {
+        throw new Error(
+          "Pinata API key is invalid or missing 'pinList' permission. Regenerate your key with pinList enabled under Legacy Endpoints.",
+        )
+      }
+      if (res.status === 429) {
+        throw new Error(
+          "Pinata rate limit exceeded. Wait a minute and try again, or upgrade to a paid plan.",
+        )
+      }
+
+      const text = await res.text().catch(() => "")
+      throw new Error(
+        `Pinata request failed (${res.status}): ${text.slice(0, 200)}`,
+      )
+    }
+    throw new Error("Pinata request failed after retries")
   }
 
   async validateKey(): Promise<boolean> {
