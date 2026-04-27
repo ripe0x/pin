@@ -6,6 +6,7 @@ import {PndAuctionHouse} from "../src/PndAuctionHouse.sol";
 import {PndAuctionHouseFactory} from "../src/PndAuctionHouseFactory.sol";
 import {IPndAuctionHouse} from "../src/IPndAuctionHouse.sol";
 import {MockERC721} from "./MockERC721.sol";
+import {NoopERC721} from "./NoopERC721.sol";
 import {RevertingReceiver} from "./RevertingReceiver.sol";
 import {NonReceivingBidder} from "./NonReceivingBidder.sol";
 
@@ -858,4 +859,131 @@ contract PndAuctionHouseTest is Test {
         vm.prank(bob);
         factory.createAuctionHouse();
     }
+
+    // ─── Ownership lockdown ──────────────────────────────────────────────
+
+    function test_Lock_TransferOwnershipReverts() public {
+        vm.prank(artist);
+        vm.expectRevert(PndAuctionHouse.OwnershipLocked.selector);
+        house.transferOwnership(alice);
+    }
+
+    function test_Lock_RenounceOwnershipReverts() public {
+        vm.prank(artist);
+        vm.expectRevert(PndAuctionHouse.OwnershipLocked.selector);
+        house.renounceOwnership();
+    }
+
+    // ─── Direct ERC721 transfer rejection ──────────────────────────────
+
+    function test_DirectERC721SafeTransfer_Reverts() public {
+        nft.mint(alice, 777);
+        vm.prank(alice);
+        vm.expectRevert(); // ERC721InvalidReceiver
+        nft.safeTransferFrom(alice, address(house), 777);
+    }
+
+    // ─── Duplicate-listing prevention (one auction per token id) ─────────
+
+    function test_DuplicateAuctionForERC721_Reverts() public {
+        _createAuction();
+        // The reverse-lookup check fires first now (before the ownership
+        // gate), so the second create reverts explicitly with the dedicated
+        // error rather than tripping on the (also-true) "not owner anymore"
+        // condition.
+        vm.expectRevert(PndAuctionHouse.AuctionAlreadyExistsForToken.selector);
+        vm.prank(artist);
+        house.createAuction(
+            TOKEN_ID,
+            address(nft),
+            DURATION,
+            RESERVE,
+            payable(address(0)),
+            0
+        );
+    }
+
+
+    function test_AfterCancel_CanRelist_ERC721() public {
+        uint256 id = _createAuction();
+        vm.prank(artist);
+        house.cancelAuction(id);
+
+        // Now relist.
+        vm.prank(artist);
+        uint256 id2 = house.createAuction(
+            TOKEN_ID,
+            address(nft),
+            DURATION,
+            RESERVE,
+            payable(address(0)),
+            0
+        );
+        assertEq(id2, id + 1);
+        assertTrue(house.hasAuctionFor(address(nft), TOKEN_ID));
+    }
+
+    function test_AfterSettle_CanRelistDifferentToken() public {
+        // After a settle the lookup is cleared, so another holder of the
+        // same token contract + tokenId could relist. Same token id, fresh
+        // mint, fresh seller (still artist for our flow).
+        uint256 id = _createAuction();
+        vm.prank(alice);
+        house.createBid{value: RESERVE}(id);
+        vm.warp(block.timestamp + DURATION + 1);
+        house.endAuction(id);
+
+        // Alice now owns TOKEN_ID, but artist owns the house. Test the
+        // simpler case: relist a freshly-minted token.
+        nft.mint(artist, 1234);
+        vm.prank(artist);
+        uint256 id2 = house.createAuction(
+            1234,
+            address(nft),
+            DURATION,
+            RESERVE,
+            payable(address(0)),
+            0
+        );
+        assertTrue(house.hasAuctionFor(address(nft), 1234));
+        assertFalse(house.hasAuctionFor(address(nft), TOKEN_ID));
+        assertEq(id2, id + 1);
+    }
+
+    // ─── Refund withdrawal explicit cases ────────────────────────────────
+
+    function test_Refund_DirectSendSucceeds_NoPendingIncrease() public {
+        // alice is an EOA — direct send works, pendingRefunds stays at 0.
+        uint256 id = _createAuction();
+        vm.prank(alice);
+        house.createBid{value: RESERVE}(id);
+
+        uint256 minNext = RESERVE + (RESERVE * 500) / 10000;
+        vm.prank(bob);
+        house.createBid{value: minNext}(id);
+
+        assertEq(house.pendingRefunds(alice), 0);
+    }
+
+    function test_WithdrawRefund_RevertsWhenNoBalance() public {
+        vm.expectRevert("No refund available");
+        vm.prank(alice);
+        house.withdrawRefund();
+    }
+
+    function test_PostTransferEscrowCheck_ERC721Liar() public {
+        NoopERC721 liar = new NoopERC721();
+        liar.setOwner(artist); // ownership check passes via isApprovedForAll
+        vm.prank(artist);
+        vm.expectRevert(PndAuctionHouse.EscrowFailed.selector);
+        house.createAuction(
+            1,
+            address(liar),
+            DURATION,
+            RESERVE,
+            payable(address(0)),
+            0
+        );
+    }
+
 }

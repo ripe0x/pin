@@ -65,6 +65,9 @@ export function Navbar() {
             <ConnectButton
               showBalance={false}
               accountStatus="avatar"
+              chainStatus={
+                process.env.NODE_ENV === "development" ? "icon" : "none"
+              }
             />
           </div>
         </div>

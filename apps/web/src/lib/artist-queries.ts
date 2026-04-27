@@ -7,11 +7,17 @@
 import { createPublicClient, http, type Address } from "viem"
 import { mainnet } from "viem/chains"
 import { normalize } from "viem/ens"
+import { nftMarketAbi } from "@pin/abi"
+import { NFT_MARKET, MAINNET_CHAIN_ID } from "@pin/addresses"
 import {
   discoverArtistTokens,
   resolveTokenMetadataDirect,
   type DiscoveredToken,
 } from "./onchain-discovery"
+import {
+  getCachedTokenRefs,
+  getCachedEnrichedPage,
+} from "./artist-cache"
 import { extractCid, ipfsToHttp } from "@pin/shared"
 
 const client = createPublicClient({
@@ -197,4 +203,117 @@ export function tokenToDisplayData(token: DiscoveredToken) {
     metadataCid: token.metadataCid,
     mediaCid: token.mediaCid,
   }
+}
+
+// ── Paginated artist gallery ────────────────────────────────────────────────
+
+const MARKET_ADDRESS = NFT_MARKET[MAINNET_CHAIN_ID]
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
+
+export type GalleryItem = ReturnType<typeof tokenToDisplayData> & {
+  /**
+   * Active buy-now listing on `NFTMarket`, or null. Price serialized as a
+   * decimal string because JSON can't carry bigint.
+   */
+  buyPrice: { seller: string; price: string } | null
+}
+
+export type GalleryPage = {
+  tokens: GalleryItem[]
+  total: number
+  page: number
+  pageSize: number
+  hasMore: boolean
+}
+
+/**
+ * Fetch one page of an artist's gallery: refs (cached), enriched metadata
+ * (cached per page), and buy-prices (one multicall per request). Used by
+ * both SSR (initial paint) and the paginated API route.
+ */
+export async function getArtistGalleryPage(
+  artistAddress: string,
+  page: number,
+  pageSize: number,
+): Promise<GalleryPage> {
+  const refs = await getCachedTokenRefs(artistAddress)
+  const total = refs.length
+  const start = page * pageSize
+  const slice = refs.slice(start, start + pageSize)
+
+  if (slice.length === 0) {
+    return { tokens: [], total, page, pageSize, hasMore: false }
+  }
+
+  const [enriched, prices] = await Promise.all([
+    getCachedEnrichedPage(slice),
+    fetchBuyPrices(slice),
+  ])
+
+  const tokens: GalleryItem[] = enriched.map((token) => {
+    const display = tokenToDisplayData(token)
+    const key = `${token.contract.toLowerCase()}:${token.tokenId}`
+    return { ...display, buyPrice: prices.get(key) ?? null }
+  })
+
+  return {
+    tokens,
+    total,
+    page,
+    pageSize,
+    hasMore: start + slice.length < total,
+  }
+}
+
+/**
+ * Batched on-chain read of `NFTMarket.getBuyPrice` for a page of tokens.
+ * Returns a map keyed by `${contract.toLowerCase()}:${tokenId}` so callers
+ * can look up by the same key regardless of result ordering.
+ */
+async function fetchBuyPrices(
+  refs: readonly { contract: Address; tokenId: string }[],
+): Promise<Map<string, { seller: string; price: string } | null>> {
+  const out = new Map<string, { seller: string; price: string } | null>()
+
+  const calls = refs.map((r) => ({
+    address: MARKET_ADDRESS,
+    abi: nftMarketAbi,
+    functionName: "getBuyPrice" as const,
+    args: [r.contract, BigInt(r.tokenId)] as const,
+  }))
+
+  type MulticallEntry =
+    | { status: "success"; result: unknown }
+    | { status: "failure"; error: unknown }
+
+  let results: MulticallEntry[]
+  try {
+    results = (await client.multicall({
+      contracts: calls,
+      allowFailure: true,
+    })) as MulticallEntry[]
+  } catch {
+    // If the whole multicall failed, return all-null; the gallery still renders.
+    for (const r of refs) {
+      out.set(`${r.contract.toLowerCase()}:${r.tokenId}`, null)
+    }
+    return out
+  }
+
+  refs.forEach((r, i) => {
+    const key = `${r.contract.toLowerCase()}:${r.tokenId}`
+    const result = results[i]
+    if (result.status !== "success") {
+      out.set(key, null)
+      return
+    }
+    const { seller, price } = result.result as { seller: string; price: bigint }
+    if (seller === ZERO_ADDRESS || price === 0n) {
+      out.set(key, null)
+      return
+    }
+    out.set(key, { seller, price: price.toString() })
+  })
+
+  return out
 }

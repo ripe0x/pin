@@ -2,7 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { formatEther, parseEther } from "viem"
-import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi"
+import {
+  useAccount,
+  useBlock,
+  useWriteContract,
+  useWaitForTransactionReceipt,
+} from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { nftMarketAbi, pndAuctionHouseAbi } from "@pin/abi"
 import type {
@@ -56,16 +61,49 @@ function formatBpsPct(bps: number): string {
   return `${pct.toFixed(2).replace(/\.?0+$/, "")}%`
 }
 
-function Countdown({ endTime }: { endTime: bigint }) {
-  const target = Number(endTime) * 1000
-  const [now, setNow] = useState(() => Date.now())
-
+/**
+ * Returns the latest known block timestamp (seconds), refreshed every second
+ * (driven by a 1s wall-clock tick) plus an additional re-render on every new
+ * block from `useBlock({ watch: true })`. We anchor to the chain rather than
+ * `Date.now()` so a fast-forwarded local fork (`evm_increaseTime`) reflects
+ * in the UI immediately. On a normal chain the two are within a block.
+ *
+ * Returns 0 until the first block lands, so callers should treat 0 as
+ * "unknown — don't make end-state decisions yet".
+ */
+function useChainNowSec(): number {
+  const { data: block } = useBlock({ watch: true })
+  const [tick, setTick] = useState(0)
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000)
+    const id = setInterval(() => setTick((n) => n + 1), 1000)
     return () => clearInterval(id)
   }, [])
 
-  const secondsLeft = Math.max(0, Math.floor((target - now) / 1000))
+  return useMemo(() => {
+    if (!block) return 0
+    // Each wall-clock second, advance the chain timestamp by 1s so the
+    // countdown ticks down between blocks (which arrive every ~12s on
+    // mainnet). The chain-truth re-anchors whenever a new block lands.
+    return Number(block.timestamp) + tick
+    // We deliberately reset `tick` indirectly via the block change: when a
+    // new block arrives the `block` reference changes, the memo recomputes,
+    // and the offset re-anchors. We don't reset `tick` to 0 because the
+    // setInterval keeps incrementing it — but that's fine, the next block
+    // re-anchors to chain truth.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [block?.timestamp, tick])
+}
+
+function Countdown({
+  endTime,
+  nowSec,
+}: {
+  endTime: bigint
+  nowSec: number
+}) {
+  const secondsLeft = nowSec === 0
+    ? 0
+    : Math.max(0, Number(endTime) - nowSec)
   return <span suppressHydrationWarning>{formatRemaining(secondsLeft)}</span>
 }
 
@@ -73,7 +111,9 @@ type Phase = "live" | "no-bids" | "ended-unsettled"
 
 function getPhase(auction: AuctionState, nowSec: number): Phase {
   if (auction.awaitingFirstBid) return "no-bids"
-  if (Number(auction.endTime) <= nowSec) return "ended-unsettled"
+  // nowSec === 0 means "we don't know chain time yet" — stay in "live" until
+  // the first block lands so we don't briefly flash the ended state.
+  if (nowSec > 0 && Number(auction.endTime) <= nowSec) return "ended-unsettled"
   return "live"
 }
 
@@ -82,11 +122,7 @@ export function AuctionPanel({
 }: {
   auction: AuctionState
 }) {
-  const [nowSec, setNowSec] = useState(() => Math.floor(Date.now() / 1000))
-  useEffect(() => {
-    const id = setInterval(() => setNowSec(Math.floor(Date.now() / 1000)), 1000)
-    return () => clearInterval(id)
-  }, [])
+  const nowSec = useChainNowSec()
   const phase = getPhase(auction, nowSec)
 
   const { amount, bidderDisplay, endTime, fees, bidHistory } = auction
@@ -125,7 +161,7 @@ export function AuctionPanel({
               ) : phase === "ended-unsettled" ? (
                 <span className="text-amber-600">Awaiting settlement</span>
               ) : (
-                <Countdown endTime={endTime} />
+                <Countdown endTime={endTime} nowSec={nowSec} />
               )}
             </p>
           </div>

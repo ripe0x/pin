@@ -416,7 +416,7 @@ export const pndAuctionHouseAbi = [
     "name": "renounceOwnership",
     "inputs": [],
     "outputs": [],
-    "stateMutability": "nonpayable"
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -459,13 +459,13 @@ export const pndAuctionHouseAbi = [
     "name": "transferOwnership",
     "inputs": [
       {
-        "name": "newOwner",
+        "name": "",
         "type": "address",
         "internalType": "address"
       }
     ],
     "outputs": [],
-    "stateMutability": "nonpayable"
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -757,6 +757,11 @@ export const pndAuctionHouseAbi = [
   },
   {
     "type": "error",
+    "name": "AuctionAlreadyExistsForToken",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "AuctionAlreadyStarted",
     "inputs": []
   },
@@ -802,6 +807,11 @@ export const pndAuctionHouseAbi = [
   },
   {
     "type": "error",
+    "name": "EscrowFailed",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidInitialization",
     "inputs": []
   },
@@ -831,6 +841,11 @@ export const pndAuctionHouseAbi = [
         "internalType": "address"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "OwnershipLocked",
+    "inputs": []
   },
   {
     "type": "error",

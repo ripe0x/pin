@@ -1,27 +1,22 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
-import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from "wagmi"
+import {
+  useAccount,
+  useWaitForTransactionReceipt,
+  useWriteContract,
+} from "wagmi"
 import { formatEther } from "viem"
+import { useInfiniteQuery } from "@tanstack/react-query"
 import { nftMarketAbi } from "@pin/abi"
 import { NFT_MARKET, MAINNET_CHAIN_ID } from "@pin/addresses"
+import type { GalleryItem, GalleryPage } from "@/lib/artist-queries"
 import { createProvider, type PinStatus } from "@/lib/pinning"
 import { TokenPinStatus } from "@/components/preserve/TokenPinStatus"
 import { DeployHouseCTA } from "@/components/auction/DeployHouseCTA"
 
 const MARKET_ADDRESS = NFT_MARKET[MAINNET_CHAIN_ID]
-
-type GalleryItem = {
-  contract: string
-  tokenId: string
-  title: string
-  imageUrl: string
-  creator: string
-  metadataCid: string | null
-  mediaCid: string | null
-}
-
 const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
 
 function isVideoUrl(url: string): boolean {
@@ -30,17 +25,45 @@ function isVideoUrl(url: string): boolean {
 }
 
 export function ArtistGallery({
-  items,
   artistAddress,
+  initialPage,
 }: {
-  items: GalleryItem[]
   artistAddress: string
+  initialPage: GalleryPage
 }) {
   const { address: connectedAddress } = useAccount()
   const isOwner =
     !!connectedAddress &&
     connectedAddress.toLowerCase() === artistAddress.toLowerCase()
 
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery<GalleryPage>({
+    queryKey: ["artist-tokens", artistAddress.toLowerCase()],
+    queryFn: async ({ pageParam = 0 }) => {
+      const res = await fetch(
+        `/api/artist/${artistAddress}/tokens?page=${pageParam}&pageSize=${initialPage.pageSize}`,
+      )
+      if (!res.ok) throw new Error("Failed to load tokens")
+      return res.json()
+    },
+    initialPageParam: 0,
+    getNextPageParam: (last) => (last.hasMore ? last.page + 1 : undefined),
+    initialData: { pages: [initialPage], pageParams: [0] },
+    // Keep the SSR-hydrated first page warm; refetches happen on tab focus
+    // for non-initial pages but not for the seeded one.
+    staleTime: 60_000,
+  })
+
+  const items = useMemo<GalleryItem[]>(
+    () => data?.pages.flatMap((p) => p.tokens) ?? [],
+    [data],
+  )
+
+  // Pin-status check across all loaded items. Re-runs as more pages load.
   const [pinStatuses, setPinStatuses] = useState<Map<string, PinStatus>>(
     new Map(),
   )
@@ -54,14 +77,13 @@ export function ArtistGallery({
     setHasProvider(true)
     const provider = createProvider(providerType as any, apiKey)
 
-    // Collect unique CIDs to check
     const cids = new Set<string>()
     for (const item of items) {
       if (item.metadataCid) cids.add(item.metadataCid)
       if (item.mediaCid) cids.add(item.mediaCid)
     }
 
-    // Check pin status for each CID
+    let cancelled = false
     async function checkAll() {
       const statuses = new Map<string, PinStatus>()
       await Promise.all(
@@ -74,13 +96,34 @@ export function ArtistGallery({
           }
         }),
       )
-      setPinStatuses(statuses)
+      if (!cancelled) setPinStatuses(statuses)
     }
-
     checkAll()
+    return () => {
+      cancelled = true
+    }
   }, [items])
 
-  if (items.length === 0) {
+  // Infinite-scroll sentinel: trigger fetchNextPage when the bottom marker
+  // enters the viewport (with a 600px margin so the next page starts loading
+  // before the user actually hits the end).
+  const sentinelRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const node = sentinelRef.current
+    if (!node || !hasNextPage) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && !isFetchingNextPage) {
+          fetchNextPage()
+        }
+      },
+      { rootMargin: "600px 0px" },
+    )
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage])
+
+  if (initialPage.total === 0) {
     return (
       <div className="text-center py-16 text-gray-400">
         <p className="text-lg">No works found</p>
@@ -109,6 +152,14 @@ export function ArtistGallery({
           />
         ))}
       </div>
+      {hasNextPage && (
+        <div
+          ref={sentinelRef}
+          className="py-12 text-center text-sm text-gray-400"
+        >
+          {isFetchingNextPage ? "Loading more…" : ""}
+        </div>
+      )}
     </div>
   )
 }
@@ -117,8 +168,6 @@ function getItemPinStatus(
   item: GalleryItem,
   pinStatuses: Map<string, PinStatus>,
 ): PinStatus | null {
-  // Consider an item pinned if its media CID is pinned (primary)
-  // or its metadata CID is pinned (fallback)
   const mediaSt = item.mediaCid ? pinStatuses.get(item.mediaCid) : undefined
   const metaSt = item.metadataCid
     ? pinStatuses.get(item.metadataCid)
@@ -127,10 +176,9 @@ function getItemPinStatus(
   if (mediaSt === "pinned" || mediaSt === "queued") return "pinned"
   if (metaSt === "pinned" || metaSt === "queued") return "pinned"
 
-  // If we checked and neither is pinned
   if (mediaSt || metaSt) return "unknown"
 
-  return null // not checked yet
+  return null
 }
 
 function GalleryCard({
@@ -147,8 +195,6 @@ function GalleryCard({
   const href = `/${item.contract}/${item.tokenId}`
   const isVideo = isVideoUrl(item.imageUrl)
   const pinStatus = hasProvider ? getItemPinStatus(item, pinStatuses) : null
-  // Holds the media's natural ratio once the browser knows it; until then we
-  // keep the box square so the grid doesn't flicker into 0-height tiles.
   const [ratio, setRatio] = useState<number | null>(null)
 
   return (
@@ -194,10 +240,11 @@ function GalleryCard({
           {pinStatus && <TokenPinStatus status={pinStatus} />}
         </div>
       </Link>
-      {isOwner && (
+      {isOwner && item.buyPrice && (
         <BuyPriceSection
           nftContract={item.contract}
           tokenId={item.tokenId}
+          buyPrice={item.buyPrice}
         />
       )}
     </div>
@@ -207,17 +254,12 @@ function GalleryCard({
 function BuyPriceSection({
   nftContract,
   tokenId,
+  buyPrice,
 }: {
   nftContract: string
   tokenId: string
+  buyPrice: { seller: string; price: string }
 }) {
-  const { data: buyPrice } = useReadContract({
-    address: MARKET_ADDRESS,
-    abi: nftMarketAbi,
-    functionName: "getBuyPrice",
-    args: [nftContract as `0x${string}`, BigInt(tokenId)],
-  })
-
   const {
     writeContract,
     data: txHash,
@@ -229,13 +271,9 @@ function BuyPriceSection({
     hash: txHash,
   })
 
-  if (!buyPrice) return null
-
-  const { seller, price } = buyPrice as unknown as { seller: string; price: bigint }
-  const hasListing =
-    seller !== "0x0000000000000000000000000000000000000000" && price > 0n
-
-  if (!hasListing || isSuccess) return null
+  // Optimistic hide once the cancel tx confirms; a refetch of the page would
+  // also clear it, but the user closes the gap immediately.
+  if (isSuccess) return null
 
   function handleCancel() {
     writeContract({
@@ -247,12 +285,13 @@ function BuyPriceSection({
   }
 
   const isPending = isWritePending || isTxPending
+  const priceWei = BigInt(buyPrice.price)
 
   return (
     <div className="px-4 pb-4 space-y-2">
       <div className="flex items-center justify-between text-sm">
         <span className="text-gray-500">Listed for</span>
-        <span className="font-medium">{formatEther(price)} ETH</span>
+        <span className="font-medium">{formatEther(priceWei)} ETH</span>
       </div>
       <button
         onClick={handleCancel}

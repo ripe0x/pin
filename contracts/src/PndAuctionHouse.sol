@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity ^0.8.20;
 
-import {IERC721, IERC165} from "openzeppelin-contracts/contracts/token/ERC721/IERC721.sol";
+import {IERC721} from "openzeppelin-contracts/contracts/token/ERC721/IERC721.sol";
+import {IERC165} from "openzeppelin-contracts/contracts/utils/introspection/IERC165.sol";
 import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 import {Initializable} from "openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from "openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
@@ -12,21 +13,28 @@ import {IPndAuctionHouse} from "./IPndAuctionHouse.sol";
 /// @notice ETH-only reserve auctions for ERC721 tokens. Deployed once as the
 ///         implementation; per-artist EIP-1167 clones (minimal proxies) share
 ///         this logic but hold isolated storage.
-/// @dev No protocol-level admin or upgrade path. Protocol fee + recipient are
-///      written once at initialize and have no setters. The artist (owner())
-///      can still transfer ownership of their own house via transferOwnership
-///      from OwnableUpgradeable.
+/// @dev No protocol-level admin or upgrade path. Protocol fee + recipient
+///      are written once at initialize. Artist ownership is also locked at
+///      deploy: transferOwnership and renounceOwnership are overridden to
+///      revert, so the house cannot be reassigned away from the original
+///      artist (and the factory's artist→house map stays stable). To change
+///      protocol fee, recipient, or implementation logic, deploy a new
+///      factory.
 ///
-///      ReentrancyGuard uses ERC-7201 namespaced storage (a fixed slot computed
-///      from a unique label, not layout slot 0+offset), so the constructor's
-///      one-time write to that slot doesn't conflict with proxy storage. The
-///      dedicated upgradeable variant was removed in OZ 5.x in favor of this
-///      design — verified against openzeppelin-contracts 5.5.x.
+///      ReentrancyGuard uses ERC-7201 namespaced storage (a fixed slot
+///      computed from a unique label), so the constructor's one-time write
+///      to that slot doesn't conflict with proxy storage. The dedicated
+///      upgradeable variant (ReentrancyGuardUpgradeable) was removed in
+///      OZ 5.x in favor of this design and does not exist in our installed
+///      OZ 5.6.1 — the non-upgradeable guard is the correct choice here.
 ///
-///      Direct safeTransferFrom(_, house, tokenId, "") is rejected: this
-///      contract intentionally does NOT implement IERC721Receiver, so any NFT
-///      sent outside createAuction reverts at the source. This prevents NFTs
-///      from getting permanently stuck in the contract.
+///      ERC721 transfers IN: transferFrom only. The contract intentionally
+///      does NOT implement IERC721Receiver, so direct safeTransferFrom from
+///      outside reverts at the source.
+///
+///      Settlement uses plain transferFrom (closes the contract-bidder
+///      griefing path that affected Zora's original safeTransferFrom + try/
+///      catch design).
 ///
 ///      Direct ETH sends are rejected via receive(). Selfdestruct/coinbase
 ///      forced ETH is outside our control.
@@ -56,6 +64,9 @@ contract PndAuctionHouse is
     error BidBelowReserve();
     error BidBelowMinimum();
     error BidMustBePositive();
+    error AuctionAlreadyExistsForToken();
+    error OwnershipLocked();
+    error EscrowFailed();
 
     /// @notice Per-auction state.
     mapping(uint256 => Auction) public auctions;
@@ -70,19 +81,13 @@ contract PndAuctionHouse is
     ///         at any time via withdrawRefund().
     mapping(address => uint256) public pendingRefunds;
 
-    /// @notice Protocol fee in basis points, set once at initialize. Immutable
-    ///         after that — no setter exists.
+    /// @notice Protocol fee in basis points, set once at initialize.
     uint16 public protocolFeeBps;
 
     /// @notice Recipient for the protocol fee, set once at initialize.
     address payable public feeRecipient;
 
     uint256 private _nextAuctionId;
-
-    /// @dev Reserved storage for future upgrades. Unused today (no upgrade
-    ///      path), kept so a future migration to an upgradeable variant could
-    ///      append fields without storage drift.
-    uint256[44] private __gap;
 
     modifier auctionExists(uint256 auctionId) {
         if (!_exists(auctionId)) revert AuctionDoesNotExist();
@@ -95,14 +100,11 @@ contract PndAuctionHouse is
         _disableInitializers();
     }
 
-    /// @notice Initializer for each per-artist clone. Sets the artist as the
-    ///         owner, locks the protocol fee + recipient, and disables further
-    ///         init via Initializable. There are no setters for any of these
-    ///         after this call.
+    /// @notice Initializer for each per-artist clone.
     /// @param artistOwner          The artist who owns this auction house.
+    ///                             Locked: cannot be transferred or renounced.
     /// @param feeRecipient_        Where the protocol fee is paid to.
-    /// @param protocolFeeBps_      Protocol fee in basis points. Capped at 500
-    ///                             (5%) at the impl level as a sanity check.
+    /// @param protocolFeeBps_      Protocol fee in basis points (capped at 5%).
     function initialize(
         address artistOwner,
         address payable feeRecipient_,
@@ -120,12 +122,23 @@ contract PndAuctionHouse is
         protocolFeeBps = protocolFeeBps_;
     }
 
-    // ─── Auction lifecycle ──────────────────────────────────────────────────
+    // ─── Ownership lockdown ─────────────────────────────────────────────────
 
-    /// @notice Create an auction in this house. Restricted to the house owner
-    ///         (the artist) so a stranger can't spam someone else's venue with
-    ///         random NFTs. The artist must own the NFT or be approved for it
-    ///         on the source ERC721 contract.
+    /// @notice Ownership is locked to the artist set at initialize. The house
+    ///         can't be reassigned or renounced, keeping the factory's
+    ///         artist-to-house mapping stable. (A compromised artist key can
+    ///         still operate auctions on this house — locking ownership only
+    ///         prevents the house itself from changing hands.)
+    function transferOwnership(address) public pure override {
+        revert OwnershipLocked();
+    }
+
+    function renounceOwnership() public pure override {
+        revert OwnershipLocked();
+    }
+
+    // ─── Auction creation ───────────────────────────────────────────────────
+
     function createAuction(
         uint256 tokenId,
         address tokenContract,
@@ -144,10 +157,6 @@ contract PndAuctionHouse is
         );
     }
 
-    /// @notice Create many auctions in one tx. All share the same duration,
-    ///         reserve, curator, and curator fee — call individually if pieces
-    ///         need different settings. Atomic: any failure (token not owned,
-    ///         not approved, etc.) reverts the whole batch.
     function bulkCreateAuctions(
         address tokenContract,
         uint256[] calldata tokenIds,
@@ -183,10 +192,11 @@ contract PndAuctionHouse is
         );
         require(curatorFeeBps < 10000, "curator fee >= 100%");
         require(duration > 0, "duration zero");
-        // A non-zero curator fee with no curator is meaningless and would
-        // produce a misleading event payload. Reject the inconsistent input.
         if (curator == address(0)) {
             require(curatorFeeBps == 0, "curator fee without curator");
+        }
+        if (_auctionIdByToken[tokenContract][tokenId] != 0) {
+            revert AuctionAlreadyExistsForToken();
         }
 
         address tokenOwner = IERC721(tokenContract).ownerOf(tokenId);
@@ -214,7 +224,14 @@ contract PndAuctionHouse is
         });
 
         _auctionIdByToken[tokenContract][tokenId] = auctionId + 1;
+
         IERC721(tokenContract).transferFrom(tokenOwner, address(this), tokenId);
+        // Belt-and-suspenders escrow check: a malicious ERC721 that claims
+        // to transfer but doesn't would otherwise leave us with a registered
+        // auction and no NFT.
+        if (IERC721(tokenContract).ownerOf(tokenId) != address(this)) {
+            revert EscrowFailed();
+        }
 
         emit AuctionCreated(
             auctionId,
@@ -233,6 +250,8 @@ contract PndAuctionHouse is
 
         return auctionId;
     }
+
+    // ─── Auction lifecycle ──────────────────────────────────────────────────
 
     function setAuctionApproval(uint256 auctionId, bool approved)
         external
@@ -271,11 +290,7 @@ contract PndAuctionHouse is
         address payable lastBidder = a.bidder;
         uint256 amount = msg.value;
 
-        // Reject zero-value bids explicitly. Otherwise reserve = 0 + amount = 0
-        // would slip past the reserve and increment checks below and start an
-        // auction "for free", which we do not consider a feature.
         if (amount == 0) revert BidMustBePositive();
-
         if (!a.approved) revert AuctionNotApproved();
         if (
             a.firstBidTime != 0 &&
@@ -290,9 +305,6 @@ contract PndAuctionHouse is
         if (firstBid) {
             a.firstBidTime = block.timestamp;
         } else if (lastBidder != address(0)) {
-            // Refund the previous bidder. If the direct send fails (contract
-            // wallets that revert on receive), credit a withdrawable balance
-            // instead so the auction never gets bricked.
             _sendOrCredit(lastBidder, a.amount);
         }
 
@@ -325,11 +337,8 @@ contract PndAuctionHouse is
         if (a.firstBidTime == 0) revert AuctionHasNoBids();
         if (block.timestamp < a.firstBidTime + a.duration) revert AuctionNotEnded();
 
-        // Plain transferFrom (not safeTransferFrom): a contract bidder that
-        // can't receive ERC721s is the bidder's own problem, not a free
-        // auction-griefing vector. The bidder locked capital to win — if they
-        // can't take delivery, they've burned ETH for nothing, but the auction
-        // does still settle on chain (NFT transfers, fees pay out).
+        // Plain transferFrom: a contract bidder that can't accept ERC721s
+        // is the bidder's own problem, not a free auction-griefing vector.
         IERC721(a.tokenContract).transferFrom(address(this), a.bidder, a.tokenId);
 
         // Compute payout: protocol fee → curator fee → seller.
@@ -381,10 +390,6 @@ contract PndAuctionHouse is
         _cancelAuction(auctionId);
     }
 
-    /// @notice Cancel many auctions in one tx. Restricted to the house owner
-    ///         (the artist) so a stranger can't grief active listings. Reverts
-    ///         the whole batch if any auctionId is invalid or has bids — atomic
-    ///         so the caller knows exactly which auctions still exist after.
     function bulkCancelAuctions(uint256[] calldata auctionIds)
         external
         override
@@ -413,10 +418,8 @@ contract PndAuctionHouse is
     // ─── Views ──────────────────────────────────────────────────────────────
 
     /// @notice Returns whether an active auction exists for a token, and its
-    ///         auctionId if so. The tuple shape removes the ambiguity that the
-    ///         old single-uint return had — auctionId 0 is a valid id, so a
-    ///         caller couldn't tell "no auction" from "auction 0" without an
-    ///         extra check. Use this getter exclusively.
+    ///         auctionId. Tuple shape disambiguates "no auction" from
+    ///         "auction id 0" — both are otherwise indistinguishable.
     function getAuctionFor(address tokenContract, uint256 tokenId)
         external
         view
@@ -427,7 +430,6 @@ contract PndAuctionHouse is
         return (true, stored - 1);
     }
 
-    /// @notice True iff there's an active auction for (tokenContract, tokenId).
     function hasAuctionFor(address tokenContract, uint256 tokenId)
         external
         view
@@ -449,11 +451,10 @@ contract PndAuctionHouse is
 
     // ─── Internal ───────────────────────────────────────────────────────────
 
-    /// @dev Push ETH to `to` if possible; if the recipient rejects (contract
-    ///      wallets, reverting fallbacks), credit a withdrawable balance
-    ///      instead. Called for bid refunds, protocol fees, curator fees, and
-    ///      seller payouts so a single failing recipient never bricks the
-    ///      auction's settlement.
+    /// @dev Push ETH to `to` if possible; if the recipient rejects, credit
+    ///      a withdrawable balance instead. Used for bid refunds, protocol
+    ///      fees, curator fees, and seller payouts so a single failing
+    ///      recipient never bricks the auction's settlement.
     function _sendOrCredit(address to, uint256 amount) internal {
         if (amount == 0) return;
         (bool sent, ) = to.call{value: amount, gas: 30000}("");
@@ -483,9 +484,8 @@ contract PndAuctionHouse is
         return auctions[auctionId].tokenOwner != address(0);
     }
 
-    /// @notice Reject direct ETH sends so accidental transfers don't get
-    ///         stuck. Selfdestruct/coinbase forced ETH bypasses this; that's
-    ///         outside our control.
+    /// @notice Reject direct ETH sends. Selfdestruct/coinbase forced ETH
+    ///         bypasses this; outside our control.
     receive() external payable {
         revert("Direct ETH not accepted");
     }

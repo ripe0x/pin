@@ -19,10 +19,16 @@ import {PndAuctionHouseFactory} from "../src/PndAuctionHouseFactory.sol";
 ///             --etherscan-api-key $ETHERSCAN_API_KEY
 ///
 ///         Required env vars (besides the RPC + signer):
-///           PND_FEE_RECIPIENT — treasury that receives protocol fees
+///           PND_FEE_RECIPIENT — treasury that receives protocol fees. Use
+///                                0x0 only when PND_PROTOCOL_FEE_BPS is 0 —
+///                                the constructor enforces that pairing.
 ///         Optional:
 ///           PND_PROTOCOL_FEE_BPS — protocol fee bps. Default 0. Capped at 500
 ///                                  (5%). Cannot be changed after deploy.
+///
+///         Reminder: if any contract changed since the last ABI emit, run
+///           node scripts/emit-pnd-abi.mjs
+///         after deploy so the frontend picks up the new ABI.
 contract DeployScript is Script {
     function run() external {
         address payable feeRecipient = payable(vm.envAddress("PND_FEE_RECIPIENT"));
@@ -43,10 +49,35 @@ contract DeployScript is Script {
         );
         vm.stopBroadcast();
 
+        // Post-deploy assertions: catch any constructor-arg or wiring mistake
+        // before the deploy is considered "done." Any failure here aborts the
+        // run with a loud revert so we don't paste a bad factory address.
+        require(
+            factory.implementation() == address(impl),
+            "factory.implementation mismatch"
+        );
+        require(
+            factory.defaultFeeRecipient() == feeRecipient,
+            "factory.defaultFeeRecipient mismatch"
+        );
+        require(
+            factory.defaultProtocolFeeBps() == protocolFeeBps,
+            "factory.defaultProtocolFeeBps mismatch"
+        );
+        require(
+            address(impl).code.length > 0,
+            "impl has no code (deploy failed?)"
+        );
+        require(
+            address(factory).code.length > 0,
+            "factory has no code (deploy failed?)"
+        );
+
         console2.log("PndAuctionHouse implementation:", address(impl));
         console2.log("PndAuctionHouseFactory:        ", address(factory));
         console2.log("Protocol fee (bps, locked):    ", protocolFeeBps);
         console2.log("Fee recipient (locked):        ", feeRecipient);
+        console2.log("Post-deploy assertions:        OK");
         console2.log("");
         console2.log("Add to packages/addresses/src/index.ts:");
         console2.log("  PND_AUCTION_HOUSE_FACTORY[MAINNET_CHAIN_ID] =", address(factory));

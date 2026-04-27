@@ -13,3 +13,9 @@ remappings = [
 
 [rpc_endpoints]
 mainnet = "${MAINNET_RPC_URL}"
+
+# Etherscan v2 API (single multichain key). Lets `forge script ... --verify`
+# and ad-hoc `forge verify-contract` runs work without re-passing the API key
+# on every command. Still resolved from env so it never lives in the repo.
+[etherscan]
+mainnet = { key = "${ETHERSCAN_API_KEY}", chain = 1 }

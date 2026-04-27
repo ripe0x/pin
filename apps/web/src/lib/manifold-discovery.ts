@@ -26,7 +26,7 @@ import {
 } from "viem"
 import { mainnet } from "viem/chains"
 import { extractCid, ipfsToHttp } from "@pin/shared"
-import type { DiscoveredToken } from "./onchain-discovery"
+import type { DiscoveredToken, TokenRef } from "./onchain-discovery"
 
 // Marker every Manifold Creator Core (V1+) returns true for. From
 // CreatorCore.sol: `bytes4 private constant _CREATOR_CORE_V1 = 0x28f10a21`.
@@ -116,6 +116,78 @@ export async function discoverManifoldTokens(
     manifoldContracts.map((c) => enumerateTokensViaAlchemyNft(c, artist)),
   )
   return perContract.flat()
+}
+
+/**
+ * Refs-only enumeration. Still calls Alchemy NFT API to learn which token
+ * IDs exist on each Manifold contract (no cheaper alternative exists), but
+ * discards the bundled metadata so the result is small + cacheable. Metadata
+ * gets re-fetched lazily by `enrichTokens` for the visible page.
+ */
+export async function discoverManifoldTokenRefs(
+  artistAddress: string,
+): Promise<TokenRef[]> {
+  const apiKey = process.env.ETHERSCAN_API_KEY
+  if (!apiKey) return []
+
+  const artist = artistAddress.toLowerCase() as Address
+  const client = getClient()
+
+  const deployed = await listDeployedContracts(artist, apiKey)
+  if (deployed.length === 0) return []
+
+  const manifoldContracts = await filterManifoldCreatorCores(client, deployed)
+  if (manifoldContracts.length === 0) return []
+
+  const perContract = await Promise.all(
+    manifoldContracts.map((c) => enumerateRefsViaAlchemyNft(c, artist)),
+  )
+  return perContract.flat()
+}
+
+async function enumerateRefsViaAlchemyNft(
+  contract: ManifoldContract,
+  artist: Address,
+): Promise<TokenRef[]> {
+  const apiKey = process.env.ALCHEMY_API_KEY
+  if (!apiKey) return []
+
+  const refs: TokenRef[] = []
+  let pageKey: string | undefined
+
+  do {
+    const url = new URL(
+      `https://eth-mainnet.g.alchemy.com/nft/v3/${apiKey}/getNFTsForContract`,
+    )
+    url.searchParams.set("contractAddress", contract.address)
+    // No metadata needed for refs — saves a bit of payload size + Alchemy
+    // compute units per call.
+    url.searchParams.set("withMetadata", "false")
+    url.searchParams.set("limit", "100")
+    if (pageKey) url.searchParams.set("pageKey", pageKey)
+
+    let json: { nfts?: Array<{ tokenId: string }>; pageKey?: string }
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(15_000) })
+      if (!res.ok) break
+      json = (await res.json()) as typeof json
+    } catch {
+      break
+    }
+
+    for (const nft of json.nfts ?? []) {
+      refs.push({
+        contract: contract.address,
+        tokenId: nft.tokenId,
+        creator: artist,
+        collectionName: contract.name,
+      })
+    }
+
+    pageKey = json.pageKey
+  } while (pageKey)
+
+  return refs
 }
 
 // ── Etherscan: contracts deployed by this wallet ─────────────────────────────

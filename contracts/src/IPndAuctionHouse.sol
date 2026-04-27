@@ -6,9 +6,9 @@ pragma solidity ^0.8.20;
 ///         Zora's AuctionHouse (audited 2021), ported to Solidity 0.8 and
 ///         restructured for per-artist EIP-1167 minimal-proxy clones.
 /// @dev No protocol-level admin or upgrade path. Protocol fee + recipient are
-///      fixed at initialize. The artist (owner()) can transfer ownership of
-///      their own house. To change protocol fee or recipient, deploy a new
-///      factory.
+///      fixed at initialize. Artist ownership is locked at deploy
+///      (transferOwnership / renounceOwnership revert) so a compromised key
+///      can't drain auctions by reassigning the house.
 interface IPndAuctionHouse {
     struct Auction {
         uint256 tokenId;
@@ -35,10 +35,7 @@ interface IPndAuctionHouse {
         uint16 curatorFeeBps
     );
 
-    event AuctionApprovalUpdated(
-        uint256 indexed auctionId,
-        bool approved
-    );
+    event AuctionApprovalUpdated(uint256 indexed auctionId, bool approved);
 
     event AuctionReservePriceUpdated(
         uint256 indexed auctionId,

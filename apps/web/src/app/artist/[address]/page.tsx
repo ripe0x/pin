@@ -1,13 +1,16 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import {
-  getArtistPortfolio,
+  getArtistGalleryPage,
+  getArtistIdentity,
   resolveEnsAddress,
-  tokenToDisplayData,
 } from "@/lib/artist-queries"
+import { getCachedTokenRefs } from "@/lib/artist-cache"
 import { ArtistHeader } from "@/components/artist/ArtistHeader"
 import { ArtistGallery } from "@/components/artist/ArtistGallery"
 import { BulkDelistPanel } from "@/components/listings/BulkDelistPanel"
+
+const INITIAL_PAGE_SIZE = 24
 
 type Params = Promise<{ address: string }>
 
@@ -34,21 +37,26 @@ export async function generateMetadata({
     return { title: `Could not resolve "${decodeURIComponent(raw)}"` }
   }
 
-  const portfolio = await getArtistPortfolio(address)
-  const { identity } = portfolio
+  // Cheap path: refs only (no enrichment) — gives us the work count without
+  // paying for thousands of IPFS fetches in the metadata route.
+  const [identity, refs] = await Promise.all([
+    getArtistIdentity(address),
+    getCachedTokenRefs(address),
+  ])
+  const totalWorks = refs.length
 
   return {
     title: identity.displayName,
-    description: `${portfolio.totalWorks} works on Foundation by ${identity.displayName}`,
+    description: `${totalWorks} works on Foundation by ${identity.displayName}`,
     openGraph: {
       title: `${identity.displayName} — Foundation Artist`,
-      description: `${portfolio.totalWorks} works on Foundation`,
+      description: `${totalWorks} works on Foundation`,
       type: "profile",
     },
     twitter: {
       card: "summary_large_image",
       title: `${identity.displayName} — Foundation Artist`,
-      description: `${portfolio.totalWorks} works on Foundation`,
+      description: `${totalWorks} works on Foundation`,
     },
   }
 }
@@ -78,22 +86,26 @@ export default async function ArtistPage({
     redirect(`/artist/${address}`)
   }
 
-  const portfolio = await getArtistPortfolio(address)
-  const displayItems = portfolio.tokens.map(tokenToDisplayData)
+  // SSR only the first page: identity + first 24 tokens. Subsequent pages
+  // load client-side via /api/artist/[address]/tokens?page=N.
+  const [identity, firstPage] = await Promise.all([
+    getArtistIdentity(address),
+    getArtistGalleryPage(address, 0, INITIAL_PAGE_SIZE),
+  ])
 
   return (
     <div className="mx-auto max-w-[2000px] px-6 py-12">
-      <ArtistHeader
-        identity={portfolio.identity}
-        totalWorks={portfolio.totalWorks}
-      />
+      <ArtistHeader identity={identity} totalWorks={firstPage.total} />
 
       <div className="mt-8">
         <BulkDelistPanel artistAddress={address} />
       </div>
 
       <div className="mt-12">
-        <ArtistGallery items={displayItems} artistAddress={address} />
+        <ArtistGallery
+          artistAddress={address}
+          initialPage={firstPage}
+        />
       </div>
     </div>
   )

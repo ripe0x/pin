@@ -22,7 +22,11 @@ import {
   MAINNET_CHAIN_ID,
 } from "@pin/addresses"
 import { extractCid, ipfsToHttp } from "@pin/shared"
-import { discoverManifoldTokens } from "./manifold-discovery"
+import {
+  discoverManifoldTokens,
+  discoverManifoldTokenRefs,
+} from "./manifold-discovery"
+import { mapWithConcurrency } from "./concurrency"
 
 const FOUNDATION_NFT_ADDRESS = FOUNDATION_NFT[MAINNET_CHAIN_ID]
 const FACTORY_V1 = COLLECTION_FACTORY_V1[MAINNET_CHAIN_ID]
@@ -55,6 +59,20 @@ export type DiscoveredToken = {
   collectionName: string | null
 }
 
+/**
+ * Lightweight reference to a token. Cheap to discover (event logs only — no
+ * `tokenURI`, no IPFS) and JSON-serializable so it can be the cache key for
+ * paginated enrichment. Sort fields are advisory: not all sources populate
+ * them (Manifold tokens via Alchemy NFT API have no on-chain log context),
+ * which is why they're at the bottom of the type rather than required.
+ */
+export type TokenRef = {
+  contract: Address
+  tokenId: string
+  creator: Address
+  collectionName: string | null
+}
+
 function getClient() {
   return createPublicClient({
     chain: mainnet,
@@ -75,13 +93,12 @@ const transferEvent = parseAbiItem(
 )
 
 /**
- * Discover all tokens minted by an artist on Foundation.
+ * Discover all tokens minted by an artist on Foundation, fully enriched.
  *
- * Scans three sources:
- * 1. The shared FoundationNFT contract (Minted event filtered by creator)
- * 2. Per-artist collection contracts (found via NFTCollectionFactory events)
- * 3. Manifold Creator Core contracts deployed by the artist (Etherscan +
- *    ERC-165 supportsInterface filter; only runs when ETHERSCAN_API_KEY is set)
+ * Kept for callers that need the complete data set in one shot (e.g. the
+ * Open Graph image route, which needs media URLs to render thumbnails).
+ * For the artist gallery, prefer `discoverArtistTokenRefs` + `enrichTokens`
+ * so that enrichment is paginated.
  */
 export async function discoverArtistTokens(
   artistAddress: string,
@@ -100,7 +117,96 @@ export async function discoverArtistTokens(
   return [...sharedTokens, ...collectionTokens, ...manifoldTokens]
 }
 
+/**
+ * Cheap discovery: scan event logs across all three sources and return a
+ * deduped, sort-stable list of `TokenRef`s. No `tokenURI`, no `ownerOf`,
+ * no IPFS — those happen later in `enrichTokens` for the visible page.
+ *
+ * Sort: Foundation refs (with known block numbers) are newest-first, then
+ * Manifold refs (no log context) appended in the order Alchemy returned them.
+ */
+export async function discoverArtistTokenRefs(
+  artistAddress: string,
+): Promise<TokenRef[]> {
+  const client = getClient()
+  const artist = artistAddress.toLowerCase() as Address
+  const latestBlock = await client.getBlockNumber()
+
+  const [sharedRefs, collectionRefs, manifoldRefs] = await Promise.all([
+    discoverSharedContractRefs(client, artist, latestBlock),
+    discoverCollectionRefs(client, artist, latestBlock),
+    discoverManifoldTokenRefs(artist),
+  ])
+
+  // Newest-first within Foundation sources (block desc, logIndex desc).
+  const foundationSorted = [...sharedRefs, ...collectionRefs].sort((a, b) => {
+    if (a.blockNumber !== b.blockNumber) {
+      return a.blockNumber > b.blockNumber ? -1 : 1
+    }
+    return b.logIndex - a.logIndex
+  })
+
+  // Strip sort metadata so the result is small + JSON-stable for cache keys.
+  const stripped: TokenRef[] = [
+    ...foundationSorted.map(({ blockNumber: _b, logIndex: _l, ...r }) => r),
+    ...manifoldRefs,
+  ]
+
+  // Dedupe by contract:tokenId — a token theoretically could surface across
+  // sources (very rare; cheap insurance).
+  const seen = new Set<string>()
+  return stripped.filter((r) => {
+    const key = `${r.contract.toLowerCase()}:${r.tokenId}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+/**
+ * Enrich a slice of refs with metadata. Designed to be called per page
+ * (e.g. 24 tokens) so that the wall-clock cost scales with what the user
+ * actually sees, not what the artist has ever minted.
+ *
+ * Uses `resolveTokenMetadataDirect` per token (which handles ERC-721 /
+ * ERC-1155 / `data:` URIs / `{id}` substitution) under bounded concurrency
+ * so a single slow IPFS gateway doesn't stall the whole page.
+ */
+export async function enrichTokens(
+  refs: readonly TokenRef[],
+): Promise<DiscoveredToken[]> {
+  if (refs.length === 0) return []
+
+  const enriched = await mapWithConcurrency(refs, 8, async (ref) => {
+    const meta = await resolveTokenMetadataDirect(ref.contract, ref.tokenId)
+    const image = meta?.image ?? null
+    const mediaHttpUrl = image ? ipfsToHttp(image) : null
+    return {
+      tokenId: ref.tokenId,
+      contract: ref.contract,
+      creator: ref.creator,
+      tokenUri: null,
+      metadataCid: null,
+      mediaCid: image ? extractCid(image) : null,
+      metadata:
+        meta?.name || meta?.description || meta?.image
+          ? {
+              name: meta?.name,
+              description: meta?.description,
+              image: meta?.image,
+            }
+          : null,
+      mediaHttpUrl,
+      collectionName: ref.collectionName,
+    } satisfies DiscoveredToken
+  })
+
+  return enriched
+}
+
 // ── Shared contract discovery ────────────────────────────────────────────────
+
+type SortableRef = TokenRef & { blockNumber: bigint; logIndex: number }
 
 async function discoverSharedContractTokens(
   client: ReturnType<typeof createPublicClient>,
@@ -123,6 +229,37 @@ async function discoverSharedContractTokens(
   )
 
   return resolveTokenMetadata(client, FOUNDATION_NFT_ADDRESS, tokenIds, artist, null)
+}
+
+async function discoverSharedContractRefs(
+  client: ReturnType<typeof createPublicClient>,
+  artist: Address,
+  latestBlock: bigint,
+): Promise<SortableRef[]> {
+  const mintLogs = await getLogs(
+    client,
+    FOUNDATION_NFT_ADDRESS,
+    mintedEvent,
+    { creator: artist },
+    SHARED_DEPLOY_BLOCK,
+    latestBlock,
+  )
+
+  return mintLogs.map((log) => {
+    const l = log as {
+      args: { tokenId: bigint }
+      blockNumber: bigint | null
+      logIndex: number | null
+    }
+    return {
+      contract: FOUNDATION_NFT_ADDRESS,
+      tokenId: l.args.tokenId.toString(),
+      creator: artist,
+      collectionName: null,
+      blockNumber: l.blockNumber ?? 0n,
+      logIndex: l.logIndex ?? 0,
+    }
+  })
 }
 
 // ── Collection contract discovery ────────────────────────────────────────────
@@ -172,6 +309,48 @@ async function discoverCollectionTokens(
   }
 
   return allTokens
+}
+
+async function discoverCollectionRefs(
+  client: ReturnType<typeof createPublicClient>,
+  artist: Address,
+  latestBlock: bigint,
+): Promise<SortableRef[]> {
+  const collections = await findArtistCollections(client, artist, latestBlock)
+  if (collections.length === 0) return []
+
+  // Collections in parallel — each does one paginated getLogs.
+  const perCollection = await mapWithConcurrency(
+    collections,
+    4,
+    async (collection) => {
+      const mintLogs = await getLogs(
+        client,
+        collection.address,
+        transferEvent,
+        { from: "0x0000000000000000000000000000000000000000" as Address },
+        FACTORY_V1_DEPLOY_BLOCK,
+        latestBlock,
+      )
+      return mintLogs.map((log) => {
+        const l = log as {
+          args: { tokenId: bigint }
+          blockNumber: bigint | null
+          logIndex: number | null
+        }
+        return {
+          contract: collection.address,
+          tokenId: l.args.tokenId.toString(),
+          creator: artist,
+          collectionName: collection.name,
+          blockNumber: l.blockNumber ?? 0n,
+          logIndex: l.logIndex ?? 0,
+        } satisfies SortableRef
+      })
+    },
+  )
+
+  return perCollection.flat()
 }
 
 async function findArtistCollections(
@@ -288,12 +467,14 @@ async function resolveTokenMetadata(
   creator: Address,
   collectionName: string | null,
 ): Promise<DiscoveredToken[]> {
-  const tokens: DiscoveredToken[] = []
-
+  // Run multicall batches in parallel rather than serially so the wall-clock
+  // cost stays reasonable when a single contract has many tokens to enrich.
+  const batches: bigint[][] = []
   for (let i = 0; i < tokenIds.length; i += 50) {
-    const batchIds = tokenIds.slice(i, i + 50)
+    batches.push(tokenIds.slice(i, i + 50))
+  }
 
-    // Batch ownerOf + tokenURI calls together
+  const perBatch = await mapWithConcurrency(batches, 3, async (batchIds) => {
     const calls = batchIds.flatMap((tokenId) => [
       {
         address: contract,
@@ -311,61 +492,64 @@ async function resolveTokenMetadata(
 
     const results = await client.multicall({ contracts: calls })
 
-    const metadataPromises = batchIds.map(async (tokenId, j) => {
-      const ownerResult = results[j * 2]
-      const uriResult = results[j * 2 + 1]
+    const enriched = await mapWithConcurrency(
+      batchIds,
+      8,
+      async (tokenId, j) => {
+        const ownerResult = results[j * 2]
+        const uriResult = results[j * 2 + 1]
 
-      // Skip burned tokens — ownerOf reverts or returns zero address
-      if (ownerResult.status !== "success") return null
-      const owner = ownerResult.result as string
-      if (owner.toLowerCase() === ZERO_ADDRESS) return null
+        // Skip burned tokens — ownerOf reverts or returns zero address
+        if (ownerResult.status !== "success") return null
+        const owner = ownerResult.result as string
+        if (owner.toLowerCase() === ZERO_ADDRESS) return null
 
-      const tokenUri =
-        uriResult.status === "success" ? (uriResult.result as string) : null
+        const tokenUri =
+          uriResult.status === "success" ? (uriResult.result as string) : null
 
-      let metadataCid: string | null = null
-      let mediaCid: string | null = null
-      let metadata: DiscoveredToken["metadata"] = null
-      let mediaHttpUrl: string | null = null
+        let metadataCid: string | null = null
+        let mediaCid: string | null = null
+        let metadata: DiscoveredToken["metadata"] = null
+        let mediaHttpUrl: string | null = null
 
-      if (tokenUri) {
-        metadataCid = extractCid(tokenUri)
+        if (tokenUri) {
+          metadataCid = extractCid(tokenUri)
 
-        try {
-          const httpUrl = ipfsToHttp(tokenUri)
-          const res = await fetch(httpUrl, {
-            signal: AbortSignal.timeout(10_000),
-          })
-          if (res.ok) {
-            metadata = await res.json()
-            if (metadata?.image) {
-              mediaCid = extractCid(metadata.image)
-              mediaHttpUrl = ipfsToHttp(metadata.image)
+          try {
+            const httpUrl = ipfsToHttp(tokenUri)
+            const res = await fetch(httpUrl, {
+              signal: AbortSignal.timeout(10_000),
+            })
+            if (res.ok) {
+              metadata = await res.json()
+              if (metadata?.image) {
+                mediaCid = extractCid(metadata.image)
+                mediaHttpUrl = ipfsToHttp(metadata.image)
+              }
             }
+          } catch {
+            // Metadata fetch failed — token still gets included with null metadata
           }
-        } catch {
-          // Metadata fetch failed — token still gets included with null metadata
         }
-      }
 
-      return {
-        tokenId: tokenId.toString(),
-        contract,
-        creator,
-        tokenUri,
-        metadataCid,
-        mediaCid,
-        metadata,
-        mediaHttpUrl,
-        collectionName,
-      } satisfies DiscoveredToken
-    })
+        return {
+          tokenId: tokenId.toString(),
+          contract,
+          creator,
+          tokenUri,
+          metadataCid,
+          mediaCid,
+          metadata,
+          mediaHttpUrl,
+          collectionName,
+        } satisfies DiscoveredToken
+      },
+    )
 
-    const batchTokens = await Promise.all(metadataPromises)
-    tokens.push(...batchTokens.filter((t): t is DiscoveredToken => t !== null))
-  }
+    return enriched.filter((t): t is DiscoveredToken => t !== null)
+  })
 
-  return tokens
+  return perBatch.flat()
 }
 
 // ── Single token data resolution (for token detail page) ────────────────────
