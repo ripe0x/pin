@@ -32,6 +32,7 @@ export default async function OGImage({
       total: 0,
       thumbnails: [],
       address: "0x0000000000000000000000000000000000000000",
+      avatarUrl: null,
     })
   }
 
@@ -68,6 +69,7 @@ export default async function OGImage({
     total,
     thumbnails,
     address: resolved,
+    avatarUrl: identity.avatarUrl,
   })
 }
 
@@ -76,11 +78,13 @@ function renderCard({
   total,
   thumbnails,
   address,
+  avatarUrl,
 }: {
   displayName: string
   total: number
   thumbnails: string[]
   address: string
+  avatarUrl: string | null
 }) {
   return new ImageResponse(
     (
@@ -103,16 +107,31 @@ function renderCard({
             width: "50%",
           }}
         >
-          <div
-            style={{
-              display: "flex",
-              width: "80px",
-              height: "80px",
-              borderRadius: "50%",
-              background: `linear-gradient(135deg, hsl(${parseInt(address.slice(2, 8), 16) % 360}, 60%, 70%) 0%, hsl(${parseInt(address.slice(8, 14), 16) % 360}, 60%, 70%) 100%)`,
-              marginBottom: "24px",
-            }}
-          />
+          {avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={avatarUrl}
+              alt=""
+              style={{
+                width: "80px",
+                height: "80px",
+                borderRadius: "50%",
+                objectFit: "cover",
+                marginBottom: "24px",
+              }}
+            />
+          ) : (
+            <div
+              style={{
+                display: "flex",
+                width: "80px",
+                height: "80px",
+                borderRadius: "50%",
+                background: `linear-gradient(135deg, hsl(${parseInt(address.slice(2, 8), 16) % 360}, 60%, 70%) 0%, hsl(${parseInt(address.slice(8, 14), 16) % 360}, 60%, 70%) 100%)`,
+                marginBottom: "24px",
+              }}
+            />
+          )}
           <div
             style={{
               fontSize: "40px",
