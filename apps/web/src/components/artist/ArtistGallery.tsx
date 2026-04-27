@@ -98,7 +98,7 @@ export function ArtistGallery({
           <DeployHouseCTA artistAddress={artistAddress} />
         </div>
       )}
-      <div className="columns-1 sm:columns-2 lg:columns-3 gap-6 [&>*]:mb-6 [&>*]:break-inside-avoid">
+      <div className="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-6 [&>*]:mb-6 [&>*]:break-inside-avoid">
         {items.map((item) => (
           <GalleryCard
             key={`${item.contract}:${item.tokenId}`}

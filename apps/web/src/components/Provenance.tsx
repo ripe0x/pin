@@ -22,45 +22,45 @@ export function Provenance({ entries }: { entries: ProvenanceEntry[] }) {
   if (entries.length === 0) return null
 
   return (
-    <div className="space-y-4">
-      <h3 className="text-sm font-medium text-gray-400 uppercase tracking-wider">
+    <div>
+      <h3 className="text-[10px] font-mono font-medium uppercase tracking-wider text-gray-400 mb-3">
         Provenance
       </h3>
       <ul className="space-y-0">
         {entries.map((entry, i) => (
-          <li key={entry.txHash + i} className="flex gap-4 py-3">
+          <li key={entry.txHash + i} className="flex gap-3 py-2">
             {/* Timeline dot + line */}
-            <div className="flex flex-col items-center">
-              <div className="h-2.5 w-2.5 rounded-full bg-black" />
+            <div className="flex flex-col items-center pt-1.5">
+              <div className="h-1.5 w-1.5 rounded-full bg-black" />
               {i < entries.length - 1 && (
-                <div className="w-px flex-1 bg-gray-200" />
+                <div className="w-px flex-1 bg-gray-200 mt-1" />
               )}
             </div>
 
-            <div className="flex-1 pb-2">
-              <p className="text-sm">
-                <span className="font-medium">{entry.event}</span>
+            <div className="flex-1 pb-1 space-y-0.5">
+              <p className="text-[11px] font-mono">
+                <span>{entry.event}</span>
                 {entry.amount !== undefined && entry.amount > 1n && (
                   <span className="text-gray-400"> ×{entry.amount.toString()}</span>
                 )}
                 <span className="text-gray-400"> by </span>
-                <span className="font-medium">{entry.fromHandle}</span>
+                <span>{entry.fromHandle}</span>
                 {entry.toHandle && (
                   <>
                     <span className="text-gray-400"> → </span>
-                    <span className="font-medium">{entry.toHandle}</span>
+                    <span>{entry.toHandle}</span>
                   </>
                 )}
               </p>
-              <div className="flex items-center gap-2 mt-0.5">
-                <p className="text-xs text-gray-400">
+              <div className="flex items-center gap-2">
+                <p className="text-[10px] font-mono text-gray-400">
                   {formatDate(entry.timestamp)}
                 </p>
                 <a
                   href={`https://evm.now/tx/${entry.txHash}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs text-gray-400 hover:text-black transition-colors"
+                  className="text-[10px] font-mono text-gray-400 hover:text-black transition-colors"
                 >
                   ↗
                 </a>

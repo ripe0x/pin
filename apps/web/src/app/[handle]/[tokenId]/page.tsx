@@ -144,116 +144,131 @@ export default async function TokenPage({
 
   return (
     <div className="mx-auto max-w-[2000px]">
-      {/* Desktop: left/right split. Mobile: stacked. */}
-      <div className="flex flex-col lg:flex-row min-h-[calc(100vh-64px)]">
-        {/* Left: artwork */}
-        <div className="flex items-center justify-center bg-gray-100 lg:w-[60%] p-8 lg:p-16">
+      {/* Desktop: 2/3 sticky artwork + 1/3 scrolling sidebar. Mobile: stacked. */}
+      <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] min-h-[calc(100vh-64px)]">
+        {/* Left: sticky artwork */}
+        <div className="lg:sticky lg:top-16 lg:h-[calc(100vh-64px)] flex items-center justify-center bg-gray-100 p-8 lg:p-12">
           <TokenMedia url={data.imageUrl} title={data.title} />
         </div>
 
-        {/* Right: info panel */}
-        <div className="lg:w-[40%] overflow-y-auto">
-          <div className="p-6 lg:p-12 space-y-8">
-            {/* Creator */}
-            <div className="space-y-1">
-              {data.creator && (
-                <Link
-                  href={`/artist/${data.creator}`}
-                  className="text-sm text-gray-600 hover:text-black transition-colors"
-                >
-                  {data.creatorHandle}
-                </Link>
-              )}
-              <h1 className="text-3xl font-semibold tracking-tight">
-                {data.title}
-              </h1>
-            </div>
+        {/* Right: scrolling sidebar */}
+        <aside className="lg:border-l border-gray-200 px-6 py-8 lg:px-8 lg:py-10">
+          {/* Title + creator */}
+          <section className="pb-5 border-b border-gray-100 space-y-2">
+            {data.creator && (
+              <Link
+                href={`/artist/${data.creator}`}
+                className="block text-[11px] font-mono uppercase tracking-wider text-gray-600 hover:text-black transition-colors"
+              >
+                {data.creatorHandle}
+              </Link>
+            )}
+            <h1 className="text-base font-mono font-medium tracking-tight">
+              {data.title}
+            </h1>
+          </section>
 
-            {/* Description */}
-            {data.description && (
-              <p className="text-base text-gray-600 leading-relaxed">
+          {/* Description (only prose section — uses Switzer) */}
+          {data.description && (
+            <section className="py-5 border-b border-gray-100">
+              <p className="text-sm text-gray-600 leading-relaxed">
                 {data.description}
               </p>
-            )}
+            </section>
+          )}
 
-            {/* Live auction (Foundation or PND). PND auctions are ERC721-only
-                so we suppress the start CTA for ERC1155 tokens. */}
-            {auction && <AuctionPanel auction={auction} />}
-            {!auction && !data.isErc1155 && (
+          {/* Live auction (Foundation or PND). PND auctions are ERC721-only
+              so we suppress the start CTA for ERC1155 tokens. */}
+          {auction && (
+            <section className="py-5 border-b border-gray-100">
+              <AuctionPanel auction={auction} />
+            </section>
+          )}
+          {!auction && !data.isErc1155 && (
+            <section className="py-5 border-b border-gray-100">
               <StartAuctionCTA
                 nftContract={data.contract as `0x${string}`}
                 tokenId={tokenId}
                 tokenTitle={data.title}
               />
-            )}
+            </section>
+          )}
 
-            {/* Ownership / edition stats */}
-            {data.isErc1155 ? (
-              <div className="flex items-center gap-6 text-sm">
-                <div>
-                  <p className="text-xs text-gray-400 uppercase tracking-wider">
+          {/* Ownership / edition stats */}
+          {data.isErc1155 ? (
+            <section className="py-5 border-b border-gray-100">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-1">
+                  <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
                     Edition
                   </p>
-                  <p className="font-medium tabular-nums">
+                  <p className="text-xs font-mono tabular-nums">
                     {(data.edition ?? 0n).toString()}
                   </p>
                 </div>
-                <div>
-                  <p className="text-xs text-gray-400 uppercase tracking-wider">
+                <div className="space-y-1">
+                  <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
                     Holders
                   </p>
-                  <p className="font-medium tabular-nums">
+                  <p className="text-xs font-mono tabular-nums">
                     {data.ownerCount ?? 0}
                   </p>
                 </div>
-                <div>
-                  <p className="text-xs text-gray-400 uppercase tracking-wider">
+                <div className="space-y-1">
+                  <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
                     Standard
                   </p>
-                  <p className="font-medium">ERC1155</p>
+                  <p className="text-xs font-mono">ERC1155</p>
                 </div>
               </div>
-            ) : (
-              data.owner && (
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="text-gray-400">Owned by</span>
-                  <Link
-                    href={`/artist/${data.owner}`}
-                    className="font-medium hover:underline"
-                  >
-                    {data.ownerHandle}
-                  </Link>
-                </div>
-              )
-            )}
+            </section>
+          ) : (
+            data.owner && (
+              <section className="py-5 border-b border-gray-100 space-y-1">
+                <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+                  Owner
+                </p>
+                <Link
+                  href={`/artist/${data.owner}`}
+                  className="text-xs font-mono hover:underline"
+                >
+                  {data.ownerHandle}
+                </Link>
+              </section>
+            )
+          )}
 
-            {/* Divider */}
-            <div className="border-t border-gray-200" />
-
-            {/* Provenance */}
+          {/* Provenance */}
+          <section className="py-5 border-b border-gray-100">
             <Provenance entries={data.provenance} />
+          </section>
 
-            {/* Contract info */}
-            <div className="border-t border-gray-200 pt-6 space-y-2">
-              <h3 className="text-sm font-medium text-gray-400 uppercase tracking-wider">
-                Contract
-              </h3>
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <span className="text-gray-400">Contract</span>
+          {/* Contract info */}
+          <section className="pt-5">
+            <h3 className="text-[10px] font-mono font-medium uppercase tracking-wider text-gray-400 mb-3">
+              Contract
+            </h3>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
+              <dt className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+                Address
+              </dt>
+              <dd className="text-[10px] font-mono truncate">
                 <a
                   href={`https://evm.now/address/${data.contract}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="font-mono text-xs truncate hover:underline"
+                  className="hover:underline"
                 >
                   {data.contract}
                 </a>
-                <span className="text-gray-400">Token ID</span>
-                <span className="font-mono text-xs">{data.tokenId}</span>
-              </div>
-            </div>
-          </div>
-        </div>
+              </dd>
+              <dt className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+                Token ID
+              </dt>
+              <dd className="text-[10px] font-mono">{data.tokenId}</dd>
+            </dl>
+          </section>
+        </aside>
       </div>
     </div>
   )

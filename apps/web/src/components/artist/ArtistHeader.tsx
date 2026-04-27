@@ -49,7 +49,7 @@ export function ArtistHeader({
         <div className="flex items-center gap-4 text-sm text-gray-500">
           <span>
             <strong className="text-black">{totalWorks}</strong>{" "}
-            {totalWorks === 1 ? "work" : "works"} on Foundation
+            {totalWorks === 1 ? "work" : "works"}
           </span>
         </div>
 

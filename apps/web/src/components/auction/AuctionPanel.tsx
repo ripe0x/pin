@@ -93,35 +93,35 @@ export function AuctionPanel({
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
-      <div className="px-5 pt-5 pb-4 space-y-5">
+      <div className="p-5 space-y-5">
         <div className="flex items-center gap-2">
           <span className={`inline-block h-1.5 w-1.5 rounded-full ${phase === "ended-unsettled" ? "bg-amber-500" : "bg-emerald-500 animate-pulse"}`} />
-          <span className="text-[11px] uppercase tracking-[0.08em] font-medium text-gray-500">
+          <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500">
             {phase === "ended-unsettled" ? "Auction ended" : "Live auction"}
           </span>
         </div>
 
         <div className="flex items-end justify-between gap-6">
-          <div>
-            <p className="text-[11px] uppercase tracking-wider text-gray-400 mb-1">
+          <div className="space-y-1">
+            <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
               {phase === "no-bids" ? "Reserve" : "Current bid"}
             </p>
-            <p className="text-3xl font-semibold tracking-tight tabular-nums leading-none">
-              {formatEther(amount)} <span className="text-base font-normal text-gray-500">ETH</span>
+            <p className="text-2xl font-mono font-medium tabular-nums tracking-tight leading-none">
+              {formatEther(amount)} <span className="text-sm font-mono text-gray-500">ETH</span>
             </p>
             {phase !== "no-bids" && bidderDisplay && (
-              <p className="text-xs text-gray-500 mt-2">
+              <p className="text-[11px] font-mono text-gray-500 pt-1">
                 by <span className={isAddress(bidderDisplay) ? "font-mono" : ""}>{bidderDisplay}</span>
               </p>
             )}
           </div>
-          <div className="text-right">
-            <p className="text-[11px] uppercase tracking-wider text-gray-400 mb-1">
+          <div className="text-right space-y-1">
+            <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
               {phase === "no-bids" ? "Status" : phase === "ended-unsettled" ? "Ended" : "Ends in"}
             </p>
-            <p className="text-lg font-semibold tracking-tight tabular-nums leading-none">
+            <p className="text-sm font-mono tabular-nums leading-none">
               {phase === "no-bids" ? (
-                <span className="text-gray-500 font-normal text-base">No bids yet</span>
+                <span className="text-gray-500">No bids yet</span>
               ) : phase === "ended-unsettled" ? (
                 <span className="text-amber-600">Awaiting settlement</span>
               ) : (
@@ -149,14 +149,14 @@ export function AuctionPanel({
 function BidHistory({ bids }: { bids: BidHistoryEntry[] }) {
   return (
     <div className="px-5 py-4 border-t border-gray-100">
-      <p className="text-[11px] uppercase tracking-[0.08em] text-gray-400 mb-3">
+      <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400 mb-3">
         Bid history
       </p>
-      <ol className="space-y-2.5">
+      <ol className="space-y-2">
         {bids.map((bid) => (
           <li
             key={`${bid.txHash}-${bid.bidder}`}
-            className="flex items-baseline justify-between text-xs"
+            className="flex items-baseline justify-between text-[11px] font-mono"
           >
             <a
               href={`https://etherscan.io/tx/${bid.txHash}`}
@@ -164,16 +164,14 @@ function BidHistory({ bids }: { bids: BidHistoryEntry[] }) {
               rel="noopener noreferrer"
               className="flex items-baseline gap-2 min-w-0 hover:opacity-70 transition-opacity"
             >
-              <span
-                className={`truncate ${isAddress(bid.bidderDisplay) ? "font-mono" : "font-medium"} text-gray-700`}
-              >
+              <span className="truncate text-gray-700">
                 {bid.bidderDisplay}
               </span>
               <span className="text-gray-400 shrink-0">
                 {formatRelativeTime(bid.blockTime)}
               </span>
             </a>
-            <span className="font-medium tabular-nums text-gray-900 shrink-0 ml-3">
+            <span className="tabular-nums text-gray-900 shrink-0 ml-3">
               {formatEther(bid.amount)} ETH
             </span>
           </li>
@@ -194,14 +192,14 @@ function FeesBreakdown({ fees }: { fees: AuctionFees }) {
 
   return (
     <div className="px-5 py-4 bg-gray-50 border-t border-gray-100">
-      <p className="text-[11px] uppercase tracking-[0.08em] text-gray-400 mb-2">
+      <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400 mb-2">
         On settlement
       </p>
       <dl className="space-y-1">
         {rows.map(([label, bps]) => (
-          <div key={label} className="flex items-baseline justify-between text-xs">
+          <div key={label} className="flex items-baseline justify-between text-[11px] font-mono">
             <dt className="text-gray-500">{label}</dt>
-            <dd className="font-medium tabular-nums text-gray-700">{formatBpsPct(bps)}</dd>
+            <dd className="tabular-nums text-gray-700">{formatBpsPct(bps)}</dd>
           </div>
         ))}
       </dl>
@@ -272,7 +270,7 @@ function BidSection({ auction }: { auction: AuctionState }) {
   if (isSuccess) {
     return (
       <div className="space-y-3">
-        <p className="text-sm text-green-700">
+        <p className="text-[11px] font-mono text-green-700">
           Bid placed. Refresh to see updated state.
         </p>
         <button
@@ -280,7 +278,7 @@ function BidSection({ auction }: { auction: AuctionState }) {
             reset()
             window.location.reload()
           }}
-          className="block w-full text-center text-sm font-medium py-3 bg-black text-white hover:bg-gray-800 transition-colors"
+          className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-black text-white hover:bg-gray-800 transition-colors"
         >
           Refresh
         </button>
@@ -294,7 +292,7 @@ function BidSection({ auction }: { auction: AuctionState }) {
         {({ openConnectModal }) => (
           <button
             onClick={openConnectModal}
-            className="block w-full text-center text-sm font-medium py-3 bg-black text-white hover:bg-gray-800 transition-colors"
+            className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-black text-white hover:bg-gray-800 transition-colors"
           >
             Connect wallet to bid
           </button>
@@ -315,19 +313,19 @@ function BidSection({ auction }: { auction: AuctionState }) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             disabled={isPending}
-            className="flex-1 px-3 py-3 text-base font-medium outline-none disabled:opacity-40"
+            className="flex-1 px-3 py-3 text-sm font-mono tabular-nums outline-none disabled:opacity-40"
           />
-          <span className="flex items-center px-3 text-sm text-gray-400 border-l border-gray-200">
+          <span className="flex items-center px-3 text-[11px] font-mono uppercase tracking-wider text-gray-400 border-l border-gray-200">
             ETH
           </span>
         </div>
       </label>
-      <p className="text-xs text-gray-400">Minimum bid: {minBidEth} ETH</p>
+      <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">Minimum bid: {minBidEth} ETH</p>
 
       <button
         onClick={handleBid}
         disabled={isPending || !validation.ok || isSelfOutbidding}
-        className="block w-full text-center text-sm font-medium py-3 bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
       >
         {isWritePending
           ? "Confirm in wallet…"
@@ -339,10 +337,10 @@ function BidSection({ auction }: { auction: AuctionState }) {
       </button>
 
       {validation.reason && input.trim() && (
-        <p className="text-xs text-red-500">{validation.reason}</p>
+        <p className="text-[11px] font-mono text-red-500">{validation.reason}</p>
       )}
       {writeError && (
-        <p className="text-xs text-red-500 break-words">
+        <p className="text-[11px] font-mono text-red-500 break-words">
           {writeError.message.includes("User rejected")
             ? "Transaction rejected"
             : writeError.message.includes("insufficient funds")
@@ -390,7 +388,7 @@ function SettleSection({ auction }: { auction: AuctionState }) {
   if (isSuccess) {
     return (
       <div className="space-y-3">
-        <p className="text-sm text-green-700">
+        <p className="text-[11px] font-mono text-green-700">
           Auction settled. NFT transferred to the winner.
         </p>
         <button
@@ -398,7 +396,7 @@ function SettleSection({ auction }: { auction: AuctionState }) {
             reset()
             window.location.reload()
           }}
-          className="block w-full text-center text-sm font-medium py-3 bg-black text-white hover:bg-gray-800 transition-colors"
+          className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-black text-white hover:bg-gray-800 transition-colors"
         >
           Refresh
         </button>
@@ -412,7 +410,7 @@ function SettleSection({ auction }: { auction: AuctionState }) {
         {({ openConnectModal }) => (
           <button
             onClick={openConnectModal}
-            className="block w-full text-center text-sm font-medium py-3 bg-black text-white hover:bg-gray-800 transition-colors"
+            className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-black text-white hover:bg-gray-800 transition-colors"
           >
             Connect wallet to settle
           </button>
@@ -423,14 +421,14 @@ function SettleSection({ auction }: { auction: AuctionState }) {
 
   return (
     <div className="space-y-2">
-      <p className="text-xs text-gray-500">
+      <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
         Auction has ended. Anyone can settle it to transfer the NFT to the
         winning bidder and pay the seller.
       </p>
       <button
         onClick={handleSettle}
         disabled={isPending}
-        className="block w-full text-center text-sm font-medium py-3 bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
       >
         {isWritePending
           ? "Confirm in wallet…"
@@ -439,7 +437,7 @@ function SettleSection({ auction }: { auction: AuctionState }) {
             : "Settle auction"}
       </button>
       {writeError && (
-        <p className="text-xs text-red-500 break-words">
+        <p className="text-[11px] font-mono text-red-500 break-words">
           {writeError.message.includes("User rejected")
             ? "Transaction rejected"
             : `Settle failed: ${writeError.message.split("\n")[0]}`}
@@ -491,7 +489,7 @@ function SellerActions({ auction }: { auction: AuctionState }) {
           resetUpdate()
           window.location.reload()
         }}
-        className="text-xs text-emerald-700 hover:underline"
+        className="text-[11px] font-mono text-emerald-700 hover:underline"
       >
         Saved. Refresh to see updated state.
       </button>
@@ -555,9 +553,9 @@ function SellerActions({ auction }: { auction: AuctionState }) {
               value={reserveInput}
               onChange={(e) => setReserveInput(e.target.value)}
               disabled={busy}
-              className="flex-1 px-3 py-2 text-sm font-medium outline-none disabled:opacity-40 bg-transparent"
+              className="flex-1 px-3 py-2 text-sm font-mono tabular-nums outline-none disabled:opacity-40 bg-transparent"
             />
-            <span className="flex items-center px-3 text-xs text-gray-400 border-l border-gray-200">
+            <span className="flex items-center px-3 text-[11px] font-mono uppercase tracking-wider text-gray-400 border-l border-gray-200">
               ETH
             </span>
           </div>
@@ -565,7 +563,7 @@ function SellerActions({ auction }: { auction: AuctionState }) {
             <button
               onClick={handleUpdate}
               disabled={busy || !reserveInput.trim()}
-              className="flex-1 text-xs font-medium py-2 bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed rounded"
+              className="flex-1 text-[11px] font-mono font-medium uppercase tracking-wider py-2 bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed rounded"
             >
               {updatePending
                 ? "Confirm…"
@@ -579,7 +577,7 @@ function SellerActions({ auction }: { auction: AuctionState }) {
                 setReserveInput("")
               }}
               disabled={busy}
-              className="text-xs text-gray-500 px-3 hover:text-black transition-colors disabled:opacity-40"
+              className="text-[11px] font-mono uppercase tracking-wider text-gray-500 px-3 hover:text-black transition-colors disabled:opacity-40"
             >
               Cancel
             </button>
@@ -590,14 +588,14 @@ function SellerActions({ auction }: { auction: AuctionState }) {
           <button
             onClick={() => setEditing(true)}
             disabled={busy}
-            className="text-xs text-gray-500 hover:text-black transition-colors disabled:opacity-40"
+            className="text-[11px] font-mono uppercase tracking-wider text-gray-500 hover:text-black transition-colors disabled:opacity-40"
           >
             Edit reserve
           </button>
           <button
             onClick={handleCancel}
             disabled={busy}
-            className="text-xs text-gray-500 hover:text-red-600 transition-colors disabled:opacity-40"
+            className="text-[11px] font-mono uppercase tracking-wider text-gray-500 hover:text-red-600 transition-colors disabled:opacity-40"
           >
             {cancelPending
               ? "Confirm…"
@@ -608,7 +606,7 @@ function SellerActions({ auction }: { auction: AuctionState }) {
         </div>
       )}
       {(cancelError || updateError) && (
-        <p className="text-xs text-red-500 break-words">
+        <p className="text-[11px] font-mono text-red-500 break-words">
           {(cancelError || updateError)!.message.includes("User rejected")
             ? "Transaction rejected"
             : (cancelError || updateError)!.message.split("\n")[0]}

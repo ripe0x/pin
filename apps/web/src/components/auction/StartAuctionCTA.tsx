@@ -73,7 +73,7 @@ function StartAuctionCTAClient({
     <>
       <button
         onClick={() => setShowModal(true)}
-        className="block w-full text-center text-sm font-medium py-3 border border-gray-200 hover:border-gray-400 transition-colors"
+        className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 border border-gray-200 hover:border-gray-400 transition-colors"
       >
         Start auction
       </button>
