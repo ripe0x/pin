@@ -45,18 +45,19 @@ export async function generateMetadata({
   ])
   const totalWorks = refs.length
 
+  const description = `${totalWorks} ${totalWorks === 1 ? "work" : "works"} by ${identity.displayName}`
   return {
     title: identity.displayName,
-    description: `${totalWorks} works on Foundation by ${identity.displayName}`,
+    description,
     openGraph: {
-      title: `${identity.displayName} — Foundation Artist`,
-      description: `${totalWorks} works on Foundation`,
+      title: identity.displayName,
+      description,
       type: "profile",
     },
     twitter: {
       card: "summary_large_image",
-      title: `${identity.displayName} — Foundation Artist`,
-      description: `${totalWorks} works on Foundation`,
+      title: identity.displayName,
+      description,
     },
   }
 }
