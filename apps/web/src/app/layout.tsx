@@ -1,10 +1,11 @@
 import type { Metadata } from "next"
-import { SITE_TITLE, SITE_DESCRIPTION } from "@pin/shared"
+import { SITE_TITLE, SITE_DESCRIPTION, SITE_URL } from "@pin/shared"
 import { Providers } from "@/components/Providers"
 import { Navbar } from "@/components/Navbar"
 import "./globals.css"
 
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: {
     default: SITE_TITLE,
     template: `%s | ${SITE_TITLE}`,
@@ -14,6 +15,13 @@ export const metadata: Metadata = {
     title: SITE_TITLE,
     description: SITE_DESCRIPTION,
     type: "website",
+    url: SITE_URL,
+    siteName: SITE_TITLE,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
   },
 }
 

@@ -93,12 +93,22 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { handle, tokenId } = await params
   const data = await getTokenPageData(handle, tokenId)
+  const ogTitle = `${data.title} by ${data.creatorHandle || "Unknown"} | ${SITE_TITLE}`
+  const description =
+    data.description ||
+    `${data.title} by ${data.creatorHandle || "Unknown"}`
   return {
     title: `${data.title} by ${data.creatorHandle || "Unknown"}`,
-    description: data.description,
+    description,
     openGraph: {
-      title: `${data.title} by ${data.creatorHandle || "Unknown"} | ${SITE_TITLE}`,
-      description: data.description,
+      title: ogTitle,
+      description,
+      images: [data.imageUrl],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: ogTitle,
+      description,
       images: [data.imageUrl],
     },
   }
