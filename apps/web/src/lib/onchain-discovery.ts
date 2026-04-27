@@ -21,7 +21,7 @@ import {
   COLLECTION_FACTORY_V2,
   MAINNET_CHAIN_ID,
 } from "@pin/addresses"
-import { extractCid, ipfsToHttp } from "@pin/shared"
+import { extractCid, fetchFromIpfs, ipfsToHttp } from "@pin/shared"
 import {
   discoverManifoldTokens,
   discoverManifoldTokenRefs,
@@ -198,8 +198,35 @@ export async function enrichTokens(
 ): Promise<DiscoveredToken[]> {
   if (refs.length === 0) return []
 
-  const enriched = await mapWithConcurrency(refs, 8, async (ref) => {
-    const meta = await resolveTokenMetadataDirect(ref.contract, ref.tokenId)
+  const client = getClient()
+
+  const enriched = await mapWithConcurrency<TokenRef, DiscoveredToken | null>(refs, 8, async (ref) => {
+    // Run metadata fetch and burn-check in parallel. The mint-log scan that
+    // produced these refs doesn't track burns, so a token can be in the list
+    // even after it's been transferred to 0x0 — `ownerOf` then reverts. We
+    // filter those out so the gallery doesn't render ghost cards.
+    const [meta, ownerProbe] = await Promise.all([
+      resolveTokenMetadataDirect(ref.contract, ref.tokenId),
+      client
+        .readContract({
+          address: ref.contract as Address,
+          abi: erc721Abi,
+          functionName: "ownerOf",
+          args: [BigInt(ref.tokenId)],
+        })
+        .then((o) => ({ ok: true, owner: o as string }) as const)
+        .catch(() => ({ ok: false }) as const),
+    ])
+
+    // Drop ERC-721 tokens that have been burned. ERC-1155 contracts don't
+    // implement `ownerOf`, so the call reverts for them too — but ERC-1155
+    // metadata reliably comes back via `uri(id)`, so we use the heuristic:
+    // burned only when ownerOf reverted AND metadata fetch returned null.
+    if (!ownerProbe.ok && !meta) return null
+    if (ownerProbe.ok && ownerProbe.owner.toLowerCase() === ZERO_ADDRESS) {
+      return null
+    }
+
     const image = meta?.image ?? null
     const mediaHttpUrl = image ? ipfsToHttp(image) : null
     return {
@@ -222,7 +249,7 @@ export async function enrichTokens(
     } satisfies DiscoveredToken
   })
 
-  return enriched
+  return enriched.filter((t): t is DiscoveredToken => t !== null)
 }
 
 // ── Shared contract discovery ────────────────────────────────────────────────
@@ -537,10 +564,11 @@ async function resolveTokenMetadata(
           metadataCid = extractCid(tokenUri)
 
           try {
-            const httpUrl = ipfsToHttp(tokenUri)
-            const res = await fetch(httpUrl, {
-              signal: AbortSignal.timeout(10_000),
-            })
+            // Try each IPFS gateway in turn for IPFS URIs; fall back to
+            // single-shot fetch for non-IPFS schemes.
+            const res = metadataCid
+              ? await fetchFromIpfs(metadataCid, { cache: "no-store" })
+              : await fetch(tokenUri, { signal: AbortSignal.timeout(10_000) })
             if (res.ok) {
               metadata = await res.json()
               if (metadata?.image) {
@@ -875,27 +903,41 @@ export async function resolveTokenMetadataDirect(
     return parseDataUriJson(resolvedUri)
   }
 
-  const httpUrl = ipfsToHttp(resolvedUri)
+  // Some metadata CDNs (Arweave gateway via CDN77) block bare server-side
+  // fetches and serve an HTML error page. A standard browser UA + JSON
+  // accept header gets through.
+  const headers = {
+    Accept: "application/json",
+    "User-Agent":
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+  }
 
+  // For non-IPFS URIs (https, ar://, etc.) keep the single-shot path.
+  const cid = extractCid(resolvedUri)
+  if (!cid) {
+    try {
+      const res = await fetch(resolvedUri, {
+        signal: AbortSignal.timeout(10_000),
+        headers,
+        cache: "no-store",
+      })
+      if (!res.ok) return null
+      const contentType = res.headers.get("content-type") ?? ""
+      if (!contentType.includes("json") && !contentType.includes("text/plain")) {
+        return null
+      }
+      return await res.json()
+    } catch {
+      return null
+    }
+  }
+
+  // IPFS URI — try each gateway in turn so one slow/timed-out gateway doesn't
+  // result in `metadata: null` getting cached for 24h.
   try {
-    const res = await fetch(httpUrl, {
-      signal: AbortSignal.timeout(10_000),
-      // Some metadata CDNs (Arweave gateway via CDN77) block bare server-side
-      // fetches and serve an HTML error page. A standard browser UA + JSON
-      // accept header gets through.
-      headers: {
-        Accept: "application/json",
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-      },
-      // Bypass Next.js's default fetch cache so a previously-failed fetch
-      // doesn't keep returning null after we fix the request.
-      cache: "no-store",
-    })
-    if (!res.ok) return null
+    const res = await fetchFromIpfs(cid, { headers, cache: "no-store" })
     const contentType = res.headers.get("content-type") ?? ""
     if (!contentType.includes("json") && !contentType.includes("text/plain")) {
-      // The CDN error page returns text/html; bail rather than try to JSON.parse.
       return null
     }
     return await res.json()

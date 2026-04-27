@@ -25,7 +25,7 @@ import {
   type PublicClient,
 } from "viem"
 import { mainnet } from "viem/chains"
-import { extractCid, ipfsToHttp } from "@pin/shared"
+import { extractCid, fetchFromIpfs, ipfsToHttp } from "@pin/shared"
 import type { DiscoveredToken, TokenRef } from "./onchain-discovery"
 
 // Marker every Manifold Creator Core (V1+) returns true for. From
@@ -541,8 +541,10 @@ function needsFallback(t: DiscoveredToken): boolean {
 async function rescueFromTokenUri(t: DiscoveredToken): Promise<void> {
   if (!t.tokenUri) return
   try {
-    const httpUrl = ipfsToHttp(t.tokenUri)
-    const res = await fetch(httpUrl, { signal: AbortSignal.timeout(8_000) })
+    const cid = extractCid(t.tokenUri)
+    const res = cid
+      ? await fetchFromIpfs(cid, { cache: "no-store" })
+      : await fetch(t.tokenUri, { signal: AbortSignal.timeout(8_000) })
     if (!res.ok) return
     const meta = (await res.json()) as {
       name?: string

@@ -2,6 +2,7 @@
 
 import type { DiscoveredToken } from "@/lib/onchain-discovery"
 import type { PinStatus } from "@/lib/pinning"
+import { useIpfsGatewayFallback } from "@/lib/use-ipfs-fallback"
 import { TokenPinStatus } from "./TokenPinStatus"
 
 type TokenWithPinState = {
@@ -46,24 +47,28 @@ function PreserveCard({ item }: { item: TokenWithPinState }) {
   const combinedStatus = worstStatus(metadataStatus, mediaStatus)
 
   const isVideo = isVideoUrl(imageUrl)
+  const { src: mediaSrc, onError: onMediaError } =
+    useIpfsGatewayFallback(imageUrl)
 
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden">
       <div className="relative bg-gray-100 aspect-square">
         {isVideo ? (
           <video
-            src={imageUrl}
+            src={mediaSrc}
             className="w-full h-full object-cover"
             muted
             playsInline
             preload="metadata"
+            onError={onMediaError}
           />
         ) : (
           <img
-            src={imageUrl}
+            src={mediaSrc}
             alt={title}
             className="w-full h-full object-cover"
             loading="lazy"
+            onError={onMediaError}
           />
         )}
         {/* Pin status overlay */}

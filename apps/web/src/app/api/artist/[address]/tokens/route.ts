@@ -32,12 +32,11 @@ export async function GET(
       { address, ...result },
       {
         headers: {
-          // Edge-cache when there's a real result; bypass on empty so a cold
-          // first hit doesn't poison the CDN.
-          "Cache-Control":
-            result.tokens.length > 0
-              ? "public, max-age=86400, stale-while-revalidate=3600"
-              : "no-store",
+          // Browser may cache short-term; CDN/edge must NOT cache because
+          // Netlify's auto-generated cache key strips ?page and ?pageSize, so
+          // paged URLs collide on a single edge entry. Server-side
+          // unstable_cache (artist-cache.ts) covers the expensive work.
+          "Cache-Control": "private, max-age=60",
         },
       },
     )

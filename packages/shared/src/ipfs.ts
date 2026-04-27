@@ -5,12 +5,13 @@
  * the web app, indexer, and API routes.
  */
 
-/** Public IPFS gateways, ordered by reliability. */
+/** Public IPFS gateways, ordered by reliability. cloudflare-ipfs.com was
+ * discontinued — `curl https://cloudflare-ipfs.com/...` returns nothing. */
 export const IPFS_GATEWAYS = [
   "https://nftstorage.link",
-  "https://cloudflare-ipfs.com",
   "https://dweb.link",
   "https://ipfs.io",
+  "https://w3s.link",
 ] as const
 
 const DEFAULT_GATEWAY = IPFS_GATEWAYS[0]
@@ -52,12 +53,21 @@ export function ipfsToHttp(uri: string, gateway?: string): string {
 /**
  * Fetch content from IPFS, trying multiple gateways in sequence.
  * Returns the first successful Response, or throws if all fail.
+ *
+ * `headers` and `cache` are forwarded to fetch() — useful for metadata reads
+ * that need a browser User-Agent (some CDNs serve HTML to bare server fetches)
+ * or `cache: "no-store"` to bypass Next.js's fetch cache.
  */
 export async function fetchFromIpfs(
   cid: string,
-  options?: { timeoutMs?: number; signal?: AbortSignal },
+  options?: {
+    timeoutMs?: number
+    signal?: AbortSignal
+    headers?: HeadersInit
+    cache?: RequestCache
+  },
 ): Promise<Response> {
-  const timeoutMs = options?.timeoutMs ?? 8_000
+  const timeoutMs = options?.timeoutMs ?? 5_000
 
   for (const gateway of IPFS_GATEWAYS) {
     try {
@@ -72,7 +82,11 @@ export async function fetchFromIpfs(
         })
       }
 
-      const res = await fetch(url, { signal: controller.signal })
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: options?.headers,
+        cache: options?.cache,
+      })
       clearTimeout(timeout)
 
       if (res.ok) return res

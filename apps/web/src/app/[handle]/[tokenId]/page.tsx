@@ -4,6 +4,7 @@ import { FOUNDATION_NFT, MAINNET_CHAIN_ID } from "@pin/addresses"
 import { Provenance, type ProvenanceEntry } from "@/components/Provenance"
 import { AuctionPanel } from "@/components/auction/AuctionPanel"
 import { StartAuctionCTA } from "@/components/auction/StartAuctionCTA"
+import { TokenMedia } from "@/components/token/TokenMedia"
 import {
   getErc1155TokenStats,
   getTokenOnChainData,
@@ -187,8 +188,9 @@ export default async function TokenPage({
             </section>
           )}
 
-          {/* Live auction (Foundation or PND). PND auctions are ERC721-only
-              so we suppress the start CTA for ERC1155 tokens. */}
+          {/* Live auction (Foundation NFTMarket or our artist-owned auction
+              house). Our houses are ERC721-only so we suppress the start CTA
+              for ERC1155 tokens. */}
           {auction && (
             <section className="py-5 border-b border-gray-100">
               <AuctionPanel auction={auction} />
@@ -284,31 +286,3 @@ export default async function TokenPage({
   )
 }
 
-const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
-
-function TokenMedia({ url, title }: { url: string; title: string }) {
-  const path = url.split("?")[0].toLowerCase()
-  const isVideo = VIDEO_EXTENSIONS.some((ext) => path.endsWith(ext))
-
-  if (isVideo) {
-    return (
-      <video
-        src={url}
-        className="max-h-[80vh] w-auto object-contain"
-        autoPlay
-        loop
-        muted
-        playsInline
-        controls
-      />
-    )
-  }
-
-  return (
-    <img
-      src={url}
-      alt={title}
-      className="max-h-[80vh] w-auto object-contain"
-    />
-  )
-}

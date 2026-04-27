@@ -21,12 +21,12 @@ import {
 export const getCachedTokenRefs = unstable_cache(
   async (artistAddress: string): Promise<TokenRef[]> =>
     discoverArtistTokenRefs(artistAddress),
-  ["artist-token-refs", "v1"],
+  ["artist-token-refs", "v4"],
   { revalidate: 86_400, tags: ["artist-refs"] },
 )
 
 export const getCachedEnrichedPage = unstable_cache(
   async (refs: TokenRef[]): Promise<DiscoveredToken[]> => enrichTokens(refs),
-  ["artist-enriched-page", "v1"],
+  ["artist-enriched-page", "v4"],
   { revalidate: 86_400 },
 )

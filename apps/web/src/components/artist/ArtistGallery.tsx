@@ -13,6 +13,7 @@ import { nftMarketAbi } from "@pin/abi"
 import { NFT_MARKET, MAINNET_CHAIN_ID } from "@pin/addresses"
 import type { GalleryItem, GalleryPage } from "@/lib/artist-queries"
 import { createProvider, type PinStatus } from "@/lib/pinning"
+import { useIpfsGatewayFallback } from "@/lib/use-ipfs-fallback"
 import { TokenPinStatus } from "@/components/preserve/TokenPinStatus"
 import { DeployHouseCTA } from "@/components/auction/DeployHouseCTA"
 
@@ -58,10 +59,20 @@ export function ArtistGallery({
     staleTime: 60_000,
   })
 
-  const items = useMemo<GalleryItem[]>(
-    () => data?.pages.flatMap((p) => p.tokens) ?? [],
-    [data],
-  )
+  // Defensive dedup by `${contract}:${tokenId}` — guards against a paged
+  // response somehow returning a token already shown on a prior page (e.g.
+  // a CDN cache-key bug serving the same page twice).
+  const items = useMemo<GalleryItem[]>(() => {
+    const seen = new Set<string>()
+    return (data?.pages ?? [])
+      .flatMap((p) => p.tokens)
+      .filter((item) => {
+        const key = `${item.contract.toLowerCase()}:${item.tokenId}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+  }, [data])
 
   // Pin-status check across all loaded items. Re-runs as more pages load.
   const [pinStatuses, setPinStatuses] = useState<Map<string, PinStatus>>(
@@ -196,6 +207,9 @@ function GalleryCard({
   const isVideo = isVideoUrl(item.imageUrl)
   const pinStatus = hasProvider ? getItemPinStatus(item, pinStatuses) : null
   const [ratio, setRatio] = useState<number | null>(null)
+  const { src: mediaSrc, onError: onMediaError } = useIpfsGatewayFallback(
+    item.imageUrl,
+  )
 
   return (
     <div className="group border border-gray-200 transition-colors hover:border-gray-400">
@@ -206,11 +220,12 @@ function GalleryCard({
         >
           {isVideo ? (
             <video
-              src={item.imageUrl}
+              src={mediaSrc}
               className="block w-full h-auto"
               muted
               playsInline
               preload="metadata"
+              onError={onMediaError}
               onLoadedMetadata={(e) => {
                 const v = e.currentTarget
                 if (v.videoWidth && v.videoHeight) {
@@ -220,10 +235,11 @@ function GalleryCard({
             />
           ) : (
             <img
-              src={item.imageUrl}
+              src={mediaSrc}
               alt={item.title}
               className="block w-full h-auto"
               loading="lazy"
+              onError={onMediaError}
               onLoad={(e) => {
                 const img = e.currentTarget
                 if (img.naturalWidth && img.naturalHeight) {
