@@ -103,12 +103,12 @@ export function DeployHouseCTA({ artistAddress }: { artistAddress: string }) {
     <div className="rounded-lg border border-gray-200 bg-white p-5 space-y-4">
       <div>
         <h3 className="text-base font-semibold tracking-tight">
-          Deploy your no fee sovereign auction house
+          Deploy your own sovereign auction house
         </h3>
         <p className="text-sm text-gray-500 mt-1">
           One time deploy of your own auction contract. Locked to your address
-          forever. No admin, no upgrades, no protocol fee. Once live, run ETH
-          reserve auctions on any ERC721 you hold.
+          forever. No admin, no upgrades, zero fee. Once live, run ETH reserve
+          auctions on any ERC721 you hold.
         </p>
       </div>
       <button
