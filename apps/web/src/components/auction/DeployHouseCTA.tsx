@@ -42,11 +42,11 @@ export function DeployHouseCTA({ artistAddress }: { artistAddress: string }) {
       <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-5 space-y-3">
         <div>
           <h3 className="text-base font-semibold tracking-tight text-emerald-900">
-            Auction house deployed ✓
+            Sovereign auction house deployed ✓
           </h3>
           <p className="text-sm text-emerald-800/80 mt-1">
-            Your auction contract is live. You can now start auctions on
-            tokens you own.
+            Your contract is live and locked to your address. You can now run
+            ETH reserve auctions on any ERC721 you own.
           </p>
         </div>
         <div className="flex flex-col gap-1">
@@ -90,7 +90,7 @@ export function DeployHouseCTA({ artistAddress }: { artistAddress: string }) {
             onClick={openConnectModal}
             className="block w-full text-center text-sm font-medium py-3 bg-black text-white hover:bg-gray-800 transition-colors"
           >
-            Connect wallet to set up auctions
+            Connect wallet
           </button>
         )}
       </ConnectButton.Custom>
@@ -103,12 +103,12 @@ export function DeployHouseCTA({ artistAddress }: { artistAddress: string }) {
     <div className="rounded-lg border border-gray-200 bg-white p-5 space-y-4">
       <div>
         <h3 className="text-base font-semibold tracking-tight">
-          Set up your auction house
+          Deploy your no fee sovereign auction house
         </h3>
         <p className="text-sm text-gray-500 mt-1">
-          One-time deploy of your own auction house contract. After this you
-          can start reserve auctions on any of your tokens directly from this
-          page.
+          One time deploy of your own auction contract. Locked to your address
+          forever. No admin, no upgrades, no protocol fee. Once live, run ETH
+          reserve auctions on any ERC721 you hold.
         </p>
       </div>
       <button
