@@ -9,7 +9,7 @@ import { CreateAuctionModal } from "./CreateAuctionModal"
 /**
  * Start-auction CTA for token detail pages. Renders only when:
  *   - The connected wallet currently owns the token (live ownerOf check)
- *   - That wallet has a deployed PND auction house
+ *   - That wallet has a deployed sovereign auction house
  *
  * Caller is responsible for not rendering this when an active auction already
  * exists for the token (the page already gates on `auction === null`).

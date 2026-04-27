@@ -9,7 +9,7 @@ import {
   useWaitForTransactionReceipt,
 } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
-import { nftMarketAbi, pndAuctionHouseAbi } from "@pin/abi"
+import { nftMarketAbi, sovereignAuctionHouseAbi } from "@pin/abi"
 import type {
   AuctionFees,
   AuctionState,
@@ -295,7 +295,7 @@ function BidSection({ auction }: { auction: AuctionState }) {
     } else {
       writeContract({
         address: auction.marketAddress,
-        abi: pndAuctionHouseAbi,
+        abi: sovereignAuctionHouseAbi,
         functionName: "createBid",
         args: [BigInt(auction.auctionId)],
         value: validation.amount,
@@ -414,7 +414,7 @@ function SettleSection({ auction }: { auction: AuctionState }) {
     } else {
       writeContract({
         address: auction.marketAddress,
-        abi: pndAuctionHouseAbi,
+        abi: sovereignAuctionHouseAbi,
         functionName: "endAuction",
         args: [BigInt(auction.auctionId)],
       })
@@ -543,7 +543,7 @@ function SellerActions({ auction }: { auction: AuctionState }) {
     } else {
       writeCancel({
         address: auction.marketAddress,
-        abi: pndAuctionHouseAbi,
+        abi: sovereignAuctionHouseAbi,
         functionName: "cancelAuction",
         args: [BigInt(auction.auctionId)],
       })
@@ -568,7 +568,7 @@ function SellerActions({ auction }: { auction: AuctionState }) {
     } else {
       writeUpdate({
         address: auction.marketAddress,
-        abi: pndAuctionHouseAbi,
+        abi: sovereignAuctionHouseAbi,
         functionName: "setAuctionReservePrice",
         args: [BigInt(auction.auctionId), parsed],
       })

@@ -1,6 +1,6 @@
-// Auto-extracted from contracts/out/PndAuctionHouse.sol/PndAuctionHouse.json.
-// Re-run: node scripts/emit-pnd-abi.mjs
-export const pndAuctionHouseAbi = [
+// Auto-extracted from contracts/out/SovereignAuctionHouse.sol/SovereignAuctionHouse.json.
+// Re-run: node scripts/emit-sovereign-abi.mjs
+export const sovereignAuctionHouseAbi = [
   {
     "type": "constructor",
     "inputs": [],
@@ -58,22 +58,12 @@ export const pndAuctionHouseAbi = [
         "internalType": "address"
       },
       {
-        "name": "approved",
-        "type": "bool",
-        "internalType": "bool"
+        "name": "firstBidTime",
+        "type": "uint64",
+        "internalType": "uint64"
       },
       {
         "name": "amount",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "duration",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "firstBidTime",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -83,14 +73,14 @@ export const pndAuctionHouseAbi = [
         "internalType": "uint256"
       },
       {
-        "name": "curatorFeeBps",
-        "type": "uint16",
-        "internalType": "uint16"
-      },
-      {
         "name": "tokenOwner",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "endTime",
+        "type": "uint64",
+        "internalType": "uint64"
       },
       {
         "name": "bidder",
@@ -98,9 +88,9 @@ export const pndAuctionHouseAbi = [
         "internalType": "address payable"
       },
       {
-        "name": "curator",
-        "type": "address",
-        "internalType": "address payable"
+        "name": "duration",
+        "type": "uint64",
+        "internalType": "uint64"
       }
     ],
     "stateMutability": "view"
@@ -141,16 +131,6 @@ export const pndAuctionHouseAbi = [
         "name": "duration",
         "type": "uint256",
         "internalType": "uint256"
-      },
-      {
-        "name": "curator",
-        "type": "address",
-        "internalType": "address payable"
-      },
-      {
-        "name": "curatorFeeBps",
-        "type": "uint16",
-        "internalType": "uint16"
       }
     ],
     "outputs": [
@@ -198,16 +178,6 @@ export const pndAuctionHouseAbi = [
         "name": "reservePrice",
         "type": "uint256",
         "internalType": "uint256"
-      },
-      {
-        "name": "curator",
-        "type": "address",
-        "internalType": "address payable"
-      },
-      {
-        "name": "curatorFeeBps",
-        "type": "uint16",
-        "internalType": "uint16"
       }
     ],
     "outputs": [
@@ -299,7 +269,12 @@ export const pndAuctionHouseAbi = [
     ],
     "outputs": [
       {
-        "name": "",
+        "name": "exists",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "minBid",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -335,7 +310,7 @@ export const pndAuctionHouseAbi = [
     "name": "initialize",
     "inputs": [
       {
-        "name": "artistOwner",
+        "name": "initialOwner",
         "type": "address",
         "internalType": "address"
       },
@@ -413,28 +388,33 @@ export const pndAuctionHouseAbi = [
   },
   {
     "type": "function",
-    "name": "renounceOwnership",
-    "inputs": [],
-    "outputs": [],
-    "stateMutability": "pure"
-  },
-  {
-    "type": "function",
-    "name": "setAuctionApproval",
+    "name": "recoverStuckERC721",
     "inputs": [
       {
-        "name": "auctionId",
+        "name": "tokenContract",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "tokenId",
         "type": "uint256",
         "internalType": "uint256"
       },
       {
-        "name": "approved",
-        "type": "bool",
-        "internalType": "bool"
+        "name": "to",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "renounceOwnership",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -473,25 +453,6 @@ export const pndAuctionHouseAbi = [
     "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "event",
-    "name": "AuctionApprovalUpdated",
-    "inputs": [
-      {
-        "name": "auctionId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "approved",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
-    "anonymous": false
   },
   {
     "type": "event",
@@ -582,25 +543,13 @@ export const pndAuctionHouseAbi = [
         "type": "address",
         "indexed": false,
         "internalType": "address"
-      },
-      {
-        "name": "curator",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
-      },
-      {
-        "name": "curatorFeeBps",
-        "type": "uint16",
-        "indexed": false,
-        "internalType": "uint16"
       }
     ],
     "anonymous": false
   },
   {
     "type": "event",
-    "name": "AuctionDurationExtended",
+    "name": "AuctionEndTimeUpdated",
     "inputs": [
       {
         "name": "auctionId",
@@ -609,10 +558,10 @@ export const pndAuctionHouseAbi = [
         "internalType": "uint256"
       },
       {
-        "name": "newDuration",
-        "type": "uint256",
+        "name": "newEndTime",
+        "type": "uint64",
         "indexed": false,
-        "internalType": "uint256"
+        "internalType": "uint64"
       }
     ],
     "anonymous": false
@@ -634,12 +583,6 @@ export const pndAuctionHouseAbi = [
         "internalType": "address"
       },
       {
-        "name": "curator",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
-      },
-      {
         "name": "winner",
         "type": "address",
         "indexed": false,
@@ -647,12 +590,6 @@ export const pndAuctionHouseAbi = [
       },
       {
         "name": "sellerProceeds",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "curatorFee",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -756,6 +693,31 @@ export const pndAuctionHouseAbi = [
     "anonymous": false
   },
   {
+    "type": "event",
+    "name": "StuckERC721Recovered",
+    "inputs": [
+      {
+        "name": "tokenContract",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "tokenId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "to",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
     "type": "error",
     "name": "AuctionAlreadyExistsForToken",
     "inputs": []
@@ -778,11 +740,6 @@ export const pndAuctionHouseAbi = [
   {
     "type": "error",
     "name": "AuctionHasNoBids",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "AuctionNotApproved",
     "inputs": []
   },
   {

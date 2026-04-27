@@ -39,15 +39,12 @@ export const COLLECTION_FACTORY_V2: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x612E2DadDc89d91409e40f946f9f7CfE422e777E",
 }
 
-// PND auction house factory (deploys per-artist EIP-1167 minimal proxies).
-// Set after deploy: paste the factory address logged by
-// `forge script script/Deploy.s.sol --broadcast --verify` here. While 0x0,
-// `getAddressOrNull` returns null and all PND auction UI surfaces no-op.
-//
-// For local end-to-end testing on an Anvil mainnet fork, paste the local
-// factory address here temporarily — but ZERO IT OUT before committing.
-export const PND_AUCTION_HOUSE_FACTORY: Record<number, Address> = {
-  [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+// SovereignAuctionHouseFactory (deploys per-owner EIP-1167 minimal proxies).
+// Mainnet deploy: 2026-04-27, fee 0bps, recipient 0x0 (locked forever).
+// For local Anvil-fork testing, paste the local factory address here
+// temporarily — but RESTORE the mainnet address before committing.
+export const SOVEREIGN_AUCTION_HOUSE_FACTORY: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f",
   [BASE_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
 }
 

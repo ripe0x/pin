@@ -3,10 +3,8 @@
 import { useEffect, useMemo, useState } from "react"
 import { parseEther } from "viem"
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from "wagmi"
-import { erc721Abi, pndAuctionHouseAbi } from "@pin/abi"
+import { erc721Abi, sovereignAuctionHouseAbi } from "@pin/abi"
 import { TxLink } from "./tx"
-
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
 const DURATION_OPTIONS = [
   { label: "24 hours", seconds: 24 * 60 * 60 },
@@ -117,15 +115,13 @@ export function CreateAuctionModal({
     if (!reserveValid) return
     writeCreate({
       address: houseAddress,
-      abi: pndAuctionHouseAbi,
+      abi: sovereignAuctionHouseAbi,
       functionName: "createAuction",
       args: [
         BigInt(tokenId),
         nftContract,
         BigInt(durationSec),
         parseEther(reserveInput.trim() as `${number}`),
-        ZERO_ADDRESS as `0x${string}`, // no curator
-        0, // no curator fee
       ],
     })
   }

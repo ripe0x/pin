@@ -2,7 +2,7 @@
  * Auction state lookups via direct RPC.
  *
  * Source-agnostic: a single token can have an active auction on either the
- * Foundation NFTMarket OR a PND auction house. Since the NFT is escrowed in
+ * Foundation NFTMarket OR a sovereign auction house. Since the NFT is escrowed in
  * the auction contract, only one source can be active at a time. We probe both
  * in parallel and return whichever has the auction.
  */
@@ -13,17 +13,17 @@ import {
   type Address,
 } from "viem"
 import { mainnet } from "viem/chains"
-import { erc721Abi, nftMarketAbi, pndAuctionHouseAbi, pndAuctionHouseFactoryAbi } from "@pin/abi"
+import { erc721Abi, nftMarketAbi, sovereignAuctionHouseAbi, sovereignAuctionHouseFactoryAbi } from "@pin/abi"
 import {
   NFT_MARKET,
   MAINNET_CHAIN_ID,
-  PND_AUCTION_HOUSE_FACTORY,
+  SOVEREIGN_AUCTION_HOUSE_FACTORY,
   getAddressOrNull,
 } from "@pin/addresses"
 import { resolveDisplayNames } from "./artist-queries"
 
 const FND_MARKET = NFT_MARKET[MAINNET_CHAIN_ID]
-const PND_FACTORY = getAddressOrNull(PND_AUCTION_HOUSE_FACTORY, MAINNET_CHAIN_ID)
+const SOVEREIGN_FACTORY = getAddressOrNull(SOVEREIGN_AUCTION_HOUSE_FACTORY, MAINNET_CHAIN_ID)
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
 /**
@@ -48,10 +48,10 @@ export type BidHistoryEntry = {
   txHash: string
 }
 
-export type AuctionSource = "foundation" | "pnd"
+export type AuctionSource = "foundation" | "sovereign"
 
 /**
- * Shared shape for both Foundation and PND auctions. The `source` discriminator
+ * Shared shape for both Foundation and artist-owned auctions. The `source` discriminator
  * tells the panel which contract + ABI to dispatch write calls against; the
  * `marketAddress` is the contract that holds the auction.
  */
@@ -91,7 +91,7 @@ export type FoundationAuctionState = AuctionState & { source: "foundation" }
 const fndBidPlacedEvent = parseAbiItem(
   "event ReserveAuctionBidPlaced(uint256 indexed auctionId, address indexed bidder, uint256 amount, uint256 endTime)",
 )
-const pndBidPlacedEvent = parseAbiItem(
+const sovereignBidPlacedEvent = parseAbiItem(
   "event AuctionBid(uint256 indexed auctionId, address indexed bidder, uint256 amount, bool firstBid, bool extended)",
 )
 
@@ -110,7 +110,7 @@ function getClient() {
 // ─── Public entry points ────────────────────────────────────────────────────
 
 /**
- * Probe both Foundation and PND auction sources for the given token. Returns
+ * Probe both Foundation NFTMarket and artist-owned auction sources for the given token. Returns
  * whichever has an active auction, or null if neither does. Both probes run in
  * parallel so latency = max(both), not sum.
  */
@@ -118,14 +118,14 @@ export async function getAuctionForToken(
   nftContract: string,
   tokenId: string,
 ): Promise<AuctionState | null> {
-  const [foundation, pnd] = await Promise.all([
+  const [foundation, artistOwned] = await Promise.all([
     getFoundationAuction(nftContract, tokenId),
-    getPndAuctionForToken(nftContract, tokenId),
+    getSovereignAuctionForToken(nftContract, tokenId),
   ])
   // An NFT can only be escrowed in one place; if both somehow returned a
   // result (impossible barring contract bug), prefer Foundation since legacy
   // auctions are the existing user expectation.
-  return foundation ?? pnd
+  return foundation ?? artistOwned
 }
 
 // ─── Foundation source ──────────────────────────────────────────────────────
@@ -270,20 +270,20 @@ async function getFoundationFees(
   }
 }
 
-// ─── PND source ─────────────────────────────────────────────────────────────
+// ─── Artist-Owned source ─────────────────────────────────────────────────────────────
 
 /**
- * Find a PND auction for the given token, if any. Strategy:
+ * Find an artist-owned auction for the given token, if any. Strategy:
  *   1. If no factory deployed yet (zero address), short-circuit.
- *   2. Read the NFT's current owner. If it's a PND house (registered with the
+ *   2. Read the NFT's current owner. If it's a sovereign auction house (registered with the
  *      factory), the token is escrowed there and that house has the auction.
  *   3. Read the auctionId from the house and build the auction state.
  */
-async function getPndAuctionForToken(
+async function getSovereignAuctionForToken(
   nftContract: string,
   tokenId: string,
 ): Promise<AuctionState | null> {
-  if (!PND_FACTORY) return null
+  if (!SOVEREIGN_FACTORY) return null
   const client = getClient()
   const contract = nftContract as Address
   const tokenIdBig = BigInt(tokenId)
@@ -300,38 +300,38 @@ async function getPndAuctionForToken(
     return null
   }
 
-  // If the token isn't escrowed in a PND house, there's no PND auction.
-  let isPndHouse: boolean
+  // If the token isn't escrowed in a sovereign auction house, there's no auction.
+  let isSovereignHouse: boolean
   try {
-    isPndHouse = await client.readContract({
-      address: PND_FACTORY,
-      abi: pndAuctionHouseFactoryAbi,
+    isSovereignHouse = await client.readContract({
+      address: SOVEREIGN_FACTORY,
+      abi: sovereignAuctionHouseFactoryAbi,
       functionName: "isHouse",
       args: [currentOwner],
     })
   } catch {
     return null
   }
-  if (!isPndHouse) return null
+  if (!isSovereignHouse) return null
 
-  return readPndAuction(client, currentOwner, contract, tokenIdBig)
+  return readSovereignAuction(client, currentOwner, contract, tokenIdBig)
 }
 
 /**
- * Build the full PND auction state given the house address that holds it.
+ * Build the full auction state given the house address that holds it.
  * Exposed because callers that already know the house (e.g. an artist gallery
  * page that fetched it once) can skip the ownerOf+isHouse round-trip.
  */
-export async function getPndAuctionByHouse(
+export async function getSovereignAuctionByHouse(
   houseAddress: Address,
   nftContract: string,
   tokenId: string,
 ): Promise<AuctionState | null> {
   const client = getClient()
-  return readPndAuction(client, houseAddress, nftContract as Address, BigInt(tokenId))
+  return readSovereignAuction(client, houseAddress, nftContract as Address, BigInt(tokenId))
 }
 
-async function readPndAuction(
+async function readSovereignAuction(
   client: ReturnType<typeof createPublicClient>,
   houseAddress: Address,
   contract: Address,
@@ -343,7 +343,7 @@ async function readPndAuction(
   try {
     const [exists, id] = (await client.readContract({
       address: houseAddress,
-      abi: pndAuctionHouseAbi,
+      abi: sovereignAuctionHouseAbi,
       functionName: "getAuctionFor",
       args: [contract, tokenIdBig],
     })) as readonly [boolean, bigint]
@@ -353,13 +353,16 @@ async function readPndAuction(
     return null
   }
 
+  // Auction struct after the curator removal:
+  //   tokenId, tokenContract, firstBidTime (u64), amount, reservePrice,
+  //   tokenOwner, endTime (u64), bidder, duration (u64).
   let auction: readonly [
-    bigint, Address, boolean, bigint, bigint, bigint, bigint, number, Address, Address, Address,
+    bigint, Address, bigint, bigint, bigint, Address, bigint, Address, bigint,
   ]
   try {
     auction = (await client.readContract({
       address: houseAddress,
-      abi: pndAuctionHouseAbi,
+      abi: sovereignAuctionHouseAbi,
       functionName: "auctions",
       args: [auctionId],
     })) as typeof auction
@@ -370,15 +373,13 @@ async function readPndAuction(
   const [
     auctionTokenId,
     auctionTokenContract,
-    approved,
-    amount,
-    duration,
     firstBidTime,
+    amount,
     reservePrice,
-    curatorFeeBps,
     tokenOwner,
+    endTimeRaw,
     bidder,
-    curator,
+    duration,
   ] = auction
 
   if (tokenOwner === ZERO_ADDRESS) return null
@@ -391,33 +392,31 @@ async function readPndAuction(
     return null
   }
 
-  const minBidWei = await client
-    .readContract({
+  // getMinBidAmount returns (bool exists, uint256 minBid).
+  let minBidWei: bigint
+  try {
+    const [, mb] = (await client.readContract({
       address: houseAddress,
-      abi: pndAuctionHouseAbi,
+      abi: sovereignAuctionHouseAbi,
       functionName: "getMinBidAmount",
       args: [auctionId],
-    })
-    .catch(() => (amount === 0n ? reservePrice : amount))
+    })) as readonly [boolean, bigint]
+    minBidWei = mb
+  } catch {
+    minBidWei = amount === 0n ? reservePrice : amount
+  }
 
-  const pricedAt = amount > 0n ? amount : reservePrice
-
-  // PND fees: protocolFeeBps from contract + curatorFeeBps from auction. No
-  // ERC2981 royalty path in v1.
+  // PND fees: protocolFeeBps from contract. No curator fee anymore (the
+  // role was removed from the contract); no ERC2981 royalty path in v1.
   const protocolFeeBps = await client
     .readContract({
       address: houseAddress,
-      abi: pndAuctionHouseAbi,
+      abi: sovereignAuctionHouseAbi,
       functionName: "protocolFeeBps",
     })
     .catch(() => 0)
   const protoBps = Number(protocolFeeBps)
-  const curBps = Number(curatorFeeBps)
-  // Curator fee is taken from the post-protocol-fee remainder, matching the
-  // contract's _refund order. Approximate as bps for display.
-  const afterProtoBps = 10000 - protoBps
-  const curatorEffectiveBps = Math.floor((afterProtoBps * curBps) / 10000)
-  const sellerBps = afterProtoBps - curatorEffectiveBps
+  const sellerBps = 10000 - protoBps
 
   const fees: AuctionFees = {
     platformLabel: "PND",
@@ -425,15 +424,12 @@ async function readPndAuction(
     creatorRoyaltyBps: 0,
     sellerBps,
   }
-  // Stash the curator fee into creatorRoyaltyBps so the existing UI line
-  // ("Curator royalty") renders. The label is still meaningful for PND since
-  // a curator IS distinct from the seller when set.
-  if (curatorEffectiveBps > 0) fees.creatorRoyaltyBps = curatorEffectiveBps
 
-  const rawHistory = await getPndBidHistory(client, houseAddress, auctionId)
+  const rawHistory = await getSovereignBidHistory(client, houseAddress, auctionId)
 
   const awaitingFirstBid = firstBidTime === 0n || bidder === ZERO_ADDRESS
-  const endTime = firstBidTime === 0n ? 0n : firstBidTime + duration
+  // endTime is stored on-chain post-first-bid; pre-bid it's zero.
+  const endTime = endTimeRaw
   const nowSec = BigInt(Math.floor(Date.now() / 1000))
   const awaitingSettlement =
     !awaitingFirstBid && endTime > 0n && endTime <= nowSec
@@ -444,15 +440,11 @@ async function readPndAuction(
   const names = await resolveDisplayNames(addressesToResolve)
   const lookup = (a: Address) => names.get(a.toLowerCase()) ?? a
 
-  // Suppress unused variable warning for fields we capture but don't surface
-  // in v1 (approved, reservePrice — already folded into amount/minBidWei).
-  void approved
+  // Suppress unused variable warning for fields we capture but don't surface.
   void reservePrice
-  void curator
-  void pricedAt
 
   return {
-    source: "pnd",
+    source: "sovereign",
     marketAddress: houseAddress,
     auctionId: auctionId.toString(),
     nftContract: auctionTokenContract,
@@ -472,7 +464,7 @@ async function readPndAuction(
   }
 }
 
-async function getPndBidHistory(
+async function getSovereignBidHistory(
   client: ReturnType<typeof createPublicClient>,
   houseAddress: Address,
   auctionId: bigint,
@@ -480,7 +472,7 @@ async function getPndBidHistory(
   const logs = await client
     .getLogs({
       address: houseAddress,
-      event: pndBidPlacedEvent,
+      event: sovereignBidPlacedEvent,
       args: { auctionId },
       fromBlock: 0n,
       toBlock: "latest",

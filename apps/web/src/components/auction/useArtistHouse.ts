@@ -1,18 +1,18 @@
 "use client"
 
 import { useReadContract } from "wagmi"
-import { pndAuctionHouseFactoryAbi } from "@pin/abi"
+import { sovereignAuctionHouseFactoryAbi } from "@pin/abi"
 import {
-  PND_AUCTION_HOUSE_FACTORY,
+  SOVEREIGN_AUCTION_HOUSE_FACTORY,
   MAINNET_CHAIN_ID,
   getAddressOrNull,
 } from "@pin/addresses"
 
-const FACTORY = getAddressOrNull(PND_AUCTION_HOUSE_FACTORY, MAINNET_CHAIN_ID)
+const FACTORY = getAddressOrNull(SOVEREIGN_AUCTION_HOUSE_FACTORY, MAINNET_CHAIN_ID)
 const ZERO = "0x0000000000000000000000000000000000000000"
 
 /**
- * Look up the PND auction house address for an artist. Returns null when no
+ * Look up the sovereign auction house address for an artist. Returns null when no
  * house has been deployed for that artist or the factory isn't live yet.
  *
  * IMPORTANT: callers must gate this hook behind a mounted check because
@@ -25,7 +25,7 @@ export function useArtistHouse(artistAddress: string | undefined) {
 
   const { data, isLoading, refetch } = useReadContract({
     address: FACTORY ?? undefined,
-    abi: pndAuctionHouseFactoryAbi,
+    abi: sovereignAuctionHouseFactoryAbi,
     functionName: "houseOf",
     args: artistAddress ? [artistAddress as `0x${string}`] : undefined,
     query: { enabled },

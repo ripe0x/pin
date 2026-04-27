@@ -3,13 +3,13 @@
 import { useEffect, useState } from "react"
 import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
-import { pndAuctionHouseFactoryAbi } from "@pin/abi"
+import { sovereignAuctionHouseFactoryAbi } from "@pin/abi"
 import { useArtistHouse } from "./useArtistHouse"
 import { AddressLink, TxLink } from "./tx"
 
 /**
- * One-time per-artist CTA: deploys the artist's PND auction house clone via
- * the factory. Renders nothing if the connected wallet is not the artist or
+ * One-time per-artist CTA: deploys the artist's auction house clone via the
+ * factory. Renders nothing if the connected wallet is not the artist or
  * if the factory isn't deployed yet. After a successful deploy it shows a
  * confirmation card with the new contract address + tx link until the user
  * acknowledges it.
@@ -76,7 +76,7 @@ export function DeployHouseCTA({ artistAddress }: { artistAddress: string }) {
     // artist, so a stranger can't squat someone else's slot.
     writeContract({
       address: factoryAddress,
-      abi: pndAuctionHouseFactoryAbi,
+      abi: sovereignAuctionHouseFactoryAbi,
       functionName: "createAuctionHouse",
       args: [],
     })
@@ -106,8 +106,9 @@ export function DeployHouseCTA({ artistAddress }: { artistAddress: string }) {
           Set up your auction house
         </h3>
         <p className="text-sm text-gray-500 mt-1">
-          One-time deploy of your own PND auction contract. After this you can
-          start reserve auctions on any of your tokens directly from this page.
+          One-time deploy of your own auction house contract. After this you
+          can start reserve auctions on any of your tokens directly from this
+          page.
         </p>
       </div>
       <button

@@ -2,8 +2,8 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {PndAuctionHouse} from "../src/PndAuctionHouse.sol";
-import {PndAuctionHouseFactory} from "../src/PndAuctionHouseFactory.sol";
+import {SovereignAuctionHouse} from "../src/SovereignAuctionHouse.sol";
+import {SovereignAuctionHouseFactory} from "../src/SovereignAuctionHouseFactory.sol";
 import {IERC721} from "openzeppelin-contracts/contracts/token/ERC721/IERC721.sol";
 
 /// @notice Mainnet fork test: deploy the full system + run an auction against a
@@ -11,17 +11,17 @@ import {IERC721} from "openzeppelin-contracts/contracts/token/ERC721/IERC721.sol
 ///         publicly checkable, and its current owner can be impersonated).
 ///
 /// Run with: MAINNET_RPC_URL=... forge test --fork-url $MAINNET_RPC_URL \
-///           --match-path test/PndAuctionHouseFork.t.sol -vv
-contract PndAuctionHouseForkTest is Test {
+///           --match-path test/SovereignAuctionHouseFork.t.sol -vv
+contract SovereignAuctionHouseForkTest is Test {
     IERC721 internal constant BAYC = IERC721(0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D);
     uint256 internal constant TOKEN_ID = 1234;
 
     address internal artist; // current owner of the NFT (impersonated)
     address internal alice = address(0xA1);
-    address payable internal pndTreasury = payable(address(0xFEE));
+    address payable internal protocolTreasury = payable(address(0xFEE));
 
-    PndAuctionHouseFactory internal factory;
-    PndAuctionHouse internal house;
+    SovereignAuctionHouseFactory internal factory;
+    SovereignAuctionHouse internal house;
 
     function setUp() public {
         // Skip the suite when no fork URL is provided (regular `forge test` runs
@@ -33,16 +33,16 @@ contract PndAuctionHouseForkTest is Test {
         // Resolve the real owner of the test NFT and impersonate them.
         artist = BAYC.ownerOf(TOKEN_ID);
 
-        PndAuctionHouse impl = new PndAuctionHouse();
-        factory = new PndAuctionHouseFactory(
+        SovereignAuctionHouse impl = new SovereignAuctionHouse();
+        factory = new SovereignAuctionHouseFactory(
             address(impl),
-            pndTreasury,
+            protocolTreasury,
             250 // 2.5% protocol fee, locked for this factory
         );
 
         // Artist deploys their own house — createAuctionHouse uses msg.sender.
         vm.prank(artist);
-        house = PndAuctionHouse(payable(factory.createAuctionHouse()));
+        house = SovereignAuctionHouse(payable(factory.createAuctionHouse()));
 
         // Artist approves the house to escrow the NFT.
         vm.prank(artist);
@@ -58,9 +58,7 @@ contract PndAuctionHouseForkTest is Test {
             TOKEN_ID,
             address(BAYC),
             24 hours,
-            10 ether,
-            payable(address(0)),
-            0
+            10 ether
         );
 
         // NFT escrowed in the house.
@@ -74,14 +72,14 @@ contract PndAuctionHouseForkTest is Test {
         vm.warp(block.timestamp + 24 hours + 1);
 
         uint256 artistBefore = artist.balance;
-        uint256 treasuryBefore = pndTreasury.balance;
+        uint256 treasuryBefore = protocolTreasury.balance;
         house.endAuction(auctionId);
 
         // NFT delivered to the winner.
         assertEq(BAYC.ownerOf(TOKEN_ID), alice);
-        // 2.5% to PND treasury, 97.5% to the artist.
+        // 2.5% to protocol treasury, 97.5% to the artist.
         uint256 protocolFee = (10 ether * 250) / 10000;
-        assertEq(pndTreasury.balance - treasuryBefore, protocolFee);
+        assertEq(protocolTreasury.balance - treasuryBefore, protocolFee);
         assertEq(artist.balance - artistBefore, 10 ether - protocolFee);
     }
 }

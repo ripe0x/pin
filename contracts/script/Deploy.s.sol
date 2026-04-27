@@ -2,10 +2,10 @@
 pragma solidity ^0.8.20;
 
 import {Script, console2} from "forge-std/Script.sol";
-import {PndAuctionHouse} from "../src/PndAuctionHouse.sol";
-import {PndAuctionHouseFactory} from "../src/PndAuctionHouseFactory.sol";
+import {SovereignAuctionHouse} from "../src/SovereignAuctionHouse.sol";
+import {SovereignAuctionHouseFactory} from "../src/SovereignAuctionHouseFactory.sol";
 
-/// @notice Mainnet deploy script for the PND auction house system.
+/// @notice Mainnet deploy script for the Sovereign Auction House system.
 /// @dev    The system is fully immutable post-deploy. Whatever protocol fee
 ///         and fee recipient you pass in are locked forever for this factory.
 ///         To change either, deploy a new factory and migrate.
@@ -27,7 +27,7 @@ import {PndAuctionHouseFactory} from "../src/PndAuctionHouseFactory.sol";
 ///                                  (5%). Cannot be changed after deploy.
 ///
 ///         Reminder: if any contract changed since the last ABI emit, run
-///           node scripts/emit-pnd-abi.mjs
+///           node scripts/emit-sovereign-abi.mjs
 ///         after deploy so the frontend picks up the new ABI.
 contract DeployScript is Script {
     function run() external {
@@ -41,8 +41,8 @@ contract DeployScript is Script {
         }
 
         vm.startBroadcast();
-        PndAuctionHouse impl = new PndAuctionHouse();
-        PndAuctionHouseFactory factory = new PndAuctionHouseFactory(
+        SovereignAuctionHouse impl = new SovereignAuctionHouse();
+        SovereignAuctionHouseFactory factory = new SovereignAuctionHouseFactory(
             address(impl),
             feeRecipient,
             protocolFeeBps
@@ -73,13 +73,13 @@ contract DeployScript is Script {
             "factory has no code (deploy failed?)"
         );
 
-        console2.log("PndAuctionHouse implementation:", address(impl));
-        console2.log("PndAuctionHouseFactory:        ", address(factory));
+        console2.log("SovereignAuctionHouse implementation:", address(impl));
+        console2.log("SovereignAuctionHouseFactory:        ", address(factory));
         console2.log("Protocol fee (bps, locked):    ", protocolFeeBps);
         console2.log("Fee recipient (locked):        ", feeRecipient);
         console2.log("Post-deploy assertions:        OK");
         console2.log("");
         console2.log("Add to packages/addresses/src/index.ts:");
-        console2.log("  PND_AUCTION_HOUSE_FACTORY[MAINNET_CHAIN_ID] =", address(factory));
+        console2.log("  SOVEREIGN_AUCTION_HOUSE_FACTORY[MAINNET_CHAIN_ID] =", address(factory));
     }
 }

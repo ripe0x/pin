@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 /// @notice A contract that rejects ETH on receive(). Used to test the
-///         pull-payment refund fallback path in PndAuctionHouse.
+///         pull-payment refund fallback path in SovereignAuctionHouse.
 contract RevertingReceiver {
     function bid(address payable house, uint256 auctionId, uint256 amount) external payable {
         (bool ok, bytes memory data) = house.call{value: amount}(

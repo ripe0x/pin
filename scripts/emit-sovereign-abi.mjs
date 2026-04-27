@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * Extract PND auction contract ABIs from forge build artifacts and write them
+ * Extract Sovereign Auction House ABIs from forge build artifacts and write them
  * as TypeScript modules under packages/abi/src.
  *
  * Run after any change to the Solidity contracts:
  *   cd contracts && forge build
- *   node scripts/emit-pnd-abi.mjs
+ *   node scripts/emit-sovereign-abi.mjs
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -19,18 +19,18 @@ function emit({ artifact, exportName, outFile }) {
   const json = JSON.parse(readFileSync(artifactPath, "utf8"));
   const abi = json.abi;
   const out = resolve(repoRoot, "packages/abi/src", outFile);
-  const body = `// Auto-extracted from contracts/out/${artifact}.\n// Re-run: node scripts/emit-pnd-abi.mjs\nexport const ${exportName} = ${JSON.stringify(abi, null, 2)} as const;\n`;
+  const body = `// Auto-extracted from contracts/out/${artifact}.\n// Re-run: node scripts/emit-sovereign-abi.mjs\nexport const ${exportName} = ${JSON.stringify(abi, null, 2)} as const;\n`;
   writeFileSync(out, body);
   console.log(`Wrote ${out} (${abi.length} items)`);
 }
 
 emit({
-  artifact: "PndAuctionHouse.sol/PndAuctionHouse.json",
-  exportName: "pndAuctionHouseAbi",
-  outFile: "pndAuctionHouse.ts",
+  artifact: "SovereignAuctionHouse.sol/SovereignAuctionHouse.json",
+  exportName: "sovereignAuctionHouseAbi",
+  outFile: "sovereignAuctionHouse.ts",
 });
 emit({
-  artifact: "PndAuctionHouseFactory.sol/PndAuctionHouseFactory.json",
-  exportName: "pndAuctionHouseFactoryAbi",
-  outFile: "pndAuctionHouseFactory.ts",
+  artifact: "SovereignAuctionHouseFactory.sol/SovereignAuctionHouseFactory.json",
+  exportName: "sovereignAuctionHouseFactoryAbi",
+  outFile: "sovereignAuctionHouseFactory.ts",
 });

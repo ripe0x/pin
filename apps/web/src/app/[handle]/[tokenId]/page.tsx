@@ -188,7 +188,7 @@ export default async function TokenPage({
             </section>
           )}
 
-          {/* Live auction (Foundation NFTMarket or our artist-owned auction
+          {/* Live auction (Foundation NFTMarket or a sovereign auction
               house). Our houses are ERC721-only so we suppress the start CTA
               for ERC1155 tokens. */}
           {auction && (

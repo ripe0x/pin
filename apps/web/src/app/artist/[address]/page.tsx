@@ -9,6 +9,7 @@ import { getCachedTokenRefs } from "@/lib/artist-cache"
 import { ArtistHeader } from "@/components/artist/ArtistHeader"
 import { ArtistGallery } from "@/components/artist/ArtistGallery"
 import { BulkDelistPanel } from "@/components/listings/BulkDelistPanel"
+import { SovereignBulkPanel } from "@/components/listings/SovereignBulkPanel"
 
 const INITIAL_PAGE_SIZE = 24
 
@@ -100,6 +101,10 @@ export default async function ArtistPage({
 
       <div className="mt-8">
         <BulkDelistPanel artistAddress={address} />
+      </div>
+
+      <div className="mt-4">
+        <SovereignBulkPanel artistAddress={address} />
       </div>
 
       <div className="mt-12">

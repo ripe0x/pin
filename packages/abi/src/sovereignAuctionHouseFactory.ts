@@ -1,6 +1,6 @@
-// Auto-extracted from contracts/out/PndAuctionHouseFactory.sol/PndAuctionHouseFactory.json.
-// Re-run: node scripts/emit-pnd-abi.mjs
-export const pndAuctionHouseFactoryAbi = [
+// Auto-extracted from contracts/out/SovereignAuctionHouseFactory.sol/SovereignAuctionHouseFactory.json.
+// Re-run: node scripts/emit-sovereign-abi.mjs
+export const sovereignAuctionHouseFactoryAbi = [
   {
     "type": "constructor",
     "inputs": [
@@ -133,6 +133,25 @@ export const pndAuctionHouseFactoryAbi = [
   },
   {
     "type": "function",
+    "name": "predictHouseAddress",
+    "inputs": [
+      {
+        "name": "owner",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "totalHouses",
     "inputs": [],
     "outputs": [
@@ -149,7 +168,7 @@ export const pndAuctionHouseFactoryAbi = [
     "name": "AuctionHouseCreated",
     "inputs": [
       {
-        "name": "artist",
+        "name": "owner",
         "type": "address",
         "indexed": true,
         "internalType": "address"

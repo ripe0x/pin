@@ -2,38 +2,42 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {PndAuctionHouse} from "../src/PndAuctionHouse.sol";
-import {PndAuctionHouseFactory} from "../src/PndAuctionHouseFactory.sol";
-import {IPndAuctionHouse} from "../src/IPndAuctionHouse.sol";
+import {SovereignAuctionHouse} from "../src/SovereignAuctionHouse.sol";
+import {SovereignAuctionHouseFactory} from "../src/SovereignAuctionHouseFactory.sol";
+import {ISovereignAuctionHouse} from "../src/ISovereignAuctionHouse.sol";
 import {MockERC721} from "./MockERC721.sol";
 import {NoopERC721} from "./NoopERC721.sol";
 import {RevertingReceiver} from "./RevertingReceiver.sol";
 import {NonReceivingBidder} from "./NonReceivingBidder.sol";
 
-contract PndAuctionHouseTest is Test {
-    PndAuctionHouse internal house;
-    PndAuctionHouseFactory internal factory;
+contract SovereignAuctionHouseTest is Test {
+    SovereignAuctionHouse internal house;
+    SovereignAuctionHouseFactory internal factory;
     MockERC721 internal nft;
 
     address internal artist = address(0xA11CE);
     address internal alice = address(0xA1);
     address internal bob = address(0xB0B);
     address internal carol = address(0xCA01);
-    address payable internal pndTreasury = payable(address(0xFEE));
+    address payable internal protocolTreasury = payable(address(0xFEE));
 
     uint256 internal constant TOKEN_ID = 1;
     uint256 internal constant DURATION = 24 hours;
     uint256 internal constant RESERVE = 1 ether;
+
+    /// @dev OZ 5.6.1 ReentrancyGuard storage slot (REENTRANCY_GUARD_STORAGE).
+    bytes32 internal constant REENTRANCY_GUARD_SLOT =
+        0x9b779b17422d0df92223018b32b4d1fa46e071723d6817e2486d003becc55f00;
 
     function setUp() public {
         nft = new MockERC721();
         nft.mint(artist, TOKEN_ID);
 
         // Deploy implementation + factory (fully immutable, no admin).
-        PndAuctionHouse impl = new PndAuctionHouse();
-        factory = new PndAuctionHouseFactory(
+        SovereignAuctionHouse impl = new SovereignAuctionHouse();
+        factory = new SovereignAuctionHouseFactory(
             address(impl),
-            pndTreasury,
+            protocolTreasury,
             0 // 0% fee, locked forever for this factory
         );
 
@@ -41,7 +45,7 @@ contract PndAuctionHouseTest is Test {
         // msg.sender as the artist, so prank.
         vm.prank(artist);
         address houseAddr = factory.createAuctionHouse();
-        house = PndAuctionHouse(payable(houseAddr));
+        house = SovereignAuctionHouse(payable(houseAddr));
 
         // Artist approves their house to escrow the NFT.
         vm.prank(artist);
@@ -53,23 +57,80 @@ contract PndAuctionHouseTest is Test {
         vm.deal(carol, 100 ether);
     }
 
+    // ─── Helper ──────────────────────────────────────────────────────────
+
+    function _readAuction(SovereignAuctionHouse h, uint256 id)
+        internal
+        view
+        returns (ISovereignAuctionHouse.Auction memory a)
+    {
+        (
+            uint256 tokenId,
+            address tokenContract,
+            uint64 firstBidTime,
+            uint256 amount,
+            uint256 reservePrice,
+            address tokenOwner,
+            uint64 endTime,
+            address payable bidder,
+            uint64 duration
+        ) = h.auctions(id);
+        a.tokenId = tokenId;
+        a.tokenContract = tokenContract;
+        a.firstBidTime = firstBidTime;
+        a.amount = amount;
+        a.reservePrice = reservePrice;
+        a.tokenOwner = tokenOwner;
+        a.endTime = endTime;
+        a.bidder = bidder;
+        a.duration = duration;
+    }
+
     // ─── Initialization ──────────────────────────────────────────────────
 
     function test_Initialize_SetsState() public view {
         assertEq(house.owner(), artist);
-        assertEq(house.feeRecipient(), pndTreasury);
+        assertEq(house.feeRecipient(), protocolTreasury);
         assertEq(house.protocolFeeBps(), 0);
     }
 
     function test_Initialize_CannotBeCalledAgain() public {
         vm.expectRevert();
-        house.initialize(artist, pndTreasury, 0);
+        house.initialize(artist, protocolTreasury, 0);
+    }
+
+    function test_Initialize_WarmsReentrancyGuardSlot() public view {
+        // After initialize, the guard slot must be 1 (NOT_ENTERED) so the
+        // first nonReentrant call pays SSTORE-from-1 instead of from-0.
+        bytes32 v = vm.load(address(house), REENTRANCY_GUARD_SLOT);
+        assertEq(uint256(v), 1);
+    }
+
+    function test_ReentrancyGuardSlot_DerivationMatchesOZ() public pure {
+        bytes32 derived = keccak256(
+            abi.encode(uint256(keccak256("openzeppelin.storage.ReentrancyGuard")) - 1)
+        ) & ~bytes32(uint256(0xff));
+        assertEq(
+            derived,
+            0x9b779b17422d0df92223018b32b4d1fa46e071723d6817e2486d003becc55f00,
+            "OZ ReentrancyGuard namespace label or derivation changed"
+        );
+    }
+
+    /// @dev 2b: After a fresh clone is deployed, vm.load the OZ namespaced
+    ///      slot and confirm it equals NOT_ENTERED (1).
+    function test_ReentrancyGuardSlot_ReadsOneAfterInitialize() public {
+        // Deploy a fresh clone via the factory for a different owner.
+        vm.prank(bob);
+        address freshHouseAddr = factory.createAuctionHouse();
+        bytes32 v = vm.load(freshHouseAddr, REENTRANCY_GUARD_SLOT);
+        assertEq(v, bytes32(uint256(1)));
     }
 
     function test_FactoryConstructor_RejectsFeeAboveCap() public {
-        PndAuctionHouse impl = new PndAuctionHouse();
+        SovereignAuctionHouse impl = new SovereignAuctionHouse();
         vm.expectRevert("fee above cap");
-        new PndAuctionHouseFactory(address(impl), pndTreasury, 501);
+        new SovereignAuctionHouseFactory(address(impl), protocolTreasury, 501);
     }
 
     // ─── Immutability — no setters exist on the impl ─────────────────────
@@ -100,39 +161,21 @@ contract PndAuctionHouseTest is Test {
 
     function _createAuction() internal returns (uint256) {
         vm.prank(artist);
-        return house.createAuction(
-            TOKEN_ID,
-            address(nft),
-            DURATION,
-            RESERVE,
-            payable(address(0)),
-            0
-        );
+        return house.createAuction(TOKEN_ID, address(nft), DURATION, RESERVE);
     }
 
-    function test_CreateAuction_EscrowsNftAndApproves() public {
+    function test_CreateAuction_EscrowsNftAndStoresState() public {
         uint256 id = _createAuction();
         assertEq(nft.ownerOf(TOKEN_ID), address(house));
-        (
-            uint256 tokenId,
-            address tokenContract,
-            bool approved,
-            uint256 amount,
-            ,
-            ,
-            uint256 reservePrice,
-            ,
-            address tokenOwner,
-            ,
-            address curator
-        ) = house.auctions(id);
-        assertEq(tokenId, TOKEN_ID);
-        assertEq(tokenContract, address(nft));
-        assertTrue(approved); // No curator set => auto-approved
-        assertEq(amount, 0);
-        assertEq(reservePrice, RESERVE);
-        assertEq(tokenOwner, artist);
-        assertEq(curator, address(0));
+        ISovereignAuctionHouse.Auction memory a = _readAuction(house, id);
+        assertEq(a.tokenId, TOKEN_ID);
+        assertEq(a.tokenContract, address(nft));
+        assertEq(a.amount, 0);
+        assertEq(a.reservePrice, RESERVE);
+        assertEq(a.tokenOwner, artist);
+        assertEq(a.duration, uint64(DURATION));
+        assertEq(a.firstBidTime, 0);
+        assertEq(a.endTime, 0);
     }
 
     function test_CreateAuction_RejectsCallerThatIsNotHouseOwner() public {
@@ -142,7 +185,7 @@ contract PndAuctionHouseTest is Test {
         nft.setApprovalForAll(address(house), true);
         vm.expectRevert(); // OwnableUnauthorizedAccount
         vm.prank(alice);
-        house.createAuction(99, address(nft), DURATION, RESERVE, payable(address(0)), 0);
+        house.createAuction(99, address(nft), DURATION, RESERVE);
     }
 
     function test_CreateAuction_RejectsArtistWhoDoesNotOwnTheNFT() public {
@@ -150,40 +193,33 @@ contract PndAuctionHouseTest is Test {
         nft.mint(alice, 42);
         vm.prank(artist);
         vm.expectRevert("Not token owner or approved");
-        house.createAuction(42, address(nft), DURATION, RESERVE, payable(address(0)), 0);
+        house.createAuction(42, address(nft), DURATION, RESERVE);
     }
 
     function test_CreateAuction_RejectsNonERC721() public {
         // Artist (an EOA) is not ERC721 — supportsInterface call will fail.
         vm.prank(artist);
         vm.expectRevert();
-        house.createAuction(TOKEN_ID, artist, DURATION, RESERVE, payable(address(0)), 0);
+        house.createAuction(TOKEN_ID, artist, DURATION, RESERVE);
     }
 
     function test_CreateAuction_RejectsZeroDuration() public {
         vm.prank(artist);
         vm.expectRevert("duration zero");
-        house.createAuction(TOKEN_ID, address(nft), 0, RESERVE, payable(address(0)), 0);
+        house.createAuction(TOKEN_ID, address(nft), 0, RESERVE);
     }
 
-    function test_CreateAuction_RejectsCuratorFeeAt100Pct() public {
+    function test_CreateAuction_RejectsAbsurdDuration() public {
         vm.prank(artist);
-        vm.expectRevert("curator fee >= 100%");
-        house.createAuction(TOKEN_ID, address(nft), DURATION, RESERVE, payable(carol), 10000);
-    }
-
-    function test_CreateAuction_WithCurator_NotAutoApproved() public {
-        vm.prank(artist);
-        uint256 id = house.createAuction(TOKEN_ID, address(nft), DURATION, RESERVE, payable(carol), 1000);
-        (,, bool approved,,,,,,,,) = house.auctions(id);
-        assertFalse(approved);
+        vm.expectRevert("duration too large");
+        house.createAuction(TOKEN_ID, address(nft), 365 days * 100 + 1, RESERVE);
     }
 
     // ─── Bid validation ──────────────────────────────────────────────────
 
     function test_Bid_RejectsBelowReserve() public {
         uint256 id = _createAuction();
-        vm.expectRevert(PndAuctionHouse.BidBelowReserve.selector);
+        vm.expectRevert(SovereignAuctionHouse.BidBelowReserve.selector);
         vm.prank(alice);
         house.createBid{value: RESERVE - 1}(id);
     }
@@ -192,10 +228,11 @@ contract PndAuctionHouseTest is Test {
         uint256 id = _createAuction();
         vm.prank(alice);
         house.createBid{value: RESERVE}(id);
-        (,,, uint256 amount,, uint256 firstBidTime,,,, address payable bidder,) = house.auctions(id);
-        assertEq(amount, RESERVE);
-        assertEq(bidder, alice);
-        assertGt(firstBidTime, 0);
+        ISovereignAuctionHouse.Auction memory a = _readAuction(house, id);
+        assertEq(a.amount, RESERVE);
+        assertEq(a.bidder, alice);
+        assertGt(a.firstBidTime, 0);
+        assertEq(uint256(a.endTime), uint256(a.firstBidTime) + DURATION);
     }
 
     function test_Bid_RejectsBelowMinIncrement() public {
@@ -205,7 +242,7 @@ contract PndAuctionHouseTest is Test {
 
         // 5% increment over RESERVE = RESERVE * 1.05
         uint256 tooLow = RESERVE + (RESERVE * 499) / 10000; // < 5% bump
-        vm.expectRevert(PndAuctionHouse.BidBelowMinimum.selector);
+        vm.expectRevert(SovereignAuctionHouse.BidBelowMinimum.selector);
         vm.prank(bob);
         house.createBid{value: tooLow}(id);
     }
@@ -218,9 +255,33 @@ contract PndAuctionHouseTest is Test {
         uint256 minNext = RESERVE + (RESERVE * 500) / 10000;
         vm.prank(bob);
         house.createBid{value: minNext}(id);
-        (,,, uint256 amount,,,,,, address payable bidder,) = house.auctions(id);
-        assertEq(amount, minNext);
-        assertEq(bidder, bob);
+        ISovereignAuctionHouse.Auction memory a = _readAuction(house, id);
+        assertEq(a.amount, minNext);
+        assertEq(a.bidder, bob);
+    }
+
+    /// Strict-greater logic with the 1-wei floor: an increment that rounds
+    /// to zero in bps must still require at least previous + 1 wei.
+    function test_Bid_RejectsExactMatchOnTinyPriorBid() public {
+        // Use a fresh zero-reserve auction so we can have a 1-wei first bid.
+        nft.mint(artist, 555);
+        vm.prank(artist);
+        uint256 id = house.createAuction(555, address(nft), DURATION, 0);
+
+        vm.prank(alice);
+        house.createBid{value: 1}(id); // amount = 1 wei
+
+        // 5% of 1 = 0; floor pushes minNext to 2.
+        // A bid of exactly 1 must revert.
+        vm.expectRevert(SovereignAuctionHouse.BidBelowMinimum.selector);
+        vm.prank(bob);
+        house.createBid{value: 1}(id);
+
+        // Bid of 2 wei is the smallest valid next bid.
+        vm.prank(bob);
+        house.createBid{value: 2}(id);
+        ISovereignAuctionHouse.Auction memory a = _readAuction(house, id);
+        assertEq(a.amount, 2);
     }
 
     function test_Bid_RefundsPriorBidder() public {
@@ -245,29 +306,14 @@ contract PndAuctionHouseTest is Test {
 
         vm.warp(block.timestamp + DURATION + 1);
         uint256 minNext = RESERVE + (RESERVE * 500) / 10000;
-        vm.expectRevert(PndAuctionHouse.AuctionExpired.selector);
+        vm.expectRevert(SovereignAuctionHouse.AuctionExpired.selector);
         vm.prank(bob);
         house.createBid{value: minNext}(id);
     }
 
-    function test_Bid_RejectsWhenNotApproved() public {
-        vm.prank(artist);
-        uint256 id = house.createAuction(
-            TOKEN_ID,
-            address(nft),
-            DURATION,
-            RESERVE,
-            payable(carol), // Curator set, so not auto-approved
-            500
-        );
-        vm.expectRevert(PndAuctionHouse.AuctionNotApproved.selector);
-        vm.prank(alice);
-        house.createBid{value: RESERVE}(id);
-    }
-
     // ─── Late-bid time extension ─────────────────────────────────────────
 
-    function test_LateBid_ExtendsDuration() public {
+    function test_LateBid_ExtendsEndTime() public {
         uint256 id = _createAuction();
         vm.prank(alice);
         house.createBid{value: RESERVE}(id);
@@ -279,16 +325,16 @@ contract PndAuctionHouseTest is Test {
         vm.prank(bob);
         house.createBid{value: minNext}(id);
 
-        ( , , , , uint256 dur, uint256 firstBid, , , , , ) = house.auctions(id);
-        // firstBid + dur should be at least block.timestamp + 15 minutes
-        assertGe(firstBid + dur, block.timestamp + 15 minutes);
+        ISovereignAuctionHouse.Auction memory a = _readAuction(house, id);
+        // endTime should be at least block.timestamp + 15 minutes.
+        assertGe(uint256(a.endTime), block.timestamp + 15 minutes);
     }
 
     function test_EarlyBid_DoesNotExtend() public {
         uint256 id = _createAuction();
-        uint256 originalDuration = DURATION;
         vm.prank(alice);
         house.createBid{value: RESERVE}(id);
+        uint64 endTimeBefore = _readAuction(house, id).endTime;
 
         // Bid plenty of time before the buffer.
         vm.warp(block.timestamp + 1 hours);
@@ -296,8 +342,8 @@ contract PndAuctionHouseTest is Test {
         vm.prank(bob);
         house.createBid{value: minNext}(id);
 
-        ( , , , , uint256 dur, , , , , , ) = house.auctions(id);
-        assertEq(dur, originalDuration);
+        ISovereignAuctionHouse.Auction memory a = _readAuction(house, id);
+        assertEq(a.endTime, endTimeBefore);
     }
 
     // ─── End auction ─────────────────────────────────────────────────────
@@ -320,29 +366,29 @@ contract PndAuctionHouseTest is Test {
         uint256 id = _createAuction();
         vm.prank(alice);
         house.createBid{value: RESERVE}(id);
-        vm.expectRevert(PndAuctionHouse.AuctionNotEnded.selector);
+        vm.expectRevert(SovereignAuctionHouse.AuctionNotEnded.selector);
         house.endAuction(id);
     }
 
     function test_EndAuction_RejectsWithoutBids() public {
         uint256 id = _createAuction();
         vm.warp(block.timestamp + DURATION + 1);
-        vm.expectRevert(PndAuctionHouse.AuctionHasNoBids.selector);
+        vm.expectRevert(SovereignAuctionHouse.AuctionHasNoBids.selector);
         house.endAuction(id);
     }
 
     /// @dev Spin up a fresh fee-charging factory + house to test the fee path.
     ///      The default `house` is at 0% (locked). Per immutable design, a new
     ///      factory is the only way to vary protocol fee.
-    function _newHouseWithFee(uint16 feeBps) internal returns (PndAuctionHouse h, uint256 nftTokenId) {
-        PndAuctionHouse impl = new PndAuctionHouse();
-        PndAuctionHouseFactory feeFactory = new PndAuctionHouseFactory(
+    function _newHouseWithFee(uint16 feeBps) internal returns (SovereignAuctionHouse h, uint256 nftTokenId) {
+        SovereignAuctionHouse impl = new SovereignAuctionHouse();
+        SovereignAuctionHouseFactory feeFactory = new SovereignAuctionHouseFactory(
             address(impl),
-            pndTreasury,
+            protocolTreasury,
             feeBps
         );
         vm.prank(artist);
-        h = PndAuctionHouse(payable(feeFactory.createAuctionHouse()));
+        h = SovereignAuctionHouse(payable(feeFactory.createAuctionHouse()));
         nftTokenId = uint256(uint160(address(h))) % 1_000_000 + 10_000;
         nft.mint(artist, nftTokenId);
         vm.prank(artist);
@@ -350,92 +396,21 @@ contract PndAuctionHouseTest is Test {
     }
 
     function test_EndAuction_PaysProtocolFee() public {
-        (PndAuctionHouse h, uint256 tokenId) = _newHouseWithFee(250); // 2.5%
+        (SovereignAuctionHouse h, uint256 tokenId) = _newHouseWithFee(250); // 2.5%
 
         vm.prank(artist);
-        uint256 id = h.createAuction(
-            tokenId,
-            address(nft),
-            DURATION,
-            RESERVE,
-            payable(address(0)),
-            0
-        );
+        uint256 id = h.createAuction(tokenId, address(nft), DURATION, RESERVE);
         vm.prank(alice);
         h.createBid{value: RESERVE}(id);
         vm.warp(block.timestamp + DURATION + 1);
 
         uint256 sellerBefore = artist.balance;
-        uint256 feeRecipientBefore = pndTreasury.balance;
+        uint256 feeRecipientBefore = protocolTreasury.balance;
         h.endAuction(id);
 
         uint256 expectedFee = (RESERVE * 250) / 10000;
-        assertEq(pndTreasury.balance - feeRecipientBefore, expectedFee);
+        assertEq(protocolTreasury.balance - feeRecipientBefore, expectedFee);
         assertEq(artist.balance - sellerBefore, RESERVE - expectedFee);
-    }
-
-    function test_EndAuction_PaysCuratorFee() public {
-        // Auction with carol as curator @ 10%
-        vm.prank(artist);
-        uint256 id = house.createAuction(
-            TOKEN_ID,
-            address(nft),
-            DURATION,
-            RESERVE,
-            payable(carol),
-            1000
-        );
-        vm.prank(carol);
-        house.setAuctionApproval(id, true);
-
-        vm.prank(alice);
-        house.createBid{value: RESERVE}(id);
-        vm.warp(block.timestamp + DURATION + 1);
-
-        uint256 sellerBefore = artist.balance;
-        uint256 carolBefore = carol.balance;
-        house.endAuction(id);
-
-        uint256 curatorFee = (RESERVE * 1000) / 10000;
-        assertEq(carol.balance - carolBefore, curatorFee);
-        assertEq(artist.balance - sellerBefore, RESERVE - curatorFee);
-    }
-
-    function test_EndAuction_PaysProtocolThenCurator() public {
-        // Protocol 5% (locked at factory), curator 10% (per-auction)
-        (PndAuctionHouse h, uint256 tokenId) = _newHouseWithFee(500);
-
-        vm.prank(artist);
-        uint256 id = h.createAuction(
-            tokenId,
-            address(nft),
-            DURATION,
-            RESERVE,
-            payable(carol),
-            1000
-        );
-        vm.prank(carol);
-        h.setAuctionApproval(id, true);
-
-        vm.prank(alice);
-        h.createBid{value: RESERVE}(id);
-        vm.warp(block.timestamp + DURATION + 1);
-
-        uint256 protocolFee = (RESERVE * 500) / 10000; // 5% of total
-        uint256 afterProtocol = RESERVE - protocolFee;
-        uint256 curatorFee = (afterProtocol * 1000) / 10000; // 10% of rest
-        uint256 sellerProceeds = afterProtocol - curatorFee;
-
-        uint256 sellerBefore = artist.balance;
-        uint256 carolBefore = carol.balance;
-        uint256 treasuryBefore = pndTreasury.balance;
-        h.endAuction(id);
-
-        assertEq(pndTreasury.balance - treasuryBefore, protocolFee);
-        assertEq(carol.balance - carolBefore, curatorFee);
-        assertEq(artist.balance - sellerBefore, sellerProceeds);
-        // Total accounted for
-        assertEq(protocolFee + curatorFee + sellerProceeds, RESERVE);
     }
 
     // ─── Cancel + update reserve ─────────────────────────────────────────
@@ -451,14 +426,14 @@ contract PndAuctionHouseTest is Test {
         uint256 id = _createAuction();
         vm.prank(alice);
         house.createBid{value: RESERVE}(id);
-        vm.expectRevert(PndAuctionHouse.AuctionAlreadyStarted.selector);
+        vm.expectRevert(SovereignAuctionHouse.AuctionAlreadyStarted.selector);
         vm.prank(artist);
         house.cancelAuction(id);
     }
 
     function test_CancelAuction_RejectsNonOwner() public {
         uint256 id = _createAuction();
-        vm.expectRevert("Not auction creator or curator");
+        vm.expectRevert("Not token owner");
         vm.prank(alice);
         house.cancelAuction(id);
     }
@@ -467,15 +442,22 @@ contract PndAuctionHouseTest is Test {
         uint256 id = _createAuction();
         vm.prank(artist);
         house.setAuctionReservePrice(id, 2 ether);
-        ( , , , , , , uint256 reserve, , , , ) = house.auctions(id);
-        assertEq(reserve, 2 ether);
+        ISovereignAuctionHouse.Auction memory a = _readAuction(house, id);
+        assertEq(a.reservePrice, 2 ether);
 
         vm.prank(alice);
         house.createBid{value: 2 ether}(id);
 
-        vm.expectRevert(PndAuctionHouse.AuctionAlreadyStarted.selector);
+        vm.expectRevert(SovereignAuctionHouse.AuctionAlreadyStarted.selector);
         vm.prank(artist);
         house.setAuctionReservePrice(id, 3 ether);
+    }
+
+    function test_UpdateReserve_RejectsNonOwner() public {
+        uint256 id = _createAuction();
+        vm.expectRevert("Not token owner");
+        vm.prank(alice);
+        house.setAuctionReservePrice(id, 2 ether);
     }
 
     // ─── Refund fallback ─────────────────────────────────────────────────
@@ -528,6 +510,21 @@ contract PndAuctionHouseTest is Test {
         assertFalse(factory.isHouse(alice));
     }
 
+    function test_Factory_PredictsHouseAddress() public {
+        // Bob hasn't deployed yet; predict matches what createAuctionHouse will produce.
+        address predicted = factory.predictHouseAddress(bob);
+        vm.prank(bob);
+        address actual = factory.createAuctionHouse();
+        assertEq(predicted, actual);
+    }
+
+    function test_Factory_PredictDifferentForDifferentOwners() public {
+        // Salt is keyed on the caller, so the prediction varies per address.
+        address predA = factory.predictHouseAddress(alice);
+        address predB = factory.predictHouseAddress(bob);
+        assertTrue(predA != predB);
+    }
+
     // ─── Per-token auction lookup ────────────────────────────────────────
 
     function test_TokenLookup_ReturnsAuctionId() public {
@@ -576,6 +573,44 @@ contract PndAuctionHouseTest is Test {
         assertEq(missingId, 0);
     }
 
+    // ─── getMinBidAmount tuple ───────────────────────────────────────────
+
+    function test_GetMinBid_NonexistentReturnsFalse() public view {
+        (bool exists, uint256 minBid) = house.getMinBidAmount(99999);
+        assertFalse(exists);
+        assertEq(minBid, 0);
+    }
+
+    function test_GetMinBid_PreBidReturnsReserve() public {
+        uint256 id = _createAuction();
+        (bool exists, uint256 minBid) = house.getMinBidAmount(id);
+        assertTrue(exists);
+        assertEq(minBid, RESERVE);
+    }
+
+    function test_GetMinBid_PostBidMatchesEnforcedFloor() public {
+        // Tiny prior bid where 5% rounds to 0; getMinBidAmount must equal
+        // the actual minimum createBid will accept.
+        nft.mint(artist, 777);
+        vm.prank(artist);
+        uint256 id = house.createAuction(777, address(nft), DURATION, 0);
+
+        vm.prank(alice);
+        house.createBid{value: 1}(id);
+
+        (bool exists, uint256 minBid) = house.getMinBidAmount(id);
+        assertTrue(exists);
+        assertEq(minBid, 2); // 1 + 1-wei floor
+
+        // Confirm createBid rejects below this and accepts at this.
+        vm.expectRevert(SovereignAuctionHouse.BidBelowMinimum.selector);
+        vm.prank(bob);
+        house.createBid{value: minBid - 1}(id);
+
+        vm.prank(bob);
+        house.createBid{value: minBid}(id);
+    }
+
     // ─── Bulk cancel ─────────────────────────────────────────────────────
 
     function _createBulkAuctions(uint256 count) internal returns (uint256[] memory ids) {
@@ -584,14 +619,7 @@ contract PndAuctionHouseTest is Test {
             uint256 tokenId = 100 + i;
             nft.mint(artist, tokenId);
             vm.prank(artist);
-            ids[i] = house.createAuction(
-                tokenId,
-                address(nft),
-                DURATION,
-                RESERVE,
-                payable(address(0)),
-                0
-            );
+            ids[i] = house.createAuction(tokenId, address(nft), DURATION, RESERVE);
         }
     }
 
@@ -624,7 +652,7 @@ contract PndAuctionHouseTest is Test {
         vm.prank(alice);
         house.createBid{value: RESERVE}(ids[1]);
 
-        vm.expectRevert(PndAuctionHouse.AuctionAlreadyStarted.selector);
+        vm.expectRevert(SovereignAuctionHouse.AuctionAlreadyStarted.selector);
         vm.prank(artist);
         house.bulkCancelAuctions(ids);
 
@@ -639,7 +667,7 @@ contract PndAuctionHouseTest is Test {
         ids[0] = _createAuction();
         ids[1] = 99999; // doesn't exist
 
-        vm.expectRevert(PndAuctionHouse.AuctionDoesNotExist.selector);
+        vm.expectRevert(SovereignAuctionHouse.AuctionDoesNotExist.selector);
         vm.prank(artist);
         house.bulkCancelAuctions(ids);
 
@@ -671,31 +699,16 @@ contract PndAuctionHouseTest is Test {
             address(nft),
             tokenIds,
             RESERVE,
-            DURATION,
-            payable(address(0)),
-            0
+            DURATION
         );
 
         assertEq(auctionIds.length, 3);
         for (uint256 i = 0; i < tokenIds.length; i++) {
             assertEq(nft.ownerOf(tokenIds[i]), address(house));
             assertTrue(house.hasAuctionFor(address(nft), tokenIds[i]));
-            (
-                ,
-                ,
-                bool approved,
-                ,
-                ,
-                ,
-                uint256 reserve,
-                ,
-                address tokenOwner,
-                ,
-
-            ) = house.auctions(auctionIds[i]);
-            assertTrue(approved); // no curator => auto-approved
-            assertEq(reserve, RESERVE);
-            assertEq(tokenOwner, artist);
+            ISovereignAuctionHouse.Auction memory a = _readAuction(house, auctionIds[i]);
+            assertEq(a.reservePrice, RESERVE);
+            assertEq(a.tokenOwner, artist);
         }
     }
 
@@ -703,14 +716,7 @@ contract PndAuctionHouseTest is Test {
         uint256[] memory tokenIds = _bulkMintTokens(2);
         vm.expectRevert(); // OwnableUnauthorizedAccount
         vm.prank(alice);
-        house.bulkCreateAuctions(
-            address(nft),
-            tokenIds,
-            RESERVE,
-            DURATION,
-            payable(address(0)),
-            0
-        );
+        house.bulkCreateAuctions(address(nft), tokenIds, RESERVE, DURATION);
     }
 
     function test_BulkCreate_RevertsIfArtistDoesntOwnOne() public {
@@ -722,14 +728,7 @@ contract PndAuctionHouseTest is Test {
 
         vm.expectRevert("Not token owner or approved");
         vm.prank(artist);
-        house.bulkCreateAuctions(
-            address(nft),
-            tokenIds,
-            RESERVE,
-            DURATION,
-            payable(address(0)),
-            0
-        );
+        house.bulkCreateAuctions(address(nft), tokenIds, RESERVE, DURATION);
 
         // Atomicity: token 300 should still be with artist, no auction created.
         assertEq(nft.ownerOf(300), artist);
@@ -743,9 +742,7 @@ contract PndAuctionHouseTest is Test {
             address(nft),
             tokenIds,
             RESERVE,
-            DURATION,
-            payable(address(0)),
-            0
+            DURATION
         );
         assertEq(result.length, 0);
     }
@@ -763,13 +760,7 @@ contract PndAuctionHouseTest is Test {
     }
 
     /// #2 — A contract bidder without IERC721Receiver no longer aborts
-    /// settlement. The previous design used safeTransferFrom + try/catch and
-    /// silently cancelled the auction (refunding the winner's bid) when the
-    /// transfer failed — a griefing path. Now plain transferFrom lands the
-    /// NFT on the contract regardless of whether the recipient implements the
-    /// receiver hook; the auction settles, the seller is paid, and the
-    /// bidder owns an NFT they can't easily move. Their problem, not the
-    /// seller's.
+    /// settlement.
     function test_BidderCantReceiveNFT_StillSettles() public {
         NonReceivingBidder bidder = new NonReceivingBidder();
         vm.deal(address(bidder), 10 ether);
@@ -796,32 +787,11 @@ contract PndAuctionHouseTest is Test {
         // Use a fresh token for a zero-reserve auction.
         nft.mint(artist, 555);
         vm.prank(artist);
-        uint256 id = house.createAuction(
-            555,
-            address(nft),
-            DURATION,
-            0, // zero reserve
-            payable(address(0)),
-            0
-        );
+        uint256 id = house.createAuction(555, address(nft), DURATION, 0);
 
-        vm.expectRevert(PndAuctionHouse.BidMustBePositive.selector);
+        vm.expectRevert(SovereignAuctionHouse.BidMustBePositive.selector);
         vm.prank(alice);
         house.createBid{value: 0}(id);
-    }
-
-    /// #10 — Curator fee with no curator is rejected at create time.
-    function test_CreateAuction_RejectsCuratorFeeWithoutCurator() public {
-        vm.prank(artist);
-        vm.expectRevert("curator fee without curator");
-        house.createAuction(
-            TOKEN_ID,
-            address(nft),
-            DURATION,
-            RESERVE,
-            payable(address(0)), // no curator
-            500 // but a fee is set — invalid
-        );
     }
 
     /// #7 — Direct ETH sends are rejected so accidental transfers don't get
@@ -837,23 +807,23 @@ contract PndAuctionHouseTest is Test {
     function test_FactoryConstructor_RejectsEOAImplementation() public {
         // alice is an EOA (no code).
         vm.expectRevert("implementation has no code");
-        new PndAuctionHouseFactory(alice, pndTreasury, 0);
+        new SovereignAuctionHouseFactory(alice, protocolTreasury, 0);
     }
 
     /// #8 — Factory rejects address(0) explicitly with the impl-required check.
     function test_FactoryConstructor_RejectsZeroImpl() public {
         vm.expectRevert("impl required");
-        new PndAuctionHouseFactory(address(0), pndTreasury, 0);
+        new SovereignAuctionHouseFactory(address(0), protocolTreasury, 0);
     }
 
     /// Factory event includes immutable fee terms.
     function test_Factory_EmitsFeeTermsInEvent() public {
         // Topics: artist, house. Data: feeRecipient, protocolFeeBps.
         vm.expectEmit(true, false, false, true);
-        emit PndAuctionHouseFactory.AuctionHouseCreated(
+        emit SovereignAuctionHouseFactory.AuctionHouseCreated(
             bob,
             address(0), // we don't predict house addr; second indexed not strict
-            pndTreasury,
+            protocolTreasury,
             0
         );
         vm.prank(bob);
@@ -864,13 +834,13 @@ contract PndAuctionHouseTest is Test {
 
     function test_Lock_TransferOwnershipReverts() public {
         vm.prank(artist);
-        vm.expectRevert(PndAuctionHouse.OwnershipLocked.selector);
+        vm.expectRevert(SovereignAuctionHouse.OwnershipLocked.selector);
         house.transferOwnership(alice);
     }
 
     function test_Lock_RenounceOwnershipReverts() public {
         vm.prank(artist);
-        vm.expectRevert(PndAuctionHouse.OwnershipLocked.selector);
+        vm.expectRevert(SovereignAuctionHouse.OwnershipLocked.selector);
         house.renounceOwnership();
     }
 
@@ -887,22 +857,10 @@ contract PndAuctionHouseTest is Test {
 
     function test_DuplicateAuctionForERC721_Reverts() public {
         _createAuction();
-        // The reverse-lookup check fires first now (before the ownership
-        // gate), so the second create reverts explicitly with the dedicated
-        // error rather than tripping on the (also-true) "not owner anymore"
-        // condition.
-        vm.expectRevert(PndAuctionHouse.AuctionAlreadyExistsForToken.selector);
+        vm.expectRevert(SovereignAuctionHouse.AuctionAlreadyExistsForToken.selector);
         vm.prank(artist);
-        house.createAuction(
-            TOKEN_ID,
-            address(nft),
-            DURATION,
-            RESERVE,
-            payable(address(0)),
-            0
-        );
+        house.createAuction(TOKEN_ID, address(nft), DURATION, RESERVE);
     }
-
 
     function test_AfterCancel_CanRelist_ERC721() public {
         uint256 id = _createAuction();
@@ -911,40 +869,21 @@ contract PndAuctionHouseTest is Test {
 
         // Now relist.
         vm.prank(artist);
-        uint256 id2 = house.createAuction(
-            TOKEN_ID,
-            address(nft),
-            DURATION,
-            RESERVE,
-            payable(address(0)),
-            0
-        );
+        uint256 id2 = house.createAuction(TOKEN_ID, address(nft), DURATION, RESERVE);
         assertEq(id2, id + 1);
         assertTrue(house.hasAuctionFor(address(nft), TOKEN_ID));
     }
 
     function test_AfterSettle_CanRelistDifferentToken() public {
-        // After a settle the lookup is cleared, so another holder of the
-        // same token contract + tokenId could relist. Same token id, fresh
-        // mint, fresh seller (still artist for our flow).
         uint256 id = _createAuction();
         vm.prank(alice);
         house.createBid{value: RESERVE}(id);
         vm.warp(block.timestamp + DURATION + 1);
         house.endAuction(id);
 
-        // Alice now owns TOKEN_ID, but artist owns the house. Test the
-        // simpler case: relist a freshly-minted token.
         nft.mint(artist, 1234);
         vm.prank(artist);
-        uint256 id2 = house.createAuction(
-            1234,
-            address(nft),
-            DURATION,
-            RESERVE,
-            payable(address(0)),
-            0
-        );
+        uint256 id2 = house.createAuction(1234, address(nft), DURATION, RESERVE);
         assertTrue(house.hasAuctionFor(address(nft), 1234));
         assertFalse(house.hasAuctionFor(address(nft), TOKEN_ID));
         assertEq(id2, id + 1);
@@ -975,15 +914,217 @@ contract PndAuctionHouseTest is Test {
         NoopERC721 liar = new NoopERC721();
         liar.setOwner(artist); // ownership check passes via isApprovedForAll
         vm.prank(artist);
-        vm.expectRevert(PndAuctionHouse.EscrowFailed.selector);
-        house.createAuction(
-            1,
-            address(liar),
-            DURATION,
-            RESERVE,
-            payable(address(0)),
-            0
-        );
+        vm.expectRevert(SovereignAuctionHouse.EscrowFailed.selector);
+        house.createAuction(1, address(liar), DURATION, RESERVE);
     }
 
+    // ─── Stuck-NFT recovery ──────────────────────────────────────────────
+
+    function test_RecoverStuck_OwnerCanReclaim() public {
+        // Plain transferFrom to the contract — no auction record.
+        nft.mint(artist, 9001);
+        vm.prank(artist);
+        nft.transferFrom(artist, address(house), 9001);
+        assertEq(nft.ownerOf(9001), address(house));
+        assertFalse(house.hasAuctionFor(address(nft), 9001));
+
+        // Owner reclaims to alice.
+        vm.prank(artist);
+        house.recoverStuckERC721(address(nft), 9001, alice);
+        assertEq(nft.ownerOf(9001), alice);
+    }
+
+    function test_RecoverStuck_BlockedWhenAuctionExists() public {
+        uint256 id = _createAuction();
+        vm.prank(artist);
+        vm.expectRevert(SovereignAuctionHouse.AuctionAlreadyExistsForToken.selector);
+        house.recoverStuckERC721(address(nft), TOKEN_ID, artist);
+        // Auction state unchanged.
+        assertTrue(house.hasAuctionFor(address(nft), TOKEN_ID));
+        assertEq(nft.ownerOf(TOKEN_ID), address(house));
+        // Sanity: id reference still good.
+        ISovereignAuctionHouse.Auction memory a = _readAuction(house, id);
+        assertEq(a.tokenOwner, artist);
+    }
+
+    function test_RecoverStuck_RejectsNonOwner() public {
+        nft.mint(artist, 9002);
+        vm.prank(artist);
+        nft.transferFrom(artist, address(house), 9002);
+
+        vm.expectRevert(); // OwnableUnauthorizedAccount
+        vm.prank(alice);
+        house.recoverStuckERC721(address(nft), 9002, alice);
+    }
+
+    function test_RecoverStuck_RejectsZeroAddress() public {
+        nft.mint(artist, 9003);
+        vm.prank(artist);
+        nft.transferFrom(artist, address(house), 9003);
+
+        vm.prank(artist);
+        vm.expectRevert("to required");
+        house.recoverStuckERC721(address(nft), 9003, address(0));
+    }
+
+    /// @dev 2c success path: recovery emits StuckERC721Recovered.
+    function test_RecoverStuck_EmitsEvent() public {
+        nft.mint(artist, 9100);
+        vm.prank(artist);
+        nft.transferFrom(artist, address(house), 9100);
+
+        vm.expectEmit(true, true, false, true, address(house));
+        emit ISovereignAuctionHouse.StuckERC721Recovered(
+            address(nft),
+            9100,
+            alice
+        );
+        vm.prank(artist);
+        house.recoverStuckERC721(address(nft), 9100, alice);
+        assertEq(nft.ownerOf(9100), alice);
+    }
+
+    /// @dev 2c clean-revert path: if the house never received the token, the
+    ///      underlying ERC721 transferFrom reverts. We don't pin a selector.
+    function test_RecoverStuck_RevertsWhenHouseDoesNotOwn() public {
+        // Mint to alice; the house never receives it.
+        nft.mint(alice, 9200);
+        vm.prank(artist);
+        vm.expectRevert();
+        house.recoverStuckERC721(address(nft), 9200, artist);
+    }
+
+    // ─── Strict-bid 1-wei boundary ───────────────────────────────────────
+
+    /// @dev 2d: Boundary cases for the bid increment + 1-wei floor.
+    function test_Bid_StrictOneWeiBoundary() public {
+        // Case A: large prior bid where bps math doesn't floor.
+        // First bid b1 = RESERVE; b1 exact match must revert; b1 + 5% bps must succeed.
+        uint256 idA = _createAuction();
+        vm.prank(alice);
+        house.createBid{value: RESERVE}(idA);
+
+        vm.expectRevert(SovereignAuctionHouse.BidBelowMinimum.selector);
+        vm.prank(bob);
+        house.createBid{value: RESERVE}(idA);
+
+        uint256 minNextA = RESERVE + (RESERVE * 500) / 10000;
+        vm.prank(bob);
+        house.createBid{value: minNextA}(idA);
+
+        // Case B: tiny prior bid where bps math floors to zero.
+        // b1 = 1 wei; b1 + 1 = 2 wei must succeed (already covered, here we
+        // also assert exact-match revert at b1 = 1).
+        nft.mint(artist, 9300);
+        vm.prank(artist);
+        uint256 idB = house.createAuction(9300, address(nft), DURATION, 0);
+
+        vm.prank(alice);
+        house.createBid{value: 1}(idB);
+
+        // 1 * 500 / 10000 == 0, so the floor must enforce minNext = 2.
+        vm.expectRevert(SovereignAuctionHouse.BidBelowMinimum.selector);
+        vm.prank(bob);
+        house.createBid{value: 1}(idB);
+
+        vm.prank(bob);
+        house.createBid{value: 2}(idB);
+    }
+
+    // ─── predictHouseAddress matches deployment ──────────────────────────
+
+    /// @dev 2e: predictHouseAddress equals the address actually deployed.
+    function test_PredictHouseAddress_MatchesActualDeployment() public {
+        address someArtist = address(0xCAFE);
+        address predicted = factory.predictHouseAddress(someArtist);
+        vm.prank(someArtist);
+        address actual = factory.createAuctionHouse();
+        assertEq(predicted, actual);
+    }
+
+    // ─── getMinBidAmount fuzz parity ─────────────────────────────────────
+
+    /// @dev 2f: getMinBidAmount must agree with the bid path's enforcement
+    ///      across the full first-bid range.
+    function testFuzz_GetMinBidAmount_MatchesCreateBidEnforcement(
+        uint128 firstAmount
+    ) public {
+        vm.assume(firstAmount > 0 && firstAmount < 1_000_000 ether);
+
+        // Fresh, low-reserve auction so any positive firstAmount clears reserve.
+        nft.mint(artist, 9400);
+        vm.prank(artist);
+        uint256 id = house.createAuction(9400, address(nft), DURATION, 0);
+
+        vm.deal(alice, uint256(firstAmount));
+        vm.prank(alice);
+        house.createBid{value: firstAmount}(id);
+
+        (bool exists, uint256 minBid) = house.getMinBidAmount(id);
+        assertTrue(exists);
+
+        // Below the reported minimum must revert.
+        vm.deal(bob, minBid);
+        vm.expectRevert(SovereignAuctionHouse.BidBelowMinimum.selector);
+        vm.prank(bob);
+        house.createBid{value: minBid - 1}(id);
+
+        // Exactly the reported minimum must succeed.
+        vm.prank(bob);
+        house.createBid{value: minBid}(id);
+
+        ISovereignAuctionHouse.Auction memory a = _readAuction(house, id);
+        assertEq(a.amount, minBid);
+        assertEq(a.bidder, bob);
+    }
+
+    // ─── First bid with duration < TIME_BUFFER triggers extension ────────
+
+    /// @dev 2g: A first bid on a sub-buffer auction must extend immediately
+    ///      so endTime ends up at block.timestamp + TIME_BUFFER, and both
+    ///      firstBid + extended must be true on the AuctionBid event.
+    function test_FirstBid_TriggersExtensionWhenDurationBelowBuffer() public {
+        nft.mint(artist, 9500);
+        uint256 shortDuration = 5 minutes; // < TIME_BUFFER (15 minutes)
+
+        vm.prank(artist);
+        uint256 id = house.createAuction(9500, address(nft), shortDuration, 0);
+
+        // Expect both AuctionBid (firstBid=true, extended=true) and
+        // AuctionEndTimeUpdated since the extension fires.
+        vm.expectEmit(true, true, false, true, address(house));
+        emit ISovereignAuctionHouse.AuctionBid(id, alice, 1, true, true);
+        vm.expectEmit(true, false, false, true, address(house));
+        emit ISovereignAuctionHouse.AuctionEndTimeUpdated(
+            id,
+            uint64(block.timestamp + house.TIME_BUFFER())
+        );
+
+        vm.prank(alice);
+        house.createBid{value: 1}(id);
+
+        ISovereignAuctionHouse.Auction memory a = _readAuction(house, id);
+        assertEq(uint256(a.endTime), block.timestamp + house.TIME_BUFFER());
+    }
+
+    // ─── MAX_DURATION boundary ───────────────────────────────────────────
+
+    /// @dev 2h: duration == MAX_DURATION succeeds, duration > MAX_DURATION
+    ///      reverts.
+    function test_CreateAuction_MaxDurationBoundary() public {
+        uint256 maxDuration = 365 days * 100;
+
+        // Allowed: exactly MAX_DURATION.
+        nft.mint(artist, 9600);
+        vm.prank(artist);
+        uint256 id = house.createAuction(9600, address(nft), maxDuration, RESERVE);
+        ISovereignAuctionHouse.Auction memory a = _readAuction(house, id);
+        assertEq(uint256(a.duration), maxDuration);
+
+        // Disallowed: MAX_DURATION + 1.
+        nft.mint(artist, 9601);
+        vm.prank(artist);
+        vm.expectRevert("duration too large");
+        house.createAuction(9601, address(nft), maxDuration + 1, RESERVE);
+    }
 }

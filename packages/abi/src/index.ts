@@ -1,5 +1,5 @@
 export { nftMarketAbi } from "./nftMarket"
 export { erc721Abi } from "./erc721"
 export { foundationNftAbi, collectionFactoryAbi } from "./foundationNft"
-export { pndAuctionHouseAbi } from "./pndAuctionHouse"
-export { pndAuctionHouseFactoryAbi } from "./pndAuctionHouseFactory"
+export { sovereignAuctionHouseAbi } from "./sovereignAuctionHouse"
+export { sovereignAuctionHouseFactoryAbi } from "./sovereignAuctionHouseFactory"

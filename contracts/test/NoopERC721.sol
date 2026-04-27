@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 /// @notice A liar ERC721: claims to support ERC165 + ERC721 and to permit
 ///         transfers, but transferFrom is a no-op. Used to verify the
-///         post-transfer escrow check in PndAuctionHouse.createAuction —
+///         post-transfer escrow check in SovereignAuctionHouse.createAuction —
 ///         after calling transferFrom, the contract reads ownerOf and reverts
 ///         with EscrowFailed when the token didn't actually move.
 contract NoopERC721 {
