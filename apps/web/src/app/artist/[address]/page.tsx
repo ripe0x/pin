@@ -1,6 +1,5 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
-import { SITE_TITLE } from "@pin/shared"
 import {
   getArtistPortfolio,
   resolveEnsAddress,
@@ -39,7 +38,7 @@ export async function generateMetadata({
   const { identity } = portfolio
 
   return {
-    title: `${identity.displayName} | ${SITE_TITLE}`,
+    title: identity.displayName,
     description: `${portfolio.totalWorks} works on Foundation by ${identity.displayName}`,
     openGraph: {
       title: `${identity.displayName} — Foundation Artist`,
