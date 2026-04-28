@@ -5,6 +5,7 @@ import {
   getArtistIdentity,
   resolveEnsAddress,
 } from "@/lib/artist-queries"
+import { getActiveAuctionCount } from "@/lib/auctions"
 import { getCachedTokenRefs } from "@/lib/artist-cache"
 import { ArtistHeader } from "@/components/artist/ArtistHeader"
 import { ArtistGallery } from "@/components/artist/ArtistGallery"
@@ -88,16 +89,22 @@ export default async function ArtistPage({
     redirect(`/artist/${address}`)
   }
 
-  // SSR only the first page: identity + first 24 tokens. Subsequent pages
-  // load client-side via /api/artist/[address]/tokens?page=N.
-  const [identity, firstPage] = await Promise.all([
+  // SSR only the first page: identity + first 24 tokens + active-auction
+  // count (null when the artist has no sovereign house). Subsequent gallery
+  // pages load client-side via /api/artist/[address]/tokens?page=N.
+  const [identity, firstPage, activeAuctions] = await Promise.all([
     getArtistIdentity(address),
     getArtistGalleryPage(address, 0, INITIAL_PAGE_SIZE),
+    getActiveAuctionCount(address).catch(() => null),
   ])
 
   return (
     <div className="mx-auto max-w-[2000px] px-6 py-12">
-      <ArtistHeader identity={identity} totalWorks={firstPage.total} />
+      <ArtistHeader
+        identity={identity}
+        totalWorks={firstPage.total}
+        activeAuctions={activeAuctions}
+      />
 
       <div className="mt-8">
         <BulkDelistPanel artistAddress={address} />

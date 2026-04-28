@@ -331,6 +331,73 @@ export async function getSovereignAuctionByHouse(
   return readSovereignAuction(client, houseAddress, nftContract as Address, BigInt(tokenId))
 }
 
+/**
+ * Count active auctions on an artist's sovereign house. "Active" = registered
+ * in storage (tokenOwner != 0); covers both pre-bid and post-bid live
+ * auctions. Settled and cancelled auctions are deleted from storage so they
+ * don't count.
+ *
+ * Returns null when the artist has no sovereign house or the factory isn't
+ * configured for this chain. Returns 0 when they have a house but no live
+ * auctions on it.
+ *
+ * Strategy: scan the house's AuctionCreated logs to learn the auctionIds that
+ * ever existed, then read each auction's current state to filter to live
+ * ones. For a single artist's house this is a small log range and a small
+ * batch of reads — fine inline; if it grows beyond ~hundreds of auctions
+ * we'd want to switch to multicall or a derived counter on-chain.
+ */
+export async function getActiveAuctionCount(
+  artistAddress: string,
+): Promise<number | null> {
+  if (!SOVEREIGN_FACTORY) return null
+  const client = getClient()
+
+  let houseAddress: Address
+  try {
+    houseAddress = await client.readContract({
+      address: SOVEREIGN_FACTORY,
+      abi: sovereignAuctionHouseFactoryAbi,
+      functionName: "houseOf",
+      args: [artistAddress as Address],
+    })
+  } catch {
+    return null
+  }
+  if (houseAddress === ZERO_ADDRESS) return null
+
+  const created = await client.getLogs({
+    address: houseAddress,
+    event: parseAbiItem(
+      "event AuctionCreated(uint256 indexed auctionId, uint256 indexed tokenId, address indexed tokenContract, uint256 duration, uint256 reservePrice, address tokenOwner)",
+    ),
+    fromBlock: 0n,
+    toBlock: "latest",
+  })
+  if (created.length === 0) return 0
+
+  const auctionIds = created
+    .map((log) => log.args.auctionId)
+    .filter((id): id is bigint => id !== undefined)
+
+  // Read each auction in parallel. Active = tokenOwner != 0 (the contract
+  // deletes settled/cancelled entries from storage).
+  const states = await Promise.all(
+    auctionIds.map((id) =>
+      client
+        .readContract({
+          address: houseAddress,
+          abi: sovereignAuctionHouseAbi,
+          functionName: "auctions",
+          args: [id],
+        })
+        .catch(() => null),
+    ),
+  )
+
+  return states.filter((s) => s !== null && s[5] !== ZERO_ADDRESS).length
+}
+
 async function readSovereignAuction(
   client: ReturnType<typeof createPublicClient>,
   houseAddress: Address,
