@@ -11,6 +11,7 @@ import { ArtistHeader } from "@/components/artist/ArtistHeader"
 import { ArtistGallery } from "@/components/artist/ArtistGallery"
 import { BulkDelistPanel } from "@/components/listings/BulkDelistPanel"
 import { SovereignBulkPanel } from "@/components/listings/SovereignBulkPanel"
+import { MigrationBanner } from "@/components/migrate/MigrationBanner"
 
 const INITIAL_PAGE_SIZE = 24
 
@@ -107,6 +108,10 @@ export default async function ArtistPage({
       />
 
       <div className="mt-8">
+        <MigrationBanner artistAddress={address} />
+      </div>
+
+      <div className="mt-4">
         <BulkDelistPanel artistAddress={address} />
       </div>
 

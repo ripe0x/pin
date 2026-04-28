@@ -33,6 +33,9 @@ export type AuctionListing = {
   nftContract: Address
   tokenId: string
   reserveWei: bigint
+  // From the original `ReserveAuctionCreated` event — used to prefill the
+  // duration when migrating to a Sovereign auction house.
+  durationSeconds: number
 }
 
 export type BuyNowListing = {
@@ -96,13 +99,14 @@ export async function getSellerCancellableListings(
   // Dedupe: same auctionId can appear once (one Created event per auction),
   // but the seller may have re-created an auction for the same token after a
   // prior cancel; keep the most recent auctionId per token.
-  const auctionIds = Array.from(
-    new Set(
-      auctionLogs.map(
-        (l) => (l as { args: { auctionId: bigint } }).args.auctionId,
-      ),
-    ),
-  )
+  const durationByAuctionId = new Map<bigint, bigint>()
+  for (const log of auctionLogs) {
+    const args = (log as { args: { auctionId: bigint; duration: bigint } }).args
+    if (!durationByAuctionId.has(args.auctionId)) {
+      durationByAuctionId.set(args.auctionId, args.duration)
+    }
+  }
+  const auctionIds = Array.from(durationByAuctionId.keys())
 
   // For buy-now, BuyPriceSet fires every time the seller sets/updates a price,
   // so dedupe by (contract, tokenId) — the read-back will tell us the current
@@ -118,7 +122,7 @@ export async function getSellerCancellableListings(
   }
 
   const [auctions, buyNows] = await Promise.all([
-    confirmActiveAuctions(client, auctionIds, seller),
+    confirmActiveAuctions(client, auctionIds, durationByAuctionId, seller),
     confirmActiveBuyNows(client, Array.from(buyNowKeys.values()), seller),
   ])
 
@@ -128,6 +132,7 @@ export async function getSellerCancellableListings(
 async function confirmActiveAuctions(
   client: PublicClient,
   auctionIds: bigint[],
+  durationByAuctionId: Map<bigint, bigint>,
   seller: Address,
 ): Promise<AuctionListing[]> {
   if (auctionIds.length === 0) return []
@@ -162,6 +167,7 @@ async function confirmActiveAuctions(
       if (a.bidder !== ZERO_ADDRESS) return
       if (a.endTime !== 0n) return
 
+      const duration = durationByAuctionId.get(auctionId) ?? 0n
       out.push({
         kind: "auction",
         id: `auction:${auctionId.toString()}`,
@@ -169,6 +175,7 @@ async function confirmActiveAuctions(
         nftContract: a.nftContract,
         tokenId: a.tokenId.toString(),
         reserveWei: a.amount,
+        durationSeconds: Number(duration),
       })
     })
   }
