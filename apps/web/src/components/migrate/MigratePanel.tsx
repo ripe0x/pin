@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { formatEther, parseEther, type Address } from "viem"
+import { formatEther, type Address } from "viem"
+import { cleanEthAmountInput, parseEthAmount } from "@/lib/parseEthAmount"
 import {
   useAccount,
   useConfig,
@@ -219,13 +220,8 @@ function Inner({
     })
   }
 
-  function isRowValid(row: Row): boolean {
-    try {
-      const v = parseEther(row.reserveInput.trim() as `${number}`)
-      return v >= 0n
-    } catch {
-      return false
-    }
+  function parseRowReserve(row: Row) {
+    return parseEthAmount(row.reserveInput)
   }
 
   async function ensureHouse(): Promise<Address | null> {
@@ -272,10 +268,12 @@ function Inner({
   }
 
   async function migrateOne(row: Row): Promise<void> {
-    if (!isRowValid(row)) {
-      updateRowState(row.id, { step: "failed", error: "Invalid reserve" })
+    const parsed = parseRowReserve(row)
+    if (!parsed.ok) {
+      updateRowState(row.id, { step: "failed", error: parsed.reason })
       return
     }
+    const reserveWei = parsed.wei
     try {
       // 1. Cancel on Foundation.
       updateRowState(row.id, { step: "cancelling" })
@@ -310,7 +308,6 @@ function Inner({
 
       // 4. Create auction on Sovereign.
       updateRowState(row.id, { step: "listing" })
-      const reserveWei = parseEther(row.reserveInput.trim() as `${number}`)
       const tokenIds = [BigInt(row.source.tokenId)]
       const createHash = await writeContractAction(config, {
         address: house,
@@ -527,6 +524,12 @@ function MigrateRow({
 
   const checkboxDisabled = disabled || !!inFlight || state?.step === "done"
 
+  // Validate the reserve string locally so the user gets immediate feedback
+  // (decimal-comma support, bad characters, etc.) before clicking Delist.
+  const parsed = parseEthAmount(row.reserveInput)
+  const reserveError = !parsed.ok ? parsed.reason : null
+  const canMigrate = parsed.ok
+
   return (
     <li className="py-4">
       <div className="flex items-start gap-3">
@@ -608,7 +611,7 @@ function MigrateRow({
                       type="text"
                       inputMode="decimal"
                       value={row.reserveInput}
-                      onChange={(e) => onChangeReserve(e.target.value)}
+                      onChange={(e) => onChangeReserve(cleanEthAmountInput(e.target.value))}
                       disabled={disabled || !!inFlight}
                       className="w-24 px-3 py-1.5 text-sm outline-none disabled:opacity-40 bg-transparent tabular-nums"
                     />
@@ -640,13 +643,16 @@ function MigrateRow({
                 </div>
                 <button
                   onClick={onMigrate}
-                  disabled={disabled || !!inFlight}
+                  disabled={disabled || !!inFlight || !canMigrate}
                   className="text-xs font-medium px-3 py-1.5 border border-gray-300 hover:border-black transition-colors disabled:opacity-40 disabled:cursor-not-allowed ml-auto"
                 >
                   {state?.step === "failed" ? "Retry" : "Delist & relist"}
                 </button>
               </div>
 
+              {reserveError && state?.step !== "failed" && (
+                <p className="mt-2 text-xs text-red-500">{reserveError}</p>
+              )}
               {state?.step === "failed" && state.error && (
                 <p className="mt-2 text-xs text-red-500 break-words">
                   {state.error}

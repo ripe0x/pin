@@ -9,7 +9,6 @@ import {
   formatEther,
   http,
   parseAbiItem,
-  parseEther,
   type Address,
 } from "viem"
 import { mainnet } from "viem/chains"
@@ -26,6 +25,7 @@ import { mapWithConcurrency } from "@/lib/concurrency"
 import { resolveTokenMetadataDirect } from "@/lib/onchain-discovery"
 import { ipfsToHttp } from "@pin/shared"
 import { useArtistHouse } from "@/components/auction/useArtistHouse"
+import { useEthAmountInput } from "@/lib/useEthAmountInput"
 import { TxLink } from "@/components/auction/tx"
 
 const DURATION_OPTIONS = [
@@ -128,7 +128,7 @@ function BulkListSection({
   const router = useRouter()
   const [load, setLoad] = useState<ListLoadState>({ kind: "loading" })
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [reserveInput, setReserveInput] = useState("")
+  const reserve = useEthAmountInput()
   const [durationSec, setDurationSec] = useState<number>(
     DURATION_OPTIONS[0].seconds,
   )
@@ -167,15 +167,9 @@ function BulkListSection({
     return map
   }, [load])
 
-  const reserveValid = useMemo(() => {
-    if (!reserveInput.trim()) return false
-    try {
-      const v = parseEther(reserveInput.trim() as `${number}`)
-      return v >= 0n
-    } catch {
-      return false
-    }
-  }, [reserveInput])
+  // Reserve = 0 is valid (no-reserve auction). The hook reports invalid for
+  // empty/non-numeric/locale-mismatched input and surfaces the reason.
+  const reserveValid = reserve.isValid && reserve.wei !== null
 
   // Listing tx state
   const [running, setRunning] = useState<{
@@ -233,7 +227,7 @@ function BulkListSection({
 
   async function handleList() {
     if (load.kind !== "loaded") return
-    if (!reserveValid) return
+    if (!reserveValid || reserve.wei == null) return
     const selectedItems = load.items.filter((i) => selected.has(itemKey(i)))
     if (selectedItems.length === 0) return
 
@@ -247,7 +241,7 @@ function BulkListSection({
     }
 
     const groups = Array.from(byContract.entries())
-    const reserveWei = parseEther(reserveInput.trim() as `${number}`)
+    const reserveWei = reserve.wei
 
     setBatchError(null)
     setRunning({ total: groups.length, current: 0, phase: "create" })
@@ -351,11 +345,8 @@ function BulkListSection({
           </span>
           <div className="mt-1 flex items-stretch border border-gray-200 focus-within:border-gray-400 transition-colors rounded">
             <input
-              type="text"
-              inputMode="decimal"
+              {...reserve.inputProps}
               placeholder="0.5"
-              value={reserveInput}
-              onChange={(e) => setReserveInput(e.target.value)}
               disabled={isRunning}
               className="flex-1 px-3 py-2 text-sm outline-none disabled:opacity-40 bg-transparent"
             />
@@ -363,6 +354,9 @@ function BulkListSection({
               ETH
             </span>
           </div>
+          {reserve.error && (
+            <p className="mt-1 text-[11px] text-red-500">{reserve.error}</p>
+          )}
         </label>
         <div className="block">
           <span className="text-[11px] uppercase tracking-[0.08em] text-gray-400">

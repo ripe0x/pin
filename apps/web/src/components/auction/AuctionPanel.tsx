@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { formatEther, parseEther } from "viem"
+import { formatEther } from "viem"
 import {
   useAccount,
   useBlock,
@@ -10,6 +10,7 @@ import {
 } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { nftMarketAbi, sovereignAuctionHouseAbi } from "@pin/abi"
+import { useEthAmountInput } from "@/lib/useEthAmountInput"
 import type {
   AuctionFees,
   AuctionState,
@@ -247,7 +248,11 @@ function BidSection({ auction }: { auction: AuctionState }) {
   const { address } = useAccount()
   const minBidWei = auction.minBidWei
   const minBidEth = formatEther(minBidWei)
-  const [input, setInput] = useState("")
+
+  const bid = useEthAmountInput({
+    min: minBidWei,
+    minLabel: (m) => `Minimum bid is ${formatEther(m)} ETH`,
+  })
 
   const {
     writeContract,
@@ -260,26 +265,12 @@ function BidSection({ auction }: { auction: AuctionState }) {
     hash: txHash,
   })
 
-  const validation = useMemo(() => {
-    if (!input.trim()) return { ok: false as const, reason: null }
-    let parsed: bigint
-    try {
-      parsed = parseEther(input.trim() as `${number}`)
-    } catch {
-      return { ok: false as const, reason: "Invalid amount" }
-    }
-    if (parsed < minBidWei) {
-      return { ok: false as const, reason: `Minimum bid is ${minBidEth} ETH` }
-    }
-    return { ok: true as const, amount: parsed }
-  }, [input, minBidWei, minBidEth])
-
   const isPending = isWritePending || isTxPending
   const isSelfOutbidding =
     !!address && address.toLowerCase() === auction.bidder.toLowerCase()
 
   function handleBid() {
-    if (!validation.ok) return
+    if (!bid.isValid || bid.wei == null) return
     if (auction.source === "foundation") {
       writeContract({
         address: auction.marketAddress,
@@ -287,10 +278,10 @@ function BidSection({ auction }: { auction: AuctionState }) {
         functionName: "placeBidV2",
         args: [
           BigInt(auction.auctionId),
-          validation.amount,
+          bid.wei,
           ZERO_ADDRESS as `0x${string}`,
         ],
-        value: validation.amount,
+        value: bid.wei,
       })
     } else {
       writeContract({
@@ -298,7 +289,7 @@ function BidSection({ auction }: { auction: AuctionState }) {
         abi: sovereignAuctionHouseAbi,
         functionName: "createBid",
         args: [BigInt(auction.auctionId)],
-        value: validation.amount,
+        value: bid.wei,
       })
     }
   }
@@ -343,11 +334,8 @@ function BidSection({ auction }: { auction: AuctionState }) {
         <span className="sr-only">Bid amount in ETH</span>
         <div className="flex items-stretch border border-gray-200 focus-within:border-gray-400 transition-colors">
           <input
-            type="text"
-            inputMode="decimal"
+            {...bid.inputProps}
             placeholder={minBidEth}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
             disabled={isPending}
             className="flex-1 px-3 py-3 text-sm font-mono tabular-nums outline-none disabled:opacity-40"
           />
@@ -356,11 +344,19 @@ function BidSection({ auction }: { auction: AuctionState }) {
           </span>
         </div>
       </label>
-      <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">Minimum bid: {minBidEth} ETH</p>
+      <button
+        type="button"
+        onClick={() => bid.setFromWei(minBidWei)}
+        disabled={isPending}
+        className="text-[10px] font-mono uppercase tracking-wider text-gray-400 hover:text-black transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+        title="Use minimum bid"
+      >
+        Minimum bid: {minBidEth} ETH
+      </button>
 
       <button
         onClick={handleBid}
-        disabled={isPending || !validation.ok || isSelfOutbidding}
+        disabled={isPending || !bid.isValid || isSelfOutbidding}
         className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
       >
         {isWritePending
@@ -372,8 +368,8 @@ function BidSection({ auction }: { auction: AuctionState }) {
               : "Place bid"}
       </button>
 
-      {validation.reason && input.trim() && (
-        <p className="text-[11px] font-mono text-red-500">{validation.reason}</p>
+      {bid.error && (
+        <p className="text-[11px] font-mono text-red-500">{bid.error}</p>
       )}
       {writeError && (
         <p className="text-[11px] font-mono text-red-500 break-words">
@@ -493,7 +489,7 @@ function SellerActions({ auction }: { auction: AuctionState }) {
   const isSeller =
     !!address && address.toLowerCase() === auction.seller.toLowerCase()
   const [editing, setEditing] = useState(false)
-  const [reserveInput, setReserveInput] = useState("")
+  const reserve = useEthAmountInput()
 
   const {
     writeContract: writeCancel,
@@ -551,26 +547,20 @@ function SellerActions({ auction }: { auction: AuctionState }) {
   }
 
   function handleUpdate() {
-    let parsed: bigint
-    try {
-      parsed = parseEther(reserveInput.trim() as `${number}`)
-    } catch {
-      return
-    }
-    if (parsed === 0n) return
+    if (!reserve.isValid || reserve.wei == null || reserve.wei === 0n) return
     if (auction.source === "foundation") {
       writeUpdate({
         address: auction.marketAddress,
         abi: nftMarketAbi,
         functionName: "updateReserveAuction",
-        args: [BigInt(auction.auctionId), parsed],
+        args: [BigInt(auction.auctionId), reserve.wei],
       })
     } else {
       writeUpdate({
         address: auction.marketAddress,
         abi: sovereignAuctionHouseAbi,
         functionName: "setAuctionReservePrice",
-        args: [BigInt(auction.auctionId), parsed],
+        args: [BigInt(auction.auctionId), reserve.wei],
       })
     }
   }
@@ -583,11 +573,8 @@ function SellerActions({ auction }: { auction: AuctionState }) {
         <div className="space-y-2">
           <div className="flex items-stretch border border-gray-200 focus-within:border-gray-400 transition-colors rounded">
             <input
-              type="text"
-              inputMode="decimal"
+              {...reserve.inputProps}
               placeholder={formatEther(auction.amount > 0n ? auction.amount : auction.minBidWei)}
-              value={reserveInput}
-              onChange={(e) => setReserveInput(e.target.value)}
               disabled={busy}
               className="flex-1 px-3 py-2 text-sm font-mono tabular-nums outline-none disabled:opacity-40 bg-transparent"
             />
@@ -595,10 +582,13 @@ function SellerActions({ auction }: { auction: AuctionState }) {
               ETH
             </span>
           </div>
+          {reserve.error && (
+            <p className="text-[11px] font-mono text-red-500">{reserve.error}</p>
+          )}
           <div className="flex gap-2">
             <button
               onClick={handleUpdate}
-              disabled={busy || !reserveInput.trim()}
+              disabled={busy || !reserve.isValid || reserve.wei === 0n}
               className="flex-1 text-[11px] font-mono font-medium uppercase tracking-wider py-2 bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed rounded"
             >
               {updatePending
@@ -610,7 +600,7 @@ function SellerActions({ auction }: { auction: AuctionState }) {
             <button
               onClick={() => {
                 setEditing(false)
-                setReserveInput("")
+                reserve.reset()
               }}
               disabled={busy}
               className="text-[11px] font-mono uppercase tracking-wider text-gray-500 px-3 hover:text-black transition-colors disabled:opacity-40"

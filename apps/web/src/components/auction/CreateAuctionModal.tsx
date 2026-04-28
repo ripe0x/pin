@@ -1,9 +1,9 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
-import { parseEther } from "viem"
+import { useEffect, useState } from "react"
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from "wagmi"
 import { erc721Abi, sovereignAuctionHouseAbi } from "@pin/abi"
+import { useEthAmountInput } from "@/lib/useEthAmountInput"
 import { TxLink } from "./tx"
 
 const DURATION_OPTIONS = [
@@ -40,7 +40,7 @@ export function CreateAuctionModal({
   onSuccess?: () => void
 }) {
   const { address } = useAccount()
-  const [reserveInput, setReserveInput] = useState("")
+  const reserve = useEthAmountInput()
   const [durationSec, setDurationSec] = useState<number>(DURATION_OPTIONS[0].seconds)
 
   // Check existing approval state. Two ways: per-token getApproved OR
@@ -88,19 +88,12 @@ export function CreateAuctionModal({
     if (isCreateSuccess && onSuccess) onSuccess()
   }, [isCreateSuccess, onSuccess])
 
-  // Reserve = 0 is valid ("no reserve" auctions). Empty input or non-numeric
-  // is invalid; negative values are caught by parseEther.
-  const reserveValid = useMemo(() => {
-    if (!reserveInput.trim()) return false
-    try {
-      const v = parseEther(reserveInput.trim() as `${number}`)
-      return v >= 0n
-    } catch {
-      return false
-    }
-  }, [reserveInput])
+  // Reserve = 0 is valid ("no reserve" auctions). The hook's `wei` is null
+  // for empty/invalid input; reserveValid is true when we have a parsed
+  // non-negative value (parser already rejects negatives).
+  const reserveValid = reserve.isValid && reserve.wei !== null
 
-  const isNoReserve = reserveInput.trim() === "0"
+  const isNoReserve = reserve.wei === 0n
 
   function handleApprove() {
     writeApprove({
@@ -112,7 +105,7 @@ export function CreateAuctionModal({
   }
 
   function handleCreate() {
-    if (!reserveValid) return
+    if (!reserveValid || reserve.wei == null) return
     writeCreate({
       address: houseAddress,
       abi: sovereignAuctionHouseAbi,
@@ -121,7 +114,7 @@ export function CreateAuctionModal({
         BigInt(tokenId),
         nftContract,
         BigInt(durationSec),
-        parseEther(reserveInput.trim() as `${number}`),
+        reserve.wei,
       ],
     })
   }
@@ -178,11 +171,8 @@ export function CreateAuctionModal({
                 </span>
                 <div className="mt-1 flex items-stretch border border-gray-200 focus-within:border-gray-400 transition-colors rounded">
                   <input
-                    type="text"
-                    inputMode="decimal"
+                    {...reserve.inputProps}
                     placeholder="0.5"
-                    value={reserveInput}
-                    onChange={(e) => setReserveInput(e.target.value)}
                     disabled={createBusy}
                     className="flex-1 px-3 py-2.5 text-base font-medium outline-none disabled:opacity-40 bg-transparent"
                   />
@@ -191,11 +181,15 @@ export function CreateAuctionModal({
                   </span>
                 </div>
               </label>
-              <p className="text-xs text-gray-400">
-                {isNoReserve
-                  ? "No reserve — any bid wins. Timer starts on first bid."
-                  : "Auction starts on the first bid at or above this price."}
-              </p>
+              {reserve.error ? (
+                <p className="text-xs text-red-500">{reserve.error}</p>
+              ) : (
+                <p className="text-xs text-gray-400">
+                  {isNoReserve
+                    ? "No reserve — any bid wins. Timer starts on first bid."
+                    : "Auction starts on the first bid at or above this price."}
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
