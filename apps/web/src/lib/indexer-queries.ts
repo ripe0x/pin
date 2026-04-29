@@ -65,12 +65,25 @@ export async function getActiveAuctionCountFromIndexer(
     // Lower-cased everywhere because Ponder normalizes addresses to
     // lowercase when writing event args (per viem's policy).
     const seller = sellerAddress.toLowerCase()
-    const rows = await db<Array<{ count: string }>>`
-      SELECT COUNT(*)::text AS count
-      FROM pnd_auctions
-      WHERE seller = ${seller}
-        AND status = 'active'
-    `
+    // Ponder namespaces its tables under a configurable schema (set via the
+    // DATABASE_SCHEMA env var on the indexer service — currently `ponder`).
+    // Default to `ponder` here so the web app and the indexer agree on the
+    // location without an extra coordination step. Override with
+    // INDEXER_SCHEMA if the indexer's schema name ever changes.
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+      /[^a-zA-Z0-9_]/g,
+      "",
+    )
+    // Schema name comes from a controlled env var and is sanitized above
+    // (postgres.js can't parameterize identifiers, only values), so the
+    // unsafe-template usage is fine here.
+    const rows = (await db.unsafe(
+      `SELECT COUNT(*)::text AS count
+       FROM ${schema}.pnd_auctions
+       WHERE seller = $1 AND status = 'active'`,
+      [seller],
+    )) as Array<{ count: string }>
+
     return Number(rows[0]?.count ?? 0)
   })
 }
