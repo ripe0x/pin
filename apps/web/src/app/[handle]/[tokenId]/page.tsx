@@ -13,6 +13,8 @@ import {
   resolveTokenMetadataDirect,
 } from "@/lib/onchain-discovery"
 import { getAuctionForToken } from "@/lib/auctions"
+import { getSettledAuctionForToken } from "@/lib/indexer-queries"
+import { SettledAuctionSummary } from "@/components/auction/SettledAuctionSummary"
 import { resolveDisplayNames } from "@/lib/artist-queries"
 import Link from "next/link"
 
@@ -124,7 +126,11 @@ export default async function TokenPage({
 }) {
   const { handle, tokenId } = await params
   const data = await getTokenPageData(handle, tokenId)
-  const auction = await getAuctionForToken(data.contract, tokenId).catch(() => null)
+  const [auction, settledAuctionRaw] = await Promise.all([
+    getAuctionForToken(data.contract, tokenId).catch(() => null),
+    getSettledAuctionForToken(data.contract, tokenId).catch(() => null),
+  ])
+  const settledAuction = !auction ? settledAuctionRaw : null
 
   // Upgrade truncated 0x… handles to ENS where available — for the creator,
   // the owner, AND every distinct address in the provenance timeline so the
@@ -135,6 +141,13 @@ export default async function TokenPage({
   for (const entry of data.provenance) {
     addressSet.add(entry.from.toLowerCase())
     if (entry.to) addressSet.add(entry.to.toLowerCase())
+  }
+  if (settledAuction) {
+    if (settledAuction.seller) addressSet.add(settledAuction.seller.toLowerCase())
+    if (settledAuction.winner) addressSet.add(settledAuction.winner.toLowerCase())
+    for (const bid of settledAuction.bids) {
+      addressSet.add(bid.bidder.toLowerCase())
+    }
   }
   if (addressSet.size > 0) {
     const names = await resolveDisplayNames(Array.from(addressSet)).catch(
@@ -153,6 +166,21 @@ export default async function TokenPage({
         ? names.get(entry.to.toLowerCase()) ?? entry.toHandle
         : entry.toHandle,
     }))
+    if (settledAuction) {
+      const sellerName = names.get(settledAuction.seller.toLowerCase())
+      settledAuction.sellerDisplay = settledAuction.seller
+        ? sellerName ?? truncateAddress(settledAuction.seller)
+        : ""
+      const winnerName = names.get(settledAuction.winner.toLowerCase())
+      settledAuction.winnerDisplay = settledAuction.winner
+        ? winnerName ?? truncateAddress(settledAuction.winner)
+        : ""
+      settledAuction.bids = settledAuction.bids.map((bid) => ({
+        ...bid,
+        bidderDisplay:
+          names.get(bid.bidder.toLowerCase()) ?? truncateAddress(bid.bidder),
+      }))
+    }
   }
 
   return (
@@ -196,6 +224,11 @@ export default async function TokenPage({
           {auction && (
             <section className="py-5 border-b border-gray-100">
               <AuctionPanel auction={auction} />
+            </section>
+          )}
+          {!auction && settledAuction && (
+            <section className="py-5 border-b border-gray-100">
+              <SettledAuctionSummary auction={settledAuction} />
             </section>
           )}
           {!auction && !data.isErc1155 && (

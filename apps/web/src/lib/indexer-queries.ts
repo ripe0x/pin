@@ -53,6 +53,91 @@ async function withTimeout<T>(
  * Returns `null` if the indexer is unavailable / disabled / slow — the
  * caller treats that as "fall back to RPC".
  */
+export type SettledAuctionBid = {
+  bidder: string
+  bidderDisplay: string
+  amount: bigint
+  blockTime: number
+  txHash: string
+}
+
+export type SettledAuction = {
+  seller: string
+  sellerDisplay: string
+  winner: string
+  winnerDisplay: string
+  amount: bigint
+  settledAtTime: number
+  bids: SettledAuctionBid[]
+}
+
+export async function getSettledAuctionForToken(
+  tokenContract: string,
+  tokenId: string,
+): Promise<SettledAuction | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+
+  return withTimeout(async () => {
+    const contract = tokenContract.toLowerCase()
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+      /[^a-zA-Z0-9_]/g,
+      "",
+    )
+
+    const rows = (await db.unsafe(
+      `SELECT id, seller, winner, amount::text AS amount,
+              settled_at_time::text AS settled_at_time
+       FROM ${schema}.pnd_auctions
+       WHERE token_contract = $1
+         AND token_id = $2::numeric
+         AND status = 'settled'
+       ORDER BY settled_at_time DESC
+       LIMIT 1`,
+      [contract, tokenId],
+    )) as Array<{
+      id: string
+      seller: string
+      winner: string
+      amount: string
+      settled_at_time: string
+    }>
+
+    if (rows.length === 0) return null
+    const row = rows[0]
+
+    const bidRows = (await db.unsafe(
+      `SELECT bidder, amount::text AS amount,
+              block_time::text AS block_time, tx_hash
+       FROM ${schema}.pnd_bids
+       WHERE auction_id = $1
+       ORDER BY block_number DESC`,
+      [row.id],
+    )) as Array<{
+      bidder: string
+      amount: string
+      block_time: string
+      tx_hash: string
+    }>
+
+    return {
+      seller: row.seller,
+      sellerDisplay: row.seller,
+      winner: row.winner ?? "",
+      winnerDisplay: row.winner ?? "",
+      amount: BigInt(row.amount),
+      settledAtTime: Number(row.settled_at_time),
+      bids: bidRows.map((b) => ({
+        bidder: b.bidder,
+        bidderDisplay: b.bidder,
+        amount: BigInt(b.amount),
+        blockTime: Number(b.block_time),
+        txHash: b.tx_hash,
+      })),
+    }
+  })
+}
+
 export async function getActiveAuctionCountFromIndexer(
   sellerAddress: string,
 ): Promise<number | null> {
