@@ -7,7 +7,6 @@
  * finalized, sold, or — for auctions — already received a bid, since
  * `cancelReserveAuction` reverts after the first bid).
  */
-import { unstable_cache } from "next/cache"
 import {
   createPublicClient,
   http,
@@ -81,56 +80,29 @@ function getClient(): PublicClient {
 /**
  * Discover a seller's active, cancellable Foundation listings.
  *
- * Cached for 5min via `unstable_cache`. The underlying scan is two `getLogs`
- * over ~10M blocks plus N multicalls — too expensive to repeat on every
- * panel open, but freshness within a few minutes is acceptable since the
- * panel is only used to cancel listings (and a stale "still cancellable"
- * row will just no-op the tx).
+ * Uncached — see comment in the body. Each call is two `getLogs` over
+ * ~10M blocks plus N multicalls. Acceptable today because all three
+ * callers (MigrationBanner, BulkDelistPanel, MigratePanel) only invoke
+ * this when their panels are opened by an artist managing their own
+ * listings; not on every page render. Move behind a route handler if
+ * the volume changes.
  */
 export async function getSellerCancellableListings(
   sellerAddress: string,
 ): Promise<{ auctions: AuctionListing[]; buyNows: BuyNowListing[] }> {
-  const cached = await getSellerCancellableListingsCached(
-    sellerAddress.toLowerCase(),
-  )
-  return {
-    auctions: cached.auctions.map((a) => ({
-      ...a,
-      auctionId: BigInt(a.auctionId),
-      reserveWei: BigInt(a.reserveWei),
-    })),
-    buyNows: cached.buyNows.map((b) => ({
-      ...b,
-      priceWei: BigInt(b.priceWei),
-    })),
-  }
+  // Direct call — no `unstable_cache` wrapper because every caller is a
+  // client component (MigrationBanner, BulkDelistPanel, MigratePanel)
+  // calling this from a useEffect. `unstable_cache` requires Next's
+  // incrementalCache context, which only exists server-side; calling it
+  // from the browser throws "Invariant: incrementalCache missing".
+  //
+  // The right structural fix is to move this behind an `/api/seller-
+  // listings/[address]` route handler so the server gets to cache it
+  // (with both unstable_cache and pgCache) and clients just fetch JSON.
+  // Deferred — current cost is bounded (panel-open only, multicall'd) and
+  // unblocks the immediate error.
+  return getSellerCancellableListingsUncached(sellerAddress.toLowerCase())
 }
-
-const getSellerCancellableListingsCached = unstable_cache(
-  async (
-    sellerAddress: string,
-  ): Promise<{
-    auctions: Array<Omit<AuctionListing, "auctionId" | "reserveWei"> & {
-      auctionId: string
-      reserveWei: string
-    }>
-    buyNows: Array<Omit<BuyNowListing, "priceWei"> & { priceWei: string }>
-  }> => {
-    const { auctions, buyNows } = await getSellerCancellableListingsUncached(
-      sellerAddress,
-    )
-    return {
-      auctions: auctions.map((a) => ({
-        ...a,
-        auctionId: a.auctionId.toString(),
-        reserveWei: a.reserveWei.toString(),
-      })),
-      buyNows: buyNows.map((b) => ({ ...b, priceWei: b.priceWei.toString() })),
-    }
-  },
-  ["seller-cancellable-listings-v1"],
-  { revalidate: 60 * 5, tags: ["seller-listings"] },
-)
 
 async function getSellerCancellableListingsUncached(
   sellerAddress: string,
