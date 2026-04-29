@@ -85,6 +85,12 @@ packages/
   addresses/    Contract addresses per chain
   shared/       Site config, IPFS utilities, shared types
 
+ponder/         Optional event indexer for PND auction houses
+                (Ponder + Postgres). See "Data layer" below.
+
+db/             SQL migrations + a Node migration runner for the shared
+                Postgres cache table.
+
 scripts/        Local fork helpers, ABI emit scripts, and dev utilities
 ```
 
@@ -114,13 +120,100 @@ PND is MIT licensed.
 
 Use the frontend, contracts, ABI package, address package, and shared utilities as they are, or modify them for your own needs.
 
-## Current frontend architecture
+## Data layer
 
-The current PND frontend reads from onchain RPC and IPFS for artist profiles, token pages, preservation flows, listing management, and auction actions.
+PND reads from a layered stack. Server components and route handlers walk it
+top to bottom, stopping at the first hit:
 
-That keeps the app relatively lightweight and easy to run today.
+```txt
+1. unstable_cache   in-process, ~ms
+                    Lives in the Netlify Function instance's memory.
+                    Per-instance, dies on cold start.
 
-Over time, PND may add indexing or other infrastructure where it improves speed, reliability, or scale. The goal is to keep the important pieces open, understandable, and portable.
+2. pgCache          Postgres KV table (cache_entries), ~10-50ms
+                    Shared across every Function instance and edge region.
+                    Bigints stringified at the boundary; JSONB column.
+
+3. Ponder           Postgres tables (ponder.pnd_auctions, ponder.pnd_bids)
+                    populated by a separate long-running Ponder service.
+                    Live event-streamed from chain; ~10-50ms point lookups.
+                    Used for PND auction state queries today; the indexer
+                    is opt-in (see `INDEXER_DISABLED`).
+
+4. RPC              Any JSON-RPC provider, via the /api/rpc proxy. The
+                    slowest layer, and the only one that contacts an
+                    external service per call. The proxy holds the API
+                    key server-side, allowlists methods, and rate-limits
+                    per IP.
+```
+
+Every layer has a kill switch. `DATABASE_URL` unset → pgCache and indexer
+queries no-op and the app behaves as if neither exists, falling through to
+RPC + the in-process cache. `INDEXER_DISABLED=1` skips Ponder reads only.
+
+### Why this shape
+
+The motivation is to rely less on direct RPC calls. The original frontend
+hit chain on every render — every visitor, every bot, every refresh —
+which made even basic pages dependent on a single provider's quota and
+latency, and exposed the API key to anyone who could view-source the
+client bundle. A single Foundation contract scan could take 18 seconds
+on a cold cache. This layout fixes those structurally:
+
+1. **Key out of the bundle.** Wagmi and any client-side viem clients
+   route through `/api/rpc`. The secret stays on the server, behind a
+   method allowlist and per-IP rate limit at the proxy.
+2. **Repeat traffic skips the provider.** Hot pages serve from the
+   in-process cache; cross-instance traffic shares the Postgres
+   layer; only the first miss per TTL window reaches RPC at all.
+3. **Wide log scans become point queries.** Ponder eagerly indexes
+   every PND auction event and writes them to Postgres.
+   `getActiveAuctionCount` is now a `COUNT(*)` against an indexed
+   table instead of a deploy-block-to-tip `getLogs` scan plus N
+   parallel reads.
+4. **Bid + settle invalidations are surgical.** A bidder calls
+   `/api/auction/revalidate?contract=…&tokenId=…` after their tx
+   confirms. Only that one auction's cache entries get flushed, in
+   both layers.
+
+### What's actually cached
+
+```txt
+ens:0xabc                          ENS reverse, 24h
+token-metadata:0xabc:1             tokenURI + IPFS metadata, 1h
+token-onchain-data:0xabc:1         owner + transfer history, 60s
+erc1155-stats:0xabc:1              supply + holders, 60s
+auction:0xabc:1                    auction state, 30s, dynamic per-token tag
+active-auction-count:0xabc         count for an artist, 5min
+last-sale:0xabc:1                  most recent sale price, 1h
+seller-listings:                   not pgCached (callers are client comps;
+                                   see lib/seller-listings.ts comment)
+```
+
+ERC1155 transfer history uses the Alchemy NFT API rather than `eth_getLogs`
+because the latter would require a contract-wide scan filtered in memory.
+ERC721 transfer history stays on indexed-topic `getLogs` — Alchemy's
+transfer API doesn't support tokenId filtering and the contract-wide page
+walk was 10× slower on Foundation's shared NFT contract.
+
+### Self-hosting the data layer
+
+The data layer is optional. The minimum runnable setup is just the
+Next.js app pointed at any RPC provider. To replicate the production
+stack:
+
+1. **Postgres** anywhere (Railway, Neon, Supabase, local). Apply the
+   migration at `db/migrations/001_cache_entries.sql` once
+   (`npm run db:migrate` reads `DATABASE_URL` from
+   `apps/web/.env.local`).
+2. **Ponder** as a separate long-running service. The `ponder/`
+   directory ships its own `package.json` and `railway.json` so it
+   deploys cleanly on its own. Set `DATABASE_URL` (same Postgres) and
+   `PONDER_RPC_URL_1` (a non-public-proxy RPC URL — Ponder's sync
+   needs `eth_getLogs` patterns the proxy's allowlist intentionally
+   blocks).
+3. **Web app**: set `DATABASE_URL` and (if Ponder is running)
+   `INDEXER_SCHEMA=ponder`.
 
 ## Features
 
@@ -229,9 +322,14 @@ The factory is open and permissionless. Anyone can deploy a house for any wallet
 
 1. Node.js 18 or newer
 2. npm 9 or newer
-3. An Alchemy API key
+3. An Alchemy API key (or any JSON-RPC provider — `ALCHEMY_API_KEY` is
+   the env var name; the URL is constructed from it server-side)
 4. A WalletConnect project ID
-5. Optional: Foundry for local mainnet fork testing
+5. Optional: a Postgres database for the shared cache layer (Railway,
+   Neon, Supabase, or local — see "Data layer" above)
+6. Optional: a separately-deployed Ponder service for live PND auction
+   indexing (see `ponder/`)
+7. Optional: Foundry for local mainnet fork testing
 
 ## Setup
 
@@ -248,7 +346,37 @@ Then edit:
 apps/web/.env.local
 ```
 
-Add your API keys and local configuration.
+Add your API keys and local configuration. Required:
+
+```txt
+ALCHEMY_API_KEY              server-only; constructs the upstream URL
+                             that /api/rpc proxies to
+NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID
+                             RainbowKit/WalletConnect handshake
+```
+
+Optional (enables the shared cache + indexer; the app falls back
+gracefully when these are unset):
+
+```txt
+DATABASE_URL                 Postgres connection string for pgCache + Ponder
+INDEXER_SCHEMA               schema name where Ponder writes its tables
+                             (default: "ponder"); only relevant if you
+                             deploy the indexer service
+INDEXER_DISABLED             set to "1" to bypass indexer reads even
+                             when DATABASE_URL is set
+ALCHEMY_STATS_SECRET         optional; gates a future /api/rpc/stats
+                             observability endpoint
+REVALIDATE_SECRET            arbitrary string; required only if you want
+                             authenticated cache flushes via
+                             /api/revalidate?secret=…
+```
+
+Once `DATABASE_URL` is set, apply the migration:
+
+```bash
+npm run db:migrate
+```
 
 ## Development
 
@@ -260,6 +388,38 @@ The app will be available at:
 
 ```txt
 http://localhost:3000
+```
+
+## API routes
+
+The web app exposes a small set of route handlers. All are safe to leave
+public; none accept arbitrary-method calls.
+
+```txt
+POST /api/rpc                 JSON-RPC proxy. Method allowlist + per-IP
+                              rate limit. Hides ALCHEMY_API_KEY from the
+                              client bundle.
+
+POST /api/auction/revalidate  Surgical per-(contract, tokenId) cache flush.
+                              Called by AuctionPanel after a bid / settle /
+                              cancel / reserve update tx confirms. Per-IP
+                              rate-limited.
+
+GET  /api/revalidate          Manually flush the artist gallery + token
+                              caches. Optional secret param skips the
+                              rate limit; otherwise public, 1/min/IP.
+                              Powers the in-page "↻ Refresh" pill.
+
+GET  /api/meta/[contract]/[tokenId]
+                              OG metadata endpoint. Delegates to the
+                              cached resolveTokenMetadataDirect — no
+                              local viem client, no secret in bundle.
+
+GET  /api/artist/[address]/tokens?page=N
+GET  /api/artist/[address]/preserve-tokens
+                              Artist gallery + preserve flow data.
+                              Wraps the same cached lib functions the
+                              SSR uses.
 ```
 
 ## Local fork testing
