@@ -10,10 +10,19 @@ export default function ArtistLoading() {
         </div>
       </div>
 
-      {/* Status message */}
-      <div className="mt-12 text-center">
-        <p className="text-sm text-gray-400 animate-pulse">
-          Resolving address and scanning the blockchain for works...
+      {/* Status message. Shown only while the SSR fetch is in flight; once
+          the page renders, this is replaced by the real gallery. The text
+          covers the dominant case (first-ever visit, or a visit after the
+          shared cache has aged out) where we have to scan chain data and
+          fetch IPFS metadata before we can show anything — that takes a
+          few seconds and we want users to know it's a one-time wait. */}
+      <div className="mt-12 max-w-md mx-auto text-center space-y-1">
+        <p className="text-sm text-gray-600 animate-pulse">
+          Indexing this artist for the first time…
+        </p>
+        <p className="text-xs text-gray-400">
+          Scanning chain data and fetching metadata. This only happens
+          once — future visits load from cache instantly.
         </p>
       </div>
 
