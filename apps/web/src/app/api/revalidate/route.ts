@@ -1,5 +1,6 @@
 import { revalidateTag } from "next/cache"
 import { NextRequest, NextResponse } from "next/server"
+import { pgCacheInvalidate } from "@/lib/pg-cache"
 
 /**
  * Manually flush the artist gallery + enriched-page caches. Hit this after
@@ -101,9 +102,25 @@ export async function GET(req: NextRequest) {
   revalidateTag("artist-refs")
   revalidateTag("artist-enriched")
 
+  // Also flush the L2 (Postgres) entries that back the same data — without
+  // this, a fresh render after a Refresh click would still hit stale rows
+  // in pgCache from any sandbox. ENS and metadata are global enough that
+  // we leave them alone here (they have their own long TTLs and rarely
+  // change); Refresh is for "I just minted, show me my new tokens."
+  await Promise.all([
+    pgCacheInvalidate("token-onchain-data:"),
+    pgCacheInvalidate("erc1155-stats:"),
+    pgCacheInvalidate("token-metadata:"),
+    pgCacheInvalidate("active-auction-count:"),
+    pgCacheInvalidate("seller-listings:"),
+    pgCacheInvalidate("auction:"),
+    pgCacheInvalidate("last-sale:"),
+  ])
+
   return NextResponse.json({
     ok: true,
     revalidated: ["artist-refs", "artist-enriched"],
+    pgCacheCleared: true,
     requested_for: artist ?? null,
     note: "All-artist flush; per-artist tagging requires dynamic tags (not supported by unstable_cache).",
   })
