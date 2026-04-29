@@ -104,12 +104,15 @@ export async function GET(req: NextRequest) {
   revalidateTag("token-metadata")
   revalidateTag("token-onchain-data")
   revalidateTag("erc1155-stats")
+  revalidateTag("ens")
 
   // Also flush the L2 (Postgres) entries that back the same data — without
   // this, a fresh render after a Refresh click would still hit stale rows
-  // in pgCache from any sandbox. ENS and metadata are global enough that
-  // we leave them alone here (they have their own long TTLs and rarely
-  // change); Refresh is for "I just minted, show me my new tokens."
+  // in pgCache from any sandbox. ENS is included here (despite its 24h TTL
+  // and global reuse) because the pgCache double-stringify bug corrupted
+  // every L2 row written during its window, and ENS is the slowest of the
+  // affected caches to self-heal. Re-resolution is lazy, so the cost is
+  // bounded (one ENSIdeas lookup per address as it's next requested).
   await Promise.all([
     pgCacheInvalidate("token-onchain-data:"),
     pgCacheInvalidate("erc1155-stats:"),
@@ -118,11 +121,12 @@ export async function GET(req: NextRequest) {
     pgCacheInvalidate("seller-listings:"),
     pgCacheInvalidate("auction:"),
     pgCacheInvalidate("last-sale:"),
+    pgCacheInvalidate("ens:"),
   ])
 
   return NextResponse.json({
     ok: true,
-    revalidated: ["artist-refs", "artist-enriched", "token-metadata", "token-onchain-data", "erc1155-stats"],
+    revalidated: ["artist-refs", "artist-enriched", "token-metadata", "token-onchain-data", "erc1155-stats", "ens"],
     pgCacheCleared: true,
     requested_for: artist ?? null,
     note: "All-artist flush; per-artist tagging requires dynamic tags (not supported by unstable_cache).",
