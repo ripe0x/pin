@@ -16,6 +16,7 @@ import {
 import { mainnet } from "viem/chains"
 import { erc721Abi, nftMarketAbi, sovereignAuctionHouseAbi, sovereignAuctionHouseFactoryAbi } from "@pin/abi"
 import { pgCache } from "./pg-cache"
+import { getActiveAuctionCountFromIndexer } from "./indexer-queries"
 import {
   NFT_MARKET,
   MAINNET_CHAIN_ID,
@@ -429,10 +430,20 @@ export async function getSovereignAuctionByHouse(
 export async function getActiveAuctionCount(
   artistAddress: string,
 ): Promise<number | null> {
-  // Cached for 5min: this is on the artist page header, hit on every load.
-  // Auctions don't appear/disappear faster than minutes (each create or
-  // settle is an on-chain tx), so 5min is well within freshness expectations.
-  return getActiveAuctionCountCached(artistAddress.toLowerCase())
+  const lower = artistAddress.toLowerCase()
+
+  // Indexer-first. Ponder writes every PND auction state transition into
+  // the same Postgres pgCache uses, so this is a sub-50ms point query —
+  // strictly cheaper than the log-scan + multicall fallback. The 500ms
+  // hard timeout in the indexer-queries helper means a slow / down /
+  // unsynced indexer doesn't add latency to renders.
+  const fromIndexer = await getActiveAuctionCountFromIndexer(lower)
+  if (fromIndexer !== null) return fromIndexer
+
+  // Fallback: existing L1 + L2 + RPC path. Fully self-contained — works
+  // when the indexer is disabled, unreachable, or hasn't caught up to
+  // a recent on-chain event yet.
+  return getActiveAuctionCountCached(lower)
 }
 
 const getActiveAuctionCountCached = unstable_cache(
