@@ -11,7 +11,7 @@ const FACTORY_ADDRESS = "0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f" as const
 // Factory deploy block — found via `cast code` binary search. No clones can
 // exist before this block, so starting earlier is just paying for an empty
 // scan on every cold sync.
-const FACTORY_DEPLOY_BLOCK = 24_970_000
+const FACTORY_DEPLOY_BLOCK = 24_956_103
 
 // Ponder needs a direct RPC URL for sync (heavy `eth_getLogs`). Don't point
 // this at the app's `/api/rpc` proxy — the allowlist there blocks the

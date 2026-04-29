@@ -42,7 +42,8 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 const FND_MARKET_DEPLOY_BLOCK = 13_840_000n
 // SovereignAuctionHouseFactory was deployed in 2026 (PND launch) — every
 // sovereign house was deployed by it, so no log we care about exists earlier.
-const SOVEREIGN_FACTORY_DEPLOY_BLOCK = 24_970_000n
+// Verified via `cast code` binary search.
+const SOVEREIGN_FACTORY_DEPLOY_BLOCK = 24_956_103n
 
 const fndCreatedEvent = parseAbiItem(
   "event ReserveAuctionCreated(address indexed seller, address indexed nftContract, uint256 indexed tokenId, uint256 duration, uint256 extensionDuration, uint256 reservePrice, uint256 auctionId)",
