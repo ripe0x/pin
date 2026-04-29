@@ -41,9 +41,10 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 // NFTMarket proxy was deployed Dec 2021 — earlier scanning is wasted RPC.
 const FND_MARKET_DEPLOY_BLOCK = 13_840_000n
 // SovereignAuctionHouseFactory was deployed in 2026 (PND launch) — every
-// sovereign house was deployed by it, so no log we care about exists earlier.
-// Verified via `cast code` binary search.
-const SOVEREIGN_FACTORY_DEPLOY_BLOCK = 24_956_103n
+// sovereign house was deployed by it, so no log we care about exists
+// earlier. Verified: `cast code` returns 0x at 24,973,293 and real
+// bytecode at 24,973,294.
+const SOVEREIGN_FACTORY_DEPLOY_BLOCK = 24_973_294n
 
 const fndCreatedEvent = parseAbiItem(
   "event ReserveAuctionCreated(address indexed seller, address indexed nftContract, uint256 indexed tokenId, uint256 duration, uint256 extensionDuration, uint256 reservePrice, uint256 auctionId)",

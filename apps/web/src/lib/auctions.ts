@@ -100,10 +100,11 @@ const sovereignBidPlacedEvent = parseAbiItem(
 
 /** NFTMarket proxy was deployed Dec 2021. Anything earlier can't have bids. */
 const FND_MARKET_DEPLOY_BLOCK = 13_840_000n
-/** SovereignAuctionHouseFactory deploy block (verified via `cast code`
- *  binary search). Used as a lower bound for log scans on the factory and
- *  any houses it created. Earlier scans are wasted; later misses houses. */
-const SOVEREIGN_FACTORY_DEPLOY_BLOCK = 24_956_103n
+/** SovereignAuctionHouseFactory deploy block. Verified: `cast code`
+ *  returns 0x at 24,973,293 and real bytecode at 24,973,294. Used as a
+ *  lower bound for log scans on the factory and any houses it created —
+ *  earlier scans are wasted, later misses houses. */
+const SOVEREIGN_FACTORY_DEPLOY_BLOCK = 24_973_294n
 
 function getClient() {
   return createPublicClient({
