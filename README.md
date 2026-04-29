@@ -199,21 +199,22 @@ walk was 10× slower on Foundation's shared NFT contract.
 ### Self-hosting the data layer
 
 The data layer is optional. The minimum runnable setup is just the
-Next.js app pointed at any RPC provider. To replicate the production
-stack:
+Next.js app pointed at any RPC provider — no Postgres, no Ponder.
+
+To replicate the production stack:
 
 1. **Postgres** anywhere (Railway, Neon, Supabase, local). Apply the
-   migration at `db/migrations/001_cache_entries.sql` once
-   (`npm run db:migrate` reads `DATABASE_URL` from
-   `apps/web/.env.local`).
+   migration once with `npm run db:migrate` (reads `DATABASE_URL`
+   from `apps/web/.env.local`).
 2. **Ponder** as a separate long-running service. The `ponder/`
-   directory ships its own `package.json` and `railway.json` so it
-   deploys cleanly on its own. Set `DATABASE_URL` (same Postgres) and
-   `PONDER_RPC_URL_1` (a non-public-proxy RPC URL — Ponder's sync
-   needs `eth_getLogs` patterns the proxy's allowlist intentionally
-   blocks).
-3. **Web app**: set `DATABASE_URL` and (if Ponder is running)
-   `INDEXER_SCHEMA=ponder`.
+   directory is self-contained. See [`ponder/README.md`](./ponder/README.md)
+   for required env vars, RPC requirements, and recovery from stuck
+   schema state.
+3. **Web app**: set `DATABASE_URL` and `INDEXER_SCHEMA=ponder`.
+
+Operational notes — Netlify deploy specifics, Postgres pooling,
+verification queries, cost expectations, kill switches, local dev —
+live in [`DEPLOYMENT.md`](./DEPLOYMENT.md).
 
 ## Features
 
