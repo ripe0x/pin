@@ -1,8 +1,10 @@
 import type { Metadata } from "next"
+import { Suspense } from "react"
 import { SITE_TITLE, ipfsToHttp } from "@pin/shared"
 import { FOUNDATION_NFT, MAINNET_CHAIN_ID } from "@pin/addresses"
 import { Provenance, type ProvenanceEntry } from "@/components/Provenance"
 import { AuctionPanel } from "@/components/auction/AuctionPanel"
+import { MoreFromContractSection } from "@/components/auction/MoreFromContract"
 import { StartAuctionCTA } from "@/components/auction/StartAuctionCTA"
 import { TokenMedia } from "@/components/token/TokenMedia"
 import {
@@ -282,6 +284,19 @@ export default async function TokenPage({
           </section>
         </aside>
       </div>
+
+      {/* "More from this artist on this contract" — streams in below the
+          fold so the primary auction render isn't blocked by the log scan. */}
+      {data.creator && (
+        <Suspense fallback={null}>
+          <MoreFromContractSection
+            contract={data.contract}
+            creator={data.creator}
+            creatorDisplay={data.creatorHandle}
+            excludeTokenId={tokenId}
+          />
+        </Suspense>
+      )}
     </div>
   )
 }

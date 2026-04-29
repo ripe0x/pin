@@ -6,6 +6,7 @@
  * the auction contract, only one source can be active at a time. We probe both
  * in parallel and return whichever has the auction.
  */
+import { unstable_cache } from "next/cache"
 import {
   createPublicClient,
   http,
@@ -14,6 +15,7 @@ import {
 } from "viem"
 import { mainnet } from "viem/chains"
 import { erc721Abi, nftMarketAbi, sovereignAuctionHouseAbi, sovereignAuctionHouseFactoryAbi } from "@pin/abi"
+import { pgCache } from "./pg-cache"
 import {
   NFT_MARKET,
   MAINNET_CHAIN_ID,
@@ -97,6 +99,9 @@ const sovereignBidPlacedEvent = parseAbiItem(
 
 /** NFTMarket proxy was deployed Dec 2021. Anything earlier can't have bids. */
 const FND_MARKET_DEPLOY_BLOCK = 13_840_000n
+/** SovereignAuctionHouseFactory deploy block (~2026 PND launch). Used as a
+ *  lower bound for log scans on the factory and any houses it created. */
+const SOVEREIGN_FACTORY_DEPLOY_BLOCK = 24_970_000n
 
 function getClient() {
   return createPublicClient({
@@ -110,22 +115,141 @@ function getClient() {
 // ─── Public entry points ────────────────────────────────────────────────────
 
 /**
- * Probe both Foundation NFTMarket and artist-owned auction sources for the given token. Returns
- * whichever has an active auction, or null if neither does. Both probes run in
- * parallel so latency = max(both), not sum.
+ * Auction state for a token, dispatching to whichever source (Foundation
+ * NFTMarket or sovereign artist house) actually escrows it.
+ *
+ * Two optimizations vs. the naive parallel-probe:
+ *
+ *  1. Single discriminator. Read `ownerOf(tokenId)` once and branch on the
+ *     result, instead of probing both sources speculatively. Cuts ~half the
+ *     RPC reads per render — the dominant cost driver before caching.
+ *
+ *  2. 30s response cache via `unstable_cache`. Auction state changes only
+ *     on bid / settle, both of which require an on-chain tx — so a brief
+ *     cache window just collapses bot/refresh traffic. Bigints are
+ *     stringified at the cache boundary because the cache layer
+ *     JSON-serializes (same pattern as `getLastSalePriceForToken`).
+ *
+ *  Tag: `auction:<lower-contract>:<tokenId>` for surgical revalidation
+ *  after a bid/settle write succeeds in the UI.
  */
+/**
+ * Build a per-token tag for `revalidateTag`. Keep this in sync with the
+ * cache wrapper below — the `/api/auction/revalidate` route calls
+ * `revalidateTag(auctionTokenTag(...))` after a bid/settle tx confirms.
+ */
+export function auctionTokenTag(nftContract: string, tokenId: string): string {
+  return `auction:${nftContract.toLowerCase()}:${tokenId}`
+}
+
 export async function getAuctionForToken(
   nftContract: string,
   tokenId: string,
 ): Promise<AuctionState | null> {
-  const [foundation, artistOwned] = await Promise.all([
-    getFoundationAuction(nftContract, tokenId),
-    getSovereignAuctionForToken(nftContract, tokenId),
-  ])
-  // An NFT can only be escrowed in one place; if both somehow returned a
-  // result (impossible barring contract bug), prefer Foundation since legacy
-  // auctions are the existing user expectation.
-  return foundation ?? artistOwned
+  const lower = nftContract.toLowerCase()
+  // L1 (in-process) wraps L2 (Postgres) wraps the actual fetcher. Same
+  // (contract, tokenId) baked into both layers' keys so revalidation in
+  // either layer hits the right entry. `auctionTokenTag` is exposed for
+  // `/api/auction/revalidate` to flush both L1 (via revalidateTag) and
+  // L2 (via pgCacheInvalidate) after a bid/settle/cancel/update.
+  const cached = unstable_cache(
+    (c: string, t: string) =>
+      pgCache<SerializedAuctionState | null>(
+        auctionTokenTag(c, t),
+        30,
+        () => fetchAuctionForToken(c, t),
+      ),
+    ["auction-for-token-v1", lower, tokenId],
+    { revalidate: 30, tags: [auctionTokenTag(lower, tokenId)] },
+  )
+  const result = await cached(lower, tokenId)
+  return result ? hydrateAuctionState(result) : null
+}
+
+async function fetchAuctionForToken(
+  nftContract: string,
+  tokenId: string,
+): Promise<SerializedAuctionState | null> {
+  const client = getClient()
+  const contract = nftContract as Address
+  const tokenIdBig = BigInt(tokenId)
+
+  // Discriminate once. Only one source can be active at a time because the
+  // NFT is escrowed in a specific contract during an auction.
+  let owner: Address
+  try {
+    owner = await client.readContract({
+      address: contract,
+      abi: erc721Abi,
+      functionName: "ownerOf",
+      args: [tokenIdBig],
+    })
+  } catch {
+    // Token doesn't exist or RPC failed — either way, no auction to show.
+    return null
+  }
+
+  let state: AuctionState | null = null
+  if (owner.toLowerCase() === FND_MARKET.toLowerCase()) {
+    state = await getFoundationAuction(nftContract, tokenId)
+  } else if (SOVEREIGN_FACTORY) {
+    let isHouse = false
+    try {
+      isHouse = await client.readContract({
+        address: SOVEREIGN_FACTORY,
+        abi: sovereignAuctionHouseFactoryAbi,
+        functionName: "isHouse",
+        args: [owner],
+      })
+    } catch {
+      // Treat factory failure as "not a house" — UI will show no auction
+      // rather than crash. The 30s cache means we'll retry shortly anyway.
+    }
+    if (isHouse) {
+      state = await readSovereignAuction(client, owner, contract, tokenIdBig)
+    }
+  }
+
+  return state ? serializeAuctionState(state) : null
+}
+
+// Bigints don't survive JSON serialization, so we stringify them at the cache
+// boundary. Hydrate back to AuctionState before returning to callers so the
+// rest of the app (panel, bid form) is unaware of the cache layer.
+type SerializedBidHistoryEntry = Omit<BidHistoryEntry, "amount"> & {
+  amount: string
+}
+type SerializedAuctionState = Omit<
+  AuctionState,
+  "amount" | "endTime" | "duration" | "minBidWei" | "bidHistory"
+> & {
+  amount: string
+  endTime: string
+  duration: string
+  minBidWei: string
+  bidHistory: SerializedBidHistoryEntry[]
+}
+
+function serializeAuctionState(s: AuctionState): SerializedAuctionState {
+  return {
+    ...s,
+    amount: s.amount.toString(),
+    endTime: s.endTime.toString(),
+    duration: s.duration.toString(),
+    minBidWei: s.minBidWei.toString(),
+    bidHistory: s.bidHistory.map((b) => ({ ...b, amount: b.amount.toString() })),
+  }
+}
+
+function hydrateAuctionState(s: SerializedAuctionState): AuctionState {
+  return {
+    ...s,
+    amount: BigInt(s.amount),
+    endTime: BigInt(s.endTime),
+    duration: BigInt(s.duration),
+    minBidWei: BigInt(s.minBidWei),
+    bidHistory: s.bidHistory.map((b) => ({ ...b, amount: BigInt(b.amount) })),
+  }
 }
 
 // ─── Foundation source ──────────────────────────────────────────────────────
@@ -213,7 +337,7 @@ export async function getFoundationAuction(
     tokenId: auction.tokenId.toString(),
     seller: auction.seller,
     sellerDisplay: lookup(auction.seller),
-    amount: auction.amount,
+    amount: auction.amount === 0n ? minBidWei : auction.amount,
     bidder: auction.bidder,
     bidderDisplay:
       auction.bidder === ZERO_ADDRESS ? "" : lookup(auction.bidder),
@@ -273,51 +397,6 @@ async function getFoundationFees(
 // ─── Artist-Owned source ─────────────────────────────────────────────────────────────
 
 /**
- * Find an artist-owned auction for the given token, if any. Strategy:
- *   1. If no factory deployed yet (zero address), short-circuit.
- *   2. Read the NFT's current owner. If it's a sovereign auction house (registered with the
- *      factory), the token is escrowed there and that house has the auction.
- *   3. Read the auctionId from the house and build the auction state.
- */
-async function getSovereignAuctionForToken(
-  nftContract: string,
-  tokenId: string,
-): Promise<AuctionState | null> {
-  if (!SOVEREIGN_FACTORY) return null
-  const client = getClient()
-  const contract = nftContract as Address
-  const tokenIdBig = BigInt(tokenId)
-
-  let currentOwner: Address
-  try {
-    currentOwner = await client.readContract({
-      address: contract,
-      abi: erc721Abi,
-      functionName: "ownerOf",
-      args: [tokenIdBig],
-    })
-  } catch {
-    return null
-  }
-
-  // If the token isn't escrowed in a sovereign auction house, there's no auction.
-  let isSovereignHouse: boolean
-  try {
-    isSovereignHouse = await client.readContract({
-      address: SOVEREIGN_FACTORY,
-      abi: sovereignAuctionHouseFactoryAbi,
-      functionName: "isHouse",
-      args: [currentOwner],
-    })
-  } catch {
-    return null
-  }
-  if (!isSovereignHouse) return null
-
-  return readSovereignAuction(client, currentOwner, contract, tokenIdBig)
-}
-
-/**
  * Build the full auction state given the house address that holds it.
  * Exposed because callers that already know the house (e.g. an artist gallery
  * page that fetched it once) can skip the ownerOf+isHouse round-trip.
@@ -350,52 +429,88 @@ export async function getSovereignAuctionByHouse(
 export async function getActiveAuctionCount(
   artistAddress: string,
 ): Promise<number | null> {
-  if (!SOVEREIGN_FACTORY) return null
-  const client = getClient()
+  // Cached for 5min: this is on the artist page header, hit on every load.
+  // Auctions don't appear/disappear faster than minutes (each create or
+  // settle is an on-chain tx), so 5min is well within freshness expectations.
+  return getActiveAuctionCountCached(artistAddress.toLowerCase())
+}
 
-  let houseAddress: Address
-  try {
-    houseAddress = await client.readContract({
-      address: SOVEREIGN_FACTORY,
-      abi: sovereignAuctionHouseFactoryAbi,
-      functionName: "houseOf",
-      args: [artistAddress as Address],
-    })
-  } catch {
-    return null
-  }
-  if (houseAddress === ZERO_ADDRESS) return null
-
-  const created = await client.getLogs({
-    address: houseAddress,
-    event: parseAbiItem(
-      "event AuctionCreated(uint256 indexed auctionId, uint256 indexed tokenId, address indexed tokenContract, uint256 duration, uint256 reservePrice, address tokenOwner)",
+const getActiveAuctionCountCached = unstable_cache(
+  (artistAddress: string) =>
+    pgCache<number | null>(
+      `active-auction-count:${artistAddress}`,
+      60 * 5,
+      () => getActiveAuctionCountUncached(artistAddress),
     ),
-    fromBlock: 0n,
-    toBlock: "latest",
-  })
-  if (created.length === 0) return 0
+  ["active-auction-count-v1"],
+  { revalidate: 60 * 5, tags: ["active-auction-count"] },
+)
 
-  const auctionIds = created
-    .map((log) => log.args.auctionId)
-    .filter((id): id is bigint => id !== undefined)
+async function getActiveAuctionCountUncached(
+  artistAddress: string,
+): Promise<number | null> {
+    if (!SOVEREIGN_FACTORY) return null
+    const client = getClient()
 
-  // Read each auction in parallel. Active = tokenOwner != 0 (the contract
-  // deletes settled/cancelled entries from storage).
-  const states = await Promise.all(
-    auctionIds.map((id) =>
-      client
-        .readContract({
+    let houseAddress: Address
+    try {
+      houseAddress = await client.readContract({
+        address: SOVEREIGN_FACTORY,
+        abi: sovereignAuctionHouseFactoryAbi,
+        functionName: "houseOf",
+        args: [artistAddress as Address],
+      })
+    } catch {
+      return null
+    }
+    if (houseAddress === ZERO_ADDRESS) return null
+
+    // Bounded by factory deploy block — no houses could exist before that, so
+    // scanning from 0 was just paying for a 24M-block null scan every call.
+    const created = await client.getLogs({
+      address: houseAddress,
+      event: parseAbiItem(
+        "event AuctionCreated(uint256 indexed auctionId, uint256 indexed tokenId, address indexed tokenContract, uint256 duration, uint256 reservePrice, address tokenOwner)",
+      ),
+      fromBlock: SOVEREIGN_FACTORY_DEPLOY_BLOCK,
+      toBlock: "latest",
+    })
+    if (created.length === 0) return 0
+
+    const auctionIds = created
+      .map((log) => log.args.auctionId)
+      .filter((id): id is bigint => id !== undefined)
+
+    // Collapse N parallel `eth_call` round-trips into a single `multicall3`
+    // aggregate3 call. For an artist with M auctions in their house's
+    // history this drops from M RPC requests to ⌈M / 100⌉ — meaningful at
+    // ~50+ auctions and free at any scale. `multicall` ABI-decodes results
+    // and returns a per-call `{ status, result }` so a single revert
+    // doesn't take down the batch.
+    const BATCH_SIZE = 100
+    let activeCount = 0
+    for (let i = 0; i < auctionIds.length; i += BATCH_SIZE) {
+      const batch = auctionIds.slice(i, i + BATCH_SIZE)
+      const results = await client.multicall({
+        contracts: batch.map((id) => ({
           address: houseAddress,
           abi: sovereignAuctionHouseAbi,
-          functionName: "auctions",
-          args: [id],
-        })
-        .catch(() => null),
-    ),
-  )
-
-  return states.filter((s) => s !== null && s[5] !== ZERO_ADDRESS).length
+          functionName: "auctions" as const,
+          args: [id] as const,
+        })),
+        allowFailure: true,
+      })
+      for (const r of results) {
+        if (r.status !== "success") continue
+        // Tuple index 5 is `tokenOwner` — zero means the contract deleted
+        // the entry on settle/cancel.
+        const tuple = r.result as readonly [
+          bigint, Address, bigint, bigint, bigint, Address, bigint, Address, bigint,
+        ]
+        if (tuple[5] !== ZERO_ADDRESS) activeCount++
+      }
+    }
+    return activeCount
 }
 
 async function readSovereignAuction(
@@ -507,9 +622,6 @@ async function readSovereignAuction(
   const names = await resolveDisplayNames(addressesToResolve)
   const lookup = (a: Address) => names.get(a.toLowerCase()) ?? a
 
-  // Suppress unused variable warning for fields we capture but don't surface.
-  void reservePrice
-
   return {
     source: "sovereign",
     marketAddress: houseAddress,
@@ -518,7 +630,7 @@ async function readSovereignAuction(
     tokenId: auctionTokenId.toString(),
     seller: tokenOwner,
     sellerDisplay: lookup(tokenOwner),
-    amount,
+    amount: amount === 0n ? reservePrice : amount,
     bidder,
     bidderDisplay: bidder === ZERO_ADDRESS ? "" : lookup(bidder),
     endTime,

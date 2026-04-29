@@ -22,7 +22,6 @@ import { erc721Abi, sovereignAuctionHouseAbi } from "@pin/abi"
 import { config as wagmiConfig } from "@/lib/wagmi"
 import type { GalleryItem, GalleryPage } from "@/lib/artist-queries"
 import { mapWithConcurrency } from "@/lib/concurrency"
-import { resolveTokenMetadataDirect } from "@/lib/onchain-discovery"
 import { ipfsToHttp } from "@pin/shared"
 import { useArtistHouse } from "@/components/auction/useArtistHouse"
 import { useEthAmountInput } from "@/lib/useEthAmountInput"
@@ -34,6 +33,23 @@ const DURATION_OPTIONS = [
   { label: "7 days", seconds: 7 * 24 * 60 * 60 },
 ] as const
 
+/**
+ * Bust the cached auction state for a batch of tokens after a bulk write
+ * succeeds. Mirrors the `useRevalidateAuctionOnSuccess` pattern in
+ * `AuctionPanel.tsx` but for arbitrary lists. Failures are swallowed —
+ * `router.refresh()` and the existing 30s TTL are the user's safety net.
+ */
+function revalidateAuctionsForTokens(
+  pairs: Array<{ contract: string; tokenId: string }>,
+) {
+  for (const { contract, tokenId } of pairs) {
+    const url = `/api/auction/revalidate?contract=${encodeURIComponent(
+      contract,
+    )}&tokenId=${encodeURIComponent(tokenId)}`
+    fetch(url, { method: "POST" }).catch(() => {})
+  }
+}
+
 const PAGE_SIZE = 100
 
 const auctionCreatedEvent = parseAbiItem(
@@ -41,12 +57,11 @@ const auctionCreatedEvent = parseAbiItem(
 )
 
 function getClient() {
+  // Use the server-side `/api/rpc` proxy to avoid bundling the Alchemy API
+  // key into this client component.
   return createPublicClient({
     chain: mainnet,
-    transport: http(
-      process.env.NEXT_PUBLIC_ALCHEMY_MAINNET_URL ??
-        "https://eth.llamarpc.com",
-    ),
+    transport: http("/api/rpc"),
   })
 }
 
@@ -249,6 +264,31 @@ function BulkListSection({
     try {
       const client = getClient()
 
+      // Collapse the per-contract `isApprovedForAll` reads into a single
+      // multicall. Was N sequential RPC reads inside the loop; now one
+      // batched call before the loop starts. Lookup map keyed by lowercase
+      // contract.
+      const contractAddresses = groups.map(([c]) => c)
+      const approvalResults = await client.multicall({
+        contracts: contractAddresses.map((c) => ({
+          address: c,
+          abi: erc721Abi,
+          functionName: "isApprovedForAll" as const,
+          args: [connectedAddress, houseAddress] as const,
+        })),
+        allowFailure: true,
+      })
+      const approvalByContract = new Map<string, boolean>()
+      contractAddresses.forEach((c, i) => {
+        const r = approvalResults[i]
+        // Treat failures conservatively as "not approved" — the user will
+        // be prompted to approve and the next attempt will succeed.
+        approvalByContract.set(
+          c.toLowerCase(),
+          r.status === "success" ? Boolean(r.result) : false,
+        )
+      })
+
       let groupIndex = 0
       for (const [contract, items] of groups) {
         groupIndex += 1
@@ -258,12 +298,7 @@ function BulkListSection({
           phase: "approve",
         })
 
-        const isApproved = await client.readContract({
-          address: contract,
-          abi: erc721Abi,
-          functionName: "isApprovedForAll",
-          args: [connectedAddress, houseAddress],
-        })
+        const isApproved = approvalByContract.get(contract.toLowerCase()) ?? false
 
         if (!isApproved) {
           const approveHash = await writeContractAction(wagmiConfig, {
@@ -289,6 +324,13 @@ function BulkListSection({
           args: [contract, tokenIds, reserveWei, BigInt(durationSec)],
         })
         await waitForTransactionReceipt(wagmiConfig, { hash: createHash })
+
+        // Surgically invalidate the cached auction state for each token
+        // we just listed so any open page renders fresh on the next hit
+        // (instead of serving stale "no auction" for ~30s).
+        revalidateAuctionsForTokens(
+          items.map((i) => ({ contract: i.contract, tokenId: i.tokenId })),
+        )
       }
 
       setRunning(null)
@@ -426,6 +468,12 @@ function BulkCancelSection({
   const router = useRouter()
   const [load, setLoad] = useState<CancelLoadState>({ kind: "loading" })
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  // Snapshot of which tokens the in-flight tx is cancelling. Captured at
+  // submission time so we can fire revalidation requests after the receipt
+  // confirms — `selected` may change between submit and confirmation.
+  const [pendingCancels, setPendingCancels] = useState<
+    Array<{ contract: string; tokenId: string }>
+  >([])
 
   const {
     writeContract,
@@ -457,13 +505,17 @@ function BulkCancelSection({
     refresh()
   }, [refresh])
 
-  // After cancel tx confirms: refresh + reset.
+  // After cancel tx confirms: revalidate the cached auction state for each
+  // affected token (so other open browsers render fresh on next hit), then
+  // refresh local + router state.
   useEffect(() => {
     if (!isSuccess) return
+    revalidateAuctionsForTokens(pendingCancels)
+    setPendingCancels([])
     router.refresh()
     refresh()
     resetWrite()
-  }, [isSuccess, refresh, resetWrite, router])
+  }, [isSuccess, refresh, resetWrite, router, pendingCancels])
 
   if (load.kind === "loading") {
     return (
@@ -508,15 +560,18 @@ function BulkCancelSection({
 
   function handleCancel() {
     if (load.kind !== "loaded") return
-    const ids = load.auctions
-      .filter((a) => selected.has(a.auctionId))
-      .map((a) => BigInt(a.auctionId))
-    if (ids.length === 0) return
+    const targets = load.auctions.filter((a) => selected.has(a.auctionId))
+    if (targets.length === 0) return
+    // Capture (contract, tokenId) pairs now so the post-confirm effect can
+    // revalidate them — `selected` may change while the tx is mining.
+    setPendingCancels(
+      targets.map((a) => ({ contract: a.contract, tokenId: a.tokenId })),
+    )
     writeContract({
       address: houseAddress,
       abi: sovereignAuctionHouseAbi,
       functionName: "bulkCancelAuctions",
-      args: [ids],
+      args: [targets.map((a) => BigInt(a.auctionId))],
     })
   }
 
@@ -743,17 +798,29 @@ async function loadCancellableAuctions(
       s !== null,
   )
 
-  // Resolve metadata in parallel via the same direct on-chain helper used elsewhere.
+  // Resolve metadata via the public `/api/meta` route. We previously called
+  // the server lib `resolveTokenMetadataDirect` directly from this client
+  // component, but that pulled the lib's import graph (including the
+  // pgCache → postgres chain) into the browser bundle — postgres is a
+  // Node-only library and Next.js refuses to bundle it. The route returns
+  // the same shape and is already 1h-cached.
   const enriched = await mapWithConcurrency(cancellable, 8, async (s) => {
     let displayName = `#${s.tokenId.toString()}`
     let imageUrl: string | null = null
     try {
-      const meta = await resolveTokenMetadataDirect(
-        s.tokenContract,
-        s.tokenId.toString(),
+      const res = await fetch(
+        `/api/meta/${s.tokenContract}/${s.tokenId.toString()}`,
+        { signal: AbortSignal.timeout(15_000) },
       )
-      if (meta?.name) displayName = meta.name
-      if (meta?.image) imageUrl = ipfsToHttp(meta.image)
+      if (res.ok) {
+        const json = (await res.json()) as {
+          metadata?: { name?: string; image?: string } | null
+          mediaUri?: string | null
+        }
+        if (json.metadata?.name) displayName = json.metadata.name
+        if (json.mediaUri) imageUrl = json.mediaUri
+        else if (json.metadata?.image) imageUrl = ipfsToHttp(json.metadata.image)
+      }
     } catch {
       // fallthrough — fallback display
     }

@@ -7,6 +7,7 @@
  * finalized, sold, or — for auctions — already received a bid, since
  * `cancelReserveAuction` reverts after the first bid).
  */
+import { unstable_cache } from "next/cache"
 import {
   createPublicClient,
   http,
@@ -18,6 +19,13 @@ import { mainnet } from "viem/chains"
 import { nftMarketAbi, erc721Abi } from "@pin/abi"
 import { NFT_MARKET, MAINNET_CHAIN_ID } from "@pin/addresses"
 import { ipfsToHttp } from "@pin/shared"
+// NOTE: this module is imported by client components (BulkDelistPanel,
+// MigrationBanner, MigratePanel) which call its runtime functions in the
+// browser. We deliberately don't layer `pgCache` here — that would pull
+// the `postgres` Node-only library into the client bundle. The 5-min
+// `unstable_cache` (per-instance) is the only cache layer for now. To
+// add L2 later, convert the three client→lib usages into client→/api/...
+// calls and wrap the route in pgCache instead.
 
 const MARKET_ADDRESS = NFT_MARKET[MAINNET_CHAIN_ID]
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
@@ -70,7 +78,61 @@ function getClient(): PublicClient {
   })
 }
 
+/**
+ * Discover a seller's active, cancellable Foundation listings.
+ *
+ * Cached for 5min via `unstable_cache`. The underlying scan is two `getLogs`
+ * over ~10M blocks plus N multicalls — too expensive to repeat on every
+ * panel open, but freshness within a few minutes is acceptable since the
+ * panel is only used to cancel listings (and a stale "still cancellable"
+ * row will just no-op the tx).
+ */
 export async function getSellerCancellableListings(
+  sellerAddress: string,
+): Promise<{ auctions: AuctionListing[]; buyNows: BuyNowListing[] }> {
+  const cached = await getSellerCancellableListingsCached(
+    sellerAddress.toLowerCase(),
+  )
+  return {
+    auctions: cached.auctions.map((a) => ({
+      ...a,
+      auctionId: BigInt(a.auctionId),
+      reserveWei: BigInt(a.reserveWei),
+    })),
+    buyNows: cached.buyNows.map((b) => ({
+      ...b,
+      priceWei: BigInt(b.priceWei),
+    })),
+  }
+}
+
+const getSellerCancellableListingsCached = unstable_cache(
+  async (
+    sellerAddress: string,
+  ): Promise<{
+    auctions: Array<Omit<AuctionListing, "auctionId" | "reserveWei"> & {
+      auctionId: string
+      reserveWei: string
+    }>
+    buyNows: Array<Omit<BuyNowListing, "priceWei"> & { priceWei: string }>
+  }> => {
+    const { auctions, buyNows } = await getSellerCancellableListingsUncached(
+      sellerAddress,
+    )
+    return {
+      auctions: auctions.map((a) => ({
+        ...a,
+        auctionId: a.auctionId.toString(),
+        reserveWei: a.reserveWei.toString(),
+      })),
+      buyNows: buyNows.map((b) => ({ ...b, priceWei: b.priceWei.toString() })),
+    }
+  },
+  ["seller-cancellable-listings-v1"],
+  { revalidate: 60 * 5, tags: ["seller-listings"] },
+)
+
+async function getSellerCancellableListingsUncached(
   sellerAddress: string,
 ): Promise<{ auctions: AuctionListing[]; buyNows: BuyNowListing[] }> {
   const client = getClient()

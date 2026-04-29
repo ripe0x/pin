@@ -1,14 +1,24 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createPublicClient, http } from "viem"
-import { mainnet } from "viem/chains"
-import { erc721Abi } from "@pin/abi"
 import { ipfsToHttp } from "@pin/shared"
+import { resolveTokenMetadataDirect } from "@/lib/onchain-discovery"
 
-const client = createPublicClient({
-  chain: mainnet,
-  transport: http(process.env.NEXT_PUBLIC_ALCHEMY_MAINNET_URL),
-})
-
+/**
+ * OG-metadata endpoint for social embeds (Discord cards, Twitter previews,
+ * iMessage). Public, hit by the entire internet whenever someone shares a
+ * token URL.
+ *
+ * Previously this route created its own viem client referencing
+ * `NEXT_PUBLIC_ALCHEMY_MAINNET_URL` and read `tokenURI` uncached on every
+ * call. That made it (a) bypass the `/api/rpc` proxy's rate limit and (b)
+ * pay a fresh on-chain read per (contract, tokenId, CDN-edge) — i.e. anyone
+ * iterating token IDs got a free RPC channel.
+ *
+ * Now: delegate to `resolveTokenMetadataDirect`, which is wrapped in
+ * `unstable_cache(..., 1h)` and (after the Postgres shared-cache layer
+ * lands) gets a second cache tier across all sandbox instances. Successful
+ * responses keep their 1-year HTTP cache header so repeat embeds never even
+ * reach the function.
+ */
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ contract: string; tokenId: string }> },
@@ -16,38 +26,28 @@ export async function GET(
   const { contract, tokenId } = await params
 
   try {
-    const tokenUri = await client.readContract({
-      address: contract as `0x${string}`,
-      abi: erc721Abi,
-      functionName: "tokenURI",
-      args: [BigInt(tokenId)],
-    })
+    const metadata = await resolveTokenMetadataDirect(contract, tokenId)
 
-    if (!tokenUri) {
-      return NextResponse.json({ tokenUri: null, metadata: null, mediaUri: null })
-    }
-
-    const httpUrl = ipfsToHttp(tokenUri as string)
-    const res = await fetch(httpUrl, { signal: AbortSignal.timeout(10_000) })
-
-    if (!res.ok) {
+    if (!metadata) {
       return NextResponse.json(
-        { tokenUri, metadata: null, mediaUri: null },
-        { headers: { "Cache-Control": "public, max-age=60" } },
+        { metadata: null, mediaUri: null },
+        {
+          status: 404,
+          headers: { "Cache-Control": "public, max-age=60" },
+        },
       )
     }
 
-    const metadata = await res.json()
     const mediaUri = metadata.image ? ipfsToHttp(metadata.image) : null
 
     return NextResponse.json(
-      { tokenUri, metadata, mediaUri },
+      { metadata, mediaUri },
       { headers: { "Cache-Control": "public, max-age=31536000, immutable" } },
     )
   } catch {
     return NextResponse.json(
-      { tokenUri: null, metadata: null, mediaUri: null },
-      { status: 404 },
+      { metadata: null, mediaUri: null },
+      { status: 500, headers: { "Cache-Control": "public, max-age=60" } },
     )
   }
 }

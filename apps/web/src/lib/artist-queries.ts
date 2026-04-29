@@ -4,9 +4,11 @@
  * Fetches all artist data from on-chain sources via RPC — no indexer dependency.
  * Used by both the artist micro-site page and the preserve flow.
  */
+import { unstable_cache } from "next/cache"
 import { createPublicClient, http, type Address } from "viem"
 import { mainnet } from "viem/chains"
 import { normalize } from "viem/ens"
+import { pgCache } from "./pg-cache"
 import { nftMarketAbi } from "@pin/abi"
 import { NFT_MARKET, MAINNET_CHAIN_ID } from "@pin/addresses"
 import {
@@ -61,15 +63,38 @@ function truncateAddress(address: string): string {
 
 /**
  * Resolve a display name for one address (ENS if set, else truncated 0x…).
+ *
+ * Cached per-address for 24h. ENS reverse records change rarely, but every
+ * uncached lookup is an `eth_call` to the ENS resolver — so without this we
+ * burn a chain read for every (creator, owner, bidder, provenance entry) on
+ * every page render. The cache key is the lowercased address.
+ *
+ * Use `revalidateTag("ens")` to manually flush (e.g. after an ENS update).
  */
+const resolveEnsNameCached = unstable_cache(
+  async (lowerAddress: string): Promise<string | null> => {
+    // L1 (unstable_cache, in-process) wraps L2 (pgCache, shared Postgres)
+    // wraps the actual ENS resolver. Same TTL on both layers — the L2
+    // hit rate is what saves cold-start fan-out across Netlify sandboxes.
+    return pgCache(`ens:${lowerAddress}`, 60 * 60 * 24, async () => {
+      try {
+        const ensName = await client.getEnsName({
+          address: lowerAddress as Address,
+        })
+        return ensName ?? null
+      } catch {
+        return null
+      }
+    })
+  },
+  ["ens-name"],
+  { revalidate: 60 * 60 * 24, tags: ["ens"] },
+)
+
 export async function resolveDisplayName(address: string): Promise<string> {
-  try {
-    const ensName = await client.getEnsName({ address: address as Address })
-    if (ensName) return ensName
-  } catch {
-    // ignore
-  }
-  return truncateAddress(address)
+  const lower = address.toLowerCase()
+  const ensName = await resolveEnsNameCached(lower)
+  return ensName ?? truncateAddress(address)
 }
 
 /**
