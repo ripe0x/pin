@@ -8,9 +8,9 @@ import { sovereignAuctionHouseFactoryAbi } from "./abis/SovereignAuctionHouseFac
 // independently to Railway without dragging in the full monorepo.
 const FACTORY_ADDRESS = "0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f" as const
 
-// Factory deploy block — found via `cast code` binary search. No clones
-// can exist before this block, so starting earlier is just paying for an
-// empty scan on every cold sync.
+// Factory deploy block — found via `cast code` binary search. No clones can
+// exist before this block, so starting earlier is just paying for an empty
+// scan on every cold sync.
 const FACTORY_DEPLOY_BLOCK = 24_970_000
 
 // Ponder needs a direct RPC URL for sync (heavy `eth_getLogs`). Don't point
@@ -18,23 +18,20 @@ const FACTORY_DEPLOY_BLOCK = 24_970_000
 // patterns Ponder needs, and the rate limit would fight initial sync. Set
 // PONDER_RPC_URL_1 directly on the Railway Ponder service to a non-public
 // Alchemy URL.
-const RPC_URL =
-  process.env.PONDER_RPC_URL_1 ?? "https://eth.llamarpc.com"
+const RPC_URL = process.env.PONDER_RPC_URL_1 ?? "https://eth.llamarpc.com"
 
 export default createConfig({
-  networks: {
+  chains: {
     mainnet: {
-      chainId: 1,
-      transport: http(RPC_URL),
-      // Conservative defaults; bump pollingInterval if Alchemy bills become
-      // an issue post-sync.
+      id: 1,
+      rpc: http(RPC_URL),
       pollingInterval: 5_000,
     },
   },
   contracts: {
     // Factory itself: tells us when new houses get deployed.
     SovereignAuctionHouseFactory: {
-      network: "mainnet",
+      chain: "mainnet",
       abi: sovereignAuctionHouseFactoryAbi,
       address: FACTORY_ADDRESS,
       startBlock: FACTORY_DEPLOY_BLOCK,
@@ -43,7 +40,7 @@ export default createConfig({
     // streams `AuctionHouseCreated` events from the factory, then starts
     // tracking each clone's auction events from its own deploy block.
     SovereignAuctionHouse: {
-      network: "mainnet",
+      chain: "mainnet",
       abi: sovereignAuctionHouseAbi,
       address: factory({
         address: FACTORY_ADDRESS,
