@@ -18,6 +18,13 @@ import { mainnet } from "viem/chains"
 import { nftMarketAbi, erc721Abi } from "@pin/abi"
 import { NFT_MARKET, MAINNET_CHAIN_ID } from "@pin/addresses"
 import { ipfsToHttp } from "@pin/shared"
+// NOTE: this module is imported by client components (BulkDelistPanel,
+// MigrationBanner, MigratePanel) which call its runtime functions in the
+// browser. We deliberately don't layer `pgCache` here — that would pull
+// the `postgres` Node-only library into the client bundle. The 5-min
+// `unstable_cache` (per-instance) is the only cache layer for now. To
+// add L2 later, convert the three client→lib usages into client→/api/...
+// calls and wrap the route in pgCache instead.
 
 const MARKET_ADDRESS = NFT_MARKET[MAINNET_CHAIN_ID]
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
@@ -70,7 +77,34 @@ function getClient(): PublicClient {
   })
 }
 
+/**
+ * Discover a seller's active, cancellable Foundation listings.
+ *
+ * Uncached — see comment in the body. Each call is two `getLogs` over
+ * ~10M blocks plus N multicalls. Acceptable today because all three
+ * callers (MigrationBanner, BulkDelistPanel, MigratePanel) only invoke
+ * this when their panels are opened by an artist managing their own
+ * listings; not on every page render. Move behind a route handler if
+ * the volume changes.
+ */
 export async function getSellerCancellableListings(
+  sellerAddress: string,
+): Promise<{ auctions: AuctionListing[]; buyNows: BuyNowListing[] }> {
+  // Direct call — no `unstable_cache` wrapper because every caller is a
+  // client component (MigrationBanner, BulkDelistPanel, MigratePanel)
+  // calling this from a useEffect. `unstable_cache` requires Next's
+  // incrementalCache context, which only exists server-side; calling it
+  // from the browser throws "Invariant: incrementalCache missing".
+  //
+  // The right structural fix is to move this behind an `/api/seller-
+  // listings/[address]` route handler so the server gets to cache it
+  // (with both unstable_cache and pgCache) and clients just fetch JSON.
+  // Deferred — current cost is bounded (panel-open only, multicall'd) and
+  // unblocks the immediate error.
+  return getSellerCancellableListingsUncached(sellerAddress.toLowerCase())
+}
+
+async function getSellerCancellableListingsUncached(
   sellerAddress: string,
 ): Promise<{ auctions: AuctionListing[]; buyNows: BuyNowListing[] }> {
   const client = getClient()

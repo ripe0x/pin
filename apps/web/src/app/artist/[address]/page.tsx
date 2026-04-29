@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { Suspense } from "react"
 import { redirect } from "next/navigation"
 import {
   getArtistGalleryPage,
@@ -7,6 +8,7 @@ import {
 } from "@/lib/artist-queries"
 import { getActiveAuctionCount } from "@/lib/auctions"
 import { getCachedTokenRefs } from "@/lib/artist-cache"
+import { pgCacheHas } from "@/lib/pg-cache"
 import { ArtistHeader } from "@/components/artist/ArtistHeader"
 import { ArtistGallery } from "@/components/artist/ArtistGallery"
 import { BulkDelistPanel } from "@/components/listings/BulkDelistPanel"
@@ -90,6 +92,19 @@ export default async function ArtistPage({
     redirect(`/artist/${address}`)
   }
 
+  // Fast pre-check (~10ms SQL point lookup). Used purely to choose the
+  // loading copy: cold cache → "Indexing this artist for the first time."
+  // already warm → "Loading artist." Doesn't gate the actual fetch.
+  const isWarm = await pgCacheHas(`ens:${address.toLowerCase()}`)
+
+  return (
+    <Suspense fallback={<ArtistFetchFallback isWarm={isWarm} />}>
+      <ArtistPageBody address={address} />
+    </Suspense>
+  )
+}
+
+async function ArtistPageBody({ address }: { address: string }) {
   // SSR only the first page: identity + first 24 tokens + active-auction
   // count (null when the artist has no sovereign house). Subsequent gallery
   // pages load client-side via /api/artist/[address]/tokens?page=N.
@@ -124,6 +139,44 @@ export default async function ArtistPage({
           artistAddress={address}
           initialPage={firstPage}
         />
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Loading state shown while `ArtistPageBody` is fetching. Mirrors the
+ * structure of `loading.tsx` (the route-level fallback) but is parameterized
+ * on whether the artist is already in the shared cache, so we can show
+ * different copy for first-visit vs. subsequent visits.
+ */
+function ArtistFetchFallback({ isWarm }: { isWarm: boolean }) {
+  return (
+    <div className="mx-auto max-w-[2000px] px-6 py-12">
+      <div className="flex items-center gap-6">
+        <div className="h-20 w-20 rounded-full skeleton" />
+        <div className="space-y-3">
+          <div className="h-7 w-48 rounded skeleton" />
+          <div className="h-4 w-32 rounded skeleton" />
+        </div>
+      </div>
+
+      <div className="mt-12 text-center">
+        <p className="text-sm text-gray-600 animate-pulse">
+          {isWarm
+            ? "Loading artist."
+            : "Indexing this artist for the first time."}
+        </p>
+      </div>
+
+      <div className="mt-8 grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="space-y-3">
+            <div className="aspect-[4/5] rounded-lg skeleton" />
+            <div className="h-4 w-3/4 rounded skeleton" />
+            <div className="h-3 w-1/2 rounded skeleton" />
+          </div>
+        ))}
       </div>
     </div>
   )

@@ -17,10 +17,11 @@ export const config = getDefaultConfig({
   projectId,
   chains: [mainnet, foundry],
   transports: {
-    [mainnet.id]: http(
-      process.env.NEXT_PUBLIC_ALCHEMY_MAINNET_URL ??
-        "https://eth.llamarpc.com"
-    ),
+    // Route browser RPC through our server-side `/api/rpc` proxy so the
+    // Alchemy API key never reaches the bundle. The proxy enforces a method
+    // allowlist + per-IP rate limit, which keeps anonymous abuse from
+    // burning through the monthly CU cap.
+    [mainnet.id]: http("/api/rpc"),
     [foundry.id]: http(anvilUrl),
   },
   ssr: true,

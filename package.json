@@ -8,7 +8,8 @@
   "scripts": {
     "dev": "npm run dev --workspace=apps/web",
     "build": "npm run build --workspace=apps/web",
-    "lint": "npm run lint --workspace=apps/web"
+    "lint": "npm run lint --workspace=apps/web",
+    "db:migrate": "node --env-file=apps/web/.env.local db/migrate.mjs"
   },
   "overrides": {
     "ink": {

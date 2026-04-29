@@ -19,6 +19,31 @@ import type {
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
+/**
+ * Fire a one-shot, fire-and-forget POST to the auction revalidation route
+ * when a write tx (bid / settle / cancel / update) confirms. The route
+ * `revalidateTag`s the cached `getAuctionForToken` for *this* token only,
+ * so the next render fetches fresh chain state instead of waiting out the
+ * 30s TTL — the bidder sees their bid land instantly, while bot/refresh
+ * traffic to *other* auctions stays cached.
+ *
+ * Failures are intentionally swallowed: revalidation is an optimization,
+ * and the existing "Refresh to see updated state" button is the user's
+ * fallback if the network call hiccups.
+ */
+function useRevalidateAuctionOnSuccess(
+  isSuccess: boolean,
+  auction: AuctionState,
+) {
+  useEffect(() => {
+    if (!isSuccess) return
+    const url = `/api/auction/revalidate?contract=${encodeURIComponent(
+      auction.nftContract,
+    )}&tokenId=${encodeURIComponent(auction.tokenId)}`
+    fetch(url, { method: "POST" }).catch(() => {})
+  }, [isSuccess, auction.nftContract, auction.tokenId])
+}
+
 function truncateAddress(addr: string): string {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`
 }
@@ -265,6 +290,8 @@ function BidSection({ auction }: { auction: AuctionState }) {
     hash: txHash,
   })
 
+  useRevalidateAuctionOnSuccess(isSuccess, auction)
+
   const isPending = isWritePending || isTxPending
   const isSelfOutbidding =
     !!address && address.toLowerCase() === auction.bidder.toLowerCase()
@@ -397,6 +424,8 @@ function SettleSection({ auction }: { auction: AuctionState }) {
     hash: txHash,
   })
 
+  useRevalidateAuctionOnSuccess(isSuccess, auction)
+
   const isPending = isWritePending || isTxPending
 
   function handleSettle() {
@@ -510,6 +539,10 @@ function SellerActions({ auction }: { auction: AuctionState }) {
   } = useWriteContract()
   const { isLoading: updateMining, isSuccess: updateSuccess } =
     useWaitForTransactionReceipt({ hash: updateHash })
+
+  // Both seller actions invalidate the cached auction state. Cancel deletes
+  // the auction; updateReserve changes the surfaced "Reserve" number.
+  useRevalidateAuctionOnSuccess(cancelSuccess || updateSuccess, auction)
 
   if (!isSeller) return null
 

@@ -7,6 +7,7 @@
  *
  * No indexer dependency — works with just an RPC endpoint + IPFS gateways.
  */
+import { unstable_cache } from "next/cache"
 import {
   createPublicClient,
   http,
@@ -15,6 +16,8 @@ import {
 } from "viem"
 import { mainnet } from "viem/chains"
 import { foundationNftAbi, collectionFactoryAbi, erc721Abi } from "@pin/abi"
+import { getAssetTransfers, getOwnersForNft } from "./alchemy"
+import { pgCache } from "./pg-cache"
 import {
   FOUNDATION_NFT,
   COLLECTION_FACTORY_V1,
@@ -76,8 +79,14 @@ export type TokenRef = {
 function getClient() {
   return createPublicClient({
     chain: mainnet,
+    // `batch: true` collapses concurrent JSON-RPC calls (within the same
+    // tick) into a single batched POST. Critical for the per-transfer
+    // `getBlock` fan-out below — N parallel reads become 1 HTTP request,
+    // same total CU cost upstream but much less HTTP overhead. Alchemy
+    // supports JSON-RPC batching natively.
     transport: http(
       process.env.NEXT_PUBLIC_ALCHEMY_MAINNET_URL ?? "https://eth.llamarpc.com",
+      { batch: true },
     ),
   })
 }
@@ -617,8 +626,65 @@ export type TokenOnChainData = {
 
 /**
  * Resolve owner, creator, and transfer history for a single token via RPC.
+ *
+ * Cached for 60s. Owner can change on transfer/sale, but the artwork is
+ * static and bot/refresh traffic shouldn't rescan the full transfer history
+ * on every render. The auction page surfaces live bid state via a separate
+ * 30s cache — no need for instant transfer freshness here.
  */
 export async function getTokenOnChainData(
+  contractAddress: string,
+  tokenId: string,
+): Promise<TokenOnChainData> {
+  const cached = await getTokenOnChainDataCached(
+    contractAddress.toLowerCase(),
+    tokenId,
+  )
+  return hydrateTokenOnChainData(cached)
+}
+
+type SerializedTokenOnChainData = {
+  owner: string | null
+  creator: string | null
+  transfers: Array<{
+    from: string
+    to: string
+    blockNumber: string
+    txHash: string
+    timestamp: number
+  }>
+}
+
+function hydrateTokenOnChainData(
+  s: SerializedTokenOnChainData,
+): TokenOnChainData {
+  return {
+    ...s,
+    transfers: s.transfers.map((t) => ({ ...t, blockNumber: BigInt(t.blockNumber) })),
+  }
+}
+
+const getTokenOnChainDataCached = unstable_cache(
+  (contractAddress: string, tokenId: string) =>
+    pgCache<SerializedTokenOnChainData>(
+      `token-onchain-data:${contractAddress}:${tokenId}`,
+      60,
+      async () => {
+        const data = await getTokenOnChainDataUncached(contractAddress, tokenId)
+        return {
+          ...data,
+          transfers: data.transfers.map((t) => ({
+            ...t,
+            blockNumber: t.blockNumber.toString(),
+          })),
+        }
+      },
+    ),
+  ["token-onchain-data-v1"],
+  { revalidate: 60, tags: ["token-onchain-data"] },
+)
+
+async function getTokenOnChainDataUncached(
   contractAddress: string,
   tokenId: string,
 ): Promise<TokenOnChainData> {
@@ -650,7 +716,14 @@ export async function getTokenOnChainData(
   const owner = ownerResult ? (ownerResult as string) : null
   let creator = creatorResult ? (creatorResult as string) : null
 
-  // Fetch transfer history
+  // ERC721 transfer history: keep the targeted indexed-topic `getLogs`
+  // filter. Alchemy charges this cheaply because the topic is indexed, and
+  // it only returns transfers for *this* token (typically 2–5 entries).
+  //
+  // We tried migrating this to `alchemy_getAssetTransfers`, but the API
+  // doesn't accept a tokenId filter — for a high-token-count contract like
+  // Foundation's shared NFT, the page-walk through every transfer in the
+  // contract took 18s+. The targeted log filter wins decisively here.
   const latestBlock = await client.getBlockNumber()
   const transferLogs = await getLogs(
     client,
@@ -661,30 +734,44 @@ export async function getTokenOnChainData(
     latestBlock,
   )
 
-  // Resolve block timestamps for each transfer
-  const transfers = await Promise.all(
-    transferLogs.map(async (log) => {
-      const l = log as {
-        args: { from: string; to: string; tokenId: bigint }
-        blockNumber: bigint
-        transactionHash: string
-      }
-      let timestamp = 0
+  // Resolve block timestamps. Two optimizations vs. the naive per-transfer
+  // fetch we had before:
+  //   1. Dedupe by block number — multiple transfers can land in the same
+  //      block (mint+transfer atomically), so we only need one fetch per
+  //      unique block.
+  //   2. The transport above has `batch: true`, so the parallel fetches
+  //      collapse into a single batched JSON-RPC POST regardless of count.
+  const uniqueBlockNumbers = Array.from(
+    new Set(
+      (transferLogs as Array<{ blockNumber: bigint }>).map((l) => l.blockNumber),
+    ),
+  )
+  const blockTimestamps = new Map<bigint, number>()
+  await Promise.all(
+    uniqueBlockNumbers.map(async (bn) => {
       try {
-        const block = await client.getBlock({ blockNumber: l.blockNumber })
-        timestamp = Number(block.timestamp)
+        const block = await client.getBlock({ blockNumber: bn })
+        blockTimestamps.set(bn, Number(block.timestamp))
       } catch {
-        // timestamp stays 0
-      }
-      return {
-        from: l.args.from,
-        to: l.args.to,
-        blockNumber: l.blockNumber,
-        txHash: l.transactionHash,
-        timestamp,
+        blockTimestamps.set(bn, 0)
       }
     }),
   )
+
+  const transfers = transferLogs.map((log) => {
+    const l = log as {
+      args: { from: string; to: string; tokenId: bigint }
+      blockNumber: bigint
+      transactionHash: string
+    }
+    return {
+      from: l.args.from,
+      to: l.args.to,
+      blockNumber: l.blockNumber,
+      txHash: l.transactionHash,
+      timestamp: blockTimestamps.get(l.blockNumber) ?? 0,
+    }
+  })
 
   // Derive creator from mint event if tokenCreator() is unavailable (custom collections)
   if (!creator && transfers.length > 0) {
@@ -752,6 +839,67 @@ export async function getErc1155TokenStats(
   contractAddress: string,
   tokenId: string,
 ): Promise<Erc1155Stats | null> {
+  // 60s cache: TransferSingle events are non-indexed by id so we full-contract
+  // scan and filter in memory — by far the most expensive read in the app for
+  // ERC1155 tokens. Bot traffic can hit this many times per minute; a short
+  // TTL collapses it without making transfer history meaningfully stale.
+  const cached = await getErc1155TokenStatsCached(
+    contractAddress.toLowerCase(),
+    tokenId,
+  )
+  return cached ? hydrateErc1155Stats(cached) : null
+}
+
+type SerializedErc1155Stats = {
+  creator: Address | null
+  totalSupply: string
+  ownerCount: number
+  transfers: Array<{
+    from: Address
+    to: Address
+    amount: string
+    timestamp: number
+    txHash: string
+  }>
+}
+
+function hydrateErc1155Stats(s: SerializedErc1155Stats): Erc1155Stats {
+  return {
+    ...s,
+    totalSupply: BigInt(s.totalSupply),
+    transfers: s.transfers.map((t) => ({ ...t, amount: BigInt(t.amount) })),
+  }
+}
+
+const getErc1155TokenStatsCached = unstable_cache(
+  (contractAddress: string, tokenId: string) =>
+    pgCache<SerializedErc1155Stats | null>(
+      `erc1155-stats:${contractAddress}:${tokenId}`,
+      60,
+      async () => {
+        const stats = await getErc1155TokenStatsUncached(
+          contractAddress,
+          tokenId,
+        )
+        if (!stats) return null
+        return {
+          ...stats,
+          totalSupply: stats.totalSupply.toString(),
+          transfers: stats.transfers.map((t) => ({
+            ...t,
+            amount: t.amount.toString(),
+          })),
+        }
+      },
+    ),
+  ["erc1155-token-stats-v1"],
+  { revalidate: 60, tags: ["erc1155-stats"] },
+)
+
+async function getErc1155TokenStatsUncached(
+  contractAddress: string,
+  tokenId: string,
+): Promise<Erc1155Stats | null> {
   const client = getClient()
   const contract = contractAddress as Address
   const tokenIdBig = BigInt(tokenId)
@@ -767,93 +915,86 @@ export async function getErc1155TokenStats(
 
   if (!isErc1155) return null
 
-  const latestBlock = await client.getBlockNumber()
-  const logs = await client
-    .getLogs({
-      address: contract,
-      event: transferSingleEvent,
-      fromBlock: SHARED_DEPLOY_BLOCK,
-      toBlock: latestBlock,
-    })
-    .catch(() => [])
+  // Two cheap parallel calls instead of a contract-wide TransferSingle scan
+  // + per-block timestamp fetches:
+  //   1. `alchemy_getAssetTransfers(category: erc1155)` — full history,
+  //      timestamps inline, *one* HTTP call.
+  //   2. `nft/v3/getOwnersForNFT` — current holder set, no replay needed.
+  // Total supply is computed by replaying the (now cheap) transfer stream.
+  const [rawTransfers, owners] = await Promise.all([
+    getAssetTransfers({
+      contractAddresses: [contractAddress],
+      category: ["erc1155"],
+      order: "asc",
+    }),
+    getOwnersForNft(contractAddress, tokenId),
+  ])
 
-  const matching = logs.filter(
-    (l) => (l.args as { id?: bigint }).id === tokenIdBig,
-  )
+  // The contract-wide stream returns transfers across all token ids; keep
+  // only entries that touched our specific id. ERC1155 batches put
+  // tokenIds in `erc1155Metadata`, so check each item.
+  type MatchedTransfer = {
+    from: Address
+    to: Address
+    amount: bigint
+    blockNum: bigint
+    timestamp: number
+    txHash: string
+  }
+  const matching: MatchedTransfer[] = []
+  for (const t of rawTransfers) {
+    const meta = t.erc1155Metadata ?? []
+    for (const m of meta) {
+      let mid: bigint
+      try {
+        mid = BigInt(m.tokenId)
+      } catch {
+        continue
+      }
+      if (mid !== tokenIdBig) continue
+      matching.push({
+        from: t.from as Address,
+        to: (t.to ?? ZERO_ADDR) as Address,
+        amount: BigInt(m.value),
+        blockNum: BigInt(t.blockNum),
+        timestamp: t.metadata?.blockTimestamp
+          ? Math.floor(new Date(t.metadata.blockTimestamp).getTime() / 1000)
+          : 0,
+        txHash: t.hash,
+      })
+    }
+  }
 
   if (matching.length === 0) {
     return { creator: null, totalSupply: 0n, ownerCount: 0, transfers: [] }
   }
 
-  // Sort chronologically so we can replay transfers into a balance map.
-  matching.sort((a, b) =>
-    Number((a.blockNumber ?? 0n) - (b.blockNumber ?? 0n)),
-  )
+  // Replay in chronological order to compute total supply + identify creator.
+  matching.sort((a, b) => Number(a.blockNum - b.blockNum))
 
-  const uniqueBlocks = Array.from(
-    new Set(
-      matching.map((l) => l.blockNumber).filter((b): b is bigint => b !== null),
-    ),
-  )
-  const blockTimes = new Map<bigint, number>()
-  await Promise.all(
-    uniqueBlocks.map(async (bn) => {
-      try {
-        const block = await client.getBlock({ blockNumber: bn })
-        blockTimes.set(bn, Number(block.timestamp))
-      } catch {
-        blockTimes.set(bn, 0)
-      }
-    }),
-  )
-
-  const balances = new Map<string, bigint>()
   let totalSupply = 0n
   let creator: Address | null = null
-  const transfers: Erc1155Stats["transfers"] = []
-
-  for (const log of matching) {
-    const args = log.args as {
-      from?: Address
-      to?: Address
-      value?: bigint
+  for (const m of matching) {
+    if (m.from === ZERO_ADDR) {
+      totalSupply += m.amount
+      if (creator === null) creator = m.to
     }
-    const from = args.from!
-    const to = args.to!
-    const value = args.value ?? 0n
-
-    if (from === ZERO_ADDR) {
-      totalSupply += value
-      if (creator === null) creator = to
-    } else {
-      const fromBal = balances.get(from.toLowerCase()) ?? 0n
-      balances.set(from.toLowerCase(), fromBal - value)
-    }
-    if (to === ZERO_ADDR) {
-      totalSupply -= value
-    } else {
-      const toBal = balances.get(to.toLowerCase()) ?? 0n
-      balances.set(to.toLowerCase(), toBal + value)
-    }
-
-    transfers.push({
-      from,
-      to,
-      amount: value,
-      timestamp: blockTimes.get(log.blockNumber!) ?? 0,
-      txHash: log.transactionHash!,
-    })
-  }
-
-  let ownerCount = 0
-  for (const bal of balances.values()) {
-    if (bal > 0n) ownerCount++
+    if (m.to === ZERO_ADDR) totalSupply -= m.amount
   }
 
   // Newest-first for display.
-  transfers.reverse()
+  const transfers: Erc1155Stats["transfers"] = matching
+    .slice()
+    .reverse()
+    .map(({ from, to, amount, timestamp, txHash }) => ({
+      from,
+      to,
+      amount,
+      timestamp,
+      txHash,
+    }))
 
-  return { creator, totalSupply, ownerCount, transfers }
+  return { creator, totalSupply, ownerCount: owners.length, transfers }
 }
 
 /**
@@ -864,6 +1005,29 @@ export async function getErc1155TokenStats(
  * lowercase hex token ID padded to 64 chars.
  */
 export async function resolveTokenMetadataDirect(
+  contractAddress: string,
+  tokenId: string,
+): Promise<{ name?: string; description?: string; image?: string } | null> {
+  // Token metadata at a specific (contract, tokenId) is effectively immutable
+  // in 99% of cases (IPFS-pinned URIs are content-addressed). Cache for 1h —
+  // long enough to absorb refresh traffic, short enough that mutable on-chain
+  // renderers stay reasonably fresh. Use lowercased contract for cache key
+  // stability.
+  return resolveTokenMetadataCached(contractAddress.toLowerCase(), tokenId)
+}
+
+const resolveTokenMetadataCached = unstable_cache(
+  async (contractAddress: string, tokenId: string) =>
+    pgCache(
+      `token-metadata:${contractAddress}:${tokenId}`,
+      60 * 60,
+      () => resolveTokenMetadataUncached(contractAddress, tokenId),
+    ),
+  ["token-metadata-v1"],
+  { revalidate: 60 * 60, tags: ["token-metadata"] },
+)
+
+async function resolveTokenMetadataUncached(
   contractAddress: string,
   tokenId: string,
 ): Promise<{ name?: string; description?: string; image?: string } | null> {
