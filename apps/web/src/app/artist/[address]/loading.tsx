@@ -10,13 +10,11 @@ export default function ArtistLoading() {
         </div>
       </div>
 
-      {/* Status message. Shown only while the SSR fetch is in flight; once
-          the page renders, this is replaced by the real gallery. */}
-      <div className="mt-12 text-center">
-        <p className="text-sm text-gray-600 animate-pulse">
-          Indexing this artist for the first time.
-        </p>
-      </div>
+      {/* Intentionally no status message here. This file is the route-level
+          loading fallback that flashes briefly during navigation BEFORE the
+          page component runs. The cache-aware "Indexing…" / "Loading artist."
+          copy lives in the inner Suspense fallback inside page.tsx, where we
+          have access to the address + can distinguish cold vs. warm cache. */}
 
       {/* Grid skeleton */}
       <div className="mt-8 grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">

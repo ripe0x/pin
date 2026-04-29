@@ -96,6 +96,28 @@ export async function pgCacheInvalidate(keyPrefix: string): Promise<void> {
 }
 
 /**
+ * Cheap point lookup: is this key currently cached (and unexpired)? Used by
+ * server components to decide between "first-time-here" and "still working"
+ * loading copy without paying for the upstream fetch yet.
+ *
+ * Returns false on DB unavailable / disabled — the safe default is to
+ * assume the cache is cold and show the more informative message.
+ */
+export async function pgCacheHas(key: string): Promise<boolean> {
+  if (!sql) return false
+  try {
+    const r = await sql<Array<{ ok: number }>>`
+      SELECT 1 AS ok FROM cache_entries
+      WHERE key = ${key} AND expires_at > NOW()
+      LIMIT 1
+    `
+    return r.length > 0
+  } catch {
+    return false
+  }
+}
+
+/**
  * Garbage-collect rows whose TTL elapsed more than `graceDays` ago.
  * Called by a scheduled Netlify function (or run manually). Stale entries
  * are also overwritten on the next miss for their key, so this is purely
