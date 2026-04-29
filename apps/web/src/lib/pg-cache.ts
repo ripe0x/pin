@@ -53,14 +53,18 @@ export async function pgCache<T>(
   // a slow DB doesn't add to render latency — if the write fails, the
   // next visit just re-fetches.
   //
-  // We pre-stringify rather than relying on postgres.js's JSON inference
-  // because the helper accepts arbitrary `T` (including primitives like
-  // `string | null` for ENS) which the library's typed `json()` rejects.
-  // The cast back to JSONB happens via the `::jsonb` annotation.
-  const serialized = JSON.stringify(value)
+  // postgres.js auto-serializes objects to JSONB when bound to a JSONB
+  // column. We use `sql.json(...)` to be explicit and to handle the cases
+  // where T can be a primitive (string | null for ENS) — the helper
+  // accepts any JSON-shaped value. **Critical: do NOT pre-stringify**.
+  // An earlier version called `JSON.stringify(value)` and bound the
+  // resulting string with a `::jsonb` cast; postgres.js then JSON-encoded
+  // the string AGAIN, producing a JSONB-string-of-JSON instead of a
+  // JSONB-object. Reads returned strings, callers did `.name` on them and
+  // got `undefined`, and every cached metadata fell back to placeholders.
   void sql`
     INSERT INTO cache_entries (key, value, expires_at)
-    VALUES (${key}, ${serialized}::jsonb, NOW() + (${ttlSec} || ' seconds')::interval)
+    VALUES (${key}, ${sql.json(value as never)}, NOW() + (${ttlSec} || ' seconds')::interval)
     ON CONFLICT (key) DO UPDATE
       SET value = EXCLUDED.value,
           expires_at = EXCLUDED.expires_at,
