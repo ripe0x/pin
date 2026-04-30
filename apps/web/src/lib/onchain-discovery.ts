@@ -839,16 +839,20 @@ export async function getErc1155TokenStats(
   contractAddress: string,
   tokenId: string,
 ): Promise<Erc1155Stats | null> {
-  // 60s cache: TransferSingle events are non-indexed by id so we full-contract
-  // scan and filter in memory — by far the most expensive read in the app for
-  // ERC1155 tokens. Bot traffic can hit this many times per minute; a short
-  // TTL collapses it without making transfer history meaningfully stale.
+  // 10-min cache: TransferSingle events are non-indexed by id so we full-
+  // contract scan and filter in memory — by far the most expensive read in the
+  // app for ERC1155 tokens. Settled transfer history is immutable; only the
+  // head is dynamic, so a longer TTL is safe and dramatically reduces miss
+  // rate under bot/crawler traffic. /api/revalidate flushes the
+  // `erc1155-stats` tag + pgCache prefix when an event needs to land sooner.
   const cached = await getErc1155TokenStatsCached(
     contractAddress.toLowerCase(),
     tokenId,
   )
   return cached ? hydrateErc1155Stats(cached) : null
 }
+
+const ERC1155_STATS_TTL_S = 600
 
 type SerializedErc1155Stats = {
   creator: Address | null
@@ -875,7 +879,7 @@ const getErc1155TokenStatsCached = unstable_cache(
   (contractAddress: string, tokenId: string) =>
     pgCache<SerializedErc1155Stats | null>(
       `erc1155-stats:${contractAddress}:${tokenId}`,
-      60,
+      ERC1155_STATS_TTL_S,
       async () => {
         const stats = await getErc1155TokenStatsUncached(
           contractAddress,
@@ -893,7 +897,7 @@ const getErc1155TokenStatsCached = unstable_cache(
       },
     ),
   ["erc1155-token-stats-v1"],
-  { revalidate: 60, tags: ["erc1155-stats"] },
+  { revalidate: ERC1155_STATS_TTL_S, tags: ["erc1155-stats"] },
 )
 
 async function getErc1155TokenStatsUncached(

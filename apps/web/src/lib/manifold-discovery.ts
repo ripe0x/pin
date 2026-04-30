@@ -145,6 +145,14 @@ export async function discoverManifoldTokenRefs(
   return perContract.flat()
 }
 
+// 20 pages × 100 tokens/page = 2000 tokens per Manifold contract. Each
+// page is a separate billable NFT API call, so unbounded pagination on a
+// large creator core can burn thousands of CU on a single cache miss. An
+// artist with more than 2000 tokens on one Manifold contract hits this cap
+// and the gallery's tail won't display — extremely rare in practice; the
+// proper fix is a per-contract indexer, which is future work.
+const MANIFOLD_MAX_PAGES = 20
+
 async function enumerateRefsViaAlchemyNft(
   contract: ManifoldContract,
   artist: Address,
@@ -154,6 +162,7 @@ async function enumerateRefsViaAlchemyNft(
 
   const refs: TokenRef[] = []
   let pageKey: string | undefined
+  let pages = 0
 
   do {
     const url = new URL(
@@ -185,6 +194,13 @@ async function enumerateRefsViaAlchemyNft(
     }
 
     pageKey = json.pageKey
+    pages++
+    if (pages >= MANIFOLD_MAX_PAGES && pageKey) {
+      console.warn(
+        `manifold-discovery: hit ${MANIFOLD_MAX_PAGES}-page cap on ${contract.address} for ${artist}; tail truncated.`,
+      )
+      break
+    }
   } while (pageKey)
 
   return refs

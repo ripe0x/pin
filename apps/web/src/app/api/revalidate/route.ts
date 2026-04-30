@@ -104,6 +104,7 @@ export async function GET(req: NextRequest) {
   revalidateTag("token-metadata")
   revalidateTag("token-onchain-data")
   revalidateTag("erc1155-stats")
+  revalidateTag("last-sale")
   revalidateTag("ens")
 
   // Also flush the L2 (Postgres) entries that back the same data — without
@@ -126,7 +127,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    revalidated: ["artist-refs", "artist-enriched", "token-metadata", "token-onchain-data", "erc1155-stats", "ens"],
+    revalidated: ["artist-refs", "artist-enriched", "token-metadata", "token-onchain-data", "erc1155-stats", "last-sale", "ens"],
     pgCacheCleared: true,
     requested_for: artist ?? null,
     note: "All-artist flush; per-artist tagging requires dynamic tags (not supported by unstable_cache).",

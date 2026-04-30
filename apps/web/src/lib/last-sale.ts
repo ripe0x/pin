@@ -24,6 +24,7 @@ import { mainnet } from "viem/chains"
 import { unstable_cache } from "next/cache"
 import { sovereignAuctionHouseFactoryAbi } from "@pin/abi"
 import { pgCache } from "./pg-cache"
+import { getSettledAuctionForToken } from "./indexer-queries"
 import {
   NFT_MARKET,
   MAINNET_CHAIN_ID,
@@ -234,11 +235,21 @@ async function getLastSalePriceCached(
   const contract = nftContract as Address
   const tokenIdBig = BigInt(tokenId)
 
+  // Indexer-first for Sovereign: when Ponder is up, the settled row is
+  // already in Postgres — skip the 4 log/block RPC calls and read directly.
+  // Falls through to the RPC path when the indexer is unavailable.
+  const sovereignFromIndexer = await getSovereignLastSaleFromIndexer(
+    nftContract,
+    tokenId,
+  )
+
   const [foundation, sovereign] = await Promise.all([
     getFoundationLastSale(client, contract, tokenIdBig),
-    creator
-      ? getSovereignLastSale(client, contract, tokenIdBig, creator as Address)
-      : Promise.resolve(null),
+    sovereignFromIndexer
+      ? Promise.resolve(sovereignFromIndexer)
+      : creator
+        ? getSovereignLastSale(client, contract, tokenIdBig, creator as Address)
+        : Promise.resolve(null),
   ])
 
   let pick: LastSale | null = null
@@ -256,15 +267,36 @@ async function getLastSalePriceCached(
   }
 }
 
+// Settled prices are immutable on-chain. The /api/revalidate flush hits both
+// the `last-sale` tag (for unstable_cache) and the `last-sale:` pgCache prefix
+// when an event lands, so the long TTL is safe.
+const LAST_SALE_TTL_S = 7 * 86_400
+
+async function getSovereignLastSaleFromIndexer(
+  nftContract: string,
+  tokenId: string,
+): Promise<LastSale | null> {
+  const settled = await getSettledAuctionForToken(nftContract, tokenId)
+  if (!settled) return null
+  return {
+    priceWei: settled.amount,
+    blockTime: settled.settledAtTime,
+    source: "sovereign",
+    // pndAuctions doesn't store the AuctionEnded txHash. UI doesn't render
+    // it (MoreFromContract uses priceWei + blockTime only).
+    txHash: "",
+  }
+}
+
 const cached = unstable_cache(
   (nftContract: string, tokenId: string, creator: string) =>
     pgCache(
       `last-sale:${nftContract.toLowerCase()}:${tokenId}`,
-      3600,
+      LAST_SALE_TTL_S,
       () => getLastSalePriceCached(nftContract, tokenId, creator),
     ),
   ["last-sale-v1"],
-  { revalidate: 3600 },
+  { revalidate: LAST_SALE_TTL_S, tags: ["last-sale"] },
 )
 
 export async function getLastSalePriceForToken(
