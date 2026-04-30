@@ -24,7 +24,6 @@ import { mainnet } from "viem/chains"
 import { unstable_cache } from "next/cache"
 import { sovereignAuctionHouseFactoryAbi } from "@pin/abi"
 import { pgCache } from "./pg-cache"
-import { getSettledAuctionForToken } from "./indexer-queries"
 import {
   readFoundationLastSale,
   writeFoundationLastSale,
@@ -84,7 +83,7 @@ function getClient() {
   })
 }
 
-async function getFoundationLastSale(
+export async function getFoundationLastSale(
   client: ReturnType<typeof createPublicClient>,
   nftContract: Address,
   tokenId: bigint,
@@ -176,7 +175,7 @@ async function scanFoundationLastSale(
   }
 }
 
-async function getSovereignLastSale(
+export async function getSovereignLastSale(
   client: ReturnType<typeof createPublicClient>,
   nftContract: Address,
   tokenId: bigint,
@@ -267,38 +266,34 @@ async function getLastSalePriceCached(
   tokenId: string,
   creator: string,
 ): Promise<CachedSale> {
-  const client = getClient()
   const contract = nftContract as Address
-  const tokenIdBig = BigInt(tokenId)
+  const creatorAddr =
+    creator && creator !== "" ? (creator as Address) : null
 
-  // Sovereign reads through the indexer-queries helper (Ponder serves it).
-  // Foundation reads through `getFoundationLastSale`, which now does a lazy
-  // index lookup before falling back to RPC + persisting on miss.
-  const sovereignFromIndexer = await getSovereignLastSaleFromIndexer(
-    nftContract,
-    tokenId,
+  // Loop the platform registry. Each adapter's `getLastSale` returns its
+  // own most-recent sale (lazy-cached internally). We pick the
+  // most-recent across all platforms.
+  const { PLATFORMS } = await import("./platforms")
+  const sales = await Promise.all(
+    PLATFORMS.map((p) => p.getLastSale(contract, tokenId, creatorAddr)),
   )
-
-  const [foundation, sovereign] = await Promise.all([
-    getFoundationLastSale(client, contract, tokenIdBig),
-    sovereignFromIndexer
-      ? Promise.resolve(sovereignFromIndexer)
-      : creator
-        ? getSovereignLastSale(client, contract, tokenIdBig, creator as Address)
-        : Promise.resolve(null),
-  ])
-
-  let pick: LastSale | null = null
-  if (foundation && sovereign) {
-    pick = foundation.blockTime >= sovereign.blockTime ? foundation : sovereign
-  } else {
-    pick = foundation ?? sovereign
-  }
-  if (!pick) return null
+  const valid = sales.filter(
+    (s): s is NonNullable<typeof s> => s !== null && s.priceWei > 0n,
+  )
+  if (valid.length === 0) return null
+  valid.sort((a, b) => b.blockTime - a.blockTime)
+  const pick = valid[0]
+  // Narrow the platform-defined `source` string back to the existing
+  // CachedSale union for callers that haven't been generalized yet.
+  // For now the only platforms returning sales are foundation + sovereign;
+  // both already use values that fit the union. New platforms will need
+  // a wider union or a separate type.
+  const source: "foundation" | "sovereign" =
+    pick.platform === "sovereign" ? "sovereign" : "foundation"
   return {
     priceWei: pick.priceWei.toString(),
     blockTime: pick.blockTime,
-    source: pick.source,
+    source,
     txHash: pick.txHash,
   }
 }
@@ -307,22 +302,6 @@ async function getLastSalePriceCached(
 // the `last-sale` tag (for unstable_cache) and the `last-sale:` pgCache prefix
 // when an event lands, so the long TTL is safe.
 const LAST_SALE_TTL_S = 7 * 86_400
-
-async function getSovereignLastSaleFromIndexer(
-  nftContract: string,
-  tokenId: string,
-): Promise<LastSale | null> {
-  const settled = await getSettledAuctionForToken(nftContract, tokenId)
-  if (!settled) return null
-  return {
-    priceWei: settled.amount,
-    blockTime: settled.settledAtTime,
-    source: "sovereign",
-    // pndAuctions doesn't store the AuctionEnded txHash. UI doesn't render
-    // it (MoreFromContract uses priceWei + blockTime only).
-    txHash: "",
-  }
-}
 
 const cached = unstable_cache(
   (nftContract: string, tokenId: string, creator: string) =>

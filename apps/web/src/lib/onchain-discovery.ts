@@ -84,7 +84,7 @@ export type TokenRef = {
   collectionName: string | null
 }
 
-function getClient() {
+export function getClient() {
   return createPublicClient({
     chain: mainnet,
     // `batch: true` collapses concurrent JSON-RPC calls (within the same
@@ -163,38 +163,19 @@ export async function discoverFoundationPinnedTokens(
  * Sort: Foundation refs (with known block numbers) are newest-first, then
  * Manifold refs (no log context) appended in the order Alchemy returned them.
  */
-export async function discoverArtistTokenRefs(
-  artistAddress: string,
-): Promise<TokenRef[]> {
-  const client = getClient()
-  const artist = artistAddress.toLowerCase() as Address
-
-  // Lazy index read for the Foundation side. If a fresh row exists for
-  // this artist, return it without RPC — replaces 7+ parallel `eth_getLogs`
-  // scans (1 shared Minted + 6 collection-factory event streams + per-
-  // collection Transfer scans) with a single Postgres point query.
+/**
+ * Foundation-side artist token discovery: shared 1/1 contract Mints +
+ * per-artist collection contract Transfer-from-zero events. Lazy-cached
+ * via `lazy_fnd_artist_tokens`. Exported so the Foundation platform
+ * adapter (`apps/web/src/lib/platforms/foundation.ts`) can call it
+ * without re-implementing the lazy + scan flow here.
+ */
+export async function discoverFoundationArtistRefs(
+  artist: Address,
+): Promise<SortableRef[]> {
   const cached = await readFoundationArtistTokens(artist)
-  const useCache =
-    cached !== null && isFresh(cached.lastIndexedAt, LAZY_TTL.foundationArtistTokens)
-
-  const latestBlock = await client.getBlockNumber()
-
-  const [sharedRefs, collectionRefs, manifoldRefs] = await Promise.all([
-    useCache
-      ? Promise.resolve([] as SortableRef[])
-      : discoverSharedContractRefs(client, artist, latestBlock),
-    useCache
-      ? Promise.resolve([] as SortableRef[])
-      : discoverCollectionRefs(client, artist, latestBlock),
-    discoverManifoldTokenRefs(artist),
-  ])
-
-  // When the cache is fresh, hydrate cached rows into SortableRefs.
-  // Otherwise we just ran the RPC scans above; persist their result for
-  // the next miss before returning.
-  let indexerFoundationSortable: SortableRef[] = []
-  if (useCache && cached) {
-    indexerFoundationSortable = cached.refs.map((r) => ({
+  if (cached && isFresh(cached.lastIndexedAt, LAZY_TTL.foundationArtistTokens)) {
+    return cached.refs.map((r) => ({
       contract: r.contract as Address,
       tokenId: r.tokenId,
       creator: artist,
@@ -202,41 +183,70 @@ export async function discoverArtistTokenRefs(
       blockNumber: r.blockNumber,
       logIndex: r.logIndex,
     }))
-  } else {
-    const allFoundationRefs = [...sharedRefs, ...collectionRefs]
-    writeFoundationArtistTokens(
-      artist,
-      allFoundationRefs.map((r) => ({
-        contract: r.contract,
-        tokenId: r.tokenId,
-        blockNumber: r.blockNumber,
-        logIndex: r.logIndex,
-      })),
-    )
   }
+  const client = getClient()
+  const latestBlock = await client.getBlockNumber()
+  const [sharedRefs, collectionRefs] = await Promise.all([
+    discoverSharedContractRefs(client, artist, latestBlock),
+    discoverCollectionRefs(client, artist, latestBlock),
+  ])
+  const all = [...sharedRefs, ...collectionRefs]
+  writeFoundationArtistTokens(
+    artist,
+    all.map((r) => ({
+      contract: r.contract,
+      tokenId: r.tokenId,
+      blockNumber: r.blockNumber,
+      logIndex: r.logIndex,
+    })),
+  )
+  return all
+}
 
-  // Newest-first within Foundation sources (block desc, logIndex desc).
-  const foundationSorted = [
-    ...indexerFoundationSortable,
-    ...sharedRefs,
-    ...collectionRefs,
-  ].sort((a, b) => {
+export async function discoverArtistTokenRefs(
+  artistAddress: string,
+): Promise<TokenRef[]> {
+  const artist = artistAddress.toLowerCase() as Address
+
+  // Loop the platform registry. Each adapter handles its own lazy
+  // read/write and returns ArtistTokenRef[] tagged with its platform id.
+  // Refs that carry on-chain log context (blockNumber + logIndex) sort
+  // newest-first; refs from indexed-API responses without log context
+  // (Manifold via Alchemy NFT API) are appended in arrival order.
+  const { PLATFORMS } = await import("./platforms")
+  const perPlatform = await Promise.all(
+    PLATFORMS.map((p) => p.discoverArtistTokens(artist)),
+  )
+  const allRefs = perPlatform.flat()
+
+  const sortable = allRefs.filter(
+    (r): r is typeof r & { blockNumber: bigint; logIndex: number } =>
+      r.blockNumber !== null && r.logIndex !== null,
+  )
+  const unsortable = allRefs.filter(
+    (r) => r.blockNumber === null || r.logIndex === null,
+  )
+
+  sortable.sort((a, b) => {
     if (a.blockNumber !== b.blockNumber) {
       return a.blockNumber > b.blockNumber ? -1 : 1
     }
     return b.logIndex - a.logIndex
   })
 
-  // Strip sort metadata so the result is small + JSON-stable for cache keys.
-  const stripped: TokenRef[] = [
-    ...foundationSorted.map(({ blockNumber: _b, logIndex: _l, ...r }) => r),
-    ...manifoldRefs,
-  ]
+  // Convert to the public TokenRef shape (no platform/blockNumber/
+  // logIndex; add creator from the function arg).
+  const merged: TokenRef[] = [...sortable, ...unsortable].map((r) => ({
+    contract: r.contract,
+    tokenId: r.tokenId,
+    creator: artist,
+    collectionName: r.collectionName,
+  }))
 
-  // Dedupe by contract:tokenId — a token theoretically could surface across
-  // sources (very rare; cheap insurance).
+  // Dedupe by contract:tokenId — a token theoretically could surface
+  // across platforms (very rare; cheap insurance).
   const seen = new Set<string>()
-  return stripped.filter((r) => {
+  return merged.filter((r) => {
     const key = `${r.contract.toLowerCase()}:${r.tokenId}`
     if (seen.has(key)) return false
     seen.add(key)
@@ -314,7 +324,7 @@ export async function enrichTokens(
 
 // ── Shared contract discovery ────────────────────────────────────────────────
 
-type SortableRef = TokenRef & { blockNumber: bigint; logIndex: number }
+export type SortableRef = TokenRef & { blockNumber: bigint; logIndex: number }
 
 async function discoverSharedContractTokens(
   client: ReturnType<typeof createPublicClient>,
@@ -339,7 +349,7 @@ async function discoverSharedContractTokens(
   return resolveTokenMetadata(client, FOUNDATION_NFT_ADDRESS, tokenIds, artist, null)
 }
 
-async function discoverSharedContractRefs(
+export async function discoverSharedContractRefs(
   client: ReturnType<typeof createPublicClient>,
   artist: Address,
   latestBlock: bigint,
@@ -419,7 +429,7 @@ async function discoverCollectionTokens(
   return allTokens
 }
 
-async function discoverCollectionRefs(
+export async function discoverCollectionRefs(
   client: ReturnType<typeof createPublicClient>,
   artist: Address,
   latestBlock: bigint,
