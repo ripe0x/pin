@@ -666,7 +666,9 @@ async function getSovereignBidHistory(
       address: houseAddress,
       event: sovereignBidPlacedEvent,
       args: { auctionId },
-      fromBlock: 0n,
+      // No house can pre-date the factory; scanning from 0 was paying for a
+      // 24M-block null scan per call.
+      fromBlock: SOVEREIGN_FACTORY_DEPLOY_BLOCK,
       toBlock: "latest",
     })
     .catch(() => [])

@@ -737,7 +737,10 @@ async function loadCancellableAuctions(
   const logs = await client.getLogs({
     address: houseAddress,
     event: auctionCreatedEvent,
-    fromBlock: 0n,
+    // Houses can't pre-date the factory; scanning from 0 was a 24M-block
+    // null scan per panel open. Hardcoded to avoid a cross-package import
+    // for a single number — also used in lib/auctions.ts and lib/last-sale.ts.
+    fromBlock: 24_973_294n,
     toBlock: "latest",
   })
 

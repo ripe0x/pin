@@ -900,13 +900,40 @@ const getErc1155TokenStatsCached = unstable_cache(
   { revalidate: ERC1155_STATS_TTL_S, tags: ["erc1155-stats"] },
 )
 
-async function getErc1155TokenStatsUncached(
+// Per-contract cache for the underlying transfer stream. ERC1155
+// TransferSingle's `id` is non-indexed, so we have to fetch every transfer on
+// the contract and filter in JS. Caching the stream once per contract means
+// sibling tokens (very common on Manifold creator cores) skip the expensive
+// `alchemy_getAssetTransfers` call entirely on a warm cache.
+type CachedTransferStream = {
+  isErc1155: boolean
+  transfers: Array<{
+    from: Address
+    to: Address
+    tokenIdHex: string
+    amountStr: string
+    blockNumHex: string
+    timestamp: number
+    txHash: string
+  }>
+}
+
+const getErc1155TransferStream = unstable_cache(
+  (contractAddress: string) =>
+    pgCache<CachedTransferStream>(
+      `erc1155-transfer-stream:${contractAddress}`,
+      ERC1155_STATS_TTL_S,
+      () => fetchErc1155TransferStream(contractAddress),
+    ),
+  ["erc1155-transfer-stream-v1"],
+  { revalidate: ERC1155_STATS_TTL_S, tags: ["erc1155-stats"] },
+)
+
+async function fetchErc1155TransferStream(
   contractAddress: string,
-  tokenId: string,
-): Promise<Erc1155Stats | null> {
+): Promise<CachedTransferStream> {
   const client = getClient()
   const contract = contractAddress as Address
-  const tokenIdBig = BigInt(tokenId)
 
   const isErc1155 = await client
     .readContract({
@@ -917,26 +944,47 @@ async function getErc1155TokenStatsUncached(
     })
     .catch(() => false)
 
-  if (!isErc1155) return null
+  if (!isErc1155) return { isErc1155: false, transfers: [] }
 
-  // Two cheap parallel calls instead of a contract-wide TransferSingle scan
-  // + per-block timestamp fetches:
-  //   1. `alchemy_getAssetTransfers(category: erc1155)` — full history,
-  //      timestamps inline, *one* HTTP call.
-  //   2. `nft/v3/getOwnersForNFT` — current holder set, no replay needed.
-  // Total supply is computed by replaying the (now cheap) transfer stream.
-  const [rawTransfers, owners] = await Promise.all([
-    getAssetTransfers({
-      contractAddresses: [contractAddress],
-      category: ["erc1155"],
-      order: "asc",
-    }),
+  const rawTransfers = await getAssetTransfers({
+    contractAddresses: [contractAddress],
+    category: ["erc1155"],
+    order: "asc",
+  })
+
+  const transfers: CachedTransferStream["transfers"] = []
+  for (const t of rawTransfers) {
+    const meta = t.erc1155Metadata ?? []
+    for (const m of meta) {
+      transfers.push({
+        from: t.from as Address,
+        to: (t.to ?? ZERO_ADDR) as Address,
+        tokenIdHex: m.tokenId,
+        amountStr: BigInt(m.value).toString(),
+        blockNumHex: t.blockNum,
+        timestamp: t.metadata?.blockTimestamp
+          ? Math.floor(new Date(t.metadata.blockTimestamp).getTime() / 1000)
+          : 0,
+        txHash: t.hash,
+      })
+    }
+  }
+  return { isErc1155: true, transfers }
+}
+
+async function getErc1155TokenStatsUncached(
+  contractAddress: string,
+  tokenId: string,
+): Promise<Erc1155Stats | null> {
+  const tokenIdBig = BigInt(tokenId)
+
+  const [stream, owners] = await Promise.all([
+    getErc1155TransferStream(contractAddress),
     getOwnersForNft(contractAddress, tokenId),
   ])
 
-  // The contract-wide stream returns transfers across all token ids; keep
-  // only entries that touched our specific id. ERC1155 batches put
-  // tokenIds in `erc1155Metadata`, so check each item.
+  if (!stream.isErc1155) return null
+
   type MatchedTransfer = {
     from: Address
     to: Address
@@ -946,27 +994,22 @@ async function getErc1155TokenStatsUncached(
     txHash: string
   }
   const matching: MatchedTransfer[] = []
-  for (const t of rawTransfers) {
-    const meta = t.erc1155Metadata ?? []
-    for (const m of meta) {
-      let mid: bigint
-      try {
-        mid = BigInt(m.tokenId)
-      } catch {
-        continue
-      }
-      if (mid !== tokenIdBig) continue
-      matching.push({
-        from: t.from as Address,
-        to: (t.to ?? ZERO_ADDR) as Address,
-        amount: BigInt(m.value),
-        blockNum: BigInt(t.blockNum),
-        timestamp: t.metadata?.blockTimestamp
-          ? Math.floor(new Date(t.metadata.blockTimestamp).getTime() / 1000)
-          : 0,
-        txHash: t.hash,
-      })
+  for (const t of stream.transfers) {
+    let mid: bigint
+    try {
+      mid = BigInt(t.tokenIdHex)
+    } catch {
+      continue
     }
+    if (mid !== tokenIdBig) continue
+    matching.push({
+      from: t.from,
+      to: t.to,
+      amount: BigInt(t.amountStr),
+      blockNum: BigInt(t.blockNumHex),
+      timestamp: t.timestamp,
+      txHash: t.txHash,
+    })
   }
 
   if (matching.length === 0) {
