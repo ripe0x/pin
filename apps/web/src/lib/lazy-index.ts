@@ -348,6 +348,151 @@ export function writeFoundationArtistTokens(
   })()
 }
 
+// ─── ERC-1155 transfer stream per contract ───────────────────────────────
+// Stored as a JSON blob per contract because Alchemy's
+// `alchemy_getAssetTransfers` doesn't surface `logIndex` per transfer,
+// so a structured per-transfer PK isn't reliable. The shape mirrors the
+// `CachedTransferStream` type that `fetchErc1155TransferStream` produces.
+
+export type LazyErc1155TransferRow = {
+  from: string
+  to: string
+  tokenIdHex: string
+  amountStr: string
+  blockNumHex: string
+  timestamp: number
+  txHash: string
+}
+
+export type LazyErc1155Stream = {
+  isErc1155: boolean
+  transfers: LazyErc1155TransferRow[]
+  lastIndexedAt: Date
+}
+
+export async function readErc1155TransferStream(
+  contract: string,
+): Promise<LazyErc1155Stream | null> {
+  if (!sql) return null
+  try {
+    const rows = await sql<
+      Array<{
+        is_erc1155: boolean
+        transfers_json: LazyErc1155TransferRow[]
+        last_indexed_at: Date
+      }>
+    >`
+      SELECT is_erc1155, transfers_json, last_indexed_at
+      FROM lazy_erc1155_streams
+      WHERE contract = ${contract.toLowerCase()}
+      LIMIT 1
+    `
+    if (rows.length === 0) return null
+    const r = rows[0]
+    return {
+      isErc1155: r.is_erc1155,
+      transfers: r.transfers_json,
+      lastIndexedAt: r.last_indexed_at,
+    }
+  } catch {
+    return null
+  }
+}
+
+export function writeErc1155TransferStream(
+  contract: string,
+  isErc1155: boolean,
+  transfers: LazyErc1155TransferRow[],
+): void {
+  if (!sql) return
+  void sql`
+    INSERT INTO lazy_erc1155_streams
+      (contract, is_erc1155, transfers_json, last_indexed_at)
+    VALUES
+      (${contract.toLowerCase()}, ${isErc1155},
+       ${sql.json(transfers)}, NOW())
+    ON CONFLICT (contract) DO UPDATE
+      SET is_erc1155 = EXCLUDED.is_erc1155,
+          transfers_json = EXCLUDED.transfers_json,
+          last_indexed_at = NOW()
+  `.catch(() => {})
+}
+
+// ─── Manifold per-artist token enumeration ───────────────────────────────
+
+export type LazyManifoldToken = {
+  contract: string
+  tokenId: string
+  collectionName: string | null
+}
+
+export async function readManifoldArtistTokens(
+  creator: string,
+): Promise<{ tokens: LazyManifoldToken[]; lastIndexedAt: Date } | null> {
+  if (!sql) return null
+  try {
+    const status = await sql<Array<{ last_indexed_at: Date }>>`
+      SELECT last_indexed_at FROM lazy_manifold_artist_status
+      WHERE creator = ${creator.toLowerCase()}
+      LIMIT 1
+    `
+    if (status.length === 0) return null
+
+    const rows = await sql<
+      Array<{
+        contract: string
+        token_id: string
+        collection_name: string | null
+      }>
+    >`
+      SELECT contract, token_id, collection_name
+      FROM lazy_manifold_artist_tokens
+      WHERE creator = ${creator.toLowerCase()}
+    `
+    return {
+      tokens: rows.map((r) => ({
+        contract: r.contract,
+        tokenId: r.token_id,
+        collectionName: r.collection_name,
+      })),
+      lastIndexedAt: status[0].last_indexed_at,
+    }
+  } catch {
+    return null
+  }
+}
+
+export function writeManifoldArtistTokens(
+  creator: string,
+  tokens: LazyManifoldToken[],
+): void {
+  if (!sql) return
+  void (async () => {
+    try {
+      const lower = creator.toLowerCase()
+      for (const t of tokens) {
+        await sql`
+          INSERT INTO lazy_manifold_artist_tokens
+            (creator, contract, token_id, collection_name, last_indexed_at)
+          VALUES
+            (${lower}, ${t.contract.toLowerCase()}, ${t.tokenId},
+             ${t.collectionName}, NOW())
+          ON CONFLICT (creator, contract, token_id) DO UPDATE
+            SET collection_name = EXCLUDED.collection_name,
+                last_indexed_at = NOW()
+        `
+      }
+      await sql`
+        INSERT INTO lazy_manifold_artist_status (creator, last_indexed_at)
+        VALUES (${lower}, NOW())
+        ON CONFLICT (creator) DO UPDATE SET last_indexed_at = NOW()
+      `
+    } catch {
+      /* ignore */
+    }
+  })()
+}
+
 /**
  * Per-table TTLs. The lazy layer sits BELOW `pgCache` (existing 7d TTL
  * on `last-sale:` keys, 24h on artist refs). Lazy TTLs must therefore be
@@ -384,6 +529,15 @@ export const LAZY_TTL = {
    * (artists mint maybe once a week at most). pgCache is 24h; lazy is
    * 30d so cold-cache cycles past the daily TTL still skip RPC. */
   foundationArtistTokens: 30 * 24 * 60 * 60 * 1000,
+  /** ERC-1155 transfer streams: TransferSingle stream per contract.
+   * Settled transfers are immutable; only new mints/transfers extend the
+   * stream. pgCache is 10 min on getErc1155TransferStream; lazy at 7d
+   * means most repeat misses past the in-process cache hit Postgres. */
+  erc1155TransferStream: 7 * 24 * 60 * 60 * 1000,
+  /** Manifold artist token enumeration: discovered Manifold creator-core
+   * contracts + tokens minted on each. pgCache for the wrapping
+   * `getCachedTokenRefs` is 24h; lazy at 30d covers cold-cache cycles. */
+  manifoldArtistTokens: 30 * 24 * 60 * 60 * 1000,
 }
 
 export function isFresh(lastIndexedAt: Date, ttlMs: number): boolean {

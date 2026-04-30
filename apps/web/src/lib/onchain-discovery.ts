@@ -33,6 +33,8 @@ import { mapWithConcurrency } from "./concurrency"
 import {
   readFoundationArtistTokens,
   writeFoundationArtistTokens,
+  readErc1155TransferStream,
+  writeErc1155TransferStream,
   LAZY_TTL,
   isFresh,
 } from "./lazy-index"
@@ -981,6 +983,26 @@ const getErc1155TransferStream = unstable_cache(
 async function fetchErc1155TransferStream(
   contractAddress: string,
 ): Promise<CachedTransferStream> {
+  // Lazy index read: when we've already scanned this contract within the
+  // 7-day window, skip the supportsInterface call AND the
+  // alchemy_getAssetTransfers pagination — both biggest cost drivers
+  // here.
+  const cached = await readErc1155TransferStream(contractAddress)
+  if (cached && isFresh(cached.lastIndexedAt, LAZY_TTL.erc1155TransferStream)) {
+    return {
+      isErc1155: cached.isErc1155,
+      transfers: cached.transfers.map((t) => ({
+        from: t.from as Address,
+        to: t.to as Address,
+        tokenIdHex: t.tokenIdHex,
+        amountStr: t.amountStr,
+        blockNumHex: t.blockNumHex,
+        timestamp: t.timestamp,
+        txHash: t.txHash,
+      })),
+    }
+  }
+
   const client = getClient()
   const contract = contractAddress as Address
 
@@ -993,7 +1015,12 @@ async function fetchErc1155TransferStream(
     })
     .catch(() => false)
 
-  if (!isErc1155) return { isErc1155: false, transfers: [] }
+  if (!isErc1155) {
+    // Persist the negative result so we don't re-do supportsInterface
+    // every miss for this ERC-721 contract.
+    writeErc1155TransferStream(contractAddress, false, [])
+    return { isErc1155: false, transfers: [] }
+  }
 
   const rawTransfers = await getAssetTransfers({
     contractAddresses: [contractAddress],
@@ -1018,6 +1045,7 @@ async function fetchErc1155TransferStream(
       })
     }
   }
+  writeErc1155TransferStream(contractAddress, true, transfers)
   return { isErc1155: true, transfers }
 }
 

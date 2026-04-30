@@ -27,6 +27,12 @@ import {
 import { mainnet } from "viem/chains"
 import { extractCid, fetchFromIpfs, ipfsToHttp } from "@pin/shared"
 import type { DiscoveredToken, TokenRef } from "./onchain-discovery"
+import {
+  readManifoldArtistTokens,
+  writeManifoldArtistTokens,
+  LAZY_TTL,
+  isFresh,
+} from "./lazy-index"
 
 // Marker every Manifold Creator Core (V1+) returns true for. From
 // CreatorCore.sol: `bytes4 private constant _CREATOR_CORE_V1 = 0x28f10a21`.
@@ -127,22 +133,53 @@ export async function discoverManifoldTokens(
 export async function discoverManifoldTokenRefs(
   artistAddress: string,
 ): Promise<TokenRef[]> {
+  const artist = artistAddress.toLowerCase() as Address
+
+  // Lazy index read: if a fresh row exists for this artist, return it
+  // without Etherscan + Alchemy NFT API calls.
+  const cached = await readManifoldArtistTokens(artist)
+  if (cached && isFresh(cached.lastIndexedAt, LAZY_TTL.manifoldArtistTokens)) {
+    return cached.tokens.map((t) => ({
+      contract: t.contract as Address,
+      tokenId: t.tokenId,
+      creator: artist,
+      collectionName: t.collectionName,
+    }))
+  }
+
   const apiKey = process.env.ETHERSCAN_API_KEY
   if (!apiKey) return []
 
-  const artist = artistAddress.toLowerCase() as Address
   const client = getClient()
 
   const deployed = await listDeployedContracts(artist, apiKey)
-  if (deployed.length === 0) return []
+  if (deployed.length === 0) {
+    // Persist the empty result so we don't repeatedly Etherscan an artist
+    // who has no Manifold deployments.
+    writeManifoldArtistTokens(artist, [])
+    return []
+  }
 
   const manifoldContracts = await filterManifoldCreatorCores(client, deployed)
-  if (manifoldContracts.length === 0) return []
+  if (manifoldContracts.length === 0) {
+    writeManifoldArtistTokens(artist, [])
+    return []
+  }
 
   const perContract = await Promise.all(
     manifoldContracts.map((c) => enumerateRefsViaAlchemyNft(c, artist)),
   )
-  return perContract.flat()
+  const refs = perContract.flat()
+
+  writeManifoldArtistTokens(
+    artist,
+    refs.map((r) => ({
+      contract: r.contract,
+      tokenId: r.tokenId,
+      collectionName: r.collectionName ?? null,
+    })),
+  )
+  return refs
 }
 
 // 20 pages × 100 tokens/page = 2000 tokens per Manifold contract. Each
