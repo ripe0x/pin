@@ -1,7 +1,19 @@
+import { unstable_noStore as noStore } from "next/cache"
 import { getActivePndAuctions } from "@/lib/indexer-queries"
 import { getArtistIdentity } from "@/lib/artist-queries"
 import { WorkArtistCard } from "./WorkArtistCard"
 import { HomeHeroTile } from "./HomeHeroTile"
+
+const HOME_GRID_SIZE = 11
+
+function shuffle<T>(arr: T[]): T[] {
+  const copy = [...arr]
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[copy[i], copy[j]] = [copy[j], copy[i]]
+  }
+  return copy
+}
 
 /**
  * The home page itself — a single composition: a wall of cards where the
@@ -11,7 +23,14 @@ import { HomeHeroTile } from "./HomeHeroTile"
  * single composite card.
  */
 export async function HomeSquare() {
-  const auctions = (await getActivePndAuctions(11)) ?? []
+  // Per-request rendering — Math.random() below would otherwise be
+  // baked into a cached output and the grid would stop varying.
+  noStore()
+
+  // Pull a wide pool so the random sample has variety. The query is a
+  // single indexed read; cost is bounded by the wide pool size, not the
+  // total active count.
+  const auctions = (await getActivePndAuctions(60)) ?? []
 
   // Resolve every seller's identity in parallel. getArtistIdentity is
   // cached, so even at cold start this is one round-trip per unique
@@ -28,15 +47,32 @@ export async function HomeSquare() {
     ),
   )
 
-  // Stable-sort: cards whose artist has an avatar render first. Empty-
-  // avatar cards still appear, just lower in the grid — keeps the top
-  // of the wall visually filled without removing anyone from the page.
-  const sortedAuctions = [...auctions].sort((a, b) => {
-    const aHas = !!identities.get(a.seller.toLowerCase())?.avatarUrl
-    const bHas = !!identities.get(b.seller.toLowerCase())?.avatarUrl
-    if (aHas === bHas) return 0
-    return aHas ? -1 : 1
-  })
+  // Partition by avatar presence, shuffle each partition independently,
+  // then concatenate. Avatar-having artists fill the top of the wall;
+  // each load picks a fresh random subset within each group.
+  const withAvatar: typeof auctions = []
+  const withoutAvatar: typeof auctions = []
+  for (const a of auctions) {
+    if (identities.get(a.seller.toLowerCase())?.avatarUrl) {
+      withAvatar.push(a)
+    } else {
+      withoutAvatar.push(a)
+    }
+  }
+  // Dedupe by seller: at most one card per artist on the home grid, so
+  // a single seller with several active auctions doesn't dominate.
+  const seenSellers = new Set<string>()
+  const sortedAuctions = [
+    ...shuffle(withAvatar),
+    ...shuffle(withoutAvatar),
+  ]
+    .filter((a) => {
+      const key = a.seller.toLowerCase()
+      if (seenSellers.has(key)) return false
+      seenSellers.add(key)
+      return true
+    })
+    .slice(0, HOME_GRID_SIZE)
 
   return (
     <ul className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 auto-rows-fr">
