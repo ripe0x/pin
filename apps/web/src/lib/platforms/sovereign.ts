@@ -6,8 +6,12 @@ import type {
   ArtistTokenRef,
   CollectorTokenRef,
   AdapterLastSale,
+  ActiveAuctionSummary,
 } from "./types"
-import { getSettledAuctionForToken } from "../indexer-queries"
+import {
+  getSettledAuctionForToken,
+  getActivePndAuctions,
+} from "../indexer-queries"
 import { getSovereignLastSale } from "../last-sale"
 import { sql } from "../db"
 
@@ -118,5 +122,23 @@ export const sovereignAdapter: PlatformAdapter = {
       source: sale.source, // "sovereign"
       txHash: sale.txHash,
     }
+  },
+
+  async getActiveAuctions(limit: number): Promise<ActiveAuctionSummary[]> {
+    const rows = await getActivePndAuctions(limit)
+    if (!rows) return []
+    return rows.map((r) => ({
+      platform: "sovereign",
+      contract: r.tokenContract as Address,
+      tokenId: r.tokenId,
+      seller: r.seller as Address,
+      reserveWei: r.reservePrice,
+      currentBidWei: r.amount,
+      currentBidder: null,
+      endTime: r.endTime,
+      // The "marketplace" address for a PND auction is its house —
+      // bids dispatch there. Each row already carries its house.
+      sourceContract: r.house as Address,
+    }))
   },
 }

@@ -3,6 +3,7 @@ import type { PlatformAdapter, PlatformId } from "./types"
 import { foundationAdapter } from "./foundation"
 import { manifoldAdapter } from "./manifold"
 import { sovereignAdapter } from "./sovereign"
+import { superrareV2Adapter } from "./superrareV2"
 
 /**
  * Registered platform adapters. The orchestrators in `onchain-discovery.ts`
@@ -18,6 +19,7 @@ export const PLATFORMS: PlatformAdapter[] = [
   foundationAdapter,
   manifoldAdapter,
   sovereignAdapter,
+  superrareV2Adapter,
 ]
 
 export const PLATFORMS_BY_ID = Object.fromEntries(
@@ -32,4 +34,5 @@ export {
   type SellerListings,
   type SellerCancellableAuction,
   type SellerCancellableBuyNow,
+  type ActiveAuctionSummary,
 } from "./types"

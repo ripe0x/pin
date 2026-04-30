@@ -18,6 +18,7 @@ export type PlatformId =
   | "foundation"
   | "manifold"
   | "sovereign"
+  | "superrareV2"
   // New platforms slot in here as they're added (superrareV1, zora, etc.)
 
 // ── Tokens ─────────────────────────────────────────────────────────────
@@ -101,6 +102,27 @@ export type SellerListings = {
   buyNows: SellerCancellableBuyNow[]
 }
 
+/**
+ * Summary row for an auction the home grid renders. Returned by
+ * `getActiveAuctions` from any platform that has marketplace state.
+ * `endTime` is unix-seconds; 0 means the auction has been created but
+ * the timer hasn't started (no bids yet — sorts to tail).
+ *
+ * `sourceContract` is the marketplace address that holds the auction
+ * (needed by token detail / bid panels to dispatch write txs).
+ */
+export type ActiveAuctionSummary = {
+  platform: PlatformId
+  contract: Address
+  tokenId: string
+  seller: Address
+  reserveWei: bigint
+  currentBidWei: bigint
+  currentBidder: Address | null
+  endTime: number
+  sourceContract: Address
+}
+
 // ── The interface ──────────────────────────────────────────────────────
 
 export interface PlatformAdapter {
@@ -147,6 +169,13 @@ export interface PlatformAdapter {
     contract: Address,
     tokenId: string,
   ): Promise<AuctionState | null>
+
+  /**
+   * Currently-active auctions on this platform, ordered ending-soonest-first
+   * (with pre-bid auctions at the tail). Optional — platforms without a
+   * marketplace return [] or omit.
+   */
+  getActiveAuctions?(limit: number): Promise<ActiveAuctionSummary[]>
 
   /**
    * Listings the seller can still cancel (no bids yet for auctions, or

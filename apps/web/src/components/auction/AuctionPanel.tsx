@@ -9,7 +9,7 @@ import {
   useWaitForTransactionReceipt,
 } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
-import { nftMarketAbi, sovereignAuctionHouseAbi } from "@pin/abi"
+import { nftMarketAbi, sovereignAuctionHouseAbi, superrareBazaarAbi } from "@pin/abi"
 import { useEthAmountInput } from "@/lib/useEthAmountInput"
 import type {
   AuctionFees,
@@ -18,6 +18,14 @@ import type {
 } from "@/lib/auctions"
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
+
+// SuperRare Bazaar's MarketplaceSettings.getMarketplaceFeePercentage()
+// has returned 3 (i.e. 3%) for years. The fee is a buyer's premium —
+// added on top of the recorded bid amount. We hardcode rather than
+// reading on every render to avoid a per-render eth_call cost; if SR
+// changes the rate, bid txs would revert with "not enough eth sent"
+// and we'd update this constant.
+const SR_MARKETPLACE_FEE_BPS = 300n // 3.00%
 
 /**
  * Fire a one-shot, fire-and-forget POST to the auction revalidation route
@@ -310,6 +318,26 @@ function BidSection({ auction }: { auction: AuctionState }) {
         ],
         value: bid.wei,
       })
+    } else if (auction.source === "superrareV2") {
+      // SR Bazaar enforces a buyer's premium on top of the bid: the
+      // total `msg.value` must equal `bid + (bid * marketplaceFee%)`.
+      // Verified on a mainnet fork — submitting `value: bid` reverts
+      // with "not enough eth sent." The fee is currently 3% (read from
+      // MarketplaceSettings; stable for years). The bid amount the
+      // contract records is still `bid.wei`; the extra 3% goes to SR.
+      const value = bid.wei + (bid.wei * SR_MARKETPLACE_FEE_BPS) / 10000n
+      writeContract({
+        address: auction.marketAddress,
+        abi: superrareBazaarAbi,
+        functionName: "bid",
+        args: [
+          auction.nftContract,
+          BigInt(auction.tokenId),
+          ZERO_ADDRESS as `0x${string}`,
+          bid.wei,
+        ],
+        value,
+      })
     } else {
       writeContract({
         address: auction.marketAddress,
@@ -380,6 +408,11 @@ function BidSection({ auction }: { auction: AuctionState }) {
       >
         Minimum bid: {minBidEth} ETH
       </button>
+      {auction.source === "superrareV2" && bid.isValid && bid.wei != null && bid.wei > 0n && (
+        <p className="text-[10px] font-mono text-gray-400">
+          + 3% buyer&apos;s premium = {formatEther(bid.wei + (bid.wei * SR_MARKETPLACE_FEE_BPS) / 10000n)} ETH total
+        </p>
+      )}
 
       <button
         onClick={handleBid}
@@ -435,6 +468,13 @@ function SettleSection({ auction }: { auction: AuctionState }) {
         abi: nftMarketAbi,
         functionName: "finalizeReserveAuction",
         args: [BigInt(auction.auctionId)],
+      })
+    } else if (auction.source === "superrareV2") {
+      writeContract({
+        address: auction.marketAddress,
+        abi: superrareBazaarAbi,
+        functionName: "settleAuction",
+        args: [auction.nftContract, BigInt(auction.tokenId)],
       })
     } else {
       writeContract({
@@ -569,6 +609,13 @@ function SellerActions({ auction }: { auction: AuctionState }) {
         functionName: "cancelReserveAuction",
         args: [BigInt(auction.auctionId)],
       })
+    } else if (auction.source === "superrareV2") {
+      writeCancel({
+        address: auction.marketAddress,
+        abi: superrareBazaarAbi,
+        functionName: "cancelAuction",
+        args: [auction.nftContract, BigInt(auction.tokenId)],
+      })
     } else {
       writeCancel({
         address: auction.marketAddress,
@@ -644,13 +691,19 @@ function SellerActions({ auction }: { auction: AuctionState }) {
         </div>
       ) : (
         <div className="flex items-center justify-between">
-          <button
-            onClick={() => setEditing(true)}
-            disabled={busy}
-            className="text-[11px] font-mono uppercase tracking-wider text-gray-500 hover:text-fg transition-colors disabled:opacity-40"
-          >
-            Edit reserve
-          </button>
+          {auction.source === "superrareV2" ? (
+            // SR Bazaar has no update-reserve on a live auction;
+            // only cancel is available pre-bid.
+            <span />
+          ) : (
+            <button
+              onClick={() => setEditing(true)}
+              disabled={busy}
+              className="text-[11px] font-mono uppercase tracking-wider text-gray-500 hover:text-fg transition-colors disabled:opacity-40"
+            >
+              Edit reserve
+            </button>
+          )}
           <button
             onClick={handleCancel}
             disabled={busy}

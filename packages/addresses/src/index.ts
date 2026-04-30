@@ -39,6 +39,22 @@ export const COLLECTION_FACTORY_V2: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x612E2DadDc89d91409e40f946f9f7CfE422e777E",
 }
 
+// SuperRare V2 NFT (ERC-721). Deployed 2019-08; powers most non-Spaces
+// SuperRare 1/1s. Used for: artist gallery discovery (Transfer-from-zero
+// scan), collector-page ownership snapshots.
+export const SUPERRARE_V2_NFT: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0xb932a70A57673d89f4acfFBE830E8ed7f75Fb9e0",
+}
+
+// SuperRare Bazaar (unified marketplace: auctions + offers + buy-now).
+// All bids/settlements/cancellations on V2 tokens flow through this
+// contract. The contract enforces SR's marketplace fee internally — our
+// UI just submits txs. Used for: last-sale (AuctionSettled events),
+// active-auction state (tokenAuctions mapping), home-grid active scan.
+export const SUPERRARE_BAZAAR: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x6d7c44773c52d396f43c2d511b81aa168e9a7a42",
+}
+
 // SovereignAuctionHouseFactory (deploys per-owner EIP-1167 minimal proxies).
 // Mainnet deploy: 2026-04-27, fee 0bps, recipient 0x0 (locked forever).
 // For local Anvil-fork testing, paste the local factory address here

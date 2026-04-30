@@ -1,5 +1,5 @@
 import { unstable_noStore as noStore } from "next/cache"
-import { getActivePndAuctions } from "@/lib/indexer-queries"
+import { PLATFORMS, type ActiveAuctionSummary } from "@/lib/platforms"
 import { getArtistIdentity } from "@/lib/artist-queries"
 import { WorkArtistCard } from "./WorkArtistCard"
 import { HomeHeroTile } from "./HomeHeroTile"
@@ -27,10 +27,27 @@ export async function HomeSquare() {
   // baked into a cached output and the grid would stop varying.
   noStore()
 
-  // Pull a wide pool so the random sample has variety. The query is a
-  // single indexed read; cost is bounded by the wide pool size, not the
-  // total active count.
-  const auctions = (await getActivePndAuctions(60)) ?? []
+  // Pull a wide pool from every platform that surfaces active auctions.
+  // Each adapter's `getActiveAuctions` is internally cached + cooldown-
+  // bounded so this is at most one Postgres lookup per platform.
+  const perPlatform = await Promise.all(
+    PLATFORMS.map((p) =>
+      p.getActiveAuctions
+        ? p.getActiveAuctions(60).catch(
+            () => [] as ActiveAuctionSummary[],
+          )
+        : Promise.resolve([] as ActiveAuctionSummary[]),
+    ),
+  )
+  const auctions: ActiveAuctionSummary[] = perPlatform
+    .flat()
+    .sort((a, b) => {
+      // Pre-bid auctions (endTime = 0) sort to the tail; otherwise
+      // soonest-ending first.
+      if (a.endTime === 0 && b.endTime !== 0) return 1
+      if (b.endTime === 0 && a.endTime !== 0) return -1
+      return a.endTime - b.endTime
+    })
 
   // Resolve every seller's identity in parallel. getArtistIdentity is
   // cached, so even at cold start this is one round-trip per unique
@@ -83,16 +100,16 @@ export async function HomeSquare() {
         const id = identities.get(w.seller.toLowerCase())
         return (
           <li
-            key={`${w.house}:${w.tokenContract}:${w.tokenId}`}
+            key={`${w.platform}:${w.contract}:${w.tokenId}`}
             className="col-span-2"
           >
             <WorkArtistCard
-              contract={w.tokenContract}
+              contract={w.contract}
               tokenId={w.tokenId}
-              amount={w.amount}
-              reservePrice={w.reservePrice}
+              amount={w.currentBidWei === 0n ? w.reserveWei : w.currentBidWei}
+              reservePrice={w.reserveWei}
               endTime={w.endTime}
-              firstBidTime={w.firstBidTime}
+              firstBidTime={0}
               artistAddress={w.seller}
               artistDisplayName={
                 id?.displayName ??

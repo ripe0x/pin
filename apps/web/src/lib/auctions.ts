@@ -15,6 +15,7 @@ import {
 } from "viem"
 import { mainnet } from "viem/chains"
 import { erc721Abi, nftMarketAbi, sovereignAuctionHouseAbi, sovereignAuctionHouseFactoryAbi } from "@pin/abi"
+import { SUPERRARE_BAZAAR } from "@pin/addresses"
 import { pgCache } from "./pg-cache"
 import { getActiveAuctionCountFromIndexer } from "./indexer-queries"
 import {
@@ -34,6 +35,7 @@ import { resolveDisplayNames } from "./artist-queries"
 
 const FND_MARKET = NFT_MARKET[MAINNET_CHAIN_ID]
 const SOVEREIGN_FACTORY = getAddressOrNull(SOVEREIGN_AUCTION_HOUSE_FACTORY, MAINNET_CHAIN_ID)
+const SR_BAZAAR = SUPERRARE_BAZAAR[MAINNET_CHAIN_ID]
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
 /**
@@ -58,7 +60,7 @@ export type BidHistoryEntry = {
   txHash: string
 }
 
-export type AuctionSource = "foundation" | "sovereign"
+export type AuctionSource = "foundation" | "sovereign" | "superrareV2"
 
 /**
  * Shared shape for both Foundation and artist-owned auctions. The `source` discriminator
@@ -202,6 +204,15 @@ async function fetchAuctionForToken(
   let state: AuctionState | null = null
   if (owner.toLowerCase() === FND_MARKET.toLowerCase()) {
     state = await getFoundationAuction(nftContract, tokenId)
+  } else if (owner.toLowerCase() === SR_BAZAAR.toLowerCase()) {
+    // SR Bazaar custodies the NFT during an active auction. Dispatch
+    // through the platform adapter so all SR V2 read logic stays in
+    // one place.
+    const { superrareV2Adapter } = await import("./platforms/superrareV2")
+    state = (await superrareV2Adapter.getActiveAuctionForToken?.(
+      contract,
+      tokenId,
+    )) ?? null
   } else if (SOVEREIGN_FACTORY) {
     let isHouse = false
     try {

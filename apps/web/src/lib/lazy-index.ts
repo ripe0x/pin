@@ -751,8 +751,363 @@ export const LAZY_TTL = {
   foundationCollectorTokens: 6 * 60 * 60 * 1000,
   /** Manifold collector tokens: same dynamism reasoning as Foundation. */
   manifoldCollectorTokens: 6 * 60 * 60 * 1000,
+  /** SR V2 artist mints: same logic as foundationArtistTokens. */
+  superrareV2ArtistTokens: 30 * 24 * 60 * 60 * 1000,
+  /** SR V2 last sale: settled auction prices are immutable. */
+  superrareV2Sale: 30 * 24 * 60 * 60 * 1000,
+  /** SR V2 collector tokens: same dynamism reasoning as Foundation. */
+  superrareV2CollectorTokens: 6 * 60 * 60 * 1000,
+  /** SR V2 active-auction scan cursor: 2 minutes. Inside the cooldown
+   * we trust the table; past it the home grid call triggers a re-scan
+   * from the cursor block. Tighter than other TTLs because home-grid
+   * freshness matters most. */
+  superrareV2AuctionScan: 2 * 60 * 1000,
 }
 
 export function isFresh(lastIndexedAt: Date, ttlMs: number): boolean {
   return Date.now() - lastIndexedAt.getTime() < ttlMs
+}
+
+// ─── SuperRare V2 ────────────────────────────────────────────────────────
+
+export type LazySuperrareV2ArtistToken = {
+  contract: string
+  tokenId: string
+  blockNumber: bigint
+  logIndex: number
+}
+
+export async function readSuperrareV2ArtistTokens(
+  creator: string,
+): Promise<{ tokens: LazySuperrareV2ArtistToken[]; lastIndexedAt: Date } | null> {
+  if (!sql) return null
+  try {
+    const status = await sql<Array<{ last_indexed_at: Date }>>`
+      SELECT last_indexed_at FROM lazy_srv2_artist_status
+      WHERE creator = ${creator.toLowerCase()}
+      LIMIT 1
+    `
+    if (status.length === 0) return null
+
+    const rows = await sql<
+      Array<{
+        contract: string
+        token_id: string
+        block_number: string
+        log_index: number
+      }>
+    >`
+      SELECT contract, token_id, block_number::text AS block_number, log_index
+      FROM lazy_srv2_artist_tokens
+      WHERE creator = ${creator.toLowerCase()}
+      ORDER BY block_number DESC, log_index DESC
+    `
+    return {
+      tokens: rows.map((r) => ({
+        contract: r.contract,
+        tokenId: r.token_id,
+        blockNumber: BigInt(r.block_number),
+        logIndex: r.log_index,
+      })),
+      lastIndexedAt: status[0].last_indexed_at,
+    }
+  } catch {
+    return null
+  }
+}
+
+export function writeSuperrareV2ArtistTokens(
+  creator: string,
+  tokens: LazySuperrareV2ArtistToken[],
+): void {
+  if (!sql) return
+  void (async () => {
+    try {
+      const lower = creator.toLowerCase()
+      for (const t of tokens) {
+        await sql`
+          INSERT INTO lazy_srv2_artist_tokens
+            (creator, contract, token_id, block_number, log_index, last_indexed_at)
+          VALUES
+            (${lower}, ${t.contract.toLowerCase()}, ${t.tokenId},
+             ${t.blockNumber.toString()}, ${t.logIndex}, NOW())
+          ON CONFLICT (creator, contract, token_id) DO UPDATE
+            SET last_indexed_at = NOW()
+        `
+      }
+      await sql`
+        INSERT INTO lazy_srv2_artist_status (creator, last_indexed_at)
+        VALUES (${lower}, NOW())
+        ON CONFLICT (creator) DO UPDATE SET last_indexed_at = NOW()
+      `
+    } catch {
+      /* ignore */
+    }
+  })()
+}
+
+export type LazySuperrareV2Sale = {
+  priceWei: bigint
+  blockTime: number
+  source: "auction"
+  txHash: string
+  lastIndexedAt: Date
+}
+
+export async function readSuperrareV2Sale(
+  nftContract: string,
+  tokenId: string,
+): Promise<LazySuperrareV2Sale | null> {
+  if (!sql) return null
+  try {
+    const rows = await sql<
+      Array<{
+        price_wei: string
+        block_time: string
+        source: "auction"
+        tx_hash: string
+        last_indexed_at: Date
+      }>
+    >`
+      SELECT price_wei, block_time::text AS block_time,
+             source, tx_hash, last_indexed_at
+      FROM lazy_srv2_sales
+      WHERE nft_contract = ${nftContract.toLowerCase()}
+        AND token_id = ${tokenId}
+      LIMIT 1
+    `
+    if (rows.length === 0) return null
+    const r = rows[0]
+    return {
+      priceWei: BigInt(r.price_wei),
+      blockTime: Number(r.block_time),
+      source: r.source,
+      txHash: r.tx_hash,
+      lastIndexedAt: r.last_indexed_at,
+    }
+  } catch {
+    return null
+  }
+}
+
+export function writeSuperrareV2Sale(
+  nftContract: string,
+  tokenId: string,
+  sale: { priceWei: bigint; blockTime: number; txHash: string },
+): void {
+  if (!sql) return
+  void sql`
+    INSERT INTO lazy_srv2_sales
+      (nft_contract, token_id, price_wei, block_time, source, tx_hash, last_indexed_at)
+    VALUES
+      (${nftContract.toLowerCase()}, ${tokenId},
+       ${sale.priceWei.toString()}, ${sale.blockTime},
+       'auction', ${sale.txHash}, NOW())
+    ON CONFLICT (nft_contract, token_id) DO UPDATE
+      SET price_wei = EXCLUDED.price_wei,
+          block_time = EXCLUDED.block_time,
+          source = EXCLUDED.source,
+          tx_hash = EXCLUDED.tx_hash,
+          last_indexed_at = NOW()
+  `.catch(() => {})
+}
+
+export type LazySuperrareV2CollectorToken = {
+  contract: string
+  tokenId: string
+}
+
+export async function readSuperrareV2CollectorTokens(
+  wallet: string,
+): Promise<{ tokens: LazySuperrareV2CollectorToken[]; lastIndexedAt: Date } | null> {
+  if (!sql) return null
+  try {
+    const status = await sql<Array<{ last_indexed_at: Date }>>`
+      SELECT last_indexed_at FROM lazy_srv2_collector_status
+      WHERE wallet = ${wallet.toLowerCase()}
+      LIMIT 1
+    `
+    if (status.length === 0) return null
+
+    const rows = await sql<Array<{ contract: string; token_id: string }>>`
+      SELECT contract, token_id
+      FROM lazy_srv2_collector_tokens
+      WHERE wallet = ${wallet.toLowerCase()}
+    `
+    return {
+      tokens: rows.map((r) => ({ contract: r.contract, tokenId: r.token_id })),
+      lastIndexedAt: status[0].last_indexed_at,
+    }
+  } catch {
+    return null
+  }
+}
+
+export function writeSuperrareV2CollectorTokens(
+  wallet: string,
+  tokens: LazySuperrareV2CollectorToken[],
+): void {
+  if (!sql) return
+  void (async () => {
+    try {
+      const lower = wallet.toLowerCase()
+      for (const t of tokens) {
+        await sql`
+          INSERT INTO lazy_srv2_collector_tokens
+            (wallet, contract, token_id, last_indexed_at)
+          VALUES
+            (${lower}, ${t.contract.toLowerCase()}, ${t.tokenId}, NOW())
+          ON CONFLICT (wallet, contract, token_id) DO UPDATE
+            SET last_indexed_at = NOW()
+        `
+      }
+      await sql`
+        INSERT INTO lazy_srv2_collector_status (wallet, last_indexed_at)
+        VALUES (${lower}, NOW())
+        ON CONFLICT (wallet) DO UPDATE SET last_indexed_at = NOW()
+      `
+    } catch {
+      /* ignore */
+    }
+  })()
+}
+
+export type LazySuperrareV2ActiveAuction = {
+  contract: string
+  tokenId: string
+  seller: string
+  reserveWei: bigint
+  currentBidWei: bigint
+  currentBidder: string | null
+  endTime: number
+  status: "active" | "settled" | "cancelled"
+  startedAtBlock: bigint
+}
+
+export async function readSuperrareV2ActiveAuctions(
+  limit: number,
+): Promise<LazySuperrareV2ActiveAuction[]> {
+  if (!sql) return []
+  try {
+    const rows = await sql<
+      Array<{
+        contract: string
+        token_id: string
+        seller: string
+        reserve_wei: string
+        current_bid_wei: string | null
+        current_bidder: string | null
+        end_time: string
+        status: "active" | "settled" | "cancelled"
+        started_at_block: string
+      }>
+    >`
+      SELECT contract, token_id, seller, reserve_wei,
+             current_bid_wei, current_bidder,
+             end_time::text AS end_time, status,
+             started_at_block::text AS started_at_block
+      FROM lazy_srv2_active_auctions
+      WHERE status = 'active'
+      ORDER BY
+        CASE WHEN end_time = 0 THEN 1 ELSE 0 END,
+        end_time ASC
+      LIMIT ${limit}
+    `
+    return rows.map((r) => ({
+      contract: r.contract,
+      tokenId: r.token_id,
+      seller: r.seller,
+      reserveWei: BigInt(r.reserve_wei),
+      currentBidWei: r.current_bid_wei ? BigInt(r.current_bid_wei) : 0n,
+      currentBidder: r.current_bidder,
+      endTime: Number(r.end_time),
+      status: r.status,
+      startedAtBlock: BigInt(r.started_at_block),
+    }))
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Bulk UPSERT of active-auction rows produced by the incremental scanner.
+ * Each row replaces the existing entry for its (contract, tokenId), so the
+ * scanner can write absolute state (status='settled' clears the row's
+ * activity even if the prior cursor missed an intermediate bid).
+ */
+export function writeSuperrareV2ActiveAuctions(
+  rows: LazySuperrareV2ActiveAuction[],
+): void {
+  if (!sql || rows.length === 0) return
+  void (async () => {
+    try {
+      for (const r of rows) {
+        await sql`
+          INSERT INTO lazy_srv2_active_auctions
+            (contract, token_id, seller, reserve_wei,
+             current_bid_wei, current_bidder, end_time,
+             status, started_at_block, last_indexed_at)
+          VALUES
+            (${r.contract.toLowerCase()}, ${r.tokenId},
+             ${r.seller.toLowerCase()}, ${r.reserveWei.toString()},
+             ${r.currentBidWei === 0n ? null : r.currentBidWei.toString()},
+             ${r.currentBidder ? r.currentBidder.toLowerCase() : null},
+             ${r.endTime}, ${r.status},
+             ${r.startedAtBlock.toString()}, NOW())
+          ON CONFLICT (contract, token_id) DO UPDATE
+            SET seller = EXCLUDED.seller,
+                reserve_wei = EXCLUDED.reserve_wei,
+                current_bid_wei = EXCLUDED.current_bid_wei,
+                current_bidder = EXCLUDED.current_bidder,
+                end_time = EXCLUDED.end_time,
+                status = EXCLUDED.status,
+                started_at_block = EXCLUDED.started_at_block,
+                last_indexed_at = NOW()
+        `
+      }
+    } catch {
+      /* ignore */
+    }
+  })()
+}
+
+export async function readScanCursor(
+  scanKey: string,
+): Promise<{ lastBlock: bigint; lastScannedAt: Date } | null> {
+  if (!sql) return null
+  try {
+    const rows = await sql<
+      Array<{ last_block: string; last_scanned_at: Date }>
+    >`
+      SELECT last_block::text AS last_block, last_scanned_at
+      FROM lazy_scan_cursors
+      WHERE scan_key = ${scanKey}
+      LIMIT 1
+    `
+    if (rows.length === 0) return null
+    return {
+      lastBlock: BigInt(rows[0].last_block),
+      lastScannedAt: rows[0].last_scanned_at,
+    }
+  } catch {
+    return null
+  }
+}
+
+export async function writeScanCursor(
+  scanKey: string,
+  lastBlock: bigint,
+): Promise<void> {
+  if (!sql) return
+  try {
+    await sql`
+      INSERT INTO lazy_scan_cursors (scan_key, last_block, last_scanned_at)
+      VALUES (${scanKey}, ${lastBlock.toString()}, NOW())
+      ON CONFLICT (scan_key) DO UPDATE
+        SET last_block = EXCLUDED.last_block,
+            last_scanned_at = NOW()
+    `
+  } catch {
+    /* ignore */
+  }
 }
