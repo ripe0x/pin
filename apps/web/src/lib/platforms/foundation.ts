@@ -4,6 +4,7 @@ import { mainnet } from "viem/chains"
 import type {
   PlatformAdapter,
   ArtistTokenRef,
+  CollectorTokenRef,
   AdapterLastSale,
   SellerListings,
 } from "./types"
@@ -51,6 +52,16 @@ export const foundationAdapter: PlatformAdapter = {
       logIndex: r.logIndex,
       collectionName: r.collectionName,
     }))
+  },
+
+  async discoverCollectorTokens(): Promise<CollectorTokenRef[]> {
+    // TODO: scan Transfer(to=wallet) on FoundationNFT shared contract +
+    // every per-artist Foundation collection contract we've discovered
+    // (lazy_fnd_collections). Stub returns [] for now so the
+    // /collector/[address] page can land with Sovereign tokens; this
+    // gets implemented in a follow-up alongside the per-artist
+    // collection scan.
+    return []
   },
 
   async getLastSale(

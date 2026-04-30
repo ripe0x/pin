@@ -3,6 +3,7 @@ import type { Address } from "viem"
 import type {
   PlatformAdapter,
   ArtistTokenRef,
+  CollectorTokenRef,
   AdapterLastSale,
 } from "./types"
 import { discoverManifoldTokenRefs } from "../manifold-discovery"
@@ -29,6 +30,14 @@ export const manifoldAdapter: PlatformAdapter = {
       logIndex: null,
       collectionName: r.collectionName,
     }))
+  },
+
+  async discoverCollectorTokens(): Promise<CollectorTokenRef[]> {
+    // TODO: call Alchemy `getNFTsForOwner(wallet)` (no contract filter),
+    // then filter to Manifold creator cores via supportsInterface check
+    // (cached per contract). Stub returns [] for now; implemented in a
+    // follow-up alongside the contract-classification cache.
+    return []
   },
 
   async getLastSale(): Promise<AdapterLastSale | null> {

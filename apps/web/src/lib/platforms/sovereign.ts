@@ -4,10 +4,12 @@ import { mainnet } from "viem/chains"
 import type {
   PlatformAdapter,
   ArtistTokenRef,
+  CollectorTokenRef,
   AdapterLastSale,
 } from "./types"
 import { getSettledAuctionForToken } from "../indexer-queries"
 import { getSovereignLastSale } from "../last-sale"
+import { sql } from "../db"
 
 function getClient() {
   return createPublicClient({
@@ -39,6 +41,47 @@ export const sovereignAdapter: PlatformAdapter = {
     // Sovereign auction houses don't mint; the tokens they escrow live
     // on other platforms' contracts and surface there.
     return []
+  },
+
+  async discoverCollectorTokens(
+    wallet: Address,
+  ): Promise<CollectorTokenRef[]> {
+    if (!sql) return []
+    try {
+      const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+        /[^a-zA-Z0-9_]/g,
+        "",
+      )
+      // Tokens this wallet won via a settled Sovereign auction. The
+      // token contract + tokenId come straight off the indexed auction
+      // row; current ownership isn't tracked by Ponder (the token
+      // transferred out of the house to the winner on settle), so this
+      // is a best-effort historical record. Reads as `acquiredAtBlock`
+      // = settledAtBlock.
+      const rows = (await sql.unsafe(
+        `SELECT token_contract, token_id::text AS token_id,
+                settled_at_block::text AS settled_at_block
+         FROM ${schema}.pnd_auctions
+         WHERE winner = $1 AND status = 'settled'
+         ORDER BY settled_at_time DESC`,
+        [wallet.toLowerCase()],
+      )) as Array<{
+        token_contract: string
+        token_id: string
+        settled_at_block: string
+      }>
+
+      return rows.map((r) => ({
+        platform: "sovereign",
+        contract: r.token_contract as Address,
+        tokenId: r.token_id,
+        ownerWallet: wallet,
+        acquiredAtBlock: BigInt(r.settled_at_block),
+        acquiredTxHash: null,
+      }))
+    } catch {
+      return []
+    }
   },
 
   async getLastSale(

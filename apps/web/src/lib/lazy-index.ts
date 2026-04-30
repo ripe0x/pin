@@ -418,6 +418,164 @@ export function writeErc1155TransferStream(
   `.catch(() => {})
 }
 
+// ─── Foundation collector tokens ─────────────────────────────────────────
+
+export type LazyFoundationCollectorToken = {
+  contract: string
+  tokenId: string
+  acquiredAtBlock: bigint
+  acquiredTxHash: string | null
+}
+
+export async function readFoundationCollectorTokens(
+  wallet: string,
+): Promise<{ tokens: LazyFoundationCollectorToken[]; lastIndexedAt: Date } | null> {
+  if (!sql) return null
+  try {
+    const status = await sql<Array<{ last_indexed_at: Date }>>`
+      SELECT last_indexed_at FROM lazy_fnd_collector_status
+      WHERE wallet = ${wallet.toLowerCase()}
+      LIMIT 1
+    `
+    if (status.length === 0) return null
+
+    const rows = await sql<
+      Array<{
+        contract: string
+        token_id: string
+        acquired_at_block: string
+        acquired_tx_hash: string | null
+      }>
+    >`
+      SELECT contract, token_id,
+             acquired_at_block::text AS acquired_at_block,
+             acquired_tx_hash
+      FROM lazy_fnd_collector_tokens
+      WHERE wallet = ${wallet.toLowerCase()}
+      ORDER BY acquired_at_block DESC
+    `
+    return {
+      tokens: rows.map((r) => ({
+        contract: r.contract,
+        tokenId: r.token_id,
+        acquiredAtBlock: BigInt(r.acquired_at_block),
+        acquiredTxHash: r.acquired_tx_hash,
+      })),
+      lastIndexedAt: status[0].last_indexed_at,
+    }
+  } catch {
+    return null
+  }
+}
+
+export function writeFoundationCollectorTokens(
+  wallet: string,
+  tokens: LazyFoundationCollectorToken[],
+): void {
+  if (!sql) return
+  void (async () => {
+    try {
+      const lower = wallet.toLowerCase()
+      for (const t of tokens) {
+        await sql`
+          INSERT INTO lazy_fnd_collector_tokens
+            (wallet, contract, token_id, acquired_at_block,
+             acquired_tx_hash, last_indexed_at)
+          VALUES
+            (${lower}, ${t.contract.toLowerCase()}, ${t.tokenId},
+             ${t.acquiredAtBlock.toString()}, ${t.acquiredTxHash}, NOW())
+          ON CONFLICT (wallet, contract, token_id) DO UPDATE
+            SET acquired_at_block = EXCLUDED.acquired_at_block,
+                acquired_tx_hash = EXCLUDED.acquired_tx_hash,
+                last_indexed_at = NOW()
+        `
+      }
+      await sql`
+        INSERT INTO lazy_fnd_collector_status (wallet, last_indexed_at)
+        VALUES (${lower}, NOW())
+        ON CONFLICT (wallet) DO UPDATE SET last_indexed_at = NOW()
+      `
+    } catch {
+      /* ignore */
+    }
+  })()
+}
+
+// ─── Manifold collector tokens ───────────────────────────────────────────
+
+export type LazyManifoldCollectorToken = {
+  contract: string
+  tokenId: string
+  collectionName: string | null
+}
+
+export async function readManifoldCollectorTokens(
+  wallet: string,
+): Promise<{ tokens: LazyManifoldCollectorToken[]; lastIndexedAt: Date } | null> {
+  if (!sql) return null
+  try {
+    const status = await sql<Array<{ last_indexed_at: Date }>>`
+      SELECT last_indexed_at FROM lazy_manifold_collector_status
+      WHERE wallet = ${wallet.toLowerCase()}
+      LIMIT 1
+    `
+    if (status.length === 0) return null
+
+    const rows = await sql<
+      Array<{
+        contract: string
+        token_id: string
+        collection_name: string | null
+      }>
+    >`
+      SELECT contract, token_id, collection_name
+      FROM lazy_manifold_collector_tokens
+      WHERE wallet = ${wallet.toLowerCase()}
+    `
+    return {
+      tokens: rows.map((r) => ({
+        contract: r.contract,
+        tokenId: r.token_id,
+        collectionName: r.collection_name,
+      })),
+      lastIndexedAt: status[0].last_indexed_at,
+    }
+  } catch {
+    return null
+  }
+}
+
+export function writeManifoldCollectorTokens(
+  wallet: string,
+  tokens: LazyManifoldCollectorToken[],
+): void {
+  if (!sql) return
+  void (async () => {
+    try {
+      const lower = wallet.toLowerCase()
+      for (const t of tokens) {
+        await sql`
+          INSERT INTO lazy_manifold_collector_tokens
+            (wallet, contract, token_id, collection_name, last_indexed_at)
+          VALUES
+            (${lower}, ${t.contract.toLowerCase()}, ${t.tokenId},
+             ${t.collectionName}, NOW())
+          ON CONFLICT (wallet, contract, token_id) DO UPDATE
+            SET collection_name = EXCLUDED.collection_name,
+                last_indexed_at = NOW()
+        `
+      }
+      await sql`
+        INSERT INTO lazy_manifold_collector_status (wallet, last_indexed_at)
+        VALUES (${lower}, NOW())
+        ON CONFLICT (wallet) DO UPDATE SET last_indexed_at = NOW()
+      `
+    } catch {
+      /* ignore */
+    }
+  })()
+}
+
 // ─── Manifold per-artist token enumeration ───────────────────────────────
 
 export type LazyManifoldToken = {
@@ -538,6 +696,13 @@ export const LAZY_TTL = {
    * contracts + tokens minted on each. pgCache for the wrapping
    * `getCachedTokenRefs` is 24h; lazy at 30d covers cold-cache cycles. */
   manifoldArtistTokens: 30 * 24 * 60 * 60 * 1000,
+  /** Foundation collector tokens: ownership shifts on every Transfer,
+   * which is more dynamic than mint history. 6h matches what feels
+   * fresh enough for a /collector/[address] page without rescanning
+   * every visit. */
+  foundationCollectorTokens: 6 * 60 * 60 * 1000,
+  /** Manifold collector tokens: same dynamism reasoning as Foundation. */
+  manifoldCollectorTokens: 6 * 60 * 60 * 1000,
 }
 
 export function isFresh(lastIndexedAt: Date, ttlMs: number): boolean {
