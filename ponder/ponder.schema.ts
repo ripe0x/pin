@@ -9,10 +9,6 @@ import { onchainTable, index } from "ponder"
  * in place rather than appending — the event log is the audit trail.
  *
  * What we deliberately don't model:
- *   - `pndHouses` — the house registry. The factory's
- *     `AuctionHouseCreated` event is enough; if we ever need a row per
- *     house we'll add it. Today the only consumer (`getActiveAuctionCount`)
- *     filters auctions directly by `seller`.
  *   - Per-token tables — those live in the cache layer (pgCache) for now.
  *     Migrate later if cross-cutting queries arrive.
  *   - Foundation NFTMarket events — out of scope for v1; this indexer is
@@ -59,6 +55,22 @@ export const pndAuctions = onchainTable(
   (table) => ({
     sellerStatusIdx: index().on(table.seller, table.status),
     tokenIdx: index().on(table.tokenContract, table.tokenId),
+  }),
+)
+
+export const pndHouses = onchainTable(
+  "pnd_houses",
+  (t) => ({
+    house: t.hex().primaryKey(),
+    owner: t.hex().notNull(),
+    feeRecipient: t.hex().notNull(),
+    protocolFeeBps: t.integer().notNull(),
+    createdAtBlock: t.bigint().notNull(),
+    createdAtTime: t.bigint().notNull(),
+  }),
+  (table) => ({
+    ownerIdx: index().on(table.owner),
+    createdIdx: index().on(table.createdAtTime),
   }),
 )
 

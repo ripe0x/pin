@@ -1,6 +1,6 @@
 export const SITE_TITLE = "PND";
 
 export const SITE_DESCRIPTION =
-  "Discover Foundation artists, explore their work, and preserve art on IPFS.";
+  "Artist infrastructure on Ethereum. Your work, your contracts, your fees.";
 
 export const SITE_URL = "https://pin.ripe.wtf";

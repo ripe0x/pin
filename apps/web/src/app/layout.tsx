@@ -47,7 +47,8 @@ export default function RootLayout({
       <body className="min-h-screen bg-white text-black antialiased">
         <Providers>
           <Navbar />
-          <main className="pt-16">{children}</main>
+          {/* pt accommodates a taller navbar on mobile (logo row + search row). */}
+          <main className="pt-28 md:pt-16">{children}</main>
         </Providers>
       </body>
     </html>

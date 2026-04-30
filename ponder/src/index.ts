@@ -1,5 +1,5 @@
 import { ponder } from "ponder:registry"
-import { pndAuctions, pndBids } from "ponder:schema"
+import { pndAuctions, pndBids, pndHouses } from "ponder:schema"
 
 /**
  * Event handlers for every contract Ponder is tracking. Each handler is a
@@ -9,15 +9,31 @@ import { pndAuctions, pndBids } from "ponder:schema"
  * client.
  *
  * The factory contract (SovereignAuctionHouseFactory) emits
- * `AuctionHouseCreated`, but Ponder uses that event implicitly via the
- * `factory()` pattern in ponder.config.ts to discover new clones. We don't
- * write a row per house yet — see ponder.schema.ts for why.
+ * `AuctionHouseCreated`. Ponder uses that event implicitly via the
+ * `factory()` pattern in ponder.config.ts to discover new clones, and we
+ * also write a row per house so callers can list houses without scanning
+ * `pnd_auctions` (which misses houses with no listings yet).
  */
 
 const compositeId = (house: string, auctionId: bigint) =>
   `${house.toLowerCase()}-${auctionId.toString()}`
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
+
+ponder.on(
+  "SovereignAuctionHouseFactory:AuctionHouseCreated",
+  async ({ event, context }) => {
+    const { owner, house, feeRecipient, protocolFeeBps } = event.args
+    await context.db.insert(pndHouses).values({
+      house,
+      owner,
+      feeRecipient,
+      protocolFeeBps,
+      createdAtBlock: event.block.number,
+      createdAtTime: event.block.timestamp,
+    })
+  },
+)
 
 ponder.on("SovereignAuctionHouse:AuctionCreated", async ({ event, context }) => {
   const { auctionId, tokenId, tokenContract, duration, reservePrice, tokenOwner } =

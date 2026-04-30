@@ -20,6 +20,24 @@ export function Navbar() {
     setQuery("")
   }
 
+  const searchForm = (compact: boolean) => (
+    <form
+      onSubmit={handleSearch}
+      className={compact ? "flex w-full" : "hidden md:flex flex-1 max-w-md mx-8"}
+    >
+      <div className="flex w-full items-center gap-2 rounded-full bg-gray-100 px-4 py-2">
+        <SearchIcon />
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Find artist by address or ENS"
+          className="flex-1 bg-transparent text-sm outline-none placeholder:text-gray-400"
+        />
+      </div>
+    </form>
+  )
+
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200">
       <nav className="mx-auto flex h-16 max-w-[2000px] items-center justify-between px-6">
@@ -28,22 +46,8 @@ export function Navbar() {
           {SITE_TITLE}
         </Link>
 
-        {/* Center: Find Artist */}
-        <form
-          onSubmit={handleSearch}
-          className="hidden md:flex flex-1 max-w-md mx-8"
-        >
-          <div className="flex w-full items-center gap-2 rounded-full bg-gray-100 px-4 py-2">
-            <SearchIcon />
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Find artist by address or ENS"
-              className="flex-1 bg-transparent text-sm outline-none placeholder:text-gray-400"
-            />
-          </div>
-        </form>
+        {/* Center (desktop only): Find Artist */}
+        {searchForm(false)}
 
         {/* Right: nav links + wallet */}
         <div className="flex items-center gap-6">
@@ -72,6 +76,12 @@ export function Navbar() {
           </div>
         </div>
       </nav>
+
+      {/* Mobile: search lives on its own row so search is a global concern
+          on every viewport, not a page-specific affordance. */}
+      <div className="md:hidden border-t border-gray-100 px-4 py-2">
+        {searchForm(true)}
+      </div>
     </header>
   )
 }

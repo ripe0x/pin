@@ -22,6 +22,12 @@ const INDEXER_DISABLED = process.env.INDEXER_DISABLED === "1"
 
 const QUERY_TIMEOUT_MS = 500
 
+// Home-page square + counters are below the hero behind Suspense, so a
+// longer timeout is acceptable. ~2s is enough for cold remote-Postgres
+// reads (Railway, Neon) without making the page feel hung if the indexer
+// is genuinely down — Suspense will simply resolve to null.
+const HOME_QUERY_TIMEOUT_MS = 2_000
+
 /**
  * Race a query against a timeout. Returns `null` if the query exceeds
  * `timeoutMs` so we don't add latency to renders when the indexer is
@@ -136,6 +142,154 @@ export async function getSettledAuctionForToken(
       })),
     }
   })
+}
+
+export type ActivePndAuction = {
+  house: string
+  tokenContract: string
+  tokenId: string
+  seller: string
+  amount: bigint
+  reservePrice: bigint
+  endTime: number
+  firstBidTime: number
+  createdAtTime: number
+}
+
+/**
+ * Currently-active PND auctions across every Sovereign Auction House,
+ * ordered ending-soonest-first with pre-bid auctions (endTime = 0) at the
+ * end. Powers the home-page square.
+ */
+export async function getActivePndAuctions(
+  limit = 12,
+): Promise<ActivePndAuction[] | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+
+  // Longer timeout than the per-token reads: the home-page square renders
+  // in a Suspense boundary below the hero, so paying ~700ms-1s on the
+  // first uncached load is fine. The hero still streams immediately.
+  return withTimeout(async () => {
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+      /[^a-zA-Z0-9_]/g,
+      "",
+    )
+
+    const rows = (await db.unsafe(
+      `SELECT house, token_contract, token_id::text AS token_id, seller,
+              amount::text AS amount, reserve_price::text AS reserve_price,
+              end_time::text AS end_time,
+              first_bid_time::text AS first_bid_time,
+              created_at_time::text AS created_at_time
+       FROM ${schema}.pnd_auctions
+       WHERE status = 'active'
+       ORDER BY
+         CASE WHEN end_time = 0 THEN 1 ELSE 0 END,
+         end_time ASC
+       LIMIT $1`,
+      [limit],
+    )) as Array<{
+      house: string
+      token_contract: string
+      token_id: string
+      seller: string
+      amount: string
+      reserve_price: string
+      end_time: string
+      first_bid_time: string
+      created_at_time: string
+    }>
+
+    return rows.map((r) => ({
+      house: r.house,
+      tokenContract: r.token_contract,
+      tokenId: r.token_id,
+      seller: r.seller,
+      amount: BigInt(r.amount),
+      reservePrice: BigInt(r.reserve_price),
+      endTime: Number(r.end_time),
+      firstBidTime: Number(r.first_bid_time),
+      createdAtTime: Number(r.created_at_time),
+    }))
+  }, HOME_QUERY_TIMEOUT_MS)
+}
+
+export type PndHouse = {
+  house: string
+  owner: string
+  createdAtTime: number
+}
+
+/**
+ * Houses deployed through the SovereignAuctionHouseFactory, newest first.
+ * Includes houses that have no listings yet — the row is written when the
+ * factory emits `AuctionHouseCreated`, before any auction exists.
+ */
+export async function getPndHouses(limit = 24): Promise<PndHouse[] | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+
+  return withTimeout(async () => {
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+      /[^a-zA-Z0-9_]/g,
+      "",
+    )
+
+    const rows = (await db.unsafe(
+      `SELECT house, owner, created_at_time::text AS created_at_time
+       FROM ${schema}.pnd_houses
+       ORDER BY created_at_time DESC
+       LIMIT $1`,
+      [limit],
+    )) as Array<{ house: string; owner: string; created_at_time: string }>
+
+    return rows.map((r) => ({
+      house: r.house,
+      owner: r.owner,
+      createdAtTime: Number(r.created_at_time),
+    }))
+  }, HOME_QUERY_TIMEOUT_MS)
+}
+
+export type PlatformStats = {
+  housesDeployed: number
+  ethSettledWei: bigint
+}
+
+/**
+ * Aggregate platform totals for the home-page ambient counters.
+ * Returns null when the indexer is unavailable; the caller hides the
+ * counters sentence entirely in that case.
+ */
+export async function getPlatformStats(): Promise<PlatformStats | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+
+  return withTimeout(async () => {
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+      /[^a-zA-Z0-9_]/g,
+      "",
+    )
+
+    const [houseRows, settledRows] = await Promise.all([
+      db.unsafe(
+        `SELECT COUNT(*)::text AS count FROM ${schema}.pnd_houses`,
+      ) as Promise<Array<{ count: string }>>,
+      db.unsafe(
+        `SELECT COALESCE(
+            SUM(seller_proceeds + protocol_fee), 0
+          )::text AS total
+         FROM ${schema}.pnd_auctions
+         WHERE status = 'settled'`,
+      ) as Promise<Array<{ total: string }>>,
+    ])
+
+    return {
+      housesDeployed: Number(houseRows[0]?.count ?? 0),
+      ethSettledWei: BigInt(settledRows[0]?.total ?? "0"),
+    }
+  }, HOME_QUERY_TIMEOUT_MS)
 }
 
 export async function getActiveAuctionCountFromIndexer(
