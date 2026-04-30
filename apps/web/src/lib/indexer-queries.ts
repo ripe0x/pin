@@ -291,6 +291,201 @@ export async function getPlatformStats(): Promise<PlatformStats | null> {
   }, 2_000)
 }
 
+// ─── Foundation NFTMarket reads ──────────────────────────────────────────
+// Backed by `fnd_auctions`, `fnd_bids`, `fnd_buy_nows`, `fnd_sales` —
+// populated by the Ponder NFTMarket handlers. All return null when the
+// indexer is unavailable / not yet caught up; callers fall back to the
+// existing `eth_getLogs`-based RPC paths.
+
+export type FoundationLastSale = {
+  priceWei: bigint
+  blockTime: number
+  source: "auction" | "buyNow"
+  txHash: string
+}
+
+/**
+ * Latest sale (auction-finalized OR buy-now-accepted) for a token.
+ */
+export async function getFoundationLastSaleFromIndexer(
+  nftContract: string,
+  tokenId: string,
+): Promise<FoundationLastSale | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+
+  return withTimeout(async () => {
+    const contract = nftContract.toLowerCase()
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+      /[^a-zA-Z0-9_]/g,
+      "",
+    )
+
+    const rows = (await db.unsafe(
+      `SELECT price_wei::text AS price_wei,
+              block_time::text AS block_time,
+              source,
+              tx_hash
+       FROM ${schema}.fnd_sales
+       WHERE nft_contract = $1
+         AND token_id = $2::numeric
+       ORDER BY block_time DESC
+       LIMIT 1`,
+      [contract, tokenId],
+    )) as Array<{
+      price_wei: string
+      block_time: string
+      source: "auction" | "buyNow"
+      tx_hash: string
+    }>
+
+    if (rows.length === 0) return null
+    const row = rows[0]
+    return {
+      priceWei: BigInt(row.price_wei),
+      blockTime: Number(row.block_time),
+      source: row.source,
+      txHash: row.tx_hash,
+    }
+  })
+}
+
+export type FoundationBidHistoryEntry = {
+  bidder: string
+  amount: bigint
+  blockTime: number
+  txHash: string
+}
+
+/**
+ * All bids for a Foundation auction, newest-first.
+ */
+export async function getFoundationBidHistoryFromIndexer(
+  auctionId: string,
+): Promise<FoundationBidHistoryEntry[] | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+
+  return withTimeout(async () => {
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+      /[^a-zA-Z0-9_]/g,
+      "",
+    )
+
+    const rows = (await db.unsafe(
+      `SELECT bidder, amount::text AS amount,
+              block_time::text AS block_time, tx_hash
+       FROM ${schema}.fnd_bids
+       WHERE auction_id = $1::numeric
+       ORDER BY block_number DESC`,
+      [auctionId],
+    )) as Array<{
+      bidder: string
+      amount: string
+      block_time: string
+      tx_hash: string
+    }>
+
+    return rows.map((r) => ({
+      bidder: r.bidder,
+      amount: BigInt(r.amount),
+      blockTime: Number(r.block_time),
+      txHash: r.tx_hash,
+    }))
+  })
+}
+
+export type FoundationCancellableAuction = {
+  auctionId: string
+  nftContract: string
+  tokenId: string
+  reserveWei: bigint
+  durationSeconds: number
+}
+
+export type FoundationCancellableBuyNow = {
+  id: string
+  nftContract: string
+  tokenId: string
+  priceWei: bigint
+}
+
+/**
+ * Active Foundation listings owned by a seller — cancellable means status =
+ * 'active' AND (for auctions) no bids placed yet (highestBid = 0). Replaces
+ * the two-`getLogs`-over-10M-blocks scan in `seller-listings.ts`.
+ */
+export async function getFoundationCancellableListingsFromIndexer(
+  sellerAddress: string,
+): Promise<{
+  auctions: FoundationCancellableAuction[]
+  buyNows: FoundationCancellableBuyNow[]
+} | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+
+  return withTimeout(async () => {
+    const seller = sellerAddress.toLowerCase()
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+      /[^a-zA-Z0-9_]/g,
+      "",
+    )
+
+    const [auctionRows, buyNowRows] = await Promise.all([
+      db.unsafe(
+        `SELECT auction_id::text AS auction_id, nft_contract,
+                token_id::text AS token_id,
+                reserve_price::text AS reserve_price,
+                duration_seconds::text AS duration_seconds
+         FROM ${schema}.fnd_auctions
+         WHERE seller = $1
+           AND status = 'active'
+           AND highest_bid = 0`,
+        [seller],
+      ) as Promise<
+        Array<{
+          auction_id: string
+          nft_contract: string
+          token_id: string
+          reserve_price: string
+          duration_seconds: string
+        }>
+      >,
+      db.unsafe(
+        `SELECT id, nft_contract, token_id::text AS token_id,
+                price::text AS price
+         FROM ${schema}.fnd_buy_nows
+         WHERE seller = $1
+           AND status = 'active'`,
+        [seller],
+      ) as Promise<
+        Array<{
+          id: string
+          nft_contract: string
+          token_id: string
+          price: string
+        }>
+      >,
+    ])
+
+    return {
+      auctions: auctionRows.map((r) => ({
+        auctionId: r.auction_id,
+        nftContract: r.nft_contract,
+        tokenId: r.token_id,
+        reserveWei: BigInt(r.reserve_price),
+        durationSeconds: Number(r.duration_seconds),
+      })),
+      buyNows: buyNowRows.map((r) => ({
+        id: r.id,
+        nftContract: r.nft_contract,
+        tokenId: r.token_id,
+        priceWei: BigInt(r.price),
+      })),
+    }
+  })
+}
+
 export async function getActiveAuctionCountFromIndexer(
   sellerAddress: string,
 ): Promise<number | null> {

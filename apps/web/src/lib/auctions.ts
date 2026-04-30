@@ -16,7 +16,10 @@ import {
 import { mainnet } from "viem/chains"
 import { erc721Abi, nftMarketAbi, sovereignAuctionHouseAbi, sovereignAuctionHouseFactoryAbi } from "@pin/abi"
 import { pgCache } from "./pg-cache"
-import { getActiveAuctionCountFromIndexer } from "./indexer-queries"
+import {
+  getActiveAuctionCountFromIndexer,
+  getFoundationBidHistoryFromIndexer,
+} from "./indexer-queries"
 import {
   NFT_MARKET,
   MAINNET_CHAIN_ID,
@@ -358,6 +361,21 @@ async function getFoundationBidHistory(
   client: ReturnType<typeof createPublicClient>,
   auctionId: bigint,
 ): Promise<Array<Omit<BidHistoryEntry, "bidderDisplay">>> {
+  // Indexer-first: when Ponder is up, bid history comes from `fnd_bids` —
+  // skips the `eth_getLogs` + per-block `getBlockByNumber` round-trips
+  // (1 + N RPC calls per cache miss). Falls back to RPC when null.
+  const fromIndexer = await getFoundationBidHistoryFromIndexer(
+    auctionId.toString(),
+  )
+  if (fromIndexer !== null) {
+    return fromIndexer.map((b) => ({
+      bidder: b.bidder as Address,
+      amount: b.amount,
+      blockTime: b.blockTime,
+      txHash: b.txHash as `0x${string}`,
+    }))
+  }
+
   const logs = await client
     .getLogs({
       address: FND_MARKET,

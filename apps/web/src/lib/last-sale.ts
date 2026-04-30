@@ -24,7 +24,10 @@ import { mainnet } from "viem/chains"
 import { unstable_cache } from "next/cache"
 import { sovereignAuctionHouseFactoryAbi } from "@pin/abi"
 import { pgCache } from "./pg-cache"
-import { getSettledAuctionForToken } from "./indexer-queries"
+import {
+  getSettledAuctionForToken,
+  getFoundationLastSaleFromIndexer,
+} from "./indexer-queries"
 import {
   NFT_MARKET,
   MAINNET_CHAIN_ID,
@@ -235,16 +238,19 @@ async function getLastSalePriceCached(
   const contract = nftContract as Address
   const tokenIdBig = BigInt(tokenId)
 
-  // Indexer-first for Sovereign: when Ponder is up, the settled row is
-  // already in Postgres — skip the 4 log/block RPC calls and read directly.
-  // Falls through to the RPC path when the indexer is unavailable.
-  const sovereignFromIndexer = await getSovereignLastSaleFromIndexer(
-    nftContract,
-    tokenId,
-  )
+  // Indexer-first for both sources. When Ponder is up:
+  //   - Sovereign: read from `pnd_auctions` (status='settled')
+  //   - Foundation: read from `fnd_sales` (latest by block_time)
+  // Each falls through to its own RPC scan when the indexer returns null.
+  const [sovereignFromIndexer, foundationFromIndexer] = await Promise.all([
+    getSovereignLastSaleFromIndexer(nftContract, tokenId),
+    getFoundationLastSaleFromIndexerHydrated(nftContract, tokenId),
+  ])
 
   const [foundation, sovereign] = await Promise.all([
-    getFoundationLastSale(client, contract, tokenIdBig),
+    foundationFromIndexer
+      ? Promise.resolve(foundationFromIndexer)
+      : getFoundationLastSale(client, contract, tokenIdBig),
     sovereignFromIndexer
       ? Promise.resolve(sovereignFromIndexer)
       : creator
@@ -285,6 +291,20 @@ async function getSovereignLastSaleFromIndexer(
     // pndAuctions doesn't store the AuctionEnded txHash. UI doesn't render
     // it (MoreFromContract uses priceWei + blockTime only).
     txHash: "",
+  }
+}
+
+async function getFoundationLastSaleFromIndexerHydrated(
+  nftContract: string,
+  tokenId: string,
+): Promise<LastSale | null> {
+  const sale = await getFoundationLastSaleFromIndexer(nftContract, tokenId)
+  if (!sale) return null
+  return {
+    priceWei: sale.priceWei,
+    blockTime: sale.blockTime,
+    source: "foundation",
+    txHash: sale.txHash,
   }
 }
 

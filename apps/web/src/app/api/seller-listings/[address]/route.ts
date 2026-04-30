@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { unstable_cache } from "next/cache"
 import { pgCache } from "@/lib/pg-cache"
 import { getSellerCancellableListings } from "@/lib/seller-listings"
+import { getFoundationCancellableListingsFromIndexer } from "@/lib/indexer-queries"
 
 /**
  * Wraps `getSellerCancellableListings` (two ~10M-block `getLogs` + multicalls
@@ -38,33 +39,62 @@ export type SellerListingsPayload = {
 
 const SELLER_LISTINGS_TTL_S = 5 * 60
 
+async function buildPayload(
+  sellerAddress: string,
+): Promise<SellerListingsPayload> {
+  // Indexer-first: when Ponder is up, the active rows are already in
+  // `fnd_auctions` + `fnd_buy_nows` — skips the two ~10M-block `eth_getLogs`
+  // scans + multicall in `getSellerCancellableListings`.
+  const fromIndexer =
+    await getFoundationCancellableListingsFromIndexer(sellerAddress)
+  if (fromIndexer !== null) {
+    return {
+      auctions: fromIndexer.auctions.map((a) => ({
+        kind: "auction" as const,
+        id: `auction:${a.auctionId}`,
+        auctionId: a.auctionId,
+        nftContract: a.nftContract,
+        tokenId: a.tokenId,
+        reserveWei: a.reserveWei.toString(),
+        durationSeconds: a.durationSeconds,
+      })),
+      buyNows: fromIndexer.buyNows.map((b) => ({
+        kind: "buyNow" as const,
+        id: `buyNow:${b.nftContract}:${b.tokenId}`,
+        nftContract: b.nftContract,
+        tokenId: b.tokenId,
+        priceWei: b.priceWei.toString(),
+      })),
+    }
+  }
+
+  const { auctions, buyNows } = await getSellerCancellableListings(sellerAddress)
+  return {
+    auctions: auctions.map((a) => ({
+      kind: "auction" as const,
+      id: a.id,
+      auctionId: a.auctionId.toString(),
+      nftContract: a.nftContract,
+      tokenId: a.tokenId,
+      reserveWei: a.reserveWei.toString(),
+      durationSeconds: a.durationSeconds,
+    })),
+    buyNows: buyNows.map((b) => ({
+      kind: "buyNow" as const,
+      id: b.id,
+      nftContract: b.nftContract,
+      tokenId: b.tokenId,
+      priceWei: b.priceWei.toString(),
+    })),
+  }
+}
+
 const cached = unstable_cache(
   (sellerAddress: string) =>
     pgCache<SellerListingsPayload>(
       `seller-listings:${sellerAddress}`,
       SELLER_LISTINGS_TTL_S,
-      async () => {
-        const { auctions, buyNows } =
-          await getSellerCancellableListings(sellerAddress)
-        return {
-          auctions: auctions.map((a) => ({
-            kind: "auction" as const,
-            id: a.id,
-            auctionId: a.auctionId.toString(),
-            nftContract: a.nftContract,
-            tokenId: a.tokenId,
-            reserveWei: a.reserveWei.toString(),
-            durationSeconds: a.durationSeconds,
-          })),
-          buyNows: buyNows.map((b) => ({
-            kind: "buyNow" as const,
-            id: b.id,
-            nftContract: b.nftContract,
-            tokenId: b.tokenId,
-            priceWei: b.priceWei.toString(),
-          })),
-        }
-      },
+      () => buildPayload(sellerAddress),
     ),
   ["seller-listings-v1"],
   { revalidate: SELLER_LISTINGS_TTL_S, tags: ["seller-listings"] },

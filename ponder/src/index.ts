@@ -1,5 +1,13 @@
 import { ponder } from "ponder:registry"
-import { pndAuctions, pndBids, pndHouses } from "ponder:schema"
+import {
+  pndAuctions,
+  pndBids,
+  pndHouses,
+  fndAuctions,
+  fndBids,
+  fndBuyNows,
+  fndSales,
+} from "ponder:schema"
 
 /**
  * Event handlers for every contract Ponder is tracking. Each handler is a
@@ -152,3 +160,212 @@ ponder.on(
       })
   },
 )
+
+// ─── Foundation NFTMarket ────────────────────────────────────────────────
+// Single-contract event stream: all Foundation reserve auctions and buy-now
+// listings live here. We deliberately skip Offer* events for now — the web
+// app's cost-driver paths (last-sale, bid history, seller-cancellable
+// listings) don't need them, and event volume on Foundation is low enough
+// that adding them later is cheap.
+
+ponder.on("NFTMarket:ReserveAuctionCreated", async ({ event, context }) => {
+  const { seller, nftContract, tokenId, duration, reservePrice, auctionId } =
+    event.args
+  await context.db
+    .insert(fndAuctions)
+    .values({
+      auctionId,
+      nftContract,
+      tokenId,
+      seller,
+      reservePrice,
+      durationSeconds: duration,
+      highestBid: 0n,
+      highestBidder: null,
+      endTime: 0n,
+      status: "active",
+      createdAtBlock: event.block.number,
+      createdAtTime: event.block.timestamp,
+    })
+    .onConflictDoNothing()
+})
+
+ponder.on("NFTMarket:ReserveAuctionBidPlaced", async ({ event, context }) => {
+  const { auctionId, bidder, amount, endTime } = event.args
+  // Insert the immutable bid log unconditionally. The auction-row update
+  // below is guarded against missing rows (auction predates index window).
+  await context.db
+    .insert(fndBids)
+    .values({
+      id: `${event.transaction.hash}-${event.log.logIndex}`,
+      auctionId,
+      bidder,
+      amount,
+      endTime,
+      blockNumber: event.block.number,
+      blockTime: event.block.timestamp,
+      txHash: event.transaction.hash,
+    })
+    .onConflictDoNothing()
+  const existing = await context.db.find(fndAuctions, { auctionId })
+  if (!existing) return
+  await context.db.update(fndAuctions, { auctionId }).set({
+    highestBid: amount,
+    highestBidder: bidder,
+    endTime,
+  })
+})
+
+ponder.on("NFTMarket:ReserveAuctionFinalized", async ({ event, context }) => {
+  const { auctionId, seller, bidder, totalFees, creatorRev, sellerRev } =
+    event.args
+  const auction = await context.db.find(fndAuctions, { auctionId })
+  // Skip finalizations for auctions that predate our index window — we
+  // can't recover (nftContract, tokenId) without the create event.
+  if (!auction) return
+
+  await context.db.update(fndAuctions, { auctionId }).set({
+    status: "finalized",
+    finalizedTotalFees: totalFees,
+    finalizedCreatorRev: creatorRev,
+    finalizedSellerRev: sellerRev,
+    finalizedAtTime: event.block.timestamp,
+    finalizedTxHash: event.transaction.hash,
+  })
+
+  await context.db
+    .insert(fndSales)
+    .values({
+      id: `${event.transaction.hash}-${event.log.logIndex}`,
+      nftContract: auction.nftContract,
+      tokenId: auction.tokenId,
+      seller,
+      buyer: bidder,
+      priceWei: totalFees + creatorRev + sellerRev,
+      source: "auction",
+      blockTime: event.block.timestamp,
+      txHash: event.transaction.hash,
+    })
+    .onConflictDoNothing()
+})
+
+ponder.on("NFTMarket:ReserveAuctionCanceled", async ({ event, context }) => {
+  const { auctionId } = event.args
+  const existing = await context.db.find(fndAuctions, { auctionId })
+  if (!existing) return
+  await context.db
+    .update(fndAuctions, { auctionId })
+    .set({ status: "canceled" })
+})
+
+ponder.on("NFTMarket:ReserveAuctionUpdated", async ({ event, context }) => {
+  const { auctionId, reservePrice } = event.args
+  const existing = await context.db.find(fndAuctions, { auctionId })
+  if (!existing) return
+  await context.db
+    .update(fndAuctions, { auctionId })
+    .set({ reservePrice })
+})
+
+ponder.on(
+  "NFTMarket:ReserveAuctionInvalidated",
+  async ({ event, context }) => {
+    const { auctionId } = event.args
+    const existing = await context.db.find(fndAuctions, { auctionId })
+    if (!existing) return
+    await context.db
+      .update(fndAuctions, { auctionId })
+      .set({ status: "invalidated" })
+  },
+)
+
+const buyNowId = (nftContract: string, tokenId: bigint) =>
+  `${nftContract.toLowerCase()}-${tokenId.toString()}`
+
+ponder.on("NFTMarket:BuyPriceSet", async ({ event, context }) => {
+  const { nftContract, tokenId, seller, price } = event.args
+  const id = buyNowId(nftContract, tokenId)
+  // BuyPriceSet fires both on initial set and on price update. The contract
+  // only allows one active buy-now per token, so the row is upserted.
+  await context.db
+    .insert(fndBuyNows)
+    .values({
+      id,
+      nftContract,
+      tokenId,
+      seller,
+      price,
+      status: "active",
+      createdAtTime: event.block.timestamp,
+    })
+    .onConflictDoUpdate(() => ({
+      seller,
+      price,
+      status: "active",
+      updatedAtTime: event.block.timestamp,
+    }))
+})
+
+ponder.on("NFTMarket:BuyPriceCanceled", async ({ event, context }) => {
+  const { nftContract, tokenId } = event.args
+  const id = buyNowId(nftContract, tokenId)
+  const existing = await context.db.find(fndBuyNows, { id })
+  if (!existing) return
+  await context.db
+    .update(fndBuyNows, { id })
+    .set({ status: "canceled", updatedAtTime: event.block.timestamp })
+})
+
+ponder.on("NFTMarket:BuyPriceAccepted", async ({ event, context }) => {
+  const {
+    nftContract,
+    tokenId,
+    seller,
+    buyer,
+    totalFees,
+    creatorRev,
+    sellerRev,
+  } = event.args
+  const id = buyNowId(nftContract, tokenId)
+  const priceWei = totalFees + creatorRev + sellerRev
+  const existing = await context.db.find(fndBuyNows, { id })
+
+  if (existing) {
+    await context.db.update(fndBuyNows, { id }).set({
+      status: "accepted",
+      updatedAtTime: event.block.timestamp,
+      acceptedBuyer: buyer,
+      acceptedTxHash: event.transaction.hash,
+      acceptedTotalFees: totalFees,
+      acceptedCreatorRev: creatorRev,
+      acceptedSellerRev: sellerRev,
+    })
+  }
+
+  // Sale row goes in regardless of whether the buyNow row was indexed —
+  // last-sale only needs the sale stream, not the listing context.
+  await context.db
+    .insert(fndSales)
+    .values({
+      id: `${event.transaction.hash}-${event.log.logIndex}`,
+      nftContract,
+      tokenId,
+      seller,
+      buyer,
+      priceWei,
+      source: "buyNow",
+      blockTime: event.block.timestamp,
+      txHash: event.transaction.hash,
+    })
+    .onConflictDoNothing()
+})
+
+ponder.on("NFTMarket:BuyPriceInvalidated", async ({ event, context }) => {
+  const { nftContract, tokenId } = event.args
+  const id = buyNowId(nftContract, tokenId)
+  const existing = await context.db.find(fndBuyNows, { id })
+  if (!existing) return
+  await context.db
+    .update(fndBuyNows, { id })
+    .set({ status: "invalidated", updatedAtTime: event.block.timestamp })
+})
