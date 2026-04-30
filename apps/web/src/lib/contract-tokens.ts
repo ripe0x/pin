@@ -2,14 +2,12 @@
  * Discover sibling tokens minted by the same creator on the same contract.
  *
  * Used by the token page to render "more from this artist on this contract"
- * below the auction panel. Reuses the artist-wide discovery from
- * `discoverArtistTokenRefs` and filters down to a single contract — the artist
- * gallery already pays this cost, so a hot cache is the common case.
+ * below the auction panel. Reads from the same `getCachedTokenRefs` 24h
+ * cache as the artist gallery so token-page loads don't repeat the discovery
+ * scan.
  */
-import {
-  discoverArtistTokenRefs,
-  type TokenRef,
-} from "./onchain-discovery"
+import { getCachedTokenRefs } from "./artist-cache"
+import type { TokenRef } from "./onchain-discovery"
 
 export type SiblingToken = TokenRef
 
@@ -24,7 +22,7 @@ export async function getTokensByContractAndCreator(
   const exclude = options.excludeTokenId
   const contractLower = nftContract.toLowerCase()
 
-  const allRefs = await discoverArtistTokenRefs(creator).catch(
+  const allRefs = await getCachedTokenRefs(creator).catch(
     () => [] as TokenRef[],
   )
 

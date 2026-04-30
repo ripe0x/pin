@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useAccount } from "wagmi"
-import { getSellerCancellableListings } from "@/lib/seller-listings"
+import { fetchSellerCancellableListings } from "@/lib/seller-listings"
 
 /**
  * Renders nothing unless the connected wallet is the artist AND has at least
@@ -26,7 +26,7 @@ export function MigrationBanner({ artistAddress }: { artistAddress: string }) {
     ;(async () => {
       try {
         const { auctions, buyNows } =
-          await getSellerCancellableListings(artistAddress)
+          await fetchSellerCancellableListings(artistAddress)
         if (cancelled) return
         setCount(auctions.length + buyNows.length)
       } catch {

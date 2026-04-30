@@ -6,7 +6,7 @@ import Link from "next/link"
 import { formatEther } from "viem"
 import { useAccount } from "wagmi"
 import {
-  getSellerCancellableListings,
+  fetchSellerCancellableListings,
   resolveListingMetadata,
   type SellerListing,
   type SellerListingMeta,
@@ -47,9 +47,8 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
   const refresh = useCallback(async () => {
     setLoad({ kind: "loading" })
     try {
-      const { auctions, buyNows } = await getSellerCancellableListings(
-        artistAddress,
-      )
+      const { auctions, buyNows } =
+        await fetchSellerCancellableListings(artistAddress)
       const all: SellerListing[] = [...auctions, ...buyNows]
       const meta = await resolveListingMetadata(all)
       setLoad({ kind: "loaded", auctions, buyNows, meta })

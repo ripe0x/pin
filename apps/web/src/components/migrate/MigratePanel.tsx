@@ -23,7 +23,7 @@ import {
 } from "@pin/abi"
 import { NFT_MARKET, MAINNET_CHAIN_ID } from "@pin/addresses"
 import {
-  getSellerCancellableListings,
+  fetchSellerCancellableListings,
   resolveListingMetadata,
   type AuctionListing,
   type BuyNowListing,
@@ -157,9 +157,8 @@ function Inner({
   const refresh = useCallback(async () => {
     setLoad({ kind: "loading" })
     try {
-      const { auctions, buyNows } = await getSellerCancellableListings(
-        artistAddress,
-      )
+      const { auctions, buyNows } =
+        await fetchSellerCancellableListings(artistAddress)
       const all: SellerListing[] = [...auctions, ...buyNows]
       const meta = await resolveListingMetadata(all)
       const rows = all.map((source): Row => {

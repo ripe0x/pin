@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { formatEther } from "viem"
-import { enrichTokens, type DiscoveredToken } from "@/lib/onchain-discovery"
+import type { DiscoveredToken } from "@/lib/onchain-discovery"
+import { getCachedEnrichedPage } from "@/lib/artist-cache"
 import { getTokensByContractAndCreator } from "@/lib/contract-tokens"
 import { getLastSalePriceForToken, type LastSale } from "@/lib/last-sale"
 
@@ -44,7 +45,7 @@ export async function MoreFromContractSection({
   // within Foundation sources).
   const priceTargets = refs.slice(0, 2)
   const [tokens, salesArr] = await Promise.all([
-    enrichTokens(refs),
+    getCachedEnrichedPage(refs),
     Promise.all(
       priceTargets.map((ref) =>
         getLastSalePriceForToken(ref.contract, ref.tokenId, creator).catch(

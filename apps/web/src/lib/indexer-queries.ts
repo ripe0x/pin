@@ -20,13 +20,12 @@ import { sql } from "./db"
 
 const INDEXER_DISABLED = process.env.INDEXER_DISABLED === "1"
 
+// Per-query default; overridable via the `withTimeout` second arg. Home-
+// page reads (square + counters) pass 2_000 because they're below the hero
+// behind Suspense, where a cold-Postgres-read of ~1s is acceptable; per-
+// token reads use this default so a slow indexer can't add latency to the
+// primary render.
 const QUERY_TIMEOUT_MS = 500
-
-// Home-page square + counters are below the hero behind Suspense, so a
-// longer timeout is acceptable. ~2s is enough for cold remote-Postgres
-// reads (Railway, Neon) without making the page feel hung if the indexer
-// is genuinely down — Suspense will simply resolve to null.
-const HOME_QUERY_TIMEOUT_MS = 2_000
 
 /**
  * Race a query against a timeout. Returns `null` if the query exceeds
@@ -212,7 +211,7 @@ export async function getActivePndAuctions(
       firstBidTime: Number(r.first_bid_time),
       createdAtTime: Number(r.created_at_time),
     }))
-  }, HOME_QUERY_TIMEOUT_MS)
+  }, 2_000)
 }
 
 export type PndHouse = {
@@ -249,7 +248,7 @@ export async function getPndHouses(limit = 24): Promise<PndHouse[] | null> {
       owner: r.owner,
       createdAtTime: Number(r.created_at_time),
     }))
-  }, HOME_QUERY_TIMEOUT_MS)
+  }, 2_000)
 }
 
 export type PlatformStats = {
@@ -289,7 +288,7 @@ export async function getPlatformStats(): Promise<PlatformStats | null> {
       housesDeployed: Number(houseRows[0]?.count ?? 0),
       ethSettledWei: BigInt(settledRows[0]?.total ?? "0"),
     }
-  }, HOME_QUERY_TIMEOUT_MS)
+  }, 2_000)
 }
 
 export async function getActiveAuctionCountFromIndexer(
