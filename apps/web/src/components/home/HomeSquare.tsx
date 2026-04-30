@@ -75,7 +75,7 @@ export async function HomeSquare() {
     .slice(0, HOME_GRID_SIZE)
 
   return (
-    <ul className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 auto-rows-fr">
+    <ul className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:auto-rows-fr">
       <li className="col-span-2 row-span-1">
         <HomeHeroTile />
       </li>

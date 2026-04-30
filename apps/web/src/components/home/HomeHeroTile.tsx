@@ -12,7 +12,7 @@ import { HomeEntryPoints } from "./HomeEntryPoints"
  */
 export function HomeHeroTile() {
   return (
-    <div className="border border-gray-200 p-6 lg:p-8 flex flex-col justify-between gap-8 h-full min-h-[359px]">
+    <div className="border border-gray-200 p-6 lg:p-8 flex flex-col justify-between gap-8 h-full lg:min-h-[359px]">
       <div className="space-y-5">
         <h1 className="text-2xl md:text-3xl font-semibold tracking-tight leading-tight max-w-md">
           artist infrastructure on Ethereum
