@@ -188,12 +188,12 @@ export default async function TokenPage({
       {/* Desktop: 2/3 sticky artwork + 1/3 scrolling sidebar. Mobile: stacked. */}
       <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] min-h-[calc(100vh-64px)]">
         {/* Left: sticky artwork */}
-        <div className="lg:sticky lg:top-16 lg:h-[calc(100vh-64px)] flex items-center justify-center bg-gray-100 p-8 lg:p-12">
+        <div className="lg:sticky lg:top-16 lg:h-[calc(100vh-64px)] flex items-center justify-center bg-gray-100 dark:bg-bg p-8 lg:p-12">
           <TokenMedia url={data.imageUrl} title={data.title} />
         </div>
 
         {/* Right: scrolling sidebar */}
-        <aside className="lg:border-l border-gray-200 px-6 py-8 lg:px-8 lg:py-10">
+        <aside className="lg:border-l border-gray-200 dark:bg-gray-100 px-6 py-8 lg:px-8 lg:py-10">
           {/* Title + creator */}
           <section className="pb-5 border-b border-gray-100 space-y-2">
             {data.creator && (
