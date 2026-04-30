@@ -30,7 +30,12 @@ import {
   discoverManifoldTokenRefs,
 } from "./manifold-discovery"
 import { mapWithConcurrency } from "./concurrency"
-import { getFoundationArtistTokensFromIndexer } from "./indexer-queries"
+import {
+  readFoundationArtistTokens,
+  writeFoundationArtistTokens,
+  LAZY_TTL,
+  isFresh,
+} from "./lazy-index"
 
 const FOUNDATION_NFT_ADDRESS = FOUNDATION_NFT[MAINNET_CHAIN_ID]
 const FACTORY_V1 = COLLECTION_FACTORY_V1[MAINNET_CHAIN_ID]
@@ -162,38 +167,51 @@ export async function discoverArtistTokenRefs(
   const client = getClient()
   const artist = artistAddress.toLowerCase() as Address
 
-  // Indexer-first for the Foundation side. When Ponder is up, both
-  // shared-contract Minted events and per-artist collection mints have
-  // already been written to fnd_artist_tokens — replaces 7+ parallel
-  // `eth_getLogs` scans (1 shared Minted + 6 collection-factory event
-  // streams + per-collection Transfer scans) with a single SQL query.
-  const indexerFoundationRefs =
-    await getFoundationArtistTokensFromIndexer(artist)
+  // Lazy index read for the Foundation side. If a fresh row exists for
+  // this artist, return it without RPC — replaces 7+ parallel `eth_getLogs`
+  // scans (1 shared Minted + 6 collection-factory event streams + per-
+  // collection Transfer scans) with a single Postgres point query.
+  const cached = await readFoundationArtistTokens(artist)
+  const useCache =
+    cached !== null && isFresh(cached.lastIndexedAt, LAZY_TTL.foundationArtistTokens)
 
   const latestBlock = await client.getBlockNumber()
 
   const [sharedRefs, collectionRefs, manifoldRefs] = await Promise.all([
-    indexerFoundationRefs !== null
+    useCache
       ? Promise.resolve([] as SortableRef[])
       : discoverSharedContractRefs(client, artist, latestBlock),
-    indexerFoundationRefs !== null
+    useCache
       ? Promise.resolve([] as SortableRef[])
       : discoverCollectionRefs(client, artist, latestBlock),
     discoverManifoldTokenRefs(artist),
   ])
 
-  // When the indexer served Foundation refs, hydrate them into
-  // SortableRefs alongside the (empty) RPC-fallback arrays so the
-  // downstream sort + dedupe sees the same shape.
-  const indexerFoundationSortable: SortableRef[] =
-    indexerFoundationRefs?.map((r) => ({
+  // When the cache is fresh, hydrate cached rows into SortableRefs.
+  // Otherwise we just ran the RPC scans above; persist their result for
+  // the next miss before returning.
+  let indexerFoundationSortable: SortableRef[] = []
+  if (useCache && cached) {
+    indexerFoundationSortable = cached.refs.map((r) => ({
       contract: r.contract as Address,
       tokenId: r.tokenId,
       creator: artist,
       collectionName: null,
       blockNumber: r.blockNumber,
       logIndex: r.logIndex,
-    })) ?? []
+    }))
+  } else {
+    const allFoundationRefs = [...sharedRefs, ...collectionRefs]
+    writeFoundationArtistTokens(
+      artist,
+      allFoundationRefs.map((r) => ({
+        contract: r.contract,
+        tokenId: r.tokenId,
+        blockNumber: r.blockNumber,
+        logIndex: r.logIndex,
+      })),
+    )
+  }
 
   // Newest-first within Foundation sources (block desc, logIndex desc).
   const foundationSorted = [

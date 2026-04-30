@@ -16,10 +16,14 @@ import {
 import { mainnet } from "viem/chains"
 import { erc721Abi, nftMarketAbi, sovereignAuctionHouseAbi, sovereignAuctionHouseFactoryAbi } from "@pin/abi"
 import { pgCache } from "./pg-cache"
+import { getActiveAuctionCountFromIndexer } from "./indexer-queries"
 import {
-  getActiveAuctionCountFromIndexer,
-  getFoundationBidHistoryFromIndexer,
-} from "./indexer-queries"
+  readFoundationBidHistory,
+  readFoundationBidHistoryFreshness,
+  writeFoundationBidHistory,
+  LAZY_TTL,
+  isFresh,
+} from "./lazy-index"
 import {
   NFT_MARKET,
   MAINNET_CHAIN_ID,
@@ -361,19 +365,20 @@ async function getFoundationBidHistory(
   client: ReturnType<typeof createPublicClient>,
   auctionId: bigint,
 ): Promise<Array<Omit<BidHistoryEntry, "bidderDisplay">>> {
-  // Indexer-first: when Ponder is up, bid history comes from `fnd_bids` —
-  // skips the `eth_getLogs` + per-block `getBlockByNumber` round-trips
-  // (1 + N RPC calls per cache miss). Falls back to RPC when null.
-  const fromIndexer = await getFoundationBidHistoryFromIndexer(
-    auctionId.toString(),
-  )
-  if (fromIndexer !== null) {
-    return fromIndexer.map((b) => ({
-      bidder: b.bidder as Address,
-      amount: b.amount,
-      blockTime: b.blockTime,
-      txHash: b.txHash as `0x${string}`,
-    }))
+  // Lazy index read: if recent rows exist, return them and skip the RPC
+  // scan + per-block timestamp round-trips entirely.
+  const auctionIdStr = auctionId.toString()
+  const freshness = await readFoundationBidHistoryFreshness(auctionIdStr)
+  if (freshness && isFresh(freshness, LAZY_TTL.foundationBids)) {
+    const cached = await readFoundationBidHistory(auctionIdStr)
+    if (cached) {
+      return cached.map((b) => ({
+        bidder: b.bidder as Address,
+        amount: b.amount,
+        blockTime: b.blockTime,
+        txHash: b.txHash as `0x${string}`,
+      }))
+    }
   }
 
   const logs = await client
@@ -386,7 +391,37 @@ async function getFoundationBidHistory(
     })
     .catch(() => [])
 
-  return enrichBidLogs(client, logs, "amount")
+  const enriched = await enrichBidLogs(client, logs, "amount")
+
+  // Fire-and-forget UPSERT. We have the txHash from each log; logIndex
+  // isn't on the enriched type so we re-derive it from the raw logs.
+  if (enriched.length > 0) {
+    const logsByTx = new Map<string, number>()
+    for (const l of logs) {
+      if (l.transactionHash && typeof l.logIndex === "number") {
+        logsByTx.set(l.transactionHash, l.logIndex)
+      }
+    }
+    const blocksByTx = new Map<string, bigint>()
+    for (const l of logs) {
+      if (l.transactionHash && l.blockNumber !== null) {
+        blocksByTx.set(l.transactionHash, l.blockNumber)
+      }
+    }
+    writeFoundationBidHistory(
+      auctionIdStr,
+      enriched.map((b) => ({
+        txHash: b.txHash,
+        logIndex: logsByTx.get(b.txHash) ?? 0,
+        bidder: b.bidder,
+        amount: b.amount,
+        blockTime: b.blockTime,
+        blockNumber: blocksByTx.get(b.txHash) ?? 0n,
+      })),
+    )
+  }
+
+  return enriched
 }
 
 async function getFoundationFees(

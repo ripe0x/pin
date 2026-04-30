@@ -24,10 +24,13 @@ import { mainnet } from "viem/chains"
 import { unstable_cache } from "next/cache"
 import { sovereignAuctionHouseFactoryAbi } from "@pin/abi"
 import { pgCache } from "./pg-cache"
+import { getSettledAuctionForToken } from "./indexer-queries"
 import {
-  getSettledAuctionForToken,
-  getFoundationLastSaleFromIndexer,
-} from "./indexer-queries"
+  readFoundationLastSale,
+  writeFoundationLastSale,
+  LAZY_TTL,
+  isFresh,
+} from "./lazy-index"
 import {
   NFT_MARKET,
   MAINNET_CHAIN_ID,
@@ -82,6 +85,36 @@ function getClient() {
 }
 
 async function getFoundationLastSale(
+  client: ReturnType<typeof createPublicClient>,
+  nftContract: Address,
+  tokenId: bigint,
+): Promise<LastSale | null> {
+  // Lazy index read: if a recent row exists, return it without RPC.
+  const cached = await readFoundationLastSale(nftContract, tokenId.toString())
+  if (cached && isFresh(cached.lastIndexedAt, LAZY_TTL.foundationSale)) {
+    return {
+      priceWei: cached.priceWei,
+      blockTime: cached.blockTime,
+      source: "foundation",
+      txHash: cached.txHash,
+    }
+  }
+
+  const sale = await scanFoundationLastSale(client, nftContract, tokenId)
+  // Fire-and-forget UPSERT so the next miss within the TTL window collapses
+  // to a Postgres point lookup.
+  if (sale) {
+    writeFoundationLastSale(nftContract, tokenId.toString(), {
+      priceWei: sale.priceWei,
+      blockTime: sale.blockTime,
+      source: "auction", // we'll widen this to buyNow once we lazy-index acceptances
+      txHash: sale.txHash,
+    })
+  }
+  return sale
+}
+
+async function scanFoundationLastSale(
   client: ReturnType<typeof createPublicClient>,
   nftContract: Address,
   tokenId: bigint,
@@ -238,19 +271,16 @@ async function getLastSalePriceCached(
   const contract = nftContract as Address
   const tokenIdBig = BigInt(tokenId)
 
-  // Indexer-first for both sources. When Ponder is up:
-  //   - Sovereign: read from `pnd_auctions` (status='settled')
-  //   - Foundation: read from `fnd_sales` (latest by block_time)
-  // Each falls through to its own RPC scan when the indexer returns null.
-  const [sovereignFromIndexer, foundationFromIndexer] = await Promise.all([
-    getSovereignLastSaleFromIndexer(nftContract, tokenId),
-    getFoundationLastSaleFromIndexerHydrated(nftContract, tokenId),
-  ])
+  // Sovereign reads through the indexer-queries helper (Ponder serves it).
+  // Foundation reads through `getFoundationLastSale`, which now does a lazy
+  // index lookup before falling back to RPC + persisting on miss.
+  const sovereignFromIndexer = await getSovereignLastSaleFromIndexer(
+    nftContract,
+    tokenId,
+  )
 
   const [foundation, sovereign] = await Promise.all([
-    foundationFromIndexer
-      ? Promise.resolve(foundationFromIndexer)
-      : getFoundationLastSale(client, contract, tokenIdBig),
+    getFoundationLastSale(client, contract, tokenIdBig),
     sovereignFromIndexer
       ? Promise.resolve(sovereignFromIndexer)
       : creator
@@ -291,20 +321,6 @@ async function getSovereignLastSaleFromIndexer(
     // pndAuctions doesn't store the AuctionEnded txHash. UI doesn't render
     // it (MoreFromContract uses priceWei + blockTime only).
     txHash: "",
-  }
-}
-
-async function getFoundationLastSaleFromIndexerHydrated(
-  nftContract: string,
-  tokenId: string,
-): Promise<LastSale | null> {
-  const sale = await getFoundationLastSaleFromIndexer(nftContract, tokenId)
-  if (!sale) return null
-  return {
-    priceWei: sale.priceWei,
-    blockTime: sale.blockTime,
-    source: "foundation",
-    txHash: sale.txHash,
   }
 }
 

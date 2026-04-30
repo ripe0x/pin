@@ -2,7 +2,12 @@ import { NextResponse } from "next/server"
 import { unstable_cache } from "next/cache"
 import { pgCache } from "@/lib/pg-cache"
 import { getSellerCancellableListings } from "@/lib/seller-listings"
-import { getFoundationCancellableListingsFromIndexer } from "@/lib/indexer-queries"
+import {
+  readFoundationSellerListings,
+  writeFoundationSellerListings,
+  LAZY_TTL,
+  isFresh,
+} from "@/lib/lazy-index"
 
 /**
  * Wraps `getSellerCancellableListings` (two ~10M-block `getLogs` + multicalls
@@ -42,34 +47,17 @@ const SELLER_LISTINGS_TTL_S = 5 * 60
 async function buildPayload(
   sellerAddress: string,
 ): Promise<SellerListingsPayload> {
-  // Indexer-first: when Ponder is up, the active rows are already in
-  // `fnd_auctions` + `fnd_buy_nows` — skips the two ~10M-block `eth_getLogs`
-  // scans + multicall in `getSellerCancellableListings`.
-  const fromIndexer =
-    await getFoundationCancellableListingsFromIndexer(sellerAddress)
-  if (fromIndexer !== null) {
+  // Lazy index read: if a fresh row exists, return it without RPC.
+  const cached = await readFoundationSellerListings(sellerAddress)
+  if (cached && isFresh(cached.lastIndexedAt, LAZY_TTL.foundationSellerListings)) {
     return {
-      auctions: fromIndexer.auctions.map((a) => ({
-        kind: "auction" as const,
-        id: `auction:${a.auctionId}`,
-        auctionId: a.auctionId,
-        nftContract: a.nftContract,
-        tokenId: a.tokenId,
-        reserveWei: a.reserveWei.toString(),
-        durationSeconds: a.durationSeconds,
-      })),
-      buyNows: fromIndexer.buyNows.map((b) => ({
-        kind: "buyNow" as const,
-        id: `buyNow:${b.nftContract}:${b.tokenId}`,
-        nftContract: b.nftContract,
-        tokenId: b.tokenId,
-        priceWei: b.priceWei.toString(),
-      })),
+      auctions: cached.auctions.map((a) => ({ ...a, kind: "auction" as const })),
+      buyNows: cached.buyNows.map((b) => ({ ...b, kind: "buyNow" as const })),
     }
   }
 
   const { auctions, buyNows } = await getSellerCancellableListings(sellerAddress)
-  return {
+  const payload: SellerListingsPayload = {
     auctions: auctions.map((a) => ({
       kind: "auction" as const,
       id: a.id,
@@ -87,6 +75,9 @@ async function buildPayload(
       priceWei: b.priceWei.toString(),
     })),
   }
+  // Fire-and-forget — next miss within 5 min hits Postgres only.
+  writeFoundationSellerListings(sellerAddress, payload)
+  return payload
 }
 
 const cached = unstable_cache(
