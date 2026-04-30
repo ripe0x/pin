@@ -513,10 +513,12 @@ function FeesBreakdown({
         <>
           <hr className="my-3 border-t border-gray-200" />
           <div className="flex items-baseline justify-between gap-3 text-[11px] font-mono">
-            <span className="text-gray-500 flex-1 pl-4 -indent-4 [text-wrap:balance]">
-              {/* Hanging indent: "+" sits in a 1rem gutter so wrapped
-                  lines align with "3%" rather than the "+" sign.
-                  Non-breaking space keeps "marketplace fee" together. */}
+            <span className="text-gray-500 flex-1 [padding-left:2ch] [text-indent:-2ch] [text-wrap:balance]">
+              {/* Hanging indent sized in `ch` units so the gutter is
+                  exactly the width of "+ " (two monospace chars) —
+                  wrapped lines align precisely under "3" rather than
+                  drifting right of it. Non-breaking space keeps
+                  "marketplace fee" together. */}
               + 3% Additional SuperRare marketplace&nbsp;fee
             </span>
             <span className="tabular-nums text-gray-700 text-right whitespace-nowrap">
