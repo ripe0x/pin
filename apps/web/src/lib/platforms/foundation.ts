@@ -1,6 +1,7 @@
 import "server-only"
 import { createPublicClient, http, type Address } from "viem"
 import { mainnet } from "viem/chains"
+import { FOUNDATION_NFT, MAINNET_CHAIN_ID } from "@pin/addresses"
 import type {
   PlatformAdapter,
   ArtistTokenRef,
@@ -10,6 +11,16 @@ import type {
 } from "./types"
 import { discoverFoundationArtistRefs } from "../onchain-discovery"
 import { getFoundationLastSale } from "../last-sale"
+import { getNFTsForOwner } from "../alchemy"
+import { sql } from "../db"
+import {
+  readFoundationCollectorTokens,
+  writeFoundationCollectorTokens,
+  LAZY_TTL,
+  isFresh,
+} from "../lazy-index"
+
+const FOUNDATION_NFT_ADDRESS = FOUNDATION_NFT[MAINNET_CHAIN_ID]
 
 function getClient() {
   return createPublicClient({
@@ -54,14 +65,65 @@ export const foundationAdapter: PlatformAdapter = {
     }))
   },
 
-  async discoverCollectorTokens(): Promise<CollectorTokenRef[]> {
-    // TODO: scan Transfer(to=wallet) on FoundationNFT shared contract +
-    // every per-artist Foundation collection contract we've discovered
-    // (lazy_fnd_collections). Stub returns [] for now so the
-    // /collector/[address] page can land with Sovereign tokens; this
-    // gets implemented in a follow-up alongside the per-artist
-    // collection scan.
-    return []
+  async discoverCollectorTokens(
+    wallet: Address,
+  ): Promise<CollectorTokenRef[]> {
+    // Lazy read first.
+    const cached = await readFoundationCollectorTokens(wallet)
+    if (cached && isFresh(cached.lastIndexedAt, LAZY_TTL.foundationCollectorTokens)) {
+      return cached.tokens.map((t) => ({
+        platform: "foundation",
+        contract: t.contract as Address,
+        tokenId: t.tokenId,
+        ownerWallet: wallet,
+        acquiredAtBlock: t.acquiredAtBlock,
+        acquiredTxHash: t.acquiredTxHash,
+      }))
+    }
+
+    // Build the list of Foundation contracts we know about: the shared
+    // 1/1 contract + every per-artist collection we've discovered via
+    // artist-gallery views (lazy_fnd_artist_tokens.contract).
+    const contracts = new Set<string>([FOUNDATION_NFT_ADDRESS.toLowerCase()])
+    if (sql) {
+      try {
+        const rows = await sql<Array<{ contract: string }>>`
+          SELECT DISTINCT contract FROM lazy_fnd_artist_tokens
+        `
+        for (const r of rows) contracts.add(r.contract.toLowerCase())
+      } catch {
+        /* DB transient — proceed with just the shared contract */
+      }
+    }
+    const contractList = [...contracts]
+
+    // Alchemy NFT API tracks current ownership; one paginated call (or
+    // batched if > 45 contracts) returns the wallet's owned tokens
+    // across all known Foundation contracts. No per-token ownerOf
+    // re-check needed.
+    const owned = await getNFTsForOwner(wallet, contractList)
+
+    const refs: CollectorTokenRef[] = owned.map((o) => ({
+      platform: "foundation",
+      contract: o.contract as Address,
+      tokenId: o.tokenId,
+      ownerWallet: wallet,
+      // NFT API doesn't surface acquisition block; collector display
+      // only needs current ownership. 0n is the sentinel.
+      acquiredAtBlock: 0n,
+      acquiredTxHash: null,
+    }))
+
+    writeFoundationCollectorTokens(
+      wallet,
+      refs.map((r) => ({
+        contract: r.contract,
+        tokenId: r.tokenId,
+        acquiredAtBlock: r.acquiredAtBlock,
+        acquiredTxHash: r.acquiredTxHash,
+      })),
+    )
+    return refs
   },
 
   async getLastSale(

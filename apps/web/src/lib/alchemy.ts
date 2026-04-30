@@ -125,6 +125,117 @@ export async function getAssetTransfers(
   return all
 }
 
+export type OwnedNft = {
+  contract: string
+  tokenId: string
+}
+
+/**
+ * Tokens currently owned by `wallet`, optionally filtered to a list of
+ * contract addresses (max 45 per Alchemy NFT API). Returns the union
+ * across all paginated calls. Used by collector-side adapter methods
+ * (`discoverCollectorTokens`) to avoid scanning Transfer events
+ * directly — the NFT API already tracks current ownership.
+ *
+ * `contractAddresses` is required: passing an unfiltered call back from
+ * the gallery tier costs significantly more (Alchemy charges per page
+ * regardless of result count), and we always have a known list of
+ * contracts per platform.
+ */
+export async function getNFTsForOwner(
+  wallet: string,
+  contractAddresses: string[],
+): Promise<OwnedNft[]> {
+  if (!NFT_URL || contractAddresses.length === 0) return []
+
+  // Alchemy caps contractAddresses at 45 per call. Batch if larger.
+  const BATCH = 45
+  const batches: string[][] = []
+  for (let i = 0; i < contractAddresses.length; i += BATCH) {
+    batches.push(contractAddresses.slice(i, i + BATCH))
+  }
+
+  const out: OwnedNft[] = []
+  for (const batch of batches) {
+    let pageKey: string | undefined
+    do {
+      const url = new URL(`${NFT_URL}/getNFTsForOwner`)
+      url.searchParams.set("owner", wallet)
+      url.searchParams.set("withMetadata", "false")
+      url.searchParams.set("pageSize", "100")
+      for (const c of batch) url.searchParams.append("contractAddresses[]", c)
+      if (pageKey) url.searchParams.set("pageKey", pageKey)
+
+      let json: {
+        ownedNfts?: Array<{ contract: { address: string }; tokenId: string }>
+        pageKey?: string
+      }
+      try {
+        const res = await fetch(url, { signal: AbortSignal.timeout(15_000) })
+        if (!res.ok) break
+        json = (await res.json()) as typeof json
+      } catch {
+        break
+      }
+      for (const n of json.ownedNfts ?? []) {
+        out.push({ contract: n.contract.address, tokenId: n.tokenId })
+      }
+      pageKey = json.pageKey
+    } while (pageKey)
+  }
+  return out
+}
+
+/**
+ * Unfiltered version: every NFT the wallet currently owns, across all
+ * contracts. Used by Manifold's collector adapter where the universe of
+ * Manifold creator-core contracts isn't known in advance — we pull the
+ * wallet's full inventory and classify by supportsInterface afterward.
+ *
+ * Bounded by `MAX_PAGES` to prevent a whale wallet from running away
+ * with cost. Each page is a separate billable NFT API call (~150 CU).
+ */
+export async function getAllNFTsForOwner(
+  wallet: string,
+  maxPages = 20,
+): Promise<OwnedNft[]> {
+  if (!NFT_URL) return []
+  const out: OwnedNft[] = []
+  let pageKey: string | undefined
+  let pages = 0
+  do {
+    const url = new URL(`${NFT_URL}/getNFTsForOwner`)
+    url.searchParams.set("owner", wallet)
+    url.searchParams.set("withMetadata", "false")
+    url.searchParams.set("pageSize", "100")
+    if (pageKey) url.searchParams.set("pageKey", pageKey)
+
+    let json: {
+      ownedNfts?: Array<{ contract: { address: string }; tokenId: string }>
+      pageKey?: string
+    }
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(15_000) })
+      if (!res.ok) break
+      json = (await res.json()) as typeof json
+    } catch {
+      break
+    }
+    for (const n of json.ownedNfts ?? []) {
+      out.push({ contract: n.contract.address, tokenId: n.tokenId })
+    }
+    pageKey = json.pageKey
+    pages++
+    if (pages >= maxPages && pageKey) {
+      console.warn(
+        `getAllNFTsForOwner: hit ${maxPages}-page cap on ${wallet}; tail truncated.`,
+      )
+      break
+    }
+  } while (pageKey)
+  return out
+}
+
 export type NftOwner = {
   ownerAddress: string
   tokenBalances: Array<{ tokenId: string; balance: string }>

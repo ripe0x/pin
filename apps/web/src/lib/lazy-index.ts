@@ -651,6 +651,54 @@ export function writeManifoldArtistTokens(
   })()
 }
 
+// ─── Per-contract classification cache ───────────────────────────────────
+// Shared across platforms: caches `supportsInterface(<id>)` results so
+// collector adapters don't re-check every contract they discover.
+
+export async function readContractClassifications(
+  contracts: string[],
+  kind: string,
+): Promise<Map<string, boolean>> {
+  const out = new Map<string, boolean>()
+  if (!sql || contracts.length === 0) return out
+  try {
+    const rows = await sql<
+      Array<{ contract: string; is_match: boolean }>
+    >`
+      SELECT contract, is_match
+      FROM lazy_contract_classification
+      WHERE kind = ${kind}
+        AND contract = ANY(${contracts.map((c) => c.toLowerCase())})
+    `
+    for (const r of rows) out.set(r.contract, r.is_match)
+  } catch {
+    /* ignore */
+  }
+  return out
+}
+
+export function writeContractClassifications(
+  results: Array<{ contract: string; kind: string; isMatch: boolean }>,
+): void {
+  if (!sql || results.length === 0) return
+  void (async () => {
+    try {
+      for (const r of results) {
+        await sql`
+          INSERT INTO lazy_contract_classification
+            (contract, kind, is_match, last_indexed_at)
+          VALUES (${r.contract.toLowerCase()}, ${r.kind}, ${r.isMatch}, NOW())
+          ON CONFLICT (contract, kind) DO UPDATE
+            SET is_match = EXCLUDED.is_match,
+                last_indexed_at = NOW()
+        `
+      }
+    } catch {
+      /* ignore */
+    }
+  })()
+}
+
 /**
  * Per-table TTLs. The lazy layer sits BELOW `pgCache` (existing 7d TTL
  * on `last-sale:` keys, 24h on artist refs). Lazy TTLs must therefore be
