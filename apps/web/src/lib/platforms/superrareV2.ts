@@ -63,6 +63,18 @@ const auctionSettledEvent = parseAbiItem(
 // ranges when topics are indexed (matches Foundation's BLOCK_RANGE).
 const BLOCK_RANGE = 2_000_000n
 
+// Minimal ABI for SR V2 NFT's tokenCreator(tokenId) — used to determine
+// primary vs secondary sale (if seller == creator, primary).
+const tokenCreatorAbi = [
+  {
+    type: "function",
+    name: "tokenCreator",
+    stateMutability: "view",
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    outputs: [{ name: "", type: "address" }],
+  },
+] as const
+
 function getClient() {
   return createPublicClient({
     chain: mainnet,
@@ -310,7 +322,12 @@ export const superrareV2Adapter: PlatformAdapter = {
     // (creator, creationBlock, startingTime, lengthOfAuction, currency,
     // minimumBid, auctionType); auctionBids returns
     // (bidder, currency, amount, marketplaceFee).
-    const [auction, bid] = await Promise.all([
+    // Read static auction config, live bid, and the original token
+    // creator in parallel. tokenCreator(tokenId) on the V2 NFT contract
+    // returns the address that minted the token — comparing against the
+    // auction's seller tells us primary vs secondary, which determines
+    // the royalty/fee split per SR's pricing rules.
+    const [auction, bid, tokenCreator] = await Promise.all([
       client
         .readContract({
           address: SR_BAZAAR,
@@ -325,6 +342,14 @@ export const superrareV2Adapter: PlatformAdapter = {
           abi: superrareBazaarAbi,
           functionName: "auctionBids",
           args: [contract, BigInt(tokenId)],
+        })
+        .catch(() => null),
+      client
+        .readContract({
+          address: contract,
+          abi: tokenCreatorAbi,
+          functionName: "tokenCreator",
+          args: [BigInt(tokenId)],
         })
         .catch(() => null),
     ])
@@ -383,16 +408,51 @@ export const superrareV2Adapter: PlatformAdapter = {
     const names = await resolveDisplayNames(addressesToResolve)
     const lookup = (a: Address) => names.get(a.toLowerCase()) ?? a
 
-    // Fees: SR's marketplace fee is enforced by the contract on settle.
-    // Surface a static "SuperRare" label so the panel renders the
-    // platform attribution; bps are not directly readable as a single
-    // call so we leave the breakdown null for now.
-    const fees: AuctionFees | null = {
-      platformLabel: "SuperRare",
-      protocolFeeBps: 0,
-      creatorRoyaltyBps: 0,
-      sellerBps: 0,
-    }
+    // SR Bazaar fee structure (per superrare.com/help/articles/10629742).
+    // The 3% marketplace fee is a buyer's premium charged on top of the
+    // bid amount in auctions — already shown separately in the bid form
+    // ("+ 3% buyer's premium"). The bps below describe how the BID
+    // AMOUNT itself is distributed at settlement, matching the existing
+    // FeesBreakdown convention used by Foundation/PND auctions:
+    //
+    //   Primary sale  (seller IS the original creator):
+    //     - Artist receives 85% of the bid (= "Seller receives" row)
+    //     - SR DAO Treasury receives 15% of the bid (= "SuperRare fee" row)
+    //
+    //   Secondary sale (seller ≠ original creator):
+    //     - Seller receives 90% of the bid
+    //     - Original creator royalty: 10% of the bid
+    //     - SR's only take is the 3% buyer's premium on top (no cut from
+    //       the bid itself — the bid is fully distributed seller+royalty)
+    //
+    // We determine primary vs secondary by comparing the original
+    // tokenCreator (the wallet that minted the token) against the
+    // current auction's seller.
+    const isPrimary =
+      tokenCreator !== null &&
+      typeof tokenCreator === "string" &&
+      tokenCreator.toLowerCase() === auctionCreator.toLowerCase()
+
+    // We collapse SR's two pre-seller takes into a single "SuperRare fee"
+    // line so the breakdown matches the simpler Foundation/PND display.
+    // On primary that's the 15% DAO Treasury cut; on secondary the 10%
+    // is technically a royalty paid to the original creator (not SR
+    // itself) — but from the seller's perspective both look the same:
+    // a fixed % of the bid taken before the seller is paid. The creator
+    // royalty row stays empty so we don't double-count.
+    const fees: AuctionFees | null = isPrimary
+      ? {
+          platformLabel: "SuperRare",
+          protocolFeeBps: 1500, // 15% of bid → SR DAO (primary)
+          creatorRoyaltyBps: 0,
+          sellerBps: 8500, // 85% of bid → artist
+        }
+      : {
+          platformLabel: "SuperRare",
+          protocolFeeBps: 1000, // 10% of bid → original creator (secondary royalty)
+          creatorRoyaltyBps: 0,
+          sellerBps: 9000, // 90% of bid → seller
+        }
 
     return {
       source: "superrareV2",

@@ -1,13 +1,32 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
 import { formatEther } from "viem"
 import {
   useAccount,
+  useBalance,
   useBlock,
+  useChainId,
+  useReadContract,
+  useSwitchChain,
   useWriteContract,
   useWaitForTransactionReceipt,
 } from "wagmi"
+import { foundry, mainnet } from "wagmi/chains"
+
+// When the dev server's mainnet RPC is pointed at a local fork
+// (NEXT_PUBLIC_ALCHEMY_MAINNET_URL=http://localhost:*), we're in
+// fork-testing mode and the *preferred* chain is foundry — sending
+// txs on real Ethereum mainnet would bypass the fork. In production
+// this env var points at Alchemy and the preferred chain is mainnet.
+// `NEXT_PUBLIC_*` vars are inlined at build time so this evaluates
+// statically per build.
+const FORK_MODE = !!process.env.NEXT_PUBLIC_ALCHEMY_MAINNET_URL?.match(
+  /^https?:\/\/(localhost|127\.0\.0\.1)/,
+)
+const PREFERRED_CHAIN = FORK_MODE ? foundry : mainnet
+const PREFERRED_CHAIN_LABEL = FORK_MODE ? "Foundry (local fork)" : "Ethereum"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { nftMarketAbi, sovereignAuctionHouseAbi, superrareBazaarAbi } from "@pin/abi"
 import { useEthAmountInput } from "@/lib/useEthAmountInput"
@@ -19,6 +38,46 @@ import type {
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
+/**
+ * Format a wagmi/viem write error for display. viem attaches the actual
+ * revert reason on the error's `cause.cause...` chain (and a friendlier
+ * `shortMessage` on the top-level error). The default Error.message is
+ * a multi-line block whose first line is just "The contract function X
+ * reverted with the following reason:" — useless without the next line.
+ * Walk the cause chain to find the deepest message that contains the
+ * actual on-chain revert string (typically prefixed `<func>::<reason>`).
+ */
+function formatWriteError(err: unknown, action: "Bid" | "Settle" | "Cancel" | "Update"): string {
+  if (!err || typeof err !== "object") return `${action} failed`
+  const e = err as {
+    message?: string
+    shortMessage?: string
+    cause?: unknown
+    metaMessages?: string[]
+  }
+  if (e.message?.includes("User rejected")) return "Transaction rejected"
+  if (e.message?.includes("insufficient funds")) return "Insufficient ETH balance"
+
+  // Walk cause chain for the deepest shortMessage / reason.
+  let deepest: string | undefined = e.shortMessage
+  let cur: unknown = e.cause
+  for (let i = 0; i < 6 && cur && typeof cur === "object"; i++) {
+    const c = cur as { shortMessage?: string; reason?: string; cause?: unknown }
+    if (c.shortMessage) deepest = c.shortMessage
+    if (c.reason) deepest = c.reason
+    cur = c.cause
+  }
+  // metaMessages often holds the reverted reason as a follow-on line.
+  if (!deepest && Array.isArray(e.metaMessages)) {
+    const reasonLine = e.metaMessages.find((m) =>
+      /::|reverted|require/i.test(m),
+    )
+    if (reasonLine) deepest = reasonLine.trim()
+  }
+  if (!deepest) deepest = e.message?.split("\n")[0]
+  return `${action} failed: ${deepest ?? "unknown error"}`
+}
+
 // SuperRare Bazaar's MarketplaceSettings.getMarketplaceFeePercentage()
 // has returned 3 (i.e. 3%) for years. The fee is a buyer's premium —
 // added on top of the recorded bid amount. We hardcode rather than
@@ -27,29 +86,141 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 // and we'd update this constant.
 const SR_MARKETPLACE_FEE_BPS = 300n // 3.00%
 
+// Chainlink ETH/USD price feed on mainnet. Returns answer with 8 decimals.
+// We read once per panel render via wagmi (cached by react-query); the
+// number drives the "$X.XX" suffix on each fee row.
+const CHAINLINK_ETH_USD = "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419"
+const chainlinkLatestAnswerAbi = [
+  {
+    type: "function",
+    name: "latestAnswer",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "int256" }],
+  },
+] as const
+
 /**
- * Fire a one-shot, fire-and-forget POST to the auction revalidation route
- * when a write tx (bid / settle / cancel / update) confirms. The route
- * `revalidateTag`s the cached `getAuctionForToken` for *this* token only,
- * so the next render fetches fresh chain state instead of waiting out the
- * 30s TTL — the bidder sees their bid land instantly, while bot/refresh
- * traffic to *other* auctions stays cached.
- *
- * Failures are intentionally swallowed: revalidation is an optimization,
- * and the existing "Refresh to see updated state" button is the user's
- * fallback if the network call hiccups.
+ * Current ETH/USD price from Chainlink. Returns null while loading or
+ * if the read fails — callers should hide the USD column rather than
+ * render a misleading "$0.00".
  */
+function useEthPriceUsd(): number | null {
+  const chainId = useChainId()
+  const { data } = useReadContract({
+    address: CHAINLINK_ETH_USD,
+    abi: chainlinkLatestAnswerAbi,
+    functionName: "latestAnswer",
+    chainId,
+  })
+  if (data === undefined || data === null) return null
+  // 8 decimals on the feed.
+  return Number(data) / 1e8
+}
+
+/**
+ * Compact ETH formatter: chooses precision by magnitude (avoid pretending
+ * we know femtosats for 1.5 ETH) and strips trailing zeros so values
+ * read as "0.3 ETH" / "1.7 ETH" / "0.06 ETH" instead of padded decimals.
+ */
+function formatEthShort(wei: bigint): string {
+  const eth = Number(formatEther(wei))
+  const fixed = eth >= 1 ? eth.toFixed(3) : eth >= 0.01 ? eth.toFixed(4) : eth.toFixed(5)
+  // Strip trailing zeros after the decimal, then a hanging dot if any.
+  return fixed.replace(/\.?0+$/, "")
+}
+
+const usdNoCents = new Intl.NumberFormat(undefined, {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+})
+const usdWithCents = new Intl.NumberFormat(undefined, {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
+
+function formatUsd(wei: bigint, ethPriceUsd: number): string {
+  const usd = Number(formatEther(wei)) * ethPriceUsd
+  // Cents only matter for sub-$100 amounts; above that the locale-aware
+  // thousands separator (",") is what you want and decimals are noise.
+  return usd >= 100 ? usdNoCents.format(usd) : usdWithCents.format(usd)
+}
+
+/**
+ * On successful write tx: invalidate the cached `getAuctionForToken`
+ * server-side (so the next read fetches fresh chain state instead of
+ * waiting out the 30s TTL), then call `router.refresh()` to re-fetch
+ * the server-rendered auction state in place — the panel re-renders
+ * with the new bid / settled / cancelled state automatically. No manual
+ * page reload needed.
+ *
+ * Network failures on the revalidate POST are swallowed: the
+ * `router.refresh()` will still fire and the next read will hit a
+ * still-warm cache (worst case: 30s of stale state until natural TTL).
+ */
+/**
+ * Persistent confirmation banner shown after a write tx confirms.
+ * Stays visible until the user dismisses (clicking Dismiss calls
+ * `reset()` to clear wagmi's success state, which lets the panel
+ * transition back to the regular form). Includes a link to Etherscan
+ * for production txs; on fork-test runs the hash will 404 there but
+ * that's the cost of one shared link target — fine for testing.
+ */
+function TxSuccessBanner({
+  txHash,
+  message,
+  onDismiss,
+}: {
+  txHash: `0x${string}`
+  message: string
+  onDismiss: () => void
+}) {
+  return (
+    <div className="px-3 py-2 bg-green-50 border border-green-200 text-green-800 text-[11px] font-mono space-y-1">
+      <div className="flex items-baseline justify-between gap-2">
+        <span>{message}</span>
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="Dismiss"
+          className="text-green-700 hover:text-green-900 leading-none"
+        >
+          ✕
+        </button>
+      </div>
+      <a
+        href={`https://etherscan.io/tx/${txHash}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="block underline hover:text-green-900 break-all"
+      >
+        View tx: {txHash.slice(0, 10)}…{txHash.slice(-8)} ↗
+      </a>
+    </div>
+  )
+}
+
 function useRevalidateAuctionOnSuccess(
   isSuccess: boolean,
   auction: AuctionState,
 ) {
+  const router = useRouter()
   useEffect(() => {
     if (!isSuccess) return
     const url = `/api/auction/revalidate?contract=${encodeURIComponent(
       auction.nftContract,
     )}&tokenId=${encodeURIComponent(auction.tokenId)}`
-    fetch(url, { method: "POST" }).catch(() => {})
-  }, [isSuccess, auction.nftContract, auction.tokenId])
+    fetch(url, { method: "POST" })
+      .catch(() => {})
+      .finally(() => {
+        // Wait for revalidate to land before refreshing so the new
+        // render hits a flushed cache, not a stale one.
+        router.refresh()
+      })
+  }, [isSuccess, auction.nftContract, auction.tokenId, router])
 }
 
 function truncateAddress(addr: string): string {
@@ -161,6 +332,15 @@ export function AuctionPanel({
 
   const { amount, bidderDisplay, endTime, fees, bidHistory } = auction
 
+  // Bid input state is owned at the panel level so both `BidSection`
+  // (input + submit handler) and `FeesBreakdown` (live buyer's-premium
+  // total) can read the same wei value. The hook is a no-op when the
+  // user hasn't typed anything; SettleSection / SellerActions ignore it.
+  const bid = useEthAmountInput({
+    min: auction.minBidWei,
+    minLabel: (m) => `Minimum bid is ${formatEther(m)} ETH`,
+  })
+
   return (
     <div className="rounded-lg border border-gray-200 bg-surface overflow-hidden">
       <div className="p-5 space-y-5">
@@ -204,14 +384,20 @@ export function AuctionPanel({
         {phase === "ended-unsettled" ? (
           <SettleSection auction={auction} />
         ) : (
-          <BidSection auction={auction} />
+          <BidSection auction={auction} bid={bid} />
         )}
 
         {auction.awaitingFirstBid && <SellerActions auction={auction} />}
       </div>
 
       {bidHistory.length > 0 && <BidHistory bids={bidHistory} />}
-      {fees && <FeesBreakdown fees={fees} />}
+      {fees && (
+        <FeesBreakdown
+          fees={fees}
+          auction={auction}
+          bidWei={bid.wei ?? undefined}
+        />
+      )}
     </div>
   )
 }
@@ -251,14 +437,47 @@ function BidHistory({ bids }: { bids: BidHistoryEntry[] }) {
   )
 }
 
-function FeesBreakdown({ fees }: { fees: AuctionFees }) {
+function FeesBreakdown({
+  fees,
+  auction,
+  bidWei,
+}: {
+  fees: AuctionFees
+  // Auction context lets us show the buyer's premium footer for
+  // platforms that have one (currently only SR V2). Optional so other
+  // call sites that don't care about live bid state can omit it.
+  auction?: AuctionState
+  // Live bid amount typed by the user, used to compute the dynamic
+  // premium total. When 0n / undefined we fall back to the current
+  // amount on the auction so the row still shows a meaningful preview.
+  bidWei?: bigint
+}) {
+  const ethPriceUsd = useEthPriceUsd()
+
   const rows: Array<[string, number]> = [
     [`${fees.platformLabel} fee`, fees.protocolFeeBps],
     ["Creator royalty", fees.creatorRoyaltyBps],
     ["Seller receives", fees.sellerBps],
   ].filter(([, bps]) => (bps as number) > 0) as Array<[string, number]>
 
-  if (rows.length === 0) return null
+  // Base amount each percentage row is computed against. Use the user's
+  // typed bid when available; fall back to the current bid / reserve
+  // so the row still shows a meaningful preview before they type.
+  const previewBid = bidWei && bidWei > 0n ? bidWei : auction?.amount ?? 0n
+  const showSrPremium = auction?.source === "superrareV2"
+  const premiumWei =
+    previewBid > 0n ? (previewBid * SR_MARKETPLACE_FEE_BPS) / 10000n : 0n
+
+  if (rows.length === 0 && !showSrPremium) return null
+
+  function rowAmounts(bps: number): { eth: string; usd: string | null } {
+    if (previewBid === 0n) return { eth: "—", usd: null }
+    const wei = (previewBid * BigInt(bps)) / 10000n
+    return {
+      eth: `${formatEthShort(wei)} ETH`,
+      usd: ethPriceUsd ? formatUsd(wei, ethPriceUsd) : null,
+    }
+  }
 
   return (
     <div className="px-5 py-4 bg-gray-50 border-t border-gray-100">
@@ -266,26 +485,80 @@ function FeesBreakdown({ fees }: { fees: AuctionFees }) {
         On settlement
       </p>
       <dl className="space-y-1">
-        {rows.map(([label, bps]) => (
-          <div key={label} className="flex items-baseline justify-between text-[11px] font-mono">
-            <dt className="text-gray-500">{label}</dt>
-            <dd className="tabular-nums text-gray-700">{formatBpsPct(bps)}</dd>
-          </div>
-        ))}
+        {rows.map(([label, bps]) => {
+          const amt = rowAmounts(bps)
+          return (
+            <div
+              key={label}
+              className="flex items-baseline justify-between gap-3 text-[11px] font-mono"
+            >
+              <dt className="text-gray-500">{label}</dt>
+              <dd className="tabular-nums text-gray-700">
+                <span>{formatBpsPct(bps)}</span>
+                {previewBid > 0n && (
+                  <>
+                    <span className="text-gray-400"> · </span>
+                    <span>{amt.eth}</span>
+                    {amt.usd && (
+                      <span className="text-gray-400"> ({amt.usd})</span>
+                    )}
+                  </>
+                )}
+              </dd>
+            </div>
+          )
+        })}
       </dl>
+      {showSrPremium && (
+        <>
+          <hr className="my-3 border-t border-gray-200" />
+          <div className="flex items-baseline justify-between gap-3 text-[11px] font-mono">
+            <span className="text-gray-500 flex-1 [text-wrap:balance]">
+              {/* Non-breaking space keeps "marketplace fee" together so
+                  "fee" never lands on its own line. */}
+              + 3% Additional SuperRare marketplace&nbsp;fee
+            </span>
+            <span className="tabular-nums text-gray-700 text-right whitespace-nowrap">
+              {previewBid > 0n ? (
+                <>
+                  <span>{formatEthShort(premiumWei)} ETH</span>
+                  {ethPriceUsd && (
+                    <span className="text-gray-400">
+                      {" "}({formatUsd(premiumWei, ethPriceUsd)})
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span>3%</span>
+              )}
+            </span>
+          </div>
+        </>
+      )}
     </div>
   )
 }
 
-function BidSection({ auction }: { auction: AuctionState }) {
+function BidSection({
+  auction,
+  bid,
+}: {
+  auction: AuctionState
+  bid: ReturnType<typeof useEthAmountInput>
+}) {
   const { address } = useAccount()
+  const chainId = useChainId()
+  const { switchChain, isPending: isSwitchPending } = useSwitchChain()
+  const wrongNetwork = !!address && chainId !== PREFERRED_CHAIN.id
+  const { data: balance } = useBalance({
+    address,
+    // Pin the balance read to the chain we'll send the tx on so the
+    // displayed number matches what the user has available for bidding.
+    chainId: PREFERRED_CHAIN.id,
+    query: { enabled: !!address && !wrongNetwork },
+  })
   const minBidWei = auction.minBidWei
   const minBidEth = formatEther(minBidWei)
-
-  const bid = useEthAmountInput({
-    min: minBidWei,
-    minLabel: (m) => `Minimum bid is ${formatEther(m)} ETH`,
-  })
 
   const {
     writeContract,
@@ -349,25 +622,6 @@ function BidSection({ auction }: { auction: AuctionState }) {
     }
   }
 
-  if (isSuccess) {
-    return (
-      <div className="space-y-3">
-        <p className="text-[11px] font-mono text-green-700">
-          Bid placed. Refresh to see updated state.
-        </p>
-        <button
-          onClick={() => {
-            reset()
-            window.location.reload()
-          }}
-          className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors"
-        >
-          Refresh
-        </button>
-      </div>
-    )
-  }
-
   if (!address) {
     return (
       <ConnectButton.Custom>
@@ -383,8 +637,28 @@ function BidSection({ auction }: { auction: AuctionState }) {
     )
   }
 
+  if (wrongNetwork) {
+    return (
+      <button
+        type="button"
+        onClick={() => switchChain({ chainId: PREFERRED_CHAIN.id })}
+        disabled={isSwitchPending}
+        className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40"
+      >
+        {isSwitchPending ? "Switching…" : `Wrong network — switch to ${PREFERRED_CHAIN_LABEL}`}
+      </button>
+    )
+  }
+
   return (
     <div className="space-y-2">
+      {isSuccess && txHash && (
+        <TxSuccessBanner
+          txHash={txHash}
+          message="Bid placed."
+          onDismiss={reset}
+        />
+      )}
       <label className="block">
         <span className="sr-only">Bid amount in ETH</span>
         <div className="flex items-stretch border border-gray-200 focus-within:border-gray-400 transition-colors">
@@ -399,20 +673,22 @@ function BidSection({ auction }: { auction: AuctionState }) {
           </span>
         </div>
       </label>
-      <button
-        type="button"
-        onClick={() => bid.setFromWei(minBidWei)}
-        disabled={isPending}
-        className="text-[10px] font-mono uppercase tracking-wider text-gray-400 hover:text-fg transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-        title="Use minimum bid"
-      >
-        Minimum bid: {minBidEth} ETH
-      </button>
-      {auction.source === "superrareV2" && bid.isValid && bid.wei != null && bid.wei > 0n && (
-        <p className="text-[10px] font-mono text-gray-400">
-          + 3% buyer&apos;s premium = {formatEther(bid.wei + (bid.wei * SR_MARKETPLACE_FEE_BPS) / 10000n)} ETH total
-        </p>
-      )}
+      <div className="flex items-baseline justify-between gap-2">
+        <button
+          type="button"
+          onClick={() => bid.setFromWei(minBidWei)}
+          disabled={isPending}
+          className="text-[10px] font-mono uppercase tracking-wider text-gray-400 hover:text-fg transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+          title="Use minimum bid"
+        >
+          Minimum bid: {minBidEth} ETH
+        </button>
+        {balance && (
+          <span className="text-[10px] font-mono uppercase tracking-wider text-gray-400 tabular-nums">
+            Balance: {Number(formatEther(balance.value)).toFixed(3)} ETH
+          </span>
+        )}
+      </div>
 
       <button
         onClick={handleBid}
@@ -433,11 +709,7 @@ function BidSection({ auction }: { auction: AuctionState }) {
       )}
       {writeError && (
         <p className="text-[11px] font-mono text-red-500 break-words">
-          {writeError.message.includes("User rejected")
-            ? "Transaction rejected"
-            : writeError.message.includes("insufficient funds")
-              ? "Insufficient ETH balance"
-              : `Bid failed: ${writeError.message.split("\n")[0]}`}
+          {formatWriteError(writeError, "Bid")}
         </p>
       )}
     </div>
@@ -446,6 +718,9 @@ function BidSection({ auction }: { auction: AuctionState }) {
 
 function SettleSection({ auction }: { auction: AuctionState }) {
   const { address } = useAccount()
+  const chainId = useChainId()
+  const { switchChain, isPending: isSwitchPending } = useSwitchChain()
+  const wrongNetwork = !!address && chainId !== PREFERRED_CHAIN.id
   const {
     writeContract,
     data: txHash,
@@ -486,22 +761,13 @@ function SettleSection({ auction }: { auction: AuctionState }) {
     }
   }
 
-  if (isSuccess) {
+  if (isSuccess && txHash) {
     return (
-      <div className="space-y-3">
-        <p className="text-[11px] font-mono text-green-700">
-          Auction settled. NFT transferred to the winner.
-        </p>
-        <button
-          onClick={() => {
-            reset()
-            window.location.reload()
-          }}
-          className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors"
-        >
-          Refresh
-        </button>
-      </div>
+      <TxSuccessBanner
+        txHash={txHash}
+        message="Auction settled. NFT transferred to the winner."
+        onDismiss={reset}
+      />
     )
   }
 
@@ -517,6 +783,19 @@ function SettleSection({ auction }: { auction: AuctionState }) {
           </button>
         )}
       </ConnectButton.Custom>
+    )
+  }
+
+  if (wrongNetwork) {
+    return (
+      <button
+        type="button"
+        onClick={() => switchChain({ chainId: PREFERRED_CHAIN.id })}
+        disabled={isSwitchPending}
+        className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40"
+      >
+        {isSwitchPending ? "Switching…" : `Wrong network — switch to ${PREFERRED_CHAIN_LABEL}`}
+      </button>
     )
   }
 
@@ -539,9 +818,7 @@ function SettleSection({ auction }: { auction: AuctionState }) {
       </button>
       {writeError && (
         <p className="text-[11px] font-mono text-red-500 break-words">
-          {writeError.message.includes("User rejected")
-            ? "Transaction rejected"
-            : `Settle failed: ${writeError.message.split("\n")[0]}`}
+          {formatWriteError(writeError, "Settle")}
         </p>
       )}
     </div>
@@ -555,6 +832,9 @@ function SettleSection({ auction }: { auction: AuctionState }) {
  */
 function SellerActions({ auction }: { auction: AuctionState }) {
   const { address } = useAccount()
+  const chainId = useChainId()
+  const { switchChain, isPending: isSwitchPending } = useSwitchChain()
+  const wrongNetwork = !!address && chainId !== PREFERRED_CHAIN.id
   const isSeller =
     !!address && address.toLowerCase() === auction.seller.toLowerCase()
   const [editing, setEditing] = useState(false)
@@ -586,18 +866,33 @@ function SellerActions({ auction }: { auction: AuctionState }) {
 
   if (!isSeller) return null
 
-  if (cancelSuccess || updateSuccess) {
+  if (wrongNetwork) {
     return (
       <button
-        onClick={() => {
+        type="button"
+        onClick={() => switchChain({ chainId: PREFERRED_CHAIN.id })}
+        disabled={isSwitchPending}
+        className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-2 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40"
+      >
+        {isSwitchPending ? "Switching…" : `Wrong network — switch to ${PREFERRED_CHAIN_LABEL}`}
+      </button>
+    )
+  }
+
+  if ((cancelSuccess && cancelHash) || (updateSuccess && updateHash)) {
+    const hash = cancelSuccess ? cancelHash! : updateHash!
+    const message = cancelSuccess
+      ? "Auction cancelled."
+      : "Reserve updated."
+    return (
+      <TxSuccessBanner
+        txHash={hash}
+        message={message}
+        onDismiss={() => {
           resetCancel()
           resetUpdate()
-          window.location.reload()
         }}
-        className="text-[11px] font-mono text-emerald-700 hover:underline"
-      >
-        Saved. Refresh to see updated state.
-      </button>
+      />
     )
   }
 
@@ -719,9 +1014,10 @@ function SellerActions({ auction }: { auction: AuctionState }) {
       )}
       {(cancelError || updateError) && (
         <p className="text-[11px] font-mono text-red-500 break-words">
-          {(cancelError || updateError)!.message.includes("User rejected")
-            ? "Transaction rejected"
-            : (cancelError || updateError)!.message.split("\n")[0]}
+          {formatWriteError(
+            (cancelError || updateError)!,
+            cancelError ? "Cancel" : "Update",
+          )}
         </p>
       )}
     </div>
