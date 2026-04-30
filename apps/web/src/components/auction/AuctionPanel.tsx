@@ -154,7 +154,7 @@ export function AuctionPanel({
   const { amount, bidderDisplay, endTime, fees, bidHistory } = auction
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+    <div className="rounded-lg border border-gray-200 bg-surface overflow-hidden">
       <div className="p-5 space-y-5">
         <div className="flex items-center gap-2">
           <span className={`inline-block h-1.5 w-1.5 rounded-full ${phase === "ended-unsettled" ? "bg-amber-500" : "bg-emerald-500 animate-pulse"}`} />
@@ -332,7 +332,7 @@ function BidSection({ auction }: { auction: AuctionState }) {
             reset()
             window.location.reload()
           }}
-          className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-black text-white hover:bg-gray-800 transition-colors"
+          className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors"
         >
           Refresh
         </button>
@@ -346,7 +346,7 @@ function BidSection({ auction }: { auction: AuctionState }) {
         {({ openConnectModal }) => (
           <button
             onClick={openConnectModal}
-            className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-black text-white hover:bg-gray-800 transition-colors"
+            className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors"
           >
             Connect wallet to bid
           </button>
@@ -375,7 +375,7 @@ function BidSection({ auction }: { auction: AuctionState }) {
         type="button"
         onClick={() => bid.setFromWei(minBidWei)}
         disabled={isPending}
-        className="text-[10px] font-mono uppercase tracking-wider text-gray-400 hover:text-black transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+        className="text-[10px] font-mono uppercase tracking-wider text-gray-400 hover:text-fg transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
         title="Use minimum bid"
       >
         Minimum bid: {minBidEth} ETH
@@ -384,7 +384,7 @@ function BidSection({ auction }: { auction: AuctionState }) {
       <button
         onClick={handleBid}
         disabled={isPending || !bid.isValid || isSelfOutbidding}
-        className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
       >
         {isWritePending
           ? "Confirm in wallet…"
@@ -457,7 +457,7 @@ function SettleSection({ auction }: { auction: AuctionState }) {
             reset()
             window.location.reload()
           }}
-          className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-black text-white hover:bg-gray-800 transition-colors"
+          className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors"
         >
           Refresh
         </button>
@@ -471,7 +471,7 @@ function SettleSection({ auction }: { auction: AuctionState }) {
         {({ openConnectModal }) => (
           <button
             onClick={openConnectModal}
-            className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-black text-white hover:bg-gray-800 transition-colors"
+            className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors"
           >
             Connect wallet to settle
           </button>
@@ -489,7 +489,7 @@ function SettleSection({ auction }: { auction: AuctionState }) {
       <button
         onClick={handleSettle}
         disabled={isPending}
-        className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
       >
         {isWritePending
           ? "Confirm in wallet…"
@@ -622,7 +622,7 @@ function SellerActions({ auction }: { auction: AuctionState }) {
             <button
               onClick={handleUpdate}
               disabled={busy || !reserve.isValid || reserve.wei === 0n}
-              className="flex-1 text-[11px] font-mono font-medium uppercase tracking-wider py-2 bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed rounded"
+              className="flex-1 text-[11px] font-mono font-medium uppercase tracking-wider py-2 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed rounded"
             >
               {updatePending
                 ? "Confirm…"
@@ -636,7 +636,7 @@ function SellerActions({ auction }: { auction: AuctionState }) {
                 reserve.reset()
               }}
               disabled={busy}
-              className="text-[11px] font-mono uppercase tracking-wider text-gray-500 px-3 hover:text-black transition-colors disabled:opacity-40"
+              className="text-[11px] font-mono uppercase tracking-wider text-gray-500 px-3 hover:text-fg transition-colors disabled:opacity-40"
             >
               Cancel
             </button>
@@ -647,7 +647,7 @@ function SellerActions({ auction }: { auction: AuctionState }) {
           <button
             onClick={() => setEditing(true)}
             disabled={busy}
-            className="text-[11px] font-mono uppercase tracking-wider text-gray-500 hover:text-black transition-colors disabled:opacity-40"
+            className="text-[11px] font-mono uppercase tracking-wider text-gray-500 hover:text-fg transition-colors disabled:opacity-40"
           >
             Edit reserve
           </button>

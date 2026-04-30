@@ -26,7 +26,7 @@ export function SettledAuctionSummary({
   auction: SettledAuction
 }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+    <div className="rounded-lg border border-gray-200 bg-surface overflow-hidden">
       <div className="p-5 space-y-5">
         <div className="flex items-center gap-2">
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-gray-400" />

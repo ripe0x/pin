@@ -20,7 +20,7 @@ export function ProviderSelect({
           onClick={() => onSelect(p.id)}
           className={`w-full text-left border rounded-lg p-4 transition-colors ${
             selected === p.id
-              ? "border-black bg-gray-50"
+              ? "border-fg bg-gray-50"
               : "border-gray-200 hover:border-gray-400"
           }`}
         >

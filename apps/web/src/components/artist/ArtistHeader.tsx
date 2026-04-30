@@ -52,12 +52,12 @@ export function ArtistHeader({
         )}
         <div className="flex items-center gap-4 text-sm text-gray-500">
           <span>
-            <strong className="text-black">{totalWorks}</strong>{" "}
+            <strong className="text-fg">{totalWorks}</strong>{" "}
             {totalWorks === 1 ? "work" : "works"}
           </span>
           {activeAuctions !== null && (
             <span>
-              <strong className="text-black">{activeAuctions}</strong>{" "}
+              <strong className="text-fg">{activeAuctions}</strong>{" "}
               active {activeAuctions === 1 ? "auction" : "auctions"}
             </span>
           )}

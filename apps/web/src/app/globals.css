@@ -1,13 +1,25 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
-  /* Foundation color system */
+  /* Foundation color system — base swatches */
   --color-white: #FFFFFF;
   --color-black: #000000;
   --color-gray-100: #F2F2F2;
   --color-gray-200: #E6E6E6;
   --color-gray-400: #999999;
   --color-gray-600: #666666;
+
+  /* Semantic theme tokens (light defaults; overridden under .dark) */
+  --color-bg: #FFFFFF;
+  --color-surface: #FFFFFF;
+  --color-surface-muted: #F2F2F2;
+  --color-fg: #000000;
+  --color-fg-muted: #666666;
+  --color-fg-subtle: #999999;
+  --color-border: #E6E6E6;
+  --color-border-strong: #999999;
 
   /* Status colors */
   --color-status-available: #0F863E;
@@ -44,11 +56,41 @@
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* Dark theme overrides — applied via class on <html> by next-themes */
+.dark {
+  --color-bg: #0A0A0A;
+  --color-surface: #141414;
+  --color-surface-muted: #1C1C1C;
+  --color-fg: #F5F5F5;
+  --color-fg-muted: #9E9E9E;
+  --color-fg-subtle: #6E6E6E;
+  --color-border: #262626;
+  --color-border-strong: #3A3A3A;
+
+  /* Re-tune the neutral scale for dark mode so existing gray-* utilities
+     flip automatically without per-class dark: variants.
+
+     Mapping intent (light → dark):
+       gray-100 (subtle surface bg)   F2F2F2 → 1C1C1C
+       gray-200 (subtle border)       E6E6E6 → 262626
+       gray-400 (placeholder, subtle) 999999 → 6E6E6E
+       gray-600 (secondary text)      666666 → 9E9E9E  (lighter for legibility) */
+  --color-gray-100: #1C1C1C;
+  --color-gray-200: #262626;
+  --color-gray-400: #6E6E6E;
+  --color-gray-600: #9E9E9E;
+
+  --color-status-available: #3FCB6B;
+  --color-status-live: #CBA1FC;
+  --color-status-sold: #E455A8;
+  --color-status-upcoming: #B8A66B;
+}
+
 /* Base styles */
 body {
   font-family: var(--font-sans);
-  color: var(--color-black);
-  background-color: var(--color-white);
+  color: var(--color-fg);
+  background-color: var(--color-bg);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -60,7 +102,7 @@ body {
 }
 
 .skeleton {
-  background-color: var(--color-gray-100);
+  background-color: var(--color-surface-muted);
   animation: pulse 2s ease-in-out infinite;
 }
 

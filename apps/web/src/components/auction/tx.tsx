@@ -24,7 +24,7 @@ export function TxLink({
       href={`https://etherscan.io/tx/${hash}`}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex items-baseline gap-1 text-xs text-gray-600 hover:text-black underline-offset-2 hover:underline"
+      className="inline-flex items-baseline gap-1 text-xs text-gray-600 hover:text-fg underline-offset-2 hover:underline"
     >
       <span>{label}</span>
       <span className="font-mono text-gray-400">{shortHash(hash)}</span>
@@ -45,7 +45,7 @@ export function AddressLink({
       href={`https://etherscan.io/address/${address}`}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex items-baseline gap-1 text-xs text-gray-600 hover:text-black underline-offset-2 hover:underline"
+      className="inline-flex items-baseline gap-1 text-xs text-gray-600 hover:text-fg underline-offset-2 hover:underline"
     >
       <span>{label}</span>
       <span className="font-mono text-gray-400">{shortAddress(address)}</span>

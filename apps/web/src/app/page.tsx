@@ -29,7 +29,7 @@ export default function HomePage() {
               href="https://x.com/ripe0x"
               target="_blank"
               rel="noopener noreferrer"
-              className="hover:text-black transition-colors"
+              className="hover:text-fg transition-colors"
             >
               Created by ripe
             </a>
@@ -37,7 +37,7 @@ export default function HomePage() {
               href="https://github.com/ripe0x/pin"
               target="_blank"
               rel="noopener noreferrer"
-              className="hover:text-black transition-colors"
+              className="hover:text-fg transition-colors"
             >
               GitHub
             </a>
@@ -45,7 +45,7 @@ export default function HomePage() {
               href="https://evm.now/address/0xcDA72070E455bb31C7690a170224Ce43623d0B6f"
               target="_blank"
               rel="noopener noreferrer"
-              className="hover:text-black transition-colors"
+              className="hover:text-fg transition-colors"
             >
               NFTMarket
             </a>
@@ -53,7 +53,7 @@ export default function HomePage() {
               href="https://github.com/f8n/fnd-protocol"
               target="_blank"
               rel="noopener noreferrer"
-              className="hover:text-black transition-colors"
+              className="hover:text-fg transition-colors"
             >
               Contracts
             </a>

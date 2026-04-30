@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { SITE_TITLE } from "@pin/shared"
 import { useAccount } from "wagmi"
+import { ThemeToggle } from "@/components/ThemeToggle"
 
 export function Navbar() {
   const { address } = useAccount()
@@ -39,7 +40,7 @@ export function Navbar() {
   )
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200">
+    <header className="fixed top-0 left-0 right-0 z-50 bg-surface border-b border-gray-200">
       <nav className="mx-auto flex h-16 max-w-[2000px] items-center justify-between px-6">
         {/* Left: logo / wordmark */}
         <Link href="/" className="text-lg font-medium tracking-tight">
@@ -53,18 +54,19 @@ export function Navbar() {
         <div className="flex items-center gap-6">
           <Link
             href="/preserve"
-            className="text-sm font-medium text-gray-600 transition-colors hover:text-black"
+            className="text-sm font-medium text-gray-600 transition-colors hover:text-fg"
           >
             Preserve
           </Link>
           {address && (
             <Link
               href={`/artist/${address}`}
-              className="hidden text-sm font-medium text-gray-600 transition-colors hover:text-black sm:inline-block"
+              className="hidden text-sm font-medium text-gray-600 transition-colors hover:text-fg sm:inline-block"
             >
               Profile
             </Link>
           )}
+          <ThemeToggle />
           <div className="rk-compact">
             <ConnectButton
               showBalance={false}

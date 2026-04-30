@@ -81,7 +81,7 @@ export function DeployHouseCTA({ artistAddress }: { artistAddress: string }) {
         {({ openConnectModal }) => (
           <button
             onClick={openConnectModal}
-            className="block w-full text-center text-sm font-medium py-3 bg-black text-white hover:bg-gray-800 transition-colors"
+            className="block w-full text-center text-sm font-medium py-3 bg-fg text-bg hover:opacity-80 transition-colors"
           >
             Connect wallet
           </button>
@@ -93,7 +93,7 @@ export function DeployHouseCTA({ artistAddress }: { artistAddress: string }) {
   const busy = isPending || isMining
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-5 space-y-4">
+    <div className="rounded-lg border border-gray-200 bg-surface p-5 space-y-4">
       <div>
         <h3 className="text-base font-semibold tracking-tight">
           Sovereign auction house
@@ -106,7 +106,7 @@ export function DeployHouseCTA({ artistAddress }: { artistAddress: string }) {
       <button
         onClick={handleDeploy}
         disabled={busy}
-        className="block w-full text-center text-sm font-medium py-3 bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        className="block w-full text-center text-sm font-medium py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
       >
         {isPending
           ? "Confirm in wallet…"

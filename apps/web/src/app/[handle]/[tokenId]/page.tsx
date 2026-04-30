@@ -199,7 +199,7 @@ export default async function TokenPage({
             {data.creator && (
               <Link
                 href={`/artist/${data.creator}`}
-                className="block text-[11px] font-mono uppercase tracking-wider text-gray-600 hover:text-black transition-colors"
+                className="block text-[11px] font-mono uppercase tracking-wider text-gray-600 hover:text-fg transition-colors"
               >
                 {data.creatorHandle}
               </Link>

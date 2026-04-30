@@ -25,7 +25,7 @@ export function PinProgress({
       {/* Progress bar */}
       <div className="h-2 w-full rounded-full bg-gray-100 overflow-hidden">
         <div
-          className="h-full rounded-full bg-black transition-all duration-300"
+          className="h-full rounded-full bg-fg transition-all duration-300"
           style={{ width: `${progress}%` }}
         />
       </div>

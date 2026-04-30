@@ -25,7 +25,7 @@ export function HomeEntryPoints() {
   }
 
   const linkClass =
-    "text-sm text-gray-500 hover:text-black transition-colors underline-offset-4"
+    "text-sm text-gray-500 hover:text-fg transition-colors underline-offset-4"
 
   return (
     <p className="text-sm text-gray-500">

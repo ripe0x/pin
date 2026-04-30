@@ -31,7 +31,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         {/* Switzer from Fontshare — closest free match to Suisse Int'l */}
         <link
@@ -44,7 +44,7 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="min-h-screen bg-white text-black antialiased">
+      <body className="min-h-screen antialiased">
         <Providers>
           <Navbar />
           {/* pt accommodates a taller navbar on mobile (logo row + search row). */}

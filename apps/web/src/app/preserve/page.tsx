@@ -406,7 +406,7 @@ export default function PreservePage() {
             <div
               className={`h-8 w-8 rounded-full flex items-center justify-center text-xs font-medium ${
                 stepIndex(step) >= i
-                  ? "bg-black text-white"
+                  ? "bg-fg text-bg"
                   : "bg-gray-100 text-gray-400"
               }`}
             >
@@ -419,7 +419,7 @@ export default function PreservePage() {
             {i < 3 && (
               <div
                 className={`h-px w-8 ${
-                  stepIndex(step) > i ? "bg-black" : "bg-gray-200"
+                  stepIndex(step) > i ? "bg-fg" : "bg-gray-200"
                 }`}
               />
             )}
@@ -455,7 +455,7 @@ export default function PreservePage() {
           <button
             onClick={discoverWorks}
             disabled={discovering || (useCustomAddress && !customAddress.trim())}
-            className="w-full bg-black text-white py-3 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors disabled:opacity-40"
+            className="w-full bg-fg text-bg py-3 rounded-lg text-sm font-medium hover:opacity-80 transition-colors disabled:opacity-40"
           >
             {discovering
               ? "Scanning the blockchain..."
@@ -482,7 +482,7 @@ export default function PreservePage() {
                       setDiscoverError("")
                     }}
                     placeholder="0x..."
-                    className="w-full border border-gray-200 rounded-lg px-4 py-3 text-sm font-mono focus:outline-none focus:border-black transition-colors"
+                    className="w-full border border-gray-200 rounded-lg px-4 py-3 text-sm font-mono focus:outline-none focus:border-fg transition-colors"
                   />
                   <button
                     onClick={() => {
@@ -529,7 +529,7 @@ export default function PreservePage() {
                     <>
                       <button
                         onClick={() => setStep("pin")}
-                        className="w-full bg-black text-white py-3 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors"
+                        className="w-full bg-fg text-bg py-3 rounded-lg text-sm font-medium hover:opacity-80 transition-colors"
                       >
                         Pin {unpinnedCount} remaining {unpinnedCount === 1 ? "file" : "files"} to {providerType ? PROVIDER_INFO[providerType].name : ""}
                       </button>
@@ -553,7 +553,7 @@ export default function PreservePage() {
                   </p>
                   <Link
                     href={`/artist/${discoveredAddress}`}
-                    className="inline-block bg-black text-white px-6 py-3 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors"
+                    className="inline-block bg-fg text-bg px-6 py-3 rounded-lg text-sm font-medium hover:opacity-80 transition-colors"
                   >
                     View Your Artist Page
                   </Link>
@@ -571,7 +571,7 @@ export default function PreservePage() {
           {step === "pin" && !pinning && (
             <button
               onClick={pinAll}
-              className="w-full bg-black text-white py-3 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors"
+              className="w-full bg-fg text-bg py-3 rounded-lg text-sm font-medium hover:opacity-80 transition-colors"
             >
               Pin {unpinnedCount > 0 ? `${unpinnedCount} files` : "All"} to {providerType ? PROVIDER_INFO[providerType].name : ""}
             </button>
@@ -608,7 +608,7 @@ export default function PreservePage() {
               </p>
               <Link
                 href={`/artist/${discoveredAddress}`}
-                className="inline-block bg-black text-white px-6 py-3 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors"
+                className="inline-block bg-fg text-bg px-6 py-3 rounded-lg text-sm font-medium hover:opacity-80 transition-colors"
               >
                 View Your Artist Page
               </Link>

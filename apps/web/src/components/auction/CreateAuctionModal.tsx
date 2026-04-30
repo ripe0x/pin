@@ -129,7 +129,7 @@ export function CreateAuctionModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md bg-white rounded-lg shadow-xl overflow-hidden"
+        className="w-full max-w-md bg-surface rounded-lg shadow-xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-5 pt-5 pb-2 border-b border-gray-100">
@@ -157,7 +157,7 @@ export function CreateAuctionModal({
                 // refetch SSR'd auction data.
                 window.location.reload()
               }}
-              className="block w-full text-center text-sm font-medium py-3 bg-black text-white hover:bg-gray-800 transition-colors"
+              className="block w-full text-center text-sm font-medium py-3 bg-fg text-bg hover:opacity-80 transition-colors"
             >
               Done
             </button>
@@ -204,7 +204,7 @@ export function CreateAuctionModal({
                     disabled={createBusy}
                     className={`py-2 text-sm border rounded transition-colors ${
                       durationSec === opt.seconds
-                        ? "border-black bg-black text-white"
+                        ? "border-fg bg-fg text-bg"
                         : "border-gray-200 hover:border-gray-400"
                     }`}
                   >
@@ -223,7 +223,7 @@ export function CreateAuctionModal({
                 <button
                   onClick={handleApprove}
                   disabled={approveBusy}
-                  className="block w-full text-center text-sm font-medium py-3 bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="block w-full text-center text-sm font-medium py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {isApprovePending
                     ? "Confirm in wallet…"
@@ -263,7 +263,7 @@ export function CreateAuctionModal({
                 <button
                   onClick={handleCreate}
                   disabled={createBusy || !reserveValid}
-                  className="block w-full text-center text-sm font-medium py-3 bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="block w-full text-center text-sm font-medium py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {isCreatePending
                     ? "Confirm in wallet…"

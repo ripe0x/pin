@@ -31,7 +31,7 @@ export function Provenance({ entries }: { entries: ProvenanceEntry[] }) {
           <li key={entry.txHash + i} className="flex gap-3 py-2">
             {/* Timeline dot + line */}
             <div className="flex flex-col items-center pt-1.5">
-              <div className="h-1.5 w-1.5 rounded-full bg-black" />
+              <div className="h-1.5 w-1.5 rounded-full bg-fg" />
               {i < entries.length - 1 && (
                 <div className="w-px flex-1 bg-gray-200 mt-1" />
               )}
@@ -60,7 +60,7 @@ export function Provenance({ entries }: { entries: ProvenanceEntry[] }) {
                   href={`https://evm.now/tx/${entry.txHash}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-[10px] font-mono text-gray-400 hover:text-black transition-colors"
+                  className="text-[10px] font-mono text-gray-400 hover:text-fg transition-colors"
                 >
                   ↗
                 </a>

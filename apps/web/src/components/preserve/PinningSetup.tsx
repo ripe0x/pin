@@ -90,7 +90,7 @@ export function PinningSetup({
             setError("")
           }}
           placeholder={info.keyPlaceholder}
-          className="w-full border border-gray-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-black transition-colors"
+          className="w-full border border-gray-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-fg transition-colors"
         />
         <p className="text-xs text-gray-400">
           Your key stays in your browser and is sent directly to {info.name} — it never touches our servers.
@@ -101,7 +101,7 @@ export function PinningSetup({
       <button
         onClick={handleValidate}
         disabled={validating || !apiKey.trim()}
-        className="w-full bg-black text-white py-3 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        className="w-full bg-fg text-bg py-3 rounded-lg text-sm font-medium hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
       >
         {validating ? "Validating..." : "Continue"}
       </button>

@@ -100,7 +100,7 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
         <p className="text-sm text-red-500">{load.message}</p>
         <button
           onClick={refresh}
-          className="mt-3 text-xs font-medium underline text-gray-700 hover:text-black"
+          className="mt-3 text-xs font-medium underline text-gray-700 hover:text-fg"
         >
           Try again
         </button>
@@ -152,7 +152,7 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
         <button
           onClick={toggleAll}
           disabled={isRunning}
-          className="text-xs font-medium text-gray-600 hover:text-black disabled:opacity-40"
+          className="text-xs font-medium text-gray-600 hover:text-fg disabled:opacity-40"
         >
           {allSelected ? "Deselect all" : "Select all"}
         </button>
@@ -219,7 +219,7 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
           <button
             onClick={handleCancel}
             disabled={selected.size === 0}
-            className="text-sm font-medium px-4 py-2 bg-black text-white hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="text-sm font-medium px-4 py-2 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {cancelButtonLabel(selected.size, mode)}
           </button>
@@ -236,7 +236,7 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
       {status === "done" && (
         <button
           onClick={refresh}
-          className="mt-3 text-xs font-medium underline text-gray-700 hover:text-black"
+          className="mt-3 text-xs font-medium underline text-gray-700 hover:text-fg"
         >
           Refresh listings
         </button>
@@ -294,7 +294,7 @@ function ModeExplainer({
 
 function Section({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-5">
+    <div className="rounded-lg border border-gray-200 bg-surface p-5">
       {children}
     </div>
   )
