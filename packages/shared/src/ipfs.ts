@@ -16,18 +16,44 @@ export const IPFS_GATEWAYS = [
 
 const DEFAULT_GATEWAY = IPFS_GATEWAYS[0]
 
+// Permissive matcher for both v0 (Qm…) and v1 (bafy…/bafk…/bafz…) CIDs.
+// We don't validate length / character set strictly — public gateways do
+// that for us, and any false positive just produces a 404 we'd handle
+// the same way we handle a missing image today.
+const CID_RE = /(Qm[1-9A-HJ-NP-Za-km-z]{44}|baf[a-z0-9]{50,})/
+
 /**
- * Extract the raw CID (+ optional path) from an IPFS URI.
- * Handles Foundation's double-prefix bug: `ipfs://ipfs/QmXXX`.
+ * Extract the raw CID (+ optional path) from a URI.
  *
- * Returns `null` if the URI is not an IPFS URI.
+ * Recognized forms:
+ *   - `ipfs://<cid>[/<path>]`
+ *   - `ipfs://ipfs/<cid>[/<path>]` (Foundation's double-prefix bug)
+ *   - `https://<gateway>/ipfs/<cid>[/<path>]` (any HTTP IPFS gateway —
+ *     custom Pinata domains, ipfs.io, dweb.link, etc.). Covers tokens
+ *     whose metadata embeds gateway URLs with hotlink protection that
+ *     would otherwise return 403.
+ *
+ * Returns `null` if no CID is found.
  */
 export function extractCid(uri: string): string | null {
-  if (!uri.startsWith("ipfs://")) return null
-  let cid = uri.replace("ipfs://", "")
-  // Fix Foundation's double-prefix bug: ipfs://ipfs/Qm...
-  if (cid.startsWith("ipfs/")) cid = cid.replace("ipfs/", "")
-  return cid || null
+  if (uri.startsWith("ipfs://")) {
+    let cid = uri.replace("ipfs://", "")
+    // Fix Foundation's double-prefix bug: ipfs://ipfs/Qm...
+    if (cid.startsWith("ipfs/")) cid = cid.replace("ipfs/", "")
+    return cid || null
+  }
+  if (uri.startsWith("http://") || uri.startsWith("https://")) {
+    // Look for `/ipfs/<cid>` in the path. Anything after the CID is
+    // treated as a sub-path and preserved on the rebuilt gateway URL.
+    const ipfsIdx = uri.search(/\/ipfs\//)
+    if (ipfsIdx === -1) return null
+    const tail = uri.slice(ipfsIdx + "/ipfs/".length)
+    const m = tail.match(CID_RE)
+    if (!m || m.index !== 0) return null
+    // Preserve the rest of the path (e.g. /CCU1007.png) and any query.
+    return tail
+  }
+  return null
 }
 
 /**

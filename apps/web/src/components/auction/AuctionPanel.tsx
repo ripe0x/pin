@@ -480,7 +480,7 @@ function FeesBreakdown({
   }
 
   return (
-    <div className="px-5 py-4 bg-gray-50 border-t border-gray-100">
+    <div className="px-5 py-4 bg-surface-muted border-t border-gray-100">
       <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400 mb-2">
         On settlement
       </p>
@@ -492,8 +492,8 @@ function FeesBreakdown({
               key={label}
               className="flex items-baseline justify-between gap-3 text-[11px] font-mono"
             >
-              <dt className="text-gray-500">{label}</dt>
-              <dd className="tabular-nums text-gray-700">
+              <dt className="text-fg-muted">{label}</dt>
+              <dd className="tabular-nums text-fg">
                 <span>{formatBpsPct(bps)}</span>
                 {previewBid > 0n && (
                   <>
@@ -513,7 +513,7 @@ function FeesBreakdown({
         <>
           <hr className="my-3 border-t border-gray-200" />
           <div className="flex items-baseline justify-between gap-3 text-[11px] font-mono">
-            <span className="text-gray-500 flex-1 [padding-left:2ch] [text-indent:-2ch] [text-wrap:balance]">
+            <span className="text-fg-muted flex-1 [padding-left:2ch] [text-indent:-2ch] [text-wrap:balance]">
               {/* Hanging indent sized in `ch` units so the gutter is
                   exactly the width of "+ " (two monospace chars) —
                   wrapped lines align precisely under "3" rather than
@@ -521,7 +521,7 @@ function FeesBreakdown({
                   "marketplace fee" together. */}
               + 3% Additional SuperRare marketplace&nbsp;fee
             </span>
-            <span className="tabular-nums text-gray-700 text-right whitespace-nowrap">
+            <span className="tabular-nums text-fg text-right whitespace-nowrap">
               {previewBid > 0n ? (
                 <>
                   <span>{formatEthShort(premiumWei)} ETH</span>
