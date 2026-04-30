@@ -486,6 +486,99 @@ export async function getFoundationCancellableListingsFromIndexer(
   })
 }
 
+export type FoundationArtistTokenRef = {
+  contract: string
+  tokenId: string
+  blockNumber: bigint
+  logIndex: number
+}
+
+/**
+ * All Foundation tokens (shared 1/1 contract + per-artist collections)
+ * minted by a given creator, newest-first. Replaces
+ * `discoverSharedContractRefs` and `discoverCollectionRefs` cold-cache
+ * `eth_getLogs` scans.
+ */
+export async function getFoundationArtistTokensFromIndexer(
+  artistAddress: string,
+): Promise<FoundationArtistTokenRef[] | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+
+  return withTimeout(async () => {
+    const creator = artistAddress.toLowerCase()
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+      /[^a-zA-Z0-9_]/g,
+      "",
+    )
+
+    const rows = (await db.unsafe(
+      `SELECT contract, token_id::text AS token_id,
+              block_number::text AS block_number, log_index
+       FROM ${schema}.fnd_artist_tokens
+       WHERE creator = $1
+       ORDER BY block_number DESC, log_index DESC`,
+      [creator],
+    )) as Array<{
+      contract: string
+      token_id: string
+      block_number: string
+      log_index: number
+    }>
+
+    return rows.map((r) => ({
+      contract: r.contract,
+      tokenId: r.token_id,
+      blockNumber: BigInt(r.block_number),
+      logIndex: r.log_index,
+    }))
+  }, 2_000)
+}
+
+export type FoundationCollectionRef = {
+  collection: string
+  name: string | null
+  kind: "1of1" | "drop"
+}
+
+/**
+ * Foundation collection contracts deployed by an artist via the V1/V2
+ * factories. Replaces the 6-`getLogs`-in-parallel scan in
+ * `findArtistCollections`.
+ */
+export async function getFoundationCollectionsFromIndexer(
+  artistAddress: string,
+): Promise<FoundationCollectionRef[] | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+
+  return withTimeout(async () => {
+    const creator = artistAddress.toLowerCase()
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+      /[^a-zA-Z0-9_]/g,
+      "",
+    )
+
+    const rows = (await db.unsafe(
+      `SELECT collection, name, kind
+       FROM ${schema}.fnd_collections
+       WHERE creator = $1
+       ORDER BY created_at_block DESC`,
+      [creator],
+    )) as Array<{
+      collection: string
+      name: string | null
+      kind: "1of1" | "drop"
+    }>
+
+    return rows.map((r) => ({
+      collection: r.collection,
+      name: r.name,
+      kind: r.kind,
+    }))
+  })
+}
+
 export async function getActiveAuctionCountFromIndexer(
   sellerAddress: string,
 ): Promise<number | null> {

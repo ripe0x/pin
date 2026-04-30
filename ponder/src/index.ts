@@ -7,6 +7,8 @@ import {
   fndBids,
   fndBuyNows,
   fndSales,
+  fndCollections,
+  fndArtistTokens,
 } from "ponder:schema"
 
 /**
@@ -369,3 +371,221 @@ ponder.on("NFTMarket:BuyPriceInvalidated", async ({ event, context }) => {
     .update(fndBuyNows, { id })
     .set({ status: "invalidated", updatedAtTime: event.block.timestamp })
 })
+
+// ─── Foundation shared 1/1 NFT contract ──────────────────────────────────
+// Every artist mint on `0x3B3ee...` lands as a Minted event keyed by
+// (creator, tokenId). We write to fnd_artist_tokens so the artist gallery
+// can list shared-contract tokens via a `WHERE creator = $1` query.
+
+const ZERO_ADDR = "0x0000000000000000000000000000000000000000" as const
+
+const FOUNDATION_NFT_ADDRESS =
+  "0x3B3ee1931Dc30C1957379FAc9aba94D1C48a5405" as const
+
+const tokenRefId = (contract: string, tokenId: bigint) =>
+  `${contract.toLowerCase()}-${tokenId.toString()}`
+
+ponder.on("FoundationNFT:Minted", async ({ event, context }) => {
+  const { creator, tokenId } = event.args
+  await context.db
+    .insert(fndArtistTokens)
+    .values({
+      id: tokenRefId(FOUNDATION_NFT_ADDRESS, tokenId),
+      creator,
+      contract: FOUNDATION_NFT_ADDRESS,
+      tokenId,
+      blockNumber: event.block.number,
+      logIndex: event.log.logIndex,
+      blockTime: event.block.timestamp,
+    })
+    .onConflictDoNothing()
+})
+
+// ─── Foundation collection factories (V1 + V2) ───────────────────────────
+// Every per-artist collection contract emitted by either factory is
+// recorded here, plus the Ponder factory() pattern in ponder.config.ts
+// hooks each new contract up to FoundationCollection's Transfer handler
+// below.
+
+ponder.on(
+  "FoundationCollectionFactoryV1:NFTCollectionCreated",
+  async ({ event, context }) => {
+    const { collection, creator, name, symbol } = event.args
+    await context.db
+      .insert(fndCollections)
+      .values({
+        collection,
+        creator,
+        kind: "1of1",
+        name,
+        symbol,
+        createdAtBlock: event.block.number,
+        createdAtTime: event.block.timestamp,
+      })
+      .onConflictDoNothing()
+  },
+)
+
+ponder.on(
+  "FoundationCollectionFactoryV1:CollectionCreated",
+  async ({ event, context }) => {
+    const { collection, creator, name, symbol } = event.args
+    await context.db
+      .insert(fndCollections)
+      .values({
+        collection,
+        creator,
+        kind: "1of1",
+        name,
+        symbol,
+        createdAtBlock: event.block.number,
+        createdAtTime: event.block.timestamp,
+      })
+      .onConflictDoNothing()
+  },
+)
+
+ponder.on(
+  "FoundationCollectionFactoryV1:NFTDropCollectionCreated",
+  async ({ event, context }) => {
+    const { collection, creator, name, symbol } = event.args
+    await context.db
+      .insert(fndCollections)
+      .values({
+        collection,
+        creator,
+        kind: "drop",
+        name,
+        symbol,
+        createdAtBlock: event.block.number,
+        createdAtTime: event.block.timestamp,
+      })
+      .onConflictDoNothing()
+  },
+)
+
+ponder.on(
+  "FoundationCollectionFactoryV2:NFTCollectionCreated",
+  async ({ event, context }) => {
+    const { collection, creator, name, symbol } = event.args
+    await context.db
+      .insert(fndCollections)
+      .values({
+        collection,
+        creator,
+        kind: "1of1",
+        name,
+        symbol,
+        createdAtBlock: event.block.number,
+        createdAtTime: event.block.timestamp,
+      })
+      .onConflictDoNothing()
+  },
+)
+
+ponder.on(
+  "FoundationCollectionFactoryV2:CollectionCreated",
+  async ({ event, context }) => {
+    const { collection, creator, name, symbol } = event.args
+    await context.db
+      .insert(fndCollections)
+      .values({
+        collection,
+        creator,
+        kind: "1of1",
+        name,
+        symbol,
+        createdAtBlock: event.block.number,
+        createdAtTime: event.block.timestamp,
+      })
+      .onConflictDoNothing()
+  },
+)
+
+ponder.on(
+  "FoundationCollectionFactoryV2:NFTDropCollectionCreated",
+  async ({ event, context }) => {
+    const { collection, creator, name, symbol } = event.args
+    await context.db
+      .insert(fndCollections)
+      .values({
+        collection,
+        creator,
+        kind: "drop",
+        name,
+        symbol,
+        createdAtBlock: event.block.number,
+        createdAtTime: event.block.timestamp,
+      })
+      .onConflictDoNothing()
+  },
+)
+
+// ─── Per-artist Foundation collection contracts ──────────────────────────
+// Three contract entries (modern / legacy / drop) all run the same handler
+// because the source address comes from `event.log.address` and writes are
+// idempotent. We only persist Transfer-from-zero (mints); the `to` address
+// is the artist (the artist mints to themselves first).
+
+ponder.on(
+  "FoundationCollectionViaModern:Transfer",
+  async ({ event, context }) => {
+    const { from, to, tokenId } = event.args
+    if (from !== ZERO_ADDR) return
+    const collection = event.log.address
+    await context.db
+      .insert(fndArtistTokens)
+      .values({
+        id: tokenRefId(collection, tokenId),
+        creator: to,
+        contract: collection,
+        tokenId,
+        blockNumber: event.block.number,
+        logIndex: event.log.logIndex,
+        blockTime: event.block.timestamp,
+      })
+      .onConflictDoNothing()
+  },
+)
+
+ponder.on(
+  "FoundationCollectionViaLegacy:Transfer",
+  async ({ event, context }) => {
+    const { from, to, tokenId } = event.args
+    if (from !== ZERO_ADDR) return
+    const collection = event.log.address
+    await context.db
+      .insert(fndArtistTokens)
+      .values({
+        id: tokenRefId(collection, tokenId),
+        creator: to,
+        contract: collection,
+        tokenId,
+        blockNumber: event.block.number,
+        logIndex: event.log.logIndex,
+        blockTime: event.block.timestamp,
+      })
+      .onConflictDoNothing()
+  },
+)
+
+ponder.on(
+  "FoundationCollectionViaDrop:Transfer",
+  async ({ event, context }) => {
+    const { from, to, tokenId } = event.args
+    if (from !== ZERO_ADDR) return
+    const collection = event.log.address
+    await context.db
+      .insert(fndArtistTokens)
+      .values({
+        id: tokenRefId(collection, tokenId),
+        creator: to,
+        contract: collection,
+        tokenId,
+        blockNumber: event.block.number,
+        logIndex: event.log.logIndex,
+        blockTime: event.block.timestamp,
+      })
+      .onConflictDoNothing()
+  },
+)

@@ -197,3 +197,45 @@ export const fndSales = onchainTable(
     tokenTimeIdx: index().on(table.nftContract, table.tokenId, table.blockTime),
   }),
 )
+
+// Every Foundation collection contract artists deploy via the V1/V2
+// factories. Maps collection address → creator. Powers
+// `findArtistCollections` reads (currently 6 parallel getLogs over a 9M-
+// block range per artist gallery cold cache).
+export const fndCollections = onchainTable(
+  "fnd_collections",
+  (t) => ({
+    collection: t.hex().primaryKey(),
+    creator: t.hex().notNull(),
+    kind: t.text().notNull(), // "1of1" | "drop"
+    name: t.text(),
+    symbol: t.text(),
+    createdAtBlock: t.bigint().notNull(),
+    createdAtTime: t.bigint().notNull(),
+  }),
+  (table) => ({
+    creatorIdx: index().on(table.creator),
+  }),
+)
+
+// Unified per-artist token list. Two writers populate it:
+//   - FoundationNFT:Minted (the shared 1/1 contract)
+//   - FoundationCollection:Transfer (mint events on per-artist collection
+//     contracts deployed via the factories)
+// Powers `discoverArtistTokenRefs` reads on the artist gallery cold cache.
+export const fndArtistTokens = onchainTable(
+  "fnd_artist_tokens",
+  (t) => ({
+    id: t.text().primaryKey(), // `${contract}-${tokenId}`
+    creator: t.hex().notNull(),
+    contract: t.hex().notNull(),
+    tokenId: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    logIndex: t.integer().notNull(),
+    blockTime: t.bigint().notNull(),
+  }),
+  (table) => ({
+    creatorIdx: index().on(table.creator, table.blockNumber),
+    tokenIdx: index().on(table.contract, table.tokenId),
+  }),
+)

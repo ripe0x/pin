@@ -30,6 +30,7 @@ import {
   discoverManifoldTokenRefs,
 } from "./manifold-discovery"
 import { mapWithConcurrency } from "./concurrency"
+import { getFoundationArtistTokensFromIndexer } from "./indexer-queries"
 
 const FOUNDATION_NFT_ADDRESS = FOUNDATION_NFT[MAINNET_CHAIN_ID]
 const FACTORY_V1 = COLLECTION_FACTORY_V1[MAINNET_CHAIN_ID]
@@ -160,16 +161,46 @@ export async function discoverArtistTokenRefs(
 ): Promise<TokenRef[]> {
   const client = getClient()
   const artist = artistAddress.toLowerCase() as Address
+
+  // Indexer-first for the Foundation side. When Ponder is up, both
+  // shared-contract Minted events and per-artist collection mints have
+  // already been written to fnd_artist_tokens — replaces 7+ parallel
+  // `eth_getLogs` scans (1 shared Minted + 6 collection-factory event
+  // streams + per-collection Transfer scans) with a single SQL query.
+  const indexerFoundationRefs =
+    await getFoundationArtistTokensFromIndexer(artist)
+
   const latestBlock = await client.getBlockNumber()
 
   const [sharedRefs, collectionRefs, manifoldRefs] = await Promise.all([
-    discoverSharedContractRefs(client, artist, latestBlock),
-    discoverCollectionRefs(client, artist, latestBlock),
+    indexerFoundationRefs !== null
+      ? Promise.resolve([] as SortableRef[])
+      : discoverSharedContractRefs(client, artist, latestBlock),
+    indexerFoundationRefs !== null
+      ? Promise.resolve([] as SortableRef[])
+      : discoverCollectionRefs(client, artist, latestBlock),
     discoverManifoldTokenRefs(artist),
   ])
 
+  // When the indexer served Foundation refs, hydrate them into
+  // SortableRefs alongside the (empty) RPC-fallback arrays so the
+  // downstream sort + dedupe sees the same shape.
+  const indexerFoundationSortable: SortableRef[] =
+    indexerFoundationRefs?.map((r) => ({
+      contract: r.contract as Address,
+      tokenId: r.tokenId,
+      creator: artist,
+      collectionName: null,
+      blockNumber: r.blockNumber,
+      logIndex: r.logIndex,
+    })) ?? []
+
   // Newest-first within Foundation sources (block desc, logIndex desc).
-  const foundationSorted = [...sharedRefs, ...collectionRefs].sort((a, b) => {
+  const foundationSorted = [
+    ...indexerFoundationSortable,
+    ...sharedRefs,
+    ...collectionRefs,
+  ].sort((a, b) => {
     if (a.blockNumber !== b.blockNumber) {
       return a.blockNumber > b.blockNumber ? -1 : 1
     }
