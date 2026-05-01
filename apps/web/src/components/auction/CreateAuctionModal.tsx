@@ -1,26 +1,19 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from "wagmi"
-import { erc721Abi, sovereignAuctionHouseAbi } from "@pin/abi"
-import { useEthAmountInput } from "@/lib/useEthAmountInput"
+import { useState } from "react"
+import { AuctionTermsForm } from "./AuctionTermsForm"
 import { TxLink } from "./tx"
 
-const DURATION_OPTIONS = [
-  { label: "24 hours", seconds: 24 * 60 * 60 },
-  { label: "3 days", seconds: 3 * 24 * 60 * 60 },
-  { label: "7 days", seconds: 7 * 24 * 60 * 60 },
-] as const
-
 /**
- * Two-step create flow:
- *   1. Approve the auction house to transfer this NFT (skipped if already approved).
- *   2. Call createAuction with reserve + duration.
+ * Modal wrapper around <AuctionTermsForm>. Used from token detail pages where
+ * the (contract, tokenId) is already known. The /auction/new page renders
+ * <AuctionTermsForm> inline instead — same on-chain flow, no chrome.
  *
  * Props:
  *   houseAddress  — the artist's deployed auction house
  *   nftContract   — the ERC721 contract holding the token
  *   tokenId       — token ID to auction
+ *   tokenTitle    — optional display name shown in the header
  *   onClose       — called when the user dismisses the modal
  *   onSuccess     — called after the createAuction tx confirms
  */
@@ -39,89 +32,12 @@ export function CreateAuctionModal({
   onClose: () => void
   onSuccess?: () => void
 }) {
-  const { address } = useAccount()
-  const reserve = useEthAmountInput()
-  const [durationSec, setDurationSec] = useState<number>(DURATION_OPTIONS[0].seconds)
+  const [createdHash, setCreatedHash] = useState<`0x${string}` | null>(null)
 
-  // Check existing approval state. Two ways: per-token getApproved OR
-  // setApprovalForAll on the operator. We only check the operator approval
-  // because that's the cheaper-to-keep path for repeat auctions.
-  const { data: isApprovedForAll, refetch: refetchApproval } = useReadContract({
-    address: nftContract,
-    abi: erc721Abi,
-    functionName: "isApprovedForAll",
-    args: address ? [address, houseAddress] : undefined,
-    query: { enabled: !!address },
-  })
-
-  // Approve tx
-  const {
-    writeContract: writeApprove,
-    data: approveHash,
-    isPending: isApprovePending,
-    error: approveError,
-  } = useWriteContract()
-  const {
-    isLoading: isApproveMining,
-    isSuccess: isApproveSuccess,
-    data: approveReceipt,
-  } = useWaitForTransactionReceipt({ hash: approveHash })
-  const approveReverted = approveReceipt?.status === "reverted"
-  useEffect(() => {
-    if (isApproveSuccess) refetchApproval()
-  }, [isApproveSuccess, refetchApproval])
-
-  // Create tx
-  const {
-    writeContract: writeCreate,
-    data: createHash,
-    isPending: isCreatePending,
-    error: createError,
-  } = useWriteContract()
-  const {
-    isLoading: isCreateMining,
-    isSuccess: isCreateSuccess,
-    data: createReceipt,
-  } = useWaitForTransactionReceipt({ hash: createHash })
-  const createReverted = createReceipt?.status === "reverted"
-  useEffect(() => {
-    if (isCreateSuccess && onSuccess) onSuccess()
-  }, [isCreateSuccess, onSuccess])
-
-  // Reserve = 0 is valid ("no reserve" auctions). The hook's `wei` is null
-  // for empty/invalid input; reserveValid is true when we have a parsed
-  // non-negative value (parser already rejects negatives).
-  const reserveValid = reserve.isValid && reserve.wei !== null
-
-  const isNoReserve = reserve.wei === 0n
-
-  function handleApprove() {
-    writeApprove({
-      address: nftContract,
-      abi: erc721Abi,
-      functionName: "setApprovalForAll",
-      args: [houseAddress, true],
-    })
+  function handleSuccess(hash: `0x${string}`) {
+    setCreatedHash(hash)
+    if (onSuccess) onSuccess()
   }
-
-  function handleCreate() {
-    if (!reserveValid || reserve.wei == null) return
-    writeCreate({
-      address: houseAddress,
-      abi: sovereignAuctionHouseAbi,
-      functionName: "createAuction",
-      args: [
-        BigInt(tokenId),
-        nftContract,
-        BigInt(durationSec),
-        reserve.wei,
-      ],
-    })
-  }
-
-  const needsApproval = !isApprovedForAll
-  const approveBusy = isApprovePending || isApproveMining
-  const createBusy = isCreatePending || isCreateMining
 
   return (
     <div
@@ -141,13 +57,13 @@ export function CreateAuctionModal({
           )}
         </div>
 
-        {isCreateSuccess ? (
+        {createdHash ? (
           <div className="px-5 py-6 space-y-4">
             <div className="rounded border border-emerald-200 bg-emerald-50 p-3 space-y-2">
               <p className="text-sm font-medium text-emerald-900">
                 Auction created ✓
               </p>
-              {createHash && <TxLink hash={createHash} label="Create tx:" />}
+              <TxLink hash={createdHash} label="Create tx:" />
             </div>
             <button
               onClick={() => {
@@ -163,137 +79,13 @@ export function CreateAuctionModal({
             </button>
           </div>
         ) : (
-          <div className="px-5 py-5 space-y-5">
-            <div className="space-y-2">
-              <label className="block">
-                <span className="text-xs uppercase tracking-wider text-gray-500">
-                  Reserve price
-                </span>
-                <div className="mt-1 flex items-stretch border border-gray-200 focus-within:border-gray-400 transition-colors rounded">
-                  <input
-                    {...reserve.inputProps}
-                    placeholder="0.5"
-                    disabled={createBusy}
-                    className="flex-1 px-3 py-2.5 text-base font-medium outline-none disabled:opacity-40 bg-transparent"
-                  />
-                  <span className="flex items-center px-3 text-sm text-gray-400 border-l border-gray-200">
-                    ETH
-                  </span>
-                </div>
-              </label>
-              {reserve.error ? (
-                <p className="text-xs text-red-500">{reserve.error}</p>
-              ) : (
-                <p className="text-xs text-gray-400">
-                  {isNoReserve
-                    ? "No reserve — any bid wins. Timer starts on first bid."
-                    : "Auction starts on the first bid at or above this price."}
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <span className="text-xs uppercase tracking-wider text-gray-500 block">
-                Duration
-              </span>
-              <div className="grid grid-cols-3 gap-2">
-                {DURATION_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.seconds}
-                    onClick={() => setDurationSec(opt.seconds)}
-                    disabled={createBusy}
-                    className={`py-2 text-sm border rounded transition-colors ${
-                      durationSec === opt.seconds
-                        ? "border-fg bg-fg text-bg"
-                        : "border-gray-200 hover:border-gray-400"
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {needsApproval ? (
-              <div className="space-y-2">
-                <p className="text-xs text-gray-500">
-                  Step 1 of 2: approve your auction house to escrow this NFT
-                  during the auction. One-time per collection.
-                </p>
-                <button
-                  onClick={handleApprove}
-                  disabled={approveBusy}
-                  className="block w-full text-center text-sm font-medium py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {isApprovePending
-                    ? "Confirm in wallet…"
-                    : isApproveMining
-                      ? "Approving…"
-                      : "Approve auction house"}
-                </button>
-                {approveHash && isApproveMining && (
-                  <TxLink hash={approveHash} label="Pending tx:" />
-                )}
-                {approveReverted && approveHash && (
-                  <div className="rounded border border-red-200 bg-red-50 p-2.5 space-y-1">
-                    <p className="text-xs font-medium text-red-700">
-                      Approve reverted on-chain
-                    </p>
-                    <TxLink hash={approveHash} label="Reverted tx:" />
-                  </div>
-                )}
-                {approveError && (
-                  <p className="text-xs text-red-500 break-words">
-                    {approveError.message.includes("User rejected")
-                      ? "Transaction rejected"
-                      : approveError.message.split("\n")[0]}
-                  </p>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {isApproveSuccess && approveHash && (
-                  <div className="rounded border border-emerald-200 bg-emerald-50 p-2.5 flex items-center justify-between gap-2">
-                    <span className="text-xs font-medium text-emerald-900">
-                      Approved ✓
-                    </span>
-                    <TxLink hash={approveHash} label="Approve tx:" />
-                  </div>
-                )}
-                <button
-                  onClick={handleCreate}
-                  disabled={createBusy || !reserveValid}
-                  className="block w-full text-center text-sm font-medium py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {isCreatePending
-                    ? "Confirm in wallet…"
-                    : isCreateMining
-                      ? "Creating auction…"
-                      : "Start auction"}
-                </button>
-                {createHash && isCreateMining && (
-                  <TxLink hash={createHash} label="Pending tx:" />
-                )}
-                {createReverted && createHash && (
-                  <div className="rounded border border-red-200 bg-red-50 p-2.5 space-y-1">
-                    <p className="text-xs font-medium text-red-700">
-                      Create reverted on-chain
-                    </p>
-                    <p className="text-xs text-red-700/80">
-                      Likely cause: you don&apos;t own this token, or the house isn&apos;t approved.
-                    </p>
-                    <TxLink hash={createHash} label="Reverted tx:" />
-                  </div>
-                )}
-                {createError && (
-                  <p className="text-xs text-red-500 break-words">
-                    {createError.message.includes("User rejected")
-                      ? "Transaction rejected"
-                      : createError.message.split("\n")[0]}
-                  </p>
-                )}
-              </div>
-            )}
+          <div className="px-5 py-5">
+            <AuctionTermsForm
+              houseAddress={houseAddress}
+              nftContract={nftContract}
+              tokenId={tokenId}
+              onSuccess={handleSuccess}
+            />
           </div>
         )}
       </div>
