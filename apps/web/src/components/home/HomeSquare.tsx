@@ -116,6 +116,7 @@ export async function HomeSquare() {
                 `${w.seller.slice(0, 6)}…${w.seller.slice(-4)}`
               }
               artistAvatarUrl={id?.avatarUrl ?? null}
+              platform={w.platform}
             />
           </li>
         )
