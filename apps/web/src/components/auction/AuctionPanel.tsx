@@ -575,6 +575,15 @@ function BidSection({
   })
 
   useRevalidateAuctionOnSuccess(isSuccess, auction)
+  // After a confirmed bid, clear the input so it doesn't render the
+  // user's now-stale bid amount alongside an "already highest bidder"
+  // disabled button (the new minimum bid is current + BID_INCREASE,
+  // so leaving the old value triggers a misleading "below minimum"
+  // error). The success banner above the form provides the
+  // confirmation; the form below resets to a clean empty state.
+  useEffect(() => {
+    if (isSuccess) bid.reset()
+  }, [isSuccess, bid])
 
   const isPending = isWritePending || isTxPending
   const isSelfOutbidding =

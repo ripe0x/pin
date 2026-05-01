@@ -184,43 +184,168 @@ async function main() {
     fail("settle", e.shortMessage ?? e.message)
   }
 
-  // ── Test 4: delist() ABI encoding round-trip ──
-  // Use a separate token (Unit Sequence #5) that's still pre-bid on the
-  // fork. Whether `delist` succeeds vs reverts depends on TL's business
-  // rules; we accept either as long as the calldata is accepted.
-  log("\n[4] delist() ABI encoding — verify accepted by contract")
-  const DELIST_CONTRACT = "0xebbe808281df1f46dea0d6b57208d4c530c0f597"
-  const DELIST_TOKEN = 5n
-  const DELIST_SELLER = "0xBE2484ee4cA2B13BdA6a65aB4069FD241A7EFA3e"
-  await rpc("anvil_impersonateAccount", [DELIST_SELLER])
-  await rpc("anvil_setBalance", [DELIST_SELLER, "0x56BC75E2D63100000"])
-  const sellerWallet = createWalletClient({
-    account: DELIST_SELLER,
+  // ── Test 4: delist + relist round-trip ──
+  // Take an active pre-bid auction, have the seller delist it (NFT
+  // returns to seller, listing cleared), then re-list it on the same
+  // Auction House with new params and verify the fresh listing.
+  log("\n[4] delist + relist round-trip — verify both write paths")
+  const RELIST_CONTRACT = "0x3910dc95176be74fe94974922496219c6e2da3e1"
+  const RELIST_TOKEN = 4n
+  const RELIST_SELLER = "0x03F916d727876DA993F0D59CF08168Dd8F571074"
+
+  // Pre-state: confirm active type-2 auction with auction-house custody.
+  const before = await pub.readContract({
+    address: TL_AH,
+    abi: transientAuctionHouseAbi,
+    functionName: "getListing",
+    args: [RELIST_CONTRACT, RELIST_TOKEN],
+  })
+  const beforeId = before.id
+  if (before.type_ === 0 || before.seller.toLowerCase() !== RELIST_SELLER.toLowerCase()) {
+    fail("relist setup", "expected active listing not found on fork")
+    log("\n--- summary ---")
+    log(process.exitCode === 1 ? "FAILURES present" : "all checks passed")
+    return
+  }
+  const ownerPre = await pub.readContract({
+    address: RELIST_CONTRACT,
+    abi: [{ type: "function", name: "ownerOf", stateMutability: "view", inputs: [{ type: "uint256" }], outputs: [{ type: "address" }] }],
+    functionName: "ownerOf",
+    args: [RELIST_TOKEN],
+  })
+  if (ownerPre.toLowerCase() !== TL_AH.toLowerCase()) {
+    fail("relist setup", `expected AH custody pre-delist, got ${ownerPre}`)
+  } else {
+    pass(`pre: AH custodies token (id=${beforeId})`)
+  }
+
+  await rpc("anvil_impersonateAccount", [RELIST_SELLER])
+  await rpc("anvil_setBalance", [RELIST_SELLER, "0x56BC75E2D63100000"])
+  const seller = createWalletClient({
+    account: RELIST_SELLER,
     chain: foundry,
     transport,
   })
+
+  // ── Delist ──
   try {
-    const txHash = await sellerWallet.writeContract({
+    const txHash = await seller.writeContract({
       address: TL_AH,
       abi: transientAuctionHouseAbi,
       functionName: "delist",
-      args: [DELIST_CONTRACT, DELIST_TOKEN],
+      args: [RELIST_CONTRACT, RELIST_TOKEN],
     })
     const receipt = await pub.waitForTransactionReceipt({ hash: txHash })
-    if (receipt.status === "success") {
-      pass(`delist succeeded (gas ${receipt.gasUsed})`)
-    } else if (receipt.status === "reverted") {
-      pass(`delist reverted on-chain (contract business logic; ABI ok)`)
+    if (receipt.status !== "success") throw new Error(`status ${receipt.status}`)
+    pass(`delist tx confirmed (gas ${receipt.gasUsed})`)
+
+    const afterDelist = await pub.readContract({
+      address: TL_AH,
+      abi: transientAuctionHouseAbi,
+      functionName: "getListing",
+      args: [RELIST_CONTRACT, RELIST_TOKEN],
+    })
+    if (afterDelist.type_ === 0) pass("listing cleared (type_ == 0)")
+    else fail("listing cleared", `type_ still ${afterDelist.type_}`)
+
+    const ownerPost = await pub.readContract({
+      address: RELIST_CONTRACT,
+      abi: [{ type: "function", name: "ownerOf", stateMutability: "view", inputs: [{ type: "uint256" }], outputs: [{ type: "address" }] }],
+      functionName: "ownerOf",
+      args: [RELIST_TOKEN],
+    })
+    if (ownerPost.toLowerCase() === RELIST_SELLER.toLowerCase()) {
+      pass(`NFT returned to seller (${ownerPost})`)
     } else {
-      fail("delist encoding", `unexpected status ${receipt.status}`)
+      fail("ownerOf after delist", `got ${ownerPost}, expected ${RELIST_SELLER}`)
     }
   } catch (e) {
-    const msg = e.shortMessage ?? e.message ?? ""
-    if (msg.includes("revert")) {
-      pass(`delist reverted with contract-side message: ${msg.slice(0, 80)}`)
+    fail("delist", e.shortMessage ?? e.message)
+  }
+
+  // ── Relist ──
+  // The seller previously approved the Auction House for transfers
+  // (otherwise the original list() would have failed). That approval
+  // is per-(owner, operator) and persists across delist/relist —
+  // ERC-721 setApprovalForAll doesn't reset on transfer.
+  const NEW_RESERVE = parseEther("0.05")
+  const NEW_DURATION = 86400n
+  // list(address nftAddress, uint256 tokenId, uint8 type_,
+  //      address payoutReceiver, address currencyAddress,
+  //      uint256 openTime, uint256 reservePrice,
+  //      uint256 auctionDuration, uint256 buyNowPrice)
+  const listAbi = [
+    {
+      type: "function",
+      name: "list",
+      stateMutability: "nonpayable",
+      inputs: [
+        { name: "nftAddress", type: "address" },
+        { name: "tokenId", type: "uint256" },
+        { name: "type_", type: "uint8" },
+        { name: "payoutReceiver", type: "address" },
+        { name: "currencyAddress", type: "address" },
+        { name: "openTime", type: "uint256" },
+        { name: "reservePrice", type: "uint256" },
+        { name: "auctionDuration", type: "uint256" },
+        { name: "buyNowPrice", type: "uint256" },
+      ],
+      outputs: [],
+    },
+  ]
+  try {
+    const txHash = await seller.writeContract({
+      address: TL_AH,
+      abi: listAbi,
+      functionName: "list",
+      args: [
+        RELIST_CONTRACT,
+        RELIST_TOKEN,
+        2, // reserve auction
+        RELIST_SELLER, // payoutReceiver
+        ZERO, // ETH
+        0n, // openTime: 0 = open now
+        NEW_RESERVE,
+        NEW_DURATION,
+        0n, // buyNowPrice
+      ],
+    })
+    const receipt = await pub.waitForTransactionReceipt({ hash: txHash })
+    if (receipt.status !== "success") throw new Error(`status ${receipt.status}`)
+    pass(`list tx confirmed (gas ${receipt.gasUsed})`)
+
+    const after = await pub.readContract({
+      address: TL_AH,
+      abi: transientAuctionHouseAbi,
+      functionName: "getListing",
+      args: [RELIST_CONTRACT, RELIST_TOKEN],
+    })
+    if (after.type_ === 2) pass(`new listing type_ = 2 (reserve auction)`)
+    else fail("relist type", `expected 2, got ${after.type_}`)
+    if (after.reservePrice === NEW_RESERVE) {
+      pass(`new reservePrice = ${formatEther(after.reservePrice)} ETH`)
     } else {
-      fail("delist encoding", `unexpected error: ${msg}`)
+      fail("relist reserve", `expected ${NEW_RESERVE}, got ${after.reservePrice}`)
     }
+    if (after.id !== beforeId) {
+      pass(`new listing id ${after.id} ≠ old id ${beforeId} (fresh listing)`)
+    } else {
+      fail("relist id", "id didn't change — listing not actually fresh")
+    }
+
+    const ownerPost = await pub.readContract({
+      address: RELIST_CONTRACT,
+      abi: [{ type: "function", name: "ownerOf", stateMutability: "view", inputs: [{ type: "uint256" }], outputs: [{ type: "address" }] }],
+      functionName: "ownerOf",
+      args: [RELIST_TOKEN],
+    })
+    if (ownerPost.toLowerCase() === TL_AH.toLowerCase()) {
+      pass(`NFT custodied by Auction House post-relist`)
+    } else {
+      fail("ownerOf after relist", `expected AH, got ${ownerPost}`)
+    }
+  } catch (e) {
+    fail("relist", e.shortMessage ?? e.message)
   }
 
   log("\n--- summary ---")

@@ -24,9 +24,13 @@ import {
   readTransientSale,
   writeTransientSale,
   readTransientActiveAuctions,
+  readTransientBidHistory,
+  readTransientBidHistoryFreshness,
+  writeTransientBidHistory,
   LAZY_TTL,
   isFresh,
 } from "../lazy-index"
+import type { BidHistoryEntry } from "../auctions"
 import { refreshTransientAuctions } from "./transient-scan"
 
 const TL_AH = TL_AUCTION_HOUSE[MAINNET_CHAIN_ID]
@@ -53,6 +57,13 @@ const auctionSettledEvent = parseAbiItem(
 )
 const buyNowFulfilledEvent = parseAbiItem(
   "event BuyNowFulfilled(address indexed sender, address indexed nftAddress, uint256 indexed tokenId, address recipient, (uint8,bool,address,address,address,uint256,uint256,uint256,uint256,uint256,address,address,uint256,uint256) listing)",
+)
+// Bid history: indexed (sender, nftAddress, tokenId). The full Listing
+// struct rides on each event so we can filter to the current listing.id
+// in-memory after the scan (TL re-uses (contract, tokenId) when an
+// artist delists + relists).
+const auctionBidEvent = parseAbiItem(
+  "event AuctionBid(address indexed sender, address indexed nftAddress, uint256 indexed tokenId, (uint8,bool,address,address,address,uint256,uint256,uint256,uint256,uint256,address,address,uint256,uint256) listing)",
 )
 
 // Block-range chunk for indexed-arg log scans.
@@ -90,6 +101,127 @@ async function paginatedIndexedScan<T>(
     }
   }
   return out
+}
+
+/**
+ * Bid history for the CURRENT listing on (contract, tokenId). Mirrors
+ * Foundation's lazy pattern (see `getFoundationBidHistory`).
+ *
+ * Each AuctionBid event carries the full Listing struct (including
+ * `id`); we filter to bids where listing.id matches the current
+ * listing's id so prior listings on the same token don't leak in.
+ */
+async function getTransientBidHistory(
+  client: ReturnType<typeof createPublicClient>,
+  contract: Address,
+  tokenId: string,
+  currentListingId: bigint,
+): Promise<Array<Omit<BidHistoryEntry, "bidderDisplay">>> {
+  const listingIdStr = currentListingId.toString()
+  const freshness = await readTransientBidHistoryFreshness(
+    contract,
+    tokenId,
+    listingIdStr,
+  )
+  if (freshness && isFresh(freshness, LAZY_TTL.transientBids)) {
+    const cached = await readTransientBidHistory(contract, tokenId, listingIdStr)
+    if (cached) {
+      return cached.map((b) => ({
+        bidder: b.bidder as Address,
+        amount: b.amount,
+        blockTime: b.blockTime,
+        txHash: b.txHash as `0x${string}`,
+      }))
+    }
+  }
+
+  const latest = await client.getBlockNumber()
+  const logs = await paginatedIndexedScan(
+    (from, to) =>
+      client.getLogs({
+        address: TL_AH,
+        event: auctionBidEvent,
+        args: { nftAddress: contract, tokenId: BigInt(tokenId) },
+        fromBlock: from,
+        toBlock: to,
+      }),
+    TL_AUCTION_HOUSE_DEPLOY_BLOCK,
+    latest,
+  )
+
+  if (logs.length === 0) return []
+
+  // Decode + filter to current listing.id. Listing tuple is anonymous
+  // in the parseAbiItem signature → array decoding (positional).
+  type ListingArray = readonly [
+    number, boolean, Address, Address, Address,
+    bigint, bigint, bigint, bigint, bigint,
+    Address, Address, bigint, bigint,
+  ]
+  type Decoded = {
+    bidder: Address
+    amount: bigint
+    txHash: `0x${string}`
+    logIndex: number
+    blockNumber: bigint
+    blockTime: number
+    listingId: bigint
+  }
+  const decodedRaw: Omit<Decoded, "blockTime">[] = []
+  for (const l of logs) {
+    if (l.blockNumber === null || l.transactionHash === null) continue
+    if (l.logIndex === null) continue
+    const args = l.args as { sender?: Address; listing?: ListingArray }
+    const tuple = args.listing
+    if (!tuple) continue
+    const [, , , , currency, , , , , , , highestBidder, highestBid, id] = tuple
+    if (currency.toLowerCase() !== ETH_CURRENCY) continue
+    if (id !== currentListingId) continue // only current listing's bids
+    decodedRaw.push({
+      bidder: highestBidder,
+      amount: highestBid,
+      txHash: l.transactionHash,
+      logIndex: l.logIndex,
+      blockNumber: l.blockNumber,
+      listingId: id,
+    })
+  }
+
+  // Resolve unique block timestamps in parallel.
+  const uniqueBlocks = Array.from(new Set(decodedRaw.map((d) => d.blockNumber)))
+  const blockTimes = new Map<bigint, number>()
+  await Promise.all(
+    uniqueBlocks.map(async (bn) => {
+      const block = await client.getBlock({ blockNumber: bn }).catch(() => null)
+      blockTimes.set(bn, block ? Number(block.timestamp) : 0)
+    }),
+  )
+  const decoded: Decoded[] = decodedRaw.map((d) => ({
+    ...d,
+    blockTime: blockTimes.get(d.blockNumber) ?? 0,
+  }))
+
+  writeTransientBidHistory(
+    contract,
+    tokenId,
+    decoded.map((d) => ({
+      txHash: d.txHash,
+      logIndex: d.logIndex,
+      listingId: d.listingId.toString(),
+      bidder: d.bidder,
+      amount: d.amount,
+      blockTime: d.blockTime,
+      blockNumber: d.blockNumber,
+    })),
+  )
+
+  decoded.sort((a, b) => b.blockTime - a.blockTime)
+  return decoded.map((d) => ({
+    bidder: d.bidder,
+    amount: d.amount,
+    blockTime: d.blockTime,
+    txHash: d.txHash,
+  }))
 }
 
 // `getListing(nftAddress, tokenId)` returns the Listing struct. Because
@@ -345,13 +477,23 @@ export const transientAdapter: PlatformAdapter = {
     // Display "current" amount: post-bid show the high bid, pre-bid
     // show the reserve.
     const amount = awaitingFirstBid ? reservePrice : highestBid
-    // Use the contract-provided next-bid amount when available — TL
-    // computes it from BID_INCREASE_BPS internally so it's always
-    // exact. Falls back to reserve / current for safety.
-    const minBidWei = (nextBid as bigint | null) ?? (awaitingFirstBid ? reservePrice : highestBid)
+    // Pre-bid: TL's `getNextBid` returns a sentinel `1` (the contract
+    // checks `bid >= reservePrice` separately, so any wei > 0 satisfies
+    // the next-bid invariant — the reserve is the real floor). Use
+    // reservePrice as the displayed minimum so the UI matches what
+    // a successful first bid actually requires.
+    // Post-bid: trust the contract-provided value (currentBid scaled
+    // up by BID_INCREASE_BPS).
+    const minBidWei = awaitingFirstBid
+      ? reservePrice
+      : (nextBid as bigint | null) ?? highestBid
 
+    // Bid history for the current listing.id (skips bids from prior
+    // listings on the same token). Same lazy + RPC pattern as Foundation.
+    const rawBids = await getTransientBidHistory(client, contract, tokenId, id)
     const addressesToResolve: string[] = [seller]
     if (highestBidder !== ZERO_ADDRESS) addressesToResolve.push(highestBidder)
+    for (const b of rawBids) addressesToResolve.push(b.bidder)
     const names = await resolveDisplayNames(addressesToResolve)
     const lookup = (a: Address) => names.get(a.toLowerCase()) ?? a
 
@@ -365,7 +507,7 @@ export const transientAdapter: PlatformAdapter = {
     // gives an exact value when needed).
     const protoBps = Number(protocolFeeBps)
     const fees: AuctionFees = {
-      platformLabel: "Transient",
+      platformLabel: "Transient Labs",
       protocolFeeBps: protoBps,
       creatorRoyaltyBps: 0,
       sellerBps: Math.max(0, 10000 - protoBps),
@@ -388,7 +530,10 @@ export const transientAdapter: PlatformAdapter = {
       awaitingFirstBid,
       awaitingSettlement,
       fees,
-      bidHistory: [],
+      bidHistory: rawBids.map((b) => ({
+        ...b,
+        bidderDisplay: lookup(b.bidder),
+      })),
     }
   },
 

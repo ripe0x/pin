@@ -770,6 +770,12 @@ export const LAZY_TTL = {
   transientCollectorTokens: 6 * 60 * 60 * 1000,
   /** TL active-auction scan cursor: matches SR V2's 2-min cooldown. */
   transientAuctionScan: 2 * 60 * 1000,
+  /** SR V2 bid history: same 30-min TTL as Foundation's bids. */
+  superrareV2Bids: 30 * 60 * 1000,
+  /** TL bid history: same 30-min TTL. */
+  transientBids: 30 * 60 * 1000,
+  /** PND/Sovereign bid history: same 30-min TTL. */
+  pndBids: 30 * 60 * 1000,
 }
 
 export function isFresh(lastIndexedAt: Date, ttlMs: number): boolean {
@@ -1419,6 +1425,277 @@ export function writeTransientActiveAuctions(
                 listing_type = EXCLUDED.listing_type,
                 started_at_block = EXCLUDED.started_at_block,
                 last_indexed_at = NOW()
+        `
+      }
+    } catch {
+      /* ignore */
+    }
+  })()
+}
+
+// ─── SR V2 / Transient / PND bid history helpers ────────────────────────
+// All three mirror the Foundation pattern in lines 120-205: a freshness
+// reader (MAX(last_indexed_at) per natural key), a full read, and a
+// bulk UPSERT writer. The three only differ in the natural key:
+//   - SR V2: (nft_contract, token_id)
+//   - TL:    (nft_contract, token_id, listing_id)  — listing_id stored
+//             so the read can filter to the current listing's bids
+//   - PND:   (house, auction_id)
+
+// ── SuperRare V2 ──
+export async function readSuperrareV2BidHistory(
+  nftContract: string,
+  tokenId: string,
+): Promise<LazyBidHistoryEntry[] | null> {
+  if (!sql) return null
+  try {
+    const rows = await sql<
+      Array<{
+        bidder: string
+        amount: string
+        block_time: string
+        tx_hash: string
+      }>
+    >`
+      SELECT bidder, amount, block_time::text AS block_time, tx_hash
+      FROM lazy_srv2_bids
+      WHERE nft_contract = ${nftContract.toLowerCase()}
+        AND token_id = ${tokenId}
+      ORDER BY block_number DESC, log_index DESC
+    `
+    return rows.map((r) => ({
+      bidder: r.bidder,
+      amount: BigInt(r.amount),
+      blockTime: Number(r.block_time),
+      txHash: r.tx_hash,
+    }))
+  } catch {
+    return null
+  }
+}
+
+export async function readSuperrareV2BidHistoryFreshness(
+  nftContract: string,
+  tokenId: string,
+): Promise<Date | null> {
+  if (!sql) return null
+  try {
+    const rows = await sql<Array<{ last_indexed_at: Date }>>`
+      SELECT MAX(last_indexed_at) AS last_indexed_at
+      FROM lazy_srv2_bids
+      WHERE nft_contract = ${nftContract.toLowerCase()}
+        AND token_id = ${tokenId}
+    `
+    return rows[0]?.last_indexed_at ?? null
+  } catch {
+    return null
+  }
+}
+
+export function writeSuperrareV2BidHistory(
+  nftContract: string,
+  tokenId: string,
+  bids: Array<{
+    txHash: string
+    logIndex: number
+    bidder: string
+    amount: bigint
+    blockTime: number
+    blockNumber: bigint
+  }>,
+): void {
+  if (!sql || bids.length === 0) return
+  void (async () => {
+    try {
+      for (const b of bids) {
+        await sql`
+          INSERT INTO lazy_srv2_bids
+            (nft_contract, token_id, tx_hash, log_index, bidder, amount,
+             block_time, block_number, last_indexed_at)
+          VALUES
+            (${nftContract.toLowerCase()}, ${tokenId}, ${b.txHash},
+             ${b.logIndex}, ${b.bidder.toLowerCase()}, ${b.amount.toString()},
+             ${b.blockTime}, ${b.blockNumber.toString()}, NOW())
+          ON CONFLICT (nft_contract, token_id, tx_hash, log_index) DO UPDATE
+            SET last_indexed_at = NOW()
+        `
+      }
+    } catch {
+      /* ignore */
+    }
+  })()
+}
+
+// ── Transient Labs ──
+// `listing_id` stored alongside each bid so the read path can filter
+// to the current listing — TL re-uses (nftAddress, tokenId) across
+// successive listings when an artist delists + relists.
+export async function readTransientBidHistory(
+  nftContract: string,
+  tokenId: string,
+  listingId: string,
+): Promise<LazyBidHistoryEntry[] | null> {
+  if (!sql) return null
+  try {
+    const rows = await sql<
+      Array<{
+        bidder: string
+        amount: string
+        block_time: string
+        tx_hash: string
+      }>
+    >`
+      SELECT bidder, amount, block_time::text AS block_time, tx_hash
+      FROM lazy_tl_bids
+      WHERE nft_contract = ${nftContract.toLowerCase()}
+        AND token_id = ${tokenId}
+        AND listing_id = ${listingId}
+      ORDER BY block_number DESC, log_index DESC
+    `
+    return rows.map((r) => ({
+      bidder: r.bidder,
+      amount: BigInt(r.amount),
+      blockTime: Number(r.block_time),
+      txHash: r.tx_hash,
+    }))
+  } catch {
+    return null
+  }
+}
+
+export async function readTransientBidHistoryFreshness(
+  nftContract: string,
+  tokenId: string,
+  listingId: string,
+): Promise<Date | null> {
+  if (!sql) return null
+  try {
+    const rows = await sql<Array<{ last_indexed_at: Date }>>`
+      SELECT MAX(last_indexed_at) AS last_indexed_at
+      FROM lazy_tl_bids
+      WHERE nft_contract = ${nftContract.toLowerCase()}
+        AND token_id = ${tokenId}
+        AND listing_id = ${listingId}
+    `
+    return rows[0]?.last_indexed_at ?? null
+  } catch {
+    return null
+  }
+}
+
+export function writeTransientBidHistory(
+  nftContract: string,
+  tokenId: string,
+  bids: Array<{
+    txHash: string
+    logIndex: number
+    listingId: string
+    bidder: string
+    amount: bigint
+    blockTime: number
+    blockNumber: bigint
+  }>,
+): void {
+  if (!sql || bids.length === 0) return
+  void (async () => {
+    try {
+      for (const b of bids) {
+        await sql`
+          INSERT INTO lazy_tl_bids
+            (nft_contract, token_id, tx_hash, log_index, listing_id,
+             bidder, amount, block_time, block_number, last_indexed_at)
+          VALUES
+            (${nftContract.toLowerCase()}, ${tokenId}, ${b.txHash},
+             ${b.logIndex}, ${b.listingId}, ${b.bidder.toLowerCase()},
+             ${b.amount.toString()}, ${b.blockTime},
+             ${b.blockNumber.toString()}, NOW())
+          ON CONFLICT (nft_contract, token_id, tx_hash, log_index) DO UPDATE
+            SET listing_id = EXCLUDED.listing_id,
+                last_indexed_at = NOW()
+        `
+      }
+    } catch {
+      /* ignore */
+    }
+  })()
+}
+
+// ── PND / Sovereign ──
+export async function readPndBidHistory(
+  house: string,
+  auctionId: string,
+): Promise<LazyBidHistoryEntry[] | null> {
+  if (!sql) return null
+  try {
+    const rows = await sql<
+      Array<{
+        bidder: string
+        amount: string
+        block_time: string
+        tx_hash: string
+      }>
+    >`
+      SELECT bidder, amount, block_time::text AS block_time, tx_hash
+      FROM lazy_pnd_bids
+      WHERE house = ${house.toLowerCase()}
+        AND auction_id = ${auctionId}
+      ORDER BY block_number DESC, log_index DESC
+    `
+    return rows.map((r) => ({
+      bidder: r.bidder,
+      amount: BigInt(r.amount),
+      blockTime: Number(r.block_time),
+      txHash: r.tx_hash,
+    }))
+  } catch {
+    return null
+  }
+}
+
+export async function readPndBidHistoryFreshness(
+  house: string,
+  auctionId: string,
+): Promise<Date | null> {
+  if (!sql) return null
+  try {
+    const rows = await sql<Array<{ last_indexed_at: Date }>>`
+      SELECT MAX(last_indexed_at) AS last_indexed_at
+      FROM lazy_pnd_bids
+      WHERE house = ${house.toLowerCase()}
+        AND auction_id = ${auctionId}
+    `
+    return rows[0]?.last_indexed_at ?? null
+  } catch {
+    return null
+  }
+}
+
+export function writePndBidHistory(
+  house: string,
+  auctionId: string,
+  bids: Array<{
+    txHash: string
+    logIndex: number
+    bidder: string
+    amount: bigint
+    blockTime: number
+    blockNumber: bigint
+  }>,
+): void {
+  if (!sql || bids.length === 0) return
+  void (async () => {
+    try {
+      for (const b of bids) {
+        await sql`
+          INSERT INTO lazy_pnd_bids
+            (house, auction_id, tx_hash, log_index, bidder, amount,
+             block_time, block_number, last_indexed_at)
+          VALUES
+            (${house.toLowerCase()}, ${auctionId}, ${b.txHash},
+             ${b.logIndex}, ${b.bidder.toLowerCase()}, ${b.amount.toString()},
+             ${b.blockTime}, ${b.blockNumber.toString()}, NOW())
+          ON CONFLICT (house, auction_id, tx_hash, log_index) DO UPDATE
+            SET last_indexed_at = NOW()
         `
       }
     } catch {
