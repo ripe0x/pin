@@ -28,7 +28,7 @@ const FORK_MODE = !!process.env.NEXT_PUBLIC_ALCHEMY_MAINNET_URL?.match(
 const PREFERRED_CHAIN = FORK_MODE ? foundry : mainnet
 const PREFERRED_CHAIN_LABEL = FORK_MODE ? "Foundry (local fork)" : "Ethereum"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
-import { nftMarketAbi, sovereignAuctionHouseAbi, superrareBazaarAbi } from "@pin/abi"
+import { nftMarketAbi, sovereignAuctionHouseAbi, superrareBazaarAbi, transientAuctionHouseAbi } from "@pin/abi"
 import { useEthAmountInput } from "@/lib/useEthAmountInput"
 import type {
   AuctionFees,
@@ -614,6 +614,24 @@ function BidSection({
         ],
         value,
       })
+    } else if (auction.source === "transient") {
+      // TL Auction House: msg.value carries the full bid amount; no
+      // buyer's premium (the protocol fee is deducted from the seller
+      // proceeds on settle, not added on top). `recipient` is who
+      // receives the NFT if the bidder wins — usually the bidder
+      // themselves (`address`).
+      writeContract({
+        address: auction.marketAddress,
+        abi: transientAuctionHouseAbi,
+        functionName: "bid",
+        args: [
+          auction.nftContract,
+          BigInt(auction.tokenId),
+          (address ?? ZERO_ADDRESS) as `0x${string}`,
+          bid.wei,
+        ],
+        value: bid.wei,
+      })
     } else {
       writeContract({
         address: auction.marketAddress,
@@ -751,6 +769,13 @@ function SettleSection({ auction }: { auction: AuctionState }) {
       writeContract({
         address: auction.marketAddress,
         abi: superrareBazaarAbi,
+        functionName: "settleAuction",
+        args: [auction.nftContract, BigInt(auction.tokenId)],
+      })
+    } else if (auction.source === "transient") {
+      writeContract({
+        address: auction.marketAddress,
+        abi: transientAuctionHouseAbi,
         functionName: "settleAuction",
         args: [auction.nftContract, BigInt(auction.tokenId)],
       })
@@ -914,6 +939,15 @@ function SellerActions({ auction }: { auction: AuctionState }) {
         functionName: "cancelAuction",
         args: [auction.nftContract, BigInt(auction.tokenId)],
       })
+    } else if (auction.source === "transient") {
+      // TL exposes the cancel-listing call as `delist` (covers
+      // auction + buy-now). Same (nftAddress, tokenId) signature.
+      writeCancel({
+        address: auction.marketAddress,
+        abi: transientAuctionHouseAbi,
+        functionName: "delist",
+        args: [auction.nftContract, BigInt(auction.tokenId)],
+      })
     } else {
       writeCancel({
         address: auction.marketAddress,
@@ -989,9 +1023,10 @@ function SellerActions({ auction }: { auction: AuctionState }) {
         </div>
       ) : (
         <div className="flex items-center justify-between">
-          {auction.source === "superrareV2" ? (
-            // SR Bazaar has no update-reserve on a live auction;
-            // only cancel is available pre-bid.
+          {auction.source === "superrareV2" || auction.source === "transient" ? (
+            // SR Bazaar and TL Auction House both lack an update-
+            // reserve call on a live listing; only cancel/delist is
+            // available pre-bid.
             <span />
           ) : (
             <button

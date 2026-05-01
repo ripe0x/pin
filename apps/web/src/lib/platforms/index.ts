@@ -4,6 +4,7 @@ import { foundationAdapter } from "./foundation"
 import { manifoldAdapter } from "./manifold"
 import { sovereignAdapter } from "./sovereign"
 import { superrareV2Adapter } from "./superrareV2"
+import { transientAdapter } from "./transient"
 
 /**
  * Registered platform adapters. The orchestrators in `onchain-discovery.ts`
@@ -20,6 +21,7 @@ export const PLATFORMS: PlatformAdapter[] = [
   manifoldAdapter,
   sovereignAdapter,
   superrareV2Adapter,
+  transientAdapter,
 ]
 
 export const PLATFORMS_BY_ID = Object.fromEntries(

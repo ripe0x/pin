@@ -20,6 +20,7 @@ import type { PlatformId } from "@/lib/platforms/types"
 const PLATFORM_LABELS: Record<PlatformId, string> = {
   foundation: "Foundation",
   superrareV2: "SuperRare",
+  transient: "Transient",
   manifold: "Manifold",
   sovereign: "Sovereign Auction House",
 }

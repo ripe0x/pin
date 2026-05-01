@@ -42,6 +42,7 @@ import { useArtistHouse } from "@/components/auction/useArtistHouse"
 const PLATFORM_LABELS: Record<PlatformId, string> = {
   foundation: "Foundation",
   superrareV2: "SuperRare",
+  transient: "Transient",
   manifold: "Manifold",
   sovereign: "Sovereign Auction House",
 }

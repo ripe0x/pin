@@ -13,10 +13,11 @@
  */
 
 import { encodeFunctionData, type Abi, type Address } from "viem"
-import { nftMarketAbi, superrareBazaarAbi } from "@pin/abi"
+import { nftMarketAbi, superrareBazaarAbi, transientAuctionHouseAbi } from "@pin/abi"
 import {
   NFT_MARKET,
   SUPERRARE_BAZAAR,
+  TL_AUCTION_HOUSE,
   MAINNET_CHAIN_ID,
 } from "@pin/addresses"
 import type { SellerListing } from "@/lib/seller-listings"
@@ -55,6 +56,16 @@ export function buildCancelCall(listing: SellerListing): CancelCall {
         address: SUPERRARE_BAZAAR[MAINNET_CHAIN_ID],
         abi: superrareBazaarAbi as Abi,
         functionName: "cancelAuction",
+        args: [listing.nftContract, BigInt(listing.tokenId)],
+      }
+
+    case "transient":
+      // TL exposes the cancel-listing call as `delist` (covers both
+      // auctions and buy-nows on the same Auction House contract).
+      return {
+        address: TL_AUCTION_HOUSE[MAINNET_CHAIN_ID],
+        abi: transientAuctionHouseAbi as Abi,
+        functionName: "delist",
         args: [listing.nftContract, BigInt(listing.tokenId)],
       }
 

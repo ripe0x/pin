@@ -28,12 +28,14 @@ import {
   NFT_MARKET,
   MAINNET_CHAIN_ID,
   SOVEREIGN_AUCTION_HOUSE_FACTORY,
+  TL_AUCTION_HOUSE,
   getAddressOrNull,
 } from "@pin/addresses"
 import { resolveDisplayNames } from "./artist-queries"
 
 const FND_MARKET = NFT_MARKET[MAINNET_CHAIN_ID]
 const SOVEREIGN_FACTORY = getAddressOrNull(SOVEREIGN_AUCTION_HOUSE_FACTORY, MAINNET_CHAIN_ID)
+const TL_AH = TL_AUCTION_HOUSE[MAINNET_CHAIN_ID]
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
 /**
@@ -58,7 +60,7 @@ export type BidHistoryEntry = {
   txHash: string
 }
 
-export type AuctionSource = "foundation" | "sovereign" | "superrareV2"
+export type AuctionSource = "foundation" | "sovereign" | "superrareV2" | "transient"
 
 /**
  * Shared shape for both Foundation and artist-owned auctions. The `source` discriminator
@@ -202,6 +204,15 @@ async function fetchAuctionForToken(
   let state: AuctionState | null = null
   if (owner.toLowerCase() === FND_MARKET.toLowerCase()) {
     state = await getFoundationAuction(nftContract, tokenId)
+  } else if (owner.toLowerCase() === TL_AH.toLowerCase()) {
+    // TL Auction House custodies the NFT during a listing, so
+    // ownerOf points here whenever there's a live TL auction. Same
+    // pattern as Foundation — clean owner-based dispatch.
+    const { transientAdapter } = await import("./platforms/transient")
+    state = (await transientAdapter.getActiveAuctionForToken?.(
+      contract,
+      tokenId,
+    )) ?? null
   } else if (SOVEREIGN_FACTORY) {
     let isHouse = false
     try {

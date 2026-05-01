@@ -55,6 +55,24 @@ export const SUPERRARE_BAZAAR: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x6d7c44773c52d396f43c2d511b81aa168e9a7a42",
 }
 
+// Transient Labs Auction House (v2.6.1). Marketplace contract handling
+// bids / settle / cancel on auctions and buy-now flows for any ERC-721
+// (typically TL's `ERC721TL` per-artist proxies, but works on any
+// 721 the seller has approved). Custodies the NFT during an active
+// listing — `ownerOf` returns this address, which is what our token-
+// detail-page routing uses to dispatch to the TL adapter.
+export const TL_AUCTION_HOUSE: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x6f66b95a0C512f3497FB46660E0BC3B94B989F8d",
+}
+
+// Transient Labs Universal Deployer. Factory for ERC721TL / ERC1155TL
+// minimal-proxy artist contracts. Same address cross-chain via CREATE2.
+// Used (eventually) to enumerate per-artist contracts for the artist
+// gallery — not consumed in the initial auction-only PR.
+export const TL_UNIVERSAL_DEPLOYER: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x7c24805454F7972d36BEE9D139BD93423AA29f3f",
+}
+
 // SovereignAuctionHouseFactory (deploys per-owner EIP-1167 minimal proxies).
 // Mainnet deploy: 2026-04-27, fee 0bps, recipient 0x0 (locked forever).
 // For local Anvil-fork testing, paste the local factory address here
