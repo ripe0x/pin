@@ -7,6 +7,7 @@ import { AuctionPanel } from "@/components/auction/AuctionPanel"
 import { MoreFromContractSection } from "@/components/auction/MoreFromContract"
 import { StartAuctionCTA } from "@/components/auction/StartAuctionCTA"
 import { TokenMedia } from "@/components/token/TokenMedia"
+import { ExpandableDescription } from "@/components/token/ExpandableDescription"
 import {
   getErc1155TokenStats,
   getTokenOnChainData,
@@ -212,9 +213,7 @@ export default async function TokenPage({
           {/* Description (only prose section — uses Switzer) */}
           {data.description && (
             <section className="py-5 border-b border-gray-100">
-              <p className="text-sm text-gray-600 leading-relaxed">
-                {data.description}
-              </p>
+              <ExpandableDescription text={data.description} />
             </section>
           )}
 
