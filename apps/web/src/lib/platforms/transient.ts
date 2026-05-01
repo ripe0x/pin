@@ -8,6 +8,7 @@ import {
 import { mainnet } from "viem/chains"
 import {
   TL_AUCTION_HOUSE,
+  TL_UNIVERSAL_DEPLOYER,
   MAINNET_CHAIN_ID,
 } from "@pin/addresses"
 import { transientAuctionHouseAbi } from "@pin/abi"
@@ -27,6 +28,8 @@ import {
   readTransientBidHistory,
   readTransientBidHistoryFreshness,
   writeTransientBidHistory,
+  readTransientArtistTokens,
+  writeTransientArtistTokens,
   LAZY_TTL,
   isFresh,
 } from "../lazy-index"
@@ -34,6 +37,7 @@ import type { BidHistoryEntry } from "../auctions"
 import { refreshTransientAuctions } from "./transient-scan"
 
 const TL_AH = TL_AUCTION_HOUSE[MAINNET_CHAIN_ID]
+const TL_DEPLOYER = TL_UNIVERSAL_DEPLOYER[MAINNET_CHAIN_ID]
 
 // TL Auction House v2.6.1 was deployed in early 2026. Block 24_500_000
 // (~Mar 2026) is a safe lower bound that comfortably pre-dates the
@@ -41,6 +45,12 @@ const TL_AH = TL_AUCTION_HOUSE[MAINNET_CHAIN_ID]
 // scan cost. Confirmed via the address's first events being well
 // after this block.
 const TL_AUCTION_HOUSE_DEPLOY_BLOCK = 24_500_000n
+
+// Universal Deployer was created at block 19,062,900 (Jan 22, 2024).
+// All ERC721TL / ERC1155TL minimal-proxy clones get deployed via
+// `ContractDeployed` events from this address. Used as the lower
+// bound for the artist-gallery scan that finds an artist's contracts.
+const TL_DEPLOYER_DEPLOY_BLOCK = 19_062_900n
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 // Currency sentinel: ETH listings use currencyAddress = address(0).
@@ -52,6 +62,18 @@ const ETH_CURRENCY = "0x0000000000000000000000000000000000000000" as const
 // the raw `type_` so future code can filter without re-scanning.
 const LISTING_TYPE_NOT_CONFIGURED = 0
 
+// Universal Deployer event — emitted on each new ERC721TL / ERC1155TL
+// proxy. `sender` is indexed → cheap server-side filter for "this
+// artist's deployed contracts" (typically 0–3 logs per artist).
+const contractDeployedEvent = parseAbiItem(
+  "event ContractDeployed(address indexed sender, address indexed deployedContract, address indexed implementation, string cType, string version)",
+)
+// ERC-721 Transfer — used to enumerate mints on each TL contract by
+// scanning Transfer(from=0x0). Matches the same shape used by the SR
+// V2 / Foundation collection-factory flows.
+const erc721TransferEvent = parseAbiItem(
+  "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
+)
 const auctionSettledEvent = parseAbiItem(
   "event AuctionSettled(address indexed sender, address indexed nftAddress, uint256 indexed tokenId, (uint8,bool,address,address,address,uint256,uint256,uint256,uint256,uint256,address,address,uint256,uint256) listing)",
 )
@@ -282,11 +304,118 @@ export const transientAdapter: PlatformAdapter = {
   id: "transient",
   displayName: "Transient",
 
-  async discoverArtistTokens(): Promise<ArtistTokenRef[]> {
-    // Deferred: per-artist contract enumeration not yet implemented.
-    // Returning [] keeps the adapter honest without breaking the
-    // registry loop in `discoverArtistTokenRefs`.
-    return []
+  /**
+   * Tokens an artist has minted on Transient Labs. Lazy pattern matches
+   * Foundation / SR V2:
+   *
+   *   1. Read `lazy_tl_artist_tokens` (status row + rows). If fresh
+   *      per LAZY_TTL.transientArtistTokens (30d), return cached.
+   *   2. Otherwise: scan Universal Deployer's `ContractDeployed` event
+   *      filtered by indexed `sender = artist` to find every TL
+   *      proxy this artist has deployed. Filter to ERC721TL only
+   *      (ERC1155 deferred — its enumeration semantics differ).
+   *   3. For each contract, scan `Transfer(from=0x0)` to collect all
+   *      mints. Persist via `writeTransientArtistTokens` and return.
+   *
+   * Cost shape per cold visit: ~1 indexed-arg scan on the deployer
+   * (cheap; usually 0–3 results) + 1 Transfer-from-zero scan per
+   * deployed contract (also cheap; per-token-mint event volume on a
+   * typical artist contract is small).
+   */
+  async discoverArtistTokens(artist: Address): Promise<ArtistTokenRef[]> {
+    const cached = await readTransientArtistTokens(artist)
+    if (cached && isFresh(cached.lastIndexedAt, LAZY_TTL.transientArtistTokens)) {
+      return cached.tokens.map((t) => ({
+        platform: "transient",
+        contract: t.contract as Address,
+        tokenId: t.tokenId,
+        blockNumber: t.blockNumber,
+        logIndex: t.logIndex,
+        collectionName: null,
+      }))
+    }
+
+    const client = getClient()
+    const latest = await client.getBlockNumber()
+
+    // Step 1 — find every TL contract this artist has deployed.
+    const deployLogs = await paginatedIndexedScan(
+      (from, to) =>
+        client.getLogs({
+          address: TL_DEPLOYER,
+          event: contractDeployedEvent,
+          args: { sender: artist },
+          fromBlock: from,
+          toBlock: to,
+        }),
+      TL_DEPLOYER_DEPLOY_BLOCK,
+      latest,
+    )
+
+    // Filter to ERC721TL contracts. ERC1155 mints have different
+    // enumeration semantics (TransferSingle/TransferBatch) and are
+    // out of scope for this pass — flagged as a follow-up.
+    const contracts: Address[] = []
+    for (const log of deployLogs) {
+      const args = log.args as { deployedContract?: Address; cType?: string }
+      if (!args.deployedContract || !args.cType) continue
+      // TL's cType strings include "ERC721TL", "ERC721TLM" (multi-tag),
+      // "ERC721TLCore", etc. — match prefix to catch all variants.
+      if (!args.cType.startsWith("ERC721")) continue
+      contracts.push(args.deployedContract)
+    }
+
+    // Step 2 — for each contract, scan Transfer-from-zero (all mints).
+    // We don't filter by `to` because TL primary sales mint directly
+    // to the buyer; the artist's gallery should still surface those
+    // pieces (the artist authored them even if the mint went elsewhere).
+    type Ref = {
+      contract: Address
+      tokenId: string
+      blockNumber: bigint
+      logIndex: number
+    }
+    const refs: Ref[] = []
+    for (const contract of contracts) {
+      const mintLogs = await paginatedIndexedScan(
+        (from, to) =>
+          client.getLogs({
+            address: contract,
+            event: erc721TransferEvent,
+            args: { from: ZERO_ADDRESS as Address },
+            fromBlock: from,
+            toBlock: to,
+          }),
+        TL_DEPLOYER_DEPLOY_BLOCK,
+        latest,
+      )
+      for (const l of mintLogs) {
+        if (l.blockNumber === null || l.logIndex === null) continue
+        const args = l.args as { tokenId?: bigint }
+        if (args.tokenId === undefined) continue
+        refs.push({
+          contract,
+          tokenId: args.tokenId.toString(),
+          blockNumber: l.blockNumber,
+          logIndex: l.logIndex,
+        })
+      }
+    }
+
+    // Persist so subsequent visits within the 30d TTL skip the scan.
+    // `writeTransientArtistTokens` writes both the rows AND the
+    // status row, so an artist with zero TL contracts still gets
+    // marked as indexed (returning [] without re-scanning).
+    writeTransientArtistTokens(artist, refs)
+
+    return refs.map((r) => ({
+      platform: "transient",
+      contract: r.contract,
+      tokenId: r.tokenId,
+      blockNumber: r.blockNumber,
+      logIndex: r.logIndex,
+      collectionName: null,
+    }))
   },
 
   async discoverCollectorTokens(): Promise<CollectorTokenRef[]> {
