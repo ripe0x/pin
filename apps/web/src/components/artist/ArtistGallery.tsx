@@ -9,6 +9,8 @@ import { createProvider, type PinStatus } from "@/lib/pinning"
 import { useIpfsGatewayFallback } from "@/lib/use-ipfs-fallback"
 import { TokenPinStatus } from "@/components/preserve/TokenPinStatus"
 import { DeployHouseCTA } from "@/components/auction/DeployHouseCTA"
+import { useDebugFlag } from "@/lib/useGodMode"
+import type { PlatformId } from "@/lib/platforms/types"
 
 const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
 
@@ -202,9 +204,16 @@ function GalleryCard({
   const { src: mediaSrc, onError: onMediaError } = useIpfsGatewayFallback(
     item.imageUrl,
   )
+  // God-mode-only debug chip showing the source platform. Reads from
+  // localStorage; the panel itself only renders for allowlisted
+  // wallets, so non-god users can't even toggle this on.
+  const [platformChips] = useDebugFlag("platformChips")
 
   return (
-    <div className="group border border-gray-200 transition-colors hover:border-gray-400">
+    <div className="group relative border border-gray-200 transition-colors hover:border-gray-400">
+      {platformChips && item.platform && (
+        <PlatformChip platform={item.platform} />
+      )}
       <Link href={href}>
         <div
           className="relative overflow-hidden bg-gray-100"
@@ -249,5 +258,24 @@ function GalleryCard({
         </div>
       </Link>
     </div>
+  )
+}
+
+const PLATFORM_CHIP_LABELS: Record<PlatformId, string> = {
+  foundation: "FND",
+  superrareV2: "SR",
+  transient: "TL",
+  manifold: "MAN",
+  sovereign: "PND",
+}
+
+function PlatformChip({ platform }: { platform: PlatformId }) {
+  return (
+    <span
+      className="absolute top-2 right-2 z-10 rounded-full bg-fg/80 px-2 py-0.5 text-[9px] font-mono uppercase tracking-wider text-bg backdrop-blur-sm pointer-events-none"
+      title={`Source: ${platform}`}
+    >
+      {PLATFORM_CHIP_LABELS[platform]}
+    </span>
   )
 }

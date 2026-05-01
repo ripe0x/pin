@@ -227,6 +227,7 @@ export function tokenToDisplayData(token: DiscoveredToken) {
     creator: token.creator,
     metadataCid: token.metadataCid,
     mediaCid: token.mediaCid,
+    platform: token.platform,
   }
 }
 

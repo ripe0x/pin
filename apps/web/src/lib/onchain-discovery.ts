@@ -30,6 +30,7 @@ import {
   discoverManifoldTokenRefs,
 } from "./manifold-discovery"
 import { mapWithConcurrency } from "./concurrency"
+import type { PlatformId } from "./platforms/types"
 import {
   readFoundationArtistTokens,
   writeFoundationArtistTokens,
@@ -68,6 +69,12 @@ export type DiscoveredToken = {
   mediaHttpUrl: string | null
   /** Name of the collection (null for shared contract tokens) */
   collectionName: string | null
+  /**
+   * Source platform (when known). Threaded through from the per-adapter
+   * discovery; client components can render platform attribution
+   * without a contract-address lookup.
+   */
+  platform?: PlatformId
 }
 
 /**
@@ -82,6 +89,13 @@ export type TokenRef = {
   tokenId: string
   creator: Address
   collectionName: string | null
+  /**
+   * Source platform of this token (when known). Threaded through from
+   * the per-adapter `ArtistTokenRef` so client components can render
+   * platform attribution (debug-mode chip, etc.) without re-deriving
+   * from the contract address.
+   */
+  platform?: PlatformId
 }
 
 export function getClient() {
@@ -234,13 +248,16 @@ export async function discoverArtistTokenRefs(
     return b.logIndex - a.logIndex
   })
 
-  // Convert to the public TokenRef shape (no platform/blockNumber/
-  // logIndex; add creator from the function arg).
+  // Convert to the public TokenRef shape. Drop blockNumber/logIndex
+  // (only used for sorting above), but preserve `platform` so client
+  // components can show platform attribution without re-deriving it
+  // from the contract address.
   const merged: TokenRef[] = [...sortable, ...unsortable].map((r) => ({
     contract: r.contract,
     tokenId: r.tokenId,
     creator: artist,
     collectionName: r.collectionName,
+    platform: r.platform,
   }))
 
   // Dedupe by contract:tokenId — a token theoretically could surface
@@ -316,6 +333,7 @@ export async function enrichTokens(
           : null,
       mediaHttpUrl,
       collectionName: ref.collectionName,
+      platform: ref.platform,
     } satisfies DiscoveredToken
   })
 
