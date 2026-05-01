@@ -214,6 +214,126 @@ export async function getActivePndAuctions(
   }, 2_000)
 }
 
+export type ActiveSrV2Auction = {
+  contract: string
+  tokenId: string
+  seller: string
+  reserveWei: bigint
+  currentBidWei: bigint
+  currentBidder: string | null
+  endTime: number
+}
+
+/**
+ * Currently-active SR V2 Bazaar auctions, filtered to artist-sellers
+ * (seller == tokenCreator) at the SQL layer so the home grid only
+ * surfaces primary art (not secondary listings). Same shape as
+ * `getActivePndAuctions`.
+ */
+export async function getActiveSrV2Auctions(
+  limit = 60,
+): Promise<ActiveSrV2Auction[] | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+
+  return withTimeout(async () => {
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+      /[^a-zA-Z0-9_]/g,
+      "",
+    )
+
+    const rows = (await db.unsafe(
+      `SELECT contract, token_id::text AS token_id, seller,
+              reserve_wei::text AS reserve_wei,
+              current_bid_wei::text AS current_bid_wei,
+              current_bidder,
+              end_time::text AS end_time
+       FROM ${schema}.srv2_auctions
+       WHERE status = 'active'
+         AND creator IS NOT NULL
+         AND LOWER(creator) = LOWER(seller)
+       ORDER BY
+         CASE WHEN end_time = 0 THEN 1 ELSE 0 END,
+         end_time ASC
+       LIMIT $1`,
+      [limit],
+    )) as Array<{
+      contract: string
+      token_id: string
+      seller: string
+      reserve_wei: string
+      current_bid_wei: string
+      current_bidder: string | null
+      end_time: string
+    }>
+
+    return rows.map((r) => ({
+      contract: r.contract,
+      tokenId: r.token_id,
+      seller: r.seller,
+      reserveWei: BigInt(r.reserve_wei),
+      currentBidWei: BigInt(r.current_bid_wei),
+      currentBidder: r.current_bidder,
+      endTime: Number(r.end_time),
+    }))
+  }, 2_000)
+}
+
+export type ActiveTlAuction = ActiveSrV2Auction
+
+/**
+ * Currently-active TL Auction House listings, same artist-seller filter
+ * as the SR V2 query.
+ */
+export async function getActiveTlAuctions(
+  limit = 60,
+): Promise<ActiveTlAuction[] | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+
+  return withTimeout(async () => {
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+      /[^a-zA-Z0-9_]/g,
+      "",
+    )
+
+    const rows = (await db.unsafe(
+      `SELECT contract, token_id::text AS token_id, seller,
+              reserve_wei::text AS reserve_wei,
+              current_bid_wei::text AS current_bid_wei,
+              current_bidder,
+              end_time::text AS end_time
+       FROM ${schema}.tl_auctions
+       WHERE status = 'active'
+         AND creator IS NOT NULL
+         AND LOWER(creator) = LOWER(seller)
+       ORDER BY
+         CASE WHEN end_time = 0 THEN 1 ELSE 0 END,
+         end_time ASC
+       LIMIT $1`,
+      [limit],
+    )) as Array<{
+      contract: string
+      token_id: string
+      seller: string
+      reserve_wei: string
+      current_bid_wei: string
+      current_bidder: string | null
+      end_time: string
+    }>
+
+    return rows.map((r) => ({
+      contract: r.contract,
+      tokenId: r.token_id,
+      seller: r.seller,
+      reserveWei: BigInt(r.reserve_wei),
+      currentBidWei: BigInt(r.current_bid_wei),
+      currentBidder: r.current_bidder,
+      endTime: Number(r.end_time),
+    }))
+  }, 2_000)
+}
+
 export type PndHouse = {
   house: string
   owner: string

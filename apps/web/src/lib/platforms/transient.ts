@@ -21,10 +21,10 @@ import type {
 } from "./types"
 import type { AuctionState, AuctionFees } from "../auctions"
 import { resolveDisplayNames } from "../artist-queries"
+import { getActiveTlAuctions } from "../indexer-queries"
 import {
   readTransientSale,
   writeTransientSale,
-  readTransientActiveAuctions,
   readTransientBidHistory,
   readTransientBidHistoryFreshness,
   writeTransientBidHistory,
@@ -666,28 +666,18 @@ export const transientAdapter: PlatformAdapter = {
   },
 
   async getActiveAuctions(limit: number): Promise<ActiveAuctionSummary[]> {
-    // Pure table read — no RPC in the home-grid request path. The
-    // scanner runs out-of-band via /api/cron/refresh-auctions.
-    // Over-read + filter to artist-sellers (seller == tokenCreator)
-    // so the home grid surfaces primary-market work only.
-    const rows = await readTransientActiveAuctions(limit * 4)
-    return rows
-      .filter(
-        (r) =>
-          r.creator !== null &&
-          r.creator.toLowerCase() === r.seller.toLowerCase(),
-      )
-      .slice(0, limit)
-      .map((r) => ({
-        platform: "transient",
-        contract: r.contract as Address,
-        tokenId: r.tokenId,
-        seller: r.seller as Address,
-        reserveWei: r.reserveWei,
-        currentBidWei: r.currentBidWei,
-        currentBidder: (r.currentBidder ?? null) as Address | null,
-        endTime: r.endTime,
-        sourceContract: TL_AH,
-      }))
+    // Pure Ponder read; artist-seller filter applied in SQL.
+    const rows = (await getActiveTlAuctions(limit)) ?? []
+    return rows.map((r) => ({
+      platform: "transient",
+      contract: r.contract as Address,
+      tokenId: r.tokenId,
+      seller: r.seller as Address,
+      reserveWei: r.reserveWei,
+      currentBidWei: r.currentBidWei,
+      currentBidder: (r.currentBidder ?? null) as Address | null,
+      endTime: r.endTime,
+      sourceContract: TL_AH,
+    }))
   },
 }

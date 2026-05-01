@@ -218,6 +218,78 @@ export const fndCollections = onchainTable(
   }),
 )
 
+// ─── SuperRare V2 Bazaar ─────────────────────────────────────────────────
+// Single shared marketplace contract. Auctions are keyed by
+// `(contract, tokenId)` because the Bazaar handles ANY ERC-721 — there's
+// no per-marketplace auctionId in the events. Mirrors the
+// `lazy_srv2_active_auctions` table this replaces; same column shape so
+// the home-grid read can drop in cleanly.
+
+export const srv2Auctions = onchainTable(
+  "srv2_auctions",
+  (t) => ({
+    id: t.text().primaryKey(), // `${contract}-${tokenId}`
+    contract: t.hex().notNull(),
+    tokenId: t.bigint().notNull(),
+    seller: t.hex().notNull(),
+    reserveWei: t.bigint().notNull(),
+    // Live auction state, updated as bids land:
+    currentBidWei: t.bigint().notNull(), // 0n pre-bid
+    currentBidder: t.hex(), // null pre-bid
+    endTime: t.bigint().notNull(), // 0n pre-bid
+    status: t.text().notNull(), // "active" | "settled" | "cancelled"
+    // Resolved at NewAuction time via `tokenCreator(tokenId)` on the NFT
+    // contract. Powers the home-grid artist-seller filter (where seller
+    // equals the original token creator, surfacing primary art only).
+    creator: t.hex(),
+    // Audit:
+    createdAtBlock: t.bigint().notNull(),
+    createdAtTime: t.bigint().notNull(),
+  }),
+  // Home grid sorts by (status='active', endTime ASC) so a covering
+  // composite index serves it directly. Per-artist views use
+  // (seller, status).
+  (table) => ({
+    statusEndIdx: index().on(table.status, table.endTime),
+    sellerStatusIdx: index().on(table.seller, table.status),
+    creatorIdx: index().on(table.creator),
+  }),
+)
+
+// ─── Transient Labs Auction House ────────────────────────────────────────
+// Single shared marketplace contract. Custodies the NFT during a live
+// listing (unlike SR Bazaar). Mirrors `lazy_tl_active_auctions`. The
+// `listingType` column stashes the on-chain enum from the Listing tuple
+// — useful for distinguishing reserve-auction (2) from buy-now (3) on
+// the read side without re-fetching the full struct.
+
+export const tlAuctions = onchainTable(
+  "tl_auctions",
+  (t) => ({
+    id: t.text().primaryKey(), // `${contract}-${tokenId}`
+    contract: t.hex().notNull(),
+    tokenId: t.bigint().notNull(),
+    seller: t.hex().notNull(),
+    reserveWei: t.bigint().notNull(),
+    currentBidWei: t.bigint().notNull(),
+    currentBidder: t.hex(),
+    endTime: t.bigint().notNull(),
+    status: t.text().notNull(), // "active" | "settled" | "cancelled"
+    listingType: t.integer().notNull(), // 1=Scheduled, 2=Reserve, 3=BuyNow
+    // ERC721TL exposes `tokenCreator(uint256)`. For older clones that
+    // don't, the handler falls back to `owner()` (per-artist contract
+    // owner = artist by Universal Deployer convention).
+    creator: t.hex(),
+    createdAtBlock: t.bigint().notNull(),
+    createdAtTime: t.bigint().notNull(),
+  }),
+  (table) => ({
+    statusEndIdx: index().on(table.status, table.endTime),
+    sellerStatusIdx: index().on(table.seller, table.status),
+    creatorIdx: index().on(table.creator),
+  }),
+)
+
 // Unified per-artist token list. Two writers populate it:
 //   - FoundationNFT:Minted (the shared 1/1 contract)
 //   - FoundationCollection:Transfer (mint events on per-artist collection
