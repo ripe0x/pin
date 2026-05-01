@@ -996,6 +996,13 @@ export type LazySuperrareV2ActiveAuction = {
   endTime: number
   status: "active" | "settled" | "cancelled"
   startedAtBlock: bigint
+  /**
+   * Original token creator (from `tokenCreator(tokenId)` on the NFT
+   * contract). Backfilled by the scanner. `null` until the next scan
+   * pass; the home-grid filter excludes null rows so we don't show
+   * auctions whose creator we haven't verified yet.
+   */
+  creator: string | null
 }
 
 export async function readSuperrareV2ActiveAuctions(
@@ -1014,12 +1021,14 @@ export async function readSuperrareV2ActiveAuctions(
         end_time: string
         status: "active" | "settled" | "cancelled"
         started_at_block: string
+        creator: string | null
       }>
     >`
       SELECT contract, token_id, seller, reserve_wei,
              current_bid_wei, current_bidder,
              end_time::text AS end_time, status,
-             started_at_block::text AS started_at_block
+             started_at_block::text AS started_at_block,
+             creator
       FROM lazy_srv2_active_auctions
       WHERE status = 'active'
       ORDER BY
@@ -1037,6 +1046,7 @@ export async function readSuperrareV2ActiveAuctions(
       endTime: Number(r.end_time),
       status: r.status,
       startedAtBlock: BigInt(r.started_at_block),
+      creator: r.creator,
     }))
   } catch {
     return []
@@ -1060,14 +1070,16 @@ export function writeSuperrareV2ActiveAuctions(
           INSERT INTO lazy_srv2_active_auctions
             (contract, token_id, seller, reserve_wei,
              current_bid_wei, current_bidder, end_time,
-             status, started_at_block, last_indexed_at)
+             status, started_at_block, creator, last_indexed_at)
           VALUES
             (${r.contract.toLowerCase()}, ${r.tokenId},
              ${r.seller.toLowerCase()}, ${r.reserveWei.toString()},
              ${r.currentBidWei === 0n ? null : r.currentBidWei.toString()},
              ${r.currentBidder ? r.currentBidder.toLowerCase() : null},
              ${r.endTime}, ${r.status},
-             ${r.startedAtBlock.toString()}, NOW())
+             ${r.startedAtBlock.toString()},
+             ${r.creator ? r.creator.toLowerCase() : null},
+             NOW())
           ON CONFLICT (contract, token_id) DO UPDATE
             SET seller = EXCLUDED.seller,
                 reserve_wei = EXCLUDED.reserve_wei,
@@ -1076,6 +1088,11 @@ export function writeSuperrareV2ActiveAuctions(
                 end_time = EXCLUDED.end_time,
                 status = EXCLUDED.status,
                 started_at_block = EXCLUDED.started_at_block,
+                -- COALESCE preserves a previously-resolved creator if
+                -- this scan pass didn't include one (e.g. a quick bid
+                -- update without a tokenCreator multicall). Once set,
+                -- the creator is immutable so we never need to clear.
+                creator = COALESCE(EXCLUDED.creator, lazy_srv2_active_auctions.creator),
                 last_indexed_at = NOW()
         `
       }
@@ -1347,6 +1364,14 @@ export type LazyTransientActiveAuction = {
   /** Raw `Listing.type_` enum value from the on-chain struct. */
   listingType: number
   startedAtBlock: bigint
+  /**
+   * Original token creator. For TL we try `tokenCreator(tokenId)`
+   * first, then fall back to the contract's `owner()` (TL contracts
+   * are OZ-Ownable and the deploying artist is the owner). `null`
+   * until backfilled by the scanner; the home-grid filter excludes
+   * null rows.
+   */
+  creator: string | null
 }
 
 export async function readTransientActiveAuctions(
@@ -1366,12 +1391,14 @@ export async function readTransientActiveAuctions(
         status: "active" | "settled" | "cancelled"
         listing_type: number
         started_at_block: string
+        creator: string | null
       }>
     >`
       SELECT contract, token_id, seller, reserve_wei,
              current_bid_wei, current_bidder,
              end_time::text AS end_time, status, listing_type,
-             started_at_block::text AS started_at_block
+             started_at_block::text AS started_at_block,
+             creator
       FROM lazy_tl_active_auctions
       WHERE status = 'active'
       ORDER BY
@@ -1390,6 +1417,7 @@ export async function readTransientActiveAuctions(
       status: r.status,
       listingType: r.listing_type,
       startedAtBlock: BigInt(r.started_at_block),
+      creator: r.creator,
     }))
   } catch {
     return []
@@ -1407,14 +1435,16 @@ export function writeTransientActiveAuctions(
           INSERT INTO lazy_tl_active_auctions
             (contract, token_id, seller, reserve_wei,
              current_bid_wei, current_bidder, end_time,
-             status, listing_type, started_at_block, last_indexed_at)
+             status, listing_type, started_at_block, creator,
+             last_indexed_at)
           VALUES
             (${r.contract.toLowerCase()}, ${r.tokenId},
              ${r.seller.toLowerCase()}, ${r.reserveWei.toString()},
              ${r.currentBidWei === 0n ? null : r.currentBidWei.toString()},
              ${r.currentBidder ? r.currentBidder.toLowerCase() : null},
              ${r.endTime}, ${r.status}, ${r.listingType},
-             ${r.startedAtBlock.toString()}, NOW())
+             ${r.startedAtBlock.toString()},
+             ${r.creator ? r.creator.toLowerCase() : null}, NOW())
           ON CONFLICT (contract, token_id) DO UPDATE
             SET seller = EXCLUDED.seller,
                 reserve_wei = EXCLUDED.reserve_wei,
@@ -1424,6 +1454,7 @@ export function writeTransientActiveAuctions(
                 status = EXCLUDED.status,
                 listing_type = EXCLUDED.listing_type,
                 started_at_block = EXCLUDED.started_at_block,
+                creator = COALESCE(EXCLUDED.creator, lazy_tl_active_auctions.creator),
                 last_indexed_at = NOW()
         `
       }
