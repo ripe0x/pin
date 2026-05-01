@@ -8,9 +8,21 @@ import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { useArtistHouse } from "@/components/auction/useArtistHouse"
 import { AuctionTermsForm } from "@/components/auction/AuctionTermsForm"
 import { TokenPreview } from "@/components/auction/TokenPreview"
-import type { GalleryItem, GalleryPage } from "@/lib/artist-queries"
 
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/
+
+type OwnedItem = {
+  contract: string
+  tokenId: string
+  name: string | null
+  imageUrl: string | null
+}
+
+type OwnedPageResp = {
+  address: string
+  items: OwnedItem[]
+  nextPageKey: string | null
+}
 
 export function AuctionNewClient() {
   // Wagmi hooks need WagmiProvider mounted, so gate all wagmi-dependent UI
@@ -126,7 +138,7 @@ function ListForm({
     setOwned(next)
   }, [])
 
-  function handlePick(item: GalleryItem) {
+  function handlePick(item: { contract: string; tokenId: string }) {
     setContractInput(item.contract)
     setTokenIdInput(item.tokenId)
     // Defer scroll so the preview mounts first.
@@ -187,6 +199,12 @@ function ListForm({
               </p>
             )}
           </label>
+          {!ready && (
+            <p className="text-xs text-gray-400">
+              After we verify you own this token, you&apos;ll set the reserve
+              price and auction duration below.
+            </p>
+          )}
         </div>
 
         {ready && (
@@ -222,74 +240,107 @@ function Picker({
   onPick,
 }: {
   connected: `0x${string}`
-  onPick: (item: GalleryItem) => void
+  onPick: (item: OwnedItem) => void
 }) {
-  const [page, setPage] = useState<GalleryPage | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [items, setItems] = useState<OwnedItem[]>([])
+  const [nextPageKey, setNextPageKey] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [initialized, setInitialized] = useState(false)
+
+  const loadPage = useCallback(
+    async (cursor: string | null) => {
+      setLoading(true)
+      setError(null)
+      try {
+        const params = cursor ? `?pageKey=${encodeURIComponent(cursor)}` : ""
+        const res = await fetch(`/api/wallet/${connected}/owned${params}`)
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const json = (await res.json()) as OwnedPageResp
+        setItems((prev) => (cursor ? [...prev, ...json.items] : json.items))
+        setNextPageKey(json.nextPageKey)
+      } catch (e) {
+        setError(String((e as Error)?.message ?? e))
+      } finally {
+        setLoading(false)
+      }
+    },
+    [connected],
+  )
+
+  // Reset + load first page whenever the connected wallet changes.
+  useEffect(() => {
+    setItems([])
+    setNextPageKey(null)
+    setInitialized(false)
+  }, [connected])
 
   useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    fetch(`/api/artist/${connected}/tokens?page=0&pageSize=24`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        return r.json() as Promise<GalleryPage>
-      })
-      .then((p) => {
-        if (!cancelled) setPage(p)
-      })
-      .catch((e) => {
-        if (!cancelled) setError(String(e?.message ?? e))
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [connected])
+    if (initialized) return
+    setInitialized(true)
+    loadPage(null)
+  }, [initialized, loadPage])
 
   return (
     <section className="space-y-4">
       <div>
         <h2 className="text-base font-semibold tracking-tight">
-          Or pick from your indexed works
+          Or pick from tokens you own
         </h2>
         <p className="text-xs text-gray-500 mt-1">
-          We only index works on Foundation, Manifold, SuperRare, Sovereign, and
-          Transient. To list anything else, paste the contract above.
+          Every ERC-721 currently held by your wallet, via Alchemy. Spam
+          collections are filtered out.
         </p>
       </div>
 
-      {loading ? (
+      {error ? (
+        <p className="text-sm text-red-500">Couldn&apos;t load your tokens.</p>
+      ) : items.length === 0 && loading ? (
         <p className="text-sm text-gray-400">Loading…</p>
-      ) : error ? (
-        <p className="text-sm text-red-500">Couldn&apos;t load your works.</p>
-      ) : !page || page.tokens.length === 0 ? (
+      ) : items.length === 0 ? (
         <p className="text-sm text-gray-400">
-          No indexed works found for your wallet.
+          No ERC-721 tokens found in this wallet.
         </p>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-          {page.tokens.map((item) => (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+            {items.map((item) => (
+              <button
+                key={`${item.contract}:${item.tokenId}`}
+                onClick={() => onPick(item)}
+                className="text-left group"
+              >
+                <div className="aspect-square bg-gray-100 rounded overflow-hidden border border-gray-200 group-hover:border-gray-400 transition-colors">
+                  {item.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={item.imageUrl}
+                      alt={item.name ?? `#${item.tokenId}`}
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-xs text-gray-400">
+                      No image
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs mt-1.5 truncate">
+                  {item.name ?? `#${item.tokenId}`}
+                </p>
+              </button>
+            ))}
+          </div>
+          {nextPageKey && (
             <button
-              key={`${item.contract}:${item.tokenId}`}
-              onClick={() => onPick(item)}
-              className="text-left group"
+              onClick={() => loadPage(nextPageKey)}
+              disabled={loading}
+              className="block w-full text-center text-sm font-medium py-3 border border-gray-200 hover:border-gray-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              <div className="aspect-square bg-gray-100 rounded overflow-hidden border border-gray-200 group-hover:border-gray-400 transition-colors">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={item.imageUrl}
-                  alt={item.title}
-                  className="w-full h-full object-cover"
-                />
-              </div>
-              <p className="text-xs mt-1.5 truncate">{item.title}</p>
+              {loading ? "Loading…" : "Load more"}
             </button>
-          ))}
-        </div>
+          )}
+        </>
       )}
     </section>
   )

@@ -236,6 +236,77 @@ export async function getAllNFTsForOwner(
   return out
 }
 
+export type OwnedErc721 = {
+  contract: string
+  tokenId: string
+  name: string | null
+  imageUrl: string | null
+}
+
+/**
+ * Single-page fetch of ERC-721s currently owned by `wallet`, with metadata
+ * (name + image) inline. Used by the auction picker to show "everything you
+ * own" without burning N tokenURI reads. Caller passes the cursor through
+ * each request — no internal loop, so each call is one Alchemy NFT-API
+ * request (~150 CU).
+ *
+ * Filters:
+ *   - tokenType === ERC721 (Sovereign house can't list 1155)
+ *   - excludeFilters[]=SPAM (Alchemy's built-in spam list)
+ */
+export async function getOwnedErc721Page(
+  wallet: string,
+  pageKey?: string,
+): Promise<{ items: OwnedErc721[]; nextPageKey: string | null }> {
+  if (!NFT_URL) return { items: [], nextPageKey: null }
+
+  const url = new URL(`${NFT_URL}/getNFTsForOwner`)
+  url.searchParams.set("owner", wallet)
+  url.searchParams.set("withMetadata", "true")
+  url.searchParams.set("pageSize", "100")
+  url.searchParams.append("excludeFilters[]", "SPAM")
+  if (pageKey) url.searchParams.set("pageKey", pageKey)
+
+  type AlchemyOwnedNft = {
+    contract: { address: string; name?: string | null }
+    tokenId: string
+    tokenType?: string
+    name?: string | null
+    image?: {
+      cachedUrl?: string | null
+      thumbnailUrl?: string | null
+      originalUrl?: string | null
+    } | null
+  }
+
+  let json: { ownedNfts?: AlchemyOwnedNft[]; pageKey?: string }
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(15_000) })
+    if (!res.ok) return { items: [], nextPageKey: null }
+    json = (await res.json()) as typeof json
+  } catch {
+    return { items: [], nextPageKey: null }
+  }
+
+  const items: OwnedErc721[] = []
+  for (const n of json.ownedNfts ?? []) {
+    if (n.tokenType !== "ERC721") continue
+    const imageUrl =
+      n.image?.cachedUrl ??
+      n.image?.thumbnailUrl ??
+      n.image?.originalUrl ??
+      null
+    items.push({
+      contract: n.contract.address,
+      tokenId: n.tokenId,
+      name: n.name ?? n.contract.name ?? null,
+      imageUrl,
+    })
+  }
+
+  return { items, nextPageKey: json.pageKey ?? null }
+}
+
 export type NftOwner = {
   ownerAddress: string
   tokenBalances: Array<{ tokenId: string; balance: string }>
