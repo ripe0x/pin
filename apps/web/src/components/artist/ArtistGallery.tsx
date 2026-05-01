@@ -160,6 +160,7 @@ export function ArtistGallery({
             pinStatuses={pinStatuses}
             hasProvider={hasProvider}
             isOwner={isOwner}
+            connectedAddress={connectedAddress}
           />
         ))}
       </div>
@@ -197,11 +198,13 @@ function GalleryCard({
   pinStatuses,
   hasProvider,
   isOwner,
+  connectedAddress,
 }: {
   item: GalleryItem
   pinStatuses: Map<string, PinStatus>
   hasProvider: boolean
   isOwner: boolean
+  connectedAddress: `0x${string}` | undefined
 }) {
   const href = `/${item.contract}/${item.tokenId}`
   const isVideo = isVideoUrl(item.imageUrl)
@@ -256,13 +259,16 @@ function GalleryCard({
           {pinStatus && <TokenPinStatus status={pinStatus} />}
         </div>
       </Link>
-      {isOwner && item.buyPrice && (
-        <BuyPriceSection
-          nftContract={item.contract}
-          tokenId={item.tokenId}
-          buyPrice={item.buyPrice}
-        />
-      )}
+      {item.buyPrice &&
+        !!connectedAddress &&
+        connectedAddress.toLowerCase() ===
+          item.buyPrice.seller.toLowerCase() && (
+          <BuyPriceSection
+            nftContract={item.contract}
+            tokenId={item.tokenId}
+            buyPrice={item.buyPrice}
+          />
+        )}
     </div>
   )
 }
