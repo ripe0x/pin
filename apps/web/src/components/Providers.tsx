@@ -6,6 +6,7 @@ import { WagmiProvider } from "wagmi"
 import { useEffect, useState, type ReactNode } from "react"
 import { ThemeProvider, useTheme } from "next-themes"
 import { config } from "@/lib/wagmi"
+import { DevImpersonate } from "@/components/DevImpersonate"
 
 import "@rainbow-me/rainbowkit/styles.css"
 
@@ -46,7 +47,10 @@ export function Providers({ children }: { children: ReactNode }) {
     >
       <WagmiProvider config={config}>
         <QueryClientProvider client={queryClient}>
-          <RainbowKitWithTheme>{children}</RainbowKitWithTheme>
+          <RainbowKitWithTheme>
+            <DevImpersonate />
+            {children}
+          </RainbowKitWithTheme>
         </QueryClientProvider>
       </WagmiProvider>
     </ThemeProvider>

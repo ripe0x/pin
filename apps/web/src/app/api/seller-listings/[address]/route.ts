@@ -1,41 +1,37 @@
 import { NextResponse } from "next/server"
 import { unstable_cache } from "next/cache"
 import { pgCache } from "@/lib/pg-cache"
-import { getSellerCancellableListings } from "@/lib/seller-listings"
-import {
-  readFoundationSellerListings,
-  writeFoundationSellerListings,
-  LAZY_TTL,
-  isFresh,
-} from "@/lib/lazy-index"
+import { PLATFORMS } from "@/lib/platforms"
+import type {
+  SellerCancellableAuction,
+  SellerCancellableBuyNow,
+} from "@/lib/platforms/types"
+import type { Address } from "viem"
 
 /**
- * Wraps `getSellerCancellableListings` (two ~10M-block `getLogs` + multicalls
- * per cold call) in unstable_cache + pgCache so repeat panel opens by the
- * same artist (and across artists who share a worker) collapse to a Postgres
- * read. The lib function is unchanged so the API route just delegates.
+ * Multi-platform cancellable-listings API. Fans out across every
+ * registered `PlatformAdapter` that implements
+ * `getCancellableListingsForSeller`, merges the platform-tagged rows
+ * into a single payload, and caches the merged result.
  *
- * Bigints are serialized to decimal strings at the cache + JSON boundary
- * because pgCache JSON-stringifies and `JSON.stringify(bigint)` throws.
+ * Each adapter handles its own per-platform cache (Foundation has a
+ * lazy DB row in `lazy_fnd_seller_listings`; SuperRare V2 relies on
+ * the route's pgCache + indexed-arg event scans). The route's
+ * `unstable_cache` + `pgCache` collapse repeated panel opens to a
+ * Postgres point read at 5-min granularity.
+ *
+ * Bigints are serialized to decimal strings at the cache + JSON
+ * boundary because pgCache JSON-stringifies and `JSON.stringify(bigint)`
+ * throws.
  */
 
 type SerializedAuction = {
   kind: "auction"
-  id: string
-  auctionId: string
-  nftContract: string
-  tokenId: string
-  reserveWei: string
-  durationSeconds: number
-}
+} & SellerCancellableAuction
 
 type SerializedBuyNow = {
   kind: "buyNow"
-  id: string
-  nftContract: string
-  tokenId: string
-  priceWei: string
-}
+} & SellerCancellableBuyNow
 
 export type SellerListingsPayload = {
   auctions: SerializedAuction[]
@@ -47,37 +43,31 @@ const SELLER_LISTINGS_TTL_S = 5 * 60
 async function buildPayload(
   sellerAddress: string,
 ): Promise<SellerListingsPayload> {
-  // Lazy index read: if a fresh row exists, return it without RPC.
-  const cached = await readFoundationSellerListings(sellerAddress)
-  if (cached && isFresh(cached.lastIndexedAt, LAZY_TTL.foundationSellerListings)) {
-    return {
-      auctions: cached.auctions.map((a) => ({ ...a, kind: "auction" as const })),
-      buyNows: cached.buyNows.map((b) => ({ ...b, kind: "buyNow" as const })),
-    }
-  }
+  // Fan out across platforms. Each adapter is responsible for its own
+  // per-platform cache; an adapter that doesn't implement the optional
+  // method (Manifold today) is silently skipped.
+  const seller = sellerAddress.toLowerCase() as Address
+  const results = await Promise.all(
+    PLATFORMS.map(async (p) => {
+      if (!p.getCancellableListingsForSeller) return null
+      try {
+        return await p.getCancellableListingsForSeller(seller)
+      } catch {
+        // One platform failing shouldn't blank the whole panel — just
+        // omit its rows. The user will see the others and can retry.
+        return null
+      }
+    }),
+  )
 
-  const { auctions, buyNows } = await getSellerCancellableListings(sellerAddress)
-  const payload: SellerListingsPayload = {
-    auctions: auctions.map((a) => ({
-      kind: "auction" as const,
-      id: a.id,
-      auctionId: a.auctionId.toString(),
-      nftContract: a.nftContract,
-      tokenId: a.tokenId,
-      reserveWei: a.reserveWei.toString(),
-      durationSeconds: a.durationSeconds,
-    })),
-    buyNows: buyNows.map((b) => ({
-      kind: "buyNow" as const,
-      id: b.id,
-      nftContract: b.nftContract,
-      tokenId: b.tokenId,
-      priceWei: b.priceWei.toString(),
-    })),
+  const auctions: SerializedAuction[] = []
+  const buyNows: SerializedBuyNow[] = []
+  for (const r of results) {
+    if (!r) continue
+    for (const a of r.auctions) auctions.push({ kind: "auction", ...a })
+    for (const b of r.buyNows) buyNows.push({ kind: "buyNow", ...b })
   }
-  // Fire-and-forget — next miss within 5 min hits Postgres only.
-  writeFoundationSellerListings(sellerAddress, payload)
-  return payload
+  return { auctions, buyNows }
 }
 
 const cached = unstable_cache(
@@ -87,7 +77,7 @@ const cached = unstable_cache(
       SELLER_LISTINGS_TTL_S,
       () => buildPayload(sellerAddress),
     ),
-  ["seller-listings-v1"],
+  ["seller-listings-v2"],
   { revalidate: SELLER_LISTINGS_TTL_S, tags: ["seller-listings"] },
 )
 

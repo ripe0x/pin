@@ -15,7 +15,6 @@ import {
 } from "viem"
 import { mainnet } from "viem/chains"
 import { erc721Abi, nftMarketAbi, sovereignAuctionHouseAbi, sovereignAuctionHouseFactoryAbi } from "@pin/abi"
-import { SUPERRARE_BAZAAR, SUPERRARE_V2_NFT } from "@pin/addresses"
 import { pgCache } from "./pg-cache"
 import { getActiveAuctionCountFromIndexer } from "./indexer-queries"
 import {
@@ -35,8 +34,6 @@ import { resolveDisplayNames } from "./artist-queries"
 
 const FND_MARKET = NFT_MARKET[MAINNET_CHAIN_ID]
 const SOVEREIGN_FACTORY = getAddressOrNull(SOVEREIGN_AUCTION_HOUSE_FACTORY, MAINNET_CHAIN_ID)
-const SR_BAZAAR = SUPERRARE_BAZAAR[MAINNET_CHAIN_ID]
-const SR_V2_NFT = SUPERRARE_V2_NFT[MAINNET_CHAIN_ID]
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
 /**
@@ -224,12 +221,15 @@ async function fetchAuctionForToken(
   }
 
   // SR Bazaar doesn't custody NFTs during an auction — the seller keeps
-  // ownerOf and Bazaar just records the auction in its tokenAuctions
-  // mapping. So owner-based routing won't surface SR V2 auctions; we
-  // fall through and ask the adapter directly. The adapter's check is
-  // a single eth_call against tokenAuctions (cheap), and it returns
-  // null when the token has no active SR auction.
-  if (!state && contract.toLowerCase() === SR_V2_NFT.toLowerCase()) {
+  // ownerOf and Bazaar records the auction in its tokenAuctions mapping.
+  // Owner-based routing therefore can't surface SR auctions; we fall
+  // through and ask the adapter directly. The check is a single eth_call
+  // against `tokenAuctions(contract, tokenId)` and returns null when no
+  // active SR auction exists. Bazaar covers both the V2 shared NFT and
+  // every SuperRare Space (per-Space ERC-721 contracts), so we no longer
+  // gate this on the V2-NFT address — any contract with a Bazaar entry
+  // gets surfaced.
+  if (!state) {
     const { superrareV2Adapter } = await import("./platforms/superrareV2")
     state = (await superrareV2Adapter.getActiveAuctionForToken?.(
       contract,

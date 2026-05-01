@@ -15,11 +15,11 @@
  *   anvil --fork-url $MAINNET_RPC_URL --port 8546
  */
 import { createPublicClient, createWalletClient, http, parseEther, formatEther } from "viem"
-import { mainnet } from "viem/chains"
+import { foundry } from "viem/chains"
 import { privateKeyToAccount } from "viem/accounts"
 import { superrareBazaarAbi } from "../packages/abi/src/superrareBazaar.ts"
 
-const RPC = "http://127.0.0.1:8546"
+const RPC = "http://127.0.0.1:8545"
 const BAZAAR = "0x6d7c44773c52d396f43c2d511b81aa168e9a7a42"
 const SR_V2_NFT = "0xb932a70A57673d89f4acfFBE830E8ed7f75Fb9e0"
 const ZERO = "0x0000000000000000000000000000000000000000"
@@ -32,9 +32,13 @@ const TEST_BIDDER_KEY =
 const TARGET_TOKEN_ID = 48544n
 const SELLER = "0x09464aD754F39578bCAeeDD64bc61F911ceC01Bb"
 const RESERVE_WEI = parseEther("1.5")
+// SR Bazaar's MarketplaceSettings.getMarketplaceFeePercentage() returns
+// 3 — buyer pays bid + 3% as msg.value or the contract reverts with
+// "not enough eth sent". Same constant we hardcode in AuctionPanel.tsx.
+const MARKETPLACE_FEE_BPS = 300n
 
 const transport = http(RPC)
-const pub = createPublicClient({ chain: mainnet, transport })
+const pub = createPublicClient({ chain: foundry, transport })
 
 async function rpc(method, params = []) {
   const res = await fetch(RPC, {
@@ -96,7 +100,7 @@ async function main() {
   await rpc("anvil_setBalance", [bidder.address, "0x56BC75E2D63100000"]) // 100 ETH
   log(`bidder: ${bidder.address}, balance: ${formatEther(await pub.getBalance({ address: bidder.address }))} ETH`)
 
-  const wallet = createWalletClient({ account: bidder, chain: mainnet, transport })
+  const wallet = createWalletClient({ account: bidder, chain: foundry, transport })
 
   // ── Read pre-state ──
   const [creator0, , startingTime0, length0, currency0, minBid0] = await readAuction(TARGET_TOKEN_ID)
@@ -112,7 +116,6 @@ async function main() {
   // SR Bazaar enforces a buyer's premium on top of the bid amount: the
   // total `msg.value` must equal `amount + (amount * marketplaceFee%)`.
   // Current marketplaceFee is 3%, so for a 1.5 ETH bid we send 1.545 ETH.
-  const MARKETPLACE_FEE_BPS = 300n // 3%
   const totalToSend = RESERVE_WEI + (RESERVE_WEI * MARKETPLACE_FEE_BPS) / 10000n
   log(`\n[1] bid() — first bid at reserve, expect success`)
   log(`    bid amount: ${formatEther(RESERVE_WEI)} ETH`)
@@ -201,7 +204,7 @@ async function main() {
   const SELLER5 = "0x16c93ec97512832ba4244cc69527530d358db0e5"
   await rpc("anvil_impersonateAccount", [SELLER5])
   await rpc("anvil_setBalance", [SELLER5, "0x56BC75E2D63100000"])
-  const seller5 = createWalletClient({ account: SELLER5, chain: mainnet, transport })
+  const seller5 = createWalletClient({ account: SELLER5, chain: foundry, transport })
   try {
     const txHash = await seller5.writeContract({
       address: BAZAAR,
@@ -230,6 +233,75 @@ async function main() {
     } else {
       fail("cancel encoding", `unexpected error: ${msg}`)
     }
+  }
+
+  // ── Test 6: bid() against a SuperRare Space contract ──
+  // Bazaar accepts originContract pointing at any Space ERC-721, not
+  // just the V2 shared NFT. This proves the same ABI/calldata path
+  // works for Spaces — same code in our adapter, same UI write path.
+  log("\n[6] bid() on a SuperRare Space — same ABI, different originContract")
+  // Token 422 on ARTIFACT (0xa9cf…). Picked because it's a cheap
+  // (0.7 ETH) pre-bid auction; leaves token 57 (1.5 ETH) untouched
+  // for manual UI testing in the dev site.
+  const SPACE_CONTRACT = "0xa9cf3fb2c4538ac95e0c822758ec745fcfed8360" // ARTIFACT
+  const SPACE_TOKEN_ID = 422n
+  const SPACE_RESERVE = parseEther("0.7")
+  const spaceTotal = SPACE_RESERVE + (SPACE_RESERVE * MARKETPLACE_FEE_BPS) / 10000n
+  // Use a fresh bidder so we don't collide with the V2 token we
+  // already mutated in Tests 1–4.
+  const spaceBidder = privateKeyToAccount(
+    "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d", // anvil account #1
+  )
+  await rpc("anvil_setBalance", [spaceBidder.address, "0x56BC75E2D63100000"])
+  const spaceWallet = createWalletClient({
+    account: spaceBidder,
+    chain: foundry,
+    transport,
+  })
+
+  // Pre-state read via the same tokenAuctions ABI used by our adapter.
+  const [spaceCreatorPre] = await pub.readContract({
+    address: BAZAAR,
+    abi: superrareBazaarAbi,
+    functionName: "tokenAuctions",
+    args: [SPACE_CONTRACT, SPACE_TOKEN_ID],
+  })
+  if (spaceCreatorPre === ZERO) {
+    fail("space pre-state", "auction not active on fork")
+  } else {
+    pass(`space auction creator on fork: ${spaceCreatorPre}`)
+  }
+
+  try {
+    const txHash = await spaceWallet.writeContract({
+      address: BAZAAR,
+      abi: superrareBazaarAbi,
+      functionName: "bid",
+      args: [SPACE_CONTRACT, SPACE_TOKEN_ID, ZERO, SPACE_RESERVE],
+      value: spaceTotal,
+    })
+    const receipt = await pub.waitForTransactionReceipt({ hash: txHash })
+    if (receipt.status !== "success") throw new Error(`status ${receipt.status}`)
+    pass(`space bid tx confirmed (gas ${receipt.gasUsed})`)
+
+    const [bidderPost, , amountPost] = await pub.readContract({
+      address: BAZAAR,
+      abi: superrareBazaarAbi,
+      functionName: "auctionBids",
+      args: [SPACE_CONTRACT, SPACE_TOKEN_ID],
+    })
+    if (bidderPost.toLowerCase() === spaceBidder.address.toLowerCase()) {
+      pass(`space bidder recorded: ${bidderPost}`)
+    } else {
+      fail("space bidder", `expected ${spaceBidder.address}, got ${bidderPost}`)
+    }
+    if (amountPost === SPACE_RESERVE) {
+      pass(`space bid amount: ${formatEther(amountPost)} ETH`)
+    } else {
+      fail("space amount", `expected ${SPACE_RESERVE}, got ${amountPost}`)
+    }
+  } catch (e) {
+    fail("space bid", e.shortMessage ?? e.message)
   }
 
   log("\n--- summary ---")

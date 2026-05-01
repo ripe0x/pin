@@ -18,6 +18,8 @@ import type {
   CollectorTokenRef,
   AdapterLastSale,
   ActiveAuctionSummary,
+  SellerListings,
+  SellerCancellableAuction,
 } from "./types"
 import type { AuctionState, AuctionFees } from "../auctions"
 import { getNFTsForOwner } from "../alchemy"
@@ -57,6 +59,13 @@ const transferEvent = parseAbiItem(
 )
 const auctionSettledEvent = parseAbiItem(
   "event AuctionSettled(address indexed _contractAddress, address indexed _bidder, address _seller, uint256 indexed _tokenId, address _currencyAddress, uint256 _amount)",
+)
+// `_auctionCreator` is indexed → cheap server-side filter for "this artist's
+// auctions". `_contractAddress` is also indexed but we don't constrain it
+// here because the same Bazaar can host auctions on any origin contract;
+// we filter to V2 NFT after the fact (per current scope).
+const newAuctionEvent = parseAbiItem(
+  "event NewAuction(address indexed _contractAddress, uint256 indexed _tokenId, address indexed _auctionCreator, address _currencyAddress, uint256 _startingTime, uint256 _minimumBid, uint256 _lengthOfAuction)",
 )
 
 // Block-range chunk for indexed-arg log scans. Alchemy supports large
@@ -111,24 +120,36 @@ async function paginatedIndexedScan<T>(
 }
 
 /**
- * SuperRare V2 platform adapter.
+ * SuperRare platform adapter (V2 NFT + Spaces).
+ *
+ * Coverage:
+ *   - V2 shared 1/1 NFT contract (`0xb932a70a…`)
+ *   - All SuperRare Spaces (per-Space ERC-721 contracts deployed via SR's
+ *     Spaces factory; share the `tokenCreator(uint256)` interface and
+ *     route through the same Bazaar marketplace contract)
  *
  * Discovery strategy (cost-bounded by indexed-arg event filters):
- *   - Artist mints: Transfer(from=0x0, to=artist) on the V2 NFT contract.
- *     Filter is on indexed `from` + `to` so Alchemy returns only this
- *     artist's mints — typically <50 logs per artist, one cheap scan.
+ *   - Artist mints (V2 NFT only): Transfer(from=0x0, to=artist). Filter
+ *     is on indexed `from` + `to` so Alchemy returns only this artist's
+ *     mints — typically <50 logs per artist, one cheap scan. Spaces
+ *     mints are NOT yet enumerated in the artist gallery — would
+ *     require either iterating known Space contracts or adding a
+ *     factory enumeration. Tracked as a follow-up.
  *   - Last sale: AuctionSettled filtered by indexed `_contractAddress`
- *     and `_tokenId`. Sold/AcceptOffer events are NOT indexed by tokenId,
- *     so direct-buy + offer-accept sales are NOT covered today (deferred
- *     follow-up — would need a platform-wide bulk scan).
- *   - Collector tokens: Alchemy NFT API `getNFTsForOwner` filtered to
- *     the V2 NFT contract — one billable page (~150 CU).
- *   - Active auctions: incremental scan of NewAuction/AuctionBid/
- *     AuctionSettled/CancelAuction on Bazaar. Cursor-based; see
- *     `superrareV2-scan.ts`.
+ *     and `_tokenId` on Bazaar — works for any contract Bazaar tracks.
+ *     Sold/AcceptOffer events are NOT indexed by tokenId so direct-buy
+ *     + offer-accept sales are NOT covered today (deferred follow-up).
+ *   - Collector tokens (V2 NFT only for now): Alchemy NFT API
+ *     `getNFTsForOwner` filtered to the V2 NFT contract.
+ *   - Active auctions / token state: incremental scan of NewAuction /
+ *     AuctionBid / AuctionSettled / CancelAuction on Bazaar populates
+ *     `lazy_srv2_active_auctions` for ALL Bazaar-tracked contracts;
+ *     `getActiveAuctionForToken` reads the on-chain `tokenAuctions`
+ *     mapping for any (contract, tokenId), gated only by Bazaar's
+ *     own zero-creator sentinel.
  *
  * Bid currency: only ETH bids (currencyAddress = 0x0) surface in our UI.
- * ERC-20 bids are rare on V2 and out of scope for the MVP.
+ * ERC-20 bids are rare and out of scope for the MVP.
  */
 export const superrareV2Adapter: PlatformAdapter = {
   id: "superrareV2",
@@ -233,9 +254,11 @@ export const superrareV2Adapter: PlatformAdapter = {
     contract: Address,
     tokenId: string,
   ): Promise<AdapterLastSale | null> {
-    // Only V2 NFT tokens can have sales on Bazaar that we track. Tokens
-    // on other contracts aren't ours to claim a sale for.
-    if (contract.toLowerCase() !== SR_V2_NFT.toLowerCase()) return null
+    // Bazaar tracks auctions across the V2 shared NFT AND every
+    // SuperRare Space (per-Space ERC-721 contracts). The AuctionSettled
+    // event is filtered by indexed `_contractAddress` + `_tokenId`, so
+    // a contract that has never had an SR auction returns zero logs and
+    // we naturally fall through to null — no need to gate on the address.
 
     const cached = await readSuperrareV2Sale(contract, tokenId)
     if (cached && isFresh(cached.lastIndexedAt, LAZY_TTL.superrareV2Sale)) {
@@ -314,8 +337,9 @@ export const superrareV2Adapter: PlatformAdapter = {
     contract: Address,
     tokenId: string,
   ): Promise<AuctionState | null> {
-    if (contract.toLowerCase() !== SR_V2_NFT.toLowerCase()) return null
-
+    // Bazaar's tokenAuctions storage covers V2 NFT + every SR Space.
+    // No address gate: contracts without an active auction return a
+    // zero-creator entry and we exit on the existing zero check below.
     const client = getClient()
 
     // Read static auction config + live bid state. tokenAuctions returns
@@ -473,6 +497,224 @@ export const superrareV2Adapter: PlatformAdapter = {
       fees,
       bidHistory: [],
     }
+  },
+
+  /**
+   * Cancellable SR V2 auctions for `seller`. Bazaar exposes
+   * `cancelAuction(originContract, tokenId)` which reverts on:
+   *   - non-seller caller (we already filter by indexed `_auctionCreator`)
+   *   - any bid received post-creation (auctions become uncancellable as
+   *     soon as `auctionBids[contract][tokenId].bidder != 0x0`)
+   *   - non-ETH currency (out of scope for the migrate flow today —
+   *     Sovereign houses are ETH-only, so we drop ERC-20 auctions)
+   *
+   * No buy-nows are returned: SuperRare's "fixed price" listings live in
+   * a separate `salePrice` mapping and aren't part of the Sovereign-
+   * destined migrate flow today.
+   */
+  async getCancellableListingsForSeller(
+    seller: Address,
+  ): Promise<SellerListings | null> {
+    const client = getClient()
+    const latest = await client.getBlockNumber()
+
+    // Indexed-arg event filter: Bazaar's NewAuction has `_auctionCreator`
+    // indexed, so this returns ONLY this seller's auctions across the
+    // platform's lifetime. Typically a handful of logs per artist.
+    const logs = await paginatedIndexedScan(
+      (from, to) =>
+        client.getLogs({
+          address: SR_BAZAAR,
+          event: newAuctionEvent,
+          args: { _auctionCreator: seller },
+          fromBlock: from,
+          toBlock: to,
+        }),
+      SR_BAZAAR_DEPLOY_BLOCK,
+      latest,
+    )
+
+    if (logs.length === 0) return { auctions: [], buyNows: [] }
+
+    // Dedupe by (contract, tokenId): SR auctions are keyed on the token
+    // (one auction per token at a time on Bazaar), so a re-listed token
+    // surfaces multiple NewAuction events. Keep the most recent by
+    // blockNumber so we use the latest configured length/min bid; the
+    // post-multicall confirmation drops anything that's no longer live.
+    type AuctionMeta = {
+      contract: Address
+      tokenId: bigint
+      lengthOfAuction: bigint
+      minimumBid: bigint
+      currencyAddress: Address
+      blockNumber: bigint
+    }
+    const byKey = new Map<string, AuctionMeta>()
+    for (const log of logs) {
+      const l = log as typeof log & {
+        args: {
+          _contractAddress: Address
+          _tokenId: bigint
+          _currencyAddress: Address
+          _minimumBid: bigint
+          _lengthOfAuction: bigint
+        }
+        blockNumber: bigint | null
+      }
+      if (l.blockNumber === null) continue
+      // ERC-20 auctions: skip — Sovereign houses don't support non-ETH.
+      if (l.args._currencyAddress.toLowerCase() !== ETH_CURRENCY) continue
+      const key = `${l.args._contractAddress.toLowerCase()}:${l.args._tokenId.toString()}`
+      const prev = byKey.get(key)
+      if (!prev || l.blockNumber > prev.blockNumber) {
+        byKey.set(key, {
+          contract: l.args._contractAddress,
+          tokenId: l.args._tokenId,
+          lengthOfAuction: l.args._lengthOfAuction,
+          minimumBid: l.args._minimumBid,
+          currencyAddress: l.args._currencyAddress,
+          blockNumber: l.blockNumber,
+        })
+      }
+    }
+
+    const candidates = Array.from(byKey.values())
+    if (candidates.length === 0) return { auctions: [], buyNows: [] }
+
+    // Multicall the live auction state + the current NFT owner. Three
+    // checks must all pass for an auction to be cancellable:
+    //   1. tokenAuctions[contract][tokenId].auctionCreator == seller
+    //      (storage entry exists and is ours).
+    //   2. auctionBids[contract][tokenId].bidder == 0x0 (cancelAuction
+    //      reverts as soon as a bid lands).
+    //   3. ownerOf(tokenId) ∈ {seller, BAZAAR}. The two cases:
+    //      - COLDIE_AUCTION (~95% of auctions): Bazaar uses an approval-
+    //        based flow, so the token stays with the seller until
+    //        settle. ownerOf == seller while live.
+    //      - SCHEDULED_AUCTION (~5%): Bazaar pulls custody on
+    //        configureAuction (because start can be days/weeks in the
+    //        future and approval-based would let the seller rug
+    //        trivially). ownerOf == BAZAAR while live.
+    //      A token at any other address is post-settle / post-rug-
+    //      transfer and the cancel call would revert internally.
+    const out: SellerCancellableAuction[] = []
+    const sellerLower = seller.toLowerCase()
+    const ownerOfAbi = [
+      {
+        type: "function" as const,
+        name: "ownerOf",
+        stateMutability: "view" as const,
+        inputs: [{ name: "tokenId", type: "uint256" as const }],
+        outputs: [{ name: "", type: "address" as const }],
+      },
+    ]
+    for (let i = 0; i < candidates.length; i += 50) {
+      const batch = candidates.slice(i, i + 50)
+      const calls = batch.flatMap((c) => [
+        {
+          address: SR_BAZAAR,
+          abi: superrareBazaarAbi,
+          functionName: "tokenAuctions" as const,
+          args: [c.contract, c.tokenId] as const,
+        },
+        {
+          address: SR_BAZAAR,
+          abi: superrareBazaarAbi,
+          functionName: "auctionBids" as const,
+          args: [c.contract, c.tokenId] as const,
+        },
+        {
+          address: c.contract,
+          abi: ownerOfAbi,
+          functionName: "ownerOf" as const,
+          args: [c.tokenId] as const,
+        },
+        // tokenCreator → primary vs secondary classification. Primary
+        // (creator == seller) → 15% to SR DAO. Secondary → 10% to the
+        // original creator royalty. The migrate panel reads this back
+        // to render the exact fee delta per row instead of "up to 15%".
+        {
+          address: c.contract,
+          abi: tokenCreatorAbi,
+          functionName: "tokenCreator" as const,
+          args: [c.tokenId] as const,
+        },
+      ])
+      const results = await client.multicall({ contracts: calls })
+      batch.forEach((c, j) => {
+        const auctionRes = results[j * 4]
+        const bidRes = results[j * 4 + 1]
+        const ownerRes = results[j * 4 + 2]
+        const creatorRes = results[j * 4 + 3]
+        if (
+          auctionRes.status !== "success" ||
+          bidRes.status !== "success" ||
+          ownerRes.status !== "success"
+        ) {
+          return
+        }
+        const a = auctionRes.result as readonly [
+          Address, // auctionCreator
+          bigint, // creationBlock
+          bigint, // startingTime
+          bigint, // lengthOfAuction
+          Address, // currencyAddress
+          bigint, // minimumBid
+          `0x${string}`, // auctionType
+        ]
+        const auctionCreator = a[0]
+        const currencyAddress = a[4]
+        const minimumBidLive = a[5]
+        if (auctionCreator === ZERO_ADDRESS) return
+        if (auctionCreator.toLowerCase() !== sellerLower) return
+        if (currencyAddress.toLowerCase() !== ETH_CURRENCY) return
+
+        const b = bidRes.result as readonly [
+          Address, // bidder
+          Address, // currencyAddress
+          bigint, // amount
+          number, // marketplaceFee
+        ]
+        const bidder = b[0]
+        const bidAmount = b[2]
+        if (bidder !== ZERO_ADDRESS && bidAmount !== 0n) return
+
+        // Multicall typings narrow per-call based on the union ABI; the
+        // cast to unknown lets us pin to Address without TS complaining
+        // about overlap with the tokenAuctions/auctionBids tuples.
+        const owner = ownerRes.result as unknown as Address
+        const ownerLower = owner.toLowerCase()
+        const isLive =
+          ownerLower === sellerLower ||
+          ownerLower === SR_BAZAAR.toLowerCase()
+        if (!isLive) return
+
+        // Compute exact fee bps: primary if the original minter still
+        // holds the seller role on this auction; secondary otherwise.
+        // tokenCreator() reverts on tokens that don't expose it (rare —
+        // a few SR collection forks); fall back to undefined so the
+        // panel renders the platform default.
+        let feeBps: number | undefined
+        if (creatorRes.status === "success") {
+          const creator = creatorRes.result as unknown as Address
+          const isPrimary = creator.toLowerCase() === sellerLower
+          feeBps = isPrimary ? 1500 : 1000
+        }
+
+        out.push({
+          id: `srv2:auction:${c.contract.toLowerCase()}:${c.tokenId.toString()}`,
+          platform: "superrareV2",
+          auctionId: `${c.contract.toLowerCase()}:${c.tokenId.toString()}`,
+          nftContract: c.contract,
+          tokenId: c.tokenId.toString(),
+          reserveWei: minimumBidLive.toString(),
+          durationSeconds: Number(c.lengthOfAuction),
+          feeBps,
+        })
+      })
+    }
+
+    return { auctions: out, buyNows: [] }
   },
 
   async getActiveAuctions(limit: number): Promise<ActiveAuctionSummary[]> {

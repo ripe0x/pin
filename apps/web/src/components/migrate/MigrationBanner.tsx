@@ -7,9 +7,10 @@ import { fetchSellerCancellableListings } from "@/lib/seller-listings"
 
 /**
  * Renders nothing unless the connected wallet is the artist AND has at least
- * one cancellable Foundation listing. Mounted on /artist/[address] above the
- * existing panels; routes the artist to /artist/[address]/migrate where the
- * full migration flow lives.
+ * one cancellable listing on a third-party marketplace (Foundation,
+ * SuperRare, etc.). Mounted on /artist/[address] above the existing
+ * panels; routes the artist to /artist/[address]/migrate where the full
+ * migration flow lives.
  */
 export function MigrationBanner({ artistAddress }: { artistAddress: string }) {
   const { address: connected } = useAccount()
@@ -45,8 +46,8 @@ export function MigrationBanner({ artistAddress }: { artistAddress: string }) {
     <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 flex items-center justify-between gap-4">
       <div>
         <p className="text-sm font-medium text-amber-900">
-          You have {count} {count === 1 ? "listing" : "listings"} on the old
-          Foundation contract.
+          You have {count} active {count === 1 ? "listing" : "listings"} on
+          third-party marketplaces.
         </p>
         <p className="text-xs text-amber-800/80 mt-0.5">
           Migrate them to your Sovereign auction house in one guided flow —
