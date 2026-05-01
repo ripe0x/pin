@@ -2,6 +2,8 @@ import Link from "next/link"
 import { formatEther } from "viem"
 import { ipfsToHttp } from "@pin/shared"
 import { resolveTokenMetadataDirect } from "@/lib/onchain-discovery"
+import { PlatformChip } from "@/components/PlatformChip"
+import type { PlatformId } from "@/lib/platforms/types"
 
 const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
 
@@ -15,6 +17,12 @@ type Props = {
   artistAddress: string
   artistDisplayName: string
   artistAvatarUrl: string | null
+  /**
+   * Source platform for the god-mode debug chip. Optional — the chip
+   * itself no-ops for non-allowlisted wallets and when the toggle is
+   * off, so passing this on every card is free.
+   */
+  platform?: PlatformId
 }
 
 function formatEth(wei: bigint): string {
@@ -53,6 +61,7 @@ export async function WorkArtistCard({
   artistAddress,
   artistDisplayName,
   artistAvatarUrl,
+  platform,
 }: Props) {
   const meta = await resolveTokenMetadataDirect(contract, tokenId).catch(
     () => null,
@@ -74,7 +83,8 @@ export async function WorkArtistCard({
   const artistHref = `/artist/${artistAddress}`
 
   return (
-    <div className="border border-gray-200 transition-colors hover:border-gray-400 flex flex-col h-full overflow-hidden">
+    <div className="relative border border-gray-200 transition-colors hover:border-gray-400 flex flex-col h-full overflow-hidden">
+      <PlatformChip platform={platform} />
       <div className="grid grid-cols-2">
         <Link
           href={tokenHref}

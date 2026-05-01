@@ -109,10 +109,7 @@ export async function refreshSuperrareV2Auctions(): Promise<void> {
   const client = getClient()
   const latestBlock = await client.getBlockNumber()
   const fromBlock = cursor ? cursor.lastBlock + 1n : SR_BAZAAR_DEPLOY_BLOCK
-  if (fromBlock > latestBlock) {
-    await writeScanCursor(SCAN_KEY, latestBlock)
-    return
-  }
+  const cursorAtHead = fromBlock > latestBlock
 
   const deadline = Date.now() + SCAN_TIMEOUT_MS
   // Index existing rows by (contract, tokenId) so events can mutate
@@ -223,6 +220,7 @@ export async function refreshSuperrareV2Auctions(): Promise<void> {
           endTime: 0,
           status: "active",
           startedAtBlock: l.blockNumber ?? 0n,
+          creator: null,
         })
       } else if (l.eventName === "AuctionBid") {
         const currency = (args._currencyAddress as Address)?.toLowerCase()
@@ -243,6 +241,7 @@ export async function refreshSuperrareV2Auctions(): Promise<void> {
             endTime: 0, // unknown; will be derived if NewAuction surfaces later
             status: "active",
             startedAtBlock: l.blockNumber ?? 0n,
+            creator: null,
           })
         } else {
           existing.currentBidWei = amount
@@ -268,10 +267,57 @@ export async function refreshSuperrareV2Auctions(): Promise<void> {
     scannedTo = end
   }
 
+  // Backfill `creator` for active rows we don't have one for yet. The
+  // home grid only surfaces auctions where seller == creator (primary
+  // art only), and `creator IS NULL` rows are excluded as unverified.
+  //
+  // Capped at MAX_BACKFILL per scan pass + chunked at MULTICALL_CHUNK to
+  // avoid Alchemy "response too large" failures. Existing tables can have
+  // thousands of historical active rows — incremental backfill across
+  // successive scans keeps each call cheap.
+  const MAX_BACKFILL = 500
+  const MULTICALL_CHUNK = 100
+  const needsCreator = [...byKey.values()]
+    .filter((r) => r.status === "active" && !r.creator)
+    .slice(0, MAX_BACKFILL)
+  for (let i = 0; i < needsCreator.length; i += MULTICALL_CHUNK) {
+    if (Date.now() > deadline) break
+    const slice = needsCreator.slice(i, i + MULTICALL_CHUNK)
+    try {
+      const results = await client.multicall({
+        contracts: slice.map((r) => ({
+          address: r.contract as Address,
+          abi: tokenCreatorAbi,
+          functionName: "tokenCreator" as const,
+          args: [BigInt(r.tokenId)],
+        })),
+        allowFailure: true,
+      })
+      for (let j = 0; j < slice.length; j++) {
+        const res = results[j]
+        if (res?.status === "success" && typeof res.result === "string") {
+          slice[j].creator = (res.result as string).toLowerCase()
+        }
+      }
+    } catch {
+      // Chunk failure leaves those rows null; next scan retries.
+    }
+  }
+
   if (byKey.size > 0) {
     writeSuperrareV2ActiveAuctions([...byKey.values()])
   }
   await writeScanCursor(SCAN_KEY, scannedTo > 0n ? scannedTo : latestBlock)
 }
+
+const tokenCreatorAbi = [
+  {
+    type: "function",
+    name: "tokenCreator",
+    stateMutability: "view",
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    outputs: [{ name: "", type: "address" }],
+  },
+] as const
 
 const ZERO_ADDRESS_LOWER = "0x0000000000000000000000000000000000000000"

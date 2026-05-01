@@ -9,6 +9,7 @@ import { createProvider, type PinStatus } from "@/lib/pinning"
 import { useIpfsGatewayFallback } from "@/lib/use-ipfs-fallback"
 import { TokenPinStatus } from "@/components/preserve/TokenPinStatus"
 import { DeployHouseCTA } from "@/components/auction/DeployHouseCTA"
+import { PlatformChip } from "@/components/PlatformChip"
 
 const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
 
@@ -204,7 +205,8 @@ function GalleryCard({
   )
 
   return (
-    <div className="group border border-gray-200 transition-colors hover:border-gray-400">
+    <div className="group relative border border-gray-200 transition-colors hover:border-gray-400">
+      <PlatformChip platform={item.platform} />
       <Link href={href}>
         <div
           className="relative overflow-hidden bg-gray-100"
@@ -251,3 +253,4 @@ function GalleryCard({
     </div>
   )
 }
+

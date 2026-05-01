@@ -7,6 +7,7 @@ import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { SITE_TITLE } from "@pin/shared"
 import { useAccount } from "wagmi"
 import { ThemeToggle } from "@/components/ThemeToggle"
+import { GodModePanel } from "@/components/GodModePanel"
 
 export function Navbar() {
   const { address } = useAccount()
@@ -67,6 +68,10 @@ export function Navbar() {
             </Link>
           )}
           <ThemeToggle />
+          {/* God-mode panel — only renders for allowlisted wallets, so
+              this is a no-op for everyone else and adds zero affordance
+              clutter on the navbar. */}
+          <GodModePanel />
           <div className="rk-compact">
             <ConnectButton
               showBalance={false}

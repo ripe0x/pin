@@ -39,7 +39,6 @@ import {
   isFresh,
 } from "../lazy-index"
 import type { BidHistoryEntry } from "../auctions"
-import { refreshSuperrareV2Auctions } from "./superrareV2-scan"
 
 const SR_V2_NFT = SUPERRARE_V2_NFT[MAINNET_CHAIN_ID]
 const SR_BAZAAR = SUPERRARE_BAZAAR[MAINNET_CHAIN_ID]
@@ -850,24 +849,28 @@ export const superrareV2Adapter: PlatformAdapter = {
   },
 
   async getActiveAuctions(limit: number): Promise<ActiveAuctionSummary[]> {
-    // Refresh first; the scan has its own cooldown so consecutive calls
-    // within the cursor freshness window are no-ops.
-    await refreshSuperrareV2Auctions().catch(() => {
-      // Scan failures fall back to whatever rows exist in the table; the
-      // home grid degrades gracefully rather than crashing.
-    })
-
-    const rows = await readSuperrareV2ActiveAuctions(limit)
-    return rows.map((r) => ({
-      platform: "superrareV2",
-      contract: r.contract as Address,
-      tokenId: r.tokenId,
-      seller: r.seller as Address,
-      reserveWei: r.reserveWei,
-      currentBidWei: r.currentBidWei,
-      currentBidder: (r.currentBidder ?? null) as Address | null,
-      endTime: r.endTime,
-      sourceContract: SR_BAZAAR,
-    }))
+    // Pure table read — no RPC in the home-grid request path. The
+    // scanner runs out-of-band via /api/cron/refresh-auctions.
+    // Over-read so the artist-seller filter doesn't shrink the result
+    // set below `limit` when many active rows are secondary listings.
+    const rows = await readSuperrareV2ActiveAuctions(limit * 4)
+    return rows
+      .filter(
+        (r) =>
+          r.creator !== null &&
+          r.creator.toLowerCase() === r.seller.toLowerCase(),
+      )
+      .slice(0, limit)
+      .map((r) => ({
+        platform: "superrareV2",
+        contract: r.contract as Address,
+        tokenId: r.tokenId,
+        seller: r.seller as Address,
+        reserveWei: r.reserveWei,
+        currentBidWei: r.currentBidWei,
+        currentBidder: (r.currentBidder ?? null) as Address | null,
+        endTime: r.endTime,
+        sourceContract: SR_BAZAAR,
+      }))
   },
 }

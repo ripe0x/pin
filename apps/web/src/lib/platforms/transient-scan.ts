@@ -117,10 +117,6 @@ export async function refreshTransientAuctions(): Promise<void> {
   const client = getClient()
   const latestBlock = await client.getBlockNumber()
   const fromBlock = cursor ? cursor.lastBlock + 1n : TL_AUCTION_HOUSE_DEPLOY_BLOCK
-  if (fromBlock > latestBlock) {
-    await writeScanCursor(SCAN_KEY, latestBlock)
-    return
-  }
 
   const deadline = Date.now() + SCAN_TIMEOUT_MS
   const existingRows = await readTransientActiveAuctions(10_000)
@@ -242,6 +238,7 @@ export async function refreshTransientAuctions(): Promise<void> {
           status: "active",
           listingType: type_,
           startedAtBlock: l.blockNumber ?? 0n,
+          creator: null,
         })
       } else if (l.eventName === "AuctionBid") {
         if (!ethListing) continue
@@ -263,6 +260,7 @@ export async function refreshTransientAuctions(): Promise<void> {
             status: "active",
             listingType: type_,
             startedAtBlock: l.blockNumber ?? 0n,
+            creator: null,
           })
         } else {
           existing.currentBidWei = highestBid
@@ -289,8 +287,82 @@ export async function refreshTransientAuctions(): Promise<void> {
     scannedTo = end
   }
 
+  // Backfill `creator` for active rows missing one. ERC721TL exposes
+  // `tokenCreator(uint256)`; clones that don't fall back to `owner()`
+  // (the per-artist contract owner is the artist by Universal Deployer
+  // convention). Chunked + capped per scan pass — see SR V2 scanner.
+  const MAX_BACKFILL = 500
+  const MULTICALL_CHUNK = 100
+  const needsCreator = [...byKey.values()]
+    .filter((r) => r.status === "active" && !r.creator)
+    .slice(0, MAX_BACKFILL)
+  for (let i = 0; i < needsCreator.length; i += MULTICALL_CHUNK) {
+    if (Date.now() > deadline) break
+    const slice = needsCreator.slice(i, i + MULTICALL_CHUNK)
+    try {
+      const tcResults = await client.multicall({
+        contracts: slice.map((r) => ({
+          address: r.contract as Address,
+          abi: tokenCreatorAbi,
+          functionName: "tokenCreator" as const,
+          args: [BigInt(r.tokenId)],
+        })),
+        allowFailure: true,
+      })
+      const ownerNeeded: number[] = []
+      for (let j = 0; j < slice.length; j++) {
+        const res = tcResults[j]
+        if (res?.status === "success" && typeof res.result === "string") {
+          slice[j].creator = (res.result as string).toLowerCase()
+        } else {
+          ownerNeeded.push(j)
+        }
+      }
+      if (ownerNeeded.length > 0) {
+        const ownerResults = await client.multicall({
+          contracts: ownerNeeded.map((j) => ({
+            address: slice[j].contract as Address,
+            abi: ownerAbi,
+            functionName: "owner" as const,
+          })),
+          allowFailure: true,
+        })
+        for (let k = 0; k < ownerNeeded.length; k++) {
+          const res = ownerResults[k]
+          if (res?.status === "success" && typeof res.result === "string") {
+            slice[ownerNeeded[k]].creator = (
+              res.result as string
+            ).toLowerCase()
+          }
+        }
+      }
+    } catch {
+      // Chunk failure leaves those rows null; next scan retries.
+    }
+  }
+
   if (byKey.size > 0) {
     writeTransientActiveAuctions([...byKey.values()])
   }
   await writeScanCursor(SCAN_KEY, scannedTo > 0n ? scannedTo : latestBlock)
 }
+
+const tokenCreatorAbi = [
+  {
+    type: "function",
+    name: "tokenCreator",
+    stateMutability: "view",
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    outputs: [{ name: "", type: "address" }],
+  },
+] as const
+
+const ownerAbi = [
+  {
+    type: "function",
+    name: "owner",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+  },
+] as const

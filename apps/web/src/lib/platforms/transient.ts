@@ -34,7 +34,6 @@ import {
   isFresh,
 } from "../lazy-index"
 import type { BidHistoryEntry } from "../auctions"
-import { refreshTransientAuctions } from "./transient-scan"
 
 const TL_AH = TL_AUCTION_HOUSE[MAINNET_CHAIN_ID]
 const TL_DEPLOYER = TL_UNIVERSAL_DEPLOYER[MAINNET_CHAIN_ID]
@@ -667,22 +666,28 @@ export const transientAdapter: PlatformAdapter = {
   },
 
   async getActiveAuctions(limit: number): Promise<ActiveAuctionSummary[]> {
-    await refreshTransientAuctions().catch(() => {
-      // Scan failures fall back to existing rows; home grid degrades
-      // gracefully rather than crashing.
-    })
-
-    const rows = await readTransientActiveAuctions(limit)
-    return rows.map((r) => ({
-      platform: "transient",
-      contract: r.contract as Address,
-      tokenId: r.tokenId,
-      seller: r.seller as Address,
-      reserveWei: r.reserveWei,
-      currentBidWei: r.currentBidWei,
-      currentBidder: (r.currentBidder ?? null) as Address | null,
-      endTime: r.endTime,
-      sourceContract: TL_AH,
-    }))
+    // Pure table read — no RPC in the home-grid request path. The
+    // scanner runs out-of-band via /api/cron/refresh-auctions.
+    // Over-read + filter to artist-sellers (seller == tokenCreator)
+    // so the home grid surfaces primary-market work only.
+    const rows = await readTransientActiveAuctions(limit * 4)
+    return rows
+      .filter(
+        (r) =>
+          r.creator !== null &&
+          r.creator.toLowerCase() === r.seller.toLowerCase(),
+      )
+      .slice(0, limit)
+      .map((r) => ({
+        platform: "transient",
+        contract: r.contract as Address,
+        tokenId: r.tokenId,
+        seller: r.seller as Address,
+        reserveWei: r.reserveWei,
+        currentBidWei: r.currentBidWei,
+        currentBidder: (r.currentBidder ?? null) as Address | null,
+        endTime: r.endTime,
+        sourceContract: TL_AH,
+      }))
   },
 }
