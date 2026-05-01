@@ -21,6 +21,9 @@ import {
   readFoundationBidHistory,
   readFoundationBidHistoryFreshness,
   writeFoundationBidHistory,
+  readPndBidHistory,
+  readPndBidHistoryFreshness,
+  writePndBidHistory,
   LAZY_TTL,
   isFresh,
 } from "./lazy-index"
@@ -28,12 +31,14 @@ import {
   NFT_MARKET,
   MAINNET_CHAIN_ID,
   SOVEREIGN_AUCTION_HOUSE_FACTORY,
+  TL_AUCTION_HOUSE,
   getAddressOrNull,
 } from "@pin/addresses"
 import { resolveDisplayNames } from "./artist-queries"
 
 const FND_MARKET = NFT_MARKET[MAINNET_CHAIN_ID]
 const SOVEREIGN_FACTORY = getAddressOrNull(SOVEREIGN_AUCTION_HOUSE_FACTORY, MAINNET_CHAIN_ID)
+const TL_AH = TL_AUCTION_HOUSE[MAINNET_CHAIN_ID]
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
 /**
@@ -58,7 +63,7 @@ export type BidHistoryEntry = {
   txHash: string
 }
 
-export type AuctionSource = "foundation" | "sovereign" | "superrareV2"
+export type AuctionSource = "foundation" | "sovereign" | "superrareV2" | "transient"
 
 /**
  * Shared shape for both Foundation and artist-owned auctions. The `source` discriminator
@@ -202,6 +207,15 @@ async function fetchAuctionForToken(
   let state: AuctionState | null = null
   if (owner.toLowerCase() === FND_MARKET.toLowerCase()) {
     state = await getFoundationAuction(nftContract, tokenId)
+  } else if (owner.toLowerCase() === TL_AH.toLowerCase()) {
+    // TL Auction House custodies the NFT during a listing, so
+    // ownerOf points here whenever there's a live TL auction. Same
+    // pattern as Foundation — clean owner-based dispatch.
+    const { transientAdapter } = await import("./platforms/transient")
+    state = (await transientAdapter.getActiveAuctionForToken?.(
+      contract,
+      tokenId,
+    )) ?? null
   } else if (SOVEREIGN_FACTORY) {
     let isHouse = false
     try {
@@ -731,6 +745,25 @@ async function getSovereignBidHistory(
   houseAddress: Address,
   auctionId: bigint,
 ): Promise<Array<Omit<BidHistoryEntry, "bidderDisplay">>> {
+  // Lazy-table cache (mirrors Foundation's pattern in
+  // `getFoundationBidHistory`): read `lazy_pnd_bids` first; if the
+  // newest row is fresh (within `LAZY_TTL.pndBids`, 30 min) return it
+  // and skip the RPC scan + per-block timestamp round-trips entirely.
+  const auctionIdStr = auctionId.toString()
+  const houseStr = houseAddress.toLowerCase()
+  const freshness = await readPndBidHistoryFreshness(houseStr, auctionIdStr)
+  if (freshness && isFresh(freshness, LAZY_TTL.pndBids)) {
+    const cached = await readPndBidHistory(houseStr, auctionIdStr)
+    if (cached) {
+      return cached.map((b) => ({
+        bidder: b.bidder as Address,
+        amount: b.amount,
+        blockTime: b.blockTime,
+        txHash: b.txHash as `0x${string}`,
+      }))
+    }
+  }
+
   const logs = await client
     .getLogs({
       address: houseAddress,
@@ -743,7 +776,37 @@ async function getSovereignBidHistory(
     })
     .catch(() => [])
 
-  return enrichBidLogs(client, logs, "amount")
+  const enriched = await enrichBidLogs(client, logs, "amount")
+
+  // Persist for the next 30 minutes. Same fire-and-forget shape as
+  // `writeFoundationBidHistory` — re-derive logIndex + blockNumber from
+  // the raw logs since `enrichBidLogs` strips both.
+  if (enriched.length > 0) {
+    const logsByTx = new Map<string, number>()
+    const blocksByTx = new Map<string, bigint>()
+    for (const l of logs) {
+      if (l.transactionHash && typeof l.logIndex === "number") {
+        logsByTx.set(l.transactionHash, l.logIndex)
+      }
+      if (l.transactionHash && l.blockNumber !== null) {
+        blocksByTx.set(l.transactionHash, l.blockNumber)
+      }
+    }
+    writePndBidHistory(
+      houseStr,
+      auctionIdStr,
+      enriched.map((b) => ({
+        txHash: b.txHash,
+        logIndex: logsByTx.get(b.txHash) ?? 0,
+        bidder: b.bidder,
+        amount: b.amount,
+        blockTime: b.blockTime,
+        blockNumber: blocksByTx.get(b.txHash) ?? 0n,
+      })),
+    )
+  }
+
+  return enriched
 }
 
 // ─── Shared helpers ─────────────────────────────────────────────────────────

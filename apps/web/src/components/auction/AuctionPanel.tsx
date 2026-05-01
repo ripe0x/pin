@@ -28,7 +28,7 @@ const FORK_MODE = !!process.env.NEXT_PUBLIC_ALCHEMY_MAINNET_URL?.match(
 const PREFERRED_CHAIN = FORK_MODE ? foundry : mainnet
 const PREFERRED_CHAIN_LABEL = FORK_MODE ? "Foundry (local fork)" : "Ethereum"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
-import { nftMarketAbi, sovereignAuctionHouseAbi, superrareBazaarAbi } from "@pin/abi"
+import { nftMarketAbi, sovereignAuctionHouseAbi, superrareBazaarAbi, transientAuctionHouseAbi } from "@pin/abi"
 import { useEthAmountInput } from "@/lib/useEthAmountInput"
 import type {
   AuctionFees,
@@ -206,8 +206,21 @@ function TxSuccessBanner({
 function useRevalidateAuctionOnSuccess(
   isSuccess: boolean,
   auction: AuctionState,
+  options?: {
+    /**
+     * Whether to call `router.refresh()` immediately after the cache
+     * flush. Default true (the bid path wants the panel to re-render
+     * with the new high-bid state in place). Pass `false` for settle /
+     * cancel write paths where a refresh would unmount the panel —
+     * including the success banner — before the user can read it.
+     * In that case the caller is responsible for calling `router.refresh()`
+     * (or a window reload) when the user dismisses the banner.
+     */
+    autoRefresh?: boolean
+  },
 ) {
   const router = useRouter()
+  const autoRefresh = options?.autoRefresh ?? true
   useEffect(() => {
     if (!isSuccess) return
     const url = `/api/auction/revalidate?contract=${encodeURIComponent(
@@ -216,11 +229,9 @@ function useRevalidateAuctionOnSuccess(
     fetch(url, { method: "POST" })
       .catch(() => {})
       .finally(() => {
-        // Wait for revalidate to land before refreshing so the new
-        // render hits a flushed cache, not a stale one.
-        router.refresh()
+        if (autoRefresh) router.refresh()
       })
-  }, [isSuccess, auction.nftContract, auction.tokenId, router])
+  }, [isSuccess, auction.nftContract, auction.tokenId, router, autoRefresh])
 }
 
 function truncateAddress(addr: string): string {
@@ -328,7 +339,7 @@ export function AuctionPanel({
   auction: AuctionState
 }) {
   const nowSec = useChainNowSec()
-  const phase = getPhase(auction, nowSec)
+  const rawPhase = getPhase(auction, nowSec)
 
   const { amount, bidderDisplay, endTime, fees, bidHistory } = auction
 
@@ -341,20 +352,53 @@ export function AuctionPanel({
     minLabel: (m) => `Minimum bid is ${formatEther(m)} ETH`,
   })
 
+  // Local override: when SettleSection / SellerActions report a
+  // confirmed write tx, we keep the panel mounted (so the success
+  // banner persists until the user dismisses), but we also need the
+  // surrounding chrome — the status pill, "Ends in" line — to reflect
+  // the new reality instead of stale "Awaiting settlement" / countdown.
+  // SettleSection + cancel set this to "settled" / "cancelled" via the
+  // setter passed below.
+  const [postWriteState, setPostWriteState] = useState<
+    null | "settled" | "cancelled"
+  >(null)
+  const phase = postWriteState ? "settled" : rawPhase
+
+  const dotColor =
+    phase === "settled"
+      ? "bg-emerald-500"
+      : phase === "ended-unsettled"
+      ? "bg-amber-500"
+      : "bg-emerald-500 animate-pulse"
+  const headerLabel =
+    phase === "settled"
+      ? postWriteState === "cancelled"
+        ? "Auction cancelled"
+        : "Auction settled"
+      : phase === "ended-unsettled"
+      ? "Auction ended"
+      : "Live auction"
+
   return (
     <div className="rounded-lg border border-gray-200 bg-surface overflow-hidden">
       <div className="p-5 space-y-5">
         <div className="flex items-center gap-2">
-          <span className={`inline-block h-1.5 w-1.5 rounded-full ${phase === "ended-unsettled" ? "bg-amber-500" : "bg-emerald-500 animate-pulse"}`} />
+          <span className={`inline-block h-1.5 w-1.5 rounded-full ${dotColor}`} />
           <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500">
-            {phase === "ended-unsettled" ? "Auction ended" : "Live auction"}
+            {headerLabel}
           </span>
         </div>
 
         <div className="flex items-end justify-between gap-6">
           <div className="space-y-1">
             <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-              {phase === "no-bids" ? "Reserve" : "Current bid"}
+              {phase === "no-bids"
+                ? "Reserve"
+                : phase === "settled"
+                ? postWriteState === "cancelled"
+                  ? "Reserve"
+                  : "Final bid"
+                : "Current bid"}
             </p>
             <p className="text-2xl font-mono font-medium tabular-nums tracking-tight leading-none">
               {formatEther(amount)} <span className="text-sm font-mono text-gray-500">ETH</span>
@@ -367,11 +411,19 @@ export function AuctionPanel({
           </div>
           <div className="text-right space-y-1">
             <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-              {phase === "no-bids" ? "Status" : phase === "ended-unsettled" ? "Ended" : "Ends in"}
+              {phase === "no-bids"
+                ? "Status"
+                : phase === "ended-unsettled" || phase === "settled"
+                ? "Status"
+                : "Ends in"}
             </p>
             <p className="text-sm font-mono tabular-nums leading-none">
               {phase === "no-bids" ? (
                 <span className="text-gray-500">No bids yet</span>
+              ) : phase === "settled" ? (
+                <span className="text-emerald-600">
+                  {postWriteState === "cancelled" ? "Cancelled" : "Settled"}
+                </span>
               ) : phase === "ended-unsettled" ? (
                 <span className="text-amber-600">Awaiting settlement</span>
               ) : (
@@ -382,12 +434,20 @@ export function AuctionPanel({
         </div>
 
         {phase === "ended-unsettled" ? (
-          <SettleSection auction={auction} />
-        ) : (
+          <SettleSection
+            auction={auction}
+            onSettled={() => setPostWriteState("settled")}
+          />
+        ) : phase === "settled" ? null : (
           <BidSection auction={auction} bid={bid} />
         )}
 
-        {auction.awaitingFirstBid && <SellerActions auction={auction} />}
+        {auction.awaitingFirstBid && phase !== "settled" && (
+          <SellerActions
+            auction={auction}
+            onCancelled={() => setPostWriteState("cancelled")}
+          />
+        )}
       </div>
 
       {bidHistory.length > 0 && <BidHistory bids={bidHistory} />}
@@ -575,6 +635,15 @@ function BidSection({
   })
 
   useRevalidateAuctionOnSuccess(isSuccess, auction)
+  // After a confirmed bid, clear the input so it doesn't render the
+  // user's now-stale bid amount alongside an "already highest bidder"
+  // disabled button (the new minimum bid is current + BID_INCREASE,
+  // so leaving the old value triggers a misleading "below minimum"
+  // error). The success banner above the form provides the
+  // confirmation; the form below resets to a clean empty state.
+  useEffect(() => {
+    if (isSuccess) bid.reset()
+  }, [isSuccess, bid])
 
   const isPending = isWritePending || isTxPending
   const isSelfOutbidding =
@@ -613,6 +682,24 @@ function BidSection({
           bid.wei,
         ],
         value,
+      })
+    } else if (auction.source === "transient") {
+      // TL Auction House: msg.value carries the full bid amount; no
+      // buyer's premium (the protocol fee is deducted from the seller
+      // proceeds on settle, not added on top). `recipient` is who
+      // receives the NFT if the bidder wins — usually the bidder
+      // themselves (`address`).
+      writeContract({
+        address: auction.marketAddress,
+        abi: transientAuctionHouseAbi,
+        functionName: "bid",
+        args: [
+          auction.nftContract,
+          BigInt(auction.tokenId),
+          (address ?? ZERO_ADDRESS) as `0x${string}`,
+          bid.wei,
+        ],
+        value: bid.wei,
       })
     } else {
       writeContract({
@@ -719,7 +806,20 @@ function BidSection({
   )
 }
 
-function SettleSection({ auction }: { auction: AuctionState }) {
+function SettleSection({
+  auction,
+  onSettled,
+}: {
+  auction: AuctionState
+  /**
+   * Fires once the settle tx confirms, so the parent panel can flip
+   * its header / status chrome to "Auction settled" while the success
+   * banner is still on screen. Without this the panel chrome stays
+   * stuck on "Awaiting settlement" until the user dismisses the banner
+   * and triggers a refresh.
+   */
+  onSettled?: () => void
+}) {
   const { address } = useAccount()
   const chainId = useChainId()
   const { switchChain, isPending: isSwitchPending } = useSwitchChain()
@@ -735,7 +835,16 @@ function SettleSection({ auction }: { auction: AuctionState }) {
     hash: txHash,
   })
 
-  useRevalidateAuctionOnSuccess(isSuccess, auction)
+  // Settle removes the auction entirely; an auto-refresh would unmount
+  // the panel (and the success banner) before the user can read it.
+  // Skip auto-refresh and let the banner's dismiss button trigger the
+  // reload manually.
+  const router = useRouter()
+  useRevalidateAuctionOnSuccess(isSuccess, auction, { autoRefresh: false })
+  // Notify the parent so the panel header flips to "settled" state.
+  useEffect(() => {
+    if (isSuccess) onSettled?.()
+  }, [isSuccess, onSettled])
 
   const isPending = isWritePending || isTxPending
 
@@ -754,6 +863,13 @@ function SettleSection({ auction }: { auction: AuctionState }) {
         functionName: "settleAuction",
         args: [auction.nftContract, BigInt(auction.tokenId)],
       })
+    } else if (auction.source === "transient") {
+      writeContract({
+        address: auction.marketAddress,
+        abi: transientAuctionHouseAbi,
+        functionName: "settleAuction",
+        args: [auction.nftContract, BigInt(auction.tokenId)],
+      })
     } else {
       writeContract({
         address: auction.marketAddress,
@@ -769,7 +885,13 @@ function SettleSection({ auction }: { auction: AuctionState }) {
       <TxSuccessBanner
         txHash={txHash}
         message="Auction settled. NFT transferred to the winner."
-        onDismiss={reset}
+        onDismiss={() => {
+          reset()
+          // Settle removed the auction; refresh now that the user has
+          // acknowledged the success so the page transitions to the
+          // post-auction state (no panel rendered).
+          router.refresh()
+        }}
       />
     )
   }
@@ -833,7 +955,13 @@ function SettleSection({ auction }: { auction: AuctionState }) {
  * connected wallet is the seller AND no bids have been placed yet — both
  * actions revert on-chain after the first bid.
  */
-function SellerActions({ auction }: { auction: AuctionState }) {
+function SellerActions({
+  auction,
+  onCancelled,
+}: {
+  auction: AuctionState
+  onCancelled?: () => void
+}) {
   const { address } = useAccount()
   const chainId = useChainId()
   const { switchChain, isPending: isSwitchPending } = useSwitchChain()
@@ -863,9 +991,21 @@ function SellerActions({ auction }: { auction: AuctionState }) {
   const { isLoading: updateMining, isSuccess: updateSuccess } =
     useWaitForTransactionReceipt({ hash: updateHash })
 
-  // Both seller actions invalidate the cached auction state. Cancel deletes
-  // the auction; updateReserve changes the surfaced "Reserve" number.
-  useRevalidateAuctionOnSuccess(cancelSuccess || updateSuccess, auction)
+  // Both seller actions invalidate the cached auction state. Cancel
+  // deletes the auction (panel will unmount on refresh — defer); update
+  // changes the surfaced "Reserve" number (panel survives so safe to
+  // auto-refresh, but for consistency we treat both as user-dismissed).
+  const sellerRouter = useRouter()
+  useRevalidateAuctionOnSuccess(cancelSuccess || updateSuccess, auction, {
+    autoRefresh: false,
+  })
+  // Tell the parent panel to flip its header to "Auction cancelled"
+  // while the success banner is still visible. (Update doesn't
+  // affect the lifecycle phase — the auction is still live with a
+  // new reserve — so we don't fire on updateSuccess.)
+  useEffect(() => {
+    if (cancelSuccess) onCancelled?.()
+  }, [cancelSuccess, onCancelled])
 
   if (!isSeller) return null
 
@@ -894,6 +1034,7 @@ function SellerActions({ auction }: { auction: AuctionState }) {
         onDismiss={() => {
           resetCancel()
           resetUpdate()
+          sellerRouter.refresh()
         }}
       />
     )
@@ -912,6 +1053,15 @@ function SellerActions({ auction }: { auction: AuctionState }) {
         address: auction.marketAddress,
         abi: superrareBazaarAbi,
         functionName: "cancelAuction",
+        args: [auction.nftContract, BigInt(auction.tokenId)],
+      })
+    } else if (auction.source === "transient") {
+      // TL exposes the cancel-listing call as `delist` (covers
+      // auction + buy-now). Same (nftAddress, tokenId) signature.
+      writeCancel({
+        address: auction.marketAddress,
+        abi: transientAuctionHouseAbi,
+        functionName: "delist",
         args: [auction.nftContract, BigInt(auction.tokenId)],
       })
     } else {
@@ -989,9 +1139,10 @@ function SellerActions({ auction }: { auction: AuctionState }) {
         </div>
       ) : (
         <div className="flex items-center justify-between">
-          {auction.source === "superrareV2" ? (
-            // SR Bazaar has no update-reserve on a live auction;
-            // only cancel is available pre-bid.
+          {auction.source === "superrareV2" || auction.source === "transient" ? (
+            // SR Bazaar and TL Auction House both lack an update-
+            // reserve call on a live listing; only cancel/delist is
+            // available pre-bid.
             <span />
           ) : (
             <button

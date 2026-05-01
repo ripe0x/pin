@@ -32,9 +32,13 @@ import {
   readSuperrareV2CollectorTokens,
   writeSuperrareV2CollectorTokens,
   readSuperrareV2ActiveAuctions,
+  readSuperrareV2BidHistory,
+  readSuperrareV2BidHistoryFreshness,
+  writeSuperrareV2BidHistory,
   LAZY_TTL,
   isFresh,
 } from "../lazy-index"
+import type { BidHistoryEntry } from "../auctions"
 import { refreshSuperrareV2Auctions } from "./superrareV2-scan"
 
 const SR_V2_NFT = SUPERRARE_V2_NFT[MAINNET_CHAIN_ID]
@@ -67,6 +71,12 @@ const auctionSettledEvent = parseAbiItem(
 const newAuctionEvent = parseAbiItem(
   "event NewAuction(address indexed _contractAddress, uint256 indexed _tokenId, address indexed _auctionCreator, address _currencyAddress, uint256 _startingTime, uint256 _minimumBid, uint256 _lengthOfAuction)",
 )
+// Bid history scan: indexed (_contractAddress, _bidder, _tokenId).
+// Filter by contract + tokenId server-side; per-token returns are
+// typically <30 logs even for active auctions.
+const auctionBidEvent = parseAbiItem(
+  "event AuctionBid(address indexed _contractAddress, address indexed _bidder, uint256 indexed _tokenId, address _currencyAddress, uint256 _amount, bool _startedAuction, uint256 _newAuctionLength, address _previousBidder)",
+)
 
 // Block-range chunk for indexed-arg log scans. Alchemy supports large
 // ranges when topics are indexed (matches Foundation's BLOCK_RANGE).
@@ -93,6 +103,120 @@ function getClient() {
       { batch: true },
     ),
   })
+}
+
+/**
+ * Bid history for a current SR V2 auction. Mirrors the Foundation
+ * pattern in `getFoundationBidHistory`: read lazy table → if fresh
+ * (30 min) return; else scan AuctionBid logs for (contract, tokenId)
+ * with indexed-arg filter, enrich with timestamps, persist, return.
+ *
+ * Note: we don't filter to "the current auction" specifically. Bazaar's
+ * AuctionBid event lacks a per-listing id, so historical bids from
+ * earlier auctions on the same token also match the indexed filter.
+ * In practice 99% of SR V2 tokens have a single auction in their
+ * lifetime; for the rare re-listed case the displayed history may
+ * include older bids — acceptable for an MVP, and the sort puts
+ * newest-first so current bids are at the top.
+ */
+async function getSuperrareV2BidHistory(
+  client: ReturnType<typeof createPublicClient>,
+  contract: Address,
+  tokenId: string,
+): Promise<Array<Omit<BidHistoryEntry, "bidderDisplay">>> {
+  const freshness = await readSuperrareV2BidHistoryFreshness(contract, tokenId)
+  if (freshness && isFresh(freshness, LAZY_TTL.superrareV2Bids)) {
+    const cached = await readSuperrareV2BidHistory(contract, tokenId)
+    if (cached) {
+      return cached.map((b) => ({
+        bidder: b.bidder as Address,
+        amount: b.amount,
+        blockTime: b.blockTime,
+        txHash: b.txHash as `0x${string}`,
+      }))
+    }
+  }
+
+  const latest = await client.getBlockNumber()
+  const logs = await paginatedIndexedScan(
+    (from, to) =>
+      client.getLogs({
+        address: SR_BAZAAR,
+        event: auctionBidEvent,
+        args: { _contractAddress: contract, _tokenId: BigInt(tokenId) },
+        fromBlock: from,
+        toBlock: to,
+      }),
+    SR_BAZAAR_DEPLOY_BLOCK,
+    latest,
+  )
+
+  if (logs.length === 0) return []
+
+  // Resolve unique block timestamps (typically 1–3 unique blocks per
+  // token). Each `getBlock` is ~26 CU; we dedupe to minimize cost.
+  const uniqueBlocks = Array.from(
+    new Set(
+      logs
+        .map((l) => l.blockNumber)
+        .filter((b): b is bigint => b !== null),
+    ),
+  )
+  const blockTimes = new Map<bigint, number>()
+  await Promise.all(
+    uniqueBlocks.map(async (bn) => {
+      const block = await client.getBlock({ blockNumber: bn }).catch(() => null)
+      blockTimes.set(bn, block ? Number(block.timestamp) : 0)
+    }),
+  )
+
+  type Decoded = {
+    bidder: Address
+    amount: bigint
+    txHash: `0x${string}`
+    logIndex: number
+    blockNumber: bigint
+    blockTime: number
+  }
+  const decoded: Decoded[] = []
+  for (const l of logs) {
+    if (l.blockNumber === null || l.transactionHash === null) continue
+    if (l.logIndex === null) continue
+    const args = l.args as { _bidder?: Address; _amount?: bigint; _currencyAddress?: Address }
+    if (!args._bidder || args._amount === undefined) continue
+    // ETH-only — non-zero currency = ERC-20 (rare; out of scope).
+    if (args._currencyAddress && args._currencyAddress.toLowerCase() !== ETH_CURRENCY) continue
+    decoded.push({
+      bidder: args._bidder,
+      amount: args._amount,
+      txHash: l.transactionHash,
+      logIndex: l.logIndex,
+      blockNumber: l.blockNumber,
+      blockTime: blockTimes.get(l.blockNumber) ?? 0,
+    })
+  }
+
+  // Persist all rows; the read path's freshness check uses MAX(last_indexed_at).
+  writeSuperrareV2BidHistory(
+    contract,
+    tokenId,
+    decoded.map((d) => ({
+      txHash: d.txHash,
+      logIndex: d.logIndex,
+      bidder: d.bidder,
+      amount: d.amount,
+      blockTime: d.blockTime,
+      blockNumber: d.blockNumber,
+    })),
+  )
+
+  decoded.sort((a, b) => b.blockTime - a.blockTime)
+  return decoded.map((d) => ({
+    bidder: d.bidder,
+    amount: d.amount,
+    blockTime: d.blockTime,
+    txHash: d.txHash,
+  }))
 }
 
 async function paginatedIndexedScan<T>(
@@ -427,8 +551,13 @@ export const superrareV2Adapter: PlatformAdapter = {
       ? minimumBid
       : bidAmount + (bidAmount / 10n)
 
+    // Bid history: parallelize with display-name resolution since both
+    // are independent RPC/DB reads. Resolve ALL bidder addresses too
+    // so the BidHistory component can render ENS / display names.
+    const rawBids = await getSuperrareV2BidHistory(client, contract, tokenId)
     const addressesToResolve: string[] = [auctionCreator]
     if (bidder !== ZERO_ADDRESS) addressesToResolve.push(bidder)
+    for (const b of rawBids) addressesToResolve.push(b.bidder)
     const names = await resolveDisplayNames(addressesToResolve)
     const lookup = (a: Address) => names.get(a.toLowerCase()) ?? a
 
@@ -495,7 +624,10 @@ export const superrareV2Adapter: PlatformAdapter = {
       awaitingFirstBid,
       awaitingSettlement,
       fees,
-      bidHistory: [],
+      bidHistory: rawBids.map((b) => ({
+        ...b,
+        bidderDisplay: lookup(b.bidder),
+      })),
     }
   },
 

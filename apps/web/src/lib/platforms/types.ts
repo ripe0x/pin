@@ -19,6 +19,7 @@ export type PlatformId =
   | "manifold"
   | "sovereign"
   | "superrareV2"
+  | "transient"
   // New platforms slot in here as they're added (superrareV1, zora, etc.)
 
 // ── Tokens ─────────────────────────────────────────────────────────────
