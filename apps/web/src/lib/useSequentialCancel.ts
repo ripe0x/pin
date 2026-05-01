@@ -1,11 +1,16 @@
 /**
- * Cancel runner for Foundation listings.
+ * Cross-platform cancel runner. Dispatches per-listing cancel calls via
+ * `buildCancelCall(listing)`, so the same hook handles Foundation auctions,
+ * Foundation buy-nows, SuperRare V2 auctions, and any future platform that
+ * lands an entry in the registry.
  *
  * Two execution modes, picked automatically from the connected wallet's
  * EIP-5792 (`wallet_sendCalls`) capability:
  *
  *   - "batched"    → one signature, one bundle. Smart wallets only
  *                    (Coinbase Smart Wallet, Safe, EIP-7702 setups).
+ *                    Cross-contract bundles are valid (FND + SR cancels
+ *                    in one bundle just produce different `to` entries).
  *   - "sequential" → N signatures, one per cancel, with per-row progress.
  *                    Works for any wallet (MetaMask, Rabby, Frame, …).
  *
@@ -22,12 +27,11 @@ import {
   waitForTransactionReceipt,
   writeContract,
 } from "@wagmi/core"
-import { encodeFunctionData } from "viem"
-import { nftMarketAbi } from "@pin/abi"
-import { NFT_MARKET, MAINNET_CHAIN_ID } from "@pin/addresses"
 import type { SellerListing } from "./seller-listings"
-
-const MARKET_ADDRESS = NFT_MARKET[MAINNET_CHAIN_ID]
+import {
+  buildCancelCall,
+  encodeCancelCallToData,
+} from "@/lib/platforms/cancel-calls"
 
 export type CancelMode = "loading" | "batched" | "sequential"
 
@@ -64,26 +68,6 @@ function isTimeoutError(err: unknown): boolean {
   return /Timed out while waiting for call bundle/i.test(err.message)
 }
 
-function encodeCancelCall(item: SellerListing): { to: `0x${string}`; data: `0x${string}` } {
-  if (item.kind === "auction") {
-    return {
-      to: MARKET_ADDRESS,
-      data: encodeFunctionData({
-        abi: nftMarketAbi,
-        functionName: "cancelReserveAuction",
-        args: [item.auctionId],
-      }),
-    }
-  }
-  return {
-    to: MARKET_ADDRESS,
-    data: encodeFunctionData({
-      abi: nftMarketAbi,
-      functionName: "cancelBuyPrice",
-      args: [item.nftContract, BigInt(item.tokenId)],
-    }),
-  }
-}
 
 export function useSequentialCancel() {
   const config = useConfig()
@@ -145,20 +129,14 @@ export function useSequentialCancel() {
         updateItem(item.id, { state: "confirming" })
 
         try {
-          const txHash =
-            item.kind === "auction"
-              ? await writeContract(config, {
-                  address: MARKET_ADDRESS,
-                  abi: nftMarketAbi,
-                  functionName: "cancelReserveAuction",
-                  args: [item.auctionId],
-                })
-              : await writeContract(config, {
-                  address: MARKET_ADDRESS,
-                  abi: nftMarketAbi,
-                  functionName: "cancelBuyPrice",
-                  args: [item.nftContract, BigInt(item.tokenId)],
-                })
+          const call = buildCancelCall(item)
+          const txHash = await writeContract(config, {
+            address: call.address,
+            abi: call.abi,
+            functionName: call.functionName,
+            args: call.args,
+            value: call.value,
+          })
 
           updateItem(item.id, { state: "mining", txHash })
           await waitForTransactionReceipt(config, { hash: txHash })
@@ -179,7 +157,7 @@ export function useSequentialCancel() {
 
       let bundleId: string
       try {
-        const calls = items.map(encodeCancelCall)
+        const calls = items.map(encodeCancelCallToData)
         const result = await sendCalls(config, { calls })
         bundleId = result.id
       } catch (err) {

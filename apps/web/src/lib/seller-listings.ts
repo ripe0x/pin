@@ -1,52 +1,65 @@
 /**
- * Discover a seller's active, cancellable Foundation listings via direct RPC.
+ * Client-safe seller-listings types and helpers. The actual cross-platform
+ * RPC discovery now lives in each platform adapter (`platforms/<id>.ts`)
+ * and is fanned-out by the `/api/seller-listings/[address]` route. This
+ * module exposes:
  *
- * Two parallel event scans on the NFTMarket contract — `ReserveAuctionCreated`
- * and `BuyPriceSet`, both filtered on the indexed seller topic — then a
- * multicall pass to drop anything that's no longer active (cancelled,
- * finalized, sold, or — for auctions — already received a bid, since
- * `cancelReserveAuction` reverts after the first bid).
+ *   - The deserialized listing types (`AuctionListing`, `BuyNowListing`,
+ *     `SellerListing`) the UI components consume.
+ *   - `fetchSellerCancellableListings` — client fetcher that hits the API
+ *     route and hydrates bigints.
+ *   - `resolveListingMetadata` — client-callable tokenURI + IPFS
+ *     resolver shared by the migrate / bulk-delist panels.
+ *
+ * Adding a new platform (e.g. SuperRare V1, Zora) requires no changes
+ * here: the adapter implements `getCancellableListingsForSeller`, and the
+ * `platform` discriminator on each row lets the client dispatch cancels
+ * via `cancel-calls.ts` (`buildCancelCall(listing)`).
  */
 import {
   createPublicClient,
   http,
-  parseAbiItem,
   type Address,
   type PublicClient,
 } from "viem"
 import { mainnet } from "viem/chains"
-import { nftMarketAbi, erc721Abi } from "@pin/abi"
-import { NFT_MARKET, MAINNET_CHAIN_ID } from "@pin/addresses"
+import { erc721Abi } from "@pin/abi"
 import { ipfsToHttp } from "@pin/shared"
-// NOTE: this module is imported by client components (BulkDelistPanel,
-// MigrationBanner, MigratePanel) which call its runtime functions in the
-// browser. We deliberately don't layer `pgCache` here — that would pull
-// the `postgres` Node-only library into the client bundle. The 5-min
-// `unstable_cache` (per-instance) is the only cache layer for now. To
-// add L2 later, convert the three client→lib usages into client→/api/...
-// calls and wrap the route in pgCache instead.
-
-const MARKET_ADDRESS = NFT_MARKET[MAINNET_CHAIN_ID]
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
-
-// NFTMarket proxy was deployed Dec 2021 — same anchor as auctions.ts:74.
-const NFT_MARKET_DEPLOY_BLOCK = 13_840_000n
-const BLOCK_RANGE = 2_000_000n
+import type { PlatformId } from "@/lib/platforms/types"
 
 export type AuctionListing = {
   kind: "auction"
+  /** Discriminator for cancel-call dispatch. */
+  platform: PlatformId
+  /** Unique row identifier across all platforms. */
   id: string
-  auctionId: bigint
+  /**
+   * Platform-defined identifier passed to the cancel call. Foundation
+   * stores the numeric NFTMarket auctionId; SuperRare V2 packs
+   * `<contract>:<tokenId>` since Bazaar's cancel takes `(contract, tokenId)`
+   * directly.
+   */
+  auctionId: string
   nftContract: Address
   tokenId: string
   reserveWei: bigint
-  // From the original `ReserveAuctionCreated` event — used to prefill the
-  // duration when migrating to a Sovereign auction house.
+  /**
+   * Original auction duration in seconds. Used by MigratePanel to prefill
+   * the snapped duration when migrating onto a Sovereign auction house.
+   * SuperRare returns the configured `lengthOfAuction`; Foundation reads
+   * it off the original `ReserveAuctionCreated` event.
+   */
   durationSeconds: number
+  /**
+   * Source-platform fee in basis points (10000 = 100%) when the adapter
+   * computed it precisely for this token. Optional — see types.ts.
+   */
+  feeBps?: number
 }
 
 export type BuyNowListing = {
   kind: "buyNow"
+  platform: PlatformId
   id: string
   nftContract: Address
   tokenId: string
@@ -60,14 +73,6 @@ export type SellerListingMeta = {
   imageUrl: string | null
 }
 
-const reserveAuctionCreatedEvent = parseAbiItem(
-  "event ReserveAuctionCreated(address indexed seller, address indexed nftContract, uint256 indexed tokenId, uint256 duration, uint256 extensionDuration, uint256 reservePrice, uint256 auctionId)",
-)
-
-const buyPriceSetEvent = parseAbiItem(
-  "event BuyPriceSet(address indexed nftContract, uint256 indexed tokenId, address indexed seller, uint256 price)",
-)
-
 function getClient(): PublicClient {
   return createPublicClient({
     chain: mainnet,
@@ -78,22 +83,9 @@ function getClient(): PublicClient {
 }
 
 /**
- * Discover a seller's active, cancellable Foundation listings.
- *
- * Server-side entry. Two ~10M-block `getLogs` + multicalls per cold call.
- * Client components must NOT call this directly (no Next cache context in
- * the browser); they go through `fetchSellerCancellableListings` which
- * hits `/api/seller-listings/[address]` and gets unstable_cache + pgCache.
- */
-export async function getSellerCancellableListings(
-  sellerAddress: string,
-): Promise<{ auctions: AuctionListing[]; buyNows: BuyNowListing[] }> {
-  return getSellerCancellableListingsUncached(sellerAddress.toLowerCase())
-}
-
-/**
- * Client-side fetcher. Hits the cached API route so panel opens collapse
- * to a Postgres read on a warm cache.
+ * Client-side fetcher. Hits the cached API route which fans out across all
+ * platform adapters and returns a unified, platform-tagged list. All
+ * panel components consume this rather than calling adapters directly.
  */
 export async function fetchSellerCancellableListings(
   sellerAddress: string,
@@ -106,15 +98,18 @@ export async function fetchSellerCancellableListings(
   const json = (await res.json()) as {
     auctions: Array<{
       kind: "auction"
+      platform: PlatformId
       id: string
       auctionId: string
       nftContract: string
       tokenId: string
       reserveWei: string
       durationSeconds: number
+      feeBps?: number
     }>
     buyNows: Array<{
       kind: "buyNow"
+      platform: PlatformId
       id: string
       nftContract: string
       tokenId: string
@@ -124,174 +119,24 @@ export async function fetchSellerCancellableListings(
   return {
     auctions: json.auctions.map((a) => ({
       kind: "auction",
+      platform: a.platform,
       id: a.id,
-      auctionId: BigInt(a.auctionId),
+      auctionId: a.auctionId,
       nftContract: a.nftContract as Address,
       tokenId: a.tokenId,
       reserveWei: BigInt(a.reserveWei),
       durationSeconds: a.durationSeconds,
+      feeBps: a.feeBps,
     })),
     buyNows: json.buyNows.map((b) => ({
       kind: "buyNow",
+      platform: b.platform,
       id: b.id,
       nftContract: b.nftContract as Address,
       tokenId: b.tokenId,
       priceWei: BigInt(b.priceWei),
     })),
   }
-}
-
-async function getSellerCancellableListingsUncached(
-  sellerAddress: string,
-): Promise<{ auctions: AuctionListing[]; buyNows: BuyNowListing[] }> {
-  const client = getClient()
-  const seller = sellerAddress.toLowerCase() as Address
-  const latestBlock = await client.getBlockNumber()
-
-  const [auctionLogs, buyPriceLogs] = await Promise.all([
-    getLogs(
-      client,
-      MARKET_ADDRESS,
-      reserveAuctionCreatedEvent,
-      { seller },
-      NFT_MARKET_DEPLOY_BLOCK,
-      latestBlock,
-    ),
-    getLogs(
-      client,
-      MARKET_ADDRESS,
-      buyPriceSetEvent,
-      { seller },
-      NFT_MARKET_DEPLOY_BLOCK,
-      latestBlock,
-    ),
-  ])
-
-  // Dedupe: same auctionId can appear once (one Created event per auction),
-  // but the seller may have re-created an auction for the same token after a
-  // prior cancel; keep the most recent auctionId per token.
-  const durationByAuctionId = new Map<bigint, bigint>()
-  for (const log of auctionLogs) {
-    const args = (log as { args: { auctionId: bigint; duration: bigint } }).args
-    if (!durationByAuctionId.has(args.auctionId)) {
-      durationByAuctionId.set(args.auctionId, args.duration)
-    }
-  }
-  const auctionIds = Array.from(durationByAuctionId.keys())
-
-  // For buy-now, BuyPriceSet fires every time the seller sets/updates a price,
-  // so dedupe by (contract, tokenId) — the read-back will tell us the current
-  // state.
-  const buyNowKeys = new Map<string, { nftContract: Address; tokenId: bigint }>()
-  for (const log of buyPriceLogs) {
-    const args = (log as { args: { nftContract: Address; tokenId: bigint } })
-      .args
-    const key = `${args.nftContract.toLowerCase()}:${args.tokenId.toString()}`
-    if (!buyNowKeys.has(key)) {
-      buyNowKeys.set(key, { nftContract: args.nftContract, tokenId: args.tokenId })
-    }
-  }
-
-  const [auctions, buyNows] = await Promise.all([
-    confirmActiveAuctions(client, auctionIds, durationByAuctionId, seller),
-    confirmActiveBuyNows(client, Array.from(buyNowKeys.values()), seller),
-  ])
-
-  return { auctions, buyNows }
-}
-
-async function confirmActiveAuctions(
-  client: PublicClient,
-  auctionIds: bigint[],
-  durationByAuctionId: Map<bigint, bigint>,
-  seller: Address,
-): Promise<AuctionListing[]> {
-  if (auctionIds.length === 0) return []
-
-  const out: AuctionListing[] = []
-
-  for (let i = 0; i < auctionIds.length; i += 50) {
-    const batch = auctionIds.slice(i, i + 50)
-    const results = await client.multicall({
-      contracts: batch.map((auctionId) => ({
-        address: MARKET_ADDRESS,
-        abi: nftMarketAbi,
-        functionName: "getReserveAuction" as const,
-        args: [auctionId] as const,
-      })),
-    })
-
-    batch.forEach((auctionId, j) => {
-      const r = results[j]
-      if (r.status !== "success") return
-      const a = r.result as {
-        nftContract: Address
-        tokenId: bigint
-        seller: Address
-        endTime: bigint
-        bidder: Address
-        amount: bigint
-      }
-      // Cancellable iff still owned by seller and no bid yet — `cancelReserveAuction`
-      // reverts once bidder is set / endTime is non-zero.
-      if (a.seller.toLowerCase() !== seller) return
-      if (a.bidder !== ZERO_ADDRESS) return
-      if (a.endTime !== 0n) return
-
-      const duration = durationByAuctionId.get(auctionId) ?? 0n
-      out.push({
-        kind: "auction",
-        id: `auction:${auctionId.toString()}`,
-        auctionId,
-        nftContract: a.nftContract,
-        tokenId: a.tokenId.toString(),
-        reserveWei: a.amount,
-        durationSeconds: Number(duration),
-      })
-    })
-  }
-
-  return out
-}
-
-async function confirmActiveBuyNows(
-  client: PublicClient,
-  candidates: Array<{ nftContract: Address; tokenId: bigint }>,
-  seller: Address,
-): Promise<BuyNowListing[]> {
-  if (candidates.length === 0) return []
-
-  const out: BuyNowListing[] = []
-
-  for (let i = 0; i < candidates.length; i += 50) {
-    const batch = candidates.slice(i, i + 50)
-    const results = await client.multicall({
-      contracts: batch.map((c) => ({
-        address: MARKET_ADDRESS,
-        abi: nftMarketAbi,
-        functionName: "getBuyPrice" as const,
-        args: [c.nftContract, c.tokenId] as const,
-      })),
-    })
-
-    batch.forEach((c, j) => {
-      const r = results[j]
-      if (r.status !== "success") return
-      const bp = r.result as { seller: Address; price: bigint }
-      if (bp.seller.toLowerCase() !== seller) return
-      if (bp.price === 0n) return
-
-      out.push({
-        kind: "buyNow",
-        id: `buyNow:${c.nftContract.toLowerCase()}:${c.tokenId.toString()}`,
-        nftContract: c.nftContract,
-        tokenId: c.tokenId.toString(),
-        priceWei: bp.price,
-      })
-    })
-  }
-
-  return out
 }
 
 /**
@@ -359,44 +204,3 @@ export async function resolveListingMetadata(
   return out
 }
 
-/**
- * Generic paginated log fetcher — splits the range on RPC failure. Mirrors
- * the helper in `onchain-discovery.ts`; kept private here to keep modules
- * independent.
- */
-async function getLogs(
-  client: PublicClient,
-  address: Address,
-  event: ReturnType<typeof parseAbiItem>,
-  args: Record<string, unknown>,
-  fromBlock: bigint,
-  toBlock: bigint,
-): Promise<unknown[]> {
-  const allLogs: unknown[] = []
-
-  for (let start = fromBlock; start <= toBlock; start += BLOCK_RANGE) {
-    const end = start + BLOCK_RANGE - 1n > toBlock ? toBlock : start + BLOCK_RANGE - 1n
-    try {
-      const logs = await client.getLogs({
-        address,
-        // viem's getLogs is overloaded; the typed wrapper struggles with
-        // a generic AbiEvent here — the runtime call is correct.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        event: event as any,
-        args,
-        fromBlock: start,
-        toBlock: end,
-      })
-      allLogs.push(...logs)
-    } catch {
-      if (end - start > 10_000n) {
-        const mid = start + (end - start) / 2n
-        const firstHalf = await getLogs(client, address, event, args, start, mid)
-        const secondHalf = await getLogs(client, address, event, args, mid + 1n, end)
-        allLogs.push(...firstHalf, ...secondHalf)
-      }
-    }
-  }
-
-  return allLogs
-}

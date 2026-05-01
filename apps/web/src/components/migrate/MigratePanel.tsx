@@ -7,8 +7,11 @@ import { formatEther, type Address } from "viem"
 import { cleanEthAmountInput, parseEthAmount } from "@/lib/parseEthAmount"
 import {
   useAccount,
+  useChainId,
   useConfig,
+  useSwitchChain,
 } from "wagmi"
+import { foundry, mainnet } from "wagmi/chains"
 import {
   readContract,
   waitForTransactionReceipt,
@@ -17,22 +20,53 @@ import {
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import {
   erc721Abi,
-  nftMarketAbi,
   sovereignAuctionHouseAbi,
   sovereignAuctionHouseFactoryAbi,
 } from "@pin/abi"
-import { NFT_MARKET, MAINNET_CHAIN_ID } from "@pin/addresses"
 import {
   fetchSellerCancellableListings,
   resolveListingMetadata,
-  type AuctionListing,
-  type BuyNowListing,
   type SellerListing,
   type SellerListingMeta,
 } from "@/lib/seller-listings"
+import { buildCancelCall } from "@/lib/platforms/cancel-calls"
+import {
+  migrationSavings,
+  netReceived,
+} from "@/lib/platforms/migration-savings"
+import type { PlatformId } from "@/lib/platforms/types"
 import { useArtistHouse } from "@/components/auction/useArtistHouse"
 
-const MARKET_ADDRESS = NFT_MARKET[MAINNET_CHAIN_ID]
+// Display names for the platform-section headers. New platforms slot in
+// here when their adapter starts surfacing cancellable listings.
+const PLATFORM_LABELS: Record<PlatformId, string> = {
+  foundation: "Foundation",
+  superrareV2: "SuperRare",
+  manifold: "Manifold",
+  sovereign: "Sovereign Auction House",
+}
+
+// In dev/fork mode (the dapp's mainnet RPC env points at localhost),
+// the preferred wallet chain is the local Anvil chain (31337) — sending
+// real txs to mainnet during a fork test would skip the fork entirely.
+// In production this evaluates to mainnet and the wrong-network banner
+// effectively never shows. `NEXT_PUBLIC_*` is statically inlined at
+// build time, so this branch decision is locked at deploy.
+const FORK_MODE = !!process.env.NEXT_PUBLIC_ALCHEMY_MAINNET_URL?.match(
+  /^https?:\/\/(localhost|127\.0\.0\.1)/,
+)
+const PREFERRED_CHAIN = FORK_MODE ? foundry : mainnet
+const PREFERRED_CHAIN_LABEL = FORK_MODE ? "Foundry (local fork)" : "Ethereum"
+
+// Stable display order for platform sections — Foundation first since
+// that's the most common source today, SR second, others appended in
+// PlatformId order.
+const PLATFORM_ORDER: PlatformId[] = [
+  "foundation",
+  "superrareV2",
+  "sovereign",
+  "manifold",
+]
 
 const DURATION_OPTIONS = [
   { label: "24 hours", seconds: 24 * 60 * 60 },
@@ -71,6 +105,20 @@ type Step =
   | "done"
   | "failed"
 
+function cancelLabelFor(platform: PlatformId): string {
+  // Per-platform copy for the "Cancelling on …" status line so artists
+  // know which marketplace is being touched (matters when migrating
+  // multiple sources in one run).
+  switch (platform) {
+    case "foundation":
+      return "Cancelling on FND…"
+    case "superrareV2":
+      return "Cancelling on SuperRare…"
+    default:
+      return "Cancelling…"
+  }
+}
+
 type RowState = {
   step: Step
   txHash?: `0x${string}`
@@ -102,7 +150,7 @@ export function MigratePanel({ artistAddress }: { artistAddress: string }) {
       <Section>
         <Heading
           title="Migrate to your Sovereign auction house"
-          subtitle="Connect the artist wallet to load your Foundation listings."
+          subtitle="Connect the artist wallet to load your active listings."
         />
         <ConnectButton.Custom>
           {({ openConnectModal }) => (
@@ -146,6 +194,10 @@ function Inner({
   connected: Address
 }) {
   const config = useConfig()
+  const chainId = useChainId()
+  const { switchChain, isPending: switchPending } = useSwitchChain()
+  const wrongNetwork = chainId !== PREFERRED_CHAIN.id
+
   const { factoryAddress, houseAddress, refetch: refetchHouse } =
     useArtistHouse(artistAddress)
 
@@ -274,25 +326,19 @@ function Inner({
     }
     const reserveWei = parsed.wei
     try {
-      // 1. Cancel on Foundation.
+      // 1. Cancel on the source marketplace. The platform discriminator
+      //    on the listing routes us to the right contract+function via
+      //    `buildCancelCall` — same code path for FND auctions, FND
+      //    buy-nows, SR V2 auctions, and any future platform.
       updateRowState(row.id, { step: "cancelling" })
-      const cancelHash =
-        row.source.kind === "auction"
-          ? await writeContractAction(config, {
-              address: MARKET_ADDRESS,
-              abi: nftMarketAbi,
-              functionName: "cancelReserveAuction",
-              args: [(row.source as AuctionListing).auctionId],
-            })
-          : await writeContractAction(config, {
-              address: MARKET_ADDRESS,
-              abi: nftMarketAbi,
-              functionName: "cancelBuyPrice",
-              args: [
-                (row.source as BuyNowListing).nftContract,
-                BigInt((row.source as BuyNowListing).tokenId),
-              ],
-            })
+      const cancelCall = buildCancelCall(row.source)
+      const cancelHash = await writeContractAction(config, {
+        address: cancelCall.address,
+        abi: cancelCall.abi,
+        functionName: cancelCall.functionName,
+        args: cancelCall.args,
+        value: cancelCall.value,
+      })
       updateRowState(row.id, { step: "cancelling", txHash: cancelHash })
       await waitForTransactionReceipt(config, { hash: cancelHash })
 
@@ -323,6 +369,18 @@ function Inner({
       await waitForTransactionReceipt(config, { hash: createHash })
 
       updateRowState(row.id, { step: "done", txHash: createHash })
+
+      // Bust the seller-listings cache so a reload (or the next refetch)
+      // doesn't return the row we just migrated. Without this, a 5-min
+      // pgCache window keeps showing the stale listing, and re-clicking
+      // re-attempts a cancel that reverts ("Must have an auction
+      // configured" / "auctionId already cancelled"). Fire-and-forget —
+      // the in-memory rowState is already "done" so the UI is consistent
+      // even if this fails.
+      void fetch(
+        `/api/seller-listings/revalidate?seller=${artistAddress.toLowerCase()}`,
+        { method: "POST" },
+      ).catch(() => {})
     } catch (err) {
       updateRowState(row.id, {
         step: "failed",
@@ -363,7 +421,7 @@ function Inner({
       <Section>
         <Heading
           title="Migrate to your Sovereign auction house"
-          subtitle="Loading your Foundation listings…"
+          subtitle="Loading your active listings…"
         />
       </Section>
     )
@@ -413,6 +471,22 @@ function Inner({
     }
   }
 
+  // Group rows by source platform so artists with listings on multiple
+  // marketplaces see clear sections (Foundation, SuperRare, …) rather
+  // than one unified-but-context-free list. Render order follows
+  // PLATFORM_ORDER for stability.
+  const rowsByPlatform = new Map<PlatformId, Row[]>()
+  for (const platform of PLATFORM_ORDER) rowsByPlatform.set(platform, [])
+  for (const row of load.rows) {
+    const arr = rowsByPlatform.get(row.source.platform) ?? []
+    arr.push(row)
+    rowsByPlatform.set(row.source.platform, arr)
+  }
+  const platformSections = PLATFORM_ORDER.filter(
+    (p) => (rowsByPlatform.get(p) ?? []).length > 0,
+  )
+  const showPlatformHeaders = platformSections.length > 1
+
   return (
     <Section>
       <Heading
@@ -425,10 +499,34 @@ function Inner({
           allDone
             ? `All ${doneCount} ${doneCount === 1 ? "listing" : "listings"} are now live on your Sovereign auction house.`
             : houseAddress
-              ? `${pendingRows.length} ${pendingRows.length === 1 ? "listing" : "listings"} on the Foundation contract. Each row will be cancelled and re-listed on your Sovereign auction house with the reserve and duration shown.`
-              : `${pendingRows.length} ${pendingRows.length === 1 ? "listing" : "listings"} on the Foundation contract. Your first migration will also deploy your Sovereign auction house (one extra signature, one-time only).`
+              ? `${pendingRows.length} active ${pendingRows.length === 1 ? "listing" : "listings"} found across third-party marketplaces. Each row will be cancelled at its source and re-listed on your Sovereign auction house with the reserve and duration shown.`
+              : `${pendingRows.length} active ${pendingRows.length === 1 ? "listing" : "listings"} found across third-party marketplaces. Your first migration will also deploy your Sovereign auction house (one extra signature, one-time only).`
         }
       />
+
+      {wrongNetwork && (
+        <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 flex items-center justify-between gap-3">
+          <p className="text-xs text-amber-900 leading-relaxed">
+            Your wallet is on a different network. Switch to{" "}
+            <span className="font-medium">{PREFERRED_CHAIN_LABEL}</span> to
+            sign migration transactions.
+            {FORK_MODE && (
+              <>
+                {" "}If your wallet has never seen this network, accept the
+                prompt to add it (RPC <code>http://127.0.0.1:8545</code>,
+                chain id <code>31337</code>).
+              </>
+            )}
+          </p>
+          <button
+            onClick={() => switchChain({ chainId: PREFERRED_CHAIN.id })}
+            disabled={switchPending}
+            className="text-xs font-medium px-3 py-1.5 bg-fg text-bg hover:opacity-80 transition-colors rounded shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {switchPending ? "Switching…" : `Switch to ${PREFERRED_CHAIN_LABEL}`}
+          </button>
+        </div>
+      )}
 
       {!allDone && (
         <div className="flex items-center justify-between mb-3">
@@ -451,23 +549,37 @@ function Inner({
         </div>
       )}
 
-      <ul className="divide-y divide-gray-100 border-y border-gray-100">
-        {load.rows.map((row) => (
-          <MigrateRow
-            key={row.id}
-            row={row}
-            checked={selected.has(row.id)}
-            onToggle={() => toggle(row.id)}
-            onChangeReserve={(v) => setRowField(row.id, { reserveInput: v })}
-            onChangeDuration={(s) =>
-              setRowField(row.id, { durationSec: s as DurationSec })
-            }
-            state={rowState.get(row.id)}
-            disabled={running}
-            onMigrate={() => handleMigrateOne(row)}
-          />
-        ))}
-      </ul>
+      {platformSections.map((platform) => {
+        const sectionRows = rowsByPlatform.get(platform) ?? []
+        const list = (
+          <ul className="divide-y divide-gray-100 border-y border-gray-100">
+            {sectionRows.map((row) => (
+              <MigrateRow
+                key={row.id}
+                row={row}
+                checked={selected.has(row.id)}
+                onToggle={() => toggle(row.id)}
+                onChangeReserve={(v) => setRowField(row.id, { reserveInput: v })}
+                onChangeDuration={(s) =>
+                  setRowField(row.id, { durationSec: s as DurationSec })
+                }
+                state={rowState.get(row.id)}
+                disabled={running}
+                onMigrate={() => handleMigrateOne(row)}
+              />
+            ))}
+          </ul>
+        )
+        if (!showPlatformHeaders) return <div key={platform}>{list}</div>
+        return (
+          <div key={platform} className="mb-4 last:mb-0">
+            <p className="text-[11px] uppercase tracking-[0.08em] text-gray-400 mb-2">
+              {PLATFORM_LABELS[platform]} · {sectionRows.length}
+            </p>
+            {list}
+          </div>
+        )
+      })}
 
       {allDone ? (
         <div className="mt-5 flex items-center gap-3">
@@ -480,8 +592,8 @@ function Inner({
         </div>
       ) : (
         <p className="mt-4 text-[11px] text-gray-400 leading-relaxed">
-          Each migrated listing requires up to four signatures: cancel on
-          Foundation, deploy your house (first time only), approve the
+          Each migrated listing requires up to four signatures: cancel at the
+          source marketplace, deploy your house (first time only), approve the
           collection (first time per collection), and create the new auction.
         </p>
       )}
@@ -491,6 +603,13 @@ function Inner({
 
 // ─── Row component ─────────────────────────────────────────────────────────
 
+/**
+ * Per-row migrate UI: a "this → that" comparison showing what the seller
+ * receives at the source platform vs on their Sovereign house. The
+ * destination's "you receive" line is in semibold (no color accent — the
+ * numerical delta itself communicates the savings). Reserve / duration
+ * are read-only by default; an Edit toggle slides the controls into view.
+ */
 function MigrateRow({
   row,
   checked,
@@ -510,6 +629,8 @@ function MigrateRow({
   disabled: boolean
   onMigrate: () => void
 }) {
+  const [editing, setEditing] = useState(false)
+
   const meta = row.meta
   const displayName = meta?.displayName ?? `#${row.source.tokenId}`
   const imageUrl = meta?.imageUrl
@@ -522,12 +643,23 @@ function MigrateRow({
     state.step !== "failed"
 
   const checkboxDisabled = disabled || !!inFlight || state?.step === "done"
+  const editLocked = disabled || !!inFlight || state?.step === "done"
 
-  // Validate the reserve string locally so the user gets immediate feedback
-  // (decimal-comma support, bad characters, etc.) before clicking Delist.
   const parsed = parseEthAmount(row.reserveInput)
   const reserveError = !parsed.ok ? parsed.reason : null
   const canMigrate = parsed.ok
+
+  // Resolved fee-bps for the "you receive" math. Falls back to the
+  // platform default for buy-nows (FND only — those charge 5%).
+  const platformDefault =
+    migrationSavings(row.source.platform, 0n)?.feeBps ?? 0
+  const sourceFeeBps =
+    row.source.kind === "auction"
+      ? row.source.feeBps ?? platformDefault
+      : platformDefault
+  const sourcePlatformLabel =
+    migrationSavings(row.source.platform, 0n)?.platformLabel ??
+    row.source.platform
 
   return (
     <li className="py-4">
@@ -540,7 +672,7 @@ function MigrateRow({
           className="h-4 w-4 mt-3 shrink-0 accent-black disabled:opacity-40"
           aria-label={`Select ${displayName}`}
         />
-        <div className="h-12 w-12 mt-1 shrink-0 bg-gray-100 overflow-hidden">
+        <div className="h-12 w-12 mt-1 shrink-0 bg-gray-100 overflow-hidden rounded">
           {imageUrl && (
             <Image
               src={imageUrl}
@@ -552,7 +684,9 @@ function MigrateRow({
             />
           )}
         </div>
+
         <div className="min-w-0 flex-1">
+          {/* Title + primary action */}
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <Link
@@ -560,30 +694,41 @@ function MigrateRow({
                 className="block text-sm font-medium text-gray-900 truncate hover:underline"
               >
                 {displayName}
+                {row.source.kind === "buyNow" && (
+                  <span className="ml-2 text-[10px] font-normal text-amber-600">
+                    buy-now → auction
+                  </span>
+                )}
               </Link>
               <p className="text-[11px] text-gray-400 tabular-nums truncate">
                 {row.source.nftContract.slice(0, 6)}…
                 {row.source.nftContract.slice(-4)} · #{row.source.tokenId}
-                {row.source.kind === "buyNow" && (
-                  <span className="ml-2 text-amber-600">
-                    buy-now → auction
-                  </span>
-                )}
               </p>
             </div>
-            <RowStatus state={state} />
+            {state?.step === "done" || state?.step === "failed" || inFlight ? (
+              <RowStatus state={state} platform={row.source.platform} />
+            ) : (
+              <button
+                onClick={onMigrate}
+                disabled={disabled || !canMigrate}
+                className="text-xs font-medium px-3 py-1.5 bg-fg text-bg hover:opacity-80 transition-colors rounded shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Migrate →
+              </button>
+            )}
           </div>
 
           {state?.step === "done" ? (
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-500 tabular-nums">
               <span>
-                Listed at {row.reserveInput} ETH · {durationLabel(row.durationSec)}
+                Listed at {row.reserveInput} ETH ·{" "}
+                {durationLabel(row.durationSec)}
               </span>
               <Link
                 href={tokenHref}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="font-medium text-emerald-700 hover:underline"
+                className="font-medium text-gray-700 hover:text-fg hover:underline"
               >
                 View auction →
               </Link>
@@ -600,36 +745,74 @@ function MigrateRow({
             </div>
           ) : (
             <>
-              <div className="mt-3 flex flex-wrap items-end gap-3">
-                <label className="block">
-                  <span className="text-[11px] uppercase tracking-[0.08em] text-gray-400">
+              {/* This → That comparison */}
+              <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+                <SideCard
+                  label={sourcePlatformLabel}
+                  reserveEth={row.reserveInput}
+                  duration={durationLabel(row.durationSec)}
+                  feeBps={sourceFeeBps}
+                  emphasis="regular"
+                />
+                <span
+                  className="text-gray-300 text-base leading-none select-none"
+                  aria-hidden
+                >
+                  →
+                </span>
+                <SideCard
+                  label="Your Sovereign auction house"
+                  reserveEth={row.reserveInput}
+                  duration={durationLabel(row.durationSec)}
+                  feeBps={0}
+                  emphasis="strong"
+                />
+              </div>
+
+              {/* Edit toggle */}
+              <div className="mt-2 flex items-center justify-end">
+                <button
+                  onClick={() => setEditing((v) => !v)}
+                  disabled={editLocked}
+                  className="text-[11px] font-medium text-gray-500 hover:text-fg underline disabled:opacity-40 disabled:cursor-not-allowed"
+                  aria-expanded={editing}
+                >
+                  {editing ? "Hide" : "Edit reserve / duration"}
+                </button>
+              </div>
+
+              {/* Slide-out editor */}
+              {editing && (
+                <div className="mt-2 rounded-md bg-gray-50 p-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-3 items-center">
+                  <span className="text-[10px] uppercase tracking-[0.08em] text-gray-500">
                     Reserve
                   </span>
-                  <div className="mt-1 flex items-stretch border border-gray-200 focus-within:border-gray-400 transition-colors rounded">
+                  <div className="flex items-stretch border border-gray-200 focus-within:border-gray-400 rounded bg-white max-w-[200px]">
                     <input
                       type="text"
                       inputMode="decimal"
                       value={row.reserveInput}
-                      onChange={(e) => onChangeReserve(cleanEthAmountInput(e.target.value))}
-                      disabled={disabled || !!inFlight}
-                      className="w-24 px-3 py-1.5 text-sm outline-none disabled:opacity-40 bg-transparent tabular-nums"
+                      onChange={(e) =>
+                        onChangeReserve(cleanEthAmountInput(e.target.value))
+                      }
+                      disabled={editLocked}
+                      className="w-full px-3 py-1.5 text-sm outline-none bg-transparent tabular-nums disabled:opacity-40"
                     />
                     <span className="flex items-center px-2 text-[11px] text-gray-400 border-l border-gray-200">
                       ETH
                     </span>
                   </div>
-                </label>
-                <div className="block">
-                  <span className="text-[11px] uppercase tracking-[0.08em] text-gray-400">
+
+                  <span className="text-[10px] uppercase tracking-[0.08em] text-gray-500">
                     Duration
                   </span>
-                  <div className="mt-1 flex gap-1">
+                  <div className="flex gap-1">
                     {DURATION_OPTIONS.map((opt) => (
                       <button
                         key={opt.seconds}
                         onClick={() => onChangeDuration(opt.seconds)}
-                        disabled={disabled || !!inFlight}
-                        className={`px-2 py-1.5 text-xs border rounded transition-colors ${
+                        disabled={editLocked}
+                        className={`px-2 py-1 text-xs border rounded transition-colors ${
                           row.durationSec === opt.seconds
                             ? "border-fg bg-fg text-bg"
                             : "border-gray-200 hover:border-gray-400"
@@ -640,21 +823,21 @@ function MigrateRow({
                     ))}
                   </div>
                 </div>
-                <button
-                  onClick={onMigrate}
-                  disabled={disabled || !!inFlight || !canMigrate}
-                  className="text-xs font-medium px-3 py-1.5 border border-gray-300 hover:border-fg transition-colors disabled:opacity-40 disabled:cursor-not-allowed ml-auto"
-                >
-                  {state?.step === "failed" ? "Retry" : "Delist & relist"}
-                </button>
-              </div>
+              )}
 
               {reserveError && state?.step !== "failed" && (
                 <p className="mt-2 text-xs text-red-500">{reserveError}</p>
               )}
               {state?.step === "failed" && state.error && (
-                <p className="mt-2 text-xs text-red-500 break-words">
-                  {state.error}
+                <p className="mt-2 text-xs text-red-500 break-words flex items-center justify-between gap-3">
+                  <span>{state.error}</span>
+                  <button
+                    onClick={onMigrate}
+                    disabled={disabled || !canMigrate}
+                    className="text-xs font-medium px-3 py-1.5 border border-gray-300 hover:border-fg transition-colors rounded shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Retry
+                  </button>
                 </p>
               )}
             </>
@@ -665,7 +848,58 @@ function MigrateRow({
   )
 }
 
-function RowStatus({ state }: { state: RowState | undefined }) {
+/**
+ * Single side of the "this → that" comparison. Same internal layout on
+ * both sides — reserve, duration, fee on top; "you receive" net amount
+ * on the bottom. Visual differentiation is typographic only (semibold
+ * on the destination's net) — no color accent, so the numerical delta
+ * does the work.
+ */
+function SideCard({
+  label,
+  reserveEth,
+  duration,
+  feeBps,
+  emphasis,
+}: {
+  label: string
+  reserveEth: string
+  duration: string
+  feeBps: number
+  emphasis: "regular" | "strong"
+}) {
+  const ethWeight = emphasis === "strong" ? "font-semibold" : "font-medium"
+  const feePct = (feeBps / 100).toFixed(0) + "%"
+  const net = netReceived(reserveEth, feeBps)
+
+  return (
+    <div className="min-w-0">
+      <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-gray-500 truncate">
+        {label}
+      </p>
+      <p className="mt-1 text-[11px] text-gray-500 tabular-nums">
+        {reserveEth} ETH reserve · {duration} · {feePct} fee
+      </p>
+      <div className="mt-2">
+        <p className="text-[10px] uppercase tracking-[0.08em] text-gray-400">
+          You receive
+        </p>
+        <p className={`mt-0.5 text-sm tabular-nums text-gray-900 ${ethWeight}`}>
+          {net.eth} ETH
+        </p>
+        <p className="text-[11px] tabular-nums text-gray-500">{net.usd}</p>
+      </div>
+    </div>
+  )
+}
+
+function RowStatus({
+  state,
+  platform,
+}: {
+  state: RowState | undefined
+  platform: PlatformId
+}) {
   if (!state || state.step === "idle") return null
   const base = "text-[11px] tabular-nums shrink-0"
   const link = state.txHash
@@ -673,7 +907,7 @@ function RowStatus({ state }: { state: RowState | undefined }) {
     : null
   const labels: Record<Step, string> = {
     idle: "",
-    cancelling: "Cancelling on FND…",
+    cancelling: cancelLabelFor(platform),
     deploying: "Deploying house…",
     approving: "Approving collection…",
     listing: "Listing on Sovereign…",
@@ -750,5 +984,18 @@ function friendlyError(err: unknown): string {
     return "Transaction rejected"
   }
   if (msg.includes("insufficient funds")) return "Insufficient ETH balance"
+
+  // Per-platform "this auction was already cancelled / settled" reverts.
+  // The user almost certainly already migrated this row in a prior click
+  // and is seeing a stale-cache row. Translate into actionable copy
+  // instead of leaking the contract's internal revert string.
+  if (
+    msg.includes("Must have an auction configured") || // SR Bazaar
+    msg.includes("NFTMarketReserveAuction_Cannot_Cancel_Nonexistent_Auction") || // FND
+    msg.includes("auction does not exist") ||
+    msg.includes("Auction does not exist")
+  ) {
+    return "Already migrated — refresh to update the list"
+  }
   return msg.split("\n")[0]
 }

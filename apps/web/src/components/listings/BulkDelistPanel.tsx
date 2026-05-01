@@ -14,6 +14,22 @@ import {
   type BuyNowListing,
 } from "@/lib/seller-listings"
 import { useSequentialCancel, type ItemStatus } from "@/lib/useSequentialCancel"
+import type { PlatformId } from "@/lib/platforms/types"
+
+// Display labels for platform-section headers, mirroring MigratePanel.
+const PLATFORM_LABELS: Record<PlatformId, string> = {
+  foundation: "Foundation",
+  superrareV2: "SuperRare",
+  manifold: "Manifold",
+  sovereign: "Sovereign Auction House",
+}
+
+const PLATFORM_ORDER: PlatformId[] = [
+  "foundation",
+  "superrareV2",
+  "sovereign",
+  "manifold",
+]
 
 type LoadState =
   | { kind: "idle" }
@@ -146,7 +162,7 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
         <div>
           <h2 className="text-sm font-semibold text-gray-900">Manage listings</h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            {total} active FND {total === 1 ? "listing" : "listings"} on this wallet
+            {total} active {total === 1 ? "listing" : "listings"} across third-party marketplaces
           </p>
         </div>
         <button
@@ -158,41 +174,66 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
         </button>
       </header>
 
-      {load.auctions.length > 0 && (
-        <Group title="Reserve auctions (no bids)">
-          {load.auctions.map((a) => (
-            <ListingRow
-              key={a.id}
-              listing={a}
-              meta={load.meta.get(a.id)}
-              checked={selected.has(a.id)}
-              status={statusFor(a.id)}
-              disabled={isRunning}
-              onToggle={() => toggle(a.id)}
-              priceWei={a.reserveWei}
-              priceLabel="Reserve"
-            />
-          ))}
-        </Group>
-      )}
+      {PLATFORM_ORDER.map((platform) => {
+        const auctions = load.auctions.filter((a) => a.platform === platform)
+        const buyNows = load.buyNows.filter((b) => b.platform === platform)
+        if (auctions.length === 0 && buyNows.length === 0) return null
 
-      {load.buyNows.length > 0 && (
-        <Group title="Buy now">
-          {load.buyNows.map((b) => (
-            <ListingRow
-              key={b.id}
-              listing={b}
-              meta={load.meta.get(b.id)}
-              checked={selected.has(b.id)}
-              status={statusFor(b.id)}
-              disabled={isRunning}
-              onToggle={() => toggle(b.id)}
-              priceWei={b.priceWei}
-              priceLabel="Price"
-            />
-          ))}
-        </Group>
-      )}
+        // When the wallet only has listings on one platform we keep the
+        // original "Reserve auctions / Buy now" headers (less noise);
+        // multi-platform wallets get a top-level platform header so the
+        // sections are unambiguous.
+        const platformsWithRows = PLATFORM_ORDER.filter((p) => {
+          const a = load.auctions.some((x) => x.platform === p)
+          const b = load.buyNows.some((x) => x.platform === p)
+          return a || b
+        })
+        const showPlatformHeader = platformsWithRows.length > 1
+
+        return (
+          <div key={platform} className={showPlatformHeader ? "mb-5 last:mb-0" : ""}>
+            {showPlatformHeader && (
+              <p className="text-[11px] uppercase tracking-[0.08em] text-gray-500 mb-2">
+                {PLATFORM_LABELS[platform]} · {auctions.length + buyNows.length}
+              </p>
+            )}
+            {auctions.length > 0 && (
+              <Group title="Reserve auctions (no bids)">
+                {auctions.map((a) => (
+                  <ListingRow
+                    key={a.id}
+                    listing={a}
+                    meta={load.meta.get(a.id)}
+                    checked={selected.has(a.id)}
+                    status={statusFor(a.id)}
+                    disabled={isRunning}
+                    onToggle={() => toggle(a.id)}
+                    priceWei={a.reserveWei}
+                    priceLabel="Reserve"
+                  />
+                ))}
+              </Group>
+            )}
+            {buyNows.length > 0 && (
+              <Group title="Buy now">
+                {buyNows.map((b) => (
+                  <ListingRow
+                    key={b.id}
+                    listing={b}
+                    meta={load.meta.get(b.id)}
+                    checked={selected.has(b.id)}
+                    status={statusFor(b.id)}
+                    disabled={isRunning}
+                    onToggle={() => toggle(b.id)}
+                    priceWei={b.priceWei}
+                    priceLabel="Price"
+                  />
+                ))}
+              </Group>
+            )}
+          </div>
+        )
+      })}
 
       <footer className="mt-5 flex items-center justify-between gap-3 border-t border-gray-100 pt-4">
         <p className="text-xs text-gray-500">

@@ -81,17 +81,41 @@ export type AdapterLastSale = {
 
 // ── Marketplace state (optional per platform) ──────────────────────────
 
+/**
+ * Wire-format (string-serialized) listing types used by the platform
+ * adapters and the `/api/seller-listings/[address]` route.
+ *
+ * `platform` tags every row so the unified API response — fanning out
+ * across Foundation, SuperRare V2, and any future marketplace — can be
+ * routed to the correct cancel call on the client. The client-side
+ * deserialized form (with bigints) lives in `seller-listings.ts`.
+ *
+ * `auctionId` is platform-defined: Foundation uses the numeric NFTMarket
+ * auctionId (decimal string); SuperRare V2 doesn't have one and packs
+ * `<contract>:<tokenId>` so the row stays uniquely identifiable.
+ */
 export type SellerCancellableAuction = {
   id: string
+  platform: PlatformId
   auctionId: string
   nftContract: string
   tokenId: string
   reserveWei: string
   durationSeconds: number
+  /**
+   * Source-platform fee in basis points (10000 = 100%). Optional —
+   * adapters that don't / can't determine the exact fee per row
+   * (e.g. need an extra RPC the discovery scan would rather not pay)
+   * leave it undefined and the migrate panel falls back to a flat
+   * platform default. SuperRare V2 sets this per row based on
+   * `tokenCreator == seller` (primary 15% vs secondary 10%).
+   */
+  feeBps?: number
 }
 
 export type SellerCancellableBuyNow = {
   id: string
+  platform: PlatformId
   nftContract: string
   tokenId: string
   priceWei: string

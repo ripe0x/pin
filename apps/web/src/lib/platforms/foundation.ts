@@ -16,9 +16,12 @@ import { sql } from "../db"
 import {
   readFoundationCollectorTokens,
   writeFoundationCollectorTokens,
+  readFoundationSellerListings,
+  writeFoundationSellerListings,
   LAZY_TTL,
   isFresh,
 } from "../lazy-index"
+import { discoverFoundationCancellableListings } from "./foundation-seller-listings"
 
 const FOUNDATION_NFT_ADDRESS = FOUNDATION_NFT[MAINNET_CHAIN_ID]
 
@@ -142,8 +145,61 @@ export const foundationAdapter: PlatformAdapter = {
     }
   },
 
-  async getCancellableListingsForSeller(): Promise<SellerListings | null> {
-    return null
+  /**
+   * Lazy-cached fan-out target for the `/api/seller-listings/[address]`
+   * route. Reads `lazy_fnd_seller_listings` first; misses run the RPC
+   * scan in `discoverFoundationCancellableListings` and fire-and-forget
+   * the row back. The route's `unstable_cache` + `pgCache` layers handle
+   * the merged-payload cache; this layer keeps Foundation-specific data
+   * warm independently so a cold fan-out doesn't always pay two scans.
+   */
+  async getCancellableListingsForSeller(
+    seller: Address,
+  ): Promise<SellerListings | null> {
+    const sellerLower = seller.toLowerCase()
+    const cached = await readFoundationSellerListings(sellerLower)
+    if (
+      cached &&
+      isFresh(cached.lastIndexedAt, LAZY_TTL.foundationSellerListings)
+    ) {
+      return {
+        auctions: cached.auctions.map((a) => ({
+          id: a.id,
+          platform: "foundation",
+          auctionId: a.auctionId,
+          nftContract: a.nftContract,
+          tokenId: a.tokenId,
+          reserveWei: a.reserveWei,
+          durationSeconds: a.durationSeconds,
+        })),
+        buyNows: cached.buyNows.map((b) => ({
+          id: b.id,
+          platform: "foundation",
+          nftContract: b.nftContract,
+          tokenId: b.tokenId,
+          priceWei: b.priceWei,
+        })),
+      }
+    }
+
+    const fresh = await discoverFoundationCancellableListings(sellerLower)
+    writeFoundationSellerListings(sellerLower, {
+      auctions: fresh.auctions.map((a) => ({
+        id: a.id,
+        auctionId: a.auctionId,
+        nftContract: a.nftContract,
+        tokenId: a.tokenId,
+        reserveWei: a.reserveWei,
+        durationSeconds: a.durationSeconds,
+      })),
+      buyNows: fresh.buyNows.map((b) => ({
+        id: b.id,
+        nftContract: b.nftContract,
+        tokenId: b.tokenId,
+        priceWei: b.priceWei,
+      })),
+    })
+    return fresh
   },
 
   async getBidHistory() {
