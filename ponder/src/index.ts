@@ -1,5 +1,12 @@
 import { ponder } from "ponder:registry"
-import { pndAuctions, pndBids, pndHouses } from "ponder:schema"
+import {
+  pndAuctions,
+  pndBids,
+  pndHouses,
+  srv2Auctions,
+  tlAuctions,
+} from "ponder:schema"
+import type { Address } from "viem"
 
 // Note: schema also defines fnd_* tables (auctions, bids, buy_nows, sales,
 // collections, artist_tokens). Those are written by the lazy backfill
@@ -158,5 +165,243 @@ ponder.on(
         settledAtBlock: event.block.number,
         settledAtTime: event.block.timestamp,
       })
+  },
+)
+
+// ─── SuperRare V2 Bazaar ─────────────────────────────────────────────────
+// Single shared marketplace; each auction keyed by (contract, tokenId).
+// `creator` is resolved at NewAuction-insert via tokenCreator(tokenId)
+// on the originating NFT contract — drives the home-grid artist-seller
+// filter. Failures (non-SR-Spaces tokens that don't implement the
+// interface) leave creator=null; those rows are filtered out at read.
+
+const tokenCreatorAbi = [
+  {
+    type: "function",
+    name: "tokenCreator",
+    stateMutability: "view",
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    outputs: [{ name: "", type: "address" }],
+  },
+] as const
+
+const ownerAbi = [
+  {
+    type: "function",
+    name: "owner",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+  },
+] as const
+
+const ETH_CURRENCY = "0x0000000000000000000000000000000000000000" as const
+
+const tokenKey = (contract: string, tokenId: bigint) =>
+  `${contract.toLowerCase()}-${tokenId.toString()}`
+
+ponder.on("SuperRareBazaar:NewAuction", async ({ event, context }) => {
+  const {
+    _contractAddress,
+    _tokenId,
+    _auctionCreator,
+    _currencyAddress,
+    _minimumBid,
+  } = event.args
+  // Skip ERC-20 auctions; the web app surfaces ETH-only.
+  if (_currencyAddress.toLowerCase() !== ETH_CURRENCY) return
+
+  const creator = await context.client
+    .readContract({
+      address: _contractAddress,
+      abi: tokenCreatorAbi,
+      functionName: "tokenCreator",
+      args: [_tokenId],
+    })
+    .catch(() => null)
+
+  await context.db
+    .insert(srv2Auctions)
+    .values({
+      id: tokenKey(_contractAddress, _tokenId),
+      contract: _contractAddress,
+      tokenId: _tokenId,
+      seller: _auctionCreator,
+      reserveWei: _minimumBid,
+      currentBidWei: 0n,
+      currentBidder: null,
+      endTime: 0n,
+      status: "active",
+      creator: (creator as Address | null) ?? null,
+      createdAtBlock: event.block.number,
+      createdAtTime: event.block.timestamp,
+    })
+    // The same token can be re-listed after a previous settle/cancel.
+    // Replace the row so the new auction's state is authoritative.
+    .onConflictDoUpdate({
+      seller: _auctionCreator,
+      reserveWei: _minimumBid,
+      currentBidWei: 0n,
+      currentBidder: null,
+      endTime: 0n,
+      status: "active",
+      creator: (creator as Address | null) ?? null,
+      createdAtBlock: event.block.number,
+      createdAtTime: event.block.timestamp,
+    })
+})
+
+ponder.on("SuperRareBazaar:AuctionBid", async ({ event, context }) => {
+  const {
+    _contractAddress,
+    _tokenId,
+    _bidder,
+    _currencyAddress,
+    _amount,
+    _newAuctionLength,
+  } = event.args
+  if (_currencyAddress.toLowerCase() !== ETH_CURRENCY) return
+
+  // SR Bazaar's `_newAuctionLength` is the auction duration; the
+  // first-bid block timestamp serves as the start time. Subsequent
+  // bids carry the same value and we recompute endTime from the
+  // current block, matching the contract's late-bid extension.
+  const endTime = event.block.timestamp + _newAuctionLength
+
+  await context.db
+    .update(srv2Auctions, { id: tokenKey(_contractAddress, _tokenId) })
+    .set({
+      currentBidWei: _amount,
+      currentBidder: _bidder,
+      endTime,
+    })
+})
+
+ponder.on("SuperRareBazaar:AuctionSettled", async ({ event, context }) => {
+  const { _contractAddress, _tokenId, _currencyAddress } = event.args
+  if (_currencyAddress.toLowerCase() !== ETH_CURRENCY) return
+  await context.db
+    .update(srv2Auctions, { id: tokenKey(_contractAddress, _tokenId) })
+    .set({ status: "settled" })
+})
+
+ponder.on("SuperRareBazaar:CancelAuction", async ({ event, context }) => {
+  const { _contractAddress, _tokenId } = event.args
+  await context.db
+    .update(srv2Auctions, { id: tokenKey(_contractAddress, _tokenId) })
+    .set({ status: "cancelled" })
+})
+
+// ─── Transient Labs Auction House ────────────────────────────────────────
+// Custodies the NFT during a live listing. The Listing tuple in every
+// event carries the full live state, so handlers don't need follow-up
+// reads except for the per-token creator backfill on insert.
+
+ponder.on(
+  "TransientAuctionHouse:ListingConfigured",
+  async ({ event, context }) => {
+    const { nftAddress, tokenId, listing } = event.args
+    if (listing.currencyAddress.toLowerCase() !== ETH_CURRENCY) return
+
+    // ERC721TL exposes tokenCreator; older clones fall back to owner()
+    // (factory-deployed clones own = artist by Universal Deployer
+    // convention).
+    const creator = await context.client
+      .readContract({
+        address: nftAddress,
+        abi: tokenCreatorAbi,
+        functionName: "tokenCreator",
+        args: [tokenId],
+      })
+      .catch(() =>
+        context.client
+          .readContract({
+            address: nftAddress,
+            abi: ownerAbi,
+            functionName: "owner",
+            args: [],
+          })
+          .catch(() => null),
+      )
+
+    const values = {
+      id: tokenKey(nftAddress, tokenId),
+      contract: nftAddress,
+      tokenId,
+      seller: listing.seller,
+      reserveWei: listing.reservePrice,
+      currentBidWei: 0n,
+      currentBidder: null,
+      // Pre-bid: startTime is 0n; endTime stays 0n until first bid.
+      endTime: 0n,
+      status: "active",
+      listingType: listing.type_,
+      creator: (creator as Address | null) ?? null,
+      createdAtBlock: event.block.number,
+      createdAtTime: event.block.timestamp,
+    } as const
+    await context.db.insert(tlAuctions).values(values).onConflictDoUpdate({
+      seller: values.seller,
+      reserveWei: values.reserveWei,
+      currentBidWei: values.currentBidWei,
+      currentBidder: values.currentBidder,
+      endTime: values.endTime,
+      status: values.status,
+      listingType: values.listingType,
+      creator: values.creator,
+      createdAtBlock: values.createdAtBlock,
+      createdAtTime: values.createdAtTime,
+    })
+  },
+)
+
+ponder.on(
+  "TransientAuctionHouse:AuctionBid",
+  async ({ event, context }) => {
+    const { nftAddress, tokenId, listing } = event.args
+    if (listing.currencyAddress.toLowerCase() !== ETH_CURRENCY) return
+    // TL stamps `startTime` to first-bid block timestamp on the first
+    // bid; subsequent events carry the same startTime. endTime is
+    // therefore exact via startTime + duration.
+    const endTime = listing.startTime + listing.duration
+    await context.db
+      .update(tlAuctions, { id: tokenKey(nftAddress, tokenId) })
+      .set({
+        currentBidWei: listing.highestBid,
+        currentBidder: listing.highestBidder,
+        endTime,
+      })
+  },
+)
+
+ponder.on(
+  "TransientAuctionHouse:AuctionSettled",
+  async ({ event, context }) => {
+    const { nftAddress, tokenId } = event.args
+    await context.db
+      .update(tlAuctions, { id: tokenKey(nftAddress, tokenId) })
+      .set({ status: "settled" })
+  },
+)
+
+ponder.on(
+  "TransientAuctionHouse:BuyNowFulfilled",
+  async ({ event, context }) => {
+    // Buy-now exits the listing the same way as a settle; the row gets
+    // filtered out by `WHERE status='active'` on the read.
+    const { nftAddress, tokenId } = event.args
+    await context.db
+      .update(tlAuctions, { id: tokenKey(nftAddress, tokenId) })
+      .set({ status: "settled" })
+  },
+)
+
+ponder.on(
+  "TransientAuctionHouse:ListingCanceled",
+  async ({ event, context }) => {
+    const { nftAddress, tokenId } = event.args
+    await context.db
+      .update(tlAuctions, { id: tokenKey(nftAddress, tokenId) })
+      .set({ status: "cancelled" })
   },
 )
