@@ -9,6 +9,7 @@ import { createProvider, type PinStatus } from "@/lib/pinning"
 import { useIpfsGatewayFallback } from "@/lib/use-ipfs-fallback"
 import { TokenPinStatus } from "@/components/preserve/TokenPinStatus"
 import { DeployHouseCTA } from "@/components/auction/DeployHouseCTA"
+import { useArtistHouse } from "@/components/auction/useArtistHouse"
 import { PlatformChip } from "@/components/PlatformChip"
 
 const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
@@ -29,6 +30,8 @@ export function ArtistGallery({
   const isOwner =
     !!connectedAddress &&
     connectedAddress.toLowerCase() === artistAddress.toLowerCase()
+  const { houseAddress } = useArtistHouse(artistAddress)
+  const showStartAuctionLink = isOwner && !!houseAddress
 
   const {
     data,
@@ -129,11 +132,27 @@ export function ArtistGallery({
 
   if (initialPage.total === 0) {
     return (
-      <div className="text-center py-16 text-gray-400">
-        <p className="text-lg">No works found</p>
-        <p className="text-sm mt-1">
-          This artist hasn&apos;t minted any works on Foundation yet.
-        </p>
+      <div className="space-y-6">
+        {isOwner && (
+          <div className="max-w-xl space-y-3">
+            <DeployHouseCTA artistAddress={artistAddress} />
+            {showStartAuctionLink && (
+              <Link
+                href="/auction/new"
+                className="block w-full text-center text-sm font-medium py-3 bg-fg text-bg hover:opacity-80 transition-colors"
+              >
+                Start an auction →
+              </Link>
+            )}
+          </div>
+        )}
+        <div className="text-center py-16 text-gray-400">
+          <p className="text-lg">No works found</p>
+          <p className="text-sm mt-1">
+            We don&apos;t see any works on supported platforms (Foundation,
+            Manifold, SuperRare, Sovereign, Transient) for this address yet.
+          </p>
+        </div>
       </div>
     )
   }
@@ -141,8 +160,16 @@ export function ArtistGallery({
   return (
     <div className="space-y-6">
       {isOwner && (
-        <div className="max-w-xl">
+        <div className="max-w-xl space-y-3">
           <DeployHouseCTA artistAddress={artistAddress} />
+          {showStartAuctionLink && (
+            <Link
+              href="/auction/new"
+              className="block w-full text-center text-sm font-medium py-3 border border-gray-200 hover:border-gray-400 transition-colors"
+            >
+              Start an auction →
+            </Link>
+          )}
         </div>
       )}
       <div className="columns-1 sm:columns-2 lg:columns-4 gap-6 [&>*]:mb-6 [&>*]:break-inside-avoid">

@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
+import Link from "next/link"
 import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { sovereignAuctionHouseFactoryAbi } from "@pin/abi"
@@ -55,6 +56,12 @@ export function DeployHouseCTA({ artistAddress }: { artistAddress: string }) {
           <AddressLink address={houseAddress} label="Contract:" />
           <TxLink hash={txHash} label="Deploy tx:" />
         </div>
+        <Link
+          href="/auction/new"
+          className="block w-full text-center text-sm font-medium py-3 bg-fg text-bg hover:opacity-80 transition-colors"
+        >
+          Start your first auction →
+        </Link>
       </div>
     )
   }
