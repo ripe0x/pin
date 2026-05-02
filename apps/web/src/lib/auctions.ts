@@ -355,7 +355,13 @@ export async function getFoundationAuction(
 
   const [fees, rawHistory] = await Promise.all([
     getFoundationFees(client, auction.nftContract, auction.tokenId, pricedAt),
-    getFoundationBidHistory(client, auctionId),
+    getFoundationBidHistory(
+      client,
+      auctionId,
+      auction.bidder === ZERO_ADDRESS
+        ? null
+        : { bidder: auction.bidder, amount: auction.amount },
+    ),
   ])
 
   const awaitingFirstBid =
@@ -395,14 +401,18 @@ export async function getFoundationAuction(
 async function getFoundationBidHistory(
   client: ReturnType<typeof createPublicClient>,
   auctionId: bigint,
+  expectedTop: { bidder: Address; amount: bigint } | null,
 ): Promise<Array<Omit<BidHistoryEntry, "bidderDisplay">>> {
   // Lazy index read: if recent rows exist, return them and skip the RPC
-  // scan + per-block timestamp round-trips entirely.
+  // scan + per-block timestamp round-trips entirely. Skip cache when its
+  // top row doesn't match the on-chain leader — `last_indexed_at` only
+  // moves on writes, so a fresh cache can still be missing a bid placed
+  // since the last scan. The chain-side leader is the ground truth.
   const auctionIdStr = auctionId.toString()
   const freshness = await readFoundationBidHistoryFreshness(auctionIdStr)
   if (freshness && isFresh(freshness, LAZY_TTL.foundationBids)) {
     const cached = await readFoundationBidHistory(auctionIdStr)
-    if (cached) {
+    if (cached && cacheCoversTop(cached, expectedTop)) {
       return cached.map((b) => ({
         bidder: b.bidder as Address,
         amount: b.amount,
@@ -704,7 +714,12 @@ async function readSovereignAuction(
     sellerBps,
   }
 
-  const rawHistory = await getSovereignBidHistory(client, houseAddress, auctionId)
+  const rawHistory = await getSovereignBidHistory(
+    client,
+    houseAddress,
+    auctionId,
+    bidder === ZERO_ADDRESS ? null : { bidder, amount },
+  )
 
   const awaitingFirstBid = firstBidTime === 0n || bidder === ZERO_ADDRESS
   // endTime is stored on-chain post-first-bid; pre-bid it's zero.
@@ -744,17 +759,21 @@ async function getSovereignBidHistory(
   client: ReturnType<typeof createPublicClient>,
   houseAddress: Address,
   auctionId: bigint,
+  expectedTop: { bidder: Address; amount: bigint } | null,
 ): Promise<Array<Omit<BidHistoryEntry, "bidderDisplay">>> {
   // Lazy-table cache (mirrors Foundation's pattern in
   // `getFoundationBidHistory`): read `lazy_pnd_bids` first; if the
   // newest row is fresh (within `LAZY_TTL.pndBids`, 30 min) return it
   // and skip the RPC scan + per-block timestamp round-trips entirely.
+  // Skip cache when its top row doesn't match the on-chain leader —
+  // `last_indexed_at` only moves on writes, so a fresh cache can still
+  // be missing a bid placed since the last scan.
   const auctionIdStr = auctionId.toString()
   const houseStr = houseAddress.toLowerCase()
   const freshness = await readPndBidHistoryFreshness(houseStr, auctionIdStr)
   if (freshness && isFresh(freshness, LAZY_TTL.pndBids)) {
     const cached = await readPndBidHistory(houseStr, auctionIdStr)
-    if (cached) {
+    if (cached && cacheCoversTop(cached, expectedTop)) {
       return cached.map((b) => ({
         bidder: b.bidder as Address,
         amount: b.amount,
@@ -810,6 +829,25 @@ async function getSovereignBidHistory(
 }
 
 // ─── Shared helpers ─────────────────────────────────────────────────────────
+
+/**
+ * True when the cached bid set already includes the on-chain leader.
+ * Cache rows are ordered newest-first and bid amounts are monotonically
+ * increasing, so the first cached row is the highest. When `expectedTop`
+ * is null (no on-chain bidder yet) the cache trivially covers it.
+ */
+function cacheCoversTop(
+  cached: ReadonlyArray<{ bidder: string; amount: bigint }>,
+  expectedTop: { bidder: Address; amount: bigint } | null,
+): boolean {
+  if (!expectedTop) return true
+  if (cached.length === 0) return false
+  const top = cached[0]
+  return (
+    top.amount === expectedTop.amount &&
+    top.bidder.toLowerCase() === expectedTop.bidder.toLowerCase()
+  )
+}
 
 async function enrichBidLogs(
   client: ReturnType<typeof createPublicClient>,
