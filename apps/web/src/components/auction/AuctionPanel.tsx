@@ -563,7 +563,7 @@ function FeesBreakdown({
               <dt className="text-fg-muted">{label}</dt>
               <dd className="tabular-nums text-fg">
                 <span>{formatBpsPct(bps)}</span>
-                {previewBid > 0n && (
+                {previewBid > 0n && bps > 0 && (
                   <>
                     <span className="text-gray-400"> · </span>
                     <span>{amt.eth}</span>
