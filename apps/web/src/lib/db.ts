@@ -32,7 +32,7 @@ const DATABASE_URL = process.env.DATABASE_URL
 
 function makeClient(): ReturnType<typeof postgres> | null {
   if (!DATABASE_URL) return null
-  return postgres(DATABASE_URL, {
+  const client = postgres(DATABASE_URL, {
     max: 2,
     idle_timeout: 20,
     connect_timeout: 10,
@@ -41,6 +41,20 @@ function makeClient(): ReturnType<typeof postgres> | null {
     // deallocation overhead on connection close.
     prepare: false,
   })
+
+  // Best-effort graceful shutdown. On Netlify, sandboxes are usually killed
+  // with SIGKILL (no signal delivered to userland), so this rarely fires in
+  // production — pgbouncer logs `client unexpected eof` for those. But when
+  // the runtime DOES send SIGTERM (graceful shutdown, dev hot-reload), this
+  // closes connections cleanly so they don't show as `unexpected eof` in
+  // pgbouncer logs.
+  for (const sig of ["SIGTERM", "SIGINT"] as const) {
+    process.once(sig, () => {
+      void client.end({ timeout: 5 })
+    })
+  }
+
+  return client
 }
 
 export const sql: ReturnType<typeof postgres> | null =
