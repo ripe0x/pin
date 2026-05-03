@@ -115,10 +115,12 @@ async function ArtistPageBody({ address }: { address: string }) {
   // SSR returns; longer-running scans keep running and finalize on a
   // subsequent visit (the next render reads whatever's in the table).
   const auctionDiscovery = Promise.allSettled(
-    PLATFORMS.map((p) =>
-      p.discoverArtistAuctions
-        ? p.discoverArtistAuctions(address as Address)
-        : Promise.resolve(),
+    PLATFORMS.map(() =>
+      // TODO(rpc-rollback): re-enable once the per-artist scanner is
+      // cursor-bounded — `discoverArtistAuctions` currently fires
+      // wide `getLogs` from each marketplace's deploy block, which
+      // slams Alchemy on every cold artist-page visit.
+      Promise.resolve(),
     ),
   )
   const auctionDiscoveryDeadline = new Promise<void>((resolve) =>
