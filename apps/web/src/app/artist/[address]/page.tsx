@@ -11,6 +11,7 @@ import { getActiveAuctionCount } from "@/lib/auctions"
 import { getCachedTokenRefs } from "@/lib/artist-cache"
 import { pgCacheHas } from "@/lib/pg-cache"
 import { isCrawler } from "@/lib/crawler"
+import { withSingleFlight } from "@/lib/single-flight"
 import { PLATFORMS } from "@/lib/platforms"
 import { ArtistHeader } from "@/components/artist/ArtistHeader"
 import { ArtistGallery } from "@/components/artist/ArtistGallery"
@@ -146,10 +147,21 @@ async function ArtistPageBody({ address }: { address: string }) {
   // SSR only the first page: identity + first 24 tokens + active-auction
   // count (null when the artist has no sovereign house). Subsequent gallery
   // pages load client-side via /api/artist/[address]/tokens?page=N.
+  //
+  // Each expensive call is wrapped in `withSingleFlight` so that a burst
+  // of concurrent same-artist renders (e.g., a Discord/Twitter share that
+  // funnels 50 visitors at the same artist within seconds) collapses to
+  // one cold-cache fetch followed by N-1 cache hits, instead of N
+  // parallel RPC fan-outs racing each other to populate the same caches.
+  // `getArtistIdentity` is already cached and cheap, so it's left bare.
   const [identity, firstPage, activeAuctions] = await Promise.all([
     getArtistIdentity(address),
-    getArtistGalleryPage(address, 0, INITIAL_PAGE_SIZE),
-    getActiveAuctionCount(address).catch(() => null),
+    withSingleFlight(`artist-gallery:${address.toLowerCase()}:0:${INITIAL_PAGE_SIZE}`, () =>
+      getArtistGalleryPage(address, 0, INITIAL_PAGE_SIZE),
+    ),
+    withSingleFlight(`artist-auctions:${address.toLowerCase()}`, () =>
+      getActiveAuctionCount(address),
+    ).catch(() => null),
     auctionDiscoveryGate,
   ])
 
