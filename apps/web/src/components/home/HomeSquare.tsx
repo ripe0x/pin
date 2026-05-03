@@ -10,6 +10,10 @@ const HOME_GRID_SIZE = 11
 // the split grid. On lg the layout is 4-col so the top half = hero
 // (col-span-2) + 1 card on row 1, then 2 cards on row 2 = 3 work cards.
 const TOP_HALF_WORK_CARDS = 3
+// Cap on cards in the live-auctions carousel. The strip's role is a
+// curated taste of what's live right now — not an exhaustive index.
+// Keeps the row scannable and bounds the lazy-load fan-out.
+const STRIP_SIZE = 20
 
 function shuffle<T>(arr: T[]): T[] {
   const copy = [...arr]
@@ -125,7 +129,10 @@ export async function HomeSquare() {
   const stripPreBid = shuffle(
     stripPool.filter((a) => a.currentBidWei === 0n),
   )
-  const stripAuctions = [...stripLiveCounting, ...stripPreBid]
+  const stripAuctions = [...stripLiveCounting, ...stripPreBid].slice(
+    0,
+    STRIP_SIZE,
+  )
 
   const topHalf = sortedAuctions.slice(0, TOP_HALF_WORK_CARDS)
   const bottomHalf = sortedAuctions.slice(TOP_HALF_WORK_CARDS)
