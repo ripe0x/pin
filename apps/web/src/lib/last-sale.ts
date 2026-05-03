@@ -22,7 +22,6 @@ import {
 } from "viem"
 import { mainnet } from "viem/chains"
 import { unstable_cache } from "next/cache"
-import { sovereignAuctionHouseFactoryAbi } from "@pin/abi"
 import { pgCache } from "./pg-cache"
 import {
   readFoundationLastSale,
@@ -30,6 +29,7 @@ import {
   LAZY_TTL,
   isFresh,
 } from "./lazy-index"
+import { getSovereignHouseOf } from "./sovereign-house"
 import {
   NFT_MARKET,
   MAINNET_CHAIN_ID,
@@ -42,7 +42,6 @@ const SOVEREIGN_FACTORY = getAddressOrNull(
   SOVEREIGN_AUCTION_HOUSE_FACTORY,
   MAINNET_CHAIN_ID,
 )
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
 // NFTMarket proxy was deployed Dec 2021 — earlier scanning is wasted RPC.
 const FND_MARKET_DEPLOY_BLOCK = 13_840_000n
@@ -183,18 +182,10 @@ export async function getSovereignLastSale(
 ): Promise<LastSale | null> {
   if (!SOVEREIGN_FACTORY) return null
 
-  let houseAddress: Address
-  try {
-    houseAddress = await client.readContract({
-      address: SOVEREIGN_FACTORY,
-      abi: sovereignAuctionHouseFactoryAbi,
-      functionName: "houseOf",
-      args: [creator],
-    })
-  } catch {
-    return null
-  }
-  if (houseAddress === ZERO_ADDRESS) return null
+  // Cached lookup — see sovereign-house.ts. Houses don't move, so a 24h
+  // cross-sandbox cache eliminates the per-render eth_call.
+  const houseAddress = await getSovereignHouseOf(creator)
+  if (!houseAddress) return null
 
   const created = await client
     .getLogs({

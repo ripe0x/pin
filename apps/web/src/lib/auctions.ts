@@ -16,6 +16,7 @@ import {
 import { mainnet } from "viem/chains"
 import { erc721Abi, nftMarketAbi, sovereignAuctionHouseAbi, sovereignAuctionHouseFactoryAbi } from "@pin/abi"
 import { pgCache } from "./pg-cache"
+import { getSovereignHouseOf } from "./sovereign-house"
 import { getActiveAuctionCountFromIndexer } from "./indexer-queries"
 import {
   readFoundationBidHistory,
@@ -604,18 +605,12 @@ async function getActiveAuctionCountUncached(
     if (!SOVEREIGN_FACTORY) return null
     const client = getClient()
 
-    let houseAddress: Address
-    try {
-      houseAddress = await client.readContract({
-        address: SOVEREIGN_FACTORY,
-        abi: sovereignAuctionHouseFactoryAbi,
-        functionName: "houseOf",
-        args: [artistAddress as Address],
-      })
-    } catch {
-      return null
-    }
-    if (houseAddress === ZERO_ADDRESS) return null
+    // Cached lookup — see sovereign-house.ts. Houses don't move once
+    // deployed, so a 24h cross-sandbox cache eliminates the per-render
+    // eth_call. The outer 5min unstable_cache wrapper memoizes within
+    // a sandbox; this layer collapses fan-out across sandboxes.
+    const houseAddress = await getSovereignHouseOf(artistAddress)
+    if (!houseAddress) return null
 
     // Bounded by factory deploy block — no houses could exist before that, so
     // scanning from 0 was just paying for a 24M-block null scan every call.

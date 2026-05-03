@@ -113,26 +113,44 @@ export async function resolveDisplayNames(
 }
 
 /**
- * Resolve an artist's identity (ENS name + avatar).
+ * Cached ENS avatar lookup, keyed by address. Uses the cached name as
+ * input but is itself address-keyed so future calls hit the L2 directly
+ * without re-resolving the name. Same 24h TTL + ens tag as the name
+ * cache so a single revalidateTag("ens") flushes both.
+ */
+const resolveEnsAvatarCached = unstable_cache(
+  async (lowerAddress: string): Promise<string | null> => {
+    return pgCache(`ens-avatar:${lowerAddress}`, 60 * 60 * 24, async () => {
+      const ensName = await resolveEnsNameCached(lowerAddress)
+      if (!ensName) return null
+      try {
+        const avatar = await client.getEnsAvatar({ name: normalize(ensName) })
+        return avatar ?? null
+      } catch {
+        return null
+      }
+    })
+  },
+  ["ens-avatar"],
+  { revalidate: 60 * 60 * 24, tags: ["ens"] },
+)
+
+/**
+ * Resolve an artist's identity (ENS name + avatar). Both lookups go
+ * through the L1+L2 cache so warm-cache calls collapse to two point
+ * lookups instead of two ENS resolver `eth_call`s. Issued in parallel —
+ * the avatar cache transparently re-uses the cached name internally.
  */
 export async function getArtistIdentity(
   address: string,
 ): Promise<ArtistIdentity> {
   const addr = address as Address
-  let ensName: string | null = null
-  let avatarUrl: string | null = null
-
-  try {
-    ensName = await client.getEnsName({ address: addr })
-    if (ensName) {
-      avatarUrl = await client.getEnsAvatar({ name: normalize(ensName) })
-    }
-  } catch {
-    // ENS resolution failed — use address as fallback
-  }
-
+  const lower = address.toLowerCase()
+  const [ensName, avatarUrl] = await Promise.all([
+    resolveEnsNameCached(lower),
+    resolveEnsAvatarCached(lower),
+  ])
   const displayName = ensName ?? `${address.slice(0, 6)}...${address.slice(-4)}`
-
   return { address: addr, ensName, displayName, avatarUrl }
 }
 
