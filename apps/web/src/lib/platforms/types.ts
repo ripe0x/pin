@@ -203,6 +203,24 @@ export interface PlatformAdapter {
   getActiveAuctions?(limit: number): Promise<ActiveAuctionSummary[]>
 
   /**
+   * Lazy-index this artist's active auctions on this platform. Called
+   * from the artist page route — each platform's marketplace contract
+   * has a seller/creator-indexed event topic, so a per-artist
+   * `getLogs` is cheap (the RPC returns only that artist's logs across
+   * the full block range).
+   *
+   * Self-cooldowns via the per-artist status table (`lazy_*_artist_auction_status`)
+   * so repeated artist-page hits don't thrash. Writes upsert into the
+   * shared `lazy_*_active_auctions` table; the home grid reads the
+   * union of all recently-scanned artists with a 24-hour freshness
+   * join, so unvisited artists drop out automatically.
+   *
+   * Optional — platforms without a marketplace omit. Sovereign/PND
+   * reads from Ponder directly and doesn't need this hook.
+   */
+  discoverArtistAuctions?(artist: Address): Promise<void>
+
+  /**
    * Listings the seller can still cancel (no bids yet for auctions, or
    * still active for buy-now). Used by the migrate / bulk-delist panels.
    */

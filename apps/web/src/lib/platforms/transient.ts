@@ -34,6 +34,7 @@ import {
   isFresh,
 } from "../lazy-index"
 import type { BidHistoryEntry } from "../auctions"
+import { discoverTransientArtistAuctions } from "./transient-scan"
 
 const TL_AH = TL_AUCTION_HOUSE[MAINNET_CHAIN_ID]
 const TL_DEPLOYER = TL_UNIVERSAL_DEPLOYER[MAINNET_CHAIN_ID]
@@ -665,9 +666,16 @@ export const transientAdapter: PlatformAdapter = {
     }
   },
 
+  async discoverArtistAuctions(artist: Address): Promise<void> {
+    await discoverTransientArtistAuctions(artist)
+  },
+
   async getActiveAuctions(limit: number): Promise<ActiveAuctionSummary[]> {
     // Pure table read — no RPC in the home-grid request path. The
-    // scanner runs out-of-band via /api/cron/refresh-auctions.
+    // per-artist scanner runs from artist-page loads via
+    // `discoverArtistAuctions`, populating the table for whoever's
+    // been visited. Reads JOIN the per-artist status table with a
+    // 24h freshness filter so unvisited artists drop out.
     // Over-read + filter to artist-sellers (seller == tokenCreator)
     // so the home grid surfaces primary-market work only.
     const rows = await readTransientActiveAuctions(limit * 4)

@@ -1,13 +1,14 @@
 import "server-only"
 import { createPublicClient, http, type Address } from "viem"
 import { mainnet } from "viem/chains"
-import { FOUNDATION_NFT, MAINNET_CHAIN_ID } from "@pin/addresses"
+import { FOUNDATION_NFT, NFT_MARKET, MAINNET_CHAIN_ID } from "@pin/addresses"
 import type {
   PlatformAdapter,
   ArtistTokenRef,
   CollectorTokenRef,
   AdapterLastSale,
   SellerListings,
+  ActiveAuctionSummary,
 } from "./types"
 import { discoverFoundationArtistRefs } from "../onchain-discovery"
 import { getFoundationLastSale } from "../last-sale"
@@ -18,12 +19,15 @@ import {
   writeFoundationCollectorTokens,
   readFoundationSellerListings,
   writeFoundationSellerListings,
+  readFoundationActiveAuctions,
   LAZY_TTL,
   isFresh,
 } from "../lazy-index"
 import { discoverFoundationCancellableListings } from "./foundation-seller-listings"
+import { discoverFoundationArtistAuctions } from "./foundation-scan"
 
 const FOUNDATION_NFT_ADDRESS = FOUNDATION_NFT[MAINNET_CHAIN_ID]
+const FND_NFT_MARKET = NFT_MARKET[MAINNET_CHAIN_ID]
 
 function getClient() {
   return createPublicClient({
@@ -204,5 +208,38 @@ export const foundationAdapter: PlatformAdapter = {
 
   async getBidHistory() {
     return null
+  },
+
+  async discoverArtistAuctions(artist: Address): Promise<void> {
+    await discoverFoundationArtistAuctions(artist)
+  },
+
+  async getActiveAuctions(limit: number): Promise<ActiveAuctionSummary[]> {
+    // Pure table read — no RPC in the home-grid request path. The
+    // per-artist scanner runs from artist-page loads via
+    // `discoverArtistAuctions`, populating the table for whoever's
+    // been visited. Reads JOIN the per-artist status table with a
+    // 24h freshness filter so unvisited artists drop out.
+    // Over-read so the artist-seller filter doesn't shrink the result
+    // set below `limit` when many active rows are secondary listings.
+    const rows = await readFoundationActiveAuctions(limit * 4)
+    return rows
+      .filter(
+        (r) =>
+          r.creator !== null &&
+          r.creator.toLowerCase() === r.seller.toLowerCase(),
+      )
+      .slice(0, limit)
+      .map((r) => ({
+        platform: "foundation",
+        contract: r.contract as Address,
+        tokenId: r.tokenId,
+        seller: r.seller as Address,
+        reserveWei: r.reserveWei,
+        currentBidWei: r.currentBidWei,
+        currentBidder: (r.currentBidder ?? null) as Address | null,
+        endTime: r.endTime,
+        sourceContract: FND_NFT_MARKET,
+      }))
   },
 }

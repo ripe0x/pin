@@ -6,41 +6,23 @@ import {
   type Address,
 } from "viem"
 import { mainnet } from "viem/chains"
+import { SUPERRARE_BAZAAR, MAINNET_CHAIN_ID } from "@pin/addresses"
 import {
-  SUPERRARE_BAZAAR,
-  MAINNET_CHAIN_ID,
-} from "@pin/addresses"
-import {
-  readScanCursor,
-  writeScanCursor,
   writeSuperrareV2ActiveAuctions,
-  readSuperrareV2ActiveAuctions,
+  readSrv2ArtistAuctionStatus,
+  writeSrv2ArtistAuctionStatus,
   LAZY_TTL,
   isFresh,
   type LazySuperrareV2ActiveAuction,
 } from "../lazy-index"
 
 const SR_BAZAAR = SUPERRARE_BAZAAR[MAINNET_CHAIN_ID]
-const SCAN_KEY = "srv2_bazaar"
-// Bazaar deployed Feb 2022 (~14_100_000). Used as the seed cursor when
-// no prior scan exists so the first scan covers the contract's full
-// lifetime in one pass.
+// Bazaar deployed Feb 2022 (~14_100_000). Per-artist `getLogs` calls
+// filter on indexed _auctionCreator / _contractAddress / _tokenId
+// topics, so the RPC returns only this artist's events regardless of
+// how wide the block range is.
 const SR_BAZAAR_DEPLOY_BLOCK = 14_100_000n
-// Per-call chunk for the unindexed scan. Bazaar emits all four event
-// types on the same address, and we don't filter by indexed args here
-// (we want every auction, not one specific token). 500K blocks keeps
-// each `getLogs` response small enough to clear Alchemy's "response
-// too large" threshold even during high-activity periods. On failure
-// the scanner halves the range and retries; first scans may take a
-// few catch-up runs to reach head, but each individual call is cheap.
-const BLOCK_RANGE = 500_000n
-const MIN_CHUNK = 10_000n
-// Minimum freshness window before we re-scan. Matches `LAZY_TTL.superrareV2AuctionScan`.
-const COOLDOWN_MS = LAZY_TTL.superrareV2AuctionScan
-// Hard upper bound on scan wall-clock so a slow RPC can't stall the
-// home grid render. The home page never awaits this past the cap;
-// stale rows continue serving until the next call refreshes them.
-const SCAN_TIMEOUT_MS = 10_000
+const COOLDOWN_MS = LAZY_TTL.superrareV2ArtistAuctions
 
 const newAuctionEvent = parseAbiItem(
   "event NewAuction(address indexed _contractAddress, uint256 indexed _tokenId, address indexed _auctionCreator, address _currencyAddress, uint256 _startingTime, uint256 _minimumBid, uint256 _lengthOfAuction)",
@@ -68,223 +50,220 @@ function getClient() {
   })
 }
 
-type ScanLog = {
-  blockNumber: bigint | null
-  logIndex: number | null
-  args: Record<string, unknown>
-  eventName: "NewAuction" | "AuctionBid" | "AuctionSettled" | "CancelAuction"
-}
+const tokenCreatorAbi = [
+  {
+    type: "function",
+    name: "tokenCreator",
+    stateMutability: "view",
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    outputs: [{ name: "", type: "address" }],
+  },
+] as const
 
 function tokenKey(contract: string, tokenId: string): string {
   return `${contract.toLowerCase()}:${tokenId}`
 }
 
-function logSortKey(l: ScanLog): bigint {
-  // Block-then-logIndex ordering as a single comparable value. logIndex
-  // fits in <32 bits; combine into the same bigint for a stable sort
-  // without per-pair comparisons.
-  const block = l.blockNumber ?? 0n
-  const idx = BigInt(l.logIndex ?? 0)
-  return block * 100_000n + idx
-}
-
 /**
- * Incrementally update `lazy_srv2_active_auctions` by replaying Bazaar
- * events from the last scanned block forward. Cooldown-bounded: callers
- * within `COOLDOWN_MS` of the last scan no-op so the home-grid orchestrator
- * can call this on every render without thrashing.
+ * Lazy-index this artist's SR V2 Bazaar reserve auctions.
  *
- * On first run (no cursor), the scan covers the full Bazaar lifetime
- * (~ Feb 2022 → now). The scan is bounded by `SCAN_TIMEOUT_MS` so a
- * long catch-up doesn't block the render; subsequent runs pick up from
- * wherever this run got to.
+ * Two-phase event walk, per-artist:
+ *
+ *   1. `NewAuction` filtered by `_auctionCreator=artist` (indexed
+ *      topic) — gives every auction where this address is the lister.
+ *      The RPC returns only this artist's logs from the contract's
+ *      deploy block forward.
+ *   2. For the union of (contract, tokenId) pairs collected above,
+ *      run `AuctionBid` / `AuctionSettled` / `CancelAuction` in
+ *      parallel. Bid + Settled don't have an `_auctionCreator` topic,
+ *      so we filter by `_contractAddress` + `_tokenId` arrays
+ *      (topic-OR within each, AND across) and discard any returned
+ *      logs whose (contract, tokenId) isn't actually in our scoped
+ *      set (handles the AND-across-fields false-positive case).
+ *      Cancel filters cleanly on `_auctionCreator`.
+ *
+ * Reduces the union of events to current state and upserts into
+ * `lazy_srv2_active_auctions`. Stamps the artist's status row at the
+ * end so the home grid's 24h freshness join surfaces them. Self-cools
+ * via `LAZY_TTL.superrareV2ArtistAuctions` (2 min).
  */
-export async function refreshSuperrareV2Auctions(): Promise<void> {
-  const cursor = await readScanCursor(SCAN_KEY)
-  if (cursor && isFresh(cursor.lastScannedAt, COOLDOWN_MS)) {
-    // Within the cooldown — trust the table.
+export async function discoverSuperrareV2ArtistAuctions(
+  artist: Address,
+): Promise<void> {
+  const status = await readSrv2ArtistAuctionStatus(artist)
+  if (status && isFresh(status.lastIndexedAt, COOLDOWN_MS)) return
+
+  const client = getClient()
+  const fromBlock = SR_BAZAAR_DEPLOY_BLOCK
+  const sellerLower = artist.toLowerCase() as Address
+
+  // Phase 1 — every auction this artist has created.
+  const newAuctionLogs = await client.getLogs({
+    address: SR_BAZAAR,
+    event: newAuctionEvent,
+    args: { _auctionCreator: sellerLower },
+    fromBlock,
+  })
+
+  if (newAuctionLogs.length === 0) {
+    await writeSrv2ArtistAuctionStatus(sellerLower)
     return
   }
 
-  const client = getClient()
-  const latestBlock = await client.getBlockNumber()
-  const fromBlock = cursor ? cursor.lastBlock + 1n : SR_BAZAAR_DEPLOY_BLOCK
-  const cursorAtHead = fromBlock > latestBlock
-
-  const deadline = Date.now() + SCAN_TIMEOUT_MS
-  // Index existing rows by (contract, tokenId) so events can mutate
-  // them in place. Read up to a generous limit so partial refreshes
-  // don't lose state; non-active rows (settled/cancelled) get re-read
-  // back as well via the SELECT below.
-  const existingRows = await readSuperrareV2ActiveAuctions(10_000)
   const byKey = new Map<string, LazySuperrareV2ActiveAuction>()
-  for (const r of existingRows) byKey.set(tokenKey(r.contract, r.tokenId), r)
-
-  // Halve-and-retry chunk fetcher. Bazaar's event volume varies; some
-  // ranges fit the default chunk and some need to be split down. Bottom
-  // out at MIN_CHUNK so a chronically-too-large response surfaces as a
-  // dropped chunk rather than infinite recursion.
-  async function fetchChunk(
-    start: bigint,
-    end: bigint,
-  ): Promise<ScanLog[] | null> {
-    try {
-      const [news, bids, settles, cancels] = await Promise.all([
-        client.getLogs({
-          address: SR_BAZAAR,
-          event: newAuctionEvent,
-          fromBlock: start,
-          toBlock: end,
-        }),
-        client.getLogs({
-          address: SR_BAZAAR,
-          event: auctionBidEvent,
-          fromBlock: start,
-          toBlock: end,
-        }),
-        client.getLogs({
-          address: SR_BAZAAR,
-          event: auctionSettledEvent,
-          fromBlock: start,
-          toBlock: end,
-        }),
-        client.getLogs({
-          address: SR_BAZAAR,
-          event: cancelAuctionEvent,
-          fromBlock: start,
-          toBlock: end,
-        }),
-      ])
-      return [
-        ...news.map((l) => ({ ...l, eventName: "NewAuction" as const })),
-        ...bids.map((l) => ({ ...l, eventName: "AuctionBid" as const })),
-        ...settles.map((l) => ({ ...l, eventName: "AuctionSettled" as const })),
-        ...cancels.map((l) => ({ ...l, eventName: "CancelAuction" as const })),
-      ] as unknown as ScanLog[]
-    } catch {
-      if (end - start <= MIN_CHUNK) return null
-      const mid = start + (end - start) / 2n
-      const a = await fetchChunk(start, mid)
-      const b = await fetchChunk(mid + 1n, end)
-      if (a === null && b === null) return null
-      return [...(a ?? []), ...(b ?? [])]
+  const contractsSet = new Set<Address>()
+  const tokenIdsSet = new Set<bigint>()
+  for (const l of newAuctionLogs) {
+    const contractAddr = l.args._contractAddress
+    const tokenIdRaw = l.args._tokenId
+    const minBid = l.args._minimumBid
+    const currency = l.args._currencyAddress
+    if (
+      contractAddr === undefined ||
+      tokenIdRaw === undefined ||
+      minBid === undefined ||
+      currency === undefined
+    ) {
+      continue
     }
-  }
-
-  // Walk forward from the cursor, applying chunks in order so events
-  // mutate rows consistently. A bid following a NewAuction within the
-  // same chunk has to apply in block:logIndex order — sort first.
-  let scannedTo = fromBlock - 1n
-  for (let start = fromBlock; start <= latestBlock; start += BLOCK_RANGE) {
-    if (Date.now() > deadline) break
-    const end = start + BLOCK_RANGE - 1n > latestBlock
-      ? latestBlock
-      : start + BLOCK_RANGE - 1n
-
-    const logs = await fetchChunk(start, end)
-    if (logs === null) {
-      // Even the smallest chunk failed — record progress and stop so
-      // next call retries from here (likely a transient RPC issue).
-      break
-    }
-
-    logs.sort((a, b) => {
-      const ak = logSortKey(a)
-      const bk = logSortKey(b)
-      return ak > bk ? 1 : ak < bk ? -1 : 0
+    if (currency.toLowerCase() !== ETH_CURRENCY) continue
+    const contractLower = contractAddr.toLowerCase()
+    const tokenId = tokenIdRaw.toString()
+    contractsSet.add(contractAddr)
+    tokenIdsSet.add(tokenIdRaw)
+    byKey.set(tokenKey(contractLower, tokenId), {
+      contract: contractLower,
+      tokenId,
+      seller: sellerLower,
+      reserveWei: minBid,
+      currentBidWei: 0n,
+      currentBidder: null,
+      endTime: 0,
+      status: "active",
+      startedAtBlock: l.blockNumber ?? 0n,
+      creator: null,
     })
-
-    for (const l of logs) {
-      const args = l.args as Record<string, unknown>
-      const contract = (args._contractAddress as Address)?.toLowerCase()
-      const tokenIdRaw = args._tokenId as bigint | undefined
-      if (!contract || tokenIdRaw === undefined) continue
-      const tokenId = tokenIdRaw.toString()
-      const key = tokenKey(contract, tokenId)
-      const existing = byKey.get(key)
-
-      if (l.eventName === "NewAuction") {
-        const currency = (args._currencyAddress as Address)?.toLowerCase()
-        // Skip ERC-20 auctions; we don't surface them.
-        if (currency && currency !== ETH_CURRENCY) {
-          if (existing) byKey.delete(key)
-          continue
-        }
-        byKey.set(key, {
-          contract,
-          tokenId,
-          seller: (args._auctionCreator as Address).toLowerCase(),
-          reserveWei: args._minimumBid as bigint,
-          currentBidWei: 0n,
-          currentBidder: null,
-          endTime: 0,
-          status: "active",
-          startedAtBlock: l.blockNumber ?? 0n,
-          creator: null,
-        })
-      } else if (l.eventName === "AuctionBid") {
-        const currency = (args._currencyAddress as Address)?.toLowerCase()
-        if (currency && currency !== ETH_CURRENCY) continue
-        const amount = args._amount as bigint
-        const newLength = args._newAuctionLength as bigint
-        if (!existing) {
-          // Bid arrived without a NewAuction we know about (cursor
-          // missed it). Synthesize a row so the home grid can still
-          // surface it. Reserve unknown — fall back to the bid amount.
-          byKey.set(key, {
-            contract,
-            tokenId,
-            seller: ZERO_ADDRESS_LOWER,
-            reserveWei: amount,
-            currentBidWei: amount,
-            currentBidder: (args._bidder as Address).toLowerCase(),
-            endTime: 0, // unknown; will be derived if NewAuction surfaces later
-            status: "active",
-            startedAtBlock: l.blockNumber ?? 0n,
-            creator: null,
-          })
-        } else {
-          existing.currentBidWei = amount
-          existing.currentBidder = (args._bidder as Address).toLowerCase()
-          // SR Bazaar bumps `_newAuctionLength` on each bid (typically
-          // identical to the configured length). End time = bid block
-          // timestamp + new length. Without a per-bid block fetch we
-          // approximate the bid timestamp from the chain head time —
-          // the scanner runs fresh enough that this is within seconds.
-          existing.endTime = Math.floor(Date.now() / 1000) + Number(newLength)
-        }
-      } else if (l.eventName === "AuctionSettled") {
-        if (existing) {
-          existing.status = "settled"
-        }
-      } else if (l.eventName === "CancelAuction") {
-        if (existing) {
-          existing.status = "cancelled"
-        }
-      }
-    }
-
-    scannedTo = end
   }
 
-  // Backfill `creator` for active rows we don't have one for yet. The
-  // home grid only surfaces auctions where seller == creator (primary
-  // art only), and `creator IS NULL` rows are excluded as unverified.
-  //
-  // Capped at MAX_BACKFILL per scan pass + chunked at MULTICALL_CHUNK to
-  // avoid Alchemy "response too large" failures. Existing tables can have
-  // thousands of historical active rows — incremental backfill across
-  // successive scans keeps each call cheap.
-  const MAX_BACKFILL = 500
+  if (byKey.size === 0) {
+    // All listings were ERC-20 priced (skipped); still mark fresh.
+    await writeSrv2ArtistAuctionStatus(sellerLower)
+    return
+  }
+
+  const contracts = Array.from(contractsSet)
+  const tokenIds = Array.from(tokenIdsSet)
+
+  // Phase 2 — Bid/Settled (filter by contract+tokenId arrays) and
+  // Cancel (filter by _auctionCreator). Bid + Settled use AND-across-
+  // fields, so a contract-token pair the artist doesn't own can match
+  // if both arrays happen to include its parts. Filter client-side.
+  const [bidLogs, settledLogs, cancelLogs] = await Promise.all([
+    client.getLogs({
+      address: SR_BAZAAR,
+      event: auctionBidEvent,
+      args: { _contractAddress: contracts, _tokenId: tokenIds },
+      fromBlock,
+    }),
+    client.getLogs({
+      address: SR_BAZAAR,
+      event: auctionSettledEvent,
+      args: { _contractAddress: contracts, _tokenId: tokenIds },
+      fromBlock,
+    }),
+    client.getLogs({
+      address: SR_BAZAAR,
+      event: cancelAuctionEvent,
+      args: { _auctionCreator: sellerLower },
+      fromBlock,
+    }),
+  ])
+
+  type AppliedLog = {
+    blockNumber: bigint | null
+    logIndex: number | null
+    kind: "bid" | "settled" | "cancel"
+    args:
+      | (typeof bidLogs)[number]["args"]
+      | (typeof settledLogs)[number]["args"]
+      | (typeof cancelLogs)[number]["args"]
+  }
+  const applied: AppliedLog[] = [
+    ...bidLogs.map((l) => ({
+      blockNumber: l.blockNumber,
+      logIndex: l.logIndex,
+      kind: "bid" as const,
+      args: l.args,
+    })),
+    ...settledLogs.map((l) => ({
+      blockNumber: l.blockNumber,
+      logIndex: l.logIndex,
+      kind: "settled" as const,
+      args: l.args,
+    })),
+    ...cancelLogs.map((l) => ({
+      blockNumber: l.blockNumber,
+      logIndex: l.logIndex,
+      kind: "cancel" as const,
+      args: l.args,
+    })),
+  ]
+  applied.sort((a, b) => {
+    const ab = a.blockNumber ?? 0n
+    const bb = b.blockNumber ?? 0n
+    if (ab !== bb) return ab > bb ? 1 : -1
+    return (a.logIndex ?? 0) - (b.logIndex ?? 0)
+  })
+
+  for (const l of applied) {
+    const contractRaw = l.args._contractAddress
+    const tokenIdRaw = l.args._tokenId
+    if (contractRaw === undefined || tokenIdRaw === undefined) continue
+    const key = tokenKey(contractRaw, tokenIdRaw.toString())
+    const existing = byKey.get(key)
+    if (!existing) continue // false positive from AND-across topic filter
+
+    if (l.kind === "bid") {
+      const args = l.args as (typeof bidLogs)[number]["args"]
+      if (args._currencyAddress?.toLowerCase() !== ETH_CURRENCY) continue
+      const amount = args._amount
+      const newLength = args._newAuctionLength
+      const bidder = args._bidder
+      if (amount !== undefined) existing.currentBidWei = amount
+      if (bidder !== undefined) existing.currentBidder = bidder.toLowerCase()
+      // SR Bazaar emits `_newAuctionLength` on each bid; the on-chain
+      // auction.startingTime is set on first bid to the block ts, and
+      // endTime = startingTime + newLength. Without a per-bid block
+      // timestamp here we approximate to `Date.now()` at scan time
+      // — the documented upstream bug. Fixing it (use
+      // `eth_getBlockByNumber` per bid block, or read the live
+      // auction state via `tokenAuctions(...)` for active rows) is
+      // out of scope for the per-artist refactor.
+      if (newLength !== undefined) {
+        existing.endTime = Math.floor(Date.now() / 1000) + Number(newLength)
+      }
+    } else if (l.kind === "settled") {
+      existing.status = "settled"
+    } else if (l.kind === "cancel") {
+      existing.status = "cancelled"
+    }
+  }
+
+  // Backfill `creator` via tokenCreator(). For SR V2 the bazaar's
+  // `_auctionCreator` is whoever's listing — may be a collector
+  // reselling a primary mint. The home-grid filter `creator = seller`
+  // keeps only primary-art listings.
+  const needsCreator = [...byKey.values()].filter(
+    (r) => r.status === "active" && !r.creator,
+  )
+  // Multicall chunks. Single-batch eth_call response can exceed RPC
+  // size limits when an artist has hundreds of auctions; chunk to a
+  // safe size that consistently clears Alchemy / public RPC caps.
   const MULTICALL_CHUNK = 100
-  const needsCreator = [...byKey.values()]
-    .filter((r) => r.status === "active" && !r.creator)
-    .slice(0, MAX_BACKFILL)
   for (let i = 0; i < needsCreator.length; i += MULTICALL_CHUNK) {
-    if (Date.now() > deadline) break
     const slice = needsCreator.slice(i, i + MULTICALL_CHUNK)
     try {
-      const results = await client.multicall({
+      const tcResults = await client.multicall({
         contracts: slice.map((r) => ({
           address: r.contract as Address,
           abi: tokenCreatorAbi,
@@ -294,7 +273,7 @@ export async function refreshSuperrareV2Auctions(): Promise<void> {
         allowFailure: true,
       })
       for (let j = 0; j < slice.length; j++) {
-        const res = results[j]
+        const res = tcResults[j]
         if (res?.status === "success" && typeof res.result === "string") {
           slice[j].creator = (res.result as string).toLowerCase()
         }
@@ -307,17 +286,5 @@ export async function refreshSuperrareV2Auctions(): Promise<void> {
   if (byKey.size > 0) {
     writeSuperrareV2ActiveAuctions([...byKey.values()])
   }
-  await writeScanCursor(SCAN_KEY, scannedTo > 0n ? scannedTo : latestBlock)
+  await writeSrv2ArtistAuctionStatus(sellerLower)
 }
-
-const tokenCreatorAbi = [
-  {
-    type: "function",
-    name: "tokenCreator",
-    stateMutability: "view",
-    inputs: [{ name: "tokenId", type: "uint256" }],
-    outputs: [{ name: "", type: "address" }],
-  },
-] as const
-
-const ZERO_ADDRESS_LOWER = "0x0000000000000000000000000000000000000000"

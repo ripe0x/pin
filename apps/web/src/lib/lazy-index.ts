@@ -757,19 +757,31 @@ export const LAZY_TTL = {
   superrareV2Sale: 30 * 24 * 60 * 60 * 1000,
   /** SR V2 collector tokens: same dynamism reasoning as Foundation. */
   superrareV2CollectorTokens: 6 * 60 * 60 * 1000,
-  /** SR V2 active-auction scan cursor: 2 minutes. Inside the cooldown
-   * we trust the table; past it the home grid call triggers a re-scan
-   * from the cursor block. Tighter than other TTLs because home-grid
-   * freshness matters most. */
-  superrareV2AuctionScan: 2 * 60 * 1000,
+  /** SR V2 per-artist active-auction scan: 2 minutes. Inside the
+   * cooldown the artist's rows are trusted; past it an artist-page
+   * load re-scans that artist's auctions. Tighter than other TTLs
+   * because home-grid freshness matters most. */
+  superrareV2ArtistAuctions: 2 * 60 * 1000,
   /** TL artist mints: same logic as superrareV2ArtistTokens. */
   transientArtistTokens: 30 * 24 * 60 * 60 * 1000,
   /** TL last sale (auction or buy-now): settled prices immutable. */
   transientSale: 30 * 24 * 60 * 60 * 1000,
   /** TL collector tokens: same 6h dynamism window as the others. */
   transientCollectorTokens: 6 * 60 * 60 * 1000,
-  /** TL active-auction scan cursor: matches SR V2's 2-min cooldown. */
-  transientAuctionScan: 2 * 60 * 1000,
+  /** TL per-artist active-auction scan: matches SR V2's 2-min cooldown. */
+  transientArtistAuctions: 2 * 60 * 1000,
+  /** Foundation NFTMarket per-artist active-auction scan. */
+  foundationArtistAuctions: 2 * 60 * 1000,
+  /**
+   * Maximum age an artist's `last_indexed_at` may have before their
+   * `lazy_*_active_auctions` rows are excluded from the home grid.
+   * The home strip is purely the union of recently-scanned artists,
+   * so an artist nobody has visited in 24h disappears from it even
+   * if the underlying rows still claim status='active'. Surfaces
+   * stale-but-once-known auctions to expire gracefully without a
+   * cleanup job.
+   */
+  homeGridArtistFreshness: 24 * 60 * 60 * 1000,
   /** SR V2 bid history: same 30-min TTL as Foundation's bids. */
   superrareV2Bids: 30 * 60 * 1000,
   /** TL bid history: same 30-min TTL. */
@@ -1024,16 +1036,18 @@ export async function readSuperrareV2ActiveAuctions(
         creator: string | null
       }>
     >`
-      SELECT contract, token_id, seller, reserve_wei,
-             current_bid_wei, current_bidder,
-             end_time::text AS end_time, status,
-             started_at_block::text AS started_at_block,
-             creator
-      FROM lazy_srv2_active_auctions
-      WHERE status = 'active'
+      SELECT a.contract, a.token_id, a.seller, a.reserve_wei,
+             a.current_bid_wei, a.current_bidder,
+             a.end_time::text AS end_time, a.status,
+             a.started_at_block::text AS started_at_block,
+             a.creator
+      FROM lazy_srv2_active_auctions a
+      INNER JOIN lazy_srv2_artist_auction_status s ON s.artist = a.seller
+      WHERE a.status = 'active'
+        AND s.last_indexed_at > NOW() - INTERVAL '24 hours'
       ORDER BY
-        CASE WHEN end_time = 0 THEN 1 ELSE 0 END,
-        end_time ASC
+        CASE WHEN a.end_time = 0 THEN 1 ELSE 0 END,
+        a.end_time ASC
       LIMIT ${limit}
     `
     return rows.map((r) => ({
@@ -1394,16 +1408,18 @@ export async function readTransientActiveAuctions(
         creator: string | null
       }>
     >`
-      SELECT contract, token_id, seller, reserve_wei,
-             current_bid_wei, current_bidder,
-             end_time::text AS end_time, status, listing_type,
-             started_at_block::text AS started_at_block,
-             creator
-      FROM lazy_tl_active_auctions
-      WHERE status = 'active'
+      SELECT a.contract, a.token_id, a.seller, a.reserve_wei,
+             a.current_bid_wei, a.current_bidder,
+             a.end_time::text AS end_time, a.status, a.listing_type,
+             a.started_at_block::text AS started_at_block,
+             a.creator
+      FROM lazy_tl_active_auctions a
+      INNER JOIN lazy_tl_artist_auction_status s ON s.artist = a.seller
+      WHERE a.status = 'active'
+        AND s.last_indexed_at > NOW() - INTERVAL '24 hours'
       ORDER BY
-        CASE WHEN end_time = 0 THEN 1 ELSE 0 END,
-        end_time ASC
+        CASE WHEN a.end_time = 0 THEN 1 ELSE 0 END,
+        a.end_time ASC
       LIMIT ${limit}
     `
     return rows.map((r) => ({
@@ -1462,6 +1478,284 @@ export function writeTransientActiveAuctions(
       /* ignore */
     }
   })()
+}
+
+// ─── Foundation NFTMarket active-auction lazy table ─────────────────────
+
+export type LazyFoundationActiveAuction = {
+  /**
+   * NFTMarket auction id. Most NFTMarket events are keyed only by this
+   * (Bid / Finalized / Canceled / Updated / Invalidated), so it's the
+   * primary key. The (contract, tokenId) pair comes from
+   * `ReserveAuctionCreated` and is stored alongside for token-level
+   * lookups.
+   */
+  auctionId: bigint
+  contract: string
+  tokenId: string
+  seller: string
+  reserveWei: bigint
+  currentBidWei: bigint
+  currentBidder: string | null
+  endTime: number
+  status: "active" | "settled" | "cancelled"
+  startedAtBlock: bigint
+  /**
+   * Original token creator. NFTMarket is generic over any ERC721;
+   * scanner backfills via `tokenCreator(tokenId)` then `owner()`
+   * fallback (per-artist contracts under Foundation's deployer
+   * convention have the artist as owner). `null` until backfilled —
+   * the home-grid filter excludes null rows.
+   */
+  creator: string | null
+}
+
+export async function readFoundationActiveAuctions(
+  limit: number,
+): Promise<LazyFoundationActiveAuction[]> {
+  if (!sql) return []
+  try {
+    const rows = await sql<
+      Array<{
+        auction_id: string
+        contract: string
+        token_id: string
+        seller: string
+        reserve_wei: string
+        current_bid_wei: string | null
+        current_bidder: string | null
+        end_time: string
+        status: "active" | "settled" | "cancelled"
+        started_at_block: string
+        creator: string | null
+      }>
+    >`
+      SELECT a.auction_id::text AS auction_id, a.contract, a.token_id,
+             a.seller, a.reserve_wei, a.current_bid_wei, a.current_bidder,
+             a.end_time::text AS end_time, a.status,
+             a.started_at_block::text AS started_at_block,
+             a.creator
+      FROM lazy_fnd_active_auctions a
+      INNER JOIN lazy_fnd_artist_auction_status s ON s.artist = a.seller
+      WHERE a.status = 'active'
+        AND s.last_indexed_at > NOW() - INTERVAL '24 hours'
+      ORDER BY
+        CASE WHEN a.end_time = 0 THEN 1 ELSE 0 END,
+        a.end_time ASC
+      LIMIT ${limit}
+    `
+    return rows.map((r) => ({
+      auctionId: BigInt(r.auction_id),
+      contract: r.contract,
+      tokenId: r.token_id,
+      seller: r.seller,
+      reserveWei: BigInt(r.reserve_wei),
+      currentBidWei: r.current_bid_wei ? BigInt(r.current_bid_wei) : 0n,
+      currentBidder: r.current_bidder,
+      endTime: Number(r.end_time),
+      status: r.status,
+      startedAtBlock: BigInt(r.started_at_block),
+      creator: r.creator,
+    }))
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Look up rows by `auctionId`. Used by the scanner to apply Bid /
+ * Finalized / Canceled events whose only key is `auctionId` — when an
+ * event lands for an auction whose `ReserveAuctionCreated` was scanned
+ * in a prior pass, the in-memory map is empty and we need a DB hit to
+ * find the (contract, tokenId) the event refers to.
+ */
+export async function readFoundationActiveAuctionsByIds(
+  auctionIds: bigint[],
+): Promise<LazyFoundationActiveAuction[]> {
+  if (!sql || auctionIds.length === 0) return []
+  try {
+    const ids = auctionIds.map((id) => id.toString())
+    const rows = await sql<
+      Array<{
+        auction_id: string
+        contract: string
+        token_id: string
+        seller: string
+        reserve_wei: string
+        current_bid_wei: string | null
+        current_bidder: string | null
+        end_time: string
+        status: "active" | "settled" | "cancelled"
+        started_at_block: string
+        creator: string | null
+      }>
+    >`
+      SELECT auction_id::text AS auction_id, contract, token_id, seller,
+             reserve_wei, current_bid_wei, current_bidder,
+             end_time::text AS end_time, status,
+             started_at_block::text AS started_at_block,
+             creator
+      FROM lazy_fnd_active_auctions
+      WHERE auction_id = ANY(${ids}::bigint[])
+    `
+    return rows.map((r) => ({
+      auctionId: BigInt(r.auction_id),
+      contract: r.contract,
+      tokenId: r.token_id,
+      seller: r.seller,
+      reserveWei: BigInt(r.reserve_wei),
+      currentBidWei: r.current_bid_wei ? BigInt(r.current_bid_wei) : 0n,
+      currentBidder: r.current_bidder,
+      endTime: Number(r.end_time),
+      status: r.status,
+      startedAtBlock: BigInt(r.started_at_block),
+      creator: r.creator,
+    }))
+  } catch {
+    return []
+  }
+}
+
+export function writeFoundationActiveAuctions(
+  rows: LazyFoundationActiveAuction[],
+): void {
+  if (!sql || rows.length === 0) return
+  void (async () => {
+    try {
+      for (const r of rows) {
+        await sql`
+          INSERT INTO lazy_fnd_active_auctions
+            (auction_id, contract, token_id, seller, reserve_wei,
+             current_bid_wei, current_bidder, end_time,
+             status, started_at_block, creator, last_indexed_at)
+          VALUES
+            (${r.auctionId.toString()}, ${r.contract.toLowerCase()},
+             ${r.tokenId}, ${r.seller.toLowerCase()},
+             ${r.reserveWei.toString()},
+             ${r.currentBidWei === 0n ? null : r.currentBidWei.toString()},
+             ${r.currentBidder ? r.currentBidder.toLowerCase() : null},
+             ${r.endTime}, ${r.status},
+             ${r.startedAtBlock.toString()},
+             ${r.creator ? r.creator.toLowerCase() : null}, NOW())
+          ON CONFLICT (auction_id) DO UPDATE
+            SET contract = EXCLUDED.contract,
+                token_id = EXCLUDED.token_id,
+                seller = EXCLUDED.seller,
+                reserve_wei = EXCLUDED.reserve_wei,
+                current_bid_wei = EXCLUDED.current_bid_wei,
+                current_bidder = EXCLUDED.current_bidder,
+                end_time = EXCLUDED.end_time,
+                status = EXCLUDED.status,
+                started_at_block = EXCLUDED.started_at_block,
+                creator = COALESCE(EXCLUDED.creator, lazy_fnd_active_auctions.creator),
+                last_indexed_at = NOW()
+        `
+      }
+    } catch {
+      /* ignore */
+    }
+  })()
+}
+
+// ─── Per-artist auction-scan freshness markers ──────────────────────────
+
+export async function readSrv2ArtistAuctionStatus(
+  artist: string,
+): Promise<{ artist: string; lastIndexedAt: Date } | null> {
+  if (!sql) return null
+  try {
+    const rows = await sql<Array<{ artist: string; last_indexed_at: Date }>>`
+      SELECT artist, last_indexed_at
+      FROM lazy_srv2_artist_auction_status
+      WHERE artist = ${artist.toLowerCase()}
+      LIMIT 1
+    `
+    if (rows.length === 0) return null
+    return { artist: rows[0].artist, lastIndexedAt: rows[0].last_indexed_at }
+  } catch {
+    return null
+  }
+}
+
+export async function writeSrv2ArtistAuctionStatus(
+  artist: string,
+): Promise<void> {
+  if (!sql) return
+  try {
+    await sql`
+      INSERT INTO lazy_srv2_artist_auction_status (artist, last_indexed_at)
+      VALUES (${artist.toLowerCase()}, NOW())
+      ON CONFLICT (artist) DO UPDATE SET last_indexed_at = NOW()
+    `
+  } catch {
+    /* ignore */
+  }
+}
+
+export async function readTransientArtistAuctionStatus(
+  artist: string,
+): Promise<{ artist: string; lastIndexedAt: Date } | null> {
+  if (!sql) return null
+  try {
+    const rows = await sql<Array<{ artist: string; last_indexed_at: Date }>>`
+      SELECT artist, last_indexed_at
+      FROM lazy_tl_artist_auction_status
+      WHERE artist = ${artist.toLowerCase()}
+      LIMIT 1
+    `
+    if (rows.length === 0) return null
+    return { artist: rows[0].artist, lastIndexedAt: rows[0].last_indexed_at }
+  } catch {
+    return null
+  }
+}
+
+export async function writeTransientArtistAuctionStatus(
+  artist: string,
+): Promise<void> {
+  if (!sql) return
+  try {
+    await sql`
+      INSERT INTO lazy_tl_artist_auction_status (artist, last_indexed_at)
+      VALUES (${artist.toLowerCase()}, NOW())
+      ON CONFLICT (artist) DO UPDATE SET last_indexed_at = NOW()
+    `
+  } catch {
+    /* ignore */
+  }
+}
+
+export async function readFoundationArtistAuctionStatus(
+  artist: string,
+): Promise<{ artist: string; lastIndexedAt: Date } | null> {
+  if (!sql) return null
+  try {
+    const rows = await sql<Array<{ artist: string; last_indexed_at: Date }>>`
+      SELECT artist, last_indexed_at
+      FROM lazy_fnd_artist_auction_status
+      WHERE artist = ${artist.toLowerCase()}
+      LIMIT 1
+    `
+    if (rows.length === 0) return null
+    return { artist: rows[0].artist, lastIndexedAt: rows[0].last_indexed_at }
+  } catch {
+    return null
+  }
+}
+
+export async function writeFoundationArtistAuctionStatus(
+  artist: string,
+): Promise<void> {
+  if (!sql) return
+  try {
+    await sql`
+      INSERT INTO lazy_fnd_artist_auction_status (artist, last_indexed_at)
+      VALUES (${artist.toLowerCase()}, NOW())
+      ON CONFLICT (artist) DO UPDATE SET last_indexed_at = NOW()
+    `
+  } catch {
+    /* ignore */
+  }
 }
 
 // ─── SR V2 / Transient / PND bid history helpers ────────────────────────

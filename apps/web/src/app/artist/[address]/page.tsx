@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { Suspense } from "react"
 import { redirect } from "next/navigation"
+import type { Address } from "viem"
 import {
   getArtistGalleryPage,
   getArtistIdentity,
@@ -9,6 +10,7 @@ import {
 import { getActiveAuctionCount } from "@/lib/auctions"
 import { getCachedTokenRefs } from "@/lib/artist-cache"
 import { pgCacheHas } from "@/lib/pg-cache"
+import { PLATFORMS } from "@/lib/platforms"
 import { ArtistHeader } from "@/components/artist/ArtistHeader"
 import { ArtistGallery } from "@/components/artist/ArtistGallery"
 import { BulkDelistPanel } from "@/components/listings/BulkDelistPanel"
@@ -105,6 +107,28 @@ export default async function ArtistPage({
 }
 
 async function ArtistPageBody({ address }: { address: string }) {
+  // Per-artist auction discovery — fire each adapter's
+  // `discoverArtistAuctions` so this artist's `lazy_*_active_auctions`
+  // rows are populated/refreshed for the home grid. Self-cooled to
+  // 2 min per (artist, platform) so repeated artist-page hits no-op.
+  // Awaited up to 3s so first-time visits commonly resolve before
+  // SSR returns; longer-running scans keep running and finalize on a
+  // subsequent visit (the next render reads whatever's in the table).
+  const auctionDiscovery = Promise.allSettled(
+    PLATFORMS.map((p) =>
+      p.discoverArtistAuctions
+        ? p.discoverArtistAuctions(address as Address)
+        : Promise.resolve(),
+    ),
+  )
+  const auctionDiscoveryDeadline = new Promise<void>((resolve) =>
+    setTimeout(resolve, 3000),
+  )
+  const auctionDiscoveryGate = Promise.race([
+    auctionDiscovery.then(() => undefined),
+    auctionDiscoveryDeadline,
+  ])
+
   // SSR only the first page: identity + first 24 tokens + active-auction
   // count (null when the artist has no sovereign house). Subsequent gallery
   // pages load client-side via /api/artist/[address]/tokens?page=N.
@@ -112,6 +136,7 @@ async function ArtistPageBody({ address }: { address: string }) {
     getArtistIdentity(address),
     getArtistGalleryPage(address, 0, INITIAL_PAGE_SIZE),
     getActiveAuctionCount(address).catch(() => null),
+    auctionDiscoveryGate,
   ])
 
   return (

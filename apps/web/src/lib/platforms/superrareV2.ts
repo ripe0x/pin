@@ -39,6 +39,7 @@ import {
   isFresh,
 } from "../lazy-index"
 import type { BidHistoryEntry } from "../auctions"
+import { discoverSuperrareV2ArtistAuctions } from "./superrareV2-scan"
 
 const SR_V2_NFT = SUPERRARE_V2_NFT[MAINNET_CHAIN_ID]
 const SR_BAZAAR = SUPERRARE_BAZAAR[MAINNET_CHAIN_ID]
@@ -848,9 +849,16 @@ export const superrareV2Adapter: PlatformAdapter = {
     return { auctions: out, buyNows: [] }
   },
 
+  async discoverArtistAuctions(artist: Address): Promise<void> {
+    await discoverSuperrareV2ArtistAuctions(artist)
+  },
+
   async getActiveAuctions(limit: number): Promise<ActiveAuctionSummary[]> {
     // Pure table read — no RPC in the home-grid request path. The
-    // scanner runs out-of-band via /api/cron/refresh-auctions.
+    // per-artist scanner runs from artist-page loads via
+    // `discoverArtistAuctions`, populating the table for whoever's
+    // been visited. Reads JOIN the per-artist status table with a
+    // 24h freshness filter so unvisited artists drop out.
     // Over-read so the artist-seller filter doesn't shrink the result
     // set below `limit` when many active rows are secondary listings.
     const rows = await readSuperrareV2ActiveAuctions(limit * 4)
