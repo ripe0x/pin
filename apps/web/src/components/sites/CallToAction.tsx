@@ -2,6 +2,12 @@
  * Footer CTA. Reuses the same DeployButtons component from the hero so the
  * deploy flow is reachable at both the top and the bottom of the page,
  * without scrolling back up.
+ *
+ * "View example" link is intentionally absent until a real standalone
+ * deployment of the template exists to point at. The previous draft
+ * pointed at /artist/<addr>, which is the main app's artist page, not
+ * an instance of this template — misleading. Add the link back when
+ * you have a deployed example URL.
  */
 import { DeployButtons, TEMPLATE_REPO_URL } from "./DeployButtons"
 
@@ -21,12 +27,6 @@ export function CallToAction() {
             className="hover:text-fg transition-colors"
           >
             View source ↗
-          </a>
-          <a
-            href="/artist/0xCB43078C32423F5348Cab5885911C3B5faE217F9"
-            className="hover:text-fg transition-colors"
-          >
-            View example ↗
           </a>
           <a
             href="https://x.com/ripe0x"

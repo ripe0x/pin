@@ -21,7 +21,7 @@ const shots = [
     src: "/sites/screenshot-detail.png",
     title: "An auction page",
     caption:
-      "Sticky artwork on the left, scrolling sidebar on the right. Bid form, current price, bid history — all live, all in-page.",
+      "Sticky artwork on the left, scrolling sidebar on the right. Bid form, current price, bid history, all live and all in-page.",
     aspect: "aspect-[16/10]",
   },
   {

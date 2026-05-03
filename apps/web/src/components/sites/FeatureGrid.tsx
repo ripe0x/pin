@@ -1,12 +1,8 @@
 /**
- * 2×3 grid of capability cards. Mirrors PND's existing feature-card
- * styling (border-only, no fill) — `text-[10px] font-mono uppercase` label
- * sitting under a status-colored dot, then a one-line description.
- *
- * Note on Foundation/SuperRare/Transient: the artist-page template
- * currently ships Sovereign-only support. The "All marketplaces" card
- * is honest about that — phrased as a roadmap rather than a present
- * promise. When Phase 2 ships, update the description.
+ * 2x3 grid of capability cards describing what's actually shipped today.
+ * Each card uses the existing PND status-dot + tiny mono caps label
+ * pattern so it reads as part of the same visual family as the rest of
+ * the app.
  */
 const features: Array<{
   label: string
@@ -14,19 +10,19 @@ const features: Array<{
   dot: string
 }> = [
   {
-    label: "Sovereign auction houses",
-    desc: "Surfaces every active and past auction on your SovereignAuctionHouse — created here or anywhere else.",
+    label: "Sovereign auction house",
+    desc: "Reads every auction on your house contract directly from the blockchain. Nothing to import, nothing to keep in sync.",
     dot: "bg-status-live",
   },
   {
-    label: "Live + past sales",
-    desc: "Active auctions with countdown and bidding. Permanent record of every settled sale.",
-    dot: "bg-status-sold",
+    label: "Live bidding",
+    desc: "Visitors connect their wallet and bid in-page. Current bid, time remaining, and bid history update on every block.",
+    dot: "bg-status-available",
   },
   {
-    label: "Bidding in-page",
-    desc: "Visitors connect their wallet and bid without leaving your site.",
-    dot: "bg-status-available",
+    label: "Settled sale archive",
+    desc: "Every settled auction stays on the page as a permanent record with the final price and the winner.",
+    dot: "bg-status-sold",
   },
   {
     label: "Link previews",
@@ -35,7 +31,7 @@ const features: Array<{
   },
   {
     label: "ENS-native",
-    desc: "Your name, avatar, bio, and social links all auto-resolve from your ENS profile. No setup.",
+    desc: "Your name, avatar, bio, and social links auto-resolve from your ENS profile. No setup. Bidders surface as their ENS names too.",
     dot: "bg-status-live",
   },
   {

@@ -2,19 +2,23 @@
  * FAQ list. Each row is a question (sans, medium weight) over an answer
  * (sans, muted, comfortable line-height). Border-b between rows for visual
  * rhythm, no expand/collapse — answers are short enough to read at a glance.
+ *
+ * Copy reflects what's actually shipped today: Sovereign auction houses
+ * only. Add entries about other marketplaces only when those code paths
+ * land.
  */
 const items: Array<{ q: string; a: string | React.ReactNode }> = [
   {
     q: "Is it really free to host?",
-    a: "Yes. Vercel Hobby and Netlify Free both handle this comfortably for any normal artist traffic — page views, link unfurls, bidding. You'd only ever need to pay if your page got tens of thousands of simultaneous viewers, in which case you can upgrade your hosting plan or add a free Alchemy key.",
+    a: "Yes. Vercel Hobby and Netlify Free both handle this comfortably for any normal artist traffic, including page views, link unfurls, and bidding. You can upgrade your hosting plan later if you ever need to.",
   },
   {
     q: "What does it cost in fees or gas?",
-    a: "Nothing from this page. Bids and purchases hit the same marketplace contracts they would on any front-end — those marketplaces' own fees still apply. SuperRare adds a 3% buyer's premium on bids, for instance; the bid form shows the total before you confirm.",
+    a: "Nothing from this page. Bids and settlement transactions hit your auction house contract directly. The protocol fee on that contract is whatever you set when you deployed it (typically 0%). No marketplace tax sits in between.",
   },
   {
     q: "How fast is it?",
-    a: "Most page loads are under 100ms. The first visitor each minute pays a tiny refresh cost (1–3 seconds) while the page pulls fresh data from the blockchain; everyone after that gets a cached version. Adding your own RPC key (free Alchemy) makes the refresh basically instant.",
+    a: "Most page loads are under 100ms. The first visitor each minute pays a tiny refresh cost (1 to 3 seconds) while the page pulls fresh data from the blockchain. Everyone after that gets a cached version. Adding your own RPC key (free Alchemy) makes the refresh basically instant.",
   },
   {
     q: "Can I customize how it looks?",
@@ -26,11 +30,11 @@ const items: Array<{ q: string; a: string | React.ReactNode }> = [
   },
   {
     q: "Do I need to host an RPC?",
-    a: "No. The page works out of the box using free public RPCs. Adding your own free Alchemy URL makes things faster but isn't required at any traffic level a personal artist page sees.",
+    a: "No. The page works out of the box using free public RPCs. Adding your own free Alchemy URL makes things faster but isn't required.",
   },
   {
-    q: "Which marketplaces are supported?",
-    a: "Today: your own Sovereign Auction House. Foundation, SuperRare, and Transient Labs are on the roadmap and will surface automatically once added — no per-marketplace setup. Past sales appear from each.",
+    q: "What about other marketplaces?",
+    a: "Today this template surfaces auctions on your Sovereign auction house only. Pulling listings from other marketplaces is on the roadmap. When that lands, you can update your deploy by re-clicking Deploy on the latest version of the template.",
   },
   {
     q: "Can I use a custom domain?",
@@ -38,10 +42,14 @@ const items: Array<{ q: string; a: string | React.ReactNode }> = [
   },
   {
     q: "Does this replace my profile in the main app?",
-    a: "No. They coexist. The main app remains your discovery surface, your gallery, and your auction-creation tool. The artist site is your own page — the place you'd link in your bio.",
+    a: "No. They coexist. The main app remains your discovery surface, your gallery, and your auction-creation tool. The artist site is your own page, the place you'd link in your bio.",
   },
   {
-    q: "What happens when a marketplace upgrades their contract?",
+    q: "What about bidding from a mobile wallet?",
+    a: "The connect button works for any browser-extension wallet (MetaMask, Rabby, Frame, Brave, Coinbase Wallet, Safe, and others). Mobile users connecting via WalletConnect QR codes are off by default to keep your deploy zero-config. The easiest workaround is to open the site inside your wallet's built-in browser. Enabling WalletConnect mobile is one optional env var if you want it.",
+  },
+  {
+    q: "What happens when the auction contract upgrades?",
     a: "You pull the latest version of this template and redeploy. We'll announce these when they happen. The deploy itself is the same one-click flow as the original setup.",
   },
 ]
