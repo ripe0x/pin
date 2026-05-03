@@ -72,10 +72,18 @@ export type BidEntry = {
  *
  * Cached for 1 hour; the value almost never changes (an artist deploys
  * exactly one house, ever).
+ *
+ * Cache-keying note: the public function reads the artist address from
+ * `getConfig()` and passes it through as an argument to the cached inner
+ * function. `unstable_cache` hashes arguments into the cache key, so the
+ * artist address ends up as part of the key. Without this, redeploying
+ * the template against a different `NEXT_PUBLIC_ARTIST_ADDRESS` while
+ * `.next/cache/` persisted would surface the *previous* artist's house
+ * (stale cache hit on the same key).
  */
-export const getArtistHouse = unstable_cache(
-  async (): Promise<Address | null> => {
-    const { factoryAddress, artistAddress } = getConfig()
+const _getArtistHouseCached = unstable_cache(
+  async (artistAddress: Address): Promise<Address | null> => {
+    const { factoryAddress } = getConfig()
     const client = getClient()
     try {
       const house = await client.readContract({
@@ -93,9 +101,14 @@ export const getArtistHouse = unstable_cache(
       return null
     }
   },
-  ["artist-house-v1"],
+  ["artist-house-v2"],
   { revalidate: 60 * 60, tags: ["artist-house"] },
 )
+
+export async function getArtistHouse(): Promise<Address | null> {
+  const { artistAddress } = getConfig()
+  return _getArtistHouseCached(artistAddress)
+}
 
 // ─── Auction list (active + past) ───────────────────────────────────────────
 
@@ -109,15 +122,23 @@ export const getArtistHouse = unstable_cache(
  * mid-scan) return what we have so far rather than throwing — the index
  * page degrades gracefully.
  */
-export const getAllAuctions = unstable_cache(
-  async (): Promise<AuctionSummary[]> => {
-    const house = await getArtistHouse()
+// See note on `getArtistHouse` above — passing artistAddress through as an
+// argument so it becomes part of the cache key, even though we don't use it
+// inside the body (we resolve via getArtistHouse, which has the same key).
+const _getAllAuctionsCached = unstable_cache(
+  async (artistAddress: Address): Promise<AuctionSummary[]> => {
+    const house = await _getArtistHouseCached(artistAddress)
     if (!house) return []
     return fetchAllAuctionsForHouse(house)
   },
-  ["all-auctions-v1"],
+  ["all-auctions-v2"],
   { revalidate: 60, tags: ["all-auctions"] },
 )
+
+export async function getAllAuctions(): Promise<AuctionSummary[]> {
+  const { artistAddress } = getConfig()
+  return _getAllAuctionsCached(artistAddress)
+}
 
 async function fetchAllAuctionsForHouse(
   house: Address,
@@ -379,22 +400,32 @@ function buildPastSummary(
 
 // ─── Single auction (for /auction/[id] detail page) ─────────────────────────
 
-export const getAuctionById = unstable_cache(
-  async (auctionId: string): Promise<AuctionSummary | null> => {
-    const all = await getAllAuctions()
+const _getAuctionByIdCached = unstable_cache(
+  async (
+    artistAddress: Address,
+    auctionId: string,
+  ): Promise<AuctionSummary | null> => {
+    const all = await _getAllAuctionsCached(artistAddress)
     return all.find((a) => a.auctionId === auctionId) ?? null
   },
-  ["auction-by-id-v1"],
+  ["auction-by-id-v2"],
   { revalidate: 60, tags: ["all-auctions"] },
 )
+
+export async function getAuctionById(
+  auctionId: string,
+): Promise<AuctionSummary | null> {
+  const { artistAddress } = getConfig()
+  return _getAuctionByIdCached(artistAddress, auctionId)
+}
 
 /**
  * Bid history for a single auction. Sorted newest first. Returns [] when
  * the auction has no bids or the scan fails.
  */
-export const getBidHistory = unstable_cache(
-  async (auctionId: string): Promise<BidEntry[]> => {
-    const house = await getArtistHouse()
+const _getBidHistoryCached = unstable_cache(
+  async (artistAddress: Address, auctionId: string): Promise<BidEntry[]> => {
+    const house = await _getArtistHouseCached(artistAddress)
     if (!house) return []
     const { factoryDeployBlock } = getConfig()
     const client = getClient()
@@ -440,6 +471,11 @@ export const getBidHistory = unstable_cache(
     entries.sort((a, b) => b.blockTime - a.blockTime)
     return entries
   },
-  ["bid-history-v1"],
+  ["bid-history-v2"],
   { revalidate: 30, tags: ["all-auctions"] },
 )
+
+export async function getBidHistory(auctionId: string): Promise<BidEntry[]> {
+  const { artistAddress } = getConfig()
+  return _getBidHistoryCached(artistAddress, auctionId)
+}
