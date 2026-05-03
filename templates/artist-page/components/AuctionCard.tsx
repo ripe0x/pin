@@ -1,81 +1,119 @@
-import Image from "next/image"
+/**
+ * Auction grid card. Mirrors the PND main app's `WorkArtistCard` pattern:
+ * border-only chrome, square aspect-ratio image, full-width strip below
+ * with title + status. No background fill, no rounded corners — the image
+ * fills its slot edge-to-edge.
+ */
 import Link from "next/link"
 import type { AuctionSummary } from "@/lib/auctions"
 import { getTokenMetadata } from "@/lib/metadata"
 import { formatEth, formatTimeRemaining } from "@/lib/format"
 
+const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
+
 export async function AuctionCard({ auction }: { auction: AuctionSummary }) {
   const metadata = await getTokenMetadata(auction.tokenContract, auction.tokenId)
   const image = metadata?.imageSmall ?? metadata?.image ?? null
-  const title = metadata?.name ?? `Token #${auction.tokenId}`
+  const title = metadata?.name ?? `#${auction.tokenId}`
+  const isVideo = image
+    ? VIDEO_EXTENSIONS.some((ext) =>
+        image.split("?")[0].toLowerCase().endsWith(ext),
+      )
+    : false
 
-  const priceLabel = labelForCard(auction)
+  const priceLine = priceLabelFor(auction)
+  const statusLabel = statusLabelFor(auction)
 
   return (
     <Link
       href={`/auction/${auction.auctionId}`}
-      className="group flex flex-col overflow-hidden border border-[hsl(var(--border))] bg-[hsl(var(--background))] transition-colors hover:bg-[hsl(var(--muted))]"
+      className="relative border border-gray-200 transition-colors hover:border-gray-400 flex flex-col h-full overflow-hidden"
     >
-      <div className="relative aspect-square w-full overflow-hidden bg-[hsl(var(--muted))]">
-        {image ? (
-          <Image
+      <div className="relative aspect-square overflow-hidden bg-gray-100">
+        {image && isVideo ? (
+          // eslint-disable-next-line jsx-a11y/media-has-caption
+          <video
+            src={image}
+            muted
+            playsInline
+            preload="metadata"
+            className="h-full w-full object-cover"
+          />
+        ) : image ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
             src={image}
             alt={title}
-            fill
-            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-            className="object-cover transition-transform duration-300 group-hover:scale-[1.02]"
-            unoptimized
+            loading="lazy"
+            className="h-full w-full object-cover"
           />
-        ) : (
-          <div className="flex h-full items-center justify-center text-sm text-[hsl(var(--muted-foreground))]">
-            No preview
-          </div>
-        )}
-        <StatusBadge status={auction.status} />
+        ) : null}
       </div>
-      <div className="flex flex-col gap-1 p-4">
-        <span className="line-clamp-1 text-base font-medium">{title}</span>
-        <span className="text-sm text-[hsl(var(--muted-foreground))]">
-          {priceLabel}
-        </span>
+
+      <div className="block p-3 space-y-1 border-t border-gray-100 min-w-0">
+        <div className="flex items-center gap-2">
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${statusDotColorFor(auction)}`}
+            aria-hidden
+          />
+          <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500">
+            {statusLabel}
+          </span>
+        </div>
+        <p className="text-sm font-medium truncate">{title}</p>
+        <p className="text-[10px] font-mono uppercase tracking-wider text-gray-500">
+          {priceLine}
+        </p>
       </div>
     </Link>
   )
 }
 
-function StatusBadge({ status }: { status: AuctionSummary["status"] }) {
-  const map: Record<AuctionSummary["status"], { label: string; cls: string }> = {
-    live: { label: "Live", cls: "bg-emerald-500 text-white" },
-    upcoming: { label: "Reserve", cls: "bg-yellow-500 text-black" },
-    settled: { label: "Sold", cls: "bg-black/80 text-white" },
-    cancelled: { label: "Cancelled", cls: "bg-zinc-500 text-white" },
+function statusLabelFor(auction: AuctionSummary): string {
+  switch (auction.status) {
+    case "live":
+      return "Live"
+    case "upcoming":
+      return "Reserve"
+    case "settled":
+      return "Sold"
+    case "cancelled":
+      return "Cancelled"
   }
-  const { label, cls } = map[status]
-  return (
-    <span
-      className={`absolute left-3 top-3 px-2.5 py-0.5 text-xs font-medium ${cls}`}
-    >
-      {label}
-    </span>
-  )
 }
 
-function labelForCard(auction: AuctionSummary): string {
-  if (auction.status === "settled" && auction.finalPrice) {
-    return `Sold for ${formatEth(auction.finalPrice)} ETH`
+function statusDotColorFor(auction: AuctionSummary): string {
+  switch (auction.status) {
+    case "live":
+      return "bg-status-live"
+    case "upcoming":
+      return "bg-status-upcoming"
+    case "settled":
+      return "bg-status-sold"
+    case "cancelled":
+      return "bg-gray-400"
   }
-  if (auction.status === "cancelled") return "Cancelled"
+}
+
+function priceLabelFor(auction: AuctionSummary): string {
+  if (auction.status === "settled" && auction.finalPrice) {
+    return `${formatEth(auction.finalPrice)} ETH`
+  }
+  if (auction.status === "cancelled") return ""
   if (auction.status === "upcoming") {
-    return `Reserve ${formatEth(auction.reservePrice)} ETH`
+    return `${formatEth(auction.reservePrice)} ETH reserve`
   }
   // live
   if (auction.amount === "0") {
-    return `Reserve ${formatEth(auction.reservePrice)} ETH`
+    return `${formatEth(auction.reservePrice)} ETH reserve`
   }
   const endTime = Number(auction.endTime)
   if (endTime > 0) {
     const remaining = endTime - Math.floor(Date.now() / 1000)
-    return `${formatEth(auction.amount)} ETH · ${formatTimeRemaining(remaining)}`
+    if (remaining > 0) {
+      return `${formatEth(auction.amount)} ETH · ${formatTimeRemaining(remaining)}`
+    }
+    return `${formatEth(auction.amount)} ETH · Ending`
   }
   return `${formatEth(auction.amount)} ETH`
 }

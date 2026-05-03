@@ -1,8 +1,22 @@
 /**
  * Pure formatting helpers — usable from both server and client without
  * pulling in viem's tree-shake-unfriendly utilities at the call site.
+ *
+ * Includes `displayFor` (ENS-or-address) since it's a pure string transform
+ * and we want to call it from both server pages and client components.
  */
 import { formatEther, type Address } from "viem"
+
+/** Display helper: ENS name if known, otherwise truncated address. */
+export function displayFor(
+  address: Address | string,
+  ensMap?: Map<string, string>,
+): string {
+  if (!address) return ""
+  const name = ensMap?.get(address.toLowerCase())
+  if (name) return name
+  return `${address.slice(0, 6)}…${address.slice(-4)}`
+}
 
 export function formatEth(wei: string | bigint, decimals = 4): string {
   const n = typeof wei === "string" ? BigInt(wei) : wei

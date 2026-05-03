@@ -1,10 +1,8 @@
-import { ArtistHeader } from "@/components/ArtistHeader"
-import { ArtistIntro } from "@/components/ArtistIntro"
+import { ArtistHero } from "@/components/ArtistHero"
 import { AuctionCard } from "@/components/AuctionCard"
+import { Footer } from "@/components/Footer"
 import { getAllAuctions, getArtistHouse } from "@/lib/auctions"
 
-// ISR — re-render every 60s so live state stays current without re-running
-// the full event scan on every visitor.
 export const revalidate = 60
 
 export default async function HomePage() {
@@ -21,53 +19,59 @@ export default async function HomePage() {
   )
 
   return (
-    <div className="min-h-screen">
-      <ArtistHeader />
-      <ArtistIntro />
-      <main className="mx-auto max-w-5xl px-6 pb-20">
-        {!house ? (
-          <NoHouseState />
-        ) : auctions.length === 0 ? (
-          <EmptyState />
-        ) : (
-          <>
-            {active.length > 0 ? (
-              <Section title="Live">
-                <Grid>
-                  {active.map((a) => (
-                    <AuctionCard key={a.auctionId} auction={a} />
-                  ))}
-                </Grid>
-              </Section>
-            ) : null}
-            {past.length > 0 ? (
-              <Section title="Past auctions">
-                <Grid>
-                  {past.map((a) => (
-                    <AuctionCard key={a.auctionId} auction={a} />
-                  ))}
-                </Grid>
-              </Section>
-            ) : null}
-          </>
-        )}
-      </main>
+    <div className="mx-auto max-w-[2000px] px-6 py-12 space-y-12">
+      <ArtistHero
+        totalAuctions={auctions.length}
+        activeAuctions={active.length}
+      />
+
+      {!house ? (
+        <NoHouseState />
+      ) : auctions.length === 0 ? (
+        <EmptyState />
+      ) : (
+        <>
+          {active.length > 0 ? (
+            <Section label="Live">
+              <Grid>
+                {active.map((a) => (
+                  <AuctionCard key={a.auctionId} auction={a} />
+                ))}
+              </Grid>
+            </Section>
+          ) : null}
+          {past.length > 0 ? (
+            <Section label="Past">
+              <Grid>
+                {past.map((a) => (
+                  <AuctionCard key={a.auctionId} auction={a} />
+                ))}
+              </Grid>
+            </Section>
+          ) : null}
+        </>
+      )}
+
+      <Footer />
     </div>
   )
 }
 
 function Section({
-  title,
+  label,
   children,
 }: {
-  title: string
+  label: string
   children: React.ReactNode
 }) {
   return (
-    <section className="mt-10">
-      <h2 className="mb-4 text-sm font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground))]">
-        {title}
-      </h2>
+    <section className="space-y-4">
+      <div className="flex items-center gap-2">
+        <span className="h-1.5 w-1.5 rounded-full bg-gray-400" aria-hidden />
+        <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500">
+          {label}
+        </span>
+      </div>
       {children}
     </section>
   )
@@ -75,7 +79,7 @@ function Section({
 
 function Grid({ children }: { children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       {children}
     </div>
   )
@@ -83,10 +87,9 @@ function Grid({ children }: { children: React.ReactNode }) {
 
 function EmptyState() {
   return (
-    <div className="mt-12 rounded-lg border border-dashed border-[hsl(var(--border))] p-12 text-center">
-      <h3 className="text-lg font-medium">No auctions yet</h3>
-      <p className="mt-2 text-sm text-[hsl(var(--muted-foreground))]">
-        Auctions will appear here once they&apos;re created on-chain.
+    <div className="border border-dashed border-gray-200 p-12 text-center">
+      <p className="text-sm text-fg-muted">
+        No auctions yet — they&rsquo;ll appear here once they&rsquo;re created on-chain.
       </p>
     </div>
   )
@@ -94,10 +97,10 @@ function EmptyState() {
 
 function NoHouseState() {
   return (
-    <div className="mt-12 rounded-lg border border-dashed border-[hsl(var(--border))] p-12 text-center">
-      <h3 className="text-lg font-medium">Auction house not deployed</h3>
-      <p className="mt-2 max-w-md text-sm text-[hsl(var(--muted-foreground))] mx-auto">
-        This wallet hasn&apos;t deployed a Sovereign auction house yet. Deploy
+    <div className="border border-dashed border-gray-200 p-12 text-center space-y-2">
+      <p className="text-sm font-medium">Auction house not deployed</p>
+      <p className="text-sm text-fg-muted max-w-md mx-auto">
+        This wallet hasn&rsquo;t deployed a Sovereign auction house yet. Deploy
         one in the main app, then auctions you create will show up here.
       </p>
     </div>

@@ -1,6 +1,10 @@
+/**
+ * Bid history list. Mirrors the PND main app's bid-history table from
+ * `SettledAuctionSummary`: tiny mono rows, bidder display + relative
+ * time on the left, amount on the right.
+ */
 import type { BidEntry } from "@/lib/auctions"
-import { displayFor } from "@/lib/ens"
-import { formatEth, formatRelativeTime } from "@/lib/format"
+import { displayFor, formatEth, formatRelativeTime } from "@/lib/format"
 
 export function BidHistory({
   bids,
@@ -11,38 +15,40 @@ export function BidHistory({
 }) {
   if (bids.length === 0) {
     return (
-      <p className="text-sm text-[hsl(var(--muted-foreground))]">
-        No bids yet.
-      </p>
+      <p className="text-[11px] font-mono text-gray-500">No bids yet.</p>
     )
   }
   return (
-    <ul className="divide-y divide-[hsl(var(--border))]">
+    <ol className="space-y-2">
       {bids.map((b) => {
         const name = displayFor(b.bidder, ensMap)
-        const isEns = ensMap?.has(b.bidder.toLowerCase()) ?? false
+        const isAddress = name.startsWith("0x")
         return (
           <li
             key={`${b.txHash}-${b.bidder}`}
-            className="flex items-center justify-between py-2.5 text-sm"
+            className="flex items-baseline justify-between text-[11px] font-mono"
           >
-            <div className="flex flex-col">
-              <a
-                href={`https://etherscan.io/tx/${b.txHash}`}
-                target="_blank"
-                rel="noreferrer"
-                className={isEns ? "hover:underline" : "font-mono hover:underline"}
+            <a
+              href={`https://etherscan.io/tx/${b.txHash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-baseline gap-2 min-w-0 hover:opacity-70 transition-opacity"
+            >
+              <span
+                className={`truncate text-gray-700 ${isAddress ? "font-mono" : ""}`}
               >
                 {name}
-              </a>
-              <span className="text-xs text-[hsl(var(--muted-foreground))]">
+              </span>
+              <span className="text-gray-400 shrink-0">
                 {formatRelativeTime(b.blockTime)}
               </span>
-            </div>
-            <span className="font-mono">{formatEth(b.amount)} ETH</span>
+            </a>
+            <span className="tabular-nums text-fg shrink-0 ml-3">
+              {formatEth(b.amount)} ETH
+            </span>
           </li>
         )
       })}
-    </ul>
+    </ol>
   )
 }

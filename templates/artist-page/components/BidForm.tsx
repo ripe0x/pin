@@ -11,7 +11,7 @@ import {
 import { ConnectButton as RKConnectButton } from "@rainbow-me/rainbowkit"
 import { sovereignAuctionHouseAbi } from "@/lib/abi"
 import { ZERO_ADDRESS } from "@/lib/config"
-import { formatEth } from "@/lib/format"
+import { displayFor, formatEth } from "@/lib/format"
 
 type Props = {
   houseAddress: Address
@@ -25,25 +25,24 @@ type Props = {
     firstBidTime: string
     tokenOwner: Address
   }
+  /** Pre-resolved ENS map for any addresses we'll display. */
+  ensMap?: Map<string, string>
 }
 
 /**
- * Client-side bid + settle controls. Polls the on-chain `auctions(id)`
- * struct every block (~12s) for live state. After a successful tx, it
- * watches the receipt and refetches to reflect the new state.
+ * Live bid + settle panel. Mirrors PND's bid panel chrome from
+ * `SettledAuctionSummary` (status header + big tabular-nums price) so
+ * pre-bid, mid-auction, and settled all read as one visual family.
  */
-export function BidForm({ houseAddress, auctionId, initial }: Props) {
+export function BidForm({ houseAddress, auctionId, initial, ensMap }: Props) {
   const { address: connected, isConnected } = useAccount()
 
-  // Live read of the auction struct. Refetches every block.
   const auctionRead = useReadContract({
     address: houseAddress,
     abi: sovereignAuctionHouseAbi,
     functionName: "auctions",
     args: [BigInt(auctionId)],
     query: {
-      // Hydrate from server-rendered initial state so the first render
-      // has the right values without flickering.
       initialData: [
         0n,
         ZERO_ADDRESS as Address,
@@ -92,7 +91,6 @@ export function BidForm({ houseAddress, auctionId, initial }: Props) {
   const { isLoading: confirming, isSuccess: confirmed } =
     useWaitForTransactionReceipt({ hash: txHash })
 
-  // Refetch after a confirmed tx.
   useEffect(() => {
     if (confirmed) {
       auctionRead.refetch()
@@ -102,25 +100,26 @@ export function BidForm({ houseAddress, auctionId, initial }: Props) {
 
   if (isCancelled) {
     return (
-      <Box>
-        <p className="text-sm text-[hsl(var(--muted-foreground))]">
+      <Panel statusDot="bg-gray-400" statusLabel="Cancelled">
+        <p className="text-[11px] font-mono text-gray-500">
           This auction was cancelled.
         </p>
-      </Box>
+      </Panel>
     )
   }
 
   if (ended) {
     return (
-      <Box>
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-[hsl(var(--muted-foreground))]">
-            Auction ended
-          </span>
-          <span className="font-mono text-sm">
-            {formatEth(amount.toString())} ETH
-          </span>
-        </div>
+      <Panel statusDot="bg-status-upcoming" statusLabel="Awaiting settlement">
+        <PriceRow
+          label="Final bid"
+          amountWei={amount}
+          subtext={
+            bidder !== ZERO_ADDRESS
+              ? `by ${displayFor(bidder, ensMap)}`
+              : undefined
+          }
+        />
         <SettleButton
           houseAddress={houseAddress}
           auctionId={auctionId}
@@ -130,31 +129,31 @@ export function BidForm({ houseAddress, auctionId, initial }: Props) {
           writeContract={writeContract}
         />
         {writeError ? <ErrorLine error={writeError} /> : null}
-      </Box>
+      </Panel>
     )
   }
 
   const remainingSec = Number(endTime) - nowSec
+  const showBidder = !awaitingFirstBid && bidder !== ZERO_ADDRESS
+
   return (
-    <Box>
-      <div className="flex items-baseline justify-between">
-        <span className="text-sm text-[hsl(var(--muted-foreground))]">
-          {awaitingFirstBid ? "Reserve price" : "Current bid"}
-        </span>
-        <span className="font-mono text-base font-medium">
-          {formatEth(awaitingFirstBid ? reservePrice.toString() : amount.toString())} ETH
-        </span>
-      </div>
-      {!awaitingFirstBid && remainingSec > 0 ? (
-        <div className="flex items-baseline justify-between">
-          <span className="text-sm text-[hsl(var(--muted-foreground))]">
-            Time remaining
-          </span>
-          <span className="font-mono text-sm">
-            <CountdownLabel target={Number(endTime)} />
-          </span>
-        </div>
-      ) : null}
+    <Panel
+      statusDot={awaitingFirstBid ? "bg-status-upcoming" : "bg-status-live"}
+      statusLabel={awaitingFirstBid ? "Awaiting first bid" : "Live auction"}
+      rightLabel={!awaitingFirstBid && remainingSec > 0 ? "Time left" : undefined}
+      rightValue={
+        !awaitingFirstBid && remainingSec > 0 ? (
+          <CountdownLabel target={Number(endTime)} />
+        ) : undefined
+      }
+    >
+      <PriceRow
+        label={awaitingFirstBid ? "Reserve price" : "Current bid"}
+        amountWei={awaitingFirstBid ? reservePrice : amount}
+        subtext={
+          showBidder ? `by ${displayFor(bidder, ensMap)}` : undefined
+        }
+      />
       <BidInput
         houseAddress={houseAddress}
         auctionId={auctionId}
@@ -166,24 +165,82 @@ export function BidForm({ houseAddress, auctionId, initial }: Props) {
         writeContract={writeContract}
       />
       {writeError ? <ErrorLine error={writeError} /> : null}
-    </Box>
+    </Panel>
   )
 }
 
-function Box({ children }: { children: React.ReactNode }) {
+function Panel({
+  statusDot,
+  statusLabel,
+  rightLabel,
+  rightValue,
+  children,
+}: {
+  statusDot: string
+  statusLabel: string
+  rightLabel?: string
+  rightValue?: React.ReactNode
+  children: React.ReactNode
+}) {
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted))] p-5">
-      {children}
+    <div className="rounded-md border border-gray-200 bg-surface overflow-hidden">
+      <div className="p-5 space-y-5">
+        <div className="flex items-center justify-between gap-6">
+          <div className="flex items-center gap-2">
+            <span className={`inline-block h-1.5 w-1.5 rounded-full ${statusDot}`} />
+            <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500">
+              {statusLabel}
+            </span>
+          </div>
+          {rightLabel ? (
+            <div className="text-right space-y-1">
+              <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+                {rightLabel}
+              </p>
+              <p className="text-sm font-mono tabular-nums leading-none text-gray-500">
+                {rightValue}
+              </p>
+            </div>
+          ) : null}
+        </div>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+function PriceRow({
+  label,
+  amountWei,
+  subtext,
+}: {
+  label: string
+  amountWei: bigint
+  subtext?: string
+}) {
+  return (
+    <div className="space-y-1">
+      <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+        {label}
+      </p>
+      <p className="text-2xl font-mono font-medium tabular-nums tracking-tight leading-none">
+        {formatEth(amountWei.toString())}{" "}
+        <span className="text-sm font-mono text-gray-500">ETH</span>
+      </p>
+      {subtext ? (
+        <p className="text-[11px] font-mono text-gray-500 pt-1">{subtext}</p>
+      ) : null}
     </div>
   )
 }
 
 function ErrorLine({ error }: { error: Error }) {
-  // Surface the most useful slice of viem error messages without dumping
-  // the full stacktrace at the visitor.
   const msg = (error.message ?? "").split("\n")[0]
   return (
-    <p className="text-sm text-red-500" role="alert">
+    <p
+      className="text-[11px] font-mono text-status-sold"
+      role="alert"
+    >
       {msg || "Transaction failed."}
     </p>
   )
@@ -238,13 +295,13 @@ function BidInput({
 
   if (!isConnected || !connected) {
     return (
-      <div className="mt-2">
+      <div className="pt-2">
         <RKConnectButton.Custom>
           {({ openConnectModal }) => (
             <button
               type="button"
               onClick={openConnectModal}
-              className="w-full rounded-md bg-[hsl(var(--accent))] px-4 py-2.5 text-sm font-medium text-[hsl(var(--accent-foreground))] hover:opacity-90"
+              className="w-full rounded-md border border-fg bg-fg px-4 py-2.5 text-sm font-medium text-bg hover:opacity-90 transition-opacity"
             >
               Connect wallet to bid
             </button>
@@ -255,8 +312,8 @@ function BidInput({
   }
 
   return (
-    <div className="mt-2 flex flex-col gap-2">
-      <label className="flex items-center gap-2 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2">
+    <div className="pt-2 space-y-2">
+      <label className="flex items-center gap-2 rounded-md border border-gray-200 bg-bg px-3 py-2 focus-within:border-gray-400 transition-colors">
         <input
           type="number"
           inputMode="decimal"
@@ -264,16 +321,16 @@ function BidInput({
           min={minEth}
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          className="flex-1 bg-transparent font-mono text-base outline-none"
+          className="flex-1 bg-transparent font-mono text-base outline-none tabular-nums"
           aria-label="Bid amount in ETH"
         />
-        <span className="text-sm text-[hsl(var(--muted-foreground))]">ETH</span>
+        <span className="font-mono text-xs text-gray-500">ETH</span>
       </label>
       <button
         type="button"
         onClick={submit}
         disabled={tooLow || isPending || confirming}
-        className="w-full rounded-md bg-[hsl(var(--accent))] px-4 py-2.5 text-sm font-medium text-[hsl(var(--accent-foreground))] disabled:cursor-not-allowed disabled:opacity-60 hover:opacity-90"
+        className="w-full rounded-md border border-fg bg-fg px-4 py-2.5 text-sm font-medium text-bg disabled:cursor-not-allowed disabled:opacity-60 hover:opacity-90 transition-opacity"
       >
         {confirming
           ? "Waiting for confirmation…"
@@ -304,13 +361,13 @@ function SettleButton({
 }) {
   if (!isConnected) {
     return (
-      <div className="mt-2">
+      <div className="pt-2">
         <RKConnectButton.Custom>
           {({ openConnectModal }) => (
             <button
               type="button"
               onClick={openConnectModal}
-              className="w-full rounded-md bg-[hsl(var(--accent))] px-4 py-2.5 text-sm font-medium text-[hsl(var(--accent-foreground))] hover:opacity-90"
+              className="w-full rounded-md border border-fg bg-fg px-4 py-2.5 text-sm font-medium text-bg hover:opacity-90 transition-opacity"
             >
               Connect wallet to settle
             </button>
@@ -331,7 +388,7 @@ function SettleButton({
         })
       }
       disabled={isPending || confirming}
-      className="mt-2 w-full rounded-md bg-[hsl(var(--accent))] px-4 py-2.5 text-sm font-medium text-[hsl(var(--accent-foreground))] disabled:cursor-not-allowed disabled:opacity-60 hover:opacity-90"
+      className="mt-2 w-full rounded-md border border-fg bg-fg px-4 py-2.5 text-sm font-medium text-bg disabled:cursor-not-allowed disabled:opacity-60 hover:opacity-90 transition-opacity"
     >
       {confirming
         ? "Waiting for confirmation…"

@@ -2,15 +2,18 @@ import { ImageResponse } from "next/og"
 import { getConfig } from "@/lib/config"
 import { getArtistDisplayName } from "@/lib/artist"
 
-// Note: this used to be the edge runtime, but resolving the artist name
-// via ENS goes through our viem client + server-only config — both Node
-// APIs. Edge cold-starts wouldn't matter for an OG endpoint anyway.
 export const runtime = "nodejs"
 
 export const alt = "Auctions"
 export const size = { width: 1200, height: 630 }
 export const contentType = "image/png"
 
+/**
+ * Index OG. Matches the PND palette: white surface, black text, gray
+ * support copy, IBM Plex Mono for the metadata caption. Crawlers cache
+ * unfurls aggressively so visual consistency with the site itself is
+ * worth the duplicated style here.
+ */
 export default async function Image() {
   const cfg = getConfig()
   const displayName = await getArtistDisplayName()
@@ -24,8 +27,8 @@ export default async function Image() {
           flexDirection: "column",
           justifyContent: "space-between",
           padding: 80,
-          background: "linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%)",
-          color: "#fafafa",
+          background: "#FFFFFF",
+          color: "#000000",
           fontFamily: "system-ui, sans-serif",
         }}
       >
@@ -34,49 +37,38 @@ export default async function Image() {
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={cfg.artistAvatarUrl}
-              width={96}
-              height={96}
+              width={72}
+              height={72}
+              style={{ borderRadius: "100%", objectFit: "cover" }}
               alt=""
             />
           ) : (
             <div
               style={{
-                width: 96,
-                height: 96,
-                background: "#262626",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 48,
-                fontWeight: 600,
+                width: 72,
+                height: 72,
+                borderRadius: "100%",
+                background: `linear-gradient(135deg, ${addressToColor(cfg.artistAddress, 0)} 0%, ${addressToColor(cfg.artistAddress, 10)} 100%)`,
               }}
-            >
-              {displayName.charAt(0).toUpperCase()}
-            </div>
+            />
           )}
           <div
             style={{
-              fontSize: 56,
+              fontSize: 36,
               fontWeight: 600,
-              letterSpacing: -1,
+              letterSpacing: -0.5,
               display: "flex",
             }}
           >
             {displayName}
           </div>
         </div>
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 12,
-          }}
-        >
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <div
             style={{
-              fontSize: 96,
-              fontWeight: 700,
-              letterSpacing: -3,
+              fontSize: 120,
+              fontWeight: 600,
+              letterSpacing: -4,
               lineHeight: 1,
               display: "flex",
             }}
@@ -86,18 +78,38 @@ export default async function Image() {
           {cfg.artistBio ? (
             <div
               style={{
-                fontSize: 28,
-                color: "#a3a3a3",
+                fontSize: 24,
+                color: "#666666",
                 maxWidth: 900,
                 display: "flex",
               }}
             >
               {cfg.artistBio}
             </div>
-          ) : null}
+          ) : (
+            <div
+              style={{
+                fontSize: 14,
+                color: "#999999",
+                fontFamily: "monospace",
+                textTransform: "uppercase",
+                letterSpacing: 1.5,
+                display: "flex",
+              }}
+            >
+              On-chain · Sovereign auction house
+            </div>
+          )}
         </div>
       </div>
     ),
     { ...size },
   )
+}
+
+function addressToColor(address: string, offset: number): string {
+  const hex = address.slice(2, 8 + offset)
+  const num = parseInt(hex, 16)
+  const h = num % 360
+  return `hsl(${h}, 60%, 70%)`
 }

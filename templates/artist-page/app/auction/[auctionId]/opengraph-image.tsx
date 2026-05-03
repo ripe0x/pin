@@ -5,21 +5,22 @@ import { getConfig } from "@/lib/config"
 import { getArtistDisplayName } from "@/lib/artist"
 import { formatEth, formatTimeRemaining } from "@/lib/format"
 
-// Note: ImageResponse can't run on edge in our app because lib/auctions
-// imports server-only and uses Next's unstable_cache. Use the Node runtime;
-// it's still free on Vercel/Netlify and has no cold-start issue worth
-// optimizing for an OG endpoint.
 export const runtime = "nodejs"
-
 export const alt = "Auction"
 export const size = { width: 1200, height: 630 }
 export const contentType = "image/png"
 
-// Cache the rendered preview for a minute. Per-auction OGs are cheap to
-// regenerate but are hit on every link unfurl, so caching here saves Reservoir
-// + RPC reads when a popular tweet/post fires off many crawler requests.
+// Cache the rendered preview for a minute. Hit on every link unfurl, so
+// caching saves RPC reads when a popular post fires off many crawler
+// requests.
 export const revalidate = 60
 
+/**
+ * Per-auction OG. Split layout: token thumbnail on the left, auction
+ * metadata on the right. White surface, black text, gray support copy
+ * to match the PND palette. Status uses the same "tiny mono caps"
+ * treatment as the main app's status pills.
+ */
 export default async function Image({
   params,
 }: {
@@ -32,23 +33,27 @@ export default async function Image({
     ? await getTokenMetadata(auction.tokenContract, auction.tokenId)
     : null
 
-  const title = metadata?.name ?? `Auction #${params.auctionId}`
+  const title = metadata?.name ?? `#${params.auctionId}`
   const image = metadata?.image ?? null
 
   let priceLabel = ""
   let statusLabel = ""
+  let statusColor = "#666666"
   if (auction) {
     if (auction.status === "settled" && auction.finalPrice) {
-      priceLabel = `Sold for ${formatEth(auction.finalPrice)} ETH`
-      statusLabel = "Settled"
+      priceLabel = `${formatEth(auction.finalPrice)} ETH`
+      statusLabel = "Sold"
+      statusColor = "#C6248B"
     } else if (auction.status === "cancelled") {
-      priceLabel = "Cancelled"
+      priceLabel = ""
       statusLabel = "Cancelled"
+      statusColor = "#999999"
     } else if (auction.amount === "0") {
-      priceLabel = `Reserve ${formatEth(auction.reservePrice)} ETH`
+      priceLabel = `${formatEth(auction.reservePrice)} ETH reserve`
       statusLabel = "Live"
+      statusColor = "#CBA1FC"
     } else {
-      priceLabel = `Current bid: ${formatEth(auction.amount)} ETH`
+      priceLabel = `${formatEth(auction.amount)} ETH`
       const endTime = Number(auction.endTime)
       if (endTime > 0) {
         const remaining = endTime - Math.floor(Date.now() / 1000)
@@ -57,6 +62,7 @@ export default async function Image({
       } else {
         statusLabel = "Live"
       }
+      statusColor = "#CBA1FC"
     }
   }
 
@@ -67,8 +73,8 @@ export default async function Image({
           width: "100%",
           height: "100%",
           display: "flex",
-          background: "#0a0a0a",
-          color: "#fafafa",
+          background: "#FFFFFF",
+          color: "#000000",
           fontFamily: "system-ui, sans-serif",
         }}
       >
@@ -76,11 +82,12 @@ export default async function Image({
           style={{
             width: 630,
             height: 630,
-            background: "#1a1a1a",
+            background: "#F2F2F2",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             overflow: "hidden",
+            borderRight: "1px solid #E6E6E6",
           }}
         >
           {image ? (
@@ -93,7 +100,16 @@ export default async function Image({
               alt=""
             />
           ) : (
-            <div style={{ fontSize: 28, color: "#525252", display: "flex" }}>
+            <div
+              style={{
+                fontSize: 14,
+                color: "#999999",
+                fontFamily: "monospace",
+                textTransform: "uppercase",
+                letterSpacing: 1.5,
+                display: "flex",
+              }}
+            >
               No preview
             </div>
           )}
@@ -112,35 +128,60 @@ export default async function Image({
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={cfg.artistAvatarUrl}
-                width={48}
-                height={48}
+                width={40}
+                height={40}
+                style={{ borderRadius: "100%", objectFit: "cover" }}
                 alt=""
               />
             ) : (
               <div
                 style={{
-                  width: 48,
-                  height: 48,
-                  background: "#262626",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 24,
-                  fontWeight: 600,
+                  width: 40,
+                  height: 40,
+                  borderRadius: "100%",
+                  background: `linear-gradient(135deg, ${addressToColor(cfg.artistAddress, 0)} 0%, ${addressToColor(cfg.artistAddress, 10)} 100%)`,
                 }}
-              >
-                {displayName.charAt(0).toUpperCase()}
-              </div>
+              />
             )}
-            <div style={{ fontSize: 28, fontWeight: 600, display: "flex" }}>
+            <div style={{ fontSize: 22, fontWeight: 500, display: "flex" }}>
               {displayName}
             </div>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+            {statusLabel ? (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <div
+                  style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: "100%",
+                    background: statusColor,
+                  }}
+                />
+                <div
+                  style={{
+                    fontSize: 14,
+                    color: "#666666",
+                    fontFamily: "monospace",
+                    textTransform: "uppercase",
+                    letterSpacing: 1.5,
+                    display: "flex",
+                  }}
+                >
+                  {statusLabel}
+                </div>
+              </div>
+            ) : null}
             <div
               style={{
                 fontSize: 56,
-                fontWeight: 700,
+                fontWeight: 600,
                 letterSpacing: -2,
                 lineHeight: 1.05,
                 display: "-webkit-box",
@@ -152,19 +193,15 @@ export default async function Image({
               {title}
             </div>
             {priceLabel ? (
-              <div style={{ fontSize: 36, color: "#fafafa", display: "flex" }}>
-                {priceLabel}
-              </div>
-            ) : null}
-            {statusLabel ? (
               <div
                 style={{
-                  fontSize: 22,
-                  color: "#a3a3a3",
+                  fontSize: 36,
+                  fontFamily: "monospace",
+                  fontWeight: 500,
                   display: "flex",
                 }}
               >
-                {statusLabel}
+                {priceLabel}
               </div>
             ) : null}
           </div>
@@ -173,4 +210,11 @@ export default async function Image({
     ),
     { ...size },
   )
+}
+
+function addressToColor(address: string, offset: number): string {
+  const hex = address.slice(2, 8 + offset)
+  const num = parseInt(hex, 16)
+  const h = num % 360
+  return `hsl(${h}, 60%, 70%)`
 }

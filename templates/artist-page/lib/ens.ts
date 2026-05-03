@@ -67,13 +67,7 @@ export async function getEnsNames(
   return map
 }
 
-/** Display helper: ENS name if known, otherwise truncated address. */
-export function displayFor(
-  address: Address | string,
-  ensMap?: Map<string, string>,
-): string {
-  if (!address) return ""
-  const name = ensMap?.get(address.toLowerCase())
-  if (name) return name
-  return `${address.slice(0, 6)}…${address.slice(-4)}`
-}
+// Note: `displayFor` lives in `./format` rather than here so client
+// components can import it without pulling in this module's `server-only`
+// marker. Server callers that need both ENS resolution and the formatter
+// should import them from their respective modules.
