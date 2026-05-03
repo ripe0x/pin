@@ -26,7 +26,32 @@ import { NextRequest, NextResponse } from "next/server"
  */
 
 const ALCHEMY_API_KEY = process.env.ALCHEMY_API_KEY
-const UPSTREAM = `https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY ?? ""}`
+
+// Upstream chain: try Alchemy first (best rate limits + archive data), then
+// fall through to public RPCs if Alchemy is down, rate-limiting us, or the
+// key is misconfigured. Each fallback supports the standard JSON-RPC method
+// set including `eth_sendRawTransaction`, so a mint/bid still goes through
+// even when the primary is unhealthy. Order matters — earliest entries are
+// tried first.
+//
+// The publicnode endpoint accepts an optional API key; we use the anonymous
+// tier. drpc/llamarpc/cloudflare are all anonymous public mainnet RPCs.
+const UPSTREAMS = [
+  ALCHEMY_API_KEY
+    ? `https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`
+    : null,
+  "https://eth.llamarpc.com",
+  "https://ethereum-rpc.publicnode.com",
+  "https://eth.drpc.org",
+  "https://rpc.ankr.com/eth",
+  "https://cloudflare-eth.com",
+  "https://1rpc.io/eth",
+].filter((u): u is string => typeof u === "string")
+
+// Per-upstream timeout. Public RPCs occasionally hang; bail fast and try the
+// next one rather than letting the wallet wait the full Vercel function
+// budget.
+const UPSTREAM_TIMEOUT_MS = 6_000
 
 // Methods we expect viem + wagmi + RainbowKit to call. Anything else gets
 // rejected. Keep this list tight; widen only when something legitimate breaks.
@@ -121,10 +146,59 @@ function rejectMethod(id: number | string | null | undefined, method: string) {
   )
 }
 
+async function tryUpstream(
+  url: string,
+  payload: string,
+): Promise<{ ok: true; status: number; text: string } | { ok: false }> {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), UPSTREAM_TIMEOUT_MS)
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: payload,
+      cache: "no-store",
+      signal: ctrl.signal,
+    })
+    // 5xx and 429 mean the upstream is unhealthy / rate-limiting us; fall
+    // through to the next one. 4xx other than 429 usually means the request
+    // itself is bad — surfacing that to the client is more useful than
+    // pretending another RPC will accept it, so we treat those as success.
+    if (res.status >= 500 || res.status === 429) {
+      return { ok: false }
+    }
+    const text = await res.text()
+    // Some public RPCs return 200 with a JSON-RPC error like "internal
+    // error" or "method handler crashed" instead of a proper 5xx. If the
+    // body parses as an RPC error and the code looks transient, fall
+    // through. Don't fall through on legitimate -32601 (method not found)
+    // for write methods etc., since the next public RPC is unlikely to
+    // accept them either; just on -32603 (internal error) and -32005
+    // (limit exceeded), which signal upstream-side failure.
+    try {
+      const parsed: unknown = JSON.parse(text)
+      const entries = Array.isArray(parsed) ? parsed : [parsed]
+      const transient = entries.some((e) => {
+        if (!e || typeof e !== "object") return false
+        const err = (e as { error?: { code?: number } }).error
+        return err?.code === -32603 || err?.code === -32005
+      })
+      if (transient) return { ok: false }
+    } catch {
+      // not JSON — let it through as-is
+    }
+    return { ok: true, status: res.status, text }
+  } catch {
+    return { ok: false }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export async function POST(req: NextRequest) {
-  if (!ALCHEMY_API_KEY) {
+  if (UPSTREAMS.length === 0) {
     return NextResponse.json(
-      { error: "ALCHEMY_API_KEY env var not configured on server" },
+      { error: "no upstream RPC configured on server" },
       { status: 500 },
     )
   }
@@ -156,21 +230,24 @@ export async function POST(req: NextRequest) {
 
   // Forward verbatim. We pass the original body bytes through so encoding
   // matches exactly what viem sent (including key ordering, etc.).
-  const upstream = await fetch(UPSTREAM, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-    // Don't let Next cache RPC responses — they're highly variable and the
-    // upstream is already fast.
-    cache: "no-store",
-  })
+  const payload = JSON.stringify(body)
 
-  // Pass the upstream body and status straight through. Strip headers we
-  // don't want to leak (e.g., upstream rate-limit headers that would confuse
-  // viem's retry).
-  const text = await upstream.text()
-  return new NextResponse(text, {
-    status: upstream.status,
-    headers: { "content-type": "application/json" },
-  })
+  // Try each upstream in order until one returns a healthy response. For a
+  // mint/bid (`eth_sendRawTransaction`) this means the transaction still
+  // gets broadcast even if Alchemy is down — any of the public fallbacks
+  // will gossip it to the mempool.
+  for (const url of UPSTREAMS) {
+    const result = await tryUpstream(url, payload)
+    if (result.ok) {
+      return new NextResponse(result.text, {
+        status: result.status,
+        headers: { "content-type": "application/json" },
+      })
+    }
+  }
+
+  return NextResponse.json(
+    { error: "all upstream RPCs failed" },
+    { status: 502 },
+  )
 }
