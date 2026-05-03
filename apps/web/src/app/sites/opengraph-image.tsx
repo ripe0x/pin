@@ -37,32 +37,33 @@ export default async function Image() {
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
           <div
             style={{
-              fontSize: 110,
+              fontSize: 88,
               fontWeight: 600,
-              letterSpacing: -4,
-              lineHeight: 1,
+              letterSpacing: -3,
+              lineHeight: 1.05,
               display: "flex",
             }}
           >
-            Run your own
+            Run your own auctions,
             <br />
-            auction page.
+            on your own url.
           </div>
           <div
             style={{
               fontFamily: "monospace",
-              fontSize: 36,
+              fontSize: 32,
               fontWeight: 500,
               color: "#374151",
               display: "flex",
               flexDirection: "column",
-              gap: 4,
+              gap: 2,
               lineHeight: 1.3,
             }}
           >
             <span>your work.</span>
-            <span>your URL.</span>
-            <span>your collectors.</span>
+            <span>your contracts.</span>
+            <span>your fees.</span>
+            <span>now, your url.</span>
           </div>
         </div>
       </div>

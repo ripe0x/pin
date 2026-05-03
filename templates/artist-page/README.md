@@ -14,9 +14,9 @@ Your own auction page, on your own domain — pulling live and past auction data
 
 Click one of these and you'll be walked through deploying your own copy. You'll need an Ethereum wallet address.
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FYOUR_ORG%2Fartist-auction-page&env=NEXT_PUBLIC_ARTIST_ADDRESS&envDescription=Your%20wallet%20address)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fripe0x%2Fartist-auction-page&env=NEXT_PUBLIC_ARTIST_ADDRESS&envDescription=Your%20wallet%20address)
 
-[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/YOUR_ORG/artist-auction-page)
+[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/ripe0x/artist-auction-page)
 
 > **Vercel vs. Netlify?** Both work, both are free for traffic at this scale. Vercel's "Hobby" tier technically says it's for non-commercial use; Netlify has no such restriction. If unsure, pick Netlify.
 
