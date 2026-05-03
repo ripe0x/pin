@@ -4,11 +4,13 @@ import postgres from "postgres"
 /**
  * Single shared Postgres client for the web app.
  *
- * Connection pooling on serverless: `max: 5` keeps each Netlify Function
- * sandbox to a small pool. Without this, function bursts can exhaust the
- * Postgres `max_connections` limit. If we ever observe connection
- * exhaustion under load, switch to PgBouncer (Railway add-on) or Neon's
- * pooled `?sslmode=require` URL.
+ * Connection pooling on serverless: `max: 2` keeps each Netlify Function
+ * sandbox to a tiny pool. Netlify can spin up dozens of sandboxes under
+ * burst — `max × sandboxes` has to stay under Postgres `max_connections`,
+ * and we observed "sorry, too many clients already" with `max: 5`. Almost
+ * every request only issues 1–2 short-lived queries, so 2 connections per
+ * sandbox is plenty. If we need to grow the pool further, switch to
+ * PgBouncer (Railway add-on) or Neon's pooled `?sslmode=require` URL.
  *
  * **Kill switch.** When `DATABASE_URL` is unset (e.g. on a preview deploy
  * before Postgres is provisioned, or as an explicit disable), we export
@@ -31,7 +33,7 @@ const DATABASE_URL = process.env.DATABASE_URL
 function makeClient(): ReturnType<typeof postgres> | null {
   if (!DATABASE_URL) return null
   return postgres(DATABASE_URL, {
-    max: 5,
+    max: 2,
     idle_timeout: 20,
     connect_timeout: 10,
     // Postgres prepared statements aren't useful in serverless because each

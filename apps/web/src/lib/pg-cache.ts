@@ -16,10 +16,30 @@ import { sql } from "./db"
  * all — same as the existing `unstable_cache`-only path. Drop the env var
  * to disable L2 instantly.
  *
+ * **Null envelope.** The `cache_entries.value` column is JSONB NOT NULL, but
+ * fetchers legitimately return `null` (no ENS for an address, no last sale
+ * for a token, no on-chain metadata). Writing raw `null` violates the
+ * constraint and silently fails — meaning nulls would never cache, and the
+ * upstream fetcher would re-run on every request. We wrap every value as
+ * `{v: value}` so `null` becomes `{v: null}` (a non-null JSONB object). Read
+ * path unwraps; legacy raw values written before this change pass through
+ * unchanged until they expire.
+ *
  * Bigint handling: callers serialize bigints to strings before caching and
  * hydrate on the way out. Same pattern the existing `unstable_cache`
  * wrappers use, since both layers rely on JSON serialization.
  */
+
+type Envelope<T> = { v: T }
+
+function isEnvelope<T>(v: unknown): v is Envelope<T> {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    "v" in (v as Record<string, unknown>) &&
+    Object.keys(v as Record<string, unknown>).length === 1
+  )
+}
 
 export async function pgCache<T>(
   key: string,
@@ -33,13 +53,18 @@ export async function pgCache<T>(
   // and one's INSERT is overwritten by the other's. The total upstream
   // cost is at most 2× per TTL boundary, which is fine.
   try {
-    const rows = await sql<Array<{ value: T }>>`
+    const rows = await sql<Array<{ value: unknown }>>`
       SELECT value
       FROM cache_entries
       WHERE key = ${key} AND expires_at > NOW()
       LIMIT 1
     `
-    if (rows.length > 0) return rows[0].value
+    if (rows.length > 0) {
+      const raw = rows[0].value
+      // New format: {v: actual}. Old format: actual itself. Distinguish by
+      // shape — a single-key object with key "v" is the envelope.
+      return isEnvelope<T>(raw) ? raw.v : (raw as T)
+    }
   } catch {
     // DB transient failure — fall through to the fetcher. The L1 layer
     // above will at least catch this within the current sandbox.
@@ -62,9 +87,10 @@ export async function pgCache<T>(
   // the string AGAIN, producing a JSONB-string-of-JSON instead of a
   // JSONB-object. Reads returned strings, callers did `.name` on them and
   // got `undefined`, and every cached metadata fell back to placeholders.
+  const envelope: Envelope<T> = { v: value }
   void sql`
     INSERT INTO cache_entries (key, value, expires_at)
-    VALUES (${key}, ${sql.json(value as never)}, NOW() + (${ttlSec} || ' seconds')::interval)
+    VALUES (${key}, ${sql.json(envelope as never)}, NOW() + (${ttlSec} || ' seconds')::interval)
     ON CONFLICT (key) DO UPDATE
       SET value = EXCLUDED.value,
           expires_at = EXCLUDED.expires_at,
