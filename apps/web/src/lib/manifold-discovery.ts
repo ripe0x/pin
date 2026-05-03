@@ -20,7 +20,6 @@
  */
 import {
   createPublicClient,
-  http,
   type Address,
   type PublicClient,
 } from "viem"
@@ -33,7 +32,7 @@ import {
   LAZY_TTL,
   isFresh,
 } from "./lazy-index"
-import { getAlchemyMainnetUrl } from "./alchemy-rpc"
+import { getAlchemyMainnetUrl, loggingHttpTransport } from "./alchemy-rpc"
 
 // Marker every Manifold Creator Core (V1+) returns true for. From
 // CreatorCore.sol: `bytes4 private constant _CREATOR_CORE_V1 = 0x28f10a21`.
@@ -88,12 +87,10 @@ const contractListCache = new Map<
   { at: number; contracts: Address[] }
 >()
 
-function getClient(): PublicClient {
+function getClient(route?: string): PublicClient {
   return createPublicClient({
     chain: mainnet,
-    transport: http(
-      getAlchemyMainnetUrl(),
-    ),
+    transport: loggingHttpTransport(getAlchemyMainnetUrl(), route),
   })
 }
 

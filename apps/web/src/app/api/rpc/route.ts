@@ -1,4 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
+import { getClientIp } from "@/lib/rate-limit"
+import {
+  hashIp,
+  logRpcEvent,
+  refererPathname,
+  upstreamHost,
+} from "@/lib/rpc-log"
 
 /**
  * Server-side JSON-RPC proxy for the public Alchemy mainnet endpoint.
@@ -96,12 +103,6 @@ const counts: Map<string, Counter> = (
   ((
     globalThis as unknown as { __pndRpcLimiter?: Map<string, Counter> }
   ).__pndRpcLimiter = new Map())
-
-function getClientIp(req: NextRequest): string {
-  const xff = req.headers.get("x-forwarded-for")
-  if (xff) return xff.split(",")[0].trim()
-  return req.headers.get("x-real-ip") ?? "unknown"
-}
 
 function rateLimit(ip: string): { ok: true } | { ok: false; retryAfter: number } {
   const now = Date.now()
@@ -245,9 +246,27 @@ export async function POST(req: NextRequest) {
   )
   const upstreams = isWriteBatch ? UPSTREAMS : UPSTREAMS.slice(0, 1)
 
+  // Log one event per request, attributed to the first batch entry's
+  // method. Batches are typically 1–2 entries; if we ever need precise
+  // per-method volume in batches we'd add a `batch_size` column.
+  const logMethod = batch[0]?.method ?? "unknown"
+  const referer = refererPathname(req.headers.get("referer"))
+  const ipHash = hashIp(ip)
+  const t0 = Date.now()
+
   for (const url of upstreams) {
     const result = await tryUpstream(url, payload)
     if (result.ok) {
+      logRpcEvent({
+        source: "proxy",
+        method: logMethod,
+        referer,
+        ipHash,
+        durationMs: Date.now() - t0,
+        status: result.status,
+        upstream: upstreamHost(url),
+        ok: true,
+      })
       return new NextResponse(result.text, {
         status: result.status,
         headers: { "content-type": "application/json" },
@@ -255,6 +274,16 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  logRpcEvent({
+    source: "proxy",
+    method: logMethod,
+    referer,
+    ipHash,
+    durationMs: Date.now() - t0,
+    status: 502,
+    upstream: null,
+    ok: false,
+  })
   return NextResponse.json(
     { error: "all upstream RPCs failed" },
     { status: 502 },

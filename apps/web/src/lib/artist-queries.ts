@@ -5,11 +5,11 @@
  * Used by both the artist micro-site page and the preserve flow.
  */
 import { unstable_cache } from "next/cache"
-import { createPublicClient, http, type Address } from "viem"
+import { createPublicClient, type Address } from "viem"
 import { mainnet } from "viem/chains"
 import { normalize } from "viem/ens"
 import { pgCache } from "./pg-cache"
-import { getAlchemyMainnetUrl } from "./alchemy-rpc"
+import { getAlchemyMainnetUrl, loggingHttpTransport } from "./alchemy-rpc"
 import { nftMarketAbi } from "@pin/abi"
 import { NFT_MARKET, MAINNET_CHAIN_ID } from "@pin/addresses"
 import {
@@ -23,11 +23,14 @@ import {
 } from "./artist-cache"
 import { extractCid, ipfsToHttp } from "@pin/shared"
 
+// Module-level singleton used for ENS lookups + a multicall in
+// `enrichWithBuyPrices`. Route is unattributed (passed as undefined)
+// because this client is shared across many call paths; if a specific
+// fanout becomes a hot spot in `rpc_events`, refactor that call site
+// to use its own per-route client.
 const client = createPublicClient({
   chain: mainnet,
-  transport: http(
-    getAlchemyMainnetUrl(),
-  ),
+  transport: loggingHttpTransport(getAlchemyMainnetUrl(), undefined),
 })
 
 /**

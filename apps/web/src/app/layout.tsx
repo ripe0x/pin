@@ -1,8 +1,11 @@
 import type { Metadata } from "next"
+import Script from "next/script"
 import { SITE_TITLE, SITE_DESCRIPTION, SITE_URL } from "@pin/shared"
 import { Providers } from "@/components/Providers"
 import { Navbar } from "@/components/Navbar"
 import "./globals.css"
+
+const PLAUSIBLE_DOMAIN = process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -43,6 +46,13 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap"
           rel="stylesheet"
         />
+        {PLAUSIBLE_DOMAIN ? (
+          <Script
+            src="https://plausible.io/js/script.js"
+            data-domain={PLAUSIBLE_DOMAIN}
+            strategy="afterInteractive"
+          />
+        ) : null}
       </head>
       <body className="min-h-screen antialiased">
         <Providers>

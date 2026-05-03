@@ -9,14 +9,13 @@
 import { unstable_cache } from "next/cache"
 import {
   createPublicClient,
-  http,
   parseAbiItem,
   type Address,
 } from "viem"
 import { mainnet } from "viem/chains"
 import { erc721Abi, nftMarketAbi, sovereignAuctionHouseAbi, sovereignAuctionHouseFactoryAbi } from "@pin/abi"
 import { pgCache } from "./pg-cache"
-import { getAlchemyMainnetUrl } from "./alchemy-rpc"
+import { getAlchemyMainnetUrl, loggingHttpTransport } from "./alchemy-rpc"
 import { getSovereignHouseOf } from "./sovereign-house"
 import { getActiveAuctionCountFromIndexer } from "./indexer-queries"
 import {
@@ -122,12 +121,10 @@ const FND_MARKET_DEPLOY_BLOCK = 13_840_000n
  *  earlier scans are wasted, later misses houses. */
 const SOVEREIGN_FACTORY_DEPLOY_BLOCK = 24_973_294n
 
-function getClient() {
+function getClient(route?: string) {
   return createPublicClient({
     chain: mainnet,
-    transport: http(
-      getAlchemyMainnetUrl(),
-    ),
+    transport: loggingHttpTransport(getAlchemyMainnetUrl(), route),
   })
 }
 

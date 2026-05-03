@@ -10,7 +10,6 @@
 import { unstable_cache } from "next/cache"
 import {
   createPublicClient,
-  http,
   parseAbiItem,
   type Address,
 } from "viem"
@@ -18,7 +17,7 @@ import { mainnet } from "viem/chains"
 import { foundationNftAbi, collectionFactoryAbi, erc721Abi } from "@pin/abi"
 import { getAssetTransfers, getOwnersForNft } from "./alchemy"
 import { pgCache } from "./pg-cache"
-import { getAlchemyMainnetUrl } from "./alchemy-rpc"
+import { getAlchemyMainnetUrl, loggingHttpTransport } from "./alchemy-rpc"
 import { isRpcDisabled } from "./rpc-circuit"
 import {
   FOUNDATION_NFT,
@@ -104,7 +103,7 @@ export type TokenRef = {
   platform?: PlatformId
 }
 
-export function getClient() {
+export function getClient(route?: string) {
   return createPublicClient({
     chain: mainnet,
     // `batch: true` collapses concurrent JSON-RPC calls (within the same
@@ -112,8 +111,9 @@ export function getClient() {
     // `getBlock` fan-out below — N parallel reads become 1 HTTP request,
     // same total CU cost upstream but much less HTTP overhead. Alchemy
     // supports JSON-RPC batching natively.
-    transport: http(
+    transport: loggingHttpTransport(
       getAlchemyMainnetUrl(),
+      route,
       { batch: true },
     ),
   })

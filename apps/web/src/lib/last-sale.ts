@@ -16,14 +16,13 @@
  */
 import {
   createPublicClient,
-  http,
   parseAbiItem,
   type Address,
 } from "viem"
 import { mainnet } from "viem/chains"
 import { unstable_cache } from "next/cache"
 import { pgCache } from "./pg-cache"
-import { getAlchemyMainnetUrl } from "./alchemy-rpc"
+import { getAlchemyMainnetUrl, loggingHttpTransport } from "./alchemy-rpc"
 import {
   readFoundationLastSale,
   writeFoundationLastSale,
@@ -76,12 +75,10 @@ export type LastSale = {
   txHash: string
 }
 
-function getClient() {
+function getClient(route?: string) {
   return createPublicClient({
     chain: mainnet,
-    transport: http(
-      getAlchemyMainnetUrl(),
-    ),
+    transport: loggingHttpTransport(getAlchemyMainnetUrl(), route),
   })
 }
 

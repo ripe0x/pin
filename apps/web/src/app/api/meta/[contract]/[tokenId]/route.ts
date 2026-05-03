@@ -3,6 +3,7 @@ import { ipfsToHttp } from "@pin/shared"
 import { resolveTokenMetadataDirect } from "@/lib/onchain-discovery"
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit"
 import { isCrawlerUserAgent } from "@/lib/crawler"
+import { withRouteContext } from "@/lib/rpc-log"
 
 /**
  * OG-metadata endpoint for social embeds (Discord cards, Twitter previews,
@@ -56,7 +57,10 @@ export async function GET(
   const { contract, tokenId } = await params
 
   try {
-    const metadata = await resolveTokenMetadataDirect(contract, tokenId)
+    const metadata = await withRouteContext(
+      "/api/meta/[contract]/[tokenId]",
+      () => resolveTokenMetadataDirect(contract, tokenId),
+    )
 
     if (!metadata) {
       return NextResponse.json(

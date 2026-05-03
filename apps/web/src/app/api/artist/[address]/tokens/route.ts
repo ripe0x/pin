@@ -3,6 +3,7 @@ import { getArtistGalleryPage } from "@/lib/artist-queries"
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit"
 import { isCrawlerUserAgent } from "@/lib/crawler"
 import { withSingleFlight } from "@/lib/single-flight"
+import { withRouteContext } from "@/lib/rpc-log"
 
 const DEFAULT_PAGE_SIZE = 24
 const MAX_PAGE_SIZE = 100
@@ -54,9 +55,13 @@ export async function GET(
     // Single-flight: concurrent same-(address,page,pageSize) callers
     // serialize on a Postgres lock so a stampede collapses to one
     // expensive fetch + N-1 cache hits inside the wrapped function.
-    const result = await withSingleFlight(
-      `gallery-page:${address.toLowerCase()}:${page}:${pageSize}`,
-      () => getArtistGalleryPage(address, page, pageSize),
+    const result = await withRouteContext(
+      "/api/artist/[address]/tokens",
+      () =>
+        withSingleFlight(
+          `gallery-page:${address.toLowerCase()}:${page}:${pageSize}`,
+          () => getArtistGalleryPage(address, page, pageSize),
+        ),
     )
 
     return NextResponse.json(

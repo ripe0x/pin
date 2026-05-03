@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { discoverFoundationPinnedTokens } from "@/lib/onchain-discovery"
+import { withRouteContext } from "@/lib/rpc-log"
 
 export async function GET(
   _req: NextRequest,
@@ -15,7 +16,10 @@ export async function GET(
   }
 
   try {
-    const tokens = await discoverFoundationPinnedTokens(address)
+    const tokens = await withRouteContext(
+      "/api/artist/[address]/preserve-tokens",
+      () => discoverFoundationPinnedTokens(address),
+    )
 
     return NextResponse.json(
       { address, tokens, count: tokens.length },

@@ -20,6 +20,8 @@
  * `ALCHEMY_API_KEY`. They never reach the client bundle.
  */
 
+import { logRpcEvent, upstreamHost } from "./rpc-log"
+
 const ALCHEMY_API_KEY = process.env.ALCHEMY_API_KEY
 
 const RPC_URL = ALCHEMY_API_KEY
@@ -79,6 +81,7 @@ type GetAssetTransfersParams = {
  */
 export async function getAssetTransfers(
   params: GetAssetTransfersParams,
+  opts?: { route?: string },
 ): Promise<AssetTransfer[]> {
   if (!RPC_URL) return []
 
@@ -103,7 +106,9 @@ export async function getAssetTransfers(
         },
       ],
     }
+    const t0 = Date.now()
     let json: { result?: { transfers: AssetTransfer[]; pageKey?: string } }
+    let status: number | undefined
     try {
       const res = await fetch(RPC_URL, {
         method: "POST",
@@ -111,11 +116,41 @@ export async function getAssetTransfers(
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(15_000),
       })
-      if (!res.ok) return all
+      status = res.status
+      if (!res.ok) {
+        logRpcEvent({
+          source: "server",
+          route: opts?.route,
+          method: "alchemy_getAssetTransfers",
+          durationMs: Date.now() - t0,
+          status,
+          upstream: upstreamHost(RPC_URL),
+          ok: false,
+        })
+        return all
+      }
       json = (await res.json()) as typeof json
     } catch {
+      logRpcEvent({
+        source: "server",
+        route: opts?.route,
+        method: "alchemy_getAssetTransfers",
+        durationMs: Date.now() - t0,
+        status,
+        upstream: upstreamHost(RPC_URL),
+        ok: false,
+      })
       return all
     }
+    logRpcEvent({
+      source: "server",
+      route: opts?.route,
+      method: "alchemy_getAssetTransfers",
+      durationMs: Date.now() - t0,
+      status,
+      upstream: upstreamHost(RPC_URL),
+      ok: true,
+    })
 
     const transfers = json.result?.transfers ?? []
     all.push(...transfers)
@@ -145,6 +180,7 @@ export type OwnedNft = {
 export async function getNFTsForOwner(
   wallet: string,
   contractAddresses: string[],
+  opts?: { route?: string },
 ): Promise<OwnedNft[]> {
   if (!NFT_URL || contractAddresses.length === 0) return []
 
@@ -166,17 +202,51 @@ export async function getNFTsForOwner(
       for (const c of batch) url.searchParams.append("contractAddresses[]", c)
       if (pageKey) url.searchParams.set("pageKey", pageKey)
 
+      const t0 = Date.now()
       let json: {
         ownedNfts?: Array<{ contract: { address: string }; tokenId: string }>
         pageKey?: string
       }
+      let status: number | undefined
+      let ok = false
       try {
         const res = await fetch(url, { signal: AbortSignal.timeout(15_000) })
-        if (!res.ok) break
+        status = res.status
+        if (!res.ok) {
+          logRpcEvent({
+            source: "server",
+            route: opts?.route,
+            method: "alchemy_getNFTsForOwner",
+            durationMs: Date.now() - t0,
+            status,
+            upstream: upstreamHost(NFT_URL),
+            ok: false,
+          })
+          break
+        }
         json = (await res.json()) as typeof json
+        ok = true
       } catch {
+        logRpcEvent({
+          source: "server",
+          route: opts?.route,
+          method: "alchemy_getNFTsForOwner",
+          durationMs: Date.now() - t0,
+          status,
+          upstream: upstreamHost(NFT_URL),
+          ok: false,
+        })
         break
       }
+      logRpcEvent({
+        source: "server",
+        route: opts?.route,
+        method: "alchemy_getNFTsForOwner",
+        durationMs: Date.now() - t0,
+        status,
+        upstream: upstreamHost(NFT_URL),
+        ok,
+      })
       for (const n of json.ownedNfts ?? []) {
         out.push({ contract: n.contract.address, tokenId: n.tokenId })
       }
@@ -198,6 +268,7 @@ export async function getNFTsForOwner(
 export async function getAllNFTsForOwner(
   wallet: string,
   maxPages = 20,
+  opts?: { route?: string },
 ): Promise<OwnedNft[]> {
   if (!NFT_URL) return []
   const out: OwnedNft[] = []
@@ -210,17 +281,51 @@ export async function getAllNFTsForOwner(
     url.searchParams.set("pageSize", "100")
     if (pageKey) url.searchParams.set("pageKey", pageKey)
 
+    const t0 = Date.now()
     let json: {
       ownedNfts?: Array<{ contract: { address: string }; tokenId: string }>
       pageKey?: string
     }
+    let status: number | undefined
+    let ok = false
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(15_000) })
-      if (!res.ok) break
+      status = res.status
+      if (!res.ok) {
+        logRpcEvent({
+          source: "server",
+          route: opts?.route,
+          method: "alchemy_getAllNFTsForOwner",
+          durationMs: Date.now() - t0,
+          status,
+          upstream: upstreamHost(NFT_URL),
+          ok: false,
+        })
+        break
+      }
       json = (await res.json()) as typeof json
+      ok = true
     } catch {
+      logRpcEvent({
+        source: "server",
+        route: opts?.route,
+        method: "alchemy_getAllNFTsForOwner",
+        durationMs: Date.now() - t0,
+        status,
+        upstream: upstreamHost(NFT_URL),
+        ok: false,
+      })
       break
     }
+    logRpcEvent({
+      source: "server",
+      route: opts?.route,
+      method: "alchemy_getAllNFTsForOwner",
+      durationMs: Date.now() - t0,
+      status,
+      upstream: upstreamHost(NFT_URL),
+      ok,
+    })
     for (const n of json.ownedNfts ?? []) {
       out.push({ contract: n.contract.address, tokenId: n.tokenId })
     }
@@ -248,16 +353,40 @@ export type NftOwner = {
 export async function getOwnersForNft(
   contract: string,
   tokenId: string,
+  opts?: { route?: string },
 ): Promise<NftOwner[]> {
   if (!NFT_URL) return []
   const url = new URL(`${NFT_URL}/getOwnersForNFT`)
   url.searchParams.set("contractAddress", contract)
   url.searchParams.set("tokenId", tokenId)
 
+  const t0 = Date.now()
+  let status: number | undefined
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(15_000) })
-    if (!res.ok) return []
+    status = res.status
+    if (!res.ok) {
+      logRpcEvent({
+        source: "server",
+        route: opts?.route,
+        method: "alchemy_getOwnersForNFT",
+        durationMs: Date.now() - t0,
+        status,
+        upstream: upstreamHost(NFT_URL),
+        ok: false,
+      })
+      return []
+    }
     const json = (await res.json()) as { owners?: string[] }
+    logRpcEvent({
+      source: "server",
+      route: opts?.route,
+      method: "alchemy_getOwnersForNFT",
+      durationMs: Date.now() - t0,
+      status,
+      upstream: upstreamHost(NFT_URL),
+      ok: true,
+    })
     // The simple endpoint returns a flat owner list; we synthesize a
     // tokenBalances shape so callers don't care about the API quirk.
     return (json.owners ?? []).map((ownerAddress) => ({
@@ -265,6 +394,15 @@ export async function getOwnersForNft(
       tokenBalances: [{ tokenId, balance: "1" }],
     }))
   } catch {
+    logRpcEvent({
+      source: "server",
+      route: opts?.route,
+      method: "alchemy_getOwnersForNFT",
+      durationMs: Date.now() - t0,
+      status,
+      upstream: upstreamHost(NFT_URL),
+      ok: false,
+    })
     return []
   }
 }
