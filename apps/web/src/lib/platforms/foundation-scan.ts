@@ -15,6 +15,7 @@ import {
   isFresh,
   type LazyFoundationActiveAuction,
 } from "../lazy-index"
+import { getAlchemyMainnetUrl } from "../alchemy-rpc"
 
 const FND_NFT_MARKET = NFT_MARKET[MAINNET_CHAIN_ID]
 // NFTMarket proxy was deployed mid-2021. Per-artist `getLogs` calls
@@ -46,8 +47,7 @@ function getClient() {
   return createPublicClient({
     chain: mainnet,
     transport: http(
-      process.env.ALCHEMY_MAINNET_URL ??
-        "https://eth.llamarpc.com",
+      getAlchemyMainnetUrl(),
       { batch: true },
     ),
   })

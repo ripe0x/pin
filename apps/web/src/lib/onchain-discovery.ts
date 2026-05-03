@@ -18,6 +18,7 @@ import { mainnet } from "viem/chains"
 import { foundationNftAbi, collectionFactoryAbi, erc721Abi } from "@pin/abi"
 import { getAssetTransfers, getOwnersForNft } from "./alchemy"
 import { pgCache } from "./pg-cache"
+import { getAlchemyMainnetUrl } from "./alchemy-rpc"
 import {
   FOUNDATION_NFT,
   COLLECTION_FACTORY_V1,
@@ -107,7 +108,7 @@ export function getClient() {
     // same total CU cost upstream but much less HTTP overhead. Alchemy
     // supports JSON-RPC batching natively.
     transport: http(
-      process.env.ALCHEMY_MAINNET_URL ?? "https://eth.llamarpc.com",
+      getAlchemyMainnetUrl(),
       { batch: true },
     ),
   })

@@ -40,6 +40,7 @@ import {
 } from "../lazy-index"
 import type { BidHistoryEntry } from "../auctions"
 import { discoverSuperrareV2ArtistAuctions } from "./superrareV2-scan"
+import { getAlchemyMainnetUrl } from "../alchemy-rpc"
 
 const SR_V2_NFT = SUPERRARE_V2_NFT[MAINNET_CHAIN_ID]
 const SR_BAZAAR = SUPERRARE_BAZAAR[MAINNET_CHAIN_ID]
@@ -98,8 +99,7 @@ function getClient() {
   return createPublicClient({
     chain: mainnet,
     transport: http(
-      process.env.ALCHEMY_MAINNET_URL ??
-        "https://eth.llamarpc.com",
+      getAlchemyMainnetUrl(),
       { batch: true },
     ),
   })

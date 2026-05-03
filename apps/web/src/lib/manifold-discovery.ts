@@ -33,6 +33,7 @@ import {
   LAZY_TTL,
   isFresh,
 } from "./lazy-index"
+import { getAlchemyMainnetUrl } from "./alchemy-rpc"
 
 // Marker every Manifold Creator Core (V1+) returns true for. From
 // CreatorCore.sol: `bytes4 private constant _CREATOR_CORE_V1 = 0x28f10a21`.
@@ -91,8 +92,7 @@ function getClient(): PublicClient {
   return createPublicClient({
     chain: mainnet,
     transport: http(
-      process.env.ALCHEMY_MAINNET_URL ??
-        "https://eth.llamarpc.com",
+      getAlchemyMainnetUrl(),
     ),
   })
 }

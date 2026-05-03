@@ -25,6 +25,7 @@ import {
 } from "../lazy-index"
 import { discoverFoundationCancellableListings } from "./foundation-seller-listings"
 import { discoverFoundationArtistAuctions } from "./foundation-scan"
+import { getAlchemyMainnetUrl } from "../alchemy-rpc"
 
 const FOUNDATION_NFT_ADDRESS = FOUNDATION_NFT[MAINNET_CHAIN_ID]
 const FND_NFT_MARKET = NFT_MARKET[MAINNET_CHAIN_ID]
@@ -33,8 +34,7 @@ function getClient() {
   return createPublicClient({
     chain: mainnet,
     transport: http(
-      process.env.ALCHEMY_MAINNET_URL ??
-        "https://eth.llamarpc.com",
+      getAlchemyMainnetUrl(),
     ),
   })
 }

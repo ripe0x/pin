@@ -14,6 +14,7 @@ import type {
   SellerCancellableBuyNow,
   SellerListings,
 } from "./types"
+import { getAlchemyMainnetUrl } from "../alchemy-rpc"
 
 /**
  * Foundation-specific cancellable-listings discovery via direct RPC.
@@ -47,7 +48,7 @@ function getClient(): PublicClient {
   return createPublicClient({
     chain: mainnet,
     transport: http(
-      process.env.ALCHEMY_MAINNET_URL ?? "https://eth.llamarpc.com",
+      getAlchemyMainnetUrl(),
     ),
   })
 }

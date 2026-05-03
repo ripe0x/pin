@@ -15,6 +15,7 @@ import {
   isFresh,
   type LazySuperrareV2ActiveAuction,
 } from "../lazy-index"
+import { getAlchemyMainnetUrl } from "../alchemy-rpc"
 
 const SR_BAZAAR = SUPERRARE_BAZAAR[MAINNET_CHAIN_ID]
 // Bazaar deployed Feb 2022 (~14_100_000). Per-artist `getLogs` calls
@@ -43,8 +44,7 @@ function getClient() {
   return createPublicClient({
     chain: mainnet,
     transport: http(
-      process.env.ALCHEMY_MAINNET_URL ??
-        "https://eth.llamarpc.com",
+      getAlchemyMainnetUrl(),
       { batch: true },
     ),
   })

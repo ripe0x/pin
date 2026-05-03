@@ -25,6 +25,7 @@ import {
   getAddressOrNull,
 } from "@pin/addresses"
 import { pgCache } from "./pg-cache"
+import { getAlchemyMainnetUrl } from "./alchemy-rpc"
 
 const SOVEREIGN_FACTORY = getAddressOrNull(
   SOVEREIGN_AUCTION_HOUSE_FACTORY,
@@ -36,8 +37,7 @@ function getClient() {
   return createPublicClient({
     chain: mainnet,
     transport: http(
-      process.env.ALCHEMY_MAINNET_URL ??
-        "https://eth.llamarpc.com",
+      getAlchemyMainnetUrl(),
     ),
   })
 }

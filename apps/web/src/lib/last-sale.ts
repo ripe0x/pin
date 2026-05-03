@@ -23,6 +23,7 @@ import {
 import { mainnet } from "viem/chains"
 import { unstable_cache } from "next/cache"
 import { pgCache } from "./pg-cache"
+import { getAlchemyMainnetUrl } from "./alchemy-rpc"
 import {
   readFoundationLastSale,
   writeFoundationLastSale,
@@ -76,8 +77,7 @@ function getClient() {
   return createPublicClient({
     chain: mainnet,
     transport: http(
-      process.env.ALCHEMY_MAINNET_URL ??
-        "https://eth.llamarpc.com",
+      getAlchemyMainnetUrl(),
     ),
   })
 }

@@ -26,6 +26,7 @@ import { mainnet } from "viem/chains"
 import { erc721Abi } from "@pin/abi"
 import { ipfsToHttp } from "@pin/shared"
 import type { PlatformId } from "@/lib/platforms/types"
+import { getAlchemyMainnetUrl } from "./alchemy-rpc"
 
 export type AuctionListing = {
   kind: "auction"
@@ -77,7 +78,7 @@ function getClient(): PublicClient {
   return createPublicClient({
     chain: mainnet,
     transport: http(
-      process.env.ALCHEMY_MAINNET_URL ?? "https://eth.llamarpc.com",
+      getAlchemyMainnetUrl(),
     ),
   })
 }

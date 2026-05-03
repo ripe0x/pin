@@ -9,6 +9,7 @@ import { createPublicClient, http, type Address } from "viem"
 import { mainnet } from "viem/chains"
 import { normalize } from "viem/ens"
 import { pgCache } from "./pg-cache"
+import { getAlchemyMainnetUrl } from "./alchemy-rpc"
 import { nftMarketAbi } from "@pin/abi"
 import { NFT_MARKET, MAINNET_CHAIN_ID } from "@pin/addresses"
 import {
@@ -25,7 +26,7 @@ import { extractCid, ipfsToHttp } from "@pin/shared"
 const client = createPublicClient({
   chain: mainnet,
   transport: http(
-    process.env.ALCHEMY_MAINNET_URL ?? "https://eth.llamarpc.com",
+    getAlchemyMainnetUrl(),
   ),
 })
 

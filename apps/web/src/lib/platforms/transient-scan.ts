@@ -15,6 +15,7 @@ import {
   isFresh,
   type LazyTransientActiveAuction,
 } from "../lazy-index"
+import { getAlchemyMainnetUrl } from "../alchemy-rpc"
 
 const TL_AH = TL_AUCTION_HOUSE[MAINNET_CHAIN_ID]
 // Auction House v2.6.1 was deployed in early 2026. Per-artist
@@ -46,8 +47,7 @@ function getClient() {
   return createPublicClient({
     chain: mainnet,
     transport: http(
-      process.env.ALCHEMY_MAINNET_URL ??
-        "https://eth.llamarpc.com",
+      getAlchemyMainnetUrl(),
       { batch: true },
     ),
   })

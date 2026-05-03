@@ -16,6 +16,7 @@ import {
 import { mainnet } from "viem/chains"
 import { erc721Abi, nftMarketAbi, sovereignAuctionHouseAbi, sovereignAuctionHouseFactoryAbi } from "@pin/abi"
 import { pgCache } from "./pg-cache"
+import { getAlchemyMainnetUrl } from "./alchemy-rpc"
 import { getSovereignHouseOf } from "./sovereign-house"
 import { getActiveAuctionCountFromIndexer } from "./indexer-queries"
 import {
@@ -125,7 +126,7 @@ function getClient() {
   return createPublicClient({
     chain: mainnet,
     transport: http(
-      process.env.ALCHEMY_MAINNET_URL ?? "https://eth.llamarpc.com",
+      getAlchemyMainnetUrl(),
     ),
   })
 }

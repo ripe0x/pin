@@ -18,6 +18,7 @@ import {
   LAZY_TTL,
   isFresh,
 } from "../lazy-index"
+import { getAlchemyMainnetUrl } from "../alchemy-rpc"
 
 // Marker interface for Manifold Creator Core (V1 + V2 share this).
 const MANIFOLD_CC_INTERFACE_ID = "0x28f10a21" as const
@@ -37,8 +38,7 @@ function getClient() {
   return createPublicClient({
     chain: mainnet,
     transport: http(
-      process.env.ALCHEMY_MAINNET_URL ??
-        "https://eth.llamarpc.com",
+      getAlchemyMainnetUrl(),
     ),
   })
 }
