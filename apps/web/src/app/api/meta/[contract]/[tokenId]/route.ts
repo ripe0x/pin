@@ -33,7 +33,12 @@ export async function GET(
         { metadata: null, mediaUri: null },
         {
           status: 404,
-          headers: { "Cache-Control": "public, max-age=60" },
+          // Short edge cache + SWR so a token whose metadata is published
+          // later (IPFS pin, contract upgrade) surfaces within a minute.
+          headers: {
+            "Cache-Control":
+              "public, max-age=60, s-maxage=60, stale-while-revalidate=300",
+          },
         },
       )
     }
@@ -42,12 +47,28 @@ export async function GET(
 
     return NextResponse.json(
       { metadata, mediaUri },
-      { headers: { "Cache-Control": "public, max-age=31536000, immutable" } },
+      {
+        // Token metadata is essentially immutable (IPFS-hashed). Browsers
+        // keep it for a year. CDN caches for a day with a week of SWR so
+        // an actual mutation eventually surfaces without a manual purge.
+        // `s-maxage` is explicit because some CDNs (Netlify) ignore plain
+        // `max-age` for shared caching.
+        headers: {
+          "Cache-Control":
+            "public, max-age=31536000, s-maxage=86400, stale-while-revalidate=604800",
+        },
+      },
     )
   } catch {
     return NextResponse.json(
       { metadata: null, mediaUri: null },
-      { status: 500, headers: { "Cache-Control": "public, max-age=60" } },
+      {
+        status: 500,
+        headers: {
+          "Cache-Control":
+            "public, max-age=60, s-maxage=60, stale-while-revalidate=300",
+        },
+      },
     )
   }
 }
