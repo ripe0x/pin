@@ -22,10 +22,16 @@ export const SOVEREIGN_FACTORY_ADDRESS: Address =
 // existed before the factory was deployed.
 export const SOVEREIGN_FACTORY_DEPLOY_BLOCK = 24_973_294n
 
-// Shared WalletConnect project ID baked into the template so non-technical
-// artists don't need to register one. Override via env var if you'd rather
-// have your own (recommended once you have real traffic).
-const DEFAULT_WALLETCONNECT_PROJECT_ID = "f5b4d8e2c41a4d0e9b2f3a7c8d6e1f5a"
+// Placeholder WalletConnect project ID. Used as a fallback so the wagmi
+// config can construct without env var setup, but we deliberately suppress
+// the WalletConnect connector when this default is in play (Reown will
+// reject this ID with HTTP 403, which would otherwise break the Connect
+// button entirely). When the artist sets their own real project ID via
+// NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID, the WC mobile connector becomes
+// available; until then, only browser-extension wallets and Coinbase
+// Wallet appear in the picker. See `lib/wagmi-config.ts`.
+export const DEFAULT_WALLETCONNECT_PROJECT_ID =
+  "0000000000000000000000000000000000000000000000000000000000000000"
 
 function readArtistAddress(): Address {
   const raw = process.env.NEXT_PUBLIC_ARTIST_ADDRESS?.trim()

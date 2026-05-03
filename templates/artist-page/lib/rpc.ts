@@ -76,15 +76,16 @@ export function getClient() {
   return _client
 }
 
-// Initial chunk size for `getLogs` — large enough that PublicNode/drpc do
-// the whole house-history scan in just a few calls. Cloudflare will reject
-// this, and we'll shrink-and-retry below.
-const INITIAL_CHUNK = 100_000n
+// Initial chunk size for `getLogs`. 5M blocks fits the entire post-factory
+// window of any Sovereign-related scan in one RPC call on
+// PublicNode/drpc/Alchemy/LlamaRPC. Cloudflare caps at 1024 blocks and
+// will reject; we shrink-and-retry below.
+const INITIAL_CHUNK = 5_000_000n
 // The smallest chunk we'll bother with before giving up. 1024 matches
 // Cloudflare's documented cap.
 const MIN_CHUNK = 1024n
 // Stop range-too-large detection from running forever on a wedge.
-const MAX_CHUNK_SHRINK_ATTEMPTS = 6
+const MAX_CHUNK_SHRINK_ATTEMPTS = 8
 
 /**
  * Heuristic: does this error look like the RPC complaining the block
