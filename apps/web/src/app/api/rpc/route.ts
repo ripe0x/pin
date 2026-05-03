@@ -232,11 +232,20 @@ export async function POST(req: NextRequest) {
   // matches exactly what viem sent (including key ordering, etc.).
   const payload = JSON.stringify(body)
 
-  // Try each upstream in order until one returns a healthy response. For a
-  // mint/bid (`eth_sendRawTransaction`) this means the transaction still
-  // gets broadcast even if Alchemy is down — any of the public fallbacks
-  // will gossip it to the mempool.
-  for (const url of UPSTREAMS) {
+  // Read calls leak the user's wallet address + query patterns to whichever
+  // RPC handles them. Public RPCs have no contractual privacy guarantee,
+  // so we keep reads on the trusted primary upstream (Alchemy when
+  // configured) and let them fail rather than silently route around it.
+  // Writes (`eth_sendRawTransaction`) are the opposite case: signed bytes
+  // are public the moment they hit any mempool, and broadcast redundancy
+  // is precisely the point — if Alchemy is down, the bid/mint should
+  // still reach the chain via a public RPC.
+  const isWriteBatch = batch.some(
+    (e) => e?.method === "eth_sendRawTransaction",
+  )
+  const upstreams = isWriteBatch ? UPSTREAMS : UPSTREAMS.slice(0, 1)
+
+  for (const url of upstreams) {
     const result = await tryUpstream(url, payload)
     if (result.ok) {
       return new NextResponse(result.text, {
