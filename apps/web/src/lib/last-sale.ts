@@ -31,6 +31,7 @@ import {
   isFresh,
 } from "./lazy-index"
 import { getSovereignHouseOf } from "./sovereign-house"
+import { isRpcDisabled } from "./rpc-circuit"
 import {
   NFT_MARKET,
   MAINNET_CHAIN_ID,
@@ -87,7 +88,7 @@ export async function getFoundationLastSale(
   nftContract: Address,
   tokenId: bigint,
 ): Promise<LastSale | null> {
-  // Lazy index read: if a recent row exists, return it without RPC.
+  // Lazy index read: if a row exists, return it.
   const cached = await readFoundationLastSale(nftContract, tokenId.toString())
   if (cached && isFresh(cached.lastIndexedAt, LAZY_TTL.foundationSale)) {
     return {
@@ -96,6 +97,22 @@ export async function getFoundationLastSale(
       source: "foundation",
       txHash: cached.txHash,
     }
+  }
+
+  // Circuit breaker: when RPC_DISABLED=1, skip the log scan entirely.
+  // Return whatever's in cache regardless of freshness — staleness is
+  // preferable to burning RPC during a bill emergency. Null when there
+  // genuinely is no cached row.
+  if (isRpcDisabled()) {
+    if (cached) {
+      return {
+        priceWei: cached.priceWei,
+        blockTime: cached.blockTime,
+        source: "foundation",
+        txHash: cached.txHash,
+      }
+    }
+    return null
   }
 
   const sale = await scanFoundationLastSale(client, nftContract, tokenId)
@@ -181,6 +198,12 @@ export async function getSovereignLastSale(
   creator: Address,
 ): Promise<LastSale | null> {
   if (!SOVEREIGN_FACTORY) return null
+
+  // Circuit breaker. No cached store for sovereign last-sale today,
+  // so disabled = no result. Token pages just won't show a "last
+  // sale" badge for sovereign-house auctions until the breaker
+  // closes.
+  if (isRpcDisabled()) return null
 
   // Cached lookup — see sovereign-house.ts. Houses don't move, so a 24h
   // cross-sandbox cache eliminates the per-render eth_call.

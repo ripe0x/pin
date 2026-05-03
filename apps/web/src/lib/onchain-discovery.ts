@@ -19,6 +19,7 @@ import { foundationNftAbi, collectionFactoryAbi, erc721Abi } from "@pin/abi"
 import { getAssetTransfers, getOwnersForNft } from "./alchemy"
 import { pgCache } from "./pg-cache"
 import { getAlchemyMainnetUrl } from "./alchemy-rpc"
+import { isRpcDisabled } from "./rpc-circuit"
 import {
   FOUNDATION_NFT,
   COLLECTION_FACTORY_V1,
@@ -139,6 +140,15 @@ const transferEvent = parseAbiItem(
 export async function discoverArtistTokens(
   artistAddress: string,
 ): Promise<DiscoveredToken[]> {
+  // Circuit breaker. Discovery fans out to Alchemy NFT API +
+  // factory log scans + per-token enrichment — easily 30+ RPC
+  // calls per cold artist. Disabled = artist gallery shows only
+  // tokens the lazy-cache layer (lazy_fnd_artist_tokens) already
+  // knows about; the existing read-path callers
+  // (`getCachedTokenRefs`, `getArtistGalleryPage`) handle empty
+  // results gracefully.
+  if (isRpcDisabled()) return []
+
   const client = getClient()
   const artist = artistAddress.toLowerCase() as Address
   const latestBlock = await client.getBlockNumber()
@@ -807,6 +817,29 @@ async function getTokenOnChainDataUncached(
   contractAddress: string,
   tokenId: string,
 ): Promise<TokenOnChainData> {
+  // Circuit breaker. ownerOf + tokenCreator + transfer log scan +
+  // per-block timestamp fetches — the most expensive single
+  // function call in the codebase per cold render. Disabled =
+  // return whatever the persistent transfer cache knows about and
+  // skip fresh chain reads. Owner/creator come back as null
+  // until the breaker closes; the token page handles that
+  // gracefully (provenance from cached transfers, owner badge
+  // hidden when null).
+  if (isRpcDisabled()) {
+    const cached = await readTokenTransfers(contractAddress, tokenId)
+    return {
+      owner: null,
+      creator: null,
+      transfers: cached.map((t) => ({
+        from: t.from,
+        to: t.to,
+        blockNumber: t.blockNumber,
+        txHash: t.txHash,
+        timestamp: t.blockTime,
+      })),
+    }
+  }
+
   const client = getClient()
   const contract = contractAddress as Address
   const id = BigInt(tokenId)
