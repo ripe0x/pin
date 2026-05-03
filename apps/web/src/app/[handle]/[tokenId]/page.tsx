@@ -16,6 +16,7 @@ import { getAuctionForToken } from "@/lib/auctions"
 import { getSettledAuctionForToken } from "@/lib/indexer-queries"
 import { SettledAuctionSummary } from "@/components/auction/SettledAuctionSummary"
 import { resolveDisplayNames } from "@/lib/artist-queries"
+import { isCrawler } from "@/lib/crawler"
 import Link from "next/link"
 
 type Params = Promise<{ handle: string; tokenId: string }>
@@ -125,6 +126,22 @@ export default async function TokenPage({
   params: Params
 }) {
   const { handle, tokenId } = await params
+
+  // Crawlers (Twitterbot, Discord, Slack, etc.) only need OG metadata.
+  // `generateMetadata` already produced the title + description + image
+  // they care about; the body's RPC reads (auction state, settled-auction
+  // bid history, ENS resolution across the provenance timeline) are all
+  // wasted on a link unfurler. Short-circuit so a burst of unfurl traffic
+  // can't fan out to RPC per crawler hit. Real users land on the full
+  // path below.
+  if (await isCrawler()) {
+    return (
+      <div className="mx-auto max-w-[2000px] px-6 py-12">
+        <p className="text-sm text-gray-500">Loading token…</p>
+      </div>
+    )
+  }
+
   const data = await getTokenPageData(handle, tokenId)
   const [auction, settledAuctionRaw] = await Promise.all([
     getAuctionForToken(data.contract, tokenId).catch(() => null),

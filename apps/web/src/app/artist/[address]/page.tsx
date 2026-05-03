@@ -10,6 +10,7 @@ import {
 import { getActiveAuctionCount } from "@/lib/auctions"
 import { getCachedTokenRefs } from "@/lib/artist-cache"
 import { pgCacheHas } from "@/lib/pg-cache"
+import { isCrawler } from "@/lib/crawler"
 import { PLATFORMS } from "@/lib/platforms"
 import { ArtistHeader } from "@/components/artist/ArtistHeader"
 import { ArtistGallery } from "@/components/artist/ArtistGallery"
@@ -107,6 +108,17 @@ export default async function ArtistPage({
 }
 
 async function ArtistPageBody({ address }: { address: string }) {
+  // Crawlers (Twitterbot, Discord, Slack, etc.) only need the OG metadata
+  // produced by `generateMetadata` — they don't render the gallery,
+  // can't bid, and don't care about live state. Skipping the body
+  // entirely keeps a burst of link-unfurl requests from cold-firing
+  // `getArtistGalleryPage` (token discovery + multicall enrichment) and
+  // `getActiveAuctionCount` (sovereign house log scan) per crawler hit.
+  // Real users land on the full path below.
+  if (await isCrawler()) {
+    return <ArtistCrawlerShell />
+  }
+
   // Per-artist auction discovery — fire each adapter's
   // `discoverArtistAuctions` so this artist's `lazy_*_active_auctions`
   // rows are populated/refreshed for the home grid. Self-cooled to
@@ -167,6 +179,20 @@ async function ArtistPageBody({ address }: { address: string }) {
           initialPage={firstPage}
         />
       </div>
+    </div>
+  )
+}
+
+/**
+ * Minimal HTML shell served to crawlers. The OG metadata in the head
+ * (from `generateMetadata`) is what they actually consume; the body
+ * just needs to be valid HTML with the artist's name surfaced as plain
+ * text so the page reads sensibly if someone scrapes it for indexing.
+ */
+function ArtistCrawlerShell() {
+  return (
+    <div className="mx-auto max-w-[2000px] px-6 py-12">
+      <p className="text-sm text-gray-500">Loading artist page…</p>
     </div>
   )
 }
