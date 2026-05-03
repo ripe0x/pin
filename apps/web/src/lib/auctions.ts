@@ -24,6 +24,8 @@ import {
   readPndBidHistory,
   readPndBidHistoryFreshness,
   writePndBidHistory,
+  readScanCursor,
+  writeScanCursor,
   LAZY_TTL,
   isFresh,
 } from "./lazy-index"
@@ -422,15 +424,52 @@ async function getFoundationBidHistory(
     }
   }
 
-  const logs = await client
-    .getLogs({
-      address: FND_MARKET,
-      event: fndBidPlacedEvent,
-      args: { auctionId },
-      fromBlock: FND_MARKET_DEPLOY_BLOCK,
-      toBlock: "latest",
-    })
-    .catch(() => [])
+  // Pre-bid short-circuit: no on-chain leader means there's nothing to
+  // find in logs. Saves an `eth_getLogs` per cold view of an auction
+  // that hasn't received its first bid yet.
+  if (!expectedTop) {
+    const cached = await readFoundationBidHistory(auctionIdStr)
+    return (cached ?? []).map((b) => ({
+      bidder: b.bidder as Address,
+      amount: b.amount,
+      blockTime: b.blockTime,
+      txHash: b.txHash as `0x${string}`,
+    }))
+  }
+
+  // Cursor-bounded incremental scan. Drops steady-state getLogs range
+  // from ~14M blocks (deploy → head) to whatever accumulated since
+  // this auction was last scanned. The cursor is advanced after every
+  // successful scan — even with 0 matches — so a quiet auction
+  // doesn't keep re-paying for the deploy-to-head range.
+  const scanKey = `fnd_bids:${auctionIdStr}`
+  const cursor = await readScanCursor(scanKey)
+  const fromBlock = cursor ? cursor.lastBlock + 1n : FND_MARKET_DEPLOY_BLOCK
+  const latest = await client.getBlockNumber().catch(() => null)
+  if (latest === null) {
+    // Couldn't read head; fall back to whatever's cached. Don't move
+    // the cursor either (we'd lose any blocks scanned next time).
+    const cached = await readFoundationBidHistory(auctionIdStr)
+    return (cached ?? []).map((b) => ({
+      bidder: b.bidder as Address,
+      amount: b.amount,
+      blockTime: b.blockTime,
+      txHash: b.txHash as `0x${string}`,
+    }))
+  }
+
+  const logs =
+    fromBlock > latest
+      ? []
+      : await client
+          .getLogs({
+            address: FND_MARKET,
+            event: fndBidPlacedEvent,
+            args: { auctionId },
+            fromBlock,
+            toBlock: latest,
+          })
+          .catch(() => [])
 
   const enriched = await enrichBidLogs(client, logs, "amount")
 
@@ -461,8 +500,14 @@ async function getFoundationBidHistory(
       })),
     )
   }
+  await writeScanCursor(scanKey, latest)
 
-  return enriched
+  // Merge cached + just-scanned. The scan is now incremental so it
+  // can't return full history on its own. Dedupe by txHash; sort
+  // newest-first by amount (Foundation bids are monotonically
+  // increasing, so amount-DESC matches block-DESC).
+  const cached = (await readFoundationBidHistory(auctionIdStr)) ?? []
+  return mergeBidHistory(cached, enriched)
 }
 
 async function getFoundationFees(
@@ -783,17 +828,47 @@ async function getSovereignBidHistory(
     }
   }
 
-  const logs = await client
-    .getLogs({
-      address: houseAddress,
-      event: sovereignBidPlacedEvent,
-      args: { auctionId },
-      // No house can pre-date the factory; scanning from 0 was paying for a
-      // 24M-block null scan per call.
-      fromBlock: SOVEREIGN_FACTORY_DEPLOY_BLOCK,
-      toBlock: "latest",
-    })
-    .catch(() => [])
+  // Pre-bid short-circuit (mirrors Foundation): no on-chain leader
+  // means there's nothing to find in logs.
+  if (!expectedTop) {
+    const cached = await readPndBidHistory(houseStr, auctionIdStr)
+    return (cached ?? []).map((b) => ({
+      bidder: b.bidder as Address,
+      amount: b.amount,
+      blockTime: b.blockTime,
+      txHash: b.txHash as `0x${string}`,
+    }))
+  }
+
+  // Cursor-bounded incremental scan (per-house+auction). Drops
+  // steady-state getLogs range from ~25M blocks to whatever
+  // accumulated since this auction was last scanned.
+  const scanKey = `pnd_bids:${houseStr}:${auctionIdStr}`
+  const cursor = await readScanCursor(scanKey)
+  const fromBlock = cursor ? cursor.lastBlock + 1n : SOVEREIGN_FACTORY_DEPLOY_BLOCK
+  const latest = await client.getBlockNumber().catch(() => null)
+  if (latest === null) {
+    const cached = await readPndBidHistory(houseStr, auctionIdStr)
+    return (cached ?? []).map((b) => ({
+      bidder: b.bidder as Address,
+      amount: b.amount,
+      blockTime: b.blockTime,
+      txHash: b.txHash as `0x${string}`,
+    }))
+  }
+
+  const logs =
+    fromBlock > latest
+      ? []
+      : await client
+          .getLogs({
+            address: houseAddress,
+            event: sovereignBidPlacedEvent,
+            args: { auctionId },
+            fromBlock,
+            toBlock: latest,
+          })
+          .catch(() => [])
 
   const enriched = await enrichBidLogs(client, logs, "amount")
 
@@ -824,8 +899,10 @@ async function getSovereignBidHistory(
       })),
     )
   }
+  await writeScanCursor(scanKey, latest)
 
-  return enriched
+  const cached = (await readPndBidHistory(houseStr, auctionIdStr)) ?? []
+  return mergeBidHistory(cached, enriched)
 }
 
 // ─── Shared helpers ─────────────────────────────────────────────────────────
@@ -836,6 +913,39 @@ async function getSovereignBidHistory(
  * increasing, so the first cached row is the highest. When `expectedTop`
  * is null (no on-chain bidder yet) the cache trivially covers it.
  */
+/**
+ * Merge cached bid rows with bids freshly scanned by the cursor-bounded
+ * incremental getLogs. The two sets can overlap when the cursor is at
+ * the same block as already-cached rows; dedupe by txHash (the upsert
+ * primary key includes log_index too, but a single tx can carry only
+ * one bid per auction). Sort newest-first by amount — bids on both
+ * Foundation and PND are monotonically increasing, so amount-DESC
+ * matches block-DESC and gives the same order the UI expects.
+ */
+function mergeBidHistory(
+  cached: ReadonlyArray<{
+    bidder: string
+    amount: bigint
+    blockTime: number
+    txHash: string
+  }>,
+  fresh: ReadonlyArray<Omit<BidHistoryEntry, "bidderDisplay">>,
+): Array<Omit<BidHistoryEntry, "bidderDisplay">> {
+  const map = new Map<string, Omit<BidHistoryEntry, "bidderDisplay">>()
+  for (const b of cached) {
+    map.set(b.txHash, {
+      bidder: b.bidder as Address,
+      amount: b.amount,
+      blockTime: b.blockTime,
+      txHash: b.txHash,
+    })
+  }
+  for (const b of fresh) map.set(b.txHash, b)
+  return Array.from(map.values()).sort((a, b) =>
+    a.amount > b.amount ? -1 : a.amount < b.amount ? 1 : 0,
+  )
+}
+
 function cacheCoversTop(
   cached: ReadonlyArray<{ bidder: string; amount: bigint }>,
   expectedTop: { bidder: Address; amount: bigint } | null,
