@@ -43,7 +43,7 @@ jobs:
         # `git-publish-subdir-action` was built for exactly this pattern —
         # it splits a subdirectory into its own commit history and pushes
         # to a target repo's branch. Pinned by SHA for supply-chain safety.
-        uses: s0/git-publish-subdir-action@27adcb6e0fe7da9747d9bea4bbab57e0a005f73b # v2.6.0
+        uses: s0/git-publish-subdir-action@92faf786f11dfa44fc366ac3eb274d193ca1af7e # v2.6.0
         env:
           REPO: ${{ vars.TEMPLATE_REPO }}
           BRANCH: main
