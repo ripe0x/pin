@@ -19,7 +19,7 @@ type Props = {
 export function SettledSummary({ auction, bids, ensMap, settledAtTime }: Props) {
   if (auction.status === "cancelled") {
     return (
-      <div className="rounded-md border border-gray-200 bg-surface p-5">
+      <div className="rounded-lg border border-gray-200 bg-surface p-5">
         <div className="flex items-center gap-2">
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-gray-400" />
           <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500">
@@ -36,7 +36,7 @@ export function SettledSummary({ auction, bids, ensMap, settledAtTime }: Props) 
   const winnerIsAddress = winnerDisplay?.startsWith("0x") ?? false
 
   return (
-    <div className="rounded-md border border-gray-200 bg-surface overflow-hidden">
+    <div className="rounded-lg border border-gray-200 bg-surface overflow-hidden">
       <div className="p-5 space-y-5">
         <div className="flex items-center gap-2">
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-status-sold" />

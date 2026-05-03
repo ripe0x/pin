@@ -78,8 +78,12 @@ function Section({
 }
 
 function Grid({ children }: { children: React.ReactNode }) {
+  // CSS multi-column masonry, matching PND's ArtistGallery. The
+  // `[&>*]:break-inside-avoid` prevents a card from being split across
+  // columns, and `[&>*]:mb-6` gives equivalent vertical rhythm to the
+  // horizontal `gap-6`.
   return (
-    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+    <div className="columns-1 sm:columns-2 lg:columns-4 gap-6 [&>*]:mb-6 [&>*]:break-inside-avoid">
       {children}
     </div>
   )

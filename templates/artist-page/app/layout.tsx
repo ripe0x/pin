@@ -34,6 +34,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        {/* Preconnect so the .woff2 hits start as soon as the HTML lands —
+            Fontshare serves the @font-face CSS, then redirects to
+            cdn.fontshare.com for the actual font binaries. */}
+        <link rel="preconnect" href="https://api.fontshare.com" crossOrigin="" />
+        <link rel="preconnect" href="https://cdn.fontshare.com" crossOrigin="" />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         {/* Switzer from Fontshare — primary sans face. */}
         <link
           href="https://api.fontshare.com/v2/css?f[]=switzer@400,500,600&display=swap"

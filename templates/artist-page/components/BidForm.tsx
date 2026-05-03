@@ -183,7 +183,7 @@ function Panel({
   children: React.ReactNode
 }) {
   return (
-    <div className="rounded-md border border-gray-200 bg-surface overflow-hidden">
+    <div className="rounded-lg border border-gray-200 bg-surface overflow-hidden">
       <div className="p-5 space-y-5">
         <div className="flex items-center justify-between gap-6">
           <div className="flex items-center gap-2">
@@ -301,7 +301,7 @@ function BidInput({
             <button
               type="button"
               onClick={openConnectModal}
-              className="w-full rounded-md border border-fg bg-fg px-4 py-2.5 text-sm font-medium text-bg hover:opacity-90 transition-opacity"
+              className="block w-full text-center text-sm font-medium py-3 bg-fg text-bg hover:opacity-80 transition-opacity"
             >
               Connect wallet to bid
             </button>
@@ -330,7 +330,7 @@ function BidInput({
         type="button"
         onClick={submit}
         disabled={tooLow || isPending || confirming}
-        className="w-full rounded-md border border-fg bg-fg px-4 py-2.5 text-sm font-medium text-bg disabled:cursor-not-allowed disabled:opacity-60 hover:opacity-90 transition-opacity"
+        className="block w-full text-center text-sm font-medium py-3 bg-fg text-bg disabled:cursor-not-allowed disabled:opacity-60 hover:opacity-80 transition-opacity"
       >
         {confirming
           ? "Waiting for confirmation…"
@@ -367,7 +367,7 @@ function SettleButton({
             <button
               type="button"
               onClick={openConnectModal}
-              className="w-full rounded-md border border-fg bg-fg px-4 py-2.5 text-sm font-medium text-bg hover:opacity-90 transition-opacity"
+              className="block w-full text-center text-sm font-medium py-3 bg-fg text-bg hover:opacity-80 transition-opacity"
             >
               Connect wallet to settle
             </button>
@@ -388,7 +388,7 @@ function SettleButton({
         })
       }
       disabled={isPending || confirming}
-      className="mt-2 w-full rounded-md border border-fg bg-fg px-4 py-2.5 text-sm font-medium text-bg disabled:cursor-not-allowed disabled:opacity-60 hover:opacity-90 transition-opacity"
+      className="mt-2 block w-full text-center text-sm font-medium py-3 bg-fg text-bg disabled:cursor-not-allowed disabled:opacity-60 hover:opacity-80 transition-opacity"
     >
       {confirming
         ? "Waiting for confirmation…"

@@ -1,119 +1,67 @@
 /**
- * Auction grid card. Mirrors the PND main app's `WorkArtistCard` pattern:
- * border-only chrome, square aspect-ratio image, full-width strip below
- * with title + status. No background fill, no rounded corners — the image
- * fills its slot edge-to-edge.
+ * Auction grid card. Mirrors PND's `GalleryCard` from
+ * `apps/web/src/components/artist/ArtistGallery.tsx`:
+ *
+ *  - `border border-gray-200 hover:border-gray-400` chrome only, no fill
+ *  - native image aspect ratio (set client-side from naturalWidth/Height)
+ *  - `p-4 text-base font-medium leading-tight truncate` title strip
+ *  - status caption (replaces PND's `TokenPinStatus`) on the right of
+ *    the title row in the same compact mono caps style used elsewhere
  */
+import { AuctionCardImage } from "./AuctionCardImage"
 import Link from "next/link"
 import type { AuctionSummary } from "@/lib/auctions"
 import { getTokenMetadata } from "@/lib/metadata"
 import { formatEth, formatTimeRemaining } from "@/lib/format"
 
-const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
-
 export async function AuctionCard({ auction }: { auction: AuctionSummary }) {
   const metadata = await getTokenMetadata(auction.tokenContract, auction.tokenId)
   const image = metadata?.imageSmall ?? metadata?.image ?? null
   const title = metadata?.name ?? `#${auction.tokenId}`
-  const isVideo = image
-    ? VIDEO_EXTENSIONS.some((ext) =>
-        image.split("?")[0].toLowerCase().endsWith(ext),
-      )
-    : false
-
-  const priceLine = priceLabelFor(auction)
-  const statusLabel = statusLabelFor(auction)
 
   return (
-    <Link
-      href={`/auction/${auction.auctionId}`}
-      className="relative border border-gray-200 transition-colors hover:border-gray-400 flex flex-col h-full overflow-hidden"
-    >
-      <div className="relative aspect-square overflow-hidden bg-gray-100">
-        {image && isVideo ? (
-          // eslint-disable-next-line jsx-a11y/media-has-caption
-          <video
-            src={image}
-            muted
-            playsInline
-            preload="metadata"
-            className="h-full w-full object-cover"
-          />
-        ) : image ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={image}
-            alt={title}
-            loading="lazy"
-            className="h-full w-full object-cover"
-          />
-        ) : null}
-      </div>
-
-      <div className="block p-3 space-y-1 border-t border-gray-100 min-w-0">
-        <div className="flex items-center gap-2">
-          <span
-            className={`h-1.5 w-1.5 rounded-full ${statusDotColorFor(auction)}`}
-            aria-hidden
-          />
-          <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500">
-            {statusLabel}
-          </span>
+    <div className="group relative border border-gray-200 transition-colors hover:border-gray-400">
+      <Link href={`/auction/${auction.auctionId}`} className="block">
+        <AuctionCardImage src={image} alt={title} />
+        <div className="p-4 flex items-center justify-between gap-2">
+          <p className="text-base font-medium leading-tight truncate">
+            {title}
+          </p>
+          <StatusBadge auction={auction} />
         </div>
-        <p className="text-sm font-medium truncate">{title}</p>
-        <p className="text-[10px] font-mono uppercase tracking-wider text-gray-500">
-          {priceLine}
-        </p>
-      </div>
-    </Link>
+      </Link>
+    </div>
   )
 }
 
-function statusLabelFor(auction: AuctionSummary): string {
-  switch (auction.status) {
-    case "live":
-      return "Live"
-    case "upcoming":
-      return "Reserve"
-    case "settled":
-      return "Sold"
-    case "cancelled":
-      return "Cancelled"
-  }
-}
-
-function statusDotColorFor(auction: AuctionSummary): string {
-  switch (auction.status) {
-    case "live":
-      return "bg-status-live"
-    case "upcoming":
-      return "bg-status-upcoming"
-    case "settled":
-      return "bg-status-sold"
-    case "cancelled":
-      return "bg-gray-400"
-  }
+function StatusBadge({ auction }: { auction: AuctionSummary }) {
+  const label = priceLabelFor(auction)
+  if (!label) return null
+  return (
+    <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500 shrink-0 whitespace-nowrap">
+      {label}
+    </span>
+  )
 }
 
 function priceLabelFor(auction: AuctionSummary): string {
   if (auction.status === "settled" && auction.finalPrice) {
     return `${formatEth(auction.finalPrice)} ETH`
   }
-  if (auction.status === "cancelled") return ""
+  if (auction.status === "cancelled") return "Cancelled"
   if (auction.status === "upcoming") {
-    return `${formatEth(auction.reservePrice)} ETH reserve`
+    return `${formatEth(auction.reservePrice)} reserve`
   }
-  // live
   if (auction.amount === "0") {
-    return `${formatEth(auction.reservePrice)} ETH reserve`
+    return `${formatEth(auction.reservePrice)} reserve`
   }
   const endTime = Number(auction.endTime)
   if (endTime > 0) {
     const remaining = endTime - Math.floor(Date.now() / 1000)
     if (remaining > 0) {
-      return `${formatEth(auction.amount)} ETH · ${formatTimeRemaining(remaining)}`
+      return `${formatEth(auction.amount)} · ${formatTimeRemaining(remaining)}`
     }
-    return `${formatEth(auction.amount)} ETH · Ending`
+    return `${formatEth(auction.amount)} · ending`
   }
   return `${formatEth(auction.amount)} ETH`
 }

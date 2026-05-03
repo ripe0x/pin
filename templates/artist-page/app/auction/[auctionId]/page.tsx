@@ -1,17 +1,15 @@
-import Link from "next/link"
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { BidForm } from "@/components/BidForm"
 import { BidHistory } from "@/components/BidHistory"
 import { SettledSummary } from "@/components/SettledSummary"
+import { TokenMedia } from "@/components/TokenMedia"
 import { getArtistHouse, getAuctionById, getBidHistory } from "@/lib/auctions"
 import { getTokenMetadata } from "@/lib/metadata"
 import { getArtistDisplayName } from "@/lib/artist"
 import { getEnsNames } from "@/lib/ens"
 import { formatAddress, formatEth } from "@/lib/format"
-
-
-const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
+import { getConfig } from "@/lib/config"
 
 export const revalidate = 60
 
@@ -46,9 +44,11 @@ export async function generateMetadata({
 
 export default async function AuctionPage({ params }: { params: Params }) {
   const { auctionId } = await params
-  const [house, auction] = await Promise.all([
+  const cfg = getConfig()
+  const [house, auction, displayName] = await Promise.all([
     getArtistHouse(),
     getAuctionById(auctionId),
+    getArtistDisplayName(),
   ])
   if (!house || !auction) notFound()
 
@@ -57,7 +57,6 @@ export default async function AuctionPage({ params }: { params: Params }) {
     getBidHistory(auctionId),
   ])
 
-  // Single batched ENS resolve for every address shown on this page.
   const addressesToResolve: string[] = []
   for (const b of bids) addressesToResolve.push(b.bidder)
   if (auction.winner) addressesToResolve.push(auction.winner)
@@ -66,86 +65,77 @@ export default async function AuctionPage({ params }: { params: Params }) {
 
   const title = metadata?.name ?? `#${auction.tokenId}`
   const image = metadata?.image ?? null
-  const isVideo = image
-    ? VIDEO_EXTENSIONS.some((ext) =>
-        image.split("?")[0].toLowerCase().endsWith(ext),
-      )
-    : false
   const isHistorical =
     auction.status === "settled" || auction.status === "cancelled"
   const settledAtTime = bids.length > 0 ? bids[0].blockTime : null
+  // Caps display name for the creator caption — mirrors PND's mono-caps treatment.
+  const creatorCaption = displayName.toUpperCase()
 
   return (
-    <div className="mx-auto max-w-[2000px] px-6 py-12">
-      <Link
-        href="/"
-        className="mb-8 inline-flex items-center gap-1 text-xs font-mono uppercase tracking-wider text-gray-500 hover:text-fg transition-colors"
-      >
-        ← All auctions
-      </Link>
-
-      <div className="grid gap-10 lg:grid-cols-[1.5fr_1fr]">
-        {/* Media */}
-        <div className="relative aspect-square w-full overflow-hidden bg-gray-100 border border-gray-200">
-          {image && isVideo ? (
-            // eslint-disable-next-line jsx-a11y/media-has-caption
-            <video
-              src={image}
-              autoPlay
-              muted
-              loop
-              playsInline
-              className="h-full w-full object-contain"
-            />
-          ) : image ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={image}
-              alt={title}
-              className="h-full w-full object-contain"
-            />
-          ) : (
-            <div className="flex h-full items-center justify-center text-[11px] font-mono uppercase tracking-wider text-gray-400">
-              No preview
-            </div>
-          )}
+    <div className="mx-auto max-w-[2000px]">
+      {/* Two-column desktop layout matching PND's token page:
+          left column is sticky-pinned artwork, right column scrolls. */}
+      <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] min-h-[calc(100vh-64px)]">
+        {/* Sticky artwork. The 64px in `top-16` and `h-calc` matches
+            the navbar height set in app/layout.tsx. */}
+        <div className="lg:sticky lg:top-16 lg:h-[calc(100vh-64px)] flex items-center justify-center bg-gray-100 dark:bg-bg p-8 lg:p-12">
+          <TokenMedia src={image} title={title} />
         </div>
 
-        {/* Right column: title, panel, history, links */}
-        <div className="flex flex-col gap-6 min-w-0">
-          <div>
-            <h1 className="text-3xl font-semibold tracking-tight">{title}</h1>
-            {metadata?.description ? (
-              <p className="mt-3 max-w-prose text-sm text-fg-muted whitespace-pre-line">
+        <aside className="lg:border-l border-gray-200 dark:bg-gray-100 px-6 py-8 lg:px-8 lg:py-10">
+          {/* Title + creator caption */}
+          <section className="pb-5 border-b border-gray-100 space-y-2">
+            <a
+              href={`https://etherscan.io/address/${cfg.artistAddress}`}
+              target="_blank"
+              rel="noreferrer"
+              className="block text-[11px] font-mono uppercase tracking-wider text-gray-600 hover:text-fg transition-colors"
+            >
+              {creatorCaption}
+            </a>
+            <h1 className="text-base font-mono font-medium tracking-tight">
+              {title}
+            </h1>
+          </section>
+
+          {/* Description — the only prose section, in sans (Switzer). */}
+          {metadata?.description ? (
+            <section className="py-5 border-b border-gray-100">
+              <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">
                 {metadata.description}
               </p>
-            ) : null}
-          </div>
+            </section>
+          ) : null}
 
+          {/* Auction state — settled summary or live bid panel. */}
           {isHistorical ? (
-            <SettledSummary
-              auction={auction}
-              bids={bids}
-              ensMap={ensMap}
-              settledAtTime={settledAtTime}
-            />
+            <section className="py-5 border-b border-gray-100">
+              <SettledSummary
+                auction={auction}
+                bids={bids}
+                ensMap={ensMap}
+                settledAtTime={settledAtTime}
+              />
+            </section>
           ) : (
             <>
-              <BidForm
-                houseAddress={house}
-                auctionId={auction.auctionId}
-                ensMap={ensMap}
-                initial={{
-                  amount: auction.amount,
-                  endTime: auction.endTime,
-                  reservePrice: auction.reservePrice,
-                  bidder: auction.bidder,
-                  firstBidTime: auction.firstBidTime,
-                  tokenOwner: auction.tokenOwner,
-                }}
-              />
+              <section className="py-5 border-b border-gray-100">
+                <BidForm
+                  houseAddress={house}
+                  auctionId={auction.auctionId}
+                  ensMap={ensMap}
+                  initial={{
+                    amount: auction.amount,
+                    endTime: auction.endTime,
+                    reservePrice: auction.reservePrice,
+                    bidder: auction.bidder,
+                    firstBidTime: auction.firstBidTime,
+                    tokenOwner: auction.tokenOwner,
+                  }}
+                />
+              </section>
               {bids.length > 0 ? (
-                <section className="space-y-3">
+                <section className="py-5 border-b border-gray-100 space-y-3">
                   <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
                     Bid history
                   </p>
@@ -155,27 +145,39 @@ export default async function AuctionPage({ params }: { params: Params }) {
             </>
           )}
 
-          <section className="text-[11px] font-mono text-gray-400 pt-2 border-t border-gray-100">
-            <p className="pt-3 space-x-4">
-              <a
-                href={`https://etherscan.io/address/${auction.tokenContract}`}
-                target="_blank"
-                rel="noreferrer"
-                className="hover:text-fg transition-colors"
-              >
-                Token {formatAddress(auction.tokenContract)} ↗
-              </a>
-              <a
-                href={`https://etherscan.io/address/${house}`}
-                target="_blank"
-                rel="noreferrer"
-                className="hover:text-fg transition-colors"
-              >
-                House {formatAddress(house)} ↗
-              </a>
-            </p>
+          {/* Contract metadata — etherscan deep-links. */}
+          <section className="pt-5">
+            <h3 className="text-[10px] font-mono font-medium uppercase tracking-wider text-gray-400 mb-3">
+              Details
+            </h3>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-[10px] font-mono">
+              <dt className="uppercase tracking-wider text-gray-400">Token</dt>
+              <dd>
+                <a
+                  href={`https://etherscan.io/address/${auction.tokenContract}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="hover:underline"
+                >
+                  {formatAddress(auction.tokenContract)} ↗
+                </a>
+              </dd>
+              <dt className="uppercase tracking-wider text-gray-400">Id</dt>
+              <dd>{auction.tokenId}</dd>
+              <dt className="uppercase tracking-wider text-gray-400">House</dt>
+              <dd>
+                <a
+                  href={`https://etherscan.io/address/${house}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="hover:underline"
+                >
+                  {formatAddress(house)} ↗
+                </a>
+              </dd>
+            </dl>
           </section>
-        </div>
+        </aside>
       </div>
     </div>
   )
