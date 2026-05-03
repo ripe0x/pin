@@ -47,8 +47,9 @@ export default function RootLayout({
       <body className="min-h-screen antialiased">
         <Providers>
           <Navbar />
-          {/* pt accommodates a taller navbar on mobile (logo row + search row). */}
-          <main className="pt-28 md:pt-16">{children}</main>
+          {/* pt accommodates a taller navbar on mobile (logo row + search row),
+              plus the campaign banner above the nav (h-8). */}
+          <main className="pt-36 md:pt-24">{children}</main>
         </Providers>
       </body>
     </html>
