@@ -14,10 +14,9 @@ export function Hero() {
           Run your own auction page.
         </h1>
         <p className="text-base sm:text-lg text-fg-muted leading-relaxed">
-          Self-hosted, brand-yours, free to run. Reads your Sovereign
-          auction house directly from the blockchain and renders every
-          active auction, every settled sale, and live bidding into one
-          page on a domain you control.
+          A free, self-hosted page that reads your Sovereign auction
+          house contract directly. Every active auction, every settled
+          sale, and live in-page bidding, on a domain you control.
         </p>
         <div className="space-y-2">
           <DeployButtons />

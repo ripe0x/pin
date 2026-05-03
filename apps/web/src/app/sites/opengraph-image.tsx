@@ -57,8 +57,9 @@ export default async function Image() {
               lineHeight: 1.4,
             }}
           >
-            Self-hosted, brand-yours, free to run. Pulls every auction and sale
-            from your wallet straight from the blockchain.
+            A free, self-hosted page that reads your Sovereign auction house
+            contract directly. Active auctions, past sales, and in-page
+            bidding, on your own domain.
           </div>
         </div>
       </div>
