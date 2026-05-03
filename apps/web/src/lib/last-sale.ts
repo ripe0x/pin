@@ -27,6 +27,8 @@ import { getAlchemyMainnetUrl } from "./alchemy-rpc"
 import {
   readFoundationLastSale,
   writeFoundationLastSale,
+  readScanCursor,
+  writeScanCursor,
   LAZY_TTL,
   isFresh,
 } from "./lazy-index"
@@ -134,15 +136,46 @@ async function scanFoundationLastSale(
   nftContract: Address,
   tokenId: bigint,
 ): Promise<LastSale | null> {
-  const created = await client
-    .getLogs({
-      address: FND_MARKET,
-      event: fndCreatedEvent,
-      args: { nftContract, tokenId },
-      fromBlock: FND_MARKET_DEPLOY_BLOCK,
-      toBlock: "latest",
-    })
-    .catch(() => [])
+  // Cursor-bounded scan. Same pattern as the bid-history and
+  // transfer-history scans: store the last block we scanned per
+  // (contract, tokenId) and start from there next time. First-ever
+  // miss pays the deploy-to-head scan once; every subsequent miss
+  // is bounded to whatever happened since the previous scan.
+  //
+  // Edge case (deliberately accepted): an auction created before
+  // the cursor that finalizes after the cursor will be missed by
+  // the from-cursor `created` scan, so we won't know to look for
+  // its `finalized` event. Mitigation: /api/auction/revalidate
+  // purges this cache when a settle tx confirms in our UI, which
+  // catches the common case (sales bid through PND). The remaining
+  // miss is: an auction created off-platform before cursor + never
+  // touched by our UI. Acceptable trade for the cost reduction;
+  // can be backstopped later by persisting auctionIds per token.
+  const scanKey = `last-sale-fnd:${nftContract.toLowerCase()}:${tokenId.toString()}`
+  const [cursor, latestBlock] = await Promise.all([
+    readScanCursor(scanKey),
+    client.getBlockNumber().catch(() => null),
+  ])
+  if (latestBlock === null) return null
+  const fromBlock = cursor ? cursor.lastBlock + 1n : FND_MARKET_DEPLOY_BLOCK
+
+  const created =
+    fromBlock > latestBlock
+      ? []
+      : await client
+          .getLogs({
+            address: FND_MARKET,
+            event: fndCreatedEvent,
+            args: { nftContract, tokenId },
+            fromBlock,
+            toBlock: latestBlock,
+          })
+          .catch(() => [])
+
+  // Always advance the cursor after a successful scan, even when
+  // no events matched — otherwise a quiet token would re-pay the
+  // deploy-to-head scan on every cache-miss visit.
+  await writeScanCursor(scanKey, latestBlock)
 
   if (created.length === 0) return null
   const auctionIds = created
@@ -151,13 +184,17 @@ async function scanFoundationLastSale(
   if (auctionIds.length === 0) return null
 
   // viem accepts an array for indexed args → topic1 OR-match in one call.
+  // Cursor-bounded the same way as the created scan above; finalized
+  // events for auctionIds we just discovered must by definition land
+  // in [fromBlock, latestBlock] too (a finalize can't precede its
+  // create), so the scan range is correct.
   const finalized = await client
     .getLogs({
       address: FND_MARKET,
       event: fndFinalizedEvent,
       args: { auctionId: auctionIds },
-      fromBlock: FND_MARKET_DEPLOY_BLOCK,
-      toBlock: "latest",
+      fromBlock,
+      toBlock: latestBlock,
     })
     .catch(() => [])
 
@@ -210,15 +247,33 @@ export async function getSovereignLastSale(
   const houseAddress = await getSovereignHouseOf(creator)
   if (!houseAddress) return null
 
-  const created = await client
-    .getLogs({
-      address: houseAddress,
-      event: sovCreatedEvent,
-      args: { tokenContract: nftContract, tokenId },
-      fromBlock: SOVEREIGN_FACTORY_DEPLOY_BLOCK,
-      toBlock: "latest",
-    })
-    .catch(() => [])
+  // Cursor-bounded scan, same shape and same accepted edge case as
+  // the Foundation path above. Cursor key includes the house so
+  // separate houses for the same (contract, tokenId) — should not
+  // happen in practice, but defensive — don't share state.
+  const scanKey = `last-sale-sov:${houseAddress.toLowerCase()}:${nftContract.toLowerCase()}:${tokenId.toString()}`
+  const [cursor, latestBlock] = await Promise.all([
+    readScanCursor(scanKey),
+    client.getBlockNumber().catch(() => null),
+  ])
+  if (latestBlock === null) return null
+  const fromBlock = cursor ? cursor.lastBlock + 1n : SOVEREIGN_FACTORY_DEPLOY_BLOCK
+
+  const created =
+    fromBlock > latestBlock
+      ? []
+      : await client
+          .getLogs({
+            address: houseAddress,
+            event: sovCreatedEvent,
+            args: { tokenContract: nftContract, tokenId },
+            fromBlock,
+            toBlock: latestBlock,
+          })
+          .catch(() => [])
+
+  // Advance cursor regardless of match count.
+  await writeScanCursor(scanKey, latestBlock)
 
   if (created.length === 0) return null
   const auctionIds = created
@@ -231,8 +286,8 @@ export async function getSovereignLastSale(
       address: houseAddress,
       event: sovEndedEvent,
       args: { auctionId: auctionIds },
-      fromBlock: SOVEREIGN_FACTORY_DEPLOY_BLOCK,
-      toBlock: "latest",
+      fromBlock,
+      toBlock: latestBlock,
     })
     .catch(() => [])
 
