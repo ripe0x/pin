@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { ipfsToHttp } from "@pin/shared"
 import { resolveTokenMetadataDirect } from "@/lib/onchain-discovery"
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit"
+import { isCrawlerUserAgent } from "@/lib/crawler"
 
 /**
  * OG-metadata endpoint for social embeds (Discord cards, Twitter previews,
@@ -20,9 +22,37 @@ import { resolveTokenMetadataDirect } from "@/lib/onchain-discovery"
  * reach the function.
  */
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ contract: string; tokenId: string }> },
 ) {
+  // This route is consumed by client-side JS (LazyAuctionCard) — not by
+  // OG-image scrapers, which read the meta tag URL directly. Bots that
+  // hit this JSON endpoint are scraping for an NFT database; they don't
+  // need to be served. Skip the (potentially RPC-firing) cache miss
+  // and return a quick 404. Real users go through the full path below.
+  if (isCrawlerUserAgent(req.headers.get("user-agent"))) {
+    return NextResponse.json(
+      { metadata: null, mediaUri: null },
+      {
+        status: 404,
+        headers: { "Cache-Control": "public, max-age=300" },
+      },
+    )
+  }
+
+  // Per-IP token bucket. Each successful request can fan out to a
+  // tokenURI eth_call + IPFS fetch on cache miss; without this an
+  // address-iterating bot can amplify into hundreds of RPC calls a
+  // minute under a single IP.
+  const ip = getClientIp(req)
+  const rl = checkRateLimit("meta", ip, 60_000, 120)
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: "rate-limited", retryAfter: rl.retryAfter },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfter) } },
+    )
+  }
+
   const { contract, tokenId } = await params
 
   try {
