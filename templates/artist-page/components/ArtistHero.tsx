@@ -1,14 +1,18 @@
 /**
  * Hero section for the index page — mirrors the PND main app's
- * `ArtistHeader` (in `components/artist/ArtistHeader.tsx`): avatar +
- * name + ENS-truncated address + a row of stat counts and pill links.
+ * `ArtistHeader`: avatar + name + truncated address + stat counts + pill row.
  *
- * Server component because the display name resolution (env → ENS → addr)
- * is server-only, and we want the right text in the SSR'd HTML for OG
- * crawlers and JS-disabled visitors.
+ * Avatar / bio / links resolve through the env-then-ENS fallback chain in
+ * `lib/artist.ts`, so artists who only set their wallet address still get a
+ * filled-in profile.
  */
 import { getConfig } from "@/lib/config"
-import { getArtistDisplayName } from "@/lib/artist"
+import {
+  getArtistDisplayName,
+  getArtistAvatarUrl,
+  getArtistBio,
+  getArtistLinks,
+} from "@/lib/artist"
 import { getArtistHouse } from "@/lib/auctions"
 import { formatAddress } from "@/lib/format"
 import { getEnsName } from "@/lib/ens"
@@ -20,18 +24,22 @@ type Props = {
 
 export async function ArtistHero({ totalAuctions, activeAuctions }: Props) {
   const cfg = getConfig()
-  const displayName = await getArtistDisplayName()
-  const ens = await getEnsName(cfg.artistAddress)
-  const house = await getArtistHouse()
+  const [displayName, avatarUrl, bio, links, ens, house] = await Promise.all([
+    getArtistDisplayName(),
+    getArtistAvatarUrl(),
+    getArtistBio(),
+    getArtistLinks(),
+    getEnsName(cfg.artistAddress),
+    getArtistHouse(),
+  ])
   const showAddressUnderName = !!ens || !!cfg.artistName
 
   return (
     <div className="flex flex-col sm:flex-row items-start gap-6">
-      {/* Avatar — keeps PND's rounded-full pattern (avatars only). */}
-      {cfg.artistAvatarUrl ? (
+      {avatarUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={cfg.artistAvatarUrl}
+          src={avatarUrl}
           alt={displayName}
           className="h-20 w-20 shrink-0 rounded-full object-cover"
         />
@@ -54,8 +62,8 @@ export async function ArtistHero({ totalAuctions, activeAuctions }: Props) {
             {formatAddress(cfg.artistAddress)}
           </p>
         )}
-        {cfg.artistBio ? (
-          <p className="max-w-2xl text-sm text-fg-muted">{cfg.artistBio}</p>
+        {bio ? (
+          <p className="max-w-2xl text-sm text-fg-muted">{bio}</p>
         ) : null}
 
         <div className="flex items-center gap-4 text-sm text-gray-500 pt-1">
@@ -71,7 +79,6 @@ export async function ArtistHero({ totalAuctions, activeAuctions }: Props) {
           )}
         </div>
 
-        {/* Pill row — etherscan link + optional artist links + house link. */}
         <div className="flex items-center flex-wrap gap-2 pt-2">
           <a
             href={`https://etherscan.io/address/${cfg.artistAddress}`}
@@ -100,7 +107,7 @@ export async function ArtistHero({ totalAuctions, activeAuctions }: Props) {
               <span aria-hidden>↗</span>
             </a>
           )}
-          {cfg.artistLinks.map((url) => (
+          {links.map((url) => (
             <a
               key={url}
               href={url}

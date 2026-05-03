@@ -2,7 +2,7 @@ import { ImageResponse } from "next/og"
 import { getAuctionById } from "@/lib/auctions"
 import { getTokenMetadata } from "@/lib/metadata"
 import { getConfig } from "@/lib/config"
-import { getArtistDisplayName } from "@/lib/artist"
+import { getArtistDisplayName, getArtistAvatarUrl } from "@/lib/artist"
 import { formatEth, formatTimeRemaining } from "@/lib/format"
 
 export const runtime = "nodejs"
@@ -27,8 +27,11 @@ export default async function Image({
   params: { auctionId: string }
 }) {
   const cfg = getConfig()
-  const displayName = await getArtistDisplayName()
-  const auction = await getAuctionById(params.auctionId)
+  const [displayName, avatarUrl, auction] = await Promise.all([
+    getArtistDisplayName(),
+    getArtistAvatarUrl(),
+    getAuctionById(params.auctionId),
+  ])
   const metadata = auction
     ? await getTokenMetadata(auction.tokenContract, auction.tokenId)
     : null
@@ -124,10 +127,10 @@ export default async function Image({
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            {cfg.artistAvatarUrl ? (
+            {avatarUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={cfg.artistAvatarUrl}
+                src={avatarUrl}
                 width={40}
                 height={40}
                 style={{ borderRadius: "100%", objectFit: "cover" }}

@@ -1,6 +1,10 @@
 import { ImageResponse } from "next/og"
 import { getConfig } from "@/lib/config"
-import { getArtistDisplayName } from "@/lib/artist"
+import {
+  getArtistDisplayName,
+  getArtistAvatarUrl,
+  getArtistBio,
+} from "@/lib/artist"
 
 export const runtime = "nodejs"
 
@@ -16,7 +20,11 @@ export const contentType = "image/png"
  */
 export default async function Image() {
   const cfg = getConfig()
-  const displayName = await getArtistDisplayName()
+  const [displayName, avatarUrl, bio] = await Promise.all([
+    getArtistDisplayName(),
+    getArtistAvatarUrl(),
+    getArtistBio(),
+  ])
   return new ImageResponse(
     (
       <div
@@ -33,10 +41,10 @@ export default async function Image() {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
-          {cfg.artistAvatarUrl ? (
+          {avatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={cfg.artistAvatarUrl}
+              src={avatarUrl}
               width={72}
               height={72}
               style={{ borderRadius: "100%", objectFit: "cover" }}
@@ -75,7 +83,7 @@ export default async function Image() {
           >
             Auctions
           </div>
-          {cfg.artistBio ? (
+          {bio ? (
             <div
               style={{
                 fontSize: 24,
@@ -84,7 +92,7 @@ export default async function Image() {
                 display: "flex",
               }}
             >
-              {cfg.artistBio}
+              {bio}
             </div>
           ) : (
             <div

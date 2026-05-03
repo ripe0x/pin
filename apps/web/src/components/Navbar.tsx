@@ -54,6 +54,12 @@ export function Navbar() {
         {/* Right: nav links + wallet */}
         <div className="flex items-center gap-6">
           <Link
+            href="/sites"
+            className="text-sm font-medium text-gray-600 transition-colors hover:text-fg"
+          >
+            Sites
+          </Link>
+          <Link
             href="/preserve"
             className="text-sm font-medium text-gray-600 transition-colors hover:text-fg"
           >

@@ -67,6 +67,42 @@ export async function getEnsNames(
   return map
 }
 
+/**
+ * Read an ENS text record for a name. Used to pull `avatar`, `description`,
+ * `url`, social handles, etc. — anything the user has set on their ENS
+ * profile. Returns null when the name has no record set or the RPC fails.
+ *
+ * Cached for 6 hours per (name, key) pair, same TTL as `getEnsName` —
+ * ENS records don't change often.
+ */
+export const getEnsText = unstable_cache(
+  async (name: string, key: string): Promise<string | null> => {
+    const client = getClient()
+    try {
+      const value = await client.getEnsText({ name, key })
+      return value ?? null
+    } catch {
+      return null
+    }
+  },
+  ["ens-text-v1"],
+  { revalidate: 60 * 60 * 6, tags: ["ens"] },
+)
+
+/**
+ * Resolve an ENS avatar URL for an address. Returns null when the address
+ * has no ENS name, the ENS name has no avatar text record, or anything else
+ * fails. Avatar values come back as raw strings — could be `https://...`,
+ * `ipfs://...`, `eip155:1/erc721:...` (NFT-as-avatar), etc. Callers should
+ * resolve any IPFS/EIP-155 forms before rendering. For now we return the
+ * raw value and let the caller handle it.
+ */
+export async function getEnsAvatarFor(address: Address): Promise<string | null> {
+  const name = await getEnsName(address)
+  if (!name) return null
+  return getEnsText(name, "avatar")
+}
+
 // Note: `displayFor` lives in `./format` rather than here so client
 // components can import it without pulling in this module's `server-only`
 // marker. Server callers that need both ENS resolution and the formatter
