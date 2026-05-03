@@ -50,16 +50,19 @@ export default async function Image() {
           </div>
           <div
             style={{
-              fontSize: 26,
-              color: "#666666",
-              maxWidth: 900,
+              fontFamily: "monospace",
+              fontSize: 36,
+              fontWeight: 500,
+              color: "#374151",
               display: "flex",
-              lineHeight: 1.4,
+              flexDirection: "column",
+              gap: 4,
+              lineHeight: 1.3,
             }}
           >
-            A free, self-hosted page that reads your Sovereign auction house
-            contract directly. Active auctions, past sales, and in-page
-            bidding, on your own domain.
+            <span>your work.</span>
+            <span>your URL.</span>
+            <span>your collectors.</span>
           </div>
         </div>
       </div>
