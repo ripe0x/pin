@@ -1,0 +1,19 @@
+# Netlify deploy configuration for the artist auction page template.
+# Required environment variables are documented in `.env.example`. The
+# Netlify deploy form prompts for any env vars not yet set.
+
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+# Tell Netlify which env vars to prompt the deployer for. We keep this
+# list intentionally minimal — only the wallet address is required;
+# everything else (display name, avatar, bio, social links) is derivable
+# from ENS or settable later as an optional override env var. See README
+# for the full list of optional overrides.
+[template.environment]
+  NEXT_PUBLIC_ARTIST_ADDRESS = "Your wallet address (0x...). The page surfaces every auction and sale this wallet has on supported marketplaces."
+  NEXT_PUBLIC_RPC_URL = "Optional. Paste your own free Alchemy/Infura URL to make pages load noticeably faster. Leave blank to use the bundled public RPC defaults."
