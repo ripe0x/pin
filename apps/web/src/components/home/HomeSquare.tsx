@@ -3,8 +3,13 @@ import { PLATFORMS, type ActiveAuctionSummary } from "@/lib/platforms"
 import { getArtistIdentity } from "@/lib/artist-queries"
 import { WorkArtistCard } from "./WorkArtistCard"
 import { HomeHeroTile } from "./HomeHeroTile"
+import { ActiveAuctionsStrip } from "./ActiveAuctionsStrip"
 
 const HOME_GRID_SIZE = 11
+// Number of work cards (excluding the hero) shown in the top half of
+// the split grid. On lg the layout is 4-col so the top half = hero
+// (col-span-2) + 1 card on row 1, then 2 cards on row 2 = 3 work cards.
+const TOP_HALF_WORK_CARDS = 3
 
 function shuffle<T>(arr: T[]): T[] {
   const copy = [...arr]
@@ -21,6 +26,12 @@ function shuffle<T>(arr: T[]): T[] {
  * pairs. Each pair shows a token currently up for auction next to the
  * artist who consigned it, sharing one outer border so they read as a
  * single composite card.
+ *
+ * The grid is split after the second row by a horizontal-scroll
+ * carousel (`ActiveAuctionsStrip`) that surfaces every other active
+ * auction — auctions whose seller's "one card per artist" slot was
+ * already taken by the grid above. Each token appears at most once on
+ * the page.
  */
 export async function HomeSquare() {
   // Per-request rendering — Math.random() below would otherwise be
@@ -91,36 +102,76 @@ export async function HomeSquare() {
     })
     .slice(0, HOME_GRID_SIZE)
 
-  return (
-    <ul className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:auto-rows-fr">
-      <li className="col-span-2 row-span-1">
-        <HomeHeroTile />
+  // Strip = active auctions whose (contract, tokenId) wasn't picked
+  // into the grid above. We surface only:
+  //   1. Has a bid AND a future endTime — soonest-ending first
+  //      (the countdown is real and the auction is closing).
+  //   2. Pre-bid auctions (endTime === 0) — randomized for variety.
+  // Auctions with `currentBidWei > 0n && endTime <= nowSec` are
+  // zombies: bids landed but the natural end time has passed without
+  // anyone calling `settle()` on-chain, so they linger in the
+  // platform's active list. Showing them as "live" is misleading
+  // (no real countdown) and as "bid" is noise — we drop them.
+  const nowSec = Math.floor(Date.now() / 1000)
+  const gridKeys = new Set(
+    sortedAuctions.map((a) => `${a.platform}:${a.contract}:${a.tokenId}`),
+  )
+  const stripPool = auctions.filter(
+    (a) => !gridKeys.has(`${a.platform}:${a.contract}:${a.tokenId}`),
+  )
+  const stripLiveCounting = stripPool
+    .filter((a) => a.currentBidWei > 0n && a.endTime > nowSec)
+    .sort((a, b) => a.endTime - b.endTime)
+  const stripPreBid = shuffle(
+    stripPool.filter((a) => a.currentBidWei === 0n),
+  )
+  const stripAuctions = [...stripLiveCounting, ...stripPreBid]
+
+  const topHalf = sortedAuctions.slice(0, TOP_HALF_WORK_CARDS)
+  const bottomHalf = sortedAuctions.slice(TOP_HALF_WORK_CARDS)
+
+  const renderWorkCard = (w: ActiveAuctionSummary) => {
+    const id = identities.get(w.seller.toLowerCase())
+    return (
+      <li
+        key={`${w.platform}:${w.contract}:${w.tokenId}`}
+        className="col-span-2"
+      >
+        <WorkArtistCard
+          contract={w.contract}
+          tokenId={w.tokenId}
+          amount={w.currentBidWei === 0n ? w.reserveWei : w.currentBidWei}
+          reservePrice={w.reserveWei}
+          endTime={w.endTime}
+          firstBidTime={0}
+          artistAddress={w.seller}
+          artistDisplayName={
+            id?.displayName ??
+            `${w.seller.slice(0, 6)}…${w.seller.slice(-4)}`
+          }
+          artistAvatarUrl={id?.avatarUrl ?? null}
+          platform={w.platform}
+        />
       </li>
-      {sortedAuctions.map((w) => {
-        const id = identities.get(w.seller.toLowerCase())
-        return (
-          <li
-            key={`${w.platform}:${w.contract}:${w.tokenId}`}
-            className="col-span-2"
-          >
-            <WorkArtistCard
-              contract={w.contract}
-              tokenId={w.tokenId}
-              amount={w.currentBidWei === 0n ? w.reserveWei : w.currentBidWei}
-              reservePrice={w.reserveWei}
-              endTime={w.endTime}
-              firstBidTime={0}
-              artistAddress={w.seller}
-              artistDisplayName={
-                id?.displayName ??
-                `${w.seller.slice(0, 6)}…${w.seller.slice(-4)}`
-              }
-              artistAvatarUrl={id?.avatarUrl ?? null}
-              platform={w.platform}
-            />
-          </li>
-        )
-      })}
-    </ul>
+    )
+  }
+
+  return (
+    <div className="space-y-12">
+      <ul className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:auto-rows-fr">
+        <li className="col-span-2 row-span-1">
+          <HomeHeroTile />
+        </li>
+        {topHalf.map(renderWorkCard)}
+      </ul>
+
+      <ActiveAuctionsStrip auctions={stripAuctions} />
+
+      {bottomHalf.length > 0 ? (
+        <ul className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:auto-rows-fr">
+          {bottomHalf.map(renderWorkCard)}
+        </ul>
+      ) : null}
+    </div>
   )
 }
