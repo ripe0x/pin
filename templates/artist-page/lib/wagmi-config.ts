@@ -1,20 +1,24 @@
 /**
  * Browser-side wagmi config for connect + bid txs.
  *
- * Two reasons we don't just call `getDefaultConfig()` and accept the full
- * default wallet list:
+ * Zero-config posture: artists deploy without registering anything anywhere.
+ * The connect modal works for any browser-extension wallet (MetaMask, Rabby,
+ * Frame, Brave, OKX, Phantom, etc.) plus Coinbase Wallet and Safe — all of
+ * which work without a WalletConnect project ID. Mobile users connecting via
+ * WC QR codes are off by default; if an artist wants to enable that, they
+ * register a free project at cloud.reown.com and set
+ * NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID. We detect that env var and add the
+ * WC connector to the wallet list when present.
  *
- * 1. **WalletConnect requires a real project ID.** The default we ship as a
- *    fallback (in `lib/config.ts`) is a placeholder; Reown's API rejects
- *    it with HTTP 403, which historically caused RainbowKit's Connect
- *    button to fail to hydrate (button stays empty). We detect the
- *    placeholder and skip the WalletConnect connector when it's in use.
- *    Artists who set `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` to a real ID
- *    from cloud.reown.com get the full wallet list (including WC mobile).
+ * We bypass RainbowKit's `getDefaultConfig` (which always wires up WC and
+ * fails noisily without a real project ID) in favor of an explicit
+ * `connectorsForWallets` list. That gives us:
+ *  - No 403 spam from Reown's API on init when no real project ID is set
+ *  - A coherent fallback for wallet UI even when WC isn't in the picture
  *
- * 2. The same RPC URLs that power our server-side viem client are passed to
- *    wagmi's `http` transport with `fallback`, so wallet-issued reads (e.g.
- *    `useReadContract`) get the same failover behavior as our server reads.
+ * The same RPC URLs that power our server-side viem client are passed to
+ * wagmi's `http` transport with `fallback`, so wallet-issued reads (e.g.
+ * `useReadContract`) get the same failover behavior as our server reads.
  */
 "use client"
 

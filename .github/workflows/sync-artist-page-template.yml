@@ -1,0 +1,58 @@
+name: Sync artist-page template to public repo
+
+# Mirrors templates/artist-page/ from this monorepo to the standalone
+# public repo that backs the `Deploy with Vercel` / `Deploy to Netlify`
+# buttons. Force-pushes to the destination's main branch so it always
+# matches what's in this monorepo.
+#
+# Triggers on:
+#  - Pushes to `main` that touch the template subdir (paths filter below)
+#  - Manual dispatch (Actions tab → "Run workflow"), useful after the
+#    initial public-repo setup or to push a hotfix without an unrelated
+#    monorepo commit.
+#
+# Setup (one-time, see .github/workflows/sync-artist-page-template.SETUP.md):
+#  1. Create the public destination repo on GitHub.
+#  2. Generate an SSH deploy key, register the public half on the
+#     destination repo with WRITE access.
+#  3. Add the private half to this repo as the secret
+#     `TEMPLATE_DEPLOY_KEY`.
+#  4. Set the variable `TEMPLATE_REPO` in this repo (Settings →
+#     Secrets and variables → Actions → Variables) to the destination,
+#     formatted as `git@github.com:OWNER/REPO.git`.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "templates/artist-page/**"
+      - ".github/workflows/sync-artist-page-template.yml"
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so the destination repo gets a meaningful commit
+          # log, not just the most recent state.
+          fetch-depth: 0
+
+      - name: Push templates/artist-page/ to public repo
+        # `git-publish-subdir-action` was built for exactly this pattern —
+        # it splits a subdirectory into its own commit history and pushes
+        # to a target repo's branch. Pinned by SHA for supply-chain safety.
+        uses: s0/git-publish-subdir-action@27adcb6e0fe7da9747d9bea4bbab57e0a005f73b # v2.6.0
+        env:
+          REPO: ${{ vars.TEMPLATE_REPO }}
+          BRANCH: main
+          FOLDER: templates/artist-page
+          SSH_PRIVATE_KEY: ${{ secrets.TEMPLATE_DEPLOY_KEY }}
+          # Mirror the upstream commit's subject so the destination's git
+          # log is readable. {msg} is interpolated by the action.
+          MESSAGE: "{msg}"
+          # Skip the empty-commit guard the action adds by default — we
+          # want every monorepo commit on this path to land downstream
+          # with a matching SHA, even if the diff is identical.
+          SKIP_EMPTY_COMMITS: "true"

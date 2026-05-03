@@ -66,6 +66,8 @@ A few small details about how the page works that are worth understanding:
 
 - **Your name comes from ENS.** If you have a primary ENS name set on your wallet (like `yourname.eth`), it appears as your display name automatically. Avatar, bio, and social links also come from your ENS profile if you've set those records (`avatar`, `description`, `url`, `com.twitter`, etc).
 
+- **Wallet support.** The connect button works for any browser-extension wallet (MetaMask, Rabby, Frame, Brave Wallet, OKX, Phantom, etc.), Coinbase Wallet, and Safe — no setup needed on your part. Mobile users connecting via WalletConnect QR codes (Rainbow mobile, Trust, MetaMask Mobile) are not enabled by default to keep your deploy zero-config; if a mobile visitor needs to bid, the easiest workaround is to open your site inside their wallet's built-in browser. To enable WalletConnect mobile QR connections, see the Customize section below.
+
 - **Updating the template.** If a marketplace upgrades their contract or this template gets new features, you'll pull the latest version and redeploy. We'll publish announcements when these come out.
 
 ---
@@ -81,7 +83,7 @@ Most artists won't need to change anything beyond the wallet address — ENS han
 | `NEXT_PUBLIC_ARTIST_BIO` | Bio override (otherwise: ENS `description` text record → empty). |
 | `NEXT_PUBLIC_ARTIST_LINKS` | Comma-separated social URLs (otherwise: ENS `url` / `com.twitter` / `org.farcaster` / `com.github` text records → empty). |
 | `NEXT_PUBLIC_RPC_URLS` | Comma-separated RPC URL chain. Use this if you want to specify your own multi-endpoint failover. |
-| `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | A WalletConnect project ID is bundled, but you can swap in your own here. |
+| `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | Set this to enable WalletConnect mobile QR connections (Rainbow, Trust, MetaMask Mobile, etc). Free, takes 2 min: register at [cloud.reown.com](https://cloud.reown.com), copy the project ID, paste it here. Without this, the connect modal still shows MetaMask, Rabby, Coinbase Wallet, Safe, and other browser-extension wallets. |
 
 To customize the look itself: this is a regular Next.js codebase. Fork it, edit the components, redeploy. See **What's where** at the bottom for the file map.
 

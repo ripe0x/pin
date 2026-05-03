@@ -22,14 +22,16 @@ export const SOVEREIGN_FACTORY_ADDRESS: Address =
 // existed before the factory was deployed.
 export const SOVEREIGN_FACTORY_DEPLOY_BLOCK = 24_973_294n
 
-// Placeholder WalletConnect project ID. Used as a fallback so the wagmi
-// config can construct without env var setup, but we deliberately suppress
-// the WalletConnect connector when this default is in play (Reown will
-// reject this ID with HTTP 403, which would otherwise break the Connect
-// button entirely). When the artist sets their own real project ID via
-// NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID, the WC mobile connector becomes
-// available; until then, only browser-extension wallets and Coinbase
-// Wallet appear in the picker. See `lib/wagmi-config.ts`.
+// Sentinel "no project ID provided" value. The template's default zero-config
+// posture is: no WalletConnect mobile support — `lib/wagmi-config.ts`
+// detects this sentinel and ships a connector list that doesn't need a
+// project ID (browser-extension wallets, Coinbase Wallet, Safe). Artists
+// who want WC mobile QR connections (Rainbow, Trust, MetaMask Mobile, etc)
+// set NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID to a real ID from
+// cloud.reown.com and the WC connector is added.
+//
+// We pass *something* here because RainbowKit's getDefaultConfig requires
+// a non-empty projectId argument, even when WC isn't in the wallet list.
 export const DEFAULT_WALLETCONNECT_PROJECT_ID =
   "0000000000000000000000000000000000000000000000000000000000000000"
 
