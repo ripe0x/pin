@@ -22,7 +22,8 @@ import {
 import { mainnet } from "viem/chains"
 import { unstable_cache } from "next/cache"
 import { pgCache } from "./pg-cache"
-import { getAlchemyMainnetUrl, loggingHttpTransport } from "./alchemy-rpc"
+import { getAlchemyMainnetUrl } from "./alchemy-rpc"
+import { loggingHttpTransport } from "./rpc-log"
 import {
   readFoundationLastSale,
   writeFoundationLastSale,

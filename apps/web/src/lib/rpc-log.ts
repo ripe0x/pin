@@ -1,6 +1,7 @@
 import "server-only"
 import { createHash } from "node:crypto"
 import { AsyncLocalStorage } from "node:async_hooks"
+import { http, type HttpTransportConfig, type Transport } from "viem"
 import { sql } from "./db"
 
 /**
@@ -108,4 +109,68 @@ export function logRpcEvent(ev: RpcEvent, opts?: { sample?: number }) {
       ${ev.ok}
     )
   `.catch(() => {})
+}
+
+/**
+ * `http(url)` with each JSON-RPC request sampled into the rpc_events
+ * table. Sampling is tighter (5 %) than the default 10 % because viem
+ * batches plus multicall fan-outs can produce hundreds of upstream
+ * calls per API request — full sampling would dominate the table.
+ *
+ * Lives here (rather than alongside `getAlchemyMainnetUrl` in
+ * alchemy-rpc.ts) so that any module-graph path leading to a client
+ * component can keep importing the URL helper without dragging
+ * "server-only" into the client bundle.
+ */
+const VIEM_LOG_SAMPLE = 0.05
+
+export function loggingHttpTransport(
+  url: string,
+  route: string | undefined,
+  config?: HttpTransportConfig,
+): Transport {
+  const inner = http(url, config)
+  const host = upstreamHost(url)
+  return ((transportConfig) => {
+    const transport = inner(transportConfig)
+    const origRequest = transport.request
+    const wrapped = {
+      ...transport,
+      request: async (args: { method?: string }) => {
+        const t0 = Date.now()
+        const method = args?.method ?? "unknown"
+        try {
+          const result = await origRequest(
+            args as Parameters<typeof origRequest>[0],
+          )
+          logRpcEvent(
+            {
+              source: "server",
+              route,
+              method,
+              durationMs: Date.now() - t0,
+              upstream: host,
+              ok: true,
+            },
+            { sample: VIEM_LOG_SAMPLE },
+          )
+          return result
+        } catch (e) {
+          logRpcEvent(
+            {
+              source: "server",
+              route,
+              method,
+              durationMs: Date.now() - t0,
+              upstream: host,
+              ok: false,
+            },
+            { sample: VIEM_LOG_SAMPLE },
+          )
+          throw e
+        }
+      },
+    }
+    return wrapped as ReturnType<typeof inner>
+  }) as Transport
 }

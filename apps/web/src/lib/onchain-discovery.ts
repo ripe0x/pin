@@ -17,7 +17,8 @@ import { mainnet } from "viem/chains"
 import { foundationNftAbi, collectionFactoryAbi, erc721Abi } from "@pin/abi"
 import { getAssetTransfers, getOwnersForNft } from "./alchemy"
 import { pgCache } from "./pg-cache"
-import { getAlchemyMainnetUrl, loggingHttpTransport } from "./alchemy-rpc"
+import { getAlchemyMainnetUrl } from "./alchemy-rpc"
+import { loggingHttpTransport } from "./rpc-log"
 import { isRpcDisabled } from "./rpc-circuit"
 import {
   FOUNDATION_NFT,
