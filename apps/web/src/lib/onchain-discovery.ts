@@ -37,6 +37,10 @@ import {
   writeFoundationArtistTokens,
   readErc1155TransferStream,
   writeErc1155TransferStream,
+  readTokenTransfers,
+  writeTokenTransfers,
+  readScanCursor,
+  writeScanCursor,
   LAZY_TTL,
   isFresh,
 } from "./lazy-index"
@@ -288,30 +292,65 @@ export async function enrichTokens(
 
   const client = getClient()
 
-  const enriched = await mapWithConcurrency<TokenRef, DiscoveredToken | null>(refs, 8, async (ref) => {
-    // Run metadata fetch and burn-check in parallel. The mint-log scan that
-    // produced these refs doesn't track burns, so a token can be in the list
-    // even after it's been transferred to 0x0 — `ownerOf` then reverts. We
-    // filter those out so the gallery doesn't render ghost cards.
-    const [meta, ownerProbe] = await Promise.all([
-      resolveTokenMetadataDirect(ref.contract, ref.tokenId),
-      client
-        .readContract({
-          address: ref.contract as Address,
-          abi: erc721Abi,
-          functionName: "ownerOf",
-          args: [BigInt(ref.tokenId)],
+  // Burn-check upfront via one multicall per contract instead of one
+  // eth_call per token. Per-page enrichment was firing N independent
+  // ownerOf reads (24 for a default gallery page), which on cold cache
+  // shows up as 24 eth_calls in the Alchemy bill. multicall3
+  // aggregate3 collapses each contract's set into one RPC and tolerates
+  // per-call failures (an individual revert returns status='failure'
+  // rather than aborting the batch — exactly what we need to detect
+  // burned ERC-721s and ERC-1155s that don't implement ownerOf).
+  const refsByContract = new Map<string, TokenRef[]>()
+  for (const ref of refs) {
+    const arr = refsByContract.get(ref.contract.toLowerCase()) ?? []
+    arr.push(ref)
+    refsByContract.set(ref.contract.toLowerCase(), arr)
+  }
+  const ownerProbes = new Map<string, { ok: boolean; owner?: string }>()
+  await Promise.all(
+    Array.from(refsByContract.entries()).map(async ([contractLower, contractRefs]) => {
+      const contract = contractLower as Address
+      const results = await client
+        .multicall({
+          contracts: contractRefs.map((r) => ({
+            address: contract,
+            abi: erc721Abi,
+            functionName: "ownerOf" as const,
+            args: [BigInt(r.tokenId)] as const,
+          })),
+          allowFailure: true,
         })
-        .then((o) => ({ ok: true, owner: o as string }) as const)
-        .catch(() => ({ ok: false }) as const),
-    ])
+        .catch(() => null)
+      contractRefs.forEach((r, i) => {
+        const key = `${contractLower}:${r.tokenId}`
+        if (!results) {
+          ownerProbes.set(key, { ok: false })
+          return
+        }
+        const result = results[i]
+        if (result.status !== "success") {
+          ownerProbes.set(key, { ok: false })
+          return
+        }
+        ownerProbes.set(key, { ok: true, owner: result.result as string })
+      })
+    }),
+  )
+
+  const enriched = await mapWithConcurrency<TokenRef, DiscoveredToken | null>(refs, 8, async (ref) => {
+    // Metadata fetch can stay per-token because it's already memoized
+    // via `resolveTokenMetadataDirect` (unstable_cache + pgCache(1h));
+    // warm-cache calls are point lookups, not RPC. The burn-check
+    // above is what was generating the cold RPC fan-out we just cut.
+    const meta = await resolveTokenMetadataDirect(ref.contract, ref.tokenId)
+    const ownerProbe = ownerProbes.get(`${ref.contract.toLowerCase()}:${ref.tokenId}`) ?? { ok: false }
 
     // Drop ERC-721 tokens that have been burned. ERC-1155 contracts don't
     // implement `ownerOf`, so the call reverts for them too — but ERC-1155
     // metadata reliably comes back via `uri(id)`, so we use the heuristic:
     // burned only when ownerOf reverted AND metadata fetch returned null.
     if (!ownerProbe.ok && !meta) return null
-    if (ownerProbe.ok && ownerProbe.owner.toLowerCase() === ZERO_ADDRESS) {
+    if (ownerProbe.ok && ownerProbe.owner?.toLowerCase() === ZERO_ADDRESS) {
       return null
     }
 
@@ -796,31 +835,37 @@ async function getTokenOnChainDataUncached(
   const owner = ownerResult ? (ownerResult as string) : null
   let creator = creatorResult ? (creatorResult as string) : null
 
-  // ERC721 transfer history: keep the targeted indexed-topic `getLogs`
-  // filter. Alchemy charges this cheaply because the topic is indexed, and
-  // it only returns transfers for *this* token (typically 2–5 entries).
-  //
-  // We tried migrating this to `alchemy_getAssetTransfers`, but the API
-  // doesn't accept a tokenId filter — for a high-token-count contract like
-  // Foundation's shared NFT, the page-walk through every transfer in the
-  // contract took 18s+. The targeted log filter wins decisively here.
-  const latestBlock = await client.getBlockNumber()
-  const transferLogs = await getLogs(
-    client,
-    contract,
-    transferEvent,
-    { tokenId: id },
-    SHARED_DEPLOY_BLOCK,
-    latestBlock,
-  )
+  // ERC721 transfer history: cursor-bounded incremental scan +
+  // persistence in lazy_token_transfers. The first ever miss for this
+  // (contract, tokenId) pays the deploy-to-head scan once; every
+  // subsequent miss only scans blocks since the cursor was last
+  // advanced. Without persistence the cursor would shrink the scan
+  // range but discard the historical transfers a cold render needs to
+  // build the provenance timeline — so the scan results merge with
+  // the cached rows and both get returned.
+  const scanKey = `token-transfers:${contractAddress.toLowerCase()}:${tokenId}`
+  const [cached, cursor, latestBlock] = await Promise.all([
+    readTokenTransfers(contractAddress, tokenId),
+    readScanCursor(scanKey),
+    client.getBlockNumber(),
+  ])
+  const fromBlock = cursor ? cursor.lastBlock + 1n : SHARED_DEPLOY_BLOCK
+  const transferLogs =
+    fromBlock > latestBlock
+      ? []
+      : await getLogs(
+          client,
+          contract,
+          transferEvent,
+          { tokenId: id },
+          fromBlock,
+          latestBlock,
+        )
 
-  // Resolve block timestamps. Two optimizations vs. the naive per-transfer
-  // fetch we had before:
-  //   1. Dedupe by block number — multiple transfers can land in the same
-  //      block (mint+transfer atomically), so we only need one fetch per
-  //      unique block.
-  //   2. The transport above has `batch: true`, so the parallel fetches
-  //      collapse into a single batched JSON-RPC POST regardless of count.
+  // Resolve block timestamps for the *new* logs only — already-cached
+  // transfers carry their block_time on the row. Dedupe + batched
+  // transport (`batch: true`) collapse the parallel fetches into one
+  // JSON-RPC POST.
   const uniqueBlockNumbers = Array.from(
     new Set(
       (transferLogs as Array<{ blockNumber: bigint }>).map((l) => l.blockNumber),
@@ -838,20 +883,68 @@ async function getTokenOnChainDataUncached(
     }),
   )
 
-  const transfers = transferLogs.map((log) => {
+  const newTransfers = transferLogs.map((log) => {
     const l = log as {
       args: { from: string; to: string; tokenId: bigint }
       blockNumber: bigint
       transactionHash: string
+      logIndex: number
     }
     return {
       from: l.args.from,
       to: l.args.to,
       blockNumber: l.blockNumber,
       txHash: l.transactionHash,
+      logIndex: l.logIndex,
       timestamp: blockTimestamps.get(l.blockNumber) ?? 0,
     }
   })
+
+  // Persist the new rows + advance the cursor in parallel. Awaited
+  // (not fire-and-forget) so a quick re-render reads the freshly
+  // written rows; the cost is small (typically 0–2 inserts per call).
+  if (newTransfers.length > 0) {
+    await writeTokenTransfers(
+      contractAddress,
+      tokenId,
+      newTransfers.map((t) => ({
+        txHash: t.txHash,
+        logIndex: t.logIndex,
+        from: t.from,
+        to: t.to,
+        blockNumber: t.blockNumber,
+        blockTime: t.timestamp,
+      })),
+    )
+  }
+  await writeScanCursor(scanKey, latestBlock)
+
+  // Merge cached + new, dedupe by (txHash, logIndex), sort newest-first.
+  const merged = new Map<
+    string,
+    { from: string; to: string; blockNumber: bigint; txHash: string; timestamp: number }
+  >()
+  for (const t of cached) {
+    merged.set(`${t.txHash}:${t.logIndex}`, {
+      from: t.from,
+      to: t.to,
+      blockNumber: t.blockNumber,
+      txHash: t.txHash,
+      timestamp: t.blockTime,
+    })
+  }
+  for (const t of newTransfers) {
+    merged.set(`${t.txHash}:${t.logIndex}`, {
+      from: t.from,
+      to: t.to,
+      blockNumber: t.blockNumber,
+      txHash: t.txHash,
+      timestamp: t.timestamp,
+    })
+  }
+  const transfers = Array.from(merged.values()).sort((a, b) =>
+    a.blockNumber > b.blockNumber ? -1 : a.blockNumber < b.blockNumber ? 1 : 0,
+  )
 
   // Derive creator from mint event if tokenCreator() is unavailable (custom collections)
   if (!creator && transfers.length > 0) {

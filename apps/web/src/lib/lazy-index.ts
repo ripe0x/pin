@@ -1116,6 +1116,83 @@ export function writeSuperrareV2ActiveAuctions(
   })()
 }
 
+// ─── Per-token ERC-721 transfer history (migration 013) ─────────────────
+// Used by `getTokenOnChainData` to skip the deploy-to-head log scan on
+// repeat token-page renders. The cursor lives in `lazy_scan_cursors`
+// with key `token-transfers:<contract>:<tokenId>`.
+
+export type LazyTokenTransfer = {
+  txHash: string
+  logIndex: number
+  from: string
+  to: string
+  blockNumber: bigint
+  blockTime: number
+}
+
+export async function readTokenTransfers(
+  contract: string,
+  tokenId: string,
+): Promise<LazyTokenTransfer[]> {
+  if (!sql) return []
+  try {
+    const rows = await sql<
+      Array<{
+        tx_hash: string
+        log_index: number
+        from_addr: string
+        to_addr: string
+        block_number: string
+        block_time: string
+      }>
+    >`
+      SELECT tx_hash, log_index, from_addr, to_addr,
+             block_number::text AS block_number,
+             block_time::text AS block_time
+      FROM lazy_token_transfers
+      WHERE contract = ${contract.toLowerCase()} AND token_id = ${tokenId}
+      ORDER BY block_number DESC, log_index DESC
+    `
+    return rows.map((r) => ({
+      txHash: r.tx_hash,
+      logIndex: r.log_index,
+      from: r.from_addr,
+      to: r.to_addr,
+      blockNumber: BigInt(r.block_number),
+      blockTime: Number(r.block_time),
+    }))
+  } catch {
+    return []
+  }
+}
+
+export async function writeTokenTransfers(
+  contract: string,
+  tokenId: string,
+  rows: LazyTokenTransfer[],
+): Promise<void> {
+  if (!sql || rows.length === 0) return
+  try {
+    // Sequential UPSERT loop. Transfer counts per token are small
+    // (typically <10) so an inserts pile is fine; using a values()
+    // batch would need bigint↔text encoding handled per-row anyway.
+    for (const r of rows) {
+      await sql`
+        INSERT INTO lazy_token_transfers
+          (contract, token_id, tx_hash, log_index,
+           from_addr, to_addr, block_number, block_time)
+        VALUES
+          (${contract.toLowerCase()}, ${tokenId}, ${r.txHash}, ${r.logIndex},
+           ${r.from.toLowerCase()}, ${r.to.toLowerCase()},
+           ${r.blockNumber.toString()}, ${r.blockTime})
+        ON CONFLICT (contract, token_id, tx_hash, log_index) DO NOTHING
+      `
+    }
+  } catch {
+    /* ignore — next miss re-scans the same range */
+  }
+}
+
 export async function readScanCursor(
   scanKey: string,
 ): Promise<{ lastBlock: bigint; lastScannedAt: Date } | null> {
