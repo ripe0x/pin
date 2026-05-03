@@ -1,5 +1,5 @@
 import type { Metadata } from "next"
-import { Suspense } from "react"
+import { Suspense, cache } from "react"
 import { SITE_TITLE, ipfsToHttp } from "@pin/shared"
 import { FOUNDATION_NFT, MAINNET_CHAIN_ID } from "@pin/addresses"
 import { Provenance, type ProvenanceEntry } from "@/components/Provenance"
@@ -25,7 +25,13 @@ function truncateAddress(addr: string): string {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`
 }
 
-async function getTokenPageData(handle: string, tokenId: string) {
+// Wrapped in React's `cache()` so calls within the same request — there
+// are two: one in `generateMetadata`, one in the page body — share a
+// single result. Without this, the metadata + body each ran the full
+// fetch independently, doubling RPC fan-out on every cold token-page
+// request. `cache()` is React's built-in request-scoped memoization;
+// state doesn't leak across requests.
+const getTokenPageData = cache(async (handle: string, tokenId: string) => {
   const isAddress = handle.startsWith("0x") && handle.length === 42
   const contract = isAddress ? handle : FOUNDATION_NFT[MAINNET_CHAIN_ID]
 
@@ -90,7 +96,7 @@ async function getTokenPageData(handle: string, tokenId: string) {
     edition: isErc1155 ? erc1155!.totalSupply : null,
     ownerCount: isErc1155 ? erc1155!.ownerCount : null,
   }
-}
+})
 
 export async function generateMetadata({
   params,
