@@ -24,7 +24,16 @@ export default createConfig({
     mainnet: {
       id: 1,
       rpc: http(RPC_URL),
-      pollingInterval: 5_000,
+      // Head-following cadence. 60s vs the default 5s is a 12× drop in
+      // baseline poll volume. Each clone house's events still get
+      // indexed within ~1 min of the on-chain confirmation — fine for
+      // an auction site where bid lists tolerate sub-minute lag, the
+      // bid button reads fresh on-chain state at click-time, and the
+      // contract rejects stale bids regardless of UI freshness.
+      // Per-poll cost grows with house count (currently 54), so
+      // throttling here keeps Ponder's RPC bill linear-bounded as
+      // houses grow rather than scaling with poll frequency too.
+      pollingInterval: 60_000,
     },
   },
   contracts: {
