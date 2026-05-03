@@ -52,7 +52,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           rel="stylesheet"
         />
       </head>
-      <body className="min-h-screen antialiased">
+      {/* `suppressHydrationWarning` is necessary because browser extensions
+          (Phantom, Kapture, MetaMask, etc.) commonly append classes/attributes
+          to <body> before React hydrates. Without this, the className diff
+          would bail out hydration on the entire client tree and the
+          RainbowKit Connect button — which is a client component — would
+          render briefly during SSR then disappear. */}
+      <body className="min-h-screen antialiased" suppressHydrationWarning>
         <Providers>
           <Navbar />
           {/* pt mirrors PND's nav offset (logo row only — no search row here). */}

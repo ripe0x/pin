@@ -54,10 +54,17 @@ export type ProvenanceEntry = {
   event: "Minted" | "Transferred" | "Listed" | "Sold" | "Cancelled"
   from: Address
   to: Address | null
+  /** Unix seconds. */
   blockTime: number
-  blockNumber: bigint
   txHash: `0x${string}`
 }
+
+// Note: we deliberately do NOT include `blockNumber` in `ProvenanceEntry`
+// even though we use it for sorting. `unstable_cache` JSON-serializes
+// return values for the disk cache, and bigints aren't JSON-safe — including
+// one would throw a "Do not know how to serialize a BigInt" error on every
+// cache write, silently breaking the cache. We sort inside the cached
+// function instead.
 
 const transferEvent = parseAbiItem(
   "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
@@ -118,13 +125,19 @@ const _getTokenProvenanceCached = unstable_cache(
 
     const lowerHouse = houseAddress?.toLowerCase()
 
-    const entries: ProvenanceEntry[] = logs
-      .filter(
-        (l): l is typeof l & {
-          blockNumber: bigint
-          transactionHash: `0x${string}`
-        } => l.blockNumber !== null && l.transactionHash !== null,
-      )
+    // Sort newest first by blockNumber while we still have it as bigint,
+    // then drop blockNumber from the returned shape so the value is
+    // JSON-serializable (unstable_cache uses JSON for disk persistence,
+    // and bigints aren't JSON-safe).
+    const filtered = logs.filter(
+      (l): l is typeof l & {
+        blockNumber: bigint
+        transactionHash: `0x${string}`
+      } => l.blockNumber !== null && l.transactionHash !== null,
+    )
+    filtered.sort((a, b) => Number(b.blockNumber - a.blockNumber))
+
+    const entries: ProvenanceEntry[] = filtered
       .map((l) => {
         const from = (l.args.from ?? ZERO_ADDRESS) as Address
         const to = (l.args.to ?? ZERO_ADDRESS) as Address
@@ -150,16 +163,13 @@ const _getTokenProvenanceCached = unstable_cache(
           from,
           to: to === ZERO_ADDRESS ? null : to,
           blockTime: blockTimes.get(l.blockNumber) ?? 0,
-          blockNumber: l.blockNumber,
           txHash: l.transactionHash,
         }
       })
 
-    // Newest first — matches PND's display order.
-    entries.sort((a, b) => Number(b.blockNumber - a.blockNumber))
     return entries
   },
-  ["token-provenance-v1"],
+  ["token-provenance-v2"],
   { revalidate: 60 * 5, tags: ["token-provenance"] },
 )
 

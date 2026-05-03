@@ -1,5 +1,4 @@
 import type { Metadata } from "next"
-import { SITE_TITLE } from "@pin/shared"
 import { Hero } from "@/components/sites/Hero"
 import { WhyItExists } from "@/components/sites/WhyItExists"
 import { FeatureGrid } from "@/components/sites/FeatureGrid"
@@ -12,8 +11,10 @@ const TITLE = "Run your own auction page"
 const DESCRIPTION =
   "A self-hosted, brand-yours auction page that pulls every active and past sale from your wallet straight from the blockchain. Free to deploy on Vercel or Netlify."
 
+// The root layout's title.template already appends " | PND", so we pass the
+// bare title here and let the template add the suffix.
 export const metadata: Metadata = {
-  title: `${TITLE} | ${SITE_TITLE}`,
+  title: TITLE,
   description: DESCRIPTION,
   openGraph: {
     title: TITLE,

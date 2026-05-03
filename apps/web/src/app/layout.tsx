@@ -44,7 +44,13 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="min-h-screen antialiased">
+      {/* `suppressHydrationWarning` guards against browser extensions
+          (Phantom, MetaMask, Kapture, etc.) appending classes/attributes to
+          <body> before React hydrates. Without it, the resulting className
+          mismatch bails out hydration on the entire client tree, which
+          breaks any client component below — most visibly the RainbowKit
+          Connect button (renders during SSR, then disappears). */}
+      <body className="min-h-screen antialiased" suppressHydrationWarning>
         <Providers>
           <Navbar />
           {/* pt accommodates a taller navbar on mobile (logo row + search row). */}
