@@ -8,7 +8,7 @@ import { resolveTokenMetadataDirect } from "@/lib/onchain-discovery"
  * token URL.
  *
  * Previously this route created its own viem client referencing
- * `NEXT_PUBLIC_ALCHEMY_MAINNET_URL` and read `tokenURI` uncached on every
+ * `ALCHEMY_MAINNET_URL` and read `tokenURI` uncached on every
  * call. That made it (a) bypass the `/api/rpc` proxy's rate limit and (b)
  * pay a fresh on-chain read per (contract, tokenId, CDN-edge) — i.e. anyone
  * iterating token IDs got a free RPC channel.

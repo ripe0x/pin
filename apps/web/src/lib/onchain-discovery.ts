@@ -107,7 +107,7 @@ export function getClient() {
     // same total CU cost upstream but much less HTTP overhead. Alchemy
     // supports JSON-RPC batching natively.
     transport: http(
-      process.env.NEXT_PUBLIC_ALCHEMY_MAINNET_URL ?? "https://eth.llamarpc.com",
+      process.env.ALCHEMY_MAINNET_URL ?? "https://eth.llamarpc.com",
       { batch: true },
     ),
   })

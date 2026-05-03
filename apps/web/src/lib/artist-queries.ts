@@ -25,7 +25,7 @@ import { extractCid, ipfsToHttp } from "@pin/shared"
 const client = createPublicClient({
   chain: mainnet,
   transport: http(
-    process.env.NEXT_PUBLIC_ALCHEMY_MAINNET_URL ?? "https://eth.llamarpc.com",
+    process.env.ALCHEMY_MAINNET_URL ?? "https://eth.llamarpc.com",
   ),
 })
 

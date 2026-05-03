@@ -15,16 +15,16 @@ import {
 } from "wagmi"
 import { foundry, mainnet } from "wagmi/chains"
 
-// When the dev server's mainnet RPC is pointed at a local fork
-// (NEXT_PUBLIC_ALCHEMY_MAINNET_URL=http://localhost:*), we're in
-// fork-testing mode and the *preferred* chain is foundry — sending
-// txs on real Ethereum mainnet would bypass the fork. In production
-// this env var points at Alchemy and the preferred chain is mainnet.
-// `NEXT_PUBLIC_*` vars are inlined at build time so this evaluates
-// statically per build.
-const FORK_MODE = !!process.env.NEXT_PUBLIC_ALCHEMY_MAINNET_URL?.match(
-  /^https?:\/\/(localhost|127\.0\.0\.1)/,
-)
+// When the dev server is pointed at a local Anvil fork
+// (NEXT_PUBLIC_USE_LOCAL_RPC=1), we're in fork-testing mode and the
+// *preferred* chain is foundry — sending txs on real Ethereum
+// mainnet would bypass the fork. In production this flag is unset
+// and the preferred chain is mainnet. `NEXT_PUBLIC_*` vars are
+// inlined at build time so this evaluates statically per build —
+// which is exactly why the flag is a boolean string and not the
+// Alchemy URL: anything in `NEXT_PUBLIC_*` ends up in the public
+// JS bundle, so URLs containing API keys must stay out.
+const FORK_MODE = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
 const PREFERRED_CHAIN = FORK_MODE ? foundry : mainnet
 const PREFERRED_CHAIN_LABEL = FORK_MODE ? "Foundry (local fork)" : "Ethereum"
 import { ConnectButton } from "@rainbow-me/rainbowkit"

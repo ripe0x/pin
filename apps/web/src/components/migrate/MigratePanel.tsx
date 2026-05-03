@@ -47,15 +47,14 @@ const PLATFORM_LABELS: Record<PlatformId, string> = {
   sovereign: "Sovereign Auction House",
 }
 
-// In dev/fork mode (the dapp's mainnet RPC env points at localhost),
-// the preferred wallet chain is the local Anvil chain (31337) — sending
-// real txs to mainnet during a fork test would skip the fork entirely.
-// In production this evaluates to mainnet and the wrong-network banner
-// effectively never shows. `NEXT_PUBLIC_*` is statically inlined at
-// build time, so this branch decision is locked at deploy.
-const FORK_MODE = !!process.env.NEXT_PUBLIC_ALCHEMY_MAINNET_URL?.match(
-  /^https?:\/\/(localhost|127\.0\.0\.1)/,
-)
+// In dev/fork mode (NEXT_PUBLIC_USE_LOCAL_RPC=1), the preferred
+// wallet chain is the local Anvil chain (31337) — sending real txs
+// to mainnet during a fork test would skip the fork entirely. In
+// production this flag is unset and the wrong-network banner
+// effectively never shows. `NEXT_PUBLIC_*` is statically inlined
+// at build time, so the flag stays a boolean string — never an
+// Alchemy URL — so nothing scrapeable lands in the bundle.
+const FORK_MODE = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
 const PREFERRED_CHAIN = FORK_MODE ? foundry : mainnet
 const PREFERRED_CHAIN_LABEL = FORK_MODE ? "Foundry (local fork)" : "Ethereum"
 

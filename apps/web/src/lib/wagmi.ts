@@ -20,10 +20,16 @@ const anvilUrl = process.env.NEXT_PUBLIC_ANVIL_RPC_URL ?? "http://localhost:8545
 // burning the proxy's rate-limit budget — and writes against chain 1 (a
 // rare wagmi auto-route) stay on the fork instead of bouncing off
 // `/api/rpc`'s eth_sendTransaction block.
-const isLocalRpc =
-  !!process.env.NEXT_PUBLIC_ALCHEMY_MAINNET_URL?.match(
-    /^https?:\/\/(localhost|127\.0\.0\.1)/,
-  )
+//
+// Detection is a dedicated boolean flag, NOT inferred from the Alchemy
+// URL env var. Reason: anything Next.js inlines at build time (any
+// `NEXT_PUBLIC_*` value referenced anywhere in an import graph reachable
+// from a client component) ends up as a literal string in the client JS
+// bundle. Reading `NEXT_PUBLIC_ALCHEMY_MAINNET_URL` here — even just to
+// `.match()` against it — would bake the URL, including the API key
+// segment, into every visitor's browser. The flag stays a flag (`"1"`
+// or unset), so there's nothing in the bundle worth scraping.
+const isLocalRpc = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
 const mainnetTransport = isLocalRpc
   ? http(anvilUrl)
   : // In production, route browser RPC through our server-side
