@@ -11,6 +11,7 @@ import { getTokenOwner, getTokenProvenance } from "@/lib/token"
 import { getArtistDisplayName } from "@/lib/artist"
 import { getEnsNames } from "@/lib/ens"
 import { displayFor, formatAddress, formatEth } from "@/lib/format"
+import { explorerAddressUrl } from "@/lib/explorer"
 import { getConfig } from "@/lib/config"
 
 export const revalidate = 60
@@ -99,7 +100,7 @@ export default async function AuctionPage({ params }: { params: Params }) {
           {/* Title + creator caption */}
           <section className="pb-5 border-b border-gray-100 space-y-2">
             <a
-              href={`https://etherscan.io/address/${cfg.artistAddress}`}
+              href={explorerAddressUrl(cfg.artistAddress)}
               target="_blank"
               rel="noreferrer"
               className="block text-[11px] font-mono uppercase tracking-wider text-gray-600 hover:text-fg transition-colors"
@@ -158,25 +159,47 @@ export default async function AuctionPage({ params }: { params: Params }) {
             </>
           )}
 
-          {/* Owner — current ownerOf the NFT. Hidden when ownerOf
-              reverted (e.g. the token was burned). */}
+          {/* Owner — current ownerOf the NFT. When the token is escrowed
+              in the artist's auction house we relabel + reword so it's
+              clear it's not actually held by some random contract address. */}
           {currentOwner ? (
             <section className="py-5 border-b border-gray-100 space-y-1">
-              <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-                Owner
-              </p>
-              <a
-                href={`https://etherscan.io/address/${currentOwner}`}
-                target="_blank"
-                rel="noreferrer"
-                className={`text-xs hover:underline ${
-                  ensMap.has(currentOwner.toLowerCase())
-                    ? ""
-                    : "font-mono"
-                }`}
-              >
-                {displayFor(currentOwner, ensMap)}
-              </a>
+              {currentOwner.toLowerCase() === house.toLowerCase() ? (
+                <>
+                  <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+                    Held in escrow
+                  </p>
+                  <p className="text-xs">
+                    <span>{displayName}&rsquo;s </span>
+                    <a
+                      href={explorerAddressUrl(currentOwner)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="hover:underline"
+                    >
+                      auction contract
+                    </a>
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+                    Owner
+                  </p>
+                  <a
+                    href={explorerAddressUrl(currentOwner)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={`text-xs hover:underline ${
+                      ensMap.has(currentOwner.toLowerCase())
+                        ? ""
+                        : "font-mono"
+                    }`}
+                  >
+                    {displayFor(currentOwner, ensMap)}
+                  </a>
+                </>
+              )}
             </section>
           ) : null}
 
@@ -198,7 +221,7 @@ export default async function AuctionPage({ params }: { params: Params }) {
               </dt>
               <dd className="text-[10px] font-mono truncate">
                 <a
-                  href={`https://etherscan.io/address/${auction.tokenContract}`}
+                  href={explorerAddressUrl(auction.tokenContract)}
                   target="_blank"
                   rel="noreferrer"
                   className="hover:underline"
@@ -215,7 +238,7 @@ export default async function AuctionPage({ params }: { params: Params }) {
               </dt>
               <dd className="text-[10px] font-mono truncate">
                 <a
-                  href={`https://etherscan.io/address/${house}`}
+                  href={explorerAddressUrl(house)}
                   target="_blank"
                   rel="noreferrer"
                   className="hover:underline"

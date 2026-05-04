@@ -22,6 +22,7 @@ import {
   getCachedTokenRefs,
   getCachedEnrichedPage,
 } from "./artist-cache"
+import { getArtistSovereignAuctionMap, type SovereignAuctionLite } from "./auctions"
 import { extractCid, ipfsToHttp } from "@pin/shared"
 
 // Module-level singleton used for ENS lookups + a multicall in
@@ -265,6 +266,11 @@ export type GalleryItem = ReturnType<typeof tokenToDisplayData> & {
    * decimal string because JSON can't carry bigint.
    */
   buyPrice: { seller: string; price: string } | null
+  /**
+   * Active Sovereign auction on the artist's house, or null. Wei amounts
+   * and timestamps as decimal strings (JSON can't carry bigint).
+   */
+  auction: SovereignAuctionLite | null
 }
 
 export type GalleryPage = {
@@ -294,15 +300,22 @@ export async function getArtistGalleryPage(
     return { tokens: [], total, page, pageSize, hasMore: false }
   }
 
-  const [enriched, prices] = await Promise.all([
+  const [enriched, prices, auctionMap] = await Promise.all([
     getCachedEnrichedPage(slice),
     fetchBuyPrices(slice),
+    getArtistSovereignAuctionMap(artistAddress).catch(
+      (): Record<string, SovereignAuctionLite> => ({}),
+    ),
   ])
 
   const tokens: GalleryItem[] = enriched.map((token) => {
     const display = tokenToDisplayData(token)
     const key = `${token.contract.toLowerCase()}:${token.tokenId}`
-    return { ...display, buyPrice: prices.get(key) ?? null }
+    return {
+      ...display,
+      buyPrice: prices.get(key) ?? null,
+      auction: auctionMap[key] ?? null,
+    }
   })
 
   return {

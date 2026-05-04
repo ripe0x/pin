@@ -81,14 +81,14 @@ export function SettledAuctionSummary({
                   rel="noopener noreferrer"
                   className="flex items-baseline gap-2 min-w-0 hover:opacity-70 transition-opacity"
                 >
-                  <span className="truncate text-gray-700">
+                  <span className="truncate text-fg-muted">
                     {bid.bidderDisplay}
                   </span>
-                  <span className="text-gray-400 shrink-0">
+                  <span className="text-fg-subtle shrink-0">
                     {formatRelativeTime(bid.blockTime)}
                   </span>
                 </a>
-                <span className="tabular-nums text-gray-900 shrink-0 ml-3">
+                <span className="tabular-nums text-fg shrink-0 ml-3">
                   {formatEther(bid.amount)} ETH
                 </span>
               </li>

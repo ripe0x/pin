@@ -63,7 +63,7 @@ const SOCIAL_TEXT_KEYS: Array<{ key: string; format: (v: string) => string | nul
   { key: "url", format: (v) => (v.startsWith("http") ? v : `https://${v}`) },
   {
     key: "com.twitter",
-    format: (v) => `https://twitter.com/${v.replace(/^@/, "")}`,
+    format: (v) => `https://x.com/${v.replace(/^@/, "")}`,
   },
   {
     key: "org.farcaster",

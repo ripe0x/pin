@@ -4,6 +4,7 @@
  * time on the left, amount on the right.
  */
 import type { BidEntry } from "@/lib/auctions"
+import { explorerTxUrl } from "@/lib/explorer"
 import { displayFor, formatEth, formatRelativeTime } from "@/lib/format"
 
 export function BidHistory({
@@ -29,17 +30,17 @@ export function BidHistory({
             className="flex items-baseline justify-between text-[11px] font-mono"
           >
             <a
-              href={`https://etherscan.io/tx/${b.txHash}`}
+              href={explorerTxUrl(b.txHash)}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-baseline gap-2 min-w-0 hover:opacity-70 transition-opacity"
             >
               <span
-                className={`truncate text-gray-700 ${isAddress ? "font-mono" : ""}`}
+                className={`truncate text-fg-muted ${isAddress ? "font-mono" : ""}`}
               >
                 {name}
               </span>
-              <span className="text-gray-400 shrink-0">
+              <span className="text-fg-subtle shrink-0">
                 {formatRelativeTime(b.blockTime)}
               </span>
             </a>

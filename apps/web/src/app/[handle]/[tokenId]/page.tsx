@@ -12,7 +12,7 @@ import {
   getTokenOnChainData,
   resolveTokenMetadataDirect,
 } from "@/lib/onchain-discovery"
-import { getAuctionForToken } from "@/lib/auctions"
+import { getAuctionForToken, type AuctionState } from "@/lib/auctions"
 import { getSettledAuctionForToken } from "@/lib/indexer-queries"
 import { SettledAuctionSummary } from "@/components/auction/SettledAuctionSummary"
 import { resolveDisplayNames } from "@/lib/artist-queries"
@@ -294,17 +294,11 @@ export default async function TokenPage({
             </section>
           ) : (
             data.owner && (
-              <section className="py-5 border-b border-gray-100 space-y-1">
-                <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-                  Owner
-                </p>
-                <Link
-                  href={`/artist/${data.owner}`}
-                  className="text-xs font-mono hover:underline"
-                >
-                  {data.ownerHandle}
-                </Link>
-              </section>
+              <OwnerOrEscrowSection
+                owner={data.owner}
+                ownerHandle={data.ownerHandle}
+                auction={auction}
+              />
             )
           )}
 
@@ -355,5 +349,70 @@ export default async function TokenPage({
       )}
     </div>
   )
+}
+
+function OwnerOrEscrowSection({
+  owner,
+  ownerHandle,
+  auction,
+}: {
+  owner: string
+  ownerHandle: string
+  auction: AuctionState | null
+}) {
+  const inEscrow =
+    !!auction &&
+    auction.marketAddress.toLowerCase() === owner.toLowerCase()
+
+  if (inEscrow) {
+    const platformLabel = escrowPlatformLabel(auction)
+    return (
+      <section className="py-5 border-b border-gray-100 space-y-1">
+        <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+          Held in escrow
+        </p>
+        <p className="text-xs font-mono">
+          <span>{platformLabel}&rsquo;s </span>
+          <a
+            href={`https://evm.now/address/${owner}`}
+            target="_blank"
+            rel="noreferrer"
+            className="hover:underline"
+          >
+            auction contract
+          </a>
+        </p>
+      </section>
+    )
+  }
+
+  return (
+    <section className="py-5 border-b border-gray-100 space-y-1">
+      <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+        Owner
+      </p>
+      <Link
+        href={`/artist/${owner}`}
+        className="text-xs font-mono hover:underline"
+      >
+        {ownerHandle}
+      </Link>
+    </section>
+  )
+}
+
+function escrowPlatformLabel(auction: AuctionState): string {
+  switch (auction.source) {
+    case "foundation":
+      return "Foundation"
+    case "sovereign":
+      return auction.sellerDisplay
+    case "superrareV2":
+      return "SuperRare"
+    case "transient":
+      return "Transient"
+    default:
+      return "this"
+  }
 }
 

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { type Address, formatEther, parseEther } from "viem"
 import {
   useAccount,
+  useBalance,
   useReadContract,
   useWaitForTransactionReceipt,
   useWriteContract,
@@ -282,8 +283,16 @@ function BidInput({
   }, [value])
   const tooLow = parsed < minBidWei
 
+  const balanceQuery = useBalance({
+    address: connected,
+    query: { enabled: Boolean(connected), refetchInterval: 12_000 },
+  })
+  const balanceWei = balanceQuery.data?.value ?? 0n
+  const balanceLoaded = balanceQuery.isSuccess
+  const insufficient = balanceLoaded && parsed > balanceWei
+
   function submit() {
-    if (tooLow) return
+    if (tooLow || insufficient) return
     writeContract({
       address: houseAddress,
       abi: sovereignAuctionHouseAbi,
@@ -329,7 +338,7 @@ function BidInput({
       <button
         type="button"
         onClick={submit}
-        disabled={tooLow || isPending || confirming}
+        disabled={tooLow || insufficient || isPending || confirming}
         className="block w-full text-center text-sm font-medium py-3 bg-fg text-bg disabled:cursor-not-allowed disabled:opacity-60 hover:opacity-80 transition-opacity"
       >
         {confirming
@@ -338,7 +347,9 @@ function BidInput({
             ? "Confirm in wallet…"
             : tooLow
               ? `Min bid ${formatEth(minBidWei.toString())} ETH`
-              : "Place bid"}
+              : insufficient
+                ? `Insufficient balance · ${formatEth(balanceWei.toString())} ETH available`
+                : "Place bid"}
       </button>
     </div>
   )
