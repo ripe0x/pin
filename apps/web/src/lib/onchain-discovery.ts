@@ -17,6 +17,10 @@ import { mainnet } from "viem/chains"
 import { foundationNftAbi, collectionFactoryAbi, erc721Abi } from "@pin/abi"
 import { getAssetTransfers, getOwnersForNft } from "./alchemy"
 import { pgCache } from "./pg-cache"
+import {
+  readTokenMetadata,
+  writeTokenMetadata,
+} from "./token-metadata-store"
 import { getAlchemyMainnetUrl } from "./alchemy-rpc"
 import { loggingHttpTransport } from "./rpc-log"
 import { isRpcDisabled } from "./rpc-circuit"
@@ -1288,23 +1292,49 @@ export async function resolveTokenMetadataDirect(
   contractAddress: string,
   tokenId: string,
 ): Promise<{ name?: string; description?: string; image?: string } | null> {
-  // Token metadata at a specific (contract, tokenId) is effectively immutable
-  // in 99% of cases (IPFS-pinned URIs are content-addressed). Cache for 1h —
-  // long enough to absorb refresh traffic, short enough that mutable on-chain
-  // renderers stay reasonably fresh. Use lowercased contract for cache key
-  // stability.
+  // Token metadata at a specific (contract, tokenId) is effectively
+  // immutable for ~99% of NFTs. Backed by the persistent
+  // `token_metadata` table — once we've fetched a token, we never
+  // re-fetch unless the row is explicitly invalidated. The L1
+  // unstable_cache below is just to dedupe within a single sandbox
+  // instance during a request burst.
   return resolveTokenMetadataCached(contractAddress.toLowerCase(), tokenId)
 }
 
 const resolveTokenMetadataCached = unstable_cache(
-  async (contractAddress: string, tokenId: string) =>
-    pgCache(
-      `token-metadata:${contractAddress}:${tokenId}`,
-      60 * 60,
-      () => resolveTokenMetadataUncached(contractAddress, tokenId),
-    ),
-  ["token-metadata-v1"],
-  { revalidate: 60 * 60, tags: ["token-metadata"] },
+  async (contractAddress: string, tokenId: string) => {
+    // L1: persistent store. Row presence = "we've resolved this before."
+    // A row with all-null metadata fields is a valid resolved-empty
+    // result; return null to preserve the function contract.
+    const stored = await readTokenMetadata(contractAddress, tokenId)
+    if (stored) {
+      if (
+        stored.name === null &&
+        stored.description === null &&
+        stored.imageUrl === null
+      ) {
+        return null
+      }
+      return {
+        ...(stored.name !== null && { name: stored.name }),
+        ...(stored.description !== null && {
+          description: stored.description,
+        }),
+        ...(stored.imageUrl !== null && { image: stored.imageUrl }),
+      }
+    }
+
+    // Cold path: resolve once, persist forever.
+    const fresh = await resolveTokenMetadataUncached(contractAddress, tokenId)
+    writeTokenMetadata(contractAddress, tokenId, {
+      name: fresh?.name ?? null,
+      description: fresh?.description ?? null,
+      imageUrl: fresh?.image ?? null,
+    })
+    return fresh
+  },
+  ["token-metadata-v2"],
+  { revalidate: 60 * 60 * 24, tags: ["token-metadata"] },
 )
 
 async function resolveTokenMetadataUncached(
