@@ -8,7 +8,7 @@ This is one-way: the monorepo is upstream, the public repo is a deploy target. D
 
 ### 1. Create the destination repo
 
-On GitHub, create a new public repository — for example `pnd-network/artist-auction-page`. Keep it empty (no README, no LICENSE, no `.gitignore`). The first sync will populate it.
+On GitHub, create a new public repository — for example `pnd-network/sovereign-artist-site`. Keep it empty (no README, no LICENSE, no `.gitignore`). The first sync will populate it.
 
 ### 2. Generate an SSH deploy key
 
@@ -44,7 +44,7 @@ Save.
 Same page, **Variables** tab → **New repository variable**.
 
 - **Name:** `TEMPLATE_REPO`
-- **Value:** `git@github.com:OWNER/REPO.git` (e.g. `git@github.com:pnd-network/artist-auction-page.git` — note SSH format, not HTTPS)
+- **Value:** `git@github.com:OWNER/REPO.git` (e.g. `git@github.com:pnd-network/sovereign-artist-site.git` — note SSH format, not HTTPS)
 
 Save.
 
@@ -67,10 +67,10 @@ After it completes, the destination repo will have the entire `templates/artist-
 Once the destination repo is live, update the `TEMPLATE_REPO_URL` constant:
 
 - File: [`apps/web/src/components/sites/DeployButtons.tsx`](../../apps/web/src/components/sites/DeployButtons.tsx)
-- Currently: `https://github.com/ripe0x/artist-auction-page` (placeholder)
+- Currently: `https://github.com/ripe0x/sovereign-artist-site`
 - Change to: `https://github.com/<OWNER>/<REPO>` matching what you created
 
-And the equivalent URLs in [`templates/artist-page/README.md`](../../templates/artist-page/README.md) (search for `YOUR_ORG/artist-auction-page`).
+And the equivalent URLs in [`templates/artist-page/README.md`](../../templates/artist-page/README.md) (search for `sovereign-artist-site`).
 
 ## Rotating the deploy key
 

@@ -15,7 +15,7 @@
  */
 import Image from "next/image"
 
-const TEMPLATE_REPO_URL = "https://github.com/ripe0x/artist-auction-page"
+const TEMPLATE_REPO_URL = "https://github.com/ripe0x/sovereign-artist-site"
 
 const VERCEL_DEPLOY_URL =
   `https://vercel.com/new/clone?repository-url=${encodeURIComponent(TEMPLATE_REPO_URL)}` +

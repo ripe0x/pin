@@ -16,7 +16,7 @@ You'll need an Ethereum wallet address. Pick one path:
 
 ### Recommended: Vercel (one click)
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fripe0x%2Fartist-auction-page&env=NEXT_PUBLIC_ARTIST_ADDRESS&envDescription=Your%20wallet%20address)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fripe0x%2Fsovereign-artist-site&env=NEXT_PUBLIC_ARTIST_ADDRESS&envDescription=Your%20wallet%20address)
 
 Creates a real GitHub fork in your account and deploys it. When this template ships updates, you click "Sync fork" on GitHub and Vercel auto-deploys the new version. No terminal needed, ever.
 
@@ -24,7 +24,7 @@ Creates a real GitHub fork in your account and deploys it. When this template sh
 
 Netlify's one-click deploy button creates a *standalone* repo with no upstream link, which means future updates require git on the command line. To get the same easy-update behavior as the Vercel path, do these two steps instead:
 
-1. **[Fork the template on GitHub](https://github.com/ripe0x/artist-auction-page/fork)** — click "Create fork".
+1. **[Fork the template on GitHub](https://github.com/ripe0x/sovereign-artist-site/fork)** — click "Create fork".
 2. **[Open Netlify's import page](https://app.netlify.com/start)** — pick your fork from the list. When prompted, set the env var `NEXT_PUBLIC_ARTIST_ADDRESS` to your wallet address.
 
 Two clicks instead of one, but every future update lands via "Sync fork" on GitHub the same way.
@@ -122,7 +122,7 @@ Both Vercel and Netlify make this a couple of clicks plus one DNS record. Their 
 
 ```bash
 git clone <your-fork-url>
-cd artist-auction-page
+cd sovereign-artist-site
 npm install
 cp .env.example .env.local
 # edit .env.local with your wallet address
