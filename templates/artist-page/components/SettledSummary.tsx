@@ -59,7 +59,7 @@ export function SettledSummary({ auction, bids, ensMap, settledAtTime }: Props) 
               <p className="text-[11px] font-mono text-gray-500 pt-1">
                 won by{" "}
                 <a
-                  href={explorerAddressUrl(auction.winner)}
+                  href={explorerAddressUrl(auction.winner ?? "")}
                   target="_blank"
                   rel="noopener noreferrer"
                   className={`hover:opacity-70 transition-opacity ${winnerIsAddress ? "font-mono" : ""}`}
