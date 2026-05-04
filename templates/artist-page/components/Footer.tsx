@@ -17,7 +17,7 @@ export async function Footer() {
     <footer className="border-t border-gray-200 pt-8 pb-16">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-gray-400">
-          {displayName} — on-chain auctions
+          {displayName}
         </p>
         <div className="flex flex-wrap gap-6 text-sm text-gray-400">
           <a
@@ -46,6 +46,25 @@ export async function Footer() {
           >
             Factory ↗
           </a>
+          <a
+            href="https://pnd.ripe.wtf"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-fg transition-colors"
+          >
+            pnd.ripe.wtf ↗
+          </a>
+          <span>
+            Created by{" "}
+            <a
+              href="https://x.com/ripe0x"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-fg transition-colors"
+            >
+              ripe ↗
+            </a>
+          </span>
         </div>
       </div>
     </footer>
