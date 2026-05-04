@@ -12,13 +12,33 @@ Your own auction page, on your own domain — pulling live and past auction data
 
 ## Deploy
 
-Click one of these and you'll be walked through deploying your own copy. You'll need an Ethereum wallet address.
+You'll need an Ethereum wallet address. Pick one path:
+
+### Recommended: Vercel (one click)
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fripe0x%2Fartist-auction-page&env=NEXT_PUBLIC_ARTIST_ADDRESS&envDescription=Your%20wallet%20address)
 
-[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/ripe0x/artist-auction-page)
+Creates a real GitHub fork in your account and deploys it. When this template ships updates, you click "Sync fork" on GitHub and Vercel auto-deploys the new version. No terminal needed, ever.
 
-> **Vercel vs. Netlify?** Both work, both are free for traffic at this scale. Vercel's "Hobby" tier technically says it's for non-commercial use; Netlify has no such restriction. If unsure, pick Netlify.
+### Alternative: Netlify (two clicks)
+
+Netlify's one-click deploy button creates a *standalone* repo with no upstream link, which means future updates require git on the command line. To get the same easy-update behavior as the Vercel path, do these two steps instead:
+
+1. **[Fork the template on GitHub](https://github.com/ripe0x/artist-auction-page/fork)** — click "Create fork".
+2. **[Open Netlify's import page](https://app.netlify.com/start)** — pick your fork from the list. When prompted, set the env var `NEXT_PUBLIC_ARTIST_ADDRESS` to your wallet address.
+
+Two clicks instead of one, but every future update lands via "Sync fork" on GitHub the same way.
+
+### Which to pick
+
+| | Vercel | Netlify (2-step) |
+|---|---|---|
+| Setup | 1 click | 2 clicks |
+| Future updates | "Sync fork" on GitHub | "Sync fork" on GitHub |
+| Free tier traffic | Unlimited at this scale | Unlimited at this scale |
+| Terms of service | "Hobby" tier is officially for non-commercial use | No restriction |
+
+If unsure, pick Vercel for speed. If the Hobby ToS matters to you, the 2-step Netlify path gets you the same outcome with one extra click.
 
 ---
 

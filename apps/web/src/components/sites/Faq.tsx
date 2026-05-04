@@ -13,6 +13,10 @@ const items: Array<{ q: string; a: string | React.ReactNode }> = [
     a: "Yes. Vercel Hobby and Netlify Free both handle this comfortably for any normal artist traffic, including page views, link unfurls, and bidding. You can upgrade your hosting plan later if you ever need to.",
   },
   {
+    q: "Vercel or Netlify?",
+    a: "Vercel is one click and forks the template into your GitHub account, so future updates land via GitHub's Sync fork button. Netlify's one-click deploy creates a standalone repo with no upstream link, which means future updates require git on the command line. The page offers a two-step Netlify path (fork on GitHub, then import into Netlify) that gets you the same easy-update behavior. Vercel's Hobby tier is officially for non-commercial use; Netlify has no such restriction. If unsure, pick Vercel.",
+  },
+  {
     q: "What does it cost in fees or gas?",
     a: "Nothing from this page. Bids and settlement transactions hit your auction house contract directly. The protocol fee on that contract is whatever you set when you deployed it (typically 0%). No marketplace tax sits in between.",
   },
@@ -34,7 +38,7 @@ const items: Array<{ q: string; a: string | React.ReactNode }> = [
   },
   {
     q: "What about other marketplaces?",
-    a: "Today this template surfaces auctions on your Sovereign auction house only. Pulling listings from other marketplaces is on the roadmap. When that lands, you can update your deploy by re-clicking Deploy on the latest version of the template.",
+    a: "Today this template surfaces auctions on your Sovereign auction house only. Pulling listings from other marketplaces is on the roadmap. When it lands, you'll click Sync fork on your GitHub fork and your live site auto-redeploys.",
   },
   {
     q: "Can I use a custom domain?",
@@ -50,7 +54,7 @@ const items: Array<{ q: string; a: string | React.ReactNode }> = [
   },
   {
     q: "What happens when the auction contract upgrades?",
-    a: "You pull the latest version of this template and redeploy. We'll announce these when they happen. The deploy itself is the same one-click flow as the original setup.",
+    a: "Click Sync fork on your GitHub fork. Vercel or Netlify auto-redeploys the new version. We'll announce these when they happen.",
   },
 ]
 
