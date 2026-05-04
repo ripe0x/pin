@@ -4,6 +4,7 @@
  * time on the left, amount on the right.
  */
 import type { BidEntry } from "@/lib/auctions"
+import { explorerTxUrl } from "@/lib/explorer"
 import { displayFor, formatEth, formatRelativeTime } from "@/lib/format"
 
 export function BidHistory({
@@ -29,7 +30,7 @@ export function BidHistory({
             className="flex items-baseline justify-between text-[11px] font-mono"
           >
             <a
-              href={`https://etherscan.io/tx/${b.txHash}`}
+              href={explorerTxUrl(b.txHash)}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-baseline gap-2 min-w-0 hover:opacity-70 transition-opacity"

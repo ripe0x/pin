@@ -1,11 +1,12 @@
 /**
  * Index-page footer. Mirrors the PND main app's footer pattern: top
- * border separator, site label on the left, etherscan/contract pills
+ * border separator, site label on the left, explorer/contract pills
  * on the right.
  */
 import { getConfig, SOVEREIGN_FACTORY_ADDRESS } from "@/lib/config"
 import { getArtistDisplayName } from "@/lib/artist"
 import { getArtistHouse } from "@/lib/auctions"
+import { explorerAddressUrl } from "@/lib/explorer"
 
 export async function Footer() {
   const cfg = getConfig()
@@ -20,7 +21,7 @@ export async function Footer() {
         </p>
         <div className="flex flex-wrap gap-6 text-sm text-gray-400">
           <a
-            href={`https://etherscan.io/address/${cfg.artistAddress}`}
+            href={explorerAddressUrl(cfg.artistAddress)}
             target="_blank"
             rel="noopener noreferrer"
             className="hover:text-fg transition-colors"
@@ -29,7 +30,7 @@ export async function Footer() {
           </a>
           {house && (
             <a
-              href={`https://etherscan.io/address/${house}`}
+              href={explorerAddressUrl(house)}
               target="_blank"
               rel="noopener noreferrer"
               className="hover:text-fg transition-colors"
@@ -38,7 +39,7 @@ export async function Footer() {
             </a>
           )}
           <a
-            href={`https://etherscan.io/address/${SOVEREIGN_FACTORY_ADDRESS}`}
+            href={explorerAddressUrl(SOVEREIGN_FACTORY_ADDRESS)}
             target="_blank"
             rel="noopener noreferrer"
             className="hover:text-fg transition-colors"

@@ -1,7 +1,11 @@
 import { ArtistHero } from "@/components/ArtistHero"
-import { AuctionCard } from "@/components/AuctionCard"
+import { AuctionCard, bucketFor } from "@/components/AuctionCard"
 import { Footer } from "@/components/Footer"
-import { getAllAuctions, getArtistHouse } from "@/lib/auctions"
+import {
+  getAllAuctions,
+  getArtistHouse,
+  type AuctionSummary,
+} from "@/lib/auctions"
 
 export const revalidate = 60
 
@@ -11,18 +15,29 @@ export default async function HomePage() {
     getArtistHouse(),
   ])
 
-  const active = auctions.filter(
-    (a) => a.status === "live" || a.status === "upcoming",
-  )
-  const past = auctions.filter(
-    (a) => a.status === "settled" || a.status === "cancelled",
-  )
+  const active: AuctionSummary[] = []
+  const ending: AuctionSummary[] = []
+  const listed: AuctionSummary[] = []
+  const past: AuctionSummary[] = []
+  for (const a of auctions) {
+    const bucket = bucketFor(a)
+    if (bucket === "active") active.push(a)
+    else if (bucket === "ending") ending.push(a)
+    else if (bucket === "listed") listed.push(a)
+    else past.push(a)
+  }
+
+  active.sort((a, b) => Number(a.endTime) - Number(b.endTime))
+  ending.sort((a, b) => Number(a.endTime) - Number(b.endTime))
+  listed.sort((a, b) => Number(b.auctionId) - Number(a.auctionId))
+
+  const totalLive = active.length + ending.length
 
   return (
     <div className="mx-auto max-w-[2000px] px-6 py-12 space-y-12">
       <ArtistHero
         totalAuctions={auctions.length}
-        activeAuctions={active.length}
+        activeAuctions={totalLive}
       />
 
       {!house ? (
@@ -32,7 +47,7 @@ export default async function HomePage() {
       ) : (
         <>
           {active.length > 0 ? (
-            <Section label="Live">
+            <Section label="Active" dotClass="bg-status-live">
               <Grid>
                 {active.map((a) => (
                   <AuctionCard key={a.auctionId} auction={a} />
@@ -40,8 +55,26 @@ export default async function HomePage() {
               </Grid>
             </Section>
           ) : null}
+          {ending.length > 0 ? (
+            <Section label="Ending" dotClass="bg-status-upcoming">
+              <Grid>
+                {ending.map((a) => (
+                  <AuctionCard key={a.auctionId} auction={a} />
+                ))}
+              </Grid>
+            </Section>
+          ) : null}
+          {listed.length > 0 ? (
+            <Section label="Listed" dotClass="bg-gray-400">
+              <Grid>
+                {listed.map((a) => (
+                  <AuctionCard key={a.auctionId} auction={a} />
+                ))}
+              </Grid>
+            </Section>
+          ) : null}
           {past.length > 0 ? (
-            <Section label="Past">
+            <Section label="Past" dotClass="bg-gray-400">
               <Grid>
                 {past.map((a) => (
                   <AuctionCard key={a.auctionId} auction={a} />
@@ -59,15 +92,20 @@ export default async function HomePage() {
 
 function Section({
   label,
+  dotClass,
   children,
 }: {
   label: string
+  dotClass: string
   children: React.ReactNode
 }) {
   return (
     <section className="space-y-4">
       <div className="flex items-center gap-2">
-        <span className="h-1.5 w-1.5 rounded-full bg-gray-400" aria-hidden />
+        <span
+          className={`h-1.5 w-1.5 rounded-full ${dotClass}`}
+          aria-hidden
+        />
         <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500">
           {label}
         </span>
@@ -78,10 +116,6 @@ function Section({
 }
 
 function Grid({ children }: { children: React.ReactNode }) {
-  // CSS multi-column masonry, matching PND's ArtistGallery. The
-  // `[&>*]:break-inside-avoid` prevents a card from being split across
-  // columns, and `[&>*]:mb-6` gives equivalent vertical rhythm to the
-  // horizontal `gap-6`.
   return (
     <div className="columns-1 sm:columns-2 lg:columns-4 gap-6 [&>*]:mb-6 [&>*]:break-inside-avoid">
       {children}

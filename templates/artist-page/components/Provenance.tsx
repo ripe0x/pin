@@ -2,8 +2,9 @@
  * Vertical timeline of provenance events for a token. Mirrors the PND
  * main app's `components/Provenance.tsx`: `text-[10px] font-mono` heading,
  * a small filled dot per row, vertical line between rows, and tx-hash
- * deep links to Etherscan.
+ * deep links to the block explorer.
  */
+import { explorerTxUrl } from "@/lib/explorer"
 import { displayFor } from "@/lib/format"
 import type { ProvenanceEntry } from "@/lib/token"
 
@@ -57,11 +58,11 @@ export function Provenance({
                   {formatDate(entry.blockTime)}
                 </p>
                 <a
-                  href={`https://etherscan.io/tx/${entry.txHash}`}
+                  href={explorerTxUrl(entry.txHash)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-[10px] font-mono text-gray-400 hover:text-fg transition-colors"
-                  aria-label="View transaction on Etherscan"
+                  aria-label="View transaction"
                 >
                   ↗
                 </a>

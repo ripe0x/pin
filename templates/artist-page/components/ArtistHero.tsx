@@ -14,6 +14,7 @@ import {
   getArtistLinks,
 } from "@/lib/artist"
 import { getArtistHouse } from "@/lib/auctions"
+import { explorerAddressUrl } from "@/lib/explorer"
 import { formatAddress } from "@/lib/format"
 import { getEnsName } from "@/lib/ens"
 
@@ -81,16 +82,16 @@ export async function ArtistHero({ totalAuctions, activeAuctions }: Props) {
 
         <div className="flex items-center flex-wrap gap-2 pt-2">
           <a
-            href={`https://etherscan.io/address/${cfg.artistAddress}`}
+            href={explorerAddressUrl(cfg.artistAddress)}
             target="_blank"
             rel="noopener noreferrer"
             className="text-xs border border-gray-200 px-3 py-1.5 rounded-full hover:border-gray-400 transition-colors"
           >
-            etherscan ↗
+            evm.now ↗
           </a>
           {house && (
             <a
-              href={`https://etherscan.io/address/${house}`}
+              href={explorerAddressUrl(house)}
               target="_blank"
               rel="noopener noreferrer"
               title={house}
@@ -115,7 +116,7 @@ export async function ArtistHero({ totalAuctions, activeAuctions }: Props) {
               rel="noopener noreferrer"
               className="text-xs border border-gray-200 px-3 py-1.5 rounded-full hover:border-gray-400 transition-colors"
             >
-              {prettyHostname(url)} ↗
+              {prettyLinkLabel(url)} ↗
             </a>
           ))}
         </div>
@@ -124,10 +125,15 @@ export async function ArtistHero({ totalAuctions, activeAuctions }: Props) {
   )
 }
 
-function prettyHostname(url: string): string {
+function prettyLinkLabel(url: string): string {
   try {
     const u = new URL(url)
-    return u.hostname.replace(/^www\./, "")
+    const host = u.hostname.replace(/^www\./, "")
+    if (host === "x.com" || host === "twitter.com") {
+      const handle = u.pathname.split("/").filter(Boolean)[0]
+      if (handle) return `@${handle}`
+    }
+    return host
   } catch {
     return url
   }

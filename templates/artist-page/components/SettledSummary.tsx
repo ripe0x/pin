@@ -5,6 +5,7 @@
  * then a bid history table with the same compact mono rows.
  */
 import type { AuctionSummary, BidEntry } from "@/lib/auctions"
+import { explorerAddressUrl } from "@/lib/explorer"
 import { displayFor, formatEth, formatRelativeTime } from "@/lib/format"
 import { BidHistory } from "./BidHistory"
 
@@ -58,7 +59,7 @@ export function SettledSummary({ auction, bids, ensMap, settledAtTime }: Props) 
               <p className="text-[11px] font-mono text-gray-500 pt-1">
                 won by{" "}
                 <a
-                  href={`https://etherscan.io/address/${auction.winner}`}
+                  href={explorerAddressUrl(auction.winner)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className={`hover:opacity-70 transition-opacity ${winnerIsAddress ? "font-mono" : ""}`}
