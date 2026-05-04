@@ -52,10 +52,6 @@ const items: Array<{ q: string; a: string | React.ReactNode }> = [
     q: "What about bidding from a mobile wallet?",
     a: "The connect button works for any browser-extension wallet (MetaMask, Rabby, Frame, Brave, Coinbase Wallet, Safe, and others). Mobile users connecting via WalletConnect QR codes are off by default to keep your deploy zero-config. The easiest workaround is to open the site inside your wallet's built-in browser. Enabling WalletConnect mobile is one optional env var if you want it.",
   },
-  {
-    q: "What happens when the auction contract upgrades?",
-    a: "Click Sync fork on your GitHub fork. Vercel or Netlify auto-redeploys the new version. We'll announce these when they happen.",
-  },
 ]
 
 export function Faq() {

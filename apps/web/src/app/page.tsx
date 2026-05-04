@@ -26,6 +26,12 @@ export default function HomePage() {
           </p>
           <div className="flex gap-6 text-sm text-gray-400">
             <a
+              href="/sites"
+              className="hover:text-fg transition-colors"
+            >
+              Sites
+            </a>
+            <a
               href="https://x.com/ripe0x"
               target="_blank"
               rel="noopener noreferrer"
