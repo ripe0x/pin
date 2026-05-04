@@ -610,6 +610,140 @@ async function getActiveAuctionCountUncached(
     return activeCount
 }
 
+/**
+ * Compact, JSON-safe summary of one Sovereign auction. Used to attach
+ * auction state to gallery items so the UI can sort + highlight without
+ * a per-token RPC call at render time.
+ */
+export type SovereignAuctionLite = {
+  auctionId: string
+  /** Current high bid in wei. "0" before first bid. */
+  amount: string
+  /** Reserve price in wei. */
+  reservePrice: string
+  /** Unix seconds. "0" before first bid. */
+  endTime: string
+  firstBidTime: string
+  /** Derived bucket: "active" (live with bids, time left), "ending"
+   *  (live with bids, settle pending), or "listed" (no bids yet). */
+  bucket: "active" | "ending" | "listed"
+}
+
+/**
+ * Map of `${contract.toLowerCase()}:${tokenId}` → auction-lite for every
+ * non-deleted auction on the artist's Sovereign house. Used by the artist
+ * gallery to hoist auction works to the top of the grid and label them
+ * with their current bid + countdown.
+ *
+ * Returns an empty map (not null) when the artist has no house — keeps
+ * call sites simple.
+ *
+ * Strategy mirrors `getActiveAuctionCountUncached`: getLogs the house's
+ * AuctionCreated, multicall `auctions(id)`, filter to non-deleted. One
+ * extra deref vs. the count call.
+ */
+export async function getArtistSovereignAuctionMap(
+  artistAddress: string,
+): Promise<Record<string, SovereignAuctionLite>> {
+  const lower = artistAddress.toLowerCase()
+  return getArtistSovereignAuctionMapCached(lower)
+}
+
+const getArtistSovereignAuctionMapCached = unstable_cache(
+  (artistAddress: string) =>
+    pgCache<Record<string, SovereignAuctionLite>>(
+      `artist-sovereign-auction-map:${artistAddress}`,
+      30,
+      () => getArtistSovereignAuctionMapUncached(artistAddress),
+    ),
+  ["artist-sovereign-auction-map-v1"],
+  { revalidate: 30, tags: ["artist-sovereign-auction-map"] },
+)
+
+async function getArtistSovereignAuctionMapUncached(
+  artistAddress: string,
+): Promise<Record<string, SovereignAuctionLite>> {
+  if (!SOVEREIGN_FACTORY) return {}
+  const client = getClient()
+
+  let houseAddress: Address
+  try {
+    houseAddress = await client.readContract({
+      address: SOVEREIGN_FACTORY,
+      abi: sovereignAuctionHouseFactoryAbi,
+      functionName: "houseOf",
+      args: [artistAddress as Address],
+    })
+  } catch {
+    return {}
+  }
+  if (houseAddress === ZERO_ADDRESS) return {}
+
+  const created = await client.getLogs({
+    address: houseAddress,
+    event: parseAbiItem(
+      "event AuctionCreated(uint256 indexed auctionId, uint256 indexed tokenId, address indexed tokenContract, uint256 duration, uint256 reservePrice, address tokenOwner)",
+    ),
+    fromBlock: SOVEREIGN_FACTORY_DEPLOY_BLOCK,
+    toBlock: "latest",
+  })
+  if (created.length === 0) return {}
+
+  const auctionIds = created
+    .map((log) => log.args.auctionId)
+    .filter((id): id is bigint => id !== undefined)
+
+  const BATCH_SIZE = 100
+  const map: Record<string, SovereignAuctionLite> = {}
+  const nowSec = BigInt(Math.floor(Date.now() / 1000))
+
+  for (let i = 0; i < auctionIds.length; i += BATCH_SIZE) {
+    const batch = auctionIds.slice(i, i + BATCH_SIZE)
+    const results = await client.multicall({
+      contracts: batch.map((id) => ({
+        address: houseAddress,
+        abi: sovereignAuctionHouseAbi,
+        functionName: "auctions" as const,
+        args: [id] as const,
+      })),
+      allowFailure: true,
+    })
+    for (let j = 0; j < results.length; j++) {
+      const r = results[j]
+      if (r.status !== "success") continue
+      const tuple = r.result as readonly [
+        bigint, Address, bigint, bigint, bigint, Address, bigint, Address, bigint,
+      ]
+      const [
+        tokenId,
+        tokenContract,
+        firstBidTime,
+        amount,
+        reservePrice,
+        tokenOwner,
+        endTime,
+      ] = tuple
+      if (tokenOwner === ZERO_ADDRESS) continue
+      const bucket: SovereignAuctionLite["bucket"] =
+        firstBidTime === 0n
+          ? "listed"
+          : endTime > 0n && endTime <= nowSec
+            ? "ending"
+            : "active"
+      const key = `${tokenContract.toLowerCase()}:${tokenId.toString()}`
+      map[key] = {
+        auctionId: batch[j].toString(),
+        amount: amount.toString(),
+        reservePrice: reservePrice.toString(),
+        endTime: endTime.toString(),
+        firstBidTime: firstBidTime.toString(),
+        bucket,
+      }
+    }
+  }
+  return map
+}
+
 async function readSovereignAuction(
   client: ReturnType<typeof createPublicClient>,
   houseAddress: Address,

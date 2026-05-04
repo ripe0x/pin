@@ -4,7 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useAccount } from "wagmi"
 import { useInfiniteQuery } from "@tanstack/react-query"
+import { formatEther } from "viem"
 import type { GalleryItem, GalleryPage } from "@/lib/artist-queries"
+import type { SovereignAuctionLite } from "@/lib/auctions"
 import { createProvider, type PinStatus } from "@/lib/pinning"
 import { useIpfsGatewayFallback } from "@/lib/use-ipfs-fallback"
 import { TokenPinStatus } from "@/components/preserve/TokenPinStatus"
@@ -58,9 +60,13 @@ export function ArtistGallery({
   // Defensive dedup by `${contract}:${tokenId}` — guards against a paged
   // response somehow returning a token already shown on a prior page (e.g.
   // a CDN cache-key bug serving the same page twice).
+  //
+  // Sort: works currently in a Sovereign auction cluster at the top in
+  // active → ending → listed order, then everything else in the original
+  // discovery order. Stable within each bucket.
   const items = useMemo<GalleryItem[]>(() => {
     const seen = new Set<string>()
-    return (data?.pages ?? [])
+    const deduped = (data?.pages ?? [])
       .flatMap((p) => p.tokens)
       .filter((item) => {
         const key = `${item.contract.toLowerCase()}:${item.tokenId}`
@@ -68,6 +74,26 @@ export function ArtistGallery({
         seen.add(key)
         return true
       })
+    const bucketRank = (item: GalleryItem) => {
+      if (!item.auction) return 3
+      if (item.auction.bucket === "active") return 0
+      if (item.auction.bucket === "ending") return 1
+      return 2
+    }
+    return deduped
+      .map((item, idx) => ({ item, idx }))
+      .sort((a, b) => {
+        const r = bucketRank(a.item) - bucketRank(b.item)
+        if (r !== 0) return r
+        if (a.item.auction && b.item.auction) {
+          return (
+            Number(a.item.auction.endTime || 0) -
+            Number(b.item.auction.endTime || 0)
+          )
+        }
+        return a.idx - b.idx
+      })
+      .map((entry) => entry.item)
   }, [data])
 
   // Pin-status check across all loaded items. Re-runs as more pages load.
@@ -231,8 +257,13 @@ function GalleryCard({
     item.imageUrl,
   )
 
+  const isActive = item.auction?.bucket === "active"
+  const borderClass = isActive
+    ? "border-fg hover:border-fg"
+    : "border-gray-200 hover:border-gray-400"
+
   return (
-    <div className="group relative border border-gray-200 transition-colors hover:border-gray-400">
+    <div className={`group relative border transition-colors ${borderClass}`}>
       <PlatformChip platform={item.platform} />
       <Link href={href}>
         <div
@@ -274,10 +305,69 @@ function GalleryCard({
           <p className="text-base font-medium leading-tight truncate">
             {item.title}
           </p>
-          {pinStatus && <TokenPinStatus status={pinStatus} />}
+          {item.auction ? (
+            <AuctionCaption auction={item.auction} />
+          ) : (
+            pinStatus && <TokenPinStatus status={pinStatus} />
+          )}
         </div>
       </Link>
     </div>
   )
+}
+
+function AuctionCaption({ auction }: { auction: SovereignAuctionLite }) {
+  if (auction.bucket === "listed") {
+    return (
+      <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500 shrink-0 whitespace-nowrap">
+        {formatEth(auction.reservePrice)} reserve
+      </span>
+    )
+  }
+  if (auction.bucket === "ending") {
+    return (
+      <span className="text-[10px] font-mono uppercase tracking-wider text-fg shrink-0 whitespace-nowrap inline-flex items-center gap-1.5">
+        <span className="h-1.5 w-1.5 rounded-full bg-status-upcoming" aria-hidden />
+        Top bid {formatEth(auction.amount)} ETH · ending
+      </span>
+    )
+  }
+  return (
+    <span className="text-[10px] font-mono uppercase tracking-wider text-fg shrink-0 whitespace-nowrap inline-flex items-center gap-1.5">
+      <span className="h-1.5 w-1.5 rounded-full bg-status-live animate-pulse" aria-hidden />
+      Top bid {formatEth(auction.amount)} ETH ·{" "}
+      <LiveCountdown endTimeSec={Number(auction.endTime)} />
+    </span>
+  )
+}
+
+function LiveCountdown({ endTimeSec }: { endTimeSec: number }) {
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
+  useEffect(() => {
+    const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000)
+    return () => clearInterval(id)
+  }, [])
+  const remaining = Math.max(0, endTimeSec - now)
+  if (remaining === 0) return <>ending</>
+  const d = Math.floor(remaining / 86400)
+  const h = Math.floor((remaining % 86400) / 3600)
+  const m = Math.floor((remaining % 3600) / 60)
+  const s = remaining % 60
+  if (d > 0) return <>{`${d}d ${h}h`}</>
+  if (h > 0) return <>{`${h}h ${m}m`}</>
+  if (m > 0) return <>{`${m}m ${s}s`}</>
+  return <>{`${s}s`}</>
+}
+
+function formatEth(wei: string, decimals = 4): string {
+  try {
+    const f = formatEther(BigInt(wei))
+    const [whole, frac = ""] = f.split(".")
+    if (frac.length === 0) return whole
+    const trimmed = frac.slice(0, decimals).replace(/0+$/, "")
+    return trimmed ? `${whole}.${trimmed}` : whole
+  } catch {
+    return "0"
+  }
 }
 
