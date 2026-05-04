@@ -1,13 +1,13 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { formatEther } from "viem"
 import {
   useAccount,
   useBalance,
-  useBlock,
   useChainId,
+  usePublicClient,
   useReadContract,
   useSwitchChain,
   useWriteContract,
@@ -278,36 +278,62 @@ function formatBpsPct(bps: number): string {
 }
 
 /**
- * Returns the latest known block timestamp (seconds), refreshed every second
- * (driven by a 1s wall-clock tick) plus an additional re-render on every new
- * block from `useBlock({ watch: true })`. We anchor to the chain rather than
- * `Date.now()` so a fast-forwarded local fork (`evm_increaseTime`) reflects
- * in the UI immediately. On a normal chain the two are within a block.
+ * Returns the chain time (seconds) for countdown rendering. Reads the
+ * latest block ONCE on mount to compute an offset between chain time
+ * and wall-clock time, then drives the countdown via `Date.now()` plus
+ * that offset. A 1-second `setInterval` triggers re-renders so the
+ * countdown ticks visibly.
  *
- * Returns 0 until the first block lands, so callers should treat 0 as
- * "unknown — don't make end-state decisions yet".
+ * Why not `useBlock({ watch: true })`: that polls
+ * `eth_getBlockByNumber` every ~4s per mounted component, dominating
+ * total RPC volume on this app (measured ~75 % of all RPC traffic
+ * came from one open auction page). The countdown only needs
+ * sub-second visual precision and the bid button always reads fresh
+ * on-chain state at click time, so polling chain time continuously is
+ * pure waste.
+ *
+ * Why anchor to chain time at all: on a local Anvil fork
+ * (`evm_increaseTime`), wall-clock time and chain time can diverge by
+ * minutes. Reading once on mount catches that case for the loaded
+ * frame. Within one page session, the offset is stable enough — if
+ * the user hard-refreshes, we re-anchor.
+ *
+ * Returns 0 until the first block read resolves, so callers treat 0
+ * as "unknown — don't make end-state decisions yet".
  */
 function useChainNowSec(): number {
-  const { data: block } = useBlock({ watch: true })
-  const [tick, setTick] = useState(0)
+  const client = usePublicClient()
+  const [chainOffsetSec, setChainOffsetSec] = useState<number | null>(null)
+  const [, setTick] = useState(0)
+
+  useEffect(() => {
+    if (!client) return
+    let cancelled = false
+    void client
+      .getBlock()
+      .then((block) => {
+        if (cancelled) return
+        const wallSec = Math.floor(Date.now() / 1000)
+        setChainOffsetSec(Number(block.timestamp) - wallSec)
+      })
+      .catch(() => {
+        // RPC unavailable — fall back to wall-clock by setting offset
+        // to 0 so countdowns still render. Acceptable failure mode:
+        // browser clock is normally accurate within milliseconds.
+        if (!cancelled) setChainOffsetSec(0)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [client])
+
   useEffect(() => {
     const id = setInterval(() => setTick((n) => n + 1), 1000)
     return () => clearInterval(id)
   }, [])
 
-  return useMemo(() => {
-    if (!block) return 0
-    // Each wall-clock second, advance the chain timestamp by 1s so the
-    // countdown ticks down between blocks (which arrive every ~12s on
-    // mainnet). The chain-truth re-anchors whenever a new block lands.
-    return Number(block.timestamp) + tick
-    // We deliberately reset `tick` indirectly via the block change: when a
-    // new block arrives the `block` reference changes, the memo recomputes,
-    // and the offset re-anchors. We don't reset `tick` to 0 because the
-    // setInterval keeps incrementing it — but that's fine, the next block
-    // re-anchors to chain truth.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [block?.timestamp, tick])
+  if (chainOffsetSec === null) return 0
+  return Math.floor(Date.now() / 1000) + chainOffsetSec
 }
 
 function Countdown({
