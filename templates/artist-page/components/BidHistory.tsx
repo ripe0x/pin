@@ -36,11 +36,11 @@ export function BidHistory({
               className="flex items-baseline gap-2 min-w-0 hover:opacity-70 transition-opacity"
             >
               <span
-                className={`truncate text-gray-700 ${isAddress ? "font-mono" : ""}`}
+                className={`truncate text-fg-muted ${isAddress ? "font-mono" : ""}`}
               >
                 {name}
               </span>
-              <span className="text-gray-400 shrink-0">
+              <span className="text-fg-subtle shrink-0">
                 {formatRelativeTime(b.blockTime)}
               </span>
             </a>
