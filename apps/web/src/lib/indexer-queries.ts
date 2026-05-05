@@ -304,6 +304,7 @@ export type ActivityKind =
   | "auction.opened"
   | "auction.firstBid"
   | "auction.settled"
+  | "auction.cancelled"
   | "sale.buyNow"
   | "mint"
 
@@ -503,6 +504,27 @@ export async function getActivityFeed(
             NULL::text
           FROM ${schema}.pnd_auctions
           ${where("status = 'settled' AND settled_at_time IS NOT NULL", "settled_at_time")}
+          ORDER BY settled_at_time DESC
+          LIMIT ${PER_SUBQUERY_LIMIT})
+
+         UNION ALL
+
+         (SELECT
+            'auction.cancelled'::text,
+            ('pnd-cancel:' || id)::text,
+            settled_at_time::text,
+            seller::text,
+            NULL::text,
+            token_contract::text,
+            token_id::text,
+            NULL::text,
+            reserve_price::text,
+            NULL::text,
+            house::text,
+            NULL::text,
+            NULL::text
+          FROM ${schema}.pnd_auctions
+          WHERE status = 'cancelled' AND settled_at_time IS NOT NULL
           ORDER BY settled_at_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})
 

@@ -88,6 +88,7 @@ export async function findCandidates(
          WHERE tm.name IS NULL
            AND tm.description IS NULL
            AND tm.image_url IS NULL
+           AND tm.animation_url IS NULL
            AND tm.fetched_at < NOW() - $1::interval
      )
      SELECT contract, token_id FROM candidates LIMIT $2`,
@@ -105,6 +106,7 @@ export type WriteInput = {
   name?: string | null
   description?: string | null
   imageUrl?: string | null
+  animationUrl?: string | null
   rawUri?: string | null
 }
 
@@ -121,13 +123,14 @@ export async function writeTokenMetadata(
   input: WriteInput,
 ): Promise<void> {
   await sql`
-    INSERT INTO token_metadata (contract, token_id, name, description, image_url, raw_uri, fetched_at)
+    INSERT INTO token_metadata (contract, token_id, name, description, image_url, animation_url, raw_uri, fetched_at)
     VALUES (
       ${contract.toLowerCase()},
       ${tokenId},
       ${input.name ?? null},
       ${input.description ?? null},
       ${input.imageUrl ?? null},
+      ${input.animationUrl ?? null},
       ${input.rawUri ?? null},
       NOW()
     )
@@ -135,6 +138,7 @@ export async function writeTokenMetadata(
       SET name = EXCLUDED.name,
           description = EXCLUDED.description,
           image_url = EXCLUDED.image_url,
+          animation_url = EXCLUDED.animation_url,
           raw_uri = EXCLUDED.raw_uri,
           fetched_at = EXCLUDED.fetched_at
   `

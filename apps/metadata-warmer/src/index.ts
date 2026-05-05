@@ -69,8 +69,10 @@ async function processCandidate(c: {
       name: meta?.name ?? null,
       description: meta?.description ?? null,
       imageUrl: meta?.image ?? null,
+      animationUrl: meta?.animation_url ?? null,
     })
-    return meta && (meta.name || meta.description || meta.image)
+    return meta &&
+      (meta.name || meta.description || meta.image || meta.animation_url)
       ? "resolved"
       : "empty"
   } catch (err) {
@@ -86,6 +88,7 @@ async function processCandidate(c: {
         name: null,
         description: null,
         imageUrl: null,
+        animationUrl: null,
       })
     } catch {
       // best effort

@@ -25,6 +25,7 @@ export type StoredTokenMetadata = {
   name: string | null
   description: string | null
   imageUrl: string | null
+  animationUrl: string | null
   rawUri: string | null
   fetchedAt: Date
 }
@@ -40,11 +41,12 @@ export async function readTokenMetadata(
         name: string | null
         description: string | null
         image_url: string | null
+        animation_url: string | null
         raw_uri: string | null
         fetched_at: Date
       }>
     >`
-      SELECT name, description, image_url, raw_uri, fetched_at
+      SELECT name, description, image_url, animation_url, raw_uri, fetched_at
       FROM token_metadata
       WHERE contract = ${contract.toLowerCase()} AND token_id = ${tokenId}
       LIMIT 1
@@ -55,6 +57,7 @@ export async function readTokenMetadata(
       name: r.name,
       description: r.description,
       imageUrl: r.image_url,
+      animationUrl: r.animation_url,
       rawUri: r.raw_uri,
       fetchedAt: r.fetched_at,
     }
@@ -67,6 +70,7 @@ export type WriteTokenMetadataInput = {
   name?: string | null
   description?: string | null
   imageUrl?: string | null
+  animationUrl?: string | null
   rawUri?: string | null
 }
 
@@ -80,13 +84,14 @@ export function writeTokenMetadata(
   // don't add Postgres write latency on top. If the write fails the next
   // read will simply re-resolve.
   void sql`
-    INSERT INTO token_metadata (contract, token_id, name, description, image_url, raw_uri, fetched_at)
+    INSERT INTO token_metadata (contract, token_id, name, description, image_url, animation_url, raw_uri, fetched_at)
     VALUES (
       ${contract.toLowerCase()},
       ${tokenId},
       ${input.name ?? null},
       ${input.description ?? null},
       ${input.imageUrl ?? null},
+      ${input.animationUrl ?? null},
       ${input.rawUri ?? null},
       NOW()
     )
@@ -94,6 +99,7 @@ export function writeTokenMetadata(
       SET name = EXCLUDED.name,
           description = EXCLUDED.description,
           image_url = EXCLUDED.image_url,
+          animation_url = EXCLUDED.animation_url,
           raw_uri = EXCLUDED.raw_uri,
           fetched_at = EXCLUDED.fetched_at
   `.catch(() => {})

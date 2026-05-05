@@ -32,6 +32,9 @@ export type TokenMetadata = {
   name?: string
   description?: string
   image?: string
+  /** Some metadata schemas embed a separate animation/video URL alongside
+   * the still image. Token pages prefer this over `image` when present. */
+  animation_url?: string
 }
 
 /**

@@ -5,6 +5,8 @@ import { getCachedEnrichedPage } from "@/lib/artist-cache"
 import { getTokensByContractAndCreator } from "@/lib/contract-tokens"
 import { getLastSalePriceForToken, type LastSale } from "@/lib/last-sale"
 
+const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
+
 type Props = {
   tokens: DiscoveredToken[]
   /** Keyed by tokenId. Only present for tokens we successfully resolved a sale for. */
@@ -119,7 +121,21 @@ export function MoreFromContract({ tokens, lastSales, creatorDisplay }: Props) {
                 className="group block border border-gray-200 transition-colors hover:border-gray-400"
               >
                 <div className="relative aspect-square overflow-hidden bg-gray-100">
-                  {token.mediaHttpUrl ? (
+                  {token.mediaHttpUrl &&
+                  VIDEO_EXTENSIONS.some((ext) =>
+                    token
+                      .mediaHttpUrl!.split("?")[0]
+                      .toLowerCase()
+                      .endsWith(ext),
+                  ) ? (
+                    <video
+                      src={token.mediaHttpUrl}
+                      muted
+                      playsInline
+                      preload="metadata"
+                      className="h-full w-full object-cover"
+                    />
+                  ) : token.mediaHttpUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={token.mediaHttpUrl}
