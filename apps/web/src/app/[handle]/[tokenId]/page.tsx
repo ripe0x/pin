@@ -243,7 +243,7 @@ export default async function TokenPage({
           {/* Description (only prose section — uses Switzer) */}
           {data.description && (
             <section className="py-5 border-b border-gray-100">
-              <p className="text-sm text-gray-600 leading-relaxed">
+              <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">
                 {data.description}
               </p>
             </section>
