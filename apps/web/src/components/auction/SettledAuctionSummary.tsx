@@ -1,6 +1,16 @@
 import { formatEther } from "viem"
 import type { SettledAuction } from "@/lib/indexer-queries"
 
+function formatEthAmount(wei: bigint): string {
+  // Match the rest of the site: drop trailing zeros so 0.190 → 0.19,
+  // but preserve all 18 decimals' worth of precision the user might
+  // need to verify the on-chain value.
+  const s = formatEther(wei)
+  if (!s.includes(".")) return s
+  const trimmed = s.replace(/0+$/, "").replace(/\.$/, "")
+  return trimmed
+}
+
 function formatRelativeTime(unixSec: number): string {
   if (unixSec === 0) return ""
   const diffSec = Math.max(0, Math.floor(Date.now() / 1000) - unixSec)
@@ -41,7 +51,7 @@ export function SettledAuctionSummary({
               Winning bid
             </p>
             <p className="text-2xl font-mono font-medium tabular-nums tracking-tight leading-none">
-              {formatEther(auction.amount)}{" "}
+              {formatEthAmount(auction.amount)}{" "}
               <span className="text-sm font-mono text-gray-500">ETH</span>
             </p>
             {auction.winnerDisplay && (

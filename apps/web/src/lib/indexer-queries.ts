@@ -324,6 +324,11 @@ export type ActivityEvent = {
   house: string | null
   collection: string | null
   collectionName: string | null
+  /** The transaction hash that produced this event, when the indexer
+   * stores one. Available for bids, FND sales, and FND auction
+   * settlements; `null` for PND settlements / house & collection
+   * deployments / mints (those tables don't carry a tx hash today). */
+  txHash: string | null
 }
 
 /**
@@ -380,9 +385,19 @@ export async function getActivityFeed(
       house: string | null
       collection: string | null
       collection_name: string | null
+      tx_hash: string | null
     }
 
     const PER_SUBQUERY_LIMIT = 100
+
+    // Filter listing/cancellation pairs that happened within 15 minutes
+    // of each other. Treated as noise (test mints, mistaken listings)
+    // rather than signal. Both events filter together so the feed
+    // doesn't show one half of the pair.
+    const SHORT_LIFE_SECONDS = 900
+    const PND_NOT_QUICK_CANCEL = `NOT (status = 'cancelled' AND settled_at_time IS NOT NULL AND settled_at_time - created_at_time < ${SHORT_LIFE_SECONDS})`
+    const FND_NOT_QUICK_CANCEL = `NOT (status = 'canceled' AND finalized_at_time IS NOT NULL AND finalized_at_time - created_at_time < ${SHORT_LIFE_SECONDS})`
+    const PND_LONG_LIVED_CANCEL = `status = 'cancelled' AND settled_at_time IS NOT NULL AND settled_at_time - created_at_time >= ${SHORT_LIFE_SECONDS}`
 
     // Cursor-aware branch filters. Each branch limits to its top-N
     // strictly-older-than-cursor rows; the outer query enforces the
@@ -417,7 +432,8 @@ export async function getActivityFeed(
             NULL::text AS end_time,
             house::text AS house,
             NULL::text AS collection,
-            NULL::text AS collection_name
+            NULL::text AS collection_name,
+            NULL::text AS tx_hash
           FROM ${schema}.pnd_houses
           ${where(null, "created_at_time")}
           ORDER BY created_at_time DESC
@@ -438,7 +454,8 @@ export async function getActivityFeed(
             NULL::text,
             NULL::text,
             collection::text,
-            name
+            name,
+            NULL::text
           FROM ${schema}.fnd_collections
           ${where(null, "created_at_time")}
           ORDER BY created_at_time DESC
@@ -459,9 +476,10 @@ export async function getActivityFeed(
             NULLIF(end_time, 0)::text,
             house::text,
             NULL::text,
+            NULL::text,
             NULL::text
           FROM ${schema}.pnd_auctions
-          ${where(null, "created_at_time")}
+          ${where(PND_NOT_QUICK_CANCEL, "created_at_time")}
           ORDER BY created_at_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})
 
@@ -480,9 +498,10 @@ export async function getActivityFeed(
             NULLIF(end_time, 0)::text,
             NULL::text,
             NULL::text,
+            NULL::text,
             NULL::text
           FROM ${schema}.fnd_auctions
-          ${where(null, "created_at_time")}
+          ${where(FND_NOT_QUICK_CANCEL, "created_at_time")}
           ORDER BY created_at_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})
 
@@ -500,6 +519,7 @@ export async function getActivityFeed(
             NULL::text,
             NULL::text,
             house::text,
+            NULL::text,
             NULL::text,
             NULL::text
           FROM ${schema}.pnd_auctions
@@ -522,9 +542,10 @@ export async function getActivityFeed(
             NULL::text,
             house::text,
             NULL::text,
+            NULL::text,
             NULL::text
           FROM ${schema}.pnd_auctions
-          WHERE status = 'cancelled' AND settled_at_time IS NOT NULL
+          ${where(PND_LONG_LIVED_CANCEL, "settled_at_time")}
           ORDER BY settled_at_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})
 
@@ -545,7 +566,8 @@ export async function getActivityFeed(
             NULL::text,
             NULL::text,
             NULL::text,
-            NULL::text
+            NULL::text,
+            tx_hash::text
           FROM ${schema}.fnd_sales
           ${where(null, "block_time")}
           ORDER BY block_time DESC
@@ -561,6 +583,7 @@ export async function getActivityFeed(
             NULL::text,
             contract::text,
             token_id::text,
+            NULL::text,
             NULL::text,
             NULL::text,
             NULL::text,
@@ -587,7 +610,8 @@ export async function getActivityFeed(
             NULLIF(pa.end_time, 0)::text,
             pa.house::text,
             NULL::text,
-            NULL::text
+            NULL::text,
+            pb.tx_hash::text
           FROM ${schema}.pnd_bids pb
           JOIN ${schema}.pnd_auctions pa ON pa.id = pb.auction_id
           ${where("pb.first_bid = TRUE", "pb.block_time")}
@@ -609,9 +633,10 @@ export async function getActivityFeed(
             NULLIF(sub.end_time, 0)::text,
             NULL::text,
             NULL::text,
-            NULL::text
+            NULL::text,
+            sub.tx_hash::text
           FROM (
-            SELECT id, auction_id, bidder, amount, end_time, block_time,
+            SELECT id, auction_id, bidder, amount, end_time, block_time, tx_hash,
                    ROW_NUMBER() OVER (
                      PARTITION BY auction_id ORDER BY block_number
                    ) AS rn
@@ -648,6 +673,7 @@ export async function getActivityFeed(
       house: r.house,
       collection: r.collection,
       collectionName: r.collection_name,
+      txHash: r.tx_hash,
     }))
   }, 3_000)
 }

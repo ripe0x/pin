@@ -1,4 +1,5 @@
 import Link from "next/link"
+import type { ReactNode } from "react"
 import type { EnrichedActivityEvent } from "@/lib/v2-activity-types"
 import { formatEth, formatTimeAgo, truncateAddress } from "./format"
 
@@ -12,6 +13,14 @@ type Props = {
  * (token metadata, artist identity, media URL) happens upstream in
  * `enrichActivityEvents`. This lets the lazy-scroll loader append rows
  * client-side without an RSC round-trip per page.
+ *
+ * Layout: `[time] [thumb] artist verb token` on the top line; price,
+ * counterparty, contracts, and tx hash on a second mono-font subline so
+ * the eye-line of human-readable headlines isn't broken up by mixed
+ * type. Verbs are deliberately short ("listed" / "sold" / "settled" /
+ * "got first bid on") rather than the marketplace-template "opened
+ * auction · reserve …" wording — feeds read better when the verb glues
+ * cleanly to the token title.
  */
 export function ActivityRow({ event }: Props) {
   const {
@@ -28,8 +37,11 @@ export function ActivityRow({ event }: Props) {
       : null
   const artistHref = `/artist/${event.artist}`
 
-  const verb = renderVerb(event)
-  const subline = renderSubline(event)
+  // Some events render the token title inline (listed, sold, etc.); a
+  // few render only the verb (collection deploy embeds the name; house
+  // deploy has no token at all).
+  const showTokenTitle =
+    event.kind !== "house.deployed" && event.kind !== "collection.deployed"
 
   return (
     <li className="border-t border-gray-200 py-4 px-1">
@@ -80,8 +92,8 @@ export function ActivityRow({ event }: Props) {
             >
               {artistDisplayName}
             </Link>
-            <span className="text-gray-500"> {verb} </span>
-            {tokenTitle ? (
+            <span className="text-gray-500"> {renderVerb(event)} </span>
+            {showTokenTitle && tokenTitle ? (
               tokenHref ? (
                 <Link
                   href={tokenHref}
@@ -94,11 +106,7 @@ export function ActivityRow({ event }: Props) {
               )
             ) : null}
           </p>
-          {subline ? (
-            <p className="font-mono text-[11px] text-gray-400 mt-1 truncate">
-              {subline}
-            </p>
-          ) : null}
+          <Subline event={event} />
         </div>
       </div>
     </li>
@@ -108,57 +116,134 @@ export function ActivityRow({ event }: Props) {
 function renderVerb(event: EnrichedActivityEvent): string {
   switch (event.kind) {
     case "house.deployed":
-      return "deployed sovereign auction house"
+      return "deployed an auction house"
     case "collection.deployed":
       return event.collectionName
         ? `deployed collection “${event.collectionName}”`
-        : "deployed collection"
+        : "deployed a collection"
     case "auction.opened":
-      return event.reserveWei !== null
-        ? `opened auction · reserve ${formatEth(event.reserveWei)} ·`
-        : "opened auction ·"
-    case "auction.firstBid":
-      return event.amountWei !== null
-        ? `received first bid ${formatEth(event.amountWei)} on`
-        : "received first bid on"
-    case "auction.settled":
-      return event.amountWei !== null
-        ? `settled auction ${formatEth(event.amountWei)} ·`
-        : "settled auction ·"
+      return "listed"
     case "auction.cancelled":
-      return event.reserveWei !== null
-        ? `cancelled auction · reserve ${formatEth(event.reserveWei)} ·`
-        : "cancelled auction ·"
+      return "cancelled listing of"
+    case "auction.firstBid":
+      return "got first bid on"
+    case "auction.settled":
+      return "settled"
     case "sale.buyNow":
-      return event.amountWei !== null
-        ? `sold ${formatEth(event.amountWei)} ·`
-        : "sold ·"
+      return "sold"
     case "mint":
       return "minted"
   }
 }
 
-function renderSubline(event: EnrichedActivityEvent): string | null {
-  const parts: string[] = []
+/**
+ * Per-event subline. Rendered as inline parts joined by " · " — each
+ * part is a node so we can mix plain text with anchor links. Order:
+ * money first, counterparty next, on-chain identifiers last.
+ */
+function Subline({ event }: { event: EnrichedActivityEvent }) {
+  const parts: ReactNode[] = []
+
+  if (
+    (event.kind === "auction.opened" || event.kind === "auction.cancelled") &&
+    event.reserveWei !== null
+  ) {
+    parts.push(<>{formatEth(event.reserveWei)} reserve</>)
+  }
+
+  if (event.kind === "auction.firstBid" && event.amountWei !== null) {
+    parts.push(
+      event.counterparty ? (
+        <>
+          {formatEth(event.amountWei)} from <AddressLink addr={event.counterparty} />
+        </>
+      ) : (
+        <>{formatEth(event.amountWei)}</>
+      ),
+    )
+  }
+
+  if (
+    (event.kind === "auction.settled" || event.kind === "sale.buyNow") &&
+    event.amountWei !== null
+  ) {
+    parts.push(
+      event.counterparty ? (
+        <>
+          {formatEth(event.amountWei)} → <AddressLink addr={event.counterparty} />
+        </>
+      ) : (
+        <>{formatEth(event.amountWei)}</>
+      ),
+    )
+  }
 
   if (event.kind === "house.deployed" && event.house) {
-    parts.push(event.house)
-  }
-  if (event.kind === "collection.deployed" && event.collection) {
-    parts.push(event.collection)
-  }
-  if (event.kind === "auction.firstBid" && event.counterparty) {
-    parts.push(`by ${truncateAddress(event.counterparty)}`)
-  }
-  if (event.kind === "auction.settled" && event.counterparty) {
-    parts.push(`→ ${truncateAddress(event.counterparty)}`)
-  }
-  if (event.kind === "sale.buyNow" && event.counterparty) {
-    parts.push(`→ ${truncateAddress(event.counterparty)}`)
-  }
-  if (event.tokenContract && event.kind !== "house.deployed") {
-    parts.push(truncateAddress(event.tokenContract))
+    parts.push(<EtherscanAddress addr={event.house} />)
   }
 
-  return parts.length > 0 ? parts.join(" · ") : null
+  if (event.kind === "collection.deployed" && event.collection) {
+    parts.push(<EtherscanAddress addr={event.collection} />)
+  }
+
+  if (event.txHash) {
+    parts.push(<TxLink hash={event.txHash} />)
+  }
+
+  if (parts.length === 0) return null
+
+  return (
+    <p className="font-mono text-[11px] text-gray-400 mt-1 truncate">
+      {parts.map((part, i) => (
+        // eslint-disable-next-line react/no-array-index-key
+        <span key={i}>
+          {i > 0 ? " · " : null}
+          {part}
+        </span>
+      ))}
+    </p>
+  )
+}
+
+/** Truncated address linked to the artist page. Used for counterparties
+ * (bidders, buyers, winners) so the click goes to their portfolio
+ * rather than off-site to Etherscan. */
+function AddressLink({ addr }: { addr: string }) {
+  return (
+    <Link
+      href={`/artist/${addr}`}
+      className="hover:text-fg transition-colors"
+    >
+      {truncateAddress(addr)}
+    </Link>
+  )
+}
+
+/** Truncated address linked to Etherscan. Used for contract addresses
+ * (auction houses, collections) where the on-chain page is the useful
+ * destination. */
+function EtherscanAddress({ addr }: { addr: string }) {
+  return (
+    <a
+      href={`https://etherscan.io/address/${addr}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="hover:text-fg transition-colors"
+    >
+      {truncateAddress(addr)}
+    </a>
+  )
+}
+
+function TxLink({ hash }: { hash: string }) {
+  return (
+    <a
+      href={`https://etherscan.io/tx/${hash}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="hover:text-fg transition-colors"
+    >
+      view tx ↗
+    </a>
+  )
 }

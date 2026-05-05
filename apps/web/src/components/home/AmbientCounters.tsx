@@ -4,9 +4,14 @@ import { getPlatformStats } from "@/lib/indexer-queries"
 function formatEth(wei: bigint): string {
   const eth = Number(formatEther(wei))
   if (eth >= 100) return Math.round(eth).toString()
-  if (eth >= 1) return eth.toFixed(2)
-  if (eth >= 0.01) return eth.toFixed(3)
-  return eth.toFixed(4)
+  if (eth >= 1) return stripTrailingZeros(eth.toFixed(2))
+  if (eth >= 0.01) return stripTrailingZeros(eth.toFixed(3))
+  return stripTrailingZeros(eth.toFixed(4))
+}
+
+function stripTrailingZeros(s: string): string {
+  if (!s.includes(".")) return s
+  return s.replace(/\.?0+$/, "")
 }
 
 /**
