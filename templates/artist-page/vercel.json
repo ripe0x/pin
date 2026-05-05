@@ -1,12 +1,4 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "nextjs",
-  "env": {
-    "NEXT_PUBLIC_ARTIST_ADDRESS": "@artist_address"
-  },
-  "build": {
-    "env": {
-      "NEXT_PUBLIC_ARTIST_ADDRESS": "@artist_address"
-    }
-  }
+  "framework": "nextjs"
 }

@@ -50,6 +50,24 @@ export async function resolveEnsAddress(
   }
 }
 
+/**
+ * Read the `url` text record from the artist's ENS name.
+ * Returns null if the artist has no ENS name or no `url` record set.
+ * Not cached — called only on the artist's own page view, client-side.
+ */
+export async function getEnsUrl(address: Address): Promise<string | null> {
+  try {
+    // Reuse the 24h-cached name resolver — avoids a fresh eth_call on every
+    // request and keeps this zero-cost when the artist has no ENS name.
+    const ensName = await resolveEnsNameCached(address.toLowerCase())
+    if (!ensName) return null
+    const url = await client.getEnsText({ name: normalize(ensName), key: "url" })
+    return url ?? null
+  } catch {
+    return null
+  }
+}
+
 export type ArtistIdentity = {
   address: Address
   ensName: string | null

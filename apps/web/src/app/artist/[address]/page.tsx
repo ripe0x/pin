@@ -18,6 +18,7 @@ import { ArtistGallery } from "@/components/artist/ArtistGallery"
 import { BulkDelistPanel } from "@/components/listings/BulkDelistPanel"
 import { SovereignBulkPanel } from "@/components/listings/SovereignBulkPanel"
 import { MigrationBanner } from "@/components/migrate/MigrationBanner"
+import { SitePanel } from "@/components/sites/SitePanel"
 
 const INITIAL_PAGE_SIZE = 24
 
@@ -183,6 +184,10 @@ async function ArtistPageBody({ address }: { address: string }) {
 
       <div className="mt-4">
         <SovereignBulkPanel artistAddress={address} />
+      </div>
+
+      <div className="mt-4">
+        <SitePanel artistAddress={address} />
       </div>
 
       <div className="mt-12">

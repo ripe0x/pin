@@ -25,9 +25,21 @@ const VERCEL_DEPLOY_URL =
 const GITHUB_FORK_URL = `${TEMPLATE_REPO_URL}/fork`
 const NETLIFY_IMPORT_URL = "https://app.netlify.com/start"
 
-export function DeployButtons({ className = "" }: { className?: string }) {
+export function DeployButtons({
+  className = "",
+  artistAddress,
+}: {
+  className?: string
+  artistAddress?: string
+}) {
   return (
     <div className={`space-y-5 ${className}`}>
+      {artistAddress && (
+        <div className="flex items-center gap-2 font-mono text-xs bg-gray-50 border border-gray-200 px-3 py-2 rounded">
+          <span className="text-gray-400 shrink-0">NEXT_PUBLIC_ARTIST_ADDRESS</span>
+          <span className="text-gray-700 truncate">{artistAddress}</span>
+        </div>
+      )}
       <div>
         <a
           href={VERCEL_DEPLOY_URL}
