@@ -47,6 +47,9 @@ const getTokenPageData = cache(async (handle: string, tokenId: string) => {
   const imageUrl = meta?.image
     ? ipfsToHttp(meta.image)
     : "https://placehold.co/1200x1500/F2F2F2/999999?text=Artwork"
+  const animationUrl = meta?.animation_url
+    ? ipfsToHttp(meta.animation_url)
+    : null
 
   const isErc1155 = !!erc1155 && erc1155.transfers.length > 0
   const creator = (onChainData?.creator || erc1155?.creator) ?? ""
@@ -91,6 +94,7 @@ const getTokenPageData = cache(async (handle: string, tokenId: string) => {
     contract,
     tokenId,
     imageUrl,
+    animationUrl,
     provenance,
     isErc1155,
     edition: isErc1155 ? erc1155!.totalSupply : null,
@@ -212,7 +216,11 @@ export default async function TokenPage({
       <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] min-h-[calc(100vh-64px)]">
         {/* Left: sticky artwork */}
         <div className="lg:sticky lg:top-16 lg:h-[calc(100vh-64px)] flex items-center justify-center bg-gray-100 dark:bg-bg p-8 lg:p-12">
-          <TokenMedia url={data.imageUrl} title={data.title} />
+          <TokenMedia
+            imageUrl={data.imageUrl}
+            animationUrl={data.animationUrl}
+            title={data.title}
+          />
         </div>
 
         {/* Right: scrolling sidebar */}

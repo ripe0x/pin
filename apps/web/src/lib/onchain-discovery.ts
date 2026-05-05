@@ -1281,6 +1281,13 @@ async function getErc1155TokenStatsUncached(
   return { creator, totalSupply, ownerCount: owners.length, transfers }
 }
 
+export type TokenMetadata = {
+  name?: string
+  description?: string
+  image?: string
+  animation_url?: string
+}
+
 /**
  * Resolve metadata for a single token directly via RPC + IPFS. Tries ERC721's
  * `tokenURI(id)` first; if that reverts (the contract is ERC1155 or doesn't
@@ -1291,7 +1298,7 @@ async function getErc1155TokenStatsUncached(
 export async function resolveTokenMetadataDirect(
   contractAddress: string,
   tokenId: string,
-): Promise<{ name?: string; description?: string; image?: string } | null> {
+): Promise<TokenMetadata | null> {
   // Token metadata at a specific (contract, tokenId) is effectively
   // immutable for ~99% of NFTs. Backed by the persistent
   // `token_metadata` table — once we've fetched a token, we never
@@ -1311,7 +1318,8 @@ const resolveTokenMetadataCached = unstable_cache(
       if (
         stored.name === null &&
         stored.description === null &&
-        stored.imageUrl === null
+        stored.imageUrl === null &&
+        stored.animationUrl === null
       ) {
         return null
       }
@@ -1321,6 +1329,9 @@ const resolveTokenMetadataCached = unstable_cache(
           description: stored.description,
         }),
         ...(stored.imageUrl !== null && { image: stored.imageUrl }),
+        ...(stored.animationUrl !== null && {
+          animation_url: stored.animationUrl,
+        }),
       }
     }
 
@@ -1330,6 +1341,7 @@ const resolveTokenMetadataCached = unstable_cache(
       name: fresh?.name ?? null,
       description: fresh?.description ?? null,
       imageUrl: fresh?.image ?? null,
+      animationUrl: fresh?.animation_url ?? null,
     })
     return fresh
   },
@@ -1340,7 +1352,7 @@ const resolveTokenMetadataCached = unstable_cache(
 async function resolveTokenMetadataUncached(
   contractAddress: string,
   tokenId: string,
-): Promise<{ name?: string; description?: string; image?: string } | null> {
+): Promise<TokenMetadata | null> {
   const client = getClient()
   const id = BigInt(tokenId)
   const contract = contractAddress as Address
@@ -1428,9 +1440,7 @@ async function resolveTokenMetadataUncached(
  *   data:application/json;base64,<b64>
  * Body content is URL-decoded for the non-base64 forms.
  */
-function parseDataUriJson(
-  uri: string,
-): { name?: string; description?: string; image?: string } | null {
+function parseDataUriJson(uri: string): TokenMetadata | null {
   const comma = uri.indexOf(",")
   if (comma < 0) return null
   const meta = uri.slice(5, comma) // strip "data:"
