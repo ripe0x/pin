@@ -1345,7 +1345,10 @@ const resolveTokenMetadataCached = unstable_cache(
     })
     return fresh
   },
-  ["token-metadata-v2"],
+  // v3: shape grew an `animation_url` field. Bumping the key forces L1
+  // re-evaluation against the DB, since old entries cached under v2 lack
+  // the field and Next won't re-run the function until the key changes.
+  ["token-metadata-v3"],
   { revalidate: 60 * 60 * 24, tags: ["token-metadata"] },
 )
 
