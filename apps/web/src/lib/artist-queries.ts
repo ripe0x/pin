@@ -117,6 +117,9 @@ const resolveEnsNameCached = unstable_cache(
 
 export async function resolveDisplayName(address: string): Promise<string> {
   const lower = address.toLowerCase()
+  // Off-RPC path first; fall back to ENS-via-RPC when EFP is unavailable.
+  const efp = await resolveEfpEnsCached(lower)
+  if (efp !== null) return efp.name ?? truncateAddress(address)
   const ensName = await resolveEnsNameCached(lower)
   return ensName ?? truncateAddress(address)
 }
@@ -135,6 +138,68 @@ export async function resolveDisplayNames(
   )
   return new Map(entries)
 }
+
+// ─── Off-RPC ENS via EFP (api.ethfollow.xyz) ───────────────────────────────
+//
+// The Ethereum Follow Protocol's profile API returns reverse-resolved ENS
+// (name + avatar) for an address in a single HTTPS call — same data the
+// `getEnsName` + `getEnsAvatar` RPC pair would produce, but with zero RPC
+// from our side. We use it as the primary resolver and fall back to the
+// RPC path on API failure / timeout, so an outage at api.ethfollow.xyz
+// degrades to the previous (slower, RPC-burning) behavior rather than
+// breaking identity rendering.
+//
+// Kill switch: `EFP_DISABLED=1` skips EFP entirely and goes straight to RPC.
+
+const EFP_BASE_URL = "https://api.ethfollow.xyz/api/v1"
+const EFP_TIMEOUT_MS = 2_500
+const EFP_DISABLED = process.env.EFP_DISABLED === "1"
+
+type EfpEnsRecord = { name: string | null; avatar: string | null }
+
+async function fetchEfpEnsRecord(
+  lowerAddress: string,
+): Promise<EfpEnsRecord | null> {
+  if (EFP_DISABLED) return null
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), EFP_TIMEOUT_MS)
+  try {
+    const res = await fetch(
+      `${EFP_BASE_URL}/users/${lowerAddress}/ens`,
+      { signal: ctrl.signal },
+    )
+    if (!res.ok) return null
+    const json = (await res.json()) as {
+      ens?: { name?: string | null; avatar?: string | null } | null
+    }
+    return {
+      name: json.ens?.name ?? null,
+      avatar: json.ens?.avatar ?? null,
+    }
+  } catch {
+    // Timeout / network / parse error — caller falls back to RPC.
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
+ * 24h-cached EFP record. Stores both successful responses (including the
+ * legitimate "no ENS" answer of `{ name: null, avatar: null }`) and
+ * failures (cached as null). On null, callers fall through to RPC — so a
+ * sustained EFP outage means RPC is used for affected addresses for up to
+ * 24h, identical to the pre-EFP behavior.
+ */
+const resolveEfpEnsCached = unstable_cache(
+  async (lowerAddress: string): Promise<EfpEnsRecord | null> => {
+    return pgCache(`efp-ens:${lowerAddress}`, 60 * 60 * 24, async () => {
+      return fetchEfpEnsRecord(lowerAddress)
+    })
+  },
+  ["efp-ens"],
+  { revalidate: 60 * 60 * 24, tags: ["ens"] },
+)
 
 /**
  * Cached ENS avatar lookup, keyed by address. Uses the cached name as
@@ -160,16 +225,34 @@ const resolveEnsAvatarCached = unstable_cache(
 )
 
 /**
- * Resolve an artist's identity (ENS name + avatar). Both lookups go
- * through the L1+L2 cache so warm-cache calls collapse to two point
- * lookups instead of two ENS resolver `eth_call`s. Issued in parallel —
- * the avatar cache transparently re-uses the cached name internally.
+ * Resolve an artist's identity (ENS name + avatar).
+ *
+ * Primary path is the EFP HTTPS API (zero RPC, one round-trip per
+ * address). When EFP returns a record we trust it — even if the record
+ * is `{ name: null, avatar: null }`, that's a legitimate "no ENS" answer
+ * and we honor it without spending RPC to confirm. When EFP is
+ * unavailable (timeout, 5xx, parse error) the cached value is null and
+ * we fall back to direct ENS RPC resolution, preserving the previous
+ * behavior end-to-end.
  */
 export async function getArtistIdentity(
   address: string,
 ): Promise<ArtistIdentity> {
   const addr = address as Address
   const lower = address.toLowerCase()
+
+  const efp = await resolveEfpEnsCached(lower)
+  if (efp !== null) {
+    const displayName =
+      efp.name ?? `${address.slice(0, 6)}...${address.slice(-4)}`
+    return {
+      address: addr,
+      ensName: efp.name,
+      displayName,
+      avatarUrl: efp.avatar,
+    }
+  }
+
   const [ensName, avatarUrl] = await Promise.all([
     resolveEnsNameCached(lower),
     resolveEnsAvatarCached(lower),
