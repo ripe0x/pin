@@ -9,10 +9,10 @@ function stripTrailingZeros(s: string): string {
 
 export function formatEth(wei: bigint): string {
   const eth = Number(formatEther(wei))
-  if (eth >= 100) return `${Math.round(eth)} Ξ`
-  if (eth >= 1) return `${stripTrailingZeros(eth.toFixed(2))} Ξ`
-  if (eth >= 0.01) return `${stripTrailingZeros(eth.toFixed(3))} Ξ`
-  return `${stripTrailingZeros(eth.toFixed(4))} Ξ`
+  if (eth >= 100) return `${Math.round(eth)} ETH`
+  if (eth >= 1) return `${stripTrailingZeros(eth.toFixed(2))} ETH`
+  if (eth >= 0.01) return `${stripTrailingZeros(eth.toFixed(3))} ETH`
+  return `${stripTrailingZeros(eth.toFixed(4))} ETH`
 }
 
 export function formatTimeAgo(unixSec: number): string {
