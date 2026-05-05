@@ -153,6 +153,10 @@ function renderVerb(event: ActivityEvent): string {
       return event.amountWei !== null
         ? `settled auction ${formatEth(event.amountWei)} ·`
         : "settled auction ·"
+    case "auction.cancelled":
+      return event.reserveWei !== null
+        ? `cancelled auction · reserve ${formatEth(event.reserveWei)} ·`
+        : "cancelled auction ·"
     case "sale.buyNow":
       return event.amountWei !== null
         ? `sold ${formatEth(event.amountWei)} ·`
