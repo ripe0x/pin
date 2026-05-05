@@ -1,15 +1,17 @@
 import { unstable_noStore as noStore } from "next/cache"
 import { getActivityFeed } from "@/lib/indexer-queries"
-import { getArtistIdentity } from "@/lib/artist-queries"
-import { ActivityRow } from "./ActivityRow"
-import { truncateAddress } from "./format"
+import { enrichActivityEvents } from "@/lib/v2-activity"
+import { ActivityFeedClient } from "./ActivityFeedClient"
 
 const FEED_SIZE = 50
 
 /**
- * Server-side feed: pulls the unioned event stream from the indexer,
- * resolves every unique artist's identity (cached, so each unique
- * address is one ENS pair), and renders a list of ActivityRow.
+ * Server-rendered first page of the activity feed.
+ *
+ * Pulls the unioned event stream from the indexer, resolves token
+ * metadata + artist identity (Postgres point-lookups thanks to the
+ * metadata warmer + EFP/ENS cache), and hands the enriched first page
+ * to a client component for infinite-scroll continuation.
  *
  * If the indexer is unavailable / disabled we render an empty state
  * rather than the rest of the page disappearing.
@@ -35,33 +37,12 @@ export async function ActivityFeed() {
     )
   }
 
-  const uniqueArtists = Array.from(
-    new Set(events.map((e) => e.artist.toLowerCase())),
-  )
-  const identities = new Map(
-    await Promise.all(
-      uniqueArtists.map(
-        async (addr) =>
-          [addr, await getArtistIdentity(addr).catch(() => null)] as const,
-      ),
-    ),
-  )
+  const enriched = await enrichActivityEvents(events)
 
   return (
-    <ul className="border-b border-gray-200">
-      {events.map((event) => {
-        const id = identities.get(event.artist.toLowerCase())
-        return (
-          <ActivityRow
-            key={event.id}
-            event={event}
-            artistDisplayName={
-              id?.displayName ?? truncateAddress(event.artist)
-            }
-            artistAvatarUrl={id?.avatarUrl ?? null}
-          />
-        )
-      })}
-    </ul>
+    <ActivityFeedClient
+      initial={enriched}
+      hasMore={enriched.length >= FEED_SIZE}
+    />
   )
 }

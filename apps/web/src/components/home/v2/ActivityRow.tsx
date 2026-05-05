@@ -1,52 +1,26 @@
 import Link from "next/link"
-import { ipfsToHttp } from "@pin/shared"
-import { resolveTokenMetadataDirect } from "@/lib/onchain-discovery"
-import type { ActivityEvent } from "@/lib/indexer-queries"
+import type { EnrichedActivityEvent } from "@/lib/v2-activity-types"
 import { formatEth, formatTimeAgo, truncateAddress } from "./format"
 
-const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
-
 type Props = {
-  event: ActivityEvent
-  artistDisplayName: string
-  artistAvatarUrl: string | null
+  event: EnrichedActivityEvent
 }
 
 /**
- * One row of the activity feed. Server component so we can resolve token
- * metadata inline (it's behind multiple cache layers — pgCache + an
- * in-process unstable_cache — so per-row reads are essentially free on
- * a warm cache).
- *
- * Layout: [time] [thumb?] [artist + verb-phrase / sub-line]. The artist's
- * name links to their portfolio; the work title links to the token page.
+ * Presentational row for the activity feed. Pure props, sync render —
+ * works on either side of the server/client boundary. Data resolution
+ * (token metadata, artist identity, media URL) happens upstream in
+ * `enrichActivityEvents`. This lets the lazy-scroll loader append rows
+ * client-side without an RSC round-trip per page.
  */
-export async function ActivityRow({
-  event,
-  artistDisplayName,
-  artistAvatarUrl,
-}: Props) {
-  const meta =
-    event.tokenContract && event.tokenId
-      ? await resolveTokenMetadataDirect(
-          event.tokenContract,
-          event.tokenId,
-        ).catch(() => null)
-      : null
-
-  const tokenTitle =
-    meta?.name && meta.name !== `#${event.tokenId}`
-      ? meta.name
-      : event.tokenId
-        ? `#${event.tokenId}`
-        : null
-
-  const mediaUrl = meta?.image ? ipfsToHttp(meta.image) : null
-  const isVideo = mediaUrl
-    ? VIDEO_EXTENSIONS.some((ext) =>
-        mediaUrl.split("?")[0].toLowerCase().endsWith(ext),
-      )
-    : false
+export function ActivityRow({ event }: Props) {
+  const {
+    artistDisplayName,
+    artistAvatarUrl,
+    tokenTitle,
+    mediaUrl,
+    isVideo,
+  } = event
 
   const tokenHref =
     event.tokenContract && event.tokenId
@@ -54,8 +28,6 @@ export async function ActivityRow({
       : null
   const artistHref = `/artist/${event.artist}`
 
-  // Verb + amount phrase, varying by event kind. Kept terse — the row's
-  // meaning lives in the verb, the rest is context.
   const verb = renderVerb(event)
   const subline = renderSubline(event)
 
@@ -133,7 +105,7 @@ export async function ActivityRow({
   )
 }
 
-function renderVerb(event: ActivityEvent): string {
+function renderVerb(event: EnrichedActivityEvent): string {
   switch (event.kind) {
     case "house.deployed":
       return "deployed sovereign auction house"
@@ -162,7 +134,7 @@ function renderVerb(event: ActivityEvent): string {
   }
 }
 
-function renderSubline(event: ActivityEvent): string | null {
+function renderSubline(event: EnrichedActivityEvent): string | null {
   const parts: string[] = []
 
   if (event.kind === "house.deployed" && event.house) {
