@@ -292,6 +292,295 @@ export async function getPlatformStats(): Promise<PlatformStats | null> {
 }
 
 
+// ─── Activity feed ────────────────────────────────────────────────────────
+//
+// One reverse-chronological stream of "sovereign actions" — events whose
+// grammatical subject is the artist (deploy, list, mint, settle), plus
+// first-bid events on their auctions. Powers the v2 home page.
+
+export type ActivityKind =
+  | "house.deployed"
+  | "collection.deployed"
+  | "auction.opened"
+  | "auction.firstBid"
+  | "auction.settled"
+  | "sale.buyNow"
+  | "mint"
+
+export type ActivityEvent = {
+  id: string
+  kind: ActivityKind
+  blockTime: number
+  /** The address that's the *subject* of the row (seller / deployer / minter). */
+  artist: string
+  /** The other party, when relevant (winner, bidder, buyer). */
+  counterparty: string | null
+  tokenContract: string | null
+  tokenId: string | null
+  amountWei: bigint | null
+  reserveWei: bigint | null
+  endTime: number | null
+  house: string | null
+  collection: string | null
+  collectionName: string | null
+}
+
+/**
+ * Recent sovereign actions across both contract families, normalized to a
+ * single shape and sorted newest-first. Each subquery is independently
+ * bounded with `ORDER BY <time> DESC LIMIT 100` so the merge sorts at most
+ * a few hundred rows even before any composite-time index exists.
+ *
+ * Returns `null` on indexer-unavailable so callers can hide the feed
+ * rather than show a half-broken page.
+ */
+export async function getActivityFeed(
+  limit = 50,
+): Promise<ActivityEvent[] | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+
+  return withTimeout(async () => {
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+      /[^a-zA-Z0-9_]/g,
+      "",
+    )
+
+    type Row = {
+      kind: ActivityKind
+      id: string
+      block_time: string
+      artist: string
+      counterparty: string | null
+      token_contract: string | null
+      token_id: string | null
+      amount: string | null
+      reserve: string | null
+      end_time: string | null
+      house: string | null
+      collection: string | null
+      collection_name: string | null
+    }
+
+    const PER_SUBQUERY_LIMIT = 100
+
+    const rows = (await db.unsafe(
+      `WITH events AS (
+         (SELECT
+            'house.deployed'::text AS kind,
+            ('house:' || house)::text AS id,
+            created_at_time::text AS block_time,
+            owner::text AS artist,
+            NULL::text AS counterparty,
+            NULL::text AS token_contract,
+            NULL::text AS token_id,
+            NULL::text AS amount,
+            NULL::text AS reserve,
+            NULL::text AS end_time,
+            house::text AS house,
+            NULL::text AS collection,
+            NULL::text AS collection_name
+          FROM ${schema}.pnd_houses
+          ORDER BY created_at_time DESC
+          LIMIT ${PER_SUBQUERY_LIMIT})
+
+         UNION ALL
+
+         (SELECT
+            'collection.deployed'::text,
+            ('coll:' || collection)::text,
+            created_at_time::text,
+            creator::text,
+            NULL::text,
+            NULL::text,
+            NULL::text,
+            NULL::text,
+            NULL::text,
+            NULL::text,
+            NULL::text,
+            collection::text,
+            name
+          FROM ${schema}.fnd_collections
+          ORDER BY created_at_time DESC
+          LIMIT ${PER_SUBQUERY_LIMIT})
+
+         UNION ALL
+
+         (SELECT
+            'auction.opened'::text,
+            ('pnd-open:' || id)::text,
+            created_at_time::text,
+            seller::text,
+            NULL::text,
+            token_contract::text,
+            token_id::text,
+            NULL::text,
+            reserve_price::text,
+            NULLIF(end_time, 0)::text,
+            house::text,
+            NULL::text,
+            NULL::text
+          FROM ${schema}.pnd_auctions
+          ORDER BY created_at_time DESC
+          LIMIT ${PER_SUBQUERY_LIMIT})
+
+         UNION ALL
+
+         (SELECT
+            'auction.opened'::text,
+            ('fnd-open:' || auction_id)::text,
+            created_at_time::text,
+            seller::text,
+            NULL::text,
+            nft_contract::text,
+            token_id::text,
+            NULL::text,
+            reserve_price::text,
+            NULLIF(end_time, 0)::text,
+            NULL::text,
+            NULL::text,
+            NULL::text
+          FROM ${schema}.fnd_auctions
+          ORDER BY created_at_time DESC
+          LIMIT ${PER_SUBQUERY_LIMIT})
+
+         UNION ALL
+
+         (SELECT
+            'auction.settled'::text,
+            ('pnd-settle:' || id)::text,
+            settled_at_time::text,
+            seller::text,
+            winner::text,
+            token_contract::text,
+            token_id::text,
+            amount::text,
+            NULL::text,
+            NULL::text,
+            house::text,
+            NULL::text,
+            NULL::text
+          FROM ${schema}.pnd_auctions
+          WHERE status = 'settled' AND settled_at_time IS NOT NULL
+          ORDER BY settled_at_time DESC
+          LIMIT ${PER_SUBQUERY_LIMIT})
+
+         UNION ALL
+
+         (SELECT
+            CASE WHEN source = 'auction'
+                 THEN 'auction.settled'
+                 ELSE 'sale.buyNow' END,
+            ('sale:' || id)::text,
+            block_time::text,
+            seller::text,
+            buyer::text,
+            nft_contract::text,
+            token_id::text,
+            price_wei::text,
+            NULL::text,
+            NULL::text,
+            NULL::text,
+            NULL::text,
+            NULL::text
+          FROM ${schema}.fnd_sales
+          ORDER BY block_time DESC
+          LIMIT ${PER_SUBQUERY_LIMIT})
+
+         UNION ALL
+
+         (SELECT
+            'mint'::text,
+            ('mint:' || id)::text,
+            block_time::text,
+            creator::text,
+            NULL::text,
+            contract::text,
+            token_id::text,
+            NULL::text,
+            NULL::text,
+            NULL::text,
+            NULL::text,
+            NULL::text,
+            NULL::text
+          FROM ${schema}.fnd_artist_tokens
+          ORDER BY block_time DESC
+          LIMIT ${PER_SUBQUERY_LIMIT})
+
+         UNION ALL
+
+         (SELECT
+            'auction.firstBid'::text,
+            ('pnd-bid:' || pb.id)::text,
+            pb.block_time::text,
+            pa.seller::text,
+            pb.bidder::text,
+            pa.token_contract::text,
+            pa.token_id::text,
+            pb.amount::text,
+            NULL::text,
+            NULLIF(pa.end_time, 0)::text,
+            pa.house::text,
+            NULL::text,
+            NULL::text
+          FROM ${schema}.pnd_bids pb
+          JOIN ${schema}.pnd_auctions pa ON pa.id = pb.auction_id
+          WHERE pb.first_bid = TRUE
+          ORDER BY pb.block_time DESC
+          LIMIT ${PER_SUBQUERY_LIMIT})
+
+         UNION ALL
+
+         (SELECT
+            'auction.firstBid'::text,
+            ('fnd-bid:' || sub.id)::text,
+            sub.block_time::text,
+            fa.seller::text,
+            sub.bidder::text,
+            fa.nft_contract::text,
+            fa.token_id::text,
+            sub.amount::text,
+            NULL::text,
+            NULLIF(sub.end_time, 0)::text,
+            NULL::text,
+            NULL::text,
+            NULL::text
+          FROM (
+            SELECT id, auction_id, bidder, amount, end_time, block_time,
+                   ROW_NUMBER() OVER (
+                     PARTITION BY auction_id ORDER BY block_number
+                   ) AS rn
+            FROM ${schema}.fnd_bids
+          ) sub
+          JOIN ${schema}.fnd_auctions fa ON fa.auction_id = sub.auction_id
+          WHERE sub.rn = 1
+          ORDER BY sub.block_time DESC
+          LIMIT ${PER_SUBQUERY_LIMIT})
+       )
+       SELECT * FROM events
+       ORDER BY block_time::numeric DESC
+       LIMIT $1`,
+      [limit],
+    )) as Row[]
+
+    return rows.map((r) => ({
+      id: r.id,
+      kind: r.kind,
+      blockTime: Number(r.block_time),
+      artist: r.artist,
+      counterparty: r.counterparty,
+      tokenContract: r.token_contract,
+      tokenId: r.token_id,
+      amountWei: r.amount === null ? null : BigInt(r.amount),
+      reserveWei: r.reserve === null ? null : BigInt(r.reserve),
+      endTime: r.end_time === null ? null : Number(r.end_time),
+      house: r.house,
+      collection: r.collection,
+      collectionName: r.collection_name,
+    }))
+  }, 3_000)
+}
+
 export async function getActiveAuctionCountFromIndexer(
   sellerAddress: string,
 ): Promise<number | null> {
