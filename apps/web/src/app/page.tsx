@@ -1,4 +1,5 @@
 import { Suspense } from "react"
+import { unstable_cache } from "next/cache"
 import { formatEther } from "viem"
 import { SITE_TITLE } from "@pin/shared"
 import { getPlatformStats } from "@/lib/indexer-queries"
@@ -73,8 +74,17 @@ function stripTrailingZeros(s: string): string {
   return s.replace(/\.?0+$/, "")
 }
 
+// Counters are fed by the same Ponder tables the activity feed reads,
+// so stale-by-30s mirrors the feed's freshness contract. Caching here
+// also takes one Postgres aggregation query out of every home-page hit.
+const getCachedPlatformStats = unstable_cache(
+  () => getPlatformStats(),
+  ["platform-stats-v1"],
+  { revalidate: 30, tags: ["activity-feed"] },
+)
+
 async function CountersInline() {
-  const stats = await getPlatformStats()
+  const stats = await getCachedPlatformStats()
   if (!stats) return null
 
   const clauses: string[] = []
