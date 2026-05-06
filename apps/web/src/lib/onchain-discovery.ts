@@ -50,6 +50,7 @@ import {
   LAZY_TTL,
   isFresh,
 } from "./lazy-index"
+import { getFoundationTokensFromIndexer } from "./indexer-queries"
 
 const FOUNDATION_NFT_ADDRESS = FOUNDATION_NFT[MAINNET_CHAIN_ID]
 const FACTORY_V1 = COLLECTION_FACTORY_V1[MAINNET_CHAIN_ID]
@@ -200,14 +201,56 @@ export async function discoverFoundationPinnedTokens(
  */
 /**
  * Foundation-side artist token discovery: shared 1/1 contract Mints +
- * per-artist collection contract Transfer-from-zero events. Lazy-cached
- * via `lazy_fnd_artist_tokens`. Exported so the Foundation platform
- * adapter (`apps/web/src/lib/platforms/foundation.ts`) can call it
- * without re-implementing the lazy + scan flow here.
+ * per-artist collection contract Transfer-from-zero events.
+ *
+ * Read order, fast → slow:
+ *
+ *   1. Ponder index (`ponder.fnd_artist_tokens`). Fastest path: a single
+ *      Postgres point lookup. Critical for crawler protection — search
+ *      bots walking `/artist/<addr>` URLs from the activity feed used to
+ *      trigger 6 parallel `eth_getLogs` scans against ~13M blocks per
+ *      address. With Ponder indexing FND, that fanout collapses to one
+ *      indexed query. Empty Ponder result is treated as authoritative
+ *      *for the indexer's startBlock window*, see caveat below.
+ *
+ *   2. Existing lazy cache (`lazy_fnd_artist_tokens`). Per-address row
+ *      with a 30-day TTL. Covers the case where someone manually
+ *      triggered a deeper scan (e.g. for a pre-startBlock historical
+ *      creator) and we want to keep serving that result.
+ *
+ *   3. Cold-path eager scan (`eth_getLogs` × 6). Only runs when Ponder
+ *      is unavailable AND no lazy cache row exists. The lazy cache then
+ *      stores the result so the next 30 days of repeat hits collapse
+ *      back to step 2.
+ *
+ * Caveat: Ponder's FND startBlock is recent (matches the PND factory
+ * deploy). Real Foundation creators whose only mints predate the
+ * startBlock will return `[]` from step 1. In exchange we eliminate
+ * the bot-driven cost amplification on non-creator addresses. If a
+ * specific historical creator needs to surface, manually trigger an
+ * eager scan via the lazy path or extend Ponder's startBlock.
+ *
+ * Exported so the Foundation platform adapter
+ * (`apps/web/src/lib/platforms/foundation.ts`) can call it without
+ * re-implementing the multi-tier flow here.
  */
 export async function discoverFoundationArtistRefs(
   artist: Address,
 ): Promise<SortableRef[]> {
+  // Step 1: Ponder-indexed fast path.
+  const indexed = await getFoundationTokensFromIndexer(artist)
+  if (indexed !== null) {
+    return indexed.map((r) => ({
+      contract: r.contract as Address,
+      tokenId: r.tokenId,
+      creator: artist,
+      collectionName: null,
+      blockNumber: r.blockNumber,
+      logIndex: r.logIndex,
+    }))
+  }
+
+  // Step 2: existing lazy cache.
   const cached = await readFoundationArtistTokens(artist)
   if (cached && isFresh(cached.lastIndexedAt, LAZY_TTL.foundationArtistTokens)) {
     return cached.refs.map((r) => ({
@@ -219,6 +262,8 @@ export async function discoverFoundationArtistRefs(
       logIndex: r.logIndex,
     }))
   }
+
+  // Step 3: eager scan (only when both indexer and lazy cache miss).
   const client = getClient()
   const latestBlock = await client.getBlockNumber()
   const [sharedRefs, collectionRefs] = await Promise.all([
