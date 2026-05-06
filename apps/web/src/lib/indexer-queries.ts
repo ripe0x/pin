@@ -292,6 +292,74 @@ export async function getPlatformStats(): Promise<PlatformStats | null> {
 }
 
 
+// ─── Foundation artist token pre-filter ──────────────────────────────────
+//
+// Used by `discoverFoundationArtistRefs` to short-circuit the expensive
+// 6-call eth_getLogs scan when Ponder already has the answer. Critical
+// for crawler protection: search-engine bots walking `/artist/<addr>`
+// links from the activity feed used to trigger eager Foundation scans
+// against ~13M blocks of chain history per address. With Ponder
+// indexing FND, a creator's tokens are a Postgres point lookup.
+
+export type IndexerFoundationTokenRef = {
+  contract: string
+  tokenId: string
+  blockNumber: bigint
+  logIndex: number
+}
+
+/**
+ * Foundation tokens minted by `creator` per Ponder. Returns null when
+ * the indexer is unavailable / disabled / slow so callers fall back to
+ * the existing lazy + RPC path. Returns `[]` when Ponder is healthy and
+ * the creator legitimately has no Foundation tokens since the indexer's
+ * startBlock — caller treats `[]` as a positive "I have an answer" hit
+ * (skip eager scan).
+ *
+ * Caveat: Ponder's startBlock is the same as PND's (~Nov 2025). Creators
+ * with only pre-startBlock activity will return `[]` here even though
+ * they're real Foundation creators. The caller can decide whether to
+ * trust the empty answer or fall through to the full eager scan; today
+ * the caller chooses to trust it for cost-protection reasons (the
+ * lazy_fnd_artist_index_status 30-day TTL on negative answers is
+ * preserved for the rare case it's needed).
+ */
+export async function getFoundationTokensFromIndexer(
+  creator: string,
+): Promise<IndexerFoundationTokenRef[] | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+
+  return withTimeout(async () => {
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+      /[^a-zA-Z0-9_]/g,
+      "",
+    )
+    const rows = (await db.unsafe(
+      `SELECT contract,
+              token_id::text AS token_id,
+              block_number::text AS block_number,
+              log_index
+         FROM ${schema}.fnd_artist_tokens
+        WHERE creator = $1
+        ORDER BY block_number DESC, log_index DESC`,
+      [creator.toLowerCase()],
+    )) as Array<{
+      contract: string
+      token_id: string
+      block_number: string
+      log_index: number
+    }>
+
+    return rows.map((r) => ({
+      contract: r.contract,
+      tokenId: r.token_id,
+      blockNumber: BigInt(r.block_number),
+      logIndex: r.log_index,
+    }))
+  })
+}
+
 // ─── Activity feed ────────────────────────────────────────────────────────
 //
 // One reverse-chronological stream of "sovereign actions" — events whose

@@ -69,6 +69,16 @@ export async function generateMetadata({
       title: identity.displayName,
       description,
     },
+    // Search engines and social-card crawlers expose `/artist/<addr>`
+    // links from the activity feed for any address that participates in
+    // an auction (sellers, bidders, winners). Most of those addresses
+    // aren't creators on any platform we index — visiting their page
+    // returns zero works. Mark those pages noindex,nofollow so bots
+    // stop walking deeper from them on subsequent crawls. Real artist
+    // pages (totalWorks > 0) stay indexable.
+    ...(totalWorks === 0 && {
+      robots: { index: false, follow: false },
+    }),
   }
 }
 
