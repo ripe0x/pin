@@ -1,4 +1,5 @@
 import { ImageResponse } from "next/og"
+import { zorbDataURI } from "zero-deps-zorbs"
 import { getConfig } from "@/lib/config"
 import {
   getArtistDisplayName,
@@ -51,13 +52,13 @@ export default async function Image() {
               alt=""
             />
           ) : (
-            <div
-              style={{
-                width: 72,
-                height: 72,
-                borderRadius: "100%",
-                background: `linear-gradient(135deg, ${addressToColor(cfg.artistAddress, 0)} 0%, ${addressToColor(cfg.artistAddress, 10)} 100%)`,
-              }}
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={zorbDataURI(cfg.artistAddress)}
+              width={72}
+              height={72}
+              style={{ borderRadius: "100%" }}
+              alt=""
             />
           )}
           <div
@@ -115,9 +116,3 @@ export default async function Image() {
   )
 }
 
-function addressToColor(address: string, offset: number): string {
-  const hex = address.slice(2, 8 + offset)
-  const num = parseInt(hex, 16)
-  const h = num % 360
-  return `hsl(${h}, 60%, 70%)`
-}

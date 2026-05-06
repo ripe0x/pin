@@ -1,5 +1,6 @@
 import Link from "next/link"
 import type { ReactNode } from "react"
+import { AddressZorb } from "@/components/AddressZorb"
 import type { EnrichedActivityEvent } from "@/lib/v2-activity-types"
 import { formatEth, formatTimeAgo, truncateAddress } from "./format"
 
@@ -50,7 +51,7 @@ export function ActivityRow({ event }: Props) {
           {formatTimeAgo(event.blockTime)}
         </span>
 
-        <div className="h-10 w-10 shrink-0 bg-gray-100 overflow-hidden flex items-center justify-center">
+        <div className="h-10 w-10 shrink-0 overflow-hidden flex items-center justify-center">
           {mediaUrl && tokenHref ? (
             <Link href={tokenHref} className="block h-full w-full">
               {isVideo ? (
@@ -81,7 +82,14 @@ export function ActivityRow({ event }: Props) {
                 className="h-full w-full object-cover"
               />
             </Link>
-          ) : null}
+          ) : (
+            <Link href={artistHref} className="block h-full w-full">
+              <AddressZorb
+                address={event.artist}
+                className="h-full w-full"
+              />
+            </Link>
+          )}
         </div>
 
         <div className="min-w-0 flex-1">

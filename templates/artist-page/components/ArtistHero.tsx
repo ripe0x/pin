@@ -17,6 +17,7 @@ import { getArtistHouse } from "@/lib/auctions"
 import { explorerAddressUrl } from "@/lib/explorer"
 import { formatAddress } from "@/lib/format"
 import { getEnsName } from "@/lib/ens"
+import { AddressZorb } from "@/components/AddressZorb"
 
 type Props = {
   totalAuctions: number
@@ -45,12 +46,9 @@ export async function ArtistHero({ totalAuctions, activeAuctions }: Props) {
           className="h-20 w-20 shrink-0 rounded-full object-cover"
         />
       ) : (
-        <div
+        <AddressZorb
+          address={cfg.artistAddress}
           className="h-20 w-20 shrink-0 rounded-full"
-          style={{
-            background: `linear-gradient(135deg, ${addressToColor(cfg.artistAddress, 0)} 0%, ${addressToColor(cfg.artistAddress, 10)} 100%)`,
-          }}
-          aria-hidden
         />
       )}
 
@@ -139,10 +137,3 @@ function prettyLinkLabel(url: string): string {
   }
 }
 
-/** Address-derived gradient (mirrors PND's `addressToColor`). */
-function addressToColor(address: string, offset: number): string {
-  const hex = address.slice(2, 8 + offset)
-  const num = parseInt(hex, 16)
-  const h = num % 360
-  return `hsl(${h}, 60%, 70%)`
-}

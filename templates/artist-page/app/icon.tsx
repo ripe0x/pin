@@ -1,4 +1,5 @@
 import { ImageResponse } from "next/og"
+import { zorbDataURI } from "zero-deps-zorbs"
 import { getConfig } from "@/lib/config"
 import { getArtistAvatarUrl } from "@/lib/artist"
 
@@ -24,32 +25,21 @@ export default async function Icon() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: avatarUrl
-            ? "transparent"
-            : `linear-gradient(135deg, ${addressToColor(cfg.artistAddress, 0)} 0%, ${addressToColor(cfg.artistAddress, 10)} 100%)`,
+          background: "transparent",
           borderRadius: 6,
           overflow: "hidden",
         }}
       >
-        {avatarUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={avatarUrl}
-            width={32}
-            height={32}
-            alt=""
-            style={{ width: 32, height: 32, objectFit: "cover" }}
-          />
-        ) : null}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={avatarUrl ?? zorbDataURI(cfg.artistAddress)}
+          width={32}
+          height={32}
+          alt=""
+          style={{ width: 32, height: 32, objectFit: "cover" }}
+        />
       </div>
     ),
     { ...size },
   )
-}
-
-function addressToColor(address: string, offset: number): string {
-  const hex = address.slice(2, 8 + offset)
-  const num = parseInt(hex, 16)
-  const h = num % 360
-  return `hsl(${h}, 60%, 70%)`
 }

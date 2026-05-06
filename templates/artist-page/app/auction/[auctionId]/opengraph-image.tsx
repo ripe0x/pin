@@ -1,4 +1,5 @@
 import { ImageResponse } from "next/og"
+import { zorbDataURI } from "zero-deps-zorbs"
 import { getAuctionById } from "@/lib/auctions"
 import { getTokenMetadata } from "@/lib/metadata"
 import { getConfig } from "@/lib/config"
@@ -137,13 +138,13 @@ export default async function Image({
                 alt=""
               />
             ) : (
-              <div
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: "100%",
-                  background: `linear-gradient(135deg, ${addressToColor(cfg.artistAddress, 0)} 0%, ${addressToColor(cfg.artistAddress, 10)} 100%)`,
-                }}
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={zorbDataURI(cfg.artistAddress)}
+                width={40}
+                height={40}
+                style={{ borderRadius: "100%" }}
+                alt=""
               />
             )}
             <div style={{ fontSize: 22, fontWeight: 500, display: "flex" }}>
@@ -215,9 +216,3 @@ export default async function Image({
   )
 }
 
-function addressToColor(address: string, offset: number): string {
-  const hex = address.slice(2, 8 + offset)
-  const num = parseInt(hex, 16)
-  const h = num % 360
-  return `hsl(${h}, 60%, 70%)`
-}

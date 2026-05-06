@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import type { ArtistIdentity } from "@/lib/artist-queries"
 import { useArtistHouse } from "@/components/auction/useArtistHouse"
+import { AddressZorb } from "@/components/AddressZorb"
 
 export function ArtistHeader({
   identity,
@@ -32,11 +33,9 @@ export function ArtistHeader({
           className="h-20 w-20 shrink-0 rounded-full object-cover"
         />
       ) : (
-        <div
+        <AddressZorb
+          address={identity.address}
           className="h-20 w-20 shrink-0 rounded-full"
-          style={{
-            background: `linear-gradient(135deg, ${addressToColor(identity.address, 0)} 0%, ${addressToColor(identity.address, 10)} 100%)`,
-          }}
         />
       )}
 
@@ -193,10 +192,3 @@ function RefreshPill({ artistAddress }: { artistAddress: string }) {
   )
 }
 
-/** Generate a deterministic color from an Ethereum address. */
-function addressToColor(address: string, offset: number): string {
-  const hex = address.slice(2, 8 + offset)
-  const num = parseInt(hex, 16)
-  const h = num % 360
-  return `hsl(${h}, 60%, 70%)`
-}

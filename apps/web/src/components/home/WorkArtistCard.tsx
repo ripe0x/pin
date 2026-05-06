@@ -3,6 +3,7 @@ import { formatEther } from "viem"
 import { ipfsToHttp } from "@pin/shared"
 import { resolveTokenMetadataDirect } from "@/lib/onchain-discovery"
 import { PlatformChip } from "@/components/PlatformChip"
+import { AddressZorb } from "@/components/AddressZorb"
 import type { PlatformId } from "@/lib/platforms/types"
 
 const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
@@ -117,7 +118,7 @@ export async function WorkArtistCard({
           href={artistHref}
           className="flex flex-col items-center justify-center gap-3 p-4 min-w-0"
         >
-          <div className="h-16 w-16 rounded-full overflow-hidden bg-gray-100 shrink-0">
+          <div className="h-16 w-16 rounded-full overflow-hidden shrink-0">
             {artistAvatarUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -126,7 +127,12 @@ export async function WorkArtistCard({
                 loading="lazy"
                 className="h-full w-full object-cover"
               />
-            ) : null}
+            ) : (
+              <AddressZorb
+                address={artistAddress}
+                className="h-full w-full"
+              />
+            )}
           </div>
           <p className="text-xs font-medium text-center truncate w-full">
             {artistDisplayName}
