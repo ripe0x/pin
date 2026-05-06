@@ -3,6 +3,7 @@ import Script from "next/script"
 import { SITE_TITLE, SITE_DESCRIPTION, SITE_URL } from "@pin/shared"
 import { Providers } from "@/components/Providers"
 import { Navbar } from "@/components/Navbar"
+import { Footer } from "@/components/Footer"
 import "./globals.css"
 
 const PLAUSIBLE_DOMAIN = process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN
@@ -66,6 +67,7 @@ export default function RootLayout({
           {/* pt accommodates a taller navbar on mobile (logo row + search row),
               plus the campaign banner above the nav (h-8). */}
           <main className="pt-36 md:pt-24">{children}</main>
+          <Footer />
         </Providers>
       </body>
     </html>
