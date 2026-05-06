@@ -1,11 +1,11 @@
 /**
  * Global site footer. Renders on every route.
  *
- * Top row carries the tagline + Sites / GitHub / NFTMarket / Contracts /
- * Created-by links. These previously lived inline on the home page
- * (`app/page.tsx`) and the archived index-prev landing; promoting them
- * here gives every route the same chrome and removes the link drift
- * between the two homes.
+ * Top row carries the tagline + About / Sites / GitHub / Created-by
+ * links. These previously lived inline on the home page (`app/page.tsx`)
+ * and the archived index-prev landing; promoting them here gives every
+ * route the same chrome and removes the link drift between the two
+ * homes.
  *
  * Below that, a small "Thank you. Supported by:" block lists every
  * unique address that has ever minted from the FundingWorksRipe
@@ -45,22 +45,6 @@ export function Footer() {
               className="hover:text-fg transition-colors"
             >
               GitHub
-            </a>
-            <a
-              href="https://evm.now/address/0xcDA72070E455bb31C7690a170224Ce43623d0B6f"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-fg transition-colors"
-            >
-              NFTMarket
-            </a>
-            <a
-              href="https://github.com/f8n/fnd-protocol"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-fg transition-colors"
-            >
-              Contracts
             </a>
             <a
               href="https://x.com/ripe0x"
