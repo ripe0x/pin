@@ -127,6 +127,8 @@ function renderVerb(event: EnrichedActivityEvent): string {
       return "cancelled listing of"
     case "auction.firstBid":
       return "got first bid on"
+    case "auction.bid":
+      return "got a bid on"
     case "auction.settled":
       return "settled"
     case "sale.buyNow":
@@ -151,7 +153,10 @@ function Subline({ event }: { event: EnrichedActivityEvent }) {
     parts.push(<>{formatEth(event.reserveWei)} reserve</>)
   }
 
-  if (event.kind === "auction.firstBid" && event.amountWei !== null) {
+  if (
+    (event.kind === "auction.firstBid" || event.kind === "auction.bid") &&
+    event.amountWei !== null
+  ) {
     parts.push(
       event.counterparty ? (
         <>

@@ -39,6 +39,7 @@ ponder.on(
       protocolFeeBps,
       createdAtBlock: event.block.number,
       createdAtTime: event.block.timestamp,
+      createdTxHash: event.transaction.hash,
     })
   },
 )
@@ -64,6 +65,7 @@ ponder.on("SovereignAuctionHouse:AuctionCreated", async ({ event, context }) => 
     status: "active",
     createdAtBlock: event.block.number,
     createdAtTime: event.block.timestamp,
+    createdTxHash: event.transaction.hash,
   })
 })
 
@@ -143,6 +145,7 @@ ponder.on("SovereignAuctionHouse:AuctionEnded", async ({ event, context }) => {
       protocolFee,
       settledAtBlock: event.block.number,
       settledAtTime: event.block.timestamp,
+      lifecycleTxHash: event.transaction.hash,
     })
 })
 
@@ -157,6 +160,7 @@ ponder.on(
         status: "cancelled",
         settledAtBlock: event.block.number,
         settledAtTime: event.block.timestamp,
+        lifecycleTxHash: event.transaction.hash,
       })
   },
 )

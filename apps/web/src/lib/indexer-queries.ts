@@ -303,6 +303,7 @@ export type ActivityKind =
   | "collection.deployed"
   | "auction.opened"
   | "auction.firstBid"
+  | "auction.bid"
   | "auction.settled"
   | "auction.cancelled"
   | "sale.buyNow"
@@ -433,7 +434,7 @@ export async function getActivityFeed(
             house::text AS house,
             NULL::text AS collection,
             NULL::text AS collection_name,
-            NULL::text AS tx_hash
+            created_tx_hash::text AS tx_hash
           FROM ${schema}.pnd_houses
           ${where(null, "created_at_time")}
           ORDER BY created_at_time DESC
@@ -477,7 +478,7 @@ export async function getActivityFeed(
             house::text,
             NULL::text,
             NULL::text,
-            NULL::text
+            created_tx_hash::text
           FROM ${schema}.pnd_auctions
           ${where(PND_NOT_QUICK_CANCEL, "created_at_time")}
           ORDER BY created_at_time DESC
@@ -521,7 +522,7 @@ export async function getActivityFeed(
             house::text,
             NULL::text,
             NULL::text,
-            NULL::text
+            lifecycle_tx_hash::text
           FROM ${schema}.pnd_auctions
           ${where("status = 'settled' AND settled_at_time IS NOT NULL", "settled_at_time")}
           ORDER BY settled_at_time DESC
@@ -543,7 +544,7 @@ export async function getActivityFeed(
             house::text,
             NULL::text,
             NULL::text,
-            NULL::text
+            lifecycle_tx_hash::text
           FROM ${schema}.pnd_auctions
           ${where(PND_LONG_LIVED_CANCEL, "settled_at_time")}
           ORDER BY settled_at_time DESC
@@ -598,7 +599,8 @@ export async function getActivityFeed(
          UNION ALL
 
          (SELECT
-            'auction.firstBid'::text,
+            (CASE WHEN pb.first_bid THEN 'auction.firstBid'
+                  ELSE 'auction.bid' END)::text,
             ('pnd-bid:' || pb.id)::text,
             pb.block_time::text,
             pa.seller::text,
@@ -614,14 +616,15 @@ export async function getActivityFeed(
             pb.tx_hash::text
           FROM ${schema}.pnd_bids pb
           JOIN ${schema}.pnd_auctions pa ON pa.id = pb.auction_id
-          ${where("pb.first_bid = TRUE", "pb.block_time")}
+          ${where(null, "pb.block_time")}
           ORDER BY pb.block_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})
 
          UNION ALL
 
          (SELECT
-            'auction.firstBid'::text,
+            (CASE WHEN sub.rn = 1 THEN 'auction.firstBid'
+                  ELSE 'auction.bid' END)::text,
             ('fnd-bid:' || sub.id)::text,
             sub.block_time::text,
             fa.seller::text,
@@ -643,7 +646,7 @@ export async function getActivityFeed(
             FROM ${schema}.fnd_bids
           ) sub
           JOIN ${schema}.fnd_auctions fa ON fa.auction_id = sub.auction_id
-          ${where("sub.rn = 1", "sub.block_time")}
+          ${where(null, "sub.block_time")}
           ORDER BY sub.block_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})
        )

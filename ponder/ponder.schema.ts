@@ -47,6 +47,13 @@ export const pndAuctions = onchainTable(
     createdAtTime: t.bigint().notNull(),
     settledAtBlock: t.bigint(),
     settledAtTime: t.bigint(),
+    // Source-of-truth tx hashes so the activity feed can render
+    // "view tx" links for each lifecycle event. `createdTxHash` is
+    // the AuctionCreated tx; `lifecycleTxHash` is the terminal state
+    // transition (AuctionEnded or AuctionCanceled), populated when
+    // `status` flips off "active".
+    createdTxHash: t.hex(),
+    lifecycleTxHash: t.hex(),
   }),
   // The two queries the web app will hit hardest:
   //   - getActiveAuctionCount(seller) → seller + status = active
@@ -68,6 +75,10 @@ export const pndHouses = onchainTable(
     protocolFeeBps: t.integer().notNull(),
     createdAtBlock: t.bigint().notNull(),
     createdAtTime: t.bigint().notNull(),
+    /** AuctionHouseCreated tx hash; powers the feed's "view tx" link
+     * for `house.deployed` rows. Nullable on existing rows until a
+     * Ponder re-sync backfills them from logs. */
+    createdTxHash: t.hex(),
   }),
   (table) => ({
     ownerIdx: index().on(table.owner),
