@@ -15,7 +15,7 @@ import {
 import { getAuctionForToken, type AuctionState } from "@/lib/auctions"
 import { getSettledAuctionForToken } from "@/lib/indexer-queries"
 import { SettledAuctionSummary } from "@/components/auction/SettledAuctionSummary"
-import { resolveDisplayNames } from "@/lib/artist-queries"
+import { getArtistIdentity, resolveDisplayNames } from "@/lib/artist-queries"
 import { isCrawler } from "@/lib/crawler"
 import Link from "next/link"
 
@@ -55,6 +55,10 @@ const getTokenPageData = cache(async (handle: string, tokenId: string) => {
   const creator = (onChainData?.creator || erc1155?.creator) ?? ""
   const owner = onChainData?.owner ?? "" // n/a for ERC1155
 
+  const creatorAvatarUrl = creator
+    ? (await getArtistIdentity(creator).catch(() => null))?.avatarUrl ?? null
+    : null
+
   const provenance: ProvenanceEntry[] = isErc1155
     ? erc1155!.transfers.map((t) => ({
         event:
@@ -89,6 +93,7 @@ const getTokenPageData = cache(async (handle: string, tokenId: string) => {
     description: meta?.description ?? "",
     creator,
     creatorHandle: creator ? truncateAddress(creator) : "",
+    creatorAvatarUrl,
     owner,
     ownerHandle: owner ? truncateAddress(owner) : "",
     contract,
@@ -230,9 +235,16 @@ export default async function TokenPage({
             {data.creator && (
               <Link
                 href={`/artist/${data.creator}`}
-                className="block text-[11px] font-mono uppercase tracking-wider text-gray-600 hover:text-fg transition-colors"
+                className="inline-flex items-center gap-2 text-[11px] font-mono uppercase tracking-wider text-gray-600 hover:text-fg transition-colors"
               >
-                {data.creatorHandle}
+                {data.creatorAvatarUrl && (
+                  <img
+                    src={data.creatorAvatarUrl}
+                    alt=""
+                    className="h-4 w-4 rounded-full object-cover"
+                  />
+                )}
+                <span>{data.creatorHandle}</span>
               </Link>
             )}
             <h1 className="text-base font-mono font-medium tracking-tight">
