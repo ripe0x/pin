@@ -9,7 +9,10 @@
  * What's gated:
  *   - getFoundationLastSale      (eth_getLogs scans)
  *   - getSovereignLastSale       (eth_getLogs scans)
- *   - getTokenOnChainData        (transfers + ownerOf + tokenCreator)
+ *   - getTokenOnChainData        (only the deploy-to-head transfer log
+ *                                 scan + per-block timestamp fan-out;
+ *                                 ownerOf + tokenCreator still run so
+ *                                 the artist + holder lines render)
  *   - discoverArtistTokens       (Alchemy NFT API + factory log scans)
  *
  * What stays operational:
@@ -20,10 +23,11 @@
  *   - ENS resolvers              (24h cached, cheap on miss)
  *   - Wagmi useReadContract      (browser-side, user-initiated)
  *
- * Effect when ON: token detail pages render with cached metadata
- * only (no provenance refresh, no last-sale refresh); artist pages
- * render their cached gallery; new tokens / new sales don't appear
- * until you turn the switch off again. Bidders can still bid.
+ * Effect when ON: token detail pages render with fresh ownerOf +
+ * tokenCreator but cached-only provenance (no log-scan refresh) and
+ * no last-sale refresh; artist pages render their cached gallery;
+ * new tokens / new sales don't appear until you turn the switch off
+ * again. Bidders can still bid.
  *
  * Toggle: set RPC_DISABLED=1 on Netlify env vars and redeploy.
  */

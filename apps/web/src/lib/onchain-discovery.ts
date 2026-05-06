@@ -851,9 +851,19 @@ function hydrateTokenOnChainData(
     )
     if (mint) creator = mint.to
   }
+  // Symmetric owner self-heal. readTokenTransfers returns rows
+  // newest-first (ORDER BY block_number DESC, log_index DESC), so
+  // the most recent transfer's `to` is the current holder. Recovers
+  // breaker-poisoned cache entries (owner: null, transfers: [...])
+  // without waiting for the pgCache TTL to expire.
+  let owner = s.owner
+  if (!owner && s.transfers.length > 0) {
+    owner = s.transfers[0].to
+  }
   return {
     ...s,
     creator,
+    owner,
     transfers: s.transfers.map((t) => ({ ...t, blockNumber: BigInt(t.blockNumber) })),
   }
 }
@@ -882,19 +892,40 @@ async function getTokenOnChainDataUncached(
   contractAddress: string,
   tokenId: string,
 ): Promise<TokenOnChainData> {
-  // Circuit breaker. ownerOf + tokenCreator + transfer log scan +
-  // per-block timestamp fetches — the most expensive single
-  // function call in the codebase per cold render. Disabled =
-  // return whatever the persistent transfer cache knows about and
-  // skip fresh chain reads. Owner/creator come back as null
-  // until the breaker closes; the token page handles that
-  // gracefully (provenance from cached transfers, owner badge
-  // hidden when null).
+  // Circuit breaker. The expensive part of this function is the
+  // deploy-to-head Transfer log scan + per-block timestamp fan-out
+  // — that's what we skip when RPC_DISABLED=1. The two single-block
+  // reads (ownerOf + tokenCreator) cost roughly nothing, so we keep
+  // them: without them the token page can't render the artist link
+  // or the Owner / "Held in escrow" line, and we'd rather pay two
+  // eth_calls than ship a half-empty page. Provenance falls back to
+  // whatever's already in the persistent transfer cache.
   if (isRpcDisabled()) {
-    const cached = await readTokenTransfers(contractAddress, tokenId)
+    const client = getClient()
+    const contract = contractAddress as Address
+    const id = BigInt(tokenId)
+    const [ownerResult, creatorResult, cached] = await Promise.all([
+      client
+        .readContract({
+          address: contract,
+          abi: erc721Abi,
+          functionName: "ownerOf",
+          args: [id],
+        })
+        .catch(() => null),
+      client
+        .readContract({
+          address: contract,
+          abi: foundationNftAbi,
+          functionName: "tokenCreator",
+          args: [id],
+        })
+        .catch(() => null),
+      readTokenTransfers(contractAddress, tokenId),
+    ])
     return {
-      owner: null,
-      creator: null,
+      owner: ownerResult ? (ownerResult as string) : null,
+      creator: creatorResult ? (creatorResult as string) : null,
       transfers: cached.map((t) => ({
         from: t.from,
         to: t.to,
