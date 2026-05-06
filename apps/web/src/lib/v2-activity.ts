@@ -26,15 +26,33 @@ function truncateAddress(address: string): string {
   return `${address.slice(0, 6)}...${address.slice(-4)}`
 }
 
+/**
+ * Bid events flip subject/object in the row template — the bidder is
+ * the actor. Resolve their identity so the headline reads "<bidder.eth>
+ * bid 0.1 ETH on <token> by <artist.eth>" instead of a truncated 0x.
+ */
+const BIDDER_AS_SUBJECT_KINDS = new Set<ActivityEvent["kind"]>([
+  "auction.firstBid",
+  "auction.bid",
+])
+
 export async function enrichActivityEvents(
   events: ActivityEvent[],
 ): Promise<EnrichedActivityEvent[]> {
-  const uniqueArtists = Array.from(
-    new Set(events.map((e) => e.artist.toLowerCase())),
-  )
+  // Pool every address whose display name we'll render — sellers always,
+  // bidders for bid events. One identity batch covers both, so a bidder
+  // who is also a seller in a different row only resolves once.
+  const addressPool = new Set<string>()
+  for (const e of events) {
+    addressPool.add(e.artist.toLowerCase())
+    if (BIDDER_AS_SUBJECT_KINDS.has(e.kind) && e.counterparty) {
+      addressPool.add(e.counterparty.toLowerCase())
+    }
+  }
+
   const identities = new Map(
     await Promise.all(
-      uniqueArtists.map(
+      Array.from(addressPool).map(
         async (addr) =>
           [addr, await getArtistIdentity(addr).catch(() => null)] as const,
       ),
@@ -65,12 +83,23 @@ export async function enrichActivityEvents(
           )
         : false
 
-      const id = identities.get(event.artist.toLowerCase())
+      const artistId = identities.get(event.artist.toLowerCase())
+
+      const counterpartyId =
+        BIDDER_AS_SUBJECT_KINDS.has(event.kind) && event.counterparty
+          ? identities.get(event.counterparty.toLowerCase())
+          : null
 
       return {
         ...event,
-        artistDisplayName: id?.displayName ?? truncateAddress(event.artist),
-        artistAvatarUrl: id?.avatarUrl ?? null,
+        artistDisplayName:
+          artistId?.displayName ?? truncateAddress(event.artist),
+        artistAvatarUrl: artistId?.avatarUrl ?? null,
+        counterpartyDisplayName: counterpartyId
+          ? (counterpartyId.displayName ??
+            (event.counterparty ? truncateAddress(event.counterparty) : null))
+          : null,
+        counterpartyAvatarUrl: counterpartyId?.avatarUrl ?? null,
         tokenTitle,
         mediaUrl,
         isVideo,

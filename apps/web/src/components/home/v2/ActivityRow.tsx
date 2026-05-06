@@ -27,6 +27,7 @@ export function ActivityRow({ event }: Props) {
   const {
     artistDisplayName,
     artistAvatarUrl,
+    counterpartyDisplayName,
     tokenTitle,
     mediaUrl,
     isVideo,
@@ -43,6 +44,13 @@ export function ActivityRow({ event }: Props) {
   // deploy has no token at all).
   const showTokenTitle =
     event.kind !== "house.deployed" && event.kind !== "collection.deployed"
+
+  // Bid events flip subject/object: the bidder is the actor. The headline
+  // reads "<bidder> bid <amount> on <token> by <artist>"; the rest of
+  // the row template still uses the seller (artist) for thumbnail
+  // fallback so an auction's rows visually anchor to the same artwork.
+  const isBidEvent =
+    event.kind === "auction.firstBid" || event.kind === "auction.bid"
 
   return (
     <li className="border-t border-gray-200 py-4 px-1">
@@ -94,25 +102,41 @@ export function ActivityRow({ event }: Props) {
 
         <div className="min-w-0 flex-1">
           <p className="text-sm leading-snug">
-            <Link
-              href={artistHref}
-              className="font-medium hover:underline underline-offset-2"
-            >
-              {artistDisplayName}
-            </Link>
-            <span className="text-gray-500"> {renderVerb(event)} </span>
-            {showTokenTitle && tokenTitle ? (
-              tokenHref ? (
+            {isBidEvent && event.counterparty ? (
+              <BidHeadline
+                event={event}
+                bidderHref={`/artist/${event.counterparty}`}
+                bidderDisplayName={
+                  counterpartyDisplayName ?? truncateAddress(event.counterparty)
+                }
+                artistHref={artistHref}
+                artistDisplayName={artistDisplayName}
+                tokenHref={tokenHref}
+                tokenTitle={tokenTitle}
+              />
+            ) : (
+              <>
                 <Link
-                  href={tokenHref}
-                  className="text-fg hover:underline underline-offset-2"
+                  href={artistHref}
+                  className="font-medium hover:underline underline-offset-2"
                 >
-                  {tokenTitle}
+                  {artistDisplayName}
                 </Link>
-              ) : (
-                <span>{tokenTitle}</span>
-              )
-            ) : null}
+                <span className="text-gray-500"> {renderVerb(event)} </span>
+                {showTokenTitle && tokenTitle ? (
+                  tokenHref ? (
+                    <Link
+                      href={tokenHref}
+                      className="text-fg hover:underline underline-offset-2"
+                    >
+                      {tokenTitle}
+                    </Link>
+                  ) : (
+                    <span>{tokenTitle}</span>
+                  )
+                ) : null}
+              </>
+            )}
           </p>
           <Subline event={event} />
         </div>
@@ -134,9 +158,11 @@ function renderVerb(event: EnrichedActivityEvent): string {
     case "auction.cancelled":
       return "cancelled listing of"
     case "auction.firstBid":
-      return "got first bid on"
     case "auction.bid":
-      return "got a bid on"
+      // Bid events use the BidHeadline path in the row template — this
+      // verb is only consulted as a fallback (no counterparty / unknown
+      // bidder), where artist-as-subject reads least confusingly.
+      return "received a bid on"
     case "auction.settled":
       return "settled"
     case "sale.buyNow":
@@ -144,6 +170,64 @@ function renderVerb(event: EnrichedActivityEvent): string {
     case "mint":
       return "minted"
   }
+}
+
+/**
+ * Bidder-as-subject headline for bid events. Reads
+ * "<bidder> bid <amount> on <token> by <seller>" — the verb consumes
+ * the amount and the seller moves to the trailing "by …" so the
+ * grammatical subject is the actual actor.
+ */
+function BidHeadline({
+  event,
+  bidderHref,
+  bidderDisplayName,
+  artistHref,
+  artistDisplayName,
+  tokenHref,
+  tokenTitle,
+}: {
+  event: EnrichedActivityEvent
+  bidderHref: string
+  bidderDisplayName: string
+  artistHref: string
+  artistDisplayName: string
+  tokenHref: string | null
+  tokenTitle: string | null
+}) {
+  return (
+    <>
+      <Link
+        href={bidderHref}
+        className="font-medium hover:underline underline-offset-2"
+      >
+        {bidderDisplayName}
+      </Link>
+      <span className="text-gray-500">
+        {" "}
+        bid{event.amountWei !== null ? ` ${formatEth(event.amountWei)}` : ""} on{" "}
+      </span>
+      {tokenTitle ? (
+        tokenHref ? (
+          <Link
+            href={tokenHref}
+            className="text-fg hover:underline underline-offset-2"
+          >
+            {tokenTitle}
+          </Link>
+        ) : (
+          <span>{tokenTitle}</span>
+        )
+      ) : null}
+      <span className="text-gray-500"> by </span>
+      <Link
+        href={artistHref}
+        className="font-medium hover:underline underline-offset-2"
+      >
+        {artistDisplayName}
+      </Link>
+    </>
+  )
 }
 
 /**
@@ -161,19 +245,16 @@ function Subline({ event }: { event: EnrichedActivityEvent }) {
     parts.push(<>{formatEth(event.reserveWei)} reserve</>)
   }
 
+  // Bid events: amount + bidder live in the headline (BidHeadline). Only
+  // surface the amount in the subline as a fallback when the bidder is
+  // unknown, since in that case the headline reverts to the
+  // artist-as-subject template and the amount has nowhere else to go.
   if (
     (event.kind === "auction.firstBid" || event.kind === "auction.bid") &&
+    !event.counterparty &&
     event.amountWei !== null
   ) {
-    parts.push(
-      event.counterparty ? (
-        <>
-          {formatEth(event.amountWei)} from <AddressLink addr={event.counterparty} />
-        </>
-      ) : (
-        <>{formatEth(event.amountWei)}</>
-      ),
-    )
+    parts.push(<>{formatEth(event.amountWei)}</>)
   }
 
   if (

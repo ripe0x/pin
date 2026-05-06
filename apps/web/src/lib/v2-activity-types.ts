@@ -11,6 +11,14 @@ import type { ActivityEvent } from "./indexer-queries"
 export type EnrichedActivityEvent = ActivityEvent & {
   artistDisplayName: string
   artistAvatarUrl: string | null
+  /**
+   * Display name + avatar for `event.counterparty` — only populated for
+   * events where the counterparty is the actor (bid events). Other event
+   * kinds carry the raw address in `counterparty` and don't need a
+   * display name; the row template renders them as truncated addresses.
+   */
+  counterpartyDisplayName: string | null
+  counterpartyAvatarUrl: string | null
   tokenTitle: string | null
   mediaUrl: string | null
   isVideo: boolean
