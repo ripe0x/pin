@@ -838,8 +838,22 @@ type SerializedTokenOnChainData = {
 function hydrateTokenOnChainData(
   s: SerializedTokenOnChainData,
 ): TokenOnChainData {
+  // Same mint-event fallback as getTokenOnChainDataUncached, but applied at
+  // read time. The cache-write path skips this when the RPC circuit breaker
+  // is engaged (early-returns with creator: null even though cached transfers
+  // contain the mint), so without a hydrate-time pass any breaker activation
+  // freezes the token in a creator-less state for the cache TTL. Hydrating
+  // here makes stale or breaker-poisoned entries self-heal on next read.
+  let creator = s.creator
+  if (!creator) {
+    const mint = s.transfers.find(
+      (t) => t.from === "0x0000000000000000000000000000000000000000",
+    )
+    if (mint) creator = mint.to
+  }
   return {
     ...s,
+    creator,
     transfers: s.transfers.map((t) => ({ ...t, blockNumber: BigInt(t.blockNumber) })),
   }
 }
