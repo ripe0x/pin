@@ -22,9 +22,7 @@ export async function Navbar() {
 
         <div className="flex items-center gap-6">
           <ThemeToggle />
-          <div className="rk-compact">
-            <ConnectButton />
-          </div>
+          <ConnectButton />
         </div>
       </nav>
     </header>

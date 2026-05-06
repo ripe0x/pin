@@ -74,15 +74,90 @@ export function Navbar() {
               this is a no-op for everyone else and adds zero affordance
               clutter on the navbar. */}
           <GodModePanel />
-          <div className="rk-compact">
-            <ConnectButton
-              showBalance={false}
-              accountStatus="avatar"
-              chainStatus={
-                process.env.NODE_ENV === "development" ? "icon" : "none"
-              }
-            />
-          </div>
+          <ConnectButton.Custom>
+            {({
+              account,
+              chain,
+              openAccountModal,
+              openChainModal,
+              openConnectModal,
+              authenticationStatus,
+              mounted,
+            }) => {
+              const ready = mounted && authenticationStatus !== "loading"
+              const connected =
+                ready &&
+                account &&
+                chain &&
+                (!authenticationStatus ||
+                  authenticationStatus === "authenticated")
+
+              const baseBtn =
+                "inline-flex items-center gap-2 text-[11px] font-mono font-medium uppercase tracking-wider px-3 py-2 bg-fg text-bg hover:opacity-80 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fg"
+
+              return (
+                <div
+                  {...(!ready && {
+                    "aria-hidden": true,
+                    style: {
+                      opacity: 0,
+                      pointerEvents: "none",
+                      userSelect: "none",
+                    },
+                  })}
+                >
+                  {(() => {
+                    if (!connected) {
+                      return (
+                        <button
+                          type="button"
+                          onClick={openConnectModal}
+                          className={baseBtn}
+                        >
+                          Connect wallet
+                        </button>
+                      )
+                    }
+                    if (chain.unsupported) {
+                      return (
+                        <button
+                          type="button"
+                          onClick={openChainModal}
+                          className={baseBtn}
+                        >
+                          Wrong network
+                        </button>
+                      )
+                    }
+                    return (
+                      <button
+                        type="button"
+                        onClick={openAccountModal}
+                        className={baseBtn}
+                      >
+                        {process.env.NODE_ENV === "development" &&
+                          chain.iconUrl && (
+                            <img
+                              src={chain.iconUrl}
+                              alt={chain.name ?? "chain"}
+                              className="h-4 w-4 rounded-full"
+                            />
+                          )}
+                        {account.ensAvatar && (
+                          <img
+                            src={account.ensAvatar}
+                            alt=""
+                            className="h-4 w-4 rounded-full"
+                          />
+                        )}
+                        <span>{account.displayName}</span>
+                      </button>
+                    )
+                  })()}
+                </div>
+              )
+            }}
+          </ConnectButton.Custom>
         </div>
       </nav>
 
