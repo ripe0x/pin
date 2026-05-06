@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { unstable_cache } from "next/cache"
 import { getActivityFeed, type ActivityCursor } from "@/lib/indexer-queries"
 import {
   enrichActivityEvents,
@@ -18,9 +19,30 @@ import {
  * Both reads are point-lookups in steady state (token_metadata is
  * pre-warmed by `apps/metadata-warmer`, ENS/EFP is pgCache + EFP HTTPS
  * with 24h TTL) — no per-request RPC fan-out.
+ *
+ * Caching: 30s revalidate keyed on `(limit, cursor)`. Matches the home
+ * page's first-page cache window so the SSR'd page and any client-side
+ * "load more" of the same first slice share a cache hit. Per-cursor
+ * keying means each scroll page gets its own cache slot; historical
+ * pages stay cached for the full window since on-chain history is
+ * stable.
  */
 const MAX_LIMIT = 100
 const DEFAULT_LIMIT = 50
+
+const fetchPaginatedFeed = unstable_cache(
+  async (
+    limit: number,
+    cursor: ActivityCursor | null,
+  ): Promise<SerializedActivityEvent[]> => {
+    const events = await getActivityFeed(limit, cursor)
+    if (!events) return []
+    const enriched = await enrichActivityEvents(events)
+    return enriched.map(serializeForWire)
+  },
+  ["activity-feed-page-v1"],
+  { revalidate: 30, tags: ["activity-feed"] },
+)
 
 export async function GET(req: Request): Promise<NextResponse> {
   const url = new URL(req.url)
@@ -45,13 +67,6 @@ export async function GET(req: Request): Promise<NextResponse> {
     }
   }
 
-  const events = await getActivityFeed(limit, cursor)
-  if (events === null) {
-    return NextResponse.json({ events: [] satisfies SerializedActivityEvent[] })
-  }
-
-  const enriched = await enrichActivityEvents(events)
-  return NextResponse.json({
-    events: enriched.map(serializeForWire),
-  })
+  const events = await fetchPaginatedFeed(limit, cursor)
+  return NextResponse.json({ events })
 }

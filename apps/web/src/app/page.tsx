@@ -77,15 +77,33 @@ function stripTrailingZeros(s: string): string {
 // Counters are fed by the same Ponder tables the activity feed reads,
 // so stale-by-30s mirrors the feed's freshness contract. Caching here
 // also takes one Postgres aggregation query out of every home-page hit.
+//
+// `unstable_cache` JSON-encodes its values internally and throws on
+// raw bigints, so we cache the wei amount as a decimal string and
+// re-hydrate on read.
 const getCachedPlatformStats = unstable_cache(
-  () => getPlatformStats(),
+  async (): Promise<{
+    housesDeployed: number
+    ethSettledWeiStr: string
+  } | null> => {
+    const stats = await getPlatformStats()
+    if (!stats) return null
+    return {
+      housesDeployed: stats.housesDeployed,
+      ethSettledWeiStr: stats.ethSettledWei.toString(),
+    }
+  },
   ["platform-stats-v1"],
   { revalidate: 30, tags: ["activity-feed"] },
 )
 
 async function CountersInline() {
-  const stats = await getCachedPlatformStats()
-  if (!stats) return null
+  const cached = await getCachedPlatformStats()
+  if (!cached) return null
+  const stats = {
+    housesDeployed: cached.housesDeployed,
+    ethSettledWei: BigInt(cached.ethSettledWeiStr),
+  }
 
   const clauses: string[] = []
   if (stats.housesDeployed >= 1) {
