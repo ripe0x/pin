@@ -1,9 +1,36 @@
-import { unstable_noStore as noStore } from "next/cache"
+import { unstable_cache } from "next/cache"
 import { getActivityFeed } from "@/lib/indexer-queries"
-import { enrichActivityEvents } from "@/lib/v2-activity"
+import { enrichActivityEvents, type EnrichedActivityEvent } from "@/lib/v2-activity"
 import { ActivityFeedClient } from "./ActivityFeedClient"
 
 const FEED_SIZE = 50
+
+/**
+ * Cached enrichment pipeline for the SSR'd first page. The unioned
+ * indexer query plus 50-row token + ENS enrichment costs ~600–1000ms on
+ * a warm path; without caching, every home-page visit pays that wait
+ * (the Suspense fallback shows "loading activity…" for the duration).
+ *
+ * Cache TTL is 30s — Ponder's head-following polls every 60s, so 30s of
+ * staleness is below the upstream's natural lag and keeps repeat visits
+ * effectively instant. New auctions/bids appear within ~30s after they
+ * settle into Ponder. The `activity-feed` tag lets us flush on demand
+ * via `revalidateTag` if that ever becomes desirable.
+ */
+const getInitialFeedPage = unstable_cache(
+  async (): Promise<{
+    events: EnrichedActivityEvent[]
+    hasMore: boolean
+  } | null> => {
+    const events = await getActivityFeed(FEED_SIZE)
+    if (!events) return null
+    if (events.length === 0) return { events: [], hasMore: false }
+    const enriched = await enrichActivityEvents(events)
+    return { events: enriched, hasMore: enriched.length >= FEED_SIZE }
+  },
+  ["activity-feed-initial-v1"],
+  { revalidate: 30, tags: ["activity-feed"] },
+)
 
 /**
  * Server-rendered first page of the activity feed.
@@ -17,11 +44,9 @@ const FEED_SIZE = 50
  * rather than the rest of the page disappearing.
  */
 export async function ActivityFeed() {
-  noStore()
+  const result = await getInitialFeedPage()
 
-  const events = await getActivityFeed(FEED_SIZE)
-
-  if (!events) {
+  if (!result) {
     return (
       <p className="font-mono text-xs text-gray-400 italic py-12 text-center">
         feed temporarily unavailable
@@ -29,7 +54,7 @@ export async function ActivityFeed() {
     )
   }
 
-  if (events.length === 0) {
+  if (result.events.length === 0) {
     return (
       <p className="font-mono text-xs text-gray-400 italic py-12 text-center">
         no activity yet
@@ -37,12 +62,10 @@ export async function ActivityFeed() {
     )
   }
 
-  const enriched = await enrichActivityEvents(events)
-
   return (
     <ActivityFeedClient
-      initial={enriched}
-      hasMore={enriched.length >= FEED_SIZE}
+      initial={result.events}
+      hasMore={result.hasMore}
     />
   )
 }
