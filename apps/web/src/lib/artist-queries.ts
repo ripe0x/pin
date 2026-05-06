@@ -95,7 +95,7 @@ function truncateAddress(address: string): string {
  *
  * Use `revalidateTag("ens")` to manually flush (e.g. after an ENS update).
  */
-const resolveEnsNameCached = unstable_cache(
+export const resolveEnsNameCached = unstable_cache(
   async (lowerAddress: string): Promise<string | null> => {
     // L1 (unstable_cache, in-process) wraps L2 (pgCache, shared Postgres)
     // wraps the actual ENS resolver. Same TTL on both layers — the L2
@@ -191,7 +191,7 @@ async function fetchEfpEnsRecord(
  * sustained EFP outage means RPC is used for affected addresses for up to
  * 24h, identical to the pre-EFP behavior.
  */
-const resolveEfpEnsCached = unstable_cache(
+export const resolveEfpEnsCached = unstable_cache(
   async (lowerAddress: string): Promise<EfpEnsRecord | null> => {
     return pgCache(`efp-ens:${lowerAddress}`, 60 * 60 * 24, async () => {
       return fetchEfpEnsRecord(lowerAddress)

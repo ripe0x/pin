@@ -3,10 +3,20 @@
  *
  * Powers the global "Thank you. Supported by:" footer at the bottom of
  * every page. Reads `TokenMinted` event logs once per 24h and resolves
- * each unique minter to an ENS name (or null) using the same off-RPC
- * EFP-first identity helper the rest of the site uses, so the daily
- * cold path is one Alchemy `getLogs` plus near-zero ENS work for
- * already-resolved addresses.
+ * each unique minter to an ENS name (or null) using a hybrid resolver
+ * (EFP-first, viem fallback) that gets the best of both worlds:
+ *
+ *   - EFP serves names off-RPC for the addresses it knows about
+ *     (~40% coverage in practice on this list).
+ *   - When EFP returns `{name: null}` (legitimate "no record") we still
+ *     try direct viem `getEnsName`, because EFP's reverse-resolution
+ *     index is incomplete and many supporter addresses have ENS set
+ *     on-chain that EFP doesn't surface.
+ *
+ * The site-wide `getArtistIdentity` helper trusts EFP's null answer
+ * without falling back — a deliberate perf tradeoff for hot paths like
+ * artist pages and the activity feed. For a once-per-24h footer fetch,
+ * we'd rather pay the extra RPC and show every name we can.
  *
  * Two-layer cache (L1 `unstable_cache` + L2 `pgCache`) means every
  * Netlify sandbox shares the same warm result — page renders after the
@@ -22,7 +32,10 @@ import { mainnet } from "viem/chains"
 import { pgCache } from "./pg-cache"
 import { getAlchemyMainnetUrl } from "./alchemy-rpc"
 import { loggingHttpTransport } from "./rpc-log"
-import { getArtistIdentity } from "./artist-queries"
+import {
+  resolveEfpEnsCached,
+  resolveEnsNameCached,
+} from "./artist-queries"
 
 // FundingWorksRipe campaign on mainnet — the contract that minted the
 // supporter NFTs that funded this work. Both values are overridable via
@@ -48,9 +61,28 @@ const client = createPublicClient({
   transport: loggingHttpTransport(getAlchemyMainnetUrl(), "fwr-supporters"),
 })
 
+/**
+ * Hybrid ENS resolver tuned for the supporter list (see file header).
+ * Tries the off-RPC EFP record first; if EFP returns no record OR a
+ * record with `{name: null}`, falls back to direct viem `getEnsName`.
+ * Returns null for addresses that have no reverse ENS record set.
+ */
+async function resolveSupporterEnsName(
+  address: `0x${string}`,
+): Promise<string | null> {
+  const lower = address.toLowerCase()
+  try {
+    const efp = await resolveEfpEnsCached(lower)
+    if (efp?.name) return efp.name
+    return await resolveEnsNameCached(lower)
+  } catch {
+    return null
+  }
+}
+
 const fetchSupporters = unstable_cache(
   async (): Promise<Supporter[]> => {
-    return pgCache("fwr-supporters:v1", 60 * 60 * 24, async () => {
+    return pgCache("fwr-supporters:v2", 60 * 60 * 24, async () => {
       try {
         const logs = await client.getLogs({
           address: FWR_CONTRACT,
@@ -80,20 +112,18 @@ const fetchSupporters = unstable_cache(
           ordered.push(lower)
         }
 
-        // Identity resolution reuses the EFP-first / RPC-fallback helper
-        // that powers artist pages and activity feeds. Both name and
-        // avatar are cached 24h per address; we ignore the avatar but
-        // get name resolution effectively for free for any address that
-        // has been seen elsewhere on the site in the last day.
-        const identities = await Promise.all(
-          ordered.map((addr) =>
-            getArtistIdentity(addr).catch(() => null),
-          ),
+        // Hybrid name resolution: EFP first (off-RPC, fast), then a
+        // direct viem ENS lookup whenever EFP returns null or
+        // `{name: null}`. Both layers are themselves 24h-cached per
+        // address, so the marginal cost of falling back is one
+        // `getEnsName` RPC per "EFP doesn't know" minter per 24h.
+        const ensNames = await Promise.all(
+          ordered.map((addr) => resolveSupporterEnsName(addr)),
         )
 
         return ordered.map((addr, i) => ({
           address: addr,
-          ensName: identities[i]?.ensName ?? null,
+          ensName: ensNames[i],
         }))
       } catch (err) {
         // eslint-disable-next-line no-console
@@ -102,7 +132,7 @@ const fetchSupporters = unstable_cache(
       }
     })
   },
-  ["fwr-supporters-v1"],
+  ["fwr-supporters-v2"],
   { revalidate: 60 * 60 * 24, tags: ["fwr-supporters"] },
 )
 
