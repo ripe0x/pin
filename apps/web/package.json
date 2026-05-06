@@ -12,6 +12,7 @@
     "@pin/abi": "*",
     "@pin/addresses": "*",
     "@pin/shared": "*",
+    "@pin/token-metadata": "*",
     "@rainbow-me/rainbowkit": "^2.2.0",
     "@tanstack/react-query": "^5.62.0",
     "next": "^15.1.0",

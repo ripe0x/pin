@@ -31,6 +31,7 @@ import {
   MAINNET_CHAIN_ID,
 } from "@pin/addresses"
 import { extractCid, fetchFromIpfs, ipfsToHttp } from "@pin/shared"
+import { resolveTokenMetadata as resolveTokenMetadataRpc } from "@pin/token-metadata"
 import {
   discoverManifoldTokens,
   discoverManifoldTokenRefs,
@@ -995,16 +996,6 @@ async function getTokenOnChainDataUncached(
   return { owner, creator, transfers }
 }
 
-const erc1155UriAbi = [
-  {
-    type: "function",
-    name: "uri",
-    inputs: [{ name: "id", type: "uint256" }],
-    outputs: [{ type: "string" }],
-    stateMutability: "view",
-  },
-] as const
-
 const supportsInterfaceAbi = [
   {
     type: "function",
@@ -1356,114 +1347,5 @@ async function resolveTokenMetadataUncached(
   contractAddress: string,
   tokenId: string,
 ): Promise<TokenMetadata | null> {
-  const client = getClient()
-  const id = BigInt(tokenId)
-  const contract = contractAddress as Address
-
-  const uriString = await client
-    .readContract({
-      address: contract,
-      abi: erc721Abi,
-      functionName: "tokenURI",
-      args: [id],
-    })
-    .catch(() =>
-      client
-        .readContract({
-          address: contract,
-          abi: erc1155UriAbi,
-          functionName: "uri",
-          args: [id],
-        })
-        .catch(() => null),
-    )
-
-  if (!uriString) return null
-
-  // ERC1155 spec: substitute {id} with hex-padded token id (lowercase, 64 chars).
-  const idHex = id.toString(16).padStart(64, "0")
-  const resolvedUri = (uriString as string).replace(/\{id\}/g, idHex)
-
-  // On-chain renderers (e.g. zorbs) return inline `data:application/json,…`
-  // URIs. Don't hand these to fetch() — Node's fetch treats `#` as a URL
-  // fragment delimiter and silently truncates the body, which trips on
-  // common cases like `"name":"foo #2"`.
-  if (resolvedUri.startsWith("data:")) {
-    return parseDataUriJson(resolvedUri)
-  }
-
-  // Some metadata CDNs (Arweave gateway via CDN77) block bare server-side
-  // fetches and serve an HTML error page. A standard browser UA + JSON
-  // accept header gets through.
-  const headers = {
-    Accept: "application/json",
-    "User-Agent":
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-  }
-
-  // For non-IPFS URIs (https, ar://, etc.) keep the single-shot path.
-  const cid = extractCid(resolvedUri)
-  if (!cid) {
-    try {
-      const res = await fetch(resolvedUri, {
-        signal: AbortSignal.timeout(10_000),
-        headers,
-        cache: "no-store",
-      })
-      if (!res.ok) return null
-      const contentType = res.headers.get("content-type") ?? ""
-      if (!contentType.includes("json") && !contentType.includes("text/plain")) {
-        return null
-      }
-      return await res.json()
-    } catch {
-      return null
-    }
-  }
-
-  // IPFS URI — try each gateway in turn so one slow/timed-out gateway doesn't
-  // result in `metadata: null` getting cached for 24h.
-  try {
-    const res = await fetchFromIpfs(cid, { headers, cache: "no-store" })
-    const contentType = res.headers.get("content-type") ?? ""
-    if (!contentType.includes("json") && !contentType.includes("text/plain")) {
-      return null
-    }
-    return await res.json()
-  } catch {
-    return null
-  }
-}
-
-/**
- * Parse a `data:` URI containing JSON metadata. Handles the common encodings:
- *   data:application/json,{...}
- *   data:application/json;utf8,{...}        ← Foundation's zorb contract
- *   data:application/json;charset=utf-8,{...}
- *   data:application/json;base64,<b64>
- * Body content is URL-decoded for the non-base64 forms.
- */
-function parseDataUriJson(uri: string): TokenMetadata | null {
-  const comma = uri.indexOf(",")
-  if (comma < 0) return null
-  const meta = uri.slice(5, comma) // strip "data:"
-  const body = uri.slice(comma + 1)
-  const isBase64 = /;\s*base64\b/i.test(meta)
-  try {
-    const decoded = isBase64
-      ? Buffer.from(body, "base64").toString("utf8")
-      : decodeURIComponent(body)
-    return JSON.parse(decoded)
-  } catch {
-    // Some renderers emit unencoded JSON containing `%` characters that
-    // decodeURIComponent rejects. Fall back to the raw body.
-    if (!isBase64) {
-      try {
-        return JSON.parse(body)
-      } catch {
-        return null
-      }
-    }
-    return null
-  }
+  return resolveTokenMetadataRpc(getClient(), contractAddress, tokenId)
 }

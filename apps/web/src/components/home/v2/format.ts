@@ -1,11 +1,18 @@
 import { formatEther } from "viem"
 
+/** Strip trailing zeros after the decimal point: 0.190 → 0.19, 2.00 → 2.
+ * Leaves integers and zero-decimal numbers alone. */
+function stripTrailingZeros(s: string): string {
+  if (!s.includes(".")) return s
+  return s.replace(/\.?0+$/, "")
+}
+
 export function formatEth(wei: bigint): string {
   const eth = Number(formatEther(wei))
-  if (eth >= 100) return `${Math.round(eth)} Ξ`
-  if (eth >= 1) return `${eth.toFixed(2)} Ξ`
-  if (eth >= 0.01) return `${eth.toFixed(3)} Ξ`
-  return `${eth.toFixed(4)} Ξ`
+  if (eth >= 100) return `${Math.round(eth)} ETH`
+  if (eth >= 1) return `${stripTrailingZeros(eth.toFixed(2))} ETH`
+  if (eth >= 0.01) return `${stripTrailingZeros(eth.toFixed(3))} ETH`
+  return `${stripTrailingZeros(eth.toFixed(4))} ETH`
 }
 
 export function formatTimeAgo(unixSec: number): string {

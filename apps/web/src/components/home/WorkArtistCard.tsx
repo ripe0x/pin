@@ -26,11 +26,15 @@ type Props = {
 }
 
 function formatEth(wei: bigint): string {
-  const eth = formatEther(wei)
-  const num = Number(eth)
-  if (num >= 1) return `${num.toFixed(2)} ETH`
-  if (num >= 0.01) return `${num.toFixed(3)} ETH`
-  return `${num.toFixed(4)} ETH`
+  const num = Number(formatEther(wei))
+  if (num >= 1) return `${stripTrailingZeros(num.toFixed(2))} ETH`
+  if (num >= 0.01) return `${stripTrailingZeros(num.toFixed(3))} ETH`
+  return `${stripTrailingZeros(num.toFixed(4))} ETH`
+}
+
+function stripTrailingZeros(s: string): string {
+  if (!s.includes(".")) return s
+  return s.replace(/\.?0+$/, "")
 }
 
 function formatTimeLeft(endTimeSec: number): string {

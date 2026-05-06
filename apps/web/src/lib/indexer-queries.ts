@@ -303,6 +303,7 @@ export type ActivityKind =
   | "collection.deployed"
   | "auction.opened"
   | "auction.firstBid"
+  | "auction.bid"
   | "auction.settled"
   | "auction.cancelled"
   | "sale.buyNow"
@@ -324,6 +325,11 @@ export type ActivityEvent = {
   house: string | null
   collection: string | null
   collectionName: string | null
+  /** The transaction hash that produced this event, when the indexer
+   * stores one. Available for bids, FND sales, and FND auction
+   * settlements; `null` for PND settlements / house & collection
+   * deployments / mints (those tables don't carry a tx hash today). */
+  txHash: string | null
 }
 
 /**
@@ -335,8 +341,27 @@ export type ActivityEvent = {
  * Returns `null` on indexer-unavailable so callers can hide the feed
  * rather than show a half-broken page.
  */
+/**
+ * Keyset cursor for `getActivityFeed`. The feed sorts by
+ * `(blockTime DESC, id DESC)` — events in the same block share a
+ * blockTime, so `id` is the tiebreaker. To page, the caller passes
+ * the last row's `(blockTime, id)` and we return the next slice.
+ *
+ * The unioned subquery shape means we can't keyset-paginate inside
+ * each branch (each branch has a distinct ORDER BY). Instead we widen
+ * `PER_SUBQUERY_LIMIT` per page so the merged candidate pool covers
+ * the requested cursor range, then filter+sort+limit at the outer
+ * query. For `limit ≤ 50` this stays under a few hundred rows of
+ * scan per page.
+ */
+export type ActivityCursor = {
+  blockTime: number
+  id: string
+}
+
 export async function getActivityFeed(
   limit = 50,
+  cursor: ActivityCursor | null = null,
 ): Promise<ActivityEvent[] | null> {
   if (INDEXER_DISABLED || !sql) return null
   const db = sql
@@ -361,9 +386,37 @@ export async function getActivityFeed(
       house: string | null
       collection: string | null
       collection_name: string | null
+      tx_hash: string | null
     }
 
     const PER_SUBQUERY_LIMIT = 100
+
+    // Filter listing/cancellation pairs that happened within 15 minutes
+    // of each other. Treated as noise (test mints, mistaken listings)
+    // rather than signal. Both events filter together so the feed
+    // doesn't show one half of the pair.
+    const SHORT_LIFE_SECONDS = 900
+    const PND_NOT_QUICK_CANCEL = `NOT (status = 'cancelled' AND settled_at_time IS NOT NULL AND settled_at_time - created_at_time < ${SHORT_LIFE_SECONDS})`
+    const FND_NOT_QUICK_CANCEL = `NOT (status = 'canceled' AND finalized_at_time IS NOT NULL AND finalized_at_time - created_at_time < ${SHORT_LIFE_SECONDS})`
+    const PND_LONG_LIVED_CANCEL = `status = 'cancelled' AND settled_at_time IS NOT NULL AND settled_at_time - created_at_time >= ${SHORT_LIFE_SECONDS}`
+
+    // Cursor-aware branch filters. Each branch limits to its top-N
+    // strictly-older-than-cursor rows; the outer query enforces the
+    // (blockTime, id) tiebreak globally. Without the per-branch
+    // filter, deep pages would starve branches whose top-100 rows
+    // all sit above the cursor.
+    const cursorTime = cursor?.blockTime ?? null
+    const cursorId = cursor?.id ?? null
+    const branchFilter = (timeCol: string) =>
+      cursor ? `AND ${timeCol} <= $2::numeric` : ""
+    // The settled subquery already has a WHERE clause; everything
+    // else needs `WHERE 1=1` as a prefix so we can append AND-clauses
+    // unconditionally.
+    const where = (existing: string | null, timeCol: string) => {
+      const branch = branchFilter(timeCol)
+      if (!branch) return existing ? `WHERE ${existing}` : ""
+      return existing ? `WHERE ${existing} ${branch}` : `WHERE 1=1 ${branch}`
+    }
 
     const rows = (await db.unsafe(
       `WITH events AS (
@@ -380,8 +433,10 @@ export async function getActivityFeed(
             NULL::text AS end_time,
             house::text AS house,
             NULL::text AS collection,
-            NULL::text AS collection_name
+            NULL::text AS collection_name,
+            created_tx_hash::text AS tx_hash
           FROM ${schema}.pnd_houses
+          ${where(null, "created_at_time")}
           ORDER BY created_at_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})
 
@@ -400,8 +455,10 @@ export async function getActivityFeed(
             NULL::text,
             NULL::text,
             collection::text,
-            name
+            name,
+            NULL::text
           FROM ${schema}.fnd_collections
+          ${where(null, "created_at_time")}
           ORDER BY created_at_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})
 
@@ -420,8 +477,10 @@ export async function getActivityFeed(
             NULLIF(end_time, 0)::text,
             house::text,
             NULL::text,
-            NULL::text
+            NULL::text,
+            created_tx_hash::text
           FROM ${schema}.pnd_auctions
+          ${where(PND_NOT_QUICK_CANCEL, "created_at_time")}
           ORDER BY created_at_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})
 
@@ -440,8 +499,10 @@ export async function getActivityFeed(
             NULLIF(end_time, 0)::text,
             NULL::text,
             NULL::text,
+            NULL::text,
             NULL::text
           FROM ${schema}.fnd_auctions
+          ${where(FND_NOT_QUICK_CANCEL, "created_at_time")}
           ORDER BY created_at_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})
 
@@ -460,9 +521,10 @@ export async function getActivityFeed(
             NULL::text,
             house::text,
             NULL::text,
-            NULL::text
+            NULL::text,
+            lifecycle_tx_hash::text
           FROM ${schema}.pnd_auctions
-          WHERE status = 'settled' AND settled_at_time IS NOT NULL
+          ${where("status = 'settled' AND settled_at_time IS NOT NULL", "settled_at_time")}
           ORDER BY settled_at_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})
 
@@ -481,9 +543,10 @@ export async function getActivityFeed(
             NULL::text,
             house::text,
             NULL::text,
-            NULL::text
+            NULL::text,
+            lifecycle_tx_hash::text
           FROM ${schema}.pnd_auctions
-          WHERE status = 'cancelled' AND settled_at_time IS NOT NULL
+          ${where(PND_LONG_LIVED_CANCEL, "settled_at_time")}
           ORDER BY settled_at_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})
 
@@ -504,8 +567,10 @@ export async function getActivityFeed(
             NULL::text,
             NULL::text,
             NULL::text,
-            NULL::text
+            NULL::text,
+            tx_hash::text
           FROM ${schema}.fnd_sales
+          ${where(null, "block_time")}
           ORDER BY block_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})
 
@@ -524,15 +589,18 @@ export async function getActivityFeed(
             NULL::text,
             NULL::text,
             NULL::text,
+            NULL::text,
             NULL::text
           FROM ${schema}.fnd_artist_tokens
+          ${where(null, "block_time")}
           ORDER BY block_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})
 
          UNION ALL
 
          (SELECT
-            'auction.firstBid'::text,
+            (CASE WHEN pb.first_bid THEN 'auction.firstBid'
+                  ELSE 'auction.bid' END)::text,
             ('pnd-bid:' || pb.id)::text,
             pb.block_time::text,
             pa.seller::text,
@@ -544,17 +612,19 @@ export async function getActivityFeed(
             NULLIF(pa.end_time, 0)::text,
             pa.house::text,
             NULL::text,
-            NULL::text
+            NULL::text,
+            pb.tx_hash::text
           FROM ${schema}.pnd_bids pb
           JOIN ${schema}.pnd_auctions pa ON pa.id = pb.auction_id
-          WHERE pb.first_bid = TRUE
+          ${where(null, "pb.block_time")}
           ORDER BY pb.block_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})
 
          UNION ALL
 
          (SELECT
-            'auction.firstBid'::text,
+            (CASE WHEN sub.rn = 1 THEN 'auction.firstBid'
+                  ELSE 'auction.bid' END)::text,
             ('fnd-bid:' || sub.id)::text,
             sub.block_time::text,
             fa.seller::text,
@@ -566,23 +636,30 @@ export async function getActivityFeed(
             NULLIF(sub.end_time, 0)::text,
             NULL::text,
             NULL::text,
-            NULL::text
+            NULL::text,
+            sub.tx_hash::text
           FROM (
-            SELECT id, auction_id, bidder, amount, end_time, block_time,
+            SELECT id, auction_id, bidder, amount, end_time, block_time, tx_hash,
                    ROW_NUMBER() OVER (
                      PARTITION BY auction_id ORDER BY block_number
                    ) AS rn
             FROM ${schema}.fnd_bids
           ) sub
           JOIN ${schema}.fnd_auctions fa ON fa.auction_id = sub.auction_id
-          WHERE sub.rn = 1
+          ${where(null, "sub.block_time")}
           ORDER BY sub.block_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})
        )
        SELECT * FROM events
-       ORDER BY block_time::numeric DESC
+       ${
+         cursor
+           ? `WHERE (block_time::numeric < $2::numeric
+                     OR (block_time::numeric = $2::numeric AND id < $3))`
+           : ""
+       }
+       ORDER BY block_time::numeric DESC, id DESC
        LIMIT $1`,
-      [limit],
+      cursor ? [limit, cursorTime, cursorId] : [limit],
     )) as Row[]
 
     return rows.map((r) => ({
@@ -599,6 +676,7 @@ export async function getActivityFeed(
       house: r.house,
       collection: r.collection,
       collectionName: r.collection_name,
+      txHash: r.tx_hash,
     }))
   }, 3_000)
 }
