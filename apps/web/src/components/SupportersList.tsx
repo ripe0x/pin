@@ -24,7 +24,7 @@ export async function SupportersList() {
         {supporters.map((s) => (
           <li key={s.address} className="break-inside-avoid">
             <a
-              href={`https://etherscan.io/address/${s.address}`}
+              href={`https://evm.now/address/${s.address}`}
               target="_blank"
               rel="noopener noreferrer"
               title={s.address}
