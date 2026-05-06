@@ -32,6 +32,9 @@ export function Footer() {
             Artist owned infrastructure on Ethereum
           </p>
           <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-gray-400">
+            <a href="/about" className="hover:text-fg transition-colors">
+              About
+            </a>
             <a href="/sites" className="hover:text-fg transition-colors">
               Sites
             </a>
