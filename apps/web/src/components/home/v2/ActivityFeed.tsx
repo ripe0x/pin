@@ -1,6 +1,11 @@
 import { unstable_cache } from "next/cache"
 import { getActivityFeed } from "@/lib/indexer-queries"
-import { enrichActivityEvents, type EnrichedActivityEvent } from "@/lib/v2-activity"
+import {
+  deserializeFromWire,
+  enrichActivityEvents,
+  serializeForWire,
+  type SerializedActivityEvent,
+} from "@/lib/v2-activity"
 import { ActivityFeedClient } from "./ActivityFeedClient"
 
 const FEED_SIZE = 50
@@ -16,17 +21,25 @@ const FEED_SIZE = 50
  * effectively instant. New auctions/bids appear within ~30s after they
  * settle into Ponder. The `activity-feed` tag lets us flush on demand
  * via `revalidateTag` if that ever becomes desirable.
+ *
+ * Cache stores the wire-serialized form (bigints → decimal strings)
+ * because `unstable_cache` JSON-encodes its values internally and
+ * throws on raw bigints. We re-hydrate on read so callers still get the
+ * native bigint shape.
  */
 const getInitialFeedPage = unstable_cache(
   async (): Promise<{
-    events: EnrichedActivityEvent[]
+    events: SerializedActivityEvent[]
     hasMore: boolean
   } | null> => {
     const events = await getActivityFeed(FEED_SIZE)
     if (!events) return null
     if (events.length === 0) return { events: [], hasMore: false }
     const enriched = await enrichActivityEvents(events)
-    return { events: enriched, hasMore: enriched.length >= FEED_SIZE }
+    return {
+      events: enriched.map(serializeForWire),
+      hasMore: enriched.length >= FEED_SIZE,
+    }
   },
   ["activity-feed-initial-v1"],
   { revalidate: 30, tags: ["activity-feed"] },
@@ -64,7 +77,7 @@ export async function ActivityFeed() {
 
   return (
     <ActivityFeedClient
-      initial={result.events}
+      initial={result.events.map(deserializeFromWire)}
       hasMore={result.hasMore}
     />
   )
