@@ -1,7 +1,6 @@
 import { Suspense } from "react"
 import { unstable_cache } from "next/cache"
 import { formatEther } from "viem"
-import { SITE_TITLE } from "@pin/shared"
 import { getPlatformStats } from "@/lib/indexer-queries"
 import { ActivityFeed } from "@/components/home/v2/ActivityFeed"
 
@@ -36,27 +35,6 @@ export default function HomePage() {
           <ActivityFeed />
         </Suspense>
       </section>
-
-      <footer className="border-t border-gray-200 pt-8 pb-16">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-gray-400">
-            {SITE_TITLE} — open artist infrastructure on Ethereum.
-          </p>
-          <div className="flex gap-6 text-sm text-gray-400">
-            <a href="/sites" className="hover:text-fg transition-colors">
-              Sites
-            </a>
-            <a
-              href="https://github.com/ripe0x/pin"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-fg transition-colors"
-            >
-              GitHub
-            </a>
-          </div>
-        </div>
-      </footer>
     </div>
   )
 }
