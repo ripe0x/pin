@@ -223,6 +223,13 @@ ponder.on("NFTMarket:ReserveAuctionCreated", async ({ event, context }) => {
 
 ponder.on("NFTMarket:ReserveAuctionBidPlaced", async ({ event, context }) => {
   const { auctionId, bidder, amount, endTime } = event.args
+  // Skip events whose auction was created pre-startBlock — we never
+  // captured the AuctionCreated, so there's nothing to update. Same
+  // pattern across every FND update handler below: pre-startBlock
+  // listings are out of scope and silently dropped rather than
+  // crashing the indexer.
+  const auction = await context.db.find(fndAuctions, { auctionId })
+  if (!auction) return
   // Bid log is immutable history. Insert first so the row survives even
   // if the auction-state update fails (matches PND behavior).
   await context.db.insert(fndBids).values({
@@ -275,6 +282,8 @@ ponder.on("NFTMarket:ReserveAuctionFinalized", async ({ event, context }) => {
 
 ponder.on("NFTMarket:ReserveAuctionCanceled", async ({ event, context }) => {
   const { auctionId } = event.args
+  const auction = await context.db.find(fndAuctions, { auctionId })
+  if (!auction) return
   await context.db.update(fndAuctions, { auctionId }).set({
     status: "canceled",
     finalizedAtTime: event.block.timestamp,
@@ -284,6 +293,8 @@ ponder.on("NFTMarket:ReserveAuctionCanceled", async ({ event, context }) => {
 
 ponder.on("NFTMarket:ReserveAuctionUpdated", async ({ event, context }) => {
   const { auctionId, reservePrice } = event.args
+  const auction = await context.db.find(fndAuctions, { auctionId })
+  if (!auction) return
   await context.db.update(fndAuctions, { auctionId }).set({ reservePrice })
 })
 
@@ -291,6 +302,8 @@ ponder.on(
   "NFTMarket:ReserveAuctionInvalidated",
   async ({ event, context }) => {
     const { auctionId } = event.args
+    const auction = await context.db.find(fndAuctions, { auctionId })
+    if (!auction) return
     await context.db.update(fndAuctions, { auctionId }).set({
       status: "invalidated",
       finalizedAtTime: event.block.timestamp,
@@ -338,6 +351,8 @@ ponder.on("NFTMarket:BuyPriceSet", async ({ event, context }) => {
 ponder.on("NFTMarket:BuyPriceCanceled", async ({ event, context }) => {
   const { nftContract, tokenId } = event.args
   const id = `${nftContract.toLowerCase()}-${tokenId.toString()}`
+  const existing = await context.db.find(fndBuyNows, { id })
+  if (!existing) return
   await context.db.update(fndBuyNows, { id }).set({
     status: "canceled",
     updatedAtTime: event.block.timestamp,
@@ -348,15 +363,22 @@ ponder.on("NFTMarket:BuyPriceAccepted", async ({ event, context }) => {
   const { nftContract, tokenId, seller, buyer, totalFees, creatorRev, sellerRev } =
     event.args
   const id = `${nftContract.toLowerCase()}-${tokenId.toString()}`
-  await context.db.update(fndBuyNows, { id }).set({
-    status: "accepted",
-    updatedAtTime: event.block.timestamp,
-    acceptedBuyer: buyer,
-    acceptedTxHash: event.transaction.hash,
-    acceptedTotalFees: totalFees,
-    acceptedCreatorRev: creatorRev,
-    acceptedSellerRev: sellerRev,
-  })
+  const existing = await context.db.find(fndBuyNows, { id })
+  if (existing) {
+    await context.db.update(fndBuyNows, { id }).set({
+      status: "accepted",
+      updatedAtTime: event.block.timestamp,
+      acceptedBuyer: buyer,
+      acceptedTxHash: event.transaction.hash,
+      acceptedTotalFees: totalFees,
+      acceptedCreatorRev: creatorRev,
+      acceptedSellerRev: sellerRev,
+    })
+  }
+  // Always record the sale even if the BuyPriceSet was pre-startBlock —
+  // the sale is itself a valuable event in the activity feed and we have
+  // all the fields we need from this event alone (no parent lookup
+  // required).
   await context.db
     .insert(fndSales)
     .values({
@@ -376,6 +398,8 @@ ponder.on("NFTMarket:BuyPriceAccepted", async ({ event, context }) => {
 ponder.on("NFTMarket:BuyPriceInvalidated", async ({ event, context }) => {
   const { nftContract, tokenId } = event.args
   const id = `${nftContract.toLowerCase()}-${tokenId.toString()}`
+  const existing = await context.db.find(fndBuyNows, { id })
+  if (!existing) return
   await context.db.update(fndBuyNows, { id }).set({
     status: "invalidated",
     updatedAtTime: event.block.timestamp,
