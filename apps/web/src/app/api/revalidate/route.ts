@@ -1,5 +1,6 @@
 import { revalidateTag } from "next/cache"
 import { NextRequest, NextResponse } from "next/server"
+import { sql } from "@/lib/db"
 import { pgCacheInvalidate } from "@/lib/pg-cache"
 
 /**
@@ -23,6 +24,13 @@ import { pgCacheInvalidate } from "@/lib/pg-cache"
  * `artist` query param is informational (echoed in the response).
  * Repopulation is lazy (one cold gallery read per artist) so the cost
  * stays bounded under the rate limit.
+ *
+ * Per-token unstick (authenticated only): pass `contract` + `tokenId` to
+ * also delete that row from the persistent `token_metadata` index, so the
+ * next page view re-resolves via RPC + IPFS. Use when a token got cached
+ * as the all-null sentinel from a transient gateway failure on first view.
+ *
+ *   curl 'https://pnd.ripe.wtf/api/revalidate?secret=…&contract=0x…&tokenId=88'
  */
 
 const RATE_LIMIT_WINDOW_MS = 60_000
@@ -69,6 +77,8 @@ export async function GET(req: NextRequest) {
   const secret = req.nextUrl.searchParams.get("secret")
   const expected = process.env.REVALIDATE_SECRET
   const artist = req.nextUrl.searchParams.get("artist")
+  const contract = req.nextUrl.searchParams.get("contract")
+  const tokenId = req.nextUrl.searchParams.get("tokenId")
 
   // Authenticated path: skips the rate limit entirely.
   if (secret) {
@@ -96,6 +106,29 @@ export async function GET(req: NextRequest) {
           headers: { "Retry-After": String(limit.retryAfter) },
         },
       )
+    }
+  }
+
+  // Per-token unstick (authenticated only). The persistent `token_metadata`
+  // table is treated as immutable once written, so a row written from a
+  // failed first-fetch (transient gateway flake) gets stuck as an all-null
+  // sentinel until the warmer's 7-day retry. This deletes that row so the
+  // next page view re-resolves via RPC + IPFS. Tag invalidation alone is
+  // not enough — the L1 unstable_cache reads from the DB row.
+  let tokenMetadataDeleted = false
+  if (secret && contract && tokenId) {
+    if (!/^0x[0-9a-fA-F]{40}$/.test(contract)) {
+      return NextResponse.json(
+        { ok: false, error: "invalid contract address" },
+        { status: 400 },
+      )
+    }
+    if (sql) {
+      const rows = await sql`
+        DELETE FROM token_metadata
+        WHERE contract = ${contract.toLowerCase()} AND token_id = ${tokenId}
+      `
+      tokenMetadataDeleted = rows.count > 0
     }
   }
 
@@ -130,6 +163,10 @@ export async function GET(req: NextRequest) {
     revalidated: ["artist-refs", "artist-enriched", "token-metadata", "token-onchain-data", "erc1155-stats", "last-sale", "ens"],
     pgCacheCleared: true,
     requested_for: artist ?? null,
+    tokenMetadataDeleted:
+      secret && contract && tokenId
+        ? { contract: contract.toLowerCase(), tokenId, deleted: tokenMetadataDeleted }
+        : null,
     note: "All-artist flush; per-artist tagging requires dynamic tags (not supported by unstable_cache).",
   })
 }
