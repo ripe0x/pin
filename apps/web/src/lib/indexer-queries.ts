@@ -20,6 +20,20 @@ import { sql } from "./db"
 
 const INDEXER_DISABLED = process.env.INDEXER_DISABLED === "1"
 
+/**
+ * Thrown by callers wrapping an indexer read in `unstable_cache` when
+ * the read is unavailable (timeout, DB down, kill switch). Throwing
+ * — rather than returning `null` from the cached function — keeps
+ * `unstable_cache` from persisting the failure, so the next request
+ * retries fresh instead of serving the bad value for the full TTL.
+ */
+export class IndexerUnavailable extends Error {
+  constructor(message = "indexer unavailable") {
+    super(message)
+    this.name = "IndexerUnavailable"
+  }
+}
+
 // Per-query default; overridable via the `withTimeout` second arg. Home-
 // page reads (square + counters) pass 2_000 because they're below the hero
 // behind Suspense, where a cold-Postgres-read of ~1s is acceptable; per-
@@ -430,6 +444,7 @@ export type ActivityCursor = {
 export async function getActivityFeed(
   limit = 50,
   cursor: ActivityCursor | null = null,
+  timeoutMs = 3_000,
 ): Promise<ActivityEvent[] | null> {
   if (INDEXER_DISABLED || !sql) return null
   const db = sql
@@ -746,7 +761,7 @@ export async function getActivityFeed(
       collectionName: r.collection_name,
       txHash: r.tx_hash,
     }))
-  }, 3_000)
+  }, timeoutMs)
 }
 
 export async function getActiveAuctionCountFromIndexer(

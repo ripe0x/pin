@@ -1,7 +1,10 @@
 import { Suspense } from "react"
 import { unstable_cache } from "next/cache"
 import { formatEther } from "viem"
-import { getPlatformStats } from "@/lib/indexer-queries"
+import {
+  getPlatformStats,
+  IndexerUnavailable,
+} from "@/lib/indexer-queries"
 import { ActivityFeed } from "@/components/home/v2/ActivityFeed"
 
 /**
@@ -59,13 +62,15 @@ function stripTrailingZeros(s: string): string {
 // `unstable_cache` JSON-encodes its values internally and throws on
 // raw bigints, so we cache the wei amount as a decimal string and
 // re-hydrate on read.
+// Throw on null instead of caching it: a single timeout would
+// otherwise hide the counters for the full 30s revalidate window.
 const getCachedPlatformStats = unstable_cache(
   async (): Promise<{
     housesDeployed: number
     ethSettledWeiStr: string
-  } | null> => {
+  }> => {
     const stats = await getPlatformStats()
-    if (!stats) return null
+    if (!stats) throw new IndexerUnavailable()
     return {
       housesDeployed: stats.housesDeployed,
       ethSettledWeiStr: stats.ethSettledWei.toString(),
@@ -76,8 +81,12 @@ const getCachedPlatformStats = unstable_cache(
 )
 
 async function CountersInline() {
-  const cached = await getCachedPlatformStats()
-  if (!cached) return null
+  let cached: { housesDeployed: number; ethSettledWeiStr: string }
+  try {
+    cached = await getCachedPlatformStats()
+  } catch {
+    return null
+  }
   const stats = {
     housesDeployed: cached.housesDeployed,
     ethSettledWei: BigInt(cached.ethSettledWeiStr),
