@@ -1,8 +1,8 @@
 /**
  * Global site footer. Renders on every route.
  *
- * Top row carries the tagline + Sites / Created-by / GitHub / NFTMarket /
- * Contracts links. These previously lived inline on the home page
+ * Top row carries the tagline + Sites / GitHub / NFTMarket / Contracts /
+ * Created-by links. These previously lived inline on the home page
  * (`app/page.tsx`) and the archived index-prev landing; promoting them
  * here gives every route the same chrome and removes the link drift
  * between the two homes.
@@ -21,7 +21,6 @@
  * wrapper at `max-w-7xl` (1280px) for readable line lengths.
  */
 import { Suspense } from "react"
-import { SITE_TITLE } from "@pin/shared"
 import { SupportersList } from "./SupportersList"
 
 export function Footer() {
@@ -30,19 +29,11 @@ export function Footer() {
       <div className="mx-auto max-w-7xl space-y-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-gray-400">
-            {SITE_TITLE} — open artist infrastructure on Ethereum.
+            Artist owned infrastructure on Ethereum
           </p>
           <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-gray-400">
             <a href="/sites" className="hover:text-fg transition-colors">
               Sites
-            </a>
-            <a
-              href="https://x.com/ripe0x"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-fg transition-colors"
-            >
-              Created by ripe
             </a>
             <a
               href="https://github.com/ripe0x/pin"
@@ -67,6 +58,14 @@ export function Footer() {
               className="hover:text-fg transition-colors"
             >
               Contracts
+            </a>
+            <a
+              href="https://x.com/ripe0x"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-fg transition-colors"
+            >
+              Created by ripe
             </a>
           </div>
         </div>
