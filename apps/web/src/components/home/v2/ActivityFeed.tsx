@@ -1,5 +1,5 @@
 import { unstable_cache } from "next/cache"
-import { getActivityFeed } from "@/lib/indexer-queries"
+import { getActivityFeed, IndexerUnavailable } from "@/lib/indexer-queries"
 import {
   deserializeFromWire,
   enrichActivityEvents,
@@ -27,13 +27,26 @@ const FEED_SIZE = 50
  * throws on raw bigints. We re-hydrate on read so callers still get the
  * native bigint shape.
  */
+// 6s budget on the home read because it's behind <Suspense>; a slow
+// cold render is acceptable, a 30s window of empty SSRs is not.
+const HOME_FEED_TIMEOUT_MS = 6_000
+
+// IMPORTANT: when `getActivityFeed` returns null (timeout / DB down /
+// kill switch), throw rather than caching a null/empty result.
+// `unstable_cache` doesn't persist rejections, so the next request
+// retries fresh against the indexer instead of serving the bad value
+// for the full 30s revalidate window.
 const getInitialFeedPage = unstable_cache(
   async (): Promise<{
     events: SerializedActivityEvent[]
     hasMore: boolean
-  } | null> => {
-    const events = await getActivityFeed(FEED_SIZE)
-    if (!events) return null
+  }> => {
+    const events = await getActivityFeed(
+      FEED_SIZE,
+      null,
+      HOME_FEED_TIMEOUT_MS,
+    )
+    if (!events) throw new IndexerUnavailable()
     if (events.length === 0) return { events: [], hasMore: false }
     const enriched = await enrichActivityEvents(events)
     return {
@@ -57,9 +70,10 @@ const getInitialFeedPage = unstable_cache(
  * rather than the rest of the page disappearing.
  */
 export async function ActivityFeed() {
-  const result = await getInitialFeedPage()
-
-  if (!result) {
+  let result: { events: SerializedActivityEvent[]; hasMore: boolean }
+  try {
+    result = await getInitialFeedPage()
+  } catch {
     return (
       <p className="font-mono text-xs text-gray-400 italic py-12 text-center">
         feed temporarily unavailable

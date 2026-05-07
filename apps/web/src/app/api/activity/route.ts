@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server"
 import { unstable_cache } from "next/cache"
-import { getActivityFeed, type ActivityCursor } from "@/lib/indexer-queries"
+import {
+  getActivityFeed,
+  IndexerUnavailable,
+  type ActivityCursor,
+} from "@/lib/indexer-queries"
 import {
   enrichActivityEvents,
   serializeForWire,
@@ -30,13 +34,19 @@ import {
 const MAX_LIMIT = 100
 const DEFAULT_LIMIT = 50
 
+// IMPORTANT: when `getActivityFeed` returns null (timeout / DB down /
+// kill switch), throw rather than caching a `[]` result. `unstable_cache`
+// doesn't persist rejections, so the next request retries fresh instead
+// of serving an empty array for the full 30s revalidate window. The GET
+// handler catches the throw and returns `{ events: [], unavailable: true }`
+// so the client can keep its existing rows and retry on next scroll.
 const fetchPaginatedFeed = unstable_cache(
   async (
     limit: number,
     cursor: ActivityCursor | null,
   ): Promise<SerializedActivityEvent[]> => {
     const events = await getActivityFeed(limit, cursor)
-    if (!events) return []
+    if (!events) throw new IndexerUnavailable()
     const enriched = await enrichActivityEvents(events)
     return enriched.map(serializeForWire)
   },
@@ -67,6 +77,11 @@ export async function GET(req: Request): Promise<NextResponse> {
     }
   }
 
-  const events = await fetchPaginatedFeed(limit, cursor)
+  let events: SerializedActivityEvent[]
+  try {
+    events = await fetchPaginatedFeed(limit, cursor)
+  } catch {
+    return NextResponse.json({ events: [], unavailable: true })
+  }
   return NextResponse.json({ events })
 }
