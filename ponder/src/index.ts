@@ -83,13 +83,27 @@ ponder.on("SovereignAuctionHouse:AuctionCreated", async ({ event, context }) => 
   })
 })
 
+// Every per-auction update handler below skips silently when the
+// auction row is missing. Cause: Ponder 0.16's factory pattern can
+// drop a clone out of `ponder_sync.factory_addresses` for a window;
+// during that window the clone's `AuctionCreated` log is never
+// fetched, so we have no row to update when later events on the same
+// auction arrive. Crashing the indexer on the resulting
+// `RecordNotFoundError` is much worse than dropping a single update —
+// it stops every other auction across every other clone too. Match
+// the FND `find-or-skip` pattern (see `NFTMarket:ReserveAuctionBidPlaced`
+// below). The drift cron at /api/cron/indexer-drift-check forward-fixes
+// the underlying gap; this is the second line of defense for events
+// that already slipped through.
+
 ponder.on("SovereignAuctionHouse:AuctionBid", async ({ event, context }) => {
   const { auctionId, bidder, amount, firstBid, extended } = event.args
   const house = event.log.address
   const id = compositeId(house, auctionId)
 
-  // Insert the bid history entry first; if the auction row update fails for
-  // any reason, we still have the immutable record on disk.
+  // Insert the bid history entry first — even when the auction row is
+  // missing the bid is an immutable on-chain event worth preserving.
+  // pnd_bids has no FK to pnd_auctions so the insert succeeds either way.
   await context.db.insert(pndBids).values({
     id: `${event.transaction.hash}-${event.log.logIndex}`,
     auctionId: id,
@@ -101,6 +115,9 @@ ponder.on("SovereignAuctionHouse:AuctionBid", async ({ event, context }) => {
     firstBid,
     extended,
   })
+
+  const existing = await context.db.find(pndAuctions, { id })
+  if (!existing) return
 
   // Update live auction state. We need the row's existing `firstBidTime`
   // and `duration` to compute `endTime` correctly when this is *not* the
@@ -130,9 +147,10 @@ ponder.on(
   async ({ event, context }) => {
     const { auctionId, newEndTime } = event.args
     const house = event.log.address
-    await context.db
-      .update(pndAuctions, { id: compositeId(house, auctionId) })
-      .set({ endTime: newEndTime })
+    const id = compositeId(house, auctionId)
+    const existing = await context.db.find(pndAuctions, { id })
+    if (!existing) return
+    await context.db.update(pndAuctions, { id }).set({ endTime: newEndTime })
   },
 )
 
@@ -141,26 +159,28 @@ ponder.on(
   async ({ event, context }) => {
     const { auctionId, reservePrice } = event.args
     const house = event.log.address
-    await context.db
-      .update(pndAuctions, { id: compositeId(house, auctionId) })
-      .set({ reservePrice })
+    const id = compositeId(house, auctionId)
+    const existing = await context.db.find(pndAuctions, { id })
+    if (!existing) return
+    await context.db.update(pndAuctions, { id }).set({ reservePrice })
   },
 )
 
 ponder.on("SovereignAuctionHouse:AuctionEnded", async ({ event, context }) => {
   const { auctionId, winner, sellerProceeds, protocolFee } = event.args
   const house = event.log.address
-  await context.db
-    .update(pndAuctions, { id: compositeId(house, auctionId) })
-    .set({
-      status: "settled",
-      winner,
-      sellerProceeds,
-      protocolFee,
-      settledAtBlock: event.block.number,
-      settledAtTime: event.block.timestamp,
-      lifecycleTxHash: event.transaction.hash,
-    })
+  const id = compositeId(house, auctionId)
+  const existing = await context.db.find(pndAuctions, { id })
+  if (!existing) return
+  await context.db.update(pndAuctions, { id }).set({
+    status: "settled",
+    winner,
+    sellerProceeds,
+    protocolFee,
+    settledAtBlock: event.block.number,
+    settledAtTime: event.block.timestamp,
+    lifecycleTxHash: event.transaction.hash,
+  })
 })
 
 ponder.on(
@@ -168,14 +188,15 @@ ponder.on(
   async ({ event, context }) => {
     const { auctionId } = event.args
     const house = event.log.address
-    await context.db
-      .update(pndAuctions, { id: compositeId(house, auctionId) })
-      .set({
-        status: "cancelled",
-        settledAtBlock: event.block.number,
-        settledAtTime: event.block.timestamp,
-        lifecycleTxHash: event.transaction.hash,
-      })
+    const id = compositeId(house, auctionId)
+    const existing = await context.db.find(pndAuctions, { id })
+    if (!existing) return
+    await context.db.update(pndAuctions, { id }).set({
+      status: "cancelled",
+      settledAtBlock: event.block.number,
+      settledAtTime: event.block.timestamp,
+      lifecycleTxHash: event.transaction.hash,
+    })
   },
 )
 
