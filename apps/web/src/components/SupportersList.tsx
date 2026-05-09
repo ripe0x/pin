@@ -1,9 +1,10 @@
 /**
  * Async server component that renders the cached lifetime supporter
- * list for the FundingWorksRipe campaign as a small "Thank you.
- * Supported by:" block beneath the global footer's tagline row. Owns
- * its own lead line so the entire thank-you block disappears cleanly
- * when no supporters resolve (cold RPC outage, fresh deploy, etc.).
+ * list for the FundingWorksRipe campaign as a small "X supporters. Y
+ * mints. Thank you." block beneath the global footer's tagline row.
+ * Owns its own lead line so the entire thank-you block disappears
+ * cleanly when no supporters resolve (cold RPC outage, fresh deploy,
+ * etc.).
  *
  * Data is served from the two-layer cache; cold path (once per 24h
  * across all sandboxes) is a single `getLogs` + opportunistic ENS.
@@ -12,13 +13,14 @@ import { getFundingWorksSupporters } from "@/lib/funding-works-supporters"
 import { truncateAddress } from "./home/v2/format"
 
 export async function SupportersList() {
-  const supporters = await getFundingWorksSupporters()
+  const { supporters, totalSupporters, totalMints } =
+    await getFundingWorksSupporters()
   if (supporters.length === 0) return null
 
   return (
     <div>
       <p className="text-xs font-mono text-gray-500">
-        Thank you. Supported by:
+        {totalSupporters} supporters. {totalMints} mints. Thank you.
       </p>
       <ul className="mt-3 columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-x-6 text-xs font-mono leading-relaxed list-none p-0">
         {supporters.map((s) => (
@@ -33,6 +35,7 @@ export async function SupportersList() {
               }`}
             >
               {s.ensName ?? truncateAddress(s.address)}
+              <span className="text-gray-400"> × {s.mintCount}</span>
             </a>
           </li>
         ))}

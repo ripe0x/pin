@@ -54,6 +54,13 @@ const TOKEN_MINTED_EVENT = parseAbiItem(
 export type Supporter = {
   address: `0x${string}`
   ensName: string | null
+  mintCount: number
+}
+
+export type SupportersPayload = {
+  supporters: Supporter[]
+  totalSupporters: number
+  totalMints: number
 }
 
 const client = createPublicClient({
@@ -80,9 +87,15 @@ async function resolveSupporterEnsName(
   }
 }
 
+const EMPTY_PAYLOAD: SupportersPayload = {
+  supporters: [],
+  totalSupporters: 0,
+  totalMints: 0,
+}
+
 const fetchSupporters = unstable_cache(
-  async (): Promise<Supporter[]> => {
-    return pgCache("fwr-supporters:v2", 60 * 60 * 24, async () => {
+  async (): Promise<SupportersPayload> => {
+    return pgCache("fwr-supporters:v3", 60 * 60 * 24, async () => {
       try {
         const logs = await client.getLogs({
           address: FWR_CONTRACT,
@@ -101,15 +114,14 @@ const fetchSupporters = unstable_cache(
           return (a.logIndex ?? 0) - (b.logIndex ?? 0)
         })
 
-        const seen = new Set<string>()
+        const counts = new Map<string, number>()
         const ordered: `0x${string}`[] = []
         for (const log of sorted) {
           const minter = log.args.minter
           if (!minter) continue
           const lower = minter.toLowerCase() as `0x${string}`
-          if (seen.has(lower)) continue
-          seen.add(lower)
-          ordered.push(lower)
+          if (!counts.has(lower)) ordered.push(lower)
+          counts.set(lower, (counts.get(lower) ?? 0) + 1)
         }
 
         // Hybrid name resolution: EFP first (off-RPC, fast), then a
@@ -121,21 +133,30 @@ const fetchSupporters = unstable_cache(
           ordered.map((addr) => resolveSupporterEnsName(addr)),
         )
 
-        return ordered.map((addr, i) => ({
+        const supporters: Supporter[] = ordered.map((addr, i) => ({
           address: addr,
           ensName: ensNames[i],
+          mintCount: counts.get(addr) ?? 1,
         }))
+
+        const totalMints = supporters.reduce((s, x) => s + x.mintCount, 0)
+
+        return {
+          supporters,
+          totalSupporters: supporters.length,
+          totalMints,
+        }
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error("[fwr-supporters] fetch failed", err)
-        return []
+        return EMPTY_PAYLOAD
       }
     })
   },
-  ["fwr-supporters-v2"],
+  ["fwr-supporters-v3"],
   { revalidate: 60 * 60 * 24, tags: ["fwr-supporters"] },
 )
 
-export async function getFundingWorksSupporters(): Promise<Supporter[]> {
+export async function getFundingWorksSupporters(): Promise<SupportersPayload> {
   return fetchSupporters()
 }
