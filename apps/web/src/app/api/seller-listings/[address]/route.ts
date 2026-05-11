@@ -1,85 +1,16 @@
 import { NextResponse } from "next/server"
-import { unstable_cache } from "next/cache"
-import { pgCache } from "@/lib/pg-cache"
-import { PLATFORMS } from "@/lib/platforms"
-import type {
-  SellerCancellableAuction,
-  SellerCancellableBuyNow,
-} from "@/lib/platforms/types"
-import type { Address } from "viem"
+import {
+  getSellerListingsPayload,
+  type SellerListingsPayload,
+} from "@/lib/seller-listings-server"
 
 /**
- * Multi-platform cancellable-listings API. Fans out across every
- * registered `PlatformAdapter` that implements
- * `getCancellableListingsForSeller`, merges the platform-tagged rows
- * into a single payload, and caches the merged result.
- *
- * Each adapter handles its own per-platform cache (Foundation has a
- * lazy DB row in `lazy_fnd_seller_listings`; SuperRare V2 relies on
- * the route's pgCache + indexed-arg event scans). The route's
- * `unstable_cache` + `pgCache` collapse repeated panel opens to a
- * Postgres point read at 5-min granularity.
- *
- * Bigints are serialized to decimal strings at the cache + JSON
- * boundary because pgCache JSON-stringifies and `JSON.stringify(bigint)`
- * throws.
+ * Multi-platform cancellable-listings API. The fan-out + caching lives in
+ * `@/lib/seller-listings-server` so other server-side callers (the
+ * dependency-check orchestrator) reuse the same cached path.
  */
 
-type SerializedAuction = {
-  kind: "auction"
-} & SellerCancellableAuction
-
-type SerializedBuyNow = {
-  kind: "buyNow"
-} & SellerCancellableBuyNow
-
-export type SellerListingsPayload = {
-  auctions: SerializedAuction[]
-  buyNows: SerializedBuyNow[]
-}
-
-const SELLER_LISTINGS_TTL_S = 5 * 60
-
-async function buildPayload(
-  sellerAddress: string,
-): Promise<SellerListingsPayload> {
-  // Fan out across platforms. Each adapter is responsible for its own
-  // per-platform cache; an adapter that doesn't implement the optional
-  // method (Manifold today) is silently skipped.
-  const seller = sellerAddress.toLowerCase() as Address
-  const results = await Promise.all(
-    PLATFORMS.map(async (p) => {
-      if (!p.getCancellableListingsForSeller) return null
-      try {
-        return await p.getCancellableListingsForSeller(seller)
-      } catch {
-        // One platform failing shouldn't blank the whole panel — just
-        // omit its rows. The user will see the others and can retry.
-        return null
-      }
-    }),
-  )
-
-  const auctions: SerializedAuction[] = []
-  const buyNows: SerializedBuyNow[] = []
-  for (const r of results) {
-    if (!r) continue
-    for (const a of r.auctions) auctions.push({ kind: "auction", ...a })
-    for (const b of r.buyNows) buyNows.push({ kind: "buyNow", ...b })
-  }
-  return { auctions, buyNows }
-}
-
-const cached = unstable_cache(
-  (sellerAddress: string) =>
-    pgCache<SellerListingsPayload>(
-      `seller-listings:${sellerAddress}`,
-      SELLER_LISTINGS_TTL_S,
-      () => buildPayload(sellerAddress),
-    ),
-  ["seller-listings-v2"],
-  { revalidate: SELLER_LISTINGS_TTL_S, tags: ["seller-listings"] },
-)
+export type { SellerListingsPayload }
 
 export async function GET(
   _req: Request,
@@ -89,6 +20,6 @@ export async function GET(
   if (!/^0x[0-9a-fA-F]{40}$/.test(address)) {
     return NextResponse.json({ error: "invalid address" }, { status: 400 })
   }
-  const data = await cached(address.toLowerCase())
+  const data = await getSellerListingsPayload(address.toLowerCase())
   return NextResponse.json(data)
 }
