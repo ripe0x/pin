@@ -34,7 +34,7 @@ import {
 } from "../lazy-index"
 import type { BidHistoryEntry } from "../auctions"
 import { discoverTransientArtistAuctions } from "./transient-scan"
-import { getMainnetTransport } from "../alchemy-rpc"
+import { getMainnetTransport } from "../alchemy-transport"
 
 const TL_AH = TL_AUCTION_HOUSE[MAINNET_CHAIN_ID]
 const TL_DEPLOYER = TL_UNIVERSAL_DEPLOYER[MAINNET_CHAIN_ID]

@@ -22,7 +22,7 @@ import {
 import { mainnet } from "viem/chains"
 import { unstable_cache } from "next/cache"
 import { pgCache } from "./pg-cache"
-import { getMainnetTransport } from "./alchemy-rpc"
+import { getMainnetTransport } from "./alchemy-transport"
 import {
   readFoundationLastSale,
   writeFoundationLastSale,

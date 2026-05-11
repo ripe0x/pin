@@ -14,7 +14,7 @@ import {
 } from "../indexer-queries"
 import { getSovereignLastSale } from "../last-sale"
 import { sql } from "../db"
-import { getMainnetTransport } from "../alchemy-rpc"
+import { getMainnetTransport } from "../alchemy-transport"
 
 function getClient() {
   return createPublicClient({

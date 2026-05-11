@@ -39,7 +39,7 @@ import {
 } from "../lazy-index"
 import type { BidHistoryEntry } from "../auctions"
 import { discoverSuperrareV2ArtistAuctions } from "./superrareV2-scan"
-import { getMainnetTransport } from "../alchemy-rpc"
+import { getMainnetTransport } from "../alchemy-transport"
 
 const SR_V2_NFT = SUPERRARE_V2_NFT[MAINNET_CHAIN_ID]
 const SR_BAZAAR = SUPERRARE_BAZAAR[MAINNET_CHAIN_ID]

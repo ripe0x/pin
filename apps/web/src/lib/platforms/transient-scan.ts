@@ -14,7 +14,7 @@ import {
   isFresh,
   type LazyTransientActiveAuction,
 } from "../lazy-index"
-import { getMainnetTransport } from "../alchemy-rpc"
+import { getMainnetTransport } from "../alchemy-transport"
 
 const TL_AH = TL_AUCTION_HOUSE[MAINNET_CHAIN_ID]
 // Auction House v2.6.1 was deployed in early 2026. Per-artist

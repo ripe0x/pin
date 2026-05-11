@@ -9,7 +9,7 @@ import { createPublicClient, type Address } from "viem"
 import { mainnet } from "viem/chains"
 import { normalize } from "viem/ens"
 import { pgCache } from "./pg-cache"
-import { getMainnetTransport } from "./alchemy-rpc"
+import { getMainnetTransport } from "./alchemy-transport"
 import { nftMarketAbi } from "@pin/abi"
 import { NFT_MARKET, MAINNET_CHAIN_ID } from "@pin/addresses"
 import {

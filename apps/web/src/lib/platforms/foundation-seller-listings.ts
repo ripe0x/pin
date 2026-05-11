@@ -13,7 +13,7 @@ import type {
   SellerCancellableBuyNow,
   SellerListings,
 } from "./types"
-import { getMainnetTransport } from "../alchemy-rpc"
+import { getMainnetTransport } from "../alchemy-transport"
 
 /**
  * Foundation-specific cancellable-listings discovery via direct RPC.

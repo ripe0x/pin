@@ -30,7 +30,7 @@ import { unstable_cache } from "next/cache"
 import { createPublicClient, parseAbiItem } from "viem"
 import { mainnet } from "viem/chains"
 import { pgCache } from "./pg-cache"
-import { getMainnetTransport } from "./alchemy-rpc"
+import { getMainnetTransport } from "./alchemy-transport"
 import {
   resolveEfpEnsCached,
   resolveEnsNameCached,

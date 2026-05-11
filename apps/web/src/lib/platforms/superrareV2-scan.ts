@@ -14,7 +14,7 @@ import {
   isFresh,
   type LazySuperrareV2ActiveAuction,
 } from "../lazy-index"
-import { getMainnetTransport } from "../alchemy-rpc"
+import { getMainnetTransport } from "../alchemy-transport"
 
 const SR_BAZAAR = SUPERRARE_BAZAAR[MAINNET_CHAIN_ID]
 // Bazaar deployed Feb 2022 (~14_100_000). Per-artist `getLogs` calls

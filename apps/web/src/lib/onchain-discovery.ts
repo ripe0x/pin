@@ -21,7 +21,7 @@ import {
   readTokenMetadata,
   writeTokenMetadata,
 } from "./token-metadata-store"
-import { getMainnetTransport } from "./alchemy-rpc"
+import { getMainnetTransport } from "./alchemy-transport"
 import { isRpcDisabled } from "./rpc-circuit"
 import {
   FOUNDATION_NFT,

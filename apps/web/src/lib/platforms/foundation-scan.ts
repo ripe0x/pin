@@ -14,7 +14,7 @@ import {
   isFresh,
   type LazyFoundationActiveAuction,
 } from "../lazy-index"
-import { getMainnetTransport } from "../alchemy-rpc"
+import { getMainnetTransport } from "../alchemy-transport"
 
 const FND_NFT_MARKET = NFT_MARKET[MAINNET_CHAIN_ID]
 // NFTMarket proxy was deployed mid-2021. Per-artist `getLogs` calls

@@ -25,7 +25,7 @@ import {
 } from "../lazy-index"
 import { discoverFoundationCancellableListings } from "./foundation-seller-listings"
 import { discoverFoundationArtistAuctions } from "./foundation-scan"
-import { getMainnetTransport } from "../alchemy-rpc"
+import { getMainnetTransport } from "../alchemy-transport"
 
 const FOUNDATION_NFT_ADDRESS = FOUNDATION_NFT[MAINNET_CHAIN_ID]
 const FND_NFT_MARKET = NFT_MARKET[MAINNET_CHAIN_ID]

@@ -32,7 +32,7 @@ import {
   LAZY_TTL,
   isFresh,
 } from "./lazy-index"
-import { getMainnetTransport } from "./alchemy-rpc"
+import { getMainnetTransport } from "./alchemy-transport"
 
 // Marker every Manifold Creator Core (V1+) returns true for. From
 // CreatorCore.sol: `bytes4 private constant _CREATOR_CORE_V1 = 0x28f10a21`.
