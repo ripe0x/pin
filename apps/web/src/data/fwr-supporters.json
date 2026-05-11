@@ -1,0 +1,716 @@
+{
+  "cursorBlock": "25073402",
+  "snapshotAt": "2026-05-11T17:37:57.553Z",
+  "supporters": [
+    {
+      "address": "0x90f64e01ffae16490aefe03c8ed7dab6c66198c3",
+      "ensName": "yougogirl.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x06d49cf038eb536b83d605220861b9fa50674f3f",
+      "ensName": "onezerozeroone.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x69cd8aed81efb1ed3d4a55ba484d2bdc8e3328cf",
+      "ensName": null,
+      "mintCount": 3
+    },
+    {
+      "address": "0x1439b4d5a72343b68f12398c649df99d76b2af53",
+      "ensName": "totty.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x1726510192461c6d9df244fa3420fd66ab5aec95",
+      "ensName": "derage.eth",
+      "mintCount": 12
+    },
+    {
+      "address": "0xbe58a1b85d11e2083bb7c5766284ed7848448d1d",
+      "ensName": "mpeyfuss.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x5a084aaef5eddd9195f28f6fe056785e01f210eb",
+      "ensName": "incarterseyes.eth",
+      "mintCount": 4
+    },
+    {
+      "address": "0x8a49240b6a8c8c0570e59a58482380eb323bc7bd",
+      "ensName": null,
+      "mintCount": 1
+    },
+    {
+      "address": "0xf54fe7f5f0f8d13ce9b685b8ad167b466b637f0d",
+      "ensName": "typo.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xa9d5676d172f9d1693192ae910c49087dbaa88fb",
+      "ensName": "strachan.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x8bf2ffc89c70efbe245aa81cc597c7e359925d61",
+      "ensName": "fascinated.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x78086ad810f8f99a0b6c92a9a6c8857d3c665622",
+      "ensName": "ol1y.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x295cf39d923bc491e138ab5f7f1c570d4732b5a1",
+      "ensName": "hot.takens.eth",
+      "mintCount": 2
+    },
+    {
+      "address": "0x95239f3e8f395bb787ec9a0f475e830c6848fdfd",
+      "ensName": null,
+      "mintCount": 7
+    },
+    {
+      "address": "0x3d9456ad6463a77bd77123cb4836e463030bfab4",
+      "ensName": "jmann.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x48aae1669d4cf7988a227b3d68d9d6e9f02840ee",
+      "ensName": "mikebones.eth",
+      "mintCount": 2
+    },
+    {
+      "address": "0xd91dc7c83bd01b91cb25019dfc4e35bc6faab814",
+      "ensName": "valent1ne.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x68bca5a8bdebe05fb8a6648c7316b4eb7e19a064",
+      "ensName": "ahotwallet.eth",
+      "mintCount": 3
+    },
+    {
+      "address": "0xb630abd9a5367763b7cba316e870c4a54064cc9f",
+      "ensName": "mikegee.eth",
+      "mintCount": 2
+    },
+    {
+      "address": "0x0f13316b80872eda120d7844ed1c1e90fc001dc1",
+      "ensName": "daimalyad.eth",
+      "mintCount": 6
+    },
+    {
+      "address": "0xd910201439151ab8d3a2601a99b1f70347b92a3d",
+      "ensName": "ansia.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x1f335c8ab8514920dba51a72f39e92b514cbacef",
+      "ensName": "danielrotter.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xcf2b7c6bc98bfe0d6138a25a3b6162b51f75e05d",
+      "ensName": "0xphoenix.eth",
+      "mintCount": 5
+    },
+    {
+      "address": "0xfc3c962fad2c1cc77f1a0d46e7b8a2de79a21774",
+      "ensName": "rhynotic.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x9da1a52aff937603aa2ed1b112deb3b22af92f96",
+      "ensName": null,
+      "mintCount": 1
+    },
+    {
+      "address": "0xcb06bede7cb0a4b333581b6bdcd05f7cc737b9cc",
+      "ensName": "matascup.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x3a6372b2013f9876a84761187d933dee0653e377",
+      "ensName": "backseats.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x1e299dc52eb9fdab6a6849f9731a948d8d72e474",
+      "ensName": "ashtar.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x11f46fff2624737aa0d38507e761b6ef770eb94d",
+      "ensName": "nicedayjules.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xd2af9f3e3435ffdef945830fce4eab40877e0475",
+      "ensName": "rudxane.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x735854c506cceb0b95c949d1acb705b31136d487",
+      "ensName": "diid.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x54ded7088b5e303ddd63e15c95f502b4c0c61627",
+      "ensName": "felixfelixfelix.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xddfa8eebda1744f58724eb9d0fafa18b2f554a02",
+      "ensName": null,
+      "mintCount": 1
+    },
+    {
+      "address": "0xfab22550fcd520a7eced27414cd74bc70a6ac1a9",
+      "ensName": "rpl.eth",
+      "mintCount": 15
+    },
+    {
+      "address": "0xa3572e2b51918d166e506197fc3adb36524a7180",
+      "ensName": null,
+      "mintCount": 1
+    },
+    {
+      "address": "0xaed3d37b761bf61767208da1dbb3a971b9f13fb5",
+      "ensName": "projectshift.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x70c19d27fcfb8d434a4155973838b8572ce2acff",
+      "ensName": null,
+      "mintCount": 20
+    },
+    {
+      "address": "0x8d85d3edea57b09fee39c94e5e0ca2757ebb6be7",
+      "ensName": "seeingblue.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x155fc33424a6103113aab831ac7e72c7e30a4c4b",
+      "ensName": null,
+      "mintCount": 1
+    },
+    {
+      "address": "0x08ceb8bba685ee708c9c4c65576837cbe19b9dea",
+      "ensName": "wmp.eth",
+      "mintCount": 2
+    },
+    {
+      "address": "0xc485e340587629edd2b14634bd03f2a01dad8dfd",
+      "ensName": "master.evgeni.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x486752e4c8ab22f5abb1feb95abc7ce0a36473da",
+      "ensName": "bubaviedma.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x11b928f86e79048c93edd2c48e24986d7d36f655",
+      "ensName": "hot.jarethc.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x0567d67105ae13d00b60a991e57b9cc83f05c083",
+      "ensName": "meilleur.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x5c70af3ddc7e815a40f2a09d22483e6e24eddf8e",
+      "ensName": "batz.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x881475210e75b814d5b711090a064942b6f30605",
+      "ensName": "traf.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x32d3aa5df3203ac5613cd5b22c642929e3dae423",
+      "ensName": null,
+      "mintCount": 1
+    },
+    {
+      "address": "0x589ffbbda0eacd5a9c2ba208b379c886b2630503",
+      "ensName": "thepark.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x504070a1a47f5bd94dd78b879e0d753e7e92bcd2",
+      "ensName": "dimmadomegallery.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xa88e4a192f3ff5e46dcc96efefb38dfec7bb250c",
+      "ensName": "takenstheorem.eth",
+      "mintCount": 2
+    },
+    {
+      "address": "0x04173063c0c491470b735954790f94ed307aae9d",
+      "ensName": null,
+      "mintCount": 1
+    },
+    {
+      "address": "0x1a1427a73b7cb0f4ea3f71c6c8090c4366c8ebe1",
+      "ensName": "jsheps.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xaf8c481eb42defb31ae67319382624a68e28f5e8",
+      "ensName": "chazzgold.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xb9a548bbb8e2251dd7dc4b0978dd318ec69a1780",
+      "ensName": "nightshare2.eth",
+      "mintCount": 2
+    },
+    {
+      "address": "0x89900edbf6b88e99ad849ea34d6e3df969631380",
+      "ensName": "animatednft.eth",
+      "mintCount": 2
+    },
+    {
+      "address": "0x7edfbd2d04505e74ea6ff6c1720275a9b16a3869",
+      "ensName": null,
+      "mintCount": 1
+    },
+    {
+      "address": "0xf845335a943109c8a80d98e6f6a606915b562dd6",
+      "ensName": "9gagvibes.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xdb3ec7b16fd60fb4fdb58a438bd8af57d8d3a91c",
+      "ensName": "agrimony.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xee49f82e58a1c2b306720d0c68047cbf70c11fb5",
+      "ensName": "pravijn.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x15265c9989a97f84c01cdba9da4461ae518083fc",
+      "ensName": "walasavagephoto.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xbe957a475844c127ddd207b4ff1f63900fd13e57",
+      "ensName": "hw1.sonoflasg.eth",
+      "mintCount": 2
+    },
+    {
+      "address": "0x1e8e749b2b578e181ca01962e9448006772b24a2",
+      "ensName": "brinkman.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x3310fd13c6c55f054cc128439e1e51cd0cb16fed",
+      "ensName": "rciv.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x6fd155b9d52f80e8a73a8a2537268602978486e2",
+      "ensName": "xibot.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x8e15f10ebaa9cb64e6881b71a0216b6433c2e880",
+      "ensName": "rainsage.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x31aac01ca971b7df70cff05c213a6450ca323f80",
+      "ensName": null,
+      "mintCount": 5
+    },
+    {
+      "address": "0x071642731357694b43567e961c6b99647962a8c7",
+      "ensName": "0009.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xf48a18e24c2399e409130e4d45ff7a9ab4456571",
+      "ensName": null,
+      "mintCount": 1
+    },
+    {
+      "address": "0x39c06b54686b0540d6d57a254b976b1df4310df1",
+      "ensName": "jasonreal.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x4cc1a03191ddf0c39d82098f059ef3412113a36e",
+      "ensName": "vihavibes.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x6dff1d922a97fda351aad8c5f7e8f69be187e0a6",
+      "ensName": "picapica.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xabfb3a0a0e4c1bc2ad036f4531217e2becd215ee",
+      "ensName": "1.cheesebiz.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x89d53e8612e8416bf960dc9444ce0e2a0878a582",
+      "ensName": null,
+      "mintCount": 5
+    },
+    {
+      "address": "0x08b296a897b1c8a033066a34dfde80c66a825d7b",
+      "ensName": "refibank.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x136bbfe37988f82f8585ed155615b75371489d45",
+      "ensName": null,
+      "mintCount": 1
+    },
+    {
+      "address": "0xa501ec048fb89e3bd3e1354751a2c04e953afb6f",
+      "ensName": "theirritant.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xf74c487e7d9ffebdcfb3189118d74b0b8591dc83",
+      "ensName": "runna.eth",
+      "mintCount": 2
+    },
+    {
+      "address": "0x3d791800a9aad32c6d8f9811c0dfa6dd7dda0650",
+      "ensName": null,
+      "mintCount": 1
+    },
+    {
+      "address": "0xe9ce20863840a90de8cf75a59b73e36fbb41bee0",
+      "ensName": null,
+      "mintCount": 1
+    },
+    {
+      "address": "0x34433cb54d406d231cd511567f33ce1914fc888e",
+      "ensName": "xenin.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xec9e512fe7e90134d8ca7295329ccb0a57c91ecb",
+      "ensName": "maxkarlan.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xc93c7f71581dfeaab59bed908888dac5689f312a",
+      "ensName": "humanityisthedevil.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x1341df844780b66af4ccc98ae0f34be87eabe1d5",
+      "ensName": "bpinnyc.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x1ed4a7446556ed14593e15cdba22b1bba158cf8c",
+      "ensName": "maning.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x66120e32be12fbe6ff56da77ea9b2208bdcad3bc",
+      "ensName": "peakfiat.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x61b04d2b5cb1f1f8505e7b4e1cb3d9e8a0b15bae",
+      "ensName": "inceptionally.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x0fbace2073d66642eadcb97fb24903c962643905",
+      "ensName": "0xsecurem.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x89cbb15c7ab08a39328b0e3ddf8cffa8d7c50899",
+      "ensName": null,
+      "mintCount": 2
+    },
+    {
+      "address": "0xe8bb2e08e6f52f11d8b65e2a3db772daa60e117e",
+      "ensName": "catra.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x9128233a0e77dca38c5abc0810bcfb3663120123",
+      "ensName": "ogtheartist.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xbaba775a0400a5e442335ceaa4820edb1ded8f73",
+      "ensName": "baseddesigner.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x877f3bcb3c0ad49b64c404970d5671e00231b59c",
+      "ensName": "greyblok.eth",
+      "mintCount": 5
+    },
+    {
+      "address": "0x4ae5e79106a42e2e36bfc8ff3db0223e20341331",
+      "ensName": "truedrew.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xc47316a2708ff27f75592eec0ae30b205b44dc2f",
+      "ensName": null,
+      "mintCount": 1
+    },
+    {
+      "address": "0x0dd399a7ed92283e4983c2974fe377070d67f4eb",
+      "ensName": "greencross.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xab1ef6a2bd769dce3da9cd96e8f16f00f50ee6e6",
+      "ensName": "blurfang.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xb505270fa2dc96e294b264344154caf4cc1a5d26",
+      "ensName": "matriona.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xfab618c8785f8d86e0895df5e9f2927096138d58",
+      "ensName": "hirahaha.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xd2530247dcbe1b42923912ecf1bfe1bda332bdbb",
+      "ensName": null,
+      "mintCount": 1
+    },
+    {
+      "address": "0xcb8ecb94f6c25af4fab696b91cbb0a1449b98f64",
+      "ensName": "cpublood.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x201b70cdb25ae89600c7b1e8fa121f537f9dc11b",
+      "ensName": null,
+      "mintCount": 1
+    },
+    {
+      "address": "0x8264e9e0f4cbcbbbb3f8ecaec0a625b590ae790e",
+      "ensName": "simnet.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x6f3b66dba3c318c405a0733d5d2cd67bfd57aa08",
+      "ensName": "peng1.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x4a1c4a25ea078c700f78c4be3d98ad122d51c045",
+      "ensName": null,
+      "mintCount": 1
+    },
+    {
+      "address": "0x04f198ceafbfdb9b1cb38425242b482313b7737e",
+      "ensName": "basepaint-xyz.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xb5a6f97a79448faa435d5dd033fbe0cea0a9f1ed",
+      "ensName": "bytegame.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xb04519e72a07ff7d85a4b0a142549d2195867f94",
+      "ensName": null,
+      "mintCount": 1
+    },
+    {
+      "address": "0x8d4ffaa33b19c2e1c346e1246dda41ca64a07de6",
+      "ensName": null,
+      "mintCount": 1
+    },
+    {
+      "address": "0xf1da6e2d387e9da611dac8a7fc587eaa4b010013",
+      "ensName": "andrewmitchell.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x9a659894e5d115846767db0e1685744c452e7a6e",
+      "ensName": "shukudai.dayo.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xe85041b675b616f635798a63db467289e5aa1e4d",
+      "ensName": null,
+      "mintCount": 1
+    },
+    {
+      "address": "0xbcdf14124b95f65c8db241aafb3ef5c1abd2adc6",
+      "ensName": "nelsonzina.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xdc79dd9b2d2237aa43cc0cbaad51962e77380aba",
+      "ensName": "0x8bit.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x2ee8670d2b936985d5fb1ee968810c155d3bb9ca",
+      "ensName": "jwpe.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x759c51e04dd9062e8d2071febe9d47caea199de5",
+      "ensName": "10082.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x460b6018b8a96668891a62ef530b687fdc20c7d4",
+      "ensName": "guwuvault.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xb464ca834796272e08dc6460940b281b046a2cee",
+      "ensName": "junglerush.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xa7efbb4a06a680f3b65c5861ec387408ceafbec8",
+      "ensName": "mbstuart.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x518b1cf3f887b35c606a9333b5ef013565ff9b64",
+      "ensName": "ammar7.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xe18c8685818cb936dc2448be33349da61b412a4d",
+      "ensName": null,
+      "mintCount": 3
+    },
+    {
+      "address": "0x2c240a75dead9fb4b875effd884738060bd5211f",
+      "ensName": null,
+      "mintCount": 4
+    },
+    {
+      "address": "0x8ade93ba431a2ce19fc62a9ce97626e69a4a333f",
+      "ensName": null,
+      "mintCount": 3
+    },
+    {
+      "address": "0xb7974874aaaca2f8b52691f622d27ba93881df88",
+      "ensName": null,
+      "mintCount": 1
+    },
+    {
+      "address": "0x6ef3839145198626d1cc051830310abe91a95ddc",
+      "ensName": null,
+      "mintCount": 22
+    },
+    {
+      "address": "0x1b123ba1388281a2974c1607adc6eac54b37e914",
+      "ensName": null,
+      "mintCount": 10
+    },
+    {
+      "address": "0xe67c19d9dd8ffa21658599fbfda4b040b99e17fe",
+      "ensName": null,
+      "mintCount": 1
+    },
+    {
+      "address": "0x921d90131fe8a8799dc8ad5b76bb72b5f7a2786f",
+      "ensName": "subhadip.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x99793910ee87090d5a9ba035b0ad3a6852c0fb4c",
+      "ensName": null,
+      "mintCount": 1
+    },
+    {
+      "address": "0x751747b1d099821784876b6dfe7a15b81e064b93",
+      "ensName": "sin7.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xeb1c22baacafac7836f20f684c946228401ff01c",
+      "ensName": "richerd.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xb0f931399ee0e75d4f0e0097c49afce9d2622455",
+      "ensName": "你🐻📉来咯.eth",
+      "mintCount": 8
+    },
+    {
+      "address": "0x5a724490faa77fe5fa0b0a8adf7c8add0bad12f8",
+      "ensName": null,
+      "mintCount": 5
+    },
+    {
+      "address": "0x1cf82438699503567fa12d41ce80e92ca0a8aef7",
+      "ensName": "0x1cf8.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x6e37d79b4744dd82261cfb7b4ccf77fe513be06f",
+      "ensName": "bcunicorn.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xb489fdf7c124d2c9338d9b0c55dc29fa6bb44d7f",
+      "ensName": "terraformsotc.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0xe4005eb741bb2d1b8e13304ba280c4690d0603ce",
+      "ensName": "bogema.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x913afeda8d647aeade636ea67627c97b5dce7019",
+      "ensName": "lndianajones.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x882ebe579e11104ffa610fad8b0b947955cf3d3d",
+      "ensName": "ap0ll0.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x11c1503ba0a3a42773dc1a9a76edfe54b30bcc38",
+      "ensName": null,
+      "mintCount": 1
+    },
+    {
+      "address": "0xfb4eecef04f1d45ead80a7a471d60b38b14eaa9a",
+      "ensName": "artisdead.eth",
+      "mintCount": 2
+    },
+    {
+      "address": "0x843a3c4ed93fb1f1335d5d174745551468106715",
+      "ensName": "buidl.scottrepreneur.eth",
+      "mintCount": 1
+    },
+    {
+      "address": "0x153214fca16c8cf75a46e01094394a3ecbff70ab",
+      "ensName": "slander.eth",
+      "mintCount": 2
+    }
+  ]
+}

@@ -22,6 +22,7 @@
  */
 import { Suspense } from "react"
 import { SupportersList } from "./SupportersList"
+import { ThemeToggle } from "./ThemeToggle"
 
 export function Footer() {
   return (
@@ -35,8 +36,14 @@ export function Footer() {
             <a href="/about" className="hover:text-fg transition-colors">
               About
             </a>
+            <a href="/guides" className="hover:text-fg transition-colors">
+              Guides
+            </a>
             <a href="/sites" className="hover:text-fg transition-colors">
               Sites
+            </a>
+            <a href="/log" className="hover:text-fg transition-colors">
+              Log
             </a>
             <a
               href="https://github.com/ripe0x/pin"
@@ -54,6 +61,7 @@ export function Footer() {
             >
               Created by ripe
             </a>
+            <ThemeToggle />
           </div>
         </div>
         <Suspense fallback={null}>

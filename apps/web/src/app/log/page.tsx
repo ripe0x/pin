@@ -57,6 +57,14 @@ type LogEntry = {
 const ENTRIES: LogEntry[] = [
   {
     date: "May 11, 2026",
+    title: "Guides section, with the first guide on auction contracts",
+    summary:
+      "/auctions explains the artist-owned auction contracts in plain language. Who deploys and owns each contract, how listing, bidding, and settlement actually happen, what continues to work if the PND frontend disappears, and the tradeoffs against a shared platform contract. Linked from a new /guides hub and from a new 'For artists' dropdown in the navbar.",
+    forArtists:
+      "When a collector or another artist asks how your contract actually works, you can link them to one page that answers it. Same job /about does for the project, scoped to the contracts themselves.",
+  },
+  {
+    date: "May 11, 2026",
     title: "Build log added",
     summary:
       "This page. A timeline of what PND has shipped, in the order it shipped.",

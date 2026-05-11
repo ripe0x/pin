@@ -1,19 +1,47 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { SITE_TITLE } from "@pin/shared"
 import { useAccount } from "wagmi"
-import { ThemeToggle } from "@/components/ThemeToggle"
 import { GodModePanel } from "@/components/GodModePanel"
 import { CampaignBanner } from "@/components/CampaignBanner"
+
+type ArtistAction = { href: string; label: string }
+
+const ARTIST_ACTIONS: ArtistAction[] = [
+  { href: "/preserve", label: "Preserve work" },
+  { href: "/auction/new", label: "Deploy your auction" },
+  { href: "/sites", label: "Run your own site" },
+]
 
 export function Navbar() {
   const { address } = useAccount()
   const router = useRouter()
   const [query, setQuery] = useState("")
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+
+  // Click-outside + Escape close the dropdown so it doesn't trap the
+  // user once it's open. Keyboard users get the same dismissal that
+  // pointer users do.
+  useEffect(() => {
+    if (!menuOpen) return
+    function onPointer(e: MouseEvent) {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false)
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setMenuOpen(false)
+    }
+    document.addEventListener("mousedown", onPointer)
+    document.addEventListener("keydown", onKey)
+    return () => {
+      document.removeEventListener("mousedown", onPointer)
+      document.removeEventListener("keydown", onKey)
+    }
+  }, [menuOpen])
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault()
@@ -55,21 +83,55 @@ export function Navbar() {
 
         {/* Right: nav links + wallet */}
         <div className="flex items-center gap-6">
-          <Link
-            href="/preserve"
-            className="text-sm font-medium text-gray-600 transition-colors hover:text-fg"
-          >
-            Preserve
-          </Link>
-          {address && (
-            <Link
-              href={`/artist/${address}`}
-              className="hidden text-sm font-medium text-gray-600 transition-colors hover:text-fg sm:inline-block"
+          <div ref={menuRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              className="flex items-center gap-1 text-sm font-medium text-gray-600 transition-colors hover:text-fg"
             >
-              Profile
-            </Link>
-          )}
-          <ThemeToggle />
+              For artists
+              <Chevron open={menuOpen} />
+            </button>
+            {menuOpen && (
+              <div
+                role="menu"
+                aria-label="For artists"
+                className="absolute right-0 mt-2 w-56 rounded-md border border-gray-200 bg-surface py-1 shadow-lg"
+              >
+                {ARTIST_ACTIONS.map((a) => (
+                  <Link
+                    key={a.href}
+                    href={a.href}
+                    role="menuitem"
+                    onClick={() => setMenuOpen(false)}
+                    className="block px-4 py-2 text-sm text-fg transition-colors hover:bg-gray-100"
+                  >
+                    {a.label}
+                  </Link>
+                ))}
+                {address && (
+                  <Link
+                    href={`/artist/${address}`}
+                    role="menuitem"
+                    onClick={() => setMenuOpen(false)}
+                    className="block border-t border-gray-200 px-4 py-2 text-sm text-fg transition-colors hover:bg-gray-100"
+                  >
+                    Manage your work
+                  </Link>
+                )}
+                <Link
+                  href="/guides"
+                  role="menuitem"
+                  onClick={() => setMenuOpen(false)}
+                  className="block border-t border-gray-200 px-4 py-2 text-sm text-fg transition-colors hover:bg-gray-100"
+                >
+                  Guides
+                </Link>
+              </div>
+            )}
+          </div>
           {/* God-mode panel — only renders for allowlisted wallets, so
               this is a no-op for everyone else and adds zero affordance
               clutter on the navbar. */}
@@ -185,6 +247,25 @@ function SearchIcon() {
     >
       <circle cx="11" cy="11" r="8" />
       <path d="m21 21-4.35-4.35" />
+    </svg>
+  )
+}
+
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="10"
+      height="10"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={`transition-transform ${open ? "rotate-180" : ""}`}
+    >
+      <polyline points="6 9 12 15 18 9" />
     </svg>
   )
 }
