@@ -1,7 +1,7 @@
 import "server-only"
 import { unstable_cache } from "next/cache"
 import type { Address } from "viem"
-import { pgCache } from "./pg-cache"
+import { sql } from "./db"
 import { getArtistIdentity, getEnsUrl } from "./artist-queries"
 import {
   IndexerUnavailable,
@@ -547,22 +547,85 @@ export async function buildDependencyReport(
 export { IndexerUnavailable }
 
 export const DEPENDENCY_SCAN_TTL_S = 5 * 60
+/**
+ * Short TTL applied when the scan is incomplete (indexer unavailable,
+ * platform timeouts). Lets the user retry and pick up the now-warm
+ * lazy caches that any timed-out background scans populated, instead
+ * of staring at the same partial banner for the full 5 minutes.
+ */
+export const DEPENDENCY_SCAN_PARTIAL_TTL_S = 30
 
 /**
- * Cached scan-report builder. Same two-layer cache pattern the rest of
- * the codebase uses: `unstable_cache` per Node sandbox over `pgCache`
- * keyed by lowercased address. Both the API route and the server-side
- * result page consume this single function so they share one cache.
- *
- * Key version bumped to v3 with the contract-centric redesign.
+ * Custom cache wrapper: same `unstable_cache` L1 over a manually-managed
+ * L2 in the `cache_entries` Postgres table — but with conditional TTL.
+ * Complete reports cache for 5 min; partial ones (anything with an
+ * `UnableToCheck` cause) cache for 30s only. We do the L2 read/write
+ * inline rather than calling `pgCache(...)` because its single-TTL API
+ * can't express this rule.
+ */
+async function fetchAndCacheReport(
+  addressLower: string,
+): Promise<DependencyReport> {
+  const key = `artist-dependency:${addressLower}`
+
+  if (sql) {
+    try {
+      const rows = await sql<Array<{ value: unknown }>>`
+        SELECT value
+        FROM cache_entries
+        WHERE key = ${key} AND expires_at > NOW()
+        LIMIT 1
+      `
+      if (rows.length > 0) {
+        const raw = rows[0].value
+        if (
+          raw &&
+          typeof raw === "object" &&
+          raw !== null &&
+          "v" in (raw as Record<string, unknown>)
+        ) {
+          return (raw as { v: DependencyReport }).v
+        }
+        return raw as DependencyReport
+      }
+    } catch {
+      // Transient DB miss — fall through to compute.
+    }
+  }
+
+  const fresh = await buildDependencyReport(addressLower as Address)
+  const complete =
+    fresh.indexerHealthy && fresh.platformCoverage.errors.length === 0
+  const ttl = complete
+    ? DEPENDENCY_SCAN_TTL_S
+    : DEPENDENCY_SCAN_PARTIAL_TTL_S
+
+  if (sql) {
+    const envelope = { v: fresh }
+    void sql`
+      INSERT INTO cache_entries (key, value, expires_at)
+      VALUES (${key}, ${sql.json(envelope as never)}, NOW() + (${ttl} || ' seconds')::interval)
+      ON CONFLICT (key) DO UPDATE
+        SET value = EXCLUDED.value,
+            expires_at = EXCLUDED.expires_at,
+            updated_at = NOW()
+    `.catch(() => {})
+  }
+
+  return fresh
+}
+
+/**
+ * Cached scan-report builder. L1 is `unstable_cache` (per Node sandbox)
+ * with a short revalidate so a stuck partial result doesn't linger
+ * within one sandbox. L2 is the conditional-TTL `cache_entries` row
+ * written by `fetchAndCacheReport`.
  */
 export const getDependencyReport = unstable_cache(
-  (addressLower: string) =>
-    pgCache<DependencyReport>(
-      `artist-dependency:${addressLower}`,
-      DEPENDENCY_SCAN_TTL_S,
-      () => buildDependencyReport(addressLower as Address),
-    ),
-  ["artist-dependency-v4"],
-  { revalidate: DEPENDENCY_SCAN_TTL_S, tags: ["artist-dependency"] },
+  fetchAndCacheReport,
+  ["artist-dependency-v5"],
+  {
+    revalidate: DEPENDENCY_SCAN_PARTIAL_TTL_S,
+    tags: ["artist-dependency"],
+  },
 )
