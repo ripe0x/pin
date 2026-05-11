@@ -9,8 +9,7 @@ import { createPublicClient, type Address } from "viem"
 import { mainnet } from "viem/chains"
 import { normalize } from "viem/ens"
 import { pgCache } from "./pg-cache"
-import { getAlchemyMainnetUrl } from "./alchemy-rpc"
-import { loggingHttpTransport } from "./rpc-log"
+import { getMainnetTransport } from "./alchemy-rpc"
 import { nftMarketAbi } from "@pin/abi"
 import { NFT_MARKET, MAINNET_CHAIN_ID } from "@pin/addresses"
 import {
@@ -32,7 +31,7 @@ import { extractCid, ipfsToHttp } from "@pin/shared"
 // to use its own per-route client.
 const client = createPublicClient({
   chain: mainnet,
-  transport: loggingHttpTransport(getAlchemyMainnetUrl(), undefined),
+  transport: getMainnetTransport(),
 })
 
 /**

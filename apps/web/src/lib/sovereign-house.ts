@@ -20,7 +20,7 @@
  * the same.
  */
 import { unstable_cache } from "next/cache"
-import { createPublicClient, http, type Address } from "viem"
+import { createPublicClient, type Address } from "viem"
 import { mainnet } from "viem/chains"
 import { sovereignAuctionHouseFactoryAbi } from "@pin/abi"
 import {
@@ -29,7 +29,7 @@ import {
   getAddressOrNull,
 } from "@pin/addresses"
 import { sql } from "./db"
-import { getAlchemyMainnetUrl } from "./alchemy-rpc"
+import { getMainnetTransport } from "./alchemy-rpc"
 
 const SOVEREIGN_FACTORY = getAddressOrNull(
   SOVEREIGN_AUCTION_HOUSE_FACTORY,
@@ -40,7 +40,7 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
 function getClient() {
   return createPublicClient({
     chain: mainnet,
-    transport: http(getAlchemyMainnetUrl()),
+    transport: getMainnetTransport("sovereign-house"),
   })
 }
 

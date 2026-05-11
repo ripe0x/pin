@@ -1,5 +1,5 @@
 import "server-only"
-import { createPublicClient, http, type Address } from "viem"
+import { createPublicClient, type Address } from "viem"
 import { mainnet } from "viem/chains"
 import { FOUNDATION_NFT, NFT_MARKET, MAINNET_CHAIN_ID } from "@pin/addresses"
 import type {
@@ -25,7 +25,7 @@ import {
 } from "../lazy-index"
 import { discoverFoundationCancellableListings } from "./foundation-seller-listings"
 import { discoverFoundationArtistAuctions } from "./foundation-scan"
-import { getAlchemyMainnetUrl } from "../alchemy-rpc"
+import { getMainnetTransport } from "../alchemy-rpc"
 
 const FOUNDATION_NFT_ADDRESS = FOUNDATION_NFT[MAINNET_CHAIN_ID]
 const FND_NFT_MARKET = NFT_MARKET[MAINNET_CHAIN_ID]
@@ -33,9 +33,7 @@ const FND_NFT_MARKET = NFT_MARKET[MAINNET_CHAIN_ID]
 function getClient() {
   return createPublicClient({
     chain: mainnet,
-    transport: http(
-      getAlchemyMainnetUrl(),
-    ),
+    transport: getMainnetTransport("foundation"),
   })
 }
 

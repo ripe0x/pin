@@ -1,7 +1,6 @@
 import "server-only"
 import {
   createPublicClient,
-  http,
   parseAbiItem,
   type Address,
   type PublicClient,
@@ -14,7 +13,7 @@ import type {
   SellerCancellableBuyNow,
   SellerListings,
 } from "./types"
-import { getAlchemyMainnetUrl } from "../alchemy-rpc"
+import { getMainnetTransport } from "../alchemy-rpc"
 
 /**
  * Foundation-specific cancellable-listings discovery via direct RPC.
@@ -47,9 +46,7 @@ const buyPriceSetEvent = parseAbiItem(
 function getClient(): PublicClient {
   return createPublicClient({
     chain: mainnet,
-    transport: http(
-      getAlchemyMainnetUrl(),
-    ),
+    transport: getMainnetTransport("foundation-seller-listings"),
   })
 }
 

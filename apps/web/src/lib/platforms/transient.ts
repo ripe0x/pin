@@ -1,7 +1,6 @@
 import "server-only"
 import {
   createPublicClient,
-  http,
   parseAbiItem,
   type Address,
 } from "viem"
@@ -35,7 +34,7 @@ import {
 } from "../lazy-index"
 import type { BidHistoryEntry } from "../auctions"
 import { discoverTransientArtistAuctions } from "./transient-scan"
-import { getAlchemyMainnetUrl } from "../alchemy-rpc"
+import { getMainnetTransport } from "../alchemy-rpc"
 
 const TL_AH = TL_AUCTION_HOUSE[MAINNET_CHAIN_ID]
 const TL_DEPLOYER = TL_UNIVERSAL_DEPLOYER[MAINNET_CHAIN_ID]
@@ -95,10 +94,7 @@ const BLOCK_RANGE = 2_000_000n
 function getClient() {
   return createPublicClient({
     chain: mainnet,
-    transport: http(
-      getAlchemyMainnetUrl(),
-      { batch: true },
-    ),
+    transport: getMainnetTransport("transient", { batch: true }),
   })
 }
 

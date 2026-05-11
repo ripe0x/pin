@@ -1,7 +1,6 @@
 import "server-only"
 import {
   createPublicClient,
-  http,
   parseAbiItem,
   type Address,
 } from "viem"
@@ -15,7 +14,7 @@ import {
   isFresh,
   type LazySuperrareV2ActiveAuction,
 } from "../lazy-index"
-import { getAlchemyMainnetUrl } from "../alchemy-rpc"
+import { getMainnetTransport } from "../alchemy-rpc"
 
 const SR_BAZAAR = SUPERRARE_BAZAAR[MAINNET_CHAIN_ID]
 // Bazaar deployed Feb 2022 (~14_100_000). Per-artist `getLogs` calls
@@ -43,10 +42,7 @@ const ETH_CURRENCY = "0x0000000000000000000000000000000000000000"
 function getClient() {
   return createPublicClient({
     chain: mainnet,
-    transport: http(
-      getAlchemyMainnetUrl(),
-      { batch: true },
-    ),
+    transport: getMainnetTransport("superrareV2-scan", { batch: true }),
   })
 }
 

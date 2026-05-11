@@ -1,5 +1,5 @@
 import "server-only"
-import { createPublicClient, http, type Address } from "viem"
+import { createPublicClient, type Address } from "viem"
 import { mainnet } from "viem/chains"
 import type {
   PlatformAdapter,
@@ -18,7 +18,7 @@ import {
   LAZY_TTL,
   isFresh,
 } from "../lazy-index"
-import { getAlchemyMainnetUrl } from "../alchemy-rpc"
+import { getMainnetTransport } from "../alchemy-rpc"
 
 // Marker interface for Manifold Creator Core (V1 + V2 share this).
 const MANIFOLD_CC_INTERFACE_ID = "0x28f10a21" as const
@@ -37,9 +37,7 @@ const supportsInterfaceAbi = [
 function getClient() {
   return createPublicClient({
     chain: mainnet,
-    transport: http(
-      getAlchemyMainnetUrl(),
-    ),
+    transport: getMainnetTransport("manifold"),
   })
 }
 

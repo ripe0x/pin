@@ -30,8 +30,7 @@ import { unstable_cache } from "next/cache"
 import { createPublicClient, parseAbiItem } from "viem"
 import { mainnet } from "viem/chains"
 import { pgCache } from "./pg-cache"
-import { getAlchemyMainnetUrl } from "./alchemy-rpc"
-import { loggingHttpTransport } from "./rpc-log"
+import { getMainnetTransport } from "./alchemy-rpc"
 import {
   resolveEfpEnsCached,
   resolveEnsNameCached,
@@ -65,7 +64,7 @@ export type SupportersPayload = {
 
 const client = createPublicClient({
   chain: mainnet,
-  transport: loggingHttpTransport(getAlchemyMainnetUrl(), "fwr-supporters"),
+  transport: getMainnetTransport("fwr-supporters"),
 })
 
 /**

@@ -1,5 +1,5 @@
 import "server-only"
-import { createPublicClient, http, type Address } from "viem"
+import { createPublicClient, type Address } from "viem"
 import { mainnet } from "viem/chains"
 import type {
   PlatformAdapter,
@@ -14,14 +14,12 @@ import {
 } from "../indexer-queries"
 import { getSovereignLastSale } from "../last-sale"
 import { sql } from "../db"
-import { getAlchemyMainnetUrl } from "../alchemy-rpc"
+import { getMainnetTransport } from "../alchemy-rpc"
 
 function getClient() {
   return createPublicClient({
     chain: mainnet,
-    transport: http(
-      getAlchemyMainnetUrl(),
-    ),
+    transport: getMainnetTransport("sovereign"),
   })
 }
 

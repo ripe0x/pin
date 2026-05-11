@@ -1,7 +1,6 @@
 import "server-only"
 import {
   createPublicClient,
-  http,
   parseAbiItem,
   type Address,
 } from "viem"
@@ -15,7 +14,7 @@ import {
   isFresh,
   type LazyTransientActiveAuction,
 } from "../lazy-index"
-import { getAlchemyMainnetUrl } from "../alchemy-rpc"
+import { getMainnetTransport } from "../alchemy-rpc"
 
 const TL_AH = TL_AUCTION_HOUSE[MAINNET_CHAIN_ID]
 // Auction House v2.6.1 was deployed in early 2026. Per-artist
@@ -46,10 +45,7 @@ const ETH_CURRENCY = "0x0000000000000000000000000000000000000000"
 function getClient() {
   return createPublicClient({
     chain: mainnet,
-    transport: http(
-      getAlchemyMainnetUrl(),
-      { batch: true },
-    ),
+    transport: getMainnetTransport("transient-scan", { batch: true }),
   })
 }
 
