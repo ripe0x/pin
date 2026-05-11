@@ -956,7 +956,12 @@ export async function getArtistContractMap(
       collectionName: r.collection_name,
       collectionSymbol: r.collection_symbol,
     }))
-  }, 2_000)
+    // Bigger budget than the other indexer queries because this is the
+    // headline read for the dependency report and under pool contention
+    // (the orchestrator fires ~6 parallel Postgres calls + the seller-
+    // listings adapters' own lazy reads against a max:2 pool) cold
+    // queries can queue for >2s before they ever start running.
+  }, 4_000)
 }
 
 export async function getActiveAuctionCountFromIndexer(

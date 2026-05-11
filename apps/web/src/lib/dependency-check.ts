@@ -5,9 +5,6 @@ import { pgCache } from "./pg-cache"
 import { getArtistIdentity, getEnsUrl } from "./artist-queries"
 import {
   IndexerUnavailable,
-  getActiveAuctionCountFromIndexer,
-  getActiveFndAuctionCount,
-  getActiveFndBuyNowCount,
   getArtistContractMap,
   getFoundationSalesSummary,
 } from "./indexer-queries"
@@ -461,6 +458,10 @@ export async function buildDependencyReport(
 ): Promise<DependencyReport> {
   const addrLower = address.toLowerCase()
 
+  // Six parallel calls against a `max:2` Postgres pool — keep this list
+  // tight. Anything not feeding the new report shape gets dropped.
+  // Active-auction/listing counts that v1 surfaced as separate cards are
+  // now reflected in the sale-path area via the seller-listings payload.
   const [
     identity,
     fndContractMap,
@@ -469,12 +470,6 @@ export async function buildDependencyReport(
     fndSales,
     listings,
     ensUrl,
-    // Indexer auction/listing counts — kept for the dependency-read
-    // computation in future iterations; currently unused beyond the
-    // sale-path area which already reads them via the listings payload.
-    _activePnd,
-    _activeFnd,
-    _activeFndBuyNows,
   ] = await Promise.all([
     getArtistIdentity(address),
     tryIndexer(() => getArtistContractMap(addrLower)),
@@ -483,14 +478,7 @@ export async function buildDependencyReport(
     tryIndexer(() => getFoundationSalesSummary(addrLower)),
     listingsWithTimeout(addrLower),
     getEnsUrl(address).catch(() => null),
-    tryIndexer(() => getActiveAuctionCountFromIndexer(addrLower)),
-    tryIndexer(() => getActiveFndAuctionCount(addrLower)),
-    tryIndexer(() => getActiveFndBuyNowCount(addrLower)),
   ])
-
-  void _activePnd
-  void _activeFnd
-  void _activeFndBuyNows
 
   const contractMap = buildContractMap({
     artistAddress: addrLower,
@@ -575,6 +563,6 @@ export const getDependencyReport = unstable_cache(
       DEPENDENCY_SCAN_TTL_S,
       () => buildDependencyReport(addressLower as Address),
     ),
-  ["artist-dependency-v3"],
+  ["artist-dependency-v4"],
   { revalidate: DEPENDENCY_SCAN_TTL_S, tags: ["artist-dependency"] },
 )

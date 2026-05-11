@@ -29,7 +29,11 @@ const FAN_OUT_PLATFORMS: PlatformId[] = [
   "transient",
 ]
 
-const PLATFORM_TIMEOUT_MS = 4_000
+// SR Bazaar deploy → head is ~14M blocks; Transient Auction House ~6M.
+// Even with indexed-arg filters, a cold-cache scan via `eth_getLogs` can
+// take 5–8s on a busy RPC. Once the 30-day lazy cache populates, calls
+// return in <500ms — so the cost is paid once per artist per month.
+const PLATFORM_TIMEOUT_MS = 10_000
 
 export type PlatformError = {
   platform: PlatformId
