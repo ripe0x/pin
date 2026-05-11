@@ -23,31 +23,35 @@ type LogEntry = {
 
 // What goes in this log
 // ─────────────────────
-// Include only value-adding events — moments where the work shipped
+// Include only value-adding events. Moments where the work shipped
 // something a person could newly do or see, or a milestone that
 // matters to artists, collectors, or the project's story.
 //
 // Include:
-//   • New capabilities — a flow, an action, support for a platform
+//   • New capabilities. A flow, an action, support for a platform
 //     or wallet pattern an artist couldn't use through PND before.
-//   • New public surfaces — a new page, a new home-page state, a
+//   • New public surfaces. A new page, a new home-page state, a
 //     new footer module, a new artist-facing template.
-//   • Milestones — mainnet deploys, the campaign hitting its
+//   • Milestones. Mainnet deploys, the campaign hitting its
 //     threshold, a project pivot, a contract becoming immutable.
 //
 // Skip:
 //   • Polish and copy tweaks on something that already shipped
-//     (e.g. "supporters footer now shows per-supporter mint counts"
-//     — the footer itself is the entry, the count column is not).
+//     (e.g. "supporters footer now shows per-supporter mint counts":
+//     the footer itself is the entry, the count column is not).
 //   • Bug fixes, performance improvements, and reliability work,
 //     unless the change unlocks a new user-visible capability.
-//   • Internal infrastructure — indexers, caches, RPC plumbing —
+//   • Internal infrastructure (indexers, caches, RPC plumbing)
 //     that doesn't change what artists or collectors can do.
 //   • Refactors, dependency bumps, design-system touch-ups.
 //
 // Rule of thumb: if the most honest summary is "X now also Y" or
 // "X is faster / more reliable", it probably doesn't belong here.
 // If it's "X is now possible", it does.
+//
+// Also: no em or en dashes in copy. Use periods, commas, or
+// parentheses instead. Hyphens in compound words ("artist-owned",
+// "multi-platform") are fine.
 //
 // Newest first.
 const ENTRIES: LogEntry[] = [
@@ -65,7 +69,7 @@ const ENTRIES: LogEntry[] = [
     summary:
       "The FundingWorksRipe campaign funding PND closed past its minimum threshold. Supporters minted, streams activated, and the work continues without VC money or platform fees.",
     forArtists:
-      "PND's runway for the next phase is funded by people who believe artist-owned infrastructure should exist — not by taking a cut from your sales.",
+      "PND's runway for the next phase is funded by people who believe artist-owned infrastructure should exist. Not by taking a cut from your sales.",
     technical:
       "FundingWorks streams funds to ripe over time. Supporters hold a token connected to the campaign and can burn it to redeem the unvested remainder if the relationship stops feeling aligned. The supporters list lives in the global footer of every PND page.",
   },
@@ -95,7 +99,7 @@ const ENTRIES: LogEntry[] = [
     date: "May 3, 2026",
     title: "/sites landing page + fork-friendly deploys",
     summary:
-      "A dedicated /sites page explains the self-hosted artist site option. The deploy path was reshaped so an artist can fork the template and deploy to Netlify with only a wallet address — no PND-issued keys required.",
+      "A dedicated /sites page explains the self-hosted artist site option. The deploy path was reshaped so an artist can fork the template and deploy to Netlify with only a wallet address. No PND-issued keys required.",
     forArtists:
       "You can run your own auction site on your own domain. If PND goes away, your site keeps working against your contract.",
   },
@@ -143,7 +147,7 @@ const ENTRIES: LogEntry[] = [
     date: "April 27, 2026",
     title: "Sovereign Auction House v1.0.0 mainnet deploy",
     summary:
-      "The artist-owned auction contract — immutable, zero platform fee, no admin role, no PND-controlled upgrade path — went live on Ethereum mainnet.",
+      "The artist-owned auction contract went live on Ethereum mainnet. Immutable, zero platform fee, no admin role, no PND-controlled upgrade path.",
     forArtists:
       "Auctions you run through this contract belong to you. The contract keeps working whether or not the PND frontend does.",
     technical:
