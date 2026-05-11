@@ -2,76 +2,54 @@ import "server-only"
 import { unstable_cache } from "next/cache"
 import type { Address } from "viem"
 import { pgCache } from "./pg-cache"
-import { getArtistIdentity } from "./artist-queries"
+import { getArtistIdentity, getEnsUrl } from "./artist-queries"
 import {
   IndexerUnavailable,
   getActiveAuctionCountFromIndexer,
   getActiveFndAuctionCount,
   getActiveFndBuyNowCount,
-  getFoundationCreatorSummary,
+  getArtistContractMap,
   getFoundationSalesSummary,
 } from "./indexer-queries"
 import { getSovereignHouseOf } from "./sovereign-house"
 import {
-  countByPlatform,
   getSellerListingsPayload,
   type SellerListingsPayload,
 } from "./seller-listings-server"
+import {
+  classifyContract,
+  type ContractMapEntry,
+  type ContractRow,
+} from "./contract-classifier"
+import {
+  getArtistInventory,
+  type ArtistInventory,
+  type PlatformError,
+} from "./artist-inventory"
 import type { PlatformId } from "./platforms/types"
 
-// Human-readable labels for the sale-paths card. Platform IDs come from
-// `platforms/types.ts`; keep this map in sync if a new platform lands.
-const PLATFORM_LABELS: Record<PlatformId, string> = {
-  foundation: "Foundation",
-  sovereign: "Sovereign",
-  superrareV2: "SuperRare",
-  transient: "Transient",
-  manifold: "Manifold",
-}
-
 /**
- * Assemble the `/api/dependency/[address]` scan report from indexed data.
+ * Assemble the Artist Dependency Report.
  *
- * Every check that ships in v1 reads from Ponder Postgres or from an
- * already-cached helper. No live RPC fanout, no per-token tokenURI calls,
- * no token-inventory crawling. When a single check can't be served from
- * the indexer (DB down, timeout, kill switch), it degrades to
- * `UnableToCheck` for that card only — the rest of the report still
- * renders.
+ * Goal: help artists understand the systems around their work — what
+ * lives where, which parts appear artist-controlled, and which areas
+ * still need a closer look. Not a contract audit, not a manifesto.
  *
- * The dependency-map cards (metadata host, royalty recipient, etc.) are
- * static `NotCheckedYet` entries with honest one-line reasons. Adding a
- * previously-deferred check later means extending Ponder, not making
- * this orchestrator heavier.
+ * Data path: Ponder Postgres for Foundation/PND, lazy-cached platform
+ * adapters for Manifold/SuperRare/Transient (each with its own 30-day
+ * cache and a 4s per-platform timeout in `artist-inventory.ts`). Zero
+ * live RPC in steady state; cold-cache scans pay the platform adapter
+ * cost once.
  */
+
+const LISTINGS_TIMEOUT_MS = 5_000
 
 export type CheckStatus =
   | "Detected"
-  | "NeedsReview"
   | "NotFound"
-  | "UnableToCheck"
-  | "NotCheckedYet"
-
-export type CheckAction = {
-  label: string
-  href: string
-}
-
-export type CheckedCard = {
-  id: string
-  title: string
-  status: CheckStatus
-  source: string
-  detail: Record<string, unknown>
-  actions: CheckAction[]
-}
-
-export type DependencyCard = {
-  id: string
-  title: string
-  status: "NotCheckedYet"
-  reason: string
-}
+  | "Checked"
+  | "NotYet"
+  | "Unable"
 
 export type SerializedIdentity = {
   address: string
@@ -80,80 +58,57 @@ export type SerializedIdentity = {
   avatarUrl: string | null
 }
 
+export type InventoryTotals = {
+  totalTokens: number
+  totalContracts: number
+  artistOwnedContracts: number
+  platformContracts: number
+  sharedContracts: number
+  unknownContracts: number
+}
+
+export type DependencyReadLabel = "Lower" | "Moderate" | "Higher" | "Unknown"
+
+export type DependencyRead = {
+  label: DependencyReadLabel
+  summary: string
+}
+
+export type AreaEntry = {
+  id: string
+  title: string
+  status: CheckStatus
+  canCheckNow: boolean
+  summary: string
+  whatWouldHelp?: string
+}
+
+export type NextStep = {
+  id: string
+  title: string
+  href: string
+  reason: string
+}
+
+export type PlatformCoverage = {
+  covered: PlatformId[]
+  errors: PlatformError[]
+}
+
 export type DependencyReport = {
   identity: SerializedIdentity
-  summary: {
-    run: number
-    detected: number
-    review: number
-    notFound: number
-    notChecked: number
-  }
-  checkedCards: CheckedCard[]
-  dependencyCards: DependencyCard[]
+  inventoryTotals: InventoryTotals
+  contractMap: ContractMapEntry[]
+  dependencyRead: DependencyRead
+  areasToReview: AreaEntry[]
+  recommendedNextSteps: NextStep[]
+  platformCoverage: PlatformCoverage
   generatedAt: number
   indexerHealthy: boolean
 }
 
-// Static dependency-map list. Each entry explains what would be required
-// to verify it, so the page can render "Not checked yet" honestly without
-// implying PND scanned everything.
-const DEPENDENCY_MAP: DependencyCard[] = [
-  {
-    id: "metadata-host",
-    title: "Metadata host",
-    status: "NotCheckedYet",
-    reason:
-      "Requires per-token tokenURI fetches; deferred to keep RPC bounded.",
-  },
-  {
-    id: "media-host",
-    title: "Media host",
-    status: "NotCheckedYet",
-    reason: "Requires metadata JSON parsing per token.",
-  },
-  {
-    id: "renderer",
-    title: "Renderer dependency",
-    status: "NotCheckedYet",
-    reason: "No standard renderer registry yet.",
-  },
-  {
-    id: "contract-owner",
-    title: "Contract ownership and permissions",
-    status: "NotCheckedYet",
-    reason:
-      "Would require per-contract owner() reads across every collection.",
-  },
-  {
-    id: "upgradeability",
-    title: "Upgradeability",
-    status: "NotCheckedYet",
-    reason: "Per-contract EIP-1967 proxy slot reads not yet wired up.",
-  },
-  {
-    id: "royalty",
-    title: "Royalty recipient",
-    status: "NotCheckedYet",
-    reason: "Per-token royaltyInfo() reads; inconsistent across contracts.",
-  },
-  {
-    id: "collectors",
-    title: "Collector base",
-    status: "NotCheckedYet",
-    reason: "Transfer log scan not indexed yet.",
-  },
-  {
-    id: "frontend",
-    title: "Frontend dependency",
-    status: "NotCheckedYet",
-    reason: "Off-chain probe; outside the on-chain scope of this scan.",
-  },
-]
+// ── helpers ──────────────────────────────────────────────────────────────
 
-// Tiny helper: indexer reads return null on unavailability. We want the
-// orchestrator to distinguish "indexer said the count is 0" from
-// "indexer couldn't answer." This wrapper preserves both states.
 type IndexerResult<T> = { ok: true; value: T } | { ok: false }
 
 async function tryIndexer<T>(
@@ -167,18 +122,6 @@ async function tryIndexer<T>(
     return { ok: false }
   }
 }
-
-// Hard cap on the seller-listings fan-out so a slow non-PND adapter
-// (SuperRare V2 / Transient `eth_getLogs` over millions of blocks on
-// cold cache) can't gate the rest of the report. Indexer-backed cards
-// complete in <500ms each; this is the only call that can stretch.
-//
-// Tradeoff: if this fires, the report is cached as UnableToCheck for
-// the listings card for the full TTL (5 min). Acceptable because (a)
-// indexer-backed cards are still real, (b) the seller-listings cache
-// keeps warming in the background, and (c) the next scan after 5 min
-// gets the fresh answer. Worse alternative: blocking the page for 30s.
-const LISTINGS_TIMEOUT_MS = 5_000
 
 async function listingsWithTimeout(
   addr: string,
@@ -205,20 +148,313 @@ async function listingsWithTimeout(
   }
 }
 
-function unableToCheck(
-  id: string,
-  title: string,
-  source: string,
-): CheckedCard {
+// ── classification ───────────────────────────────────────────────────────
+
+/**
+ * Combine indexer rows (Foundation), platform-adapter rows (non-Foundation),
+ * and the artist's Sovereign house into a single classified contract map.
+ */
+function buildContractMap(args: {
+  artistAddress: string
+  fndRows: ContractRow[] | null
+  inventory: ArtistInventory
+  sovereignHouse: string | null
+}): ContractMapEntry[] {
+  const { artistAddress, fndRows, inventory, sovereignHouse } = args
+  const seen = new Set<string>()
+  const entries: ContractMapEntry[] = []
+
+  // Foundation rows first (richer metadata via fnd_collections).
+  if (fndRows) {
+    for (const r of fndRows) {
+      const entry = classifyContract(r, artistAddress)
+      entries.push(entry)
+      seen.add(entry.contract)
+    }
+  }
+
+  // Other platforms — skip anything already accounted for by Ponder.
+  for (const c of inventory.contracts) {
+    if (seen.has(c.contract)) continue
+    entries.push(
+      classifyContract(
+        {
+          contract: c.contract,
+          tokenCount: c.tokenCount,
+          collectionName: c.collectionName,
+          platform: c.platform,
+        },
+        artistAddress,
+      ),
+    )
+    seen.add(c.contract)
+  }
+
+  // Sovereign auction house, if any. Token count = 0 (it's an auction
+  // contract, not a token contract) but we surface it as artist-owned
+  // capability per product direction.
+  if (sovereignHouse && !seen.has(sovereignHouse.toLowerCase())) {
+    entries.push(
+      classifyContract(
+        {
+          contract: sovereignHouse,
+          tokenCount: 0,
+          isSovereignHouse: true,
+        },
+        artistAddress,
+      ),
+    )
+  }
+
+  // Sort: artist-owned first, then by token count desc, then unknown last.
+  const TYPE_RANK: Record<string, number> = {
+    "artist-owned": 0,
+    "pnd-auction": 1,
+    "shared-creator": 2,
+    platform: 3,
+    unknown: 4,
+  }
+  entries.sort((a, b) => {
+    const r = (TYPE_RANK[a.type] ?? 9) - (TYPE_RANK[b.type] ?? 9)
+    if (r !== 0) return r
+    return b.tokenCount - a.tokenCount
+  })
+
+  return entries
+}
+
+function computeInventoryTotals(map: ContractMapEntry[]): InventoryTotals {
+  let totalTokens = 0
+  let artistOwned = 0
+  let platform = 0
+  let shared = 0
+  let unknown = 0
+  for (const e of map) {
+    totalTokens += e.tokenCount
+    if (e.type === "artist-owned" || e.type === "pnd-auction") artistOwned++
+    else if (e.type === "platform") platform++
+    else if (e.type === "shared-creator") shared++
+    else unknown++
+  }
   return {
-    id,
-    title,
-    status: "UnableToCheck",
-    source,
-    detail: { reason: "indexer-unavailable" },
-    actions: [],
+    totalTokens,
+    totalContracts: map.length,
+    artistOwnedContracts: artistOwned,
+    platformContracts: platform,
+    sharedContracts: shared,
+    unknownContracts: unknown,
   }
 }
+
+function computeDependencyRead(
+  map: ContractMapEntry[],
+  totals: InventoryTotals,
+): DependencyRead {
+  // Token-weighted, not contract-weighted: a single artist-owned
+  // contract with 100 tokens beats five shared-contract entries with
+  // 1 token each.
+  if (totals.totalTokens === 0) {
+    const hasHouse = map.some((e) => e.type === "pnd-auction")
+    if (hasHouse) {
+      return {
+        label: "Unknown",
+        summary:
+          "No tokens detected yet. PND found an artist-owned auction contract for this wallet.",
+      }
+    }
+    return {
+      label: "Unknown",
+      summary:
+        "PND did not find tokens connected to this wallet in supported sources.",
+    }
+  }
+
+  let artistOwnedTokens = 0
+  for (const e of map) {
+    if (e.type === "artist-owned") artistOwnedTokens += e.tokenCount
+  }
+  const ratio = artistOwnedTokens / totals.totalTokens
+
+  if (ratio >= 0.7) {
+    return {
+      label: "Lower",
+      summary:
+        "Most detected works sit on artist-owned contracts. Outside systems still apply to media, metadata, and sale paths — a closer look there is recommended.",
+    }
+  }
+  if (ratio >= 0.3) {
+    return {
+      label: "Moderate",
+      summary:
+        "Work is spread across artist-owned and shared or platform contracts. Reviewing where the media, metadata, and sale paths live can clarify which parts depend on outside systems.",
+    }
+  }
+  return {
+    label: "Higher",
+    summary:
+      "Most detected works sit on shared or platform contracts. That does not mean the work is broken — it means the artist may want to review where the media, metadata, sale paths, and public context live.",
+  }
+}
+
+// ── areas to review ──────────────────────────────────────────────────────
+
+type AreaInputs = {
+  totals: InventoryTotals
+  map: ContractMapEntry[]
+  sovereignHouse: string | null
+  foundationSalesCount: number | null
+  listings: { ok: true; value: SellerListingsPayload } | { ok: false }
+  ensUrl: string | null
+  platformErrors: PlatformError[]
+}
+
+function buildAreasToReview(inputs: AreaInputs): AreaEntry[] {
+  const areas: AreaEntry[] = []
+
+  // 1. Contract footprint — always checkable from the contract map.
+  const systems = new Set<string>()
+  for (const e of inputs.map) if (e.system) systems.add(e.system)
+  areas.push({
+    id: "contract-footprint",
+    title: "Contract footprint",
+    status: inputs.totals.totalContracts > 0 ? "Checked" : "NotFound",
+    canCheckNow: true,
+    summary:
+      inputs.totals.totalContracts > 0
+        ? `PND identified ${inputs.totals.totalContracts} ${
+            inputs.totals.totalContracts === 1 ? "contract" : "contracts"
+          } holding work, across ${
+            systems.size > 0 ? [...systems].join(", ") : "supported sources"
+          }.`
+        : "PND did not identify any contracts connected to this wallet.",
+  })
+
+  // 2. Display path — needs per-token metadata; deferred.
+  areas.push({
+    id: "display-path",
+    title: "Display path",
+    status: "NotYet",
+    canCheckNow: false,
+    summary:
+      "PND has not yet identified where metadata and media for each token live.",
+    whatWouldHelp:
+      "Per-token tokenURI reads plus metadata host classification (planned).",
+  })
+
+  // 3. Sale path — derived from sales history, active listings, and the
+  //    artist's Sovereign house presence.
+  const salePathSystems = new Set<string>()
+  if ((inputs.foundationSalesCount ?? 0) > 0) salePathSystems.add("Foundation")
+  if (inputs.sovereignHouse) salePathSystems.add("PND")
+  if (inputs.listings.ok) {
+    for (const a of inputs.listings.value.auctions) {
+      salePathSystems.add(systemLabelForPlatform(a.platform))
+    }
+    for (const b of inputs.listings.value.buyNows) {
+      salePathSystems.add(systemLabelForPlatform(b.platform))
+    }
+  }
+  areas.push({
+    id: "sale-path",
+    title: "Sale path",
+    status: salePathSystems.size > 0 ? "Checked" : "NotFound",
+    canCheckNow: true,
+    summary:
+      salePathSystems.size > 0
+        ? `PND identified sale paths via: ${[...salePathSystems].join(", ")}.`
+        : "PND did not identify any sale paths connected to this wallet.",
+  })
+
+  // 4. Preservation — would need pin-status writeback from /preserve.
+  areas.push({
+    id: "preservation",
+    title: "Preservation",
+    status: "NotYet",
+    canCheckNow: false,
+    summary:
+      "PND has not yet checked whether the underlying media and metadata are pinned.",
+    whatWouldHelp:
+      "Pin-status writeback from the /preserve flow (planned).",
+  })
+
+  // 5. Public context — checkable via ENS url record.
+  areas.push({
+    id: "public-context",
+    title: "Public context",
+    status: inputs.ensUrl ? "Checked" : "NotFound",
+    canCheckNow: true,
+    summary: inputs.ensUrl
+      ? `Public site found via ENS url record: ${inputs.ensUrl}.`
+      : "PND did not find a public site for this wallet (ENS url record not set).",
+  })
+
+  return areas
+}
+
+function systemLabelForPlatform(p: PlatformId): string {
+  switch (p) {
+    case "foundation":
+      return "Foundation"
+    case "manifold":
+      return "Manifold"
+    case "superrareV2":
+      return "SuperRare"
+    case "transient":
+      return "Transient"
+    case "sovereign":
+      return "PND"
+  }
+}
+
+// ── recommended next steps ───────────────────────────────────────────────
+
+function buildNextSteps(args: {
+  map: ContractMapEntry[]
+  totals: InventoryTotals
+  sovereignHouse: string | null
+  ensUrl: string | null
+  artistAddress: string
+}): NextStep[] {
+  const steps: NextStep[] = []
+  const sharedTokens = args.map
+    .filter((e) => e.type === "shared-creator" || e.type === "unknown")
+    .reduce((s, e) => s + e.tokenCount, 0)
+
+  if (sharedTokens > 0) {
+    steps.push({
+      id: "review-shared",
+      title: "Check media and metadata locations for the largest contract groups",
+      href: `/artist/${args.artistAddress}`,
+      reason: `${sharedTokens} ${
+        sharedTokens === 1 ? "token" : "tokens"
+      } sit on shared or unknown contracts where the media and metadata sources are worth a closer look.`,
+    })
+  }
+
+  if (args.totals.totalTokens > 0) {
+    steps.push({
+      id: "preserve",
+      title: "Preserve files for works that depend on third-party storage",
+      href: "/preserve",
+      reason:
+        "PND cannot yet verify pin status. Running the preserve flow gives you a copy of metadata and media you control.",
+    })
+  }
+
+  if (!args.sovereignHouse) {
+    steps.push({
+      id: "auction",
+      title: "Create an artist-owned auction contract for future sales",
+      href: "/auction/new",
+      reason:
+        "An artist-owned auction contract keeps the sale path independent of platform marketplaces.",
+    })
+  }
+
+  return steps.slice(0, 3)
+}
+
+// ── orchestrator ─────────────────────────────────────────────────────────
 
 export async function buildDependencyReport(
   address: Address,
@@ -227,212 +463,76 @@ export async function buildDependencyReport(
 
   const [
     identity,
-    fndCreator,
-    activeFnd,
-    activeFndBuyNows,
+    fndContractMap,
     house,
-    activePnd,
+    inventory,
     fndSales,
     listings,
+    ensUrl,
+    // Indexer auction/listing counts — kept for the dependency-read
+    // computation in future iterations; currently unused beyond the
+    // sale-path area which already reads them via the listings payload.
+    _activePnd,
+    _activeFnd,
+    _activeFndBuyNows,
   ] = await Promise.all([
     getArtistIdentity(address),
-    tryIndexer(() => getFoundationCreatorSummary(addrLower)),
+    tryIndexer(() => getArtistContractMap(addrLower)),
+    getSovereignHouseOf(address).catch(() => null),
+    getArtistInventory(addrLower),
+    tryIndexer(() => getFoundationSalesSummary(addrLower)),
+    listingsWithTimeout(addrLower),
+    getEnsUrl(address).catch(() => null),
+    tryIndexer(() => getActiveAuctionCountFromIndexer(addrLower)),
     tryIndexer(() => getActiveFndAuctionCount(addrLower)),
     tryIndexer(() => getActiveFndBuyNowCount(addrLower)),
-    // `getSovereignHouseOf` never throws and falls back to an on-chain
-    // `houseOf` call only when Postgres is unreachable (see header
-    // comment in sovereign-house.ts).
-    getSovereignHouseOf(address).catch(() => null),
-    tryIndexer(() => getActiveAuctionCountFromIndexer(addrLower)),
-    tryIndexer(() => getFoundationSalesSummary(addrLower)),
-    // Seller-listings is the only fan-out that touches non-PND platforms.
-    // Hard timeout so a slow `eth_getLogs` adapter doesn't gate the
-    // rest of the report; see `listingsWithTimeout`.
-    listingsWithTimeout(addrLower),
   ])
 
-  const cards: CheckedCard[] = []
+  void _activePnd
+  void _activeFnd
+  void _activeFndBuyNows
 
-  // 1. Foundation exposure
-  if (fndCreator.ok) {
-    const { tokenCount, collectionCount } = fndCreator.value
-    const detected = tokenCount > 0 || collectionCount > 0
-    cards.push({
-      id: "foundation-exposure",
-      title: "Foundation exposure",
-      status: detected ? "Detected" : "NotFound",
-      source: "ponder:fnd_artist_tokens + fnd_collections",
-      detail: { tokenCount, collectionCount },
-      actions: detected
-        ? [{ label: "Open artist page", href: `/artist/${addrLower}` }]
-        : [],
-    })
-  } else {
-    cards.push(
-      unableToCheck(
-        "foundation-exposure",
-        "Foundation exposure",
-        "ponder:fnd_artist_tokens + fnd_collections",
-      ),
-    )
-  }
-
-  // 2. Active Foundation listings (auctions + buy-nows)
-  if (activeFnd.ok && activeFndBuyNows.ok) {
-    const auctions = activeFnd.value
-    const buyNows = activeFndBuyNows.value
-    const total = auctions + buyNows
-    cards.push({
-      id: "active-fnd-listings",
-      title: "Active Foundation listings",
-      status: total > 0 ? "Detected" : "NotFound",
-      source: "ponder:fnd_auctions + fnd_buy_nows",
-      detail: { auctions, buyNows, total },
-      actions:
-        total > 0
-          ? [{ label: "Open artist page", href: `/artist/${addrLower}` }]
-          : [],
-    })
-  } else {
-    cards.push(
-      unableToCheck(
-        "active-fnd-listings",
-        "Active Foundation listings",
-        "ponder:fnd_auctions + fnd_buy_nows",
-      ),
-    )
-  }
-
-  // 3. Sovereign Auction House owned by artist
-  cards.push({
-    id: "sovereign-house",
-    title: "Sovereign Auction House",
-    status: house ? "Detected" : "NotFound",
-    source: "ponder:pnd_houses",
-    detail: { house: house ?? null },
-    actions: house
-      ? [{ label: "Open artist page", href: `/artist/${addrLower}` }]
-      : [],
+  const contractMap = buildContractMap({
+    artistAddress: addrLower,
+    fndRows: fndContractMap.ok ? fndContractMap.value : null,
+    inventory,
+    sovereignHouse: house,
   })
 
-  // 4. Active Sovereign auctions
-  if (activePnd.ok) {
-    const count = activePnd.value
-    cards.push({
-      id: "active-pnd-auctions",
-      title: "Active Sovereign auctions",
-      status: count > 0 ? "Detected" : "NotFound",
-      source: "ponder:pnd_auctions",
-      detail: { count },
-      actions:
-        count > 0
-          ? [{ label: "Open artist page", href: `/artist/${addrLower}` }]
-          : [],
-    })
-  } else {
-    cards.push(
-      unableToCheck(
-        "active-pnd-auctions",
-        "Active Sovereign auctions",
-        "ponder:pnd_auctions",
-      ),
-    )
-  }
-
-  // 5. Delistable / unsettled items
-  if (listings.ok) {
-    const { auctions, buyNows } = listings.value
-    const byPlatform = countByPlatform(listings.value)
-    const total = auctions.length + buyNows.length
-    cards.push({
-      id: "delistable",
-      title: "Delistable / unsettled items",
-      status: total > 0 ? "Detected" : "NotFound",
-      source: "api:seller-listings",
-      detail: { auctions: auctions.length, buyNows: buyNows.length, byPlatform },
-      actions:
-        total > 0
-          ? [{ label: "Open artist page", href: `/artist/${addrLower}` }]
-          : [],
-    })
-  } else {
-    cards.push(
-      unableToCheck(
-        "delistable",
-        "Delistable / unsettled items",
-        "api:seller-listings",
-      ),
-    )
-  }
-
-  // 6. Sale paths observed — union of platforms with active listings and
-  // any platform we have settled sales for (Foundation only, today).
-  const marketplaces = new Set<PlatformId>()
-  if (listings.ok) {
-    for (const a of listings.value.auctions) marketplaces.add(a.platform)
-    for (const b of listings.value.buyNows) marketplaces.add(b.platform)
-  }
-  if (fndSales.ok && fndSales.value.hasFoundation) {
-    marketplaces.add("foundation")
-  }
-  // Sovereign sales aren't in fnd_sales but they're proven by an artist's
-  // house existence — surface that as a Sovereign sale path too.
-  if (house) marketplaces.add("sovereign")
-  const marketplaceList = [...marketplaces]
-  const sale6CanAnswer =
-    listings.ok || fndSales.ok || house !== undefined
-  if (sale6CanAnswer) {
-    cards.push({
-      id: "sale-paths",
-      title: "Sale paths observed",
-      status: marketplaceList.length > 0 ? "Detected" : "NotFound",
-      source: "ponder:fnd_sales + api:seller-listings",
-      detail: {
-        marketplaces: marketplaceList,
-        marketplaceLabels: marketplaceList.map((id) => PLATFORM_LABELS[id]),
-        foundationSalesCount: fndSales.ok ? fndSales.value.saleCount : null,
-      },
-      actions: [],
-    })
-  } else {
-    cards.push(
-      unableToCheck(
-        "sale-paths",
-        "Sale paths observed",
-        "ponder:fnd_sales + api:seller-listings",
-      ),
-    )
-  }
-
-  // 7. PND artist page presence (derived from #1/#3/#4)
-  const hasArtistPage =
-    (fndCreator.ok &&
-      (fndCreator.value.tokenCount > 0 ||
-        fndCreator.value.collectionCount > 0)) ||
-    !!house ||
-    (activePnd.ok && activePnd.value > 0)
-  cards.push({
-    id: "pnd-page-presence",
-    title: "PND artist page presence",
-    status: hasArtistPage ? "Detected" : "NotFound",
-    source: "derived",
-    detail: { hasArtistPage },
-    actions: hasArtistPage
-      ? [{ label: "Open artist page", href: `/artist/${addrLower}` }]
-      : [],
+  const inventoryTotals = computeInventoryTotals(contractMap)
+  const dependencyRead = computeDependencyRead(contractMap, inventoryTotals)
+  const areasToReview = buildAreasToReview({
+    totals: inventoryTotals,
+    map: contractMap,
+    sovereignHouse: house,
+    foundationSalesCount: fndSales.ok ? fndSales.value.saleCount : null,
+    listings,
+    ensUrl,
+    platformErrors: inventory.platformErrors,
+  })
+  const recommendedNextSteps = buildNextSteps({
+    map: contractMap,
+    totals: inventoryTotals,
+    sovereignHouse: house,
+    ensUrl,
+    artistAddress: addrLower,
   })
 
-  // Summary counts.
-  let detected = 0
-  let review = 0
-  let notFound = 0
-  let unable = 0
-  for (const c of cards) {
-    if (c.status === "Detected") detected++
-    else if (c.status === "NeedsReview") review++
-    else if (c.status === "NotFound") notFound++
-    else if (c.status === "UnableToCheck") unable++
-  }
+  // Platform coverage: which platforms reported successfully + which
+  // errored. Foundation/Sovereign aren't in the fan-out (they're served
+  // by Ponder/factory), so they're always considered covered when the
+  // indexer is healthy.
+  const fannedOut: PlatformId[] = ["manifold", "superrareV2", "transient"]
+  const errorPlatforms = new Set(
+    inventory.platformErrors.map((e) => e.platform),
+  )
+  const covered: PlatformId[] = [
+    "foundation",
+    "sovereign",
+    ...fannedOut.filter((p) => !errorPlatforms.has(p)),
+  ]
+
+  const indexerHealthy = fndContractMap.ok
 
   return {
     identity: {
@@ -441,23 +541,21 @@ export async function buildDependencyReport(
       displayName: identity.displayName,
       avatarUrl: identity.avatarUrl,
     },
-    summary: {
-      run: cards.length,
-      detected,
-      review,
-      notFound,
-      notChecked: DEPENDENCY_MAP.length,
+    inventoryTotals,
+    contractMap,
+    dependencyRead,
+    areasToReview,
+    recommendedNextSteps,
+    platformCoverage: {
+      covered,
+      errors: inventory.platformErrors,
     },
-    checkedCards: cards,
-    dependencyCards: DEPENDENCY_MAP,
     generatedAt: Math.floor(Date.now() / 1000),
-    indexerHealthy: unable === 0,
+    indexerHealthy,
   }
 }
 
-// Re-export so route handlers can `catch` it explicitly. Not used by the
-// orchestrator itself — `tryIndexer` swallows it inline — but exposing
-// the type makes the contract clear.
+// Re-export so route handlers can `catch` it explicitly.
 export { IndexerUnavailable }
 
 export const DEPENDENCY_SCAN_TTL_S = 5 * 60
@@ -467,6 +565,8 @@ export const DEPENDENCY_SCAN_TTL_S = 5 * 60
  * the codebase uses: `unstable_cache` per Node sandbox over `pgCache`
  * keyed by lowercased address. Both the API route and the server-side
  * result page consume this single function so they share one cache.
+ *
+ * Key version bumped to v3 with the contract-centric redesign.
  */
 export const getDependencyReport = unstable_cache(
   (addressLower: string) =>
@@ -475,6 +575,6 @@ export const getDependencyReport = unstable_cache(
       DEPENDENCY_SCAN_TTL_S,
       () => buildDependencyReport(addressLower as Address),
     ),
-  ["artist-dependency-v2"],
+  ["artist-dependency-v3"],
   { revalidate: DEPENDENCY_SCAN_TTL_S, tags: ["artist-dependency"] },
 )

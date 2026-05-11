@@ -1,16 +1,19 @@
 export function InitialFieldNote() {
   return (
     <div className="border border-gray-200 rounded-md p-5 space-y-3">
-      <h2 className="font-semibold">What PND means by a sovereign artist</h2>
+      <h2 className="font-semibold">Understand the systems around the work</h2>
       <p className="text-sm text-gray-600">
-        Artist sovereignty starts with knowing the system around the work.
+        Onchain work can live across contracts, metadata, media, sale
+        systems, and public context. PND is trying to make those layers
+        easier for artists to see and understand.
       </p>
-      <p className="text-sm text-gray-600">An artist should know:</p>
+      <p className="text-sm text-gray-600">This report shows:</p>
       <ul className="text-sm text-gray-600 space-y-1 list-disc pl-5">
-        <li>where the media lives</li>
-        <li>who controls the metadata</li>
-        <li>which contract handles the sale</li>
-        <li>what still works if a frontend goes away</li>
+        <li>where the work lives</li>
+        <li>which contracts it sits on</li>
+        <li>which parts appear artist-controlled</li>
+        <li>which parts may depend on outside systems</li>
+        <li>what still needs a closer look</li>
       </ul>
     </div>
   )

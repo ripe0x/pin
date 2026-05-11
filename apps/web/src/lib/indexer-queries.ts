@@ -891,6 +891,74 @@ export async function getFoundationSalesSummary(
   }, 2_000)
 }
 
+export type ArtistContractRow = {
+  contract: string
+  tokenCount: number
+  /** Set when the contract has a row in `fnd_collections` (i.e. it was
+   * deployed via the V1/V2 factories). The classifier compares this to
+   * the scanned artist address to decide artist-owned vs shared. */
+  collectionCreator: string | null
+  collectionKind: string | null
+  collectionName: string | null
+  collectionSymbol: string | null
+}
+
+/**
+ * Per-contract token counts for an artist, joined with the
+ * `fnd_collections` row when one exists. The classifier in
+ * `contract-classifier.ts` turns these rows into typed map entries for
+ * the Artist Dependency Report.
+ *
+ * Returns null on indexer-unavailable so the caller can render an
+ * "Unable to check" state for the contract-map section rather than
+ * failing the whole report.
+ */
+export async function getArtistContractMap(
+  artistAddress: string,
+): Promise<ArtistContractRow[] | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+  return withTimeout(async () => {
+    const creator = artistAddress.toLowerCase()
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+      /[^a-zA-Z0-9_]/g,
+      "",
+    )
+    const rows = (await db.unsafe(
+      `SELECT
+         t.contract,
+         COUNT(*)::int AS token_count,
+         c.creator AS collection_creator,
+         c.kind   AS collection_kind,
+         c.name   AS collection_name,
+         c.symbol AS collection_symbol
+       FROM ${schema}.fnd_artist_tokens t
+       LEFT JOIN ${schema}.fnd_collections c
+              ON c.collection = t.contract
+       WHERE t.creator = $1
+       GROUP BY t.contract, c.creator, c.kind, c.name, c.symbol
+       ORDER BY COUNT(*) DESC`,
+      [creator],
+    )) as Array<{
+      contract: string
+      token_count: number
+      collection_creator: string | null
+      collection_kind: string | null
+      collection_name: string | null
+      collection_symbol: string | null
+    }>
+
+    return rows.map((r) => ({
+      contract: r.contract,
+      tokenCount: Number(r.token_count),
+      collectionCreator: r.collection_creator,
+      collectionKind: r.collection_kind,
+      collectionName: r.collection_name,
+      collectionSymbol: r.collection_symbol,
+    }))
+  }, 2_000)
+}
+
 export async function getActiveAuctionCountFromIndexer(
   sellerAddress: string,
 ): Promise<number | null> {

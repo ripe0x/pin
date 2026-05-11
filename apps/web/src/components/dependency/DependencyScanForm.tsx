@@ -59,8 +59,8 @@ export function DependencyScanForm() {
       </div>
       {error && <p className="text-xs text-amber-700">{error}</p>}
       <p className="text-xs text-gray-500">
-        PND only checks supported sources. Not found, Unknown, or Not
-        checked does not mean absent everywhere.
+        PND only identifies what it can find in supported sources. Not
+        found, Unknown, and Not yet do not mean absent everywhere.
       </p>
     </form>
   )

@@ -2,18 +2,18 @@ import type { CheckStatus } from "@/lib/dependency-check"
 
 const LABELS: Record<CheckStatus, string> = {
   Detected: "Detected",
-  NeedsReview: "Needs review",
   NotFound: "Not found",
-  UnableToCheck: "Unable to check",
-  NotCheckedYet: "Not checked yet",
+  Checked: "Checked",
+  NotYet: "Not yet",
+  Unable: "Unable to check",
 }
 
 const STYLES: Record<CheckStatus, string> = {
   Detected: "border-emerald-300 text-emerald-700 bg-emerald-50",
-  NeedsReview: "border-amber-300 text-amber-700 bg-amber-50",
+  Checked: "border-emerald-300 text-emerald-700 bg-emerald-50",
   NotFound: "border-gray-200 text-gray-500 bg-white",
-  UnableToCheck: "border-gray-200 text-gray-400 bg-gray-50",
-  NotCheckedYet: "border-gray-200 text-gray-400 bg-gray-50",
+  NotYet: "border-gray-200 text-gray-400 bg-gray-50",
+  Unable: "border-gray-200 text-gray-400 bg-gray-50",
 }
 
 export function StatusBadge({ status }: { status: CheckStatus }) {
