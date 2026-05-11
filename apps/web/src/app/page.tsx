@@ -105,8 +105,15 @@ async function CountersInline() {
   clauses.push("zero platform fees")
 
   return (
-    <p className="font-mono text-xs text-gray-500">
-      {clauses.join(" · ")}
-    </p>
+    <ul className="font-mono text-xs text-gray-500 flex flex-col gap-y-0.5 sm:flex-row sm:flex-wrap sm:gap-x-2">
+      {clauses.map((c, i) => (
+        <li key={c} className="flex items-baseline gap-x-2">
+          {i > 0 && (
+            <span aria-hidden="true" className="hidden sm:inline">·</span>
+          )}
+          <span>{c}</span>
+        </li>
+      ))}
+    </ul>
   )
 }

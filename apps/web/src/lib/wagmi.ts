@@ -1,13 +1,25 @@
-import { getDefaultConfig } from "@rainbow-me/rainbowkit"
+import { connectorsForWallets, getDefaultConfig } from "@rainbow-me/rainbowkit"
+import {
+  coinbaseWallet,
+  injectedWallet,
+  metaMaskWallet,
+  rabbyWallet,
+  safeWallet,
+} from "@rainbow-me/rainbowkit/wallets"
 import { foundry, mainnet } from "wagmi/chains"
 import { createConfig, http } from "wagmi"
 import { mock } from "wagmi/connectors"
 import type { Address } from "viem"
 
-// WalletConnect requires a projectId. Get one free at https://cloud.walletconnect.com
-// For local dev without one, we use a placeholder that disables WC but still allows injected wallets.
-const projectId =
-  process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "PLACEHOLDER_DEV_ID"
+// WalletConnect requires a real projectId. Get one free at
+// https://cloud.walletconnect.com. When the env var is unset (most dev
+// machines) we skip WalletConnect entirely so the Reown AppKit init
+// doesn't hit api.web3modal.org with a bad id and noise up the console
+// with a 403. Injected wallets (MetaMask, Rabby, Brave, Coinbase, Safe)
+// still work without it.
+const rawProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID
+const hasRealProjectId = Boolean(rawProjectId) && rawProjectId !== "PLACEHOLDER_DEV_ID"
+const projectId = rawProjectId || "PLACEHOLDER_DEV_ID"
 
 // Include the local Anvil chain (31337) when an Anvil RPC is configured so
 // MetaMask labels fork txs as "Foundry"/"Anvil" rather than "Ethereum Mainnet"
@@ -83,10 +95,31 @@ export const config = allowImpersonation
         }),
       ],
     })
-  : getDefaultConfig({
-      appName: "PND",
-      projectId,
-      chains: [mainnet, foundry],
-      transports,
-      ssr: true,
-    })
+  : hasRealProjectId
+    ? getDefaultConfig({
+        appName: "PND",
+        projectId,
+        chains: [mainnet, foundry],
+        transports,
+        ssr: true,
+      })
+    : createConfig({
+        chains: [mainnet, foundry],
+        transports,
+        ssr: true,
+        connectors: connectorsForWallets(
+          [
+            {
+              groupName: "Recommended",
+              wallets: [
+                injectedWallet,
+                metaMaskWallet,
+                rabbyWallet,
+                coinbaseWallet,
+                safeWallet,
+              ],
+            },
+          ],
+          { appName: "PND", projectId },
+        ),
+      })
