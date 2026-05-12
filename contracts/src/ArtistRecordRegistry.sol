@@ -80,6 +80,12 @@ contract ArtistRecordRegistry {
     /// @dev index-plus-one map for O(1) contract-pointer existence
     ///      checks + swap-and-pop. Zero means "not present"; a value
     ///      of (index + 1) means "present at _artistContracts[index]".
+    //
+    // Why "+1" instead of storing the raw index: Solidity's default for
+    // an unread map entry is zero. If we stored raw indices, "missing"
+    // and "present at slot 0" would both read as zero, breaking the
+    // existence check. Shifting by one preserves a unique sentinel for
+    // "missing" without paying the gas of a parallel boolean map.
     mapping(address => mapping(bytes32 => uint256)) private _contractIndexPlusOne;
 
     /// @dev index-plus-one map for token pointers. See _contractIndexPlusOne.
@@ -94,6 +100,10 @@ contract ArtistRecordRegistry {
     /// @dev    Operators cannot sub-delegate (cannot call setOperator
     ///         for another artist) and cannot set a successor (that
     ///         function is scoped to the caller's own slot).
+    //
+    // `public` auto-generates an external `isOperator(address, address)
+    // returns (bool)` getter, which is the public read surface — no
+    // separate `function isOperator(...)` is needed.
     mapping(address => mapping(address => bool)) public isOperator;
 
     /// @dev One-way, append-only successor pointer. An artist may
@@ -270,6 +280,10 @@ contract ArtistRecordRegistry {
     ///      operator.
     /// @param artist  Artist whose storage is being targeted.
     function _requireAuthorized(address artist) internal view {
+        // Validate the artist param first so a caller passing
+        // address(0) gets a precise `InvalidArtist` error instead of a
+        // generic `NotAuthorized`. Useful for clients debugging bad
+        // input.
         if (artist == address(0)) revert InvalidArtist();
         if (msg.sender != artist && !isOperator[artist][msg.sender]) {
             revert NotAuthorized();
@@ -281,6 +295,14 @@ contract ArtistRecordRegistry {
     /// @notice Compute the deterministic key used internally for
     ///         contract-pointer existence checks.
     /// @dev    `keccak256(abi.encode(chainId, contractAddress))`.
+    ///
+    ///         We use `abi.encode` (32-byte-aligned) rather than
+    ///         `abi.encodePacked` so the key for a contract pointer
+    ///         cannot collide with the key for any other pointer type
+    ///         even when their packed bytes would coincide. The key
+    ///         spaces are also kept separate by living in distinct
+    ///         mappings, but using `encode` keeps the safety property
+    ///         self-contained at the hashing step.
     /// @param chainId          EIP-155 chain id.
     /// @param contractAddress  Contract address.
     /// @return                 32-byte key.
@@ -386,12 +408,17 @@ contract ArtistRecordRegistry {
     ) internal {
         if (contractAddress == address(0)) revert InvalidContractAddress();
         bytes32 key = getContractKey(chainId, contractAddress);
+        // A non-zero indexPlusOne means the pointer is already in the
+        // list at array position (indexPlusOne - 1).
         if (_contractIndexPlusOne[artist][key] != 0) {
             revert ContractAlreadyRegistered();
         }
         _artistContracts[artist].push(
             ContractPointer({chainId: chainId, contractAddress: contractAddress})
         );
+        // After push, the new entry sits at `length - 1`. We store
+        // `length` (i.e. index + 1) directly — equivalent and avoids
+        // an extra subtraction.
         _contractIndexPlusOne[artist][key] = _artistContracts[artist].length;
         emit ContractAdded(artist, chainId, contractAddress);
     }
@@ -407,13 +434,19 @@ contract ArtistRecordRegistry {
     ) internal {
         if (contractAddress == address(0)) revert InvalidContractAddress();
         bytes32 key = getContractKey(chainId, contractAddress);
+        // Step 1: look up the stored position (one-indexed).
         uint256 indexPlusOne = _contractIndexPlusOne[artist][key];
         if (indexPlusOne == 0) revert ContractNotRegistered();
 
+        // Step 2: convert to the actual array index.
         uint256 index = indexPlusOne - 1;
         ContractPointer[] storage list = _artistContracts[artist];
         uint256 lastIndex = list.length - 1;
 
+        // Step 3: if we're removing from the middle, move the last
+        // entry into the gap and rewrite its position pointer.
+        // Skipping this branch when the removed entry IS the last one
+        // saves an SSTORE on the common case of stack-like removal.
         if (index != lastIndex) {
             ContractPointer memory moved = list[lastIndex];
             list[index] = moved;
@@ -421,6 +454,9 @@ contract ArtistRecordRegistry {
             _contractIndexPlusOne[artist][movedKey] = index + 1;
         }
 
+        // Step 4: shrink the array and clear the removed entry's
+        // position pointer. Order matters for clarity but not for
+        // correctness — both operations are independent SSTOREs.
         list.pop();
         delete _contractIndexPlusOne[artist][key];
         emit ContractRemoved(artist, chainId, contractAddress);
@@ -557,8 +593,9 @@ contract ArtistRecordRegistry {
         emit TokenAdded(artist, chainId, contractAddress, tokenId);
     }
 
-    /// @dev Remove a token pointer via swap-and-pop. See
-    ///      `_removeContract` for the algorithm. Emits `TokenRemoved`.
+    /// @dev Remove a token pointer via swap-and-pop. The algorithm
+    ///      mirrors `_removeContract` — see those step comments for
+    ///      the walk-through. Emits `TokenRemoved`.
     function _removeToken(
         address artist,
         uint256 chainId,
@@ -755,9 +792,9 @@ contract ArtistRecordRegistry {
         );
     }
 
-    /// @dev Remove a token-range pointer via swap-and-pop. See
-    ///      `_removeContract` for the algorithm. Emits
-    ///      `TokenRangeRemoved`.
+    /// @dev Remove a token-range pointer via swap-and-pop. The
+    ///      algorithm mirrors `_removeContract` — see those step
+    ///      comments for the walk-through. Emits `TokenRangeRemoved`.
     function _removeTokenRange(
         address artist,
         uint256 chainId,
@@ -882,6 +919,10 @@ contract ArtistRecordRegistry {
     /// @param approved  New value for `isOperator[msg.sender][operator]`.
     function setOperator(address operator, bool approved) external {
         if (operator == address(0)) revert InvalidOperator();
+        // Scope is enforced by the `msg.sender` key: there is no
+        // `setOperatorFor(artist, …)`, so a caller can only mutate
+        // its own operator slot. An operator invoking this function
+        // sets *its own* operators, not the artist's.
         isOperator[msg.sender][operator] = approved;
         emit OperatorSet(msg.sender, operator, approved);
     }
@@ -914,9 +955,16 @@ contract ArtistRecordRegistry {
         if (newSuccessor == address(0) || newSuccessor == msg.sender) {
             revert InvalidSuccessor();
         }
+        // Append-only: once an address has declared a successor that
+        // pointer is permanent. An attacker who later compromises the
+        // key cannot rewrite the chain backwards.
         if (_successor[msg.sender] != address(0)) {
             revert SuccessorAlreadySet();
         }
+        // Scope mirrors `setOperator`: only `msg.sender` can write
+        // its own slot. There is intentionally no `setSuccessorFor`
+        // — operators must not be able to take over an artist's
+        // identity.
         _successor[msg.sender] = newSuccessor;
         emit SuccessorSet(msg.sender, newSuccessor);
     }
