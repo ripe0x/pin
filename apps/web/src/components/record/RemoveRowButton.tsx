@@ -1,7 +1,7 @@
 "use client"
 
 import { useRegistryWrite, type RegistryFunctionName } from "./useRegistryWrite"
-import { extractShortError } from "./AddContractForm"
+import { extractShortError } from "./registryErrors"
 
 type Args = readonly (`0x${string}` | bigint)[]
 

@@ -2,7 +2,6 @@
 
 import type { Address } from "viem"
 import { useIsRecordOwner } from "./useIsRecordOwner"
-import { AddRangeForm } from "./AddRangeForm"
 import { RemoveRowButton } from "./RemoveRowButton"
 
 function shortAddr(addr: string) {
@@ -21,8 +20,10 @@ export function RecordRangesEditable({
   }>
 }) {
   const isOwner = useIsRecordOwner(artist)
-
-  const list = (
+  if (ranges.length === 0) {
+    return <p className="text-sm text-gray-500">No token ranges declared yet.</p>
+  }
+  return (
     <ul className="space-y-2">
       {ranges.map((r) => (
         <li
@@ -35,9 +36,7 @@ export function RecordRangesEditable({
             </div>
             <div className="text-xs text-gray-500">
               Tokens {r.startTokenId}
-              {r.startTokenId === r.endTokenId
-                ? ""
-                : ` – ${r.endTokenId}`}
+              {r.startTokenId === r.endTokenId ? "" : ` – ${r.endTokenId}`}
             </div>
           </div>
           {isOwner ? (
@@ -62,26 +61,5 @@ export function RecordRangesEditable({
         </li>
       ))}
     </ul>
-  )
-
-  if (!isOwner) {
-    return ranges.length === 0 ? (
-      <p className="text-sm text-gray-500">No token ranges declared yet.</p>
-    ) : (
-      list
-    )
-  }
-
-  return (
-    <div className="space-y-3">
-      <AddRangeForm />
-      {ranges.length === 0 ? (
-        <p className="text-sm text-gray-500">
-          No token ranges declared yet. Add the first one above.
-        </p>
-      ) : (
-        list
-      )}
-    </div>
   )
 }

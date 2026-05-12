@@ -2,7 +2,6 @@
 
 import type { Address } from "viem"
 import { useIsRecordOwner } from "./useIsRecordOwner"
-import { AddTokenForm } from "./AddTokenForm"
 import { RemoveRowButton } from "./RemoveRowButton"
 
 function shortAddr(addr: string) {
@@ -17,8 +16,10 @@ export function RecordTokensEditable({
   tokens: Array<{ contractAddress: string; tokenId: string }>
 }) {
   const isOwner = useIsRecordOwner(artist)
-
-  const list = (
+  if (tokens.length === 0) {
+    return <p className="text-sm text-gray-500">No tokens declared yet.</p>
+  }
+  return (
     <ul className="space-y-2">
       {tokens.map((t) => (
         <li
@@ -34,10 +35,7 @@ export function RecordTokensEditable({
           {isOwner ? (
             <RemoveRowButton
               fn="removeToken"
-              args={[
-                t.contractAddress as `0x${string}`,
-                BigInt(t.tokenId),
-              ]}
+              args={[t.contractAddress as `0x${string}`, BigInt(t.tokenId)]}
             />
           ) : (
             <a
@@ -52,26 +50,5 @@ export function RecordTokensEditable({
         </li>
       ))}
     </ul>
-  )
-
-  if (!isOwner) {
-    return tokens.length === 0 ? (
-      <p className="text-sm text-gray-500">No tokens declared yet.</p>
-    ) : (
-      list
-    )
-  }
-
-  return (
-    <div className="space-y-3">
-      <AddTokenForm />
-      {tokens.length === 0 ? (
-        <p className="text-sm text-gray-500">
-          No tokens declared yet. Add the first one above.
-        </p>
-      ) : (
-        list
-      )}
-    </div>
   )
 }

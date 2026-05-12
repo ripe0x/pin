@@ -6,6 +6,7 @@ import { resolveEnsAddress, getArtistIdentity } from "@/lib/artist-queries"
 import { getCachedArtistRecord } from "@/lib/artist-record-cache"
 import { AddressZorb } from "@/components/AddressZorb"
 import { RecordSummary } from "@/components/record/RecordSummary"
+import { AddEntrySection } from "@/components/record/AddEntrySection"
 import { RecordContractsEditable } from "@/components/record/RecordContractsEditable"
 import { RecordTokensEditable } from "@/components/record/RecordTokensEditable"
 import { RecordRangesEditable } from "@/components/record/RecordRangesEditable"
@@ -140,6 +141,8 @@ async function RecordBody({ address }: { address: Address }) {
           hasSuccessor={record.successor !== null}
         />
       )}
+
+      <AddEntrySection artist={address} />
 
       <section className="space-y-3">
         <SectionHeader

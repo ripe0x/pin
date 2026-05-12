@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { useAccount } from "wagmi"
 import { useRegistryWrite } from "./useRegistryWrite"
-import { extractShortError } from "./AddContractForm"
+import { extractShortError } from "./registryErrors"
 
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/
 
