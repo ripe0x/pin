@@ -104,10 +104,21 @@ export async function getArtistRecord(
       args: [artist] as const,
     },
   ]
-  const results = await client.multicall({
-    contracts: calls,
-    allowFailure: false,
-  })
+  let results
+  try {
+    results = await client.multicall({
+      contracts: calls,
+      allowFailure: false,
+    })
+  } catch (e) {
+    // Pre-deploy / wrong-chain / RPC blip: degrade to empty record so
+    // callers don't have to wrap each call themselves. The most common
+    // cause here is the contract simply not existing at the configured
+    // address (multicall returns 0x, decoding fails). Treat as "no
+    // record yet."
+    if (isContractMissing(e)) return emptyRecord(artist)
+    throw e
+  }
 
   const [rawContracts, rawTokens, rawRanges, rawSuccessor] = results as [
     readonly Address[],
@@ -177,15 +188,36 @@ export async function getArtistRecordWithChain(
 async function getSuccessorOnly(addr: Address): Promise<Address | null> {
   if (!REGISTRY) return null
   const client = getClient()
-  const successor = (await client.readContract({
-    address: REGISTRY,
-    abi: artistRecordRegistryAbi,
-    functionName: "getSuccessor",
-    args: [addr],
-  })) as Address
-  return successor === "0x0000000000000000000000000000000000000000"
-    ? null
-    : successor
+  try {
+    const successor = (await client.readContract({
+      address: REGISTRY,
+      abi: artistRecordRegistryAbi,
+      functionName: "getSuccessor",
+      args: [addr],
+    })) as Address
+    return successor === "0x0000000000000000000000000000000000000000"
+      ? null
+      : successor
+  } catch (e) {
+    if (isContractMissing(e)) return null
+    throw e
+  }
+}
+
+/**
+ * Heuristic: was this error caused by the registry contract not
+ * existing at its configured address? viem surfaces this as the
+ * `getContracts returned no data ("0x")` cause chain when an
+ * eth_call to an EOA / non-existent contract is ABI-decoded.
+ */
+function isContractMissing(err: unknown): boolean {
+  if (!(err instanceof Error)) return false
+  const msg = err.message || ""
+  return (
+    msg.includes('returned no data ("0x")') ||
+    msg.includes("Cannot decode zero data") ||
+    msg.includes("ContractFunctionZeroDataError")
+  )
 }
 
 /**
@@ -251,10 +283,16 @@ export async function hasAnyDeclarations(
       args: [artist] as const,
     },
   ]
-  const results = (await client.multicall({
-    contracts: calls,
-    allowFailure: false,
-  })) as unknown as [bigint, bigint, bigint, Address]
+  let results
+  try {
+    results = (await client.multicall({
+      contracts: calls,
+      allowFailure: false,
+    })) as unknown as [bigint, bigint, bigint, Address]
+  } catch (e) {
+    if (isContractMissing(e)) return false
+    throw e
+  }
   const [cc, tc, rc, succ] = results
   return (
     cc > 0n ||
