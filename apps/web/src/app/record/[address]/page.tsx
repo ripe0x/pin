@@ -6,10 +6,11 @@ import { resolveEnsAddress, getArtistIdentity } from "@/lib/artist-queries"
 import { getCachedArtistRecord } from "@/lib/artist-record-cache"
 import { AddressZorb } from "@/components/AddressZorb"
 import { RecordSummary } from "@/components/record/RecordSummary"
-import { RecordContractsSection } from "@/components/record/RecordContractsSection"
-import { RecordTokensSection } from "@/components/record/RecordTokensSection"
-import { RecordRangesSection } from "@/components/record/RecordRangesSection"
-import { RecordSuccessorSection } from "@/components/record/RecordSuccessorSection"
+import { RecordContractsEditable } from "@/components/record/RecordContractsEditable"
+import { RecordTokensEditable } from "@/components/record/RecordTokensEditable"
+import { RecordRangesEditable } from "@/components/record/RecordRangesEditable"
+import { RecordSuccessorEditable } from "@/components/record/RecordSuccessorEditable"
+import { RecordOperatorEditable } from "@/components/record/RecordOperatorEditable"
 import { EditModeIndicator } from "@/components/record/EditModeIndicator"
 
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/
@@ -147,7 +148,10 @@ async function RecordBody({ address }: { address: Address }) {
             record.contracts.length === 1 ? "entry" : "entries"
           }`}
         />
-        <RecordContractsSection contracts={record.contracts} />
+        <RecordContractsEditable
+          artist={address}
+          contracts={record.contracts}
+        />
       </section>
 
       <section className="space-y-3">
@@ -157,7 +161,7 @@ async function RecordBody({ address }: { address: Address }) {
             record.tokens.length === 1 ? "entry" : "entries"
           }`}
         />
-        <RecordTokensSection tokens={record.tokens} />
+        <RecordTokensEditable artist={address} tokens={record.tokens} />
       </section>
 
       <section className="space-y-3">
@@ -167,16 +171,18 @@ async function RecordBody({ address }: { address: Address }) {
             record.tokenRanges.length === 1 ? "entry" : "entries"
           }`}
         />
-        <RecordRangesSection ranges={record.tokenRanges} />
+        <RecordRangesEditable artist={address} ranges={record.tokenRanges} />
       </section>
 
       <section className="space-y-3">
         <SectionHeader title="Successor" />
-        <RecordSuccessorSection
+        <RecordSuccessorEditable
           artist={address}
           successorChain={record.successorChain}
         />
       </section>
+
+      <RecordOperatorEditable artist={address} />
 
       <p className="text-xs text-gray-400 pt-4 border-t border-gray-100">
         Adding a pointer means this address added it to its public
