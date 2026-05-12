@@ -25,6 +25,12 @@ const GUIDES: Guide[] = [
     blurb:
       "How the auction contracts work, who deploys and owns them, how listing, bidding, and settlement happen, and what happens if PND's frontend disappears.",
   },
+  {
+    href: "/guides/delist",
+    title: "Cancel marketplace listings in one transaction",
+    blurb:
+      "How the bulk delist tool works across Foundation and SuperRare, which listings it can cancel, what smart wallets can batch in one signature, and what the tool costs (gas only, no fees).",
+  },
 ]
 
 export default function GuidesIndexPage() {
