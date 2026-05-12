@@ -29,23 +29,31 @@ pragma solidity ^0.8.24;
 ///         that downstream indexers should follow when reconstructing
 ///         the artist's full record across key rotations or wallet
 ///         retirements.
+///
+/// @dev    CROSS-CHAIN MODEL:
+///
+///         Each registry instance is scoped to the chain it's deployed
+///         on. Pointers reference contracts on that same chain — there
+///         is no `chainId` field because the deployment chain is the
+///         answer. To capture an artist's record on multiple chains,
+///         deploy this same source on each chain via the canonical
+///         CREATE2 deterministic-deployment proxy
+///         (0x4e59b44847b379578588920cA78FbF26c0B4956C) with a chosen
+///         salt — every chain gets the registry at the same address.
+///         Indexers union per-artist records across chains by address.
+///
+///         Operator approvals and successor pointers are per-chain
+///         state. An artist who works on multiple chains can use
+///         different operators per chain, but a successor declaration
+///         on one chain has no effect on others. Set successors on
+///         every chain that holds part of your record.
 contract ArtistRecordRegistry {
     // ─── Types ──────────────────────────────────────────────────────
 
-    /// @notice A pointer to an entire contract on a given chain.
-    /// @param chainId          EIP-155 chain identifier. Not restricted.
-    /// @param contractAddress  The contract being pointed at. Must be non-zero.
-    struct ContractPointer {
-        uint256 chainId;
-        address contractAddress;
-    }
-
     /// @notice A pointer to a single token on a given contract.
-    /// @param chainId          EIP-155 chain identifier. Not restricted.
     /// @param contractAddress  The contract that holds the token. Must be non-zero.
     /// @param tokenId          Any uint256. Not bounded.
     struct TokenPointer {
-        uint256 chainId;
         address contractAddress;
         uint256 tokenId;
     }
@@ -53,12 +61,10 @@ contract ArtistRecordRegistry {
     /// @notice A pointer to a contiguous, inclusive range of token IDs on
     ///         a given contract. `startTokenId == endTokenId` is allowed
     ///         and effectively represents a single-token pointer.
-    /// @param chainId          EIP-155 chain identifier. Not restricted.
     /// @param contractAddress  The contract that holds the tokens. Must be non-zero.
     /// @param startTokenId     Inclusive lower bound. Must be <= endTokenId.
     /// @param endTokenId       Inclusive upper bound.
     struct TokenRangePointer {
-        uint256 chainId;
         address contractAddress;
         uint256 startTokenId;
         uint256 endTokenId;
@@ -66,10 +72,11 @@ contract ArtistRecordRegistry {
 
     // ─── Storage ────────────────────────────────────────────────────
 
-    /// @dev Per-artist enumerable list of contract pointers. Order is
+    /// @dev Per-artist enumerable list of contract addresses. Order is
     ///      not guaranteed — `swap and pop` removal swaps the last
-    ///      element into the removed slot.
-    mapping(address => ContractPointer[]) private _artistContracts;
+    ///      element into the removed slot. (Contract pointers degenerate
+    ///      to plain addresses since chainId is implicit; no struct.)
+    mapping(address => address[]) private _artistContracts;
 
     /// @dev Per-artist enumerable list of single-token pointers.
     mapping(address => TokenPointer[]) private _artistTokens;
@@ -119,63 +126,57 @@ contract ArtistRecordRegistry {
     ///      solve lost keys — that's a wallet-security problem
     ///      unsolvable at this layer. Set a successor early, while
     ///      your key is healthy.
+    ///
+    ///      Per-chain state: a successor declaration on one chain does
+    ///      not propagate. Set successors on every chain that holds
+    ///      part of your record.
     mapping(address => address) private _successor;
 
     // ─── Events ─────────────────────────────────────────────────────
 
     /// @notice Emitted when an artist adds a contract pointer.
     /// @param artist           The artist whose record was modified.
-    /// @param chainId          The chain the pointer references.
     /// @param contractAddress  The contract address pointed at.
     event ContractAdded(
         address indexed artist,
-        uint256 indexed chainId,
         address indexed contractAddress
     );
 
     /// @notice Emitted when an artist removes a contract pointer.
     /// @param artist           The artist whose record was modified.
-    /// @param chainId          The chain the pointer referenced.
     /// @param contractAddress  The contract address that was removed.
     event ContractRemoved(
         address indexed artist,
-        uint256 indexed chainId,
         address indexed contractAddress
     );
 
     /// @notice Emitted when an artist adds a single-token pointer.
     /// @param artist           The artist whose record was modified.
-    /// @param chainId          The chain the pointer references.
     /// @param contractAddress  The contract that holds the token.
     /// @param tokenId          The specific token being pointed at.
     event TokenAdded(
         address indexed artist,
-        uint256 indexed chainId,
         address indexed contractAddress,
-        uint256 tokenId
+        uint256 indexed tokenId
     );
 
     /// @notice Emitted when an artist removes a single-token pointer.
     /// @param artist           The artist whose record was modified.
-    /// @param chainId          The chain the pointer referenced.
     /// @param contractAddress  The contract that held the token.
     /// @param tokenId          The token id that was removed.
     event TokenRemoved(
         address indexed artist,
-        uint256 indexed chainId,
         address indexed contractAddress,
-        uint256 tokenId
+        uint256 indexed tokenId
     );
 
     /// @notice Emitted when an artist adds a token-range pointer.
     /// @param artist           The artist whose record was modified.
-    /// @param chainId          The chain the pointer references.
     /// @param contractAddress  The contract that holds the tokens.
     /// @param startTokenId     Inclusive lower bound of the range.
     /// @param endTokenId       Inclusive upper bound of the range.
     event TokenRangeAdded(
         address indexed artist,
-        uint256 indexed chainId,
         address indexed contractAddress,
         uint256 startTokenId,
         uint256 endTokenId
@@ -183,13 +184,11 @@ contract ArtistRecordRegistry {
 
     /// @notice Emitted when an artist removes a token-range pointer.
     /// @param artist           The artist whose record was modified.
-    /// @param chainId          The chain the pointer referenced.
     /// @param contractAddress  The contract that held the tokens.
     /// @param startTokenId     Inclusive lower bound that was removed.
     /// @param endTokenId       Inclusive upper bound that was removed.
     event TokenRangeRemoved(
         address indexed artist,
-        uint256 indexed chainId,
         address indexed contractAddress,
         uint256 startTokenId,
         uint256 endTokenId
@@ -258,8 +257,8 @@ contract ArtistRecordRegistry {
 
     /// @notice Attempted to add a token-range pointer that already
     ///         exists in this artist's record. (Identity is the exact
-    ///         (chainId, contract, start, end) tuple; overlapping
-    ///         ranges with different bounds are independent entries.)
+    ///         (contract, start, end) tuple; overlapping ranges with
+    ///         different bounds are independent entries.)
     error TokenRangeAlreadyRegistered();
 
     /// @notice Attempted to remove a token-range pointer that doesn't
@@ -294,7 +293,7 @@ contract ArtistRecordRegistry {
 
     /// @notice Compute the deterministic key used internally for
     ///         contract-pointer existence checks.
-    /// @dev    `keccak256(abi.encode(chainId, contractAddress))`.
+    /// @dev    `keccak256(abi.encode(contractAddress))`.
     ///
     ///         We use `abi.encode` (32-byte-aligned) rather than
     ///         `abi.encodePacked` so the key for a contract pointer
@@ -303,49 +302,43 @@ contract ArtistRecordRegistry {
     ///         spaces are also kept separate by living in distinct
     ///         mappings, but using `encode` keeps the safety property
     ///         self-contained at the hashing step.
-    /// @param chainId          EIP-155 chain id.
     /// @param contractAddress  Contract address.
     /// @return                 32-byte key.
     function getContractKey(
-        uint256 chainId,
         address contractAddress
     ) public pure returns (bytes32) {
-        return keccak256(abi.encode(chainId, contractAddress));
+        return keccak256(abi.encode(contractAddress));
     }
 
     /// @notice Compute the deterministic key used internally for
     ///         single-token-pointer existence checks.
-    /// @dev    `keccak256(abi.encode(chainId, contractAddress, tokenId))`.
-    /// @param chainId          EIP-155 chain id.
+    /// @dev    `keccak256(abi.encode(contractAddress, tokenId))`.
     /// @param contractAddress  Contract address.
     /// @param tokenId          Token id.
     /// @return                 32-byte key.
     function getTokenKey(
-        uint256 chainId,
         address contractAddress,
         uint256 tokenId
     ) public pure returns (bytes32) {
-        return keccak256(abi.encode(chainId, contractAddress, tokenId));
+        return keccak256(abi.encode(contractAddress, tokenId));
     }
 
     /// @notice Compute the deterministic key used internally for
     ///         token-range-pointer existence checks. Identity is the
     ///         exact tuple; two ranges with different bounds are
     ///         distinct keys even if they overlap.
-    /// @dev    `keccak256(abi.encode(chainId, contractAddress, start, end))`.
-    /// @param chainId          EIP-155 chain id.
+    /// @dev    `keccak256(abi.encode(contractAddress, start, end))`.
     /// @param contractAddress  Contract address.
     /// @param startTokenId     Inclusive lower bound.
     /// @param endTokenId       Inclusive upper bound.
     /// @return                 32-byte key.
     function getTokenRangeKey(
-        uint256 chainId,
         address contractAddress,
         uint256 startTokenId,
         uint256 endTokenId
     ) public pure returns (bytes32) {
         return keccak256(
-            abi.encode(chainId, contractAddress, startTokenId, endTokenId)
+            abi.encode(contractAddress, startTokenId, endTokenId)
         );
     }
 
@@ -355,72 +348,63 @@ contract ArtistRecordRegistry {
     /// @dev Reverts if the pointer already exists. Anyone (including
     ///      an EOA) may be referenced — the contract performs no
     ///      semantic checks beyond non-zero.
-    /// @param chainId          Chain the pointer references.
     /// @param contractAddress  Contract being pointed at. Must be non-zero.
-    function addContract(uint256 chainId, address contractAddress) external {
-        _addContract(msg.sender, chainId, contractAddress);
+    function addContract(address contractAddress) external {
+        _addContract(msg.sender, contractAddress);
     }
 
     /// @notice Add a contract pointer to `artist`'s record on its
     ///         behalf. Caller must be the artist or an approved
     ///         operator.
     /// @param artist           Artist whose record is being updated.
-    /// @param chainId          Chain the pointer references.
     /// @param contractAddress  Contract being pointed at. Must be non-zero.
     function addContractFor(
         address artist,
-        uint256 chainId,
         address contractAddress
     ) external {
         _requireAuthorized(artist);
-        _addContract(artist, chainId, contractAddress);
+        _addContract(artist, contractAddress);
     }
 
     /// @notice Remove a contract pointer from the caller's record.
     /// @dev Reverts if the pointer doesn't exist.
-    /// @param chainId          Chain the pointer references.
     /// @param contractAddress  Contract to remove from the record.
-    function removeContract(uint256 chainId, address contractAddress) external {
-        _removeContract(msg.sender, chainId, contractAddress);
+    function removeContract(address contractAddress) external {
+        _removeContract(msg.sender, contractAddress);
     }
 
     /// @notice Remove a contract pointer from `artist`'s record on its
     ///         behalf. Caller must be the artist or an approved
     ///         operator.
     /// @param artist           Artist whose record is being updated.
-    /// @param chainId          Chain the pointer references.
     /// @param contractAddress  Contract to remove from the record.
     function removeContractFor(
         address artist,
-        uint256 chainId,
         address contractAddress
     ) external {
         _requireAuthorized(artist);
-        _removeContract(artist, chainId, contractAddress);
+        _removeContract(artist, contractAddress);
     }
 
     /// @dev Push a contract pointer to `artist`'s list and record its
     ///      index. Emits `ContractAdded`.
     function _addContract(
         address artist,
-        uint256 chainId,
         address contractAddress
     ) internal {
         if (contractAddress == address(0)) revert InvalidContractAddress();
-        bytes32 key = getContractKey(chainId, contractAddress);
+        bytes32 key = getContractKey(contractAddress);
         // A non-zero indexPlusOne means the pointer is already in the
         // list at array position (indexPlusOne - 1).
         if (_contractIndexPlusOne[artist][key] != 0) {
             revert ContractAlreadyRegistered();
         }
-        _artistContracts[artist].push(
-            ContractPointer({chainId: chainId, contractAddress: contractAddress})
-        );
+        _artistContracts[artist].push(contractAddress);
         // After push, the new entry sits at `length - 1`. We store
         // `length` (i.e. index + 1) directly — equivalent and avoids
         // an extra subtraction.
         _contractIndexPlusOne[artist][key] = _artistContracts[artist].length;
-        emit ContractAdded(artist, chainId, contractAddress);
+        emit ContractAdded(artist, contractAddress);
     }
 
     /// @dev Remove a contract pointer via swap-and-pop. When the
@@ -429,18 +413,17 @@ contract ArtistRecordRegistry {
     ///      rewritten. Emits `ContractRemoved`.
     function _removeContract(
         address artist,
-        uint256 chainId,
         address contractAddress
     ) internal {
         if (contractAddress == address(0)) revert InvalidContractAddress();
-        bytes32 key = getContractKey(chainId, contractAddress);
+        bytes32 key = getContractKey(contractAddress);
         // Step 1: look up the stored position (one-indexed).
         uint256 indexPlusOne = _contractIndexPlusOne[artist][key];
         if (indexPlusOne == 0) revert ContractNotRegistered();
 
         // Step 2: convert to the actual array index.
         uint256 index = indexPlusOne - 1;
-        ContractPointer[] storage list = _artistContracts[artist];
+        address[] storage list = _artistContracts[artist];
         uint256 lastIndex = list.length - 1;
 
         // Step 3: if we're removing from the middle, move the last
@@ -448,9 +431,9 @@ contract ArtistRecordRegistry {
         // Skipping this branch when the removed entry IS the last one
         // saves an SSTORE on the common case of stack-like removal.
         if (index != lastIndex) {
-            ContractPointer memory moved = list[lastIndex];
+            address moved = list[lastIndex];
             list[index] = moved;
-            bytes32 movedKey = getContractKey(moved.chainId, moved.contractAddress);
+            bytes32 movedKey = getContractKey(moved);
             _contractIndexPlusOne[artist][movedKey] = index + 1;
         }
 
@@ -459,30 +442,28 @@ contract ArtistRecordRegistry {
         // correctness — both operations are independent SSTOREs.
         list.pop();
         delete _contractIndexPlusOne[artist][key];
-        emit ContractRemoved(artist, chainId, contractAddress);
+        emit ContractRemoved(artist, contractAddress);
     }
 
     /// @notice Check whether `artist` has registered a contract pointer
-    ///         matching `(chainId, contractAddress)`.
+    ///         matching `contractAddress`.
     /// @param artist           Artist whose record is being queried.
-    /// @param chainId          Chain the pointer would reference.
     /// @param contractAddress  Contract being queried.
     /// @return                 True iff the pointer exists.
     function isContractRegistered(
         address artist,
-        uint256 chainId,
         address contractAddress
     ) external view returns (bool) {
-        return _contractIndexPlusOne[artist][getContractKey(chainId, contractAddress)] != 0;
+        return _contractIndexPlusOne[artist][getContractKey(contractAddress)] != 0;
     }
 
     /// @notice Return every contract pointer in `artist`'s record.
     /// @dev    Order is not guaranteed.
     /// @param artist  Artist whose record is being read.
-    /// @return        Array of `ContractPointer` structs.
+    /// @return        Array of contract addresses.
     function getContracts(
         address artist
-    ) external view returns (ContractPointer[] memory) {
+    ) external view returns (address[] memory) {
         return _artistContracts[artist];
     }
 
@@ -497,100 +478,88 @@ contract ArtistRecordRegistry {
 
     /// @notice Indexed access to a single contract pointer.
     /// @dev    Reverts on out-of-bounds index (default array revert).
-    /// @param artist           Artist whose record is being read.
-    /// @param index            Position in the unordered list.
-    /// @return chainId         Chain of the pointer at `index`.
-    /// @return contractAddress Contract address of the pointer at `index`.
+    /// @param artist  Artist whose record is being read.
+    /// @param index   Position in the unordered list.
+    /// @return        Contract address of the pointer at `index`.
     function getContractAt(
         address artist,
         uint256 index
-    ) external view returns (uint256 chainId, address contractAddress) {
-        ContractPointer memory p = _artistContracts[artist][index];
-        return (p.chainId, p.contractAddress);
+    ) external view returns (address) {
+        return _artistContracts[artist][index];
     }
 
     // ─── Token pointers ─────────────────────────────────────────────
 
     /// @notice Add a single-token pointer to the caller's record.
-    /// @param chainId          Chain the pointer references.
     /// @param contractAddress  Contract that holds the token. Must be non-zero.
     /// @param tokenId          Token id being pointed at.
     function addToken(
-        uint256 chainId,
         address contractAddress,
         uint256 tokenId
     ) external {
-        _addToken(msg.sender, chainId, contractAddress, tokenId);
+        _addToken(msg.sender, contractAddress, tokenId);
     }
 
     /// @notice Add a single-token pointer to `artist`'s record on its
     ///         behalf. Caller must be the artist or an approved
     ///         operator.
     /// @param artist           Artist whose record is being updated.
-    /// @param chainId          Chain the pointer references.
     /// @param contractAddress  Contract that holds the token. Must be non-zero.
     /// @param tokenId          Token id being pointed at.
     function addTokenFor(
         address artist,
-        uint256 chainId,
         address contractAddress,
         uint256 tokenId
     ) external {
         _requireAuthorized(artist);
-        _addToken(artist, chainId, contractAddress, tokenId);
+        _addToken(artist, contractAddress, tokenId);
     }
 
     /// @notice Remove a single-token pointer from the caller's record.
-    /// @param chainId          Chain the pointer references.
     /// @param contractAddress  Contract that held the token.
     /// @param tokenId          Token id to remove from the record.
     function removeToken(
-        uint256 chainId,
         address contractAddress,
         uint256 tokenId
     ) external {
-        _removeToken(msg.sender, chainId, contractAddress, tokenId);
+        _removeToken(msg.sender, contractAddress, tokenId);
     }
 
     /// @notice Remove a single-token pointer from `artist`'s record on
     ///         its behalf. Caller must be the artist or an approved
     ///         operator.
     /// @param artist           Artist whose record is being updated.
-    /// @param chainId          Chain the pointer references.
     /// @param contractAddress  Contract that held the token.
     /// @param tokenId          Token id to remove from the record.
     function removeTokenFor(
         address artist,
-        uint256 chainId,
         address contractAddress,
         uint256 tokenId
     ) external {
         _requireAuthorized(artist);
-        _removeToken(artist, chainId, contractAddress, tokenId);
+        _removeToken(artist, contractAddress, tokenId);
     }
 
     /// @dev Push a token pointer to `artist`'s list and record its
     ///      index. Emits `TokenAdded`.
     function _addToken(
         address artist,
-        uint256 chainId,
         address contractAddress,
         uint256 tokenId
     ) internal {
         if (contractAddress == address(0)) revert InvalidContractAddress();
-        bytes32 key = getTokenKey(chainId, contractAddress, tokenId);
+        bytes32 key = getTokenKey(contractAddress, tokenId);
         if (_tokenIndexPlusOne[artist][key] != 0) {
             revert TokenAlreadyRegistered();
         }
         _artistTokens[artist].push(
             TokenPointer({
-                chainId: chainId,
                 contractAddress: contractAddress,
                 tokenId: tokenId
             })
         );
         _tokenIndexPlusOne[artist][key] = _artistTokens[artist].length;
-        emit TokenAdded(artist, chainId, contractAddress, tokenId);
+        emit TokenAdded(artist, contractAddress, tokenId);
     }
 
     /// @dev Remove a token pointer via swap-and-pop. The algorithm
@@ -598,12 +567,11 @@ contract ArtistRecordRegistry {
     ///      the walk-through. Emits `TokenRemoved`.
     function _removeToken(
         address artist,
-        uint256 chainId,
         address contractAddress,
         uint256 tokenId
     ) internal {
         if (contractAddress == address(0)) revert InvalidContractAddress();
-        bytes32 key = getTokenKey(chainId, contractAddress, tokenId);
+        bytes32 key = getTokenKey(contractAddress, tokenId);
         uint256 indexPlusOne = _tokenIndexPlusOne[artist][key];
         if (indexPlusOne == 0) revert TokenNotRegistered();
 
@@ -615,7 +583,6 @@ contract ArtistRecordRegistry {
             TokenPointer memory moved = list[lastIndex];
             list[index] = moved;
             bytes32 movedKey = getTokenKey(
-                moved.chainId,
                 moved.contractAddress,
                 moved.tokenId
             );
@@ -624,24 +591,22 @@ contract ArtistRecordRegistry {
 
         list.pop();
         delete _tokenIndexPlusOne[artist][key];
-        emit TokenRemoved(artist, chainId, contractAddress, tokenId);
+        emit TokenRemoved(artist, contractAddress, tokenId);
     }
 
     /// @notice Check whether `artist` has registered a single-token
-    ///         pointer matching `(chainId, contractAddress, tokenId)`.
+    ///         pointer matching `(contractAddress, tokenId)`.
     /// @param artist           Artist whose record is being queried.
-    /// @param chainId          Chain the pointer would reference.
     /// @param contractAddress  Contract being queried.
     /// @param tokenId          Token id being queried.
     /// @return                 True iff the pointer exists.
     function isTokenRegistered(
         address artist,
-        uint256 chainId,
         address contractAddress,
         uint256 tokenId
     ) external view returns (bool) {
         return _tokenIndexPlusOne[artist][
-            getTokenKey(chainId, contractAddress, tokenId)
+            getTokenKey(contractAddress, tokenId)
         ] != 0;
     }
 
@@ -668,97 +633,86 @@ contract ArtistRecordRegistry {
     /// @dev    Reverts on out-of-bounds index (default array revert).
     /// @param artist           Artist whose record is being read.
     /// @param index            Position in the unordered list.
-    /// @return chainId         Chain of the pointer at `index`.
     /// @return contractAddress Contract address of the pointer at `index`.
     /// @return tokenId         Token id of the pointer at `index`.
     function getTokenAt(
         address artist,
         uint256 index
     ) external view returns (
-        uint256 chainId,
         address contractAddress,
         uint256 tokenId
     ) {
         TokenPointer memory p = _artistTokens[artist][index];
-        return (p.chainId, p.contractAddress, p.tokenId);
+        return (p.contractAddress, p.tokenId);
     }
 
     // ─── Token range pointers ───────────────────────────────────────
 
     /// @notice Add a token-range pointer to the caller's record.
     /// @dev    Overlapping ranges are allowed; identity is the exact
-    ///         `(chainId, contract, start, end)` tuple. Single-token
-    ///         ranges (`start == end`) are valid.
-    /// @param chainId          Chain the pointer references.
+    ///         `(contract, start, end)` tuple. Single-token ranges
+    ///         (`start == end`) are valid.
     /// @param contractAddress  Contract that holds the tokens. Must be non-zero.
     /// @param startTokenId     Inclusive lower bound. Must be <= endTokenId.
     /// @param endTokenId       Inclusive upper bound.
     function addTokenRange(
-        uint256 chainId,
         address contractAddress,
         uint256 startTokenId,
         uint256 endTokenId
     ) external {
-        _addTokenRange(msg.sender, chainId, contractAddress, startTokenId, endTokenId);
+        _addTokenRange(msg.sender, contractAddress, startTokenId, endTokenId);
     }
 
     /// @notice Add a token-range pointer to `artist`'s record on its
     ///         behalf. Caller must be the artist or an approved
     ///         operator.
     /// @param artist           Artist whose record is being updated.
-    /// @param chainId          Chain the pointer references.
     /// @param contractAddress  Contract that holds the tokens. Must be non-zero.
     /// @param startTokenId     Inclusive lower bound. Must be <= endTokenId.
     /// @param endTokenId       Inclusive upper bound.
     function addTokenRangeFor(
         address artist,
-        uint256 chainId,
         address contractAddress,
         uint256 startTokenId,
         uint256 endTokenId
     ) external {
         _requireAuthorized(artist);
-        _addTokenRange(artist, chainId, contractAddress, startTokenId, endTokenId);
+        _addTokenRange(artist, contractAddress, startTokenId, endTokenId);
     }
 
     /// @notice Remove a token-range pointer from the caller's record.
-    /// @param chainId          Chain the pointer references.
     /// @param contractAddress  Contract that held the tokens.
     /// @param startTokenId     Inclusive lower bound that was added.
     /// @param endTokenId       Inclusive upper bound that was added.
     function removeTokenRange(
-        uint256 chainId,
         address contractAddress,
         uint256 startTokenId,
         uint256 endTokenId
     ) external {
-        _removeTokenRange(msg.sender, chainId, contractAddress, startTokenId, endTokenId);
+        _removeTokenRange(msg.sender, contractAddress, startTokenId, endTokenId);
     }
 
     /// @notice Remove a token-range pointer from `artist`'s record on
     ///         its behalf. Caller must be the artist or an approved
     ///         operator.
     /// @param artist           Artist whose record is being updated.
-    /// @param chainId          Chain the pointer references.
     /// @param contractAddress  Contract that held the tokens.
     /// @param startTokenId     Inclusive lower bound that was added.
     /// @param endTokenId       Inclusive upper bound that was added.
     function removeTokenRangeFor(
         address artist,
-        uint256 chainId,
         address contractAddress,
         uint256 startTokenId,
         uint256 endTokenId
     ) external {
         _requireAuthorized(artist);
-        _removeTokenRange(artist, chainId, contractAddress, startTokenId, endTokenId);
+        _removeTokenRange(artist, contractAddress, startTokenId, endTokenId);
     }
 
     /// @dev Push a token-range pointer to `artist`'s list and record
     ///      its index. Reverts on inverted range. Emits `TokenRangeAdded`.
     function _addTokenRange(
         address artist,
-        uint256 chainId,
         address contractAddress,
         uint256 startTokenId,
         uint256 endTokenId
@@ -766,7 +720,6 @@ contract ArtistRecordRegistry {
         if (contractAddress == address(0)) revert InvalidContractAddress();
         if (startTokenId > endTokenId) revert InvalidTokenRange();
         bytes32 key = getTokenRangeKey(
-            chainId,
             contractAddress,
             startTokenId,
             endTokenId
@@ -776,7 +729,6 @@ contract ArtistRecordRegistry {
         }
         _artistTokenRanges[artist].push(
             TokenRangePointer({
-                chainId: chainId,
                 contractAddress: contractAddress,
                 startTokenId: startTokenId,
                 endTokenId: endTokenId
@@ -785,7 +737,6 @@ contract ArtistRecordRegistry {
         _tokenRangeIndexPlusOne[artist][key] = _artistTokenRanges[artist].length;
         emit TokenRangeAdded(
             artist,
-            chainId,
             contractAddress,
             startTokenId,
             endTokenId
@@ -797,14 +748,12 @@ contract ArtistRecordRegistry {
     ///      comments for the walk-through. Emits `TokenRangeRemoved`.
     function _removeTokenRange(
         address artist,
-        uint256 chainId,
         address contractAddress,
         uint256 startTokenId,
         uint256 endTokenId
     ) internal {
         if (contractAddress == address(0)) revert InvalidContractAddress();
         bytes32 key = getTokenRangeKey(
-            chainId,
             contractAddress,
             startTokenId,
             endTokenId
@@ -820,7 +769,6 @@ contract ArtistRecordRegistry {
             TokenRangePointer memory moved = list[lastIndex];
             list[index] = moved;
             bytes32 movedKey = getTokenRangeKey(
-                moved.chainId,
                 moved.contractAddress,
                 moved.startTokenId,
                 moved.endTokenId
@@ -832,7 +780,6 @@ contract ArtistRecordRegistry {
         delete _tokenRangeIndexPlusOne[artist][key];
         emit TokenRangeRemoved(
             artist,
-            chainId,
             contractAddress,
             startTokenId,
             endTokenId
@@ -841,11 +788,10 @@ contract ArtistRecordRegistry {
 
     /// @notice Check whether `artist` has registered a token-range
     ///         pointer matching the exact tuple.
-    /// @dev    Identity is the exact `(chainId, contract, start, end)`
-    ///         tuple; this does NOT report ranges that merely cover
-    ///         the queried bounds. Coverage logic belongs in indexers.
+    /// @dev    Identity is the exact `(contract, start, end)` tuple;
+    ///         this does NOT report ranges that merely cover the
+    ///         queried bounds. Coverage logic belongs in indexers.
     /// @param artist           Artist whose record is being queried.
-    /// @param chainId          Chain the pointer would reference.
     /// @param contractAddress  Contract being queried.
     /// @param startTokenId     Inclusive lower bound being queried.
     /// @param endTokenId       Inclusive upper bound being queried.
@@ -853,13 +799,12 @@ contract ArtistRecordRegistry {
     ///                         bounds exists.
     function isTokenRangeRegistered(
         address artist,
-        uint256 chainId,
         address contractAddress,
         uint256 startTokenId,
         uint256 endTokenId
     ) external view returns (bool) {
         return _tokenRangeIndexPlusOne[artist][
-            getTokenRangeKey(chainId, contractAddress, startTokenId, endTokenId)
+            getTokenRangeKey(contractAddress, startTokenId, endTokenId)
         ] != 0;
     }
 
@@ -886,7 +831,6 @@ contract ArtistRecordRegistry {
     /// @dev    Reverts on out-of-bounds index (default array revert).
     /// @param artist           Artist whose record is being read.
     /// @param index            Position in the unordered list.
-    /// @return chainId         Chain of the pointer at `index`.
     /// @return contractAddress Contract address of the pointer at `index`.
     /// @return startTokenId    Inclusive lower bound of the pointer at `index`.
     /// @return endTokenId      Inclusive upper bound of the pointer at `index`.
@@ -894,13 +838,12 @@ contract ArtistRecordRegistry {
         address artist,
         uint256 index
     ) external view returns (
-        uint256 chainId,
         address contractAddress,
         uint256 startTokenId,
         uint256 endTokenId
     ) {
         TokenRangePointer memory p = _artistTokenRanges[artist][index];
-        return (p.chainId, p.contractAddress, p.startTokenId, p.endTokenId);
+        return (p.contractAddress, p.startTokenId, p.endTokenId);
     }
 
     // ─── Operator delegation ────────────────────────────────────────
@@ -949,6 +892,10 @@ contract ArtistRecordRegistry {
     ///         handle cycles via max-depth or seen-set. The contract
     ///         only rejects the trivial self-cycle (msg.sender ==
     ///         newSuccessor) and zero address.
+    ///
+    ///         Per-chain state: a successor declaration on this chain
+    ///         does not propagate to other chains where this same
+    ///         contract address holds a record.
     /// @param newSuccessor  Canonical continuation address. Must be
     ///                      non-zero and not equal to msg.sender.
     function setSuccessor(address newSuccessor) external {
