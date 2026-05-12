@@ -35,6 +35,8 @@ import {
   readSuperrareV2BidHistory,
   readSuperrareV2BidHistoryFreshness,
   writeSuperrareV2BidHistory,
+  readSuperrareV2SellerListings,
+  writeSuperrareV2SellerListings,
   LAZY_TTL,
   isFresh,
 } from "../lazy-index"
@@ -224,23 +226,38 @@ async function paginatedIndexedScan<T>(
   fromBlock: bigint,
   toBlock: bigint,
 ): Promise<T[]> {
-  const out: T[] = []
+  // Build the chunk list up front, then fan out in parallel. Serial chunks
+  // (the previous shape) made a cold seller-listings scan ~6× slower than it
+  // needed to be, which was the dominant cause of `/api/seller-listings`
+  // hitting Netlify's 10s function timeout and 502-ing the panel. Alchemy's
+  // per-key concurrency is generous; indexed-arg filters return tiny
+  // payloads per chunk, so the parallel fan-out has no meaningful effect on
+  // RPC unit cost.
+  const chunks: Array<[bigint, bigint]> = []
   for (let start = fromBlock; start <= toBlock; start += BLOCK_RANGE) {
     const end = start + BLOCK_RANGE - 1n > toBlock ? toBlock : start + BLOCK_RANGE - 1n
-    try {
-      const logs = await scan(start, end)
-      out.push(...logs)
-    } catch {
-      // RPC may reject very large ranges; halve and retry once.
-      if (end - start > 10_000n) {
-        const mid = start + (end - start) / 2n
-        const a = await paginatedIndexedScan(scan, start, mid)
-        const b = await paginatedIndexedScan(scan, mid + 1n, end)
-        out.push(...a, ...b)
-      }
-    }
+    chunks.push([start, end])
   }
-  return out
+  const results = await Promise.all(
+    chunks.map(async ([start, end]) => {
+      try {
+        return await scan(start, end)
+      } catch {
+        // RPC may reject very large ranges; halve and retry once. The
+        // recursive call uses the same parallel logic.
+        if (end - start > 10_000n) {
+          const mid = start + (end - start) / 2n
+          const [a, b] = await Promise.all([
+            paginatedIndexedScan(scan, start, mid),
+            paginatedIndexedScan(scan, mid + 1n, end),
+          ])
+          return [...a, ...b]
+        }
+        return [] as T[]
+      }
+    }),
+  )
+  return results.flat()
 }
 
 /**
@@ -647,13 +664,96 @@ export const superrareV2Adapter: PlatformAdapter = {
   async getCancellableListingsForSeller(
     seller: Address,
   ): Promise<SellerListings | null> {
-    const client = getClient()
-    const latest = await client.getBlockNumber()
+    const sellerLower = seller.toLowerCase()
 
-    // Indexed-arg event filter: Bazaar's NewAuction has `_auctionCreator`
-    // indexed, so this returns ONLY this seller's auctions across the
-    // platform's lifetime. Typically a handful of logs per artist.
-    const logs = await paginatedIndexedScan(
+    // Per-seller write-through cache. The RPC scan below is ~50 chunked
+    // `eth_getLogs` calls + a multicall over years of SR history. We pay
+    // that cost at most once per seller per TTL (30 min); every other
+    // reader gets the row as a pg point lookup. The bulk-delist UI also
+    // POSTs /api/seller-listings/revalidate after a successful cancel,
+    // dropping this row immediately so the user sees the updated state.
+    const cached = await readSuperrareV2SellerListings(sellerLower)
+    if (
+      cached &&
+      isFresh(cached.lastIndexedAt, LAZY_TTL.superrareV2SellerListings)
+    ) {
+      return {
+        auctions: cached.auctions.map((a) => ({
+          id: a.id,
+          platform: "superrareV2",
+          auctionId: a.auctionId,
+          nftContract: a.nftContract as Address,
+          tokenId: a.tokenId,
+          reserveWei: a.reserveWei,
+          durationSeconds: a.durationSeconds,
+          feeBps: a.feeBps,
+        })),
+        buyNows: [],
+      }
+    }
+
+    const fresh = await discoverSrCancellableLive(seller)
+    writeSuperrareV2SellerListings(sellerLower, {
+      auctions: fresh.auctions.map((a) => ({
+        id: a.id,
+        auctionId: a.auctionId,
+        nftContract: a.nftContract,
+        tokenId: a.tokenId,
+        reserveWei: a.reserveWei,
+        durationSeconds: a.durationSeconds,
+        feeBps: a.feeBps,
+      })),
+    })
+    return fresh
+  },
+
+  async discoverArtistAuctions(artist: Address): Promise<void> {
+    await discoverSuperrareV2ArtistAuctions(artist)
+  },
+
+  async getActiveAuctions(limit: number): Promise<ActiveAuctionSummary[]> {
+    // Pure table read — no RPC in the home-grid request path. The
+    // per-artist scanner runs from artist-page loads via
+    // `discoverArtistAuctions`, populating the table for whoever's
+    // been visited. Reads JOIN the per-artist status table with a
+    // 24h freshness filter so unvisited artists drop out.
+    // Over-read so the artist-seller filter doesn't shrink the result
+    // set below `limit` when many active rows are secondary listings.
+    const rows = await readSuperrareV2ActiveAuctions(limit * 4)
+    return rows
+      .filter(
+        (r) =>
+          r.creator !== null &&
+          r.creator.toLowerCase() === r.seller.toLowerCase(),
+      )
+      .slice(0, limit)
+      .map((r) => ({
+        platform: "superrareV2",
+        contract: r.contract as Address,
+        tokenId: r.tokenId,
+        seller: r.seller as Address,
+        reserveWei: r.reserveWei,
+        currentBidWei: r.currentBidWei,
+        currentBidder: (r.currentBidder ?? null) as Address | null,
+        endTime: r.endTime,
+        sourceContract: SR_BAZAAR,
+      }))
+  },
+}
+
+/**
+ * Live SR cancellable-listings discovery: chunked log scan + multicall
+ * confirmation. Wrapped behind the per-seller lazy cache in
+ * `getCancellableListingsForSeller`, so this runs at most once per seller
+ * per 30-min TTL.
+ */
+async function discoverSrCancellableLive(
+  seller: Address,
+): Promise<SellerListings> {
+  const client = getClient()
+  const latest = await client.getBlockNumber()
+
+  const logs = await paginatedIndexedScan(
       (from, to) =>
         client.getLogs({
           address: SR_BAZAAR,
@@ -847,38 +947,4 @@ export const superrareV2Adapter: PlatformAdapter = {
     }
 
     return { auctions: out, buyNows: [] }
-  },
-
-  async discoverArtistAuctions(artist: Address): Promise<void> {
-    await discoverSuperrareV2ArtistAuctions(artist)
-  },
-
-  async getActiveAuctions(limit: number): Promise<ActiveAuctionSummary[]> {
-    // Pure table read — no RPC in the home-grid request path. The
-    // per-artist scanner runs from artist-page loads via
-    // `discoverArtistAuctions`, populating the table for whoever's
-    // been visited. Reads JOIN the per-artist status table with a
-    // 24h freshness filter so unvisited artists drop out.
-    // Over-read so the artist-seller filter doesn't shrink the result
-    // set below `limit` when many active rows are secondary listings.
-    const rows = await readSuperrareV2ActiveAuctions(limit * 4)
-    return rows
-      .filter(
-        (r) =>
-          r.creator !== null &&
-          r.creator.toLowerCase() === r.seller.toLowerCase(),
-      )
-      .slice(0, limit)
-      .map((r) => ({
-        platform: "superrareV2",
-        contract: r.contract as Address,
-        tokenId: r.tokenId,
-        seller: r.seller as Address,
-        reserveWei: r.reserveWei,
-        currentBidWei: r.currentBidWei,
-        currentBidder: (r.currentBidder ?? null) as Address | null,
-        endTime: r.endTime,
-        sourceContract: SR_BAZAAR,
-      }))
-  },
 }
