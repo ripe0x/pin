@@ -20,10 +20,14 @@ import {
   readFoundationSellerListings,
   writeFoundationSellerListings,
   readFoundationActiveAuctions,
+  type LazySellerListings,
   LAZY_TTL,
   isFresh,
 } from "../lazy-index"
-import { discoverFoundationCancellableListings } from "./foundation-seller-listings"
+import {
+  discoverFoundationCancellableListings,
+  type FndDiscoveryCache,
+} from "./foundation-seller-listings"
 import { discoverFoundationArtistAuctions } from "./foundation-scan"
 import { getAlchemyMainnetUrl } from "../alchemy-rpc"
 
@@ -37,6 +41,54 @@ function getClient() {
       getAlchemyMainnetUrl(),
     ),
   })
+}
+
+/**
+ * Convert a cached `lazy_fnd_seller_listings` row into the shape
+ * `discoverFoundationCancellableListings` expects as its merge baseline,
+ * so the incremental refresh can layer new `(fromBlock, latest)` events
+ * on top instead of re-scanning history from the NFTMarket deploy block.
+ * The multicall layer downstream re-confirms cancellable state on every
+ * candidate, so any cached entries that were settled or cancelled in
+ * the gap drop out naturally.
+ */
+function fndCachedToDiscoveryCache(
+  cached: LazySellerListings,
+): FndDiscoveryCache {
+  const durationByAuctionId = new Map<bigint, bigint>()
+  for (const a of cached.auctions) {
+    try {
+      durationByAuctionId.set(
+        BigInt(a.auctionId),
+        BigInt(a.durationSeconds),
+      )
+    } catch {
+      // Defensive: skip cached rows with malformed auctionId. The next
+      // refresh will pick them up via the live scan if they're still
+      // live, or correctly drop them if not.
+    }
+  }
+  const buyNowKeys = new Map<
+    string,
+    { nftContract: Address; tokenId: bigint }
+  >()
+  for (const b of cached.buyNows) {
+    try {
+      const key = `${b.nftContract.toLowerCase()}:${b.tokenId}`
+      buyNowKeys.set(key, {
+        nftContract: b.nftContract as Address,
+        tokenId: BigInt(b.tokenId),
+      })
+    } catch {
+      // Same defensive skip — bad cached row drops out and gets
+      // re-resolved next refresh.
+    }
+  }
+  return {
+    auctionIds: Array.from(durationByAuctionId.keys()),
+    durationByAuctionId,
+    buyNowKeys,
+  }
 }
 
 /**
@@ -186,9 +238,18 @@ export const foundationAdapter: PlatformAdapter = {
       }
     }
 
-    const fresh = await discoverFoundationCancellableListings(sellerLower)
+    // Incremental refresh. Existing rows without a `lastScannedBlock`
+    // (pre-incremental-column writes) fall back to a full rescan once,
+    // then settle into incremental mode on subsequent refreshes.
+    const cachedContext = cached ? fndCachedToDiscoveryCache(cached) : undefined
+    const fromBlock =
+      cached?.lastScannedBlock != null ? cached.lastScannedBlock + 1n : undefined
+    const { listings, scannedTo } = await discoverFoundationCancellableListings(
+      sellerLower,
+      { fromBlock, cached: cachedContext },
+    )
     writeFoundationSellerListings(sellerLower, {
-      auctions: fresh.auctions.map((a) => ({
+      auctions: listings.auctions.map((a) => ({
         id: a.id,
         auctionId: a.auctionId,
         nftContract: a.nftContract,
@@ -196,14 +257,15 @@ export const foundationAdapter: PlatformAdapter = {
         reserveWei: a.reserveWei,
         durationSeconds: a.durationSeconds,
       })),
-      buyNows: fresh.buyNows.map((b) => ({
+      buyNows: listings.buyNows.map((b) => ({
         id: b.id,
         nftContract: b.nftContract,
         tokenId: b.tokenId,
         priceWei: b.priceWei,
       })),
+      lastScannedBlock: scannedTo,
     })
-    return fresh
+    return listings
   },
 
   async getBidHistory() {
