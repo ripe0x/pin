@@ -13,7 +13,10 @@ contract ArtistRecordRegistryTest is Test {
     address internal stranger = address(0xDEAD);
 
     uint256 internal constant CHAIN = 1;
-    uint256 internal constant OTHER_CHAIN = 8453;
+    // Arbitrary non-mainnet chainId for cross-chain reference tests.
+    // The registry deploys on mainnet only but its data model accepts
+    // any chainId so artists can reference contracts deployed elsewhere.
+    uint256 internal constant OTHER_CHAIN = 137;
     address internal constant NFT_ADDR = address(0xF00D);
     address internal constant NFT_ADDR_B = address(0xF11D);
 
