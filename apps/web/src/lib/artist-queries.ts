@@ -19,6 +19,10 @@ import {
   type DiscoveredToken,
 } from "./onchain-discovery"
 import {
+  readEnsIdentity,
+  writeEnsIdentity,
+} from "./ens-identity-store"
+import {
   getCachedTokenRefs,
   getCachedEnrichedPage,
 } from "./artist-cache"
@@ -51,21 +55,30 @@ export async function resolveEnsAddress(
 }
 
 /**
- * Read the `url` text record from the artist's ENS name.
- * Returns null if the artist has no ENS name or no `url` record set.
- * Not cached — called only on the artist's own page view, client-side.
+ * Read the `url` text record from the artist's ENS name. Returns null if the
+ * artist has no ENS name or no `url` record set.
+ *
+ * Cached for 24h. Unlike ENS name/avatar (which get the permanent
+ * `ens_identities` table treatment because they change rarely), `url` text
+ * records DO change with some regularity — artists update their site URL
+ * when they move hosting. The TTL strikes the balance between "no RPC on
+ * every artist-page view" and "stale within a day."
  */
 export async function getEnsUrl(address: Address): Promise<string | null> {
-  try {
-    // Reuse the 24h-cached name resolver — avoids a fresh eth_call on every
-    // request and keeps this zero-cost when the artist has no ENS name.
-    const ensName = await resolveEnsNameCached(address.toLowerCase())
-    if (!ensName) return null
-    const url = await client.getEnsText({ name: normalize(ensName), key: "url" })
-    return url ?? null
-  } catch {
-    return null
-  }
+  const lower = address.toLowerCase()
+  return pgCache(`ens-url:${lower}`, 60 * 60 * 24, async () => {
+    try {
+      const id = await getArtistIdentity(lower)
+      if (!id.ensName) return null
+      const url = await client.getEnsText({
+        name: normalize(id.ensName),
+        key: "url",
+      })
+      return url ?? null
+    } catch {
+      return null
+    }
+  })
 }
 
 export type ArtistIdentity = {
@@ -116,17 +129,17 @@ export const resolveEnsNameCached = unstable_cache(
 )
 
 export async function resolveDisplayName(address: string): Promise<string> {
-  const lower = address.toLowerCase()
-  // Off-RPC path first; fall back to ENS-via-RPC when EFP is unavailable.
-  const efp = await resolveEfpEnsCached(lower)
-  if (efp !== null) return efp.name ?? truncateAddress(address)
-  const ensName = await resolveEnsNameCached(lower)
-  return ensName ?? truncateAddress(address)
+  // Single read path for all display-name lookups: route through the
+  // permanently-indexed `ens_identities` table via `getArtistIdentity`. The
+  // first sight of an address resolves it live (EFP / ENS RPC) and persists;
+  // every subsequent call is a pg point lookup.
+  const id = await getArtistIdentity(address)
+  return id.displayName
 }
 
 /**
  * Resolve display names for many addresses in parallel.
- * Deduplicates and caches per-call. Always returns a value per input address.
+ * Deduplicates per-call. Every input address gets a returned value.
  */
 export async function resolveDisplayNames(
   addresses: readonly string[],
@@ -227,13 +240,15 @@ const resolveEnsAvatarCached = unstable_cache(
 /**
  * Resolve an artist's identity (ENS name + avatar).
  *
- * Primary path is the EFP HTTPS API (zero RPC, one round-trip per
- * address). When EFP returns a record we trust it — even if the record
- * is `{ name: null, avatar: null }`, that's a legitimate "no ENS" answer
- * and we honor it without spending RPC to confirm. When EFP is
- * unavailable (timeout, 5xx, parse error) the cached value is null and
- * we fall back to direct ENS RPC resolution, preserving the previous
- * behavior end-to-end.
+ * Read path is a single point lookup against the persistent
+ * `ens_identities` table — no TTL, no upstream call. Rows are written
+ * once on first sight and live forever. When the row is missing we fall
+ * through to live resolution via EFP (HTTPS) with an ENS RPC fallback,
+ * then persist the result so the next read is a pure pg hit.
+ *
+ * Refresh: the stored row never expires on a timer. When a user updates
+ * their ENS record their stored display name goes stale; surface a
+ * manual invalidation route if/when that becomes a real complaint.
  */
 export async function getArtistIdentity(
   address: string,
@@ -241,24 +256,49 @@ export async function getArtistIdentity(
   const addr = address as Address
   const lower = address.toLowerCase()
 
-  const efp = await resolveEfpEnsCached(lower)
-  if (efp !== null) {
-    const displayName =
-      efp.name ?? `${address.slice(0, 6)}...${address.slice(-4)}`
+  const stored = await readEnsIdentity(lower)
+  if (stored) {
+    const displayName = stored.ensName ?? truncateAddress(address)
     return {
       address: addr,
-      ensName: efp.name,
+      ensName: stored.ensName,
       displayName,
-      avatarUrl: efp.avatar,
+      avatarUrl: stored.avatarUrl,
     }
   }
 
+  const resolved = await resolveEnsIdentityLive(lower)
+  writeEnsIdentity(lower, {
+    ensName: resolved.ensName,
+    avatarUrl: resolved.avatarUrl,
+  })
+  const displayName = resolved.ensName ?? truncateAddress(address)
+  return {
+    address: addr,
+    ensName: resolved.ensName,
+    displayName,
+    avatarUrl: resolved.avatarUrl,
+  }
+}
+
+/**
+ * Live ENS resolution (EFP HTTPS first, ENS RPC fallback). Used internally
+ * by `getArtistIdentity` for the cold-path (row missing from
+ * `ens_identities`); the resolved value is then persisted so subsequent
+ * reads stay on the pg point-lookup path.
+ */
+async function resolveEnsIdentityLive(
+  lowerAddress: string,
+): Promise<{ ensName: string | null; avatarUrl: string | null }> {
+  const efp = await resolveEfpEnsCached(lowerAddress)
+  if (efp !== null) {
+    return { ensName: efp.name, avatarUrl: efp.avatar }
+  }
   const [ensName, avatarUrl] = await Promise.all([
-    resolveEnsNameCached(lower),
-    resolveEnsAvatarCached(lower),
+    resolveEnsNameCached(lowerAddress),
+    resolveEnsAvatarCached(lowerAddress),
   ])
-  const displayName = ensName ?? `${address.slice(0, 6)}...${address.slice(-4)}`
-  return { address: addr, ensName, displayName, avatarUrl }
+  return { ensName, avatarUrl }
 }
 
 /**
