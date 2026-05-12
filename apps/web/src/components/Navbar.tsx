@@ -13,7 +13,7 @@ type ArtistAction = { href: string; label: string }
 
 const ARTIST_ACTIONS: ArtistAction[] = [
   { href: "/preserve", label: "Preserve work" },
-  { href: "/delist", label: "Delist your work" },
+  { href: "/delist", label: "Leave platforms" },
   { href: "/auction/new", label: "Deploy your auction" },
   { href: "/sites", label: "Run your own site" },
 ]

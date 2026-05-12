@@ -98,16 +98,18 @@ function Hero() {
   return (
     <header className="space-y-4">
       <h1 className="text-3xl font-semibold tracking-tight">
-        Cancel your marketplace listings
+        Delist from platforms
       </h1>
       <p className="text-base text-fg-muted leading-relaxed">
-        Cancel your active listings on Foundation and SuperRare in one
-        transaction. The tool reads directly from the marketplace
-        contracts. You pay gas. There are no fees.
+        If you&rsquo;re done selling on Foundation or SuperRare, your
+        listings stay live there until you cancel each one. This tool
+        cancels them all in a single transaction, straight against the
+        marketplace contracts. Gas only, no fees, nothing routes through
+        this site.
       </p>
       <p className="text-base text-fg-muted leading-relaxed">
-        Enter any address to see what is currently listed. Connect that
-        wallet to cancel.
+        Paste any address or ENS to see what&rsquo;s still listed.
+        Connect that wallet to take it down.
       </p>
     </header>
   )

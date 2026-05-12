@@ -3,9 +3,9 @@ import { Suspense } from "react"
 import { resolveEnsAddress } from "@/lib/artist-queries"
 import { DelistClient } from "./DelistClient"
 
-const TITLE = "Cancel your marketplace listings"
+const TITLE = "Delist from platforms"
 const DESCRIPTION =
-  "Cancel your listings on Foundation and SuperRare in one transaction. Pay only gas, no fees."
+  "Cancel your active Foundation and SuperRare listings in one transaction. Gas only, no fees, nothing routes through this site."
 
 export const metadata: Metadata = {
   title: TITLE,
