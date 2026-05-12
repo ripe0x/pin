@@ -1,27 +1,31 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useRegistryWrite } from "./useRegistryWrite"
 import { extractShortError } from "./registryErrors"
+import { ContractPreview } from "./ContractPreview"
+import { TokenPreview } from "./TokenPreview"
+import { useContractInfo } from "./useContractInfo"
 
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/
 
 /**
- * Single unified form for adding any pointer to the record. Two fields,
- * no radios:
+ * Add form for /record.
  *
- *   1. Contract address (required)
- *   2. Tokens (optional) — accepts a single id ("42") or a range
- *      ("1-100"). Blank means "all tokens on this contract".
+ *   1. Contract address (required) — preview card below shows
+ *      name / symbol / standard / total supply when we can read them.
+ *   2. Which tokens? (optional) — single id ("42") or range
+ *      ("1-100"). Blank = all tokens. When a single id is entered,
+ *      a small thumbnail+name preview confirms the artist has the
+ *      right token. When a range is entered, a count summary appears.
+ *   3. A "you're about to add..." summary line tells the artist
+ *      exactly which contract function will fire and on what.
  *
- * On submit the form parses field 2 and dispatches to the matching
- * registry function: blank → addContract, single id → addToken, range
- * → addTokenRange. Degenerate ranges ("5-5") collapse to addToken.
- *
- * The artist never has to know the distinction between addToken and
- * addTokenRange, and "the whole contract" / "specific tokens"
- * vocabulary is gone — the optional field already implies the
- * either/or.
+ * Validation is intentionally non-blocking. Per the registry's "no
+ * semantic checks" rule, the contract accepts anything; the form
+ * surfaces what we can find but never refuses submission based on
+ * on-chain state. Format errors (non-address, malformed range) DO
+ * block — those are pure input mistakes.
  */
 
 type ParsedTokens =
@@ -51,11 +55,29 @@ function parseTokens(input: string): ParsedTokens | { error: string } {
   }
 }
 
+function formatBigInt(n: bigint): string {
+  if (n < 1_000_000_000n) return Number(n).toLocaleString()
+  return n.toString()
+}
+
 export function AddEntryForm() {
   const { call, busy, error, reset, isSuccess } = useRegistryWrite()
   const [addr, setAddr] = useState("")
   const [tokens, setTokens] = useState("")
   const [localErr, setLocalErr] = useState<string | null>(null)
+
+  const addrValid = ADDRESS_RE.test(addr.trim())
+  const { data: contractInfo } = useContractInfo(addr)
+
+  // Parse tokens lazily so the summary line + token preview can read
+  // the result without re-parsing.
+  const parsed = useMemo<ParsedTokens | { error: string }>(
+    () => parseTokens(tokens),
+    [tokens],
+  )
+
+  const parseFailed = "error" in parsed
+  const tokensTouched = tokens.trim() !== ""
 
   useEffect(() => {
     if (isSuccess) {
@@ -71,8 +93,7 @@ export function AddEntryForm() {
       setLocalErr("Enter a valid contract address.")
       return
     }
-    const parsed = parseTokens(tokens)
-    if ("error" in parsed) {
+    if (parseFailed) {
       setLocalErr(parsed.error)
       return
     }
@@ -86,6 +107,12 @@ export function AddEntryForm() {
       call("addTokenRange", [c as `0x${string}`, parsed.start, parsed.end])
     }
   }
+
+  // Over-supply warning: when totalSupply is known, flag a token id or
+  // range upper bound that's higher than what's been minted. Soft —
+  // many contracts mint unbounded over time and the artist might be
+  // declaring a range that fills out as new tokens drop.
+  const overSupplyHint = computeOverSupplyHint(parsed, contractInfo)
 
   return (
     <form
@@ -117,6 +144,7 @@ export function AddEntryForm() {
           disabled={busy}
           className="w-full border border-gray-200 rounded-md px-3 py-2 font-mono text-sm focus:outline-none focus:border-gray-400 disabled:opacity-50"
         />
+        <ContractPreview address={addr} />
       </div>
 
       <div className="space-y-1.5">
@@ -145,12 +173,39 @@ export function AddEntryForm() {
         <p className="text-xs text-gray-500">
           Leave blank to add all tokens on this contract.
         </p>
+        {tokensTouched && parseFailed && (
+          <p className="text-xs text-amber-700">{parsed.error}</p>
+        )}
+
+        {/* Per-scope preview */}
+        {addrValid && !parseFailed && parsed.type === "single" && (
+          <TokenPreview contract={addr} tokenId={parsed.id.toString()} />
+        )}
+        {addrValid && !parseFailed && parsed.type === "range" && (
+          <div className="border border-gray-200 rounded-md p-3 text-sm">
+            Adding{" "}
+            <strong>
+              {formatBigInt(parsed.end - parsed.start + 1n)}
+            </strong>{" "}
+            tokens — IDs {parsed.start.toString()} through{" "}
+            {parsed.end.toString()}.
+          </div>
+        )}
+        {overSupplyHint && (
+          <p className="text-xs text-amber-700">{overSupplyHint}</p>
+        )}
       </div>
+
+      <SummaryLine
+        addrValid={addrValid}
+        parsed={parseFailed ? null : parsed}
+        contractName={contractInfo?.name ?? null}
+      />
 
       <div className="flex items-center justify-end">
         <button
           type="submit"
-          disabled={busy}
+          disabled={busy || !addrValid || parseFailed}
           className="bg-fg text-bg text-sm font-medium px-4 py-2 rounded-md hover:opacity-90 transition-opacity disabled:opacity-50"
         >
           {busy ? "Adding..." : "Add to record"}
@@ -163,4 +218,64 @@ export function AddEntryForm() {
       )}
     </form>
   )
+}
+
+/**
+ * One-line "you're about to add..." summary so the artist sees the
+ * exact action before clicking. Hidden until address is valid AND
+ * tokens-field parses cleanly.
+ */
+function SummaryLine({
+  addrValid,
+  parsed,
+  contractName,
+}: {
+  addrValid: boolean
+  parsed: ParsedTokens | null
+  contractName: string | null
+}) {
+  if (!addrValid || !parsed) return null
+  const label = contractName ?? "this contract"
+  let body: React.ReactNode
+  if (parsed.type === "all") {
+    body = (
+      <>
+        Adding <strong>all tokens</strong> on{" "}
+        <strong>{label}</strong>.
+      </>
+    )
+  } else if (parsed.type === "single") {
+    body = (
+      <>
+        Adding <strong>token #{parsed.id.toString()}</strong> on{" "}
+        <strong>{label}</strong>.
+      </>
+    )
+  } else {
+    body = (
+      <>
+        Adding <strong>tokens {parsed.start.toString()}–{parsed.end.toString()}</strong>{" "}
+        on <strong>{label}</strong>.
+      </>
+    )
+  }
+  return <p className="text-sm text-gray-600">{body}</p>
+}
+
+function computeOverSupplyHint(
+  parsed: ParsedTokens | { error: string },
+  info: { totalSupply: string | null } | null,
+): string | null {
+  if (!info || info.totalSupply === null) return null
+  if ("error" in parsed) return null
+  if (parsed.type === "all") return null
+  const supply = BigInt(info.totalSupply)
+  if (supply === 0n) return null
+  if (parsed.type === "single" && parsed.id >= supply) {
+    return `Token #${parsed.id.toString()} is above the current supply (${formatBigInt(supply)}). It may not exist yet.`
+  }
+  if (parsed.type === "range" && parsed.end >= supply) {
+    return `Range ends above the current supply (${formatBigInt(supply)}). Some tokens may not exist yet.`
+  }
+  return null
 }
