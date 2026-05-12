@@ -37,6 +37,7 @@ import {
   writeSuperrareV2BidHistory,
   readSuperrareV2SellerListings,
   writeSuperrareV2SellerListings,
+  type LazySrSellerListings,
   LAZY_TTL,
   isFresh,
 } from "../lazy-index"
@@ -666,12 +667,19 @@ export const superrareV2Adapter: PlatformAdapter = {
   ): Promise<SellerListings | null> {
     const sellerLower = seller.toLowerCase()
 
-    // Per-seller write-through cache. The RPC scan below is ~50 chunked
-    // `eth_getLogs` calls + a multicall over years of SR history. We pay
-    // that cost at most once per seller per TTL (30 min); every other
-    // reader gets the row as a pg point lookup. The bulk-delist UI also
-    // POSTs /api/seller-listings/revalidate after a successful cancel,
-    // dropping this row immediately so the user sees the updated state.
+    // Two-layer cache:
+    //   1. If the row is younger than the TTL, return it as-is — no scan,
+    //      no multicall, no RPC.
+    //   2. If the row is stale OR missing, refresh. The refresh is
+    //      *incremental*: we scan only `(last_scanned_block + 1, head)`
+    //      for new NewAuction events, merge them with the cached
+    //      candidate set, then multicall to confirm which are still
+    //      cancellable. The multicall step drops anything cancelled /
+    //      settled / bid-on between the last scan and now.
+    //
+    // The bulk-delist UI also POSTs /api/seller-listings/revalidate
+    // after a successful cancel, dropping this row so the next read
+    // refreshes immediately.
     const cached = await readSuperrareV2SellerListings(sellerLower)
     if (
       cached &&
@@ -692,9 +700,23 @@ export const superrareV2Adapter: PlatformAdapter = {
       }
     }
 
-    const fresh = await discoverSrCancellableLive(seller)
+    // Incremental refresh path. Cached rows without a `lastScannedBlock`
+    // (written before the column existed) fall back to a full rescan
+    // once, then settle into incremental mode on the next refresh.
+    const fromBlock =
+      cached?.lastScannedBlock != null
+        ? cached.lastScannedBlock + 1n
+        : SR_BAZAAR_DEPLOY_BLOCK
+    const cachedCandidates = cached
+      ? cachedAuctionsToCandidates(cached.auctions)
+      : new Map<string, SrCandidateMeta>()
+    const { listings, scannedTo } = await discoverSrCancellableLive(
+      seller,
+      fromBlock,
+      cachedCandidates,
+    )
     writeSuperrareV2SellerListings(sellerLower, {
-      auctions: fresh.auctions.map((a) => ({
+      auctions: listings.auctions.map((a) => ({
         id: a.id,
         auctionId: a.auctionId,
         nftContract: a.nftContract,
@@ -703,8 +725,9 @@ export const superrareV2Adapter: PlatformAdapter = {
         durationSeconds: a.durationSeconds,
         feeBps: a.feeBps,
       })),
+      lastScannedBlock: scannedTo,
     })
-    return fresh
+    return listings
   },
 
   async discoverArtistAuctions(artist: Address): Promise<void> {
@@ -742,46 +765,92 @@ export const superrareV2Adapter: PlatformAdapter = {
 }
 
 /**
- * Live SR cancellable-listings discovery: chunked log scan + multicall
- * confirmation. Wrapped behind the per-seller lazy cache in
- * `getCancellableListingsForSeller`, so this runs at most once per seller
- * per 30-min TTL.
+ * Candidate shape used between the log-scan step and the multicall
+ * confirmation step. Exported as a type so the cache rehydration in
+ * `getCancellableListingsForSeller` can construct prior candidates
+ * without re-scanning.
+ */
+type SrCandidateMeta = {
+  contract: Address
+  tokenId: bigint
+  lengthOfAuction: bigint
+  minimumBid: bigint
+  currencyAddress: Address
+  blockNumber: bigint
+}
+
+/**
+ * Rebuild SR candidates from a previously-cached `lazy_sr_seller_listings`
+ * row. Cached entries are post-filter (we only ever stored ETH auctions)
+ * and the multicall step uses them only to confirm liveness, so we don't
+ * need every field that the live scan emits. blockNumber is set to 0n so
+ * any new NewAuction event for the same (contract, tokenId) will win the
+ * "most-recent-by-blockNumber" dedupe inside `discoverSrCancellableLive`.
+ */
+function cachedAuctionsToCandidates(
+  cached: LazySrSellerListings["auctions"],
+): Map<string, SrCandidateMeta> {
+  const out = new Map<string, SrCandidateMeta>()
+  for (const a of cached) {
+    const key = `${a.nftContract.toLowerCase()}:${a.tokenId}`
+    out.set(key, {
+      contract: a.nftContract as Address,
+      tokenId: BigInt(a.tokenId),
+      lengthOfAuction: BigInt(a.durationSeconds),
+      minimumBid: BigInt(a.reserveWei),
+      currencyAddress: ETH_CURRENCY as Address,
+      blockNumber: 0n,
+    })
+  }
+  return out
+}
+
+/**
+ * Live SR cancellable-listings discovery: scan new NewAuction events
+ * since `fromBlock`, merge with `cachedCandidates`, multicall to confirm
+ * which are still cancellable. Returns the resolved listings plus the
+ * head block we scanned to, so the caller can persist
+ * `last_scanned_block` and run an even cheaper incremental scan next
+ * time.
+ *
+ * Wrapped behind the per-seller lazy cache in
+ * `getCancellableListingsForSeller`. On a TTL-fresh hit the cache is
+ * served as-is and this function does not run.
  */
 async function discoverSrCancellableLive(
   seller: Address,
-): Promise<SellerListings> {
+  fromBlock: bigint,
+  cachedCandidates: Map<string, SrCandidateMeta>,
+): Promise<{ listings: SellerListings; scannedTo: bigint }> {
   const client = getClient()
   const latest = await client.getBlockNumber()
 
-  const logs = await paginatedIndexedScan(
-      (from, to) =>
-        client.getLogs({
-          address: SR_BAZAAR,
-          event: newAuctionEvent,
-          args: { _auctionCreator: seller },
-          fromBlock: from,
-          toBlock: to,
-        }),
-      SR_BAZAAR_DEPLOY_BLOCK,
-      latest,
-    )
+  // Skip the scan entirely if the cache is already at or past head — can
+  // happen on a tight TTL-expiry retry with no new blocks. The multicall
+  // below still runs to re-confirm cancellable state.
+  const logs =
+    fromBlock > latest
+      ? []
+      : await paginatedIndexedScan(
+          (from, to) =>
+            client.getLogs({
+              address: SR_BAZAAR,
+              event: newAuctionEvent,
+              args: { _auctionCreator: seller },
+              fromBlock: from,
+              toBlock: to,
+            }),
+          fromBlock,
+          latest,
+        )
 
-    if (logs.length === 0) return { auctions: [], buyNows: [] }
-
-    // Dedupe by (contract, tokenId): SR auctions are keyed on the token
-    // (one auction per token at a time on Bazaar), so a re-listed token
-    // surfaces multiple NewAuction events. Keep the most recent by
-    // blockNumber so we use the latest configured length/min bid; the
-    // post-multicall confirmation drops anything that's no longer live.
-    type AuctionMeta = {
-      contract: Address
-      tokenId: bigint
-      lengthOfAuction: bigint
-      minimumBid: bigint
-      currencyAddress: Address
-      blockNumber: bigint
-    }
-    const byKey = new Map<string, AuctionMeta>()
+    // Start from the cached candidate set, then layer new NewAuction
+    // events on top. Same dedupe rule as before: newest blockNumber wins.
+    // Cached entries have blockNumber=0n so any real new event wins
+    // automatically, which correctly handles the relist-after-cancel
+    // case where the cached row references an older auction and a fresh
+    // NewAuction has just landed.
+    const byKey = new Map<string, SrCandidateMeta>(cachedCandidates)
     for (const log of logs) {
       const l = log as typeof log & {
         args: {
@@ -811,7 +880,8 @@ async function discoverSrCancellableLive(
     }
 
     const candidates = Array.from(byKey.values())
-    if (candidates.length === 0) return { auctions: [], buyNows: [] }
+    if (candidates.length === 0)
+      return { listings: { auctions: [], buyNows: [] }, scannedTo: latest }
 
     // Multicall the live auction state + the current NFT owner. Three
     // checks must all pass for an auction to be cancellable:
@@ -946,5 +1016,8 @@ async function discoverSrCancellableLive(
       })
     }
 
-    return { auctions: out, buyNows: [] }
+    return {
+      listings: { auctions: out, buyNows: [] },
+      scannedTo: latest,
+    }
 }
