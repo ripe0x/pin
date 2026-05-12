@@ -1,4 +1,6 @@
+import type { Address } from "viem"
 import type { ContractMapEntry, Confidence } from "@/lib/contract-classifier"
+import { DeclareInRecordButton } from "./DeclareInRecordButton"
 
 const CONFIDENCE_STYLES: Record<Confidence, string> = {
   Known: "text-emerald-700",
@@ -12,8 +14,10 @@ function shortAddr(addr: string) {
 }
 
 export function ContractMapTable({
+  artist,
   entries,
 }: {
+  artist: Address
   entries: ContractMapEntry[]
 }) {
   if (entries.length === 0) {
@@ -69,6 +73,11 @@ export function ContractMapTable({
             </span>
           </div>
           {e.note && <p className="text-sm text-gray-600">{e.note}</p>}
+          {!e.declaredInRegistry && (
+            <div className="flex justify-end">
+              <DeclareInRecordButton artist={artist} contract={e.contract} />
+            </div>
+          )}
         </li>
       ))}
     </ul>

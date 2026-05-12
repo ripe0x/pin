@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { useRegistryWrite } from "./useRegistryWrite"
 import { extractShortError } from "./registryErrors"
 import { ContractPreview } from "./ContractPreview"
@@ -67,10 +68,26 @@ function formatBigInt(n: bigint): string {
 
 export function AddEntryForm() {
   const { call, busy, error, reset, isSuccess } = useRegistryWrite()
+  const searchParams = useSearchParams()
   const [addr, setAddr] = useState("")
   const [scope, setScope] = useState<Scope>("all")
   const [tokens, setTokens] = useState("")
   const [localErr, setLocalErr] = useState<string | null>(null)
+
+  // Pre-fill the address when arriving with `?addContract=0x...` —
+  // used by the "Declare in your record" CTA on /dependency. Runs
+  // once on mount; the artist can edit or clear the field freely
+  // after that.
+  useEffect(() => {
+    const param = searchParams?.get("addContract")
+    if (param && ADDRESS_RE.test(param.trim())) {
+      setAddr(param.trim())
+    }
+    // We deliberately don't include `searchParams` in the deps so a
+    // navigation back to the same page doesn't re-stomp the field
+    // after the artist clears it. Mount-time only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const addrValid = ADDRESS_RE.test(addr.trim())
   const { data: contractInfo } = useContractInfo(addr)

@@ -156,7 +156,7 @@ async function ScanBody({ address }: { address: Address }) {
           title="Contract map"
           right={`${report.contractMap.length} ${report.contractMap.length === 1 ? "contract" : "contracts"}`}
         />
-        <ContractMapTable entries={report.contractMap} />
+        <ContractMapTable artist={address} entries={report.contractMap} />
       </section>
 
       <section className="space-y-3">
