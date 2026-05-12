@@ -224,23 +224,38 @@ async function paginatedIndexedScan<T>(
   fromBlock: bigint,
   toBlock: bigint,
 ): Promise<T[]> {
-  const out: T[] = []
+  // Build the chunk list up front, then fan out in parallel. Serial chunks
+  // (the previous shape) made a cold seller-listings scan ~6× slower than it
+  // needed to be, which was the dominant cause of `/api/seller-listings`
+  // hitting Netlify's 10s function timeout and 502-ing the panel. Alchemy's
+  // per-key concurrency is generous; indexed-arg filters return tiny
+  // payloads per chunk, so the parallel fan-out has no meaningful effect on
+  // RPC unit cost.
+  const chunks: Array<[bigint, bigint]> = []
   for (let start = fromBlock; start <= toBlock; start += BLOCK_RANGE) {
     const end = start + BLOCK_RANGE - 1n > toBlock ? toBlock : start + BLOCK_RANGE - 1n
-    try {
-      const logs = await scan(start, end)
-      out.push(...logs)
-    } catch {
-      // RPC may reject very large ranges; halve and retry once.
-      if (end - start > 10_000n) {
-        const mid = start + (end - start) / 2n
-        const a = await paginatedIndexedScan(scan, start, mid)
-        const b = await paginatedIndexedScan(scan, mid + 1n, end)
-        out.push(...a, ...b)
-      }
-    }
+    chunks.push([start, end])
   }
-  return out
+  const results = await Promise.all(
+    chunks.map(async ([start, end]) => {
+      try {
+        return await scan(start, end)
+      } catch {
+        // RPC may reject very large ranges; halve and retry once. The
+        // recursive call uses the same parallel logic.
+        if (end - start > 10_000n) {
+          const mid = start + (end - start) / 2n
+          const [a, b] = await Promise.all([
+            paginatedIndexedScan(scan, start, mid),
+            paginatedIndexedScan(scan, mid + 1n, end),
+          ])
+          return [...a, ...b]
+        }
+        return [] as T[]
+      }
+    }),
+  )
+  return results.flat()
 }
 
 /**
