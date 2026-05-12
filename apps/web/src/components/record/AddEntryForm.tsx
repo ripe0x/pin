@@ -28,14 +28,19 @@ const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/
  * block — those are pure input mistakes.
  */
 
-type ParsedTokens =
-  | { type: "all" }
+type Scope = "all" | "specific"
+
+type ParsedSpecific =
   | { type: "single"; id: bigint }
   | { type: "range"; start: bigint; end: bigint }
 
-function parseTokens(input: string): ParsedTokens | { error: string } {
+type Parsed = { type: "all" } | ParsedSpecific
+
+function parseSpecific(input: string): ParsedSpecific | { error: string } {
   const trimmed = input.trim()
-  if (trimmed === "") return { type: "all" }
+  if (trimmed === "") {
+    return { error: "Enter a token ID or a range like 1-100." }
+  }
   // Range form: "1-100" / "1 - 100" / with en-dash.
   const rangeMatch = trimmed.match(/^(\d+)\s*[-–]\s*(\d+)$/)
   if (rangeMatch) {
@@ -51,7 +56,7 @@ function parseTokens(input: string): ParsedTokens | { error: string } {
     return { type: "single", id: BigInt(trimmed) }
   }
   return {
-    error: "Use a single number like 42, a range like 1-100, or leave blank.",
+    error: "Use a single number like 42 or a range like 1-100.",
   }
 }
 
@@ -63,26 +68,36 @@ function formatBigInt(n: bigint): string {
 export function AddEntryForm() {
   const { call, busy, error, reset, isSuccess } = useRegistryWrite()
   const [addr, setAddr] = useState("")
+  const [scope, setScope] = useState<Scope>("all")
   const [tokens, setTokens] = useState("")
   const [localErr, setLocalErr] = useState<string | null>(null)
 
   const addrValid = ADDRESS_RE.test(addr.trim())
   const { data: contractInfo } = useContractInfo(addr)
 
-  // Parse tokens lazily so the summary line + token preview can read
-  // the result without re-parsing.
-  const parsed = useMemo<ParsedTokens | { error: string }>(
-    () => parseTokens(tokens),
-    [tokens],
-  )
+  // Parse only when the artist is on the "specific" scope. Empty
+  // input there is an error; for the "all" scope we skip parsing
+  // entirely.
+  const parsedSpecific = useMemo<
+    ParsedSpecific | { error: string } | null
+  >(() => (scope === "specific" ? parseSpecific(tokens) : null), [
+    scope,
+    tokens,
+  ])
 
-  const parseFailed = "error" in parsed
+  const parsed: Parsed | { error: string } | null =
+    scope === "all"
+      ? { type: "all" }
+      : parsedSpecific
+
+  const parseFailed = parsed !== null && "error" in parsed
   const tokensTouched = tokens.trim() !== ""
 
   useEffect(() => {
     if (isSuccess) {
       setAddr("")
       setTokens("")
+      setScope("all")
     }
   }, [isSuccess])
 
@@ -93,8 +108,8 @@ export function AddEntryForm() {
       setLocalErr("Enter a valid contract address.")
       return
     }
-    if (parseFailed) {
-      setLocalErr(parsed.error)
+    if (parsed === null || "error" in parsed) {
+      setLocalErr(parsed && "error" in parsed ? parsed.error : "Pick what to add.")
       return
     }
     setLocalErr(null)
@@ -148,57 +163,79 @@ export function AddEntryForm() {
       </div>
 
       <div className="space-y-1.5">
-        <label
-          htmlFor="record-tokens"
-          className="block text-xs text-gray-600"
-        >
-          Which tokens?{" "}
-          <span className="text-gray-400">(optional)</span>
-        </label>
-        <input
-          id="record-tokens"
-          type="text"
-          inputMode="text"
-          autoComplete="off"
-          spellCheck={false}
-          value={tokens}
-          onChange={(e) => {
-            setTokens(e.target.value)
+        <div className="block text-xs text-gray-600">What to add</div>
+        <ScopePicker
+          scope={scope}
+          onChange={(s) => {
+            setScope(s)
             if (localErr) setLocalErr(null)
           }}
-          placeholder="42, or 1-100"
           disabled={busy}
-          className="w-full border border-gray-200 rounded-md px-3 py-2 font-mono text-sm focus:outline-none focus:border-gray-400 disabled:opacity-50"
         />
-        <p className="text-xs text-gray-500">
-          Leave blank to add all tokens on this contract.
-        </p>
-        {tokensTouched && parseFailed && (
-          <p className="text-xs text-amber-700">{parsed.error}</p>
-        )}
-
-        {/* Per-scope preview */}
-        {addrValid && !parseFailed && parsed.type === "single" && (
-          <TokenPreview contract={addr} tokenId={parsed.id.toString()} />
-        )}
-        {addrValid && !parseFailed && parsed.type === "range" && (
-          <div className="border border-gray-200 rounded-md p-3 text-sm">
-            Adding{" "}
-            <strong>
-              {formatBigInt(parsed.end - parsed.start + 1n)}
-            </strong>{" "}
-            tokens — IDs {parsed.start.toString()} through{" "}
-            {parsed.end.toString()}.
-          </div>
-        )}
-        {overSupplyHint && (
-          <p className="text-xs text-amber-700">{overSupplyHint}</p>
-        )}
       </div>
+
+      {scope === "specific" && (
+        <div className="space-y-1.5">
+          <label
+            htmlFor="record-tokens"
+            className="block text-xs text-gray-600"
+          >
+            Which tokens?
+          </label>
+          <input
+            id="record-tokens"
+            type="text"
+            inputMode="text"
+            autoComplete="off"
+            spellCheck={false}
+            value={tokens}
+            onChange={(e) => {
+              setTokens(e.target.value)
+              if (localErr) setLocalErr(null)
+            }}
+            placeholder="42, or 1-100"
+            disabled={busy}
+            autoFocus
+            className="w-full border border-gray-200 rounded-md px-3 py-2 font-mono text-sm focus:outline-none focus:border-gray-400 disabled:opacity-50"
+          />
+          <p className="text-xs text-gray-500">
+            A single ID like <span className="font-mono">42</span> or a
+            range like <span className="font-mono">1-100</span>.
+          </p>
+          {tokensTouched && parseFailed && (
+            <p className="text-xs text-amber-700">
+              {parsed && "error" in parsed ? parsed.error : ""}
+            </p>
+          )}
+
+          {addrValid &&
+            parsed &&
+            !("error" in parsed) &&
+            parsed.type === "single" && (
+              <TokenPreview contract={addr} tokenId={parsed.id.toString()} />
+            )}
+          {addrValid &&
+            parsed &&
+            !("error" in parsed) &&
+            parsed.type === "range" && (
+              <div className="border border-gray-200 rounded-md p-3 text-sm">
+                Adding{" "}
+                <strong>
+                  {formatBigInt(parsed.end - parsed.start + 1n)}
+                </strong>{" "}
+                tokens — IDs {parsed.start.toString()} through{" "}
+                {parsed.end.toString()}.
+              </div>
+            )}
+          {overSupplyHint && (
+            <p className="text-xs text-amber-700">{overSupplyHint}</p>
+          )}
+        </div>
+      )}
 
       <SummaryLine
         addrValid={addrValid}
-        parsed={parseFailed ? null : parsed}
+        parsed={parsed && !("error" in parsed) ? parsed : null}
         contractName={contractInfo?.name ?? null}
       />
 
@@ -231,7 +268,7 @@ function SummaryLine({
   contractName,
 }: {
   addrValid: boolean
-  parsed: ParsedTokens | null
+  parsed: Parsed | null
   contractName: string | null
 }) {
   if (!addrValid || !parsed) return null
@@ -263,11 +300,11 @@ function SummaryLine({
 }
 
 function computeOverSupplyHint(
-  parsed: ParsedTokens | { error: string },
+  parsed: Parsed | { error: string } | null,
   info: { totalSupply: string | null } | null,
 ): string | null {
   if (!info || info.totalSupply === null) return null
-  if ("error" in parsed) return null
+  if (parsed === null || "error" in parsed) return null
   if (parsed.type === "all") return null
   const supply = BigInt(info.totalSupply)
   if (supply === 0n) return null
@@ -278,4 +315,64 @@ function computeOverSupplyHint(
     return `Range ends above the current supply (${formatBigInt(supply)}). Some tokens may not exist yet.`
   }
   return null
+}
+
+function ScopePicker({
+  scope,
+  onChange,
+  disabled,
+}: {
+  scope: Scope
+  onChange: (s: Scope) => void
+  disabled: boolean
+}) {
+  const opts: Array<{ id: Scope; label: string; hint: string }> = [
+    {
+      id: "all",
+      label: "All tokens on this contract",
+      hint: "Add every token, current and future.",
+    },
+    {
+      id: "specific",
+      label: "Specific tokens",
+      hint: "Add one ID or a range.",
+    },
+  ]
+  return (
+    <div
+      role="radiogroup"
+      aria-label="What to add"
+      className="grid grid-cols-1 sm:grid-cols-2 gap-2"
+    >
+      {opts.map((o) => {
+        const active = scope === o.id
+        return (
+          <button
+            key={o.id}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange(o.id)}
+            disabled={disabled}
+            className={`text-left rounded-md border p-3 transition-colors disabled:opacity-50 ${
+              active
+                ? "border-fg bg-gray-50"
+                : "border-gray-200 hover:border-gray-400"
+            }`}
+          >
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <span
+                className={`inline-block h-3 w-3 rounded-full border ${
+                  active ? "bg-fg border-fg" : "border-gray-300"
+                }`}
+                aria-hidden
+              />
+              {o.label}
+            </div>
+            <div className="text-xs text-gray-500 mt-1 ml-5">{o.hint}</div>
+          </button>
+        )
+      })}
+    </div>
+  )
 }
