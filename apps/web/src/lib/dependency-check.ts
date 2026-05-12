@@ -15,6 +15,7 @@ import {
 } from "./seller-listings-server"
 import {
   classifyContract,
+  declaredOnlyEntry,
   type ContractMapEntry,
   type ContractRow,
 } from "./contract-classifier"
@@ -23,6 +24,7 @@ import {
   type ArtistInventory,
   type PlatformError,
 } from "./artist-inventory"
+import { getArtistRecord, type ArtistRecord } from "./artist-record"
 import type { PlatformId } from "./platforms/types"
 
 /**
@@ -149,22 +151,26 @@ async function listingsWithTimeout(
 
 /**
  * Combine indexer rows (Foundation), platform-adapter rows (non-Foundation),
- * and the artist's Sovereign house into a single classified contract map.
+ * the artist's Sovereign house, and on-chain registry declarations into a
+ * single classified contract map. Registry declarations are dual-purposed:
+ * they bump the `declaredInRegistry` flag on auto-detected entries AND
+ * surface declared-only contracts as new rows.
  */
 function buildContractMap(args: {
   artistAddress: string
   fndRows: ContractRow[] | null
   inventory: ArtistInventory
   sovereignHouse: string | null
+  declaredContracts: ReadonlySet<string>
 }): ContractMapEntry[] {
-  const { artistAddress, fndRows, inventory, sovereignHouse } = args
+  const { artistAddress, fndRows, inventory, sovereignHouse, declaredContracts } = args
   const seen = new Set<string>()
   const entries: ContractMapEntry[] = []
 
   // Foundation rows first (richer metadata via fnd_collections).
   if (fndRows) {
     for (const r of fndRows) {
-      const entry = classifyContract(r, artistAddress)
+      const entry = classifyContract(r, artistAddress, declaredContracts)
       entries.push(entry)
       seen.add(entry.contract)
     }
@@ -182,6 +188,7 @@ function buildContractMap(args: {
           platform: c.platform,
         },
         artistAddress,
+        declaredContracts,
       ),
     )
     seen.add(c.contract)
@@ -199,8 +206,21 @@ function buildContractMap(args: {
           isSovereignHouse: true,
         },
         artistAddress,
+        declaredContracts,
       ),
     )
+    seen.add(sovereignHouse.toLowerCase())
+  }
+
+  // Declared-but-undetected contracts. These are claimed by the artist
+  // on-chain but no platform adapter discovered them — either because
+  // the contract isn't on a supported platform or the artist deployed
+  // something we don't know how to classify. Surface as artist-owned
+  // with the registry-declaration flag set.
+  for (const declared of declaredContracts) {
+    if (seen.has(declared)) continue
+    entries.push(declaredOnlyEntry(declared))
+    seen.add(declared)
   }
 
   // Sort: artist-owned first, then by token count desc, then unknown last.
@@ -470,6 +490,7 @@ export async function buildDependencyReport(
     fndSales,
     listings,
     ensUrl,
+    registryRecord,
   ] = await Promise.all([
     getArtistIdentity(address),
     tryIndexer(() => getArtistContractMap(addrLower)),
@@ -478,13 +499,33 @@ export async function buildDependencyReport(
     tryIndexer(() => getFoundationSalesSummary(addrLower)),
     listingsWithTimeout(addrLower),
     getEnsUrl(address).catch(() => null),
+    // Registry read — single multicall to the on-chain registry. On any
+    // failure (registry not deployed, RPC blip), fall back to an empty
+    // record so the rest of the report still renders cleanly.
+    getArtistRecord(address).catch((): ArtistRecord => ({
+      artist: address,
+      contracts: [],
+      tokens: [],
+      tokenRanges: [],
+      successor: null,
+    })),
   ])
+
+  // The set of contract addresses the artist has personally declared
+  // in the on-chain registry. Used by the classifier to flag
+  // auto-detected entries with `declaredInRegistry: true` AND to
+  // surface declared-only contracts (those not picked up by any
+  // platform adapter) as additional artist-owned rows.
+  const declaredContracts = new Set<string>(
+    registryRecord.contracts.map((c) => c.toLowerCase()),
+  )
 
   const contractMap = buildContractMap({
     artistAddress: addrLower,
     fndRows: fndContractMap.ok ? fndContractMap.value : null,
     inventory,
     sovereignHouse: house,
+    declaredContracts,
   })
 
   const inventoryTotals = computeInventoryTotals(contractMap)
@@ -623,7 +664,7 @@ async function fetchAndCacheReport(
  */
 export const getDependencyReport = unstable_cache(
   fetchAndCacheReport,
-  ["artist-dependency-v5"],
+  ["artist-dependency-v6"],
   {
     revalidate: DEPENDENCY_SCAN_PARTIAL_TTL_S,
     tags: ["artist-dependency"],

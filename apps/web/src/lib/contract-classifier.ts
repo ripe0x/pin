@@ -85,6 +85,10 @@ export type ContractMapEntry = {
   name: string | null
   kind: "1of1" | "drop" | null
   note: string
+  /** True iff the artist has declared this contract in the on-chain
+   * ArtistRecordRegistry. Independent of `confidence` — a contract can
+   * be both auto-detected (Known/Detected confidence) AND declared. */
+  declaredInRegistry: boolean
 }
 
 const LABELS: Record<ContractType, string> = {
@@ -106,12 +110,14 @@ const PLATFORM_SYSTEM_NAMES: Record<PlatformHint, string> = {
 export function classifyContract(
   row: ContractRow,
   artistAddress: string,
+  declaredSet?: ReadonlySet<string>,
 ): ContractMapEntry {
   const contract = row.contract.toLowerCase()
   const kind: "1of1" | "drop" | null =
     row.collectionKind === "1of1" || row.collectionKind === "drop"
       ? row.collectionKind
       : null
+  const declaredInRegistry = declaredSet?.has(contract) ?? false
 
   // Caller-flagged Sovereign auction house — surface as artist-owned.
   if (row.isSovereignHouse) {
@@ -125,6 +131,7 @@ export function classifyContract(
       name: row.collectionName ?? null,
       kind,
       note: "Artist-owned auction house deployed via the PND factory.",
+      declaredInRegistry,
     }
   }
 
@@ -140,6 +147,7 @@ export function classifyContract(
       name: "Foundation 1/1",
       kind,
       note: "Shared Foundation creator contract used by many artists.",
+      declaredInRegistry,
     }
   }
   if (EQ(contract, SR_V2_NFT_ADDR)) {
@@ -153,6 +161,7 @@ export function classifyContract(
       name: "SuperRare V2",
       kind,
       note: "Shared SuperRare V2 creator contract.",
+      declaredInRegistry,
     }
   }
 
@@ -169,6 +178,7 @@ export function classifyContract(
       name: "Foundation Marketplace",
       kind,
       note: "Foundation marketplace contract.",
+      declaredInRegistry,
     }
   }
   if (EQ(contract, SR_BAZAAR_ADDR)) {
@@ -182,6 +192,7 @@ export function classifyContract(
       name: "SuperRare Bazaar",
       kind,
       note: "SuperRare marketplace contract.",
+      declaredInRegistry,
     }
   }
   if (EQ(contract, TL_AH_ADDR)) {
@@ -195,6 +206,7 @@ export function classifyContract(
       name: "Transient Auction House",
       kind,
       note: "Transient Labs auction house contract.",
+      declaredInRegistry,
     }
   }
 
@@ -215,6 +227,7 @@ export function classifyContract(
       note: isArtistDeployed
         ? "Foundation clone deployed by this artist."
         : "Foundation clone deployed by another address.",
+      declaredInRegistry,
     }
   }
 
@@ -233,6 +246,7 @@ export function classifyContract(
       name: row.collectionName ?? null,
       kind,
       note: `${system}-indexed contract; deployer not verified.`,
+      declaredInRegistry,
     }
   }
 
@@ -247,5 +261,28 @@ export function classifyContract(
     name: row.collectionName ?? null,
     kind,
     note: "PND could not identify this contract from its current registry.",
+    declaredInRegistry,
+  }
+}
+
+/**
+ * Build a contract-map entry for a contract that was declared in the
+ * artist's on-chain record but didn't surface from any platform-side
+ * discovery (no Foundation tokens, no Manifold/SR/Transient match).
+ * Surfaces as artist-owned with `Declared` confidence — the artist
+ * personally attested to it.
+ */
+export function declaredOnlyEntry(contract: string): ContractMapEntry {
+  return {
+    contract: contract.toLowerCase(),
+    tokenCount: 0,
+    type: "artist-owned",
+    label: LABELS["artist-owned"],
+    confidence: "Detected",
+    system: null,
+    name: null,
+    kind: null,
+    note: "Declared by the artist in the on-chain registry; tokens not enumerated by platform indexers.",
+    declaredInRegistry: true,
   }
 }

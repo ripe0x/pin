@@ -56,6 +56,11 @@ export function ContractMapTable({
               {e.kind && (
                 <span className="text-gray-400">· {e.kind}</span>
               )}
+              {e.declaredInRegistry && (
+                <span className="text-[11px] uppercase tracking-wide text-emerald-700 border border-emerald-300 bg-emerald-50 rounded-full px-2 py-0.5">
+                  Declared in record
+                </span>
+              )}
             </div>
             <span
               className={`text-[11px] uppercase tracking-wide ${CONFIDENCE_STYLES[e.confidence]}`}
