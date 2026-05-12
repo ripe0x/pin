@@ -272,6 +272,68 @@ export function writeFoundationSellerListings(
   `.catch(() => {})
 }
 
+// ─── SuperRare V2: cancellable seller listings ──────────────────────────
+// Mirrors the Foundation helpers above. SR's discovery is the more
+// expensive of the two (full-history `eth_getLogs` over ~11M blocks), so
+// the lazy cache is what keeps /delist responsive after the first visit
+// per seller.
+
+export type LazySrSellerListings = {
+  auctions: Array<{
+    id: string
+    auctionId: string
+    nftContract: string
+    tokenId: string
+    reserveWei: string
+    durationSeconds: number
+    feeBps?: number
+  }>
+  lastIndexedAt: Date
+}
+
+export async function readSuperrareV2SellerListings(
+  seller: string,
+): Promise<LazySrSellerListings | null> {
+  if (!sql) return null
+  try {
+    const rows = await sql<
+      Array<{
+        auctions: LazySrSellerListings["auctions"]
+        last_indexed_at: Date
+      }>
+    >`
+      SELECT auctions, last_indexed_at
+      FROM lazy_sr_seller_listings
+      WHERE seller = ${seller.toLowerCase()}
+      LIMIT 1
+    `
+    if (rows.length === 0) return null
+    const r = rows[0]
+    return {
+      auctions: r.auctions,
+      lastIndexedAt: r.last_indexed_at,
+    }
+  } catch {
+    return null
+  }
+}
+
+export function writeSuperrareV2SellerListings(
+  seller: string,
+  payload: { auctions: LazySrSellerListings["auctions"] },
+): void {
+  if (!sql) return
+  void sql`
+    INSERT INTO lazy_sr_seller_listings
+      (seller, auctions, last_indexed_at)
+    VALUES
+      (${seller.toLowerCase()}, ${sql.json(payload.auctions)}, NOW())
+    ON CONFLICT (seller) DO UPDATE
+      SET auctions = EXCLUDED.auctions,
+          last_indexed_at = NOW()
+  `.catch(() => {})
+}
+
 export type LazyArtistTokenRef = {
   contract: string
   tokenId: string
@@ -762,6 +824,10 @@ export const LAZY_TTL = {
    * load re-scans that artist's auctions. Tighter than other TTLs
    * because home-grid freshness matters most. */
   superrareV2ArtistAuctions: 2 * 60 * 1000,
+  /** SR V2 cancellable seller-listings: mirrors foundationSellerListings.
+   * 30 min cap, with the bulk-delist UI invalidating the row on a
+   * successful cancel via /api/seller-listings/revalidate. */
+  superrareV2SellerListings: 30 * 60 * 1000,
   /** TL artist mints: same logic as superrareV2ArtistTokens. */
   transientArtistTokens: 30 * 24 * 60 * 60 * 1000,
   /** TL last sale (auction or buy-now): settled prices immutable. */
