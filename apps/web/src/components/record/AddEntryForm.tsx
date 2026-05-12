@@ -7,51 +7,52 @@ import { extractShortError } from "./registryErrors"
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/
 
 /**
- * Single unified form for adding any pointer to the record.
+ * Single unified form for adding any pointer to the record. Two fields,
+ * no radios:
  *
- * The artist enters a contract address and chooses scope:
- *   "The whole contract" → addContract
- *   "Specific tokens"    → addToken (single id) or addTokenRange (a range)
+ *   1. Contract address (required)
+ *   2. Tokens (optional) — accepts a single id ("42") or a range
+ *      ("1-100"). Blank means "all tokens on this contract".
  *
- * The tokens input accepts either a single number ("42") or a range
- * ("1-100"); the form figures out which contract function to call and
- * collapses degenerate single-token ranges (e.g. "5-5") to addToken.
- * Removing the developer vocabulary (Contract / Token / Range) means
- * an artist who's never thought about the distinction still gets it
- * right.
+ * On submit the form parses field 2 and dispatches to the matching
+ * registry function: blank → addContract, single id → addToken, range
+ * → addTokenRange. Degenerate ranges ("5-5") collapse to addToken.
+ *
+ * The artist never has to know the distinction between addToken and
+ * addTokenRange, and "the whole contract" / "specific tokens"
+ * vocabulary is gone — the optional field already implies the
+ * either/or.
  */
-type Scope = "whole" | "specific"
 
 type ParsedTokens =
+  | { type: "all" }
   | { type: "single"; id: bigint }
   | { type: "range"; start: bigint; end: bigint }
 
 function parseTokens(input: string): ParsedTokens | { error: string } {
   const trimmed = input.trim()
-  if (trimmed === "") {
-    return { error: "Enter a token ID or a range like 1-100." }
-  }
-  // Range form: "1-100" or "1 - 100" or with en-dash.
+  if (trimmed === "") return { type: "all" }
+  // Range form: "1-100" / "1 - 100" / with en-dash.
   const rangeMatch = trimmed.match(/^(\d+)\s*[-–]\s*(\d+)$/)
   if (rangeMatch) {
     const start = BigInt(rangeMatch[1])
     const end = BigInt(rangeMatch[2])
-    if (start > end) return { error: "Start must be less than or equal to end." }
+    if (start > end) {
+      return { error: "Start must be less than or equal to end." }
+    }
     if (start === end) return { type: "single", id: start }
     return { type: "range", start, end }
   }
-  // Single id.
   if (/^\d+$/.test(trimmed)) {
     return { type: "single", id: BigInt(trimmed) }
   }
   return {
-    error: "Use a single number like 42 or a range like 1-100.",
+    error: "Use a single number like 42, a range like 1-100, or leave blank.",
   }
 }
 
 export function AddEntryForm() {
   const { call, busy, error, reset, isSuccess } = useRegistryWrite()
-  const [scope, setScope] = useState<Scope>("whole")
   const [addr, setAddr] = useState("")
   const [tokens, setTokens] = useState("")
   const [localErr, setLocalErr] = useState<string | null>(null)
@@ -70,14 +71,6 @@ export function AddEntryForm() {
       setLocalErr("Enter a valid contract address.")
       return
     }
-
-    if (scope === "whole") {
-      setLocalErr(null)
-      reset()
-      call("addContract", [c as `0x${string}`])
-      return
-    }
-
     const parsed = parseTokens(tokens)
     if ("error" in parsed) {
       setLocalErr(parsed.error)
@@ -85,7 +78,9 @@ export function AddEntryForm() {
     }
     setLocalErr(null)
     reset()
-    if (parsed.type === "single") {
+    if (parsed.type === "all") {
+      call("addContract", [c as `0x${string}`])
+    } else if (parsed.type === "single") {
       call("addToken", [c as `0x${string}`, parsed.id])
     } else {
       call("addTokenRange", [c as `0x${string}`, parsed.start, parsed.end])
@@ -124,71 +119,33 @@ export function AddEntryForm() {
         />
       </div>
 
-      <fieldset className="space-y-2">
-        <legend className="text-xs text-gray-600 mb-1">
-          What part of it?
-        </legend>
-        <div className="flex flex-col sm:flex-row gap-3 sm:gap-6">
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input
-              type="radio"
-              name="scope"
-              value="whole"
-              checked={scope === "whole"}
-              onChange={() => {
-                setScope("whole")
-                if (localErr) setLocalErr(null)
-              }}
-              disabled={busy}
-            />
-            The whole contract
-          </label>
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input
-              type="radio"
-              name="scope"
-              value="specific"
-              checked={scope === "specific"}
-              onChange={() => {
-                setScope("specific")
-                if (localErr) setLocalErr(null)
-              }}
-              disabled={busy}
-            />
-            Specific tokens
-          </label>
-        </div>
-      </fieldset>
-
-      {scope === "specific" && (
-        <div className="space-y-1.5">
-          <label
-            htmlFor="record-tokens"
-            className="block text-xs text-gray-600"
-          >
-            Which tokens?
-          </label>
-          <input
-            id="record-tokens"
-            type="text"
-            inputMode="text"
-            autoComplete="off"
-            spellCheck={false}
-            value={tokens}
-            onChange={(e) => {
-              setTokens(e.target.value)
-              if (localErr) setLocalErr(null)
-            }}
-            placeholder="42, or 1-100"
-            disabled={busy}
-            className="w-full border border-gray-200 rounded-md px-3 py-2 font-mono text-sm focus:outline-none focus:border-gray-400 disabled:opacity-50"
-          />
-          <p className="text-xs text-gray-500">
-            One token ID like <span className="font-mono">42</span>, or a
-            range like <span className="font-mono">1-100</span>.
-          </p>
-        </div>
-      )}
+      <div className="space-y-1.5">
+        <label
+          htmlFor="record-tokens"
+          className="block text-xs text-gray-600"
+        >
+          Which tokens?{" "}
+          <span className="text-gray-400">(optional)</span>
+        </label>
+        <input
+          id="record-tokens"
+          type="text"
+          inputMode="text"
+          autoComplete="off"
+          spellCheck={false}
+          value={tokens}
+          onChange={(e) => {
+            setTokens(e.target.value)
+            if (localErr) setLocalErr(null)
+          }}
+          placeholder="42, or 1-100"
+          disabled={busy}
+          className="w-full border border-gray-200 rounded-md px-3 py-2 font-mono text-sm focus:outline-none focus:border-gray-400 disabled:opacity-50"
+        />
+        <p className="text-xs text-gray-500">
+          Leave blank to add all tokens on this contract.
+        </p>
+      </div>
 
       <div className="flex items-center justify-end">
         <button
