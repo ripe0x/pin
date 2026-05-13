@@ -6,7 +6,7 @@ import {
   rabbyWallet,
   safeWallet,
 } from "@rainbow-me/rainbowkit/wallets"
-import { foundry, mainnet } from "wagmi/chains"
+import { foundry as foundryBase, mainnet } from "wagmi/chains"
 import { createConfig, http } from "wagmi"
 import { mock } from "wagmi/connectors"
 import type { Address } from "viem"
@@ -25,6 +25,22 @@ const projectId = rawProjectId || "PLACEHOLDER_DEV_ID"
 // MetaMask labels fork txs as "Foundry"/"Anvil" rather than "Ethereum Mainnet"
 // — eliminates the "is this a real mainnet tx?" anxiety during local testing.
 const anvilUrl = process.env.NEXT_PUBLIC_ANVIL_RPC_URL ?? "http://localhost:8545"
+
+// viem's built-in `foundry` chain hardcodes `rpcUrls.default.http` to
+// `http://127.0.0.1:8545`. The wagmi `mock` connector reads that URL
+// directly for `eth_sendTransaction` (it bypasses the configured
+// `transports` map for writes), so if the anvil fork is on a non-default
+// port — or if another process owns 8545 — every write from the
+// impersonation harness lands on the wrong node and comes back as
+// "Missing or invalid parameters." Patching the chain object here so
+// reads, writes, and the wallet-label all agree on the same URL.
+const foundry = {
+  ...foundryBase,
+  rpcUrls: {
+    ...foundryBase.rpcUrls,
+    default: { ...foundryBase.rpcUrls.default, http: [anvilUrl] },
+  },
+} as typeof foundryBase
 
 // When running against a local fork the mainnet transport also goes
 // straight to anvil. Anvil holds the full mainnet state at fork-block, so
