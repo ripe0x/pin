@@ -1,8 +1,5 @@
 import type { Address } from "viem"
-
-function shortAddr(addr: string) {
-  return `${addr.slice(0, 6)}...${addr.slice(-4)}`
-}
+import { ContractLabel } from "./RecordRowLabels"
 
 export function RecordContractsSection({
   contracts,
@@ -23,7 +20,7 @@ export function RecordContractsSection({
           key={c}
           className="border border-gray-200 rounded-md p-4 flex items-center justify-between gap-3"
         >
-          <div className="font-mono text-sm">{shortAddr(c)}</div>
+          <ContractLabel address={c} />
           <a
             href={`https://evm.now/address/${c}`}
             target="_blank"

@@ -3,10 +3,7 @@
 import type { Address } from "viem"
 import { useIsRecordOwner } from "./useIsRecordOwner"
 import { RemoveRowButton } from "./RemoveRowButton"
-
-function shortAddr(addr: string) {
-  return `${addr.slice(0, 6)}...${addr.slice(-4)}`
-}
+import { ContractLabel } from "./RecordRowLabels"
 
 /**
  * Contracts section. Renders the list of declared contracts. When the
@@ -32,7 +29,7 @@ export function RecordContractsEditable({
           key={c}
           className="border border-gray-200 rounded-md p-4 flex items-center justify-between gap-3"
         >
-          <div className="font-mono text-sm">{shortAddr(c)}</div>
+          <ContractLabel address={c} />
           {isOwner ? (
             <RemoveRowButton fn="removeContract" args={[c]} />
           ) : (

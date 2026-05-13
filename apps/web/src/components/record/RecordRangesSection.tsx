@@ -1,6 +1,4 @@
-function shortAddr(addr: string) {
-  return `${addr.slice(0, 6)}...${addr.slice(-4)}`
-}
+import { ContractLabel } from "./RecordRowLabels"
 
 export function RecordRangesSection({
   ranges,
@@ -23,10 +21,8 @@ export function RecordRangesSection({
           key={`${r.contractAddress}:${r.startTokenId}:${r.endTokenId}`}
           className="border border-gray-200 rounded-md p-4 flex items-center justify-between gap-3 flex-wrap"
         >
-          <div className="min-w-0 space-y-0.5">
-            <div className="font-mono text-sm">
-              {shortAddr(r.contractAddress)}
-            </div>
+          <div className="min-w-0 space-y-1">
+            <ContractLabel address={r.contractAddress} />
             <div className="text-xs text-gray-500">
               Tokens {r.startTokenId}
               {r.startTokenId === r.endTokenId

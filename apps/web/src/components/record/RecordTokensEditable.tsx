@@ -3,10 +3,7 @@
 import type { Address } from "viem"
 import { useIsRecordOwner } from "./useIsRecordOwner"
 import { RemoveRowButton } from "./RemoveRowButton"
-
-function shortAddr(addr: string) {
-  return `${addr.slice(0, 6)}...${addr.slice(-4)}`
-}
+import { TokenLabel } from "./RecordRowLabels"
 
 export function RecordTokensEditable({
   artist,
@@ -26,12 +23,10 @@ export function RecordTokensEditable({
           key={`${t.contractAddress}:${t.tokenId}`}
           className="border border-gray-200 rounded-md p-4 flex items-center justify-between gap-3 flex-wrap"
         >
-          <div className="min-w-0 space-y-0.5">
-            <div className="font-mono text-sm">
-              {shortAddr(t.contractAddress)}
-            </div>
-            <div className="text-xs text-gray-500">Token #{t.tokenId}</div>
-          </div>
+          <TokenLabel
+            contractAddress={t.contractAddress}
+            tokenId={t.tokenId}
+          />
           {isOwner ? (
             <RemoveRowButton
               fn="removeToken"
