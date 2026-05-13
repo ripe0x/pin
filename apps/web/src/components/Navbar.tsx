@@ -13,9 +13,9 @@ type ArtistAction = { href: string; label: string }
 
 const ARTIST_ACTIONS: ArtistAction[] = [
   { href: "/preserve", label: "Preserve work" },
-  { href: "/delist", label: "Leave platforms" },
-  { href: "/auction/new", label: "Deploy your auction" },
-  { href: "/sites", label: "Run your own site" },
+  { href: "/delist", label: "Manage platform listings" },
+  { href: "/auction/new", label: "Create auction contract" },
+  { href: "/sites", label: "Publish artist site" },
 ]
 
 export function Navbar() {
