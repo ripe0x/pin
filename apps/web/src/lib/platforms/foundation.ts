@@ -29,7 +29,7 @@ import {
   type FndDiscoveryCache,
 } from "./foundation-seller-listings"
 import { discoverFoundationArtistAuctions } from "./foundation-scan"
-import { getAlchemyMainnetUrl } from "../alchemy-rpc"
+import { getMainnetRpcUrl } from "../rpc"
 
 const FOUNDATION_NFT_ADDRESS = FOUNDATION_NFT[MAINNET_CHAIN_ID]
 const FND_NFT_MARKET = NFT_MARKET[MAINNET_CHAIN_ID]
@@ -38,7 +38,7 @@ function getClient() {
   return createPublicClient({
     chain: mainnet,
     transport: http(
-      getAlchemyMainnetUrl(),
+      getMainnetRpcUrl(),
     ),
   })
 }

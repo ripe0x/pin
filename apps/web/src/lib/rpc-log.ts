@@ -3,7 +3,7 @@ import { createHash } from "node:crypto"
 import { AsyncLocalStorage } from "node:async_hooks"
 import { fallback, http, type HttpTransportConfig, type Transport } from "viem"
 import { sql } from "./db"
-import { getMainnetRpcUrls } from "./alchemy-rpc"
+import { getMainnetRpcUrls } from "./rpc"
 
 /**
  * Sampled RPC call logger backed by the `rpc_events` Postgres table.
@@ -13,7 +13,7 @@ import { getMainnetRpcUrls } from "./alchemy-rpc"
  *     page's pathname as `referer`, so we can see which page drives the
  *     most calls.
  *   - Server-side fanouts (Alchemy enhanced API in `alchemy.ts`, viem
- *     clients in `alchemy-rpc.ts`) log each upstream call with `route`
+ *     clients in `rpc.ts`) log each upstream call with `route`
  *     set to the API handler that initiated the work, so we can see
  *     which endpoint amplifies the most.
  *
@@ -118,8 +118,8 @@ export function logRpcEvent(ev: RpcEvent, opts?: { sample?: number }) {
  * batches plus multicall fan-outs can produce hundreds of upstream
  * calls per API request — full sampling would dominate the table.
  *
- * Lives here (rather than alongside `getAlchemyMainnetUrl` in
- * alchemy-rpc.ts) so that any module-graph path leading to a client
+ * Lives here (rather than alongside `getMainnetRpcUrl` in
+ * rpc.ts) so that any module-graph path leading to a client
  * component can keep importing the URL helper without dragging
  * "server-only" into the client bundle.
  */
@@ -185,7 +185,7 @@ export function loggingHttpTransport(
  * rpc_events with its own `upstream` host so we can spot drift between
  * providers in the logs.
  *
- * Prefer this over `loggingHttpTransport(getAlchemyMainnetUrl(), route)`
+ * Prefer this over `loggingHttpTransport(getMainnetRpcUrl(), route)`
  * for every server-side mainnet client. The single-URL helper is kept for
  * paths that genuinely want a specific provider (none today).
  */

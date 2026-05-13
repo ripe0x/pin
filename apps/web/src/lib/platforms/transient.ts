@@ -35,7 +35,7 @@ import {
 } from "../lazy-index"
 import type { BidHistoryEntry } from "../auctions"
 import { discoverTransientArtistAuctions } from "./transient-scan"
-import { getAlchemyMainnetUrl } from "../alchemy-rpc"
+import { getMainnetRpcUrl } from "../rpc"
 
 const TL_AH = TL_AUCTION_HOUSE[MAINNET_CHAIN_ID]
 const TL_DEPLOYER = TL_UNIVERSAL_DEPLOYER[MAINNET_CHAIN_ID]
@@ -96,7 +96,7 @@ function getClient() {
   return createPublicClient({
     chain: mainnet,
     transport: http(
-      getAlchemyMainnetUrl(),
+      getMainnetRpcUrl(),
       { batch: true },
     ),
   })
