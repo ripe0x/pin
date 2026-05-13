@@ -18,6 +18,12 @@ export type SellerListingsState =
       auctions: AuctionListing[]
       buyNows: BuyNowListing[]
       meta: Map<string, SellerListingMeta>
+      /** True when at least one platform adapter timed out or upstream
+       * RPC failed mid-scan. Surfaces in the UI so a 0-listing result
+       * during a scan failure doesn't read as a confident "nothing
+       * here." Partial results are NOT persisted in pg by the route,
+       * so a refresh re-runs the scan fresh. */
+      partial: boolean
     }
   | { kind: "error"; message: string }
 
@@ -44,12 +50,11 @@ export function useSellerListings(
     if (!address) return
     setState({ kind: "loading" })
     try {
-      const { auctions, buyNows } = await fetchSellerCancellableListings(
-        address,
-      )
+      const { auctions, buyNows, partial } =
+        await fetchSellerCancellableListings(address)
       const all: SellerListing[] = [...auctions, ...buyNows]
       const meta = await resolveListingMetadata(all)
-      setState({ kind: "loaded", auctions, buyNows, meta })
+      setState({ kind: "loaded", auctions, buyNows, meta, partial })
     } catch (err) {
       setState({
         kind: "error",
@@ -76,6 +81,7 @@ export function useSellerListings(
         auctions: prev.auctions.filter((a) => !ids.has(a.id)),
         buyNows: prev.buyNows.filter((b) => !ids.has(b.id)),
         meta: prev.meta,
+        partial: prev.partial,
       }
     })
   }, [])
