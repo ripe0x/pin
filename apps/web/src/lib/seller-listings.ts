@@ -87,15 +87,27 @@ function getClient(): PublicClient {
  * Client-side fetcher. Hits the cached API route which fans out across all
  * platform adapters and returns a unified, platform-tagged list. All
  * panel components consume this rather than calling adapters directly.
+ *
+ * The `partial` flag is true when the route returned an incomplete
+ * result — at least one platform adapter timed out or upstream RPC
+ * failed. Callers should surface this so users know empty results may
+ * be a scan failure, not an actual absence of listings. The route
+ * deliberately does NOT cache partial results, so the next refresh
+ * runs fresh.
  */
 export async function fetchSellerCancellableListings(
   sellerAddress: string,
-): Promise<{ auctions: AuctionListing[]; buyNows: BuyNowListing[] }> {
+): Promise<{
+  auctions: AuctionListing[]
+  buyNows: BuyNowListing[]
+  partial: boolean
+}> {
   const res = await fetch(
     `/api/seller-listings/${sellerAddress.toLowerCase()}`,
     { cache: "no-store" },
   )
   if (!res.ok) throw new Error(`seller-listings ${res.status}`)
+  const partial = res.headers.get("x-seller-listings-partial") === "1"
   const json = (await res.json()) as {
     auctions: Array<{
       kind: "auction"
@@ -137,6 +149,7 @@ export async function fetchSellerCancellableListings(
       tokenId: b.tokenId,
       priceWei: BigInt(b.priceWei),
     })),
+    partial,
   }
 }
 

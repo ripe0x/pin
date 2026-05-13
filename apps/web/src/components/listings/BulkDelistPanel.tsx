@@ -73,6 +73,27 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
   }
 
   const total = state.auctions.length + state.buyNows.length
+
+  // Partial empty result: the scan didn't complete, so we can't honestly
+  // say "you have no listings" — show a refresh prompt instead of
+  // hiding the panel.
+  if (total === 0 && state.partial) {
+    return (
+      <Section>
+        <p className="text-sm text-gray-700">
+          Marketplace scan didn&rsquo;t complete. Upstream RPC may be rate-
+          limited or down.
+        </p>
+        <button
+          onClick={refresh}
+          className="mt-3 text-xs font-medium underline text-gray-700 hover:text-fg"
+        >
+          Try again
+        </button>
+      </Section>
+    )
+  }
+
   if (total === 0) return null
 
   const allItems: SellerListing[] = [...state.auctions, ...state.buyNows]
@@ -120,6 +141,19 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
           {allSelected ? "Deselect all" : "Select all"}
         </button>
       </header>
+
+      {state.partial && (
+        <div className="mb-4 border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          One of the marketplace scans didn&rsquo;t complete. The list below
+          may be missing rows.{" "}
+          <button
+            onClick={refresh}
+            className="font-medium underline hover:text-amber-700"
+          >
+            Refresh
+          </button>
+        </div>
+      )}
 
       <SellerListingsView
         mode="interactive"
