@@ -5,10 +5,15 @@ import { mainnet } from "viem/chains"
 import { pgCache } from "@/lib/pg-cache"
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit"
 import { loggingFallbackTransport } from "@/lib/rpc-log"
+import {
+  readContractIdentity,
+  writeContractIdentity,
+  type StoredContractIdentity,
+} from "@/lib/contract-identity-store"
 
 /**
- * Lightweight contract sanity-check used by the /record Add form so
- * the artist sees what they're about to declare before they confirm.
+ * Lightweight contract sanity-check used by the /record Add form and
+ * the /record list pages.
  *
  * Returns:
  *   - whether the address has any deployed bytecode
@@ -16,14 +21,18 @@ import { loggingFallbackTransport } from "@/lib/rpc-log"
  *   - which ERC standard the contract claims (721 / 1155 / both)
  *   - totalSupply when implemented (ERC-721 enumerable)
  *
- * Every read tolerates failure individually — many older or
- * minimalist contracts don't implement name(), totalSupply(),
- * or supportsInterface. We surface what we can and leave the rest
- * blank.
+ * Two-tier caching:
+ *   1. Identity (name, symbol, has_bytecode, ERC standard) — persistent
+ *      index in the `contract_identity` table. Rows live forever once
+ *      written; one on-chain probe per address ever. See
+ *      `contract-identity-store.ts` and migration 021.
+ *   2. totalSupply — short-TTL pgCache. Supply mutates on every mint,
+ *      so we re-read on a short cycle. The record list pages don't read
+ *      this column, so most callers never trigger the supply path.
  *
- * Cached 1h per address. Contract identity doesn't change; the only
- * thing that drifts is totalSupply for actively-minting collections,
- * which is fine to be slightly stale for a confidence-check preview.
+ * Every read tolerates failure individually — many older or minimalist
+ * contracts don't implement name(), totalSupply(), or supportsInterface.
+ * We surface what we can and leave the rest blank.
  */
 
 const ERC165_ABI = [
@@ -73,7 +82,7 @@ export type ContractInfo = {
   isERC1155: boolean
 }
 
-const TTL_S = 60 * 60
+const SUPPLY_TTL_S = 5 * 60
 
 function getClient() {
   return createPublicClient({
@@ -82,12 +91,16 @@ function getClient() {
   })
 }
 
-async function fetchContractInfo(address: Address): Promise<ContractInfo> {
+/**
+ * One-shot multicall + bytecode read against the chain. Used on a
+ * persistent-index miss (every value gets persisted, no re-fetch later)
+ * AND for the standalone supply refresh path.
+ */
+async function probeContractIdentity(address: Address): Promise<
+  StoredContractIdentity & { totalSupply: string | null }
+> {
   const client = getClient()
 
-  // Code check + interface probes + name/symbol/totalSupply in one
-  // multicall. allowFailure: true so missing functions don't sink
-  // the whole read.
   const [bytecode, multicallResults] = await Promise.all([
     client.getBytecode({ address }).catch(() => undefined),
     client.multicall({
@@ -133,7 +146,6 @@ async function fetchContractInfo(address: Address): Promise<ContractInfo> {
   ] = multicallResults
 
   return {
-    address: address.toLowerCase(),
     hasBytecode: !!bytecode && bytecode !== "0x",
     isERC721:
       isERC721Result.status === "success" && isERC721Result.result === true,
@@ -153,19 +165,81 @@ async function fetchContractInfo(address: Address): Promise<ContractInfo> {
       typeof totalSupplyResult.result === "bigint"
         ? totalSupplyResult.result.toString()
         : null,
+    fetchedAt: new Date(),
   }
 }
 
-const cached = unstable_cache(
+/**
+ * Read just the supply, cached on a short TTL. Used after identity has
+ * been resolved (cheap point read against the table) — the eth_call here
+ * is the only RPC cost on a warm record-list render that needs supply.
+ */
+async function readSupplyOnly(address: Address): Promise<string | null> {
+  const client = getClient()
+  try {
+    const supply = await client.readContract({
+      address,
+      abi: NAME_SYMBOL_ABI,
+      functionName: "totalSupply",
+    })
+    return typeof supply === "bigint" ? supply.toString() : null
+  } catch {
+    return null
+  }
+}
+
+const cachedSupply = unstable_cache(
   (addressLower: string) =>
-    pgCache<ContractInfo>(
-      `contract-info:${addressLower}`,
-      TTL_S,
-      () => fetchContractInfo(addressLower as Address),
+    pgCache<string | null>(
+      `contract-supply:${addressLower}`,
+      SUPPLY_TTL_S,
+      () => readSupplyOnly(addressLower as Address),
     ),
-  ["contract-info-v1"],
-  { revalidate: TTL_S, tags: ["contract-info"] },
+  ["contract-supply-v1"],
+  { revalidate: SUPPLY_TTL_S, tags: ["contract-supply"] },
 )
+
+async function resolveContractInfo(address: string): Promise<ContractInfo> {
+  const lower = address.toLowerCase()
+
+  // Fast path: persistent identity index. One Postgres point read.
+  const stored = await readContractIdentity(lower)
+  if (stored) {
+    // Identity served from the index; supply layered on top (short TTL).
+    // Skip the supply read entirely if the contract has no bytecode —
+    // it'd revert anyway, and we already know that's the answer.
+    const supply = stored.hasBytecode ? await cachedSupply(lower) : null
+    return {
+      address: lower,
+      hasBytecode: stored.hasBytecode,
+      name: stored.name,
+      symbol: stored.symbol,
+      totalSupply: supply,
+      isERC721: stored.isERC721,
+      isERC1155: stored.isERC1155,
+    }
+  }
+
+  // Cold path: never seen this address. One multicall + bytecode read,
+  // persist identity to the index, return everything.
+  const probed = await probeContractIdentity(lower as Address)
+  writeContractIdentity(lower, {
+    name: probed.name,
+    symbol: probed.symbol,
+    hasBytecode: probed.hasBytecode,
+    isERC721: probed.isERC721,
+    isERC1155: probed.isERC1155,
+  })
+  return {
+    address: lower,
+    hasBytecode: probed.hasBytecode,
+    name: probed.name,
+    symbol: probed.symbol,
+    totalSupply: probed.totalSupply,
+    isERC721: probed.isERC721,
+    isERC1155: probed.isERC1155,
+  }
+}
 
 export async function GET(
   req: NextRequest,
@@ -187,7 +261,7 @@ export async function GET(
   }
 
   try {
-    const data = await cached(address.toLowerCase())
+    const data = await resolveContractInfo(address)
     return NextResponse.json(data, {
       headers: { "Cache-Control": "private, max-age=300" },
     })
