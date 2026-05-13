@@ -14,13 +14,13 @@ import {
 } from "../indexer-queries"
 import { getSovereignLastSale } from "../last-sale"
 import { sql } from "../db"
-import { getAlchemyMainnetUrl } from "../alchemy-rpc"
+import { getMainnetRpcUrl } from "../rpc"
 
 function getClient() {
   return createPublicClient({
     chain: mainnet,
     transport: http(
-      getAlchemyMainnetUrl(),
+      getMainnetRpcUrl(),
     ),
   })
 }

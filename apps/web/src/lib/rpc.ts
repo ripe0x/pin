@@ -1,23 +1,31 @@
 /**
- * Server-side Mainnet RPC URL resolution. One source of truth so callers
- * can't drift apart and so the deploy environment only needs a single
- * env var (`ALCHEMY_API_KEY`) to work end-to-end.
+ * Server-side mainnet RPC URL resolution. One source of truth so callers
+ * can't drift apart, and provider-neutral so swapping primaries is a
+ * one-line env change.
  *
  * Returns a ranked list, primary first:
- *   1. `ALCHEMY_MAINNET_URL` if explicitly set — escape hatch for
- *      pointing at a non-Alchemy provider (drpc, self-hosted node) or
- *      a different Alchemy app per environment.
- *   2. `ALCHEMY_API_KEY` if set — built into the canonical Alchemy
- *      mainnet URL.
- *   3. Public providers, in order of historical reliability. Used as
+ *   1. `MAINNET_RPC_URL` if set — the canonical env var. Any JSON-RPC
+ *      compatible provider works (Alchemy, Quicknode, drpc, a self-hosted
+ *      node). Pass the full URL with credentials inline; no provider-
+ *      specific assumptions in code.
+ *   2. `ALCHEMY_MAINNET_URL` if set — deprecated alias for #1. Read here
+ *      so existing deployments with the older env name don't break on
+ *      this PR. Slated for removal after the env var is migrated across
+ *      environments.
+ *   3. `ALCHEMY_API_KEY` if set — deprecated legacy that derives the
+ *      canonical Alchemy URL. Prefer setting `MAINNET_RPC_URL` directly.
+ *      Note: `ALCHEMY_API_KEY` is still used (and correctly named) by the
+ *      Alchemy NFT enhanced API in `lib/alchemy.ts`. That usage is
+ *      legitimate and unaffected — the key is now scoped to NFT-API auth
+ *      only, not RPC URL construction.
+ *   4. Public providers, in order of historical reliability. Used as
  *      automatic fallbacks when the primary fails (rate-limited, capped,
  *      503'd, etc.). The viem `fallback` transport rotates through them
  *      until one returns a successful response, so a single dead provider
  *      doesn't take the site down.
  *
  * Server-only — never imported from a `"use client"` file. Reads
- * server-side env vars (`ALCHEMY_API_KEY` has no `NEXT_PUBLIC_`
- * prefix on purpose).
+ * server-side env vars (no `NEXT_PUBLIC_` prefix on purpose).
  */
 import { fallback, http, type Transport } from "viem"
 
@@ -43,31 +51,31 @@ let warned = false
  * call sites that need a single URL string (e.g. Ponder's standalone
  * sync config, IPFS gateway selection logging).
  */
-export function getAlchemyMainnetUrl(): string {
-  const explicit = process.env.ALCHEMY_MAINNET_URL
+export function getMainnetRpcUrl(): string {
+  const explicit = process.env.MAINNET_RPC_URL ?? process.env.ALCHEMY_MAINNET_URL
   if (explicit) return explicit
-  const key = process.env.ALCHEMY_API_KEY
-  if (key) return `https://eth-mainnet.g.alchemy.com/v2/${key}`
+  const legacyKey = process.env.ALCHEMY_API_KEY
+  if (legacyKey) return `https://eth-mainnet.g.alchemy.com/v2/${legacyKey}`
   if (!warned) {
     warned = true
     // eslint-disable-next-line no-console
     console.warn(
-      "[alchemy-rpc] ALCHEMY_API_KEY and ALCHEMY_MAINNET_URL are both unset; falling back to public providers. Reads will throttle and archive queries may fail.",
+      "[rpc] MAINNET_RPC_URL is not set; falling back to public providers. Reads will throttle and archive queries may fail.",
     )
   }
   return PUBLIC_FALLBACKS[0]
 }
 
 /**
- * The full ranked URL list: primary (Alchemy / explicit override) followed
- * by every public fallback. Exposed so callers that need raw URLs (e.g.
- * the multicall path that constructs its own client per route attribution)
- * can build their own fallback transport.
+ * The full ranked URL list: primary (configured or public fallback)
+ * followed by every public fallback. Exposed so callers that need raw
+ * URLs (e.g. the multicall path that constructs its own client per
+ * route attribution) can build their own fallback transport.
  */
 export function getMainnetRpcUrls(): string[] {
-  const primary = getAlchemyMainnetUrl()
+  const primary = getMainnetRpcUrl()
   // Dedup in case primary is itself one of the public fallbacks (dev
-  // sandboxes where ALCHEMY_* is unset).
+  // sandboxes where neither env var is set).
   const seen = new Set<string>([primary])
   const out: string[] = [primary]
   for (const url of PUBLIC_FALLBACKS) {

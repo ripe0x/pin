@@ -32,14 +32,23 @@ import {
  * pipeline calls them.
  */
 
-const ALCHEMY_API_KEY = process.env.ALCHEMY_API_KEY
+// Primary RPC: provider-neutral. Set `MAINNET_RPC_URL` to any JSON-RPC
+// compatible endpoint with credentials inline. Legacy `ALCHEMY_MAINNET_URL`
+// and `ALCHEMY_API_KEY` are read as backward-compat fallbacks; remove once
+// all environments are migrated to `MAINNET_RPC_URL`.
+const PRIMARY_RPC_URL =
+  process.env.MAINNET_RPC_URL
+  ?? process.env.ALCHEMY_MAINNET_URL
+  ?? (process.env.ALCHEMY_API_KEY
+    ? `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`
+    : null)
 const INFURA_API_KEY = process.env.INFURA_API_KEY
 
-// Upstream chain: try Alchemy first, then Infura, then fall through to
-// public RPCs. Each fallback supports the standard JSON-RPC method set
-// including `eth_sendRawTransaction`, so a mint/bid still goes through
-// even when the primary is unhealthy. Order matters — earliest entries
-// are tried first.
+// Upstream chain: try the configured primary first, then Infura (if
+// configured), then fall through to public RPCs. Each fallback supports
+// the standard JSON-RPC method set including `eth_sendRawTransaction`,
+// so a mint/bid still goes through even when the primary is unhealthy.
+// Order matters — earliest entries are tried first.
 //
 // Infura's free tier intermittently caps `eth_getLogs` to a 10-block range
 // and returns an "Under the Free tier plan..." JSON-RPC error. The body
@@ -52,9 +61,7 @@ const INFURA_API_KEY = process.env.INFURA_API_KEY
 // The publicnode endpoint accepts an optional API key; we use the anonymous
 // tier. drpc/llamarpc/cloudflare are all anonymous public mainnet RPCs.
 const UPSTREAMS = [
-  ALCHEMY_API_KEY
-    ? `https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`
-    : null,
+  PRIMARY_RPC_URL,
   INFURA_API_KEY
     ? `https://mainnet.infura.io/v3/${INFURA_API_KEY}`
     : null,

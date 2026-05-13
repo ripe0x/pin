@@ -29,7 +29,7 @@ import {
   getAddressOrNull,
 } from "@pin/addresses"
 import { sql } from "./db"
-import { getMainnetTransport } from "./alchemy-rpc"
+import { getMainnetTransport } from "./rpc"
 
 const SOVEREIGN_FACTORY = getAddressOrNull(
   SOVEREIGN_AUCTION_HOUSE_FACTORY,

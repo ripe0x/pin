@@ -216,6 +216,48 @@ Operational notes — Netlify deploy specifics, Postgres pooling,
 verification queries, cost expectations, kill switches, local dev —
 live in [`DEPLOYMENT.md`](./DEPLOYMENT.md).
 
+### Forking and provider choice
+
+The app talks to mainnet through one env var: `MAINNET_RPC_URL`. Point it
+at any JSON-RPC compatible endpoint (Alchemy, Quicknode, drpc, a
+self-hosted node) and the core experience works.
+
+Some features rely on Alchemy's enhanced NFT API and only light up when
+`ALCHEMY_API_KEY` is also set. They degrade silently (empty results, no
+crashes) without it:
+
+| Feature | What's broken without `ALCHEMY_API_KEY` | Code path |
+|---|---|---|
+| Manifold artist gallery | Manifold creators show "No works found" | [`lib/manifold-discovery.ts`](./apps/web/src/lib/manifold-discovery.ts) `enumerateRefsViaAlchemyNft` |
+| Collector page — Manifold | Manifold section empty on `/collector/[address]` | [`lib/platforms/manifold.ts`](./apps/web/src/lib/platforms/manifold.ts) `discoverCollectorTokens` (uses `getAllNFTsForOwner`) |
+| Collector page — Foundation | Foundation section empty | [`lib/platforms/foundation.ts`](./apps/web/src/lib/platforms/foundation.ts) `discoverCollectorTokens` (uses `getNFTsForOwner`) |
+| Collector page — SuperRare V2 | SuperRare section empty | [`lib/platforms/superrareV2.ts`](./apps/web/src/lib/platforms/superrareV2.ts) `discoverCollectorTokens` (uses `getNFTsForOwner`) |
+| ERC-1155 supporter / holder stats | No supporters list, no mint counts on token pages | [`lib/onchain-discovery.ts`](./apps/web/src/lib/onchain-discovery.ts) `getErc1155TokenStatsUncached` (uses `alchemy_getAssetTransfers` and `getOwnersForNft`) |
+
+What works on plain RPC, no Alchemy required:
+- Artist pages for Foundation, SuperRare, Sovereign, and Transient
+  (event-scan based)
+- Sovereign auction house deploys, listings, bids, settles, migrations,
+  bulk delist / cancel
+- ENS resolution, token detail pages, the home activity feed (which
+  reads from the Ponder indexer, not RPC)
+- The `/api/rpc` proxy itself, with automatic fallback through public
+  RPCs when the configured primary is unhealthy
+
+These coupled paths use `alchemy_getAssetTransfers` (a non-standard
+JSON-RPC extension) and the `/nft/v3/...` REST endpoints, neither of
+which any other provider implements drop-in. Replacing them with plain
+`eth_getLogs` is feasible for the bounded cases (Foundation + SuperRare
+collector, the known-contract Manifold artist enumeration) but
+expensive for the open-universe Manifold collector — better solved by
+extending the Ponder indexer than by per-render RPC scans.
+
+The optional `INFURA_API_KEY` is read only by the `/api/rpc` proxy as a
+secondary authenticated fallback. The proxy detects Infura's
+free-tier `eth_getLogs` block-range error and falls through to public
+RPCs without the cap, so Infura usefully covers everything except wide
+log scans.
+
 ## Features
 
 ### Artist profiles and lookup

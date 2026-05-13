@@ -36,13 +36,16 @@ const RETRY_AFTER = process.env.WARMER_RETRY_AFTER ?? "7 days"
 const HEALTH_PORT = Number(process.env.PORT ?? "8080")
 
 function getRpcUrl(): string {
-  const explicit = process.env.ALCHEMY_MAINNET_URL
+  // Provider-neutral: prefer `MAINNET_RPC_URL`. Legacy `ALCHEMY_MAINNET_URL`
+  // and `ALCHEMY_API_KEY` are read as backward-compat fallbacks; remove
+  // once env vars are migrated.
+  const explicit = process.env.MAINNET_RPC_URL ?? process.env.ALCHEMY_MAINNET_URL
   if (explicit) return explicit
   const key = process.env.ALCHEMY_API_KEY
   if (key) return `https://eth-mainnet.g.alchemy.com/v2/${key}`
   // eslint-disable-next-line no-console
   console.error(
-    "[metadata-warmer] ALCHEMY_API_KEY / ALCHEMY_MAINNET_URL unset — exiting. tokenURI calls would throttle.",
+    "[metadata-warmer] MAINNET_RPC_URL is not set — exiting. tokenURI calls would throttle.",
   )
   process.exit(1)
 }
