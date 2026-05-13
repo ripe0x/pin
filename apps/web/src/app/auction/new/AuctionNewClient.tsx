@@ -53,7 +53,7 @@ function Inner() {
             {({ openConnectModal }) => (
               <button
                 onClick={openConnectModal}
-                className="block w-full text-center text-sm font-medium py-3 bg-fg text-bg hover:opacity-80 transition-colors"
+                className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors"
               >
                 Connect wallet
               </button>
@@ -85,7 +85,7 @@ function Inner() {
           </p>
           <Link
             href={`/artist/${address}`}
-            className="block w-full text-center text-sm font-medium py-3 bg-fg text-bg hover:opacity-80 transition-colors"
+            className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors"
           >
             Go to your profile to deploy →
           </Link>

@@ -32,8 +32,7 @@ import {
   LAZY_TTL,
   isFresh,
 } from "./lazy-index"
-import { getAlchemyMainnetUrl } from "./alchemy-rpc"
-import { loggingHttpTransport } from "./rpc-log"
+import { loggingFallbackTransport } from "./rpc-log"
 
 // Marker every Manifold Creator Core (V1+) returns true for. From
 // CreatorCore.sol: `bytes4 private constant _CREATOR_CORE_V1 = 0x28f10a21`.
@@ -91,7 +90,7 @@ const contractListCache = new Map<
 function getClient(route?: string): PublicClient {
   return createPublicClient({
     chain: mainnet,
-    transport: loggingHttpTransport(getAlchemyMainnetUrl(), route),
+    transport: loggingFallbackTransport(route),
   })
 }
 

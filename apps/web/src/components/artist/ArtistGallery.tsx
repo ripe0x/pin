@@ -165,7 +165,7 @@ export function ArtistGallery({
             {showStartAuctionLink && (
               <Link
                 href="/auction/new"
-                className="block w-full text-center text-sm font-medium py-3 bg-fg text-bg hover:opacity-80 transition-colors"
+                className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors"
               >
                 Start an auction →
               </Link>

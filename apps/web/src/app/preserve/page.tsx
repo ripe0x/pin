@@ -455,7 +455,7 @@ export default function PreservePage() {
           <button
             onClick={discoverWorks}
             disabled={discovering || (useCustomAddress && !customAddress.trim())}
-            className="w-full bg-fg text-bg py-3 rounded-lg text-sm font-medium hover:opacity-80 transition-colors disabled:opacity-40"
+            className="w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40"
           >
             {discovering
               ? "Scanning the blockchain..."
@@ -529,7 +529,7 @@ export default function PreservePage() {
                     <>
                       <button
                         onClick={() => setStep("pin")}
-                        className="w-full bg-fg text-bg py-3 rounded-lg text-sm font-medium hover:opacity-80 transition-colors"
+                        className="w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors"
                       >
                         Pin {unpinnedCount} remaining {unpinnedCount === 1 ? "file" : "files"} to {providerType ? PROVIDER_INFO[providerType].name : ""}
                       </button>
@@ -553,7 +553,7 @@ export default function PreservePage() {
                   </p>
                   <Link
                     href={`/artist/${discoveredAddress}`}
-                    className="inline-block bg-fg text-bg px-6 py-3 rounded-lg text-sm font-medium hover:opacity-80 transition-colors"
+                    className="inline-flex items-center text-[11px] font-mono font-medium uppercase tracking-wider px-6 py-3 bg-fg text-bg hover:opacity-80 transition-colors"
                   >
                     View Your Artist Page
                   </Link>
@@ -571,7 +571,7 @@ export default function PreservePage() {
           {step === "pin" && !pinning && (
             <button
               onClick={pinAll}
-              className="w-full bg-fg text-bg py-3 rounded-lg text-sm font-medium hover:opacity-80 transition-colors"
+              className="w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors"
             >
               Pin {unpinnedCount > 0 ? `${unpinnedCount} files` : "All"} to {providerType ? PROVIDER_INFO[providerType].name : ""}
             </button>
@@ -608,7 +608,7 @@ export default function PreservePage() {
               </p>
               <Link
                 href={`/artist/${discoveredAddress}`}
-                className="inline-block bg-fg text-bg px-6 py-3 rounded-lg text-sm font-medium hover:opacity-80 transition-colors"
+                className="inline-flex items-center text-[11px] font-mono font-medium uppercase tracking-wider px-6 py-3 bg-fg text-bg hover:opacity-80 transition-colors"
               >
                 View Your Artist Page
               </Link>

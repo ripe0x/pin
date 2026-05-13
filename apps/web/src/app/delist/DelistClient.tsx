@@ -140,7 +140,7 @@ function AddressInputForm({
         />
         <button
           type="submit"
-          className="bg-fg text-bg px-5 py-3 rounded-lg text-sm font-medium hover:opacity-80 transition-colors"
+          className="inline-flex items-center text-[11px] font-mono font-medium uppercase tracking-wider px-5 py-3 bg-fg text-bg hover:opacity-80 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fg"
         >
           Preview
         </button>
