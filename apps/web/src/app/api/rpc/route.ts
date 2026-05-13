@@ -32,23 +32,26 @@ import {
  * pipeline calls them.
  */
 
-const INFURA_API_KEY = process.env.INFURA_API_KEY
 const ALCHEMY_API_KEY = process.env.ALCHEMY_API_KEY
 
-// Upstream chain: try Alchemy first, then Infura, then fall through to
-// public RPCs. Each fallback supports the standard JSON-RPC method set
-// including `eth_sendRawTransaction`, so a mint/bid still goes through
-// even when the primary is unhealthy. Order matters — earliest entries
-// are tried first.
+// Upstream chain: try Alchemy first, then fall through to public RPCs.
+// Each fallback supports the standard JSON-RPC method set including
+// `eth_sendRawTransaction`, so a mint/bid still goes through even when
+// the primary is unhealthy. Order matters — earliest entries are tried
+// first.
+//
+// Infura is deliberately omitted. Its free tier intermittently caps
+// `eth_getLogs` to 10-block ranges and returns an error our viem clients
+// can't recover from on the wallet side, so it's a worse fallback than
+// the anonymous public RPCs for our query mix (wide AuctionCreated /
+// Transfer log scans against indexed args). Mirrors the server-side
+// `PUBLIC_FALLBACKS` list in alchemy-rpc.ts.
 //
 // The publicnode endpoint accepts an optional API key; we use the anonymous
 // tier. drpc/llamarpc/cloudflare are all anonymous public mainnet RPCs.
 const UPSTREAMS = [
   ALCHEMY_API_KEY
     ? `https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`
-    : null,
-  INFURA_API_KEY
-    ? `https://mainnet.infura.io/v3/${INFURA_API_KEY}`
     : null,
   "https://eth.llamarpc.com",
   "https://ethereum-rpc.publicnode.com",
