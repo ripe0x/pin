@@ -9,8 +9,7 @@ import { createPublicClient, type Address } from "viem"
 import { mainnet } from "viem/chains"
 import { normalize } from "viem/ens"
 import { pgCache } from "./pg-cache"
-import { getAlchemyMainnetUrl } from "./alchemy-rpc"
-import { loggingHttpTransport } from "./rpc-log"
+import { loggingFallbackTransport } from "./rpc-log"
 import { nftMarketAbi } from "@pin/abi"
 import { NFT_MARKET, MAINNET_CHAIN_ID } from "@pin/addresses"
 import {
@@ -19,6 +18,7 @@ import {
   type DiscoveredToken,
 } from "./onchain-discovery"
 import {
+  readAddressByEnsName,
   readEnsIdentity,
   writeEnsIdentity,
 } from "./ens-identity-store"
@@ -36,18 +36,35 @@ import { extractCid, ipfsToHttp } from "@pin/shared"
 // to use its own per-route client.
 const client = createPublicClient({
   chain: mainnet,
-  transport: loggingHttpTransport(getAlchemyMainnetUrl(), undefined),
+  transport: loggingFallbackTransport(undefined),
 })
 
 /**
  * Resolve an ENS name to an Ethereum address.
+ *
+ * Read path is the persistent `ens_identities` table first — every
+ * reverse-resolved row `(address, ens_name)` is also a forward index for
+ * free, so any name we've ever resolved (for any artist page, activity-
+ * feed enrichment, /delist preview, etc.) serves out of pg with zero
+ * RPC. Misses fall through to a live `getEnsAddress` call; on success we
+ * persist the row so the next forward + reverse hit both stay warm.
+ *
  * Returns null if the name doesn't resolve.
  */
 export async function resolveEnsAddress(
   ensName: string,
 ): Promise<Address | null> {
+  const indexed = await readAddressByEnsName(ensName)
+  if (indexed) return indexed as Address
   try {
     const address = await client.getEnsAddress({ name: normalize(ensName) })
+    if (address) {
+      // Persist forward → reverse mirror. Avatar resolution is
+      // deferred to the next `getArtistIdentity` call for this
+      // address; we store null here rather than make a second RPC
+      // round-trip on every forward lookup.
+      writeEnsIdentity(address, { ensName, avatarUrl: null })
+    }
     return address ?? null
   } catch {
     return null

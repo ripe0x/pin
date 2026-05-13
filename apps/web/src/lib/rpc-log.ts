@@ -1,8 +1,9 @@
 import "server-only"
 import { createHash } from "node:crypto"
 import { AsyncLocalStorage } from "node:async_hooks"
-import { http, type HttpTransportConfig, type Transport } from "viem"
+import { fallback, http, type HttpTransportConfig, type Transport } from "viem"
 import { sql } from "./db"
+import { getMainnetRpcUrls } from "./alchemy-rpc"
 
 /**
  * Sampled RPC call logger backed by the `rpc_events` Postgres table.
@@ -173,4 +174,25 @@ export function loggingHttpTransport(
     }
     return wrapped as ReturnType<typeof inner>
   }) as Transport
+}
+
+/**
+ * Same per-request logging as `loggingHttpTransport`, but wraps the full
+ * fallback ladder from `getMainnetRpcUrls()`. When the primary provider
+ * is down / capped / rate-limited (e.g. Alchemy's "monthly capacity
+ * exceeded" page returning non-JSON), viem rotates to the next provider
+ * automatically. Each provider's success / failure is sampled into
+ * rpc_events with its own `upstream` host so we can spot drift between
+ * providers in the logs.
+ *
+ * Prefer this over `loggingHttpTransport(getAlchemyMainnetUrl(), route)`
+ * for every server-side mainnet client. The single-URL helper is kept for
+ * paths that genuinely want a specific provider (none today).
+ */
+export function loggingFallbackTransport(
+  route: string | undefined,
+  config?: HttpTransportConfig,
+): Transport {
+  const urls = getMainnetRpcUrls()
+  return fallback(urls.map((url) => loggingHttpTransport(url, route, config)))
 }

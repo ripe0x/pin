@@ -28,6 +28,31 @@ export type StoredEnsIdentity = {
   resolvedAt: Date
 }
 
+/**
+ * Forward lookup: ENS name → address. The reverse-resolved rows
+ * `(address, ens_name)` already double as a forward index thanks to the
+ * mirror: if we've seen `0xcb43.. → ripe0x.eth` we can serve
+ * `ripe0x.eth → 0xcb43..` straight from pg without an RPC round-trip.
+ * Returns null if we've never resolved this name.
+ */
+export async function readAddressByEnsName(
+  ensName: string,
+): Promise<string | null> {
+  if (!sql) return null
+  try {
+    const rows = await sql<Array<{ address: string }>>`
+      SELECT address
+      FROM ens_identities
+      WHERE LOWER(ens_name) = ${ensName.toLowerCase()}
+      LIMIT 1
+    `
+    if (rows.length === 0) return null
+    return rows[0].address
+  } catch {
+    return null
+  }
+}
+
 export async function readEnsIdentity(
   address: string,
 ): Promise<StoredEnsIdentity | null> {
