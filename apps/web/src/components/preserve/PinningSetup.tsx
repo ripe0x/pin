@@ -101,7 +101,7 @@ export function PinningSetup({
       <button
         onClick={handleValidate}
         disabled={validating || !apiKey.trim()}
-        className="w-full bg-fg text-bg py-3 rounded-lg text-sm font-medium hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        className="w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
       >
         {validating ? "Validating..." : "Continue"}
       </button>

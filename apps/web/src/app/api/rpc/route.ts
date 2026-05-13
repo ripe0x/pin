@@ -33,19 +33,30 @@ import {
  */
 
 const ALCHEMY_API_KEY = process.env.ALCHEMY_API_KEY
+const INFURA_API_KEY = process.env.INFURA_API_KEY
 
-// Upstream chain: try Alchemy first (best rate limits + archive data), then
-// fall through to public RPCs if Alchemy is down, rate-limiting us, or the
-// key is misconfigured. Each fallback supports the standard JSON-RPC method
-// set including `eth_sendRawTransaction`, so a mint/bid still goes through
-// even when the primary is unhealthy. Order matters — earliest entries are
-// tried first.
+// Upstream chain: try Alchemy first, then Infura, then fall through to
+// public RPCs. Each fallback supports the standard JSON-RPC method set
+// including `eth_sendRawTransaction`, so a mint/bid still goes through
+// even when the primary is unhealthy. Order matters — earliest entries
+// are tried first.
+//
+// Infura's free tier intermittently caps `eth_getLogs` to a 10-block range
+// and returns an "Under the Free tier plan..." JSON-RPC error. The body
+// matcher in `tryUpstream` below detects that response and treats it as a
+// transient failure so the proxy falls through to the next upstream — that
+// way Infura remains a useful authenticated backup for every other method
+// (eth_call, eth_estimateGas, eth_blockNumber, …) while wide log scans
+// gracefully skip past it to a public RPC without the cap.
 //
 // The publicnode endpoint accepts an optional API key; we use the anonymous
 // tier. drpc/llamarpc/cloudflare are all anonymous public mainnet RPCs.
 const UPSTREAMS = [
   ALCHEMY_API_KEY
     ? `https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`
+    : null,
+  INFURA_API_KEY
+    ? `https://mainnet.infura.io/v3/${INFURA_API_KEY}`
     : null,
   "https://eth.llamarpc.com",
   "https://ethereum-rpc.publicnode.com",
@@ -176,13 +187,29 @@ async function tryUpstream(
     // for write methods etc., since the next public RPC is unlikely to
     // accept them either; just on -32603 (internal error) and -32005
     // (limit exceeded), which signal upstream-side failure.
+    //
+    // We also detect Infura's free-tier rejection by body text rather
+    // than error code — Infura piggybacks on the standard -32600
+    // ("Invalid Request") code for what is functionally a quota cap, so
+    // matching on the human-readable hint ("Free tier" / "block range")
+    // is the only way to tell a genuine bad request apart from a
+    // capacity rejection. Worst case if the wording changes: we see it
+    // once and add another pattern.
     try {
       const parsed: unknown = JSON.parse(text)
       const entries = Array.isArray(parsed) ? parsed : [parsed]
       const transient = entries.some((e) => {
         if (!e || typeof e !== "object") return false
-        const err = (e as { error?: { code?: number } }).error
-        return err?.code === -32603 || err?.code === -32005
+        const err = (e as {
+          error?: { code?: number; message?: string; data?: unknown }
+        }).error
+        if (!err) return false
+        if (err.code === -32603 || err.code === -32005) return true
+        const hint = `${err.message ?? ""} ${
+          typeof err.data === "string" ? err.data : JSON.stringify(err.data ?? "")
+        }`
+        if (/free tier|block range/i.test(hint)) return true
+        return false
       })
       if (transient) return { ok: false }
     } catch {
@@ -233,18 +260,13 @@ export async function POST(req: NextRequest) {
   // matches exactly what viem sent (including key ordering, etc.).
   const payload = JSON.stringify(body)
 
-  // Read calls leak the user's wallet address + query patterns to whichever
-  // RPC handles them. Public RPCs have no contractual privacy guarantee,
-  // so we keep reads on the trusted primary upstream (Alchemy when
-  // configured) and let them fail rather than silently route around it.
-  // Writes (`eth_sendRawTransaction`) are the opposite case: signed bytes
-  // are public the moment they hit any mempool, and broadcast redundancy
-  // is precisely the point — if Alchemy is down, the bid/mint should
-  // still reach the chain via a public RPC.
-  const isWriteBatch = batch.some(
-    (e) => e?.method === "eth_sendRawTransaction",
-  )
-  const upstreams = isWriteBatch ? UPSTREAMS : UPSTREAMS.slice(0, 1)
+  // Walk the full upstream chain for every request. The configured primary
+  // (Alchemy → Infura) serves every healthy read, keeping wallet+query
+  // patterns off public RPCs on the happy path. The public fallbacks only
+  // see traffic when every preferred upstream is down — a tradeoff against
+  // the previous design, where a single primary hiccup took the entire
+  // read path down site-wide.
+  const upstreams = UPSTREAMS
 
   // Log one event per request, attributed to the first batch entry's
   // method. Batches are typically 1–2 entries; if we ever need precise

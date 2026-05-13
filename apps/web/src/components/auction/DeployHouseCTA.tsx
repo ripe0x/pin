@@ -58,7 +58,7 @@ export function DeployHouseCTA({ artistAddress }: { artistAddress: string }) {
         </div>
         <Link
           href="/auction/new"
-          className="block w-full text-center text-sm font-medium py-3 bg-fg text-bg hover:opacity-80 transition-colors"
+          className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors"
         >
           Start your first auction →
         </Link>
@@ -88,7 +88,7 @@ export function DeployHouseCTA({ artistAddress }: { artistAddress: string }) {
         {({ openConnectModal }) => (
           <button
             onClick={openConnectModal}
-            className="block w-full text-center text-sm font-medium py-3 bg-fg text-bg hover:opacity-80 transition-colors"
+            className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors"
           >
             Connect wallet
           </button>
@@ -113,7 +113,7 @@ export function DeployHouseCTA({ artistAddress }: { artistAddress: string }) {
       <button
         onClick={handleDeploy}
         disabled={busy}
-        className="block w-full text-center text-sm font-medium py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
       >
         {isPending
           ? "Confirm in wallet…"

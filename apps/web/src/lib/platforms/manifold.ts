@@ -18,7 +18,7 @@ import {
   LAZY_TTL,
   isFresh,
 } from "../lazy-index"
-import { getMainnetTransport } from "../alchemy-transport"
+import { loggingFallbackTransport } from "../rpc-log"
 
 // Marker interface for Manifold Creator Core (V1 + V2 share this).
 const MANIFOLD_CC_INTERFACE_ID = "0x28f10a21" as const
@@ -37,7 +37,7 @@ const supportsInterfaceAbi = [
 function getClient() {
   return createPublicClient({
     chain: mainnet,
-    transport: getMainnetTransport("manifold"),
+    transport: loggingFallbackTransport("manifold"),
   })
 }
 

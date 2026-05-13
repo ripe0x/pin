@@ -22,7 +22,7 @@ import {
 import { mainnet } from "viem/chains"
 import { unstable_cache } from "next/cache"
 import { pgCache } from "./pg-cache"
-import { getMainnetTransport } from "./alchemy-transport"
+import { loggingFallbackTransport } from "./rpc-log"
 import {
   readFoundationLastSale,
   writeFoundationLastSale,
@@ -78,7 +78,7 @@ export type LastSale = {
 function getClient(route?: string) {
   return createPublicClient({
     chain: mainnet,
-    transport: getMainnetTransport(route),
+    transport: loggingFallbackTransport(route),
   })
 }
 

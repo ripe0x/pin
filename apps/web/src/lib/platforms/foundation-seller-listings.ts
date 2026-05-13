@@ -13,7 +13,7 @@ import type {
   SellerCancellableBuyNow,
   SellerListings,
 } from "./types"
-import { getMainnetTransport } from "../alchemy-transport"
+import { loggingFallbackTransport } from "../rpc-log"
 
 /**
  * Foundation-specific cancellable-listings discovery via direct RPC.
@@ -46,40 +46,65 @@ const buyPriceSetEvent = parseAbiItem(
 function getClient(): PublicClient {
   return createPublicClient({
     chain: mainnet,
-    transport: getMainnetTransport("foundation-seller-listings"),
+    transport: loggingFallbackTransport("foundation-seller-listings"),
   })
+}
+
+/**
+ * Cached auction context passed in from the lazy cache so the live scan
+ * can skip already-known auctions and only fetch new NewAuction events
+ * since the last refresh. The multicall step still re-confirms every
+ * candidate (cached + new) so cancels / finalizes that landed in the gap
+ * drop out.
+ */
+export type FndDiscoveryCache = {
+  auctionIds: bigint[]
+  durationByAuctionId: Map<bigint, bigint>
+  buyNowKeys: Map<string, { nftContract: Address; tokenId: bigint }>
 }
 
 export async function discoverFoundationCancellableListings(
   sellerAddress: string,
-): Promise<SellerListings> {
+  options: { fromBlock?: bigint; cached?: FndDiscoveryCache } = {},
+): Promise<{ listings: SellerListings; scannedTo: bigint }> {
   const client = getClient()
   const seller = sellerAddress.toLowerCase() as Address
   const latestBlock = await client.getBlockNumber()
+  const fromBlock = options.fromBlock ?? NFT_MARKET_DEPLOY_BLOCK
 
-  const [auctionLogs, buyPriceLogs] = await Promise.all([
-    getLogs(
-      client,
-      MARKET_ADDRESS,
-      reserveAuctionCreatedEvent,
-      { seller },
-      NFT_MARKET_DEPLOY_BLOCK,
-      latestBlock,
-    ),
-    getLogs(
-      client,
-      MARKET_ADDRESS,
-      buyPriceSetEvent,
-      { seller },
-      NFT_MARKET_DEPLOY_BLOCK,
-      latestBlock,
-    ),
-  ])
+  // Empty scans when fromBlock > latest (a tight TTL retry with no new
+  // blocks). The multicall below still runs to re-confirm liveness on
+  // the cached candidate set.
+  const [auctionLogs, buyPriceLogs] =
+    fromBlock > latestBlock
+      ? [[], []]
+      : await Promise.all([
+          getLogs(
+            client,
+            MARKET_ADDRESS,
+            reserveAuctionCreatedEvent,
+            { seller },
+            fromBlock,
+            latestBlock,
+          ),
+          getLogs(
+            client,
+            MARKET_ADDRESS,
+            buyPriceSetEvent,
+            { seller },
+            fromBlock,
+            latestBlock,
+          ),
+        ])
 
-  // Dedupe: same auctionId can appear once (one Created event per auction),
-  // but the seller may have re-created an auction for the same token after a
-  // prior cancel; keep the most recent auctionId per token.
-  const durationByAuctionId = new Map<bigint, bigint>()
+  // Start from cached candidates, then layer new events on top. Same
+  // dedupe rule as before: first sight wins for auctionIds (each gets
+  // exactly one Created event); buy-nows dedupe by (contract, tokenId)
+  // since BuyPriceSet fires per-update and the read-back resolves the
+  // current price.
+  const durationByAuctionId = new Map<bigint, bigint>(
+    options.cached?.durationByAuctionId ?? [],
+  )
   for (const log of auctionLogs) {
     const args = (log as { args: { auctionId: bigint; duration: bigint } }).args
     if (!durationByAuctionId.has(args.auctionId)) {
@@ -88,10 +113,10 @@ export async function discoverFoundationCancellableListings(
   }
   const auctionIds = Array.from(durationByAuctionId.keys())
 
-  // For buy-now, BuyPriceSet fires every time the seller sets/updates a price,
-  // so dedupe by (contract, tokenId) — the read-back will tell us the current
-  // state.
-  const buyNowKeys = new Map<string, { nftContract: Address; tokenId: bigint }>()
+  const buyNowKeys = new Map<
+    string,
+    { nftContract: Address; tokenId: bigint }
+  >(options.cached?.buyNowKeys ?? [])
   for (const log of buyPriceLogs) {
     const args = (log as { args: { nftContract: Address; tokenId: bigint } })
       .args
@@ -106,7 +131,10 @@ export async function discoverFoundationCancellableListings(
     confirmActiveBuyNows(client, Array.from(buyNowKeys.values()), seller),
   ])
 
-  return { auctions, buyNows }
+  return {
+    listings: { auctions, buyNows },
+    scannedTo: latestBlock,
+  }
 }
 
 async function confirmActiveAuctions(

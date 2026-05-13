@@ -11,7 +11,7 @@ import {
   MAINNET_CHAIN_ID,
   getAddressOrNull,
 } from "@pin/addresses"
-import { getMainnetTransport } from "./alchemy-transport"
+import { loggingFallbackTransport } from "./rpc-log"
 
 /**
  * Read layer for ArtistRecordRegistry. The contract's read functions
@@ -46,7 +46,7 @@ export type ArtistRecord = {
 function getClient(): PublicClient {
   return createPublicClient({
     chain: mainnet,
-    transport: getMainnetTransport("artist-record"),
+    transport: loggingFallbackTransport("artist-record"),
   })
 }
 

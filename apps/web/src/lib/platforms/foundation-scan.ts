@@ -14,7 +14,7 @@ import {
   isFresh,
   type LazyFoundationActiveAuction,
 } from "../lazy-index"
-import { getMainnetTransport } from "../alchemy-transport"
+import { loggingFallbackTransport } from "../rpc-log"
 
 const FND_NFT_MARKET = NFT_MARKET[MAINNET_CHAIN_ID]
 // NFTMarket proxy was deployed mid-2021. Per-artist `getLogs` calls
@@ -45,7 +45,7 @@ const reserveAuctionInvalidatedEvent = parseAbiItem(
 function getClient() {
   return createPublicClient({
     chain: mainnet,
-    transport: getMainnetTransport("foundation-scan", { batch: true }),
+    transport: loggingFallbackTransport("foundation-scan", { batch: true }),
   })
 }
 

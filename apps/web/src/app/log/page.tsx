@@ -56,6 +56,22 @@ type LogEntry = {
 // Newest first.
 const ENTRIES: LogEntry[] = [
   {
+    date: "May 12, 2026",
+    title: "/delist landing page",
+    summary:
+      "A dedicated /delist page explains the bulk-cancel tool and previews any wallet's active Foundation and SuperRare listings without requiring a connection. Paste an address or ENS to see what's listed. Connect that wallet to cancel selected rows. Linked from the For-artists nav and a new /guides/delist explainer.",
+    forArtists:
+      "If a collector or another artist asks whether they have stale Foundation or SuperRare listings, you can send them one URL. They see what's listed before being asked to connect anything.",
+  },
+  {
+    date: "May 11, 2026",
+    title: "Guides section, with the first guide on auction contracts",
+    summary:
+      "/auctions explains the artist-owned auction contracts in plain language. Who deploys and owns each contract, how listing, bidding, and settlement actually happen, what continues to work if the PND frontend disappears, and the tradeoffs against a shared platform contract. Linked from a new /guides hub and from a new 'For artists' dropdown in the navbar.",
+    forArtists:
+      "When a collector or another artist asks how your contract actually works, you can link them to one page that answers it. Same job /about does for the project, scoped to the contracts themselves.",
+  },
+  {
     date: "May 11, 2026",
     title: "Build log added",
     summary:

@@ -21,7 +21,7 @@ import {
   readTokenMetadata,
   writeTokenMetadata,
 } from "./token-metadata-store"
-import { getMainnetTransport } from "./alchemy-transport"
+import { loggingFallbackTransport } from "./rpc-log"
 import { isRpcDisabled } from "./rpc-circuit"
 import {
   FOUNDATION_NFT,
@@ -117,7 +117,7 @@ export function getClient(route?: string) {
     // `getBlock` fan-out below — N parallel reads become 1 HTTP request,
     // same total CU cost upstream but much less HTTP overhead. Alchemy
     // supports JSON-RPC batching natively.
-    transport: getMainnetTransport(route, { batch: true }),
+    transport: loggingFallbackTransport(route, { batch: true }),
   })
 }
 

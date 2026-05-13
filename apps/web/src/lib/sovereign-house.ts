@@ -29,7 +29,7 @@ import {
   getAddressOrNull,
 } from "@pin/addresses"
 import { sql } from "./db"
-import { getMainnetTransport } from "./alchemy-transport"
+import { getMainnetTransport } from "./alchemy-rpc"
 
 const SOVEREIGN_FACTORY = getAddressOrNull(
   SOVEREIGN_AUCTION_HOUSE_FACTORY,
@@ -40,7 +40,7 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
 function getClient() {
   return createPublicClient({
     chain: mainnet,
-    transport: getMainnetTransport("sovereign-house"),
+    transport: getMainnetTransport(),
   })
 }
 

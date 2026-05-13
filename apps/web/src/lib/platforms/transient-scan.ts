@@ -14,7 +14,7 @@ import {
   isFresh,
   type LazyTransientActiveAuction,
 } from "../lazy-index"
-import { getMainnetTransport } from "../alchemy-transport"
+import { loggingFallbackTransport } from "../rpc-log"
 
 const TL_AH = TL_AUCTION_HOUSE[MAINNET_CHAIN_ID]
 // Auction House v2.6.1 was deployed in early 2026. Per-artist
@@ -45,7 +45,7 @@ const ETH_CURRENCY = "0x0000000000000000000000000000000000000000"
 function getClient() {
   return createPublicClient({
     chain: mainnet,
-    transport: getMainnetTransport("transient-scan", { batch: true }),
+    transport: loggingFallbackTransport("transient-scan", { batch: true }),
   })
 }
 

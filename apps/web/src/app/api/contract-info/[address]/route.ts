@@ -4,7 +4,7 @@ import { createPublicClient, type Address } from "viem"
 import { mainnet } from "viem/chains"
 import { pgCache } from "@/lib/pg-cache"
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit"
-import { getMainnetTransport } from "@/lib/alchemy-transport"
+import { loggingFallbackTransport } from "@/lib/rpc-log"
 
 /**
  * Lightweight contract sanity-check used by the /record Add form so
@@ -78,7 +78,7 @@ const TTL_S = 60 * 60
 function getClient() {
   return createPublicClient({
     chain: mainnet,
-    transport: getMainnetTransport("contract-info"),
+    transport: loggingFallbackTransport("contract-info"),
   })
 }
 

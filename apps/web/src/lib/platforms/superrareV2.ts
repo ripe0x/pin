@@ -34,12 +34,15 @@ import {
   readSuperrareV2BidHistory,
   readSuperrareV2BidHistoryFreshness,
   writeSuperrareV2BidHistory,
+  readSuperrareV2SellerListings,
+  writeSuperrareV2SellerListings,
+  type LazySrSellerListings,
   LAZY_TTL,
   isFresh,
 } from "../lazy-index"
 import type { BidHistoryEntry } from "../auctions"
 import { discoverSuperrareV2ArtistAuctions } from "./superrareV2-scan"
-import { getMainnetTransport } from "../alchemy-transport"
+import { loggingFallbackTransport } from "../rpc-log"
 
 const SR_V2_NFT = SUPERRARE_V2_NFT[MAINNET_CHAIN_ID]
 const SR_BAZAAR = SUPERRARE_BAZAAR[MAINNET_CHAIN_ID]
@@ -97,7 +100,7 @@ const tokenCreatorAbi = [
 function getClient() {
   return createPublicClient({
     chain: mainnet,
-    transport: getMainnetTransport("superrareV2", { batch: true }),
+    transport: loggingFallbackTransport("superrareV2", { batch: true }),
   })
 }
 
@@ -220,23 +223,38 @@ async function paginatedIndexedScan<T>(
   fromBlock: bigint,
   toBlock: bigint,
 ): Promise<T[]> {
-  const out: T[] = []
+  // Build the chunk list up front, then fan out in parallel. Serial chunks
+  // (the previous shape) made a cold seller-listings scan ~6× slower than it
+  // needed to be, which was the dominant cause of `/api/seller-listings`
+  // hitting Netlify's 10s function timeout and 502-ing the panel. Alchemy's
+  // per-key concurrency is generous; indexed-arg filters return tiny
+  // payloads per chunk, so the parallel fan-out has no meaningful effect on
+  // RPC unit cost.
+  const chunks: Array<[bigint, bigint]> = []
   for (let start = fromBlock; start <= toBlock; start += BLOCK_RANGE) {
     const end = start + BLOCK_RANGE - 1n > toBlock ? toBlock : start + BLOCK_RANGE - 1n
-    try {
-      const logs = await scan(start, end)
-      out.push(...logs)
-    } catch {
-      // RPC may reject very large ranges; halve and retry once.
-      if (end - start > 10_000n) {
-        const mid = start + (end - start) / 2n
-        const a = await paginatedIndexedScan(scan, start, mid)
-        const b = await paginatedIndexedScan(scan, mid + 1n, end)
-        out.push(...a, ...b)
-      }
-    }
+    chunks.push([start, end])
   }
-  return out
+  const results = await Promise.all(
+    chunks.map(async ([start, end]) => {
+      try {
+        return await scan(start, end)
+      } catch {
+        // RPC may reject very large ranges; halve and retry once. The
+        // recursive call uses the same parallel logic.
+        if (end - start > 10_000n) {
+          const mid = start + (end - start) / 2n
+          const [a, b] = await Promise.all([
+            paginatedIndexedScan(scan, start, mid),
+            paginatedIndexedScan(scan, mid + 1n, end),
+          ])
+          return [...a, ...b]
+        }
+        return [] as T[]
+      }
+    }),
+  )
+  return results.flat()
 }
 
 /**
@@ -643,41 +661,192 @@ export const superrareV2Adapter: PlatformAdapter = {
   async getCancellableListingsForSeller(
     seller: Address,
   ): Promise<SellerListings | null> {
-    const client = getClient()
-    const latest = await client.getBlockNumber()
+    const sellerLower = seller.toLowerCase()
 
-    // Indexed-arg event filter: Bazaar's NewAuction has `_auctionCreator`
-    // indexed, so this returns ONLY this seller's auctions across the
-    // platform's lifetime. Typically a handful of logs per artist.
-    const logs = await paginatedIndexedScan(
-      (from, to) =>
-        client.getLogs({
-          address: SR_BAZAAR,
-          event: newAuctionEvent,
-          args: { _auctionCreator: seller },
-          fromBlock: from,
-          toBlock: to,
-        }),
-      SR_BAZAAR_DEPLOY_BLOCK,
-      latest,
-    )
-
-    if (logs.length === 0) return { auctions: [], buyNows: [] }
-
-    // Dedupe by (contract, tokenId): SR auctions are keyed on the token
-    // (one auction per token at a time on Bazaar), so a re-listed token
-    // surfaces multiple NewAuction events. Keep the most recent by
-    // blockNumber so we use the latest configured length/min bid; the
-    // post-multicall confirmation drops anything that's no longer live.
-    type AuctionMeta = {
-      contract: Address
-      tokenId: bigint
-      lengthOfAuction: bigint
-      minimumBid: bigint
-      currencyAddress: Address
-      blockNumber: bigint
+    // Two-layer cache:
+    //   1. If the row is younger than the TTL, return it as-is — no scan,
+    //      no multicall, no RPC.
+    //   2. If the row is stale OR missing, refresh. The refresh is
+    //      *incremental*: we scan only `(last_scanned_block + 1, head)`
+    //      for new NewAuction events, merge them with the cached
+    //      candidate set, then multicall to confirm which are still
+    //      cancellable. The multicall step drops anything cancelled /
+    //      settled / bid-on between the last scan and now.
+    //
+    // The bulk-delist UI also POSTs /api/seller-listings/revalidate
+    // after a successful cancel, dropping this row so the next read
+    // refreshes immediately.
+    const cached = await readSuperrareV2SellerListings(sellerLower)
+    if (
+      cached &&
+      isFresh(cached.lastIndexedAt, LAZY_TTL.superrareV2SellerListings)
+    ) {
+      return {
+        auctions: cached.auctions.map((a) => ({
+          id: a.id,
+          platform: "superrareV2",
+          auctionId: a.auctionId,
+          nftContract: a.nftContract as Address,
+          tokenId: a.tokenId,
+          reserveWei: a.reserveWei,
+          durationSeconds: a.durationSeconds,
+          feeBps: a.feeBps,
+        })),
+        buyNows: [],
+      }
     }
-    const byKey = new Map<string, AuctionMeta>()
+
+    // Incremental refresh path. Cached rows without a `lastScannedBlock`
+    // (written before the column existed) fall back to a full rescan
+    // once, then settle into incremental mode on the next refresh.
+    const fromBlock =
+      cached?.lastScannedBlock != null
+        ? cached.lastScannedBlock + 1n
+        : SR_BAZAAR_DEPLOY_BLOCK
+    const cachedCandidates = cached
+      ? cachedAuctionsToCandidates(cached.auctions)
+      : new Map<string, SrCandidateMeta>()
+    const { listings, scannedTo } = await discoverSrCancellableLive(
+      seller,
+      fromBlock,
+      cachedCandidates,
+    )
+    writeSuperrareV2SellerListings(sellerLower, {
+      auctions: listings.auctions.map((a) => ({
+        id: a.id,
+        auctionId: a.auctionId,
+        nftContract: a.nftContract,
+        tokenId: a.tokenId,
+        reserveWei: a.reserveWei,
+        durationSeconds: a.durationSeconds,
+        feeBps: a.feeBps,
+      })),
+      lastScannedBlock: scannedTo,
+    })
+    return listings
+  },
+
+  async discoverArtistAuctions(artist: Address): Promise<void> {
+    await discoverSuperrareV2ArtistAuctions(artist)
+  },
+
+  async getActiveAuctions(limit: number): Promise<ActiveAuctionSummary[]> {
+    // Pure table read — no RPC in the home-grid request path. The
+    // per-artist scanner runs from artist-page loads via
+    // `discoverArtistAuctions`, populating the table for whoever's
+    // been visited. Reads JOIN the per-artist status table with a
+    // 24h freshness filter so unvisited artists drop out.
+    // Over-read so the artist-seller filter doesn't shrink the result
+    // set below `limit` when many active rows are secondary listings.
+    const rows = await readSuperrareV2ActiveAuctions(limit * 4)
+    return rows
+      .filter(
+        (r) =>
+          r.creator !== null &&
+          r.creator.toLowerCase() === r.seller.toLowerCase(),
+      )
+      .slice(0, limit)
+      .map((r) => ({
+        platform: "superrareV2",
+        contract: r.contract as Address,
+        tokenId: r.tokenId,
+        seller: r.seller as Address,
+        reserveWei: r.reserveWei,
+        currentBidWei: r.currentBidWei,
+        currentBidder: (r.currentBidder ?? null) as Address | null,
+        endTime: r.endTime,
+        sourceContract: SR_BAZAAR,
+      }))
+  },
+}
+
+/**
+ * Candidate shape used between the log-scan step and the multicall
+ * confirmation step. Exported as a type so the cache rehydration in
+ * `getCancellableListingsForSeller` can construct prior candidates
+ * without re-scanning.
+ */
+type SrCandidateMeta = {
+  contract: Address
+  tokenId: bigint
+  lengthOfAuction: bigint
+  minimumBid: bigint
+  currencyAddress: Address
+  blockNumber: bigint
+}
+
+/**
+ * Rebuild SR candidates from a previously-cached `lazy_sr_seller_listings`
+ * row. Cached entries are post-filter (we only ever stored ETH auctions)
+ * and the multicall step uses them only to confirm liveness, so we don't
+ * need every field that the live scan emits. blockNumber is set to 0n so
+ * any new NewAuction event for the same (contract, tokenId) will win the
+ * "most-recent-by-blockNumber" dedupe inside `discoverSrCancellableLive`.
+ */
+function cachedAuctionsToCandidates(
+  cached: LazySrSellerListings["auctions"],
+): Map<string, SrCandidateMeta> {
+  const out = new Map<string, SrCandidateMeta>()
+  for (const a of cached) {
+    const key = `${a.nftContract.toLowerCase()}:${a.tokenId}`
+    out.set(key, {
+      contract: a.nftContract as Address,
+      tokenId: BigInt(a.tokenId),
+      lengthOfAuction: BigInt(a.durationSeconds),
+      minimumBid: BigInt(a.reserveWei),
+      currencyAddress: ETH_CURRENCY as Address,
+      blockNumber: 0n,
+    })
+  }
+  return out
+}
+
+/**
+ * Live SR cancellable-listings discovery: scan new NewAuction events
+ * since `fromBlock`, merge with `cachedCandidates`, multicall to confirm
+ * which are still cancellable. Returns the resolved listings plus the
+ * head block we scanned to, so the caller can persist
+ * `last_scanned_block` and run an even cheaper incremental scan next
+ * time.
+ *
+ * Wrapped behind the per-seller lazy cache in
+ * `getCancellableListingsForSeller`. On a TTL-fresh hit the cache is
+ * served as-is and this function does not run.
+ */
+async function discoverSrCancellableLive(
+  seller: Address,
+  fromBlock: bigint,
+  cachedCandidates: Map<string, SrCandidateMeta>,
+): Promise<{ listings: SellerListings; scannedTo: bigint }> {
+  const client = getClient()
+  const latest = await client.getBlockNumber()
+
+  // Skip the scan entirely if the cache is already at or past head — can
+  // happen on a tight TTL-expiry retry with no new blocks. The multicall
+  // below still runs to re-confirm cancellable state.
+  const logs =
+    fromBlock > latest
+      ? []
+      : await paginatedIndexedScan(
+          (from, to) =>
+            client.getLogs({
+              address: SR_BAZAAR,
+              event: newAuctionEvent,
+              args: { _auctionCreator: seller },
+              fromBlock: from,
+              toBlock: to,
+            }),
+          fromBlock,
+          latest,
+        )
+
+    // Start from the cached candidate set, then layer new NewAuction
+    // events on top. Same dedupe rule as before: newest blockNumber wins.
+    // Cached entries have blockNumber=0n so any real new event wins
+    // automatically, which correctly handles the relist-after-cancel
+    // case where the cached row references an older auction and a fresh
+    // NewAuction has just landed.
+    const byKey = new Map<string, SrCandidateMeta>(cachedCandidates)
     for (const log of logs) {
       const l = log as typeof log & {
         args: {
@@ -707,7 +876,8 @@ export const superrareV2Adapter: PlatformAdapter = {
     }
 
     const candidates = Array.from(byKey.values())
-    if (candidates.length === 0) return { auctions: [], buyNows: [] }
+    if (candidates.length === 0)
+      return { listings: { auctions: [], buyNows: [] }, scannedTo: latest }
 
     // Multicall the live auction state + the current NFT owner. Three
     // checks must all pass for an auction to be cancellable:
@@ -842,39 +1012,8 @@ export const superrareV2Adapter: PlatformAdapter = {
       })
     }
 
-    return { auctions: out, buyNows: [] }
-  },
-
-  async discoverArtistAuctions(artist: Address): Promise<void> {
-    await discoverSuperrareV2ArtistAuctions(artist)
-  },
-
-  async getActiveAuctions(limit: number): Promise<ActiveAuctionSummary[]> {
-    // Pure table read — no RPC in the home-grid request path. The
-    // per-artist scanner runs from artist-page loads via
-    // `discoverArtistAuctions`, populating the table for whoever's
-    // been visited. Reads JOIN the per-artist status table with a
-    // 24h freshness filter so unvisited artists drop out.
-    // Over-read so the artist-seller filter doesn't shrink the result
-    // set below `limit` when many active rows are secondary listings.
-    const rows = await readSuperrareV2ActiveAuctions(limit * 4)
-    return rows
-      .filter(
-        (r) =>
-          r.creator !== null &&
-          r.creator.toLowerCase() === r.seller.toLowerCase(),
-      )
-      .slice(0, limit)
-      .map((r) => ({
-        platform: "superrareV2",
-        contract: r.contract as Address,
-        tokenId: r.tokenId,
-        seller: r.seller as Address,
-        reserveWei: r.reserveWei,
-        currentBidWei: r.currentBidWei,
-        currentBidder: (r.currentBidder ?? null) as Address | null,
-        endTime: r.endTime,
-        sourceContract: SR_BAZAAR,
-      }))
-  },
+    return {
+      listings: { auctions: out, buyNows: [] },
+      scannedTo: latest,
+    }
 }

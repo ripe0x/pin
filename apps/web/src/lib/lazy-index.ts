@@ -220,6 +220,10 @@ export type LazySellerListings = {
     priceWei: string
   }>
   lastIndexedAt: Date
+  /** Highest block number scanned for new events. Null on rows written
+   * before the incremental-scan column existed; treat null as "do a full
+   * rescan next time and populate." */
+  lastScannedBlock: bigint | null
 }
 
 export async function readFoundationSellerListings(
@@ -232,9 +236,10 @@ export async function readFoundationSellerListings(
         auctions: LazySellerListings["auctions"]
         buy_nows: LazySellerListings["buyNows"]
         last_indexed_at: Date
+        last_scanned_block: string | null
       }>
     >`
-      SELECT auctions, buy_nows, last_indexed_at
+      SELECT auctions, buy_nows, last_indexed_at, last_scanned_block::text
       FROM lazy_fnd_seller_listings
       WHERE seller = ${seller.toLowerCase()}
       LIMIT 1
@@ -245,6 +250,8 @@ export async function readFoundationSellerListings(
       auctions: r.auctions,
       buyNows: r.buy_nows,
       lastIndexedAt: r.last_indexed_at,
+      lastScannedBlock:
+        r.last_scanned_block === null ? null : BigInt(r.last_scanned_block),
     }
   } catch {
     return null
@@ -256,19 +263,96 @@ export function writeFoundationSellerListings(
   payload: {
     auctions: LazySellerListings["auctions"]
     buyNows: LazySellerListings["buyNows"]
+    lastScannedBlock: bigint
   },
 ): void {
   if (!sql) return
   void sql`
     INSERT INTO lazy_fnd_seller_listings
-      (seller, auctions, buy_nows, last_indexed_at)
+      (seller, auctions, buy_nows, last_indexed_at, last_scanned_block)
     VALUES
       (${seller.toLowerCase()}, ${sql.json(payload.auctions)},
-       ${sql.json(payload.buyNows)}, NOW())
+       ${sql.json(payload.buyNows)}, NOW(),
+       ${payload.lastScannedBlock.toString()}::bigint)
     ON CONFLICT (seller) DO UPDATE
       SET auctions = EXCLUDED.auctions,
           buy_nows = EXCLUDED.buy_nows,
-          last_indexed_at = NOW()
+          last_indexed_at = NOW(),
+          last_scanned_block = EXCLUDED.last_scanned_block
+  `.catch(() => {})
+}
+
+// ─── SuperRare V2: cancellable seller listings ──────────────────────────
+// Mirrors the Foundation helpers above. SR's discovery is the more
+// expensive of the two (full-history `eth_getLogs` over ~11M blocks), so
+// the lazy cache is what keeps /delist responsive after the first visit
+// per seller.
+
+export type LazySrSellerListings = {
+  auctions: Array<{
+    id: string
+    auctionId: string
+    nftContract: string
+    tokenId: string
+    reserveWei: string
+    durationSeconds: number
+    feeBps?: number
+  }>
+  lastIndexedAt: Date
+  /** Highest block scanned for new SR Bazaar events. Null on rows
+   * written before the incremental-scan column existed; treat null as
+   * "do a full rescan next time." */
+  lastScannedBlock: bigint | null
+}
+
+export async function readSuperrareV2SellerListings(
+  seller: string,
+): Promise<LazySrSellerListings | null> {
+  if (!sql) return null
+  try {
+    const rows = await sql<
+      Array<{
+        auctions: LazySrSellerListings["auctions"]
+        last_indexed_at: Date
+        last_scanned_block: string | null
+      }>
+    >`
+      SELECT auctions, last_indexed_at, last_scanned_block::text
+      FROM lazy_sr_seller_listings
+      WHERE seller = ${seller.toLowerCase()}
+      LIMIT 1
+    `
+    if (rows.length === 0) return null
+    const r = rows[0]
+    return {
+      auctions: r.auctions,
+      lastIndexedAt: r.last_indexed_at,
+      lastScannedBlock:
+        r.last_scanned_block === null ? null : BigInt(r.last_scanned_block),
+    }
+  } catch {
+    return null
+  }
+}
+
+export function writeSuperrareV2SellerListings(
+  seller: string,
+  payload: {
+    auctions: LazySrSellerListings["auctions"]
+    lastScannedBlock: bigint
+  },
+): void {
+  if (!sql) return
+  void sql`
+    INSERT INTO lazy_sr_seller_listings
+      (seller, auctions, last_indexed_at, last_scanned_block)
+    VALUES
+      (${seller.toLowerCase()}, ${sql.json(payload.auctions)}, NOW(),
+       ${payload.lastScannedBlock.toString()}::bigint)
+    ON CONFLICT (seller) DO UPDATE
+      SET auctions = EXCLUDED.auctions,
+          last_indexed_at = NOW(),
+          last_scanned_block = EXCLUDED.last_scanned_block
   `.catch(() => {})
 }
 
@@ -762,6 +846,10 @@ export const LAZY_TTL = {
    * load re-scans that artist's auctions. Tighter than other TTLs
    * because home-grid freshness matters most. */
   superrareV2ArtistAuctions: 2 * 60 * 1000,
+  /** SR V2 cancellable seller-listings: mirrors foundationSellerListings.
+   * 30 min cap, with the bulk-delist UI invalidating the row on a
+   * successful cancel via /api/seller-listings/revalidate. */
+  superrareV2SellerListings: 30 * 60 * 1000,
   /** TL artist mints: same logic as superrareV2ArtistTokens. */
   transientArtistTokens: 30 * 24 * 60 * 60 * 1000,
   /** TL last sale (auction or buy-now): settled prices immutable. */

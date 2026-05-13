@@ -1,47 +1,11 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
-import Image from "next/image"
-import Link from "next/link"
-import { formatEther } from "viem"
+import { useEffect, useState } from "react"
 import { useAccount } from "wagmi"
-import {
-  fetchSellerCancellableListings,
-  resolveListingMetadata,
-  type SellerListing,
-  type SellerListingMeta,
-  type AuctionListing,
-  type BuyNowListing,
-} from "@/lib/seller-listings"
-import { useSequentialCancel, type ItemStatus } from "@/lib/useSequentialCancel"
-import type { PlatformId } from "@/lib/platforms/types"
-
-// Display labels for platform-section headers, mirroring MigratePanel.
-const PLATFORM_LABELS: Record<PlatformId, string> = {
-  foundation: "Foundation",
-  superrareV2: "SuperRare",
-  transient: "Transient",
-  manifold: "Manifold",
-  sovereign: "Sovereign Auction House",
-}
-
-const PLATFORM_ORDER: PlatformId[] = [
-  "foundation",
-  "superrareV2",
-  "sovereign",
-  "manifold",
-]
-
-type LoadState =
-  | { kind: "idle" }
-  | { kind: "loading" }
-  | {
-      kind: "loaded"
-      auctions: AuctionListing[]
-      buyNows: BuyNowListing[]
-      meta: Map<string, SellerListingMeta>
-    }
-  | { kind: "error"; message: string }
+import type { SellerListing } from "@/lib/seller-listings"
+import { useSellerListings } from "@/lib/useSellerListings"
+import { useSequentialCancel } from "@/lib/useSequentialCancel"
+import { SellerListingsView } from "@/components/listings/SellerListingsView"
 
 export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
   const { address: connectedAddress } = useAccount()
@@ -49,7 +13,9 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
     !!connectedAddress &&
     connectedAddress.toLowerCase() === artistAddress.toLowerCase()
 
-  const [load, setLoad] = useState<LoadState>({ kind: "idle" })
+  const { state, refresh, removeIds } = useSellerListings(artistAddress, {
+    enabled: isOwner,
+  })
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const {
     run,
@@ -61,60 +27,41 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
     walletLabel,
   } = useSequentialCancel()
 
-  const refresh = useCallback(async () => {
-    setLoad({ kind: "loading" })
-    try {
-      const { auctions, buyNows } =
-        await fetchSellerCancellableListings(artistAddress)
-      const all: SellerListing[] = [...auctions, ...buyNows]
-      const meta = await resolveListingMetadata(all)
-      setLoad({ kind: "loaded", auctions, buyNows, meta })
-      setSelected(new Set())
-    } catch (err) {
-      setLoad({
-        kind: "error",
-        message: err instanceof Error ? err.message : "Failed to load listings",
-      })
-    }
-  }, [artistAddress])
-
+  // After a run completes, drop done rows, clear their selection, and
+  // invalidate the seller-listings cache so the next read (here or on the
+  // /delist page or another tab) doesn't return the just-cancelled rows from
+  // the 1h pg/L1 cache.
   useEffect(() => {
-    if (!isOwner) return
-    refresh()
-  }, [isOwner, refresh])
-
-  // After a run completes, drop done rows from the list and clear selection.
-  useEffect(() => {
-    if (status !== "done" || load.kind !== "loaded") return
-    const stillActive = (id: string) => {
-      const s = perItemStatus.get(id)
-      return !s || s.state !== "done"
+    if (status !== "done" || state.kind !== "loaded") return
+    const doneIds = new Set<string>()
+    for (const [id, s] of perItemStatus) {
+      if (s.state === "done") doneIds.add(id)
     }
-    setLoad({
-      kind: "loaded",
-      auctions: load.auctions.filter((a) => stillActive(a.id)),
-      buyNows: load.buyNows.filter((b) => stillActive(b.id)),
-      meta: load.meta,
-    })
+    if (doneIds.size === 0) return
+    removeIds(doneIds)
     setSelected((prev) => {
       const next = new Set<string>()
-      for (const id of prev) if (stillActive(id)) next.add(id)
+      for (const id of prev) if (!doneIds.has(id)) next.add(id)
       return next
     })
-  }, [status, perItemStatus, load])
+    void fetch(
+      `/api/seller-listings/revalidate?seller=${artistAddress.toLowerCase()}`,
+      { method: "POST" },
+    ).catch(() => {})
+  }, [status, perItemStatus, state.kind, removeIds, artistAddress])
 
   if (!isOwner) return null
-  if (load.kind === "idle" || load.kind === "loading") {
+  if (state.kind === "idle" || state.kind === "loading") {
     return (
       <Section>
         <p className="text-sm text-gray-500">Loading your listings…</p>
       </Section>
     )
   }
-  if (load.kind === "error") {
+  if (state.kind === "error") {
     return (
       <Section>
-        <p className="text-sm text-red-500">{load.message}</p>
+        <p className="text-sm text-red-500">{state.message}</p>
         <button
           onClick={refresh}
           className="mt-3 text-xs font-medium underline text-gray-700 hover:text-fg"
@@ -125,10 +72,10 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
     )
   }
 
-  const total = load.auctions.length + load.buyNows.length
+  const total = state.auctions.length + state.buyNows.length
   if (total === 0) return null
 
-  const allItems: SellerListing[] = [...load.auctions, ...load.buyNows]
+  const allItems: SellerListing[] = [...state.auctions, ...state.buyNows]
   const allSelected = selected.size === total
   const isRunning = status === "running"
 
@@ -153,17 +100,16 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
     run(items)
   }
 
-  function statusFor(id: string): ItemStatus | undefined {
-    return perItemStatus.get(id)
-  }
-
   return (
     <Section>
       <header className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-sm font-semibold text-gray-900">Manage listings</h2>
+          <h2 className="text-sm font-semibold text-gray-900">
+            Manage listings
+          </h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            {total} active {total === 1 ? "listing" : "listings"} across third-party marketplaces
+            {total} active {total === 1 ? "listing" : "listings"} across
+            third-party marketplaces
           </p>
         </div>
         <button
@@ -175,66 +121,16 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
         </button>
       </header>
 
-      {PLATFORM_ORDER.map((platform) => {
-        const auctions = load.auctions.filter((a) => a.platform === platform)
-        const buyNows = load.buyNows.filter((b) => b.platform === platform)
-        if (auctions.length === 0 && buyNows.length === 0) return null
-
-        // When the wallet only has listings on one platform we keep the
-        // original "Reserve auctions / Buy now" headers (less noise);
-        // multi-platform wallets get a top-level platform header so the
-        // sections are unambiguous.
-        const platformsWithRows = PLATFORM_ORDER.filter((p) => {
-          const a = load.auctions.some((x) => x.platform === p)
-          const b = load.buyNows.some((x) => x.platform === p)
-          return a || b
-        })
-        const showPlatformHeader = platformsWithRows.length > 1
-
-        return (
-          <div key={platform} className={showPlatformHeader ? "mb-5 last:mb-0" : ""}>
-            {showPlatformHeader && (
-              <p className="text-[11px] uppercase tracking-[0.08em] text-gray-500 mb-2">
-                {PLATFORM_LABELS[platform]} · {auctions.length + buyNows.length}
-              </p>
-            )}
-            {auctions.length > 0 && (
-              <Group title="Reserve auctions (no bids)">
-                {auctions.map((a) => (
-                  <ListingRow
-                    key={a.id}
-                    listing={a}
-                    meta={load.meta.get(a.id)}
-                    checked={selected.has(a.id)}
-                    status={statusFor(a.id)}
-                    disabled={isRunning}
-                    onToggle={() => toggle(a.id)}
-                    priceWei={a.reserveWei}
-                    priceLabel="Reserve"
-                  />
-                ))}
-              </Group>
-            )}
-            {buyNows.length > 0 && (
-              <Group title="Buy now">
-                {buyNows.map((b) => (
-                  <ListingRow
-                    key={b.id}
-                    listing={b}
-                    meta={load.meta.get(b.id)}
-                    checked={selected.has(b.id)}
-                    status={statusFor(b.id)}
-                    disabled={isRunning}
-                    onToggle={() => toggle(b.id)}
-                    priceWei={b.priceWei}
-                    priceLabel="Price"
-                  />
-                ))}
-              </Group>
-            )}
-          </div>
-        )
-      })}
+      <SellerListingsView
+        mode="interactive"
+        auctions={state.auctions}
+        buyNows={state.buyNows}
+        meta={state.meta}
+        selected={selected}
+        onToggle={toggle}
+        perItemStatus={perItemStatus}
+        isRunning={isRunning}
+      />
 
       <footer className="mt-5 flex items-center justify-between gap-3 border-t border-gray-100 pt-4">
         <p className="text-xs text-gray-500">
@@ -261,7 +157,7 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
           <button
             onClick={handleCancel}
             disabled={selected.size === 0}
-            className="text-sm font-medium px-4 py-2 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="text-[11px] font-mono font-medium uppercase tracking-wider px-4 py-2 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {cancelButtonLabel(selected.size, mode)}
           </button>
@@ -287,7 +183,10 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
   )
 }
 
-function cancelButtonLabel(count: number, mode: "loading" | "batched" | "sequential"): string {
+function cancelButtonLabel(
+  count: number,
+  mode: "loading" | "batched" | "sequential",
+): string {
   const noun = count === 1 ? "listing" : "listings"
   if (count === 0) return "Cancel listings"
   if (mode === "batched") return `Cancel ${count} ${noun}`
@@ -339,127 +238,5 @@ function Section({ children }: { children: React.ReactNode }) {
     <div className="rounded-lg border border-gray-200 bg-surface p-5">
       {children}
     </div>
-  )
-}
-
-function Group({
-  title,
-  children,
-}: {
-  title: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="mb-4 last:mb-0">
-      <p className="text-[11px] uppercase tracking-[0.08em] text-gray-400 mb-2">
-        {title}
-      </p>
-      <ul className="divide-y divide-gray-100 border-y border-gray-100">
-        {children}
-      </ul>
-    </div>
-  )
-}
-
-function ListingRow({
-  listing,
-  meta,
-  checked,
-  status,
-  disabled,
-  onToggle,
-  priceWei,
-  priceLabel,
-}: {
-  listing: SellerListing
-  meta: SellerListingMeta | undefined
-  checked: boolean
-  status: ItemStatus | undefined
-  disabled: boolean
-  onToggle: () => void
-  priceWei: bigint
-  priceLabel: string
-}) {
-  const tokenHref = `/${listing.nftContract}/${listing.tokenId}`
-  const displayName = meta?.displayName ?? `#${listing.tokenId}`
-  const imageUrl = meta?.imageUrl
-
-  // Once a row enters the run pipeline its state is committed — disable the
-  // checkbox so the user can't deselect it mid-cancel.
-  const inFlight =
-    status?.state === "confirming" ||
-    status?.state === "mining" ||
-    status?.state === "done"
-  const checkboxDisabled = disabled || inFlight
-
-  return (
-    <li className="flex items-center gap-3 py-3">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={onToggle}
-        disabled={checkboxDisabled}
-        className="h-4 w-4 shrink-0 accent-black disabled:opacity-40"
-        aria-label={`Select ${displayName}`}
-      />
-      <div className="h-10 w-10 shrink-0 bg-gray-100 overflow-hidden">
-        {imageUrl && (
-          <Image
-            src={imageUrl}
-            alt=""
-            width={40}
-            height={40}
-            className="h-full w-full object-cover"
-            unoptimized
-          />
-        )}
-      </div>
-      <div className="min-w-0 flex-1">
-        <Link
-          href={tokenHref}
-          className="block text-sm font-medium text-gray-900 truncate hover:underline"
-        >
-          {displayName}
-        </Link>
-        <p className="text-xs text-gray-400 tabular-nums">
-          {priceLabel} {formatEther(priceWei)} ETH
-        </p>
-      </div>
-      <RowStatus status={status} />
-    </li>
-  )
-}
-
-function RowStatus({ status }: { status: ItemStatus | undefined }) {
-  if (!status || status.state === "idle") return null
-  const base = "text-xs tabular-nums shrink-0"
-  if (status.state === "confirming")
-    return <span className={`${base} text-gray-500`}>Confirm…</span>
-  if (status.state === "mining")
-    return (
-      <a
-        href={`https://etherscan.io/tx/${status.txHash}`}
-        target="_blank"
-        rel="noopener noreferrer"
-        className={`${base} text-amber-600 hover:underline`}
-      >
-        Cancelling…
-      </a>
-    )
-  if (status.state === "done")
-    return (
-      <a
-        href={`https://etherscan.io/tx/${status.txHash}`}
-        target="_blank"
-        rel="noopener noreferrer"
-        className={`${base} text-emerald-600 hover:underline`}
-      >
-        Cancelled
-      </a>
-    )
-  return (
-    <span className={`${base} text-red-500 max-w-[160px] truncate`} title={status.error}>
-      {status.error}
-    </span>
   )
 }

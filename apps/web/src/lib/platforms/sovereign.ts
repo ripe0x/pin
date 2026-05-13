@@ -14,12 +14,12 @@ import {
 } from "../indexer-queries"
 import { getSovereignLastSale } from "../last-sale"
 import { sql } from "../db"
-import { getMainnetTransport } from "../alchemy-transport"
+import { loggingFallbackTransport } from "../rpc-log"
 
 function getClient() {
   return createPublicClient({
     chain: mainnet,
-    transport: getMainnetTransport("sovereign"),
+    transport: loggingFallbackTransport("sovereign"),
   })
 }
 

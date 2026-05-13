@@ -14,7 +14,7 @@ import {
   isFresh,
   type LazySuperrareV2ActiveAuction,
 } from "../lazy-index"
-import { getMainnetTransport } from "../alchemy-transport"
+import { loggingFallbackTransport } from "../rpc-log"
 
 const SR_BAZAAR = SUPERRARE_BAZAAR[MAINNET_CHAIN_ID]
 // Bazaar deployed Feb 2022 (~14_100_000). Per-artist `getLogs` calls
@@ -42,7 +42,7 @@ const ETH_CURRENCY = "0x0000000000000000000000000000000000000000"
 function getClient() {
   return createPublicClient({
     chain: mainnet,
-    transport: getMainnetTransport("superrareV2-scan", { batch: true }),
+    transport: loggingFallbackTransport("superrareV2-scan", { batch: true }),
   })
 }
 
