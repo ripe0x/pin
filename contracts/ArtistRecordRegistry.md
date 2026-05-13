@@ -53,6 +53,31 @@ artist's — because authorization is scoped to `msg.sender`.
 `OperatorSet` is emitted on every call, including idempotent ones, so
 downstream consumers get a uniform audit trail.
 
+## Batching via multicall
+
+The registry inherits OpenZeppelin's `Multicall`. An artist (or an
+approved operator) can submit any mix of pointer operations in a single
+transaction via `multicall(bytes[] calls)`, where each `bytes` is the
+ABI-encoded call to one of the registry's own functions.
+
+This collapses what would otherwise be one wallet signature and one
+intrinsic-gas charge *per pointer* into one of each for the whole batch.
+For an artist declaring N contracts during initial setup, that is roughly
+21k × (N − 1) gas saved on top of N − 1 fewer signing prompts.
+
+Each inner call still emits its own event — indexers see one
+`ContractAdded` / `TokenAdded` / `TokenRangeAdded` per pointer, regardless
+of whether the call arrived stand-alone or inside a batch.
+
+The batch is atomic: any inner revert (duplicate pointer, unauthorized
+`*For` call, malformed range) reverts the whole transaction. Plan
+batches so any expected reverts are resolved off-chain before submitting.
+
+Authorization rules are unchanged. Inner calls execute via `delegatecall`
+from the registry to itself, so `msg.sender` is preserved as the original
+external caller; `*For` variants apply the same operator check inside a
+batch as they do outside it.
+
 ## What is intentionally out of scope
 
 **Key rotation and identity grouping.** This contract records pointers

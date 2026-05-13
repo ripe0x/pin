@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {Multicall} from "openzeppelin-contracts/contracts/utils/Multicall.sol";
+
 /// @title ArtistRecordRegistry
 /// @notice Generic, immutable, public infrastructure where an artist
 ///         address can publish on-chain pointers that belong in its
@@ -74,7 +76,34 @@ pragma solidity ^0.8.24;
 ///         init code hash is a pure function of the compiled bytecode,
 ///         which in turn depends on items 4–6. Salt alone is not
 ///         enough — pinning the toolchain matters.
-contract ArtistRecordRegistry {
+///
+/// @dev    BATCHING VIA MULTICALL:
+///
+///         The contract inherits OpenZeppelin's `Multicall`. An artist
+///         (or an approved operator) can declare an arbitrary mix of
+///         pointer operations in a single transaction by calling
+///         `multicall(bytes[] calls)`, where each `bytes` is an
+///         ABI-encoded call to one of this contract's functions.
+///
+///         Why: the dominant cost when an artist adds N pointers is the
+///         per-transaction intrinsic gas (~21k) and the wallet signature
+///         friction — both linear in N when issued separately. Batching
+///         collapses those to one tx and one signature. Each inner call
+///         still emits its own event, so off-chain indexers see one
+///         add/remove per pointer with no batch-specific decoding.
+///
+///         Atomicity: `multicall` reverts the entire batch on the first
+///         inner revert. A duplicate add, an unauthorized `*For` call,
+///         or an invalid range will undo every preceding operation in
+///         the same batch. Plan batches so any expected reverts are
+///         resolved client-side before submission.
+///
+///         Authorization: each inner call is executed via `delegatecall`
+///         from this contract to itself, so `msg.sender` is preserved
+///         as the original external caller. `addContractFor` etc.
+///         continue to enforce the same operator check inside a batch
+///         as they would outside it.
+contract ArtistRecordRegistry is Multicall {
     // ─── Types ──────────────────────────────────────────────────────
 
     /// @notice A pointer to a single token on a given contract.

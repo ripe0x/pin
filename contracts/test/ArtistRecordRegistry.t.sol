@@ -781,4 +781,220 @@ contract ArtistRecordRegistryTest is Test {
         bytes32 different = reg.getTokenRangeKey(NFT_ADDR, 1, 99);
         assertTrue(k1 != different);
     }
+
+    // ─── Multicall (batched operations) ─────────────────────────────
+
+    function _encodeAddContract(address c) internal pure returns (bytes memory) {
+        return abi.encodeWithSelector(ArtistRecordRegistry.addContract.selector, c);
+    }
+
+    function _encodeAddToken(address c, uint256 id) internal pure returns (bytes memory) {
+        return abi.encodeWithSelector(ArtistRecordRegistry.addToken.selector, c, id);
+    }
+
+    function _encodeAddTokenRange(address c, uint256 s, uint256 e)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return abi.encodeWithSelector(
+            ArtistRecordRegistry.addTokenRange.selector, c, s, e
+        );
+    }
+
+    function _encodeRemoveContract(address c) internal pure returns (bytes memory) {
+        return abi.encodeWithSelector(
+            ArtistRecordRegistry.removeContract.selector, c
+        );
+    }
+
+    function _encodeAddContractFor(address a, address c)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return abi.encodeWithSelector(
+            ArtistRecordRegistry.addContractFor.selector, a, c
+        );
+    }
+
+    function test_multicall_emptyArray_isNoOp() public {
+        bytes[] memory calls = new bytes[](0);
+        vm.prank(artist);
+        reg.multicall(calls);
+        assertEq(reg.getContractCount(artist), 0);
+    }
+
+    function test_multicall_addsAllThreeTypesInOneTx() public {
+        bytes[] memory calls = new bytes[](3);
+        calls[0] = _encodeAddContract(NFT_ADDR);
+        calls[1] = _encodeAddToken(NFT_ADDR, 1);
+        calls[2] = _encodeAddTokenRange(NFT_ADDR_B, 1, 100);
+
+        vm.prank(artist);
+        reg.multicall(calls);
+
+        assertEq(reg.getContractCount(artist), 1);
+        assertTrue(reg.isContractRegistered(artist, NFT_ADDR));
+        assertEq(reg.getTokenCount(artist), 1);
+        assertTrue(reg.isTokenRegistered(artist, NFT_ADDR, 1));
+        assertEq(reg.getTokenRangeCount(artist), 1);
+        assertTrue(reg.isTokenRangeRegistered(artist, NFT_ADDR_B, 1, 100));
+    }
+
+    function test_multicall_preservesMsgSender_forPerArtistAuthorization() public {
+        // msg.sender survives delegatecall in OZ Multicall, so per-artist
+        // ownership checks resolve to the original caller, not the contract.
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = _encodeAddContract(NFT_ADDR);
+        calls[1] = _encodeAddContract(NFT_ADDR_B);
+
+        vm.prank(artist);
+        reg.multicall(calls);
+
+        assertTrue(reg.isContractRegistered(artist, NFT_ADDR));
+        assertTrue(reg.isContractRegistered(artist, NFT_ADDR_B));
+        // Other artist's record is untouched.
+        assertEq(reg.getContractCount(artistB), 0);
+    }
+
+    function test_multicall_mixedAddAndRemove_inSameBatch() public {
+        // Pre-populate with one contract.
+        vm.prank(artist);
+        reg.addContract(NFT_ADDR);
+
+        // Batch: remove the existing one, add a different one.
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = _encodeRemoveContract(NFT_ADDR);
+        calls[1] = _encodeAddContract(NFT_ADDR_B);
+
+        vm.prank(artist);
+        reg.multicall(calls);
+
+        assertFalse(reg.isContractRegistered(artist, NFT_ADDR));
+        assertTrue(reg.isContractRegistered(artist, NFT_ADDR_B));
+        assertEq(reg.getContractCount(artist), 1);
+    }
+
+    function test_multicall_emitsOneEventPerInnerCall() public {
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = _encodeAddContract(NFT_ADDR);
+        calls[1] = _encodeAddContract(NFT_ADDR_B);
+
+        vm.expectEmit(true, true, false, false);
+        emit ContractAdded(artist, NFT_ADDR);
+        vm.expectEmit(true, true, false, false);
+        emit ContractAdded(artist, NFT_ADDR_B);
+
+        vm.prank(artist);
+        reg.multicall(calls);
+    }
+
+    function test_multicall_revertsAtomically_onDuplicateMidBatch() public {
+        // Pre-add NFT_ADDR so the third call below will revert as duplicate.
+        vm.prank(artist);
+        reg.addContract(NFT_ADDR);
+
+        // Batch tries: add NFT_ADDR_B (ok), add token (ok), add NFT_ADDR
+        // (revert: already registered). The whole batch must unwind.
+        bytes[] memory calls = new bytes[](3);
+        calls[0] = _encodeAddContract(NFT_ADDR_B);
+        calls[1] = _encodeAddToken(NFT_ADDR_B, 42);
+        calls[2] = _encodeAddContract(NFT_ADDR);
+
+        // OZ's Multicall surfaces inner reverts via Address.functionDelegateCall,
+        // which bubbles the raw revert data. We assert any revert here; the
+        // important property is atomicity (state unchanged below).
+        vm.prank(artist);
+        vm.expectRevert();
+        reg.multicall(calls);
+
+        // None of the batch's effects landed.
+        assertFalse(reg.isContractRegistered(artist, NFT_ADDR_B));
+        assertFalse(reg.isTokenRegistered(artist, NFT_ADDR_B, 42));
+        // Pre-existing state still there.
+        assertTrue(reg.isContractRegistered(artist, NFT_ADDR));
+        assertEq(reg.getContractCount(artist), 1);
+    }
+
+    function test_multicall_operator_canBatchForArtist() public {
+        // Artist authorizes operator.
+        vm.prank(artist);
+        reg.setOperator(operator, true);
+
+        // Operator batches three contract adds via the *For variants.
+        bytes[] memory calls = new bytes[](3);
+        calls[0] = _encodeAddContractFor(artist, NFT_ADDR);
+        calls[1] = _encodeAddContractFor(artist, NFT_ADDR_B);
+        calls[2] = _encodeAddContractFor(artist, address(0xC0FE));
+
+        vm.prank(operator);
+        reg.multicall(calls);
+
+        assertEq(reg.getContractCount(artist), 3);
+        assertTrue(reg.isContractRegistered(artist, NFT_ADDR));
+        assertTrue(reg.isContractRegistered(artist, NFT_ADDR_B));
+        assertTrue(reg.isContractRegistered(artist, address(0xC0FE)));
+    }
+
+    function test_multicall_unauthorizedCaller_revertsBatch() public {
+        // Stranger has no operator approval and tries to batch *For calls
+        // against another artist's record. The first inner call's auth
+        // check fails, unwinding the whole batch.
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = _encodeAddContractFor(artist, NFT_ADDR);
+        calls[1] = _encodeAddContractFor(artist, NFT_ADDR_B);
+
+        vm.prank(stranger);
+        vm.expectRevert();
+        reg.multicall(calls);
+
+        assertEq(reg.getContractCount(artist), 0);
+    }
+
+    function test_multicall_gasSavings_vsIndividualCalls() public {
+        // Measure baseline: 5 individual addContract transactions.
+        address[] memory addrs = new address[](5);
+        addrs[0] = address(0xA1);
+        addrs[1] = address(0xA2);
+        addrs[2] = address(0xA3);
+        addrs[3] = address(0xA4);
+        addrs[4] = address(0xA5);
+
+        uint256 individualGas;
+        for (uint256 i = 0; i < addrs.length; i++) {
+            vm.prank(artist);
+            uint256 before = gasleft();
+            reg.addContract(addrs[i]);
+            individualGas += before - gasleft();
+        }
+
+        // Reset state for the batched run.
+        for (uint256 i = 0; i < addrs.length; i++) {
+            vm.prank(artist);
+            reg.removeContract(addrs[i]);
+        }
+
+        // Multicall the same five.
+        bytes[] memory calls = new bytes[](5);
+        for (uint256 i = 0; i < addrs.length; i++) {
+            calls[i] = _encodeAddContract(addrs[i]);
+        }
+
+        vm.prank(artist);
+        uint256 before2 = gasleft();
+        reg.multicall(calls);
+        uint256 batchGas = before2 - gasleft();
+
+        // The intrinsic-21k saving is on the wallet/tx side and isn't
+        // captured by Foundry's gasleft() measurement (we're already
+        // inside a single test tx). What this assertion verifies is the
+        // tighter property: the per-item EVM-execution cost of multicall
+        // doesn't balloon vs the individual path. A modest delegatecall
+        // overhead is expected and acceptable; pathological growth would
+        // indicate a regression.
+        assertLt(batchGas, (individualGas * 12) / 10);
+        // And the writes did land.
+        assertEq(reg.getContractCount(artist), 5);
+    }
 }
