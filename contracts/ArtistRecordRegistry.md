@@ -11,9 +11,18 @@ Anyone may write into their own record.
 A record is an unordered set of pointers belonging to a single artist
 address. There are three pointer types:
 
-- **Contract pointer** — `address contractAddress`
+- **Contract pointer** — `address contractAddress`. The "contract"
+  label reflects the typical use (NFT contract addresses), but the
+  registry accepts any non-zero address: EOAs, contracts that don't
+  exist yet at the target address, contracts that have been
+  selfdestruct'd. Interpretation of what the address points to is the
+  consumer's job, not the registry's.
 - **Token pointer** — `(address contractAddress, uint256 tokenId)`
-- **Token-range pointer** — `(address contractAddress, uint256 startTokenId, uint256 endTokenId)` (inclusive bounds; `start == end` is allowed)
+- **Token-range pointer** — `(address contractAddress, uint256 startTokenId, uint256 endTokenId)`. Inclusive bounds. `start == end`
+  is allowed and describes one token, but it remains a *range* pointer
+  and is stored independently from a `Token pointer` — the same token
+  can be registered both ways at once and they live in separate lists
+  with separate keys.
 
 Identity for each type is the full tuple. Two ranges with different
 bounds are independent entries even if they overlap. Overlapping
@@ -52,6 +61,23 @@ artist's — because authorization is scoped to `msg.sender`.
 
 `OperatorSet` is emitted on every call, including idempotent ones, so
 downstream consumers get a uniform audit trail.
+
+Every add/remove event includes an `actor` field set to the
+`msg.sender` of the call. For direct-path calls (`addContract`,
+`removeToken`, etc.) `actor == artist`. For `*For` calls invoked by an
+approved operator, `actor == operator`. Downstream tools and audits can
+read the field directly instead of correlating against transaction
+sender out-of-band.
+
+> **Operator approval is consequential.** An approved operator can add
+> or remove an arbitrary number of pointers on the artist's record at
+> any time, until revoked. The contract has no per-operator caps and no
+> built-in "clear all" for cleanup — a compromised operator that has
+> added many garbage pointers leaves the artist responsible for
+> removing each one (one tx per pointer, or batched via `multicall`).
+> Treat operator approval like granting write access to the record;
+> only approve addresses you control or fully trust. Frontends should
+> mirror that framing in the approval UI.
 
 ## Batching via multicall
 
@@ -103,15 +129,19 @@ not reported as registered. Coverage logic belongs in indexers.
 
 Two access patterns are provided for each pointer type:
 
-- **Full reads:** `getContracts`, `getTokens`, `getTokenRanges` return
-  the entire list for a given artist. Convenient for small records;
-  for large records the gas cost of copying storage to memory grows
-  linearly.
-- **Slice reads:** `getContractsSlice`, `getTokensSlice`,
-  `getTokenRangesSlice` return up to `count` entries starting at
-  `start`. Out-of-range requests degrade gracefully — `start >= length`
-  returns an empty array, and `start + count > length` returns only
-  the remaining entries. Useful for paginated frontends and indexers.
+- **Slice reads (preferred for production):**
+  `getContractsSlice`, `getTokensSlice`, `getTokenRangesSlice` return
+  up to `count` entries starting at `start`. Out-of-range requests
+  degrade gracefully — `start >= length` returns an empty array, and
+  `start + count > length` returns only the remaining entries. These
+  are the read functions production frontends and indexers should use
+  by default: bounded gas, easy pagination, no failure mode on large
+  records.
+- **Full reads (convenience only):** `getContracts`, `getTokens`,
+  `getTokenRanges` return the entire list. Useful for small records,
+  ad-hoc tooling, and tests. For large records the gas cost of copying
+  storage to memory grows linearly and an RPC provider may refuse the
+  call once the response gets big enough.
 
 Existence checks (`isContractRegistered`, `isTokenRegistered`,
 `isTokenRangeRegistered`) and counts (`getContractCount`,
@@ -144,14 +174,21 @@ items 4–6. Pinning the toolchain matters — salt alone is not enough.
 
 ## Events
 
+Every add/remove event includes an `actor` field set to `msg.sender`
+of the originating call (artist for direct calls, operator for `*For`
+calls). For `Token*` events `tokenId` is non-indexed; for
+`TokenRange*` events `startTokenId` / `endTokenId` are non-indexed.
+Three topic slots are reserved for the most-filtered fields:
+`artist`, `actor`, `contractAddress`.
+
 | Event | When |
 | --- | --- |
-| `ContractAdded(artist, contractAddress)` | Contract pointer added |
-| `ContractRemoved(artist, contractAddress)` | Contract pointer removed |
-| `TokenAdded(artist, contractAddress, tokenId)` | Token pointer added |
-| `TokenRemoved(artist, contractAddress, tokenId)` | Token pointer removed |
-| `TokenRangeAdded(artist, contractAddress, startTokenId, endTokenId)` | Range pointer added |
-| `TokenRangeRemoved(artist, contractAddress, startTokenId, endTokenId)` | Range pointer removed |
+| `ContractAdded(artist, actor, contractAddress)` | Contract pointer added |
+| `ContractRemoved(artist, actor, contractAddress)` | Contract pointer removed |
+| `TokenAdded(artist, actor, contractAddress, tokenId)` | Token pointer added |
+| `TokenRemoved(artist, actor, contractAddress, tokenId)` | Token pointer removed |
+| `TokenRangeAdded(artist, actor, contractAddress, startTokenId, endTokenId)` | Range pointer added |
+| `TokenRangeRemoved(artist, actor, contractAddress, startTokenId, endTokenId)` | Range pointer removed |
 | `OperatorSet(artist, operator, approved)` | Operator approved or revoked |
 
 ## Errors

@@ -114,9 +114,15 @@ contract ArtistRecordRegistry is Multicall {
         uint256 tokenId;
     }
 
-    /// @notice A pointer to a contiguous, inclusive range of token IDs on
-    ///         a given contract. `startTokenId == endTokenId` is allowed
-    ///         and effectively represents a single-token pointer.
+    /// @notice A pointer to a contiguous, inclusive range of token IDs
+    ///         on a given contract. `startTokenId == endTokenId` is
+    ///         allowed and describes one token, but it remains a range
+    ///         pointer and is stored independently from a `TokenPointer`
+    ///         — the same token can be registered as both an
+    ///         `addToken` entry and a single-token range, and the two
+    ///         live in separate lists with separate keys. The registry
+    ///         does not treat them as equivalent or deduplicate across
+    ///         pointer types.
     /// @param contractAddress  The contract that holds the tokens. Must be non-zero.
     /// @param startTokenId     Inclusive lower bound. Must be <= endTokenId.
     /// @param endTokenId       Inclusive upper bound.
@@ -170,61 +176,93 @@ contract ArtistRecordRegistry is Multicall {
 
     // ─── Events ─────────────────────────────────────────────────────
 
-    /// @notice Emitted when an artist adds a contract pointer.
+    /// @notice Emitted when a contract pointer is added to an artist's
+    ///         record.
+    /// @dev    `actor` is the `msg.sender` of the originating call —
+    ///         either the artist (direct path) or an approved operator
+    ///         (`*For` path). Including it inline makes the operator
+    ///         attribution self-contained in the event so consumers can
+    ///         answer "who changed this record?" without correlating
+    ///         against transaction sender out-of-band. For `*For` calls
+    ///         `artist != actor`; for direct calls `artist == actor`.
     /// @param artist           The artist whose record was modified.
+    /// @param actor            The address that initiated the mutation.
     /// @param contractAddress  The contract address pointed at.
     event ContractAdded(
         address indexed artist,
+        address indexed actor,
         address indexed contractAddress
     );
 
-    /// @notice Emitted when an artist removes a contract pointer.
+    /// @notice Emitted when a contract pointer is removed from an
+    ///         artist's record.
+    /// @dev    See `ContractAdded` for the `actor` rationale.
     /// @param artist           The artist whose record was modified.
+    /// @param actor            The address that initiated the mutation.
     /// @param contractAddress  The contract address that was removed.
     event ContractRemoved(
         address indexed artist,
+        address indexed actor,
         address indexed contractAddress
     );
 
-    /// @notice Emitted when an artist adds a single-token pointer.
+    /// @notice Emitted when a single-token pointer is added to an
+    ///         artist's record.
+    /// @dev    `tokenId` is intentionally NOT indexed — log topic slots
+    ///         are limited to three, and `artist` + `actor` +
+    ///         `contractAddress` are the more frequently filtered fields.
+    ///         Indexers that need per-tokenId filtering can decode the
+    ///         data segment.
     /// @param artist           The artist whose record was modified.
+    /// @param actor            The address that initiated the mutation.
     /// @param contractAddress  The contract that holds the token.
     /// @param tokenId          The specific token being pointed at.
     event TokenAdded(
         address indexed artist,
+        address indexed actor,
         address indexed contractAddress,
-        uint256 indexed tokenId
+        uint256 tokenId
     );
 
-    /// @notice Emitted when an artist removes a single-token pointer.
+    /// @notice Emitted when a single-token pointer is removed from an
+    ///         artist's record.
+    /// @dev    See `TokenAdded` for the indexing rationale.
     /// @param artist           The artist whose record was modified.
+    /// @param actor            The address that initiated the mutation.
     /// @param contractAddress  The contract that held the token.
     /// @param tokenId          The token id that was removed.
     event TokenRemoved(
         address indexed artist,
+        address indexed actor,
         address indexed contractAddress,
-        uint256 indexed tokenId
+        uint256 tokenId
     );
 
-    /// @notice Emitted when an artist adds a token-range pointer.
+    /// @notice Emitted when a token-range pointer is added to an
+    ///         artist's record.
     /// @param artist           The artist whose record was modified.
+    /// @param actor            The address that initiated the mutation.
     /// @param contractAddress  The contract that holds the tokens.
     /// @param startTokenId     Inclusive lower bound of the range.
     /// @param endTokenId       Inclusive upper bound of the range.
     event TokenRangeAdded(
         address indexed artist,
+        address indexed actor,
         address indexed contractAddress,
         uint256 startTokenId,
         uint256 endTokenId
     );
 
-    /// @notice Emitted when an artist removes a token-range pointer.
+    /// @notice Emitted when a token-range pointer is removed from an
+    ///         artist's record.
     /// @param artist           The artist whose record was modified.
+    /// @param actor            The address that initiated the mutation.
     /// @param contractAddress  The contract that held the tokens.
     /// @param startTokenId     Inclusive lower bound that was removed.
     /// @param endTokenId       Inclusive upper bound that was removed.
     event TokenRangeRemoved(
         address indexed artist,
+        address indexed actor,
         address indexed contractAddress,
         uint256 startTokenId,
         uint256 endTokenId
@@ -422,7 +460,7 @@ contract ArtistRecordRegistry is Multicall {
         // `length` (i.e. index + 1) directly — equivalent and avoids
         // an extra subtraction.
         _contractIndexPlusOne[artist][key] = _artistContracts[artist].length;
-        emit ContractAdded(artist, contractAddress);
+        emit ContractAdded(artist, msg.sender, contractAddress);
     }
 
     /// @dev Remove a contract pointer via swap-and-pop. When the
@@ -460,7 +498,7 @@ contract ArtistRecordRegistry is Multicall {
         // correctness — both operations are independent SSTOREs.
         list.pop();
         delete _contractIndexPlusOne[artist][key];
-        emit ContractRemoved(artist, contractAddress);
+        emit ContractRemoved(artist, msg.sender, contractAddress);
     }
 
     /// @notice Check whether `artist` has registered a contract pointer
@@ -619,7 +657,7 @@ contract ArtistRecordRegistry is Multicall {
             })
         );
         _tokenIndexPlusOne[artist][key] = _artistTokens[artist].length;
-        emit TokenAdded(artist, contractAddress, tokenId);
+        emit TokenAdded(artist, msg.sender, contractAddress, tokenId);
     }
 
     /// @dev Remove a token pointer via swap-and-pop. The algorithm
@@ -651,7 +689,7 @@ contract ArtistRecordRegistry is Multicall {
 
         list.pop();
         delete _tokenIndexPlusOne[artist][key];
-        emit TokenRemoved(artist, contractAddress, tokenId);
+        emit TokenRemoved(artist, msg.sender, contractAddress, tokenId);
     }
 
     /// @notice Check whether `artist` has registered a single-token
@@ -821,6 +859,7 @@ contract ArtistRecordRegistry is Multicall {
         _tokenRangeIndexPlusOne[artist][key] = _artistTokenRanges[artist].length;
         emit TokenRangeAdded(
             artist,
+            msg.sender,
             contractAddress,
             startTokenId,
             endTokenId
@@ -870,6 +909,7 @@ contract ArtistRecordRegistry is Multicall {
         delete _tokenRangeIndexPlusOne[artist][key];
         emit TokenRangeRemoved(
             artist,
+            msg.sender,
             contractAddress,
             startTokenId,
             endTokenId

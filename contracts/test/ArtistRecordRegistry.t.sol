@@ -18,30 +18,36 @@ contract ArtistRecordRegistryTest is Test {
     // Re-declared so vm.expectEmit can match on topics + data.
     event ContractAdded(
         address indexed artist,
+        address indexed actor,
         address indexed contractAddress
     );
     event ContractRemoved(
         address indexed artist,
+        address indexed actor,
         address indexed contractAddress
     );
     event TokenAdded(
         address indexed artist,
+        address indexed actor,
         address indexed contractAddress,
-        uint256 indexed tokenId
+        uint256 tokenId
     );
     event TokenRemoved(
         address indexed artist,
+        address indexed actor,
         address indexed contractAddress,
-        uint256 indexed tokenId
+        uint256 tokenId
     );
     event TokenRangeAdded(
         address indexed artist,
+        address indexed actor,
         address indexed contractAddress,
         uint256 startTokenId,
         uint256 endTokenId
     );
     event TokenRangeRemoved(
         address indexed artist,
+        address indexed actor,
         address indexed contractAddress,
         uint256 startTokenId,
         uint256 endTokenId
@@ -71,8 +77,8 @@ contract ArtistRecordRegistryTest is Test {
     // ─── Contract pointers ──────────────────────────────────────────
 
     function test_addContract_succeeds_andEmits() public {
-        vm.expectEmit(true, true, false, false);
-        emit ContractAdded(artist, NFT_ADDR);
+        vm.expectEmit(true, true, true, false);
+        emit ContractAdded(artist, artist, NFT_ADDR);
         vm.prank(artist);
         reg.addContract(NFT_ADDR);
 
@@ -104,8 +110,8 @@ contract ArtistRecordRegistryTest is Test {
         vm.prank(artist);
         reg.addContract(NFT_ADDR);
 
-        vm.expectEmit(true, true, false, false);
-        emit ContractRemoved(artist, NFT_ADDR);
+        vm.expectEmit(true, true, true, false);
+        emit ContractRemoved(artist, artist, NFT_ADDR);
         vm.prank(artist);
         reg.removeContract(NFT_ADDR);
 
@@ -128,8 +134,8 @@ contract ArtistRecordRegistryTest is Test {
     // ─── Token pointers ─────────────────────────────────────────────
 
     function test_addToken_succeeds_andEmits() public {
-        vm.expectEmit(true, true, true, false);
-        emit TokenAdded(artist, NFT_ADDR, 42);
+        vm.expectEmit(true, true, true, true);
+        emit TokenAdded(artist, artist, NFT_ADDR, 42);
         vm.prank(artist);
         reg.addToken(NFT_ADDR, 42);
 
@@ -178,8 +184,8 @@ contract ArtistRecordRegistryTest is Test {
         vm.prank(artist);
         reg.addToken(NFT_ADDR, 7);
 
-        vm.expectEmit(true, true, true, false);
-        emit TokenRemoved(artist, NFT_ADDR, 7);
+        vm.expectEmit(true, true, true, true);
+        emit TokenRemoved(artist, artist, NFT_ADDR, 7);
         vm.prank(artist);
         reg.removeToken(NFT_ADDR, 7);
 
@@ -196,8 +202,8 @@ contract ArtistRecordRegistryTest is Test {
     // ─── Token range pointers ───────────────────────────────────────
 
     function test_addTokenRange_succeeds_andEmits() public {
-        vm.expectEmit(true, true, false, true);
-        emit TokenRangeAdded(artist, NFT_ADDR, 1, 100);
+        vm.expectEmit(true, true, true, true);
+        emit TokenRangeAdded(artist, artist, NFT_ADDR, 1, 100);
         vm.prank(artist);
         reg.addTokenRange(NFT_ADDR, 1, 100);
 
@@ -261,8 +267,8 @@ contract ArtistRecordRegistryTest is Test {
         vm.prank(artist);
         reg.addTokenRange(NFT_ADDR, 1, 100);
 
-        vm.expectEmit(true, true, false, true);
-        emit TokenRangeRemoved(artist, NFT_ADDR, 1, 100);
+        vm.expectEmit(true, true, true, true);
+        emit TokenRangeRemoved(artist, artist, NFT_ADDR, 1, 100);
         vm.prank(artist);
         reg.removeTokenRange(NFT_ADDR, 1, 100);
 
@@ -529,6 +535,167 @@ contract ArtistRecordRegistryTest is Test {
         vm.prank(artist);
         reg.removeTokenRange(NFT_ADDR, 21, 30);
         assertEq(reg.getTokenRangeCount(artist), 1);
+    }
+
+    // Swap-and-pop edge cases. The middle case above exercises the
+    // moved-entry index rewrite. These three cases cover the other
+    // boundaries — removing the first entry (which gets the tail moved
+    // into it), the last entry (no move needed, just pop), and the
+    // only entry (length becomes zero). Tested only on the contract
+    // pointer list because the algorithm is identical across all three
+    // pointer types and the middle-case tests above already verify
+    // structural parity.
+
+    function test_contracts_swapAndPop_removeFirst() public {
+        address a1 = address(0x1111);
+        address a2 = address(0x2222);
+        address a3 = address(0x3333);
+        vm.prank(artist);
+        reg.addContract(a1);
+        vm.prank(artist);
+        reg.addContract(a2);
+        vm.prank(artist);
+        reg.addContract(a3);
+
+        vm.prank(artist);
+        reg.removeContract(a1);
+
+        assertEq(reg.getContractCount(artist), 2);
+        assertFalse(reg.isContractRegistered(artist, a1));
+        // The previously-last entry (a3) was moved into slot 0; verify
+        // its rewritten index by removing it and confirming the count
+        // drops cleanly.
+        vm.prank(artist);
+        reg.removeContract(a3);
+        assertEq(reg.getContractCount(artist), 1);
+        assertTrue(reg.isContractRegistered(artist, a2));
+    }
+
+    function test_contracts_swapAndPop_removeLast() public {
+        address a1 = address(0x1111);
+        address a2 = address(0x2222);
+        address a3 = address(0x3333);
+        vm.prank(artist);
+        reg.addContract(a1);
+        vm.prank(artist);
+        reg.addContract(a2);
+        vm.prank(artist);
+        reg.addContract(a3);
+
+        // Removing the tail skips the move branch entirely.
+        vm.prank(artist);
+        reg.removeContract(a3);
+
+        assertEq(reg.getContractCount(artist), 2);
+        assertFalse(reg.isContractRegistered(artist, a3));
+        assertTrue(reg.isContractRegistered(artist, a1));
+        assertTrue(reg.isContractRegistered(artist, a2));
+
+        // The remaining entries should still be addressable / removable
+        // with their original index-plus-one mappings intact.
+        vm.prank(artist);
+        reg.removeContract(a1);
+        vm.prank(artist);
+        reg.removeContract(a2);
+        assertEq(reg.getContractCount(artist), 0);
+    }
+
+    function test_contracts_swapAndPop_removeOnly() public {
+        vm.prank(artist);
+        reg.addContract(NFT_ADDR);
+        assertEq(reg.getContractCount(artist), 1);
+
+        vm.prank(artist);
+        reg.removeContract(NFT_ADDR);
+
+        assertEq(reg.getContractCount(artist), 0);
+        assertFalse(reg.isContractRegistered(artist, NFT_ADDR));
+
+        // Re-adding the same pointer must succeed (the prior
+        // index-plus-one entry was cleared).
+        vm.prank(artist);
+        reg.addContract(NFT_ADDR);
+        assertTrue(reg.isContractRegistered(artist, NFT_ADDR));
+    }
+
+    // ─── Actor attribution in events ────────────────────────────────
+
+    /// @dev Direct-path add: `actor` in the event MUST equal the artist
+    ///      (which equals `msg.sender`). Verified by checking the
+    ///      indexed-topic match — re-emitting with a wrong actor would
+    ///      not satisfy `expectEmit`.
+    function test_event_actor_isArtist_onDirectAdd() public {
+        vm.expectEmit(true, true, true, false);
+        emit ContractAdded(artist, artist, NFT_ADDR);
+        vm.prank(artist);
+        reg.addContract(NFT_ADDR);
+    }
+
+    /// @dev Operator-path add: `actor` MUST be the operator, NOT the
+    ///      artist. This is the primary auditability use case the
+    ///      `actor` field exists for — answering "who actually
+    ///      modified this artist's record?" without correlating against
+    ///      tx.origin out-of-band.
+    function test_event_actor_isOperator_onForCalls() public {
+        vm.prank(artist);
+        reg.setOperator(operator, true);
+
+        vm.expectEmit(true, true, true, false);
+        emit ContractAdded(artist, operator, NFT_ADDR);
+        vm.prank(operator);
+        reg.addContractFor(artist, NFT_ADDR);
+    }
+
+    /// @dev Multicall-wrapped operator add: `msg.sender` is preserved
+    ///      across OZ's `delegatecall`, so the inner emit should still
+    ///      attribute to the operator, not to the registry contract
+    ///      itself.
+    function test_event_actor_isPreservedThroughMulticall() public {
+        vm.prank(artist);
+        reg.setOperator(operator, true);
+
+        bytes[] memory calls = new bytes[](1);
+        calls[0] = abi.encodeWithSelector(
+            ArtistRecordRegistry.addContractFor.selector,
+            artist,
+            NFT_ADDR
+        );
+
+        vm.expectEmit(true, true, true, false);
+        emit ContractAdded(artist, operator, NFT_ADDR);
+        vm.prank(operator);
+        reg.multicall(calls);
+    }
+
+    // ─── Token-pointer vs single-token-range distinction ────────────
+
+    /// @dev A token at `(contract, id)` and a single-token range at
+    ///      `(contract, id, id)` describe the same token but live in
+    ///      separate lists under separate keys. Both adds must
+    ///      succeed; neither blocks the other; each is removable
+    ///      independently. The README calls this out explicitly so
+    ///      downstream tools don't assume the pointers are
+    ///      equivalent.
+    function test_singleTokenRange_isDistinctFromTokenPointer() public {
+        vm.prank(artist);
+        reg.addToken(NFT_ADDR, 1);
+        vm.prank(artist);
+        reg.addTokenRange(NFT_ADDR, 1, 1);
+
+        assertTrue(reg.isTokenRegistered(artist, NFT_ADDR, 1));
+        assertTrue(reg.isTokenRangeRegistered(artist, NFT_ADDR, 1, 1));
+        assertEq(reg.getTokenCount(artist), 1);
+        assertEq(reg.getTokenRangeCount(artist), 1);
+
+        // Removing one must leave the other untouched.
+        vm.prank(artist);
+        reg.removeToken(NFT_ADDR, 1);
+        assertFalse(reg.isTokenRegistered(artist, NFT_ADDR, 1));
+        assertTrue(reg.isTokenRangeRegistered(artist, NFT_ADDR, 1, 1));
+
+        vm.prank(artist);
+        reg.removeTokenRange(NFT_ADDR, 1, 1);
+        assertFalse(reg.isTokenRangeRegistered(artist, NFT_ADDR, 1, 1));
     }
 
     // ─── Isolation between artists ──────────────────────────────────
@@ -881,10 +1048,10 @@ contract ArtistRecordRegistryTest is Test {
         calls[0] = _encodeAddContract(NFT_ADDR);
         calls[1] = _encodeAddContract(NFT_ADDR_B);
 
-        vm.expectEmit(true, true, false, false);
-        emit ContractAdded(artist, NFT_ADDR);
-        vm.expectEmit(true, true, false, false);
-        emit ContractAdded(artist, NFT_ADDR_B);
+        vm.expectEmit(true, true, true, false);
+        emit ContractAdded(artist, artist, NFT_ADDR);
+        vm.expectEmit(true, true, true, false);
+        emit ContractAdded(artist, artist, NFT_ADDR_B);
 
         vm.prank(artist);
         reg.multicall(calls);

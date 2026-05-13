@@ -37,6 +37,10 @@ const anvilUrl = process.env.NEXT_PUBLIC_ANVIL_RPC_URL ?? "http://localhost:8545
 // labels all agree on the same endpoint.
 export const FORK_CHAIN_ID = 31339
 export const FORK_CHAIN_NAME = "Anvil fork (PND)"
+// Cast through `unknown` because the upstream `foundry` chain object
+// has `id: 31337` as a literal — TypeScript correctly notices we're
+// overriding to a different literal. Runtime shape is identical; the
+// strict literal type is the only thing in the way.
 const foundry = {
   ...foundryBase,
   id: FORK_CHAIN_ID,
@@ -45,7 +49,7 @@ const foundry = {
     ...foundryBase.rpcUrls,
     default: { ...foundryBase.rpcUrls.default, http: [anvilUrl] },
   },
-} as typeof foundryBase
+} as unknown as typeof foundryBase
 
 // Re-export the customized chain so dapp code (ChainSwitcher etc.) sees
 // the same id/name/RPC the wagmi config uses. Importing the wagmi/chains

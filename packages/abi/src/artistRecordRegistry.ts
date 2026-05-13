@@ -655,6 +655,25 @@ export const artistRecordRegistryAbi = [
   },
   {
     "type": "function",
+    "name": "multicall",
+    "inputs": [
+      {
+        "name": "data",
+        "type": "bytes[]",
+        "internalType": "bytes[]"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "results",
+        "type": "bytes[]",
+        "internalType": "bytes[]"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "removeContract",
     "inputs": [
       {
@@ -805,6 +824,12 @@ export const artistRecordRegistryAbi = [
         "internalType": "address"
       },
       {
+        "name": "actor",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
         "name": "contractAddress",
         "type": "address",
         "indexed": true,
@@ -819,6 +844,12 @@ export const artistRecordRegistryAbi = [
     "inputs": [
       {
         "name": "artist",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "actor",
         "type": "address",
         "indexed": true,
         "internalType": "address"
@@ -868,6 +899,12 @@ export const artistRecordRegistryAbi = [
         "internalType": "address"
       },
       {
+        "name": "actor",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
         "name": "contractAddress",
         "type": "address",
         "indexed": true,
@@ -876,7 +913,7 @@ export const artistRecordRegistryAbi = [
       {
         "name": "tokenId",
         "type": "uint256",
-        "indexed": true,
+        "indexed": false,
         "internalType": "uint256"
       }
     ],
@@ -888,6 +925,12 @@ export const artistRecordRegistryAbi = [
     "inputs": [
       {
         "name": "artist",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "actor",
         "type": "address",
         "indexed": true,
         "internalType": "address"
@@ -924,6 +967,12 @@ export const artistRecordRegistryAbi = [
         "internalType": "address"
       },
       {
+        "name": "actor",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
         "name": "contractAddress",
         "type": "address",
         "indexed": true,
@@ -955,6 +1004,12 @@ export const artistRecordRegistryAbi = [
         "internalType": "address"
       },
       {
+        "name": "actor",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
         "name": "contractAddress",
         "type": "address",
         "indexed": true,
@@ -963,11 +1018,22 @@ export const artistRecordRegistryAbi = [
       {
         "name": "tokenId",
         "type": "uint256",
-        "indexed": true,
+        "indexed": false,
         "internalType": "uint256"
       }
     ],
     "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "AddressEmptyCode",
+    "inputs": [
+      {
+        "name": "target",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
   },
   {
     "type": "error",
@@ -977,6 +1043,11 @@ export const artistRecordRegistryAbi = [
   {
     "type": "error",
     "name": "ContractNotRegistered",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "FailedCall",
     "inputs": []
   },
   {
