@@ -35,24 +35,24 @@ const NFT_COLLECTION_FACTORY_V2_ADDRESS =
 // but tens of thousands of additional getLogs scans during backfill.
 const FND_START_BLOCK = FACTORY_DEPLOY_BLOCK
 
-// Ponder needs a paid RPC URL — Alchemy / Quicknode / drpc / etc. — and
-// PONDER_RPC_URL_1 must be set on Railway. We tried fronting it with a
-// fallback chain of free public RPCs (publicnode, llamarpc, ankr) and it
-// did not work: Ponder's factory pattern issues `eth_getLogs` calls with
-// up to 50 cloned addresses bundled in `address` (hardcoded slice in
-// `node_modules/ponder/src/sync-historical/index.ts:188`), and every
-// free provider we tested rejects multi-address arrays of that size. The
-// fallback chain just added retry latency before falling through to the
-// paid endpoint anyway.
+// Use drpc.org's free tier (`PONDER_RPC_URL_1=https://eth.drpc.org`).
+// It handles the factory-pattern multi-address `eth_getLogs` calls that
+// Ponder issues (up to 50 cloned addresses per request, hardcoded slice
+// in `node_modules/ponder/src/sync-historical/index.ts:188`, no config
+// knob in v0.16). publicnode, llamarpc, and ankr all reject the
+// multi-address shape and a viem.fallback() across them just adds retry
+// latency before falling through to whatever paid endpoint serves it.
+// Alchemy works but burns CU fast as clone count grows — we hit a
+// monthly cap in a single afternoon at 60s polling with 76 clones.
 //
-// Cost is controlled instead by `pollingInterval` below — see that
-// comment for the math. Don't point this at the app's `/api/rpc` proxy:
-// the allowlist there blocks the bulk-getLogs patterns Ponder needs, and
-// the rate limit would fight initial sync.
+// Cost is controlled by `pollingInterval` below. Don't point this at
+// the app's `/api/rpc` proxy: the allowlist there blocks the bulk
+// getLogs patterns Ponder needs, and the rate limit would fight sync.
 const RPC_URL = process.env.PONDER_RPC_URL_1
 if (!RPC_URL) {
   throw new Error(
-    "PONDER_RPC_URL_1 is required (paid endpoint: Alchemy / Quicknode / drpc).",
+    "PONDER_RPC_URL_1 is required. drpc.org free tier works: " +
+      "https://eth.drpc.org",
   )
 }
 
