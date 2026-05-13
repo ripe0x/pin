@@ -1,5 +1,5 @@
 import { createConfig, factory } from "ponder"
-import { http, parseAbiItem } from "viem"
+import { fallback, http, parseAbiItem } from "viem"
 import { sovereignAuctionHouseAbi } from "./abis/SovereignAuctionHouse"
 import { sovereignAuctionHouseFactoryAbi } from "./abis/SovereignAuctionHouseFactory"
 import { foundationNftAbi, collectionFactoryAbi } from "./abis/FoundationNFT"
@@ -37,10 +37,28 @@ const FND_START_BLOCK = FACTORY_DEPLOY_BLOCK
 
 // Ponder needs a direct RPC URL for sync (heavy `eth_getLogs`). Don't point
 // this at the app's `/api/rpc` proxy — the allowlist there blocks the
-// patterns Ponder needs, and the rate limit would fight initial sync. Set
-// PONDER_RPC_URL_1 directly on the Railway Ponder service to a non-public
-// Alchemy URL.
-const RPC_URL = process.env.PONDER_RPC_URL_1 ?? "https://eth.llamarpc.com"
+// patterns Ponder needs, and the rate limit would fight initial sync.
+//
+// Strategy: free public RPCs are perfectly adequate for an indexer because
+// Ponder caches sync state per-block; the upstream sees a trickle of reads
+// in steady-state head-following. Save paid Alchemy CU for the user-facing
+// app. Public RPCs are tried first; PONDER_RPC_URL_1 (if set on Railway to
+// an Alchemy URL) sits at the end of the chain as a last-resort safety net
+// only used when every public provider has rejected a request.
+const PUBLIC_RPCS = [
+  "https://ethereum-rpc.publicnode.com",
+  "https://eth.llamarpc.com",
+  "https://rpc.ankr.com/eth",
+] as const
+
+const FALLBACK_RPC = process.env.PONDER_RPC_URL_1
+const RPC_TRANSPORT = fallback(
+  [
+    ...PUBLIC_RPCS.map((url) => http(url)),
+    ...(FALLBACK_RPC ? [http(FALLBACK_RPC)] : []),
+  ],
+  { rank: false },
+)
 
 // ERC-721 Transfer event — used to track mints (from address zero) on
 // every per-artist Foundation collection contract via the factory pattern.
@@ -52,7 +70,7 @@ export default createConfig({
   chains: {
     mainnet: {
       id: 1,
-      rpc: http(RPC_URL),
+      rpc: RPC_TRANSPORT,
       // Head-following cadence. 60s vs the default 5s is a 12× drop in
       // baseline poll volume. Each clone house's events still get
       // indexed within ~1 min of the on-chain confirmation — fine for
