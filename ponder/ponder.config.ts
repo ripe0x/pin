@@ -35,12 +35,26 @@ const NFT_COLLECTION_FACTORY_V2_ADDRESS =
 // but tens of thousands of additional getLogs scans during backfill.
 const FND_START_BLOCK = FACTORY_DEPLOY_BLOCK
 
-// Ponder needs a direct RPC URL for sync (heavy `eth_getLogs`). Don't point
-// this at the app's `/api/rpc` proxy — the allowlist there blocks the
-// patterns Ponder needs, and the rate limit would fight initial sync. Set
-// PONDER_RPC_URL_1 directly on the Railway Ponder service to a non-public
-// Alchemy URL.
-const RPC_URL = process.env.PONDER_RPC_URL_1 ?? "https://eth.llamarpc.com"
+// Use drpc.org's free tier (`PONDER_RPC_URL_1=https://eth.drpc.org`).
+// It handles the factory-pattern multi-address `eth_getLogs` calls that
+// Ponder issues (up to 50 cloned addresses per request, hardcoded slice
+// in `node_modules/ponder/src/sync-historical/index.ts:188`, no config
+// knob in v0.16). publicnode, llamarpc, and ankr all reject the
+// multi-address shape and a viem.fallback() across them just adds retry
+// latency before falling through to whatever paid endpoint serves it.
+// Alchemy works but burns CU fast as clone count grows — we hit a
+// monthly cap in a single afternoon at 60s polling with 76 clones.
+//
+// Cost is controlled by `pollingInterval` below. Don't point this at
+// the app's `/api/rpc` proxy: the allowlist there blocks the bulk
+// getLogs patterns Ponder needs, and the rate limit would fight sync.
+const RPC_URL = process.env.PONDER_RPC_URL_1
+if (!RPC_URL) {
+  throw new Error(
+    "PONDER_RPC_URL_1 is required. drpc.org free tier works: " +
+      "https://eth.drpc.org",
+  )
+}
 
 // ERC-721 Transfer event — used to track mints (from address zero) on
 // every per-artist Foundation collection contract via the factory pattern.
@@ -53,16 +67,16 @@ export default createConfig({
     mainnet: {
       id: 1,
       rpc: http(RPC_URL),
-      // Head-following cadence. 60s vs the default 5s is a 12× drop in
-      // baseline poll volume. Each clone house's events still get
-      // indexed within ~1 min of the on-chain confirmation — fine for
-      // an auction site where bid lists tolerate sub-minute lag, the
-      // bid button reads fresh on-chain state at click-time, and the
-      // contract rejects stale bids regardless of UI freshness.
-      // Per-poll cost grows with house count (currently 54), so
-      // throttling here keeps Ponder's RPC bill linear-bounded as
-      // houses grow rather than scaling with poll frequency too.
-      pollingInterval: 60_000,
+      // Head-following cadence. Bumped from 60s → 300s (5 min) for cost
+      // control: per-poll work scales with the contract surface area
+      // (5 base contracts + ~50 cloned auction houses + N FoundationCollection
+      // clones, each generating an `eth_getLogs` per tracked event), so
+      // dropping poll frequency 5× drops steady-state RPC spend ~5×.
+      // Auction state tolerates this: bid lists may show new bids up to
+      // 5 min late, but the bid button reads fresh on-chain state at
+      // click-time and the contract rejects stale bids regardless of UI
+      // freshness. Default is 5s — 300s is 60× cheaper than that baseline.
+      pollingInterval: 300_000,
     },
   },
   contracts: {

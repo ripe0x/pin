@@ -43,10 +43,10 @@ const buyPriceSetEvent = parseAbiItem(
   "event BuyPriceSet(address indexed nftContract, uint256 indexed tokenId, address indexed seller, uint256 price)",
 )
 
-function getClient(): PublicClient {
+function getClient(route?: string): PublicClient {
   return createPublicClient({
     chain: mainnet,
-    transport: loggingFallbackTransport("foundation-seller-listings"),
+    transport: loggingFallbackTransport(route),
   })
 }
 

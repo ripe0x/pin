@@ -108,9 +108,12 @@ Setup is in [`ponder/README.md`](./ponder/README.md). The summary:
 2. Point its `DATABASE_URL` at the same Postgres the web app uses.
 3. Set `DATABASE_SCHEMA=ponder` on the indexer service so its tables
    live in their own namespace.
-4. Set `PONDER_RPC_URL_1` to an RPC endpoint that handles
-   `eth_getLogs` with multiple addresses in the `address` array
-   (drpc.org and Alchemy do; publicnode rejects).
+4. Set `PONDER_RPC_URL_1=https://eth.drpc.org` (drpc.org's free tier
+   handles Ponder's factory-pattern multi-address `eth_getLogs` calls
+   correctly; publicnode / llamarpc / ankr do not — see
+   [`ponder/README.md`](./ponder/README.md#rpc-strategy) for the full
+   failure mode). Cost is controlled via `pollingInterval` in
+   `ponder.config.ts`, currently 300s.
 5. Set `INDEXER_SCHEMA=ponder` on the web app so it knows where
    Ponder writes.
 

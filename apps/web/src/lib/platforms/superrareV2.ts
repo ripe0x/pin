@@ -97,10 +97,10 @@ const tokenCreatorAbi = [
   },
 ] as const
 
-function getClient() {
+function getClient(route?: string) {
   return createPublicClient({
     chain: mainnet,
-    transport: loggingFallbackTransport("superrareV2", { batch: true }),
+    transport: loggingFallbackTransport(route, { batch: true }),
   })
 }
 
