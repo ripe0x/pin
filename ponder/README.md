@@ -47,31 +47,49 @@ ponder.pnd_bids        immutable bid log. Indexed on (auction_id,
 DATABASE_URL              same Postgres the web app uses
 DATABASE_SCHEMA           required by Ponder ≥ 0.16. Set to "ponder"
                           so the web app's INDEXER_SCHEMA matches.
-PONDER_RPC_URL_1          mainnet JSON-RPC URL. See "RPC requirements"
-                          below — not every public endpoint works.
+PONDER_RPC_URL_1          OPTIONAL. Paid Alchemy / Infura URL used as a
+                          last-resort fallback. Leave unset in normal
+                          operation — see "RPC strategy" below.
 ```
 
-## RPC requirements (this is the main gotcha)
+## RPC strategy
 
-Ponder uses the `factory()` pattern to track all clones. Every poll
-cycle, it issues `eth_getLogs` calls with **multiple addresses** in the
-`address` array (one per known clone).
-
-Public RPC providers vary in how they handle this:
+[`ponder.config.ts`](ponder.config.ts) wires the chain transport to
+viem's `fallback()` with a chain of **free public RPCs first**, and
+`PONDER_RPC_URL_1` (if set) appended at the end as a last-resort
+safety net:
 
 ```txt
-✅ drpc.org                       handles multi-address arrays cleanly
-✅ Alchemy                        same
-❌ publicnode.com                 rejects "blocked parameter:
-                                  params.0.address.#"
-⚠️  Your own node                 depends on the client's eth_getLogs
-                                  filter handling
+1. https://ethereum-rpc.publicnode.com   (primary)
+2. https://eth.llamarpc.com              (fallback)
+3. https://rpc.ankr.com/eth              (fallback)
+4. $PONDER_RPC_URL_1                     (last-resort, only if set)
 ```
 
-Use drpc as the default if you don't already have an Alchemy / Infura
-key. Don't point this at the web app's own `/api/rpc` proxy — the
+This is deliberate. The indexer's RPC profile — periodic head-following
+polls + per-block sync state cached in Postgres — fits inside what free
+public providers comfortably serve. Save paid Alchemy CU for the
+user-facing app, where rate limits and reliability actually bite.
+
+**Why a chain instead of one provider:** Ponder uses the `factory()`
+pattern to track all clones, so every poll issues `eth_getLogs` calls
+with **multiple addresses** in the `address` array. Public providers
+disagree on how big an address list they accept — llamarpc and ankr
+sometimes reject the wider arrays, publicnode handles them. The
+fallback chain rotates on rejection so individual provider quirks
+don't stall sync. Expect a small number of `WARN  Received JSON-RPC
+error` lines in the logs during heavy backfill — that's the rotation
+working, not a failure.
+
+**Don't point this at the web app's own `/api/rpc` proxy** — the
 allowlist there intentionally blocks the bulk-`getLogs` patterns that
 Ponder's sync needs.
+
+**If you must use a paid provider as primary** (e.g. private chain,
+custom node), edit `ponder.config.ts` to put your URL ahead of
+`PUBLIC_RPCS` in the fallback array. Don't just set the env var
+expecting it to take precedence — by design it sits at the end of
+the chain.
 
 ## Required: src/api/index.ts
 
@@ -93,14 +111,21 @@ use Nixpacks with `npm install && npm run codegen` for build and
 
 1. Create a new service in your Railway project.
 2. Source: connect this repo, set **Root Directory** to `ponder`.
-3. Add env vars: `DATABASE_URL`, `DATABASE_SCHEMA=ponder`,
-   `PONDER_RPC_URL_1`.
+3. Add env vars: `DATABASE_URL`, `DATABASE_SCHEMA=ponder`.
+   `PONDER_RPC_URL_1` is optional and should normally be left unset
+   (see "RPC strategy"). The public-RPC fallback chain in
+   `ponder.config.ts` is sufficient on its own.
 4. Deploy.
 
-Initial sync of the factory + clones takes ~30s for a few thousand
-blocks of activity. After backfill, Ponder polls for new blocks every
-5s. Postgres grows as new auctions land — bounded by total event
-volume.
+Initial sync of the factory + clones runs against the public-RPC
+fallback chain. Backfill from `FACTORY_DEPLOY_BLOCK` takes on the
+order of an hour for the first deploy as it scans 7+ months of logs
+across all factory clones. After backfill, Ponder head-follows at
+the cadence set by `pollingInterval` (currently 60s; see
+`ponder.config.ts:65`). Steady-state RPC volume is bounded by chain
+activity and clone count — small enough to serve from public
+providers indefinitely. Postgres grows as new auctions land —
+bounded by total event volume.
 
 ### Other hosts
 
@@ -157,12 +182,13 @@ cd ponder
 npm install
 DATABASE_URL=postgresql://postgres:dev@localhost:5432/postgres \
 DATABASE_SCHEMA=ponder \
-PONDER_RPC_URL_1=https://eth.drpc.org \
   npm run dev
 ```
 
-`ponder dev` runs the indexer with hot reload. Sync against drpc
-takes seconds for the small event volume.
+`ponder dev` runs the indexer with hot reload against the public-RPC
+fallback chain — no RPC env var needed. A full local backfill from
+`FACTORY_DEPLOY_BLOCK` takes ~1h on public RPCs; once it's caught up,
+head-following is fast.
 
 If you want the web app to read from your local Ponder, set
 `INDEXER_SCHEMA=ponder` and `DATABASE_URL` (the same one Ponder
@@ -187,9 +213,17 @@ At PND's current event volume:
 
 ```txt
 Postgres storage   < 100MB for years
-Sync RPC calls     bounded by chain activity; tiny
+Sync RPC calls     $0 — served from the public-RPC fallback chain
 Service uptime     ~$5-10/mo on Railway, similar on Render/Fly
 ```
 
 Most of the cost story is "is Ponder running?" not "how much is it
 indexing?" — the bottleneck is wall-clock uptime, not throughput.
+
+> **History note.** Before the public-RPC fallback chain landed, the
+> indexer pointed at a paid Alchemy URL via `PONDER_RPC_URL_1` and was
+> burning ~273K requests/day at a sustained ~238 CU/s. That was ~99%
+> of the project's Alchemy traffic — orders of magnitude more than the
+> user-facing app, which only emits RPC on cold cache misses. If you
+> see Alchemy CU climbing again after a deploy, check that this
+> service isn't somehow back on a single-provider transport.
