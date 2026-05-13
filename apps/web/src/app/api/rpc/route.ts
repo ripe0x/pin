@@ -32,20 +32,23 @@ import {
  * pipeline calls them.
  */
 
+const INFURA_API_KEY = process.env.INFURA_API_KEY
 const ALCHEMY_API_KEY = process.env.ALCHEMY_API_KEY
 
-// Upstream chain: try Alchemy first (best rate limits + archive data), then
-// fall through to public RPCs if Alchemy is down, rate-limiting us, or the
-// key is misconfigured. Each fallback supports the standard JSON-RPC method
-// set including `eth_sendRawTransaction`, so a mint/bid still goes through
-// even when the primary is unhealthy. Order matters — earliest entries are
-// tried first.
+// Upstream chain: try Alchemy first, then Infura, then fall through to
+// public RPCs. Each fallback supports the standard JSON-RPC method set
+// including `eth_sendRawTransaction`, so a mint/bid still goes through
+// even when the primary is unhealthy. Order matters — earliest entries
+// are tried first.
 //
 // The publicnode endpoint accepts an optional API key; we use the anonymous
 // tier. drpc/llamarpc/cloudflare are all anonymous public mainnet RPCs.
 const UPSTREAMS = [
   ALCHEMY_API_KEY
     ? `https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`
+    : null,
+  INFURA_API_KEY
+    ? `https://mainnet.infura.io/v3/${INFURA_API_KEY}`
     : null,
   "https://eth.llamarpc.com",
   "https://ethereum-rpc.publicnode.com",
@@ -233,18 +236,13 @@ export async function POST(req: NextRequest) {
   // matches exactly what viem sent (including key ordering, etc.).
   const payload = JSON.stringify(body)
 
-  // Read calls leak the user's wallet address + query patterns to whichever
-  // RPC handles them. Public RPCs have no contractual privacy guarantee,
-  // so we keep reads on the trusted primary upstream (Alchemy when
-  // configured) and let them fail rather than silently route around it.
-  // Writes (`eth_sendRawTransaction`) are the opposite case: signed bytes
-  // are public the moment they hit any mempool, and broadcast redundancy
-  // is precisely the point — if Alchemy is down, the bid/mint should
-  // still reach the chain via a public RPC.
-  const isWriteBatch = batch.some(
-    (e) => e?.method === "eth_sendRawTransaction",
-  )
-  const upstreams = isWriteBatch ? UPSTREAMS : UPSTREAMS.slice(0, 1)
+  // Walk the full upstream chain for every request. The configured primary
+  // (Alchemy → Infura) serves every healthy read, keeping wallet+query
+  // patterns off public RPCs on the happy path. The public fallbacks only
+  // see traffic when every preferred upstream is down — a tradeoff against
+  // the previous design, where a single primary hiccup took the entire
+  // read path down site-wide.
+  const upstreams = UPSTREAMS
 
   // Log one event per request, attributed to the first batch entry's
   // method. Batches are typically 1–2 entries; if we ever need precise
