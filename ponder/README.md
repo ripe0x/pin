@@ -47,49 +47,41 @@ ponder.pnd_bids        immutable bid log. Indexed on (auction_id,
 DATABASE_URL              same Postgres the web app uses
 DATABASE_SCHEMA           required by Ponder ≥ 0.16. Set to "ponder"
                           so the web app's INDEXER_SCHEMA matches.
-PONDER_RPC_URL_1          OPTIONAL. Paid Alchemy / Infura URL used as a
-                          last-resort fallback. Leave unset in normal
-                          operation — see "RPC strategy" below.
+PONDER_RPC_URL_1          REQUIRED. Paid mainnet JSON-RPC URL — Alchemy,
+                          Quicknode, drpc, etc. See "RPC strategy" below
+                          for why free public RPCs do not work for this
+                          indexer.
 ```
 
 ## RPC strategy
 
-[`ponder.config.ts`](ponder.config.ts) wires the chain transport to
-viem's `fallback()` with a chain of **free public RPCs first**, and
-`PONDER_RPC_URL_1` (if set) appended at the end as a last-resort
-safety net:
+Single paid endpoint, throttled by `pollingInterval` for cost control.
+That's it.
 
-```txt
-1. https://ethereum-rpc.publicnode.com   (primary)
-2. https://eth.llamarpc.com              (fallback)
-3. https://rpc.ankr.com/eth              (fallback)
-4. $PONDER_RPC_URL_1                     (last-resort, only if set)
-```
+**Why not a free public RPC.** Ponder's `factory()` pattern issues
+`eth_getLogs` calls with up to 50 cloned addresses bundled in the
+`address` array (hardcoded slice in
+`node_modules/ponder/src/sync-historical/index.ts:188`, no config knob
+in v0.16 — the constant is the same on `main`). Every free public
+provider tested (publicnode, llamarpc, ankr) rejects multi-address
+arrays at that size: publicnode returns "blocked parameter", llamarpc
+and ankr return non-JSON HTML error responses. A `viem.fallback()`
+chain just adds retry latency before falling through to the paid
+endpoint — total CU spend is unchanged.
 
-This is deliberate. The indexer's RPC profile — periodic head-following
-polls + per-block sync state cached in Postgres — fits inside what free
-public providers comfortably serve. Save paid Alchemy CU for the
-user-facing app, where rate limits and reliability actually bite.
-
-**Why a chain instead of one provider:** Ponder uses the `factory()`
-pattern to track all clones, so every poll issues `eth_getLogs` calls
-with **multiple addresses** in the `address` array. Public providers
-disagree on how big an address list they accept — llamarpc and ankr
-sometimes reject the wider arrays, publicnode handles them. The
-fallback chain rotates on rejection so individual provider quirks
-don't stall sync. Expect a small number of `WARN  Received JSON-RPC
-error` lines in the logs during heavy backfill — that's the rotation
-working, not a failure.
+**Cost is controlled at the polling interval.** See `ponder.config.ts`
+chain `pollingInterval` (currently 300s / 5 min). Per-poll RPC volume
+scales with the contract surface area (5 base contracts + ~50 Sovereign
+auction-house clones + N FoundationCollection clones, each generating
+an `eth_getLogs` per tracked event), so dropping poll frequency drops
+steady-state RPC spend linearly. 300s vs the Ponder default of 5s is a
+60× reduction. Go higher (600s, 900s) if you want to trade more lag
+for less spend; the auction site's UI tolerates it because the bid
+button reads fresh on-chain state at click-time.
 
 **Don't point this at the web app's own `/api/rpc` proxy** — the
 allowlist there intentionally blocks the bulk-`getLogs` patterns that
 Ponder's sync needs.
-
-**If you must use a paid provider as primary** (e.g. private chain,
-custom node), edit `ponder.config.ts` to put your URL ahead of
-`PUBLIC_RPCS` in the fallback array. Don't just set the env var
-expecting it to take precedence — by design it sits at the end of
-the chain.
 
 ## Required: src/api/index.ts
 
@@ -111,21 +103,16 @@ use Nixpacks with `npm install && npm run codegen` for build and
 
 1. Create a new service in your Railway project.
 2. Source: connect this repo, set **Root Directory** to `ponder`.
-3. Add env vars: `DATABASE_URL`, `DATABASE_SCHEMA=ponder`.
-   `PONDER_RPC_URL_1` is optional and should normally be left unset
-   (see "RPC strategy"). The public-RPC fallback chain in
-   `ponder.config.ts` is sufficient on its own.
+3. Add env vars: `DATABASE_URL`, `DATABASE_SCHEMA=ponder`,
+   `PONDER_RPC_URL_1` (paid endpoint — see "RPC strategy").
 4. Deploy.
 
-Initial sync of the factory + clones runs against the public-RPC
-fallback chain. Backfill from `FACTORY_DEPLOY_BLOCK` takes on the
-order of an hour for the first deploy as it scans 7+ months of logs
-across all factory clones. After backfill, Ponder head-follows at
-the cadence set by `pollingInterval` (currently 60s; see
-`ponder.config.ts:65`). Steady-state RPC volume is bounded by chain
-activity and clone count — small enough to serve from public
-providers indefinitely. Postgres grows as new auctions land —
-bounded by total event volume.
+Initial sync of the factory + clones takes on the order of an hour
+for the first deploy as it scans 7+ months of logs across all factory
+clones. After backfill, Ponder head-follows at the cadence set by
+`pollingInterval` (currently 300s; see `ponder.config.ts`).
+Steady-state RPC volume is bounded by clone count and poll frequency.
+Postgres grows as new auctions land — bounded by total event volume.
 
 ### Other hosts
 
@@ -182,13 +169,13 @@ cd ponder
 npm install
 DATABASE_URL=postgresql://postgres:dev@localhost:5432/postgres \
 DATABASE_SCHEMA=ponder \
+PONDER_RPC_URL_1=https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY \
   npm run dev
 ```
 
-`ponder dev` runs the indexer with hot reload against the public-RPC
-fallback chain — no RPC env var needed. A full local backfill from
-`FACTORY_DEPLOY_BLOCK` takes ~1h on public RPCs; once it's caught up,
-head-following is fast.
+`ponder dev` runs the indexer with hot reload. A full local backfill
+from `FACTORY_DEPLOY_BLOCK` takes on the order of an hour against a
+paid RPC; once caught up, head-following is fast.
 
 If you want the web app to read from your local Ponder, set
 `INDEXER_SCHEMA=ponder` and `DATABASE_URL` (the same one Ponder
@@ -213,17 +200,25 @@ At PND's current event volume:
 
 ```txt
 Postgres storage   < 100MB for years
-Sync RPC calls     $0 — served from the public-RPC fallback chain
+Sync RPC calls     proportional to (clone count) × (1 / pollingInterval)
+                   — see "RPC strategy"; currently tuned to ~5 min polls
 Service uptime     ~$5-10/mo on Railway, similar on Render/Fly
+RPC plan           a paid tier (Alchemy / Quicknode / drpc); Ponder's
+                   factory-pattern queries do not work on free public
+                   RPCs at this clone count
 ```
 
-Most of the cost story is "is Ponder running?" not "how much is it
-indexing?" — the bottleneck is wall-clock uptime, not throughput.
+If Alchemy CU/s is the line item to watch, the lever is
+`pollingInterval` in `ponder.config.ts`. Going from 300s → 600s halves
+indexer spend; bid-list freshness shifts from "up to 5 min late" to
+"up to 10 min late" — usually fine for a non-realtime auction site.
 
-> **History note.** Before the public-RPC fallback chain landed, the
-> indexer pointed at a paid Alchemy URL via `PONDER_RPC_URL_1` and was
-> burning ~273K requests/day at a sustained ~238 CU/s. That was ~99%
-> of the project's Alchemy traffic — orders of magnitude more than the
-> user-facing app, which only emits RPC on cold cache misses. If you
-> see Alchemy CU climbing again after a deploy, check that this
-> service isn't somehow back on a single-provider transport.
+> **History note.** A previous attempt fronted Alchemy with a viem
+> `fallback()` chain of free public RPCs (publicnode → llamarpc →
+> ankr) hoping to absorb the indexer load for free. It did not work:
+> Ponder bundles up to 50 cloned addresses per `eth_getLogs` call and
+> all three providers reject multi-address arrays at that size.
+> Removed in favor of a single paid endpoint + longer poll interval.
+> If Alchemy CU climbs unexpectedly, check whether `pollingInterval`
+> was lowered or whether the indexer is in a re-sync (look for
+> `Updated backfill indexing progress` in the service logs).

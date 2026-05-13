@@ -1,5 +1,5 @@
 import { createConfig, factory } from "ponder"
-import { fallback, http, parseAbiItem } from "viem"
+import { http, parseAbiItem } from "viem"
 import { sovereignAuctionHouseAbi } from "./abis/SovereignAuctionHouse"
 import { sovereignAuctionHouseFactoryAbi } from "./abis/SovereignAuctionHouseFactory"
 import { foundationNftAbi, collectionFactoryAbi } from "./abis/FoundationNFT"
@@ -35,30 +35,26 @@ const NFT_COLLECTION_FACTORY_V2_ADDRESS =
 // but tens of thousands of additional getLogs scans during backfill.
 const FND_START_BLOCK = FACTORY_DEPLOY_BLOCK
 
-// Ponder needs a direct RPC URL for sync (heavy `eth_getLogs`). Don't point
-// this at the app's `/api/rpc` proxy — the allowlist there blocks the
-// patterns Ponder needs, and the rate limit would fight initial sync.
+// Ponder needs a paid RPC URL — Alchemy / Quicknode / drpc / etc. — and
+// PONDER_RPC_URL_1 must be set on Railway. We tried fronting it with a
+// fallback chain of free public RPCs (publicnode, llamarpc, ankr) and it
+// did not work: Ponder's factory pattern issues `eth_getLogs` calls with
+// up to 50 cloned addresses bundled in `address` (hardcoded slice in
+// `node_modules/ponder/src/sync-historical/index.ts:188`), and every
+// free provider we tested rejects multi-address arrays of that size. The
+// fallback chain just added retry latency before falling through to the
+// paid endpoint anyway.
 //
-// Strategy: free public RPCs are perfectly adequate for an indexer because
-// Ponder caches sync state per-block; the upstream sees a trickle of reads
-// in steady-state head-following. Save paid Alchemy CU for the user-facing
-// app. Public RPCs are tried first; PONDER_RPC_URL_1 (if set on Railway to
-// an Alchemy URL) sits at the end of the chain as a last-resort safety net
-// only used when every public provider has rejected a request.
-const PUBLIC_RPCS = [
-  "https://ethereum-rpc.publicnode.com",
-  "https://eth.llamarpc.com",
-  "https://rpc.ankr.com/eth",
-] as const
-
-const FALLBACK_RPC = process.env.PONDER_RPC_URL_1
-const RPC_TRANSPORT = fallback(
-  [
-    ...PUBLIC_RPCS.map((url) => http(url)),
-    ...(FALLBACK_RPC ? [http(FALLBACK_RPC)] : []),
-  ],
-  { rank: false },
-)
+// Cost is controlled instead by `pollingInterval` below — see that
+// comment for the math. Don't point this at the app's `/api/rpc` proxy:
+// the allowlist there blocks the bulk-getLogs patterns Ponder needs, and
+// the rate limit would fight initial sync.
+const RPC_URL = process.env.PONDER_RPC_URL_1
+if (!RPC_URL) {
+  throw new Error(
+    "PONDER_RPC_URL_1 is required (paid endpoint: Alchemy / Quicknode / drpc).",
+  )
+}
 
 // ERC-721 Transfer event — used to track mints (from address zero) on
 // every per-artist Foundation collection contract via the factory pattern.
@@ -70,17 +66,17 @@ export default createConfig({
   chains: {
     mainnet: {
       id: 1,
-      rpc: RPC_TRANSPORT,
-      // Head-following cadence. 60s vs the default 5s is a 12× drop in
-      // baseline poll volume. Each clone house's events still get
-      // indexed within ~1 min of the on-chain confirmation — fine for
-      // an auction site where bid lists tolerate sub-minute lag, the
-      // bid button reads fresh on-chain state at click-time, and the
-      // contract rejects stale bids regardless of UI freshness.
-      // Per-poll cost grows with house count (currently 54), so
-      // throttling here keeps Ponder's RPC bill linear-bounded as
-      // houses grow rather than scaling with poll frequency too.
-      pollingInterval: 60_000,
+      rpc: http(RPC_URL),
+      // Head-following cadence. Bumped from 60s → 300s (5 min) for cost
+      // control: per-poll work scales with the contract surface area
+      // (5 base contracts + ~50 cloned auction houses + N FoundationCollection
+      // clones, each generating an `eth_getLogs` per tracked event), so
+      // dropping poll frequency 5× drops steady-state RPC spend ~5×.
+      // Auction state tolerates this: bid lists may show new bids up to
+      // 5 min late, but the bid button reads fresh on-chain state at
+      // click-time and the contract rejects stale bids regardless of UI
+      // freshness. Default is 5s — 300s is 60× cheaper than that baseline.
+      pollingInterval: 300_000,
     },
   },
   contracts: {

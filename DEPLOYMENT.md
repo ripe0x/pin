@@ -108,12 +108,11 @@ Setup is in [`ponder/README.md`](./ponder/README.md). The summary:
 2. Point its `DATABASE_URL` at the same Postgres the web app uses.
 3. Set `DATABASE_SCHEMA=ponder` on the indexer service so its tables
    live in their own namespace.
-4. **Don't** set `PONDER_RPC_URL_1` unless you have a specific reason
-   to. The indexer ships with a public-RPC fallback chain
-   (publicnode → llamarpc → ankr) wired into `ponder.config.ts` and
-   doesn't need a paid endpoint. If set, `PONDER_RPC_URL_1` sits at
-   the end of the chain as a last-resort safety net only. See
-   [`ponder/README.md`](./ponder/README.md#rpc-strategy) for why.
+4. Set `PONDER_RPC_URL_1` to a paid mainnet RPC URL (Alchemy,
+   Quicknode, drpc, etc.). Free public RPCs do not work for this
+   indexer — see [`ponder/README.md`](./ponder/README.md#rpc-strategy)
+   for the failure mode. Cost is controlled via `pollingInterval` in
+   `ponder.config.ts`, currently 300s.
 5. Set `INDEXER_SCHEMA=ponder` on the web app so it knows where
    Ponder writes.
 
