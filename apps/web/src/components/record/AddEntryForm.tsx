@@ -66,8 +66,35 @@ function formatBigInt(n: bigint): string {
   return n.toString()
 }
 
-export function AddEntryForm() {
-  const { call, busy, error, reset, isSuccess } = useRegistryWrite()
+export type ExistingRecord = {
+  /** Lowercase contract pointers already in the record. */
+  contracts: string[]
+  /** Token pointers already in the record (contractAddress lowercased). */
+  tokens: Array<{ contractAddress: string; tokenId: string }>
+  /** Range pointers already in the record (contractAddress lowercased). */
+  tokenRanges: Array<{
+    contractAddress: string
+    startTokenId: string
+    endTokenId: string
+  }>
+}
+
+export function AddEntryForm({
+  existing,
+}: {
+  existing?: ExistingRecord
+}) {
+  const {
+    call,
+    busy,
+    error,
+    reset,
+    isPending,
+    isMining,
+    isSuccess,
+    isReverted,
+    txHash,
+  } = useRegistryWrite()
   const searchParams = useSearchParams()
   const [addr, setAddr] = useState("")
   const [scope, setScope] = useState<Scope>("all")
@@ -128,6 +155,50 @@ export function AddEntryForm() {
     if (parsed === null || "error" in parsed) {
       setLocalErr(parsed && "error" in parsed ? parsed.error : "Pick what to add.")
       return
+    }
+    // Client-side duplicate guard. The registry reverts on duplicates
+    // via `ContractAlreadyRegistered` / `TokenAlreadyRegistered` /
+    // `TokenRangeAlreadyRegistered`, but catching it here saves the
+    // user a wallet prompt + gas + a confused "Reverted on chain"
+    // banner. The check uses the page's last-rendered record, so a
+    // very-fresh duplicate (added in another tab between page load and
+    // submit) still falls through to the on-chain revert.
+    const cLower = c.toLowerCase()
+    if (existing) {
+      if (parsed.type === "all") {
+        if (existing.contracts.includes(cLower)) {
+          setLocalErr("This contract is already in your record.")
+          return
+        }
+      } else if (parsed.type === "single") {
+        const idStr = parsed.id.toString()
+        if (
+          existing.tokens.some(
+            (t) => t.contractAddress === cLower && t.tokenId === idStr,
+          )
+        ) {
+          setLocalErr(
+            `Token #${idStr} on this contract is already in your record.`,
+          )
+          return
+        }
+      } else {
+        const start = parsed.start.toString()
+        const end = parsed.end.toString()
+        if (
+          existing.tokenRanges.some(
+            (r) =>
+              r.contractAddress === cLower &&
+              r.startTokenId === start &&
+              r.endTokenId === end,
+          )
+        ) {
+          setLocalErr(
+            `Range ${start}–${end} on this contract is already in your record.`,
+          )
+          return
+        }
+      }
     }
     setLocalErr(null)
     reset()
@@ -270,7 +341,102 @@ export function AddEntryForm() {
       {error && (
         <p className="text-xs text-amber-700">{extractShortError(error)}</p>
       )}
+      <TxStatusPanel
+        isPending={isPending}
+        isMining={isMining}
+        isSuccess={isSuccess && !busy}
+        isReverted={isReverted && !busy}
+        txHash={txHash}
+        onDismiss={reset}
+      />
     </form>
+  )
+}
+
+/**
+ * Inline status panel that mirrors the wagmi write lifecycle:
+ *   - wallet signature pending → "Waiting for wallet…"
+ *   - tx broadcast, mining     → "Mining…" with tx hash
+ *   - confirmed (status=success)  → green "Confirmed" with evm.now link
+ *   - mined but reverted (status=reverted) → red "Reverted" with evm.now link
+ *
+ * `isSuccess` vs `isReverted` are split in the parent hook so we don't
+ * paint a green banner for an on-chain revert just because the receipt
+ * came back.
+ */
+function TxStatusPanel({
+  isPending,
+  isMining,
+  isSuccess,
+  isReverted,
+  txHash,
+  onDismiss,
+}: {
+  isPending: boolean
+  isMining: boolean
+  isSuccess: boolean
+  isReverted: boolean
+  txHash: `0x${string}` | undefined
+  onDismiss: () => void
+}) {
+  if (!isPending && !isMining && !isSuccess && !isReverted) return null
+
+  const palette = isSuccess
+    ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+    : isReverted
+      ? "border-rose-200 bg-rose-50 text-rose-900"
+      : "border-gray-200 bg-gray-50 text-gray-700"
+
+  const dismissBorder = isReverted
+    ? "border-rose-300 text-rose-900 hover:bg-rose-100"
+    : "border-emerald-300 text-emerald-900 hover:bg-emerald-100"
+
+  return (
+    <div
+      className={`mt-1 rounded-md border ${palette} px-4 py-3 flex items-center justify-between gap-3`}
+    >
+      <div className="text-xs leading-relaxed min-w-0">
+        {isPending && <>Waiting for wallet signature…</>}
+        {isMining && (
+          <>
+            <span className="font-medium">Mining…</span> The transaction has
+            been broadcast and is waiting to be included in a block.
+          </>
+        )}
+        {isSuccess && (
+          <>
+            <span className="font-medium">Confirmed.</span> Your record has
+            been updated. The list below will refresh in a moment.
+          </>
+        )}
+        {isReverted && (
+          <>
+            <span className="font-medium">Reverted on chain.</span> The
+            transaction was mined but the contract rejected it (likely a
+            duplicate or unauthorized operation).
+          </>
+        )}
+        {txHash && (
+          <a
+            href={`https://evm.now/tx/${txHash}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block mt-1 font-mono text-[11px] opacity-70 break-all underline hover:opacity-100"
+          >
+            {txHash}
+          </a>
+        )}
+      </div>
+      {(isSuccess || isReverted) && (
+        <button
+          type="button"
+          onClick={onDismiss}
+          className={`text-[11px] font-mono font-medium uppercase tracking-wider px-3 py-1.5 border transition-colors shrink-0 ${dismissBorder}`}
+        >
+          Dismiss
+        </button>
+      )}
+    </div>
   )
 }
 

@@ -24,11 +24,23 @@ export function ContractLabel({ address }: { address: string }) {
   return (
     <div className="min-w-0 space-y-0.5">
       {name ? (
-        <div className="text-sm font-medium truncate">{name}</div>
+        <a
+          href={`https://evm.now/address/${address}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-sm font-medium truncate underline-offset-2 hover:underline"
+        >
+          {name}
+        </a>
       ) : null}
-      <div className="font-mono text-xs text-gray-500">
+      <a
+        href={`https://evm.now/address/${address}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="block font-mono text-xs text-gray-500 underline-offset-2 hover:underline"
+      >
         {shortAddr(address)}
-      </div>
+      </a>
     </div>
   )
 }
@@ -69,13 +81,23 @@ export function TokenLabel({
         )
       )}
       <div className="min-w-0 space-y-0.5">
-        <div className="text-sm font-medium truncate">
+        <a
+          href={`https://evm.now/address/${contractAddress}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block text-sm font-medium truncate underline-offset-2 hover:underline"
+        >
           {tokenName ?? `Token #${tokenId}`}
-        </div>
-        <div className="font-mono text-xs text-gray-500 truncate">
+        </a>
+        <a
+          href={`https://evm.now/address/${contractAddress}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block font-mono text-xs text-gray-500 truncate underline-offset-2 hover:underline"
+        >
           {contractName ? `${contractName} · ` : ""}
           {shortAddr(contractAddress)} · #{tokenId}
-        </div>
+        </a>
       </div>
     </div>
   )

@@ -10,7 +10,6 @@ import { AddEntrySection } from "@/components/record/AddEntrySection"
 import { RecordContractsEditable } from "@/components/record/RecordContractsEditable"
 import { RecordTokensEditable } from "@/components/record/RecordTokensEditable"
 import { RecordRangesEditable } from "@/components/record/RecordRangesEditable"
-import { RecordOperatorEditable } from "@/components/record/RecordOperatorEditable"
 import { EditModeIndicator } from "@/components/record/EditModeIndicator"
 
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/
@@ -139,7 +138,21 @@ async function RecordBody({ address }: { address: Address }) {
         />
       )}
 
-      <AddEntrySection artist={address} />
+      <AddEntrySection
+        artist={address}
+        existing={{
+          contracts: record.contracts.map((c) => c.toLowerCase()),
+          tokens: record.tokens.map((t) => ({
+            contractAddress: t.contractAddress.toLowerCase(),
+            tokenId: t.tokenId,
+          })),
+          tokenRanges: record.tokenRanges.map((r) => ({
+            contractAddress: r.contractAddress.toLowerCase(),
+            startTokenId: r.startTokenId,
+            endTokenId: r.endTokenId,
+          })),
+        }}
+      />
 
       <section className="space-y-3">
         <SectionHeader
@@ -173,8 +186,6 @@ async function RecordBody({ address }: { address: Address }) {
         />
         <RecordRangesEditable artist={address} ranges={record.tokenRanges} />
       </section>
-
-      <RecordOperatorEditable artist={address} />
 
       <p className="text-xs text-gray-400 pt-4 border-t border-gray-100">
         Adding a pointer means this address added it to its public
