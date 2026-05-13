@@ -33,25 +33,30 @@ import {
  */
 
 const ALCHEMY_API_KEY = process.env.ALCHEMY_API_KEY
+const INFURA_API_KEY = process.env.INFURA_API_KEY
 
-// Upstream chain: try Alchemy first, then fall through to public RPCs.
-// Each fallback supports the standard JSON-RPC method set including
-// `eth_sendRawTransaction`, so a mint/bid still goes through even when
-// the primary is unhealthy. Order matters — earliest entries are tried
-// first.
+// Upstream chain: try Alchemy first, then Infura, then fall through to
+// public RPCs. Each fallback supports the standard JSON-RPC method set
+// including `eth_sendRawTransaction`, so a mint/bid still goes through
+// even when the primary is unhealthy. Order matters — earliest entries
+// are tried first.
 //
-// Infura is deliberately omitted. Its free tier intermittently caps
-// `eth_getLogs` to 10-block ranges and returns an error our viem clients
-// can't recover from on the wallet side, so it's a worse fallback than
-// the anonymous public RPCs for our query mix (wide AuctionCreated /
-// Transfer log scans against indexed args). Mirrors the server-side
-// `PUBLIC_FALLBACKS` list in alchemy-rpc.ts.
+// Infura's free tier intermittently caps `eth_getLogs` to a 10-block range
+// and returns an "Under the Free tier plan..." JSON-RPC error. The body
+// matcher in `tryUpstream` below detects that response and treats it as a
+// transient failure so the proxy falls through to the next upstream — that
+// way Infura remains a useful authenticated backup for every other method
+// (eth_call, eth_estimateGas, eth_blockNumber, …) while wide log scans
+// gracefully skip past it to a public RPC without the cap.
 //
 // The publicnode endpoint accepts an optional API key; we use the anonymous
 // tier. drpc/llamarpc/cloudflare are all anonymous public mainnet RPCs.
 const UPSTREAMS = [
   ALCHEMY_API_KEY
     ? `https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`
+    : null,
+  INFURA_API_KEY
+    ? `https://mainnet.infura.io/v3/${INFURA_API_KEY}`
     : null,
   "https://eth.llamarpc.com",
   "https://ethereum-rpc.publicnode.com",
@@ -182,13 +187,29 @@ async function tryUpstream(
     // for write methods etc., since the next public RPC is unlikely to
     // accept them either; just on -32603 (internal error) and -32005
     // (limit exceeded), which signal upstream-side failure.
+    //
+    // We also detect Infura's free-tier rejection by body text rather
+    // than error code — Infura piggybacks on the standard -32600
+    // ("Invalid Request") code for what is functionally a quota cap, so
+    // matching on the human-readable hint ("Free tier" / "block range")
+    // is the only way to tell a genuine bad request apart from a
+    // capacity rejection. Worst case if the wording changes: we see it
+    // once and add another pattern.
     try {
       const parsed: unknown = JSON.parse(text)
       const entries = Array.isArray(parsed) ? parsed : [parsed]
       const transient = entries.some((e) => {
         if (!e || typeof e !== "object") return false
-        const err = (e as { error?: { code?: number } }).error
-        return err?.code === -32603 || err?.code === -32005
+        const err = (e as {
+          error?: { code?: number; message?: string; data?: unknown }
+        }).error
+        if (!err) return false
+        if (err.code === -32603 || err.code === -32005) return true
+        const hint = `${err.message ?? ""} ${
+          typeof err.data === "string" ? err.data : JSON.stringify(err.data ?? "")
+        }`
+        if (/free tier|block range/i.test(hint)) return true
+        return false
       })
       if (transient) return { ok: false }
     } catch {
