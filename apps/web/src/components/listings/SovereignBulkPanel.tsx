@@ -436,7 +436,7 @@ function BulkListSection({
         <button
           onClick={handleList}
           disabled={isRunning || selected.size === 0 || !reserveValid}
-          className="text-sm font-medium px-4 py-2 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          className="text-[11px] font-mono font-medium uppercase tracking-wider px-4 py-2 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {isRunning
             ? "Listing…"
@@ -627,7 +627,7 @@ function BulkCancelSection({
         <button
           onClick={handleCancel}
           disabled={isRunning || selected.size === 0}
-          className="text-sm font-medium px-4 py-2 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          className="text-[11px] font-mono font-medium uppercase tracking-wider px-4 py-2 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {isWritePending
             ? "Confirm in wallet…"

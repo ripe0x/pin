@@ -46,7 +46,7 @@ export function DeployButtons({
           target="_blank"
           rel="noopener noreferrer"
           aria-label="Deploy with Vercel"
-          className="inline-flex items-center justify-center gap-2 bg-fg text-bg text-sm font-medium px-5 py-3 hover:opacity-80 transition-opacity"
+          className="inline-flex items-center justify-center gap-2 bg-fg text-bg text-[11px] font-mono font-medium uppercase tracking-wider px-5 py-3 hover:opacity-80 transition-opacity"
         >
           <Image
             src="https://vercel.com/button"

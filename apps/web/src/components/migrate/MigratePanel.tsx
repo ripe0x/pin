@@ -156,7 +156,7 @@ export function MigratePanel({ artistAddress }: { artistAddress: string }) {
           {({ openConnectModal }) => (
             <button
               onClick={openConnectModal}
-              className="block w-full text-center text-sm font-medium py-3 bg-fg text-bg hover:opacity-80 transition-colors"
+              className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors"
             >
               Connect wallet
             </button>
@@ -521,7 +521,7 @@ function Inner({
           <button
             onClick={() => switchChain({ chainId: PREFERRED_CHAIN.id })}
             disabled={switchPending}
-            className="text-xs font-medium px-3 py-1.5 bg-fg text-bg hover:opacity-80 transition-colors rounded shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="text-[11px] font-mono font-medium uppercase tracking-wider px-3 py-1.5 bg-fg text-bg hover:opacity-80 transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {switchPending ? "Switching…" : `Switch to ${PREFERRED_CHAIN_LABEL}`}
           </button>
@@ -540,7 +540,7 @@ function Inner({
           <button
             onClick={handleMigrateSelected}
             disabled={running || selectedCount === 0}
-            className="text-sm font-medium px-4 py-2 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="text-[11px] font-mono font-medium uppercase tracking-wider px-4 py-2 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {running
               ? "Migrating…"
@@ -585,7 +585,7 @@ function Inner({
         <div className="mt-5 flex items-center gap-3">
           <Link
             href={`/artist/${artistAddress}`}
-            className="text-sm font-medium px-4 py-2 bg-fg text-bg hover:opacity-80 transition-colors"
+            className="text-[11px] font-mono font-medium uppercase tracking-wider px-4 py-2 bg-fg text-bg hover:opacity-80 transition-colors"
           >
             Back to your artist page
           </Link>
@@ -711,7 +711,7 @@ function MigrateRow({
               <button
                 onClick={onMigrate}
                 disabled={disabled || !canMigrate}
-                className="text-xs font-medium px-3 py-1.5 bg-fg text-bg hover:opacity-80 transition-colors rounded shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="text-[11px] font-mono font-medium uppercase tracking-wider px-3 py-1.5 bg-fg text-bg hover:opacity-80 transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Migrate →
               </button>

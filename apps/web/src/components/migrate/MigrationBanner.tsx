@@ -57,7 +57,7 @@ export function MigrationBanner({ artistAddress }: { artistAddress: string }) {
       </div>
       <Link
         href={`/artist/${artistAddress}/migrate`}
-        className="text-sm font-medium px-4 py-2 bg-fg text-bg hover:opacity-80 transition-colors shrink-0"
+        className="inline-flex items-center text-[11px] font-mono font-medium uppercase tracking-wider px-4 py-2 bg-fg text-bg hover:opacity-80 transition-colors shrink-0"
       >
         Migrate →
       </Link>

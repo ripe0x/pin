@@ -157,7 +157,7 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
           <button
             onClick={handleCancel}
             disabled={selected.size === 0}
-            className="text-sm font-medium px-4 py-2 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="text-[11px] font-mono font-medium uppercase tracking-wider px-4 py-2 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {cancelButtonLabel(selected.size, mode)}
           </button>

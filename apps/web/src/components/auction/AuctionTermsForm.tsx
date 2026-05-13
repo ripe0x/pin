@@ -185,7 +185,7 @@ export function AuctionTermsForm({
           <button
             onClick={handleApprove}
             disabled={approveBusy}
-            className="block w-full text-center text-sm font-medium py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {isApprovePending
               ? "Confirm in wallet…"
@@ -225,7 +225,7 @@ export function AuctionTermsForm({
           <button
             onClick={handleCreate}
             disabled={createBusy || !reserveValid}
-            className="block w-full text-center text-sm font-medium py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {isCreatePending
               ? "Confirm in wallet…"

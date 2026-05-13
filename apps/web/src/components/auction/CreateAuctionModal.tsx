@@ -73,7 +73,7 @@ export function CreateAuctionModal({
                 // refetch SSR'd auction data.
                 window.location.reload()
               }}
-              className="block w-full text-center text-sm font-medium py-3 bg-fg text-bg hover:opacity-80 transition-colors"
+              className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors"
             >
               Done
             </button>
