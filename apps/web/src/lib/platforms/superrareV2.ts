@@ -1,7 +1,6 @@
 import "server-only"
 import {
   createPublicClient,
-  http,
   parseAbiItem,
   type Address,
 } from "viem"
@@ -43,7 +42,7 @@ import {
 } from "../lazy-index"
 import type { BidHistoryEntry } from "../auctions"
 import { discoverSuperrareV2ArtistAuctions } from "./superrareV2-scan"
-import { getAlchemyMainnetUrl } from "../alchemy-rpc"
+import { loggingFallbackTransport } from "../rpc-log"
 
 const SR_V2_NFT = SUPERRARE_V2_NFT[MAINNET_CHAIN_ID]
 const SR_BAZAAR = SUPERRARE_BAZAAR[MAINNET_CHAIN_ID]
@@ -98,13 +97,10 @@ const tokenCreatorAbi = [
   },
 ] as const
 
-function getClient() {
+function getClient(route?: string) {
   return createPublicClient({
     chain: mainnet,
-    transport: http(
-      getAlchemyMainnetUrl(),
-      { batch: true },
-    ),
+    transport: loggingFallbackTransport(route, { batch: true }),
   })
 }
 

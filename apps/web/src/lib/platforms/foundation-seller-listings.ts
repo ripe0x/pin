@@ -1,7 +1,6 @@
 import "server-only"
 import {
   createPublicClient,
-  http,
   parseAbiItem,
   type Address,
   type PublicClient,
@@ -14,7 +13,7 @@ import type {
   SellerCancellableBuyNow,
   SellerListings,
 } from "./types"
-import { getAlchemyMainnetUrl } from "../alchemy-rpc"
+import { loggingFallbackTransport } from "../rpc-log"
 
 /**
  * Foundation-specific cancellable-listings discovery via direct RPC.
@@ -44,12 +43,10 @@ const buyPriceSetEvent = parseAbiItem(
   "event BuyPriceSet(address indexed nftContract, uint256 indexed tokenId, address indexed seller, uint256 price)",
 )
 
-function getClient(): PublicClient {
+function getClient(route?: string): PublicClient {
   return createPublicClient({
     chain: mainnet,
-    transport: http(
-      getAlchemyMainnetUrl(),
-    ),
+    transport: loggingFallbackTransport(route),
   })
 }
 
