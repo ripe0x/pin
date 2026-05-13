@@ -207,19 +207,29 @@ export const artistRecordRegistryAbi = [
   },
   {
     "type": "function",
-    "name": "getSuccessor",
+    "name": "getContractsSlice",
     "inputs": [
       {
         "name": "artist",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "start",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "count",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [
       {
         "name": "",
-        "type": "address",
-        "internalType": "address"
+        "type": "address[]",
+        "internalType": "address[]"
       }
     ],
     "stateMutability": "view"
@@ -416,12 +426,99 @@ export const artistRecordRegistryAbi = [
   },
   {
     "type": "function",
+    "name": "getTokenRangesSlice",
+    "inputs": [
+      {
+        "name": "artist",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "start",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "count",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple[]",
+        "internalType": "struct ArtistRecordRegistry.TokenRangePointer[]",
+        "components": [
+          {
+            "name": "contractAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "startTokenId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "endTokenId",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "getTokens",
     "inputs": [
       {
         "name": "artist",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple[]",
+        "internalType": "struct ArtistRecordRegistry.TokenPointer[]",
+        "components": [
+          {
+            "name": "contractAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "tokenId",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getTokensSlice",
+    "inputs": [
+      {
+        "name": "artist",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "start",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "count",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [
@@ -698,19 +795,6 @@ export const artistRecordRegistryAbi = [
     "stateMutability": "nonpayable"
   },
   {
-    "type": "function",
-    "name": "setSuccessor",
-    "inputs": [
-      {
-        "name": "newSuccessor",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
     "type": "event",
     "name": "ContractAdded",
     "inputs": [
@@ -769,25 +853,6 @@ export const artistRecordRegistryAbi = [
         "type": "bool",
         "indexed": false,
         "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "SuccessorSet",
-    "inputs": [
-      {
-        "name": "artist",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "successor",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
       }
     ],
     "anonymous": false
@@ -931,22 +996,12 @@ export const artistRecordRegistryAbi = [
   },
   {
     "type": "error",
-    "name": "InvalidSuccessor",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "InvalidTokenRange",
     "inputs": []
   },
   {
     "type": "error",
     "name": "NotAuthorized",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "SuccessorAlreadySet",
     "inputs": []
   },
   {

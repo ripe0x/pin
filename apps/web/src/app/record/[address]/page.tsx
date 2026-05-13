@@ -10,7 +10,6 @@ import { AddEntrySection } from "@/components/record/AddEntrySection"
 import { RecordContractsEditable } from "@/components/record/RecordContractsEditable"
 import { RecordTokensEditable } from "@/components/record/RecordTokensEditable"
 import { RecordRangesEditable } from "@/components/record/RecordRangesEditable"
-import { RecordSuccessorEditable } from "@/components/record/RecordSuccessorEditable"
 import { RecordOperatorEditable } from "@/components/record/RecordOperatorEditable"
 import { EditModeIndicator } from "@/components/record/EditModeIndicator"
 
@@ -100,8 +99,7 @@ async function RecordBody({ address }: { address: Address }) {
   const empty =
     record.contracts.length === 0 &&
     record.tokens.length === 0 &&
-    record.tokenRanges.length === 0 &&
-    record.successor === null
+    record.tokenRanges.length === 0
 
   return (
     <div className="space-y-10">
@@ -138,7 +136,6 @@ async function RecordBody({ address }: { address: Address }) {
           contracts={record.contracts.length}
           tokens={record.tokens.length}
           ranges={record.tokenRanges.length}
-          hasSuccessor={record.successor !== null}
         />
       )}
 
@@ -175,14 +172,6 @@ async function RecordBody({ address }: { address: Address }) {
           }`}
         />
         <RecordRangesEditable artist={address} ranges={record.tokenRanges} />
-      </section>
-
-      <section className="space-y-3">
-        <SectionHeader title="Successor" />
-        <RecordSuccessorEditable
-          artist={address}
-          successorChain={record.successorChain}
-        />
       </section>
 
       <RecordOperatorEditable artist={address} />

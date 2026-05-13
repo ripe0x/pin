@@ -41,7 +41,6 @@ export type RegistryFunctionName =
   | "removeTokenRange"
   | "removeTokenRangeFor"
   | "setOperator"
-  | "setSuccessor"
 
 export function useRegistryWrite() {
   const router = useRouter()

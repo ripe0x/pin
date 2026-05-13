@@ -4,8 +4,9 @@ pragma solidity ^0.8.24;
 /// @title ArtistRecordRegistry
 /// @notice Generic, immutable, public infrastructure where an artist
 ///         address can publish on-chain pointers that belong in its
-///         public artist record. A pointer is a contract address, a
-///         single token, or a contiguous token range.
+///         public artist record. A pointer is one of three things:
+///         a contract address, a single token on a contract, or a
+///         contiguous range of token IDs on a contract.
 ///
 /// @dev    CORE MEANING (read carefully before consuming this contract):
 ///
@@ -22,31 +23,57 @@ pragma solidity ^0.8.24;
 ///         confidence, surfacing conflicts. The contract stays small on
 ///         purpose; semantics live off-chain.
 ///
+///         Order is not guaranteed because removal uses swap-and-pop:
+///         removing an element that isn't last moves the tail element
+///         into the freed slot. Consumers that need a specific order
+///         can sort off-chain.
+///
+///         Overlapping token ranges are allowed. Identity for a range
+///         pointer is the exact `(contract, startTokenId, endTokenId)`
+///         tuple; two ranges with different bounds are distinct
+///         entries even if they overlap.
+///
+/// @dev    SCOPE BOUNDARIES:
+///
 ///         No admin, no owner, no upgrade path, no fees, no pause, no
 ///         protocol logic. The only privileged role is per-artist:
 ///         an artist may approve operators to add and remove pointers
-///         on its behalf, and may declare a one-way successor address
-///         that downstream indexers should follow when reconstructing
-///         the artist's full record across key rotations or wallet
-///         retirements.
+///         on its behalf.
 ///
-/// @dev    CROSS-CHAIN MODEL:
+///         Key rotation and identity grouping are intentionally
+///         outside this contract's scope. Artists, platforms, wallets,
+///         and indexers may establish continuity off-chain — through
+///         signatures, public statements, ENS records, social
+///         verification, or other context. This contract only records
+///         pointers added by a specific address; aggregating records
+///         across addresses is an off-chain concern.
+///
+/// @dev    PER-CHAIN, DETERMINISTIC DEPLOYMENT:
 ///
 ///         Each registry instance is scoped to the chain it's deployed
 ///         on. Pointers reference contracts on that same chain — there
 ///         is no `chainId` field because the deployment chain is the
-///         answer. To capture an artist's record on multiple chains,
-///         deploy this same source on each chain via the canonical
-///         CREATE2 deterministic-deployment proxy
-///         (0x4e59b44847b379578588920cA78FbF26c0B4956C) with a chosen
-///         salt — every chain gets the registry at the same address.
-///         Indexers union per-artist records across chains by address.
+///         answer. Records on different chains are independent.
 ///
-///         Operator approvals and successor pointers are per-chain
-///         state. An artist who works on multiple chains can use
-///         different operators per chain, but a successor declaration
-///         on one chain has no effect on others. Set successors on
-///         every chain that holds part of your record.
+///         To land the registry at the same address on every chain,
+///         deploy through the canonical CREATE2 deterministic-
+///         deployment proxy (0x4e59b44847b379578588920cA78FbF26c0B4956C)
+///         with a chosen salt. Identical addresses across chains
+///         require ALL of the following to match:
+///
+///           1. same deployer (the CREATE2 proxy is identical on every
+///              EVM chain it's been deployed to, which is most of them)
+///           2. same salt
+///           3. same init code hash (i.e. the exact same compiled
+///              bytecode)
+///           4. same Solidity compiler version
+///           5. same optimizer settings (including `runs`)
+///           6. same source code
+///
+///         Because this contract has no constructor arguments, the
+///         init code hash is a pure function of the compiled bytecode,
+///         which in turn depends on items 4–6. Salt alone is not
+///         enough — pinning the toolchain matters.
 contract ArtistRecordRegistry {
     // ─── Types ──────────────────────────────────────────────────────
 
@@ -73,7 +100,7 @@ contract ArtistRecordRegistry {
     // ─── Storage ────────────────────────────────────────────────────
 
     /// @dev Per-artist enumerable list of contract addresses. Order is
-    ///      not guaranteed — `swap and pop` removal swaps the last
+    ///      not guaranteed — `swap-and-pop` removal swaps the last
     ///      element into the removed slot. (Contract pointers degenerate
     ///      to plain addresses since chainId is implicit; no struct.)
     mapping(address => address[]) private _artistContracts;
@@ -105,32 +132,12 @@ contract ArtistRecordRegistry {
     ///         approved `operator` to add and remove pointers on its
     ///         behalf via the `*For` functions.
     /// @dev    Operators cannot sub-delegate (cannot call setOperator
-    ///         for another artist) and cannot set a successor (that
-    ///         function is scoped to the caller's own slot).
+    ///         for another artist).
     //
     // `public` auto-generates an external `isOperator(address, address)
     // returns (bool)` getter, which is the public read surface — no
     // separate `function isOperator(...)` is needed.
     mapping(address => mapping(address => bool)) public isOperator;
-
-    /// @dev One-way, append-only successor pointer. An artist may
-    ///      declare exactly one successor address while its key is
-    ///      healthy; the pointer cannot be changed under that address
-    ///      afterwards. The successor may extend the chain further by
-    ///      declaring its own successor. Downstream indexers walk the
-    ///      forward chain to reconstruct the artist's full record
-    ///      across migrations.
-    ///
-    ///      This solves planned migrations (key rotation, wallet
-    ///      retirement, splitting personal from studio). It does NOT
-    ///      solve lost keys — that's a wallet-security problem
-    ///      unsolvable at this layer. Set a successor early, while
-    ///      your key is healthy.
-    ///
-    ///      Per-chain state: a successor declaration on one chain does
-    ///      not propagate. Set successors on every chain that holds
-    ///      part of your record.
-    mapping(address => address) private _successor;
 
     // ─── Events ─────────────────────────────────────────────────────
 
@@ -206,16 +213,6 @@ contract ArtistRecordRegistry {
         bool approved
     );
 
-    /// @notice Emitted when an artist declares a successor. Emitted at
-    ///         most once per artist address (the successor pointer is
-    ///         append-only).
-    /// @param artist     The address declaring the successor.
-    /// @param successor  The canonical continuation address.
-    event SuccessorSet(
-        address indexed artist,
-        address indexed successor
-    );
-
     // ─── Errors ─────────────────────────────────────────────────────
 
     /// @notice Caller is neither the artist nor an approved operator
@@ -232,12 +229,10 @@ contract ArtistRecordRegistry {
     /// @notice Operator argument to `setOperator` was the zero address.
     error InvalidOperator();
 
-    /// @notice Token range had `startTokenId > endTokenId`.
+    /// @notice Token range had `startTokenId > endTokenId`. Raised on
+    ///         both add and remove so the two paths reject the same
+    ///         malformed inputs.
     error InvalidTokenRange();
-
-    /// @notice Successor argument to `setSuccessor` was the zero
-    ///         address or equal to `msg.sender` (trivial self-cycle).
-    error InvalidSuccessor();
 
     /// @notice Attempted to add a contract pointer that already exists
     ///         in this artist's record.
@@ -264,12 +259,6 @@ contract ArtistRecordRegistry {
     /// @notice Attempted to remove a token-range pointer that doesn't
     ///         exist in this artist's record.
     error TokenRangeNotRegistered();
-
-    /// @notice Attempted to set a successor on an address that already
-    ///         has one. The successor pointer is append-only; extend
-    ///         the chain by calling `setSuccessor` from the successor
-    ///         itself.
-    error SuccessorAlreadySet();
 
     // ─── Internal: authorization ────────────────────────────────────
 
@@ -458,7 +447,8 @@ contract ArtistRecordRegistry {
     }
 
     /// @notice Return every contract pointer in `artist`'s record.
-    /// @dev    Order is not guaranteed.
+    /// @dev    Order is not guaranteed. For very large records prefer
+    ///         `getContractsSlice` to avoid pulling the entire list.
     /// @param artist  Artist whose record is being read.
     /// @return        Array of contract addresses.
     function getContracts(
@@ -486,6 +476,47 @@ contract ArtistRecordRegistry {
         uint256 index
     ) external view returns (address) {
         return _artistContracts[artist][index];
+    }
+
+    /// @notice Slice access for paginated reads. Returns up to `count`
+    ///         contracts starting at `start`. Tolerates out-of-range
+    ///         requests:
+    ///           - if `start >= length`, returns an empty array
+    ///           - if `start + count > length`, returns only the
+    ///             remaining elements
+    /// @dev    Useful for frontends and indexers reading large records
+    ///         without paying the gas of a full-array copy.
+    /// @param artist  Artist whose record is being read.
+    /// @param start   Zero-based offset into the unordered list.
+    /// @param count   Maximum number of items to return.
+    /// @return        Up to `count` contract addresses starting at `start`.
+    function getContractsSlice(
+        address artist,
+        uint256 start,
+        uint256 count
+    ) external view returns (address[] memory) {
+        address[] storage list = _artistContracts[artist];
+        return _sliceAddresses(list, start, count);
+    }
+
+    /// @dev Shared slice helper for the address array (contract
+    ///      pointers). Inlined per-type for the struct lists because
+    ///      Solidity can't generically copy storage to memory across
+    ///      different value types.
+    function _sliceAddresses(
+        address[] storage list,
+        uint256 start,
+        uint256 count
+    ) private view returns (address[] memory) {
+        uint256 len = list.length;
+        if (start >= len) return new address[](0);
+        uint256 available = len - start;
+        uint256 take = count < available ? count : available;
+        address[] memory result = new address[](take);
+        for (uint256 i = 0; i < take; ++i) {
+            result[i] = list[start + i];
+        }
+        return result;
     }
 
     // ─── Token pointers ─────────────────────────────────────────────
@@ -611,7 +642,8 @@ contract ArtistRecordRegistry {
     }
 
     /// @notice Return every single-token pointer in `artist`'s record.
-    /// @dev    Order is not guaranteed.
+    /// @dev    Order is not guaranteed. For very large records prefer
+    ///         `getTokensSlice` to avoid pulling the entire list.
     /// @param artist  Artist whose record is being read.
     /// @return        Array of `TokenPointer` structs.
     function getTokens(
@@ -644,6 +676,29 @@ contract ArtistRecordRegistry {
     ) {
         TokenPointer memory p = _artistTokens[artist][index];
         return (p.contractAddress, p.tokenId);
+    }
+
+    /// @notice Slice access for paginated reads. See
+    ///         `getContractsSlice` for the out-of-range semantics.
+    /// @param artist  Artist whose record is being read.
+    /// @param start   Zero-based offset into the unordered list.
+    /// @param count   Maximum number of items to return.
+    /// @return        Up to `count` token pointers starting at `start`.
+    function getTokensSlice(
+        address artist,
+        uint256 start,
+        uint256 count
+    ) external view returns (TokenPointer[] memory) {
+        TokenPointer[] storage list = _artistTokens[artist];
+        uint256 len = list.length;
+        if (start >= len) return new TokenPointer[](0);
+        uint256 available = len - start;
+        uint256 take = count < available ? count : available;
+        TokenPointer[] memory result = new TokenPointer[](take);
+        for (uint256 i = 0; i < take; ++i) {
+            result[i] = list[start + i];
+        }
+        return result;
     }
 
     // ─── Token range pointers ───────────────────────────────────────
@@ -746,6 +801,11 @@ contract ArtistRecordRegistry {
     /// @dev Remove a token-range pointer via swap-and-pop. The
     ///      algorithm mirrors `_removeContract` — see those step
     ///      comments for the walk-through. Emits `TokenRangeRemoved`.
+    ///
+    ///      Reverts on inverted range (`start > end`) for symmetry
+    ///      with `_addTokenRange`: a tuple that can never be added
+    ///      can never be removed either, and rejecting it early gives
+    ///      callers a precise error instead of `TokenRangeNotRegistered`.
     function _removeTokenRange(
         address artist,
         address contractAddress,
@@ -753,6 +813,7 @@ contract ArtistRecordRegistry {
         uint256 endTokenId
     ) internal {
         if (contractAddress == address(0)) revert InvalidContractAddress();
+        if (startTokenId > endTokenId) revert InvalidTokenRange();
         bytes32 key = getTokenRangeKey(
             contractAddress,
             startTokenId,
@@ -809,7 +870,8 @@ contract ArtistRecordRegistry {
     }
 
     /// @notice Return every token-range pointer in `artist`'s record.
-    /// @dev    Order is not guaranteed.
+    /// @dev    Order is not guaranteed. For very large records prefer
+    ///         `getTokenRangesSlice` to avoid pulling the entire list.
     /// @param artist  Artist whose record is being read.
     /// @return        Array of `TokenRangePointer` structs.
     function getTokenRanges(
@@ -846,6 +908,29 @@ contract ArtistRecordRegistry {
         return (p.contractAddress, p.startTokenId, p.endTokenId);
     }
 
+    /// @notice Slice access for paginated reads. See
+    ///         `getContractsSlice` for the out-of-range semantics.
+    /// @param artist  Artist whose record is being read.
+    /// @param start   Zero-based offset into the unordered list.
+    /// @param count   Maximum number of items to return.
+    /// @return        Up to `count` range pointers starting at `start`.
+    function getTokenRangesSlice(
+        address artist,
+        uint256 start,
+        uint256 count
+    ) external view returns (TokenRangePointer[] memory) {
+        TokenRangePointer[] storage list = _artistTokenRanges[artist];
+        uint256 len = list.length;
+        if (start >= len) return new TokenRangePointer[](0);
+        uint256 available = len - start;
+        uint256 take = count < available ? count : available;
+        TokenRangePointer[] memory result = new TokenRangePointer[](take);
+        for (uint256 i = 0; i < take; ++i) {
+            result[i] = list[start + i];
+        }
+        return result;
+    }
+
     // ─── Operator delegation ────────────────────────────────────────
 
     /// @notice Approve or revoke an operator for the caller. The
@@ -868,63 +953,5 @@ contract ArtistRecordRegistry {
         // sets *its own* operators, not the artist's.
         isOperator[msg.sender][operator] = approved;
         emit OperatorSet(msg.sender, operator, approved);
-    }
-
-    // ─── Successor (key migration) ──────────────────────────────────
-
-    /// @notice Declare the canonical continuation address for the
-    ///         caller. Indexers walk the forward chain from a starting
-    ///         address to aggregate the artist's full record across
-    ///         migrations.
-    /// @dev    Append-only. Once set under an address the pointer
-    ///         cannot be changed under that address. To extend the
-    ///         chain further (e.g. rotate keys again), the successor
-    ///         calls `setSuccessor` from its own address.
-    ///
-    ///         Only the artist itself may call. Operators cannot
-    ///         succeed an artist's identity — that's a deliberate
-    ///         scope limit on the operator role. A compromised
-    ///         operator can write nuisance pointers (removable by
-    ///         the artist with its own key) but cannot permanently
-    ///         take over the artist's identity.
-    ///
-    ///         Cycle detection is not enforced on-chain; indexers
-    ///         handle cycles via max-depth or seen-set. The contract
-    ///         only rejects the trivial self-cycle (msg.sender ==
-    ///         newSuccessor) and zero address.
-    ///
-    ///         Per-chain state: a successor declaration on this chain
-    ///         does not propagate to other chains where this same
-    ///         contract address holds a record.
-    /// @param newSuccessor  Canonical continuation address. Must be
-    ///                      non-zero and not equal to msg.sender.
-    function setSuccessor(address newSuccessor) external {
-        if (newSuccessor == address(0) || newSuccessor == msg.sender) {
-            revert InvalidSuccessor();
-        }
-        // Append-only: once an address has declared a successor that
-        // pointer is permanent. An attacker who later compromises the
-        // key cannot rewrite the chain backwards.
-        if (_successor[msg.sender] != address(0)) {
-            revert SuccessorAlreadySet();
-        }
-        // Scope mirrors `setOperator`: only `msg.sender` can write
-        // its own slot. There is intentionally no `setSuccessorFor`
-        // — operators must not be able to take over an artist's
-        // identity.
-        _successor[msg.sender] = newSuccessor;
-        emit SuccessorSet(msg.sender, newSuccessor);
-    }
-
-    /// @notice Return the canonical continuation address declared by
-    ///         `artist`, or the zero address if none.
-    /// @dev    To follow the full forward chain, callers should call
-    ///         repeatedly with the returned address until it returns
-    ///         the zero address. Bound the walk with a max-depth
-    ///         (cycles are not prevented on-chain).
-    /// @param artist  Address whose successor is being read.
-    /// @return        The declared successor address, or `address(0)`.
-    function getSuccessor(address artist) external view returns (address) {
-        return _successor[artist];
     }
 }

@@ -507,7 +507,6 @@ export async function buildDependencyReport(
       contracts: [],
       tokens: [],
       tokenRanges: [],
-      successor: null,
     })),
   ])
 

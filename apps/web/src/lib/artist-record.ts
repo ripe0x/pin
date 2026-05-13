@@ -41,16 +41,6 @@ export type ArtistRecord = {
     startTokenId: string
     endTokenId: string
   }>
-  /** Successor address declared by this artist, or null. */
-  successor: Address | null
-}
-
-export type ArtistRecordWithChain = ArtistRecord & {
-  /** Forward successor chain rooted at the queried address. Always
-   * starts with the queried address; subsequent entries are each
-   * predecessor's declared successor, walked until either a zero
-   * successor is found or the chain hits its max-depth bound. */
-  successorChain: Address[]
 }
 
 function getClient(): PublicClient {
@@ -62,12 +52,12 @@ function getClient(): PublicClient {
 
 /**
  * Read one artist's full record. Issues a single multicall for the
- * four read functions (contracts, tokens, ranges, successor) so the
- * RPC cost is one round-trip regardless of record size.
+ * three read functions (contracts, tokens, ranges) so the RPC cost is
+ * one round-trip regardless of record size.
  *
- * Returns an empty record (no contracts/tokens/ranges, successor null)
- * when the registry address isn't configured for the current chain or
- * when the artist hasn't declared anything yet — these states are
+ * Returns an empty record (no contracts/tokens/ranges) when the
+ * registry address isn't configured for the current chain or when the
+ * artist hasn't declared anything yet — these states are
  * indistinguishable from the consumer's perspective and both render
  * "no record yet" in the UI.
  */
@@ -97,12 +87,6 @@ export async function getArtistRecord(
       functionName: "getTokenRanges" as const,
       args: [artist] as const,
     },
-    {
-      address: REGISTRY,
-      abi: artistRecordRegistryAbi,
-      functionName: "getSuccessor" as const,
-      args: [artist] as const,
-    },
   ]
   let results
   try {
@@ -120,7 +104,7 @@ export async function getArtistRecord(
     throw e
   }
 
-  const [rawContracts, rawTokens, rawRanges, rawSuccessor] = results as [
+  const [rawContracts, rawTokens, rawRanges] = results as [
     readonly Address[],
     readonly { contractAddress: Address; tokenId: bigint }[],
     readonly {
@@ -128,7 +112,6 @@ export async function getArtistRecord(
       startTokenId: bigint
       endTokenId: bigint
     }[],
-    Address,
   ]
 
   return {
@@ -143,64 +126,6 @@ export async function getArtistRecord(
       startTokenId: r.startTokenId.toString(),
       endTokenId: r.endTokenId.toString(),
     })),
-    successor:
-      rawSuccessor === "0x0000000000000000000000000000000000000000"
-        ? null
-        : rawSuccessor,
-  }
-}
-
-/**
- * Like `getArtistRecord` but also walks the successor chain forward,
- * returning the list of addresses traversed. Bounded by MAX_DEPTH to
- * defend against on-chain cycles (the contract doesn't enforce cycle
- * prevention — see the registry's NatSpec).
- */
-const MAX_SUCCESSOR_DEPTH = 16
-
-export async function getArtistRecordWithChain(
-  artist: Address,
-): Promise<ArtistRecordWithChain> {
-  const base = await getArtistRecord(artist)
-  const chain: Address[] = [artist]
-  const seen = new Set<string>([artist.toLowerCase()])
-
-  let cursor: Address | null = base.successor
-  let depth = 0
-  while (cursor && depth < MAX_SUCCESSOR_DEPTH) {
-    const lower = cursor.toLowerCase()
-    if (seen.has(lower)) break // cycle protection
-    seen.add(lower)
-    chain.push(cursor)
-    const next = await getSuccessorOnly(cursor)
-    cursor = next
-    depth++
-  }
-
-  return { ...base, successorChain: chain }
-}
-
-/**
- * Read just an address's declared successor. Used by the chain-walk
- * helper above; one RPC call per hop, but the chain is typically 0–2
- * hops in practice.
- */
-async function getSuccessorOnly(addr: Address): Promise<Address | null> {
-  if (!REGISTRY) return null
-  const client = getClient()
-  try {
-    const successor = (await client.readContract({
-      address: REGISTRY,
-      abi: artistRecordRegistryAbi,
-      functionName: "getSuccessor",
-      args: [addr],
-    })) as Address
-    return successor === "0x0000000000000000000000000000000000000000"
-      ? null
-      : successor
-  } catch (e) {
-    if (isContractMissing(e)) return null
-    throw e
   }
 }
 
@@ -243,7 +168,6 @@ function emptyRecord(artist: Address): ArtistRecord {
     contracts: [],
     tokens: [],
     tokenRanges: [],
-    successor: null,
   }
 }
 
@@ -276,28 +200,17 @@ export async function hasAnyDeclarations(
       functionName: "getTokenRangeCount" as const,
       args: [artist] as const,
     },
-    {
-      address: REGISTRY,
-      abi: artistRecordRegistryAbi,
-      functionName: "getSuccessor" as const,
-      args: [artist] as const,
-    },
   ]
   let results
   try {
     results = (await client.multicall({
       contracts: calls,
       allowFailure: false,
-    })) as unknown as [bigint, bigint, bigint, Address]
+    })) as unknown as [bigint, bigint, bigint]
   } catch (e) {
     if (isContractMissing(e)) return false
     throw e
   }
-  const [cc, tc, rc, succ] = results
-  return (
-    cc > 0n ||
-    tc > 0n ||
-    rc > 0n ||
-    succ !== "0x0000000000000000000000000000000000000000"
-  )
+  const [cc, tc, rc] = results
+  return cc > 0n || tc > 0n || rc > 0n
 }

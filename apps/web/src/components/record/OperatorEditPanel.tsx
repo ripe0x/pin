@@ -65,8 +65,7 @@ export function OperatorEditPanel({ artist }: { artist: Address }) {
     <div className="space-y-3">
       <p className="text-sm text-gray-600">
         Approve another address to add and remove pointers on your
-        behalf. Operators can&rsquo;t approve other operators or change
-        your successor.
+        behalf. Operators can&rsquo;t approve other operators.
       </p>
       <div className="flex gap-2 flex-wrap">
         <input

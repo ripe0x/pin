@@ -51,10 +51,6 @@ contract ArtistRecordRegistryTest is Test {
         address indexed operator,
         bool approved
     );
-    event SuccessorSet(
-        address indexed artist,
-        address indexed successor
-    );
 
     function setUp() public {
         reg = new ArtistRecordRegistry();
@@ -278,6 +274,22 @@ contract ArtistRecordRegistryTest is Test {
         vm.expectRevert(ArtistRecordRegistry.TokenRangeNotRegistered.selector);
         vm.prank(artist);
         reg.removeTokenRange(NFT_ADDR, 1, 100);
+    }
+
+    function test_removeTokenRange_startGreaterThanEnd_reverts() public {
+        // Symmetric with `_addTokenRange`: an inverted tuple can never
+        // be added, so it should be rejected up front on remove with the
+        // same `InvalidTokenRange` error rather than the generic
+        // `TokenRangeNotRegistered`.
+        vm.expectRevert(ArtistRecordRegistry.InvalidTokenRange.selector);
+        vm.prank(artist);
+        reg.removeTokenRange(NFT_ADDR, 100, 1);
+    }
+
+    function test_removeTokenRange_zeroAddress_reverts() public {
+        vm.expectRevert(ArtistRecordRegistry.InvalidContractAddress.selector);
+        vm.prank(artist);
+        reg.removeTokenRange(address(0), 1, 100);
     }
 
     // ─── Operator delegation ────────────────────────────────────────
@@ -589,74 +601,156 @@ contract ArtistRecordRegistryTest is Test {
         );
     }
 
-    // ─── Successor primitive ────────────────────────────────────────
+    // ─── Slice getters ──────────────────────────────────────────────
 
-    function test_successor_setSucceeds_andEmits() public {
-        address newKey = address(0xAABB);
-        vm.expectEmit(true, true, true, true);
-        emit SuccessorSet(artist, newKey);
-        vm.prank(artist);
-        reg.setSuccessor(newKey);
-        assertEq(reg.getSuccessor(artist), newKey);
+    function test_getContractsSlice_middleSegment() public {
+        address a1 = address(0x1111);
+        address a2 = address(0x2222);
+        address a3 = address(0x3333);
+        address a4 = address(0x4444);
+        address a5 = address(0x5555);
+        vm.startPrank(artist);
+        reg.addContract(a1);
+        reg.addContract(a2);
+        reg.addContract(a3);
+        reg.addContract(a4);
+        reg.addContract(a5);
+        vm.stopPrank();
+
+        address[] memory slice = reg.getContractsSlice(artist, 1, 3);
+        assertEq(slice.length, 3);
+        assertEq(slice[0], a2);
+        assertEq(slice[1], a3);
+        assertEq(slice[2], a4);
     }
 
-    function test_successor_unset_returnsZero() public view {
-        assertEq(reg.getSuccessor(artist), address(0));
+    function test_getContractsSlice_countExceedsRemaining_returnsShorter() public {
+        address a1 = address(0x1111);
+        address a2 = address(0x2222);
+        address a3 = address(0x3333);
+        vm.startPrank(artist);
+        reg.addContract(a1);
+        reg.addContract(a2);
+        reg.addContract(a3);
+        vm.stopPrank();
+
+        address[] memory slice = reg.getContractsSlice(artist, 1, 100);
+        assertEq(slice.length, 2);
+        assertEq(slice[0], a2);
+        assertEq(slice[1], a3);
     }
 
-    function test_successor_setTwice_reverts() public {
-        address k1 = address(0xAABB);
-        address k2 = address(0xCCDD);
-        vm.prank(artist);
-        reg.setSuccessor(k1);
-        vm.expectRevert(ArtistRecordRegistry.SuccessorAlreadySet.selector);
-        vm.prank(artist);
-        reg.setSuccessor(k2);
-    }
-
-    function test_successor_zero_reverts() public {
-        vm.expectRevert(ArtistRecordRegistry.InvalidSuccessor.selector);
-        vm.prank(artist);
-        reg.setSuccessor(address(0));
-    }
-
-    function test_successor_self_reverts() public {
-        vm.expectRevert(ArtistRecordRegistry.InvalidSuccessor.selector);
-        vm.prank(artist);
-        reg.setSuccessor(artist);
-    }
-
-    function test_successor_chainExtension_succeeds() public {
-        address k1 = address(0xAABB);
-        address k2 = address(0xCCDD);
-        vm.prank(artist);
-        reg.setSuccessor(k1);
-        vm.prank(k1);
-        reg.setSuccessor(k2);
-        assertEq(reg.getSuccessor(artist), k1);
-        assertEq(reg.getSuccessor(k1), k2);
-        assertEq(reg.getSuccessor(k2), address(0));
-    }
-
-    function test_successor_operator_cannotSetSuccessor() public {
-        vm.prank(artist);
-        reg.setOperator(operator, true);
-
-        vm.prank(operator);
-        reg.setSuccessor(address(0xBEEF));
-
-        assertEq(reg.getSuccessor(artist), address(0));
-        assertEq(reg.getSuccessor(operator), address(0xBEEF));
-    }
-
-    function test_successor_doesNotMovePointers() public {
+    function test_getContractsSlice_startBeyondLength_returnsEmpty() public {
         vm.prank(artist);
         reg.addContract(NFT_ADDR);
-        vm.prank(artist);
-        reg.setSuccessor(address(0xAABB));
 
-        assertEq(reg.getContractCount(artist), 1);
-        assertEq(reg.getContractCount(address(0xAABB)), 0);
+        address[] memory slice = reg.getContractsSlice(artist, 5, 10);
+        assertEq(slice.length, 0);
+    }
+
+    function test_getContractsSlice_emptyList_returnsEmpty() public view {
+        address[] memory slice = reg.getContractsSlice(artist, 0, 10);
+        assertEq(slice.length, 0);
+    }
+
+    function test_getTokensSlice_middleSegment() public {
+        vm.startPrank(artist);
+        reg.addToken(NFT_ADDR, 1);
+        reg.addToken(NFT_ADDR, 2);
+        reg.addToken(NFT_ADDR, 3);
+        reg.addToken(NFT_ADDR, 4);
+        reg.addToken(NFT_ADDR, 5);
+        vm.stopPrank();
+
+        ArtistRecordRegistry.TokenPointer[] memory slice =
+            reg.getTokensSlice(artist, 1, 3);
+        assertEq(slice.length, 3);
+        assertEq(slice[0].tokenId, 2);
+        assertEq(slice[1].tokenId, 3);
+        assertEq(slice[2].tokenId, 4);
+    }
+
+    function test_getTokensSlice_countExceedsRemaining_returnsShorter() public {
+        vm.startPrank(artist);
+        reg.addToken(NFT_ADDR, 1);
+        reg.addToken(NFT_ADDR, 2);
+        reg.addToken(NFT_ADDR, 3);
+        vm.stopPrank();
+
+        ArtistRecordRegistry.TokenPointer[] memory slice =
+            reg.getTokensSlice(artist, 1, 100);
+        assertEq(slice.length, 2);
+        assertEq(slice[0].tokenId, 2);
+        assertEq(slice[1].tokenId, 3);
+    }
+
+    function test_getTokensSlice_startBeyondLength_returnsEmpty() public {
+        vm.prank(artist);
+        reg.addToken(NFT_ADDR, 1);
+
+        ArtistRecordRegistry.TokenPointer[] memory slice =
+            reg.getTokensSlice(artist, 5, 10);
+        assertEq(slice.length, 0);
+    }
+
+    function test_getTokensSlice_emptyList_returnsEmpty() public view {
+        ArtistRecordRegistry.TokenPointer[] memory slice =
+            reg.getTokensSlice(artist, 0, 10);
+        assertEq(slice.length, 0);
+    }
+
+    function test_getTokenRangesSlice_middleSegment() public {
+        vm.startPrank(artist);
+        reg.addTokenRange(NFT_ADDR, 1, 10);
+        reg.addTokenRange(NFT_ADDR, 11, 20);
+        reg.addTokenRange(NFT_ADDR, 21, 30);
+        reg.addTokenRange(NFT_ADDR, 31, 40);
+        reg.addTokenRange(NFT_ADDR, 41, 50);
+        vm.stopPrank();
+
+        ArtistRecordRegistry.TokenRangePointer[] memory slice =
+            reg.getTokenRangesSlice(artist, 1, 3);
+        assertEq(slice.length, 3);
+        assertEq(slice[0].startTokenId, 11);
+        assertEq(slice[1].startTokenId, 21);
+        assertEq(slice[2].startTokenId, 31);
+        assertEq(slice[2].endTokenId, 40);
+    }
+
+    function test_getTokenRangesSlice_countExceedsRemaining_returnsShorter() public {
+        vm.startPrank(artist);
+        reg.addTokenRange(NFT_ADDR, 1, 10);
+        reg.addTokenRange(NFT_ADDR, 11, 20);
+        reg.addTokenRange(NFT_ADDR, 21, 30);
+        vm.stopPrank();
+
+        ArtistRecordRegistry.TokenRangePointer[] memory slice =
+            reg.getTokenRangesSlice(artist, 1, 100);
+        assertEq(slice.length, 2);
+        assertEq(slice[0].startTokenId, 11);
+        assertEq(slice[1].startTokenId, 21);
+    }
+
+    function test_getTokenRangesSlice_startBeyondLength_returnsEmpty() public {
+        vm.prank(artist);
+        reg.addTokenRange(NFT_ADDR, 1, 10);
+
+        ArtistRecordRegistry.TokenRangePointer[] memory slice =
+            reg.getTokenRangesSlice(artist, 5, 10);
+        assertEq(slice.length, 0);
+    }
+
+    function test_getTokenRangesSlice_emptyList_returnsEmpty() public view {
+        ArtistRecordRegistry.TokenRangePointer[] memory slice =
+            reg.getTokenRangesSlice(artist, 0, 10);
+        assertEq(slice.length, 0);
+    }
+
+    function test_getContractsSlice_zeroCount_returnsEmpty() public {
+        vm.prank(artist);
+        reg.addContract(NFT_ADDR);
+        address[] memory slice = reg.getContractsSlice(artist, 0, 0);
+        assertEq(slice.length, 0);
     }
 
     // ─── Key helpers ────────────────────────────────────────────────

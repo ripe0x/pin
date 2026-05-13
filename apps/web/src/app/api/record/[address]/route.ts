@@ -3,15 +3,12 @@ import { unstable_cache } from "next/cache"
 import type { Address } from "viem"
 import { pgCache } from "@/lib/pg-cache"
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit"
-import {
-  getArtistRecordWithChain,
-  type ArtistRecordWithChain,
-} from "@/lib/artist-record"
+import { getArtistRecord, type ArtistRecord } from "@/lib/artist-record"
 
 /**
  * Read an artist's declared record from the on-chain
- * ArtistRecordRegistry. Returns the contracts/tokens/ranges plus the
- * resolved forward successor chain.
+ * ArtistRecordRegistry. Returns the contracts/tokens/ranges declared
+ * by the address.
  *
  * Two-layer cache (5 min L1 unstable_cache + L2 pgCache) per address.
  * The underlying registry view functions are cheap point lookups, but
@@ -21,10 +18,8 @@ import {
  * Per-IP rate limit at 10 req/min mirrors the dependency-check route.
  */
 
-type SerializedRecord = Omit<ArtistRecordWithChain, "artist" | "successorChain"> & {
+type SerializedRecord = Omit<ArtistRecord, "artist"> & {
   artist: string
-  successor: string | null
-  successorChain: string[]
 }
 
 const RECORD_TTL_S = 5 * 60
@@ -35,14 +30,12 @@ const cached = unstable_cache(
       `artist-record:${addressLower}`,
       RECORD_TTL_S,
       async () => {
-        const r = await getArtistRecordWithChain(addressLower as Address)
+        const r = await getArtistRecord(addressLower as Address)
         return {
           artist: r.artist,
           contracts: r.contracts,
           tokens: r.tokens,
           tokenRanges: r.tokenRanges,
-          successor: r.successor,
-          successorChain: r.successorChain,
         }
       },
     ),
