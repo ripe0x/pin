@@ -1,7 +1,6 @@
 import "server-only"
 import {
   createPublicClient,
-  http,
   parseAbiItem,
   type Address,
 } from "viem"
@@ -15,7 +14,7 @@ import {
   isFresh,
   type LazyFoundationActiveAuction,
 } from "../lazy-index"
-import { getAlchemyMainnetUrl } from "../alchemy-rpc"
+import { loggingFallbackTransport } from "../rpc-log"
 
 const FND_NFT_MARKET = NFT_MARKET[MAINNET_CHAIN_ID]
 // NFTMarket proxy was deployed mid-2021. Per-artist `getLogs` calls
@@ -46,10 +45,7 @@ const reserveAuctionInvalidatedEvent = parseAbiItem(
 function getClient() {
   return createPublicClient({
     chain: mainnet,
-    transport: http(
-      getAlchemyMainnetUrl(),
-      { batch: true },
-    ),
+    transport: loggingFallbackTransport("foundation-scan", { batch: true }),
   })
 }
 

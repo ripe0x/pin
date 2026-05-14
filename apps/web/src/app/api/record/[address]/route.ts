@@ -1,0 +1,74 @@
+import { NextRequest, NextResponse } from "next/server"
+import { unstable_cache } from "next/cache"
+import type { Address } from "viem"
+import { pgCache } from "@/lib/pg-cache"
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit"
+import { getArtistRecord, type ArtistRecord } from "@/lib/artist-record"
+
+/**
+ * Read an artist's declared record from the on-chain
+ * ArtistRecordRegistry. Returns the contracts/tokens/ranges declared
+ * by the address.
+ *
+ * Two-layer cache (5 min L1 unstable_cache + L2 pgCache) per address.
+ * The underlying registry view functions are cheap point lookups, but
+ * caching the assembled payload keeps repeated dependency-report and
+ * /record visits free of RPC.
+ *
+ * Per-IP rate limit at 10 req/min mirrors the dependency-check route.
+ */
+
+type SerializedRecord = Omit<ArtistRecord, "artist"> & {
+  artist: string
+}
+
+const RECORD_TTL_S = 5 * 60
+
+const cached = unstable_cache(
+  (addressLower: string): Promise<SerializedRecord> =>
+    pgCache<SerializedRecord>(
+      `artist-record:${addressLower}`,
+      RECORD_TTL_S,
+      async () => {
+        const r = await getArtistRecord(addressLower as Address)
+        return {
+          artist: r.artist,
+          contracts: r.contracts,
+          tokens: r.tokens,
+          tokenRanges: r.tokenRanges,
+        }
+      },
+    ),
+  ["artist-record-v1"],
+  { revalidate: RECORD_TTL_S, tags: ["artist-record"] },
+)
+
+export async function GET(
+  req: NextRequest,
+  ctx: { params: Promise<{ address: string }> },
+): Promise<NextResponse<SerializedRecord | { error: string }>> {
+  const { address } = await ctx.params
+
+  if (!/^0x[0-9a-fA-F]{40}$/.test(address)) {
+    return NextResponse.json({ error: "invalid address" }, { status: 400 })
+  }
+
+  const ip = getClientIp(req)
+  const rl = checkRateLimit("artist-record", ip, 60_000, 10)
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: "rate-limited" },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfter) } },
+    )
+  }
+
+  try {
+    const data = await cached(address.toLowerCase())
+    return NextResponse.json(data, {
+      headers: { "Cache-Control": "private, max-age=60" },
+    })
+  } catch (err) {
+    console.error("record read failed:", err)
+    return NextResponse.json({ error: "read failed" }, { status: 500 })
+  }
+}

@@ -764,6 +764,206 @@ export async function getActivityFeed(
   }, timeoutMs)
 }
 
+// ─── Dependency-check helpers ────────────────────────────────────────────
+//
+// Used by `apps/web/src/lib/dependency-check.ts` to assemble the scan
+// report at `/api/dependency/[address]`. All four are point lookups
+// against existing indexes (`fnd_auctions.seller_status`, `fnd_buy_nows
+// .seller_status`, `fnd_artist_tokens.creator`, `fnd_collections.creator`,
+// `fnd_sales` filtered on `seller`).
+
+export async function getActiveFndAuctionCount(
+  sellerAddress: string,
+): Promise<number | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+  return withTimeout(async () => {
+    const seller = sellerAddress.toLowerCase()
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+      /[^a-zA-Z0-9_]/g,
+      "",
+    )
+    const rows = (await db.unsafe(
+      `SELECT COUNT(*)::text AS count
+         FROM ${schema}.fnd_auctions
+        WHERE seller = $1 AND status = 'active'`,
+      [seller],
+    )) as Array<{ count: string }>
+    return Number(rows[0]?.count ?? 0)
+  }, 2_000)
+}
+
+export async function getActiveFndBuyNowCount(
+  sellerAddress: string,
+): Promise<number | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+  return withTimeout(async () => {
+    const seller = sellerAddress.toLowerCase()
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+      /[^a-zA-Z0-9_]/g,
+      "",
+    )
+    const rows = (await db.unsafe(
+      `SELECT COUNT(*)::text AS count
+         FROM ${schema}.fnd_buy_nows
+        WHERE seller = $1 AND status = 'active'`,
+      [seller],
+    )) as Array<{ count: string }>
+    return Number(rows[0]?.count ?? 0)
+  }, 2_000)
+}
+
+export type FoundationCreatorSummary = {
+  tokenCount: number
+  collectionCount: number
+}
+
+/**
+ * Counts of Foundation tokens minted by an artist and per-artist
+ * collection contracts they've deployed. Combines both contract families
+ * (shared FoundationNFT contract + per-artist clones from the V1/V2
+ * factories).
+ */
+export async function getFoundationCreatorSummary(
+  artistAddress: string,
+): Promise<FoundationCreatorSummary | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+  return withTimeout(async () => {
+    const creator = artistAddress.toLowerCase()
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+      /[^a-zA-Z0-9_]/g,
+      "",
+    )
+    const [tokenRows, collectionRows] = await Promise.all([
+      db.unsafe(
+        `SELECT COUNT(*)::text AS count
+           FROM ${schema}.fnd_artist_tokens
+          WHERE creator = $1`,
+        [creator],
+      ) as Promise<Array<{ count: string }>>,
+      db.unsafe(
+        `SELECT COUNT(*)::text AS count
+           FROM ${schema}.fnd_collections
+          WHERE creator = $1`,
+        [creator],
+      ) as Promise<Array<{ count: string }>>,
+    ])
+    return {
+      tokenCount: Number(tokenRows[0]?.count ?? 0),
+      collectionCount: Number(collectionRows[0]?.count ?? 0),
+    }
+  }, 2_000)
+}
+
+export type FoundationSalesSummary = {
+  saleCount: number
+  /** True when this seller has any settled Foundation sale on record. */
+  hasFoundation: boolean
+}
+
+/**
+ * Settled Foundation sales (auctions + buy-nows) where this address was
+ * the seller. Drives the "sale paths observed" card — Foundation is the
+ * one platform PND fully indexes today; the other marketplaces come
+ * from the seller-listings adapter in chip 2.
+ */
+export async function getFoundationSalesSummary(
+  sellerAddress: string,
+): Promise<FoundationSalesSummary | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+  return withTimeout(async () => {
+    const seller = sellerAddress.toLowerCase()
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+      /[^a-zA-Z0-9_]/g,
+      "",
+    )
+    const rows = (await db.unsafe(
+      `SELECT COUNT(*)::text AS count
+         FROM ${schema}.fnd_sales
+        WHERE seller = $1`,
+      [seller],
+    )) as Array<{ count: string }>
+    const saleCount = Number(rows[0]?.count ?? 0)
+    return { saleCount, hasFoundation: saleCount > 0 }
+  }, 2_000)
+}
+
+export type ArtistContractRow = {
+  contract: string
+  tokenCount: number
+  /** Set when the contract has a row in `fnd_collections` (i.e. it was
+   * deployed via the V1/V2 factories). The classifier compares this to
+   * the scanned artist address to decide artist-owned vs shared. */
+  collectionCreator: string | null
+  collectionKind: string | null
+  collectionName: string | null
+  collectionSymbol: string | null
+}
+
+/**
+ * Per-contract token counts for an artist, joined with the
+ * `fnd_collections` row when one exists. The classifier in
+ * `contract-classifier.ts` turns these rows into typed map entries for
+ * the Artist Dependency Report.
+ *
+ * Returns null on indexer-unavailable so the caller can render an
+ * "Unable to check" state for the contract-map section rather than
+ * failing the whole report.
+ */
+export async function getArtistContractMap(
+  artistAddress: string,
+): Promise<ArtistContractRow[] | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+  return withTimeout(async () => {
+    const creator = artistAddress.toLowerCase()
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+      /[^a-zA-Z0-9_]/g,
+      "",
+    )
+    const rows = (await db.unsafe(
+      `SELECT
+         t.contract,
+         COUNT(*)::int AS token_count,
+         c.creator AS collection_creator,
+         c.kind   AS collection_kind,
+         c.name   AS collection_name,
+         c.symbol AS collection_symbol
+       FROM ${schema}.fnd_artist_tokens t
+       LEFT JOIN ${schema}.fnd_collections c
+              ON c.collection = t.contract
+       WHERE t.creator = $1
+       GROUP BY t.contract, c.creator, c.kind, c.name, c.symbol
+       ORDER BY COUNT(*) DESC`,
+      [creator],
+    )) as Array<{
+      contract: string
+      token_count: number
+      collection_creator: string | null
+      collection_kind: string | null
+      collection_name: string | null
+      collection_symbol: string | null
+    }>
+
+    return rows.map((r) => ({
+      contract: r.contract,
+      tokenCount: Number(r.token_count),
+      collectionCreator: r.collection_creator,
+      collectionKind: r.collection_kind,
+      collectionName: r.collection_name,
+      collectionSymbol: r.collection_symbol,
+    }))
+    // Bigger budget than the other indexer queries because this is the
+    // headline read for the dependency report and under pool contention
+    // (the orchestrator fires ~6 parallel Postgres calls + the seller-
+    // listings adapters' own lazy reads against a max:2 pool) cold
+    // queries can queue for >2s before they ever start running.
+  }, 4_000)
+}
+
 export async function getActiveAuctionCountFromIndexer(
   sellerAddress: string,
 ): Promise<number | null> {
@@ -796,5 +996,5 @@ export async function getActiveAuctionCountFromIndexer(
     )) as Array<{ count: string }>
 
     return Number(rows[0]?.count ?? 0)
-  })
+  }, 2_000)
 }

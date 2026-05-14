@@ -5,3 +5,4 @@ broadcast/
 
 # Forge-installed dependencies (reinstall with `forge install` per README).
 lib/
+.env

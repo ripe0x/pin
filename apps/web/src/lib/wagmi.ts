@@ -6,7 +6,7 @@ import {
   rabbyWallet,
   safeWallet,
 } from "@rainbow-me/rainbowkit/wallets"
-import { foundry, mainnet } from "wagmi/chains"
+import { foundry as foundryBase, mainnet } from "wagmi/chains"
 import { createConfig, http } from "wagmi"
 import { mock } from "wagmi/connectors"
 import type { Address } from "viem"
@@ -25,6 +25,38 @@ const projectId = rawProjectId || "PLACEHOLDER_DEV_ID"
 // MetaMask labels fork txs as "Foundry"/"Anvil" rather than "Ethereum Mainnet"
 // — eliminates the "is this a real mainnet tx?" anxiety during local testing.
 const anvilUrl = process.env.NEXT_PUBLIC_ANVIL_RPC_URL ?? "http://localhost:8545"
+
+// viem's built-in `foundry` chain hardcodes `rpcUrls.default.http` to
+// `http://127.0.0.1:8545` AND uses chain id 31337 — same id Hardhat
+// nodes use. If a developer already has a "Hardhat Local" network in
+// MetaMask at 31337, `wallet_addEthereumChain` for our anvil refuses
+// to overwrite it; the user ends up signing transactions against the
+// wrong node. We give the dev anvil a deliberately distinct chain id
+// (31338) so it lands as a brand-new MetaMask entry, and override the
+// default RPC URL so reads, writes, mock-connector calls, and wallet
+// labels all agree on the same endpoint.
+export const FORK_CHAIN_ID = 31339
+export const FORK_CHAIN_NAME = "Anvil fork (PND)"
+// Cast through `unknown` because the upstream `foundry` chain object
+// has `id: 31337` as a literal — TypeScript correctly notices we're
+// overriding to a different literal. Runtime shape is identical; the
+// strict literal type is the only thing in the way.
+const foundry = {
+  ...foundryBase,
+  id: FORK_CHAIN_ID,
+  name: FORK_CHAIN_NAME,
+  rpcUrls: {
+    ...foundryBase.rpcUrls,
+    default: { ...foundryBase.rpcUrls.default, http: [anvilUrl] },
+  },
+} as unknown as typeof foundryBase
+
+// Re-export the customized chain so dapp code (ChainSwitcher etc.) sees
+// the same id/name/RPC the wagmi config uses. Importing the wagmi/chains
+// `foundry` directly would resolve to the unmodified upstream version
+// (id 31337, RPC localhost:8545) and silently disagree with the active
+// config.
+export const forkChain = foundry
 
 // When running against a local fork the mainnet transport also goes
 // straight to anvil. Anvil holds the full mainnet state at fork-block, so
