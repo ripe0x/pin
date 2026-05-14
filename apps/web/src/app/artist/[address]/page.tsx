@@ -15,6 +15,7 @@ import { withSingleFlight } from "@/lib/single-flight"
 import { PLATFORMS } from "@/lib/platforms"
 import { ArtistHeader } from "@/components/artist/ArtistHeader"
 import { ArtistGallery } from "@/components/artist/ArtistGallery"
+import { ArtistRecordSection } from "@/components/artist/ArtistRecordSection"
 import { BulkDelistPanel } from "@/components/listings/BulkDelistPanel"
 import { SovereignBulkPanel } from "@/components/listings/SovereignBulkPanel"
 import { MigrationBanner } from "@/components/migrate/MigrationBanner"
@@ -198,6 +199,10 @@ async function ArtistPageBody({ address }: { address: string }) {
 
       <div className="mt-4">
         <SitePanel artistAddress={address} />
+      </div>
+
+      <div className="mt-12">
+        <ArtistRecordSection address={address as `0x${string}`} />
       </div>
 
       <div className="mt-12">
