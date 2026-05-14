@@ -82,15 +82,15 @@ export const SOVEREIGN_AUCTION_HOUSE_FACTORY: Record<number, Address> = {
   [BASE_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
 }
 
-// ArtistRecordRegistry — generic public registry where an artist address can
+// Catalog — generic public registry where an artist address can
 // publish on-chain pointers (contracts, tokens, ranges) belonging to its
 // public record. Deployed via the canonical CREATE2 deterministic-deployment
-// proxy with salt = keccak256("ArtistRecordRegistry"), so the same source +
+// proxy with salt = keccak256("Catalog"), so the same source +
 // salt yields the same address on every EVM chain we ever deploy to. The
 // value below is the predicted address from the CREATE2 computation;
 // confirm with `cast code` after the first mainnet deploy.
 export const ARTIST_RECORD_REGISTRY: Record<number, Address> = {
-  [MAINNET_CHAIN_ID]: "0xAF0013bFDC488F9017603875fAcf0c95d91691D7",
+  [MAINNET_CHAIN_ID]: "0x43efE30B60Ef6Ba300D97F9936eDbE099d619CD4",
 }
 
 // Helper for the address-or-null pattern: returns null when no factory is
