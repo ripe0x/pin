@@ -964,6 +964,101 @@ export async function getArtistContractMap(
   }, 4_000)
 }
 
+// ─── Catalog ─────────────────────────────────────────────────────────────
+//
+// Replaces the per-render `viem.multicall` against the Catalog
+// contract in `apps/web/src/lib/catalog.ts`. The three reads
+// (contracts, tokens, ranges) are point lookups against the per-artist
+// composite index on the catalog_* tables, so each query is cheap and
+// the three run in parallel.
+//
+// Returns null when the indexer is disabled / unavailable / slow so the
+// caller can fall through to the RPC path. An indexer that's healthy
+// but legitimately has no entries for the artist returns an empty
+// `Catalog` shape — same semantics as the on-chain getContracts() etc.
+// returning empty arrays.
+//
+// Caveat: Ponder's chain-wide pollingInterval is 300s on mainnet (see
+// ponder/ponder.config.ts). A write that confirms now may take up to
+// 5 minutes before its event lands in these tables. The
+// `useCatalogWrite` hook busts the page caches on tx success — that
+// part still works — but the next render against this read can still
+// see stale rows during the polling window. If the post-write UX
+// becomes a problem, the cheapest fix is to reduce pollingInterval
+// (cost rises ~5×) rather than adding a write-time RPC fallback here.
+
+export type IndexerCatalog = {
+  contracts: string[]
+  tokens: Array<{ contractAddress: string; tokenId: string }>
+  tokenRanges: Array<{
+    contractAddress: string
+    startTokenId: string
+    endTokenId: string
+  }>
+}
+
+export async function getCatalogFromIndexer(
+  artistAddress: string,
+): Promise<IndexerCatalog | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+
+  return withTimeout(async () => {
+    const artist = artistAddress.toLowerCase()
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+      /[^a-zA-Z0-9_]/g,
+      "",
+    )
+
+    const [contractRows, tokenRows, rangeRows] = await Promise.all([
+      db.unsafe(
+        `SELECT contract_address
+           FROM ${schema}.catalog_contracts
+          WHERE artist = $1
+          ORDER BY block_number ASC`,
+        [artist],
+      ) as Promise<Array<{ contract_address: string }>>,
+      db.unsafe(
+        `SELECT contract_address, token_id::text AS token_id
+           FROM ${schema}.catalog_tokens
+          WHERE artist = $1
+          ORDER BY block_number ASC`,
+        [artist],
+      ) as Promise<
+        Array<{ contract_address: string; token_id: string }>
+      >,
+      db.unsafe(
+        `SELECT contract_address,
+                start_token_id::text AS start_token_id,
+                end_token_id::text   AS end_token_id
+           FROM ${schema}.catalog_ranges
+          WHERE artist = $1
+          ORDER BY block_number ASC`,
+        [artist],
+      ) as Promise<
+        Array<{
+          contract_address: string
+          start_token_id: string
+          end_token_id: string
+        }>
+      >,
+    ])
+
+    return {
+      contracts: contractRows.map((r) => r.contract_address),
+      tokens: tokenRows.map((r) => ({
+        contractAddress: r.contract_address,
+        tokenId: r.token_id,
+      })),
+      tokenRanges: rangeRows.map((r) => ({
+        contractAddress: r.contract_address,
+        startTokenId: r.start_token_id,
+        endTokenId: r.end_token_id,
+      })),
+    }
+  }, 2_000)
+}
+
 export async function getActiveAuctionCountFromIndexer(
   sellerAddress: string,
 ): Promise<number | null> {

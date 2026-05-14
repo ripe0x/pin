@@ -12,15 +12,25 @@ import {
   getAddressOrNull,
 } from "@pin/addresses"
 import { loggingFallbackTransport } from "./rpc-log"
+import { getCatalogFromIndexer } from "./indexer-queries"
 
 /**
- * Read layer for CatalogRegistry. The contract's read functions
- * are cheap point lookups (one storage slot for booleans, small arrays
- * for the per-artist lists), so v1 reads directly via RPC rather than
- * indexing events into Ponder. If usage grows or cross-artist queries
- * become important ("all artists who declared contract X"), a Ponder
- * subgraph can be layered on later — the read API surface here stays
- * the same.
+ * Read layer for the on-chain Catalog. Primary path is Ponder
+ * (Postgres SELECTs against catalog_contracts / catalog_tokens /
+ * catalog_ranges); the viem multicall below is the fallback used only
+ * when the indexer is disabled, unreachable, or its read times out.
+ *
+ * The indexer wiring lives in `ponder/ponder.{config,schema}.ts` and
+ * `ponder/src/Catalog.ts`. Reads are issued through
+ * `getCatalogFromIndexer` in `./indexer-queries.ts` so the kill-switch
+ * + timeout pattern is shared with every other indexer-backed query.
+ *
+ * Trade-off: Ponder polls mainnet HEAD every 300s (see
+ * ponder/ponder.config.ts), so a write that confirms now can take up
+ * to 5 minutes to land in the Postgres tables. The `useCatalogWrite`
+ * hook busts the page caches on tx success but the next render can
+ * still see pre-write rows during the polling window. Bumping
+ * pollingInterval is the lever; v1 accepts the lag.
  *
  * No write functions here. Writes happen client-side via wagmi /
  * walletConnect from the /record UI; the server never holds keys.
@@ -51,9 +61,9 @@ function getClient(): PublicClient {
 }
 
 /**
- * Read one artist's full record. Issues a single multicall for the
- * three read functions (contracts, tokens, ranges) so the RPC cost is
- * one round-trip regardless of record size.
+ * Read one artist's full record. Tries the Ponder-backed Postgres path
+ * first (zero RPC); on null (indexer disabled / unreachable / timed
+ * out) falls back to the on-chain multicall.
  *
  * Returns an empty record (no contracts/tokens/ranges) when the
  * registry address isn't configured for the current chain or when the
@@ -62,6 +72,39 @@ function getClient(): PublicClient {
  * "no record yet" in the UI.
  */
 export async function getCatalog(
+  artist: Address,
+): Promise<Catalog> {
+  if (!REGISTRY) {
+    return emptyRecord(artist)
+  }
+
+  const indexed = await getCatalogFromIndexer(artist)
+  if (indexed) {
+    return {
+      artist,
+      contracts: indexed.contracts as Address[],
+      tokens: indexed.tokens.map((t) => ({
+        contractAddress: t.contractAddress as Address,
+        tokenId: t.tokenId,
+      })),
+      tokenRanges: indexed.tokenRanges.map((r) => ({
+        contractAddress: r.contractAddress as Address,
+        startTokenId: r.startTokenId,
+        endTokenId: r.endTokenId,
+      })),
+    }
+  }
+
+  return getCatalogFromChain(artist)
+}
+
+/**
+ * Direct on-chain read via `viem.multicall`. Kept as the fallback for
+ * `getCatalog` when the indexer is unavailable, and exported so callers
+ * that explicitly want fresh-from-chain data (e.g. a post-write
+ * verification flow) can opt out of the Ponder polling lag.
+ */
+export async function getCatalogFromChain(
   artist: Address,
 ): Promise<Catalog> {
   if (!REGISTRY) {

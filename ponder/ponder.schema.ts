@@ -250,3 +250,78 @@ export const fndArtistTokens = onchainTable(
     tokenIdx: index().on(table.contract, table.tokenId),
   }),
 )
+
+// ─── Catalog ─────────────────────────────────────────────────────────────
+//
+// On-chain registry where artist addresses publish pointers to contracts,
+// single tokens, and token ranges that belong to their public record.
+// Replaces the per-render viem multicall in `apps/web/src/lib/catalog.ts`
+// — the page reads from these three tables instead.
+//
+// Synthetic text IDs (e.g. `${artist}-${contractAddress}`) match the
+// rest of the schema and let removal events reuse the same composite
+// without a separate "where" delete. The on-chain contract itself
+// prevents duplicate inserts (see Catalog.sol's
+// ContractAlreadyRegistered / TokenAlreadyRegistered / TokenRangeAlready-
+// Registered guards), so a re-org that re-emits an Added event lands
+// the same row — `onConflictDoNothing` keeps that idempotent.
+//
+// `actor` is the `msg.sender` from the on-chain event — same as the
+// artist for direct calls, the operator address for `*For` calls.
+// Preserved as audit trail; the artist-page read filters strictly on
+// `artist`.
+
+export const catalogContracts = onchainTable(
+  "catalog_contracts",
+  (t) => ({
+    id: t.text().primaryKey(), // `${artist}-${contractAddress}`
+    artist: t.hex().notNull(),
+    contractAddress: t.hex().notNull(),
+    actor: t.hex().notNull(),
+    blockNumber: t.bigint().notNull(),
+    blockTime: t.bigint().notNull(),
+    txHash: t.hex().notNull(),
+  }),
+  (table) => ({
+    // /catalog/[address] reads (artist, ORDER BY blockNumber).
+    artistIdx: index().on(table.artist, table.blockNumber),
+    // Enables future "who declared contract X" cross-artist queries.
+    contractIdx: index().on(table.contractAddress),
+  }),
+)
+
+export const catalogTokens = onchainTable(
+  "catalog_tokens",
+  (t) => ({
+    id: t.text().primaryKey(), // `${artist}-${contractAddress}-${tokenId}`
+    artist: t.hex().notNull(),
+    contractAddress: t.hex().notNull(),
+    tokenId: t.bigint().notNull(),
+    actor: t.hex().notNull(),
+    blockNumber: t.bigint().notNull(),
+    blockTime: t.bigint().notNull(),
+    txHash: t.hex().notNull(),
+  }),
+  (table) => ({
+    artistIdx: index().on(table.artist, table.blockNumber),
+  }),
+)
+
+export const catalogRanges = onchainTable(
+  "catalog_ranges",
+  (t) => ({
+    // `${artist}-${contractAddress}-${startTokenId}-${endTokenId}`
+    id: t.text().primaryKey(),
+    artist: t.hex().notNull(),
+    contractAddress: t.hex().notNull(),
+    startTokenId: t.bigint().notNull(),
+    endTokenId: t.bigint().notNull(),
+    actor: t.hex().notNull(),
+    blockNumber: t.bigint().notNull(),
+    blockTime: t.bigint().notNull(),
+    txHash: t.hex().notNull(),
+  }),
+  (table) => ({
+    artistIdx: index().on(table.artist, table.blockNumber),
+  }),
+)

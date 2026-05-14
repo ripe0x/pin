@@ -4,6 +4,7 @@ import { sovereignAuctionHouseAbi } from "./abis/SovereignAuctionHouse"
 import { sovereignAuctionHouseFactoryAbi } from "./abis/SovereignAuctionHouseFactory"
 import { foundationNftAbi, collectionFactoryAbi } from "./abis/FoundationNFT"
 import { nftMarketAbi } from "./abis/NFTMarket"
+import { catalogAbi } from "./abis/Catalog"
 
 // Production address of the SovereignAuctionHouseFactory on mainnet. Pinned
 // here rather than imported from @pin/addresses so this directory can deploy
@@ -24,6 +25,22 @@ const NFT_COLLECTION_FACTORY_V1_ADDRESS =
   "0x3B612a5B49e025a6e4bA4eE4FB1EF46D13588059" as const
 const NFT_COLLECTION_FACTORY_V2_ADDRESS =
   "0x612E2DadDc89d91409e40f946f9f7CfE422e777E" as const
+
+// Catalog — single fixed address (no factory pattern). Deployed via
+// CREATE2 deterministic-deployment proxy with the same salt across
+// chains, so the same address appears everywhere we deploy. Address
+// matches `ARTIST_RECORD_REGISTRY[MAINNET_CHAIN_ID]` in
+// `packages/addresses/src/index.ts` — kept in sync manually because
+// `ponder/` deploys to Railway independently of the monorepo.
+const CATALOG_ADDRESS = "0x467a9c39e03C595EC3075D856f19C7386b6b915d" as const
+
+// Catalog deploy block on mainnet. Source: deploy receipt at
+// `contracts/broadcast/DeployCatalog.s.sol/1/run-latest.json` —
+// `receipts[0].blockNumber` is `0x17ed9e2`. Pinned because the contract
+// emitted zero events when this indexer wiring landed, so backfill is
+// near-instant; bumping startBlock later only matters if every existing
+// row gets re-emitted (it doesn't — the contract uses idempotent writes).
+const CATALOG_DEPLOY_BLOCK = 25_090_530
 
 // Foundation startBlock is aligned with PND's FACTORY_DEPLOY_BLOCK so the
 // activity feed shows a consistent ~7-month window across both contract
@@ -166,6 +183,19 @@ export default createConfig({
         parameter: "collection",
       }),
       startBlock: FND_START_BLOCK,
+    },
+
+    // ── Catalog ─────────────────────────────────────────────────────────
+    // Single fixed-address registry — no factory pattern. Each artist
+    // publishes contract/token/range pointers via writes; the six
+    // Added/Removed events on the contract are mirrored into the three
+    // `catalog_*` tables and the web app reads from those instead of
+    // doing a per-render multicall against the chain.
+    Catalog: {
+      chain: "mainnet",
+      abi: catalogAbi,
+      address: CATALOG_ADDRESS,
+      startBlock: CATALOG_DEPLOY_BLOCK,
     },
   },
 })

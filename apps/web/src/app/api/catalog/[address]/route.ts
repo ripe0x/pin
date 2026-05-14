@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { unstable_cache } from "next/cache"
 import type { Address } from "viem"
-import { pgCache } from "@/lib/pg-cache"
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit"
 import { getCatalog, type Catalog } from "@/lib/catalog"
 
@@ -10,10 +9,11 @@ import { getCatalog, type Catalog } from "@/lib/catalog"
  * Catalog. Returns the contracts/tokens/ranges declared
  * by the address.
  *
- * Two-layer cache (5 min L1 unstable_cache + L2 pgCache) per address.
- * The underlying registry view functions are cheap point lookups, but
- * caching the assembled payload keeps repeated dependency-report and
- * /record visits free of RPC.
+ * Backed by Ponder (Postgres reads against catalog_*) with a viem
+ * multicall fallback — see `apps/web/src/lib/catalog.ts`. The old
+ * two-layer cache (unstable_cache + pgCache) collapsed to a single
+ * `unstable_cache` layer once the indexer landed: Postgres itself is
+ * the cache, so wrapping it again with pgCache was redundant.
  *
  * Per-IP rate limit at 10 req/min mirrors the dependency-check route.
  */
@@ -22,24 +22,19 @@ type SerializedRecord = Omit<Catalog, "artist"> & {
   artist: string
 }
 
-const RECORD_TTL_S = 5 * 60
+const RECORD_TTL_S = 60
 
 const cached = unstable_cache(
-  (addressLower: string): Promise<SerializedRecord> =>
-    pgCache<SerializedRecord>(
-      `catalog:${addressLower}`,
-      RECORD_TTL_S,
-      async () => {
-        const r = await getCatalog(addressLower as Address)
-        return {
-          artist: r.artist,
-          contracts: r.contracts,
-          tokens: r.tokens,
-          tokenRanges: r.tokenRanges,
-        }
-      },
-    ),
-  ["catalog-v1"],
+  async (addressLower: string): Promise<SerializedRecord> => {
+    const r = await getCatalog(addressLower as Address)
+    return {
+      artist: r.artist,
+      contracts: r.contracts,
+      tokens: r.tokens,
+      tokenRanges: r.tokenRanges,
+    }
+  },
+  ["catalog-route-v2"],
   { revalidate: RECORD_TTL_S, tags: ["catalog"] },
 )
 

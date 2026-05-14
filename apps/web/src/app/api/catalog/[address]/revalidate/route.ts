@@ -1,14 +1,19 @@
 import { NextResponse } from "next/server"
 import { revalidateTag } from "next/cache"
-import { pgCacheInvalidate } from "@/lib/pg-cache"
 
 /**
  * Bust the record-cache for a specific artist after a write tx confirms.
  * Called by `useCatalogWrite` once `isSuccess` flips true.
  *
- * Two layers to clear:
- *   1. `unstable_cache` — invalidated by tag.
- *   2. `pgCache` — invalidated by key prefix.
+ * Only one layer to clear now — `unstable_cache`, invalidated by tag.
+ * The previous pgCache wrap is gone now that the underlying reads come
+ * straight from Ponder's Postgres tables (see lib/catalog.ts).
+ *
+ * Caveat: this kicks the request cache, not the indexer. Ponder polls
+ * mainnet HEAD every 300s, so a write that confirms now may not appear
+ * in the next render. The address param is preserved in the URL even
+ * though we revalidate the whole `catalog` tag — kept so a future per-
+ * artist invalidation strategy can slot in without breaking callers.
  *
  * Same pattern as `/api/auction/revalidate`. Safe to call unauthenticated:
  * worst case a stranger forces a re-fetch of public data, which is what
@@ -24,8 +29,6 @@ export async function POST(
   if (!/^0x[0-9a-fA-F]{40}$/.test(address)) {
     return NextResponse.json({ error: "invalid address" }, { status: 400 })
   }
-  const lower = address.toLowerCase()
-  await pgCacheInvalidate(`catalog:${lower}`)
   revalidateTag("catalog")
   return NextResponse.json({ ok: true })
 }

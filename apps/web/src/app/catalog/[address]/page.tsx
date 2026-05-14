@@ -4,6 +4,21 @@ import { redirect } from "next/navigation"
 import type { Address } from "viem"
 import { resolveEnsAddress, getArtistIdentity } from "@/lib/artist-queries"
 import { getCachedCatalog } from "@/lib/catalog-cache"
+
+/**
+ * Incremental Static Regeneration — the rendered HTML is cached at the
+ * CDN per-URL on first hit and regenerated in the background at most
+ * once every 60s. Most visitors hit a static response; the function
+ * only fires on revalidation, and when it does the underlying read is
+ * a handful of Postgres SELECTs (see `lib/catalog.ts`) instead of a
+ * viem multicall against the chain. Combined cost in steady state is
+ * ~nothing per visitor.
+ *
+ * The post-write `useCatalogWrite` flow still fires
+ * `revalidateTag("catalog")` from `/api/catalog/[address]/revalidate`,
+ * which evicts every ISR entry that touched `getCachedCatalog`.
+ */
+export const revalidate = 60
 import { AddressZorb } from "@/components/AddressZorb"
 import { CatalogSummary } from "@/components/catalog/CatalogSummary"
 import { AddEntrySection } from "@/components/catalog/AddEntrySection"
