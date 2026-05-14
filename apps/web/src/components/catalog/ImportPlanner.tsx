@@ -579,13 +579,30 @@ function WholeContractRow({
 }
 
 /**
- * <img> wrapper with a graceful failure path. Source registries link
- * out to a grab-bag of hosts (artist personal sites, IPFS gateways with
- * expired DNS, OpenSea CDN cache misses, etc.). When the primary URL
- * fails (404, expired SSL cert, CORS, etc.), swap to the IPFS fallback
- * if the source mapper populated one — otherwise hide so the gray
- * placeholder behind shows through.
+ * <img> wrapper with a graceful three-stage failure path. Source
+ * registries link out to a grab-bag of hosts (artist personal sites,
+ * IPFS gateways with expired DNS, NFT CDNs with stale TLS certs, etc.).
+ *
+ * Fallback chain:
+ *   1. primary `src`               — what the source feed gave us
+ *   2. `fallback` (e.g. IPFS pin) — if the mapper populated it
+ *   3. weserv image proxy          — fetches the primary server-side,
+ *                                    bypassing expired certs / CORS
+ *
+ * Stage 3 always exists (the proxy is public + free), so any image
+ * the server can fetch will ultimately render. Stage 3 only fires
+ * after stages 1+2 have both errored — so for the ~99% case where
+ * the primary works, we don't add a third-party hop.
  */
+const WESERV_PROXY = "https://images.weserv.nl/?url="
+
+function weservProxyUrl(src: string): string {
+  // weserv accepts URLs with or without protocol; stripping `https://`
+  // and `http://` keeps the encoded path shorter.
+  const stripped = src.replace(/^https?:\/\//, "")
+  return `${WESERV_PROXY}${encodeURIComponent(stripped)}`
+}
+
 function Thumb({
   src,
   fallback,
@@ -595,15 +612,19 @@ function Thumb({
   fallback?: string
   alt: string
 }) {
-  // `useState` keyed off `src` so a re-render with a new primary URL
-  // resets the fallback attempt. Without the key, a row swap would
-  // keep showing the previous row's fallback.
-  const [active, setActive] = useState(src)
-  const [triedFallback, setTriedFallback] = useState(false)
+  // 0 = primary, 1 = fallback, 2 = proxy, 3 = give up (hide).
+  // Keyed off `src` so a row swap (re-render with new primary URL)
+  // resets the chain.
+  const [stage, setStage] = useState(0)
   useEffect(() => {
-    setActive(src)
-    setTriedFallback(false)
+    setStage(0)
   }, [src])
+
+  const active = (() => {
+    if (stage === 0) return src
+    if (stage === 1 && fallback) return fallback
+    return weservProxyUrl(src)
+  })()
 
   return (
     // eslint-disable-next-line @next/next/no-img-element
@@ -613,11 +634,17 @@ function Thumb({
       className="h-full w-full object-cover"
       loading="lazy"
       onError={(e) => {
-        if (fallback && !triedFallback) {
-          setTriedFallback(true)
-          setActive(fallback)
+        // Stage 0 fail → try `fallback` if present, otherwise skip to proxy.
+        if (stage === 0) {
+          setStage(fallback ? 1 : 2)
           return
         }
+        if (stage === 1) {
+          setStage(2)
+          return
+        }
+        // Stage 2 (proxy) failed — last resort, hide the element so
+        // the gray placeholder behind shows through.
         ;(e.currentTarget as HTMLImageElement).style.display = "none"
       }}
     />
