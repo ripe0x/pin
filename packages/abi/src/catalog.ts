@@ -1,5 +1,5 @@
 // Auto-extracted from contracts/out/Catalog.sol/Catalog.json.
-// Re-run: node scripts/emit-record-registry-abi.mjs
+// Re-run: node scripts/emit-catalog-abi.mjs
 export const catalogAbi = [
   {
     "type": "function",
@@ -123,6 +123,93 @@ export const catalogAbi = [
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "getCatalogCountsOf",
+    "inputs": [
+      {
+        "name": "artist",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "contracts",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "tokens",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "tokenRanges",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getCatalogOf",
+    "inputs": [
+      {
+        "name": "artist",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "contracts",
+        "type": "address[]",
+        "internalType": "address[]"
+      },
+      {
+        "name": "tokens",
+        "type": "tuple[]",
+        "internalType": "struct Catalog.TokenPointer[]",
+        "components": [
+          {
+            "name": "contractAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "tokenId",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      },
+      {
+        "name": "tokenRanges",
+        "type": "tuple[]",
+        "internalType": "struct Catalog.TokenRangePointer[]",
+        "components": [
+          {
+            "name": "contractAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "startTokenId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "endTokenId",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",

@@ -6,14 +6,14 @@ import {Multicall} from "openzeppelin-contracts/contracts/utils/Multicall.sol";
 /// @title Catalog
 /// @notice Generic, immutable, public infrastructure where an artist
 ///         address can publish on-chain pointers that belong in its
-///         public artist record. A pointer is one of three things:
+///         public catalog. A pointer is one of three things:
 ///         a contract address, a single token on a contract, or a
 ///         contiguous range of token IDs on a contract.
 ///
 /// @dev    CORE MEANING (read carefully before consuming this contract):
 ///
-///         The registry only means: "this artist address added this
-///         pointer to its public artist record."
+///         The catalog only means: "this artist address added this
+///         pointer to its public catalog."
 ///
 ///         It does NOT prove authorship, provenance, token type,
 ///         authenticity, ownership, creator status, or endorsement.
@@ -52,12 +52,12 @@ import {Multicall} from "openzeppelin-contracts/contracts/utils/Multicall.sol";
 ///
 /// @dev    PER-CHAIN, DETERMINISTIC DEPLOYMENT:
 ///
-///         Each registry instance is scoped to the chain it's deployed
+///         Each catalog instance is scoped to the chain it's deployed
 ///         on. Pointers reference contracts on that same chain — there
 ///         is no `chainId` field because the deployment chain is the
-///         answer. Records on different chains are independent.
+///         answer. Catalogs on different chains are independent.
 ///
-///         To land the registry at the same address on every chain,
+///         To land the catalog at the same address on every chain,
 ///         deploy through the canonical CREATE2 deterministic-
 ///         deployment proxy (0x4e59b44847b379578588920cA78FbF26c0B4956C)
 ///         with a chosen salt. Identical addresses across chains
@@ -120,7 +120,7 @@ contract Catalog is Multicall {
     ///         pointer and is stored independently from a `TokenPointer`
     ///         — the same token can be registered as both an
     ///         `addToken` entry and a single-token range, and the two
-    ///         live in separate lists with separate keys. The registry
+    ///         live in separate lists with separate keys. The catalog
     ///         does not treat them as equivalent or deduplicate across
     ///         pointer types.
     /// @param contractAddress  The contract that holds the tokens. Must be non-zero.
@@ -177,15 +177,15 @@ contract Catalog is Multicall {
     // ─── Events ─────────────────────────────────────────────────────
 
     /// @notice Emitted when a contract pointer is added to an artist's
-    ///         record.
+    ///         catalog.
     /// @dev    `actor` is the `msg.sender` of the originating call —
     ///         either the artist (direct path) or an approved operator
     ///         (`*For` path). Including it inline makes the operator
     ///         attribution self-contained in the event so consumers can
-    ///         answer "who changed this record?" without correlating
+    ///         answer "who changed this catalog?" without correlating
     ///         against transaction sender out-of-band. For `*For` calls
     ///         `artist != actor`; for direct calls `artist == actor`.
-    /// @param artist           The artist whose record was modified.
+    /// @param artist           The artist whose catalog was modified.
     /// @param actor            The address that initiated the mutation.
     /// @param contractAddress  The contract address pointed at.
     event ContractAdded(
@@ -195,9 +195,9 @@ contract Catalog is Multicall {
     );
 
     /// @notice Emitted when a contract pointer is removed from an
-    ///         artist's record.
+    ///         artist's catalog.
     /// @dev    See `ContractAdded` for the `actor` rationale.
-    /// @param artist           The artist whose record was modified.
+    /// @param artist           The artist whose catalog was modified.
     /// @param actor            The address that initiated the mutation.
     /// @param contractAddress  The contract address that was removed.
     event ContractRemoved(
@@ -207,13 +207,13 @@ contract Catalog is Multicall {
     );
 
     /// @notice Emitted when a single-token pointer is added to an
-    ///         artist's record.
+    ///         artist's catalog.
     /// @dev    `tokenId` is intentionally NOT indexed — log topic slots
     ///         are limited to three, and `artist` + `actor` +
     ///         `contractAddress` are the more frequently filtered fields.
     ///         Indexers that need per-tokenId filtering can decode the
     ///         data segment.
-    /// @param artist           The artist whose record was modified.
+    /// @param artist           The artist whose catalog was modified.
     /// @param actor            The address that initiated the mutation.
     /// @param contractAddress  The contract that holds the token.
     /// @param tokenId          The specific token being pointed at.
@@ -225,9 +225,9 @@ contract Catalog is Multicall {
     );
 
     /// @notice Emitted when a single-token pointer is removed from an
-    ///         artist's record.
+    ///         artist's catalog.
     /// @dev    See `TokenAdded` for the indexing rationale.
-    /// @param artist           The artist whose record was modified.
+    /// @param artist           The artist whose catalog was modified.
     /// @param actor            The address that initiated the mutation.
     /// @param contractAddress  The contract that held the token.
     /// @param tokenId          The token id that was removed.
@@ -239,8 +239,8 @@ contract Catalog is Multicall {
     );
 
     /// @notice Emitted when a token-range pointer is added to an
-    ///         artist's record.
-    /// @param artist           The artist whose record was modified.
+    ///         artist's catalog.
+    /// @param artist           The artist whose catalog was modified.
     /// @param actor            The address that initiated the mutation.
     /// @param contractAddress  The contract that holds the tokens.
     /// @param startTokenId     Inclusive lower bound of the range.
@@ -254,8 +254,8 @@ contract Catalog is Multicall {
     );
 
     /// @notice Emitted when a token-range pointer is removed from an
-    ///         artist's record.
-    /// @param artist           The artist whose record was modified.
+    ///         artist's catalog.
+    /// @param artist           The artist whose catalog was modified.
     /// @param actor            The address that initiated the mutation.
     /// @param contractAddress  The contract that held the tokens.
     /// @param startTokenId     Inclusive lower bound that was removed.
@@ -302,29 +302,29 @@ contract Catalog is Multicall {
     error InvalidTokenRange();
 
     /// @notice Attempted to add a contract pointer that already exists
-    ///         in this artist's record.
+    ///         in this artist's catalog.
     error ContractAlreadyRegistered();
 
     /// @notice Attempted to remove a contract pointer that doesn't
-    ///         exist in this artist's record.
+    ///         exist in this artist's catalog.
     error ContractNotRegistered();
 
     /// @notice Attempted to add a token pointer that already exists in
-    ///         this artist's record.
+    ///         this artist's catalog.
     error TokenAlreadyRegistered();
 
     /// @notice Attempted to remove a token pointer that doesn't exist
-    ///         in this artist's record.
+    ///         in this artist's catalog.
     error TokenNotRegistered();
 
     /// @notice Attempted to add a token-range pointer that already
-    ///         exists in this artist's record. (Identity is the exact
+    ///         exists in this artist's catalog. (Identity is the exact
     ///         (contract, start, end) tuple; overlapping ranges with
     ///         different bounds are independent entries.)
     error TokenRangeAlreadyRegistered();
 
     /// @notice Attempted to remove a token-range pointer that doesn't
-    ///         exist in this artist's record.
+    ///         exist in this artist's catalog.
     error TokenRangeNotRegistered();
 
     // ─── Internal: authorization ────────────────────────────────────
@@ -400,7 +400,7 @@ contract Catalog is Multicall {
 
     // ─── Contract pointers ──────────────────────────────────────────
 
-    /// @notice Add a contract pointer to the caller's record.
+    /// @notice Add a contract pointer to the caller's catalog.
     /// @dev Reverts if the pointer already exists. Anyone (including
     ///      an EOA) may be referenced — the contract performs no
     ///      semantic checks beyond non-zero.
@@ -409,10 +409,10 @@ contract Catalog is Multicall {
         _addContract(msg.sender, contractAddress);
     }
 
-    /// @notice Add a contract pointer to `artist`'s record on its
+    /// @notice Add a contract pointer to `artist`'s catalog on its
     ///         behalf. Caller must be the artist or an approved
     ///         operator.
-    /// @param artist           Artist whose record is being updated.
+    /// @param artist           Artist whose catalog is being updated.
     /// @param contractAddress  Contract being pointed at. Must be non-zero.
     function addContractFor(
         address artist,
@@ -422,18 +422,18 @@ contract Catalog is Multicall {
         _addContract(artist, contractAddress);
     }
 
-    /// @notice Remove a contract pointer from the caller's record.
+    /// @notice Remove a contract pointer from the caller's catalog.
     /// @dev Reverts if the pointer doesn't exist.
-    /// @param contractAddress  Contract to remove from the record.
+    /// @param contractAddress  Contract to remove from the catalog.
     function removeContract(address contractAddress) external {
         _removeContract(msg.sender, contractAddress);
     }
 
-    /// @notice Remove a contract pointer from `artist`'s record on its
+    /// @notice Remove a contract pointer from `artist`'s catalog on its
     ///         behalf. Caller must be the artist or an approved
     ///         operator.
-    /// @param artist           Artist whose record is being updated.
-    /// @param contractAddress  Contract to remove from the record.
+    /// @param artist           Artist whose catalog is being updated.
+    /// @param contractAddress  Contract to remove from the catalog.
     function removeContractFor(
         address artist,
         address contractAddress
@@ -442,7 +442,7 @@ contract Catalog is Multicall {
         _removeContract(artist, contractAddress);
     }
 
-    /// @dev Push a contract pointer to `artist`'s list and record its
+    /// @dev Push a contract pointer to `artist`'s list and remember its
     ///      index. Emits `ContractAdded`.
     function _addContract(
         address artist,
@@ -503,7 +503,7 @@ contract Catalog is Multicall {
 
     /// @notice Check whether `artist` has registered a contract pointer
     ///         matching `contractAddress`.
-    /// @param artist           Artist whose record is being queried.
+    /// @param artist           Artist whose catalog is being queried.
     /// @param contractAddress  Contract being queried.
     /// @return                 True iff the pointer exists.
     function isContractRegistered(
@@ -513,10 +513,10 @@ contract Catalog is Multicall {
         return _contractIndexPlusOne[artist][getContractKey(contractAddress)] != 0;
     }
 
-    /// @notice Return every contract pointer in `artist`'s record.
+    /// @notice Return every contract pointer in `artist`'s catalog.
     /// @dev    Order is not guaranteed. For very large records prefer
     ///         `getContractsSlice` to avoid pulling the entire list.
-    /// @param artist  Artist whose record is being read.
+    /// @param artist  Artist whose catalog is being read.
     /// @return        Array of contract addresses.
     function getContracts(
         address artist
@@ -524,8 +524,8 @@ contract Catalog is Multicall {
         return _artistContracts[artist];
     }
 
-    /// @notice Number of contract pointers in `artist`'s record.
-    /// @param artist  Artist whose record is being read.
+    /// @notice Number of contract pointers in `artist`'s catalog.
+    /// @param artist  Artist whose catalog is being read.
     /// @return        Count of pointers.
     function getContractCount(
         address artist
@@ -535,7 +535,7 @@ contract Catalog is Multicall {
 
     /// @notice Indexed access to a single contract pointer.
     /// @dev    Reverts on out-of-bounds index (default array revert).
-    /// @param artist  Artist whose record is being read.
+    /// @param artist  Artist whose catalog is being read.
     /// @param index   Position in the unordered list.
     /// @return        Contract address of the pointer at `index`.
     function getContractAt(
@@ -553,7 +553,7 @@ contract Catalog is Multicall {
     ///             remaining elements
     /// @dev    Useful for frontends and indexers reading large records
     ///         without paying the gas of a full-array copy.
-    /// @param artist  Artist whose record is being read.
+    /// @param artist  Artist whose catalog is being read.
     /// @param start   Zero-based offset into the unordered list.
     /// @param count   Maximum number of items to return.
     /// @return        Up to `count` contract addresses starting at `start`.
@@ -588,7 +588,7 @@ contract Catalog is Multicall {
 
     // ─── Token pointers ─────────────────────────────────────────────
 
-    /// @notice Add a single-token pointer to the caller's record.
+    /// @notice Add a single-token pointer to the caller's catalog.
     /// @param contractAddress  Contract that holds the token. Must be non-zero.
     /// @param tokenId          Token id being pointed at.
     function addToken(
@@ -598,10 +598,10 @@ contract Catalog is Multicall {
         _addToken(msg.sender, contractAddress, tokenId);
     }
 
-    /// @notice Add a single-token pointer to `artist`'s record on its
+    /// @notice Add a single-token pointer to `artist`'s catalog on its
     ///         behalf. Caller must be the artist or an approved
     ///         operator.
-    /// @param artist           Artist whose record is being updated.
+    /// @param artist           Artist whose catalog is being updated.
     /// @param contractAddress  Contract that holds the token. Must be non-zero.
     /// @param tokenId          Token id being pointed at.
     function addTokenFor(
@@ -613,9 +613,9 @@ contract Catalog is Multicall {
         _addToken(artist, contractAddress, tokenId);
     }
 
-    /// @notice Remove a single-token pointer from the caller's record.
+    /// @notice Remove a single-token pointer from the caller's catalog.
     /// @param contractAddress  Contract that held the token.
-    /// @param tokenId          Token id to remove from the record.
+    /// @param tokenId          Token id to remove from the catalog.
     function removeToken(
         address contractAddress,
         uint256 tokenId
@@ -623,12 +623,12 @@ contract Catalog is Multicall {
         _removeToken(msg.sender, contractAddress, tokenId);
     }
 
-    /// @notice Remove a single-token pointer from `artist`'s record on
+    /// @notice Remove a single-token pointer from `artist`'s catalog on
     ///         its behalf. Caller must be the artist or an approved
     ///         operator.
-    /// @param artist           Artist whose record is being updated.
+    /// @param artist           Artist whose catalog is being updated.
     /// @param contractAddress  Contract that held the token.
-    /// @param tokenId          Token id to remove from the record.
+    /// @param tokenId          Token id to remove from the catalog.
     function removeTokenFor(
         address artist,
         address contractAddress,
@@ -638,7 +638,7 @@ contract Catalog is Multicall {
         _removeToken(artist, contractAddress, tokenId);
     }
 
-    /// @dev Push a token pointer to `artist`'s list and record its
+    /// @dev Push a token pointer to `artist`'s list and remember its
     ///      index. Emits `TokenAdded`.
     function _addToken(
         address artist,
@@ -694,7 +694,7 @@ contract Catalog is Multicall {
 
     /// @notice Check whether `artist` has registered a single-token
     ///         pointer matching `(contractAddress, tokenId)`.
-    /// @param artist           Artist whose record is being queried.
+    /// @param artist           Artist whose catalog is being queried.
     /// @param contractAddress  Contract being queried.
     /// @param tokenId          Token id being queried.
     /// @return                 True iff the pointer exists.
@@ -708,10 +708,10 @@ contract Catalog is Multicall {
         ] != 0;
     }
 
-    /// @notice Return every single-token pointer in `artist`'s record.
+    /// @notice Return every single-token pointer in `artist`'s catalog.
     /// @dev    Order is not guaranteed. For very large records prefer
     ///         `getTokensSlice` to avoid pulling the entire list.
-    /// @param artist  Artist whose record is being read.
+    /// @param artist  Artist whose catalog is being read.
     /// @return        Array of `TokenPointer` structs.
     function getTokens(
         address artist
@@ -719,8 +719,8 @@ contract Catalog is Multicall {
         return _artistTokens[artist];
     }
 
-    /// @notice Number of single-token pointers in `artist`'s record.
-    /// @param artist  Artist whose record is being read.
+    /// @notice Number of single-token pointers in `artist`'s catalog.
+    /// @param artist  Artist whose catalog is being read.
     /// @return        Count of pointers.
     function getTokenCount(
         address artist
@@ -730,7 +730,7 @@ contract Catalog is Multicall {
 
     /// @notice Indexed access to a single token pointer.
     /// @dev    Reverts on out-of-bounds index (default array revert).
-    /// @param artist           Artist whose record is being read.
+    /// @param artist           Artist whose catalog is being read.
     /// @param index            Position in the unordered list.
     /// @return contractAddress Contract address of the pointer at `index`.
     /// @return tokenId         Token id of the pointer at `index`.
@@ -747,7 +747,7 @@ contract Catalog is Multicall {
 
     /// @notice Slice access for paginated reads. See
     ///         `getContractsSlice` for the out-of-range semantics.
-    /// @param artist  Artist whose record is being read.
+    /// @param artist  Artist whose catalog is being read.
     /// @param start   Zero-based offset into the unordered list.
     /// @param count   Maximum number of items to return.
     /// @return        Up to `count` token pointers starting at `start`.
@@ -770,7 +770,7 @@ contract Catalog is Multicall {
 
     // ─── Token range pointers ───────────────────────────────────────
 
-    /// @notice Add a token-range pointer to the caller's record.
+    /// @notice Add a token-range pointer to the caller's catalog.
     /// @dev    Overlapping ranges are allowed; identity is the exact
     ///         `(contract, start, end)` tuple. Single-token ranges
     ///         (`start == end`) are valid.
@@ -785,10 +785,10 @@ contract Catalog is Multicall {
         _addTokenRange(msg.sender, contractAddress, startTokenId, endTokenId);
     }
 
-    /// @notice Add a token-range pointer to `artist`'s record on its
+    /// @notice Add a token-range pointer to `artist`'s catalog on its
     ///         behalf. Caller must be the artist or an approved
     ///         operator.
-    /// @param artist           Artist whose record is being updated.
+    /// @param artist           Artist whose catalog is being updated.
     /// @param contractAddress  Contract that holds the tokens. Must be non-zero.
     /// @param startTokenId     Inclusive lower bound. Must be <= endTokenId.
     /// @param endTokenId       Inclusive upper bound.
@@ -802,7 +802,7 @@ contract Catalog is Multicall {
         _addTokenRange(artist, contractAddress, startTokenId, endTokenId);
     }
 
-    /// @notice Remove a token-range pointer from the caller's record.
+    /// @notice Remove a token-range pointer from the caller's catalog.
     /// @param contractAddress  Contract that held the tokens.
     /// @param startTokenId     Inclusive lower bound that was added.
     /// @param endTokenId       Inclusive upper bound that was added.
@@ -814,10 +814,10 @@ contract Catalog is Multicall {
         _removeTokenRange(msg.sender, contractAddress, startTokenId, endTokenId);
     }
 
-    /// @notice Remove a token-range pointer from `artist`'s record on
+    /// @notice Remove a token-range pointer from `artist`'s catalog on
     ///         its behalf. Caller must be the artist or an approved
     ///         operator.
-    /// @param artist           Artist whose record is being updated.
+    /// @param artist           Artist whose catalog is being updated.
     /// @param contractAddress  Contract that held the tokens.
     /// @param startTokenId     Inclusive lower bound that was added.
     /// @param endTokenId       Inclusive upper bound that was added.
@@ -831,7 +831,7 @@ contract Catalog is Multicall {
         _removeTokenRange(artist, contractAddress, startTokenId, endTokenId);
     }
 
-    /// @dev Push a token-range pointer to `artist`'s list and record
+    /// @dev Push a token-range pointer to `artist`'s list and remember
     ///      its index. Reverts on inverted range. Emits `TokenRangeAdded`.
     function _addTokenRange(
         address artist,
@@ -921,7 +921,7 @@ contract Catalog is Multicall {
     /// @dev    Identity is the exact `(contract, start, end)` tuple;
     ///         this does NOT report ranges that merely cover the
     ///         queried bounds. Coverage logic belongs in indexers.
-    /// @param artist           Artist whose record is being queried.
+    /// @param artist           Artist whose catalog is being queried.
     /// @param contractAddress  Contract being queried.
     /// @param startTokenId     Inclusive lower bound being queried.
     /// @param endTokenId       Inclusive upper bound being queried.
@@ -938,10 +938,10 @@ contract Catalog is Multicall {
         ] != 0;
     }
 
-    /// @notice Return every token-range pointer in `artist`'s record.
+    /// @notice Return every token-range pointer in `artist`'s catalog.
     /// @dev    Order is not guaranteed. For very large records prefer
     ///         `getTokenRangesSlice` to avoid pulling the entire list.
-    /// @param artist  Artist whose record is being read.
+    /// @param artist  Artist whose catalog is being read.
     /// @return        Array of `TokenRangePointer` structs.
     function getTokenRanges(
         address artist
@@ -949,8 +949,8 @@ contract Catalog is Multicall {
         return _artistTokenRanges[artist];
     }
 
-    /// @notice Number of token-range pointers in `artist`'s record.
-    /// @param artist  Artist whose record is being read.
+    /// @notice Number of token-range pointers in `artist`'s catalog.
+    /// @param artist  Artist whose catalog is being read.
     /// @return        Count of pointers.
     function getTokenRangeCount(
         address artist
@@ -960,7 +960,7 @@ contract Catalog is Multicall {
 
     /// @notice Indexed access to a single token-range pointer.
     /// @dev    Reverts on out-of-bounds index (default array revert).
-    /// @param artist           Artist whose record is being read.
+    /// @param artist           Artist whose catalog is being read.
     /// @param index            Position in the unordered list.
     /// @return contractAddress Contract address of the pointer at `index`.
     /// @return startTokenId    Inclusive lower bound of the pointer at `index`.
@@ -979,7 +979,7 @@ contract Catalog is Multicall {
 
     /// @notice Slice access for paginated reads. See
     ///         `getContractsSlice` for the out-of-range semantics.
-    /// @param artist  Artist whose record is being read.
+    /// @param artist  Artist whose catalog is being read.
     /// @param start   Zero-based offset into the unordered list.
     /// @param count   Maximum number of items to return.
     /// @return        Up to `count` range pointers starting at `start`.
@@ -998,6 +998,81 @@ contract Catalog is Multicall {
             result[i] = list[start + i];
         }
         return result;
+    }
+
+    // ─── Combined catalog reads ─────────────────────────────────────
+
+    /// @notice Return every pointer in `artist`'s catalog — contracts,
+    ///         single tokens, and token ranges — in a single call.
+    /// @dev    Convenience wrapper over `getContracts`, `getTokens`, and
+    ///         `getTokenRanges`. The bundling is the only reason this
+    ///         function exists: one `eth_call` returns all three lists
+    ///         instead of three round-trips. Same data, same shapes —
+    ///         consumers that need only one or two of the lists should
+    ///         keep calling the per-type getters to avoid copying
+    ///         storage they don't need.
+    ///
+    ///         All caveats from the per-type getters apply:
+    ///           - Order is not stable across reads (swap-and-pop
+    ///             removal). Sort client-side if a stable ordering is
+    ///             required.
+    ///           - For very large catalogs the gas cost grows linearly
+    ///             across all three lists combined and the response may
+    ///             approach or exceed RPC return-size limits. Frontends
+    ///             rendering a known-large catalog should prefer the
+    ///             `*Slice` getters and paginate per type.
+    ///           - The arrays are independent; a token registered both
+    ///             as `addToken(c, id)` and `addTokenRange(c, id, id)`
+    ///             appears in both `tokens` and `tokenRanges`. Treat
+    ///             pointer types as distinct sets, not as a single
+    ///             deduplicated collection.
+    ///
+    ///         Reverts: none. Calling with `artist = address(0)` or any
+    ///         address with no entries returns three empty arrays.
+    /// @param  artist           Artist whose catalog is being read.
+    /// @return contracts        Array of contract pointers.
+    /// @return tokens           Array of single-token pointers.
+    /// @return tokenRanges      Array of token-range pointers.
+    function getCatalogOf(
+        address artist
+    ) external view returns (
+        address[] memory contracts,
+        TokenPointer[] memory tokens,
+        TokenRangePointer[] memory tokenRanges
+    ) {
+        return (
+            _artistContracts[artist],
+            _artistTokens[artist],
+            _artistTokenRanges[artist]
+        );
+    }
+
+    /// @notice Return the size of `artist`'s catalog across all three
+    ///         pointer types in a single call.
+    /// @dev    Cheaper than `getCatalogOf` when the caller only needs
+    ///         to know how big each list is — e.g. a summary header
+    ///         showing "12 contracts, 4 tokens, 1 range", an
+    ///         empty-state check, or a pagination-aware UI deciding
+    ///         how many `*Slice` pages to fetch.
+    ///
+    ///         Reverts: none. An address with no entries returns
+    ///         `(0, 0, 0)`.
+    /// @param  artist           Artist whose catalog is being measured.
+    /// @return contracts        Number of contract pointers.
+    /// @return tokens           Number of single-token pointers.
+    /// @return tokenRanges      Number of token-range pointers.
+    function getCatalogCountsOf(
+        address artist
+    ) external view returns (
+        uint256 contracts,
+        uint256 tokens,
+        uint256 tokenRanges
+    ) {
+        return (
+            _artistContracts[artist].length,
+            _artistTokens[artist].length,
+            _artistTokenRanges[artist].length
+        );
     }
 
     // ─── Operator delegation ────────────────────────────────────────

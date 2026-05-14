@@ -90,7 +90,7 @@ export const SOVEREIGN_AUCTION_HOUSE_FACTORY: Record<number, Address> = {
 // value below is the predicted address from the CREATE2 computation;
 // confirm with `cast code` after the first mainnet deploy.
 export const ARTIST_RECORD_REGISTRY: Record<number, Address> = {
-  [MAINNET_CHAIN_ID]: "0x43efE30B60Ef6Ba300D97F9936eDbE099d619CD4",
+  [MAINNET_CHAIN_ID]: "0x467a9c39e03C595EC3075D856f19C7386b6b915d",
 }
 
 // Helper for the address-or-null pattern: returns null when no factory is
