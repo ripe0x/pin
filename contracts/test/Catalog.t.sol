@@ -1164,4 +1164,114 @@ contract CatalogTest is Test {
         // And the writes did land.
         assertEq(reg.getContractCount(artist), 5);
     }
+
+    // ─── Combined catalog reads ─────────────────────────────────────
+
+    function test_getCatalogOf_emptyArtist_returnsEmptyArrays() public view {
+        (
+            address[] memory contracts,
+            Catalog.TokenPointer[] memory tokens,
+            Catalog.TokenRangePointer[] memory ranges
+        ) = reg.getCatalogOf(artist);
+        assertEq(contracts.length, 0);
+        assertEq(tokens.length, 0);
+        assertEq(ranges.length, 0);
+    }
+
+    function test_getCatalogOf_mixedPointers_returnsAllThree() public {
+        // Populate one of each type.
+        vm.prank(artist);
+        reg.addContract(NFT_ADDR);
+        vm.prank(artist);
+        reg.addToken(NFT_ADDR_B, 42);
+        vm.prank(artist);
+        reg.addTokenRange(NFT_ADDR_B, 1, 100);
+
+        (
+            address[] memory contracts,
+            Catalog.TokenPointer[] memory tokens,
+            Catalog.TokenRangePointer[] memory ranges
+        ) = reg.getCatalogOf(artist);
+
+        assertEq(contracts.length, 1);
+        assertEq(contracts[0], NFT_ADDR);
+
+        assertEq(tokens.length, 1);
+        assertEq(tokens[0].contractAddress, NFT_ADDR_B);
+        assertEq(tokens[0].tokenId, 42);
+
+        assertEq(ranges.length, 1);
+        assertEq(ranges[0].contractAddress, NFT_ADDR_B);
+        assertEq(ranges[0].startTokenId, 1);
+        assertEq(ranges[0].endTokenId, 100);
+
+        // Other artists' catalogs are isolated.
+        (
+            address[] memory bContracts,
+            Catalog.TokenPointer[] memory bTokens,
+            Catalog.TokenRangePointer[] memory bRanges
+        ) = reg.getCatalogOf(artistB);
+        assertEq(bContracts.length, 0);
+        assertEq(bTokens.length, 0);
+        assertEq(bRanges.length, 0);
+    }
+
+    function test_getCatalogOf_zeroAddress_isEmptyAndDoesNotRevert() public view {
+        // Passing address(0) returns three empty arrays — no special
+        // case for the zero address on reads. Writes still reject it.
+        (
+            address[] memory contracts,
+            Catalog.TokenPointer[] memory tokens,
+            Catalog.TokenRangePointer[] memory ranges
+        ) = reg.getCatalogOf(address(0));
+        assertEq(contracts.length, 0);
+        assertEq(tokens.length, 0);
+        assertEq(ranges.length, 0);
+    }
+
+    function test_getCatalogCountsOf_emptyArtist_isZeroes() public view {
+        (uint256 c, uint256 t, uint256 r) = reg.getCatalogCountsOf(artist);
+        assertEq(c, 0);
+        assertEq(t, 0);
+        assertEq(r, 0);
+    }
+
+    function test_getCatalogCountsOf_matchesIndividualCounts() public {
+        // Populate with a deliberately uneven mix so we can prove each
+        // count comes from its own list, not from cross-talk.
+        vm.startPrank(artist);
+        reg.addContract(NFT_ADDR);
+        reg.addContract(NFT_ADDR_B);
+        reg.addContract(address(0xC0FE));
+        reg.addToken(NFT_ADDR, 1);
+        reg.addToken(NFT_ADDR, 2);
+        reg.addTokenRange(NFT_ADDR_B, 1, 10);
+        vm.stopPrank();
+
+        (uint256 c, uint256 t, uint256 r) = reg.getCatalogCountsOf(artist);
+        assertEq(c, 3);
+        assertEq(t, 2);
+        assertEq(r, 1);
+
+        // Equal to what the per-type count getters would return.
+        assertEq(c, reg.getContractCount(artist));
+        assertEq(t, reg.getTokenCount(artist));
+        assertEq(r, reg.getTokenRangeCount(artist));
+    }
+
+    function test_getCatalogCountsOf_tracksRemovals() public {
+        vm.prank(artist);
+        reg.addContract(NFT_ADDR);
+        vm.prank(artist);
+        reg.addContract(NFT_ADDR_B);
+
+        (uint256 c0,,) = reg.getCatalogCountsOf(artist);
+        assertEq(c0, 2);
+
+        vm.prank(artist);
+        reg.removeContract(NFT_ADDR);
+
+        (uint256 c1,,) = reg.getCatalogCountsOf(artist);
+        assertEq(c1, 1);
+    }
 }
