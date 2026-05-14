@@ -86,7 +86,7 @@ export type ContractMapEntry = {
   kind: "1of1" | "drop" | null
   note: string
   /** True iff the artist has declared this contract in the on-chain
-   * ArtistRecordRegistry. Independent of `confidence` — a contract can
+   * CatalogRegistry. Independent of `confidence` — a contract can
    * be both auto-detected (Known/Detected confidence) AND declared. */
   declaredInRegistry: boolean
 }

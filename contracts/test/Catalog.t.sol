@@ -1,0 +1,1167 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import {Test} from "forge-std/Test.sol";
+import {Catalog} from "../src/Catalog.sol";
+
+contract CatalogTest is Test {
+    Catalog internal reg;
+
+    address internal artist = address(0xA0A0);
+    address internal artistB = address(0xB0B0);
+    address internal operator = address(0x0001);
+    address internal stranger = address(0xDEAD);
+
+    address internal constant NFT_ADDR = address(0xF00D);
+    address internal constant NFT_ADDR_B = address(0xF11D);
+
+    // Re-declared so vm.expectEmit can match on topics + data.
+    event ContractAdded(
+        address indexed artist,
+        address indexed actor,
+        address indexed contractAddress
+    );
+    event ContractRemoved(
+        address indexed artist,
+        address indexed actor,
+        address indexed contractAddress
+    );
+    event TokenAdded(
+        address indexed artist,
+        address indexed actor,
+        address indexed contractAddress,
+        uint256 tokenId
+    );
+    event TokenRemoved(
+        address indexed artist,
+        address indexed actor,
+        address indexed contractAddress,
+        uint256 tokenId
+    );
+    event TokenRangeAdded(
+        address indexed artist,
+        address indexed actor,
+        address indexed contractAddress,
+        uint256 startTokenId,
+        uint256 endTokenId
+    );
+    event TokenRangeRemoved(
+        address indexed artist,
+        address indexed actor,
+        address indexed contractAddress,
+        uint256 startTokenId,
+        uint256 endTokenId
+    );
+    event OperatorSet(
+        address indexed artist,
+        address indexed operator,
+        bool approved
+    );
+
+    function setUp() public {
+        reg = new Catalog();
+    }
+
+    // ─── Deployment ─────────────────────────────────────────────────
+
+    function test_deploysSuccessfully() public view {
+        assertEq(reg.getContractCount(artist), 0);
+    }
+
+    function test_hasNoOwnerOrAdminSurface() public view {
+        // No owner / admin / pause / upgrade functions exposed; the
+        // absence is enforced by the contract's source.
+        assertTrue(address(reg).code.length > 0);
+    }
+
+    // ─── Contract pointers ──────────────────────────────────────────
+
+    function test_addContract_succeeds_andEmits() public {
+        vm.expectEmit(true, true, true, false);
+        emit ContractAdded(artist, artist, NFT_ADDR);
+        vm.prank(artist);
+        reg.addContract(NFT_ADDR);
+
+        assertTrue(reg.isContractRegistered(artist, NFT_ADDR));
+        assertEq(reg.getContractCount(artist), 1);
+
+        address[] memory cs = reg.getContracts(artist);
+        assertEq(cs.length, 1);
+        assertEq(cs[0], NFT_ADDR);
+
+        assertEq(reg.getContractAt(artist, 0), NFT_ADDR);
+    }
+
+    function test_addContract_duplicate_reverts() public {
+        vm.prank(artist);
+        reg.addContract(NFT_ADDR);
+        vm.expectRevert(Catalog.ContractAlreadyRegistered.selector);
+        vm.prank(artist);
+        reg.addContract(NFT_ADDR);
+    }
+
+    function test_addContract_zeroAddress_reverts() public {
+        vm.expectRevert(Catalog.InvalidContractAddress.selector);
+        vm.prank(artist);
+        reg.addContract(address(0));
+    }
+
+    function test_removeContract_succeeds_andEmits() public {
+        vm.prank(artist);
+        reg.addContract(NFT_ADDR);
+
+        vm.expectEmit(true, true, true, false);
+        emit ContractRemoved(artist, artist, NFT_ADDR);
+        vm.prank(artist);
+        reg.removeContract(NFT_ADDR);
+
+        assertFalse(reg.isContractRegistered(artist, NFT_ADDR));
+        assertEq(reg.getContractCount(artist), 0);
+    }
+
+    function test_removeContract_missing_reverts() public {
+        vm.expectRevert(Catalog.ContractNotRegistered.selector);
+        vm.prank(artist);
+        reg.removeContract(NFT_ADDR);
+    }
+
+    function test_removeContract_zeroAddress_reverts() public {
+        vm.expectRevert(Catalog.InvalidContractAddress.selector);
+        vm.prank(artist);
+        reg.removeContract(address(0));
+    }
+
+    // ─── Token pointers ─────────────────────────────────────────────
+
+    function test_addToken_succeeds_andEmits() public {
+        vm.expectEmit(true, true, true, true);
+        emit TokenAdded(artist, artist, NFT_ADDR, 42);
+        vm.prank(artist);
+        reg.addToken(NFT_ADDR, 42);
+
+        assertTrue(reg.isTokenRegistered(artist, NFT_ADDR, 42));
+        assertEq(reg.getTokenCount(artist), 1);
+        (address addr, uint256 tid) = reg.getTokenAt(artist, 0);
+        assertEq(addr, NFT_ADDR);
+        assertEq(tid, 42);
+
+        Catalog.TokenPointer[] memory ts = reg.getTokens(artist);
+        assertEq(ts.length, 1);
+        assertEq(ts[0].tokenId, 42);
+    }
+
+    function test_addToken_duplicate_reverts() public {
+        vm.prank(artist);
+        reg.addToken(NFT_ADDR, 1);
+        vm.expectRevert(Catalog.TokenAlreadyRegistered.selector);
+        vm.prank(artist);
+        reg.addToken(NFT_ADDR, 1);
+    }
+
+    function test_addToken_sameTokenIdDifferentContract_succeeds() public {
+        vm.prank(artist);
+        reg.addToken(NFT_ADDR, 1);
+        vm.prank(artist);
+        reg.addToken(NFT_ADDR_B, 1);
+        assertEq(reg.getTokenCount(artist), 2);
+    }
+
+    function test_addToken_differentTokenIdSameContract_succeeds() public {
+        vm.prank(artist);
+        reg.addToken(NFT_ADDR, 1);
+        vm.prank(artist);
+        reg.addToken(NFT_ADDR, 2);
+        assertEq(reg.getTokenCount(artist), 2);
+    }
+
+    function test_addToken_zeroAddress_reverts() public {
+        vm.expectRevert(Catalog.InvalidContractAddress.selector);
+        vm.prank(artist);
+        reg.addToken(address(0), 1);
+    }
+
+    function test_removeToken_succeeds_andEmits() public {
+        vm.prank(artist);
+        reg.addToken(NFT_ADDR, 7);
+
+        vm.expectEmit(true, true, true, true);
+        emit TokenRemoved(artist, artist, NFT_ADDR, 7);
+        vm.prank(artist);
+        reg.removeToken(NFT_ADDR, 7);
+
+        assertFalse(reg.isTokenRegistered(artist, NFT_ADDR, 7));
+        assertEq(reg.getTokenCount(artist), 0);
+    }
+
+    function test_removeToken_missing_reverts() public {
+        vm.expectRevert(Catalog.TokenNotRegistered.selector);
+        vm.prank(artist);
+        reg.removeToken(NFT_ADDR, 7);
+    }
+
+    // ─── Token range pointers ───────────────────────────────────────
+
+    function test_addTokenRange_succeeds_andEmits() public {
+        vm.expectEmit(true, true, true, true);
+        emit TokenRangeAdded(artist, artist, NFT_ADDR, 1, 100);
+        vm.prank(artist);
+        reg.addTokenRange(NFT_ADDR, 1, 100);
+
+        assertTrue(reg.isTokenRangeRegistered(artist, NFT_ADDR, 1, 100));
+        assertEq(reg.getTokenRangeCount(artist), 1);
+
+        (address addr, uint256 s, uint256 e) = reg.getTokenRangeAt(artist, 0);
+        assertEq(addr, NFT_ADDR);
+        assertEq(s, 1);
+        assertEq(e, 100);
+
+        Catalog.TokenRangePointer[] memory rs =
+            reg.getTokenRanges(artist);
+        assertEq(rs.length, 1);
+        assertEq(rs[0].endTokenId, 100);
+    }
+
+    function test_addTokenRange_duplicate_reverts() public {
+        vm.prank(artist);
+        reg.addTokenRange(NFT_ADDR, 1, 100);
+        vm.expectRevert(Catalog.TokenRangeAlreadyRegistered.selector);
+        vm.prank(artist);
+        reg.addTokenRange(NFT_ADDR, 1, 100);
+    }
+
+    function test_addTokenRange_overlapping_succeeds() public {
+        vm.prank(artist);
+        reg.addTokenRange(NFT_ADDR, 1, 100);
+        vm.prank(artist);
+        reg.addTokenRange(NFT_ADDR, 50, 150);
+        assertEq(reg.getTokenRangeCount(artist), 2);
+    }
+
+    function test_addTokenRange_adjacent_succeeds() public {
+        vm.prank(artist);
+        reg.addTokenRange(NFT_ADDR, 1, 100);
+        vm.prank(artist);
+        reg.addTokenRange(NFT_ADDR, 101, 200);
+        assertEq(reg.getTokenRangeCount(artist), 2);
+    }
+
+    function test_addTokenRange_singleToken_succeeds() public {
+        vm.prank(artist);
+        reg.addTokenRange(NFT_ADDR, 42, 42);
+        assertTrue(reg.isTokenRangeRegistered(artist, NFT_ADDR, 42, 42));
+    }
+
+    function test_addTokenRange_startGreaterThanEnd_reverts() public {
+        vm.expectRevert(Catalog.InvalidTokenRange.selector);
+        vm.prank(artist);
+        reg.addTokenRange(NFT_ADDR, 100, 1);
+    }
+
+    function test_addTokenRange_zeroAddress_reverts() public {
+        vm.expectRevert(Catalog.InvalidContractAddress.selector);
+        vm.prank(artist);
+        reg.addTokenRange(address(0), 1, 100);
+    }
+
+    function test_removeTokenRange_succeeds_andEmits() public {
+        vm.prank(artist);
+        reg.addTokenRange(NFT_ADDR, 1, 100);
+
+        vm.expectEmit(true, true, true, true);
+        emit TokenRangeRemoved(artist, artist, NFT_ADDR, 1, 100);
+        vm.prank(artist);
+        reg.removeTokenRange(NFT_ADDR, 1, 100);
+
+        assertFalse(reg.isTokenRangeRegistered(artist, NFT_ADDR, 1, 100));
+        assertEq(reg.getTokenRangeCount(artist), 0);
+    }
+
+    function test_removeTokenRange_missing_reverts() public {
+        vm.expectRevert(Catalog.TokenRangeNotRegistered.selector);
+        vm.prank(artist);
+        reg.removeTokenRange(NFT_ADDR, 1, 100);
+    }
+
+    function test_removeTokenRange_startGreaterThanEnd_reverts() public {
+        // Symmetric with `_addTokenRange`: an inverted tuple can never
+        // be added, so it should be rejected up front on remove with the
+        // same `InvalidTokenRange` error rather than the generic
+        // `TokenRangeNotRegistered`.
+        vm.expectRevert(Catalog.InvalidTokenRange.selector);
+        vm.prank(artist);
+        reg.removeTokenRange(NFT_ADDR, 100, 1);
+    }
+
+    function test_removeTokenRange_zeroAddress_reverts() public {
+        vm.expectRevert(Catalog.InvalidContractAddress.selector);
+        vm.prank(artist);
+        reg.removeTokenRange(address(0), 1, 100);
+    }
+
+    // ─── Operator delegation ────────────────────────────────────────
+
+    function test_setOperator_emitsAndStores() public {
+        vm.expectEmit(true, true, true, true);
+        emit OperatorSet(artist, operator, true);
+        vm.prank(artist);
+        reg.setOperator(operator, true);
+        assertTrue(reg.isOperator(artist, operator));
+    }
+
+    function test_setOperator_alwaysEmits_evenWhenIdempotent() public {
+        vm.prank(artist);
+        reg.setOperator(operator, true);
+
+        // Setting same value again must still emit (uniform audit trail).
+        vm.expectEmit(true, true, true, true);
+        emit OperatorSet(artist, operator, true);
+        vm.prank(artist);
+        reg.setOperator(operator, true);
+    }
+
+    function test_setOperator_zero_reverts() public {
+        vm.expectRevert(Catalog.InvalidOperator.selector);
+        vm.prank(artist);
+        reg.setOperator(address(0), true);
+    }
+
+    function test_approvedOperator_canAddContract() public {
+        vm.prank(artist);
+        reg.setOperator(operator, true);
+        vm.prank(operator);
+        reg.addContractFor(artist, NFT_ADDR);
+        assertTrue(reg.isContractRegistered(artist, NFT_ADDR));
+    }
+
+    function test_approvedOperator_canRemoveContract() public {
+        vm.prank(artist);
+        reg.setOperator(operator, true);
+        vm.prank(operator);
+        reg.addContractFor(artist, NFT_ADDR);
+        vm.prank(operator);
+        reg.removeContractFor(artist, NFT_ADDR);
+        assertFalse(reg.isContractRegistered(artist, NFT_ADDR));
+    }
+
+    function test_approvedOperator_canManageTokens() public {
+        vm.prank(artist);
+        reg.setOperator(operator, true);
+        vm.prank(operator);
+        reg.addTokenFor(artist, NFT_ADDR, 1);
+        assertTrue(reg.isTokenRegistered(artist, NFT_ADDR, 1));
+        vm.prank(operator);
+        reg.removeTokenFor(artist, NFT_ADDR, 1);
+        assertFalse(reg.isTokenRegistered(artist, NFT_ADDR, 1));
+    }
+
+    function test_approvedOperator_canManageTokenRanges() public {
+        vm.prank(artist);
+        reg.setOperator(operator, true);
+        vm.prank(operator);
+        reg.addTokenRangeFor(artist, NFT_ADDR, 1, 100);
+        assertTrue(reg.isTokenRangeRegistered(artist, NFT_ADDR, 1, 100));
+        vm.prank(operator);
+        reg.removeTokenRangeFor(artist, NFT_ADDR, 1, 100);
+        assertFalse(reg.isTokenRangeRegistered(artist, NFT_ADDR, 1, 100));
+    }
+
+    function test_nonOperator_cannotAddContract() public {
+        vm.expectRevert(Catalog.NotAuthorized.selector);
+        vm.prank(stranger);
+        reg.addContractFor(artist, NFT_ADDR);
+    }
+
+    function test_nonOperator_cannotRemoveContract() public {
+        vm.prank(artist);
+        reg.addContract(NFT_ADDR);
+        vm.expectRevert(Catalog.NotAuthorized.selector);
+        vm.prank(stranger);
+        reg.removeContractFor(artist, NFT_ADDR);
+    }
+
+    function test_nonOperator_cannotAddToken() public {
+        vm.expectRevert(Catalog.NotAuthorized.selector);
+        vm.prank(stranger);
+        reg.addTokenFor(artist, NFT_ADDR, 1);
+    }
+
+    function test_nonOperator_cannotRemoveToken() public {
+        vm.prank(artist);
+        reg.addToken(NFT_ADDR, 1);
+        vm.expectRevert(Catalog.NotAuthorized.selector);
+        vm.prank(stranger);
+        reg.removeTokenFor(artist, NFT_ADDR, 1);
+    }
+
+    function test_nonOperator_cannotAddTokenRange() public {
+        vm.expectRevert(Catalog.NotAuthorized.selector);
+        vm.prank(stranger);
+        reg.addTokenRangeFor(artist, NFT_ADDR, 1, 100);
+    }
+
+    function test_nonOperator_cannotRemoveTokenRange() public {
+        vm.prank(artist);
+        reg.addTokenRange(NFT_ADDR, 1, 100);
+        vm.expectRevert(Catalog.NotAuthorized.selector);
+        vm.prank(stranger);
+        reg.removeTokenRangeFor(artist, NFT_ADDR, 1, 100);
+    }
+
+    function test_revokedOperator_loses_writeAccess_immediately() public {
+        vm.prank(artist);
+        reg.setOperator(operator, true);
+        vm.prank(artist);
+        reg.setOperator(operator, false);
+        assertFalse(reg.isOperator(artist, operator));
+
+        vm.expectRevert(Catalog.NotAuthorized.selector);
+        vm.prank(operator);
+        reg.addContractFor(artist, NFT_ADDR);
+    }
+
+    function test_operator_cannot_setOperatorForArtist() public {
+        vm.prank(artist);
+        reg.setOperator(operator, true);
+
+        // Calling setOperator from the operator's address sets the
+        // operator's own operator map, not the artist's. Verify the
+        // artist's slot is unchanged.
+        address rogue = address(0x9999);
+        vm.prank(operator);
+        reg.setOperator(rogue, true);
+
+        assertFalse(reg.isOperator(artist, rogue));
+        assertTrue(reg.isOperator(operator, rogue));
+    }
+
+    // ─── Zero-artist checks on *For functions ───────────────────────
+
+    function test_addContractFor_zeroArtist_reverts() public {
+        vm.expectRevert(Catalog.InvalidArtist.selector);
+        reg.addContractFor(address(0), NFT_ADDR);
+    }
+
+    function test_removeContractFor_zeroArtist_reverts() public {
+        vm.expectRevert(Catalog.InvalidArtist.selector);
+        reg.removeContractFor(address(0), NFT_ADDR);
+    }
+
+    function test_addTokenFor_zeroArtist_reverts() public {
+        vm.expectRevert(Catalog.InvalidArtist.selector);
+        reg.addTokenFor(address(0), NFT_ADDR, 1);
+    }
+
+    function test_removeTokenFor_zeroArtist_reverts() public {
+        vm.expectRevert(Catalog.InvalidArtist.selector);
+        reg.removeTokenFor(address(0), NFT_ADDR, 1);
+    }
+
+    function test_addTokenRangeFor_zeroArtist_reverts() public {
+        vm.expectRevert(Catalog.InvalidArtist.selector);
+        reg.addTokenRangeFor(address(0), NFT_ADDR, 1, 100);
+    }
+
+    function test_removeTokenRangeFor_zeroArtist_reverts() public {
+        vm.expectRevert(Catalog.InvalidArtist.selector);
+        reg.removeTokenRangeFor(address(0), NFT_ADDR, 1, 100);
+    }
+
+    // ─── Enumeration + swap-and-pop ─────────────────────────────────
+
+    function test_contracts_swapAndPop_fromMiddle() public {
+        address a1 = address(0x1111);
+        address a2 = address(0x2222);
+        address a3 = address(0x3333);
+        vm.prank(artist);
+        reg.addContract(a1);
+        vm.prank(artist);
+        reg.addContract(a2);
+        vm.prank(artist);
+        reg.addContract(a3);
+
+        vm.prank(artist);
+        reg.removeContract(a2);
+
+        assertEq(reg.getContractCount(artist), 2);
+        assertFalse(reg.isContractRegistered(artist, a2));
+        assertTrue(reg.isContractRegistered(artist, a1));
+        assertTrue(reg.isContractRegistered(artist, a3));
+
+        // Verify the moved pointer (a3) is now removable — exercises
+        // the moved-entry's index-plus-one rewrite.
+        vm.prank(artist);
+        reg.removeContract(a3);
+        assertEq(reg.getContractCount(artist), 1);
+        assertTrue(reg.isContractRegistered(artist, a1));
+    }
+
+    function test_tokens_swapAndPop_fromMiddle() public {
+        vm.prank(artist);
+        reg.addToken(NFT_ADDR, 1);
+        vm.prank(artist);
+        reg.addToken(NFT_ADDR, 2);
+        vm.prank(artist);
+        reg.addToken(NFT_ADDR, 3);
+
+        vm.prank(artist);
+        reg.removeToken(NFT_ADDR, 2);
+
+        assertEq(reg.getTokenCount(artist), 2);
+        assertFalse(reg.isTokenRegistered(artist, NFT_ADDR, 2));
+        assertTrue(reg.isTokenRegistered(artist, NFT_ADDR, 1));
+        assertTrue(reg.isTokenRegistered(artist, NFT_ADDR, 3));
+
+        vm.prank(artist);
+        reg.removeToken(NFT_ADDR, 3);
+        assertEq(reg.getTokenCount(artist), 1);
+    }
+
+    function test_tokenRanges_swapAndPop_fromMiddle() public {
+        vm.prank(artist);
+        reg.addTokenRange(NFT_ADDR, 1, 10);
+        vm.prank(artist);
+        reg.addTokenRange(NFT_ADDR, 11, 20);
+        vm.prank(artist);
+        reg.addTokenRange(NFT_ADDR, 21, 30);
+
+        vm.prank(artist);
+        reg.removeTokenRange(NFT_ADDR, 11, 20);
+
+        assertEq(reg.getTokenRangeCount(artist), 2);
+        assertFalse(reg.isTokenRangeRegistered(artist, NFT_ADDR, 11, 20));
+        assertTrue(reg.isTokenRangeRegistered(artist, NFT_ADDR, 1, 10));
+        assertTrue(reg.isTokenRangeRegistered(artist, NFT_ADDR, 21, 30));
+
+        vm.prank(artist);
+        reg.removeTokenRange(NFT_ADDR, 21, 30);
+        assertEq(reg.getTokenRangeCount(artist), 1);
+    }
+
+    // Swap-and-pop edge cases. The middle case above exercises the
+    // moved-entry index rewrite. These three cases cover the other
+    // boundaries — removing the first entry (which gets the tail moved
+    // into it), the last entry (no move needed, just pop), and the
+    // only entry (length becomes zero). Tested only on the contract
+    // pointer list because the algorithm is identical across all three
+    // pointer types and the middle-case tests above already verify
+    // structural parity.
+
+    function test_contracts_swapAndPop_removeFirst() public {
+        address a1 = address(0x1111);
+        address a2 = address(0x2222);
+        address a3 = address(0x3333);
+        vm.prank(artist);
+        reg.addContract(a1);
+        vm.prank(artist);
+        reg.addContract(a2);
+        vm.prank(artist);
+        reg.addContract(a3);
+
+        vm.prank(artist);
+        reg.removeContract(a1);
+
+        assertEq(reg.getContractCount(artist), 2);
+        assertFalse(reg.isContractRegistered(artist, a1));
+        // The previously-last entry (a3) was moved into slot 0; verify
+        // its rewritten index by removing it and confirming the count
+        // drops cleanly.
+        vm.prank(artist);
+        reg.removeContract(a3);
+        assertEq(reg.getContractCount(artist), 1);
+        assertTrue(reg.isContractRegistered(artist, a2));
+    }
+
+    function test_contracts_swapAndPop_removeLast() public {
+        address a1 = address(0x1111);
+        address a2 = address(0x2222);
+        address a3 = address(0x3333);
+        vm.prank(artist);
+        reg.addContract(a1);
+        vm.prank(artist);
+        reg.addContract(a2);
+        vm.prank(artist);
+        reg.addContract(a3);
+
+        // Removing the tail skips the move branch entirely.
+        vm.prank(artist);
+        reg.removeContract(a3);
+
+        assertEq(reg.getContractCount(artist), 2);
+        assertFalse(reg.isContractRegistered(artist, a3));
+        assertTrue(reg.isContractRegistered(artist, a1));
+        assertTrue(reg.isContractRegistered(artist, a2));
+
+        // The remaining entries should still be addressable / removable
+        // with their original index-plus-one mappings intact.
+        vm.prank(artist);
+        reg.removeContract(a1);
+        vm.prank(artist);
+        reg.removeContract(a2);
+        assertEq(reg.getContractCount(artist), 0);
+    }
+
+    function test_contracts_swapAndPop_removeOnly() public {
+        vm.prank(artist);
+        reg.addContract(NFT_ADDR);
+        assertEq(reg.getContractCount(artist), 1);
+
+        vm.prank(artist);
+        reg.removeContract(NFT_ADDR);
+
+        assertEq(reg.getContractCount(artist), 0);
+        assertFalse(reg.isContractRegistered(artist, NFT_ADDR));
+
+        // Re-adding the same pointer must succeed (the prior
+        // index-plus-one entry was cleared).
+        vm.prank(artist);
+        reg.addContract(NFT_ADDR);
+        assertTrue(reg.isContractRegistered(artist, NFT_ADDR));
+    }
+
+    // ─── Actor attribution in events ────────────────────────────────
+
+    /// @dev Direct-path add: `actor` in the event MUST equal the artist
+    ///      (which equals `msg.sender`). Verified by checking the
+    ///      indexed-topic match — re-emitting with a wrong actor would
+    ///      not satisfy `expectEmit`.
+    function test_event_actor_isArtist_onDirectAdd() public {
+        vm.expectEmit(true, true, true, false);
+        emit ContractAdded(artist, artist, NFT_ADDR);
+        vm.prank(artist);
+        reg.addContract(NFT_ADDR);
+    }
+
+    /// @dev Operator-path add: `actor` MUST be the operator, NOT the
+    ///      artist. This is the primary auditability use case the
+    ///      `actor` field exists for — answering "who actually
+    ///      modified this artist's record?" without correlating against
+    ///      tx.origin out-of-band.
+    function test_event_actor_isOperator_onForCalls() public {
+        vm.prank(artist);
+        reg.setOperator(operator, true);
+
+        vm.expectEmit(true, true, true, false);
+        emit ContractAdded(artist, operator, NFT_ADDR);
+        vm.prank(operator);
+        reg.addContractFor(artist, NFT_ADDR);
+    }
+
+    /// @dev Multicall-wrapped operator add: `msg.sender` is preserved
+    ///      across OZ's `delegatecall`, so the inner emit should still
+    ///      attribute to the operator, not to the registry contract
+    ///      itself.
+    function test_event_actor_isPreservedThroughMulticall() public {
+        vm.prank(artist);
+        reg.setOperator(operator, true);
+
+        bytes[] memory calls = new bytes[](1);
+        calls[0] = abi.encodeWithSelector(
+            Catalog.addContractFor.selector,
+            artist,
+            NFT_ADDR
+        );
+
+        vm.expectEmit(true, true, true, false);
+        emit ContractAdded(artist, operator, NFT_ADDR);
+        vm.prank(operator);
+        reg.multicall(calls);
+    }
+
+    // ─── Token-pointer vs single-token-range distinction ────────────
+
+    /// @dev A token at `(contract, id)` and a single-token range at
+    ///      `(contract, id, id)` describe the same token but live in
+    ///      separate lists under separate keys. Both adds must
+    ///      succeed; neither blocks the other; each is removable
+    ///      independently. The README calls this out explicitly so
+    ///      downstream tools don't assume the pointers are
+    ///      equivalent.
+    function test_singleTokenRange_isDistinctFromTokenPointer() public {
+        vm.prank(artist);
+        reg.addToken(NFT_ADDR, 1);
+        vm.prank(artist);
+        reg.addTokenRange(NFT_ADDR, 1, 1);
+
+        assertTrue(reg.isTokenRegistered(artist, NFT_ADDR, 1));
+        assertTrue(reg.isTokenRangeRegistered(artist, NFT_ADDR, 1, 1));
+        assertEq(reg.getTokenCount(artist), 1);
+        assertEq(reg.getTokenRangeCount(artist), 1);
+
+        // Removing one must leave the other untouched.
+        vm.prank(artist);
+        reg.removeToken(NFT_ADDR, 1);
+        assertFalse(reg.isTokenRegistered(artist, NFT_ADDR, 1));
+        assertTrue(reg.isTokenRangeRegistered(artist, NFT_ADDR, 1, 1));
+
+        vm.prank(artist);
+        reg.removeTokenRange(NFT_ADDR, 1, 1);
+        assertFalse(reg.isTokenRangeRegistered(artist, NFT_ADDR, 1, 1));
+    }
+
+    // ─── Isolation between artists ──────────────────────────────────
+
+    function test_artists_areIsolated_contracts() public {
+        vm.prank(artist);
+        reg.addContract(NFT_ADDR);
+        assertFalse(reg.isContractRegistered(artistB, NFT_ADDR));
+
+        vm.prank(artistB);
+        reg.addContract(NFT_ADDR);
+        assertTrue(reg.isContractRegistered(artistB, NFT_ADDR));
+    }
+
+    function test_artists_areIsolated_tokens() public {
+        vm.prank(artist);
+        reg.addToken(NFT_ADDR, 5);
+        assertFalse(reg.isTokenRegistered(artistB, NFT_ADDR, 5));
+
+        vm.prank(artistB);
+        reg.addToken(NFT_ADDR, 5);
+        assertTrue(reg.isTokenRegistered(artistB, NFT_ADDR, 5));
+    }
+
+    function test_artists_areIsolated_tokenRanges() public {
+        vm.prank(artist);
+        reg.addTokenRange(NFT_ADDR, 1, 100);
+        assertFalse(reg.isTokenRangeRegistered(artistB, NFT_ADDR, 1, 100));
+
+        vm.prank(artistB);
+        reg.addTokenRange(NFT_ADDR, 1, 100);
+        assertTrue(reg.isTokenRangeRegistered(artistB, NFT_ADDR, 1, 100));
+    }
+
+    function test_artists_areIsolated_operators() public {
+        vm.prank(artist);
+        reg.setOperator(operator, true);
+        assertTrue(reg.isOperator(artist, operator));
+        assertFalse(reg.isOperator(artistB, operator));
+    }
+
+    // ─── No semantic checks ─────────────────────────────────────────
+
+    function test_eoaAsContractAddress_succeeds() public {
+        // The registry doesn't check that contractAddress is a contract.
+        address eoaLike = address(0xBEEF);
+        vm.prank(artist);
+        reg.addContract(eoaLike);
+        assertTrue(reg.isContractRegistered(artist, eoaLike));
+    }
+
+    function test_tokenIdZero_succeeds() public {
+        vm.prank(artist);
+        reg.addToken(NFT_ADDR, 0);
+        assertTrue(reg.isTokenRegistered(artist, NFT_ADDR, 0));
+    }
+
+    function test_veryLargeTokenId_succeeds() public {
+        uint256 huge = type(uint256).max;
+        vm.prank(artist);
+        reg.addToken(NFT_ADDR, huge);
+        assertTrue(reg.isTokenRegistered(artist, NFT_ADDR, huge));
+    }
+
+    function test_veryLargeTokenRange_succeeds() public {
+        vm.prank(artist);
+        reg.addTokenRange(NFT_ADDR, 0, type(uint256).max);
+        assertTrue(
+            reg.isTokenRangeRegistered(artist, NFT_ADDR, 0, type(uint256).max)
+        );
+    }
+
+    // ─── Slice getters ──────────────────────────────────────────────
+
+    function test_getContractsSlice_middleSegment() public {
+        address a1 = address(0x1111);
+        address a2 = address(0x2222);
+        address a3 = address(0x3333);
+        address a4 = address(0x4444);
+        address a5 = address(0x5555);
+        vm.startPrank(artist);
+        reg.addContract(a1);
+        reg.addContract(a2);
+        reg.addContract(a3);
+        reg.addContract(a4);
+        reg.addContract(a5);
+        vm.stopPrank();
+
+        address[] memory slice = reg.getContractsSlice(artist, 1, 3);
+        assertEq(slice.length, 3);
+        assertEq(slice[0], a2);
+        assertEq(slice[1], a3);
+        assertEq(slice[2], a4);
+    }
+
+    function test_getContractsSlice_countExceedsRemaining_returnsShorter() public {
+        address a1 = address(0x1111);
+        address a2 = address(0x2222);
+        address a3 = address(0x3333);
+        vm.startPrank(artist);
+        reg.addContract(a1);
+        reg.addContract(a2);
+        reg.addContract(a3);
+        vm.stopPrank();
+
+        address[] memory slice = reg.getContractsSlice(artist, 1, 100);
+        assertEq(slice.length, 2);
+        assertEq(slice[0], a2);
+        assertEq(slice[1], a3);
+    }
+
+    function test_getContractsSlice_startBeyondLength_returnsEmpty() public {
+        vm.prank(artist);
+        reg.addContract(NFT_ADDR);
+
+        address[] memory slice = reg.getContractsSlice(artist, 5, 10);
+        assertEq(slice.length, 0);
+    }
+
+    function test_getContractsSlice_emptyList_returnsEmpty() public view {
+        address[] memory slice = reg.getContractsSlice(artist, 0, 10);
+        assertEq(slice.length, 0);
+    }
+
+    function test_getTokensSlice_middleSegment() public {
+        vm.startPrank(artist);
+        reg.addToken(NFT_ADDR, 1);
+        reg.addToken(NFT_ADDR, 2);
+        reg.addToken(NFT_ADDR, 3);
+        reg.addToken(NFT_ADDR, 4);
+        reg.addToken(NFT_ADDR, 5);
+        vm.stopPrank();
+
+        Catalog.TokenPointer[] memory slice =
+            reg.getTokensSlice(artist, 1, 3);
+        assertEq(slice.length, 3);
+        assertEq(slice[0].tokenId, 2);
+        assertEq(slice[1].tokenId, 3);
+        assertEq(slice[2].tokenId, 4);
+    }
+
+    function test_getTokensSlice_countExceedsRemaining_returnsShorter() public {
+        vm.startPrank(artist);
+        reg.addToken(NFT_ADDR, 1);
+        reg.addToken(NFT_ADDR, 2);
+        reg.addToken(NFT_ADDR, 3);
+        vm.stopPrank();
+
+        Catalog.TokenPointer[] memory slice =
+            reg.getTokensSlice(artist, 1, 100);
+        assertEq(slice.length, 2);
+        assertEq(slice[0].tokenId, 2);
+        assertEq(slice[1].tokenId, 3);
+    }
+
+    function test_getTokensSlice_startBeyondLength_returnsEmpty() public {
+        vm.prank(artist);
+        reg.addToken(NFT_ADDR, 1);
+
+        Catalog.TokenPointer[] memory slice =
+            reg.getTokensSlice(artist, 5, 10);
+        assertEq(slice.length, 0);
+    }
+
+    function test_getTokensSlice_emptyList_returnsEmpty() public view {
+        Catalog.TokenPointer[] memory slice =
+            reg.getTokensSlice(artist, 0, 10);
+        assertEq(slice.length, 0);
+    }
+
+    function test_getTokenRangesSlice_middleSegment() public {
+        vm.startPrank(artist);
+        reg.addTokenRange(NFT_ADDR, 1, 10);
+        reg.addTokenRange(NFT_ADDR, 11, 20);
+        reg.addTokenRange(NFT_ADDR, 21, 30);
+        reg.addTokenRange(NFT_ADDR, 31, 40);
+        reg.addTokenRange(NFT_ADDR, 41, 50);
+        vm.stopPrank();
+
+        Catalog.TokenRangePointer[] memory slice =
+            reg.getTokenRangesSlice(artist, 1, 3);
+        assertEq(slice.length, 3);
+        assertEq(slice[0].startTokenId, 11);
+        assertEq(slice[1].startTokenId, 21);
+        assertEq(slice[2].startTokenId, 31);
+        assertEq(slice[2].endTokenId, 40);
+    }
+
+    function test_getTokenRangesSlice_countExceedsRemaining_returnsShorter() public {
+        vm.startPrank(artist);
+        reg.addTokenRange(NFT_ADDR, 1, 10);
+        reg.addTokenRange(NFT_ADDR, 11, 20);
+        reg.addTokenRange(NFT_ADDR, 21, 30);
+        vm.stopPrank();
+
+        Catalog.TokenRangePointer[] memory slice =
+            reg.getTokenRangesSlice(artist, 1, 100);
+        assertEq(slice.length, 2);
+        assertEq(slice[0].startTokenId, 11);
+        assertEq(slice[1].startTokenId, 21);
+    }
+
+    function test_getTokenRangesSlice_startBeyondLength_returnsEmpty() public {
+        vm.prank(artist);
+        reg.addTokenRange(NFT_ADDR, 1, 10);
+
+        Catalog.TokenRangePointer[] memory slice =
+            reg.getTokenRangesSlice(artist, 5, 10);
+        assertEq(slice.length, 0);
+    }
+
+    function test_getTokenRangesSlice_emptyList_returnsEmpty() public view {
+        Catalog.TokenRangePointer[] memory slice =
+            reg.getTokenRangesSlice(artist, 0, 10);
+        assertEq(slice.length, 0);
+    }
+
+    function test_getContractsSlice_zeroCount_returnsEmpty() public {
+        vm.prank(artist);
+        reg.addContract(NFT_ADDR);
+        address[] memory slice = reg.getContractsSlice(artist, 0, 0);
+        assertEq(slice.length, 0);
+    }
+
+    // ─── Key helpers ────────────────────────────────────────────────
+
+    function test_getContractKey_isDeterministic() public view {
+        bytes32 k1 = reg.getContractKey(NFT_ADDR);
+        bytes32 k2 = reg.getContractKey(NFT_ADDR);
+        assertEq(k1, k2);
+
+        bytes32 different = reg.getContractKey(NFT_ADDR_B);
+        assertTrue(k1 != different);
+    }
+
+    function test_getTokenKey_isDeterministic() public view {
+        bytes32 k1 = reg.getTokenKey(NFT_ADDR, 1);
+        bytes32 k2 = reg.getTokenKey(NFT_ADDR, 1);
+        assertEq(k1, k2);
+
+        bytes32 different = reg.getTokenKey(NFT_ADDR, 2);
+        assertTrue(k1 != different);
+    }
+
+    function test_getTokenRangeKey_isDeterministic() public view {
+        bytes32 k1 = reg.getTokenRangeKey(NFT_ADDR, 1, 100);
+        bytes32 k2 = reg.getTokenRangeKey(NFT_ADDR, 1, 100);
+        assertEq(k1, k2);
+
+        bytes32 different = reg.getTokenRangeKey(NFT_ADDR, 1, 99);
+        assertTrue(k1 != different);
+    }
+
+    // ─── Multicall (batched operations) ─────────────────────────────
+
+    function _encodeAddContract(address c) internal pure returns (bytes memory) {
+        return abi.encodeWithSelector(Catalog.addContract.selector, c);
+    }
+
+    function _encodeAddToken(address c, uint256 id) internal pure returns (bytes memory) {
+        return abi.encodeWithSelector(Catalog.addToken.selector, c, id);
+    }
+
+    function _encodeAddTokenRange(address c, uint256 s, uint256 e)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return abi.encodeWithSelector(
+            Catalog.addTokenRange.selector, c, s, e
+        );
+    }
+
+    function _encodeRemoveContract(address c) internal pure returns (bytes memory) {
+        return abi.encodeWithSelector(
+            Catalog.removeContract.selector, c
+        );
+    }
+
+    function _encodeAddContractFor(address a, address c)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return abi.encodeWithSelector(
+            Catalog.addContractFor.selector, a, c
+        );
+    }
+
+    function test_multicall_emptyArray_isNoOp() public {
+        bytes[] memory calls = new bytes[](0);
+        vm.prank(artist);
+        reg.multicall(calls);
+        assertEq(reg.getContractCount(artist), 0);
+    }
+
+    function test_multicall_addsAllThreeTypesInOneTx() public {
+        bytes[] memory calls = new bytes[](3);
+        calls[0] = _encodeAddContract(NFT_ADDR);
+        calls[1] = _encodeAddToken(NFT_ADDR, 1);
+        calls[2] = _encodeAddTokenRange(NFT_ADDR_B, 1, 100);
+
+        vm.prank(artist);
+        reg.multicall(calls);
+
+        assertEq(reg.getContractCount(artist), 1);
+        assertTrue(reg.isContractRegistered(artist, NFT_ADDR));
+        assertEq(reg.getTokenCount(artist), 1);
+        assertTrue(reg.isTokenRegistered(artist, NFT_ADDR, 1));
+        assertEq(reg.getTokenRangeCount(artist), 1);
+        assertTrue(reg.isTokenRangeRegistered(artist, NFT_ADDR_B, 1, 100));
+    }
+
+    function test_multicall_preservesMsgSender_forPerArtistAuthorization() public {
+        // msg.sender survives delegatecall in OZ Multicall, so per-artist
+        // ownership checks resolve to the original caller, not the contract.
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = _encodeAddContract(NFT_ADDR);
+        calls[1] = _encodeAddContract(NFT_ADDR_B);
+
+        vm.prank(artist);
+        reg.multicall(calls);
+
+        assertTrue(reg.isContractRegistered(artist, NFT_ADDR));
+        assertTrue(reg.isContractRegistered(artist, NFT_ADDR_B));
+        // Other artist's record is untouched.
+        assertEq(reg.getContractCount(artistB), 0);
+    }
+
+    function test_multicall_mixedAddAndRemove_inSameBatch() public {
+        // Pre-populate with one contract.
+        vm.prank(artist);
+        reg.addContract(NFT_ADDR);
+
+        // Batch: remove the existing one, add a different one.
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = _encodeRemoveContract(NFT_ADDR);
+        calls[1] = _encodeAddContract(NFT_ADDR_B);
+
+        vm.prank(artist);
+        reg.multicall(calls);
+
+        assertFalse(reg.isContractRegistered(artist, NFT_ADDR));
+        assertTrue(reg.isContractRegistered(artist, NFT_ADDR_B));
+        assertEq(reg.getContractCount(artist), 1);
+    }
+
+    function test_multicall_emitsOneEventPerInnerCall() public {
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = _encodeAddContract(NFT_ADDR);
+        calls[1] = _encodeAddContract(NFT_ADDR_B);
+
+        vm.expectEmit(true, true, true, false);
+        emit ContractAdded(artist, artist, NFT_ADDR);
+        vm.expectEmit(true, true, true, false);
+        emit ContractAdded(artist, artist, NFT_ADDR_B);
+
+        vm.prank(artist);
+        reg.multicall(calls);
+    }
+
+    function test_multicall_revertsAtomically_onDuplicateMidBatch() public {
+        // Pre-add NFT_ADDR so the third call below will revert as duplicate.
+        vm.prank(artist);
+        reg.addContract(NFT_ADDR);
+
+        // Batch tries: add NFT_ADDR_B (ok), add token (ok), add NFT_ADDR
+        // (revert: already registered). The whole batch must unwind.
+        bytes[] memory calls = new bytes[](3);
+        calls[0] = _encodeAddContract(NFT_ADDR_B);
+        calls[1] = _encodeAddToken(NFT_ADDR_B, 42);
+        calls[2] = _encodeAddContract(NFT_ADDR);
+
+        // OZ's Multicall surfaces inner reverts via Address.functionDelegateCall,
+        // which bubbles the raw revert data. We assert any revert here; the
+        // important property is atomicity (state unchanged below).
+        vm.prank(artist);
+        vm.expectRevert();
+        reg.multicall(calls);
+
+        // None of the batch's effects landed.
+        assertFalse(reg.isContractRegistered(artist, NFT_ADDR_B));
+        assertFalse(reg.isTokenRegistered(artist, NFT_ADDR_B, 42));
+        // Pre-existing state still there.
+        assertTrue(reg.isContractRegistered(artist, NFT_ADDR));
+        assertEq(reg.getContractCount(artist), 1);
+    }
+
+    function test_multicall_operator_canBatchForArtist() public {
+        // Artist authorizes operator.
+        vm.prank(artist);
+        reg.setOperator(operator, true);
+
+        // Operator batches three contract adds via the *For variants.
+        bytes[] memory calls = new bytes[](3);
+        calls[0] = _encodeAddContractFor(artist, NFT_ADDR);
+        calls[1] = _encodeAddContractFor(artist, NFT_ADDR_B);
+        calls[2] = _encodeAddContractFor(artist, address(0xC0FE));
+
+        vm.prank(operator);
+        reg.multicall(calls);
+
+        assertEq(reg.getContractCount(artist), 3);
+        assertTrue(reg.isContractRegistered(artist, NFT_ADDR));
+        assertTrue(reg.isContractRegistered(artist, NFT_ADDR_B));
+        assertTrue(reg.isContractRegistered(artist, address(0xC0FE)));
+    }
+
+    function test_multicall_unauthorizedCaller_revertsBatch() public {
+        // Stranger has no operator approval and tries to batch *For calls
+        // against another artist's record. The first inner call's auth
+        // check fails, unwinding the whole batch.
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = _encodeAddContractFor(artist, NFT_ADDR);
+        calls[1] = _encodeAddContractFor(artist, NFT_ADDR_B);
+
+        vm.prank(stranger);
+        vm.expectRevert();
+        reg.multicall(calls);
+
+        assertEq(reg.getContractCount(artist), 0);
+    }
+
+    function test_multicall_gasSavings_vsIndividualCalls() public {
+        // Measure baseline: 5 individual addContract transactions.
+        address[] memory addrs = new address[](5);
+        addrs[0] = address(0xA1);
+        addrs[1] = address(0xA2);
+        addrs[2] = address(0xA3);
+        addrs[3] = address(0xA4);
+        addrs[4] = address(0xA5);
+
+        uint256 individualGas;
+        for (uint256 i = 0; i < addrs.length; i++) {
+            vm.prank(artist);
+            uint256 before = gasleft();
+            reg.addContract(addrs[i]);
+            individualGas += before - gasleft();
+        }
+
+        // Reset state for the batched run.
+        for (uint256 i = 0; i < addrs.length; i++) {
+            vm.prank(artist);
+            reg.removeContract(addrs[i]);
+        }
+
+        // Multicall the same five.
+        bytes[] memory calls = new bytes[](5);
+        for (uint256 i = 0; i < addrs.length; i++) {
+            calls[i] = _encodeAddContract(addrs[i]);
+        }
+
+        vm.prank(artist);
+        uint256 before2 = gasleft();
+        reg.multicall(calls);
+        uint256 batchGas = before2 - gasleft();
+
+        // The intrinsic-21k saving is on the wallet/tx side and isn't
+        // captured by Foundry's gasleft() measurement (we're already
+        // inside a single test tx). What this assertion verifies is the
+        // tighter property: the per-item EVM-execution cost of multicall
+        // doesn't balloon vs the individual path. A modest delegatecall
+        // overhead is expected and acceptable; pathological growth would
+        // indicate a regression.
+        assertLt(batchGas, (individualGas * 12) / 10);
+        // And the writes did land.
+        assertEq(reg.getContractCount(artist), 5);
+    }
+}

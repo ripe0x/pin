@@ -24,7 +24,7 @@ import {
   type ArtistInventory,
   type PlatformError,
 } from "./artist-inventory"
-import { getArtistRecord, type ArtistRecord } from "./artist-record"
+import { getCatalog, type Catalog } from "./catalog"
 import type { PlatformId } from "./platforms/types"
 
 /**
@@ -502,7 +502,7 @@ export async function buildDependencyReport(
     // Registry read — single multicall to the on-chain registry. On any
     // failure (registry not deployed, RPC blip), fall back to an empty
     // record so the rest of the report still renders cleanly.
-    getArtistRecord(address).catch((): ArtistRecord => ({
+    getCatalog(address).catch((): Catalog => ({
       artist: address,
       contracts: [],
       tokens: [],
