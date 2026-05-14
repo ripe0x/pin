@@ -167,7 +167,7 @@ export function AddEntryForm({
     if (existing) {
       if (parsed.type === "all") {
         if (existing.contracts.includes(cLower)) {
-          setLocalErr("This contract is already in your record.")
+          setLocalErr("This contract is already in your catalog.")
           return
         }
       } else if (parsed.type === "single") {
@@ -178,7 +178,7 @@ export function AddEntryForm({
           )
         ) {
           setLocalErr(
-            `Token #${idStr} on this contract is already in your record.`,
+            `Token #${idStr} on this contract is already in your catalog.`,
           )
           return
         }
@@ -194,7 +194,7 @@ export function AddEntryForm({
           )
         ) {
           setLocalErr(
-            `Range ${start}–${end} on this contract is already in your record.`,
+            `Range ${start} to ${end} on this contract is already in your catalog.`,
           )
           return
         }
@@ -222,7 +222,7 @@ export function AddEntryForm({
       onSubmit={onSubmit}
       className="border border-gray-200 rounded-md p-5 space-y-4"
     >
-      <h2 className="text-sm font-semibold">Add to your record</h2>
+      <h2 className="text-sm font-semibold">Add to your catalog</h2>
 
       <div className="space-y-1.5">
         <label
@@ -311,7 +311,7 @@ export function AddEntryForm({
                 <strong>
                   {formatBigInt(parsed.end - parsed.start + 1n)}
                 </strong>{" "}
-                tokens — IDs {parsed.start.toString()} through{" "}
+                tokens. IDs {parsed.start.toString()} through{" "}
                 {parsed.end.toString()}.
               </div>
             )}
@@ -333,7 +333,7 @@ export function AddEntryForm({
           disabled={busy || !addrValid || parseFailed}
           className="bg-fg text-bg text-sm font-medium px-4 py-2 rounded-md hover:opacity-90 transition-opacity disabled:opacity-50"
         >
-          {busy ? "Adding..." : "Add to record"}
+          {busy ? "Adding..." : "Add to catalog"}
         </button>
       </div>
 
@@ -405,7 +405,7 @@ function TxStatusPanel({
         )}
         {isSuccess && (
           <>
-            <span className="font-medium">Confirmed.</span> Your record has
+            <span className="font-medium">Confirmed.</span> Your catalog has
             been updated. The list below will refresh in a moment.
           </>
         )}

@@ -22,7 +22,7 @@ export function EditModeIndicator({ artist }: { artist: Address }) {
 
   return (
     <span className="inline-flex items-center text-[11px] font-medium uppercase tracking-wide px-2 py-0.5 rounded-full border border-emerald-300 text-emerald-700 bg-emerald-50">
-      Your record
+      Your catalog
     </span>
   )
 }

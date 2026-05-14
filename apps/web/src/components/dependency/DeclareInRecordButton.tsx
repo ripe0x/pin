@@ -30,13 +30,13 @@ export function DeclareInRecordButton({
   if (!mounted || !isConnected || !address) return null
   if (address.toLowerCase() !== artist.toLowerCase()) return null
 
-  const href = `/record/${artist.toLowerCase()}?addContract=${contract}`
+  const href = `/catalog/${artist.toLowerCase()}?addContract=${contract}`
   return (
     <a
       href={href}
       className="text-xs border border-gray-200 px-3 py-1.5 rounded-full hover:border-gray-400 transition-colors"
     >
-      Declare in your record →
+      Add to your catalog →
     </a>
   )
 }

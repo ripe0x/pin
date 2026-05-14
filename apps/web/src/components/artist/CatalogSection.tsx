@@ -30,9 +30,9 @@ export async function CatalogSection({
   return (
     <section className="space-y-6">
       <div className="flex items-baseline justify-between">
-        <h2 className="text-lg font-semibold">Artist record</h2>
+        <h2 className="text-lg font-semibold">Artist catalog</h2>
         <Link
-          href={`/record/${address.toLowerCase()}`}
+          href={`/catalog/${address.toLowerCase()}`}
           className="text-xs text-gray-500 hover:text-gray-900 underline-offset-2 hover:underline"
         >
           Manage →

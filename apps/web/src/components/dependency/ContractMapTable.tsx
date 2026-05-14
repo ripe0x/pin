@@ -62,7 +62,7 @@ export function ContractMapTable({
               )}
               {e.declaredInRegistry && (
                 <span className="text-[11px] uppercase tracking-wide text-emerald-700 border border-emerald-300 bg-emerald-50 rounded-full px-2 py-0.5">
-                  Declared in record
+                  In catalog
                 </span>
               )}
             </div>

@@ -52,8 +52,8 @@ export async function generateMetadata({
     }
   }
   return {
-    title: "Artist record",
-    description: "On-chain record of contracts, tokens, and token ranges.",
+    title: "Artist catalog",
+    description: "On-chain catalog of contracts, tokens, and token ranges.",
   }
 }
 
@@ -74,7 +74,7 @@ export default async function RecordPage({
           &ldquo;{decoded}&rdquo; is not a valid Ethereum address or ENS name.
         </p>
         <a
-          href="/record"
+          href="/catalog"
           className="inline-block mt-6 text-sm border border-gray-200 px-3 py-1.5 rounded-full hover:border-gray-400 transition-colors"
         >
           Start over
@@ -84,17 +84,17 @@ export default async function RecordPage({
   }
 
   if (!ADDRESS_RE.test(decoded)) {
-    redirect(`/record/${address.toLowerCase()}`)
+    redirect(`/catalog/${address.toLowerCase()}`)
   }
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-10 space-y-8">
       <header className="space-y-1">
         <div className="text-xs uppercase tracking-wide text-gray-500">
-          Artist record
+          Artist catalog
         </div>
         <h1 className="text-3xl font-semibold tracking-tight">
-          Artist record
+          Artist catalog
         </h1>
       </header>
 
@@ -143,7 +143,7 @@ async function RecordBody({ address }: { address: Address }) {
 
       {empty ? (
         <div className="border border-dashed border-gray-200 rounded-md p-6 text-sm text-gray-500">
-          This address has not declared anything in the registry yet.
+          This catalog is empty. The artist controls what appears here.
         </div>
       ) : (
         <CatalogSummary
@@ -204,7 +204,7 @@ async function RecordBody({ address }: { address: Address }) {
 
       <p className="text-xs text-gray-400 pt-4 border-t border-gray-100">
         Adding a pointer means this address added it to its public
-        record. It does not prove authorship, ownership, or endorsement.
+        catalog. It does not prove authorship, ownership, or endorsement.
       </p>
     </div>
   )
@@ -222,7 +222,7 @@ function SectionHeader({ title, right }: { title: string; right?: string }) {
 function RecordFallback() {
   return (
     <div className="space-y-4">
-      <p className="text-sm text-gray-500">Loading record...</p>
+      <p className="text-sm text-gray-500">Loading catalog...</p>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {Array.from({ length: 4 }).map((_, i) => (
           <div

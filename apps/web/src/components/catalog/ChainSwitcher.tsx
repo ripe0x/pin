@@ -9,18 +9,9 @@ const PREFERRED_CHAIN = FORK_MODE ? forkChain : mainnet
 const PREFERRED_CHAIN_LABEL = FORK_MODE ? FORK_CHAIN_NAME : "Ethereum"
 
 /**
- * Wallet-chain status indicator above the Add form.
- *
- * Three states:
- *   - disconnected           → renders nothing
- *   - connected, right chain → small green pill confirming the chain id
- *   - connected, wrong chain → amber banner with switch button
- *
- * The always-visible "right chain" pill is intentional: silent success
- * mode made it hard to tell whether a `-32002 Requested resource not
- * available` from MetaMask was a chain mismatch or a stuck pending
- * request. With the pill, the user can rule out chain mismatch in one
- * glance.
+ * Wallet-chain status indicator above the Add form. Renders nothing when
+ * disconnected or when the wallet is already on the preferred chain;
+ * shows an amber banner with a switch button on a chain mismatch.
  */
 export function ChainSwitcher() {
   const { isConnected } = useAccount()
@@ -28,22 +19,14 @@ export function ChainSwitcher() {
   const { switchChain, isPending } = useSwitchChain()
 
   if (!isConnected) return null
-
-  if (chainId === PREFERRED_CHAIN.id) {
-    return (
-      <div className="mb-4 inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] text-emerald-900">
-        <span aria-hidden className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-600" />
-        Wallet on <span className="font-medium">{PREFERRED_CHAIN_LABEL}</span> (chain id <code>{chainId}</code>)
-      </div>
-    )
-  }
+  if (chainId === PREFERRED_CHAIN.id) return null
 
   return (
     <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 flex items-center justify-between gap-3">
       <p className="text-xs text-amber-900 leading-relaxed">
         Your wallet is on chain id <code>{chainId}</code>. Switch to{" "}
         <span className="font-medium">{PREFERRED_CHAIN_LABEL}</span> (chain id{" "}
-        <code>{PREFERRED_CHAIN.id}</code>) to sign record transactions.
+        <code>{PREFERRED_CHAIN.id}</code>) to sign catalog transactions.
         {FORK_MODE && (
           <>
             {" "}If your wallet doesn't have this network yet, accept the prompt

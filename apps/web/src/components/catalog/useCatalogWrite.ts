@@ -81,7 +81,7 @@ export function useCatalogWrite() {
   // the artist whose record was mutated.
   useEffect(() => {
     if (!isSuccess || !connected) return
-    void fetch(`/api/record/${connected.toLowerCase()}/revalidate`, {
+    void fetch(`/api/catalog/${connected.toLowerCase()}/revalidate`, {
       method: "POST",
     })
       .catch(() => {})

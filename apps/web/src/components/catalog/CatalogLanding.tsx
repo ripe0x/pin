@@ -22,7 +22,7 @@ export function CatalogLanding() {
 
   useEffect(() => {
     if (isConnected && address) {
-      router.replace(`/record/${address.toLowerCase()}`)
+      router.replace(`/catalog/${address.toLowerCase()}`)
     }
   }, [isConnected, address, router])
 
@@ -40,18 +40,18 @@ export function CatalogLanding() {
     }
     setError(null)
     const slug = ADDRESS_RE.test(trimmed) ? trimmed.toLowerCase() : trimmed
-    router.push(`/record/${encodeURIComponent(slug)}`)
+    router.push(`/catalog/${encodeURIComponent(slug)}`)
   }
 
   return (
     <div className="space-y-6">
       <form onSubmit={onSubmit} className="space-y-2">
-        <label htmlFor="record-input" className="block text-sm font-medium">
-          Look up an artist record
+        <label htmlFor="catalog-input" className="block text-sm font-medium">
+          Look up an artist&rsquo;s catalog
         </label>
         <div className="flex gap-2">
           <input
-            id="record-input"
+            id="catalog-input"
             type="text"
             inputMode="text"
             autoComplete="off"
@@ -77,7 +77,7 @@ export function CatalogLanding() {
       </form>
 
       <p className="text-sm text-gray-600">
-        Connect a wallet to manage your own record. Otherwise, look up
+        Connect a wallet to manage your own catalog. Otherwise, look up
         any address to see what they have declared.
       </p>
     </div>

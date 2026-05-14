@@ -282,7 +282,7 @@ export function declaredOnlyEntry(contract: string): ContractMapEntry {
     system: null,
     name: null,
     kind: null,
-    note: "Declared by the artist in the on-chain registry; tokens not enumerated by platform indexers.",
+    note: "Declared by the artist in the on-chain catalog; tokens not enumerated by platform indexers.",
     declaredInRegistry: true,
   }
 }
