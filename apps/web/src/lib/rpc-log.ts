@@ -194,5 +194,13 @@ export function loggingFallbackTransport(
   config?: HttpTransportConfig,
 ): Transport {
   const urls = getMainnetRpcUrls()
-  return fallback(urls.map((url) => loggingHttpTransport(url, route, config)))
+  // retryCount: 0 per transport so fallback immediately rotates on any
+  // provider error. Without it, a dead primary (e.g. disabled Alchemy
+  // app returning 403) burns viem's default 3 retries × ~1s each before
+  // moving on — visible to the user as `/api/record` taking 20s to
+  // resolve. Same rationale as in `getMainnetTransport`.
+  const merged: HttpTransportConfig = { retryCount: 0, ...config }
+  return fallback(
+    urls.map((url) => loggingHttpTransport(url, route, merged)),
+  )
 }

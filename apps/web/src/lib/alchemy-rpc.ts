@@ -81,11 +81,20 @@ export function getMainnetRpcUrls(): string[] {
 /**
  * Multi-provider viem transport with automatic failover. Use this in
  * `createPublicClient({ transport: getMainnetTransport() })` so a single
- * provider's outage or quota cap doesn't take the site down. viem's
- * `fallback` retries the primary a few times before rotating, so a
- * transient blip stays on the primary instead of churning through every
- * provider on each request.
+ * provider's outage or quota cap doesn't take the site down.
+ *
+ * `retryCount: 0` per transport is deliberate. viem's default is to
+ * retry each transport ~3 times before moving on, which means a fully
+ * dead primary (e.g. an Alchemy app that's been disabled — returns 403
+ * on every call) burns ~3× retry delay before the fallback kicks in.
+ * For an `/api/record` server-render, that turns into 20s of "Loading…"
+ * for the user. Setting per-transport retries to 0 lets fallback
+ * immediately rotate to the next provider on any error — transient
+ * blips lose the per-provider retry, but if the blip really is just a
+ * blip the next provider in the list will serve it.
  */
 export function getMainnetTransport(): Transport {
-  return fallback(getMainnetRpcUrls().map((url) => http(url)))
+  return fallback(
+    getMainnetRpcUrls().map((url) => http(url, { retryCount: 0 })),
+  )
 }
