@@ -165,36 +165,76 @@ additional sources into the view — no downstream code changes needed.
 ### Files
 
 - [`db/migrations/022_known_artists_view.sql`](./db/migrations/022_known_artists_view.sql)
-  — the view definition
+  — view definition
+- [`db/migrations/023_per_artist_last_scanned_block.sql`](./db/migrations/023_per_artist_last_scanned_block.sql)
+  — adds `last_scanned_block` cursors per platform so refreshes are
+  incremental from the previous head
+- [`db/migrations/024_lazy_manifold_contracts.sql`](./db/migrations/024_lazy_manifold_contracts.sql)
+  — caches Manifold contract classifications per artist
 - [`apps/web/src/lib/known-artists.ts`](./apps/web/src/lib/known-artists.ts)
   — `isKnownArtist(address)` gate, fails closed on DB error
 - [`apps/web/src/lib/external-indexer.ts`](./apps/web/src/lib/external-indexer.ts)
-  — `refreshArtist`, `refreshAllKnownArtists`, `maybeRefreshArtistIfStale`
+  — `refreshArtist`, `refreshAllKnownArtists`,
+  `getMostRecentRefreshTime`, `countArtistTokens`
+- Scan functions: `scanSrv2ArtistTokens`, `scanTransientArtistTokens`
+  (in their respective platform files), `scanManifoldArtistTokens`
+  (in `manifold-discovery.ts`). Each gates on `isKnownArtist` and is
+  incremental against `last_scanned_block`.
+- [`apps/web/src/app/api/refresh-artist/[address]/route.ts`](./apps/web/src/app/api/refresh-artist/[address]/route.ts)
+  — "Refresh my work" button endpoint, gated + rate-limited
 - [`apps/web/src/app/api/cron/refresh-external-indexes/route.ts`](./apps/web/src/app/api/cron/refresh-external-indexes/route.ts)
   — daily cron endpoint
-- Adapters: [`platforms/manifold.ts`](./apps/web/src/lib/platforms/manifold.ts),
-  [`platforms/superrareV2.ts`](./apps/web/src/lib/platforms/superrareV2.ts),
+- [`apps/web/src/components/catalog/RefreshButton.tsx`](./apps/web/src/components/catalog/RefreshButton.tsx)
+  — client component, visible only when connected wallet matches artist
+- Adapters: [`platforms/superrareV2.ts`](./apps/web/src/lib/platforms/superrareV2.ts),
   [`platforms/transient.ts`](./apps/web/src/lib/platforms/transient.ts),
+  [`platforms/manifold.ts`](./apps/web/src/lib/platforms/manifold.ts),
   [`manifold-discovery.ts`](./apps/web/src/lib/manifold-discovery.ts)
-  — each calls `isKnownArtist` before any external API.
+  — `discoverArtistTokens` is pure Postgres read; scan functions
+  are the only paths that hit external APIs.
 
 ### Triggers
 
-Two ways a refresh fires:
+Two ways a scan fires:
 
-1. **On-visit, stale-while-revalidate.** Server components for
-   `/artist/[address]` and `/catalog/[address]` call
-   `void maybeRefreshArtistIfStale(address)` near the top of the
-   render. No-op for unknown addresses; no-op within the 1-hour
-   stale window; otherwise fire-and-forget background refresh.
-   Page renders with current data while the refresh writes update
-   rows for the next visit. Placed after the crawler check on
-   `/artist/` so bot traffic doesn't drive refresh frequency.
+1. **"Refresh my work" button** on `/catalog/[address]`. Visible only
+   when the connected wallet's address matches the page's artist.
+   Click → POST to `/api/refresh-artist/[address]` → incremental scan
+   across all three platforms → success/error/rate-limited feedback
+   inline. 5-minute rate limit per address based on the most recent
+   `last_indexed_at` across the platform status rows.
 
-2. **Daily cron.** `POST /api/cron/refresh-external-indexes` iterates
-   every row in `known_artists` and refreshes all three platforms
-   per artist. Schedule once daily; the route is idempotent and
-   safe to re-run.
+2. **Daily cron** at 04:00 UTC. `POST /api/cron/refresh-external-indexes`
+   iterates every row in `known_artists` and scans all three platforms
+   per artist. The route is idempotent and safe to re-run manually.
+
+No automatic on-visit refresh. We tried fire-and-forget patterns
+(`void` and `after()`) at the page level, but Netlify's serverless
+function lifetime doesn't reliably extend past the response for
+long-running work (the scans can take 30+ seconds on a first run).
+The cron + button covers the use case: button for fresh-mint
+discovery within minutes, cron for everyone else within 24h.
+
+### Incremental scans
+
+Each platform's scan function reads `last_scanned_block` from the
+artist's status row and scans from `last_scanned_block + 1` to current
+head. Null cursor → full sweep from the platform's deploy block (first
+scan ever for that artist). After a successful scan, the cursor is
+updated to the head block observed during the scan.
+
+This keeps button-click cost low: a typical refresh pays for a few
+hours of new chain history, not the full multi-year history.
+
+For Manifold specifically:
+- Contract discovery still uses Etherscan `txlist` (cheap, one call,
+  full history) but classifications are cached in
+  `lazy_manifold_contracts` so multicall `supportsInterface` only
+  runs on newly-discovered contracts.
+- Token enumeration switched from Alchemy NFT API `getNFTsForContract`
+  (no `fromBlock` support) to JSON-RPC `alchemy_getAssetTransfers`
+  (supports `fromBlock`, deduplicated client-side per (contract,
+  tokenId) for ERC-1155 editions).
 
 ### Scheduling the cron
 
@@ -223,24 +263,27 @@ curl -X POST 'https://<your-host>/api/cron/refresh-external-indexes?secret=$REVA
 
 ### Cost ceiling
 
-Per-artist refresh: ~150–1500 Alchemy CU spread across the three
-platforms. At 100–500 known artists × daily cron:
+Per-artist incremental refresh: typically 50–300 Alchemy CU spread
+across the three platforms (lower than full scans because each scan
+covers only ~24h of new chain history). First-ever scan for a new
+artist is heavier (~300–1500 CU for the full sweep).
 
-| View size | Daily cron cost | On-visit ceiling (1h stale × full traffic) |
+At 100–500 known artists × daily cron:
+
+| Set size | Daily cron cost | Button worst case (every artist clicks max-rate) |
 |---|---|---|
-| 100 artists | ~$0.07/month | $5.40/month worst case |
-| 500 artists | ~$1.10/month | $27/month worst case |
-| 1,000 artists | ~$2.25/month | $54/month worst case |
+| 100 artists | ~$0.02/month | ~$1.30/month |
+| 500 artists | ~$0.36/month | ~$6.50/month |
+| 1,000 artists | ~$0.72/month | ~$13/month |
 
-The "worst case" assumes a crawler hits every known-artist URL every
-hour for a month and triggers a refresh each time — unrealistic but
-it's the ceiling. Practical cost is much closer to "daily cron
-total" because most known artists aren't visited every hour.
+"Button worst case" assumes every known artist clicks the refresh
+button at the 5-min rate limit ceiling for an entire month —
+unrealistic. Practical button usage adds pennies/month.
 
-To tighten the ceiling further, raise the stale threshold in
-`STALE_THRESHOLD_MS` in `external-indexer.ts` (currently 1h) — at
-24h, the on-visit ceiling drops by ~24× and effectively converges
-on the daily cron cost.
+The 5-min rate limit (in `/api/refresh-artist/[address]`) and the
+known-artist gate together cap the maximum spend regardless of
+traffic patterns. Anonymous crawler traffic costs $0 because the
+gate refuses to scan unknown addresses.
 
 ### Verification
 

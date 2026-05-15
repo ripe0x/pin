@@ -1,15 +1,12 @@
 import "server-only"
-import type { Address } from "viem"
 import { sql } from "./db"
-import { manifoldAdapter } from "./platforms/manifold"
-import { superrareV2Adapter } from "./platforms/superrareV2"
-import { transientAdapter } from "./platforms/transient"
+import { scanSrv2ArtistTokens } from "./platforms/superrareV2"
+import { scanTransientArtistTokens } from "./platforms/transient"
+import { scanManifoldArtistTokens } from "./manifold-discovery"
 import { isKnownArtist } from "./known-artists"
 
 // Re-export so consumers can import `isKnownArtist` from this module
-// alongside the refresh helpers. The implementation lives in
-// `known-artists.ts` to avoid circular imports with the adapters
-// (adapters need the gate; this module imports the adapters).
+// alongside the refresh helpers.
 export { isKnownArtist }
 
 /**
@@ -19,33 +16,33 @@ export { isKnownArtist }
  * Background
  * ----------
  * These three platforms aren't in Ponder. The web app fetches per-artist
- * data from Alchemy NFT API / Alchemy Transfers / Etherscan on demand
- * and writes it to Postgres (`lazy_<platform>_artist_tokens` tables —
- * the "lazy" prefix is legacy naming from when they had TTLs). This
- * module:
+ * data from Alchemy + Etherscan on demand and writes it to Postgres
+ * (`lazy_<platform>_artist_tokens` tables — the "lazy" prefix is legacy
+ * from when they had TTLs). This module:
  *
  *   1. Enforces the known-artist gate (`isKnownArtist`) so anonymous
  *      crawler traffic can't trigger Alchemy spend on random addresses.
- *   2. Drives the daily cron-based refresh of every known artist.
+ *   2. Drives the daily cron-based refresh of every known artist
+ *      (`refreshAllKnownArtists`).
+ *   3. Provides `refreshArtist` for the manual "Refresh my work" button
+ *      route (`/api/refresh-artist/[address]`) which is rate-limited at
+ *      5 minutes per artist.
  *
- * Cost model
- * ----------
- * Reads: free (Postgres SELECT on indexed `creator`).
- * Writes (per artist per platform): ~150–1500 Alchemy CU.
- * Cron: daily refresh of every `known_artists` row × 3 platforms.
- *   At 100–2000 known artists: ~$0.07–$5/month bounded total.
- *
- * Membership: see db/migrations/022_known_artists_view.sql.
+ * Incremental scans
+ * -----------------
+ * Each refresh resumes from the per-artist `last_scanned_block` cursor
+ * in `lazy_<platform>_artist_status`, so a typical refresh pays for only
+ * a few hours of new chain history instead of full sweeps from the
+ * platform's deploy block. See `db/migrations/023_per_artist_last_scanned_block.sql`.
  *
  * Cache vs store
  * --------------
- * The per-platform tables are store, not cache. The adapter's
- * `discoverArtistTokens` trusts whatever rows exist for an artist —
- * no TTL gate. Refreshes happen via this module's `refreshArtist`,
- * which deletes the artist's status row so the adapter sees a cache
- * miss and re-fetches. Brief window between delete and re-fetch
- * during which a concurrent read returns `[]`; acceptable for the
- * off-peak cron timing.
+ * The per-platform tables are store, not cache. The platform adapters'
+ * `discoverArtistTokens` is pure-read — it trusts whatever rows exist
+ * for an artist (no TTL gate) and never triggers external API calls.
+ * The scan functions (`scanSrv2ArtistTokens`, `scanTransientArtistTokens`,
+ * `scanManifoldArtistTokens`) are the only code that talks to
+ * Alchemy/Etherscan, and they're called only from `refreshArtist`.
  */
 
 export type RefreshReport = {
@@ -89,111 +86,87 @@ export async function refreshAllKnownArtists(): Promise<RefreshReport> {
 }
 
 /**
- * Default freshness threshold for on-visit refresh checks. 1 hour means
- * an artist visiting their `/catalog` page within an hour of any prior
- * visit gets the cached state without re-fetching. Past 1h, a fresh
- * refresh fires in the background. Same threshold used for `/artist/`.
+ * Refresh one artist across all three external platforms. The three
+ * scan functions are independent and run in parallel; each gates on
+ * `isKnownArtist` and is incremental against its own
+ * `last_scanned_block` cursor.
+ *
+ * Per-platform failures are isolated so one platform's flakiness
+ * doesn't drop the others.
+ *
+ * No DELETE of status rows: incremental scans depend on the existing
+ * `last_scanned_block`, so we only update on success.
  */
-const STALE_THRESHOLD_MS = 60 * 60 * 1000
+export async function refreshArtist(address: string): Promise<void> {
+  if (!sql) return
+  const lower = address.toLowerCase() as `0x${string}`
+
+  await Promise.all([
+    scanSrv2ArtistTokens(lower).catch(() => undefined),
+    scanTransientArtistTokens(lower).catch(() => undefined),
+    scanManifoldArtistTokens(lower).catch(() => undefined),
+  ])
+}
 
 /**
- * On-visit trigger: if the address is in `known_artists` AND any of its
- * platform status rows are older than `thresholdMs` (default 1h), run
- * `refreshArtist`. Designed to be invoked from within a Next.js
- * `after()` callback so the work survives serverless function teardown.
- *
- * Callers should always wrap this in `after()` (or `unstable_after()`)
- * at the page level — do NOT call as `void maybeRefreshArtistIfStale()`,
- * because Netlify tears down the function as soon as the response is
- * sent and any in-flight awaits get cut off. Example:
- *
- *     import { after } from "next/server"
- *     after(() => maybeRefreshArtistIfStale(address))
- *
- * Crawlers hitting pages for unknown addresses cost zero (the
- * `isKnownArtist` gate fires first); for known addresses they may
- * trigger one refresh per `thresholdMs` window per artist, but cost
- * stays bounded by the known-artists set.
- *
- * Race: two concurrent visits within the same window may both fire a
- * refresh. The wasted call is one per concurrent visitor — acceptable
- * at the volumes we expect.
+ * Most-recent `last_indexed_at` across the three platform status rows
+ * for one artist. Used by `/api/refresh-artist/[address]` as the
+ * rate-limit cursor — reject the button-click if any platform was
+ * refreshed within the last cooldown window. Returns null if no
+ * status rows exist (artist has never been refreshed).
  */
-export async function maybeRefreshArtistIfStale(
+export async function getMostRecentRefreshTime(
   address: string,
-  thresholdMs: number = STALE_THRESHOLD_MS,
-): Promise<void> {
-  if (!sql) return
+): Promise<Date | null> {
+  if (!sql) return null
   const lower = address.toLowerCase()
-
-  // Gate first — unknown addresses cost nothing past this point.
-  if (!(await isKnownArtist(lower))) return
-
-  // Look at the oldest status row across all three platforms. If any is
-  // stale (or any is missing entirely), refresh. Missing rows are
-  // treated as "infinitely stale" → first-ever visit triggers a refresh.
-  type Row = { oldest: string | null; missing: number }
-  const rows = (await sql`
-    WITH s AS (
-      SELECT last_indexed_at FROM lazy_manifold_artist_status WHERE creator = ${lower}
-      UNION ALL
-      SELECT last_indexed_at FROM lazy_srv2_artist_status WHERE creator = ${lower}
-      UNION ALL
-      SELECT last_indexed_at FROM lazy_tl_artist_status WHERE creator = ${lower}
-    )
-    SELECT MIN(last_indexed_at)::text AS oldest, (3 - COUNT(*))::int AS missing
-    FROM s
-  `) as Row[]
-
-  const row = rows[0]
-  const missing = row?.missing ?? 3
-  const oldest = row?.oldest ? new Date(row.oldest).getTime() : 0
-  const stale =
-    missing > 0 || Date.now() - oldest > thresholdMs
-
-  if (!stale) return
-
   try {
-    await refreshArtist(lower)
+    const rows = (await sql`
+      SELECT MAX(last_indexed_at)::text AS latest FROM (
+        SELECT last_indexed_at FROM lazy_manifold_artist_status WHERE creator = ${lower}
+        UNION ALL
+        SELECT last_indexed_at FROM lazy_srv2_artist_status WHERE creator = ${lower}
+        UNION ALL
+        SELECT last_indexed_at FROM lazy_tl_artist_status WHERE creator = ${lower}
+      ) s
+    `) as Array<{ latest: string | null }>
+    const latest = rows[0]?.latest
+    return latest ? new Date(latest) : null
   } catch {
-    // Swallow — best-effort background work; the cron picks up
-    // anything we miss.
+    return null
   }
 }
 
 /**
- * Refresh one artist across all three external platforms. Steps:
- *
- *   1. DELETE the artist's status row from each lazy_* status table
- *      so the adapter's cache check sees "never indexed" on next call.
- *   2. Call each adapter's `discoverArtistTokens(artist)` which:
- *      - sees the cache miss
- *      - gates on `isKnownArtist` (true, since we got here from a
- *        known-artists iteration or a known-artist on-demand caller)
- *      - fetches from Alchemy/Etherscan
- *      - writes fresh rows (updates `last_indexed_at` along the way)
- *
- * Per-platform failures are isolated (`catch(() => {})`) so one
- * platform's flakiness doesn't drop the others.
+ * Token row counts per platform after a refresh, for the button's UI
+ * feedback ("you have N Manifold tokens, M SR V2 tokens, ..."). Used
+ * by `/api/refresh-artist/[address]` in the success response.
  */
-export async function refreshArtist(address: string): Promise<void> {
-  if (!sql) return
-  const lower = address.toLowerCase() as Address
+export type ArtistTokenCounts = {
+  manifold: number
+  srv2: number
+  tl: number
+}
 
-  // Invalidate status so the adapters' cache checks miss.
-  await sql`
-    DELETE FROM lazy_manifold_artist_status WHERE creator = ${lower}
-  `
-  await sql`
-    DELETE FROM lazy_srv2_artist_status WHERE creator = ${lower}
-  `
-  await sql`
-    DELETE FROM lazy_tl_artist_status WHERE creator = ${lower}
-  `
-
-  await Promise.all([
-    superrareV2Adapter.discoverArtistTokens(lower).catch(() => undefined),
-    transientAdapter.discoverArtistTokens(lower).catch(() => undefined),
-    manifoldAdapter.discoverArtistTokens(lower).catch(() => undefined),
-  ])
+export async function countArtistTokens(
+  address: string,
+): Promise<ArtistTokenCounts> {
+  if (!sql) return { manifold: 0, srv2: 0, tl: 0 }
+  const lower = address.toLowerCase()
+  try {
+    const rows = (await sql`
+      SELECT
+        (SELECT COUNT(*) FROM lazy_manifold_artist_tokens WHERE creator = ${lower})::int AS manifold,
+        (SELECT COUNT(*) FROM lazy_srv2_artist_tokens     WHERE creator = ${lower})::int AS srv2,
+        (SELECT COUNT(*) FROM lazy_tl_artist_tokens       WHERE creator = ${lower})::int AS tl
+    `) as Array<{ manifold: number; srv2: number; tl: number }>
+    const r = rows[0]
+    return {
+      manifold: r?.manifold ?? 0,
+      srv2: r?.srv2 ?? 0,
+      tl: r?.tl ?? 0,
+    }
+  } catch {
+    return { manifold: 0, srv2: 0, tl: 0 }
+  }
 }
