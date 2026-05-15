@@ -5,18 +5,34 @@ import { useIpfsGatewayFallback } from "./use-ipfs-fallback"
 import { optimizeImageUrl } from "./optimize-image-url"
 
 /**
- * Image source hook for grid tiles. Layers two fallbacks:
+ * Below this requested width, treat the proxy as the only attempt: if
+ * weserv refuses (e.g. >71-megapixel arweave source), do NOT fall back
+ * to the raw URL — that would download the full original (often tens of
+ * MB) just to render at a thumbnail size. Show a placeholder instead.
  *
- *  1. Default `src` is the weserv-optimized version of the current IPFS
- *     gateway URL — small WebP, ~95% lighter than the raw original.
- *  2. If weserv errors (e.g. pixel-limit, fair-use throttle, outage),
- *     drop the proxy and try the raw gateway URL.
- *  3. If the raw URL also errors AND it's an IPFS gateway URL, rotate
- *     to the next gateway via `useIpfsGatewayFallback`.
- *  4. If everything has failed and there is nothing left to rotate to
- *     (non-IPFS URL or all gateways exhausted), `failed` flips to
- *     `true` so callers can render a placeholder instead of the
- *     browser's broken-image icon.
+ * Above this width the raw fallback is allowed because the image IS the
+ * primary content (gallery tile) and the user is expecting a real
+ * picture even if it's heavy.
+ */
+const THUMBNAIL_WIDTH_THRESHOLD = 200
+
+/**
+ * Image source hook for grid tiles. Layers fallbacks differently
+ * depending on whether the caller wants a thumbnail or a full tile.
+ *
+ * **Tile mode** (width ≥ 200):
+ *  1. weserv-optimized WebP — small, ~95% lighter than raw.
+ *  2. If weserv errors, try the raw gateway URL.
+ *  3. If raw errors and it's an IPFS URL, rotate gateway.
+ *  4. Otherwise `failed` flips true → caller renders a placeholder.
+ *
+ * **Thumbnail mode** (width < 200):
+ *  1. weserv-optimized WebP.
+ *  2. If weserv errors and it's an IPFS URL, skip raw, rotate gateway,
+ *     try weserv on the new gateway.
+ *  3. Otherwise `failed` flips true. Critically, we do NOT fall back
+ *     to the raw URL for thumbnails — the raw original is often tens
+ *     of MB and would be wasted on a 40-pixel display.
  *
  * Non-proxyable URLs (`data:`, on-chain SVG, video, unknown hosts) flow
  * through unchanged — `optimizeImageUrl` returns them as-is.
@@ -49,17 +65,27 @@ export function useOptimizedImage(initialUrl: string, width = 800) {
   const proxyApplied = useProxy && optimized !== rawSrc
   const displaySrc = useProxy ? optimized : rawSrc
 
+  const isThumbnail = width < THUMBNAIL_WIDTH_THRESHOLD
+
   const onError = useCallback(() => {
     if (proxyApplied) {
+      if (isThumbnail) {
+        // Skip raw — see THUMBNAIL_WIDTH_THRESHOLD docstring. Try the
+        // next IPFS gateway via proxy; if no rotation available, give
+        // up and let the caller render a placeholder.
+        const rotated = onRawError()
+        if (!rotated) setFailed(true)
+        return
+      }
       setUseProxy(false)
       return
     }
-    // Raw URL also failed. Ask the gateway-rotation hook to try the
-    // next gateway. If it can't rotate, the cascade is exhausted —
-    // flip `failed` so the caller renders a placeholder.
+    // Tile mode, raw URL also failed. Ask the gateway-rotation hook
+    // to try the next gateway. If it can't rotate, the cascade is
+    // exhausted — flip `failed` so the caller renders a placeholder.
     const rotated = onRawError()
     if (!rotated) setFailed(true)
-  }, [proxyApplied, onRawError])
+  }, [proxyApplied, onRawError, isThumbnail])
 
   // Catch SSR-rendered images that already failed before hydration —
   // their native error event has come and gone, so the React handler
