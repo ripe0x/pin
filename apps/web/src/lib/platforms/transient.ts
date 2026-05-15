@@ -329,7 +329,7 @@ export async function scanTransientArtistTokens(artist: Address): Promise<void> 
   const client = getClient()
   const latest = await client.getBlockNumber()
   if (fromBlock > latest) {
-    writeTransientArtistTokens(artist, [], latest)
+    await writeTransientArtistTokens(artist, [], latest)
     return
   }
 
@@ -401,7 +401,7 @@ export async function scanTransientArtistTokens(artist: Address): Promise<void> 
     }
   }
 
-  writeTransientArtistTokens(artist, refs, latest)
+  await writeTransientArtistTokens(artist, refs, latest)
 }
 
 export const transientAdapter: PlatformAdapter = {

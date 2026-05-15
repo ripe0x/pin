@@ -21,7 +21,7 @@ import { useAccount } from "wagmi"
 type State =
   | { kind: "idle" }
   | { kind: "loading" }
-  | { kind: "ok"; durationMs: number; counts: Counts }
+  | { kind: "ok"; durationMs: number; added: Counts; totals: Counts }
   | { kind: "rate-limited"; retryAfterSec: number }
   | { kind: "error"; message: string }
 
@@ -45,7 +45,12 @@ export function RefreshButton({ artistAddress }: { artistAddress: string }) {
         method: "POST",
       })
       const json = (await res.json()) as
-        | { ok: true; durationMs: number; manifold: number; srv2: number; tl: number }
+        | {
+            ok: true
+            durationMs: number
+            totals: Counts
+            added: Counts
+          }
         | { ok: false; error: string; retryAfter?: number }
       if (res.status === 429 && !json.ok) {
         setState({
@@ -64,11 +69,8 @@ export function RefreshButton({ artistAddress }: { artistAddress: string }) {
       setState({
         kind: "ok",
         durationMs: json.durationMs,
-        counts: {
-          manifold: json.manifold,
-          srv2: json.srv2,
-          tl: json.tl,
-        },
+        added: json.added,
+        totals: json.totals,
       })
     } catch (err) {
       setState({
@@ -109,19 +111,33 @@ function RefreshStatus({ state }: { state: State }) {
   }
   // ok
   const secs = Math.max(1, Math.round(state.durationMs / 1000))
-  const total =
-    state.counts.manifold + state.counts.srv2 + state.counts.tl
+  const addedTotal = state.added.manifold + state.added.srv2 + state.added.tl
+  const totalsTotal =
+    state.totals.manifold + state.totals.srv2 + state.totals.tl
+
+  // If new work was found, highlight it. Otherwise just confirm the
+  // refresh completed and report the total catalog size so the artist
+  // knows the index is healthy.
+  if (addedTotal > 0) {
+    return (
+      <span className="text-xs text-gray-500">
+        Refreshed in {secs}s. Found {addedTotal} new piece
+        {addedTotal === 1 ? "" : "s"}.{" "}
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="underline hover:no-underline"
+        >
+          Reload
+        </button>{" "}
+        to see them.
+      </span>
+    )
+  }
   return (
     <span className="text-xs text-gray-500">
-      Refreshed in {secs}s ({total} token{total === 1 ? "" : "s"} indexed).{" "}
-      <button
-        type="button"
-        onClick={() => window.location.reload()}
-        className="underline hover:no-underline"
-      >
-        Reload
-      </button>{" "}
-      to see new work.
+      Refreshed in {secs}s. No new pieces since last scan
+      {totalsTotal > 0 ? ` (${totalsTotal} total indexed).` : "."}
     </span>
   )
 }
