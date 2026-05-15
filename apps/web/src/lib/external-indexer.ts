@@ -1,4 +1,5 @@
 import "server-only"
+import { after } from "next/server"
 import type { Address } from "viem"
 import { sql } from "./db"
 import { manifoldAdapter } from "./platforms/manifold"
@@ -98,9 +99,17 @@ const STALE_THRESHOLD_MS = 60 * 60 * 1000
 
 /**
  * On-visit trigger: if the address is in `known_artists` AND any of its
- * platform status rows are older than `thresholdMs` (default 1h), fire
- * `refreshArtist` in the background. Returns immediately — the refresh
- * runs fire-and-forget so the page render isn't delayed.
+ * platform status rows are older than `thresholdMs` (default 1h), schedule
+ * `refreshArtist` to run AFTER the response is sent. The page render
+ * isn't delayed; the refresh writes update rows for the next visitor.
+ *
+ * Uses Next.js's `after()` (stable as of 15.1) rather than `void` because
+ * Netlify (and other serverless runtimes) terminate the function
+ * immediately after the response is sent — any `void promise` work in
+ * flight at that moment gets cut off mid-statement. We saw exactly that
+ * in production: the first DELETE landed but the rest of `refreshArtist`
+ * never ran. `after()` is the official Next.js way to keep async work
+ * alive past the response.
  *
  * Called from server components for `/catalog/[address]` and
  * `/artist/[address]`. Crawlers hitting these pages for unknown
@@ -110,8 +119,7 @@ const STALE_THRESHOLD_MS = 60 * 60 * 1000
  *
  * Race: two concurrent visits within the same window may both fire a
  * refresh. The wasted call is one per concurrent visitor — acceptable
- * at the volumes we expect. If this becomes a concern, wrap in
- * `withSingleFlight`.
+ * at the volumes we expect.
  */
 export async function maybeRefreshArtistIfStale(
   address: string,
@@ -147,9 +155,16 @@ export async function maybeRefreshArtistIfStale(
 
   if (!stale) return
 
-  // Fire-and-forget. Page render proceeds; refresh writes update rows
-  // for the next visitor (or this same visitor on next render).
-  void refreshArtist(lower).catch(() => undefined)
+  // Schedule the refresh to run AFTER the response is sent. Survives
+  // serverless function teardown that would kill a `void` promise.
+  after(async () => {
+    try {
+      await refreshArtist(lower)
+    } catch {
+      // Swallow — best-effort background work; the cron picks up
+      // anything we miss.
+    }
+  })
 }
 
 /**
