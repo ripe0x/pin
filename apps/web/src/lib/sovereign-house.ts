@@ -1,7 +1,8 @@
 /**
  * Resolver for an artist's sovereign auction house address.
  *
- * Source of truth: the Ponder indexer's `ponder.pnd_houses` table. Ponder
+ * Source of truth: the Ponder indexer's `pnd_houses` table (under the
+ * schema named by `INDEXER_SCHEMA`, currently `ponder_v1`). Ponder
  * subscribes to the factory's `AuctionHouseCreated` events in real time
  * and maintains a row per house indexed by `owner`. Reading from there
  * costs one Postgres point query and is free of on-chain RPC traffic.
@@ -49,11 +50,16 @@ async function readHouseFromPonder(
 ): Promise<Address | null | undefined> {
   if (!sql) return undefined
   try {
-    const rows = await sql<Array<{ house: string }>>`
-      SELECT house FROM ponder.pnd_houses
-      WHERE lower(owner) = ${artistLower}
-      LIMIT 1
-    `
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+      /[^a-zA-Z0-9_]/g,
+      "",
+    )
+    const rows = (await sql.unsafe(
+      `SELECT house FROM ${schema}.pnd_houses
+       WHERE lower(owner) = $1
+       LIMIT 1`,
+      [artistLower],
+    )) as Array<{ house: string }>
     if (rows.length === 0) return null
     return rows[0].house as Address
   } catch {

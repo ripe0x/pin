@@ -200,7 +200,7 @@ export async function discoverFoundationPinnedTokens(
  *
  * Read order, fast → slow:
  *
- *   1. Ponder index (`ponder.fnd_artist_tokens`). Fastest path: a single
+ *   1. Ponder index (`<INDEXER_SCHEMA>.fnd_artist_tokens`). Fastest path: a single
  *      Postgres point lookup. Critical for crawler protection — search
  *      bots walking `/artist/<addr>` URLs from the activity feed used to
  *      trigger 6 parallel `eth_getLogs` scans against ~13M blocks per

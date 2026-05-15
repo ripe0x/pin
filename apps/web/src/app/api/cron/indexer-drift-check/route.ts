@@ -18,12 +18,13 @@ import { sql } from "@/lib/db"
  * What this cron does. Compares the application tables against
  * `factory_addresses` for both PND (factory_id=1) and FND collections
  * (factory_id=512) and INSERTs any missing rows. **Forward fix only.**
- * Does NOT drop the ponder schema. New events on the now-registered
+ * Does NOT drop the indexer schema. New events on the now-registered
  * clones will be indexed correctly going forward; past events that
  * fired between clone deploy and this cron's repair are NOT
- * automatically backfilled — they require a manual reindex
- * (`DROP SCHEMA ponder CASCADE`, Ponder auto-restart replays from
- * cached `ponder_sync.logs`).
+ * automatically backfilled — they require a manual reindex (the
+ * versioned-schema upgrade flow in ponder/README.md is the cheap
+ * way: bump DATABASE_SCHEMA, let Ponder rebuild the new schema from
+ * `ponder_sync.logs` cache, flip INDEXER_SCHEMA on the web app).
  *
  * The response includes a `requires_manual_reindex` flag when a repair
  * happened, so the caller can alert.
@@ -68,28 +69,34 @@ export async function POST(req: NextRequest) {
   }
 
   const db = sql
+  const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+    /[^a-zA-Z0-9_]/g,
+    "",
+  )
 
   // PND: pnd_houses ↔ factory_addresses(factory_id=1)
-  const pndMissing = (await db`
-    SELECT h.house AS address, h.created_at_block::text AS block_number
-    FROM ponder.pnd_houses h
-    WHERE NOT EXISTS (
-      SELECT 1 FROM ponder_sync.factory_addresses fa
-      WHERE fa.factory_id = ${PND_FACTORY_ID} AND lower(fa.address) = h.house
-    )
-    ORDER BY h.created_at_block::numeric
-  `) as Array<{ address: string; block_number: string }>
+  const pndMissing = (await db.unsafe(
+    `SELECT h.house AS address, h.created_at_block::text AS block_number
+     FROM ${schema}.pnd_houses h
+     WHERE NOT EXISTS (
+       SELECT 1 FROM ponder_sync.factory_addresses fa
+       WHERE fa.factory_id = $1 AND lower(fa.address) = h.house
+     )
+     ORDER BY h.created_at_block::numeric`,
+    [PND_FACTORY_ID],
+  )) as Array<{ address: string; block_number: string }>
 
   // FND: fnd_collections ↔ factory_addresses(factory_id=512)
-  const fndMissing = (await db`
-    SELECT c.collection AS address, c.created_at_block::text AS block_number
-    FROM ponder.fnd_collections c
-    WHERE NOT EXISTS (
-      SELECT 1 FROM ponder_sync.factory_addresses fa
-      WHERE fa.factory_id = ${FND_FACTORY_ID} AND lower(fa.address) = c.collection
-    )
-    ORDER BY c.created_at_block::numeric
-  `) as Array<{ address: string; block_number: string }>
+  const fndMissing = (await db.unsafe(
+    `SELECT c.collection AS address, c.created_at_block::text AS block_number
+     FROM ${schema}.fnd_collections c
+     WHERE NOT EXISTS (
+       SELECT 1 FROM ponder_sync.factory_addresses fa
+       WHERE fa.factory_id = $1 AND lower(fa.address) = c.collection
+     )
+     ORDER BY c.created_at_block::numeric`,
+    [FND_FACTORY_ID],
+  )) as Array<{ address: string; block_number: string }>
 
   // Insert missing rows. Small batches; the gaps we're patching are
   // dozens at most — full table sweeps are unnecessary.
@@ -110,13 +117,14 @@ export async function POST(req: NextRequest) {
   }
 
   // Sanity totals so the response answers "are we in sync now?"
-  const [totals] = (await db`
-    SELECT
-      (SELECT count(*)::int FROM ponder.pnd_houses) AS pnd_houses,
-      (SELECT count(*)::int FROM ponder_sync.factory_addresses WHERE factory_id = ${PND_FACTORY_ID}) AS pnd_factory_addrs,
-      (SELECT count(*)::int FROM ponder.fnd_collections) AS fnd_collections,
-      (SELECT count(*)::int FROM ponder_sync.factory_addresses WHERE factory_id = ${FND_FACTORY_ID}) AS fnd_factory_addrs
-  `) as [
+  const [totals] = (await db.unsafe(
+    `SELECT
+       (SELECT count(*)::int FROM ${schema}.pnd_houses) AS pnd_houses,
+       (SELECT count(*)::int FROM ponder_sync.factory_addresses WHERE factory_id = $1) AS pnd_factory_addrs,
+       (SELECT count(*)::int FROM ${schema}.fnd_collections) AS fnd_collections,
+       (SELECT count(*)::int FROM ponder_sync.factory_addresses WHERE factory_id = $2) AS fnd_factory_addrs`,
+    [PND_FACTORY_ID, FND_FACTORY_ID],
+  )) as [
     {
       pnd_houses: number
       pnd_factory_addrs: number
@@ -137,7 +145,7 @@ export async function POST(req: NextRequest) {
     totals,
     note:
       repaired > 0
-        ? "factory_addresses backfilled — new events on these clones will index going forward, but past missed events require a manual reindex (DROP SCHEMA ponder CASCADE; Ponder auto-restarts and replays from ponder_sync.logs)."
+        ? "factory_addresses backfilled — new events on these clones will index going forward. Past missed events need a manual reindex; the cheap path is the versioned-schema bump in ponder/README.md (Ponder rebuilds from cached ponder_sync.logs, no RPC re-fetch)."
         : "no drift detected.",
   })
 }

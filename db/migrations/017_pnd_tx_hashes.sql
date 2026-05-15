@@ -12,12 +12,18 @@
 --
 -- Idempotent: safe to run before or after Ponder re-syncs. If Ponder's
 -- own schema migration runs first, these statements are no-ops.
+--
+-- Schema name is parameterized (`ponder_schema` constant) — bump it on
+-- every versioned-schema upgrade. See ponder/README.md for the flow.
 
-ALTER TABLE ponder.pnd_houses
-  ADD COLUMN IF NOT EXISTS created_tx_hash TEXT;
-
-ALTER TABLE ponder.pnd_auctions
-  ADD COLUMN IF NOT EXISTS created_tx_hash TEXT;
-
-ALTER TABLE ponder.pnd_auctions
-  ADD COLUMN IF NOT EXISTS lifecycle_tx_hash TEXT;
+DO $$
+DECLARE
+  ponder_schema CONSTANT TEXT := 'ponder_v1';
+BEGIN
+  EXECUTE 'ALTER TABLE ' || ponder_schema || '.pnd_houses '   ||
+          'ADD COLUMN IF NOT EXISTS created_tx_hash TEXT';
+  EXECUTE 'ALTER TABLE ' || ponder_schema || '.pnd_auctions ' ||
+          'ADD COLUMN IF NOT EXISTS created_tx_hash TEXT';
+  EXECUTE 'ALTER TABLE ' || ponder_schema || '.pnd_auctions ' ||
+          'ADD COLUMN IF NOT EXISTS lifecycle_tx_hash TEXT';
+END $$;

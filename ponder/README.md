@@ -33,11 +33,11 @@ AuctionCanceled                → set pnd_auctions.status = 'cancelled'
 Schema is in [`ponder.schema.ts`](ponder.schema.ts). Two tables:
 
 ```txt
-ponder.pnd_auctions    one row per (house, auctionId), state-machine'd
+<schema>.pnd_auctions   one row per (house, auctionId), state-machine'd
                        in place. Indexed on (seller, status) and
                        (token_contract, token_id).
 
-ponder.pnd_bids        immutable bid log. Indexed on (auction_id,
+<schema>.pnd_bids      immutable bid log. Indexed on (auction_id,
                        block_number).
 ```
 
@@ -197,11 +197,21 @@ that another build owns. Bump the version instead of dropping:
 2. **Update `db/migrations/022_known_artists_view.sql`** — the
    `ponder_schema` constant near the top points at the live schema.
    Bump it to the new value.
-3. **Update the code default** in
-   `apps/web/src/lib/indexer-queries.ts` — search for
-   `INDEXER_SCHEMA ?? "ponder_v1"` and bump the literal. The env
-   var is the source of truth in production; the default exists
-   for fresh local-dev setups.
+3. **Update every code default** that reads the indexer schema.
+   Most live in `apps/web/src/lib/indexer-queries.ts`, but a few
+   call sites inline the same `INDEXER_SCHEMA ?? "ponder_v1"`
+   pattern (e.g. `apps/web/src/lib/sovereign-house.ts`,
+   `apps/web/src/app/api/cron/indexer-drift-check/route.ts`).
+   Run this from the repo root to find every literal that needs
+   bumping — should hit the migration files too:
+   ```bash
+   grep -rnE 'ponder_v[0-9]+|INDEXER_SCHEMA \?\? "ponder' \
+     apps/ db/ ponder/ scripts/ \
+     --include='*.ts' --include='*.tsx' \
+     --include='*.sql' --include='*.md'
+   ```
+   The env var is the source of truth in production; the defaults
+   exist for fresh local-dev setups and CI without env config.
 4. **Set `DATABASE_SCHEMA=ponder_v2` on the indexer** (Railway
    variables → ponder service). Trigger a fresh deploy with
    `railway up --service ponder` — `redeploy` reuses the cached
