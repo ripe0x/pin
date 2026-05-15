@@ -257,6 +257,7 @@ function GalleryCard({
     src: mediaSrc,
     onError: onMediaError,
     ref: mediaRef,
+    failed: mediaFailed,
   } = useOptimizedImage(item.imageUrl, 800)
 
   const isActive = item.auction?.bucket === "active"
@@ -272,7 +273,7 @@ function GalleryCard({
           className="relative overflow-hidden bg-gray-100"
           style={{ aspectRatio: ratio ?? 1 }}
         >
-          {isVideo ? (
+          {mediaFailed ? null : isVideo ? (
             <video
               src={mediaSrc}
               className="block w-full h-auto"

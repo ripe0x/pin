@@ -9,7 +9,10 @@ function shortAddr(addr: string) {
 }
 
 function TokenThumbnail({ src, alt }: { src: string; alt: string }) {
-  const { src: mediaSrc, onError, ref } = useOptimizedImage(src, 96)
+  const { src: mediaSrc, onError, ref, failed } = useOptimizedImage(src, 96)
+  if (failed) {
+    return <div className="h-10 w-10 rounded-md bg-gray-100 shrink-0" />
+  }
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img

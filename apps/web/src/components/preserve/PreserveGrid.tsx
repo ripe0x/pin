@@ -51,12 +51,13 @@ function PreserveCard({ item }: { item: TokenWithPinState }) {
     src: mediaSrc,
     onError: onMediaError,
     ref: mediaRef,
+    failed: mediaFailed,
   } = useOptimizedImage(imageUrl, 600)
 
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden">
       <div className="relative bg-gray-100 aspect-square">
-        {isVideo ? (
+        {mediaFailed ? null : isVideo ? (
           <video
             src={mediaSrc}
             className="w-full h-full object-cover"
