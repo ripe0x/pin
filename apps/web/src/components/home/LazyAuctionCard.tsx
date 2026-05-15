@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { useEffect, useRef, useState } from "react"
 import { formatEther } from "viem"
+import { OptimizedImage } from "@/components/OptimizedImage"
 import { PlatformChip } from "@/components/PlatformChip"
 import type { PlatformId } from "@/lib/platforms/types"
 
@@ -151,11 +152,10 @@ export function LazyAuctionCard({
             className="h-full w-full object-cover"
           />
         ) : meta?.mediaUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <OptimizedImage
             src={meta.mediaUrl}
             alt={title}
-            loading="lazy"
+            width={500}
             className="h-full w-full object-cover"
           />
         ) : null}

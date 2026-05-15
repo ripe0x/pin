@@ -3,6 +3,7 @@ import { formatEther } from "viem"
 import { ipfsToHttp } from "@pin/shared"
 import { resolveTokenMetadataDirect } from "@/lib/onchain-discovery"
 import { PlatformChip } from "@/components/PlatformChip"
+import { OptimizedImage } from "@/components/OptimizedImage"
 import type { PlatformId } from "@/lib/platforms/types"
 
 const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
@@ -101,11 +102,10 @@ export async function AuctionCard({
             className="h-full w-full object-cover"
           />
         ) : mediaUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <OptimizedImage
             src={mediaUrl}
             alt={title}
-            loading="lazy"
+            width={500}
             className="h-full w-full object-cover"
           />
         ) : null}

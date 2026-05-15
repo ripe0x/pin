@@ -1,6 +1,7 @@
 import Link from "next/link"
 import type { ReactNode } from "react"
 import { AddressZorb } from "@/components/AddressZorb"
+import { OptimizedImage } from "@/components/OptimizedImage"
 import type { EnrichedActivityEvent } from "@/lib/v2-activity-types"
 import { formatEth, formatTimeAgo, truncateAddress } from "./format"
 
@@ -71,22 +72,20 @@ export function ActivityRow({ event }: Props) {
                   className="h-full w-full object-cover"
                 />
               ) : (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <OptimizedImage
                   src={mediaUrl}
                   alt={tokenTitle ?? ""}
-                  loading="lazy"
+                  width={96}
                   className="h-full w-full object-cover"
                 />
               )}
             </Link>
           ) : artistAvatarUrl ? (
             <Link href={artistHref} className="block h-full w-full">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+              <OptimizedImage
                 src={artistAvatarUrl}
                 alt={artistDisplayName}
-                loading="lazy"
+                width={96}
                 className="h-full w-full object-cover"
               />
             </Link>

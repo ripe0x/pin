@@ -3,6 +3,7 @@ import { formatEther } from "viem"
 import { ipfsToHttp } from "@pin/shared"
 import { resolveTokenMetadataDirect } from "@/lib/onchain-discovery"
 import { PlatformChip } from "@/components/PlatformChip"
+import { OptimizedImage } from "@/components/OptimizedImage"
 import { AddressZorb } from "@/components/AddressZorb"
 import type { PlatformId } from "@/lib/platforms/types"
 
@@ -104,11 +105,10 @@ export async function WorkArtistCard({
               className="h-full w-full object-cover"
             />
           ) : mediaUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <OptimizedImage
               src={mediaUrl}
               alt={title}
-              loading="lazy"
+              width={600}
               className="h-full w-full object-cover"
             />
           ) : null}
@@ -120,11 +120,10 @@ export async function WorkArtistCard({
         >
           <div className="h-16 w-16 rounded-full overflow-hidden shrink-0">
             {artistAvatarUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
+              <OptimizedImage
                 src={artistAvatarUrl}
                 alt={artistDisplayName}
-                loading="lazy"
+                width={160}
                 className="h-full w-full object-cover"
               />
             ) : (

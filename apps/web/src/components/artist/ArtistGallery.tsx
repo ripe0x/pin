@@ -8,7 +8,7 @@ import { formatEther } from "viem"
 import type { GalleryItem, GalleryPage } from "@/lib/artist-queries"
 import type { SovereignAuctionLite } from "@/lib/auctions"
 import { createProvider, type PinStatus } from "@/lib/pinning"
-import { useIpfsGatewayFallback } from "@/lib/use-ipfs-fallback"
+import { useOptimizedImage } from "@/lib/use-optimized-image"
 import { TokenPinStatus } from "@/components/preserve/TokenPinStatus"
 import { DeployHouseCTA } from "@/components/auction/DeployHouseCTA"
 import { useArtistHouse } from "@/components/auction/useArtistHouse"
@@ -253,9 +253,11 @@ function GalleryCard({
   const isVideo = isVideoUrl(item.imageUrl)
   const pinStatus = hasProvider ? getItemPinStatus(item, pinStatuses) : null
   const [ratio, setRatio] = useState<number | null>(null)
-  const { src: mediaSrc, onError: onMediaError } = useIpfsGatewayFallback(
-    item.imageUrl,
-  )
+  const {
+    src: mediaSrc,
+    onError: onMediaError,
+    ref: mediaRef,
+  } = useOptimizedImage(item.imageUrl, 800)
 
   const isActive = item.auction?.bucket === "active"
   const borderClass = isActive
@@ -287,6 +289,7 @@ function GalleryCard({
             />
           ) : (
             <img
+              ref={mediaRef}
               src={mediaSrc}
               alt={item.title}
               className="block w-full h-auto"

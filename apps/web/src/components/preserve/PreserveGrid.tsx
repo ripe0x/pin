@@ -2,7 +2,7 @@
 
 import type { DiscoveredToken } from "@/lib/onchain-discovery"
 import type { PinStatus } from "@/lib/pinning"
-import { useIpfsGatewayFallback } from "@/lib/use-ipfs-fallback"
+import { useOptimizedImage } from "@/lib/use-optimized-image"
 import { TokenPinStatus } from "./TokenPinStatus"
 
 type TokenWithPinState = {
@@ -47,8 +47,11 @@ function PreserveCard({ item }: { item: TokenWithPinState }) {
   const combinedStatus = worstStatus(metadataStatus, mediaStatus)
 
   const isVideo = isVideoUrl(imageUrl)
-  const { src: mediaSrc, onError: onMediaError } =
-    useIpfsGatewayFallback(imageUrl)
+  const {
+    src: mediaSrc,
+    onError: onMediaError,
+    ref: mediaRef,
+  } = useOptimizedImage(imageUrl, 600)
 
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden">
@@ -64,6 +67,7 @@ function PreserveCard({ item }: { item: TokenWithPinState }) {
           />
         ) : (
           <img
+            ref={mediaRef}
             src={mediaSrc}
             alt={title}
             className="w-full h-full object-cover"

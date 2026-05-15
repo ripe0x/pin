@@ -2,9 +2,25 @@
 
 import { useContractInfo } from "./useContractInfo"
 import { useTokenInfo } from "./useTokenInfo"
+import { useOptimizedImage } from "@/lib/use-optimized-image"
 
 function shortAddr(addr: string) {
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`
+}
+
+function TokenThumbnail({ src, alt }: { src: string; alt: string }) {
+  const { src: mediaSrc, onError, ref } = useOptimizedImage(src, 96)
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      ref={ref}
+      src={mediaSrc}
+      alt={alt}
+      className="h-10 w-10 rounded-md object-cover bg-gray-100 shrink-0"
+      loading="lazy"
+      onError={onError}
+    />
+  )
 }
 
 /**
@@ -68,18 +84,15 @@ export function TokenLabel({
 
   return (
     <div className="flex items-center gap-3 min-w-0">
-      {thumbnail && (
-        image ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+      {thumbnail &&
+        (image ? (
+          <TokenThumbnail
             src={image}
             alt={tokenName ?? `Token #${tokenId}`}
-            className="h-10 w-10 rounded-md object-cover bg-gray-100 shrink-0"
           />
         ) : (
           <div className="h-10 w-10 rounded-md bg-gray-100 shrink-0" />
-        )
-      )}
+        ))}
       <div className="min-w-0 space-y-0.5">
         <a
           href={`https://evm.now/address/${contractAddress}`}
