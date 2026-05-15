@@ -35,6 +35,7 @@ import {
 import type { BidHistoryEntry } from "../auctions"
 import { discoverTransientArtistAuctions } from "./transient-scan"
 import { loggingFallbackTransport } from "../rpc-log"
+import { isKnownArtist } from "../known-artists"
 
 const TL_AH = TL_AUCTION_HOUSE[MAINNET_CHAIN_ID]
 const TL_DEPLOYER = TL_UNIVERSAL_DEPLOYER[MAINNET_CHAIN_ID]
@@ -319,8 +320,12 @@ export const transientAdapter: PlatformAdapter = {
    * typical artist contract is small).
    */
   async discoverArtistTokens(artist: Address): Promise<ArtistTokenRef[]> {
+    // Postgres is source of truth: trust any existing rows. The cron
+    // (see lib/external-indexer.ts) handles refreshes for known
+    // artists by clearing the status row first, then calling this
+    // method — that path lands in the cache-miss branch below.
     const cached = await readTransientArtistTokens(artist)
-    if (cached && isFresh(cached.lastIndexedAt, LAZY_TTL.transientArtistTokens)) {
+    if (cached) {
       return cached.tokens.map((t) => ({
         platform: "transient",
         contract: t.contract as Address,
@@ -329,6 +334,12 @@ export const transientAdapter: PlatformAdapter = {
         logIndex: t.logIndex,
         collectionName: null,
       }))
+    }
+
+    // Cache miss: gate on known_artists before any external call.
+    if (!(await isKnownArtist(artist))) {
+      writeTransientArtistTokens(artist, [])
+      return []
     }
 
     const client = getClient()

@@ -29,10 +29,9 @@ import type { DiscoveredToken, TokenRef } from "./onchain-discovery"
 import {
   readManifoldArtistTokens,
   writeManifoldArtistTokens,
-  LAZY_TTL,
-  isFresh,
 } from "./lazy-index"
 import { loggingFallbackTransport } from "./rpc-log"
+import { isKnownArtist } from "./known-artists"
 
 // Marker every Manifold Creator Core (V1+) returns true for. From
 // CreatorCore.sol: `bytes4 private constant _CREATOR_CORE_V1 = 0x28f10a21`.
@@ -132,16 +131,25 @@ export async function discoverManifoldTokenRefs(
 ): Promise<TokenRef[]> {
   const artist = artistAddress.toLowerCase() as Address
 
-  // Lazy index read: if a fresh row exists for this artist, return it
-  // without Etherscan + Alchemy NFT API calls.
+  // Postgres is source of truth: trust any existing rows (no TTL gate).
+  // Refresh is driven by the daily cron in lib/external-indexer.ts which
+  // clears the status row before re-calling, landing in the fetch branch.
   const cached = await readManifoldArtistTokens(artist)
-  if (cached && isFresh(cached.lastIndexedAt, LAZY_TTL.manifoldArtistTokens)) {
+  if (cached) {
     return cached.tokens.map((t) => ({
       contract: t.contract as Address,
       tokenId: t.tokenId,
       creator: artist,
       collectionName: t.collectionName,
     }))
+  }
+
+  // Cache miss: gate on known_artists before any Etherscan/Alchemy call.
+  // Bounds external-API spend to the ecosystem allow-list — anonymous
+  // crawler traffic on unknown addresses returns [] without scanning.
+  if (!(await isKnownArtist(artist))) {
+    writeManifoldArtistTokens(artist, [])
+    return []
   }
 
   const apiKey = process.env.ETHERSCAN_API_KEY
