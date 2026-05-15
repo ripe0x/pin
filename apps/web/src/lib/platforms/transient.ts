@@ -36,6 +36,7 @@ import type { BidHistoryEntry } from "../auctions"
 import { discoverTransientArtistAuctions } from "./transient-scan"
 import { loggingFallbackTransport } from "../rpc-log"
 import { isKnownArtist } from "../known-artists"
+import { MAX_BLOCKS_PER_SCAN } from "../external-indexer"
 
 const TL_AH = TL_AUCTION_HOUSE[MAINNET_CHAIN_ID]
 const TL_DEPLOYER = TL_UNIVERSAL_DEPLOYER[MAINNET_CHAIN_ID]
@@ -317,8 +318,10 @@ type Listing = {
  *
  * Gated by `isKnownArtist`.
  */
-export async function scanTransientArtistTokens(artist: Address): Promise<void> {
-  if (!(await isKnownArtist(artist))) return
+export async function scanTransientArtistTokens(
+  artist: Address,
+): Promise<{ caughtUp: boolean }> {
+  if (!(await isKnownArtist(artist))) return { caughtUp: true }
 
   const existing = await readTransientArtistTokens(artist)
   const fromBlock =
@@ -330,8 +333,11 @@ export async function scanTransientArtistTokens(artist: Address): Promise<void> 
   const latest = await client.getBlockNumber()
   if (fromBlock > latest) {
     await writeTransientArtistTokens(artist, [], latest)
-    return
+    return { caughtUp: true }
   }
+
+  const budgetEnd = fromBlock + MAX_BLOCKS_PER_SCAN - 1n
+  const toBlock = budgetEnd < latest ? budgetEnd : latest
 
   // Stage 1 — discover newly-deployed ERC721TL clones for this artist.
   // The deployer event is rare per-artist so this is cheap even on first
@@ -346,7 +352,7 @@ export async function scanTransientArtistTokens(artist: Address): Promise<void> 
         toBlock: to,
       }),
     fromBlock,
-    latest,
+    toBlock,
   )
   const newContracts: Address[] = []
   for (const log of deployLogs) {
@@ -386,7 +392,7 @@ export async function scanTransientArtistTokens(artist: Address): Promise<void> 
           toBlock: to,
         }),
       fromBlock,
-      latest,
+      toBlock,
     )
     for (const l of mintLogs) {
       if (l.blockNumber === null || l.logIndex === null) continue
@@ -401,7 +407,8 @@ export async function scanTransientArtistTokens(artist: Address): Promise<void> 
     }
   }
 
-  await writeTransientArtistTokens(artist, refs, latest)
+  await writeTransientArtistTokens(artist, refs, toBlock)
+  return { caughtUp: toBlock >= latest }
 }
 
 export const transientAdapter: PlatformAdapter = {

@@ -21,7 +21,13 @@ import { useAccount } from "wagmi"
 type State =
   | { kind: "idle" }
   | { kind: "loading" }
-  | { kind: "ok"; durationMs: number; added: Counts; totals: Counts }
+  | {
+      kind: "ok"
+      durationMs: number
+      added: Counts
+      totals: Counts
+      caughtUp: boolean
+    }
   | { kind: "rate-limited"; retryAfterSec: number }
   | { kind: "error"; message: string }
 
@@ -50,6 +56,7 @@ export function RefreshButton({ artistAddress }: { artistAddress: string }) {
             durationMs: number
             totals: Counts
             added: Counts
+            caughtUp: boolean
           }
         | { ok: false; error: string; retryAfter?: number }
       if (res.status === 429 && !json.ok) {
@@ -71,6 +78,7 @@ export function RefreshButton({ artistAddress }: { artistAddress: string }) {
         durationMs: json.durationMs,
         added: json.added,
         totals: json.totals,
+        caughtUp: json.caughtUp,
       })
     } catch (err) {
       setState({
@@ -115,9 +123,20 @@ function RefreshStatus({ state }: { state: State }) {
   const totalsTotal =
     state.totals.manifold + state.totals.srv2 + state.totals.tl
 
-  // If new work was found, highlight it. Otherwise just confirm the
-  // refresh completed and report the total catalog size so the artist
-  // knows the index is healthy.
+  // Catching-up mode: bigger histories need multiple refresh clicks
+  // because each scan is bounded by MAX_BLOCKS_PER_SCAN. Tell the user
+  // to keep clicking until done.
+  if (!state.caughtUp) {
+    return (
+      <span className="text-xs text-amber-600">
+        Found {addedTotal} new piece{addedTotal === 1 ? "" : "s"} so far in {secs}s.
+        Still catching up — click again to continue.
+      </span>
+    )
+  }
+
+  // Fully caught up. If we found something, surface it; otherwise just
+  // confirm the refresh completed.
   if (addedTotal > 0) {
     return (
       <span className="text-xs text-gray-500">

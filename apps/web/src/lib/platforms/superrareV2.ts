@@ -44,6 +44,7 @@ import type { BidHistoryEntry } from "../auctions"
 import { discoverSuperrareV2ArtistAuctions } from "./superrareV2-scan"
 import { loggingFallbackTransport } from "../rpc-log"
 import { isKnownArtist } from "../known-artists"
+import { MAX_BLOCKS_PER_SCAN } from "../external-indexer"
 
 const SR_V2_NFT = SUPERRARE_V2_NFT[MAINNET_CHAIN_ID]
 const SR_BAZAAR = SUPERRARE_BAZAAR[MAINNET_CHAIN_ID]
@@ -295,16 +296,27 @@ async function paginatedIndexedScan<T>(
  * previous successful scan. Called by `refreshArtist` in
  * `lib/external-indexer.ts` (cron + refresh-button entrypoints).
  *
- * Cursor: `lazy_srv2_artist_status.last_scanned_block`. Null on the
- * first-ever scan → full sweep from `SR_V2_NFT_DEPLOY_BLOCK`. Otherwise
- * scans from `last_scanned_block + 1` to current head, so a typical
- * refresh only pays for a few hours of chain history.
+ * Bounded by `MAX_BLOCKS_PER_SCAN` (see external-indexer.ts) so a single
+ * call always fits inside Netlify's HTTP-function timeout, even on the
+ * first-ever scan of an artist with multi-year chain history. If the
+ * budget is hit before reaching head, the cursor advances to the
+ * scanned end block (not head). The next refresh call resumes from
+ * there.
  *
- * Gated by `isKnownArtist` to keep crawler-driven cost at zero for
- * non-ecosystem addresses.
+ * Returns `{ caughtUp }` so callers know whether further scans are
+ * needed. `caughtUp` is true when the scan reached (or was already at)
+ * the current chain head.
+ *
+ * Cursor: `lazy_srv2_artist_status.last_scanned_block`. Null → first
+ * sweep from `SR_V2_NFT_DEPLOY_BLOCK`. Otherwise resumes from
+ * `last_scanned_block + 1`.
+ *
+ * Gated by `isKnownArtist`.
  */
-export async function scanSrv2ArtistTokens(artist: Address): Promise<void> {
-  if (!(await isKnownArtist(artist))) return
+export async function scanSrv2ArtistTokens(
+  artist: Address,
+): Promise<{ caughtUp: boolean }> {
+  if (!(await isKnownArtist(artist))) return { caughtUp: true }
 
   const existing = await readSuperrareV2ArtistTokens(artist)
   const fromBlock =
@@ -315,10 +327,12 @@ export async function scanSrv2ArtistTokens(artist: Address): Promise<void> {
   const client = getClient()
   const latest = await client.getBlockNumber()
   if (fromBlock > latest) {
-    // Nothing new; still bump status so the rate-limit window resets.
     await writeSuperrareV2ArtistTokens(artist, [], latest)
-    return
+    return { caughtUp: true }
   }
+
+  const budgetEnd = fromBlock + MAX_BLOCKS_PER_SCAN - 1n
+  const toBlock = budgetEnd < latest ? budgetEnd : latest
 
   const logs = await paginatedIndexedScan(
     (from, to) =>
@@ -333,7 +347,7 @@ export async function scanSrv2ArtistTokens(artist: Address): Promise<void> {
         toBlock: to,
       }),
     fromBlock,
-    latest,
+    toBlock,
   )
 
   const refs = logs
@@ -354,7 +368,8 @@ export async function scanSrv2ArtistTokens(artist: Address): Promise<void> {
       logIndex: l.logIndex,
     }))
 
-  await writeSuperrareV2ArtistTokens(artist, refs, latest)
+  await writeSuperrareV2ArtistTokens(artist, refs, toBlock)
+  return { caughtUp: toBlock >= latest }
 }
 
 export const superrareV2Adapter: PlatformAdapter = {
