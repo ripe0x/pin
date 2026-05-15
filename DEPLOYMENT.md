@@ -120,6 +120,162 @@ Setup is in [`ponder/README.md`](./ponder/README.md). The summary:
 Ongoing cost is small (Ponder polls for new blocks, the events on a
 factory + clones are sparse).
 
+## External-platform indexer (Manifold / SuperRare V2 / Transient Labs)
+
+The three external NFT platforms aren't indexed by Ponder — that would
+mean polling tens of thousands of contracts globally, with cost that
+scales with the platform's whole user base rather than your ecosystem.
+Instead, per-artist data is pulled from Alchemy NFT API + Etherscan on
+demand, written to Postgres, and served from there. The architecture
+is "store, not cache" — written rows persist; refresh happens on
+explicit triggers, not on TTL expiry.
+
+The single mechanism that bounds cost is the **known-artist gate**:
+anonymous crawler traffic against `/artist/<random>` produces zero
+Alchemy spend because the adapter declines to call external APIs for
+addresses outside the `known_artists` view.
+
+### Membership: `known_artists` view
+
+Defined in [`db/migrations/022_known_artists_view.sql`](./db/migrations/022_known_artists_view.sql).
+An address counts as "known" iff any of these is true:
+
+- Deployed a Sovereign Auction House (`pnd_houses.owner`)
+- Deployed a Foundation collection contract (`fnd_collections.creator`)
+- Minted on Foundation, shared contract or own collection
+  (`fnd_artist_tokens.creator`)
+- Declared work in the on-chain Catalog (`catalog_contracts.artist`,
+  `catalog_tokens.artist`, or `catalog_ranges.artist`)
+
+The view is a UNION over Ponder-managed tables. New artists join the
+set automatically when Ponder picks up their on-chain action. No
+sync step required.
+
+The migration is defensive: catalog branches are only included if
+the corresponding `ponder.catalog_*` tables exist at migration time
+(catalog support is a newer Ponder schema addition). If your Ponder
+deployment predates catalog, the view runs with FND + PND sources
+only. After deploying catalog-aware Ponder, write a follow-up
+migration that re-runs the same `CREATE OR REPLACE VIEW` to pick up
+the catalog branches.
+
+To extend later (e.g., manual opt-in, collector recognition), UNION
+additional sources into the view — no downstream code changes needed.
+
+### Files
+
+- [`db/migrations/022_known_artists_view.sql`](./db/migrations/022_known_artists_view.sql)
+  — the view definition
+- [`apps/web/src/lib/known-artists.ts`](./apps/web/src/lib/known-artists.ts)
+  — `isKnownArtist(address)` gate, fails closed on DB error
+- [`apps/web/src/lib/external-indexer.ts`](./apps/web/src/lib/external-indexer.ts)
+  — `refreshArtist`, `refreshAllKnownArtists`, `maybeRefreshArtistIfStale`
+- [`apps/web/src/app/api/cron/refresh-external-indexes/route.ts`](./apps/web/src/app/api/cron/refresh-external-indexes/route.ts)
+  — daily cron endpoint
+- Adapters: [`platforms/manifold.ts`](./apps/web/src/lib/platforms/manifold.ts),
+  [`platforms/superrareV2.ts`](./apps/web/src/lib/platforms/superrareV2.ts),
+  [`platforms/transient.ts`](./apps/web/src/lib/platforms/transient.ts),
+  [`manifold-discovery.ts`](./apps/web/src/lib/manifold-discovery.ts)
+  — each calls `isKnownArtist` before any external API.
+
+### Triggers
+
+Two ways a refresh fires:
+
+1. **On-visit, stale-while-revalidate.** Server components for
+   `/artist/[address]` and `/catalog/[address]` call
+   `void maybeRefreshArtistIfStale(address)` near the top of the
+   render. No-op for unknown addresses; no-op within the 1-hour
+   stale window; otherwise fire-and-forget background refresh.
+   Page renders with current data while the refresh writes update
+   rows for the next visit. Placed after the crawler check on
+   `/artist/` so bot traffic doesn't drive refresh frequency.
+
+2. **Daily cron.** `POST /api/cron/refresh-external-indexes` iterates
+   every row in `known_artists` and refreshes all three platforms
+   per artist. Schedule once daily; the route is idempotent and
+   safe to re-run.
+
+### Scheduling the cron
+
+Wired via a Netlify Scheduled Function that POSTs to the secret-gated
+Next.js route. No third-party cron service needed.
+
+- Function: [`apps/web/netlify/functions/refresh-external-indexes-cron.ts`](./apps/web/netlify/functions/refresh-external-indexes-cron.ts)
+- Schedule: configured in [`netlify.toml`](./netlify.toml) under
+  `[functions."refresh-external-indexes-cron"]`, currently `0 4 * * *`
+  (04:00 UTC daily).
+
+Required env on Netlify:
+- `URL` — auto-set by Netlify to the site's primary URL
+- `REVALIDATE_SECRET` — same secret used by `/api/cron/cleanup` and
+  `/api/cron/indexer-drift-check`
+
+The serial loop over known artists can take several minutes for
+1000+ artists; the underlying route sets `maxDuration = 300` so a
+function-host timeout doesn't kill it mid-run.
+
+Manual invocation for ad-hoc refreshes (no scheduler needed):
+
+```bash
+curl -X POST 'https://<your-host>/api/cron/refresh-external-indexes?secret=$REVALIDATE_SECRET'
+```
+
+### Cost ceiling
+
+Per-artist refresh: ~150–1500 Alchemy CU spread across the three
+platforms. At 100–500 known artists × daily cron:
+
+| View size | Daily cron cost | On-visit ceiling (1h stale × full traffic) |
+|---|---|---|
+| 100 artists | ~$0.07/month | $5.40/month worst case |
+| 500 artists | ~$1.10/month | $27/month worst case |
+| 1,000 artists | ~$2.25/month | $54/month worst case |
+
+The "worst case" assumes a crawler hits every known-artist URL every
+hour for a month and triggers a refresh each time — unrealistic but
+it's the ceiling. Practical cost is much closer to "daily cron
+total" because most known artists aren't visited every hour.
+
+To tighten the ceiling further, raise the stale threshold in
+`STALE_THRESHOLD_MS` in `external-indexer.ts` (currently 1h) — at
+24h, the on-visit ceiling drops by ~24× and effectively converges
+on the daily cron cost.
+
+### Verification
+
+After running the migration and deploying the route:
+
+```sql
+-- 1. Sanity-check the view size
+SELECT COUNT(*) FROM known_artists;
+
+-- 2. Spot-check membership for a known artist
+SELECT 1 FROM known_artists WHERE address = lower('0x<your-test-artist>');
+
+-- 3. After visiting their /catalog page, verify their status rows refreshed
+SELECT
+  (SELECT last_indexed_at FROM lazy_manifold_artist_status WHERE creator = lower('0x...')),
+  (SELECT last_indexed_at FROM lazy_srv2_artist_status     WHERE creator = lower('0x...')),
+  (SELECT last_indexed_at FROM lazy_tl_artist_status       WHERE creator = lower('0x...'));
+```
+
+### Kill switch
+
+If anything goes wrong with the external indexer, the existing
+`INDEXER_DISABLED=1` env var doesn't apply (it targets Ponder reads).
+The three external paths fail closed: if `DATABASE_URL` is unset the
+gate returns `false` and no external API calls fire. To temporarily
+stop all external-indexer writes without redeploying:
+
+```sql
+-- Drop the view → isKnownArtist returns false → adapters short-circuit.
+-- Reads from existing lazy_*_artist_tokens rows continue serving.
+DROP VIEW IF EXISTS known_artists;
+```
+
+Restore by re-running migration 022.
+
 ## Netlify
 
 ### Branch + preview deploys

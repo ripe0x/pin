@@ -43,6 +43,7 @@ import {
 import type { BidHistoryEntry } from "../auctions"
 import { discoverSuperrareV2ArtistAuctions } from "./superrareV2-scan"
 import { loggingFallbackTransport } from "../rpc-log"
+import { isKnownArtist } from "../known-artists"
 
 const SR_V2_NFT = SUPERRARE_V2_NFT[MAINNET_CHAIN_ID]
 const SR_BAZAAR = SUPERRARE_BAZAAR[MAINNET_CHAIN_ID]
@@ -294,8 +295,12 @@ export const superrareV2Adapter: PlatformAdapter = {
   displayName: "SuperRare",
 
   async discoverArtistTokens(artist: Address): Promise<ArtistTokenRef[]> {
+    // Postgres is source of truth: trust any existing rows. The cron
+    // (see lib/external-indexer.ts) handles refreshes for known
+    // artists by clearing the status row first, then calling this
+    // method — that path lands in the cache-miss branch below.
     const cached = await readSuperrareV2ArtistTokens(artist)
-    if (cached && isFresh(cached.lastIndexedAt, LAZY_TTL.superrareV2ArtistTokens)) {
+    if (cached) {
       return cached.tokens.map((t) => ({
         platform: "superrareV2",
         contract: t.contract as Address,
@@ -304,6 +309,14 @@ export const superrareV2Adapter: PlatformAdapter = {
         logIndex: t.logIndex,
         collectionName: null,
       }))
+    }
+
+    // Cache miss: gate on known_artists before any external call.
+    // Bounds Alchemy/RPC spend to the ecosystem allow-list — anonymous
+    // crawler traffic on unknown addresses returns [] without scanning.
+    if (!(await isKnownArtist(artist))) {
+      writeSuperrareV2ArtistTokens(artist, [])
+      return []
     }
 
     const client = getClient()

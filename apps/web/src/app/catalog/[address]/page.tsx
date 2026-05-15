@@ -4,6 +4,7 @@ import { redirect } from "next/navigation"
 import type { Address } from "viem"
 import { resolveEnsAddress, getArtistIdentity } from "@/lib/artist-queries"
 import { getCachedCatalog } from "@/lib/catalog-cache"
+import { maybeRefreshArtistIfStale } from "@/lib/external-indexer"
 
 /**
  * Incremental Static Regeneration — the rendered HTML is cached at the
@@ -106,6 +107,12 @@ export default async function RecordPage({
 }
 
 async function RecordBody({ address }: { address: Address }) {
+  // Fire-and-forget on-visit refresh check. No-op for unknown addresses
+  // (the `isKnownArtist` gate inside) and no-op within the 1h stale
+  // window. ISR's 60s revalidation naturally rate-limits how often this
+  // runs per address per Vercel instance. See `lib/external-indexer.ts`.
+  void maybeRefreshArtistIfStale(address)
+
   const [identity, record] = await Promise.all([
     getArtistIdentity(address),
     getCachedCatalog(address.toLowerCase()),

@@ -12,6 +12,7 @@ import { getCachedTokenRefs } from "@/lib/artist-cache"
 import { pgCacheHas } from "@/lib/pg-cache"
 import { isCrawler } from "@/lib/crawler"
 import { withSingleFlight } from "@/lib/single-flight"
+import { maybeRefreshArtistIfStale } from "@/lib/external-indexer"
 import { PLATFORMS } from "@/lib/platforms"
 import { ArtistHeader } from "@/components/artist/ArtistHeader"
 import { ArtistGallery } from "@/components/artist/ArtistGallery"
@@ -131,6 +132,13 @@ async function ArtistPageBody({ address }: { address: string }) {
   if (await isCrawler()) {
     return <ArtistCrawlerShell />
   }
+
+  // Fire-and-forget on-visit refresh check for external-platform indexes
+  // (Manifold / SR V2 / TL). No-op for unknown addresses (the
+  // `isKnownArtist` gate inside short-circuits) and no-op within the 1h
+  // stale window. Placed AFTER the crawler check so bot traffic doesn't
+  // drive refresh frequency even for known artists.
+  void maybeRefreshArtistIfStale(address)
 
   // Per-artist auction discovery — fire each adapter's
   // `discoverArtistAuctions` so this artist's `lazy_*_active_auctions`
