@@ -12,6 +12,7 @@ import type {
   CollectorTokenRef,
   AdapterLastSale,
 } from "./types"
+import { sql } from "../db"
 import {
   readMintArtistTokens,
   writeMintArtistTokens,
@@ -229,6 +230,67 @@ export async function scanMintArtistTokens(
 
   await writeMintArtistTokens(artist, refs, toBlock)
   return { caughtUp: toBlock >= latest }
+}
+
+/**
+ * Refresh the `mint_creators` allow-list. Scans the Mint Factory for
+ * new `Created` events (no topic filter — we want every deployer) and
+ * upserts addresses into `mint_creators`, which is UNION'd into the
+ * `known_artists` view by migration 026.
+ *
+ * Cursor: `MAX(first_seen_block)` from the table. Null → first run →
+ * full backfill from `MINT_FACTORY_DEPLOY_BLOCK`. The Factory is a
+ * single contract with a single event type and Mint deployment volume
+ * is modest, so we don't bound this by `MAX_BLOCKS_PER_SCAN` — let it
+ * walk to head in one call. (If Mint adoption explodes this can be
+ * chunked the same way the per-artist scan is.)
+ *
+ * Called from `refreshAllKnownArtists` so the daily cron picks up new
+ * Mint deployers automatically; once added, the artist's `lazy_mint_*`
+ * scan runs in the same cron pass via the standard per-artist loop.
+ */
+export async function refreshMintCreators(): Promise<{ added: number }> {
+  if (!sql) return { added: 0 }
+  const client = getClient()
+  const latest = await client.getBlockNumber()
+
+  const cursorRows = (await sql`
+    SELECT MAX(first_seen_block)::text AS lsb FROM mint_creators
+  `) as Array<{ lsb: string | null }>
+  const lastSeen =
+    cursorRows[0]?.lsb != null ? BigInt(cursorRows[0].lsb) : null
+  const fromBlock =
+    lastSeen != null ? lastSeen + 1n : MINT_FACTORY_DEPLOY_BLOCK
+  if (fromBlock > latest) return { added: 0 }
+
+  // No topic filter — every deployer qualifies. Sparse enough at Mint's
+  // current volume that the unfiltered scan still returns a manageable
+  // payload per 2M-block chunk.
+  const logs = await paginatedIndexedScan(
+    (from, to) =>
+      client.getLogs({
+        address: MINT_FACTORY_ADDR,
+        event: createdEvent,
+        fromBlock: from,
+        toBlock: to,
+      }),
+    fromBlock,
+    latest,
+  )
+
+  let added = 0
+  for (const log of logs) {
+    const args = log.args as { ownerAddress?: Address }
+    const owner = args.ownerAddress
+    if (!owner || log.blockNumber === null) continue
+    const result = await sql`
+      INSERT INTO mint_creators (address, first_seen_block)
+      VALUES (${owner.toLowerCase()}, ${log.blockNumber.toString()}::bigint)
+      ON CONFLICT (address) DO NOTHING
+    `
+    if (result.count > 0) added++
+  }
+  return { added }
 }
 
 /**

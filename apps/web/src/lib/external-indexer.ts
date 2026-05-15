@@ -2,7 +2,7 @@ import "server-only"
 import { sql } from "./db"
 import { scanSrv2ArtistTokens } from "./platforms/superrareV2"
 import { scanTransientArtistTokens } from "./platforms/transient"
-import { scanMintArtistTokens } from "./platforms/mint"
+import { scanMintArtistTokens, refreshMintCreators } from "./platforms/mint"
 import { scanManifoldArtistTokens } from "./manifold-discovery"
 import { isKnownArtist } from "./known-artists"
 
@@ -85,6 +85,18 @@ export async function refreshAllKnownArtists(): Promise<RefreshReport> {
   if (!sql) {
     return { total: 0, succeeded: 0, failed: 0, durationMs: 0 }
   }
+
+  // Refresh the Mint creator allow-list before iterating `known_artists`.
+  // New Mint deployers picked up here become "known" for the rest of
+  // this run, so their `lazy_mint_*` data lands on the same cron pass
+  // instead of waiting another day. Errors are swallowed: a Factory-
+  // scan flake shouldn't drop the daily refresh for everyone else.
+  try {
+    await refreshMintCreators()
+  } catch {
+    /* ignore */
+  }
+
   const rows = (await sql`
     SELECT address FROM known_artists
   `) as Array<{ address: string }>
