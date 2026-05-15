@@ -70,10 +70,12 @@ export function buildCancelCall(listing: SellerListing): CancelCall {
       }
 
     case "manifold":
+    case "mint":
     case "sovereign":
       // Sovereign auctions are the destination, not a source we cancel
-      // from in this flow. Manifold has no marketplace concept. Both
-      // shouldn't appear in cancellable listings — defensive throw.
+      // from in this flow. Manifold and Mint have no marketplace concept
+      // (mints happen inside the collection contracts directly). All
+      // three shouldn't appear in cancellable listings — defensive throw.
       throw new Error(
         `buildCancelCall: platform ${listing.platform} is not a cancel source`,
       )

@@ -62,6 +62,7 @@ export type ContractRow = {
 export type PlatformHint =
   | "foundation"
   | "manifold"
+  | "mint"
   | "superrareV2"
   | "transient"
   | "sovereign"
@@ -102,6 +103,7 @@ const LABELS: Record<ContractType, string> = {
 const PLATFORM_SYSTEM_NAMES: Record<PlatformHint, string> = {
   foundation: "Foundation",
   manifold: "Manifold",
+  mint: "Mint",
   superrareV2: "SuperRare",
   transient: "Transient",
   sovereign: "PND",

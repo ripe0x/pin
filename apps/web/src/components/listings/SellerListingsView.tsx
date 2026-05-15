@@ -18,6 +18,7 @@ export const PLATFORM_LABELS: Record<PlatformId, string> = {
   superrareV2: "SuperRare",
   transient: "Transient",
   manifold: "Manifold",
+  mint: "Mint",
   sovereign: "Sovereign Auction House",
 }
 

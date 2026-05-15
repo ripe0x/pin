@@ -2,6 +2,7 @@ import "server-only"
 import type { PlatformAdapter, PlatformId } from "./types"
 import { foundationAdapter } from "./foundation"
 import { manifoldAdapter } from "./manifold"
+import { mintAdapter } from "./mint"
 import { sovereignAdapter } from "./sovereign"
 import { superrareV2Adapter } from "./superrareV2"
 import { transientAdapter } from "./transient"
@@ -19,6 +20,7 @@ import { transientAdapter } from "./transient"
 export const PLATFORMS: PlatformAdapter[] = [
   foundationAdapter,
   manifoldAdapter,
+  mintAdapter,
   sovereignAdapter,
   superrareV2Adapter,
   transientAdapter,

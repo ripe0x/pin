@@ -73,6 +73,17 @@ export const TL_UNIVERSAL_DEPLOYER: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x7c24805454F7972d36BEE9D139BD93423AA29f3f",
 }
 
+// Mint protocol (Visualize Value) Factory. Deploys per-artist
+// ERC1155 collection contracts (the per-collection `Mint.sol`
+// implementation, wrapped by an ERC1967 proxy or minimal-proxy clone).
+// Emits `Created(address indexed ownerAddress, address contractAddress)`
+// on every collection deploy — `ownerAddress` is the artist, indexed
+// for cheap topic-filtered enumeration of an artist's clones.
+// Deployed Nov 2024 in tx 0x57b1ad0…46ce650 at block 21167599.
+export const MINT_FACTORY: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0xd717Fe677072807057B03705227EC3E3b467b670",
+}
+
 // SovereignAuctionHouseFactory (deploys per-owner EIP-1167 minimal proxies).
 // Mainnet deploy: 2026-04-27, fee 0bps, recipient 0x0 (locked forever).
 // For local Anvil-fork testing, paste the local factory address here

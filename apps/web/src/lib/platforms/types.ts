@@ -17,6 +17,7 @@ import type { AuctionState, BidHistoryEntry } from "../auctions"
 export type PlatformId =
   | "foundation"
   | "manifold"
+  | "mint"
   | "sovereign"
   | "superrareV2"
   | "transient"
