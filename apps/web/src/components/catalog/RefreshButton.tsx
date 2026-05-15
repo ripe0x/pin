@@ -129,8 +129,9 @@ function RefreshStatus({ state }: { state: State }) {
   if (!state.caughtUp) {
     return (
       <span className="text-xs text-amber-600">
-        Found {addedTotal} new piece{addedTotal === 1 ? "" : "s"} so far in {secs}s.
-        Still catching up — click again to continue.
+        Found {addedTotal} new piece{addedTotal === 1 ? "" : "s"} on Manifold /
+        SuperRare / Transient Labs so far in {secs}s. Still catching up — click
+        again to continue.
       </span>
     )
   }
@@ -141,7 +142,7 @@ function RefreshStatus({ state }: { state: State }) {
     return (
       <span className="text-xs text-gray-500">
         Refreshed in {secs}s. Found {addedTotal} new piece
-        {addedTotal === 1 ? "" : "s"}.{" "}
+        {addedTotal === 1 ? "" : "s"} on Manifold / SuperRare / Transient Labs.{" "}
         <button
           type="button"
           onClick={() => window.location.reload()}
@@ -153,10 +154,18 @@ function RefreshStatus({ state }: { state: State }) {
       </span>
     )
   }
+
+  // Be explicit about which platforms the button scans. The artist's
+  // gallery elsewhere on the site also includes Foundation + Sovereign
+  // tokens via Ponder, which are NOT part of the refresh — so the
+  // count here may legitimately differ from the gallery's count.
   return (
     <span className="text-xs text-gray-500">
-      Refreshed in {secs}s. No new pieces since last scan
-      {totalsTotal > 0 ? ` (${totalsTotal} total indexed).` : "."}
+      Refreshed in {secs}s. No new pieces on Manifold / SuperRare / Transient
+      Labs since last scan
+      {totalsTotal > 0
+        ? ` (${totalsTotal} indexed from these three platforms).`
+        : "."}
     </span>
   )
 }
