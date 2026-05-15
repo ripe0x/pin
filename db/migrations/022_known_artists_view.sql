@@ -29,8 +29,14 @@
 -- apps/web/src/lib/external-indexer.ts header), UNION a `manual_opt_ins`
 -- table into this view — no downstream code changes needed.
 
+-- Ponder schema name follows the versioned-deploy convention
+-- (`ponder_v1` → `ponder_v2` on every schema-changing release; see
+-- ponder/README.md). When bumping, update :ponder_schema below to
+-- match the new DATABASE_SCHEMA on the indexer service and re-run
+-- this migration after the new schema's tables exist.
 DO $$
 DECLARE
+  ponder_schema CONSTANT TEXT := 'ponder_v1';
   has_catalog_contracts BOOLEAN;
   has_catalog_tokens    BOOLEAN;
   has_catalog_ranges    BOOLEAN;
@@ -39,37 +45,37 @@ BEGIN
   -- Core sources — these MUST exist; Ponder writes them as part of
   -- the FND/PND schemas that the rest of the app already depends on.
   view_sql :=
-    'CREATE OR REPLACE VIEW known_artists AS '                          ||
-    'SELECT DISTINCT owner   AS address FROM ponder.pnd_houses '        ||
-    'UNION '                                                            ||
-    'SELECT DISTINCT creator AS address FROM ponder.fnd_collections '   ||
-    'UNION '                                                            ||
-    'SELECT DISTINCT creator AS address FROM ponder.fnd_artist_tokens';
+    'CREATE OR REPLACE VIEW known_artists AS '                                  ||
+    'SELECT DISTINCT owner   AS address FROM ' || ponder_schema || '.pnd_houses '        ||
+    'UNION '                                                                    ||
+    'SELECT DISTINCT creator AS address FROM ' || ponder_schema || '.fnd_collections '   ||
+    'UNION '                                                                    ||
+    'SELECT DISTINCT creator AS address FROM ' || ponder_schema || '.fnd_artist_tokens';
 
   -- Optional sources — newer Ponder schema. Probe each separately
   -- so a partial rollout (one table exists but the others don't)
   -- still produces a working view.
   SELECT EXISTS (
     SELECT 1 FROM information_schema.tables
-     WHERE table_schema = 'ponder' AND table_name = 'catalog_contracts'
+     WHERE table_schema = ponder_schema AND table_name = 'catalog_contracts'
   ) INTO has_catalog_contracts;
   SELECT EXISTS (
     SELECT 1 FROM information_schema.tables
-     WHERE table_schema = 'ponder' AND table_name = 'catalog_tokens'
+     WHERE table_schema = ponder_schema AND table_name = 'catalog_tokens'
   ) INTO has_catalog_tokens;
   SELECT EXISTS (
     SELECT 1 FROM information_schema.tables
-     WHERE table_schema = 'ponder' AND table_name = 'catalog_ranges'
+     WHERE table_schema = ponder_schema AND table_name = 'catalog_ranges'
   ) INTO has_catalog_ranges;
 
   IF has_catalog_contracts THEN
-    view_sql := view_sql || ' UNION SELECT DISTINCT artist AS address FROM ponder.catalog_contracts';
+    view_sql := view_sql || ' UNION SELECT DISTINCT artist AS address FROM ' || ponder_schema || '.catalog_contracts';
   END IF;
   IF has_catalog_tokens THEN
-    view_sql := view_sql || ' UNION SELECT DISTINCT artist AS address FROM ponder.catalog_tokens';
+    view_sql := view_sql || ' UNION SELECT DISTINCT artist AS address FROM ' || ponder_schema || '.catalog_tokens';
   END IF;
   IF has_catalog_ranges THEN
-    view_sql := view_sql || ' UNION SELECT DISTINCT artist AS address FROM ponder.catalog_ranges';
+    view_sql := view_sql || ' UNION SELECT DISTINCT artist AS address FROM ' || ponder_schema || '.catalog_ranges';
   END IF;
 
   EXECUTE view_sql;

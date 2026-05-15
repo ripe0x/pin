@@ -45,8 +45,11 @@ ponder.pnd_bids        immutable bid log. Indexed on (auction_id,
 
 ```txt
 DATABASE_URL              same Postgres the web app uses
-DATABASE_SCHEMA           required by Ponder ≥ 0.16. Set to "ponder"
-                          so the web app's INDEXER_SCHEMA matches.
+DATABASE_SCHEMA           required by Ponder ≥ 0.16. Currently
+                          "ponder_v1" — the web app's INDEXER_SCHEMA
+                          must match. Bump on every schema-changing
+                          release; see "Versioned schema upgrades"
+                          below.
 PONDER_RPC_URL_1          REQUIRED. drpc.org free tier works in
                           production for this indexer (verified on
                           mainnet with 76+ factory clones at 300s
@@ -155,9 +158,11 @@ use Nixpacks with `npm install && npm run codegen` for build and
 
 1. Create a new service in your Railway project.
 2. Source: connect this repo, set **Root Directory** to `ponder`.
-3. Add env vars: `DATABASE_URL`, `DATABASE_SCHEMA=ponder`,
+3. Add env vars: `DATABASE_URL`, `DATABASE_SCHEMA=ponder_v1`,
    `PONDER_RPC_URL_1=https://eth.drpc.org` (see "RPC strategy" for
-   why this and not Alchemy / publicnode / etc.).
+   why this and not Alchemy / publicnode / etc.). The `_v1` suffix
+   leaves room for zero-downtime schema bumps later — see
+   "Versioned schema upgrades" below.
 4. Deploy.
 
 Initial sync of the factory + clones takes on the order of an hour
@@ -173,36 +178,68 @@ Anywhere that runs a long-lived Node 20+ process. Don't run it in a
 serverless function — it's a continuously-syncing process with
 streaming state.
 
-## Recovery: schema is locked
+## Versioned schema upgrades
 
-If you redeploy with a config change and Ponder fails with:
+Whenever `ponder.schema.ts` or `ponder.config.ts` changes shape
+(new table, removed table, factory address change, new contract
+entry), Ponder ≥ 0.16 refuses to start with:
 
 ```txt
-MigrationError: Schema "ponder" was previously used by a different
+MigrationError: Schema "ponder_v1" was previously used by a different
 Ponder app. Drop the schema first, or use a different schema.
 ```
 
-Ponder tracks "what app version owns this schema" in metadata; a
-shape-incompatible redeploy refuses to overwrite it. Recovery is
-manual:
+This is a safety check — Ponder won't silently overwrite a schema
+that another build owns. Bump the version instead of dropping:
 
-```sql
-DROP SCHEMA IF EXISTS ponder CASCADE;
-DROP SCHEMA IF EXISTS ponder_sync CASCADE;
-```
+1. **Pick the next version.** If current `DATABASE_SCHEMA=ponder_v1`,
+   the next is `ponder_v2`.
+2. **Update `db/migrations/022_known_artists_view.sql`** — the
+   `ponder_schema` constant near the top points at the live schema.
+   Bump it to the new value.
+3. **Update the code default** in
+   `apps/web/src/lib/indexer-queries.ts` — search for
+   `INDEXER_SCHEMA ?? "ponder_v1"` and bump the literal. The env
+   var is the source of truth in production; the default exists
+   for fresh local-dev setups.
+4. **Set `DATABASE_SCHEMA=ponder_v2` on the indexer** (Railway
+   variables → ponder service). Trigger a fresh deploy with
+   `railway up --service ponder` — `redeploy` reuses the cached
+   image and won't pick up env-var changes that the build needs.
+5. Wait for the new schema to backfill to head (`Completed backfill
+   indexing across all chains` in the logs). Verify with the
+   queries in "Verification" below, pointed at the new schema.
+6. **Set `INDEXER_SCHEMA=ponder_v2` on the web app** (Netlify env
+   → all contexts) and trigger a redeploy. Web app now reads from
+   the new schema.
+7. **Re-run the migration** so `known_artists` is rebuilt against
+   the new schema:
+   ```bash
+   echo "$(cat db/migrations/022_known_artists_view.sql)" | \
+     railway connect Postgres
+   ```
+8. **Drop the old schema** once the new one is verified in
+   production:
+   ```sql
+   DROP SCHEMA IF EXISTS ponder_v1 CASCADE;
+   ```
+   `ponder_sync` is shared and stays — Ponder reuses the cached
+   chain data across schema versions.
 
-Then redeploy. Ponder will recreate both schemas from scratch and
-re-sync from `FACTORY_DEPLOY_BLOCK`. Re-sync is fast.
+If you skip the version bump and the old schema isn't compatible,
+the recovery is to drop both schemas and re-sync from
+`FACTORY_DEPLOY_BLOCK` — slow and costs RPC. Stick with the
+versioned-deploy flow above.
 
 ## Verification
 
 ```sql
 -- Is Ponder caught up + serving?
-SELECT value FROM ponder._ponder_meta WHERE key = 'app';
+SELECT value FROM ponder_v1._ponder_meta WHERE key = 'app';
 -- Look for: "is_ready": 1
 
 -- How many auctions has it indexed?
-SELECT count(*), status FROM ponder.pnd_auctions GROUP BY status;
+SELECT count(*), status FROM ponder_v1.pnd_auctions GROUP BY status;
 
 -- How many factory clones discovered?
 SELECT count(*) FROM ponder_sync.factory_addresses;
@@ -221,7 +258,7 @@ no error log spam in the service logs.
 cd ponder
 npm install
 DATABASE_URL=postgresql://postgres:dev@localhost:5432/postgres \
-DATABASE_SCHEMA=ponder \
+DATABASE_SCHEMA=ponder_v1 \
 PONDER_RPC_URL_1=https://eth.drpc.org \
   npm run dev
 ```
@@ -231,7 +268,7 @@ from `FACTORY_DEPLOY_BLOCK` takes on the order of an hour; once
 caught up, head-following is fast.
 
 If you want the web app to read from your local Ponder, set
-`INDEXER_SCHEMA=ponder` and `DATABASE_URL` (the same one Ponder
+`INDEXER_SCHEMA=ponder_v1` and `DATABASE_URL` (the same one Ponder
 uses) in `apps/web/.env.local`.
 
 ## What's not in here

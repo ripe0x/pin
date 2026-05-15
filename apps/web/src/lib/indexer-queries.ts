@@ -99,7 +99,7 @@ export async function getSettledAuctionForToken(
 
   return withTimeout(async () => {
     const contract = tokenContract.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
       /[^a-zA-Z0-9_]/g,
       "",
     )
@@ -184,7 +184,7 @@ export async function getActivePndAuctions(
   // in a Suspense boundary below the hero, so paying ~700ms-1s on the
   // first uncached load is fine. The hero still streams immediately.
   return withTimeout(async () => {
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
       /[^a-zA-Z0-9_]/g,
       "",
     )
@@ -244,7 +244,7 @@ export async function getPndHouses(limit = 24): Promise<PndHouse[] | null> {
   const db = sql
 
   return withTimeout(async () => {
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
       /[^a-zA-Z0-9_]/g,
       "",
     )
@@ -280,7 +280,7 @@ export async function getPlatformStats(): Promise<PlatformStats | null> {
   const db = sql
 
   return withTimeout(async () => {
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
       /[^a-zA-Z0-9_]/g,
       "",
     )
@@ -345,7 +345,7 @@ export async function getFoundationTokensFromIndexer(
   const db = sql
 
   return withTimeout(async () => {
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
       /[^a-zA-Z0-9_]/g,
       "",
     )
@@ -450,7 +450,7 @@ export async function getActivityFeed(
   const db = sql
 
   return withTimeout(async () => {
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
       /[^a-zA-Z0-9_]/g,
       "",
     )
@@ -779,7 +779,7 @@ export async function getActiveFndAuctionCount(
   const db = sql
   return withTimeout(async () => {
     const seller = sellerAddress.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
       /[^a-zA-Z0-9_]/g,
       "",
     )
@@ -800,7 +800,7 @@ export async function getActiveFndBuyNowCount(
   const db = sql
   return withTimeout(async () => {
     const seller = sellerAddress.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
       /[^a-zA-Z0-9_]/g,
       "",
     )
@@ -832,7 +832,7 @@ export async function getFoundationCreatorSummary(
   const db = sql
   return withTimeout(async () => {
     const creator = artistAddress.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
       /[^a-zA-Z0-9_]/g,
       "",
     )
@@ -876,7 +876,7 @@ export async function getFoundationSalesSummary(
   const db = sql
   return withTimeout(async () => {
     const seller = sellerAddress.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
       /[^a-zA-Z0-9_]/g,
       "",
     )
@@ -920,7 +920,7 @@ export async function getArtistContractMap(
   const db = sql
   return withTimeout(async () => {
     const creator = artistAddress.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
       /[^a-zA-Z0-9_]/g,
       "",
     )
@@ -1005,7 +1005,7 @@ export async function getCatalogFromIndexer(
 
   return withTimeout(async () => {
     const artist = artistAddress.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
       /[^a-zA-Z0-9_]/g,
       "",
     )
@@ -1071,12 +1071,13 @@ export async function getActiveAuctionCountFromIndexer(
     // Lower-cased everywhere because Ponder normalizes addresses to
     // lowercase when writing event args (per viem's policy).
     const seller = sellerAddress.toLowerCase()
-    // Ponder namespaces its tables under a configurable schema (set via the
-    // DATABASE_SCHEMA env var on the indexer service — currently `ponder`).
-    // Default to `ponder` here so the web app and the indexer agree on the
-    // location without an extra coordination step. Override with
-    // INDEXER_SCHEMA if the indexer's schema name ever changes.
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
+    // Ponder namespaces its tables under a configurable schema (set via
+    // DATABASE_SCHEMA on the indexer service). The convention is to bump
+    // the version (`ponder_v1` → `ponder_v2`) on every schema-changing
+    // release so the indexer can run zero-downtime cutovers; see
+    // ponder/README.md for the full upgrade flow. Override the default
+    // here via INDEXER_SCHEMA when the indexer's schema name changes.
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
       /[^a-zA-Z0-9_]/g,
       "",
     )
