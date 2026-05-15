@@ -414,6 +414,8 @@ function systemLabelForPlatform(p: PlatformId): string {
       return "Foundation"
     case "manifold":
       return "Manifold"
+    case "mint":
+      return "Mint"
     case "superrareV2":
       return "SuperRare"
     case "transient":

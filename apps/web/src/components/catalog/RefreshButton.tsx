@@ -6,8 +6,8 @@ import { useAccount } from "wagmi"
  * "Refresh my work" button. Visible only when the connected wallet
  * address matches the page's artist. Clicking POSTs to
  * `/api/refresh-artist/[address]`, which incrementally scans Manifold /
- * SuperRare V2 / Transient Labs for new mints since the previous scan
- * and writes them to Postgres.
+ * SuperRare V2 / Transient Labs / Mint for new mints since the previous
+ * scan and writes them to Postgres.
  *
  * Client-side address match is purely UX — hides the button from
  * collectors and crawlers. Cost protection lives on the server: the
@@ -31,7 +31,7 @@ type State =
   | { kind: "rate-limited"; retryAfterSec: number }
   | { kind: "error"; message: string }
 
-type Counts = { manifold: number; srv2: number; tl: number }
+type Counts = { manifold: number; srv2: number; tl: number; mint: number }
 
 export function RefreshButton({ artistAddress }: { artistAddress: string }) {
   const { address: connected } = useAccount()
@@ -119,9 +119,16 @@ function RefreshStatus({ state }: { state: State }) {
   }
   // ok
   const secs = Math.max(1, Math.round(state.durationMs / 1000))
-  const addedTotal = state.added.manifold + state.added.srv2 + state.added.tl
+  const addedTotal =
+    state.added.manifold +
+    state.added.srv2 +
+    state.added.tl +
+    state.added.mint
   const totalsTotal =
-    state.totals.manifold + state.totals.srv2 + state.totals.tl
+    state.totals.manifold +
+    state.totals.srv2 +
+    state.totals.tl +
+    state.totals.mint
 
   // Catching-up mode: bigger histories need multiple refresh clicks
   // because each scan is bounded by MAX_BLOCKS_PER_SCAN. Tell the user
@@ -130,8 +137,8 @@ function RefreshStatus({ state }: { state: State }) {
     return (
       <span className="text-xs text-amber-600">
         Found {addedTotal} new piece{addedTotal === 1 ? "" : "s"} on Manifold /
-        SuperRare / Transient Labs so far in {secs}s. Still catching up — click
-        again to continue.
+        SuperRare / Transient Labs / Mint so far in {secs}s. Still catching up
+        — click again to continue.
       </span>
     )
   }
@@ -142,7 +149,8 @@ function RefreshStatus({ state }: { state: State }) {
     return (
       <span className="text-xs text-gray-500">
         Refreshed in {secs}s. Found {addedTotal} new piece
-        {addedTotal === 1 ? "" : "s"} on Manifold / SuperRare / Transient Labs.{" "}
+        {addedTotal === 1 ? "" : "s"} on Manifold / SuperRare / Transient Labs
+        / Mint.{" "}
         <button
           type="button"
           onClick={() => window.location.reload()}
@@ -162,9 +170,9 @@ function RefreshStatus({ state }: { state: State }) {
   return (
     <span className="text-xs text-gray-500">
       Refreshed in {secs}s. No new pieces on Manifold / SuperRare / Transient
-      Labs since last scan
+      Labs / Mint since last scan
       {totalsTotal > 0
-        ? ` (${totalsTotal} indexed from these three platforms).`
+        ? ` (${totalsTotal} indexed from these four platforms).`
         : "."}
     </span>
   )

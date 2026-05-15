@@ -2,6 +2,7 @@ import "server-only"
 import { sql } from "./db"
 import { scanSrv2ArtistTokens } from "./platforms/superrareV2"
 import { scanTransientArtistTokens } from "./platforms/transient"
+import { scanMintArtistTokens, refreshMintCreators } from "./platforms/mint"
 import { scanManifoldArtistTokens } from "./manifold-discovery"
 import { isKnownArtist } from "./known-artists"
 
@@ -84,6 +85,18 @@ export async function refreshAllKnownArtists(): Promise<RefreshReport> {
   if (!sql) {
     return { total: 0, succeeded: 0, failed: 0, durationMs: 0 }
   }
+
+  // Refresh the Mint creator allow-list before iterating `known_artists`.
+  // New Mint deployers picked up here become "known" for the rest of
+  // this run, so their `lazy_mint_*` data lands on the same cron pass
+  // instead of waiting another day. Errors are swallowed: a Factory-
+  // scan flake shouldn't drop the daily refresh for everyone else.
+  try {
+    await refreshMintCreators()
+  } catch {
+    /* ignore */
+  }
+
   const rows = (await sql`
     SELECT address FROM known_artists
   `) as Array<{ address: string }>
@@ -136,6 +149,7 @@ export async function refreshArtist(
     scanSrv2ArtistTokens(lower).catch(() => ({ caughtUp: false })),
     scanTransientArtistTokens(lower).catch(() => ({ caughtUp: false })),
     scanManifoldArtistTokens(lower).catch(() => ({ caughtUp: false })),
+    scanMintArtistTokens(lower).catch(() => ({ caughtUp: false })),
   ])
   return { caughtUp: results.every((r) => r.caughtUp) }
 }
@@ -162,10 +176,16 @@ export async function hasUnscannedPlatform(
       SELECT
         (SELECT last_scanned_block FROM lazy_manifold_artist_status WHERE creator = ${lower}) AS m,
         (SELECT last_scanned_block FROM lazy_srv2_artist_status     WHERE creator = ${lower}) AS s,
-        (SELECT last_scanned_block FROM lazy_tl_artist_status       WHERE creator = ${lower}) AS t
-    `) as Array<{ m: string | null; s: string | null; t: string | null }>
+        (SELECT last_scanned_block FROM lazy_tl_artist_status       WHERE creator = ${lower}) AS t,
+        (SELECT last_scanned_block FROM lazy_mint_artist_status     WHERE creator = ${lower}) AS mt
+    `) as Array<{
+      m: string | null
+      s: string | null
+      t: string | null
+      mt: string | null
+    }>
     const r = rows[0]
-    return r.m === null || r.s === null || r.t === null
+    return r.m === null || r.s === null || r.t === null || r.mt === null
   } catch {
     return false
   }
@@ -191,6 +211,8 @@ export async function getMostRecentRefreshTime(
         SELECT last_indexed_at FROM lazy_srv2_artist_status WHERE creator = ${lower}
         UNION ALL
         SELECT last_indexed_at FROM lazy_tl_artist_status WHERE creator = ${lower}
+        UNION ALL
+        SELECT last_indexed_at FROM lazy_mint_artist_status WHERE creator = ${lower}
       ) s
     `) as Array<{ latest: string | null }>
     const latest = rows[0]?.latest
@@ -209,27 +231,35 @@ export type ArtistTokenCounts = {
   manifold: number
   srv2: number
   tl: number
+  mint: number
 }
 
 export async function countArtistTokens(
   address: string,
 ): Promise<ArtistTokenCounts> {
-  if (!sql) return { manifold: 0, srv2: 0, tl: 0 }
+  if (!sql) return { manifold: 0, srv2: 0, tl: 0, mint: 0 }
   const lower = address.toLowerCase()
   try {
     const rows = (await sql`
       SELECT
         (SELECT COUNT(*) FROM lazy_manifold_artist_tokens WHERE creator = ${lower})::int AS manifold,
         (SELECT COUNT(*) FROM lazy_srv2_artist_tokens     WHERE creator = ${lower})::int AS srv2,
-        (SELECT COUNT(*) FROM lazy_tl_artist_tokens       WHERE creator = ${lower})::int AS tl
-    `) as Array<{ manifold: number; srv2: number; tl: number }>
+        (SELECT COUNT(*) FROM lazy_tl_artist_tokens       WHERE creator = ${lower})::int AS tl,
+        (SELECT COUNT(*) FROM lazy_mint_artist_tokens     WHERE creator = ${lower})::int AS mint
+    `) as Array<{
+      manifold: number
+      srv2: number
+      tl: number
+      mint: number
+    }>
     const r = rows[0]
     return {
       manifold: r?.manifold ?? 0,
       srv2: r?.srv2 ?? 0,
       tl: r?.tl ?? 0,
+      mint: r?.mint ?? 0,
     }
   } catch {
-    return { manifold: 0, srv2: 0, tl: 0 }
+    return { manifold: 0, srv2: 0, tl: 0, mint: 0 }
   }
 }

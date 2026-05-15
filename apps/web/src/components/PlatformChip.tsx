@@ -19,6 +19,7 @@ const LABELS: Record<PlatformId, string> = {
   superrareV2: "SR",
   transient: "TL",
   manifold: "MAN",
+  mint: "MINT",
   sovereign: "PND",
 }
 

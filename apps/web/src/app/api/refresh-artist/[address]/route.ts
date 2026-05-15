@@ -9,8 +9,8 @@ import {
 
 /**
  * "Refresh my work" button endpoint. Re-runs the per-artist
- * external-platform scan (Manifold / SuperRare V2 / Transient Labs)
- * incrementally from each platform's `last_scanned_block` cursor.
+ * external-platform scan (Manifold / SuperRare V2 / Transient Labs /
+ * Mint) incrementally from each platform's `last_scanned_block` cursor.
  *
  * Cost protection:
  *   - Gate 1: `isKnownArtist(address)` — only addresses in our
@@ -117,6 +117,7 @@ export async function POST(
     manifold: Math.max(0, after.manifold - before.manifold),
     srv2: Math.max(0, after.srv2 - before.srv2),
     tl: Math.max(0, after.tl - before.tl),
+    mint: Math.max(0, after.mint - before.mint),
   }
   return NextResponse.json({
     ok: true,
