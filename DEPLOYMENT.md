@@ -122,6 +122,11 @@ factory + clones are sparse).
 
 ## External-platform indexer (Manifold / SuperRare V2 / Transient Labs)
 
+To add a new external platform (KnownOrigin, Highlight, Async, Zora,
+etc.), follow [`docs/adding-a-platform.md`](./docs/adding-a-platform.md).
+This section documents the runtime architecture; the doc covers the
+contributor process.
+
 The three external NFT platforms aren't indexed by Ponder — that would
 mean polling tens of thousands of contracts globally, with cost that
 scales with the platform's whole user base rather than your ecosystem.

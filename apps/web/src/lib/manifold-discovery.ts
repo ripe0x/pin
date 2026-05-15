@@ -35,6 +35,7 @@ import {
 } from "./lazy-index"
 import { loggingFallbackTransport } from "./rpc-log"
 import { isKnownArtist } from "./known-artists"
+import { MAX_BLOCKS_PER_SCAN } from "./external-indexer"
 
 // Marker every Manifold Creator Core (V1+) returns true for. From
 // CreatorCore.sol: `bytes4 private constant _CREATOR_CORE_V1 = 0x28f10a21`.
@@ -175,13 +176,13 @@ export async function discoverManifoldTokenRefs(
  */
 export async function scanManifoldArtistTokens(
   artistAddress: string,
-): Promise<void> {
+): Promise<{ caughtUp: boolean }> {
   const artist = artistAddress.toLowerCase() as Address
 
-  if (!(await isKnownArtist(artist))) return
+  if (!(await isKnownArtist(artist))) return { caughtUp: true }
 
   const apiKey = process.env.ETHERSCAN_API_KEY
-  if (!apiKey) return
+  if (!apiKey) return { caughtUp: true }
 
   const existing = await readManifoldArtistTokens(artist)
   const fromBlock =
@@ -255,25 +256,29 @@ export async function scanManifoldArtistTokens(
   const latest = await client.getBlockNumber()
   if (manifoldContracts.length === 0) {
     await writeManifoldArtistTokens(artist, [], latest)
-    return
+    return { caughtUp: true }
   }
 
   if (fromBlock > latest) {
     await writeManifoldArtistTokens(artist, [], latest)
-    return
+    return { caughtUp: true }
   }
+
+  const budgetEnd = fromBlock + MAX_BLOCKS_PER_SCAN - 1n
+  const toBlock = budgetEnd < latest ? budgetEnd : latest
 
   // Phase B — incremental token enumeration via Alchemy
   // `alchemy_getAssetTransfers`. For each Manifold core, fetch transfers
   // with `fromBlock` filter + `category=["erc721","erc1155"]` and the
-  // contract address constraint.
+  // contract address constraint. Bounded by `toBlock` so a fresh artist
+  // catches up over multiple refresh calls instead of timing out one.
   const perContract = await Promise.all(
     manifoldContracts.map((c) =>
       enumerateRefsViaAssetTransfers(
         c.contract as Address,
         c.collectionName,
         fromBlock,
-        latest,
+        toBlock,
       ),
     ),
   )
@@ -286,8 +291,9 @@ export async function scanManifoldArtistTokens(
       tokenId: r.tokenId,
       collectionName: r.collectionName ?? null,
     })),
-    latest,
+    toBlock,
   )
+  return { caughtUp: toBlock >= latest }
 }
 
 // First block we'd ever consider Manifold mints from. Used as the lower

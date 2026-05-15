@@ -4,6 +4,7 @@ import {
   refreshArtist,
   getMostRecentRefreshTime,
   countArtistTokens,
+  hasUnscannedPlatform,
 } from "@/lib/external-indexer"
 
 /**
@@ -64,7 +65,13 @@ export async function POST(
   // Gate 2: rate limit. Reject if any platform was refreshed within the
   // cooldown window. Status rows tracking `last_indexed_at` are bumped
   // on every successful scan (incremental or full).
-  const lastRefresh = await getMostRecentRefreshTime(address)
+  //
+  // Bypass: artists who haven't been scanned at least once on every
+  // platform (any cursor still null) skip the cooldown so they can
+  // catch up across multiple back-to-back clicks. After every cursor is
+  // non-null, the cooldown takes over.
+  const catchingUp = await hasUnscannedPlatform(address)
+  const lastRefresh = catchingUp ? null : await getMostRecentRefreshTime(address)
   if (lastRefresh) {
     const elapsedMs = Date.now() - lastRefresh.getTime()
     if (elapsedMs < REFRESH_COOLDOWN_MS) {
@@ -102,7 +109,7 @@ export async function POST(
   // mints should land regardless of whether the user kept the tab open).
   void req.signal // suppress unused-var lint without binding
   const start = Date.now()
-  await refreshArtist(address)
+  const result = await refreshArtist(address)
   const durationMs = Date.now() - start
 
   const after = await countArtistTokens(address)
@@ -118,5 +125,9 @@ export async function POST(
     totals: after,
     // Delta vs pre-refresh — what the UI should highlight:
     added,
+    // False when at least one platform stopped short of head due to
+    // the MAX_BLOCKS_PER_SCAN budget. UI surfaces "still catching up"
+    // and the cooldown stays bypassed until every cursor is non-null.
+    caughtUp: result.caughtUp,
   })
 }

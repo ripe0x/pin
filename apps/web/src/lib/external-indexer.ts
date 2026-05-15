@@ -10,6 +10,27 @@ import { isKnownArtist } from "./known-artists"
 export { isKnownArtist }
 
 /**
+ * Maximum chain blocks any single scan call will cover, end-to-end.
+ *
+ * Sized to fit comfortably within Netlify's 26-second HTTP-function
+ * timeout. Three platforms scan in parallel via Promise.all; the slowest
+ * platform's serial `paginatedIndexedScan` (2M block per getLogs call,
+ * ~2-3s per call against drpc + Alchemy) dictates wall time. At 10M
+ * blocks that's 5 sequential getLogs per platform ≈ 10-15s total — well
+ * inside the timeout with margin for the surrounding DB work.
+ *
+ * On a fresh-cursor artist (full chain history needed), one refresh
+ * call advances each cursor by ~10M blocks. SR V2 (8M → 25M = 17M
+ * blocks) needs ~2 refreshes to catch up; Manifold (~13M blocks) ~2;
+ * TL (~6M blocks) fits in one. Cron over multiple days catches up
+ * eventually without user interaction.
+ *
+ * Bigger numbers risk timeout; smaller numbers make catch-up take more
+ * refresh clicks. 10M is the current safe operating point.
+ */
+export const MAX_BLOCKS_PER_SCAN = 10_000_000n
+
+/**
  * External-platform indexer: orchestrates writes to the per-platform
  * artist-token tables for Manifold, SuperRare V2, and Transient Labs.
  *
@@ -92,20 +113,62 @@ export async function refreshAllKnownArtists(): Promise<RefreshReport> {
  * `last_scanned_block` cursor.
  *
  * Per-platform failures are isolated so one platform's flakiness
- * doesn't drop the others.
+ * doesn't drop the others. A failed scan is treated as
+ * `caughtUp: false` so the caller knows further refresh attempts may
+ * surface more data.
  *
  * No DELETE of status rows: incremental scans depend on the existing
  * `last_scanned_block`, so we only update on success.
+ *
+ * Returns `{ caughtUp }` — true only when ALL three platforms scanned
+ * up to chain head this call. False when at least one platform stopped
+ * short due to the `MAX_BLOCKS_PER_SCAN` budget or due to a thrown
+ * error. Callers (the refresh-button route, the cron) use this to
+ * decide whether the artist needs more refresh cycles.
  */
-export async function refreshArtist(address: string): Promise<void> {
-  if (!sql) return
+export async function refreshArtist(
+  address: string,
+): Promise<{ caughtUp: boolean }> {
+  if (!sql) return { caughtUp: true }
   const lower = address.toLowerCase() as `0x${string}`
 
-  await Promise.all([
-    scanSrv2ArtistTokens(lower).catch(() => undefined),
-    scanTransientArtistTokens(lower).catch(() => undefined),
-    scanManifoldArtistTokens(lower).catch(() => undefined),
+  const results = await Promise.all([
+    scanSrv2ArtistTokens(lower).catch(() => ({ caughtUp: false })),
+    scanTransientArtistTokens(lower).catch(() => ({ caughtUp: false })),
+    scanManifoldArtistTokens(lower).catch(() => ({ caughtUp: false })),
   ])
+  return { caughtUp: results.every((r) => r.caughtUp) }
+}
+
+/**
+ * Returns true iff at least one platform's `last_scanned_block` is
+ * null for this artist — i.e., they've never been scanned. Used by
+ * the refresh-button route to bypass the 5-min cooldown for artists
+ * who are mid-catch-up.
+ *
+ * Limitation: once every cursor is non-null, this returns false even
+ * if the cursor is far behind head. The trade-off keeps the check
+ * RPC-free (no chain-head lookup) and bounds cooldown bypass to the
+ * first scan only. Catch-up beyond the first scan happens via the
+ * daily cron, which doesn't enforce per-artist cooldown.
+ */
+export async function hasUnscannedPlatform(
+  address: string,
+): Promise<boolean> {
+  if (!sql) return false
+  const lower = address.toLowerCase()
+  try {
+    const rows = (await sql`
+      SELECT
+        (SELECT last_scanned_block FROM lazy_manifold_artist_status WHERE creator = ${lower}) AS m,
+        (SELECT last_scanned_block FROM lazy_srv2_artist_status     WHERE creator = ${lower}) AS s,
+        (SELECT last_scanned_block FROM lazy_tl_artist_status       WHERE creator = ${lower}) AS t
+    `) as Array<{ m: string | null; s: string | null; t: string | null }>
+    const r = rows[0]
+    return r.m === null || r.s === null || r.t === null
+  } catch {
+    return false
+  }
 }
 
 /**
