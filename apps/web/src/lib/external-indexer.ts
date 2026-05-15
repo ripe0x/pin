@@ -1,5 +1,4 @@
 import "server-only"
-import { after } from "next/server"
 import type { Address } from "viem"
 import { sql } from "./db"
 import { manifoldAdapter } from "./platforms/manifold"
@@ -99,23 +98,22 @@ const STALE_THRESHOLD_MS = 60 * 60 * 1000
 
 /**
  * On-visit trigger: if the address is in `known_artists` AND any of its
- * platform status rows are older than `thresholdMs` (default 1h), schedule
- * `refreshArtist` to run AFTER the response is sent. The page render
- * isn't delayed; the refresh writes update rows for the next visitor.
+ * platform status rows are older than `thresholdMs` (default 1h), run
+ * `refreshArtist`. Designed to be invoked from within a Next.js
+ * `after()` callback so the work survives serverless function teardown.
  *
- * Uses Next.js's `after()` (stable as of 15.1) rather than `void` because
- * Netlify (and other serverless runtimes) terminate the function
- * immediately after the response is sent — any `void promise` work in
- * flight at that moment gets cut off mid-statement. We saw exactly that
- * in production: the first DELETE landed but the rest of `refreshArtist`
- * never ran. `after()` is the official Next.js way to keep async work
- * alive past the response.
+ * Callers should always wrap this in `after()` (or `unstable_after()`)
+ * at the page level — do NOT call as `void maybeRefreshArtistIfStale()`,
+ * because Netlify tears down the function as soon as the response is
+ * sent and any in-flight awaits get cut off. Example:
  *
- * Called from server components for `/catalog/[address]` and
- * `/artist/[address]`. Crawlers hitting these pages for unknown
- * addresses cost zero (the `isKnownArtist` gate fires first); for
- * known addresses they may trigger one refresh per `thresholdMs`
- * window per artist, but cost stays bounded by the known-artists set.
+ *     import { after } from "next/server"
+ *     after(() => maybeRefreshArtistIfStale(address))
+ *
+ * Crawlers hitting pages for unknown addresses cost zero (the
+ * `isKnownArtist` gate fires first); for known addresses they may
+ * trigger one refresh per `thresholdMs` window per artist, but cost
+ * stays bounded by the known-artists set.
  *
  * Race: two concurrent visits within the same window may both fire a
  * refresh. The wasted call is one per concurrent visitor — acceptable
@@ -155,16 +153,12 @@ export async function maybeRefreshArtistIfStale(
 
   if (!stale) return
 
-  // Schedule the refresh to run AFTER the response is sent. Survives
-  // serverless function teardown that would kill a `void` promise.
-  after(async () => {
-    try {
-      await refreshArtist(lower)
-    } catch {
-      // Swallow — best-effort background work; the cron picks up
-      // anything we miss.
-    }
-  })
+  try {
+    await refreshArtist(lower)
+  } catch {
+    // Swallow — best-effort background work; the cron picks up
+    // anything we miss.
+  }
 }
 
 /**
