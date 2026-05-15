@@ -243,7 +243,7 @@ export async function scanManifoldArtistTokens(
         })
       }
     }
-    if (newRows.length > 0) writeManifoldContracts(artist, newRows)
+    if (newRows.length > 0) await writeManifoldContracts(artist, newRows)
   }
 
   const manifoldContracts = Array.from(known.values()).filter(
@@ -254,12 +254,12 @@ export async function scanManifoldArtistTokens(
   // if Phase B finds zero new mints.
   const latest = await client.getBlockNumber()
   if (manifoldContracts.length === 0) {
-    writeManifoldArtistTokens(artist, [], latest)
+    await writeManifoldArtistTokens(artist, [], latest)
     return
   }
 
   if (fromBlock > latest) {
-    writeManifoldArtistTokens(artist, [], latest)
+    await writeManifoldArtistTokens(artist, [], latest)
     return
   }
 
@@ -279,7 +279,7 @@ export async function scanManifoldArtistTokens(
   )
   const refs = perContract.flat()
 
-  writeManifoldArtistTokens(
+  await writeManifoldArtistTokens(
     artist,
     refs.map((r) => ({
       contract: r.contract,

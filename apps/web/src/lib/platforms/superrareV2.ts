@@ -316,7 +316,7 @@ export async function scanSrv2ArtistTokens(artist: Address): Promise<void> {
   const latest = await client.getBlockNumber()
   if (fromBlock > latest) {
     // Nothing new; still bump status so the rate-limit window resets.
-    writeSuperrareV2ArtistTokens(artist, [], latest)
+    await writeSuperrareV2ArtistTokens(artist, [], latest)
     return
   }
 
@@ -354,7 +354,7 @@ export async function scanSrv2ArtistTokens(artist: Address): Promise<void> {
       logIndex: l.logIndex,
     }))
 
-  writeSuperrareV2ArtistTokens(artist, refs, latest)
+  await writeSuperrareV2ArtistTokens(artist, refs, latest)
 }
 
 export const superrareV2Adapter: PlatformAdapter = {

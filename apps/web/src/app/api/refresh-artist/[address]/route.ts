@@ -88,6 +88,11 @@ export async function POST(
     }
   }
 
+  // Snapshot counts BEFORE the scan so we can report only the delta
+  // ("found 3 new tokens"). Otherwise the button reports the static
+  // total which is misleading on a refresh that found nothing new.
+  const before = await countArtistTokens(address)
+
   // Do the scan synchronously inside this route's `maxDuration` budget.
   // Survives serverless function teardown that killed `after()`-based
   // background work on page server components.
@@ -100,6 +105,18 @@ export async function POST(
   await refreshArtist(address)
   const durationMs = Date.now() - start
 
-  const counts = await countArtistTokens(address)
-  return NextResponse.json({ ok: true, durationMs, ...counts })
+  const after = await countArtistTokens(address)
+  const added = {
+    manifold: Math.max(0, after.manifold - before.manifold),
+    srv2: Math.max(0, after.srv2 - before.srv2),
+    tl: Math.max(0, after.tl - before.tl),
+  }
+  return NextResponse.json({
+    ok: true,
+    durationMs,
+    // Totals after the refresh:
+    totals: after,
+    // Delta vs pre-refresh — what the UI should highlight:
+    added,
+  })
 }
