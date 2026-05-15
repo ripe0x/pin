@@ -198,23 +198,28 @@ Two ways a refresh fires:
 
 ### Scheduling the cron
 
-Same pattern as the other `/api/cron/*` routes: secret-gated POST
-endpoint, invoked by external cron or a Netlify scheduled function.
+Wired via a Netlify Scheduled Function that POSTs to the secret-gated
+Next.js route. No third-party cron service needed.
+
+- Function: [`apps/web/netlify/functions/refresh-external-indexes-cron.ts`](./apps/web/netlify/functions/refresh-external-indexes-cron.ts)
+- Schedule: configured in [`netlify.toml`](./netlify.toml) under
+  `[functions."refresh-external-indexes-cron"]`, currently `0 4 * * *`
+  (04:00 UTC daily).
+
+Required env on Netlify:
+- `URL` — auto-set by Netlify to the site's primary URL
+- `REVALIDATE_SECRET` — same secret used by `/api/cron/cleanup` and
+  `/api/cron/indexer-drift-check`
+
+The serial loop over known artists can take several minutes for
+1000+ artists; the underlying route sets `maxDuration = 300` so a
+function-host timeout doesn't kill it mid-run.
+
+Manual invocation for ad-hoc refreshes (no scheduler needed):
 
 ```bash
 curl -X POST 'https://<your-host>/api/cron/refresh-external-indexes?secret=$REVALIDATE_SECRET'
 ```
-
-Recommended cadence: once daily, off-peak (e.g. 04:00 UTC). The
-serial loop over known artists can take several minutes for 1000+
-artists; the route sets `maxDuration = 300` so a function-host
-timeout doesn't kill it mid-run.
-
-If you use Netlify scheduled functions, add a thin wrapper at
-`apps/web/netlify/functions/refresh-external-indexes.ts` that POSTs
-to the route on a `schedule` annotation, mirroring the existing
-`cleanup` / `indexer-drift-check` setup. Otherwise an external cron
-service (cron-job.org, Easycron, etc.) hitting the URL is sufficient.
 
 ### Cost ceiling
 

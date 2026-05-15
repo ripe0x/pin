@@ -8,3 +8,10 @@
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
+
+# Daily refresh of the external-platform indexer (Manifold / SR V2 / TL).
+# Wrapper function lives at `apps/web/netlify/functions/refresh-external-
+# indexes-cron.ts`; it POSTs to the secret-gated Next.js API route. See
+# DEPLOYMENT.md "External-platform indexer" for context.
+[functions."refresh-external-indexes-cron"]
+  schedule = "0 4 * * *"
