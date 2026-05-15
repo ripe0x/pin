@@ -56,6 +56,36 @@ type LogEntry = {
 // Newest first.
 const ENTRIES: LogEntry[] = [
   {
+    date: "May 14, 2026",
+    title: "Catalog import planner",
+    summary:
+      "/artist/[address]/import turns an artist's self-published registry (currently Bryan Brinkman's JSON-LD feed at bryanbrinkman.com/api/artworks) into a one-click bulk-import flow for the Catalog contract. The planner filters to mainnet, deduplicates against what's already on-chain, surfaces non-mainnet and off-chain entries transparently, and batches the writes into a few multicall transactions.",
+    forArtists:
+      "Declaring 200+ works one at a time was never going to happen. If you publish your own canonical list of work, PND can translate it into your on-chain Catalog in a handful of transactions.",
+    technical:
+      "Pluggable adapter registry under apps/web/src/lib/import-sources/. Per-contract granularity toggle (token-by-token vs. full contract), hidden for known shared platforms. Multicall hook chunks at 50 ops per tx. End-to-end verified on an anvil fork: 229 ops across 5 multicall txs against the live Catalog contract.",
+  },
+  {
+    date: "May 14, 2026",
+    title: "Indexed every artist active on a supported platform",
+    summary:
+      "PND now keeps a server-side index of every address that has acted as an artist on a contract PND supports (Sovereign house owners, Foundation creators and minters, Catalog declarants), and a per-artist index of their work across every supported platform (Foundation, Sovereign, Manifold, SuperRare V2, Transient Labs). The data lives in PND's own database, not refetched against the chain on each page load.",
+    forArtists:
+      "Wherever PND shows your work, it's reading from one consistent record of what you've made across the platforms it covers. That same record is the substrate the catalog tooling reads from, so flows like the import planner can pull from what you've already minted instead of asking you to track down contract addresses.",
+    technical:
+      "known_artists is a Postgres view over Ponder tables (Sovereign house owners, Foundation creators and artist-token minters, Catalog declarants). Per-artist token enumeration on the external platforms (Manifold, SR V2, Transient Labs) is stored in three status tables with incremental eth_getLogs cursors. Refreshes are background-only and gated on the known set, so anonymous traffic can't drive RPC fan-out.",
+  },
+  {
+    date: "May 13, 2026",
+    title: "Catalog mainnet deploy + /catalog and /dependency pages",
+    summary:
+      "The Catalog contract went live on Ethereum mainnet. Artists can publish an authoritative on-chain list of which contracts, tokens, and token ranges belong to their public record. /catalog/[address] is the read view and the owner's edit flow. /dependency/[address] is a contract-centric companion that asks which artist any given contract belongs to. The artist page surfaces a compact Catalog section when an artist has declared anything.",
+    forArtists:
+      "If a collector or another artist asks 'is this really yours?', the answer can now live on-chain in a place you control, separate from any one platform. Galleries, archives, and tools can read it without trusting PND.",
+    technical:
+      "Immutable, public-infrastructure contract: no admin, no owner, no upgrade path, no fees. Deployed via CREATE2 so the same address applies on every EVM chain given identical bytecode and salt. Multicall and operator delegation. Add/remove events include the actor so audit trails are self-contained. Indexed by Ponder so /catalog reads from Postgres rather than fanning out to RPC on every visit.",
+  },
+  {
     date: "May 12, 2026",
     title: "/delist landing page",
     summary:
