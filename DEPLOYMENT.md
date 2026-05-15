@@ -106,16 +106,19 @@ Setup is in [`ponder/README.md`](./ponder/README.md). The summary:
    Fly, your own VM). Don't try to run it in a Function — it's a
    continuously-syncing process.
 2. Point its `DATABASE_URL` at the same Postgres the web app uses.
-3. Set `DATABASE_SCHEMA=ponder` on the indexer service so its tables
-   live in their own namespace.
+3. Set `DATABASE_SCHEMA=ponder_v1` on the indexer service so its
+   tables live in their own namespace. The `_v1` suffix is the
+   versioned-deploy convention; bump it on every schema-changing
+   release. See [Versioned schema upgrades](./ponder/README.md#versioned-schema-upgrades).
 4. Set `PONDER_RPC_URL_1=https://eth.drpc.org` (drpc.org's free tier
    handles Ponder's factory-pattern multi-address `eth_getLogs` calls
    correctly; publicnode / llamarpc / ankr do not — see
    [`ponder/README.md`](./ponder/README.md#rpc-strategy) for the full
    failure mode). Cost is controlled via `pollingInterval` in
    `ponder.config.ts`, currently 300s.
-5. Set `INDEXER_SCHEMA=ponder` on the web app so it knows where
-   Ponder writes.
+5. Set `INDEXER_SCHEMA=ponder_v1` on the web app so it knows where
+   Ponder writes. Must match the indexer's `DATABASE_SCHEMA`
+   exactly; bump in lockstep on schema upgrades.
 
 Ongoing cost is small (Ponder polls for new blocks, the events on a
 factory + clones are sparse).
