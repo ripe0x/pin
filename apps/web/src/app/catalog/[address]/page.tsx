@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { Suspense } from "react"
 import { redirect } from "next/navigation"
 import type { Address } from "viem"
+import { after } from "next/server"
 import { resolveEnsAddress, getArtistIdentity } from "@/lib/artist-queries"
 import { getCachedCatalog } from "@/lib/catalog-cache"
 import { maybeRefreshArtistIfStale } from "@/lib/external-indexer"
@@ -107,11 +108,13 @@ export default async function RecordPage({
 }
 
 async function RecordBody({ address }: { address: Address }) {
-  // Fire-and-forget on-visit refresh check. No-op for unknown addresses
-  // (the `isKnownArtist` gate inside) and no-op within the 1h stale
-  // window. ISR's 60s revalidation naturally rate-limits how often this
-  // runs per address per Vercel instance. See `lib/external-indexer.ts`.
-  void maybeRefreshArtistIfStale(address)
+  // Register an after() callback synchronously during render so Netlify's
+  // serverless runtime keeps the function alive past the response. The
+  // previous `void maybeRefreshArtistIfStale()` pattern lost its
+  // in-flight awaits to function teardown. No-op inside for unknown
+  // addresses (gate) and within the 1h stale window. See
+  // `lib/external-indexer.ts` header for the cost model.
+  after(() => maybeRefreshArtistIfStale(address))
 
   const [identity, record] = await Promise.all([
     getArtistIdentity(address),
