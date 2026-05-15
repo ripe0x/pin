@@ -29,6 +29,9 @@ import type { DiscoveredToken, TokenRef } from "./onchain-discovery"
 import {
   readManifoldArtistTokens,
   writeManifoldArtistTokens,
+  readManifoldContracts,
+  writeManifoldContracts,
+  type LazyManifoldContract,
 } from "./lazy-index"
 import { loggingFallbackTransport } from "./rpc-log"
 import { isKnownArtist } from "./known-artists"
@@ -121,58 +124,158 @@ export async function discoverManifoldTokens(
 }
 
 /**
- * Refs-only enumeration. Still calls Alchemy NFT API to learn which token
- * IDs exist on each Manifold contract (no cheaper alternative exists), but
- * discards the bundled metadata so the result is small + cacheable. Metadata
- * gets re-fetched lazily by `enrichTokens` for the visible page.
+ * Pure Postgres read. Returns whatever's already indexed for this
+ * artist — empty for artists who haven't been scanned yet. Scans are
+ * triggered explicitly via `scanManifoldArtistTokens` (cron +
+ * refresh-button entrypoints in `lib/external-indexer.ts`). No
+ * external API call on this path under any circumstances.
  */
 export async function discoverManifoldTokenRefs(
   artistAddress: string,
 ): Promise<TokenRef[]> {
   const artist = artistAddress.toLowerCase() as Address
-
-  // Postgres is source of truth: trust any existing rows (no TTL gate).
-  // Refresh is driven by the daily cron in lib/external-indexer.ts which
-  // clears the status row before re-calling, landing in the fetch branch.
   const cached = await readManifoldArtistTokens(artist)
-  if (cached) {
-    return cached.tokens.map((t) => ({
-      contract: t.contract as Address,
-      tokenId: t.tokenId,
-      creator: artist,
-      collectionName: t.collectionName,
-    }))
-  }
+  if (!cached) return []
+  return cached.tokens.map((t) => ({
+    contract: t.contract as Address,
+    tokenId: t.tokenId,
+    creator: artist,
+    collectionName: t.collectionName,
+  }))
+}
 
-  // Cache miss: gate on known_artists before any Etherscan/Alchemy call.
-  // Bounds external-API spend to the ecosystem allow-list — anonymous
-  // crawler traffic on unknown addresses returns [] without scanning.
-  if (!(await isKnownArtist(artist))) {
-    writeManifoldArtistTokens(artist, [])
-    return []
-  }
+/**
+ * Incremental scan: writes new Manifold mint rows for `artist` since the
+ * previous successful scan. Called by `refreshArtist` in
+ * `lib/external-indexer.ts` (cron + refresh-button entrypoints).
+ *
+ * Two phases:
+ *
+ *   Phase A — contract discovery & classification (CHEAP).
+ *     Etherscan `txlist` returns every contract this artist has
+ *     deployed (factory deploys via `txlistinternal` for known Manifold
+ *     factories). For contracts we haven't classified yet, run
+ *     `supportsInterface(0x28f10a21)` + ERC-721/1155 probes via
+ *     multicall, then resolve `name()` for the survivors. Persist the
+ *     classification in `lazy_manifold_contracts` so subsequent refreshes
+ *     skip the multicall for already-known contracts.
+ *
+ *   Phase B — token enumeration via Alchemy `getAssetTransfers` (INCREMENTAL).
+ *     For each Manifold Creator Core, scan ERC-721 + ERC-1155 transfers
+ *     from `fromBlock = last_scanned_block + 1` to current head. Each
+ *     mint emits `Transfer(from=0x0)` or `TransferSingle(from=0x0)` /
+ *     `TransferBatch(from=0x0)`. The `tokenId` (or `id` / `ids[]`) is
+ *     what we record; `ON CONFLICT DO NOTHING` dedups across edition
+ *     mints of the same 1155 id.
+ *
+ * Cursor: `lazy_manifold_artist_status.last_scanned_block`. Null on the
+ * first scan → full sweep from `MANIFOLD_FIRST_BLOCK`.
+ *
+ * Gated by `isKnownArtist`.
+ */
+export async function scanManifoldArtistTokens(
+  artistAddress: string,
+): Promise<void> {
+  const artist = artistAddress.toLowerCase() as Address
+
+  if (!(await isKnownArtist(artist))) return
 
   const apiKey = process.env.ETHERSCAN_API_KEY
-  if (!apiKey) return []
+  if (!apiKey) return
 
+  const existing = await readManifoldArtistTokens(artist)
+  const fromBlock =
+    existing?.lastScannedBlock != null
+      ? existing.lastScannedBlock + 1n
+      : MANIFOLD_FIRST_BLOCK
+
+  // Phase A — discover & classify contracts.
   const client = getClient()
-
   const deployed = await listDeployedContracts(artist, apiKey)
-  if (deployed.length === 0) {
-    // Persist the empty result so we don't repeatedly Etherscan an artist
-    // who has no Manifold deployments.
-    writeManifoldArtistTokens(artist, [])
-    return []
+
+  // Read existing classifications. Anything in the cache is already
+  // known to be a Manifold core or not.
+  const cachedContracts = await readManifoldContracts(artist)
+  const known = new Map(cachedContracts.map((c) => [c.contract.toLowerCase(), c]))
+
+  // Probe just the contracts we haven't classified yet.
+  const unclassified = deployed.filter(
+    (addr) => !known.has(addr.toLowerCase()),
+  )
+  if (unclassified.length > 0) {
+    const probed = await filterManifoldCreatorCores(client, unclassified)
+    const probedSet = new Set(probed.map((p) => p.address.toLowerCase()))
+    // Probed-but-not-Manifold contracts: still mark them so we don't
+    // re-classify on every refresh.
+    const newRows: LazyManifoldContract[] = []
+    for (const addr of unclassified) {
+      const lower = addr.toLowerCase()
+      const hit = probed.find((p) => p.address.toLowerCase() === lower)
+      if (hit) {
+        newRows.push({
+          contract: lower,
+          isCreatorCore: true,
+          is721: hit.is721,
+          is1155: hit.is1155,
+          collectionName: hit.name,
+        })
+        known.set(lower, {
+          contract: lower,
+          isCreatorCore: true,
+          is721: hit.is721,
+          is1155: hit.is1155,
+          collectionName: hit.name,
+        })
+      } else if (!probedSet.has(lower)) {
+        newRows.push({
+          contract: lower,
+          isCreatorCore: false,
+          is721: false,
+          is1155: false,
+          collectionName: null,
+        })
+        known.set(lower, {
+          contract: lower,
+          isCreatorCore: false,
+          is721: false,
+          is1155: false,
+          collectionName: null,
+        })
+      }
+    }
+    if (newRows.length > 0) writeManifoldContracts(artist, newRows)
   }
 
-  const manifoldContracts = await filterManifoldCreatorCores(client, deployed)
+  const manifoldContracts = Array.from(known.values()).filter(
+    (c) => c.isCreatorCore,
+  )
+
+  // Determine the chain head NOW so we record a consistent cursor even
+  // if Phase B finds zero new mints.
+  const latest = await client.getBlockNumber()
   if (manifoldContracts.length === 0) {
-    writeManifoldArtistTokens(artist, [])
-    return []
+    writeManifoldArtistTokens(artist, [], latest)
+    return
   }
 
+  if (fromBlock > latest) {
+    writeManifoldArtistTokens(artist, [], latest)
+    return
+  }
+
+  // Phase B — incremental token enumeration via Alchemy
+  // `alchemy_getAssetTransfers`. For each Manifold core, fetch transfers
+  // with `fromBlock` filter + `category=["erc721","erc1155"]` and the
+  // contract address constraint.
   const perContract = await Promise.all(
-    manifoldContracts.map((c) => enumerateRefsViaAlchemyNft(c, artist)),
+    manifoldContracts.map((c) =>
+      enumerateRefsViaAssetTransfers(
+        c.contract as Address,
+        c.collectionName,
+        fromBlock,
+        latest,
+      ),
+    ),
   )
   const refs = perContract.flat()
 
@@ -183,9 +286,14 @@ export async function discoverManifoldTokenRefs(
       tokenId: r.tokenId,
       collectionName: r.collectionName ?? null,
     })),
+    latest,
   )
-  return refs
 }
+
+// First block we'd ever consider Manifold mints from. Used as the lower
+// bound on a never-before-scanned artist's first incremental window.
+// 13_500_000 = ~Sep 2021, before Manifold Studio's public launch.
+const MANIFOLD_FIRST_BLOCK = 13_500_000n
 
 // 20 pages × 100 tokens/page = 2000 tokens per Manifold contract. Each
 // page is a separate billable NFT API call, so unbounded pagination on a
@@ -240,6 +348,113 @@ async function enumerateRefsViaAlchemyNft(
     if (pages >= MANIFOLD_MAX_PAGES && pageKey) {
       console.warn(
         `manifold-discovery: hit ${MANIFOLD_MAX_PAGES}-page cap on ${contract.address} for ${artist}; tail truncated.`,
+      )
+      break
+    }
+  } while (pageKey)
+
+  return refs
+}
+
+/**
+ * Per-contract incremental enumeration via Alchemy's
+ * `alchemy_getAssetTransfers` JSON-RPC. Used by `scanManifoldArtistTokens`
+ * — replaces the older `getNFTsForContract` NFT API call which doesn't
+ * support a fromBlock filter and therefore can't be made incremental.
+ *
+ * `from = 0x0` filter narrows to mints only. `category = ["erc721",
+ * "erc1155"]` covers both Manifold core variants. Deduplicates within
+ * the response by `(contract, tokenId)` — for ERC-1155 editions, many
+ * mints of the same `id` collapse to one row.
+ *
+ * Returns minimal rows; collection name comes from the caller's
+ * `lazy_manifold_contracts` cache, not from the response.
+ */
+type AssetTransferRef = {
+  contract: Address
+  tokenId: string
+  collectionName: string | null
+}
+
+type AlchemyAssetTransfer = {
+  category: "erc721" | "erc1155" | "external" | "internal" | "erc20" | string
+  tokenId?: string | null
+  erc1155Metadata?: Array<{ tokenId: string; value: string }> | null
+}
+
+async function enumerateRefsViaAssetTransfers(
+  contract: Address,
+  collectionName: string | null,
+  fromBlock: bigint,
+  toBlock: bigint,
+): Promise<AssetTransferRef[]> {
+  const apiKey = process.env.ALCHEMY_API_KEY
+  if (!apiKey) return []
+
+  const refs: AssetTransferRef[] = []
+  const seen = new Set<string>()
+  let pageKey: string | undefined
+  let pages = 0
+  const endpoint = `https://eth-mainnet.g.alchemy.com/v2/${apiKey}`
+
+  do {
+    const body = {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "alchemy_getAssetTransfers",
+      params: [
+        {
+          fromBlock: `0x${fromBlock.toString(16)}`,
+          toBlock: `0x${toBlock.toString(16)}`,
+          contractAddresses: [contract],
+          category: ["erc721", "erc1155"],
+          fromAddress: "0x0000000000000000000000000000000000000000",
+          maxCount: "0x3e8", // 1000 per page
+          ...(pageKey ? { pageKey } : {}),
+        },
+      ],
+    }
+
+    let json: {
+      result?: { transfers?: AlchemyAssetTransfer[]; pageKey?: string }
+    }
+    try {
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(30_000),
+      })
+      if (!res.ok) break
+      json = (await res.json()) as typeof json
+    } catch {
+      break
+    }
+
+    const transfers = json.result?.transfers ?? []
+    for (const t of transfers) {
+      if (t.category === "erc721" && t.tokenId) {
+        const id = BigInt(t.tokenId).toString()
+        const key = `${contract.toLowerCase()}-${id}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        refs.push({ contract, tokenId: id, collectionName })
+      } else if (t.category === "erc1155" && t.erc1155Metadata) {
+        for (const m of t.erc1155Metadata) {
+          const id = BigInt(m.tokenId).toString()
+          const key = `${contract.toLowerCase()}-${id}`
+          if (seen.has(key)) continue
+          seen.add(key)
+          refs.push({ contract, tokenId: id, collectionName })
+        }
+      }
+    }
+
+    pageKey = json.result?.pageKey
+    pages++
+    if (pages >= MANIFOLD_MAX_PAGES && pageKey) {
+      console.warn(
+        `manifold-discovery: hit ${MANIFOLD_MAX_PAGES}-page cap on getAssetTransfers ${contract}; tail truncated.`,
       )
       break
     }

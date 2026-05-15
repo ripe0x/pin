@@ -10,10 +10,8 @@ import {
 import { getActiveAuctionCount } from "@/lib/auctions"
 import { getCachedTokenRefs } from "@/lib/artist-cache"
 import { pgCacheHas } from "@/lib/pg-cache"
-import { after } from "next/server"
 import { isCrawler } from "@/lib/crawler"
 import { withSingleFlight } from "@/lib/single-flight"
-import { maybeRefreshArtistIfStale } from "@/lib/external-indexer"
 import { PLATFORMS } from "@/lib/platforms"
 import { ArtistHeader } from "@/components/artist/ArtistHeader"
 import { ArtistGallery } from "@/components/artist/ArtistGallery"
@@ -133,13 +131,6 @@ async function ArtistPageBody({ address }: { address: string }) {
   if (await isCrawler()) {
     return <ArtistCrawlerShell />
   }
-
-  // Register an after() callback synchronously during render so Netlify's
-  // serverless runtime keeps the function alive past the response for the
-  // external-platform refresh (Manifold / SR V2 / TL). No-op inside for
-  // unknown addresses (gate) and within the 1h stale window. Placed AFTER
-  // the crawler check so bot traffic doesn't drive refresh frequency.
-  after(() => maybeRefreshArtistIfStale(address))
 
   // Per-artist auction discovery — fire each adapter's
   // `discoverArtistAuctions` so this artist's `lazy_*_active_auctions`

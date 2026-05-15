@@ -670,11 +670,18 @@ export type LazyManifoldToken = {
 
 export async function readManifoldArtistTokens(
   creator: string,
-): Promise<{ tokens: LazyManifoldToken[]; lastIndexedAt: Date } | null> {
+): Promise<{
+  tokens: LazyManifoldToken[]
+  lastIndexedAt: Date
+  lastScannedBlock: bigint | null
+} | null> {
   if (!sql) return null
   try {
-    const status = await sql<Array<{ last_indexed_at: Date }>>`
-      SELECT last_indexed_at FROM lazy_manifold_artist_status
+    const status = await sql<
+      Array<{ last_indexed_at: Date; last_scanned_block: string | null }>
+    >`
+      SELECT last_indexed_at, last_scanned_block::text AS last_scanned_block
+      FROM lazy_manifold_artist_status
       WHERE creator = ${creator.toLowerCase()}
       LIMIT 1
     `
@@ -698,15 +705,24 @@ export async function readManifoldArtistTokens(
         collectionName: r.collection_name,
       })),
       lastIndexedAt: status[0].last_indexed_at,
+      lastScannedBlock:
+        status[0].last_scanned_block != null
+          ? BigInt(status[0].last_scanned_block)
+          : null,
     }
   } catch {
     return null
   }
 }
 
+/**
+ * Write Manifold artist token rows, then bump the status row. See
+ * `writeSuperrareV2ArtistTokens` for the lastScannedBlock semantics.
+ */
 export function writeManifoldArtistTokens(
   creator: string,
   tokens: LazyManifoldToken[],
+  lastScannedBlock: bigint | null = null,
 ): void {
   if (!sql) return
   void (async () => {
@@ -724,11 +740,98 @@ export function writeManifoldArtistTokens(
                 last_indexed_at = NOW()
         `
       }
-      await sql`
-        INSERT INTO lazy_manifold_artist_status (creator, last_indexed_at)
-        VALUES (${lower}, NOW())
-        ON CONFLICT (creator) DO UPDATE SET last_indexed_at = NOW()
-      `
+      if (lastScannedBlock != null) {
+        await sql`
+          INSERT INTO lazy_manifold_artist_status (creator, last_indexed_at, last_scanned_block)
+          VALUES (${lower}, NOW(), ${lastScannedBlock.toString()}::bigint)
+          ON CONFLICT (creator) DO UPDATE
+            SET last_indexed_at = NOW(),
+                last_scanned_block = EXCLUDED.last_scanned_block
+        `
+      } else {
+        await sql`
+          INSERT INTO lazy_manifold_artist_status (creator, last_indexed_at)
+          VALUES (${lower}, NOW())
+          ON CONFLICT (creator) DO UPDATE SET last_indexed_at = NOW()
+        `
+      }
+    } catch {
+      /* ignore */
+    }
+  })()
+}
+
+// ─── Manifold per-artist contract cache ──────────────────────────────────
+// Caches the result of "is this contract an artist-deployed Manifold
+// Creator Core?" — Etherscan + supportsInterface multicall + name()
+// lookup — so we don't re-classify on every refresh. New deployments
+// surface via Etherscan `txlist` (cheap, one call); only previously
+// unknown contracts get the multicall classification.
+//
+// `is_creator_core = false` rows are KEPT to mark "this contract was
+// probed and is not Manifold" so we skip re-probing it in future refreshes.
+// Schema: migration 024.
+
+export type LazyManifoldContract = {
+  contract: string
+  isCreatorCore: boolean
+  is721: boolean
+  is1155: boolean
+  collectionName: string | null
+}
+
+export async function readManifoldContracts(
+  artist: string,
+): Promise<LazyManifoldContract[]> {
+  if (!sql) return []
+  try {
+    const rows = await sql<
+      Array<{
+        contract: string
+        is_creator_core: boolean
+        is_erc721: boolean
+        is_erc1155: boolean
+        collection_name: string | null
+      }>
+    >`
+      SELECT contract, is_creator_core, is_erc721, is_erc1155, collection_name
+      FROM lazy_manifold_contracts
+      WHERE artist = ${artist.toLowerCase()}
+    `
+    return rows.map((r) => ({
+      contract: r.contract,
+      isCreatorCore: r.is_creator_core,
+      is721: r.is_erc721,
+      is1155: r.is_erc1155,
+      collectionName: r.collection_name,
+    }))
+  } catch {
+    return []
+  }
+}
+
+export function writeManifoldContracts(
+  artist: string,
+  contracts: LazyManifoldContract[],
+): void {
+  if (!sql) return
+  void (async () => {
+    try {
+      const lower = artist.toLowerCase()
+      for (const c of contracts) {
+        await sql`
+          INSERT INTO lazy_manifold_contracts
+            (artist, contract, is_creator_core, is_erc721, is_erc1155, collection_name)
+          VALUES
+            (${lower}, ${c.contract.toLowerCase()}, ${c.isCreatorCore},
+             ${c.is721}, ${c.is1155}, ${c.collectionName})
+          ON CONFLICT (artist, contract) DO UPDATE
+            SET is_creator_core = EXCLUDED.is_creator_core,
+                is_erc721       = EXCLUDED.is_erc721,
+                is_erc1155      = EXCLUDED.is_erc1155,
+                collection_name = COALESCE(EXCLUDED.collection_name, lazy_manifold_contracts.collection_name)
+        `
+      }
     } catch {
       /* ignore */
     }
@@ -893,11 +996,18 @@ export type LazySuperrareV2ArtistToken = {
 
 export async function readSuperrareV2ArtistTokens(
   creator: string,
-): Promise<{ tokens: LazySuperrareV2ArtistToken[]; lastIndexedAt: Date } | null> {
+): Promise<{
+  tokens: LazySuperrareV2ArtistToken[]
+  lastIndexedAt: Date
+  lastScannedBlock: bigint | null
+} | null> {
   if (!sql) return null
   try {
-    const status = await sql<Array<{ last_indexed_at: Date }>>`
-      SELECT last_indexed_at FROM lazy_srv2_artist_status
+    const status = await sql<
+      Array<{ last_indexed_at: Date; last_scanned_block: string | null }>
+    >`
+      SELECT last_indexed_at, last_scanned_block::text AS last_scanned_block
+      FROM lazy_srv2_artist_status
       WHERE creator = ${creator.toLowerCase()}
       LIMIT 1
     `
@@ -924,15 +1034,28 @@ export async function readSuperrareV2ArtistTokens(
         logIndex: r.log_index,
       })),
       lastIndexedAt: status[0].last_indexed_at,
+      lastScannedBlock:
+        status[0].last_scanned_block != null
+          ? BigInt(status[0].last_scanned_block)
+          : null,
     }
   } catch {
     return null
   }
 }
 
+/**
+ * Write SR V2 artist token rows, then bump the status row.
+ *
+ * `lastScannedBlock` is the head block observed during this scan; it
+ * becomes the lower bound (+1) for the next incremental scan. Pass
+ * `null` to leave it unchanged (e.g. when persisting a discovered-but-
+ * unindexed empty result).
+ */
 export function writeSuperrareV2ArtistTokens(
   creator: string,
   tokens: LazySuperrareV2ArtistToken[],
+  lastScannedBlock: bigint | null = null,
 ): void {
   if (!sql) return
   void (async () => {
@@ -949,11 +1072,21 @@ export function writeSuperrareV2ArtistTokens(
             SET last_indexed_at = NOW()
         `
       }
-      await sql`
-        INSERT INTO lazy_srv2_artist_status (creator, last_indexed_at)
-        VALUES (${lower}, NOW())
-        ON CONFLICT (creator) DO UPDATE SET last_indexed_at = NOW()
-      `
+      if (lastScannedBlock != null) {
+        await sql`
+          INSERT INTO lazy_srv2_artist_status (creator, last_indexed_at, last_scanned_block)
+          VALUES (${lower}, NOW(), ${lastScannedBlock.toString()}::bigint)
+          ON CONFLICT (creator) DO UPDATE
+            SET last_indexed_at = NOW(),
+                last_scanned_block = EXCLUDED.last_scanned_block
+        `
+      } else {
+        await sql`
+          INSERT INTO lazy_srv2_artist_status (creator, last_indexed_at)
+          VALUES (${lower}, NOW())
+          ON CONFLICT (creator) DO UPDATE SET last_indexed_at = NOW()
+        `
+      }
     } catch {
       /* ignore */
     }
@@ -1335,11 +1468,18 @@ export type LazyTransientArtistToken = {
 
 export async function readTransientArtistTokens(
   creator: string,
-): Promise<{ tokens: LazyTransientArtistToken[]; lastIndexedAt: Date } | null> {
+): Promise<{
+  tokens: LazyTransientArtistToken[]
+  lastIndexedAt: Date
+  lastScannedBlock: bigint | null
+} | null> {
   if (!sql) return null
   try {
-    const status = await sql<Array<{ last_indexed_at: Date }>>`
-      SELECT last_indexed_at FROM lazy_tl_artist_status
+    const status = await sql<
+      Array<{ last_indexed_at: Date; last_scanned_block: string | null }>
+    >`
+      SELECT last_indexed_at, last_scanned_block::text AS last_scanned_block
+      FROM lazy_tl_artist_status
       WHERE creator = ${creator.toLowerCase()}
       LIMIT 1
     `
@@ -1365,15 +1505,24 @@ export async function readTransientArtistTokens(
         logIndex: r.log_index,
       })),
       lastIndexedAt: status[0].last_indexed_at,
+      lastScannedBlock:
+        status[0].last_scanned_block != null
+          ? BigInt(status[0].last_scanned_block)
+          : null,
     }
   } catch {
     return null
   }
 }
 
+/**
+ * Write TL artist token rows, then bump the status row. See
+ * `writeSuperrareV2ArtistTokens` for the lastScannedBlock semantics.
+ */
 export function writeTransientArtistTokens(
   creator: string,
   tokens: LazyTransientArtistToken[],
+  lastScannedBlock: bigint | null = null,
 ): void {
   if (!sql) return
   void (async () => {
@@ -1390,11 +1539,21 @@ export function writeTransientArtistTokens(
             SET last_indexed_at = NOW()
         `
       }
-      await sql`
-        INSERT INTO lazy_tl_artist_status (creator, last_indexed_at)
-        VALUES (${lower}, NOW())
-        ON CONFLICT (creator) DO UPDATE SET last_indexed_at = NOW()
-      `
+      if (lastScannedBlock != null) {
+        await sql`
+          INSERT INTO lazy_tl_artist_status (creator, last_indexed_at, last_scanned_block)
+          VALUES (${lower}, NOW(), ${lastScannedBlock.toString()}::bigint)
+          ON CONFLICT (creator) DO UPDATE
+            SET last_indexed_at = NOW(),
+                last_scanned_block = EXCLUDED.last_scanned_block
+        `
+      } else {
+        await sql`
+          INSERT INTO lazy_tl_artist_status (creator, last_indexed_at)
+          VALUES (${lower}, NOW())
+          ON CONFLICT (creator) DO UPDATE SET last_indexed_at = NOW()
+        `
+      }
     } catch {
       /* ignore */
     }

@@ -297,6 +297,113 @@ type Listing = {
  * Bid currency: only ETH listings (currencyAddress = 0x0) surface in
  * our UI. ERC-20 listings exist on TL but are out of scope for the MVP.
  */
+/**
+ * Incremental scan: writes new TL mint rows for `artist` since the
+ * previous successful scan. Called by `refreshArtist` in
+ * `lib/external-indexer.ts` (cron + refresh-button entrypoints).
+ *
+ * Two stages, both bounded by the same `last_scanned_block` cursor:
+ *   1. Universal Deployer — `ContractDeployed` filtered by indexed
+ *      `sender = artist`. Picks up any newly-deployed ERC721TL clones.
+ *      Existing clones aren't re-discovered (their row is already in
+ *      `lazy_tl_artist_tokens` from prior scans).
+ *   2. Per ERC721TL clone discovered in stage 1 — Transfer-from-zero
+ *      from `fromBlock` forward. Existing clones we already know about
+ *      from prior runs ALSO get their incremental window so new mints
+ *      on relisted/active contracts surface too.
+ *
+ * Cursor: `lazy_tl_artist_status.last_scanned_block`. Null on the
+ * first scan → full sweep from `TL_DEPLOYER_DEPLOY_BLOCK`.
+ *
+ * Gated by `isKnownArtist`.
+ */
+export async function scanTransientArtistTokens(artist: Address): Promise<void> {
+  if (!(await isKnownArtist(artist))) return
+
+  const existing = await readTransientArtistTokens(artist)
+  const fromBlock =
+    existing?.lastScannedBlock != null
+      ? existing.lastScannedBlock + 1n
+      : TL_DEPLOYER_DEPLOY_BLOCK
+
+  const client = getClient()
+  const latest = await client.getBlockNumber()
+  if (fromBlock > latest) {
+    writeTransientArtistTokens(artist, [], latest)
+    return
+  }
+
+  // Stage 1 — discover newly-deployed ERC721TL clones for this artist.
+  // The deployer event is rare per-artist so this is cheap even on first
+  // full scan.
+  const deployLogs = await paginatedIndexedScan(
+    (from, to) =>
+      client.getLogs({
+        address: TL_DEPLOYER,
+        event: contractDeployedEvent,
+        args: { sender: artist },
+        fromBlock: from,
+        toBlock: to,
+      }),
+    fromBlock,
+    latest,
+  )
+  const newContracts: Address[] = []
+  for (const log of deployLogs) {
+    const args = log.args as { deployedContract?: Address; cType?: string }
+    if (!args.deployedContract || !args.cType) continue
+    if (!args.cType.startsWith("ERC721")) continue
+    newContracts.push(args.deployedContract)
+  }
+
+  // Stage 2 — union the newly discovered clones with the artist's
+  // already-known clones (from existing rows). Scan Transfer-from-zero
+  // on ALL of them within the incremental window, so new mints on
+  // active old contracts also surface.
+  const knownContracts = new Set<Address>(newContracts)
+  for (const t of existing?.tokens ?? []) {
+    knownContracts.add(t.contract as Address)
+  }
+
+  type Ref = {
+    contract: Address
+    tokenId: string
+    blockNumber: bigint
+    logIndex: number
+  }
+  const refs: Ref[] = []
+  for (const contract of knownContracts) {
+    // For newly-discovered clones (in `newContracts`), scan from their
+    // deploy block (= within the incremental window already). For
+    // pre-existing clones, scan only the incremental window.
+    const mintLogs = await paginatedIndexedScan(
+      (from, to) =>
+        client.getLogs({
+          address: contract,
+          event: erc721TransferEvent,
+          args: { from: ZERO_ADDRESS as Address },
+          fromBlock: from,
+          toBlock: to,
+        }),
+      fromBlock,
+      latest,
+    )
+    for (const l of mintLogs) {
+      if (l.blockNumber === null || l.logIndex === null) continue
+      const args = l.args as { tokenId?: bigint }
+      if (args.tokenId === undefined) continue
+      refs.push({
+        contract,
+        tokenId: args.tokenId.toString(),
+        blockNumber: l.blockNumber,
+        logIndex: l.logIndex,
+      })
+    }
+  }
+
+  writeTransientArtistTokens(artist, refs, latest)
+}
+
 export const transientAdapter: PlatformAdapter = {
   id: "transient",
   displayName: "Transient",
@@ -319,108 +426,21 @@ export const transientAdapter: PlatformAdapter = {
    * deployed contract (also cheap; per-token-mint event volume on a
    * typical artist contract is small).
    */
+  /**
+   * Pure Postgres read. Returns whatever's already indexed for this
+   * artist — empty for artists who haven't been scanned yet. Scans are
+   * triggered explicitly via `scanTransientArtistTokens` (cron +
+   * refresh-button path in `lib/external-indexer.ts`).
+   */
   async discoverArtistTokens(artist: Address): Promise<ArtistTokenRef[]> {
-    // Postgres is source of truth: trust any existing rows. The cron
-    // (see lib/external-indexer.ts) handles refreshes for known
-    // artists by clearing the status row first, then calling this
-    // method — that path lands in the cache-miss branch below.
     const cached = await readTransientArtistTokens(artist)
-    if (cached) {
-      return cached.tokens.map((t) => ({
-        platform: "transient",
-        contract: t.contract as Address,
-        tokenId: t.tokenId,
-        blockNumber: t.blockNumber,
-        logIndex: t.logIndex,
-        collectionName: null,
-      }))
-    }
-
-    // Cache miss: gate on known_artists before any external call.
-    if (!(await isKnownArtist(artist))) {
-      writeTransientArtistTokens(artist, [])
-      return []
-    }
-
-    const client = getClient()
-    const latest = await client.getBlockNumber()
-
-    // Step 1 — find every TL contract this artist has deployed.
-    const deployLogs = await paginatedIndexedScan(
-      (from, to) =>
-        client.getLogs({
-          address: TL_DEPLOYER,
-          event: contractDeployedEvent,
-          args: { sender: artist },
-          fromBlock: from,
-          toBlock: to,
-        }),
-      TL_DEPLOYER_DEPLOY_BLOCK,
-      latest,
-    )
-
-    // Filter to ERC721TL contracts. ERC1155 mints have different
-    // enumeration semantics (TransferSingle/TransferBatch) and are
-    // out of scope for this pass — flagged as a follow-up.
-    const contracts: Address[] = []
-    for (const log of deployLogs) {
-      const args = log.args as { deployedContract?: Address; cType?: string }
-      if (!args.deployedContract || !args.cType) continue
-      // TL's cType strings include "ERC721TL", "ERC721TLM" (multi-tag),
-      // "ERC721TLCore", etc. — match prefix to catch all variants.
-      if (!args.cType.startsWith("ERC721")) continue
-      contracts.push(args.deployedContract)
-    }
-
-    // Step 2 — for each contract, scan Transfer-from-zero (all mints).
-    // We don't filter by `to` because TL primary sales mint directly
-    // to the buyer; the artist's gallery should still surface those
-    // pieces (the artist authored them even if the mint went elsewhere).
-    type Ref = {
-      contract: Address
-      tokenId: string
-      blockNumber: bigint
-      logIndex: number
-    }
-    const refs: Ref[] = []
-    for (const contract of contracts) {
-      const mintLogs = await paginatedIndexedScan(
-        (from, to) =>
-          client.getLogs({
-            address: contract,
-            event: erc721TransferEvent,
-            args: { from: ZERO_ADDRESS as Address },
-            fromBlock: from,
-            toBlock: to,
-          }),
-        TL_DEPLOYER_DEPLOY_BLOCK,
-        latest,
-      )
-      for (const l of mintLogs) {
-        if (l.blockNumber === null || l.logIndex === null) continue
-        const args = l.args as { tokenId?: bigint }
-        if (args.tokenId === undefined) continue
-        refs.push({
-          contract,
-          tokenId: args.tokenId.toString(),
-          blockNumber: l.blockNumber,
-          logIndex: l.logIndex,
-        })
-      }
-    }
-
-    // Persist so subsequent visits within the 30d TTL skip the scan.
-    // `writeTransientArtistTokens` writes both the rows AND the
-    // status row, so an artist with zero TL contracts still gets
-    // marked as indexed (returning [] without re-scanning).
-    writeTransientArtistTokens(artist, refs)
-
-    return refs.map((r) => ({
+    if (!cached) return []
+    return cached.tokens.map((t) => ({
       platform: "transient",
-      contract: r.contract,
-      tokenId: r.tokenId,
-      blockNumber: r.blockNumber,
-      logIndex: r.logIndex,
+      contract: t.contract as Address,
+      tokenId: t.tokenId,
+      blockNumber: t.blockNumber,
+      logIndex: t.logIndex,
       collectionName: null,
     }))
   },

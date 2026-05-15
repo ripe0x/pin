@@ -290,83 +290,95 @@ async function paginatedIndexedScan<T>(
  * Bid currency: only ETH bids (currencyAddress = 0x0) surface in our UI.
  * ERC-20 bids are rare and out of scope for the MVP.
  */
+/**
+ * Incremental scan: writes new SR V2 mint rows for `artist` since the
+ * previous successful scan. Called by `refreshArtist` in
+ * `lib/external-indexer.ts` (cron + refresh-button entrypoints).
+ *
+ * Cursor: `lazy_srv2_artist_status.last_scanned_block`. Null on the
+ * first-ever scan → full sweep from `SR_V2_NFT_DEPLOY_BLOCK`. Otherwise
+ * scans from `last_scanned_block + 1` to current head, so a typical
+ * refresh only pays for a few hours of chain history.
+ *
+ * Gated by `isKnownArtist` to keep crawler-driven cost at zero for
+ * non-ecosystem addresses.
+ */
+export async function scanSrv2ArtistTokens(artist: Address): Promise<void> {
+  if (!(await isKnownArtist(artist))) return
+
+  const existing = await readSuperrareV2ArtistTokens(artist)
+  const fromBlock =
+    existing?.lastScannedBlock != null
+      ? existing.lastScannedBlock + 1n
+      : SR_V2_NFT_DEPLOY_BLOCK
+
+  const client = getClient()
+  const latest = await client.getBlockNumber()
+  if (fromBlock > latest) {
+    // Nothing new; still bump status so the rate-limit window resets.
+    writeSuperrareV2ArtistTokens(artist, [], latest)
+    return
+  }
+
+  const logs = await paginatedIndexedScan(
+    (from, to) =>
+      client.getLogs({
+        address: SR_V2_NFT,
+        event: transferEvent,
+        args: {
+          from: ZERO_ADDRESS as Address,
+          to: artist,
+        },
+        fromBlock: from,
+        toBlock: to,
+      }),
+    fromBlock,
+    latest,
+  )
+
+  const refs = logs
+    .filter(
+      (l): l is typeof l & {
+        blockNumber: bigint
+        logIndex: number
+        args: { tokenId: bigint }
+      } =>
+        l.blockNumber !== null &&
+        l.logIndex !== null &&
+        l.args.tokenId !== undefined,
+    )
+    .map((l) => ({
+      contract: SR_V2_NFT,
+      tokenId: l.args.tokenId.toString(),
+      blockNumber: l.blockNumber,
+      logIndex: l.logIndex,
+    }))
+
+  writeSuperrareV2ArtistTokens(artist, refs, latest)
+}
+
 export const superrareV2Adapter: PlatformAdapter = {
   id: "superrareV2",
   displayName: "SuperRare",
 
+  /**
+   * Pure Postgres read. Returns whatever's already indexed for this
+   * artist — empty for artists who haven't been scanned yet (the cron
+   * + the "Refresh my work" button are the scan triggers, see
+   * `scanSrv2ArtistTokens` and `lib/external-indexer.ts`). No external
+   * API call on this path under any circumstances.
+   */
   async discoverArtistTokens(artist: Address): Promise<ArtistTokenRef[]> {
-    // Postgres is source of truth: trust any existing rows. The cron
-    // (see lib/external-indexer.ts) handles refreshes for known
-    // artists by clearing the status row first, then calling this
-    // method — that path lands in the cache-miss branch below.
     const cached = await readSuperrareV2ArtistTokens(artist)
-    if (cached) {
-      return cached.tokens.map((t) => ({
-        platform: "superrareV2",
-        contract: t.contract as Address,
-        tokenId: t.tokenId,
-        blockNumber: t.blockNumber,
-        logIndex: t.logIndex,
-        collectionName: null,
-      }))
-    }
-
-    // Cache miss: gate on known_artists before any external call.
-    // Bounds Alchemy/RPC spend to the ecosystem allow-list — anonymous
-    // crawler traffic on unknown addresses returns [] without scanning.
-    if (!(await isKnownArtist(artist))) {
-      writeSuperrareV2ArtistTokens(artist, [])
-      return []
-    }
-
-    const client = getClient()
-    const latest = await client.getBlockNumber()
-    const logs = await paginatedIndexedScan(
-      (from, to) =>
-        client.getLogs({
-          address: SR_V2_NFT,
-          event: transferEvent,
-          args: {
-            from: ZERO_ADDRESS as Address,
-            to: artist,
-          },
-          fromBlock: from,
-          toBlock: to,
-        }),
-      SR_V2_NFT_DEPLOY_BLOCK,
-      latest,
-    )
-
-    const refs = logs
-      .filter(
-        (l): l is typeof l & {
-          blockNumber: bigint
-          logIndex: number
-          args: { tokenId: bigint }
-        } =>
-          l.blockNumber !== null &&
-          l.logIndex !== null &&
-          l.args.tokenId !== undefined,
-      )
-      .map((l) => ({
-        platform: "superrareV2" as const,
-        contract: SR_V2_NFT,
-        tokenId: l.args.tokenId.toString(),
-        blockNumber: l.blockNumber,
-        logIndex: l.logIndex,
-        collectionName: null,
-      }))
-
-    writeSuperrareV2ArtistTokens(
-      artist,
-      refs.map((r) => ({
-        contract: r.contract,
-        tokenId: r.tokenId,
-        blockNumber: r.blockNumber,
-        logIndex: r.logIndex,
-      })),
-    )
-    return refs
+    if (!cached) return []
+    return cached.tokens.map((t) => ({
+      platform: "superrareV2",
+      contract: t.contract as Address,
+      tokenId: t.tokenId,
+      blockNumber: t.blockNumber,
+      logIndex: t.logIndex,
+      collectionName: null,
+    }))
   },
 
   async discoverCollectorTokens(
