@@ -33,7 +33,6 @@ import {
   isFresh,
 } from "../lazy-index"
 import type { BidHistoryEntry } from "../auctions"
-import { discoverTransientArtistAuctions } from "./transient-scan"
 import { loggingFallbackTransport } from "../rpc-log"
 import { isKnownArtist } from "../known-artists"
 import { MAX_BLOCKS_PER_SCAN } from "../external-indexer"
@@ -698,10 +697,6 @@ export const transientAdapter: PlatformAdapter = {
         bidderDisplay: lookup(b.bidder),
       })),
     }
-  },
-
-  async discoverArtistAuctions(artist: Address): Promise<void> {
-    await discoverTransientArtistAuctions(artist)
   },
 
   async getActiveAuctions(limit: number): Promise<ActiveAuctionSummary[]> {
