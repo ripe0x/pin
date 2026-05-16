@@ -23,10 +23,11 @@ import type {
 import type { AuctionState, AuctionFees } from "../auctions"
 import { getNFTsForOwner } from "../alchemy"
 import { resolveDisplayNames } from "../artist-queries"
-import { getActiveSrV2Auctions } from "../indexer-queries"
 import {
-  readSuperrareV2ArtistTokens,
-  writeSuperrareV2ArtistTokens,
+  getActiveSrV2Auctions,
+  getSrv2TokensFromIndexer,
+} from "../indexer-queries"
+import {
   readSuperrareV2Sale,
   writeSuperrareV2Sale,
   readSuperrareV2CollectorTokens,
@@ -290,107 +291,26 @@ async function paginatedIndexedScan<T>(
  * Bid currency: only ETH bids (currencyAddress = 0x0) surface in our UI.
  * ERC-20 bids are rare and out of scope for the MVP.
  */
-/**
- * Incremental scan: writes new SR V2 mint rows for `artist` since the
- * previous successful scan. Called by `refreshArtist` in
- * `lib/external-indexer.ts` (cron + refresh-button entrypoints).
- *
- * Bounded by `MAX_BLOCKS_PER_SCAN` (see external-indexer.ts) so a single
- * call always fits inside Netlify's HTTP-function timeout, even on the
- * first-ever scan of an artist with multi-year chain history. If the
- * budget is hit before reaching head, the cursor advances to the
- * scanned end block (not head). The next refresh call resumes from
- * there.
- *
- * Returns `{ caughtUp }` so callers know whether further scans are
- * needed. `caughtUp` is true when the scan reached (or was already at)
- * the current chain head.
- *
- * Cursor: `lazy_srv2_artist_status.last_scanned_block`. Null → first
- * sweep from `SR_V2_NFT_DEPLOY_BLOCK`. Otherwise resumes from
- * `last_scanned_block + 1`.
- *
- * Gated by `isKnownArtist`.
- */
-export async function scanSrv2ArtistTokens(
-  artist: Address,
-): Promise<{ caughtUp: boolean }> {
-  if (!(await isKnownArtist(artist))) return { caughtUp: true }
-
-  const existing = await readSuperrareV2ArtistTokens(artist)
-  const fromBlock =
-    existing?.lastScannedBlock != null
-      ? existing.lastScannedBlock + 1n
-      : SR_V2_NFT_DEPLOY_BLOCK
-
-  const client = getClient()
-  const latest = await client.getBlockNumber()
-  if (fromBlock > latest) {
-    await writeSuperrareV2ArtistTokens(artist, [], latest)
-    return { caughtUp: true }
-  }
-
-  const budgetEnd = fromBlock + MAX_BLOCKS_PER_SCAN - 1n
-  const toBlock = budgetEnd < latest ? budgetEnd : latest
-
-  const logs = await paginatedIndexedScan(
-    (from, to) =>
-      client.getLogs({
-        address: SR_V2_NFT,
-        event: transferEvent,
-        args: {
-          from: ZERO_ADDRESS as Address,
-          to: artist,
-        },
-        fromBlock: from,
-        toBlock: to,
-      }),
-    fromBlock,
-    toBlock,
-  )
-
-  const refs = logs
-    .filter(
-      (l): l is typeof l & {
-        blockNumber: bigint
-        logIndex: number
-        args: { tokenId: bigint }
-      } =>
-        l.blockNumber !== null &&
-        l.logIndex !== null &&
-        l.args.tokenId !== undefined,
-    )
-    .map((l) => ({
-      contract: SR_V2_NFT,
-      tokenId: l.args.tokenId.toString(),
-      blockNumber: l.blockNumber,
-      logIndex: l.logIndex,
-    }))
-
-  await writeSuperrareV2ArtistTokens(artist, refs, toBlock)
-  return { caughtUp: toBlock >= latest }
-}
-
 export const superrareV2Adapter: PlatformAdapter = {
   id: "superrareV2",
   displayName: "SuperRare",
 
   /**
-   * Pure Postgres read. Returns whatever's already indexed for this
-   * artist — empty for artists who haven't been scanned yet (the cron
-   * + the "Refresh my work" button are the scan triggers, see
-   * `scanSrv2ArtistTokens` and `lib/external-indexer.ts`). No external
-   * API call on this path under any circumstances.
+   * Reads from Ponder (`<schema>.srv2_artist_tokens`). The previous
+   * hand-rolled scanner + `lazy_srv2_artist_tokens` table are gone;
+   * see `ponder/src/SRV2NFT.ts` for the handler. Scope is the SR V2
+   * shared 1/1 contract only — Spaces (per-artist contracts) are
+   * out of scope (matches the prior lazy-scan deferral).
    */
   async discoverArtistTokens(artist: Address): Promise<ArtistTokenRef[]> {
-    const cached = await readSuperrareV2ArtistTokens(artist)
-    if (!cached) return []
-    return cached.tokens.map((t) => ({
+    const refs = await getSrv2TokensFromIndexer(artist)
+    if (!refs) return []
+    return refs.map((r) => ({
       platform: "superrareV2",
-      contract: t.contract as Address,
-      tokenId: t.tokenId,
-      blockNumber: t.blockNumber,
-      logIndex: t.logIndex,
+      contract: r.contract as Address,
+      tokenId: r.tokenId,
+      blockNumber: r.blockNumber,
+      logIndex: r.logIndex,
       collectionName: null,
     }))
   },
