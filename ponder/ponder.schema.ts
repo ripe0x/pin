@@ -397,3 +397,57 @@ export const catalogRanges = onchainTable(
     artistIdx: index().on(table.artist, table.blockNumber),
   }),
 )
+
+// ─── Mint protocol (Visualize Value) ─────────────────────────────────────
+// Replaces the web app's hand-rolled scan (`scanMintArtistTokens` +
+// `lazy_mint_*` tables) and the public.mint_creators table that fed the
+// known_artists view. Factory `Created` events drive both:
+//   - mintCreators: one row per (deployer, clone) pair from the Factory's
+//     `Created(ownerAddress, contractAddress)` event. Feeds the
+//     known_artists view via UNION.
+//   - mintArtistTokens: per-token mint rows from each clone's
+//     TransferSingle / TransferBatch with from = 0x0. ERC-1155 editions
+//     share a tokenId on the same contract; the (creator, contract,
+//     tokenId) PK collapses them to one row.
+
+export const mintCreators = onchainTable(
+  "mint_creators",
+  (t) => ({
+    // Clone contract address (CREATE2 / nonce-derived — globally
+    // unique). Each clone has exactly one owner (the deployer); we
+    // key by clone so the per-token TransferSingle handler can find
+    // its owner via a primary-key lookup without scanning.
+    contract: t.hex().primaryKey(),
+    address: t.hex().notNull(),
+    firstSeenBlock: t.bigint().notNull(),
+    firstSeenTime: t.bigint().notNull(),
+    txHash: t.hex().notNull(),
+  }),
+  // Artist gallery filters by deployer address; an artist who has
+  // deployed N clones gets N rows back.
+  (table) => ({
+    addressIdx: index().on(table.address),
+  }),
+)
+
+export const mintArtistTokens = onchainTable(
+  "mint_artist_tokens",
+  (t) => ({
+    // `${contract}-${tokenId}` so the same edition's many mints collapse
+    // to one row. Edition mints arrive in arbitrary block order; the
+    // upsert keeps the earliest-seen blockNumber/logIndex (see handler).
+    id: t.text().primaryKey(),
+    creator: t.hex().notNull(),
+    contract: t.hex().notNull(),
+    tokenId: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    logIndex: t.integer().notNull(),
+    blockTime: t.bigint().notNull(),
+  }),
+  // Same shape as fnd_artist_tokens — (creator, blockNumber DESC) is
+  // the artist-gallery read pattern.
+  (table) => ({
+    creatorBlockIdx: index().on(table.creator, table.blockNumber),
+    contractTokenIdx: index().on(table.contract, table.tokenId),
+  }),
+)
