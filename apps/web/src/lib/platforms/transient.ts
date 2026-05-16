@@ -20,10 +20,10 @@ import type {
 } from "./types"
 import type { AuctionState, AuctionFees } from "../auctions"
 import { resolveDisplayNames } from "../artist-queries"
+import { getActiveTlAuctions } from "../indexer-queries"
 import {
   readTransientSale,
   writeTransientSale,
-  readTransientActiveAuctions,
   readTransientBidHistory,
   readTransientBidHistoryFreshness,
   writeTransientBidHistory,
@@ -705,31 +705,22 @@ export const transientAdapter: PlatformAdapter = {
   },
 
   async getActiveAuctions(limit: number): Promise<ActiveAuctionSummary[]> {
-    // Pure table read — no RPC in the home-grid request path. The
-    // per-artist scanner runs from artist-page loads via
-    // `discoverArtistAuctions`, populating the table for whoever's
-    // been visited. Reads JOIN the per-artist status table with a
-    // 24h freshness filter so unvisited artists drop out.
-    // Over-read + filter to artist-sellers (seller == tokenCreator)
-    // so the home grid surfaces primary-market work only.
-    const rows = await readTransientActiveAuctions(limit * 4)
-    return rows
-      .filter(
-        (r) =>
-          r.creator !== null &&
-          r.creator.toLowerCase() === r.seller.toLowerCase(),
-      )
-      .slice(0, limit)
-      .map((r) => ({
-        platform: "transient",
-        contract: r.contract as Address,
-        tokenId: r.tokenId,
-        seller: r.seller as Address,
-        reserveWei: r.reserveWei,
-        currentBidWei: r.currentBidWei,
-        currentBidder: (r.currentBidder ?? null) as Address | null,
-        endTime: r.endTime,
-        sourceContract: TL_AH,
-      }))
+    // Pure Ponder read; artist-seller filter (creator == seller) is
+    // applied in SQL by `getActiveTlAuctions`, so the result set is
+    // already trimmed to primary art. Replaces the prior lazy-table
+    // read path; `lazy_tl_active_auctions` writes are now unused and
+    // get cleaned up in a follow-up PR once backfill is verified.
+    const rows = (await getActiveTlAuctions(limit)) ?? []
+    return rows.map((r) => ({
+      platform: "transient",
+      contract: r.contract as Address,
+      tokenId: r.tokenId,
+      seller: r.seller as Address,
+      reserveWei: r.reserveWei,
+      currentBidWei: r.currentBidWei,
+      currentBidder: (r.currentBidder ?? null) as Address | null,
+      endTime: r.endTime,
+      sourceContract: TL_AH,
+    }))
   },
 }
