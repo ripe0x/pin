@@ -99,33 +99,11 @@ export default async () => {
   let totalProcessed = 0
   let totalFailed = 0
   let batchesFailed = 0
-  let mintCreatorsAdded = 0
   const target = `${baseUrl}/api/cron/refresh-external-indexes?secret=${encodeURIComponent(secret)}`
 
-  // Step 0: refresh the Mint creator allow-list before batching. New
-  // Mint deployers picked up here become "known" mid-run and get scanned
-  // on this same pass instead of waiting another day.
-  try {
-    const t0 = Date.now()
-    const res = await fetch(target, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "refresh-mint-creators" }),
-    })
-    if (res.ok) {
-      const j = (await res.json()) as { added?: number }
-      mintCreatorsAdded = j.added ?? 0
-      console.log(
-        `refresh-external-indexes-cron: mint_creators refreshed (+${mintCreatorsAdded}, ${Date.now() - t0}ms)`,
-      )
-    } else {
-      console.error(
-        `refresh-external-indexes-cron: mint_creators refresh failed HTTP ${res.status}`,
-      )
-    }
-  } catch (err) {
-    console.error("refresh-external-indexes-cron: mint_creators refresh threw", err)
-  }
+  // Mint creator discovery is now handled by Ponder
+  // (MintFactory:Created handler) — no per-cron-run refresh needed
+  // before iterating artists.
 
   for (let i = 0; i < artists.length; i += BATCH_SIZE) {
     const batch = artists.slice(i, i + BATCH_SIZE)
@@ -174,7 +152,6 @@ export default async () => {
     batchesFailed,
     totalProcessed,
     totalFailed,
-    mintCreatorsAdded,
     durationMs: Date.now() - runStart,
   }
   console.log("refresh-external-indexes-cron: complete", summary)

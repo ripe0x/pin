@@ -451,3 +451,54 @@ export const mintArtistTokens = onchainTable(
     contractTokenIdx: index().on(table.contract, table.tokenId),
   }),
 )
+
+// ─── Transient Labs Universal Deployer ───────────────────────────────────
+// Replaces the web app's hand-rolled scan (`scanTransientArtistTokens` +
+// `lazy_tl_artist_*` tables). The Universal Deployer emits
+// `ContractDeployed` for each ERC721TL / ERC1155TL clone; we index the
+// ERC-721 clones (matching the prior lazy-scan scope) and use the
+// dynamic-factory pattern to subscribe to `Transfer` on each clone for
+// per-token mint discovery.
+
+export const tlCreators = onchainTable(
+  "tl_creators",
+  (t) => ({
+    // Clone contract address — globally unique. The deployer (artist
+    // for self-deploys, operator for managed deploys) is stored as
+    // `sender`. The per-token Transfer handler resolves the creator
+    // by primary-key lookup on this table.
+    contract: t.hex().primaryKey(),
+    sender: t.hex().notNull(),
+    implementation: t.hex().notNull(),
+    cType: t.text().notNull(), // e.g. "ERC721TL"
+    version: t.text().notNull(),
+    firstSeenBlock: t.bigint().notNull(),
+    firstSeenTime: t.bigint().notNull(),
+    txHash: t.hex().notNull(),
+  }),
+  // Artist-gallery lookup pattern: WHERE sender = $1.
+  (table) => ({
+    senderIdx: index().on(table.sender),
+  }),
+)
+
+export const tlArtistTokens = onchainTable(
+  "tl_artist_tokens",
+  (t) => ({
+    // `${contract}-${tokenId}` — ERC-721 tokens are unique per
+    // (contract, tokenId).
+    id: t.text().primaryKey(),
+    creator: t.hex().notNull(),
+    contract: t.hex().notNull(),
+    tokenId: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    logIndex: t.integer().notNull(),
+    blockTime: t.bigint().notNull(),
+  }),
+  // Same shape as fnd_artist_tokens — (creator, blockNumber DESC) is
+  // the artist-gallery read pattern.
+  (table) => ({
+    creatorBlockIdx: index().on(table.creator, table.blockNumber),
+    contractTokenIdx: index().on(table.contract, table.tokenId),
+  }),
+)
