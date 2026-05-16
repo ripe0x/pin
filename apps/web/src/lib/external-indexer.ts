@@ -1,6 +1,5 @@
 import "server-only"
 import { sql } from "./db"
-import { scanSrv2ArtistTokens } from "./platforms/superrareV2"
 import { scanManifoldArtistTokens } from "./manifold-discovery"
 import { isKnownArtist } from "./known-artists"
 
@@ -133,7 +132,6 @@ export async function refreshArtist(
   const lower = address.toLowerCase() as `0x${string}`
 
   const results = await Promise.all([
-    scanSrv2ArtistTokens(lower).catch(() => ({ caughtUp: false })),
     scanManifoldArtistTokens(lower).catch(() => ({ caughtUp: false })),
   ])
   return { caughtUp: results.every((r) => r.caughtUp) }
@@ -159,16 +157,15 @@ export async function hasUnscannedPlatform(
   try {
     const rows = (await sql`
       SELECT
-        (SELECT last_scanned_block FROM lazy_manifold_artist_status WHERE creator = ${lower}) AS m,
-        (SELECT last_scanned_block FROM lazy_srv2_artist_status     WHERE creator = ${lower}) AS s
+        (SELECT last_scanned_block FROM lazy_manifold_artist_status WHERE creator = ${lower}) AS m
     `) as Array<{
       m: string | null
-      s: string | null
     }>
     const r = rows[0]
-    // Mint and TL are no longer in this list — Ponder owns their indexes,
-    // so there's no per-artist "first scan" pass to catch up on.
-    return r.m === null || r.s === null
+    // SR V2, TL, and Mint are no longer in this list — Ponder owns
+    // their indexes, so there's no per-artist "first scan" to catch up
+    // on. Manifold remains the only platform on the lazy-scan path.
+    return r.m === null
   } catch {
     return false
   }
@@ -188,11 +185,8 @@ export async function getMostRecentRefreshTime(
   const lower = address.toLowerCase()
   try {
     const rows = (await sql`
-      SELECT MAX(last_indexed_at)::text AS latest FROM (
-        SELECT last_indexed_at FROM lazy_manifold_artist_status WHERE creator = ${lower}
-        UNION ALL
-        SELECT last_indexed_at FROM lazy_srv2_artist_status WHERE creator = ${lower}
-      ) s
+      SELECT MAX(last_indexed_at)::text AS latest
+        FROM lazy_manifold_artist_status WHERE creator = ${lower}
     `) as Array<{ latest: string | null }>
     const latest = rows[0]?.latest
     return latest ? new Date(latest) : null
@@ -218,9 +212,9 @@ export async function countArtistTokens(
 ): Promise<ArtistTokenCounts> {
   if (!sql) return { manifold: 0, srv2: 0, tl: 0, mint: 0 }
   const lower = address.toLowerCase()
-  // Mint and TL counts come from Ponder; Manifold + SR V2 still live in
-  // public.lazy_*_artist_tokens until those platforms migrate too.
-  // Sanitize INDEXER_SCHEMA the same way indexer-queries.ts does.
+  // SR V2 / TL / Mint counts come from Ponder; only Manifold still lives
+  // in public.lazy_*_artist_tokens. Sanitize INDEXER_SCHEMA the same way
+  // indexer-queries.ts does.
   const indexerSchema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
     /[^a-zA-Z0-9_]/g,
     "",
@@ -229,7 +223,7 @@ export async function countArtistTokens(
     const rows = (await sql.unsafe(
       `SELECT
         (SELECT COUNT(*) FROM lazy_manifold_artist_tokens WHERE creator = $1)::int AS manifold,
-        (SELECT COUNT(*) FROM lazy_srv2_artist_tokens     WHERE creator = $1)::int AS srv2,
+        (SELECT COUNT(*) FROM ${indexerSchema}.srv2_artist_tokens WHERE creator = $1)::int AS srv2,
         (SELECT COUNT(*) FROM ${indexerSchema}.tl_artist_tokens   WHERE creator = $1)::int AS tl,
         (SELECT COUNT(*) FROM ${indexerSchema}.mint_artist_tokens WHERE creator = $1)::int AS mint`,
       [lower],

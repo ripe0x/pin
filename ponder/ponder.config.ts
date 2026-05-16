@@ -9,6 +9,7 @@ import { superrareBazaarAbi } from "./abis/SuperRareBazaar"
 import { transientAuctionHouseAbi } from "./abis/TransientAuctionHouse"
 import { mintFactoryAbi } from "./abis/MintFactory"
 import { tlUniversalDeployerAbi } from "./abis/TLUniversalDeployer"
+import { superrareNftAbi } from "./abis/SuperRareNFT"
 
 // Production address of the SovereignAuctionHouseFactory on mainnet. Pinned
 // here rather than imported from @pin/addresses so this directory can deploy
@@ -64,6 +65,15 @@ const FND_START_BLOCK = FACTORY_DEPLOY_BLOCK
 // to minutes without losing surfaceable rows.
 const SR_BAZAAR_ADDRESS = "0x6d7c44773c52d396f43c2d511b81aa168e9a7a42" as const
 const SR_BAZAAR_START_BLOCK = 24_800_000
+
+// SuperRare V2 shared 1/1 NFT contract (deployed 2019). Block 8_000_000
+// (Aug 2019) is a safe lower bound; narrowing further saves a small
+// fraction of the indexed-arg scan and risks missing early mints.
+// Backfill is bounded by the ~10K total tokens that have ever been
+// minted here — large in absolute block range (~17M blocks) but the
+// event volume per block is tiny.
+const SR_V2_NFT_ADDRESS = "0xb932a70a57673d89f4acffbe830e8ed7f75fb9e0" as const
+const SR_V2_NFT_DEPLOY_BLOCK = 8_000_000
 
 // Transient Labs Auction House (v2.6.1, deployed early 2026). Recent
 // enough to cover from deploy.
@@ -246,6 +256,19 @@ export default createConfig({
       abi: superrareBazaarAbi,
       address: SR_BAZAAR_ADDRESS,
       startBlock: SR_BAZAAR_START_BLOCK,
+    },
+
+    // ── SuperRare V2 shared 1/1 NFT contract ───────────────────────────
+    // Single static contract; no factory pattern. Mints arrive as
+    // `Transfer(from=0x0, to=artist)` — SR's mint flow mints directly
+    // to the creator. See ponder/src/SRV2NFT.ts for the handler.
+    // Replaces the prior `scanSrv2ArtistTokens` path and
+    // `lazy_srv2_artist_*` tables.
+    SuperRareNFT: {
+      chain: "mainnet",
+      abi: superrareNftAbi,
+      address: SR_V2_NFT_ADDRESS,
+      startBlock: SR_V2_NFT_DEPLOY_BLOCK,
     },
 
     // ── Transient Labs Auction House ───────────────────────────────────

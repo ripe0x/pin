@@ -413,18 +413,12 @@ export const catalogRanges = onchainTable(
 export const mintCreators = onchainTable(
   "mint_creators",
   (t) => ({
-    // Clone contract address (CREATE2 / nonce-derived — globally
-    // unique). Each clone has exactly one owner (the deployer); we
-    // key by clone so the per-token TransferSingle handler can find
-    // its owner via a primary-key lookup without scanning.
     contract: t.hex().primaryKey(),
     address: t.hex().notNull(),
     firstSeenBlock: t.bigint().notNull(),
     firstSeenTime: t.bigint().notNull(),
     txHash: t.hex().notNull(),
   }),
-  // Artist gallery filters by deployer address; an artist who has
-  // deployed N clones gets N rows back.
   (table) => ({
     addressIdx: index().on(table.address),
   }),
@@ -433,9 +427,6 @@ export const mintCreators = onchainTable(
 export const mintArtistTokens = onchainTable(
   "mint_artist_tokens",
   (t) => ({
-    // `${contract}-${tokenId}` so the same edition's many mints collapse
-    // to one row. Edition mints arrive in arbitrary block order; the
-    // upsert keeps the earliest-seen blockNumber/logIndex (see handler).
     id: t.text().primaryKey(),
     creator: t.hex().notNull(),
     contract: t.hex().notNull(),
@@ -444,8 +435,6 @@ export const mintArtistTokens = onchainTable(
     logIndex: t.integer().notNull(),
     blockTime: t.bigint().notNull(),
   }),
-  // Same shape as fnd_artist_tokens — (creator, blockNumber DESC) is
-  // the artist-gallery read pattern.
   (table) => ({
     creatorBlockIdx: index().on(table.creator, table.blockNumber),
     contractTokenIdx: index().on(table.contract, table.tokenId),
@@ -463,20 +452,15 @@ export const mintArtistTokens = onchainTable(
 export const tlCreators = onchainTable(
   "tl_creators",
   (t) => ({
-    // Clone contract address — globally unique. The deployer (artist
-    // for self-deploys, operator for managed deploys) is stored as
-    // `sender`. The per-token Transfer handler resolves the creator
-    // by primary-key lookup on this table.
     contract: t.hex().primaryKey(),
     sender: t.hex().notNull(),
     implementation: t.hex().notNull(),
-    cType: t.text().notNull(), // e.g. "ERC721TL"
+    cType: t.text().notNull(),
     version: t.text().notNull(),
     firstSeenBlock: t.bigint().notNull(),
     firstSeenTime: t.bigint().notNull(),
     txHash: t.hex().notNull(),
   }),
-  // Artist-gallery lookup pattern: WHERE sender = $1.
   (table) => ({
     senderIdx: index().on(table.sender),
   }),
@@ -485,8 +469,6 @@ export const tlCreators = onchainTable(
 export const tlArtistTokens = onchainTable(
   "tl_artist_tokens",
   (t) => ({
-    // `${contract}-${tokenId}` — ERC-721 tokens are unique per
-    // (contract, tokenId).
     id: t.text().primaryKey(),
     creator: t.hex().notNull(),
     contract: t.hex().notNull(),
@@ -495,8 +477,31 @@ export const tlArtistTokens = onchainTable(
     logIndex: t.integer().notNull(),
     blockTime: t.bigint().notNull(),
   }),
-  // Same shape as fnd_artist_tokens — (creator, blockNumber DESC) is
-  // the artist-gallery read pattern.
+  (table) => ({
+    creatorBlockIdx: index().on(table.creator, table.blockNumber),
+    contractTokenIdx: index().on(table.contract, table.tokenId),
+  }),
+)
+
+// ─── SuperRare V2 artist tokens ──────────────────────────────────────────
+// Replaces `scanSrv2ArtistTokens` + `lazy_srv2_artist_*` tables. The
+// SR V2 shared 1/1 contract mints directly to the artist (Transfer
+// from address(0) where `to` is the creator), so we don't need a
+// separate creators table — the artist IS the recipient of the mint.
+// SuperRare Spaces (per-artist contracts) are out of scope; matches
+// the prior lazy-scan deferral.
+
+export const srv2ArtistTokens = onchainTable(
+  "srv2_artist_tokens",
+  (t) => ({
+    id: t.text().primaryKey(),
+    creator: t.hex().notNull(),
+    contract: t.hex().notNull(),
+    tokenId: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    logIndex: t.integer().notNull(),
+    blockTime: t.bigint().notNull(),
+  }),
   (table) => ({
     creatorBlockIdx: index().on(table.creator, table.blockNumber),
     contractTokenIdx: index().on(table.contract, table.tokenId),
