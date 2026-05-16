@@ -25,6 +25,7 @@ import {
 import {
   getCachedTokenRefs,
   getCachedEnrichedPage,
+  EnrichmentEmpty,
 } from "./artist-cache"
 import { getArtistSovereignAuctionMap, type SovereignAuctionLite } from "./auctions"
 import { extractCid, ipfsToHttp } from "@pin/shared"
@@ -459,7 +460,15 @@ export async function getArtistGalleryPage(
   }
 
   const [enriched, prices, auctionMap] = await Promise.all([
-    getCachedEnrichedPage(slice),
+    // `getCachedEnrichedPage` throws `EnrichmentEmpty` when every token
+    // in the slice enriches to null (transient RPC/IPFS hiccup, not a
+    // real empty gallery) — the throw stops `unstable_cache` from
+    // persisting `[]` for the full 24h TTL. Render the page empty for
+    // this request; the next visitor's render retries from cold.
+    getCachedEnrichedPage(slice).catch((err) => {
+      if (err instanceof EnrichmentEmpty) return [] as DiscoveredToken[]
+      throw err
+    }),
     fetchBuyPrices(slice),
     getArtistSovereignAuctionMap(artistAddress).catch(
       (): Record<string, SovereignAuctionLite> => ({}),
