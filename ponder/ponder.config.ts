@@ -8,6 +8,7 @@ import { catalogAbi } from "./abis/Catalog"
 import { superrareBazaarAbi } from "./abis/SuperRareBazaar"
 import { transientAuctionHouseAbi } from "./abis/TransientAuctionHouse"
 import { mintFactoryAbi } from "./abis/MintFactory"
+import { tlUniversalDeployerAbi } from "./abis/TLUniversalDeployer"
 
 // Production address of the SovereignAuctionHouseFactory on mainnet. Pinned
 // here rather than imported from @pin/addresses so this directory can deploy
@@ -81,6 +82,13 @@ const TL_AUCTION_HOUSE_START_BLOCK = 24_500_000
 // independent-deploy reason as the other addresses above.
 const MINT_FACTORY_ADDRESS = "0xd717Fe677072807057B03705227EC3E3b467b670" as const
 const MINT_FACTORY_DEPLOY_BLOCK = 21_167_599
+
+// Transient Labs Universal Deployer (factory for ERC721TL / ERC1155TL
+// minimal-proxy clones). Same address cross-chain via CREATE2.
+// Deployed at block 19_062_900 (Jan 22, 2024). All TL artist contracts
+// flow through `ContractDeployed` events from this address.
+const TL_DEPLOYER_ADDRESS = "0x7c24805454F7972d36BEE9D139BD93423AA29f3f" as const
+const TL_DEPLOYER_DEPLOY_BLOCK = 19_062_900
 
 // Use drpc.org's free tier (`PONDER_RPC_URL_1=https://eth.drpc.org`).
 // It handles the factory-pattern multi-address `eth_getLogs` calls that
@@ -286,6 +294,32 @@ export default createConfig({
         parameter: "contractAddress",
       }),
       startBlock: MINT_FACTORY_DEPLOY_BLOCK,
+    },
+
+    // ── TL Universal Deployer + per-artist ERC721TL clones ─────────────
+    // The Universal Deployer emits `ContractDeployed` on every ERC721TL
+    // / ERC1155TL clone deploy; we index ERC-721 clones (filtered in
+    // the handler by cType) into `tl_creators` and use the dynamic-
+    // factory pattern to subscribe to `Transfer` on each clone for
+    // the per-artist token list. ERC-1155 support deferred — matches
+    // the prior lazy-scan scope.
+    TLUniversalDeployer: {
+      chain: "mainnet",
+      abi: tlUniversalDeployerAbi,
+      address: TL_DEPLOYER_ADDRESS,
+      startBlock: TL_DEPLOYER_DEPLOY_BLOCK,
+    },
+    TLCollection: {
+      chain: "mainnet",
+      abi: [erc721TransferEvent] as const,
+      address: factory({
+        address: TL_DEPLOYER_ADDRESS,
+        event: parseAbiItem(
+          "event ContractDeployed(address indexed sender, address indexed deployedContract, address indexed implementation, string cType, string version)",
+        ),
+        parameter: "deployedContract",
+      }),
+      startBlock: TL_DEPLOYER_DEPLOY_BLOCK,
     },
   },
 })

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { refreshArtist } from "@/lib/external-indexer"
-import { refreshMintCreators } from "@/lib/platforms/mint"
 
 /**
  * Batch refresh endpoint for the external-platform indexer
- * (Manifold / SuperRare V2 / Transient Labs / Mint).
+ * (Manifold / SuperRare V2 — Mint and TL artist-tokens are now
+ * indexed by Ponder directly).
  *
  * Receives a list of artist addresses in the JSON body and refreshes
  * each in sequence. Sized so a typical batch fits inside Netlify's
@@ -19,14 +19,13 @@ import { refreshMintCreators } from "@/lib/platforms/mint"
  *
  * Auth: same `REVALIDATE_SECRET` gate as the rest of /api/cron/*.
  *
- * Request body shapes:
+ * Request body:
  *   `{ "addresses": ["0x...", "0x..."] }` — refresh those artists
  *      (max 25 per call). Returns `{ ok, processed, failed, durationMs }`.
- *   `{ "action": "refresh-mint-creators" }` — re-scan the Mint Factory
- *      for new `Created` events and upsert into `mint_creators` (which
- *      feeds the `known_artists` view). Called once at the top of each
- *      cron run so new Mint deployers become "known" before the batches.
- *      Returns `{ ok, added, durationMs }`.
+ *
+ * The `refresh-mint-creators` action that previously lived here is
+ * gone — Mint creator discovery is now handled by the Ponder
+ * `MintFactory:Created` handler instead.
  */
 
 // Netlify caps synchronous HTTP functions at 26s on Pro; keep the
@@ -39,7 +38,7 @@ export const maxDuration = 60
 // shape that caused the original incident.
 const MAX_BATCH = 25
 
-type Body = { addresses?: unknown; action?: unknown }
+type Body = { addresses?: unknown }
 
 export async function POST(req: NextRequest) {
   const secret = req.nextUrl.searchParams.get("secret")
@@ -65,25 +64,6 @@ export async function POST(req: NextRequest) {
       { ok: false, error: "invalid JSON body" },
       { status: 400 },
     )
-  }
-
-  if (body.action === "refresh-mint-creators") {
-    const start = Date.now()
-    let added = 0
-    try {
-      const result = await refreshMintCreators()
-      added = result.added
-    } catch {
-      return NextResponse.json(
-        { ok: false, error: "refreshMintCreators failed", durationMs: Date.now() - start },
-        { status: 502 },
-      )
-    }
-    return NextResponse.json({
-      ok: true,
-      added,
-      durationMs: Date.now() - start,
-    })
   }
 
   const addresses = sanitizeAddresses(body.addresses)
