@@ -585,6 +585,14 @@ ponder.on("SuperRareBazaar:NewAuction", async ({ event, context }) => {
     })
 })
 
+// Every per-auction update handler below skips silently when the row
+// is missing. This happens when the corresponding NewAuction was
+// emitted pre-startBlock and our scanner only picked up the later
+// lifecycle event. Mirrors the same pattern in the PND handlers
+// (see `SovereignAuctionHouse:AuctionBid`) — crashing the indexer on
+// a `RecordNotFoundError` here would stop every other auction across
+// every other clone too. Pre-startBlock listings are out of scope.
+
 ponder.on("SuperRareBazaar:AuctionBid", async ({ event, context }) => {
   const {
     _contractAddress,
@@ -596,34 +604,38 @@ ponder.on("SuperRareBazaar:AuctionBid", async ({ event, context }) => {
   } = event.args
   if (_currencyAddress.toLowerCase() !== ETH_CURRENCY) return
 
+  const id = tokenKey(_contractAddress, _tokenId)
+  const existing = await context.db.find(srv2Auctions, { id })
+  if (!existing) return
+
   // SR Bazaar's `_newAuctionLength` is the auction duration; the
   // first-bid block timestamp serves as the start time. Subsequent
   // bids carry the same value and we recompute endTime from the
   // current block, matching the contract's late-bid extension.
   const endTime = event.block.timestamp + _newAuctionLength
 
-  await context.db
-    .update(srv2Auctions, { id: tokenKey(_contractAddress, _tokenId) })
-    .set({
-      currentBidWei: _amount,
-      currentBidder: _bidder,
-      endTime,
-    })
+  await context.db.update(srv2Auctions, { id }).set({
+    currentBidWei: _amount,
+    currentBidder: _bidder,
+    endTime,
+  })
 })
 
 ponder.on("SuperRareBazaar:AuctionSettled", async ({ event, context }) => {
   const { _contractAddress, _tokenId, _currencyAddress } = event.args
   if (_currencyAddress.toLowerCase() !== ETH_CURRENCY) return
-  await context.db
-    .update(srv2Auctions, { id: tokenKey(_contractAddress, _tokenId) })
-    .set({ status: "settled" })
+  const id = tokenKey(_contractAddress, _tokenId)
+  const existing = await context.db.find(srv2Auctions, { id })
+  if (!existing) return
+  await context.db.update(srv2Auctions, { id }).set({ status: "settled" })
 })
 
 ponder.on("SuperRareBazaar:CancelAuction", async ({ event, context }) => {
   const { _contractAddress, _tokenId } = event.args
-  await context.db
-    .update(srv2Auctions, { id: tokenKey(_contractAddress, _tokenId) })
-    .set({ status: "cancelled" })
+  const id = tokenKey(_contractAddress, _tokenId)
+  const existing = await context.db.find(srv2Auctions, { id })
+  if (!existing) return
+  await context.db.update(srv2Auctions, { id }).set({ status: "cancelled" })
 })
 
 // ─── Transient Labs Auction House ────────────────────────────────────────
@@ -689,22 +701,28 @@ ponder.on(
   },
 )
 
+// Same find-or-skip pattern as the SR V2 handlers above and the PND
+// handlers further up: TL lifecycle events whose `ListingConfigured`
+// was pre-startBlock won't have a row to update. Skip silently rather
+// than crashing the indexer.
+
 ponder.on(
   "TransientAuctionHouse:AuctionBid",
   async ({ event, context }) => {
     const { nftAddress, tokenId, listing } = event.args
     if (listing.currencyAddress.toLowerCase() !== ETH_CURRENCY) return
+    const id = tokenKey(nftAddress, tokenId)
+    const existing = await context.db.find(tlAuctions, { id })
+    if (!existing) return
     // TL stamps `startTime` to first-bid block timestamp on the first
     // bid; subsequent events carry the same startTime. endTime is
     // therefore exact via startTime + duration.
     const endTime = listing.startTime + listing.duration
-    await context.db
-      .update(tlAuctions, { id: tokenKey(nftAddress, tokenId) })
-      .set({
-        currentBidWei: listing.highestBid,
-        currentBidder: listing.highestBidder,
-        endTime,
-      })
+    await context.db.update(tlAuctions, { id }).set({
+      currentBidWei: listing.highestBid,
+      currentBidder: listing.highestBidder,
+      endTime,
+    })
   },
 )
 
@@ -712,9 +730,10 @@ ponder.on(
   "TransientAuctionHouse:AuctionSettled",
   async ({ event, context }) => {
     const { nftAddress, tokenId } = event.args
-    await context.db
-      .update(tlAuctions, { id: tokenKey(nftAddress, tokenId) })
-      .set({ status: "settled" })
+    const id = tokenKey(nftAddress, tokenId)
+    const existing = await context.db.find(tlAuctions, { id })
+    if (!existing) return
+    await context.db.update(tlAuctions, { id }).set({ status: "settled" })
   },
 )
 
@@ -724,9 +743,10 @@ ponder.on(
     // Buy-now exits the listing the same way as a settle; the row gets
     // filtered out by `WHERE status='active'` on the read.
     const { nftAddress, tokenId } = event.args
-    await context.db
-      .update(tlAuctions, { id: tokenKey(nftAddress, tokenId) })
-      .set({ status: "settled" })
+    const id = tokenKey(nftAddress, tokenId)
+    const existing = await context.db.find(tlAuctions, { id })
+    if (!existing) return
+    await context.db.update(tlAuctions, { id }).set({ status: "settled" })
   },
 )
 
@@ -734,8 +754,9 @@ ponder.on(
   "TransientAuctionHouse:ListingCanceled",
   async ({ event, context }) => {
     const { nftAddress, tokenId } = event.args
-    await context.db
-      .update(tlAuctions, { id: tokenKey(nftAddress, tokenId) })
-      .set({ status: "cancelled" })
+    const id = tokenKey(nftAddress, tokenId)
+    const existing = await context.db.find(tlAuctions, { id })
+    if (!existing) return
+    await context.db.update(tlAuctions, { id }).set({ status: "cancelled" })
   },
 )
