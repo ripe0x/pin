@@ -41,7 +41,6 @@ import {
   isFresh,
 } from "../lazy-index"
 import type { BidHistoryEntry } from "../auctions"
-import { discoverSuperrareV2ArtistAuctions } from "./superrareV2-scan"
 import { loggingFallbackTransport } from "../rpc-log"
 import { isKnownArtist } from "../known-artists"
 import { MAX_BLOCKS_PER_SCAN } from "../external-indexer"
@@ -764,10 +763,6 @@ export const superrareV2Adapter: PlatformAdapter = {
       lastScannedBlock: scannedTo,
     })
     return listings
-  },
-
-  async discoverArtistAuctions(artist: Address): Promise<void> {
-    await discoverSuperrareV2ArtistAuctions(artist)
   },
 
   async getActiveAuctions(limit: number): Promise<ActiveAuctionSummary[]> {
