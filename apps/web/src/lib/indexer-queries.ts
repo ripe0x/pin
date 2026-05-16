@@ -348,6 +348,55 @@ export async function getActiveTlAuctions(
   }, 2_000)
 }
 
+/**
+ * Mint protocol tokens minted by `creator` per Ponder. Replaces the
+ * web-side `scanMintArtistTokens` + `lazy_mint_artist_tokens` path.
+ * Returns null when the indexer is unavailable/slow so callers can
+ * fall through to whatever (now-empty) hand-rolled path remains.
+ */
+export type IndexerMintTokenRef = {
+  contract: string
+  tokenId: string
+  blockNumber: bigint
+  logIndex: number
+}
+
+export async function getMintTokensFromIndexer(
+  creator: string,
+): Promise<IndexerMintTokenRef[] | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+
+  return withTimeout(async () => {
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+      /[^a-zA-Z0-9_]/g,
+      "",
+    )
+    const rows = (await db.unsafe(
+      `SELECT contract,
+              token_id::text AS token_id,
+              block_number::text AS block_number,
+              log_index
+         FROM ${schema}.mint_artist_tokens
+        WHERE creator = $1
+        ORDER BY block_number DESC, log_index DESC`,
+      [creator.toLowerCase()],
+    )) as Array<{
+      contract: string
+      token_id: string
+      block_number: string
+      log_index: number
+    }>
+
+    return rows.map((r) => ({
+      contract: r.contract,
+      tokenId: r.token_id,
+      blockNumber: BigInt(r.block_number),
+      logIndex: r.log_index,
+    }))
+  })
+}
+
 export type PndHouse = {
   house: string
   owner: string

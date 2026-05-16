@@ -7,6 +7,7 @@ import { nftMarketAbi } from "./abis/NFTMarket"
 import { catalogAbi } from "./abis/Catalog"
 import { superrareBazaarAbi } from "./abis/SuperRareBazaar"
 import { transientAuctionHouseAbi } from "./abis/TransientAuctionHouse"
+import { mintFactoryAbi } from "./abis/MintFactory"
 
 // Production address of the SovereignAuctionHouseFactory on mainnet. Pinned
 // here rather than imported from @pin/addresses so this directory can deploy
@@ -67,6 +68,19 @@ const SR_BAZAAR_START_BLOCK = 24_800_000
 // enough to cover from deploy.
 const TL_AUCTION_HOUSE_ADDRESS = "0x6f66b95a0C512f3497FB46660E0BC3B94B989F8d" as const
 const TL_AUCTION_HOUSE_START_BLOCK = 24_500_000
+
+// Mint protocol (Visualize Value) Factory. Deploys per-artist
+// ERC-1155 collection contracts (the per-collection `Mint.sol`
+// implementation, wrapped by an ERC1967 proxy or minimal-proxy clone).
+// Emits `Created(address indexed ownerAddress, address contractAddress)`
+// on every collection deploy — `ownerAddress` is the artist, indexed
+// for cheap topic-filtered enumeration of an artist's clones.
+// Deployed Nov 2024 in tx 0x57b1ad0…46ce650 at block 21167599.
+//
+// Pinned here rather than imported from @pin/addresses for the same
+// independent-deploy reason as the other addresses above.
+const MINT_FACTORY_ADDRESS = "0xd717Fe677072807057B03705227EC3E3b467b670" as const
+const MINT_FACTORY_DEPLOY_BLOCK = 21_167_599
 
 // Use drpc.org's free tier (`PONDER_RPC_URL_1=https://eth.drpc.org`).
 // It handles the factory-pattern multi-address `eth_getLogs` calls that
@@ -237,6 +251,41 @@ export default createConfig({
       abi: transientAuctionHouseAbi,
       address: TL_AUCTION_HOUSE_ADDRESS,
       startBlock: TL_AUCTION_HOUSE_START_BLOCK,
+    },
+
+    // ── Mint protocol Factory + per-artist clones ──────────────────────
+    // Factory emits `Created(ownerAddress, contractAddress)` on every
+    // collection deploy. We index the Created stream to a `mint_creators`
+    // table (replaces the public.mint_creators table that fed the
+    // known_artists view) and use the dynamic-factory pattern to
+    // subscribe to TransferSingle/TransferBatch on each clone for the
+    // per-artist token list.
+    MintFactory: {
+      chain: "mainnet",
+      abi: mintFactoryAbi,
+      address: MINT_FACTORY_ADDRESS,
+      startBlock: MINT_FACTORY_DEPLOY_BLOCK,
+    },
+    // Per-artist clones spawned by the Factory. ERC-1155 transfers from
+    // address(0) are the mint signal — see handlers in src/Mint.ts.
+    MintCollection: {
+      chain: "mainnet",
+      abi: [
+        parseAbiItem(
+          "event TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value)",
+        ),
+        parseAbiItem(
+          "event TransferBatch(address indexed operator, address indexed from, address indexed to, uint256[] ids, uint256[] values)",
+        ),
+      ] as const,
+      address: factory({
+        address: MINT_FACTORY_ADDRESS,
+        event: parseAbiItem(
+          "event Created(address indexed ownerAddress, address contractAddress)",
+        ),
+        parameter: "contractAddress",
+      }),
+      startBlock: MINT_FACTORY_DEPLOY_BLOCK,
     },
   },
 })
