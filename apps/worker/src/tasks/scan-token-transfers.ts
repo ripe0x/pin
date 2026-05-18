@@ -22,7 +22,14 @@ import type { TaskResult } from "../scheduler.ts"
 const TRANSFER_EVENT = parseAbiItem(
   "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
 )
-const MAX_BLOCKS_PER_SCAN = 2_000_000n
+// drpc free tier caps eth_getLogs at 10,000 blocks per call. Stay under
+// with margin.
+const MAX_BLOCKS_PER_SCAN = 9_500n
+// Per-task wall-time cap: process up to N chunks per contract per task
+// invocation, then let the next interval pick up where we left off. With
+// 9_500 block chunks and the task running every 5 min, 50 chunks per
+// call = ~475K blocks/cycle, so a year of history backfills in ~5 cycles.
+const MAX_CHUNKS_PER_CONTRACT = 50n
 const TASK = "scan-token-transfers"
 
 async function getContracts(): Promise<string[]> {
@@ -142,7 +149,7 @@ export async function scanTokenTransfers(): Promise<TaskResult> {
 
         // Cap per-task wall time — let the next interval pick up where
         // we left off rather than blocking other tasks.
-        if (cursor > fromBlock + MAX_BLOCKS_PER_SCAN * 3n) break
+        if (cursor > fromBlock + MAX_BLOCKS_PER_SCAN * MAX_CHUNKS_PER_CONTRACT) break
       }
     } catch (err) {
       console.error(`[scan-token-transfers] ${contract}:`, err)

@@ -22,8 +22,12 @@ const TRANSFER_FROM_ZERO = parseAbiItem(
   "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
 )
 const ZERO = "0x0000000000000000000000000000000000000000"
-const MAX_BLOCKS_PER_SCAN = 2_000_000n
-const MAX_ITERATIONS_PER_CALL = 3
+// drpc free tier caps eth_getLogs at 10,000 blocks per call. Stay under
+// with margin. Iterations bumped so first-time backfill of a deep-history
+// contract (years of blocks) still converges in a handful of task cycles
+// rather than weeks.
+const MAX_BLOCKS_PER_SCAN = 9_500n
+const MAX_ITERATIONS_PER_CALL = 50
 
 export type ScanArgs = {
   // postgres.js Sql instance — typed loosely because the library's
