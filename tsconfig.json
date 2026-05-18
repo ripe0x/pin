@@ -1,16 +1,13 @@
 {
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "declaration": true,
-    "declarationMap": true,
-    "composite": true
-  }
+  "extends": "./tsconfig.base.json",
+  "include": [],
+  "references": [
+    { "path": "./apps/web" },
+    { "path": "./apps/indexer" },
+    { "path": "./apps/worker" },
+    { "path": "./packages/abi" },
+    { "path": "./packages/addresses" },
+    { "path": "./packages/shared" },
+    { "path": "./packages/token-metadata" }
+  ]
 }

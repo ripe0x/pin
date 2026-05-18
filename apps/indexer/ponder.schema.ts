@@ -1,0 +1,316 @@
+import { onchainTable, index } from "ponder"
+
+/**
+ * v2 Ponder schema. Dropped vs v1: srv2Auctions, tlAuctions,
+ * mintArtistTokens, tlArtistTokens. Those reads now go to the worker-
+ * owned `artist_tokens` table (per-platform rows).
+ *
+ * Keep family:
+ *   - pnd_* (PND)
+ *   - fnd_* (Foundation NFTMarket auctions, bids, buy-nows, sales,
+ *     collections, shared-contract artist tokens)
+ *   - catalog_* (on-chain Catalog registry)
+ *   - srv2_artist_tokens (SR V2 shared 1/1; artist = mint recipient)
+ *   - mint_creators (Mint factory discovery only)
+ *   - tl_creators (TL deployer discovery only)
+ */
+
+// ─── PND ─────────────────────────────────────────────────────────────────
+
+export const pndAuctions = onchainTable(
+  "pnd_auctions",
+  (t) => ({
+    id: t.text().primaryKey(),
+    house: t.hex().notNull(),
+    auctionId: t.bigint().notNull(),
+    tokenContract: t.hex().notNull(),
+    tokenId: t.bigint().notNull(),
+    seller: t.hex().notNull(),
+    reservePrice: t.bigint().notNull(),
+    duration: t.bigint().notNull(),
+    amount: t.bigint().notNull(),
+    bidder: t.hex().notNull(),
+    firstBidTime: t.bigint().notNull(),
+    endTime: t.bigint().notNull(),
+    status: t.text().notNull(),
+    winner: t.hex(),
+    sellerProceeds: t.bigint(),
+    protocolFee: t.bigint(),
+    createdAtBlock: t.bigint().notNull(),
+    createdAtTime: t.bigint().notNull(),
+    settledAtBlock: t.bigint(),
+    settledAtTime: t.bigint(),
+    createdTxHash: t.hex(),
+    lifecycleTxHash: t.hex(),
+  }),
+  (table) => ({
+    sellerStatusIdx: index().on(table.seller, table.status),
+    tokenIdx: index().on(table.tokenContract, table.tokenId),
+  }),
+)
+
+export const pndHouses = onchainTable(
+  "pnd_houses",
+  (t) => ({
+    house: t.hex().primaryKey(),
+    owner: t.hex().notNull(),
+    feeRecipient: t.hex().notNull(),
+    protocolFeeBps: t.integer().notNull(),
+    createdAtBlock: t.bigint().notNull(),
+    createdAtTime: t.bigint().notNull(),
+    createdTxHash: t.hex(),
+  }),
+  (table) => ({
+    ownerIdx: index().on(table.owner),
+    createdIdx: index().on(table.createdAtTime),
+  }),
+)
+
+export const pndBids = onchainTable(
+  "pnd_bids",
+  (t) => ({
+    id: t.text().primaryKey(),
+    auctionId: t.text().notNull(),
+    bidder: t.hex().notNull(),
+    amount: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    blockTime: t.bigint().notNull(),
+    txHash: t.hex().notNull(),
+    firstBid: t.boolean().notNull(),
+    extended: t.boolean().notNull(),
+  }),
+  (table) => ({
+    auctionIdx: index().on(table.auctionId, table.blockNumber),
+  }),
+)
+
+// ─── Foundation NFTMarket ────────────────────────────────────────────────
+
+export const fndAuctions = onchainTable(
+  "fnd_auctions",
+  (t) => ({
+    auctionId: t.bigint().primaryKey(),
+    nftContract: t.hex().notNull(),
+    tokenId: t.bigint().notNull(),
+    seller: t.hex().notNull(),
+    reservePrice: t.bigint().notNull(),
+    durationSeconds: t.bigint().notNull(),
+    highestBid: t.bigint().notNull(),
+    highestBidder: t.hex(),
+    endTime: t.bigint().notNull(),
+    status: t.text().notNull(),
+    finalizedTotalFees: t.bigint(),
+    finalizedCreatorRev: t.bigint(),
+    finalizedSellerRev: t.bigint(),
+    createdAtBlock: t.bigint().notNull(),
+    createdAtTime: t.bigint().notNull(),
+    finalizedAtTime: t.bigint(),
+    finalizedTxHash: t.hex(),
+  }),
+  (table) => ({
+    sellerStatusIdx: index().on(table.seller, table.status),
+    tokenIdx: index().on(table.nftContract, table.tokenId),
+  }),
+)
+
+export const fndBids = onchainTable(
+  "fnd_bids",
+  (t) => ({
+    id: t.text().primaryKey(),
+    auctionId: t.bigint().notNull(),
+    bidder: t.hex().notNull(),
+    amount: t.bigint().notNull(),
+    endTime: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    blockTime: t.bigint().notNull(),
+    txHash: t.hex().notNull(),
+  }),
+  (table) => ({
+    auctionIdx: index().on(table.auctionId, table.blockNumber),
+  }),
+)
+
+export const fndBuyNows = onchainTable(
+  "fnd_buy_nows",
+  (t) => ({
+    id: t.text().primaryKey(),
+    nftContract: t.hex().notNull(),
+    tokenId: t.bigint().notNull(),
+    seller: t.hex().notNull(),
+    price: t.bigint().notNull(),
+    status: t.text().notNull(),
+    createdAtTime: t.bigint().notNull(),
+    updatedAtTime: t.bigint(),
+    acceptedBuyer: t.hex(),
+    acceptedTxHash: t.hex(),
+    acceptedTotalFees: t.bigint(),
+    acceptedCreatorRev: t.bigint(),
+    acceptedSellerRev: t.bigint(),
+  }),
+  (table) => ({
+    sellerStatusIdx: index().on(table.seller, table.status),
+    tokenIdx: index().on(table.nftContract, table.tokenId),
+  }),
+)
+
+export const fndSales = onchainTable(
+  "fnd_sales",
+  (t) => ({
+    id: t.text().primaryKey(),
+    nftContract: t.hex().notNull(),
+    tokenId: t.bigint().notNull(),
+    seller: t.hex().notNull(),
+    buyer: t.hex().notNull(),
+    priceWei: t.bigint().notNull(),
+    source: t.text().notNull(),
+    blockTime: t.bigint().notNull(),
+    txHash: t.hex().notNull(),
+  }),
+  (table) => ({
+    tokenTimeIdx: index().on(table.nftContract, table.tokenId, table.blockTime),
+  }),
+)
+
+export const fndCollections = onchainTable(
+  "fnd_collections",
+  (t) => ({
+    collection: t.hex().primaryKey(),
+    creator: t.hex().notNull(),
+    kind: t.text().notNull(),
+    name: t.text(),
+    symbol: t.text(),
+    createdAtBlock: t.bigint().notNull(),
+    createdAtTime: t.bigint().notNull(),
+  }),
+  (table) => ({
+    creatorIdx: index().on(table.creator),
+  }),
+)
+
+// Populated by FoundationNFT:Minted (shared 1/1 contract).
+// NOT populated by per-clone FoundationCollection Transfer events in v2 —
+// that work moves to the worker's scan-fnd-collections task.
+export const fndArtistTokens = onchainTable(
+  "fnd_artist_tokens",
+  (t) => ({
+    id: t.text().primaryKey(),
+    creator: t.hex().notNull(),
+    contract: t.hex().notNull(),
+    tokenId: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    logIndex: t.integer().notNull(),
+    blockTime: t.bigint().notNull(),
+  }),
+  (table) => ({
+    creatorIdx: index().on(table.creator, table.blockNumber),
+    tokenIdx: index().on(table.contract, table.tokenId),
+  }),
+)
+
+// ─── Catalog ─────────────────────────────────────────────────────────────
+
+export const catalogContracts = onchainTable(
+  "catalog_contracts",
+  (t) => ({
+    id: t.text().primaryKey(),
+    artist: t.hex().notNull(),
+    contractAddress: t.hex().notNull(),
+    actor: t.hex().notNull(),
+    blockNumber: t.bigint().notNull(),
+    blockTime: t.bigint().notNull(),
+    txHash: t.hex().notNull(),
+  }),
+  (table) => ({
+    artistIdx: index().on(table.artist, table.blockNumber),
+    contractIdx: index().on(table.contractAddress),
+  }),
+)
+
+export const catalogTokens = onchainTable(
+  "catalog_tokens",
+  (t) => ({
+    id: t.text().primaryKey(),
+    artist: t.hex().notNull(),
+    contractAddress: t.hex().notNull(),
+    tokenId: t.bigint().notNull(),
+    actor: t.hex().notNull(),
+    blockNumber: t.bigint().notNull(),
+    blockTime: t.bigint().notNull(),
+    txHash: t.hex().notNull(),
+  }),
+  (table) => ({
+    artistIdx: index().on(table.artist, table.blockNumber),
+  }),
+)
+
+export const catalogRanges = onchainTable(
+  "catalog_ranges",
+  (t) => ({
+    id: t.text().primaryKey(),
+    artist: t.hex().notNull(),
+    contractAddress: t.hex().notNull(),
+    startTokenId: t.bigint().notNull(),
+    endTokenId: t.bigint().notNull(),
+    actor: t.hex().notNull(),
+    blockNumber: t.bigint().notNull(),
+    blockTime: t.bigint().notNull(),
+    txHash: t.hex().notNull(),
+  }),
+  (table) => ({
+    artistIdx: index().on(table.artist, table.blockNumber),
+  }),
+)
+
+// ─── Discovery-only registries ───────────────────────────────────────────
+// One row per artist-deploys-a-clone. Worker reads these to know which
+// clones to per-artist-scan. v1's per-clone Transfer subscriptions are
+// dropped in favor of the worker's cursor-driven scans.
+
+export const mintCreators = onchainTable(
+  "mint_creators",
+  (t) => ({
+    contract: t.hex().primaryKey(),
+    address: t.hex().notNull(),
+    firstSeenBlock: t.bigint().notNull(),
+    firstSeenTime: t.bigint().notNull(),
+    txHash: t.hex().notNull(),
+  }),
+  (table) => ({
+    addressIdx: index().on(table.address),
+  }),
+)
+
+export const tlCreators = onchainTable(
+  "tl_creators",
+  (t) => ({
+    contract: t.hex().primaryKey(),
+    sender: t.hex().notNull(),
+    implementation: t.hex().notNull(),
+    cType: t.text().notNull(),
+    version: t.text().notNull(),
+    firstSeenBlock: t.bigint().notNull(),
+    firstSeenTime: t.bigint().notNull(),
+    txHash: t.hex().notNull(),
+  }),
+  (table) => ({
+    senderIdx: index().on(table.sender),
+  }),
+)
+
+// SR V2 shared 1/1. Artist = mint recipient (no creators registry needed).
+export const srv2ArtistTokens = onchainTable(
+  "srv2_artist_tokens",
+  (t) => ({
+    id: t.text().primaryKey(),
+    creator: t.hex().notNull(),
+    contract: t.hex().notNull(),
+    tokenId: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    logIndex: t.integer().notNull(),
+    blockTime: t.bigint().notNull(),
+  }),
+  (table) => ({
+    creatorBlockIdx: index().on(table.creator, table.blockNumber),
+    contractTokenIdx: index().on(table.contract, table.tokenId),
+  }),
+)

@@ -1,6 +1,0 @@
-node_modules
-.ponder
-generated
-ponder-env.d.ts
-.env
-.env.local

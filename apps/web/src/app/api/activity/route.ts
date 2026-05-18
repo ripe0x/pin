@@ -21,7 +21,7 @@ import {
  * The endpoint resolves token metadata + artist identity server-side
  * before responding so the client renders without follow-up requests.
  * Both reads are point-lookups in steady state (token_metadata is
- * pre-warmed by `apps/metadata-warmer`, ENS/EFP is pgCache + EFP HTTPS
+ * pre-warmed by `worker warm-metadata task`, ENS/EFP is pgCache + EFP HTTPS
  * with 24h TTL) — no per-request RPC fan-out.
  *
  * Caching: 30s revalidate keyed on `(limit, cursor)`. Matches the home

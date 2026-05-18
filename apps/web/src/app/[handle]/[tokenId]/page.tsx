@@ -74,6 +74,7 @@ const getTokenPageData = cache(async (handle: string, tokenId: string) => {
         amount: t.amount,
       }))
     : (onChainData?.transfers ?? [])
+        .slice()
         .sort((a, b) => b.timestamp - a.timestamp)
         .map((t) => ({
           event:

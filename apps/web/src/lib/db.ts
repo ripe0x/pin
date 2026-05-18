@@ -4,13 +4,10 @@ import postgres from "postgres"
 /**
  * Single shared Postgres client for the web app.
  *
- * Connection pooling on serverless: `max: 2` keeps each Netlify Function
- * sandbox to a tiny pool. Netlify can spin up dozens of sandboxes under
- * burst — `max × sandboxes` has to stay under Postgres `max_connections`,
- * and we observed "sorry, too many clients already" with `max: 5`. Almost
- * every request only issues 1–2 short-lived queries, so 2 connections per
- * sandbox is plenty. If we need to grow the pool further, switch to
- * PgBouncer (Railway add-on) or Neon's pooled `?sslmode=require` URL.
+ * v2 runs as a long-running Node process on Railway (not Netlify
+ * serverless), so we can use a real pool. `max: 20` is sized for the
+ * concurrent request rate at our scale (~100 visits/day with bursts);
+ * bump if pg logs ever surface "too many clients."
  *
  * **Kill switch.** When `DATABASE_URL` is unset (e.g. on a preview deploy
  * before Postgres is provisioned, or as an explicit disable), we export
@@ -33,12 +30,13 @@ const DATABASE_URL = process.env.DATABASE_URL
 function makeClient(): ReturnType<typeof postgres> | null {
   if (!DATABASE_URL) return null
   const client = postgres(DATABASE_URL, {
-    max: 2,
-    idle_timeout: 20,
+    max: 20,
+    idle_timeout: 30,
     connect_timeout: 10,
-    // Postgres prepared statements aren't useful in serverless because each
-    // sandbox has its own connection pool; turn them off to skip the
-    // deallocation overhead on connection close.
+    // Prepared statements would be a net win for a long-running process,
+    // but postgres.js has subtle TS-ergonomics issues with `prepare: true`
+    // when using the template-tag interface heavily. Leave off until we
+    // have a profiler-driven reason to flip.
     prepare: false,
   })
 

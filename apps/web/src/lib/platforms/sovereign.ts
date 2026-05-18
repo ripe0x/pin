@@ -1,141 +1,79 @@
 import "server-only"
-import { createPublicClient, type Address } from "viem"
-import { mainnet } from "viem/chains"
+import type { Address } from "viem"
 import type {
-  PlatformAdapter,
-  ArtistTokenRef,
-  CollectorTokenRef,
-  AdapterLastSale,
-  ActiveAuctionSummary,
+  PlatformAdapter, ArtistTokenRef, AdapterLastSale, ActiveAuctionSummary,
 } from "./types"
-import {
-  getSettledAuctionForToken,
-  getActivePndAuctions,
-} from "../indexer-queries"
-import { getSovereignLastSale } from "../last-sale"
 import { sql } from "../db"
-import { loggingFallbackTransport } from "../rpc-log"
 
-function getClient() {
-  return createPublicClient({
-    chain: mainnet,
-    transport: loggingFallbackTransport("sovereign"),
-  })
-}
+const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+  /[^a-zA-Z0-9_]/g, "",
+)
 
-/**
- * Sovereign (PND) platform adapter. Sovereign Auction Houses don't mint
- * tokens — they auction tokens that exist on other contracts (Foundation
- * shared NFT, Foundation collections, Manifold creator cores, ERC-721/
- * 1155 contracts in general). So `discoverArtistTokens` returns [] and
- * the artist gallery is unaffected.
- *
- * The interesting Sovereign methods are marketplace ones:
- *   - getLastSale: served by Ponder via `pnd_auctions.status='settled'`
- *   - getActiveAuctionForToken: TODO (currently in auctions.ts directly)
- *   - getBidHistory: TODO (currently in auctions.ts directly)
- */
 export const sovereignAdapter: PlatformAdapter = {
   id: "sovereign",
-  displayName: "Sovereign Auction House",
+  displayName: "Sovereign",
 
   async discoverArtistTokens(): Promise<ArtistTokenRef[]> {
-    // Sovereign auction houses don't mint; the tokens they escrow live
-    // on other platforms' contracts and surface there.
+    // PND houses don't have a per-house "minted by artist" stream —
+    // the artist's gallery surfaces work indexed under FND/Mint/TL/SR
+    // platforms; PND auctions decorate those rows in the UI.
     return []
   },
 
-  async discoverCollectorTokens(
-    wallet: Address,
-  ): Promise<CollectorTokenRef[]> {
-    if (!sql) return []
-    try {
-      const schema = (process.env.INDEXER_SCHEMA ?? "ponder").replace(
-        /[^a-zA-Z0-9_]/g,
-        "",
-      )
-      // Tokens this wallet won via a settled Sovereign auction. The
-      // token contract + tokenId come straight off the indexed auction
-      // row; current ownership isn't tracked by Ponder (the token
-      // transferred out of the house to the winner on settle), so this
-      // is a best-effort historical record. Reads as `acquiredAtBlock`
-      // = settledAtBlock.
-      const rows = (await sql.unsafe(
-        `SELECT token_contract, token_id::text AS token_id,
-                settled_at_block::text AS settled_at_block
-         FROM ${schema}.pnd_auctions
-         WHERE winner = $1 AND status = 'settled'
-         ORDER BY settled_at_time DESC`,
-        [wallet.toLowerCase()],
-      )) as Array<{
-        token_contract: string
-        token_id: string
-        settled_at_block: string
-      }>
-
-      return rows.map((r) => ({
-        platform: "sovereign",
-        contract: r.token_contract as Address,
-        tokenId: r.token_id,
-        ownerWallet: wallet,
-        acquiredAtBlock: BigInt(r.settled_at_block),
-        acquiredTxHash: null,
-      }))
-    } catch {
-      return []
-    }
-  },
-
   async getLastSale(
-    contract: Address,
-    tokenId: string,
-    creator: Address | null,
+    contract: Address, tokenId: string,
   ): Promise<AdapterLastSale | null> {
-    // Indexer first — when Ponder is up, this is a Postgres point query.
-    const settled = await getSettledAuctionForToken(contract, tokenId)
-    if (settled) {
-      return {
-        platform: "sovereign",
-        priceWei: settled.amount,
-        blockTime: settled.settledAtTime,
-        source: "auction",
-        txHash: "",
-      }
-    }
-    // RPC fallback for when the indexer is down / lagging. Requires
-    // creator to look up the artist's house address via houseOf(creator).
-    if (!creator) return null
-    const client = getClient()
-    const sale = await getSovereignLastSale(
-      client,
-      contract,
-      BigInt(tokenId),
-      creator,
-    )
-    if (!sale) return null
+    if (!sql) return null
+    const rows = (await sql.unsafe(
+      `SELECT amount::text AS price_wei, settled_at_time::text AS block_time,
+              lifecycle_tx_hash AS tx_hash
+       FROM ${schema}.pnd_auctions
+       WHERE lower(token_contract) = $1 AND token_id::text = $2
+         AND status = 'settled'
+       ORDER BY settled_at_time DESC LIMIT 1`,
+      [contract.toLowerCase(), tokenId],
+    )) as Array<{ price_wei: string; block_time: string; tx_hash: string | null }>
+    if (rows.length === 0) return null
     return {
       platform: "sovereign",
-      priceWei: sale.priceWei,
-      blockTime: sale.blockTime,
-      source: sale.source, // "sovereign"
-      txHash: sale.txHash,
+      priceWei: BigInt(rows[0].price_wei),
+      blockTime: Number(rows[0].block_time),
+      source: "auction",
+      txHash: rows[0].tx_hash ?? "",
     }
   },
 
   async getActiveAuctions(limit: number): Promise<ActiveAuctionSummary[]> {
-    const rows = await getActivePndAuctions(limit)
-    if (!rows) return []
+    if (!sql) return []
+    const rows = (await sql.unsafe(
+      `SELECT lower(house) AS house, lower(token_contract) AS contract,
+              token_id::text AS token_id, lower(seller) AS seller,
+              reserve_price::text AS reserve_wei,
+              amount::text AS current_bid_wei,
+              lower(bidder) AS bidder,
+              end_time::text AS end_time
+       FROM ${schema}.pnd_auctions
+       WHERE status = 'active'
+       ORDER BY CASE WHEN end_time = 0 THEN 1 ELSE 0 END, end_time ASC
+       LIMIT $1`,
+      [limit],
+    )) as Array<{
+      house: string; contract: string; token_id: string; seller: string;
+      reserve_wei: string; current_bid_wei: string; bidder: string | null;
+      end_time: string
+    }>
     return rows.map((r) => ({
       platform: "sovereign",
-      contract: r.tokenContract as Address,
-      tokenId: r.tokenId,
+      contract: r.contract as Address,
+      tokenId: r.token_id,
       seller: r.seller as Address,
-      reserveWei: r.reservePrice,
-      currentBidWei: r.amount,
-      currentBidder: null,
-      endTime: r.endTime,
-      // The "marketplace" address for a PND auction is its house —
-      // bids dispatch there. Each row already carries its house.
+      reserveWei: BigInt(r.reserve_wei),
+      currentBidWei: BigInt(r.current_bid_wei),
+      currentBidder: r.bidder
+        ? (r.bidder.toLowerCase() === "0x0000000000000000000000000000000000000000"
+            ? null : (r.bidder as Address))
+        : null,
+      endTime: Number(r.end_time),
       sourceContract: r.house as Address,
     }))
   },
