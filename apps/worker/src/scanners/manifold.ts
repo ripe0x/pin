@@ -29,6 +29,7 @@
  */
 import { sql as workerSql } from "../db.ts"
 import { client as viemClient, traceClient } from "../rpc.ts"
+import { throttleRpc } from "../throttle.ts"
 import {
   getAddress, parseAbiItem, type Address, type PublicClient,
 } from "viem"
@@ -41,7 +42,9 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
 const MANIFOLD_FIRST_BLOCK = 13_500_000n
 const LOG_CHUNK = 10_000n
 const TRACE_CHUNK = 50_000n
-const MAX_LOG_CHUNKS_PER_TICK = 200
+// Kept conservative so a single artist's scan doesn't burn the whole
+// drpc free-tier budget; backfill resumes from cursor next cycle.
+const MAX_LOG_CHUNKS_PER_TICK = 20
 const MAX_TRACE_CHUNKS_PER_TICK = 200
 const TASK_NAME = "scan-manifold"
 
@@ -355,6 +358,7 @@ async function scanMintsForContract(
     const toBlock = cursor + LOG_CHUNK - 1n > head ? head : cursor + LOG_CHUNK - 1n
 
     if (is721) {
+      await throttleRpc()
       const logs = await viemClient.getLogs({
         address: contract,
         event: transferEvent,
@@ -372,6 +376,7 @@ async function scanMintsForContract(
     }
 
     if (is1155) {
+      await throttleRpc()
       const singles = await viemClient.getLogs({
         address: contract,
         event: transferSingleEvent,
@@ -387,6 +392,7 @@ async function scanMintsForContract(
         rowsWritten++
       }
 
+      await throttleRpc()
       const batches = await viemClient.getLogs({
         address: contract,
         event: transferBatchEvent,

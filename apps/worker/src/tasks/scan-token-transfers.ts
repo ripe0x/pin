@@ -16,6 +16,7 @@
  */
 import { sql } from "../db.ts"
 import { client } from "../rpc.ts"
+import { throttleRpc } from "../throttle.ts"
 import { parseAbiItem, getAddress, type Address } from "viem"
 import type { TaskResult } from "../scheduler.ts"
 
@@ -26,10 +27,10 @@ const TRANSFER_EVENT = parseAbiItem(
 // with margin.
 const MAX_BLOCKS_PER_SCAN = 9_500n
 // Per-task wall-time cap: process up to N chunks per contract per task
-// invocation, then let the next interval pick up where we left off. With
-// 9_500 block chunks and the task running every 5 min, 50 chunks per
-// call = ~475K blocks/cycle, so a year of history backfills in ~5 cycles.
-const MAX_CHUNKS_PER_CONTRACT = 50n
+// invocation, then let the next interval pick up where we left off.
+// Kept low so this task (which has the most contracts) doesn't starve
+// the others under drpc's free-tier budget.
+const MAX_CHUNKS_PER_CONTRACT = 10n
 const TASK = "scan-token-transfers"
 
 async function getContracts(): Promise<string[]> {
@@ -102,6 +103,7 @@ export async function scanTokenTransfers(): Promise<TaskResult> {
           ? headBlock
           : cursor + MAX_BLOCKS_PER_SCAN
 
+        await throttleRpc()
         const logs = await client.getLogs({
           address: getAddress(contract) as Address,
           event: TRANSFER_EVENT,

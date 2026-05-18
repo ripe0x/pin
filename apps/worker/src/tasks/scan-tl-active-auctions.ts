@@ -13,6 +13,7 @@
  */
 import { sql } from "../db.ts"
 import { client } from "../rpc.ts"
+import { throttleRpc } from "../throttle.ts"
 import {
   getAddress, parseAbiItem, type Address,
 } from "viem"
@@ -101,6 +102,7 @@ async function scanOneArtist(
   let chunks = 0
   while (cursor <= head && chunks < MAX_CHUNKS_PER_TICK) {
     const toBlock = cursor + CHUNK_SIZE - 1n > head ? head : cursor + CHUNK_SIZE - 1n
+    await throttleRpc()
     const logs = await client.getLogs({
       address: TL_AUCTION_HOUSE,
       event: listingConfiguredEvent,

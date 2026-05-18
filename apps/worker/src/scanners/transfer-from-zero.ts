@@ -17,17 +17,17 @@ import {
   parseAbiItem, getAddress, type Address, type PublicClient,
 } from "viem"
 import { resolveNewTokenOwner } from "./resolve-owner.ts"
+import { throttleRpc } from "../throttle.ts"
 
 const TRANSFER_FROM_ZERO = parseAbiItem(
   "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
 )
 const ZERO = "0x0000000000000000000000000000000000000000"
 // drpc free tier caps eth_getLogs at 10,000 blocks per call. Stay under
-// with margin. Iterations bumped so first-time backfill of a deep-history
-// contract (years of blocks) still converges in a handful of task cycles
-// rather than weeks.
+// with margin. Per-tick iteration count kept low so each cycle leaves
+// budget for other tasks; backfill spread across many cycles is fine.
 const MAX_BLOCKS_PER_SCAN = 9_500n
-const MAX_ITERATIONS_PER_CALL = 50
+const MAX_ITERATIONS_PER_CALL = 15
 
 export type ScanArgs = {
   // postgres.js Sql instance — typed loosely because the library's
@@ -72,6 +72,7 @@ export async function scanArtistTokensViaTransferFromZero(
       ? head
       : cursor + MAX_BLOCKS_PER_SCAN
 
+    await throttleRpc()
     const logs = await client.getLogs({
       address: getAddress(contract) as Address,
       event: TRANSFER_FROM_ZERO,

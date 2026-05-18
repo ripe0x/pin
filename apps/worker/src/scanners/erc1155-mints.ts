@@ -15,6 +15,7 @@ import {
   parseAbiItem, getAddress, type Address, type PublicClient,
 } from "viem"
 import { resolveNewTokenOwner } from "./resolve-owner.ts"
+import { throttleRpc } from "../throttle.ts"
 
 const TRANSFER_SINGLE = parseAbiItem(
   "event TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value)",
@@ -24,11 +25,10 @@ const TRANSFER_BATCH = parseAbiItem(
 )
 const ZERO = "0x0000000000000000000000000000000000000000"
 // drpc free tier caps eth_getLogs at 10,000 blocks per call. Stay under
-// with margin. Iterations bumped so first-time backfill of a deep-history
-// contract (years of blocks) still converges in a handful of task cycles
-// rather than weeks.
+// with margin. Per-tick iteration count kept low so each cycle leaves
+// budget for other tasks; backfill spread across many cycles is fine.
 const MAX_BLOCKS_PER_SCAN = 9_500n
-const MAX_ITERATIONS_PER_CALL = 50
+const MAX_ITERATIONS_PER_CALL = 15
 
 export type Erc1155ScanArgs = {
   sql: Sql
@@ -69,6 +69,7 @@ export async function scanErc1155MintsFromZero(
       : cursor + MAX_BLOCKS_PER_SCAN
 
     // TransferSingle batch
+    await throttleRpc()
     const singles = await client.getLogs({
       address: getAddress(contract) as Address,
       event: TRANSFER_SINGLE,
@@ -95,6 +96,7 @@ export async function scanErc1155MintsFromZero(
     }
 
     // TransferBatch
+    await throttleRpc()
     const batches = await client.getLogs({
       address: getAddress(contract) as Address,
       event: TRANSFER_BATCH,
