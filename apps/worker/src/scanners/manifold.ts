@@ -54,6 +54,16 @@ const nameAbi = [{
   type: "function" as const, name: "name", stateMutability: "view" as const,
   inputs: [], outputs: [{ type: "string" as const }],
 }] as const
+const tokenUriAbi = [{
+  type: "function" as const, name: "tokenURI", stateMutability: "view" as const,
+  inputs: [{ name: "tokenId", type: "uint256" as const }],
+  outputs: [{ type: "string" as const }],
+}] as const
+const uriAbi = [{
+  type: "function" as const, name: "uri", stateMutability: "view" as const,
+  inputs: [{ name: "id", type: "uint256" as const }],
+  outputs: [{ type: "string" as const }],
+}] as const
 
 const transferEvent = parseAbiItem(
   "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
@@ -102,18 +112,22 @@ export async function scanManifoldArtistTokens(
 
   if (unclassified.length > 0) {
     const probed = await classifyContracts(viemClient, unclassified)
-    rpcCalls += Math.ceil(unclassified.length * 4 / 250)
+    rpcCalls += Math.ceil(unclassified.length * 6 / 250)
 
     const probedByAddr = new Map(probed.map((p) => [p.address.toLowerCase(), p]))
     for (const addr of unclassified) {
       const lower = addr.toLowerCase()
       const hit = probedByAddr.get(lower)
-      const row = hit ?? { address: lower, is721: false, is1155: false, name: null }
-      const isCore = !!hit
+      // `hit` only exists if the contract is recognized as Creator Core,
+      // ERC-721, or ERC-1155 (by ERC-165 OR by tokenURI/uri probe). For
+      // anything else (proxies, safes, non-NFT contracts the artist
+      // happened to deploy) write the all-false sentinel so we don't
+      // re-probe on every cycle.
+      const row = hit ?? { isCore: false, is721: false, is1155: false, name: null }
       await workerSql`
         INSERT INTO manifold_contracts
           (artist, contract, is_creator_core, is_erc721, is_erc1155, collection_name, classified_at)
-        VALUES (${artist}, ${lower}, ${isCore}, ${row.is721}, ${row.is1155}, ${row.name}, NOW())
+        VALUES (${artist}, ${lower}, ${row.isCore}, ${row.is721}, ${row.is1155}, ${row.name}, NOW())
         ON CONFLICT (artist, contract) DO UPDATE SET
           is_creator_core = EXCLUDED.is_creator_core,
           is_erc721 = EXCLUDED.is_erc721,
@@ -123,7 +137,7 @@ export async function scanManifoldArtistTokens(
       `
       known.set(lower, {
         contract: lower,
-        is_creator_core: isCore,
+        is_creator_core: row.isCore,
         is_erc721: row.is721,
         is_erc1155: row.is1155,
         collection_name: row.name,
@@ -131,10 +145,15 @@ export async function scanManifoldArtistTokens(
     }
   }
 
-  const manifoldCores = Array.from(known.values()).filter((r) => r.is_creator_core)
-  if (manifoldCores.length === 0) return { rpcCalls, rowsWritten }
+  // Scan any contract we recognized as Creator Core OR plain ERC-721 OR
+  // ERC-1155. Older Manifold deploys often skip ERC-165 entirely; the
+  // tokenURI/uri probe in `classifyContracts` catches them.
+  const scannable = Array.from(known.values()).filter(
+    (r) => r.is_creator_core || r.is_erc721 || r.is_erc1155,
+  )
+  if (scannable.length === 0) return { rpcCalls, rowsWritten }
 
-  for (const c of manifoldCores) {
+  for (const c of scannable) {
     const scope = `${artist}:${c.contract}`
     const cursorRow = (await workerSql`
       SELECT last_block::text AS last_block FROM worker_cursors
@@ -244,9 +263,15 @@ async function discoverDeployedContracts(
 
 async function classifyContracts(
   client: PublicClient, addresses: Address[],
-): Promise<Array<{ address: Address; is721: boolean; is1155: boolean; name: string | null }>> {
+): Promise<Array<{
+  address: Address; isCore: boolean; is721: boolean; is1155: boolean; name: string | null
+}>> {
   if (addresses.length === 0) return []
 
+  // Probe six things per contract. The first three are the "well-behaved"
+  // ERC-165 path. The last two (tokenURI/uri) are the fallback for older
+  // Manifold deploys that skipped ERC-165 entirely — they still return a
+  // tokenURI for token id 1 if you ask. `name` is for display.
   const calls = addresses.flatMap((addr) => [
     {
       address: addr, abi: erc165Abi, functionName: "supportsInterface" as const,
@@ -260,9 +285,9 @@ async function classifyContracts(
       address: addr, abi: erc165Abi, functionName: "supportsInterface" as const,
       args: [ERC1155_INTERFACE],
     },
-    {
-      address: addr, abi: nameAbi, functionName: "name" as const,
-    },
+    { address: addr, abi: nameAbi, functionName: "name" as const },
+    { address: addr, abi: tokenUriAbi, functionName: "tokenURI" as const, args: [1n] },
+    { address: addr, abi: uriAbi, functionName: "uri" as const, args: [1n] },
   ])
 
   const results = (await client.multicall({
@@ -270,18 +295,43 @@ async function classifyContracts(
     allowFailure: true,
   })) as Array<{ status: "success"; result: unknown } | { status: "failure" }>
 
-  const out: Array<{ address: Address; is721: boolean; is1155: boolean; name: string | null }> = []
+  const out: Array<{
+    address: Address; isCore: boolean; is721: boolean; is1155: boolean; name: string | null
+  }> = []
   for (let i = 0; i < addresses.length; i++) {
-    const base = i * 4
-    const coreRes = results[base]
-    if (coreRes.status !== "success" || coreRes.result !== true) continue
-    const is721Res = results[base + 1]
-    const is1155Res = results[base + 2]
-    const nameRes = results[base + 3]
+    const base = i * 6
+    const coreRes    = results[base]
+    const is721Res   = results[base + 1]
+    const is1155Res  = results[base + 2]
+    const nameRes    = results[base + 3]
+    const tokenUriRes = results[base + 4]
+    const uriRes      = results[base + 5]
+
+    const isCore  = coreRes.status === "success" && coreRes.result === true
+    const erc165Says721  = is721Res.status === "success" && is721Res.result === true
+    const erc165Says1155 = is1155Res.status === "success" && is1155Res.result === true
+
+    // Probe fallback: a contract that returns a tokenURI for id 1 is
+    // ERC-721 even if it doesn't implement ERC-165. Same for uri →
+    // ERC-1155. Required for older Manifold deploys that skipped
+    // ERC-165.
+    const probeSays721  = tokenUriRes.status === "success"
+    const probeSays1155 = uriRes.status === "success"
+
+    const is721  = erc165Says721  || (probeSays721 && !probeSays1155)
+    const is1155 = erc165Says1155 || (probeSays1155 && !probeSays721)
+
+    // Only emit contracts we actually recognize as scannable. Random
+    // non-NFT contracts the artist deployed (gnosis safes, proxies,
+    // utility contracts) get skipped here AND get a sentinel row
+    // written by the caller so we don't re-probe them.
+    if (!isCore && !is721 && !is1155) continue
+
     out.push({
       address: addresses[i],
-      is721: is721Res.status === "success" && is721Res.result === true,
-      is1155: is1155Res.status === "success" && is1155Res.result === true,
+      isCore,
+      is721,
+      is1155,
       name: nameRes.status === "success" ? (nameRes.result as string) : null,
     })
   }
