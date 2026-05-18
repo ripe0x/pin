@@ -28,7 +28,7 @@
  * re-walked, which is cheap.
  */
 import { sql as workerSql } from "../db.ts"
-import { client as viemClient } from "../rpc.ts"
+import { client as viemClient, traceClient } from "../rpc.ts"
 import {
   getAddress, parseAbiItem, type Address, type PublicClient,
 } from "viem"
@@ -96,7 +96,7 @@ export async function scanManifoldArtistTokens(
   let rpcCalls = 0
   let rowsWritten = 0
 
-  const discoverResult = await discoverDeployedContracts(artist, viemClient)
+  const discoverResult = await discoverDeployedContracts(artist, traceClient)
   rpcCalls += discoverResult.rpcCalls
   const deployed = discoverResult.contracts
 

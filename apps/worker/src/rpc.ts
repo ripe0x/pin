@@ -66,3 +66,30 @@ export const client: PublicClient = createPublicClient({
   chain: mainnet,
   transport: fallback(getTransports(), { retryCount: 1, retryDelay: 200 }),
 })
+
+/**
+ * Dedicated trace_filter client. The free public RPCs in our fallback
+ * chain (publicnode, llamarpc, ankr) don't implement trace_filter at
+ * all — but they take ~8s to time out before viem's fallback moves on
+ * to drpc. That wasted latency stacks: per-artist scan-manifold does
+ * ~200 trace chunks × ~24s wasted overhead = ~80 min of pure stall.
+ * This client skips the fallback for trace operations and goes directly
+ * to drpc (the only one that supports them). Use only for trace_*
+ * methods.
+ */
+function getTraceUrl(): string {
+  const drpcUrl = process.env.ALCHEMY_MAINNET_URL
+  if (drpcUrl) return drpcUrl
+  // Fallback to Alchemy paid if drpc isn't configured; Alchemy also
+  // supports trace_filter on archive plans.
+  const alchemyKey = process.env.ALCHEMY_API_KEY
+  if (alchemyKey && !alchemyKey.startsWith("set-")) {
+    return `https://eth-mainnet.g.alchemy.com/v2/${alchemyKey}`
+  }
+  throw new Error("[worker] no trace_filter-capable RPC configured")
+}
+
+export const traceClient: PublicClient = createPublicClient({
+  chain: mainnet,
+  transport: http(getTraceUrl(), { timeout: 30_000 }),
+})
