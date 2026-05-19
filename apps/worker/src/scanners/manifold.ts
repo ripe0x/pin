@@ -102,9 +102,22 @@ export async function scanManifoldArtistTokens(
   let rpcCalls = 0
   let rowsWritten = 0
 
+  // Discovery path A: find contracts the artist deployed via trace_filter.
+  // Catches own Creator Core deployments.
   const discoverResult = await discoverDeployedContracts(artist, traceClient)
   rpcCalls += discoverResult.rpcCalls
   const deployed = discoverResult.contracts
+
+  // Discovery path B: find tokens minted TO the artist on contracts the
+  // artist did NOT deploy (collab contracts, shared platforms, contracts
+  // a deployer-contract created on the artist's behalf). Catches everything
+  // path A misses. Alchemy-only — falls back to the trace path when
+  // Alchemy isn't configured.
+  const mintsResult = await discoverMintsToArtist({ artist })
+  if (mintsResult) {
+    rpcCalls += mintsResult.rpcCalls
+    rowsWritten += mintsResult.rowsWritten
+  }
 
   const cached = (await workerSql`
     SELECT lower(contract) AS contract, is_creator_core, is_erc721, is_erc1155, collection_name
@@ -571,6 +584,190 @@ async function tryAlchemyFastBackfill(args: {
   // Cursor jumps to head: future ticks go straight to incremental getLogs
   // for any new mints after this point.
   return { rpcCalls, rowsWritten, scannedTo: head }
+}
+
+// ─── Discovery path B: mints TO the artist (Alchemy-only) ─────────────────
+//
+// trace_filter discovery only finds contracts the artist DEPLOYED. Artists
+// also mint on contracts they didn't deploy: collaboration contracts,
+// shared-platform contracts (Manifold studio shared, OpenSea shared),
+// contracts that a deployer contract created for them via CREATE2.
+//
+// `alchemy_getAssetTransfers` filtered to `fromAddress=0x0, toAddress=artist`
+// returns every NFT mint where the artist was the original recipient — the
+// universal "this token is by this artist" signal. Then for each unique
+// (contract, tokenId) pair, batch fetch metadata.
+//
+// Cost: ~1 getAssetTransfers call (paginated, ~1000 per page) + 1 call per
+// 100 tokens via getNFTMetadataBatch. For a typical artist with <500 mints:
+// 5-6 Alchemy calls total. Tiny.
+
+const ALCHEMY_RPC_BASE = "https://eth-mainnet.g.alchemy.com/v2"
+type AlchemyTransfer = {
+  blockNum?: string
+  hash?: string
+  rawContract?: { address?: string }
+  tokenId?: string | null
+  erc1155Metadata?: Array<{ tokenId?: string }>
+  category?: string
+}
+
+async function discoverMintsToArtist(args: {
+  artist: Address
+}): Promise<{ rpcCalls: number; rowsWritten: number } | null> {
+  if (!workerSql) return null
+  const key = process.env.ALCHEMY_API_KEY
+  if (!key || key.startsWith("set-")) return null
+
+  const { artist } = args
+
+  // Page through all NFT mints to the artist.
+  type MintRef = { contract: string; tokenId: string; blockNum: bigint }
+  const mints: MintRef[] = []
+  let pageKey: string | undefined
+  let rpcCalls = 0
+  const MAX_PAGES = 50 // ~50K mints max — way beyond any realistic artist
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const body: Record<string, unknown> = {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "alchemy_getAssetTransfers",
+      params: [{
+        fromAddress: "0x0000000000000000000000000000000000000000",
+        toAddress: artist,
+        category: ["erc721", "erc1155"],
+        maxCount: "0x3e8", // 1000 per page
+        withMetadata: false,
+        order: "asc",
+        ...(pageKey ? { pageKey } : {}),
+      }],
+    }
+
+    let data: { result?: { transfers?: AlchemyTransfer[]; pageKey?: string } }
+    try {
+      const res = await fetch(`${ALCHEMY_RPC_BASE}/${key}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(30_000),
+      })
+      if (!res.ok) {
+        console.warn(`[manifold-mints-to] ${artist}: ${res.status}`)
+        return null
+      }
+      data = (await res.json()) as typeof data
+    } catch (err) {
+      console.warn(`[manifold-mints-to] ${artist}: ${err}`)
+      return null
+    }
+    rpcCalls++
+
+    const transfers = data.result?.transfers ?? []
+    for (const t of transfers) {
+      const contract = t.rawContract?.address?.toLowerCase()
+      if (!contract) continue
+      const blockNum = t.blockNum ? BigInt(t.blockNum) : 0n
+
+      if (t.category === "erc1155") {
+        for (const m of t.erc1155Metadata ?? []) {
+          if (m.tokenId) mints.push({ contract, tokenId: BigInt(m.tokenId).toString(), blockNum })
+        }
+      } else if (t.tokenId) {
+        mints.push({ contract, tokenId: BigInt(t.tokenId).toString(), blockNum })
+      }
+    }
+
+    pageKey = data.result?.pageKey
+    if (!pageKey) break
+  }
+
+  if (mints.length === 0) return { rpcCalls, rowsWritten: 0 }
+
+  // Batch metadata: getNFTMetadataBatch takes up to 100 tokens per call.
+  type AlchemyMeta = {
+    contract?: { address?: string }
+    tokenId?: string
+    name?: string | null
+    description?: string | null
+    image?: { cachedUrl?: string | null; originalUrl?: string | null } | null
+    animation?: { cachedUrl?: string | null; originalUrl?: string | null } | null
+    tokenUri?: string | null
+  }
+
+  const metadataByKey = new Map<string, AlchemyMeta>()
+  for (let i = 0; i < mints.length; i += 100) {
+    const batch = mints.slice(i, i + 100).map((m) => ({
+      contractAddress: m.contract,
+      tokenId: m.tokenId,
+    }))
+    try {
+      const res = await fetch(
+        `https://eth-mainnet.g.alchemy.com/nft/v3/${key}/getNFTMetadataBatch`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ tokens: batch, refreshCache: false }),
+          signal: AbortSignal.timeout(30_000),
+        },
+      )
+      if (res.ok) {
+        const data = (await res.json()) as { nfts?: AlchemyMeta[] }
+        for (const nft of data.nfts ?? []) {
+          const c = nft.contract?.address?.toLowerCase()
+          const t = nft.tokenId
+          if (c && t) metadataByKey.set(`${c}:${t}`, nft)
+        }
+      }
+    } catch (err) {
+      console.warn(`[manifold-mints-to] metadata batch error: ${err}`)
+    }
+    rpcCalls++
+  }
+
+  // Insert. Use platform='manifold' as a catch-all for artist-minted-via-Alchemy
+  // discovery. Steady-state log scans on contracts the artist deployed will
+  // still write platform='manifold' for the same tokens; ON CONFLICT dedupes.
+  let rowsWritten = 0
+  for (const m of mints) {
+    const meta = metadataByKey.get(`${m.contract}:${m.tokenId}`)
+    try {
+      await workerSql.begin(async (tx) => {
+        await tx`
+          INSERT INTO artist_tokens
+            (artist, contract, token_id, platform, mint_block, mint_log_index, first_seen_at)
+          VALUES
+            (${artist}, ${m.contract}, ${m.tokenId}, 'manifold',
+             ${m.blockNum.toString()}::bigint, 0, NOW())
+          ON CONFLICT (contract, token_id) DO NOTHING
+        `
+        if (meta) {
+          const imageUrl = meta.image?.cachedUrl ?? meta.image?.originalUrl ?? null
+          const animationUrl = meta.animation?.cachedUrl ?? meta.animation?.originalUrl ?? null
+          await tx`
+            INSERT INTO token_metadata
+              (contract, token_id, name, description, image_url, animation_url, raw_uri, fetched_at)
+            VALUES
+              (${m.contract}, ${m.tokenId},
+               ${meta.name ?? null}, ${meta.description ?? null},
+               ${imageUrl}, ${animationUrl}, ${meta.tokenUri ?? null}, NOW())
+            ON CONFLICT (contract, token_id) DO UPDATE SET
+              name = COALESCE(EXCLUDED.name, token_metadata.name),
+              description = COALESCE(EXCLUDED.description, token_metadata.description),
+              image_url = COALESCE(EXCLUDED.image_url, token_metadata.image_url),
+              animation_url = COALESCE(EXCLUDED.animation_url, token_metadata.animation_url),
+              raw_uri = COALESCE(EXCLUDED.raw_uri, token_metadata.raw_uri),
+              fetched_at = NOW()
+          `
+        }
+      })
+      rowsWritten++
+    } catch (err) {
+      console.warn(`[manifold-mints-to] ${m.contract}/${m.tokenId}: ${err}`)
+    }
+  }
+
+  return { rpcCalls, rowsWritten }
 }
 
 async function insertToken(
