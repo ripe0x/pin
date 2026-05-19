@@ -173,9 +173,26 @@ export async function scanManifoldArtistTokens(
     rpcCalls += 1
     if (fromBlock > head) continue
 
-    const result = await scanMintsForContract(
-      artist, c.contract as Address, c.is_erc721, c.is_erc1155, fromBlock, head,
-    )
+    // Backfill mode: if the cursor is more than 100K blocks behind head,
+    // try the Alchemy NFT API fast path before falling back to chunked
+    // getLogs. One paginated call returns every token in the contract
+    // with metadata + ownership, vs. ~1,160 chunks scanning empty space.
+    // Skipped for incremental updates (cursor within 100K of head) since
+    // chunked getLogs is cheap then.
+    const isBackfill = head - fromBlock > 100_000n
+    let result: { rpcCalls: number; rowsWritten: number; scannedTo: bigint } | null = null
+
+    if (isBackfill) {
+      result = await tryAlchemyFastBackfill({
+        artist, contract: c.contract as Address, head,
+      })
+    }
+
+    if (!result) {
+      result = await scanMintsForContract(
+        artist, c.contract as Address, c.is_erc721, c.is_erc1155, fromBlock, head,
+      )
+    }
     rpcCalls += result.rpcCalls
     rowsWritten += result.rowsWritten
 
@@ -418,6 +435,142 @@ async function scanMintsForContract(
   }
 
   return { rpcCalls, rowsWritten, scannedTo: cursor - 1n }
+}
+
+// ─── Phase 3-fast: Alchemy NFT API backfill ───────────────────────────────
+//
+// `alchemy_getNFTsForContract` (NFT API v3, REST endpoint, not JSON-RPC)
+// returns every token in a contract with name/description/image/owner/
+// mint-block in one paginated call. Avoids the chunked getLogs walk that
+// scans ~1,160 mostly-empty 10K-block ranges per contract.
+//
+// Returns null if ALCHEMY_API_KEY isn't set or the API call fails;
+// caller falls back to chunked getLogs. Sets cursor to `head` on success
+// so subsequent ticks go straight to incremental mode.
+
+const ALCHEMY_NFT_BASE = "https://eth-mainnet.g.alchemy.com/nft/v3"
+const ALCHEMY_NFT_MAX_PAGES = 100 // safety cap: ~10,000 tokens/contract
+
+type AlchemyNftPage = {
+  nfts?: Array<{
+    tokenId?: string
+    name?: string | null
+    description?: string | null
+    image?: { cachedUrl?: string | null; originalUrl?: string | null } | null
+    animation?: { cachedUrl?: string | null; originalUrl?: string | null } | null
+    tokenUri?: string | null
+    mint?: { blockNumber?: number | string | null } | null
+    owners?: string[] | null
+  }>
+  pageKey?: string
+}
+
+async function tryAlchemyFastBackfill(args: {
+  artist: Address; contract: Address; head: bigint
+}): Promise<{ rpcCalls: number; rowsWritten: number; scannedTo: bigint } | null> {
+  if (!workerSql) return null
+  const key = process.env.ALCHEMY_API_KEY
+  if (!key || key.startsWith("set-")) return null
+
+  const { artist, contract, head } = args
+  let pageKey: string | undefined
+  let rpcCalls = 0
+  let rowsWritten = 0
+  let pages = 0
+
+  do {
+    const url = new URL(`${ALCHEMY_NFT_BASE}/${key}/getNFTsForContract`)
+    url.searchParams.set("contractAddress", contract)
+    url.searchParams.set("withMetadata", "true")
+    url.searchParams.set("limit", "100")
+    if (pageKey) url.searchParams.set("pageKey", pageKey)
+
+    let data: AlchemyNftPage
+    try {
+      const res = await fetch(url, {
+        method: "GET",
+        signal: AbortSignal.timeout(30_000),
+      })
+      if (!res.ok) {
+        console.warn(`[manifold-fast] ${contract}: NFT API ${res.status} ${await res.text().catch(() => "")}`)
+        return null
+      }
+      data = (await res.json()) as AlchemyNftPage
+    } catch (err) {
+      console.warn(`[manifold-fast] ${contract}: fetch error ${err}`)
+      return null
+    }
+    rpcCalls++
+
+    for (const nft of data.nfts ?? []) {
+      if (!nft.tokenId) continue
+      const tokenId = nft.tokenId
+      const imageUrl =
+        nft.image?.cachedUrl ?? nft.image?.originalUrl ?? null
+      const animationUrl =
+        nft.animation?.cachedUrl ?? nft.animation?.originalUrl ?? null
+      const mintBlock = nft.mint?.blockNumber
+        ? BigInt(nft.mint.blockNumber)
+        : 0n
+      const owner = nft.owners?.[0]?.toLowerCase() ?? null
+
+      try {
+        await workerSql.begin(async (tx) => {
+          await tx`
+            INSERT INTO artist_tokens
+              (artist, contract, token_id, platform, mint_block, mint_log_index, first_seen_at)
+            VALUES
+              (${artist}, ${contract}, ${tokenId}, 'manifold',
+               ${mintBlock.toString()}::bigint, 0, NOW())
+            ON CONFLICT (contract, token_id) DO NOTHING
+          `
+          // Persist metadata if present. Always write a row (even if all-null)
+          // so warm-metadata doesn't redundantly re-resolve.
+          await tx`
+            INSERT INTO token_metadata
+              (contract, token_id, name, description, image_url, animation_url, raw_uri, fetched_at)
+            VALUES
+              (${contract}, ${tokenId},
+               ${nft.name ?? null}, ${nft.description ?? null},
+               ${imageUrl}, ${animationUrl}, ${nft.tokenUri ?? null}, NOW())
+            ON CONFLICT (contract, token_id) DO UPDATE SET
+              name = COALESCE(EXCLUDED.name, token_metadata.name),
+              description = COALESCE(EXCLUDED.description, token_metadata.description),
+              image_url = COALESCE(EXCLUDED.image_url, token_metadata.image_url),
+              animation_url = COALESCE(EXCLUDED.animation_url, token_metadata.animation_url),
+              raw_uri = COALESCE(EXCLUDED.raw_uri, token_metadata.raw_uri),
+              fetched_at = NOW()
+          `
+          if (owner) {
+            await tx`
+              INSERT INTO token_owners
+                (contract, token_id, owner, transferred_at_block, transferred_at_time, tx_hash)
+              VALUES
+                (${contract}, ${tokenId}, ${owner},
+                 ${mintBlock.toString()}::bigint, 0::bigint, '')
+              ON CONFLICT (contract, token_id) DO UPDATE SET
+                owner = EXCLUDED.owner,
+                transferred_at_block = GREATEST(token_owners.transferred_at_block, EXCLUDED.transferred_at_block)
+            `
+          }
+        })
+        rowsWritten++
+      } catch (err) {
+        console.warn(`[manifold-fast] ${contract}/${tokenId}: insert error ${err}`)
+      }
+    }
+
+    pageKey = data.pageKey
+    pages++
+    if (pages >= ALCHEMY_NFT_MAX_PAGES) {
+      console.warn(`[manifold-fast] ${contract}: hit ${ALCHEMY_NFT_MAX_PAGES}-page cap`)
+      break
+    }
+  } while (pageKey)
+
+  // Cursor jumps to head: future ticks go straight to incremental getLogs
+  // for any new mints after this point.
+  return { rpcCalls, rowsWritten, scannedTo: head }
 }
 
 async function insertToken(
