@@ -42,9 +42,12 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
 const MANIFOLD_FIRST_BLOCK = 13_500_000n
 const LOG_CHUNK = 10_000n
 const TRACE_CHUNK = 50_000n
-// Kept conservative so a single artist's scan doesn't burn the whole
-// drpc free-tier budget; backfill resumes from cursor next cycle.
-const MAX_LOG_CHUNKS_PER_TICK = 20
+// Per-artist scan cap. With Alchemy in the fallback chain as the
+// last-resort backstop, failed drpc calls succeed via Alchemy instead
+// of being silently swallowed. Bumping the cap so refresh-artist
+// invocations make meaningful progress per call rather than nudging
+// cursors by 200K blocks at a time.
+const MAX_LOG_CHUNKS_PER_TICK = 100
 const MAX_TRACE_CHUNKS_PER_TICK = 200
 const TASK_NAME = "scan-manifold"
 
