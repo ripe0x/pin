@@ -586,6 +586,43 @@ async function tryAlchemyFastBackfill(args: {
   return { rpcCalls, rowsWritten, scannedTo: head }
 }
 
+// Multicall `owner()` for a list of contracts. Returns a Map of
+// contract -> owner (lowercased), with missing entries for contracts
+// that don't implement owner() (typically not-the-artist contracts).
+async function fetchContractOwners(
+  contracts: string[],
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  if (contracts.length === 0) return out
+
+  const ownerAbi = [{
+    type: "function" as const, name: "owner", stateMutability: "view" as const,
+    inputs: [], outputs: [{ type: "address" as const }],
+  }] as const
+
+  // Multicall in batches of 250 (Alchemy's default multicall limit).
+  for (let i = 0; i < contracts.length; i += 250) {
+    const batch = contracts.slice(i, i + 250)
+    const calls = batch.map((addr) => ({
+      address: addr as Address, abi: ownerAbi, functionName: "owner" as const,
+    }))
+    try {
+      const results = (await viemClient.multicall({
+        contracts: calls, allowFailure: true,
+      })) as Array<{ status: "success"; result: string } | { status: "failure" }>
+      for (let j = 0; j < batch.length; j++) {
+        const r = results[j]
+        if (r.status === "success" && typeof r.result === "string") {
+          out.set(batch[j], r.result.toLowerCase())
+        }
+      }
+    } catch (err) {
+      console.warn(`[manifold-mints-to] owner() multicall error: ${err}`)
+    }
+  }
+  return out
+}
+
 // ─── Discovery path B: mints TO the artist (Alchemy-only) ─────────────────
 //
 // trace_filter discovery only finds contracts the artist DEPLOYED. Artists
@@ -683,6 +720,35 @@ async function discoverMintsToArtist(args: {
   }
 
   if (mints.length === 0) return { rpcCalls, rowsWritten: 0 }
+
+  // Filter to contracts the artist is the CREATOR/OWNER of, not just a
+  // recipient on. "Received a mint" alone would also catch collector
+  // purchases via public mint functions — that's not artist work, it's
+  // the artist as buyer.
+  //
+  // The cheap, definitive signal: contract.owner() == artist. Manifold
+  // Creator Core, OpenZeppelin Ownable, and most ERC-721/1155 platform
+  // contracts implement this. Multicall it for all unique contracts in
+  // one RPC call.
+  const uniqueContracts = Array.from(new Set(mints.map((m) => m.contract)))
+  const ownerByContract = await fetchContractOwners(uniqueContracts)
+  rpcCalls += Math.ceil(uniqueContracts.length / 250) // multicall batching
+
+  const ownedContracts = new Set(
+    uniqueContracts.filter((c) => ownerByContract.get(c) === artist.toLowerCase()),
+  )
+  const filtered = mints.filter((m) => ownedContracts.has(m.contract))
+
+  console.log(
+    `[manifold-mints-to] ${artist}: ` +
+    `${mints.length} mints received → ${filtered.length} on contracts owned by artist ` +
+    `(${ownedContracts.size}/${uniqueContracts.length} contracts pass owner() check)`,
+  )
+
+  if (filtered.length === 0) return { rpcCalls, rowsWritten: 0 }
+  // Use filtered set from here on.
+  mints.length = 0
+  mints.push(...filtered)
 
   // Batch metadata: getNFTMetadataBatch takes up to 100 tokens per call.
   type AlchemyMeta = {
