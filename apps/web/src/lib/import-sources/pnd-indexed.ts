@@ -81,30 +81,46 @@ async function fetchPndIndexedWorks(
   // for manifold-platform contracts; other artist-owned platforms
   // currently have no per-contract name source — adapter falls back to
   // contract_identity if available later, undefined for now).
-  // Stable ORDER so the planner preview is deterministic between
-  // reloads.
+  //
+  // Order: newest-deployed-contract first. The earliest mint we've
+  // indexed on a contract is a reasonable proxy for its deploy time
+  // (artists typically mint shortly after deploying), so we partition
+  // by contract, find the min mint block, and sort contracts by that
+  // min DESC. Within a contract, ascending by token_id.
   const rows = (await sql.unsafe(
     `WITH src AS (
-       SELECT lower(contract) AS contract, token_id, platform
+       SELECT lower(contract) AS contract, token_id, platform,
+              mint_block AS mint_block
        FROM artist_tokens WHERE artist = $1
        UNION ALL
-       SELECT lower(contract), token_id::text, 'fnd-shared' AS platform
+       SELECT lower(contract), token_id::text, 'fnd-shared' AS platform,
+              block_number::bigint AS mint_block
        FROM ${INDEXER_SCHEMA}.fnd_artist_tokens WHERE lower(creator) = $1
        UNION ALL
-       SELECT lower(contract), token_id::text, 'srv2-shared' AS platform
+       SELECT lower(contract), token_id::text, 'srv2-shared' AS platform,
+              block_number::bigint AS mint_block
        FROM ${INDEXER_SCHEMA}.srv2_artist_tokens WHERE lower(creator) = $1
+     ),
+     src_ranked AS (
+       SELECT *,
+              MIN(mint_block) OVER (PARTITION BY contract) AS contract_first_block
+       FROM src
      )
-     SELECT src.contract, src.token_id, src.platform,
+     SELECT src_ranked.contract, src_ranked.token_id, src_ranked.platform,
             m.name, m.image_url, m.raw_uri,
             COALESCE(mc.collection_name, ci.name) AS collection_name
-     FROM src
+     FROM src_ranked
      LEFT JOIN token_metadata m
-       ON m.contract = src.contract AND m.token_id = src.token_id
+       ON m.contract = src_ranked.contract AND m.token_id = src_ranked.token_id
      LEFT JOIN manifold_contracts mc
-       ON mc.artist = $1 AND mc.contract = src.contract
+       ON mc.artist = $1 AND mc.contract = src_ranked.contract
      LEFT JOIN contract_identity ci
-       ON ci.address = src.contract
-     ORDER BY src.contract, src.token_id`,
+       ON ci.address = src_ranked.contract
+     ORDER BY src_ranked.contract_first_block DESC NULLS LAST,
+              src_ranked.contract,
+              -- numeric cast keeps token IDs in number order even when
+              -- some are very large (uint256 max would overflow bigint).
+              src_ranked.token_id::numeric`,
     [lower],
   )) as Row[]
 
