@@ -101,25 +101,54 @@ export function ImportPlanner({
   const [contractMode, setContractMode] = useState<
     Record<Address, ContractMode>
   >({})
+  // In "whole" mode, the entire contract becomes a single addContract
+  // op. Track per-contract selection so the artist can opt OUT of a
+  // whole contract without flipping back to specific mode + unchecking
+  // every token. Defaults to all whole-mode contracts selected.
+  const [selectedContracts, setSelectedContracts] = useState<Set<Address>>(
+    () => new Set(),
+  )
   // Default per-contract mode: "whole" when EVERY underlying work for
   // that contract carries `claimWholeContract: true` (signaled by the
   // adapter when the artist owns the contract). Shared-platform
   // contracts and any contract with mixed signals stay in "specific"
   // mode. Re-evaluated whenever the plan identity changes.
   useEffect(() => {
-    const next: Record<Address, ContractMode> = {}
+    const nextMode: Record<Address, ContractMode> = {}
+    const nextSelected = new Set<Address>()
     for (const { contract, ops } of groupedOps) {
       if (isSharedContract(contract)) continue
       const allWorks = ops.flatMap((op) => op.works)
       if (allWorks.length === 0) continue
       const allClaim = allWorks.every((w) => w.claimWholeContract === true)
-      if (allClaim) next[contract] = "whole"
+      if (allClaim) {
+        nextMode[contract] = "whole"
+        nextSelected.add(contract)
+      }
     }
-    setContractMode(next)
+    setContractMode(nextMode)
+    setSelectedContracts(nextSelected)
   }, [groupedOps])
 
   const setMode = (contract: Address, mode: ContractMode) => {
     setContractMode((prev) => ({ ...prev, [contract]: mode }))
+    // When flipping INTO whole mode, opt the contract in by default.
+    if (mode === "whole") {
+      setSelectedContracts((prev) => {
+        const next = new Set(prev)
+        next.add(contract)
+        return next
+      })
+    }
+  }
+
+  const toggleContract = (contract: Address) => {
+    setSelectedContracts((prev) => {
+      const next = new Set(prev)
+      if (next.has(contract)) next.delete(contract)
+      else next.add(contract)
+      return next
+    })
   }
 
   const toggle = (key: EntryKey) => {
@@ -142,6 +171,9 @@ export function ImportPlanner({
     for (const { contract, ops } of groupedOps) {
       const mode = contractMode[contract] ?? "specific"
       if (mode === "whole" && !isSharedContract(contract)) {
+        // Whole-mode contracts are gated by the contract-level checkbox.
+        // Unchecked = skip this contract entirely.
+        if (!selectedContracts.has(contract)) continue
         const allWorks = ops.flatMap((op) => op.works)
         out.push({ kind: "addContract", contract, works: allWorks })
       } else {
@@ -225,6 +257,8 @@ export function ImportPlanner({
               onToggle={toggle}
               mode={contractMode[contract] ?? "specific"}
               onModeChange={(m) => setMode(contract, m)}
+              wholeContractSelected={selectedContracts.has(contract)}
+              onToggleWholeContract={() => toggleContract(contract)}
             />
           ))}
         </div>
@@ -424,6 +458,8 @@ function ContractGroup({
   onToggle,
   mode,
   onModeChange,
+  wholeContractSelected,
+  onToggleWholeContract,
 }: {
   contract: Address
   ops: CatalogOp[]
@@ -431,6 +467,8 @@ function ContractGroup({
   onToggle: (k: EntryKey) => void
   mode: ContractMode
   onModeChange: (mode: ContractMode) => void
+  wholeContractSelected: boolean
+  onToggleWholeContract: () => void
 }) {
   const total = ops.reduce((n, op) => n + tokenCount(op), 0)
   const selectedCount = ops.filter((op) => selected.has(entryKey(op))).length
@@ -470,7 +508,13 @@ function ContractGroup({
       </header>
 
       {mode === "whole" && showWholeOption ? (
-        <WholeContractRow contract={contract} ops={ops} total={total} />
+        <WholeContractRow
+          contract={contract}
+          ops={ops}
+          total={total}
+          selected={wholeContractSelected}
+          onToggle={onToggleWholeContract}
+        />
       ) : (
         <ul className="divide-y divide-gray-100">
           {ops.map((op) => {
@@ -551,10 +595,14 @@ function WholeContractRow({
   contract,
   ops,
   total,
+  selected,
+  onToggle,
 }: {
   contract: Address
   ops: CatalogOp[]
   total: number
+  selected: boolean
+  onToggle: () => void
 }) {
   const allWorks = ops.flatMap((op) => op.works)
   const firstWorkWithImage = allWorks.find((w) => w.imageUrl)
@@ -564,35 +612,39 @@ function WholeContractRow({
   // dramatically improves scannability vs a raw 0xab8089… string.
   const collectionName = allWorks.find((w) => w.collectionName)?.collectionName
   return (
-    <div className="px-4 py-3">
-      <div className="flex items-center gap-4">
-        <div className="h-12 w-12 shrink-0 bg-gray-100 rounded overflow-hidden relative">
-          {firstWorkWithImage?.imageUrl && (
-            <Thumb
-              src={firstWorkWithImage.imageUrl}
-              fallback={firstWorkWithImage.imageFallbackUrl}
-              alt=""
-            />
-          )}
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium">
-            {collectionName ?? "Register the full contract"}
-          </p>
-          <p className="text-xs text-gray-500 mt-0.5">
-            <span className="font-mono">{contract.slice(0, 10)}…</span>
-            {" · "}
-            Claims all {total} {pluralize("token", "tokens", total)} + any
-            future mints on this contract. Replaces {ops.length}{" "}
-            {pluralize("per-token entry", "per-token entries", ops.length)} with
-            a single <code className="font-mono">addContract</code> call.
-          </p>
-        </div>
-        <span className="shrink-0 text-[10px] uppercase font-mono tracking-wider px-2 py-0.5 rounded bg-gray-50 text-gray-600 border border-gray-200">
-          contract
-        </span>
+    <label className="flex items-center gap-4 px-4 py-3 hover:bg-gray-50 cursor-pointer">
+      <input
+        type="checkbox"
+        checked={selected}
+        onChange={onToggle}
+        className="h-4 w-4 accent-emerald-600"
+      />
+      <div className="h-12 w-12 shrink-0 bg-gray-100 rounded overflow-hidden relative">
+        {firstWorkWithImage?.imageUrl && (
+          <Thumb
+            src={firstWorkWithImage.imageUrl}
+            fallback={firstWorkWithImage.imageFallbackUrl}
+            alt=""
+          />
+        )}
       </div>
-    </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium">
+          {collectionName ?? "Register the full contract"}
+        </p>
+        <p className="text-xs text-gray-500 mt-0.5">
+          <span className="font-mono">{contract.slice(0, 10)}…</span>
+          {" · "}
+          Claims all {total} {pluralize("token", "tokens", total)} + any
+          future mints on this contract. Replaces {ops.length}{" "}
+          {pluralize("per-token entry", "per-token entries", ops.length)} with
+          a single <code className="font-mono">addContract</code> call.
+        </p>
+      </div>
+      <span className="shrink-0 text-[10px] uppercase font-mono tracking-wider px-2 py-0.5 rounded bg-gray-50 text-gray-600 border border-gray-200">
+        contract
+      </span>
+    </label>
   )
 }
 
