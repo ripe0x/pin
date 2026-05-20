@@ -79,16 +79,40 @@ export function ImportPlanner({
   const walletMatches =
     !!connected && connected.toLowerCase() === artistAddress.toLowerCase()
 
-  // Default all entries selected. The artist explicitly unchecks ones
-  // they want to skip — matches the "land + click" expectation in the
-  // brief better than "land + check every box".
-  const allKeys = useMemo(() => plan.ops.map(entryKey), [plan.ops])
+  // Extra ops added inline by the artist via the "Add a contract we
+  // missed" affordance at the bottom of the planner. Merged into
+  // effectiveOps so they ride the same multicall as the pre-fill
+  // selection. Stable EntryKey via the standard entryKey() helper.
+  const [extraOps, setExtraOps] = useState<CatalogOp[]>([])
+  const addExtraOp = (op: CatalogOp) => {
+    setExtraOps((prev) => {
+      const k = entryKey(op)
+      if (prev.some((p) => entryKey(p) === k)) return prev
+      return [...prev, op]
+    })
+  }
+  const removeExtraOp = (k: EntryKey) => {
+    setExtraOps((prev) => prev.filter((p) => entryKey(p) !== k))
+  }
+
+  // Default all entries selected (pre-fill + extras). The artist
+  // explicitly unchecks ones they want to skip — matches the "land +
+  // click" expectation in the brief better than "land + check every
+  // box".
+  const allKeys = useMemo(
+    () => [...plan.ops, ...extraOps].map(entryKey),
+    [plan.ops, extraOps],
+  )
   const [selected, setSelected] = useState<Set<EntryKey>>(
     () => new Set(allKeys),
   )
 
   useEffect(() => {
-    setSelected(new Set(allKeys))
+    setSelected((prev) => {
+      const next = new Set(prev)
+      for (const k of allKeys) next.add(k)
+      return next
+    })
   }, [allKeys])
 
   // Per-contract mode: "specific" (default, safe — emits the per-entry
@@ -97,7 +121,10 @@ export function ImportPlanner({
   // shared-contracts.ts) so an artist can't accidentally claim other
   // people's tokens. Mode survives re-renders but resets when the plan
   // identity changes.
-  const groupedOps = useMemo(() => groupByContract(plan.ops), [plan.ops])
+  const groupedOps = useMemo(
+    () => groupByContract([...plan.ops, ...extraOps]),
+    [plan.ops, extraOps],
+  )
   const [contractMode, setContractMode] = useState<
     Record<Address, ContractMode>
   >({})
@@ -303,6 +330,9 @@ export function ImportPlanner({
                   onToggleWholeContract={() => toggleContract(contract)}
                 />
               ))}
+              <section className="border border-gray-200 rounded-md overflow-hidden">
+                <BatchAddRow onAdd={addExtraOp} />
+              </section>
             </div>
           )
         })()
@@ -493,6 +523,198 @@ function groupByContract(
     map.get(op.contract)!.push(op)
   }
   return Array.from(map.entries()).map(([contract, ops]) => ({ contract, ops }))
+}
+
+/**
+ * Inline "add to selection" form. Lightweight version of AddEntryForm
+ * that builds a CatalogOp and hands it back to the parent instead of
+ * triggering its own chain write. Lets the artist add custom entries
+ * to the planner's batch so everything submits together via a single
+ * multicall — no separate transaction for hand-typed contracts.
+ *
+ * Just contract address + scope toggle. Validation is intentionally
+ * minimal: we accept any well-formed address. Catalog itself does no
+ * semantic checks, and adding into a multicall means a bad entry
+ * reverts the whole batch — so the existing AddEntryForm (full
+ * standalone) still exists for the case where the artist wants the
+ * preview + duplicate-guard.
+ */
+const ADDRESS_PATTERN = /^0x[a-fA-F0-9]{40}$/
+
+function BatchAddRow({
+  onAdd,
+}: {
+  onAdd: (op: CatalogOp) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [addr, setAddr] = useState("")
+  const [scope, setScope] = useState<"all" | "single" | "range">("all")
+  const [tokenInput, setTokenInput] = useState("")
+  const [err, setErr] = useState<string | null>(null)
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="w-full text-left text-sm text-gray-700 underline hover:text-gray-900 px-4 py-3"
+      >
+        + Add a contract we missed
+      </button>
+    )
+  }
+
+  function handleAdd() {
+    const c = addr.trim().toLowerCase() as Address
+    if (!ADDRESS_PATTERN.test(c)) {
+      setErr("Enter a valid contract address.")
+      return
+    }
+    if (scope === "all") {
+      onAdd({
+        kind: "addContract",
+        contract: c,
+        works: [
+          {
+            id: `manual:${c}`,
+            title: c,
+            chainId: 1,
+            contract: c,
+            claimWholeContract: true,
+          },
+        ],
+      })
+    } else if (scope === "single") {
+      const id = tokenInput.trim()
+      if (!/^\d+$/.test(id)) {
+        setErr("Enter a token ID (digits).")
+        return
+      }
+      const tokenId = BigInt(id)
+      onAdd({
+        kind: "addToken",
+        contract: c,
+        tokenId,
+        works: [
+          {
+            id: `manual:${c}:${id}`,
+            title: `#${id}`,
+            chainId: 1,
+            contract: c,
+            tokenId,
+          },
+        ],
+      })
+    } else {
+      const m = tokenInput.trim().match(/^(\d+)\s*[-–]\s*(\d+)$/)
+      if (!m) {
+        setErr("Enter a range like 1-100.")
+        return
+      }
+      const start = BigInt(m[1])
+      const end = BigInt(m[2])
+      if (end < start) {
+        setErr("Range end must be ≥ start.")
+        return
+      }
+      onAdd({
+        kind: "addTokenRange",
+        contract: c,
+        start,
+        end,
+        works: [
+          {
+            id: `manual:${c}:${start}-${end}`,
+            title: `#${start}–${end}`,
+            chainId: 1,
+            contract: c,
+            tokenIdStart: start,
+            tokenIdEnd: end,
+          },
+        ],
+      })
+    }
+    // Clear + leave open so the artist can add several without
+    // re-expanding.
+    setAddr("")
+    setTokenInput("")
+    setScope("all")
+    setErr(null)
+  }
+
+  return (
+    <div className="px-4 py-3 space-y-2 bg-gray-50/50">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold text-gray-700">
+          Add a contract we missed
+        </p>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="text-xs text-gray-500 hover:text-gray-900 underline"
+        >
+          Cancel
+        </button>
+      </div>
+      <input
+        type="text"
+        autoComplete="off"
+        spellCheck={false}
+        value={addr}
+        onChange={(e) => {
+          setAddr(e.target.value)
+          setErr(null)
+        }}
+        placeholder="0x... contract address"
+        className="w-full border border-gray-200 rounded-md px-3 py-2 font-mono text-xs focus:outline-none focus:border-gray-400"
+      />
+      <div className="flex items-center gap-2">
+        <div className="inline-flex border border-gray-200 rounded overflow-hidden text-[11px] font-mono">
+          {(["all", "single", "range"] as const).map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => {
+                setScope(s)
+                setErr(null)
+              }}
+              className={`px-2.5 py-1 transition-colors ${
+                scope === s
+                  ? "bg-gray-900 text-white"
+                  : "bg-white text-gray-600 hover:bg-gray-100"
+              } ${s !== "all" ? "border-l border-gray-200" : ""}`}
+            >
+              {s === "all"
+                ? "Whole contract"
+                : s === "single"
+                  ? "Single token"
+                  : "Token range"}
+            </button>
+          ))}
+        </div>
+        {scope !== "all" && (
+          <input
+            type="text"
+            value={tokenInput}
+            onChange={(e) => {
+              setTokenInput(e.target.value)
+              setErr(null)
+            }}
+            placeholder={scope === "single" ? "Token ID" : "1-100"}
+            className="flex-1 border border-gray-200 rounded-md px-3 py-1.5 font-mono text-xs focus:outline-none focus:border-gray-400"
+          />
+        )}
+        <button
+          type="button"
+          onClick={handleAdd}
+          className="text-xs px-3 py-1.5 bg-gray-900 text-white rounded hover:bg-gray-800"
+        >
+          Add to selection
+        </button>
+      </div>
+      {err && <p className="text-xs text-amber-700">{err}</p>}
+    </div>
+  )
 }
 
 /**
