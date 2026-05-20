@@ -649,6 +649,8 @@ type AlchemyTransfer = {
   category?: string
 }
 
+const MINTS_TO_CURSOR_SCOPE_SUFFIX = "mints-to"
+
 async function discoverMintsToArtist(args: {
   artist: Address
 }): Promise<{ rpcCalls: number; rowsWritten: number } | null> {
@@ -658,11 +660,26 @@ async function discoverMintsToArtist(args: {
 
   const { artist } = args
 
-  // Page through all NFT mints to the artist.
+  // Incremental scan: read last-checked-block cursor. On first run, start
+  // from 0 (full backfill). On subsequent runs, only query the small range
+  // since last check — usually 0-5K new blocks since previous tick.
+  // Without this, every 30-min tick re-queries from block 0 for every
+  // artist, burning ~$25/month in Alchemy CUs for what's mostly empty
+  // results.
+  const cursorScope = `${artist}:${MINTS_TO_CURSOR_SCOPE_SUFFIX}`
+  const cursorRow = (await workerSql`
+    SELECT last_block::text AS last_block FROM worker_cursors
+    WHERE task = ${TASK_NAME} AND scope = ${cursorScope} LIMIT 1
+  `) as Array<{ last_block: string }>
+  const fromBlock = cursorRow[0] ? BigInt(cursorRow[0].last_block) + 1n : 0n
+  const fromBlockHex = "0x" + fromBlock.toString(16)
+
+  // Page through new NFT mints to the artist since the cursor.
   type MintRef = { contract: string; tokenId: string; blockNum: bigint }
   const mints: MintRef[] = []
   let pageKey: string | undefined
   let rpcCalls = 0
+  let maxBlockSeen = fromBlock
   const MAX_PAGES = 50 // ~50K mints max — way beyond any realistic artist
 
   for (let page = 0; page < MAX_PAGES; page++) {
@@ -677,6 +694,7 @@ async function discoverMintsToArtist(args: {
         maxCount: "0x3e8", // 1000 per page
         withMetadata: false,
         order: "asc",
+        fromBlock: fromBlockHex,
         ...(pageKey ? { pageKey } : {}),
       }],
     }
@@ -705,6 +723,7 @@ async function discoverMintsToArtist(args: {
       const contract = t.rawContract?.address?.toLowerCase()
       if (!contract) continue
       const blockNum = t.blockNum ? BigInt(t.blockNum) : 0n
+      if (blockNum > maxBlockSeen) maxBlockSeen = blockNum
 
       if (t.category === "erc1155") {
         for (const m of t.erc1155Metadata ?? []) {
@@ -719,7 +738,23 @@ async function discoverMintsToArtist(args: {
     if (!pageKey) break
   }
 
-  if (mints.length === 0) return { rpcCalls, rowsWritten: 0 }
+  // Empty incremental tick — write cursor forward to head so we don't keep
+  // re-querying the same idle range. Use viemClient.getBlockNumber() since
+  // we already paid for trace_filter; this is in cache.
+  if (mints.length === 0) {
+    try {
+      const head = await viemClient.getBlockNumber()
+      await workerSql`
+        INSERT INTO worker_cursors (task, scope, last_block, last_run_at)
+        VALUES (${TASK_NAME}, ${cursorScope}, ${head.toString()}::bigint, NOW())
+        ON CONFLICT (task, scope) DO UPDATE SET
+          last_block = EXCLUDED.last_block, last_run_at = NOW()
+      `
+    } catch (err) {
+      console.warn(`[manifold-mints-to] ${artist}: cursor update failed ${err}`)
+    }
+    return { rpcCalls, rowsWritten: 0 }
+  }
 
   // Filter to contracts the artist is the CREATOR/OWNER of, not just a
   // recipient on. "Received a mint" alone would also catch collector
@@ -831,6 +866,22 @@ async function discoverMintsToArtist(args: {
     } catch (err) {
       console.warn(`[manifold-mints-to] ${m.contract}/${m.tokenId}: ${err}`)
     }
+  }
+
+  // Advance the cursor to head so the next tick starts at the right place.
+  // Using head (not maxBlockSeen) so that we don't re-query the entire
+  // chain even if the most-recent mint we found was historical — the
+  // important thing is that we've now SEEN every mint up to head.
+  try {
+    const head = await viemClient.getBlockNumber()
+    await workerSql`
+      INSERT INTO worker_cursors (task, scope, last_block, last_run_at)
+      VALUES (${TASK_NAME}, ${cursorScope}, ${head.toString()}::bigint, NOW())
+      ON CONFLICT (task, scope) DO UPDATE SET
+        last_block = EXCLUDED.last_block, last_run_at = NOW()
+    `
+  } catch (err) {
+    console.warn(`[manifold-mints-to] ${artist}: cursor update failed ${err}`)
   }
 
   return { rpcCalls, rowsWritten }
