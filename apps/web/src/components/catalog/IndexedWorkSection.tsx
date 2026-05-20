@@ -32,10 +32,40 @@ export function IndexedWorkSection({
   fetchError: string | null
 }) {
   const isOwner = useIsCatalogOwner(artist)
-  const [dismissed, setDismissed] = useState(false)
+  const [minimized, setMinimized] = useState(false)
   if (!isOwner) return null
   if (plan.ops.length === 0 && plan.alreadyIndexed.length === 0) return null
-  if (dismissed) return null
+
+  const indexedCount = plan.ops.reduce(
+    (n, op) =>
+      n +
+      (op.kind === "addToken"
+        ? 1
+        : op.kind === "addTokenRange"
+          ? Number(op.end - op.start + 1n)
+          : op.works.length),
+    0,
+  )
+
+  if (minimized) {
+    return (
+      <button
+        type="button"
+        onClick={() => setMinimized(false)}
+        className="w-full flex items-center justify-between border border-gray-200 rounded-md px-4 py-2.5 bg-gray-50/50 hover:bg-gray-100 text-left transition-colors"
+      >
+        <span className="text-sm">
+          <span className="font-medium">
+            Pre-fill from your indexed work
+          </span>
+          <span className="text-gray-500 ml-2">
+            {indexedCount} {indexedCount === 1 ? "entry" : "entries"} ready
+          </span>
+        </span>
+        <span className="text-xs text-gray-500 underline">Expand</span>
+      </button>
+    )
+  }
 
   return (
     <section className="border border-gray-200 rounded-md p-4 bg-gray-50/50">
@@ -52,10 +82,10 @@ export function IndexedWorkSection({
         </div>
         <button
           type="button"
-          onClick={() => setDismissed(true)}
+          onClick={() => setMinimized(true)}
           className="text-xs text-gray-500 hover:text-gray-900 underline shrink-0"
         >
-          Hide
+          Minimize
         </button>
       </header>
       <ImportPlanner
