@@ -247,21 +247,56 @@ export function ImportPlanner({
           offChain={plan.offChain.length}
         />
       ) : (
-        <div className="mt-8 space-y-6">
-          {groupedOps.map(({ contract, ops }) => (
-            <ContractGroup
-              key={contract}
-              contract={contract}
-              ops={ops}
-              selected={selected}
-              onToggle={toggle}
-              mode={contractMode[contract] ?? "specific"}
-              onModeChange={(m) => setMode(contract, m)}
-              wholeContractSelected={selectedContracts.has(contract)}
-              onToggleWholeContract={() => toggleContract(contract)}
-            />
-          ))}
-        </div>
+        (() => {
+          // Split contracts into two visual categories:
+          //   - "Whole contract" group: owner-controlled contracts (artist
+          //     deployed or owns). The claim shape is identical for every
+          //     row, so we render them as a single flat list with ONE
+          //     explanation header and tight per-row chrome (no section
+          //     box per contract, no repeating description sentence).
+          //   - Everything else: shared-platform per-token claims, plus
+          //     adapter rows that don't carry a claimWholeContract hint
+          //     (Brinkman, etc.) — keep the existing per-contract section
+          //     with the mode toggle since those rows have real choices.
+          const wholeGroups: typeof groupedOps = []
+          const otherGroups: typeof groupedOps = []
+          for (const g of groupedOps) {
+            if (isSharedContract(g.contract)) {
+              otherGroups.push(g)
+              continue
+            }
+            const allWorks = g.ops.flatMap((op) => op.works)
+            const allClaim =
+              allWorks.length > 0 &&
+              allWorks.every((w) => w.claimWholeContract === true)
+            if (allClaim) wholeGroups.push(g)
+            else otherGroups.push(g)
+          }
+          return (
+            <div className="mt-8 space-y-6">
+              {wholeGroups.length > 0 && (
+                <WholeContractsList
+                  groups={wholeGroups}
+                  selectedContracts={selectedContracts}
+                  onToggleContract={toggleContract}
+                />
+              )}
+              {otherGroups.map(({ contract, ops }) => (
+                <ContractGroup
+                  key={contract}
+                  contract={contract}
+                  ops={ops}
+                  selected={selected}
+                  onToggle={toggle}
+                  mode={contractMode[contract] ?? "specific"}
+                  onModeChange={(m) => setMode(contract, m)}
+                  wholeContractSelected={selectedContracts.has(contract)}
+                  onToggleWholeContract={() => toggleContract(contract)}
+                />
+              ))}
+            </div>
+          )
+        })()
       )}
 
       <OffChainNotice offChain={plan.offChain} />
@@ -449,6 +484,93 @@ function groupByContract(
     map.get(op.contract)!.push(op)
   }
   return Array.from(map.entries()).map(([contract, ops]) => ({ contract, ops }))
+}
+
+/**
+ * Single-section render for owner-controlled contracts.
+ *
+ * Each owner-controlled contract has the same claim shape (addContract
+ * — claims everything past + future), so showing a separate section
+ * box per contract with the same explanation sentence on every row is
+ * just noise when the artist has 10+ collections. Render the whole
+ * group as one flat list with ONE explanation header and tight rows.
+ *
+ * Per-row content is the minimum needed for the artist to recognize +
+ * decide: checkbox, thumbnail, collection name, address. No mode
+ * toggle (it's whole-only), no body description (it's in the header).
+ */
+function WholeContractsList({
+  groups,
+  selectedContracts,
+  onToggleContract,
+}: {
+  groups: Array<{ contract: Address; ops: CatalogOp[] }>
+  selectedContracts: Set<Address>
+  onToggleContract: (contract: Address) => void
+}) {
+  const total = groups.length
+  const selectedCount = groups.filter((g) => selectedContracts.has(g.contract)).length
+  return (
+    <section className="border border-gray-200 rounded-md overflow-hidden">
+      <header className="bg-gray-50 border-b border-gray-200 px-4 py-3">
+        <div className="flex items-baseline justify-between gap-4">
+          <h3 className="text-sm font-semibold">Your collections</h3>
+          <span className="text-xs text-gray-500 font-mono">
+            {selectedCount}/{total} selected
+          </span>
+        </div>
+        <p className="text-xs text-gray-500 mt-1">
+          One <code className="font-mono">addContract</code> call per row —
+          claims the entire contract, every existing token and every
+          future mint. Uncheck any you don&rsquo;t want.
+        </p>
+      </header>
+      <ul className="divide-y divide-gray-100">
+        {groups.map(({ contract, ops }) => {
+          const allWorks = ops.flatMap((op) => op.works)
+          const firstImage = allWorks.find((w) => w.imageUrl)
+          const name =
+            allWorks.find((w) => w.collectionName)?.collectionName ?? null
+          const isSelected = selectedContracts.has(contract)
+          return (
+            <li key={contract}>
+              <label className="flex items-center gap-4 px-4 py-3 hover:bg-gray-50 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => onToggleContract(contract)}
+                  className="h-4 w-4 accent-emerald-600"
+                />
+                <div className="h-10 w-10 shrink-0 bg-gray-100 rounded overflow-hidden relative">
+                  {firstImage?.imageUrl && (
+                    <Thumb
+                      src={firstImage.imageUrl}
+                      fallback={firstImage.imageFallbackUrl}
+                      alt=""
+                    />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  {name ? (
+                    <>
+                      <p className="text-sm font-medium truncate">{name}</p>
+                      <p className="font-mono text-[11px] text-gray-500 truncate">
+                        {contract}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="font-mono text-xs text-gray-700 truncate">
+                      {contract}
+                    </p>
+                  )}
+                </div>
+              </label>
+            </li>
+          )
+        })}
+      </ul>
+    </section>
+  )
 }
 
 function ContractGroup({
