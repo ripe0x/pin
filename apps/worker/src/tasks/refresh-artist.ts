@@ -10,7 +10,8 @@ import { sql } from "../db.ts"
 import { client } from "../rpc.ts"
 import { scanArtistTokensViaTransferFromZero } from "../scanners/transfer-from-zero.ts"
 import { scanErc1155MintsFromZero } from "../scanners/erc1155-mints.ts"
-import { scanManifoldArtistTokens } from "../scanners/manifold.ts"
+import { scanManifoldArtistTokens, discoverMintsToArtist } from "../scanners/manifold.ts"
+import type { Address } from "viem"
 
 export async function refreshArtist(address: string): Promise<void> {
   const lower = address.toLowerCase()
@@ -78,7 +79,13 @@ export async function refreshArtist(address: string): Promise<void> {
         })
       }
     }),
-    // Manifold (no Ponder discovery; full per-artist scan)
+    // Manifold scheduled flow (Path A trace_filter + per-contract scans).
     scanManifoldArtistTokens(lower),
+    // Manifold Path B (mints-to-artist). Intentionally NOT in the
+    // scheduled scan-manifold task — only fires on artist-triggered
+    // refresh and on first-time-known-artists onboarding. Catches new
+    // contracts the artist starts using as recipient (Manifold Studio,
+    // collabs) that Path A misses.
+    discoverMintsToArtist({ artist: lower as Address }),
   ])
 }
