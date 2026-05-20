@@ -507,11 +507,16 @@ function ContractGroup({
           )}
           <p className="text-xs text-gray-500 mt-0.5">
             {mode === "whole" && showWholeOption ? (
-              <>{total} indexed for you (contract may have more)</>
+              // Whole-contract mode: count is intentionally absent here
+              // — addContract claims the entire contract regardless of
+              // how many tokens we've indexed, and saying "N indexed"
+              // implies the contract HAS N tokens, which is usually
+              // wrong (we typically only see the mints-to-artist subset
+              // for owner-controlled contracts).
+              <>Full contract</>
             ) : (
               <>
-                {ops.length} {pluralize("entry", "entries", ops.length)} ·{" "}
-                {total} {pluralize("token", "tokens", total)} indexed ·{" "}
+                {total} of your works indexed ·{" "}
                 {selectedCount} selected
               </>
             )}
