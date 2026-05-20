@@ -475,23 +475,46 @@ function ContractGroup({
   const shared = isSharedContract(contract)
   const sharedInfo = sharedContractInfo(contract)
   const showWholeOption = !shared
+  const collectionName = ops
+    .flatMap((op) => op.works)
+    .find((w) => w.collectionName)?.collectionName
 
   return (
     <section className="border border-gray-200 rounded-md overflow-hidden">
       <header className="flex items-start justify-between bg-gray-50 border-b border-gray-200 px-4 py-3 gap-4">
         <div className="min-w-0 flex-1">
-          <a
-            href={`https://evm.now/address/${contract}?chainId=1`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-mono text-xs text-gray-700 hover:text-gray-900 underline break-all"
-          >
-            {contract}
-          </a>
+          {collectionName ? (
+            <>
+              <p className="text-sm font-semibold truncate">{collectionName}</p>
+              <a
+                href={`https://evm.now/address/${contract}?chainId=1`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-mono text-[11px] text-gray-500 hover:text-gray-900 underline break-all"
+              >
+                {contract}
+              </a>
+            </>
+          ) : (
+            <a
+              href={`https://evm.now/address/${contract}?chainId=1`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono text-xs text-gray-700 hover:text-gray-900 underline break-all"
+            >
+              {contract}
+            </a>
+          )}
           <p className="text-xs text-gray-500 mt-0.5">
-            {ops.length} {pluralize("entry", "entries", ops.length)} · {total}{" "}
-            {pluralize("token", "tokens", total)}
-            {mode === "specific" && <> · {selectedCount} selected</>}
+            {mode === "whole" && showWholeOption ? (
+              <>{total} indexed for you (contract may have more)</>
+            ) : (
+              <>
+                {ops.length} {pluralize("entry", "entries", ops.length)} ·{" "}
+                {total} {pluralize("token", "tokens", total)} indexed ·{" "}
+                {selectedCount} selected
+              </>
+            )}
             {sharedInfo && (
               <>
                 {" "}· <span className="text-amber-700">{sharedInfo.platform}</span>
@@ -592,9 +615,7 @@ function ModeRadio({
 }
 
 function WholeContractRow({
-  contract,
   ops,
-  total,
   selected,
   onToggle,
 }: {
@@ -606,11 +627,6 @@ function WholeContractRow({
 }) {
   const allWorks = ops.flatMap((op) => op.works)
   const firstWorkWithImage = allWorks.find((w) => w.imageUrl)
-  // Prefer a contract-level name supplied by the adapter; otherwise show
-  // the contract address. Tokens within a contract usually share a
-  // title prefix (e.g. "O.P.P. 4", "O.P.P. 5") so the collection name
-  // dramatically improves scannability vs a raw 0xab8089… string.
-  const collectionName = allWorks.find((w) => w.collectionName)?.collectionName
   return (
     <label className="flex items-center gap-4 px-4 py-3 hover:bg-gray-50 cursor-pointer">
       <input
@@ -628,18 +644,11 @@ function WholeContractRow({
           />
         )}
       </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium">
-          {collectionName ?? "Register the full contract"}
-        </p>
-        <p className="text-xs text-gray-500 mt-0.5">
-          <span className="font-mono">{contract.slice(0, 10)}…</span>
-          {" · "}
-          Claims this entire contract — every token on it now (whoever
-          holds it) and every future mint. We&rsquo;ve indexed {total}{" "}
-          of them for you so far; the contract may have more.
-        </p>
-      </div>
+      <p className="min-w-0 flex-1 text-xs text-gray-500">
+        Claims the entire contract — every existing token (whoever holds
+        it) and every future mint, in one{" "}
+        <code className="font-mono">addContract</code> call.
+      </p>
       <span className="shrink-0 text-[10px] uppercase font-mono tracking-wider px-2 py-0.5 rounded bg-gray-50 text-gray-600 border border-gray-200">
         contract
       </span>
