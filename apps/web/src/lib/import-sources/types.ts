@@ -56,9 +56,15 @@ export type SkippedWork = {
 }
 
 export type ImportSource = {
+  /**
+   * Stable identifier for the source itself, independent of artist
+   * (`"brinkman"`, `"pnd-indexed"`). Used as the `?source=` query-param
+   * value so the page can disambiguate when multiple sources apply.
+   */
+  id: string
   /** The artist's on-chain address. URL key + Catalog.sol authority. */
   artistAddress: Address
-  /** Human-readable name for UI ("Bryan Brinkman"). */
+  /** Human-readable name for UI ("Bryan Brinkman", "Indexed by pnd"). */
   displayName: string
   /** Link back to the artist's own registry page for credit. */
   sourceUrl: string
