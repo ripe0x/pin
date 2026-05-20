@@ -635,10 +635,9 @@ function WholeContractRow({
         <p className="text-xs text-gray-500 mt-0.5">
           <span className="font-mono">{contract.slice(0, 10)}…</span>
           {" · "}
-          Claims all {total} {pluralize("token", "tokens", total)} + any
-          future mints on this contract. Replaces {ops.length}{" "}
-          {pluralize("per-token entry", "per-token entries", ops.length)} with
-          a single <code className="font-mono">addContract</code> call.
+          Claims this entire contract — every token on it now (whoever
+          holds it) and every future mint. We&rsquo;ve indexed {total}{" "}
+          of them for you so far; the contract may have more.
         </p>
       </div>
       <span className="shrink-0 text-[10px] uppercase font-mono tracking-wider px-2 py-0.5 rounded bg-gray-50 text-gray-600 border border-gray-200">
