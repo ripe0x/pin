@@ -108,6 +108,15 @@ async function fetchPndIndexedWorks(
     [lower],
   )) as Row[]
 
+  // Per-contract fallback collection name: if neither manifold_contracts
+  // nor contract_identity gives us a name, derive one from the longest
+  // common prefix of the per-token titles in that contract. Many older
+  // Manifold deployments don't implement `name()` (revert) but the
+  // token-metadata names follow a consistent pattern like
+  // "O.P.P. 4" / "O.P.P. 5" / "O.P.P. 6" — the shared prefix IS the
+  // collection name. Computed once per contract, attached to each row.
+  const derivedByContract = deriveCollectionNames(rows)
+
   const works: RawWork[] = rows.map((r) => {
     const tokenId = BigInt(r.token_id)
     const primary = r.image_url ?? undefined
@@ -134,13 +143,66 @@ async function fetchPndIndexedWorks(
       // contract). See ARTIST_OWNED_PLATFORMS above for the gate.
       claimWholeContract: ARTIST_OWNED_PLATFORMS.has(r.platform),
       collectionName:
-        r.collection_name && r.collection_name.trim()
-          ? r.collection_name
-          : undefined,
+        (r.collection_name && r.collection_name.trim()) ||
+        derivedByContract.get(r.contract) ||
+        undefined,
     }
   })
 
   return { works, skipped: [] }
+}
+
+/**
+ * Per-contract heuristic: if every token in the contract shares a title
+ * prefix, return that prefix (trimmed of trailing punctuation/numbers)
+ * as the inferred collection name. Returns an empty map entry when the
+ * inferred name is too short or all-numeric.
+ *
+ * Examples:
+ *   "O.P.P. 4" / "O.P.P. 5" / "O.P.P. 6"     → "O.P.P."
+ *   "afterglow" / "afterglow"                 → "afterglow"
+ *   "Token #1" / "Token #2"                   → "Token"
+ *   "Sunset" / "Mountain"                     → (no common prefix)
+ *   "#1" / "#2"                               → (numeric-only, skipped)
+ */
+function deriveCollectionNames(rows: Row[]): Map<string, string> {
+  const byContract = new Map<string, string[]>()
+  for (const r of rows) {
+    if (!r.name || !r.name.trim()) continue
+    const list = byContract.get(r.contract) ?? []
+    list.push(r.name)
+    byContract.set(r.contract, list)
+  }
+  const out = new Map<string, string>()
+  for (const [contract, titles] of byContract) {
+    if (titles.length < 2) {
+      // Single token: use the title as-is only if it's non-numeric.
+      const t = titles[0].trim()
+      if (t && !/^#?\d+$/.test(t)) out.set(contract, t)
+      continue
+    }
+    let prefix = titles[0]
+    for (let i = 1; i < titles.length && prefix.length > 0; i++) {
+      const other = titles[i]
+      let j = 0
+      while (
+        j < prefix.length &&
+        j < other.length &&
+        prefix[j] === other[j]
+      ) {
+        j++
+      }
+      prefix = prefix.slice(0, j)
+    }
+    // Strip trailing whitespace, separators, '#', and digits.
+    const cleaned = prefix.replace(/[\s#\-–·.:_]+\d*\s*$/, "").trim()
+    // Reject tiny or all-numeric prefixes that aren't recognizable
+    // collection names.
+    if (cleaned.length >= 2 && !/^#?\d+$/.test(cleaned)) {
+      out.set(contract, cleaned)
+    }
+  }
+  return out
 }
 
 function isIpfsLike(v: string | undefined): v is string {
