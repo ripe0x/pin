@@ -117,6 +117,20 @@ async function fetchPndIndexedWorks(
   // collection name. Computed once per contract, attached to each row.
   const derivedByContract = deriveCollectionNames(rows)
 
+  // Total token count per owner-controlled contract. Fetched once per
+  // contract via Alchemy's getContractMetadata. The artist who deploys
+  // a 1,139-token contract sees "1,139 tokens" instead of the
+  // misleading "28 indexed for you" subset. Page-level revalidate=60
+  // amortizes these calls.
+  const ownedContracts = Array.from(
+    new Set(
+      rows
+        .filter((r) => ARTIST_OWNED_PLATFORMS.has(r.platform))
+        .map((r) => r.contract),
+    ),
+  )
+  const totalSupplyByContract = await fetchContractTotalSupplies(ownedContracts)
+
   const works: RawWork[] = rows.map((r) => {
     const tokenId = BigInt(r.token_id)
     const primary = r.image_url ?? undefined
@@ -146,10 +160,46 @@ async function fetchPndIndexedWorks(
         (r.collection_name && r.collection_name.trim()) ||
         derivedByContract.get(r.contract) ||
         undefined,
+      contractTotalSupply: totalSupplyByContract.get(r.contract),
     }
   })
 
   return { works, skipped: [] }
+}
+
+/**
+ * Fetch totalSupply per contract via Alchemy's getContractMetadata.
+ * Parallelized, errors swallowed (missing entries → undefined in map).
+ * Caller wraps this in the page-level revalidate=60 so each contract
+ * is fetched at most once per minute.
+ */
+async function fetchContractTotalSupplies(
+  contracts: string[],
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>()
+  if (contracts.length === 0) return out
+  const key = process.env.ALCHEMY_API_KEY
+  if (!key || key.startsWith("set-")) return out
+
+  await Promise.all(
+    contracts.map(async (contract) => {
+      try {
+        const res = await fetch(
+          `https://eth-mainnet.g.alchemy.com/nft/v3/${key}/getContractMetadata?contractAddress=${contract}`,
+          { signal: AbortSignal.timeout(8_000) },
+        )
+        if (!res.ok) return
+        const data = (await res.json()) as { totalSupply?: string | number }
+        const raw = data.totalSupply
+        if (raw === undefined || raw === null) return
+        const n = typeof raw === "string" ? parseInt(raw, 10) : raw
+        if (Number.isFinite(n) && n > 0) out.set(contract, n)
+      } catch {
+        // swallow; row falls back to no count
+      }
+    }),
+  )
+  return out
 }
 
 /**

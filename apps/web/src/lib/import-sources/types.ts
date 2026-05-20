@@ -54,6 +54,14 @@ export type RawWork = {
    * metadata can leave this undefined.
    */
   collectionName?: string
+  /**
+   * Total token count on the contract, regardless of who holds them.
+   * Used in the planner to show "1,139 tokens" on a whole-contract row,
+   * vs the misleading "28 indexed for you" which is just the mints-to-
+   * artist subset. Optional — adapter sets it when known (typically via
+   * a getContractMetadata call); planner falls back to omitting.
+   */
+  contractTotalSupply?: number
 }
 
 /**

@@ -200,6 +200,10 @@ async function RecordBody({ address }: { address: Address }) {
 
       <AddEntrySection
         artist={address}
+        prefillPanelPresent={
+          !!indexedPlan &&
+          (indexedPlan.ops.length > 0 || indexedPlan.alreadyIndexed.length > 0)
+        }
         existing={{
           contracts: record.contracts.map((c) => c.toLowerCase()),
           tokens: record.tokens.map((t) => ({
