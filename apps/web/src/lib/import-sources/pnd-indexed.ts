@@ -38,7 +38,25 @@ type Row = {
   name: string | null
   image_url: string | null
   raw_uri: string | null
+  collection_name: string | null
 }
+
+/**
+ * Platforms where the artist deployed (or owns) the underlying contract.
+ * For these, "this whole contract is mine" is the right default for
+ * Catalog import: one `addContract` write, claims all current + future
+ * tokens.
+ *
+ * Excluded: 'fnd-shared' + 'srv2-shared' — those are platform-wide
+ * contracts where many artists co-exist; the artist owns the TOKEN but
+ * not the CONTRACT. Per-token addToken is the only safe op.
+ */
+const ARTIST_OWNED_PLATFORMS = new Set([
+  "manifold",
+  "mint",
+  "fnd-collection",
+  "tl",
+])
 
 export function pndIndexedSource(artist: Address): ImportSource {
   const lower = artist.toLowerCase() as Address
@@ -58,7 +76,11 @@ async function fetchPndIndexedWorks(
   const lower = artist.toLowerCase()
 
   // UNION the worker-owned artist_tokens with the two Ponder shared-
-  // platform tables, then LEFT JOIN token_metadata for display fields.
+  // platform tables, then LEFT JOIN token_metadata for display fields
+  // and manifold_contracts for the collection-level name (only present
+  // for manifold-platform contracts; other artist-owned platforms
+  // currently have no per-contract name source — adapter falls back to
+  // contract_identity if available later, undefined for now).
   // Stable ORDER so the planner preview is deterministic between
   // reloads.
   const rows = (await sql.unsafe(
@@ -73,10 +95,15 @@ async function fetchPndIndexedWorks(
        FROM ${INDEXER_SCHEMA}.srv2_artist_tokens WHERE lower(creator) = $1
      )
      SELECT src.contract, src.token_id, src.platform,
-            m.name, m.image_url, m.raw_uri
+            m.name, m.image_url, m.raw_uri,
+            COALESCE(mc.collection_name, ci.name) AS collection_name
      FROM src
      LEFT JOIN token_metadata m
        ON m.contract = src.contract AND m.token_id = src.token_id
+     LEFT JOIN manifold_contracts mc
+       ON mc.artist = $1 AND mc.contract = src.contract
+     LEFT JOIN contract_identity ci
+       ON ci.address = src.contract
      ORDER BY src.contract, src.token_id`,
     [lower],
   )) as Row[]
@@ -102,6 +129,14 @@ async function fetchPndIndexedWorks(
       tokenId,
       imageUrl: primary,
       imageFallbackUrl: fallback,
+      // Artist-owned platforms get the "claim whole contract" default.
+      // Shared platforms stay per-token (artist owns the token, not the
+      // contract). See ARTIST_OWNED_PLATFORMS above for the gate.
+      claimWholeContract: ARTIST_OWNED_PLATFORMS.has(r.platform),
+      collectionName:
+        r.collection_name && r.collection_name.trim()
+          ? r.collection_name
+          : undefined,
     }
   })
 

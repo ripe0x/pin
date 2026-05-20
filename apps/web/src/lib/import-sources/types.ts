@@ -33,6 +33,27 @@ export type RawWork = {
    */
   imageFallbackUrl?: string
   externalUrl?: string
+  /**
+   * Hint from the source that this work lives on a contract the artist
+   * fully controls — typically `contract.owner() == artist`, established
+   * by Path B (mints-to-artist) at indexing time. When true, the planner
+   * defaults the per-contract toggle to "whole contract" mode so the
+   * artist registers the entire collection in a single Catalog write
+   * instead of N per-token writes. Artist can still flip to per-token
+   * mode in the UI if they want fine-grained selection.
+   *
+   * Adapters that aren't confident the artist owns the contract should
+   * leave this undefined; the planner falls back to per-token mode.
+   */
+  claimWholeContract?: boolean
+  /**
+   * Display name for the contract itself (collection name), distinct
+   * from the per-token title. Surfaced in the "Register the full
+   * contract" row in the planner so the artist sees "O.P.P." instead of
+   * just the contract address. Adapters that don't have collection-level
+   * metadata can leave this undefined.
+   */
+  collectionName?: string
 }
 
 /**

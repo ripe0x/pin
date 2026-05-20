@@ -101,9 +101,22 @@ export function ImportPlanner({
   const [contractMode, setContractMode] = useState<
     Record<Address, ContractMode>
   >({})
+  // Default per-contract mode: "whole" when EVERY underlying work for
+  // that contract carries `claimWholeContract: true` (signaled by the
+  // adapter when the artist owns the contract). Shared-platform
+  // contracts and any contract with mixed signals stay in "specific"
+  // mode. Re-evaluated whenever the plan identity changes.
   useEffect(() => {
-    setContractMode({})
-  }, [plan.ops])
+    const next: Record<Address, ContractMode> = {}
+    for (const { contract, ops } of groupedOps) {
+      if (isSharedContract(contract)) continue
+      const allWorks = ops.flatMap((op) => op.works)
+      if (allWorks.length === 0) continue
+      const allClaim = allWorks.every((w) => w.claimWholeContract === true)
+      if (allClaim) next[contract] = "whole"
+    }
+    setContractMode(next)
+  }, [groupedOps])
 
   const setMode = (contract: Address, mode: ContractMode) => {
     setContractMode((prev) => ({ ...prev, [contract]: mode }))
@@ -543,9 +556,13 @@ function WholeContractRow({
   ops: CatalogOp[]
   total: number
 }) {
-  const firstWorkWithImage = ops
-    .flatMap((op) => op.works)
-    .find((w) => w.imageUrl)
+  const allWorks = ops.flatMap((op) => op.works)
+  const firstWorkWithImage = allWorks.find((w) => w.imageUrl)
+  // Prefer a contract-level name supplied by the adapter; otherwise show
+  // the contract address. Tokens within a contract usually share a
+  // title prefix (e.g. "O.P.P. 4", "O.P.P. 5") so the collection name
+  // dramatically improves scannability vs a raw 0xab8089… string.
+  const collectionName = allWorks.find((w) => w.collectionName)?.collectionName
   return (
     <div className="px-4 py-3">
       <div className="flex items-center gap-4">
@@ -559,15 +576,16 @@ function WholeContractRow({
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium">Register the full contract</p>
+          <p className="text-sm font-medium">
+            {collectionName ?? "Register the full contract"}
+          </p>
           <p className="text-xs text-gray-500 mt-0.5">
-            Claims all current ({total} {pluralize("token", "tokens", total)}{" "}
-            in your registry) AND any future tokens minted on{" "}
-            <span className="font-mono">{contract.slice(0, 10)}…</span>.
-            Replaces the {ops.length}{" "}
-            {pluralize("specific entry", "specific entries", ops.length)} for
-            this contract with a single <code className="font-mono">addContract</code>{" "}
-            call.
+            <span className="font-mono">{contract.slice(0, 10)}…</span>
+            {" · "}
+            Claims all {total} {pluralize("token", "tokens", total)} + any
+            future mints on this contract. Replaces {ops.length}{" "}
+            {pluralize("per-token entry", "per-token entries", ops.length)} with
+            a single <code className="font-mono">addContract</code> call.
           </p>
         </div>
         <span className="shrink-0 text-[10px] uppercase font-mono tracking-wider px-2 py-0.5 rounded bg-gray-50 text-gray-600 border border-gray-200">
