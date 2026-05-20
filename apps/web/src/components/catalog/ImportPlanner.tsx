@@ -475,9 +475,20 @@ function ContractGroup({
   const shared = isSharedContract(contract)
   const sharedInfo = sharedContractInfo(contract)
   const showWholeOption = !shared
-  const collectionName = ops
-    .flatMap((op) => op.works)
-    .find((w) => w.collectionName)?.collectionName
+  // Hide the per-token mode toggle when the contract is owner-controlled
+  // (adapter signaled claimWholeContract on every work). For those, the
+  // addContract claim is the natural correct action and per-token mode
+  // is a false choice: the visible "X of N indexed" count is just our
+  // mints-to-artist subset, not the artist's full creation set, so
+  // exposing it would let the artist pick from a misleading menu.
+  // Specific-token curation (disavow individual tokens) is an exception
+  // case handled by post-add Catalog editing, not by this importer.
+  const allWorks = ops.flatMap((op) => op.works)
+  const allClaimWhole =
+    allWorks.length > 0 &&
+    allWorks.every((w) => w.claimWholeContract === true)
+  const showSpecificOption = shared || !allClaimWhole
+  const collectionName = allWorks.find((w) => w.collectionName)?.collectionName
 
   return (
     <section className="border border-gray-200 rounded-md overflow-hidden">
@@ -531,6 +542,7 @@ function ContractGroup({
           mode={mode}
           onChange={onModeChange}
           showWholeOption={showWholeOption}
+          showSpecificOption={showSpecificOption}
           sharedPlatform={sharedInfo?.platform ?? null}
         />
       </header>
@@ -569,13 +581,16 @@ function ModeRadio({
   mode,
   onChange,
   showWholeOption,
+  showSpecificOption,
   sharedPlatform,
 }: {
   mode: ContractMode
   onChange: (mode: ContractMode) => void
   showWholeOption: boolean
+  showSpecificOption: boolean
   sharedPlatform: string | null
 }) {
+  // Shared platforms: only per-token mode makes sense.
   if (!showWholeOption) {
     return (
       <span
@@ -587,6 +602,18 @@ function ModeRadio({
         }
       >
         Specific only ({sharedPlatform ?? "shared"})
+      </span>
+    )
+  }
+  // Owner-controlled contracts: only whole-contract mode. Render as a
+  // static label, not a toggle — there's no decision to make.
+  if (!showSpecificOption) {
+    return (
+      <span
+        className="shrink-0 text-[10px] uppercase font-mono tracking-wider px-2 py-1 rounded border border-gray-200 bg-gray-900 text-white"
+        title="You own this contract. addContract is the correct claim — the whole collection, every existing and future token."
+      >
+        Full contract
       </span>
     )
   }
