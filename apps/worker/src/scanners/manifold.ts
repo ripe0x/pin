@@ -103,21 +103,26 @@ export async function scanManifoldArtistTokens(
   let rowsWritten = 0
 
   // Discovery path A: find contracts the artist deployed via trace_filter.
-  // Catches own Creator Core deployments.
+  // Catches own Creator Core deployments. Runs scheduled every tick — it's
+  // cheap (drpc-free, cursored, only walks new blocks).
   const discoverResult = await discoverDeployedContracts(artist, traceClient)
   rpcCalls += discoverResult.rpcCalls
   const deployed = discoverResult.contracts
 
-  // Discovery path B: find tokens minted TO the artist on contracts the
-  // artist did NOT deploy (collab contracts, shared platforms, contracts
-  // a deployer-contract created on the artist's behalf). Catches everything
-  // path A misses. Alchemy-only — falls back to the trace path when
-  // Alchemy isn't configured.
-  const mintsResult = await discoverMintsToArtist({ artist })
-  if (mintsResult) {
-    rpcCalls += mintsResult.rpcCalls
-    rowsWritten += mintsResult.rowsWritten
-  }
+  // Path B (mints-to-artist) is INTENTIONALLY NOT run from the scheduled
+  // task. It's the expensive Alchemy-only path and the only thing it
+  // catches that scheduled scans don't is new CONTRACTS the artist
+  // starts using as recipient (Manifold Studio deploys, collab adds).
+  // Those are artist-initiated actions, so artist-triggered refresh is
+  // the right cadence. See refreshArtist() and seedKnownArtists() for
+  // the two places it actually fires:
+  //   - refreshArtist: artist clicks 'refresh' on their page
+  //   - seedKnownArtists: one-shot welcome scan for newly-discovered artists
+  //
+  // Steady-state: scheduled scan-manifold makes ~1 trace_filter call per
+  // artist per tick (cheap, drpc-free) instead of additionally firing
+  // Path B's getAssetTransfers (Alchemy CUs every tick for every artist
+  // even when idle).
 
   const cached = (await workerSql`
     SELECT lower(contract) AS contract, is_creator_core, is_erc721, is_erc1155, collection_name
@@ -651,7 +656,20 @@ type AlchemyTransfer = {
 
 const MINTS_TO_CURSOR_SCOPE_SUFFIX = "mints-to"
 
-async function discoverMintsToArtist(args: {
+/**
+ * Discovery path B: tokens minted TO the artist on contracts they didn't
+ * deploy via their own EOA. Catches Manifold Studio deploys, collab
+ * contracts, and other artist-as-recipient patterns that Path A's
+ * trace_filter discovery misses.
+ *
+ * Alchemy-only. Returns null when Alchemy isn't configured.
+ *
+ * NOT called from the scheduled scan-manifold task — it's only fired by
+ * (a) `refreshArtist()` (artist-triggered) and (b) `seedKnownArtists()`
+ * for newly-added artists. See the doc comment in scanManifoldArtistTokens
+ * for the rationale.
+ */
+export async function discoverMintsToArtist(args: {
   artist: Address
 }): Promise<{ rpcCalls: number; rowsWritten: number } | null> {
   if (!workerSql) return null
