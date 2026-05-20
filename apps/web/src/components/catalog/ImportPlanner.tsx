@@ -592,38 +592,48 @@ function WholeContractsList({
                 className="h-4 w-4 accent-emerald-600 cursor-pointer"
                 onClick={(e) => e.stopPropagation()}
               />
+              {/*
+               * Layout: image | (name over address-link) | total-count.
+               * Image + name area is the click-target that toggles the
+               * row's checkbox. The address is a real anchor inside the
+               * name block so the artist can click it to verify on
+               * evm.now without toggling (stopPropagation).
+               */}
               <button
                 type="button"
                 onClick={() => toggleOne(contract)}
-                className="flex flex-1 min-w-0 items-center gap-4 cursor-pointer text-left"
+                className="h-10 w-10 shrink-0 bg-gray-100 rounded overflow-hidden relative cursor-pointer"
+                aria-label={`Toggle ${name ?? contract}`}
               >
-                <div className="h-10 w-10 shrink-0 bg-gray-100 rounded overflow-hidden relative">
-                  {firstImage?.imageUrl && (
-                    <Thumb
-                      src={firstImage.imageUrl}
-                      fallback={firstImage.imageFallbackUrl}
-                      alt=""
-                    />
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  {name ? (
-                    <p className="text-sm font-medium truncate">{name}</p>
-                  ) : null}
-                </div>
+                {firstImage?.imageUrl && (
+                  <Thumb
+                    src={firstImage.imageUrl}
+                    fallback={firstImage.imageFallbackUrl}
+                    alt=""
+                  />
+                )}
               </button>
-              {/* Address as a real link (outside the toggle button so the
-                  artist can click through to confirm without toggling). */}
-              <a
-                href={`https://evm.now/address/${contract}?chainId=1`}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="font-mono text-[11px] text-gray-500 hover:text-gray-900 underline shrink-0"
-              >
-                {contract.slice(0, 6)}…{contract.slice(-4)}
-              </a>
-              <span className="shrink-0 text-xs text-gray-500 tabular-nums w-20 text-right">
+              <div className="min-w-0 flex-1">
+                {name ? (
+                  <button
+                    type="button"
+                    onClick={() => toggleOne(contract)}
+                    className="block text-left text-sm font-medium truncate w-full cursor-pointer hover:underline"
+                  >
+                    {name}
+                  </button>
+                ) : null}
+                <a
+                  href={`https://evm.now/address/${contract}?chainId=1`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="font-mono text-[11px] text-gray-500 hover:text-gray-900 underline truncate block"
+                >
+                  {contract}
+                </a>
+              </div>
+              <span className="shrink-0 text-xs text-gray-500 tabular-nums">
                 {totalSupply !== undefined
                   ? `${totalSupply.toLocaleString()} ${totalSupply === 1 ? "token" : "tokens"}`
                   : ""}
@@ -745,31 +755,36 @@ function SharedTokensList({
                     <button
                       type="button"
                       onClick={() => onToggle(k)}
-                      className="flex flex-1 min-w-0 items-center gap-4 cursor-pointer text-left"
+                      className="h-10 w-10 shrink-0 bg-gray-100 rounded overflow-hidden relative cursor-pointer"
+                      aria-label={`Toggle ${work?.title ?? tokenIdLabel}`}
                     >
-                      <div className="h-10 w-10 shrink-0 bg-gray-100 rounded overflow-hidden relative">
-                        {work?.imageUrl && (
-                          <Thumb
-                            src={work.imageUrl}
-                            fallback={work.imageFallbackUrl}
-                            alt=""
-                          />
-                        )}
-                      </div>
-                      <p className="min-w-0 flex-1 text-sm truncate">
-                        {work?.title || tokenIdLabel}
-                      </p>
+                      {work?.imageUrl && (
+                        <Thumb
+                          src={work.imageUrl}
+                          fallback={work.imageFallbackUrl}
+                          alt=""
+                        />
+                      )}
                     </button>
-                    <a
-                      href={`https://evm.now/address/${contract}?chainId=1`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      className="font-mono text-[11px] text-gray-500 hover:text-gray-900 underline shrink-0"
-                    >
-                      {contract.slice(0, 6)}…{contract.slice(-4)}
-                    </a>
-                    <span className="shrink-0 text-xs text-gray-500 font-mono tabular-nums w-20 text-right">
+                    <div className="min-w-0 flex-1">
+                      <button
+                        type="button"
+                        onClick={() => onToggle(k)}
+                        className="block text-left text-sm truncate w-full cursor-pointer hover:underline"
+                      >
+                        {work?.title || tokenIdLabel}
+                      </button>
+                      <a
+                        href={`https://evm.now/address/${contract}?chainId=1`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="font-mono text-[11px] text-gray-500 hover:text-gray-900 underline truncate block"
+                      >
+                        {contract}
+                      </a>
+                    </div>
+                    <span className="shrink-0 text-xs text-gray-500 font-mono tabular-nums">
                       {tokenIdLabel}
                     </span>
                   </li>
