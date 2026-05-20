@@ -27,6 +27,9 @@ import { CatalogContractsEditable } from "@/components/catalog/CatalogContractsE
 import { CatalogTokensEditable } from "@/components/catalog/CatalogTokensEditable"
 import { CatalogRangesEditable } from "@/components/catalog/CatalogRangesEditable"
 import { EditModeIndicator } from "@/components/catalog/EditModeIndicator"
+import { IndexedWorkSection } from "@/components/catalog/IndexedWorkSection"
+import { pndIndexedSource } from "@/lib/import-sources/pnd-indexed"
+import { normalize } from "@/lib/import-sources/normalize"
 
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/
 
@@ -111,6 +114,37 @@ async function RecordBody({ address }: { address: Address }) {
     getArtistIdentity(address),
     getCachedCatalog(address.toLowerCase()),
   ])
+
+  // Pre-seed plan from PND's indexed work. Fetched server-side so the
+  // empty-state check ("does this artist have anything we could
+  // pre-fill?") doesn't require a client round-trip. The IndexedWorkSection
+  // component itself gates rendering on (a) wallet ownership matches
+  // and (b) plan is non-empty.
+  let indexedPlan: ReturnType<typeof normalize> | null = null
+  let indexedPlanError: string | null = null
+  try {
+    const source = pndIndexedSource(address)
+    const fetched = await source.fetchWorks()
+    indexedPlan = normalize(
+      fetched.works,
+      {
+        contracts: record.contracts.map((c) => c.toLowerCase() as Address),
+        tokens: record.tokens.map((t) => ({
+          contractAddress: t.contractAddress.toLowerCase() as Address,
+          tokenId: t.tokenId,
+        })),
+        tokenRanges: record.tokenRanges.map((r) => ({
+          contractAddress: r.contractAddress.toLowerCase() as Address,
+          startTokenId: r.startTokenId,
+          endTokenId: r.endTokenId,
+        })),
+      },
+      fetched.skipped,
+    )
+  } catch (e) {
+    indexedPlanError =
+      e instanceof Error ? e.message : "Failed to load indexed work."
+  }
   const empty =
     record.contracts.length === 0 &&
     record.tokens.length === 0 &&
@@ -153,6 +187,14 @@ async function RecordBody({ address }: { address: Address }) {
           contracts={record.contracts.length}
           tokens={record.tokens.length}
           ranges={record.tokenRanges.length}
+        />
+      )}
+
+      {indexedPlan && (
+        <IndexedWorkSection
+          artist={address}
+          plan={indexedPlan}
+          fetchError={indexedPlanError}
         />
       )}
 
