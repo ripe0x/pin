@@ -38,26 +38,24 @@ type Props = {
 export function BidForm({ houseAddress, auctionId, initial, ensMap }: Props) {
   const { address: connected, isConnected } = useAccount()
 
+  // No `initialData` here on purpose: seeding the query with the
+  // server-rendered tuple makes react-query treat it as already-fetched and
+  // it can stick on that stale seed (e.g. a bid placed after the page's last
+  // ISR revalidation would never flip "awaiting first bid" → "live"). We let
+  // the live read be the single source of truth and fall back to the server
+  // `initial.*` values below only until the first fetch resolves.
   const auctionRead = useReadContract({
     address: houseAddress,
     abi: sovereignAuctionHouseAbi,
     functionName: "auctions",
     args: [BigInt(auctionId)],
     query: {
-      initialData: [
-        0n,
-        ZERO_ADDRESS as Address,
-        BigInt(initial.firstBidTime),
-        BigInt(initial.amount),
-        BigInt(initial.reservePrice),
-        initial.tokenOwner,
-        BigInt(initial.endTime),
-        initial.bidder,
-        0n,
-      ] as readonly [
-        bigint, Address, bigint, bigint, bigint, Address, bigint, Address, bigint,
-      ],
       refetchInterval: 12_000,
+      // Keep polling while the tab is backgrounded — during the wallet
+      // popup / tx confirmation the tab loses focus, and without this the
+      // 12s interval pauses, so a freshly placed bid wouldn't reflect until
+      // the user refocused. One extra poll during an active bid is cheap.
+      refetchIntervalInBackground: true,
     },
   })
 
@@ -76,7 +74,7 @@ export function BidForm({ houseAddress, auctionId, initial, ensMap }: Props) {
     abi: sovereignAuctionHouseAbi,
     functionName: "getMinBidAmount",
     args: [BigInt(auctionId)],
-    query: { refetchInterval: 12_000 },
+    query: { refetchInterval: 12_000, refetchIntervalInBackground: true },
   })
   const minBidWei =
     (minBidRead.data as readonly [boolean, bigint] | undefined)?.[1] ??
