@@ -51,6 +51,19 @@ const getTokenPageData = cache(async (handle: string, tokenId: string) => {
     ? ipfsToHttp(meta.animation_url)
     : null
 
+  // Verification links: the canonical metadata source (tokenURI) and the
+  // artwork, resolved to an HTTP gateway. `data:` URIs are inline JSON with
+  // nothing external to open, so skip the metadata link for those.
+  const metadataSourceUrl =
+    meta?.rawUri && !meta.rawUri.startsWith("data:")
+      ? ipfsToHttp(meta.rawUri)
+      : null
+  const artworkSourceUrl = meta?.animation_url
+    ? ipfsToHttp(meta.animation_url)
+    : meta?.image
+      ? ipfsToHttp(meta.image)
+      : null
+
   const isErc1155 = !!erc1155 && erc1155.transfers.length > 0
   const creator = (onChainData?.creator || erc1155?.creator) ?? ""
   const owner = onChainData?.owner ?? "" // n/a for ERC1155
@@ -101,6 +114,8 @@ const getTokenPageData = cache(async (handle: string, tokenId: string) => {
     tokenId,
     imageUrl,
     animationUrl,
+    metadataSourceUrl,
+    artworkSourceUrl,
     provenance,
     isErc1155,
     edition: isErc1155 ? erc1155!.totalSupply : null,
@@ -353,6 +368,38 @@ export default async function TokenPage({
               <dd className="text-[10px] font-mono">{data.tokenId}</dd>
             </dl>
           </section>
+
+          {/* Source / verification links — open the canonical on-chain
+              metadata and artwork so anyone can verify the record. */}
+          {(data.metadataSourceUrl || data.artworkSourceUrl) && (
+            <section className="pt-5">
+              <h3 className="text-[10px] font-mono font-medium uppercase tracking-wider text-gray-400 mb-3">
+                Source
+              </h3>
+              <div className="flex flex-col gap-2">
+                {data.metadataSourceUrl && (
+                  <a
+                    href={data.metadataSourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] font-mono hover:underline"
+                  >
+                    Metadata ↗
+                  </a>
+                )}
+                {data.artworkSourceUrl && (
+                  <a
+                    href={data.artworkSourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] font-mono hover:underline"
+                  >
+                    Artwork ↗
+                  </a>
+                )}
+              </div>
+            </section>
+          )}
         </aside>
       </div>
 

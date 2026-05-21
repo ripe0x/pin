@@ -73,6 +73,8 @@ export type DirectTokenMetadata = {
   description: string | null
   image: string | null
   animation_url: string | null
+  /** Canonical tokenURI the metadata came from (for "verify source" links). */
+  rawUri: string | null
 }
 
 export async function resolveTokenMetadataDirect(
@@ -83,7 +85,7 @@ export async function resolveTokenMetadataDirect(
 
   // Check the table first — covers the common case.
   const rows = (await sql`
-    SELECT name, description, image_url, animation_url
+    SELECT name, description, image_url, animation_url, raw_uri
     FROM token_metadata
     WHERE contract = ${contract.toLowerCase()} AND token_id = ${tokenId}
     LIMIT 1
@@ -92,6 +94,7 @@ export async function resolveTokenMetadataDirect(
     description: string | null
     image_url: string | null
     animation_url: string | null
+    raw_uri: string | null
   }>
   if (rows.length > 0) {
     return {
@@ -99,6 +102,7 @@ export async function resolveTokenMetadataDirect(
       description: rows[0].description,
       image: rows[0].image_url,
       animation_url: rows[0].animation_url,
+      rawUri: rows[0].raw_uri,
     }
   }
 
@@ -114,17 +118,18 @@ export async function resolveTokenMetadataDirect(
         (${contract.toLowerCase()}, ${tokenId},
          ${meta?.name ?? null}, ${meta?.description ?? null},
          ${meta?.image ?? null}, ${meta?.animation_url ?? null},
-         null, NOW())
+         ${meta?.uri ?? null}, NOW())
       ON CONFLICT (contract, token_id) DO UPDATE SET
         name = EXCLUDED.name, description = EXCLUDED.description,
         image_url = EXCLUDED.image_url, animation_url = EXCLUDED.animation_url,
-        raw_uri = EXCLUDED.raw_uri, fetched_at = NOW()
+        raw_uri = COALESCE(EXCLUDED.raw_uri, token_metadata.raw_uri), fetched_at = NOW()
     `
     return {
       name: meta?.name ?? null,
       description: meta?.description ?? null,
       image: meta?.image ?? null,
       animation_url: meta?.animation_url ?? null,
+      rawUri: meta?.uri ?? null,
     }
   } catch {
     return null

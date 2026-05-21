@@ -35,6 +35,10 @@ export type TokenMetadata = {
   /** Some metadata schemas embed a separate animation/video URL alongside
    * the still image. Token pages prefer this over `image` when present. */
   animation_url?: string
+  /** The resolved tokenURI the metadata was fetched from (after `{id}`
+   * substitution). Persisted as `raw_uri` so the UI can link to the
+   * canonical source for verification. Omitted for inline `data:` URIs. */
+  uri?: string
 }
 
 /**
@@ -111,7 +115,7 @@ export async function resolveTokenMetadata(
       if (!contentType.includes("json") && !contentType.includes("text/plain")) {
         return null
       }
-      return (await res.json()) as TokenMetadata
+      return { ...((await res.json()) as TokenMetadata), uri: resolvedUri }
     } catch {
       return null
     }
@@ -130,7 +134,7 @@ export async function resolveTokenMetadata(
       if (!contentType.includes("json") && !contentType.includes("text/plain")) {
         return null
       }
-      return (await res.json()) as TokenMetadata
+      return { ...((await res.json()) as TokenMetadata), uri: resolvedUri }
     } catch {
       return null
     }
@@ -144,7 +148,7 @@ export async function resolveTokenMetadata(
     if (!contentType.includes("json") && !contentType.includes("text/plain")) {
       return null
     }
-    return (await res.json()) as TokenMetadata
+    return { ...((await res.json()) as TokenMetadata), uri: resolvedUri }
   } catch {
     return null
   }
