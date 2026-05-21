@@ -253,12 +253,17 @@ test("range trimmed to single → emits addToken not addTokenRange", () => {
   }
 })
 
-test("output is sorted by contract for stable UI grouping", () => {
+test("preserves source input order of contracts (adapter controls ordering)", () => {
+  // normalize() no longer imposes an alphabetical sort on contracts —
+  // adapters (e.g. pnd-indexed orders by recency-of-first-mint DESC)
+  // get to decide the order. Within a contract, range-before-single
+  // and token-id ascending still apply.
   const w1 = work({ id: "b", contract: C2, tokenId: 1n })
   const w2 = work({ id: "a", contract: C1, tokenId: 1n })
   const plan = normalize([w1, w2], EMPTY)
-  assert.equal(plan.ops[0].contract, C1)
-  assert.equal(plan.ops[1].contract, C2)
+  // C2 was first in input → first in output, regardless of alpha order.
+  assert.equal(plan.ops[0].contract, C2)
+  assert.equal(plan.ops[1].contract, C1)
 })
 
 test("intra-list duplicates collapse into a single op", () => {
