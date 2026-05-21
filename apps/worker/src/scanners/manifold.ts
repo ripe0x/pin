@@ -35,6 +35,25 @@ import {
 } from "viem"
 import { resolveNewTokenOwner } from "./resolve-owner.ts"
 
+/**
+ * Alchemy returns a "#<tokenId>" placeholder name when it can't resolve a
+ * token's metadata (e.g. ipns:// tokenURIs it doesn't follow). Persisting
+ * that placeholder is harmful: it looks broken in the UI, it blocks
+ * warm-metadata's own resolver (which only re-resolves rows with a NULL
+ * name), and the COALESCE upsert below would re-clobber a real name on
+ * every rescan. Treat such placeholders as "no name" so the dedicated
+ * metadata resolver wins and its result sticks.
+ */
+function realName(
+  name: string | null | undefined,
+  tokenId: string,
+): string | null {
+  if (!name) return null
+  const n = name.trim()
+  if (n === "" || n === `#${tokenId}` || n === tokenId) return null
+  return n
+}
+
 const CREATOR_CORE_V1_INTERFACE = "0x28f10a21" as const
 const ERC721_INTERFACE = "0x80ac58cd" as const
 const ERC1155_INTERFACE = "0xd9b67a26" as const
@@ -549,7 +568,7 @@ async function tryAlchemyFastBackfill(args: {
               (contract, token_id, name, description, image_url, animation_url, raw_uri, fetched_at)
             VALUES
               (${contract}, ${tokenId},
-               ${nft.name ?? null}, ${nft.description ?? null},
+               ${realName(nft.name, tokenId)}, ${nft.description ?? null},
                ${imageUrl}, ${animationUrl}, ${nft.tokenUri ?? null}, NOW())
             ON CONFLICT (contract, token_id) DO UPDATE SET
               name = COALESCE(EXCLUDED.name, token_metadata.name),
@@ -868,7 +887,7 @@ export async function discoverMintsToArtist(args: {
               (contract, token_id, name, description, image_url, animation_url, raw_uri, fetched_at)
             VALUES
               (${m.contract}, ${m.tokenId},
-               ${meta.name ?? null}, ${meta.description ?? null},
+               ${realName(meta.name, m.tokenId)}, ${meta.description ?? null},
                ${imageUrl}, ${animationUrl}, ${meta.tokenUri ?? null}, NOW())
             ON CONFLICT (contract, token_id) DO UPDATE SET
               name = COALESCE(EXCLUDED.name, token_metadata.name),
