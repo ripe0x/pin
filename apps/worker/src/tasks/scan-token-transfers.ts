@@ -34,8 +34,16 @@ const MAX_CHUNKS_PER_CONTRACT = 10n
 const TASK = "scan-token-transfers"
 
 async function getContracts(): Promise<string[]> {
+  // Exclude shared-platform contracts (Foundation shared 1/1, SR V2
+  // shared). Those are single high-volume contracts shared by thousands
+  // of artists — scanning every Transfer on them to find our handful of
+  // known-artist tokens would be the exact unbounded scan v2 is built to
+  // avoid. Owner for those tokens is resolved inline at mint-discovery
+  // time (resolveNewTokenOwner); per-token transfer history isn't worth
+  // a full-contract scan.
   const rows = (await sql`
     SELECT DISTINCT lower(contract) AS contract FROM artist_tokens
+    WHERE platform NOT IN ('fnd-shared', 'srv2-shared')
   `) as Array<{ contract: string }>
   return rows.map((r) => r.contract)
 }

@@ -18,6 +18,7 @@ import { warmContractIdentity } from "./tasks/warm-contract-identity.ts"
 import { warmEns } from "./tasks/warm-ens.ts"
 import { warmMetadata } from "./tasks/warm-metadata.ts"
 import { scanFndCollections } from "./tasks/scan-fnd-collections.ts"
+import { scanFndShared } from "./tasks/scan-fnd-shared.ts"
 import { scanMintClones } from "./tasks/scan-mint-clones.ts"
 import { scanTlClones } from "./tasks/scan-tl-clones.ts"
 import { scanManifold } from "./tasks/scan-manifold.ts"
@@ -34,6 +35,7 @@ type TaskName =
   | "warm-ens"
   | "warm-metadata"
   | "scan-fnd-collections"
+  | "scan-fnd-shared"
   | "scan-mint-clones"
   | "scan-tl-clones"
   | "scan-manifold"
@@ -63,6 +65,7 @@ const tasks: Task[] = [
   { name: "warm-ens",              intervalMs: 10 * MIN, fn: warmEns,              dependsOnPonder: true },
   { name: "warm-metadata",         intervalMs: 1  * MIN, fn: warmMetadata },
   { name: "scan-fnd-collections",  intervalMs: 10 * MIN, fn: scanFndCollections,   dependsOnPonder: true },
+  { name: "scan-fnd-shared",       intervalMs: 10 * MIN, fn: scanFndShared,        dependsOnPonder: true },
   { name: "scan-mint-clones",      intervalMs: 10 * MIN, fn: scanMintClones,       dependsOnPonder: true },
   { name: "scan-tl-clones",        intervalMs: 10 * MIN, fn: scanTlClones,         dependsOnPonder: true },
   { name: "scan-manifold",         intervalMs: 30 * MIN, fn: scanManifold,         dependsOnPonder: true },
