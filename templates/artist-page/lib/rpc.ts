@@ -76,29 +76,39 @@ export function getClient() {
   return _client
 }
 
-// Initial chunk size for `getLogs`. 5M blocks fits the entire post-factory
-// window of any Sovereign-related scan in one RPC call on
-// PublicNode/drpc/Alchemy/LlamaRPC. Cloudflare caps at 1024 blocks and
-// will reject; we shrink-and-retry below.
-const INITIAL_CHUNK = 5_000_000n
-// The smallest chunk we'll bother with before giving up. 1024 matches
-// Cloudflare's documented cap.
-const MIN_CHUNK = 1024n
+// Initial chunk size for `getLogs`. Public RPCs cap the `eth_getLogs` block
+// range far more tightly than they used to — observed live caps: PublicNode
+// 50k, drpc free tier 10k, Cloudflare 800. Starting at 45k keeps the common
+// path (PublicNode primary) to a single query per window with no wasted
+// oversized first attempt; if a smaller-capped provider answers, we shrink.
+const INITIAL_CHUNK = 45_000n
+// The smallest chunk we'll bother with before giving up. Kept below
+// Cloudflare's ~800-block cap so even the stingiest provider can answer.
+const MIN_CHUNK = 500n
 // Stop range-too-large detection from running forever on a wedge.
 const MAX_CHUNK_SHRINK_ATTEMPTS = 8
 
 /**
  * Heuristic: does this error look like the RPC complaining the block
  * range is too wide? Different providers phrase it differently — match
- * loosely on common substrings.
+ * loosely on common substrings. Observed messages:
+ *   PublicNode: "exceed maximum block range: 50000"
+ *   drpc:       "ranges over 10000 blocks are not supported on freetier"
+ *   Cloudflare: "range too large. Max range: 800"
+ *   Alchemy:    "Log response size exceeded" / "query returned more than 10000 results"
  */
 function isRangeTooLarge(err: unknown): boolean {
   const msg = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase()
   return (
     msg.includes("block range") ||
+    msg.includes("maximum block range") ||
     msg.includes("range is too") ||
     msg.includes("range too") ||
+    msg.includes("max range") ||
+    msg.includes("ranges over") ||
+    msg.includes("are not supported") ||
     msg.includes("limit exceeded") ||
+    msg.includes("response size") ||
     msg.includes("query returned more than") ||
     msg.includes("more than 10000")
   )
@@ -131,10 +141,13 @@ export async function getLogsChunked<TEvent extends AbiEvent>(
   let chunk = INITIAL_CHUNK
 
   while (cursor <= toBlock) {
-    const end = cursor + chunk - 1n > toBlock ? toBlock : cursor + chunk - 1n
+    // `end` is derived from the *current* chunk size and is recomputed
+    // whenever we shrink — otherwise a "range too large" retry would
+    // re-issue the identical oversized query and fail forever.
+    let end = cursor + chunk - 1n > toBlock ? toBlock : cursor + chunk - 1n
     let attempt = 0
     let succeeded = false
-    while (attempt < MAX_CHUNK_SHRINK_ATTEMPTS && !succeeded) {
+    while (!succeeded) {
       try {
         // viem types `getLogs` with a complex generic; the runtime accepts
         // these args fine but the type narrowing across our generic event
@@ -149,9 +162,15 @@ export async function getLogsChunked<TEvent extends AbiEvent>(
         ;(all as unknown as unknown[]).push(...(logs as unknown as unknown[]))
         succeeded = true
       } catch (err) {
-        if (isRangeTooLarge(err) && chunk > MIN_CHUNK) {
-          // Halve and retry the same window with a smaller chunk size.
+        if (
+          isRangeTooLarge(err) &&
+          chunk > MIN_CHUNK &&
+          attempt < MAX_CHUNK_SHRINK_ATTEMPTS
+        ) {
+          // Halve the chunk AND narrow `end` to match, then retry the now
+          // smaller window from the same cursor.
           chunk = chunk / 2n > MIN_CHUNK ? chunk / 2n : MIN_CHUNK
+          end = cursor + chunk - 1n > toBlock ? toBlock : cursor + chunk - 1n
           attempt++
           continue
         }
