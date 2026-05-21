@@ -68,6 +68,20 @@ export async function scanErc1155MintsFromZero(
       ? head
       : cursor + MAX_BLOCKS_PER_SCAN
 
+    // Resolve block timestamps once per distinct block, so mint-history rows
+    // carry real dates. Deduped + throttled; bounded by the number of distinct
+    // mint blocks in the window (small — editions mint rarely).
+    const blockTime = new Map<bigint, bigint>()
+    const blockTimeFor = async (bn: bigint): Promise<bigint> => {
+      const cached = blockTime.get(bn)
+      if (cached !== undefined) return cached
+      await throttleRpc()
+      const blk = await client.getBlock({ blockNumber: bn })
+      rpcCalls += 1
+      blockTime.set(bn, blk.timestamp)
+      return blk.timestamp
+    }
+
     // TransferSingle batch
     await throttleRpc()
     const singles = await client.getLogs({
@@ -91,6 +105,20 @@ export async function scanErc1155MintsFromZero(
         ON CONFLICT (contract, token_id) DO NOTHING
       `
       rowsWritten += 1
+      // Mint-history row. ERC-1155 editions mint the same tokenId multiple
+      // times, so this is one row per mint event (PK includes log_index), not
+      // deduped by tokenId — that's what drives edition supply (Σ amount) and
+      // the mint timeline. value is the number of copies minted.
+      const ts = await blockTimeFor(log.blockNumber!)
+      await sql`
+        INSERT INTO token_1155_mints
+          (contract, token_id, to_addr, amount, block_number, block_time, tx_hash, log_index)
+        VALUES
+          (${contract}, ${tokenId}, ${(log.args.to as string).toLowerCase()},
+           ${(log.args.value as bigint).toString()}, ${log.blockNumber!.toString()}::bigint,
+           ${ts.toString()}::bigint, ${log.transactionHash!}, ${log.logIndex!})
+        ON CONFLICT (tx_hash, log_index, token_id) DO NOTHING
+      `
       await resolveNewTokenOwner({ sql, client, contract, tokenId })
       rpcCalls += 1
     }
@@ -108,8 +136,10 @@ export async function scanErc1155MintsFromZero(
 
     for (const log of batches) {
       const ids = (log.args.ids ?? []) as readonly bigint[]
-      for (const id of ids) {
-        const tokenId = id.toString()
+      const values = (log.args.values ?? []) as readonly bigint[]
+      const ts = ids.length > 0 ? await blockTimeFor(log.blockNumber!) : 0n
+      for (let i = 0; i < ids.length; i++) {
+        const tokenId = ids[i].toString()
         await sql`
           INSERT INTO artist_tokens
             (artist, contract, token_id, platform, mint_block, mint_log_index, first_seen_at)
@@ -119,6 +149,16 @@ export async function scanErc1155MintsFromZero(
           ON CONFLICT (contract, token_id) DO NOTHING
         `
         rowsWritten += 1
+        // One mint-history row per id in the batch. ids[i] ↔ values[i].
+        await sql`
+          INSERT INTO token_1155_mints
+            (contract, token_id, to_addr, amount, block_number, block_time, tx_hash, log_index)
+          VALUES
+            (${contract}, ${tokenId}, ${(log.args.to as string).toLowerCase()},
+             ${(values[i] ?? 0n).toString()}, ${log.blockNumber!.toString()}::bigint,
+             ${ts.toString()}::bigint, ${log.transactionHash!}, ${log.logIndex!})
+          ON CONFLICT (tx_hash, log_index, token_id) DO NOTHING
+        `
       }
     }
 
