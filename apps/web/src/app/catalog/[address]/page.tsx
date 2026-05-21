@@ -19,7 +19,14 @@ import { RefreshButton } from "@/components/catalog/RefreshButton"
  * `revalidateTag("catalog")` from `/api/catalog/[address]/revalidate`,
  * which evicts every ISR entry that touched `getCachedCatalog`.
  */
-export const revalidate = 60
+// 1 hour. Catalog records change rarely (artist-initiated edits) and
+// every write fires revalidateTag("catalog") for instant freshness, so
+// this timer is only a backstop. A short timer would needlessly
+// re-run the page's server work (pnd-indexed plan + per-contract
+// Alchemy getContractMetadata calls + DB connections) every minute for
+// data that's effectively static between edits. No live-auction data
+// lives on this page, so the long timer costs nothing in freshness.
+export const revalidate = 3600
 import { AddressZorb } from "@/components/AddressZorb"
 import { CatalogSummary } from "@/components/catalog/CatalogSummary"
 import { AddEntrySection } from "@/components/catalog/AddEntrySection"
