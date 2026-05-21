@@ -16,7 +16,7 @@
  */
 import type { Address, PublicClient } from "viem"
 import { erc721Abi } from "@pin/abi"
-import { extractCid, fetchFromIpfs } from "@pin/shared"
+import { extractCid, fetchFromIpfs, extractIpnsPath, fetchFromIpns } from "@pin/shared"
 
 const erc1155UriAbi = [
   {
@@ -97,6 +97,24 @@ export async function resolveTokenMetadata(
     Accept: "application/json",
     "User-Agent":
       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+  }
+
+  // IPNS URI — mutable name pointer. Node's fetch can't speak the `ipns:`
+  // protocol, and extractCid won't find a CID, so route it through an
+  // IPNS-capable gateway. The resolved JSON may itself embed `ipns://`
+  // media URLs; those are converted at render time by `ipfsToHttp`.
+  const ipnsPath = extractIpnsPath(resolvedUri)
+  if (ipnsPath) {
+    try {
+      const res = await fetchFromIpns(ipnsPath, { headers, cache: "no-store" })
+      const contentType = res.headers.get("content-type") ?? ""
+      if (!contentType.includes("json") && !contentType.includes("text/plain")) {
+        return null
+      }
+      return (await res.json()) as TokenMetadata
+    } catch {
+      return null
+    }
   }
 
   const cid = extractCid(resolvedUri)
