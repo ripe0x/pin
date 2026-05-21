@@ -62,8 +62,9 @@ export function ArtistGallery({
   // a CDN cache-key bug serving the same page twice).
   //
   // Sort: works currently in a Sovereign auction cluster at the top in
-  // active → ending → listed order, then everything else in the original
-  // discovery order. Stable within each bucket.
+  // active → ending → listed order, then everything else. Within every
+  // bucket, newest mint first (discovery order from `ORDER BY mint_block
+  // DESC`).
   const items = useMemo<GalleryItem[]>(() => {
     const seen = new Set<string>()
     const deduped = (data?.pages ?? [])
@@ -85,12 +86,8 @@ export function ArtistGallery({
       .sort((a, b) => {
         const r = bucketRank(a.item) - bucketRank(b.item)
         if (r !== 0) return r
-        if (a.item.auction && b.item.auction) {
-          return (
-            Number(a.item.auction.endTime || 0) -
-            Number(b.item.auction.endTime || 0)
-          )
-        }
+        // Within a bucket, preserve discovery order, which is mint-recency
+        // (newest first) from the `ORDER BY mint_block DESC` query.
         return a.idx - b.idx
       })
       .map((entry) => entry.item)
