@@ -5,4 +5,8 @@ export {
   ipfsToGatewayUrl,
   fetchFromIpfs,
   IPFS_GATEWAYS,
+  extractIpnsPath,
+  ipnsToGatewayUrl,
+  fetchFromIpns,
+  IPNS_GATEWAYS,
 } from "./ipfs.ts"
