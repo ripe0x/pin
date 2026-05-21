@@ -232,8 +232,10 @@ export default async function TokenPage({
   }
 
   return (
-    <div className="mx-auto max-w-[2000px]">
-      {/* Desktop: 2/3 sticky artwork + 1/3 scrolling sidebar. Mobile: stacked. */}
+    <div>
+      {/* Desktop: 2/3 sticky artwork + 1/3 scrolling sidebar. Mobile: stacked.
+          Full-bleed (no max-width) so the gray artwork field always runs to
+          the left edge of the viewport. */}
       <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] min-h-[calc(100vh-64px)]">
         {/* Left: sticky artwork */}
         <div className="lg:sticky lg:top-16 lg:h-[calc(100vh-64px)] flex items-center justify-center bg-gray-100 dark:bg-bg p-8 lg:p-12">
@@ -338,10 +340,14 @@ export default async function TokenPage({
             )
           )}
 
-          {/* Provenance */}
-          <section className="py-5 border-b border-gray-100">
-            <Provenance entries={data.provenance} />
-          </section>
+          {/* Provenance — only when there's history. `Provenance` itself
+              renders nothing for an empty list, so without this guard the
+              section's padding + border-b leave an empty bordered band. */}
+          {data.provenance.length > 0 && (
+            <section className="py-5 border-b border-gray-100">
+              <Provenance entries={data.provenance} />
+            </section>
+          )}
 
           {/* Contract info */}
           <section className="pt-5">
