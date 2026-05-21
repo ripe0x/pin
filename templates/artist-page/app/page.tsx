@@ -17,6 +17,34 @@ const BUCKET_RANK: Record<ReturnType<typeof bucketFor>, number> = {
   cancelled: 4,
 }
 
+/**
+ * Collapse the grid to one card per token. A token can have many auctions
+ * over its life (listed, cancelled, relisted, sold), but the gallery should
+ * show each work once. Among a token's auctions we keep the most relevant by
+ * bucket rank (active → ending → listed → settled → cancelled), breaking ties
+ * with the newest auctionId. Tokens whose only auctions were cancelled are
+ * dropped entirely — a listing that was created and cancelled isn't a work to
+ * showcase. The full auction list is preserved elsewhere (getAuctionById), so
+ * direct links to any auction, including cancelled ones, still resolve.
+ */
+function dedupeByToken(auctions: AuctionSummary[]): AuctionSummary[] {
+  const best = new Map<string, AuctionSummary>()
+  for (const a of auctions) {
+    const key = `${a.tokenContract.toLowerCase()}:${a.tokenId}`
+    const cur = best.get(key)
+    if (!cur) {
+      best.set(key, a)
+      continue
+    }
+    const ra = BUCKET_RANK[bucketFor(a)]
+    const rc = BUCKET_RANK[bucketFor(cur)]
+    if (ra < rc || (ra === rc && Number(a.auctionId) > Number(cur.auctionId))) {
+      best.set(key, a)
+    }
+  }
+  return [...best.values()].filter((a) => bucketFor(a) !== "cancelled")
+}
+
 function compareAuctions(a: AuctionSummary, b: AuctionSummary): number {
   const ra = BUCKET_RANK[bucketFor(a)]
   const rb = BUCKET_RANK[bucketFor(b)]
@@ -36,8 +64,9 @@ export default async function HomePage() {
     getArtistHouse(),
   ])
 
-  const sorted = [...auctions].sort(compareAuctions)
-  const activeCount = auctions.filter((a) => {
+  const unique = dedupeByToken(auctions)
+  const sorted = [...unique].sort(compareAuctions)
+  const activeCount = unique.filter((a) => {
     const b = bucketFor(a)
     return b === "active" || b === "ending"
   }).length
@@ -45,7 +74,7 @@ export default async function HomePage() {
   return (
     <div className="mx-auto max-w-[2000px] px-6 py-12 space-y-12">
       <ArtistHero
-        totalAuctions={auctions.length}
+        totalAuctions={unique.length}
         activeAuctions={activeCount}
       />
 
