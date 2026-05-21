@@ -28,6 +28,7 @@ import { refreshArtist } from "./tasks/refresh-artist.ts"
 import { scan1155Stats } from "./tasks/scan-1155-stats.ts"
 import { scanSrv2ActiveAuctions } from "./tasks/scan-srv2-active-auctions.ts"
 import { scanTlActiveAuctions } from "./tasks/scan-tl-active-auctions.ts"
+import { scanPndAuctionTokens } from "./tasks/scan-pnd-auction-tokens.ts"
 
 type TaskName =
   | "seed-known-artists"
@@ -43,6 +44,7 @@ type TaskName =
   | "scan-1155-stats"
   | "scan-srv2-active-auctions"
   | "scan-tl-active-auctions"
+  | "scan-pnd-auction-tokens"
   | "ponder-drift-check"
 
 export type TaskResult = {
@@ -73,6 +75,7 @@ const tasks: Task[] = [
   { name: "scan-1155-stats",           intervalMs: 30 * MIN, fn: scan1155Stats },
   { name: "scan-srv2-active-auctions", intervalMs: 5  * MIN, fn: scanSrv2ActiveAuctions },
   { name: "scan-tl-active-auctions",   intervalMs: 5  * MIN, fn: scanTlActiveAuctions },
+  { name: "scan-pnd-auction-tokens",   intervalMs: 15 * MIN, fn: scanPndAuctionTokens, dependsOnPonder: true },
   { name: "ponder-drift-check",        intervalMs: 60 * MIN, fn: ponderDriftCheck },
 ]
 
