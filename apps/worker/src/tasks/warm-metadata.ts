@@ -99,7 +99,7 @@ async function processOne(c: Candidate): Promise<"resolved" | "empty"> {
         (${c.contract}, ${c.tokenId},
          ${meta?.name ?? null}, ${meta?.description ?? null},
          ${meta?.image ?? null}, ${meta?.animation_url ?? null},
-         null, NOW())
+         ${meta?.uri ?? null}, NOW())
       ON CONFLICT (contract, token_id) DO UPDATE SET
         name = EXCLUDED.name, description = EXCLUDED.description,
         image_url = EXCLUDED.image_url, animation_url = EXCLUDED.animation_url,
