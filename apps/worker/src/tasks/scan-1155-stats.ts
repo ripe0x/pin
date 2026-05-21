@@ -77,7 +77,20 @@ export async function scan1155Stats(): Promise<TaskResult> {
   for (let i = 0; i < candidates.length; i++) {
     const c = candidates[i]
     const r = results[i]
-    const supply = r.status === "success" ? (r.result as bigint) : 0n
+    // Prefer event-derived supply: Σ minted value from token_1155_mints,
+    // which the mint-clone scanner records per mint event. The on-chain
+    // totalSupply(id) reverts on Mint protocol contracts (no ERC1155Supply),
+    // so the eth_call only serves as a fallback for contracts that do
+    // implement it (e.g. Manifold ERC1155Supply) and whose mints we haven't
+    // recorded in token_1155_mints.
+    const mintedRow = (await sql`
+      SELECT COALESCE(SUM(amount::numeric), 0)::text AS minted
+      FROM token_1155_mints
+      WHERE contract = ${c.contract} AND token_id = ${c.tokenId}
+    `) as Array<{ minted: string }>
+    const minted = BigInt(mintedRow[0]?.minted ?? "0")
+    const ethCallSupply = r.status === "success" ? (r.result as bigint) : 0n
+    const supply = minted > 0n ? minted : ethCallSupply
     await sql`
       INSERT INTO token_1155_stats
         (contract, token_id, total_supply, owner_count, fetched_at)

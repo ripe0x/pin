@@ -325,12 +325,39 @@ export async function getErc1155TokenStats(
     LIMIT 1
   `) as Array<{ total_supply: string; owner_count: number }>
   if (rows.length === 0) return null
+
+  // Mint history — one row per mint event, recorded by the worker's
+  // mint-clone scanner. from is always the zero address (these are mints),
+  // which the token page renders as a "Minted" provenance entry.
+  const mints = (await sql`
+    SELECT to_addr,
+           amount,
+           block_number::text AS block_number,
+           block_time::text   AS block_time,
+           tx_hash
+    FROM token_1155_mints
+    WHERE contract = ${contract.toLowerCase()} AND token_id = ${tokenId}
+    ORDER BY block_number DESC, log_index DESC
+    LIMIT 50
+  `) as Array<{
+    to_addr: string
+    amount: string
+    block_number: string
+    block_time: string | null
+    tx_hash: string
+  }>
+
   return {
     totalSupply: BigInt(rows[0].total_supply),
     ownerCount: rows[0].owner_count,
-    // transfers + creator stay in the type for v1 call-site
-    // compatibility; v2 doesn't surface them on the token page header.
-    transfers: [],
+    transfers: mints.map((m) => ({
+      from: "0x0000000000000000000000000000000000000000",
+      to: m.to_addr,
+      blockNumber: BigInt(m.block_number),
+      timestamp: m.block_time ? Number(m.block_time) : 0,
+      txHash: m.tx_hash,
+      amount: BigInt(m.amount),
+    })),
     creator: null,
   }
 }
