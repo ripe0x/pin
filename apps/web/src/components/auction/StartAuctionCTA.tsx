@@ -69,8 +69,13 @@ function StartAuctionCTAClient({
 
   if (!isCurrentOwner || !houseAddress) return null
 
+  // Own the section chrome here rather than in the page. The component
+  // returns null in every non-owner / pre-mount case, so wrapping the
+  // <section> at the page level produced an empty bordered band for every
+  // viewer who isn't the current owner. Rendering it here means no band
+  // unless the CTA actually has something to show.
   return (
-    <>
+    <section className="py-5 border-b border-gray-100">
       <button
         onClick={() => setShowModal(true)}
         className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 border border-gray-200 hover:border-gray-400 transition-colors"
@@ -86,6 +91,6 @@ function StartAuctionCTAClient({
           onClose={() => setShowModal(false)}
         />
       )}
-    </>
+    </section>
   )
 }

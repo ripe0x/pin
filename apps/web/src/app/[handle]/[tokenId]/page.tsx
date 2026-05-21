@@ -64,7 +64,11 @@ const getTokenPageData = cache(async (handle: string, tokenId: string) => {
       ? ipfsToHttp(meta.image)
       : null
 
-  const isErc1155 = !!erc1155 && erc1155.transfers.length > 0
+  // A token is ERC1155 if the indexer has 1155 stats for it. The old check
+  // also required `transfers.length > 0`, but the v2 stats reader always
+  // returns `transfers: []`, so it was never true — 1155 tokens fell through
+  // to the ERC721 path (no edition grid, spurious start-auction CTA).
+  const isErc1155 = !!erc1155
   const creator = (onChainData?.creator || erc1155?.creator) ?? ""
   const owner = onChainData?.owner ?? "" // n/a for ERC1155
 
@@ -292,14 +296,16 @@ export default async function TokenPage({
               <SettledAuctionSummary auction={settledAuction} />
             </section>
           )}
+          {/* StartAuctionCTA renders its own bordered section only when the
+              viewer is the current owner with a deployed house — otherwise it
+              returns null, so we don't wrap it in a section here (that left an
+              empty bordered band for every non-owner viewer). */}
           {!auction && !data.isErc1155 && (
-            <section className="py-5 border-b border-gray-100">
-              <StartAuctionCTA
-                nftContract={data.contract as `0x${string}`}
-                tokenId={tokenId}
-                tokenTitle={data.title}
-              />
-            </section>
+            <StartAuctionCTA
+              nftContract={data.contract as `0x${string}`}
+              tokenId={tokenId}
+              tokenTitle={data.title}
+            />
           )}
 
           {/* Ownership / edition stats */}
