@@ -51,6 +51,7 @@ export async function fetchBrinkmanWorks(): Promise<{
 }
 
 export const brinkmanSource: ImportSource = {
+  id: "brinkman",
   artistAddress: BRINKMAN_ADDRESS,
   displayName: "Bryan Brinkman",
   sourceUrl: "https://bryanbrinkman.com/registry",

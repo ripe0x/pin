@@ -19,7 +19,14 @@ import { RefreshButton } from "@/components/catalog/RefreshButton"
  * `revalidateTag("catalog")` from `/api/catalog/[address]/revalidate`,
  * which evicts every ISR entry that touched `getCachedCatalog`.
  */
-export const revalidate = 60
+// 1 hour. Catalog records change rarely (artist-initiated edits) and
+// every write fires revalidateTag("catalog") for instant freshness, so
+// this timer is only a backstop. A short timer would needlessly
+// re-run the page's server work (pnd-indexed plan + per-contract
+// Alchemy getContractMetadata calls + DB connections) every minute for
+// data that's effectively static between edits. No live-auction data
+// lives on this page, so the long timer costs nothing in freshness.
+export const revalidate = 3600
 import { AddressZorb } from "@/components/AddressZorb"
 import { CatalogSummary } from "@/components/catalog/CatalogSummary"
 import { AddEntrySection } from "@/components/catalog/AddEntrySection"
@@ -27,6 +34,9 @@ import { CatalogContractsEditable } from "@/components/catalog/CatalogContractsE
 import { CatalogTokensEditable } from "@/components/catalog/CatalogTokensEditable"
 import { CatalogRangesEditable } from "@/components/catalog/CatalogRangesEditable"
 import { EditModeIndicator } from "@/components/catalog/EditModeIndicator"
+import { IndexedWorkSection } from "@/components/catalog/IndexedWorkSection"
+import { pndIndexedSource } from "@/lib/import-sources/pnd-indexed"
+import { normalize } from "@/lib/import-sources/normalize"
 
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/
 
@@ -111,6 +121,37 @@ async function RecordBody({ address }: { address: Address }) {
     getArtistIdentity(address),
     getCachedCatalog(address.toLowerCase()),
   ])
+
+  // Pre-seed plan from PND's indexed work. Fetched server-side so the
+  // empty-state check ("does this artist have anything we could
+  // pre-fill?") doesn't require a client round-trip. The IndexedWorkSection
+  // component itself gates rendering on (a) wallet ownership matches
+  // and (b) plan is non-empty.
+  let indexedPlan: ReturnType<typeof normalize> | null = null
+  let indexedPlanError: string | null = null
+  try {
+    const source = pndIndexedSource(address)
+    const fetched = await source.fetchWorks()
+    indexedPlan = normalize(
+      fetched.works,
+      {
+        contracts: record.contracts.map((c) => c.toLowerCase() as Address),
+        tokens: record.tokens.map((t) => ({
+          contractAddress: t.contractAddress.toLowerCase() as Address,
+          tokenId: t.tokenId,
+        })),
+        tokenRanges: record.tokenRanges.map((r) => ({
+          contractAddress: r.contractAddress.toLowerCase() as Address,
+          startTokenId: r.startTokenId,
+          endTokenId: r.endTokenId,
+        })),
+      },
+      fetched.skipped,
+    )
+  } catch (e) {
+    indexedPlanError =
+      e instanceof Error ? e.message : "Failed to load indexed work."
+  }
   const empty =
     record.contracts.length === 0 &&
     record.tokens.length === 0 &&
@@ -156,8 +197,20 @@ async function RecordBody({ address }: { address: Address }) {
         />
       )}
 
+      {indexedPlan && (
+        <IndexedWorkSection
+          artist={address}
+          plan={indexedPlan}
+          fetchError={indexedPlanError}
+        />
+      )}
+
       <AddEntrySection
         artist={address}
+        prefillPanelPresent={
+          !!indexedPlan &&
+          (indexedPlan.ops.length > 0 || indexedPlan.alreadyIndexed.length > 0)
+        }
         existing={{
           contracts: record.contracts.map((c) => c.toLowerCase()),
           tokens: record.tokens.map((t) => ({

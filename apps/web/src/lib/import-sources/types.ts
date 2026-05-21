@@ -33,6 +33,35 @@ export type RawWork = {
    */
   imageFallbackUrl?: string
   externalUrl?: string
+  /**
+   * Hint from the source that this work lives on a contract the artist
+   * fully controls — typically `contract.owner() == artist`, established
+   * by Path B (mints-to-artist) at indexing time. When true, the planner
+   * defaults the per-contract toggle to "whole contract" mode so the
+   * artist registers the entire collection in a single Catalog write
+   * instead of N per-token writes. Artist can still flip to per-token
+   * mode in the UI if they want fine-grained selection.
+   *
+   * Adapters that aren't confident the artist owns the contract should
+   * leave this undefined; the planner falls back to per-token mode.
+   */
+  claimWholeContract?: boolean
+  /**
+   * Display name for the contract itself (collection name), distinct
+   * from the per-token title. Surfaced in the "Register the full
+   * contract" row in the planner so the artist sees "O.P.P." instead of
+   * just the contract address. Adapters that don't have collection-level
+   * metadata can leave this undefined.
+   */
+  collectionName?: string
+  /**
+   * Total token count on the contract, regardless of who holds them.
+   * Used in the planner to show "1,139 tokens" on a whole-contract row,
+   * vs the misleading "28 indexed for you" which is just the mints-to-
+   * artist subset. Optional — adapter sets it when known (typically via
+   * a getContractMetadata call); planner falls back to omitting.
+   */
+  contractTotalSupply?: number
 }
 
 /**
@@ -56,9 +85,15 @@ export type SkippedWork = {
 }
 
 export type ImportSource = {
+  /**
+   * Stable identifier for the source itself, independent of artist
+   * (`"brinkman"`, `"pnd-indexed"`). Used as the `?source=` query-param
+   * value so the page can disambiguate when multiple sources apply.
+   */
+  id: string
   /** The artist's on-chain address. URL key + Catalog.sol authority. */
   artistAddress: Address
-  /** Human-readable name for UI ("Bryan Brinkman"). */
+  /** Human-readable name for UI ("Bryan Brinkman", "Indexed by pnd"). */
   displayName: string
   /** Link back to the artist's own registry page for credit. */
   sourceUrl: string

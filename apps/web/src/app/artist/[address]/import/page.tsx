@@ -1,21 +1,30 @@
 import type { Metadata } from "next"
-import { notFound, redirect } from "next/navigation"
+import { redirect } from "next/navigation"
+import Link from "next/link"
 import type { Address } from "viem"
 import { resolveEnsAddress } from "@/lib/artist-queries"
 import { getCatalog } from "@/lib/catalog"
-import { getImportSource } from "@/lib/import-sources"
+import {
+  getImportSource,
+  listImportSourcesForArtist,
+} from "@/lib/import-sources"
 import { normalize } from "@/lib/import-sources/normalize"
+import type { ImportSource } from "@/lib/import-sources/types"
 import { ImportPlanner } from "@/components/catalog/ImportPlanner"
 
 /**
- * Batch import page. Pulls an artist's externally-published registry
- * (per `IMPORT_SOURCES`), normalizes it against their on-chain Catalog,
- * and hands the plan to <ImportPlanner> for review + signing. Reachable
- * at `/artist/[address]/import`; falls through to 404 for any address
- * that doesn't have a registered import source.
+ * Batch import page. Resolves the artist address, picks an import
+ * source (artist-specific adapters like Brinkman's bespoke registry, or
+ * the generic `pnd-indexed` adapter that prefills from our own indexer),
+ * normalizes against the on-chain Catalog, and hands the plan to
+ * <ImportPlanner> for review + signing. Reachable at
+ * `/artist/[address]/import?source=<id>`. Default source is the first
+ * applicable in registry order — currently Brinkman's bespoke registry
+ * when it matches, otherwise `pnd-indexed`.
  */
 
 type Params = Promise<{ address: string }>
+type SearchParams = Promise<{ source?: string }>
 
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/
 
@@ -34,16 +43,21 @@ export async function generateMetadata({
   const { address: raw } = await params
   const address = await resolveParam(raw)
   if (!address) return { title: "Import to Catalog" }
-  const source = getImportSource(address)
-  const name = source?.displayName ?? address
   return {
-    title: `Import ${name}'s registry to Catalog`,
+    title: `Import to Catalog`,
     robots: { index: false, follow: false },
   }
 }
 
-export default async function ImportPage({ params }: { params: Params }) {
+export default async function ImportPage({
+  params,
+  searchParams,
+}: {
+  params: Params
+  searchParams: SearchParams
+}) {
   const { address: raw } = await params
+  const { source: requestedSourceId } = await searchParams
   const decoded = decodeURIComponent(raw)
   const address = await resolveParam(raw)
 
@@ -61,22 +75,27 @@ export default async function ImportPage({ params }: { params: Params }) {
     redirect(`/artist/${address}/import`)
   }
 
-  const source = getImportSource(address)
-  if (!source) {
+  const sources = listImportSourcesForArtist(address as Address)
+  if (sources.length === 0) {
+    // pnd-indexed is unconditional, so this should be unreachable in
+    // practice — but keep the empty-state branch so the page can't
+    // crash if the provider list is ever pruned.
     return (
       <div className="mx-auto max-w-3xl px-6 py-16 text-center">
-        <h1 className="text-2xl font-semibold">No import source registered</h1>
+        <h1 className="text-2xl font-semibold">No import source available</h1>
         <p className="text-gray-500 mt-3">
-          We don&rsquo;t have a registered external registry for{" "}
-          <span className="font-mono text-xs">{address}</span> yet.
-        </p>
-        <p className="text-gray-500 mt-2">
-          If this artist publishes a machine-readable registry, get in touch
-          and we can add it.
+          We don&rsquo;t have any import source configured for{" "}
+          <span className="font-mono text-xs">{address}</span>.
         </p>
       </div>
     )
   }
+
+  const source =
+    (requestedSourceId
+      ? sources.find((s) => s.id === requestedSourceId)
+      : null) ??
+    getImportSource(address as Address, sources[0].id)!
 
   let fetched: Awaited<ReturnType<typeof source.fetchWorks>> = {
     works: [],
@@ -94,12 +113,57 @@ export default async function ImportPage({ params }: { params: Params }) {
   const plan = normalize(fetched.works, existing, fetched.skipped)
 
   return (
-    <ImportPlanner
-      artistAddress={address as Address}
-      sourceName={source.displayName}
-      sourceUrl={source.sourceUrl}
-      plan={plan}
-      fetchError={fetchError}
-    />
+    <div>
+      {sources.length > 1 && (
+        <SourcePicker
+          sources={sources}
+          currentId={source.id}
+          artistAddress={address as Address}
+        />
+      )}
+      <ImportPlanner
+        artistAddress={address as Address}
+        sourceName={source.displayName}
+        sourceUrl={source.sourceUrl}
+        plan={plan}
+        fetchError={fetchError}
+      />
+    </div>
+  )
+}
+
+function SourcePicker({
+  sources,
+  currentId,
+  artistAddress,
+}: {
+  sources: ImportSource[]
+  currentId: string
+  artistAddress: Address
+}) {
+  return (
+    <div className="mx-auto max-w-5xl px-6 pt-8">
+      <p className="text-xs uppercase tracking-widest text-gray-500 mb-2">
+        Source
+      </p>
+      <div className="inline-flex border border-gray-200 rounded-md overflow-hidden text-xs">
+        {sources.map((s) => {
+          const active = s.id === currentId
+          return (
+            <Link
+              key={s.id}
+              href={`/artist/${artistAddress}/import?source=${s.id}`}
+              className={`px-3 py-2 transition-colors ${
+                active
+                  ? "bg-gray-900 text-white"
+                  : "bg-white text-gray-700 hover:bg-gray-100"
+              }`}
+            >
+              {s.displayName}
+            </Link>
+          )
+        })}
+      </div>
+    </div>
   )
 }

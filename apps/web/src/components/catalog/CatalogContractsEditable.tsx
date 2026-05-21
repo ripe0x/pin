@@ -3,7 +3,7 @@
 import type { Address } from "viem"
 import { useIsCatalogOwner } from "./useIsCatalogOwner"
 import { RemoveRowButton } from "./RemoveRowButton"
-import { ContractLabel } from "./CatalogRowLabels"
+import { ContractLabel, ContractTotalSupplyBadge } from "./CatalogRowLabels"
 
 /**
  * Contracts section. Renders the list of declared contracts. When the
@@ -30,6 +30,7 @@ export function CatalogContractsEditable({
           className="border border-gray-200 rounded-md p-4 flex items-center justify-between gap-3"
         >
           <ContractLabel address={c} />
+          <ContractTotalSupplyBadge address={c} />
           {isOwner ? (
             <RemoveRowButton fn="removeContract" args={[c]} />
           ) : (
