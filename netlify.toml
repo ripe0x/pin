@@ -1,17 +1,25 @@
+# Netlify build config for the v2 web app.
+#
+# v2 is a pnpm workspace monorepo. The build runs from repo root so
+# pnpm can resolve workspace packages (@pin/abi, @pin/addresses,
+# @pin/shared, @pin/token-metadata). Only the web app is built here;
+# worker + indexer run on Railway.
+#
+# Worker + indexer + Postgres are NOT built by Netlify. They live on
+# Railway and the web app reads from the Railway Postgres over the
+# public endpoint via DATABASE_URL.
+
 [build]
-  base = "apps/web"
-  command = "cd ../.. && npm run build"
-  publish = ".next"
+  command = "corepack enable && pnpm install --frozen-lockfile && pnpm --filter @pin/web build"
+  publish = "apps/web/.next"
 
 [build.environment]
-  NODE_VERSION = "22"
+  NODE_VERSION = "22.19.0"
+  # Force pnpm via corepack so the lockfile is honored. Without this
+  # Netlify may try to use npm and fail on the workspace protocol.
+  NPM_FLAGS = "--version"
 
+# Next.js runtime plugin — Netlify auto-installs this for Next.js
+# projects, but we pin it explicitly so build behavior is reproducible.
 [[plugins]]
   package = "@netlify/plugin-nextjs"
-
-# Daily refresh of the external-platform indexer (Manifold / SR V2 / TL).
-# Wrapper function lives at `apps/web/netlify/functions/refresh-external-
-# indexes-cron.ts`; it POSTs to the secret-gated Next.js API route. See
-# DEPLOYMENT.md "External-platform indexer" for context.
-[functions."refresh-external-indexes-cron"]
-  schedule = "0 4 * * *"

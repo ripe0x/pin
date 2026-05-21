@@ -228,174 +228,21 @@ export async function getActivePndAuctions(
   }, 2_000)
 }
 
-export type ActiveSrV2Auction = {
-  contract: string
-  tokenId: string
-  seller: string
-  reserveWei: bigint
-  currentBidWei: bigint
-  currentBidder: string | null
-  endTime: number
-}
-
-/**
- * Currently-active SR V2 Bazaar auctions, filtered to artist-sellers
- * (seller == tokenCreator) at the SQL layer so the home grid only
- * surfaces primary art (not secondary listings). Same shape as
- * `getActivePndAuctions`.
- */
-export async function getActiveSrV2Auctions(
-  limit = 60,
-): Promise<ActiveSrV2Auction[] | null> {
-  if (INDEXER_DISABLED || !sql) return null
-  const db = sql
-
-  return withTimeout(async () => {
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
-
-    const rows = (await db.unsafe(
-      `SELECT contract, token_id::text AS token_id, seller,
-              reserve_wei::text AS reserve_wei,
-              current_bid_wei::text AS current_bid_wei,
-              current_bidder,
-              end_time::text AS end_time
-       FROM ${schema}.srv2_auctions
-       WHERE status = 'active'
-         AND creator IS NOT NULL
-         AND LOWER(creator) = LOWER(seller)
-       ORDER BY
-         CASE WHEN end_time = 0 THEN 1 ELSE 0 END,
-         end_time ASC
-       LIMIT $1`,
-      [limit],
-    )) as Array<{
-      contract: string
-      token_id: string
-      seller: string
-      reserve_wei: string
-      current_bid_wei: string
-      current_bidder: string | null
-      end_time: string
-    }>
-
-    return rows.map((r) => ({
-      contract: r.contract,
-      tokenId: r.token_id,
-      seller: r.seller,
-      reserveWei: BigInt(r.reserve_wei),
-      currentBidWei: BigInt(r.current_bid_wei),
-      currentBidder: r.current_bidder,
-      endTime: Number(r.end_time),
-    }))
-  }, 2_000)
-}
-
-export type ActiveTlAuction = ActiveSrV2Auction
-
-/**
- * Currently-active TL Auction House listings, same artist-seller filter
- * as the SR V2 query.
- */
-export async function getActiveTlAuctions(
-  limit = 60,
-): Promise<ActiveTlAuction[] | null> {
-  if (INDEXER_DISABLED || !sql) return null
-  const db = sql
-
-  return withTimeout(async () => {
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
-
-    const rows = (await db.unsafe(
-      `SELECT contract, token_id::text AS token_id, seller,
-              reserve_wei::text AS reserve_wei,
-              current_bid_wei::text AS current_bid_wei,
-              current_bidder,
-              end_time::text AS end_time
-       FROM ${schema}.tl_auctions
-       WHERE status = 'active'
-         AND creator IS NOT NULL
-         AND LOWER(creator) = LOWER(seller)
-       ORDER BY
-         CASE WHEN end_time = 0 THEN 1 ELSE 0 END,
-         end_time ASC
-       LIMIT $1`,
-      [limit],
-    )) as Array<{
-      contract: string
-      token_id: string
-      seller: string
-      reserve_wei: string
-      current_bid_wei: string
-      current_bidder: string | null
-      end_time: string
-    }>
-
-    return rows.map((r) => ({
-      contract: r.contract,
-      tokenId: r.token_id,
-      seller: r.seller,
-      reserveWei: BigInt(r.reserve_wei),
-      currentBidWei: BigInt(r.current_bid_wei),
-      currentBidder: r.current_bidder,
-      endTime: Number(r.end_time),
-    }))
-  }, 2_000)
-}
-
-/**
- * Mint protocol tokens minted by `creator` per Ponder. Replaces the
- * web-side `scanMintArtistTokens` + `lazy_mint_artist_tokens` path.
- * Returns null when the indexer is unavailable/slow so callers can
- * fall through to whatever (now-empty) hand-rolled path remains.
- */
-export type IndexerMintTokenRef = {
-  contract: string
-  tokenId: string
-  blockNumber: bigint
-  logIndex: number
-}
-
-export async function getMintTokensFromIndexer(
-  creator: string,
-): Promise<IndexerMintTokenRef[] | null> {
-  if (INDEXER_DISABLED || !sql) return null
-  const db = sql
-
-  return withTimeout(async () => {
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
-    const rows = (await db.unsafe(
-      `SELECT contract,
-              token_id::text AS token_id,
-              block_number::text AS block_number,
-              log_index
-         FROM ${schema}.mint_artist_tokens
-        WHERE creator = $1
-        ORDER BY block_number DESC, log_index DESC`,
-      [creator.toLowerCase()],
-    )) as Array<{
-      contract: string
-      token_id: string
-      block_number: string
-      log_index: number
-    }>
-
-    return rows.map((r) => ({
-      contract: r.contract,
-      tokenId: r.token_id,
-      blockNumber: BigInt(r.block_number),
-      logIndex: r.log_index,
-    }))
-  })
-}
+// REMOVED in v2: getActiveSrV2Auctions, getActiveTlAuctions,
+// getMintTokensFromIndexer. The underlying Ponder tables (srv2_auctions,
+// tl_auctions, mint_artist_tokens) are dropped from v2's schema.
+//
+// Active SR V2 / TL auctions: now served by lib/onchain.ts:
+//   getActiveSrV2AuctionMap(artist) + getActiveTlAuctionMap(artist).
+//   On-demand getLogs(seller=artist), 30s pgCache, only fires on
+//   artist-page renders (gated by isCrawler). Trades 30s of staleness
+//   for elimination of continuous marketplace indexing.
+//
+// Mint artist tokens: now served by the worker. Web reads them from
+// public.artist_tokens WHERE platform='mint' via lib/reads.ts.
+//
+// The home-grid orchestration that used to UNION the three sources is
+// gone in v2 (home is just the activity feed now).
 
 /**
  * SuperRare V2 tokens minted by `creator` per Ponder. Replaces the
@@ -445,54 +292,10 @@ export async function getSrv2TokensFromIndexer(
   })
 }
 
-/**
- * Transient Labs ERC-721 tokens minted by `creator` per Ponder.
- * Replaces the web-side `scanTransientArtistTokens` +
- * `lazy_tl_artist_tokens` path. Returns null when the indexer is
- * unavailable/slow.
- */
-export type IndexerTlTokenRef = {
-  contract: string
-  tokenId: string
-  blockNumber: bigint
-  logIndex: number
-}
-
-export async function getTlTokensFromIndexer(
-  creator: string,
-): Promise<IndexerTlTokenRef[] | null> {
-  if (INDEXER_DISABLED || !sql) return null
-  const db = sql
-
-  return withTimeout(async () => {
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
-    const rows = (await db.unsafe(
-      `SELECT contract,
-              token_id::text AS token_id,
-              block_number::text AS block_number,
-              log_index
-         FROM ${schema}.tl_artist_tokens
-        WHERE creator = $1
-        ORDER BY block_number DESC, log_index DESC`,
-      [creator.toLowerCase()],
-    )) as Array<{
-      contract: string
-      token_id: string
-      block_number: string
-      log_index: number
-    }>
-
-    return rows.map((r) => ({
-      contract: r.contract,
-      tokenId: r.token_id,
-      blockNumber: BigInt(r.block_number),
-      logIndex: r.log_index,
-    }))
-  })
-}
+// REMOVED in v2: getTlTokensFromIndexer. The ponder.tl_artist_tokens
+// table is dropped; TL artist tokens are now served by the worker via
+// public.artist_tokens WHERE platform='tl'. Web reads them through
+// lib/reads.ts:getArtistTokens.
 
 export type PndHouse = {
   house: string

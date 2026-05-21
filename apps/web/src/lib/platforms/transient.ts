@@ -1,573 +1,81 @@
 import "server-only"
-import {
-  createPublicClient,
-  parseAbiItem,
-  type Address,
-} from "viem"
-import { mainnet } from "viem/chains"
-import { TL_AUCTION_HOUSE, MAINNET_CHAIN_ID } from "@pin/addresses"
-import { transientAuctionHouseAbi } from "@pin/abi"
+import type { Address } from "viem"
 import type {
-  PlatformAdapter,
-  ArtistTokenRef,
-  CollectorTokenRef,
-  AdapterLastSale,
+  PlatformAdapter, ArtistTokenRef, CollectorTokenRef, AdapterLastSale,
   ActiveAuctionSummary,
 } from "./types"
-import type { AuctionState, AuctionFees } from "../auctions"
-import { resolveDisplayNames } from "../artist-queries"
-import {
-  getActiveTlAuctions,
-  getTlTokensFromIndexer,
-} from "../indexer-queries"
-import {
-  readTransientSale,
-  writeTransientSale,
-  readTransientBidHistory,
-  readTransientBidHistoryFreshness,
-  writeTransientBidHistory,
-  LAZY_TTL,
-  isFresh,
-} from "../lazy-index"
-import type { BidHistoryEntry } from "../auctions"
-import { loggingFallbackTransport } from "../rpc-log"
-import { isKnownArtist } from "../known-artists"
-import { MAX_BLOCKS_PER_SCAN } from "../external-indexer"
+import { sql } from "../db"
+import { getActiveTlAuctionMap } from "../onchain"
 
-const TL_AH = TL_AUCTION_HOUSE[MAINNET_CHAIN_ID]
-
-// TL Auction House v2.6.1 was deployed in early 2026. Block 24_500_000
-// (~Mar 2026) is a safe lower bound that comfortably pre-dates the
-// deploy; narrowing further only saves a small fraction of indexed-arg
-// scan cost. Confirmed via the address's first events being well
-// after this block.
-const TL_AUCTION_HOUSE_DEPLOY_BLOCK = 24_500_000n
-
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
-// Currency sentinel: ETH listings use currencyAddress = address(0).
-const ETH_CURRENCY = "0x0000000000000000000000000000000000000000" as const
-
-// Listing.type_ enum values (probed from live listings on the verified
-// source). 0 = NOT_CONFIGURED, others are auction/buy-now flavors.
-// We treat "active" as creator != 0x0; the home-grid scanner records
-// the raw `type_` so future code can filter without re-scanning.
-const LISTING_TYPE_NOT_CONFIGURED = 0
-
-const auctionSettledEvent = parseAbiItem(
-  "event AuctionSettled(address indexed sender, address indexed nftAddress, uint256 indexed tokenId, (uint8,bool,address,address,address,uint256,uint256,uint256,uint256,uint256,address,address,uint256,uint256) listing)",
-)
-const buyNowFulfilledEvent = parseAbiItem(
-  "event BuyNowFulfilled(address indexed sender, address indexed nftAddress, uint256 indexed tokenId, address recipient, (uint8,bool,address,address,address,uint256,uint256,uint256,uint256,uint256,address,address,uint256,uint256) listing)",
-)
-// Bid history: indexed (sender, nftAddress, tokenId). The full Listing
-// struct rides on each event so we can filter to the current listing.id
-// in-memory after the scan (TL re-uses (contract, tokenId) when an
-// artist delists + relists).
-const auctionBidEvent = parseAbiItem(
-  "event AuctionBid(address indexed sender, address indexed nftAddress, uint256 indexed tokenId, (uint8,bool,address,address,address,uint256,uint256,uint256,uint256,uint256,address,address,uint256,uint256) listing)",
+const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+  /[^a-zA-Z0-9_]/g, "",
 )
 
-// Block-range chunk for indexed-arg log scans.
-const BLOCK_RANGE = 2_000_000n
-
-function getClient() {
-  return createPublicClient({
-    chain: mainnet,
-    transport: loggingFallbackTransport("transient", { batch: true }),
-  })
-}
-
-async function paginatedIndexedScan<T>(
-  scan: (fromBlock: bigint, toBlock: bigint) => Promise<T[]>,
-  fromBlock: bigint,
-  toBlock: bigint,
-): Promise<T[]> {
-  const out: T[] = []
-  for (let start = fromBlock; start <= toBlock; start += BLOCK_RANGE) {
-    const end = start + BLOCK_RANGE - 1n > toBlock ? toBlock : start + BLOCK_RANGE - 1n
-    try {
-      const logs = await scan(start, end)
-      out.push(...logs)
-    } catch {
-      if (end - start > 10_000n) {
-        const mid = start + (end - start) / 2n
-        const a = await paginatedIndexedScan(scan, start, mid)
-        const b = await paginatedIndexedScan(scan, mid + 1n, end)
-        out.push(...a, ...b)
-      }
-    }
-  }
-  return out
-}
-
-/**
- * Bid history for the CURRENT listing on (contract, tokenId). Mirrors
- * Foundation's lazy pattern (see `getFoundationBidHistory`).
- *
- * Each AuctionBid event carries the full Listing struct (including
- * `id`); we filter to bids where listing.id matches the current
- * listing's id so prior listings on the same token don't leak in.
- */
-async function getTransientBidHistory(
-  client: ReturnType<typeof createPublicClient>,
-  contract: Address,
-  tokenId: string,
-  currentListingId: bigint,
-): Promise<Array<Omit<BidHistoryEntry, "bidderDisplay">>> {
-  const listingIdStr = currentListingId.toString()
-  const freshness = await readTransientBidHistoryFreshness(
-    contract,
-    tokenId,
-    listingIdStr,
-  )
-  if (freshness && isFresh(freshness, LAZY_TTL.transientBids)) {
-    const cached = await readTransientBidHistory(contract, tokenId, listingIdStr)
-    if (cached) {
-      return cached.map((b) => ({
-        bidder: b.bidder as Address,
-        amount: b.amount,
-        blockTime: b.blockTime,
-        txHash: b.txHash as `0x${string}`,
-      }))
-    }
-  }
-
-  const latest = await client.getBlockNumber()
-  const logs = await paginatedIndexedScan(
-    (from, to) =>
-      client.getLogs({
-        address: TL_AH,
-        event: auctionBidEvent,
-        args: { nftAddress: contract, tokenId: BigInt(tokenId) },
-        fromBlock: from,
-        toBlock: to,
-      }),
-    TL_AUCTION_HOUSE_DEPLOY_BLOCK,
-    latest,
-  )
-
-  if (logs.length === 0) return []
-
-  // Decode + filter to current listing.id. Listing tuple is anonymous
-  // in the parseAbiItem signature → array decoding (positional).
-  type ListingArray = readonly [
-    number, boolean, Address, Address, Address,
-    bigint, bigint, bigint, bigint, bigint,
-    Address, Address, bigint, bigint,
-  ]
-  type Decoded = {
-    bidder: Address
-    amount: bigint
-    txHash: `0x${string}`
-    logIndex: number
-    blockNumber: bigint
-    blockTime: number
-    listingId: bigint
-  }
-  const decodedRaw: Omit<Decoded, "blockTime">[] = []
-  for (const l of logs) {
-    if (l.blockNumber === null || l.transactionHash === null) continue
-    if (l.logIndex === null) continue
-    const args = l.args as { sender?: Address; listing?: ListingArray }
-    const tuple = args.listing
-    if (!tuple) continue
-    const [, , , , currency, , , , , , , highestBidder, highestBid, id] = tuple
-    if (currency.toLowerCase() !== ETH_CURRENCY) continue
-    if (id !== currentListingId) continue // only current listing's bids
-    decodedRaw.push({
-      bidder: highestBidder,
-      amount: highestBid,
-      txHash: l.transactionHash,
-      logIndex: l.logIndex,
-      blockNumber: l.blockNumber,
-      listingId: id,
-    })
-  }
-
-  // Resolve unique block timestamps in parallel.
-  const uniqueBlocks = Array.from(new Set(decodedRaw.map((d) => d.blockNumber)))
-  const blockTimes = new Map<bigint, number>()
-  await Promise.all(
-    uniqueBlocks.map(async (bn) => {
-      const block = await client.getBlock({ blockNumber: bn }).catch(() => null)
-      blockTimes.set(bn, block ? Number(block.timestamp) : 0)
-    }),
-  )
-  const decoded: Decoded[] = decodedRaw.map((d) => ({
-    ...d,
-    blockTime: blockTimes.get(d.blockNumber) ?? 0,
-  }))
-
-  writeTransientBidHistory(
-    contract,
-    tokenId,
-    decoded.map((d) => ({
-      txHash: d.txHash,
-      logIndex: d.logIndex,
-      listingId: d.listingId.toString(),
-      bidder: d.bidder,
-      amount: d.amount,
-      blockTime: d.blockTime,
-      blockNumber: d.blockNumber,
-    })),
-  )
-
-  decoded.sort((a, b) => b.blockTime - a.blockTime)
-  return decoded.map((d) => ({
-    bidder: d.bidder,
-    amount: d.amount,
-    blockTime: d.blockTime,
-    txHash: d.txHash,
-  }))
-}
-
-// `getListing(nftAddress, tokenId)` returns the Listing struct. Because
-// the ABI tuple has named components, viem decodes it as an object
-// (NOT a positional array) — so we read by field name rather than
-// destructure. Same convention applies in the scanner where event
-// payloads include this struct.
-type Listing = {
-  type_: number
-  zeroProtocolFee: boolean
-  seller: Address
-  payoutReceiver: Address
-  currencyAddress: Address
-  openTime: bigint
-  reservePrice: bigint
-  buyNowPrice: bigint
-  startTime: bigint
-  duration: bigint
-  recipient: Address
-  highestBidder: Address
-  highestBid: bigint
-  id: bigint
-}
-
-/**
- * Transient Labs platform adapter.
- *
- * Coverage:
- *   - All `ERC721TL` per-artist contracts (deployed via TL Universal
- *     Deployer as ERC-1167 minimal proxies). The adapter is contract-
- *     agnostic: `getActiveAuctionForToken` / `getLastSale` work for any
- *     ERC-721 with a TL Auction House listing.
- *
- * Custody pattern (DIFFERENT from SR Bazaar):
- *   - The Auction House calls `transferFrom` when a listing is
- *     configured, so `ownerOf` returns the Auction House address while
- *     a listing is live. This means owner-based dispatch in
- *     `auctions.ts` works cleanly — no fall-through hack needed.
- *
- * Discovery strategy (cost-bounded by indexed-arg event filters):
- *   - Artist mints: NOT YET. Requires enumerating per-artist contracts
- *     via the Universal Deployer's deployment events. Returns [] for
- *     now; tracked as a follow-up.
- *   - Last sale: AuctionSettled + BuyNowFulfilled, both indexed by
- *     `nftAddress` + `tokenId`. Take the most-recent of either.
- *   - Collector tokens: NOT YET. Same enumeration constraint.
- *   - Active auctions / token state: incremental scan of
- *     ListingConfigured / AuctionBid / AuctionSettled /
- *     BuyNowFulfilled / ListingCanceled events on the Auction House
- *     populates `lazy_tl_active_auctions`; `getActiveAuctionForToken`
- *     reads `getListing(nftAddress, tokenId)` directly for the live
- *     state on demand.
- *
- * Bid currency: only ETH listings (currencyAddress = 0x0) surface in
- * our UI. ERC-20 listings exist on TL but are out of scope for the MVP.
- */
-export const transientAdapter: PlatformAdapter = {
+export const transientAdapter: PlatformAdapter & {
+  getActiveAuctionMap: (artist: Address) => Promise<Record<string, { reserveWei: bigint; currentBidWei: bigint }>>
+} = {
   id: "transient",
-  displayName: "Transient",
+  displayName: "Transient Labs",
 
-  /**
-   * Tokens an artist has minted on Transient Labs (ERC-721 clones only —
-   * the prior lazy-scan scope; ERC-1155 deferred). Pure Postgres read
-   * against `ponder_v*.tl_artist_tokens`. Indexed in real time by
-   * `ponder/src/TL.ts` from Universal Deployer `ContractDeployed`
-   * events + per-clone `Transfer(from=0x0)` events.
-   */
   async discoverArtistTokens(artist: Address): Promise<ArtistTokenRef[]> {
-    // Reads from Ponder (`<schema>.tl_artist_tokens`). The previous
-    // hand-rolled scanner + `lazy_tl_artist_tokens` table are gone;
-    // see ponder/src/TL.ts for the new event handlers and the
-    // accompanying migration for the table drop.
-    const refs = await getTlTokensFromIndexer(artist)
-    if (!refs) return []
-    return refs.map((r) => ({
-      platform: "transient",
+    if (!sql) return []
+    const lower = artist.toLowerCase()
+    const rows = (await sql.unsafe(
+      `SELECT lower(contract) AS contract, token_id,
+              mint_block::text AS mint_block, mint_log_index
+       FROM artist_tokens
+       WHERE artist = $1 AND platform = 'tl'
+       ORDER BY mint_block DESC, mint_log_index DESC`,
+      [lower],
+    )) as Array<{
+      contract: string; token_id: string; mint_block: string; mint_log_index: number
+    }>
+    return rows.map((r) => ({
+      platform: "transient" as const,
       contract: r.contract as Address,
-      tokenId: r.tokenId,
-      blockNumber: r.blockNumber,
-      logIndex: r.logIndex,
+      tokenId: r.token_id,
+      blockNumber: BigInt(r.mint_block),
+      logIndex: r.mint_log_index,
       collectionName: null,
     }))
   },
 
-  async discoverCollectorTokens(): Promise<CollectorTokenRef[]> {
-    // Same constraint as artist tokens — defer to follow-up.
-    return []
-  },
-
-  async getLastSale(
-    contract: Address,
-    tokenId: string,
-  ): Promise<AdapterLastSale | null> {
-    const cached = await readTransientSale(contract, tokenId)
-    if (cached && isFresh(cached.lastIndexedAt, LAZY_TTL.transientSale)) {
-      return {
-        platform: "transient",
-        priceWei: cached.priceWei,
-        blockTime: cached.blockTime,
-        source: cached.source,
-        txHash: cached.txHash,
-      }
-    }
-
-    const client = getClient()
-    const latest = await client.getBlockNumber()
-
-    // Both AuctionSettled and BuyNowFulfilled are indexed by
-    // (nftAddress, tokenId); fetch in parallel and pick the most
-    // recent across the two streams.
-    const [settled, buyNow] = await Promise.all([
-      paginatedIndexedScan(
-        (from, to) =>
-          client.getLogs({
-            address: TL_AH,
-            event: auctionSettledEvent,
-            args: { nftAddress: contract, tokenId: BigInt(tokenId) },
-            fromBlock: from,
-            toBlock: to,
-          }),
-        TL_AUCTION_HOUSE_DEPLOY_BLOCK,
-        latest,
-      ),
-      paginatedIndexedScan(
-        (from, to) =>
-          client.getLogs({
-            address: TL_AH,
-            event: buyNowFulfilledEvent,
-            args: { nftAddress: contract, tokenId: BigInt(tokenId) },
-            fromBlock: from,
-            toBlock: to,
-          }),
-        TL_AUCTION_HOUSE_DEPLOY_BLOCK,
-        latest,
-      ),
-    ])
-
-    type Cand = {
-      blockNumber: bigint
-      txHash: `0x${string}`
-      currency: Address
-      amount: bigint
-      source: "auction" | "buyNow"
-    }
-    const candidates: Cand[] = []
-    for (const l of settled) {
-      const args = l.args as {
-        listing?: readonly [number, boolean, Address, Address, Address, bigint, bigint, bigint, bigint, bigint, Address, Address, bigint, bigint]
-      }
-      const tuple = args.listing
-      if (!tuple || l.blockNumber === null || l.transactionHash === null) continue
-      const [, , , , currency, , , , , , , , highestBid] = tuple
-      candidates.push({
-        blockNumber: l.blockNumber,
-        txHash: l.transactionHash,
-        currency,
-        amount: highestBid,
-        source: "auction",
-      })
-    }
-    for (const l of buyNow) {
-      const args = l.args as {
-        listing?: readonly [number, boolean, Address, Address, Address, bigint, bigint, bigint, bigint, bigint, Address, Address, bigint, bigint]
-      }
-      const tuple = args.listing
-      if (!tuple || l.blockNumber === null || l.transactionHash === null) continue
-      const [, , , , currency, , , buyNowPrice] = tuple
-      candidates.push({
-        blockNumber: l.blockNumber,
-        txHash: l.transactionHash,
-        currency,
-        amount: buyNowPrice,
-        source: "buyNow",
-      })
-    }
-
-    // Skip ERC-20 settlements; we don't surface non-ETH prices today.
-    const eth = candidates.filter(
-      (c) => c.currency.toLowerCase() === ETH_CURRENCY,
-    )
-    if (eth.length === 0) return null
-    eth.sort((a, b) => (a.blockNumber > b.blockNumber ? -1 : 1))
-    const pick = eth[0]
-    if (pick.amount === 0n) return null
-
-    const block = await client
-      .getBlock({ blockNumber: pick.blockNumber })
-      .catch(() => null)
-    if (!block) return null
-    const blockTime = Number(block.timestamp)
-
-    writeTransientSale(contract, tokenId, {
-      priceWei: pick.amount,
-      blockTime,
-      source: pick.source,
-      txHash: pick.txHash,
-    })
-
-    return {
-      platform: "transient",
-      priceWei: pick.amount,
-      blockTime,
-      source: pick.source,
-      txHash: pick.txHash,
-    }
-  },
-
-  async getActiveAuctionForToken(
-    contract: Address,
-    tokenId: string,
-  ): Promise<AuctionState | null> {
-    const client = getClient()
-
-    // Single read returns the entire Listing struct + the contract's
-    // computed minimum next bid. `getRoyalty` is a third call but
-    // gives us the actual royalty bps for the FeesBreakdown.
-    const [listing, nextBid, protocolFeeBps] = await Promise.all([
-      client
-        .readContract({
-          address: TL_AH,
-          abi: transientAuctionHouseAbi,
-          functionName: "getListing",
-          args: [contract, BigInt(tokenId)],
-        })
-        .catch(() => null),
-      client
-        .readContract({
-          address: TL_AH,
-          abi: transientAuctionHouseAbi,
-          functionName: "getNextBid",
-          args: [contract, BigInt(tokenId)],
-        })
-        .catch(() => null),
-      client
-        .readContract({
-          address: TL_AH,
-          abi: transientAuctionHouseAbi,
-          functionName: "protocolFeeBps",
-        })
-        .catch(() => 0n),
-    ])
-
-    if (!listing) return null
-    const l = listing as unknown as Listing
-    const {
-      type_,
-      seller,
-      currencyAddress,
-      reservePrice,
-      startTime,
-      duration,
-      highestBidder,
-      highestBid,
-      id,
-    } = l
-
-    if (type_ === LISTING_TYPE_NOT_CONFIGURED) return null
-    if (seller === ZERO_ADDRESS) return null
-    if (currencyAddress.toLowerCase() !== ETH_CURRENCY) return null
-
-    const awaitingFirstBid = highestBidder === ZERO_ADDRESS || highestBid === 0n
-    // Once the first bid lands, TL sets `startTime` to that block's
-    // timestamp; endTime = startTime + duration. Pre-bid the timer
-    // hasn't started — treat as 0 (sorts to the tail of home grid).
-    const endTime = awaitingFirstBid ? 0n : startTime + duration
-    const nowSec = BigInt(Math.floor(Date.now() / 1000))
-    const awaitingSettlement =
-      !awaitingFirstBid && endTime > 0n && endTime <= nowSec
-
-    // Display "current" amount: post-bid show the high bid, pre-bid
-    // show the reserve.
-    const amount = awaitingFirstBid ? reservePrice : highestBid
-    // Pre-bid: TL's `getNextBid` returns a sentinel `1` (the contract
-    // checks `bid >= reservePrice` separately, so any wei > 0 satisfies
-    // the next-bid invariant — the reserve is the real floor). Use
-    // reservePrice as the displayed minimum so the UI matches what
-    // a successful first bid actually requires.
-    // Post-bid: trust the contract-provided value (currentBid scaled
-    // up by BID_INCREASE_BPS).
-    const minBidWei = awaitingFirstBid
-      ? reservePrice
-      : (nextBid as bigint | null) ?? highestBid
-
-    // Bid history for the current listing.id (skips bids from prior
-    // listings on the same token). Same lazy + RPC pattern as Foundation.
-    const rawBids = await getTransientBidHistory(client, contract, tokenId, id)
-    const addressesToResolve: string[] = [seller]
-    if (highestBidder !== ZERO_ADDRESS) addressesToResolve.push(highestBidder)
-    for (const b of rawBids) addressesToResolve.push(b.bidder)
-    const names = await resolveDisplayNames(addressesToResolve)
-    const lookup = (a: Address) => names.get(a.toLowerCase()) ?? a
-
-    // Fee structure: TL takes a flat `protocolFeeBps` of the bid (no
-    // buyer's premium — verified by fork test). Royalty comes from
-    // ERC-2981 via the NFT contract or TL's RoyaltyLookup; for the
-    // fees panel we surface the protocol fee as "Transient fee" and
-    // leave royalty at 0% pending a per-token RoyaltyLookup read
-    // (deferred — same call adds RPC cost on every render and the
-    // typical TL royalty is 10%; `getRoyalty` on the Auction House
-    // gives an exact value when needed).
-    const protoBps = Number(protocolFeeBps)
-    const fees: AuctionFees = {
-      platformLabel: "Transient Labs",
-      protocolFeeBps: protoBps,
-      creatorRoyaltyBps: 0,
-      sellerBps: Math.max(0, 10000 - protoBps),
-    }
-
-    return {
-      source: "transient",
-      marketAddress: TL_AH,
-      auctionId: id.toString(),
-      nftContract: contract,
-      tokenId,
-      seller,
-      sellerDisplay: lookup(seller),
-      amount,
-      bidder: highestBidder,
-      bidderDisplay: highestBidder === ZERO_ADDRESS ? "" : lookup(highestBidder),
-      endTime,
-      duration,
-      minBidWei,
-      awaitingFirstBid,
-      awaitingSettlement,
-      fees,
-      bidHistory: rawBids.map((b) => ({
-        ...b,
-        bidderDisplay: lookup(b.bidder),
-      })),
-    }
-  },
-
-  async getActiveAuctions(limit: number): Promise<ActiveAuctionSummary[]> {
-    // Pure Ponder read; artist-seller filter (creator == seller) is
-    // applied in SQL by `getActiveTlAuctions`, so the result set is
-    // already trimmed to primary art. Replaces the prior lazy-table
-    // read path; `lazy_tl_active_auctions` writes are now unused and
-    // get cleaned up in a follow-up PR once backfill is verified.
-    const rows = (await getActiveTlAuctions(limit)) ?? []
+  async discoverCollectorTokens(wallet: Address): Promise<CollectorTokenRef[]> {
+    if (!sql) return []
+    const lower = wallet.toLowerCase()
+    const rows = (await sql.unsafe(
+      `SELECT o.contract, o.token_id, o.transferred_at_block::text AS block,
+              o.tx_hash
+       FROM token_owners o
+       WHERE o.owner = $1
+         AND EXISTS (
+           SELECT 1 FROM ${schema}.tl_creators
+             WHERE lower(contract) = o.contract
+         )
+       ORDER BY o.transferred_at_block DESC LIMIT 200`,
+      [lower],
+    )) as Array<{
+      contract: string; token_id: string; block: string; tx_hash: string | null
+    }>
     return rows.map((r) => ({
       platform: "transient",
       contract: r.contract as Address,
-      tokenId: r.tokenId,
-      seller: r.seller as Address,
-      reserveWei: r.reserveWei,
-      currentBidWei: r.currentBidWei,
-      currentBidder: (r.currentBidder ?? null) as Address | null,
-      endTime: r.endTime,
-      sourceContract: TL_AH,
+      tokenId: r.token_id,
+      ownerWallet: lower as Address,
+      acquiredAtBlock: BigInt(r.block),
+      acquiredTxHash: r.tx_hash,
     }))
+  },
+
+  async getLastSale(): Promise<AdapterLastSale | null> {
+    return null
+  },
+
+  async getActiveAuctions(_limit: number): Promise<ActiveAuctionSummary[]> {
+    return []
+  },
+
+  async getActiveAuctionMap(artist: Address) {
+    return getActiveTlAuctionMap(artist)
   },
 }

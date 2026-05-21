@@ -410,8 +410,20 @@ export function tokenToDisplayData(token: DiscoveredToken) {
     creator: token.creator,
     metadataCid: token.metadataCid,
     mediaCid: token.mediaCid,
-    platform: token.platform,
+    // Narrow worker-side platform tags ("fnd-shared", "fnd-collection",
+    // "srv2-shared") to the canonical PlatformId used by PlatformChip.
+    platform: normalizePlatform(token.platform),
   }
+}
+
+function normalizePlatform(p: string): import("./platforms/types").PlatformId | undefined {
+  if (p === "fnd-shared" || p === "fnd-collection" || p === "foundation") return "foundation"
+  if (p === "srv2-shared" || p === "superrareV2") return "superrareV2"
+  if (p === "tl" || p === "transient") return "transient"
+  if (p === "mint") return "mint"
+  if (p === "manifold") return "manifold"
+  if (p === "sovereign") return "sovereign"
+  return undefined
 }
 
 // ── Paginated artist gallery ────────────────────────────────────────────────

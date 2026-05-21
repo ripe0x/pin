@@ -1,7 +1,7 @@
 import type { NextConfig } from "next"
 
 const nextConfig: NextConfig = {
-  transpilePackages: ["@pin/abi", "@pin/addresses", "@pin/shared"],
+  transpilePackages: ["@pin/abi", "@pin/addresses", "@pin/shared", "@pin/token-metadata"],
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "**.ipfs.w3s.link" },
@@ -10,10 +10,9 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "dweb.link" },
     ],
   },
+  // No Next-level proxy to the worker — the web app calls it directly via fetch
+  // from its own server-side code. `WORKER_URL` is set in the Railway environment.
   async redirects() {
-    // `/record` was the previous name for the catalog UI. Permanent
-    // redirect so any pre-rename bookmarks, dependency-report
-    // `addContract` deep links, or external mentions keep working.
     return [
       { source: "/record", destination: "/catalog", permanent: true },
       { source: "/record/:address", destination: "/catalog/:address", permanent: true },

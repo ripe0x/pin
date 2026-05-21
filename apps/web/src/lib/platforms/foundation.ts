@@ -1,305 +1,170 @@
 import "server-only"
-import { createPublicClient, type Address } from "viem"
-import { mainnet } from "viem/chains"
-import { FOUNDATION_NFT, NFT_MARKET, MAINNET_CHAIN_ID } from "@pin/addresses"
+import type { Address } from "viem"
 import type {
-  PlatformAdapter,
-  ArtistTokenRef,
-  CollectorTokenRef,
-  AdapterLastSale,
-  SellerListings,
-  ActiveAuctionSummary,
+  PlatformAdapter, ArtistTokenRef, CollectorTokenRef,
+  AdapterLastSale, SellerListings, ActiveAuctionSummary,
 } from "./types"
-import { discoverFoundationArtistRefs } from "../onchain-discovery"
-import { getFoundationLastSale } from "../last-sale"
-import { getNFTsForOwner } from "../alchemy"
 import { sql } from "../db"
-import {
-  readFoundationCollectorTokens,
-  writeFoundationCollectorTokens,
-  readFoundationSellerListings,
-  writeFoundationSellerListings,
-  readFoundationActiveAuctions,
-  type LazySellerListings,
-  LAZY_TTL,
-  isFresh,
-} from "../lazy-index"
-import {
-  discoverFoundationCancellableListings,
-  type FndDiscoveryCache,
-} from "./foundation-seller-listings"
-import { discoverFoundationArtistAuctions } from "./foundation-scan"
-import { loggingFallbackTransport } from "../rpc-log"
+import { getFoundationTokensFromIndexer } from "../indexer-queries"
+import { getLastSale as readLastSale } from "../reads"
 
-const FOUNDATION_NFT_ADDRESS = FOUNDATION_NFT[MAINNET_CHAIN_ID]
-const FND_NFT_MARKET = NFT_MARKET[MAINNET_CHAIN_ID]
+const FND_NFT_MARKET = "0xcDA72070E455bb31C7690a170224Ce43623d0B6f"
 
-function getClient() {
-  return createPublicClient({
-    chain: mainnet,
-    transport: loggingFallbackTransport("foundation"),
-  })
-}
+const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+  /[^a-zA-Z0-9_]/g, "",
+)
 
-/**
- * Convert a cached `lazy_fnd_seller_listings` row into the shape
- * `discoverFoundationCancellableListings` expects as its merge baseline,
- * so the incremental refresh can layer new `(fromBlock, latest)` events
- * on top instead of re-scanning history from the NFTMarket deploy block.
- * The multicall layer downstream re-confirms cancellable state on every
- * candidate, so any cached entries that were settled or cancelled in
- * the gap drop out naturally.
- */
-function fndCachedToDiscoveryCache(
-  cached: LazySellerListings,
-): FndDiscoveryCache {
-  const durationByAuctionId = new Map<bigint, bigint>()
-  for (const a of cached.auctions) {
-    try {
-      durationByAuctionId.set(
-        BigInt(a.auctionId),
-        BigInt(a.durationSeconds),
-      )
-    } catch {
-      // Defensive: skip cached rows with malformed auctionId. The next
-      // refresh will pick them up via the live scan if they're still
-      // live, or correctly drop them if not.
-    }
-  }
-  const buyNowKeys = new Map<
-    string,
-    { nftContract: Address; tokenId: bigint }
-  >()
-  for (const b of cached.buyNows) {
-    try {
-      const key = `${b.nftContract.toLowerCase()}:${b.tokenId}`
-      buyNowKeys.set(key, {
-        nftContract: b.nftContract as Address,
-        tokenId: BigInt(b.tokenId),
-      })
-    } catch {
-      // Same defensive skip — bad cached row drops out and gets
-      // re-resolved next refresh.
-    }
-  }
-  return {
-    auctionIds: Array.from(durationByAuctionId.keys()),
-    durationByAuctionId,
-    buyNowKeys,
-  }
-}
-
-/**
- * Foundation platform adapter. Wraps the existing Foundation discovery,
- * last-sale, bid history, and seller-listings code so the orchestrator
- * can call it via the platform registry without knowing about
- * Foundation-specific internals.
- *
- * Implementation: each method delegates to the existing Foundation
- * functions, which already do their own lazy read/write through the
- * `lazy_fnd_*` tables. This adapter is a thin protocol layer; behavior
- * is identical to the pre-adapter code.
- *
- * `getLastSale` / `getBidHistory` / `getCancellableListingsForSeller`
- * are wired in the next step (this PR) — for now they're stubbed to
- * return null so the orchestrators in `last-sale.ts` and `auctions.ts`
- * can call the registry without losing data, then we move the real
- * implementations into the adapter.
- */
 export const foundationAdapter: PlatformAdapter = {
   id: "foundation",
   displayName: "Foundation",
 
   async discoverArtistTokens(artist: Address): Promise<ArtistTokenRef[]> {
-    const refs = await discoverFoundationArtistRefs(artist)
-    return refs.map((r) => ({
-      platform: "foundation",
-      contract: r.contract,
-      tokenId: r.tokenId,
-      blockNumber: r.blockNumber,
-      logIndex: r.logIndex,
-      collectionName: r.collectionName,
-    }))
-  },
-
-  async discoverCollectorTokens(
-    wallet: Address,
-  ): Promise<CollectorTokenRef[]> {
-    // Lazy read first.
-    const cached = await readFoundationCollectorTokens(wallet)
-    if (cached && isFresh(cached.lastIndexedAt, LAZY_TTL.foundationCollectorTokens)) {
-      return cached.tokens.map((t) => ({
-        platform: "foundation",
-        contract: t.contract as Address,
-        tokenId: t.tokenId,
-        ownerWallet: wallet,
-        acquiredAtBlock: t.acquiredAtBlock,
-        acquiredTxHash: t.acquiredTxHash,
-      }))
-    }
-
-    // Build the list of Foundation contracts we know about: the shared
-    // 1/1 contract + every per-artist collection we've discovered via
-    // artist-gallery views (lazy_fnd_artist_tokens.contract).
-    const contracts = new Set<string>([FOUNDATION_NFT_ADDRESS.toLowerCase()])
-    if (sql) {
-      try {
-        const rows = await sql<Array<{ contract: string }>>`
-          SELECT DISTINCT contract FROM lazy_fnd_artist_tokens
-        `
-        for (const r of rows) contracts.add(r.contract.toLowerCase())
-      } catch {
-        /* DB transient — proceed with just the shared contract */
-      }
-    }
-    const contractList = [...contracts]
-
-    // Alchemy NFT API tracks current ownership; one paginated call (or
-    // batched if > 45 contracts) returns the wallet's owned tokens
-    // across all known Foundation contracts. No per-token ownerOf
-    // re-check needed.
-    const owned = await getNFTsForOwner(wallet, contractList)
-
-    const refs: CollectorTokenRef[] = owned.map((o) => ({
-      platform: "foundation",
-      contract: o.contract as Address,
-      tokenId: o.tokenId,
-      ownerWallet: wallet,
-      // NFT API doesn't surface acquisition block; collector display
-      // only needs current ownership. 0n is the sentinel.
-      acquiredAtBlock: 0n,
-      acquiredTxHash: null,
-    }))
-
-    writeFoundationCollectorTokens(
-      wallet,
-      refs.map((r) => ({
-        contract: r.contract,
+    if (!sql) return []
+    const lower = artist.toLowerCase()
+    const shared = (await getFoundationTokensFromIndexer(lower)) ?? []
+    const perArtist = (await sql.unsafe(
+      `SELECT lower(contract) AS contract, token_id, mint_block::text AS mint_block, mint_log_index
+       FROM artist_tokens
+       WHERE artist = $1 AND platform = 'fnd-collection'
+       ORDER BY mint_block DESC, mint_log_index DESC`,
+      [lower],
+    )) as Array<{
+      contract: string; token_id: string; mint_block: string; mint_log_index: number
+    }>
+    return [
+      ...shared.map((r) => ({
+        platform: "foundation" as const,
+        contract: r.contract as Address,
         tokenId: r.tokenId,
-        acquiredAtBlock: r.acquiredAtBlock,
-        acquiredTxHash: r.acquiredTxHash,
+        blockNumber: r.blockNumber,
+        logIndex: r.logIndex,
+        collectionName: null,
       })),
-    )
-    return refs
+      ...perArtist.map((r) => ({
+        platform: "foundation" as const,
+        contract: r.contract as Address,
+        tokenId: r.token_id,
+        blockNumber: BigInt(r.mint_block),
+        logIndex: r.mint_log_index,
+        collectionName: null,
+      })),
+    ]
   },
 
-  async getLastSale(
-    contract: Address,
-    tokenId: string,
-  ): Promise<AdapterLastSale | null> {
-    const client = getClient()
-    const sale = await getFoundationLastSale(client, contract, BigInt(tokenId))
+  async discoverCollectorTokens(wallet: Address): Promise<CollectorTokenRef[]> {
+    if (!sql) return []
+    const lower = wallet.toLowerCase()
+    const rows = (await sql.unsafe(
+      `SELECT o.contract, o.token_id, o.transferred_at_block::text AS block,
+              o.tx_hash
+       FROM token_owners o
+       WHERE o.owner = $1
+         AND EXISTS (
+           SELECT 1 FROM ${schema}.fnd_artist_tokens
+             WHERE lower(contract) = o.contract AND token_id::text = o.token_id
+           UNION
+           SELECT 1 FROM artist_tokens
+             WHERE lower(contract) = o.contract AND token_id = o.token_id
+               AND platform IN ('fnd-shared', 'fnd-collection')
+         )
+       ORDER BY o.transferred_at_block DESC LIMIT 200`,
+      [lower],
+    )) as Array<{
+      contract: string; token_id: string; block: string; tx_hash: string | null
+    }>
+    return rows.map((r) => ({
+      platform: "foundation",
+      contract: r.contract as Address,
+      tokenId: r.token_id,
+      ownerWallet: lower as Address,
+      acquiredAtBlock: BigInt(r.block),
+      acquiredTxHash: r.tx_hash,
+    }))
+  },
+
+  async getLastSale(contract: Address, tokenId: string): Promise<AdapterLastSale | null> {
+    const sale = await readLastSale(contract, tokenId)
     if (!sale) return null
     return {
       platform: "foundation",
       priceWei: sale.priceWei,
-      blockTime: sale.blockTime,
-      source: sale.source, // "foundation" — narrowed at orchestrator
+      blockTime: Number(sale.blockTime),
+      source: sale.source,
       txHash: sale.txHash,
     }
   },
 
-  /**
-   * Lazy-cached fan-out target for the `/api/seller-listings/[address]`
-   * route. Reads `lazy_fnd_seller_listings` first; misses run the RPC
-   * scan in `discoverFoundationCancellableListings` and fire-and-forget
-   * the row back. The route's `unstable_cache` + `pgCache` layers handle
-   * the merged-payload cache; this layer keeps Foundation-specific data
-   * warm independently so a cold fan-out doesn't always pay two scans.
-   */
-  async getCancellableListingsForSeller(
-    seller: Address,
-  ): Promise<SellerListings | null> {
-    const sellerLower = seller.toLowerCase()
-    const cached = await readFoundationSellerListings(sellerLower)
-    if (
-      cached &&
-      isFresh(cached.lastIndexedAt, LAZY_TTL.foundationSellerListings)
-    ) {
-      return {
-        auctions: cached.auctions.map((a) => ({
-          id: a.id,
-          platform: "foundation",
-          auctionId: a.auctionId,
-          nftContract: a.nftContract,
-          tokenId: a.tokenId,
-          reserveWei: a.reserveWei,
-          durationSeconds: a.durationSeconds,
-        })),
-        buyNows: cached.buyNows.map((b) => ({
-          id: b.id,
-          platform: "foundation",
-          nftContract: b.nftContract,
-          tokenId: b.tokenId,
-          priceWei: b.priceWei,
-        })),
-      }
-    }
-
-    // Incremental refresh. Existing rows without a `lastScannedBlock`
-    // (pre-incremental-column writes) fall back to a full rescan once,
-    // then settle into incremental mode on subsequent refreshes.
-    const cachedContext = cached ? fndCachedToDiscoveryCache(cached) : undefined
-    const fromBlock =
-      cached?.lastScannedBlock != null ? cached.lastScannedBlock + 1n : undefined
-    const { listings, scannedTo } = await discoverFoundationCancellableListings(
-      sellerLower,
-      { fromBlock, cached: cachedContext },
-    )
-    writeFoundationSellerListings(sellerLower, {
-      auctions: listings.auctions.map((a) => ({
-        id: a.id,
-        auctionId: a.auctionId,
-        nftContract: a.nftContract,
-        tokenId: a.tokenId,
-        reserveWei: a.reserveWei,
-        durationSeconds: a.durationSeconds,
-      })),
-      buyNows: listings.buyNows.map((b) => ({
-        id: b.id,
-        nftContract: b.nftContract,
-        tokenId: b.tokenId,
-        priceWei: b.priceWei,
-      })),
-      lastScannedBlock: scannedTo,
-    })
-    return listings
-  },
-
-  async getBidHistory() {
-    return null
-  },
-
-  async discoverArtistAuctions(artist: Address): Promise<void> {
-    await discoverFoundationArtistAuctions(artist)
-  },
-
   async getActiveAuctions(limit: number): Promise<ActiveAuctionSummary[]> {
-    // Pure table read — no RPC in the home-grid request path. The
-    // per-artist scanner runs from artist-page loads via
-    // `discoverArtistAuctions`, populating the table for whoever's
-    // been visited. Reads JOIN the per-artist status table with a
-    // 24h freshness filter so unvisited artists drop out.
-    // Over-read so the artist-seller filter doesn't shrink the result
-    // set below `limit` when many active rows are secondary listings.
-    const rows = await readFoundationActiveAuctions(limit * 4)
-    return rows
-      .filter(
-        (r) =>
-          r.creator !== null &&
-          r.creator.toLowerCase() === r.seller.toLowerCase(),
-      )
-      .slice(0, limit)
-      .map((r) => ({
+    if (!sql) return []
+    const rows = (await sql.unsafe(
+      `SELECT a.nft_contract, a.token_id::text AS token_id, a.seller,
+              a.reserve_price::text AS reserve_wei,
+              a.highest_bid::text AS current_bid_wei,
+              a.highest_bidder, a.end_time::text AS end_time
+       FROM ${schema}.fnd_auctions a
+       WHERE a.status = 'active'
+       ORDER BY CASE WHEN a.end_time = 0 THEN 1 ELSE 0 END, a.end_time ASC
+       LIMIT $1`,
+      [limit],
+    )) as Array<{
+      nft_contract: string; token_id: string; seller: string;
+      reserve_wei: string; current_bid_wei: string;
+      highest_bidder: string | null; end_time: string
+    }>
+    return rows.map((r) => ({
+      platform: "foundation",
+      contract: r.nft_contract as Address,
+      tokenId: r.token_id,
+      seller: r.seller as Address,
+      reserveWei: BigInt(r.reserve_wei),
+      currentBidWei: BigInt(r.current_bid_wei),
+      currentBidder: (r.highest_bidder ?? null) as Address | null,
+      endTime: Number(r.end_time),
+      sourceContract: FND_NFT_MARKET as Address,
+    }))
+  },
+
+  async getCancellableListingsForSeller(seller: Address): Promise<SellerListings | null> {
+    if (!sql) return null
+    const lower = seller.toLowerCase()
+    const [auctions, buyNows] = await Promise.all([
+      sql.unsafe(
+        `SELECT auction_id::text AS auction_id, nft_contract, token_id::text,
+                reserve_price::text AS reserve_wei,
+                duration_seconds::text AS duration
+         FROM ${schema}.fnd_auctions
+         WHERE lower(seller) = $1 AND status = 'active' AND highest_bidder IS NULL`,
+        [lower],
+      ) as Promise<Array<{
+        auction_id: string; nft_contract: string; token_id: string;
+        reserve_wei: string; duration: string
+      }>>,
+      sql.unsafe(
+        `SELECT id, nft_contract, token_id::text, price::text AS price_wei
+         FROM ${schema}.fnd_buy_nows
+         WHERE lower(seller) = $1 AND status = 'active'`,
+        [lower],
+      ) as Promise<Array<{
+        id: string; nft_contract: string; token_id: string; price_wei: string
+      }>>,
+    ])
+    return {
+      auctions: auctions.map((r) => ({
+        id: r.auction_id,
         platform: "foundation",
-        contract: r.contract as Address,
-        tokenId: r.tokenId,
-        seller: r.seller as Address,
-        reserveWei: r.reserveWei,
-        currentBidWei: r.currentBidWei,
-        currentBidder: (r.currentBidder ?? null) as Address | null,
-        endTime: r.endTime,
-        sourceContract: FND_NFT_MARKET,
-      }))
+        auctionId: r.auction_id,
+        nftContract: r.nft_contract,
+        tokenId: r.token_id,
+        reserveWei: r.reserve_wei,
+        durationSeconds: Number(r.duration),
+      })),
+      buyNows: buyNows.map((r) => ({
+        id: r.id,
+        platform: "foundation",
+        nftContract: r.nft_contract,
+        tokenId: r.token_id,
+        priceWei: r.price_wei,
+      })),
+    }
   },
 }

@@ -1,23 +1,22 @@
 {
-  "name": "pin",
+  "name": "pnd-v2",
   "private": true,
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
   "scripts": {
-    "dev": "npm run dev --workspace=apps/web",
-    "build": "npm run build --workspace=apps/web",
-    "lint": "npm run lint --workspace=apps/web",
-    "db:migrate": "node --env-file=apps/web/.env.local db/migrate.mjs",
-    "snapshot:fwr-supporters": "node --env-file=apps/web/.env.local scripts/snapshot-fwr-supporters.mjs"
+    "dev:web": "pnpm --filter @pin/web dev",
+    "dev:indexer": "pnpm --filter @pin/indexer dev",
+    "dev:worker": "pnpm --filter @pin/worker dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "db:migrate": "node --env-file=.env db/migrate.mjs",
+    "worker:refresh": "node --env-file=.env scripts/worker-refresh.mjs"
   },
-  "overrides": {
-    "ink": {
-      "react": "18.3.1"
-    },
-    "react-reconciler": {
-      "react": "18.3.1"
-    }
+  "devDependencies": {
+    "postgres": "^3.4.9",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
   }
 }

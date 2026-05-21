@@ -16,7 +16,7 @@ export {
  * Server-only enrichment for v2 activity events. Resolves token
  * metadata + artist identity in parallel so the client can render rows
  * without follow-up requests. Both lookups are point-reads in steady
- * state (token_metadata is pre-warmed by `apps/metadata-warmer`,
+ * state (token_metadata is pre-warmed by `worker warm-metadata task`,
  * ENS/EFP via pgCache).
  */
 

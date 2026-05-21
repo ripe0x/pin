@@ -9,7 +9,6 @@ import {
 } from "@/lib/artist-queries"
 import { getActiveAuctionCount } from "@/lib/auctions"
 import { getCachedTokenRefs } from "@/lib/artist-cache"
-import { pgCacheHas } from "@/lib/pg-cache"
 import { isCrawler } from "@/lib/crawler"
 import { withSingleFlight } from "@/lib/single-flight"
 import { PLATFORMS } from "@/lib/platforms"
@@ -108,13 +107,8 @@ export default async function ArtistPage({
     redirect(`/artist/${address}`)
   }
 
-  // Fast pre-check (~10ms SQL point lookup). Used purely to choose the
-  // loading copy: cold cache → "Indexing this artist for the first time."
-  // already warm → "Loading artist." Doesn't gate the actual fetch.
-  const isWarm = await pgCacheHas(`ens:${address.toLowerCase()}`)
-
   return (
-    <Suspense fallback={<ArtistFetchFallback isWarm={isWarm} />}>
+    <Suspense fallback={<ArtistFetchFallback />}>
       <ArtistPageBody address={address} />
     </Suspense>
   )
@@ -231,11 +225,9 @@ function ArtistCrawlerShell() {
 
 /**
  * Loading state shown while `ArtistPageBody` is fetching. Mirrors the
- * structure of `loading.tsx` (the route-level fallback) but is parameterized
- * on whether the artist is already in the shared cache, so we can show
- * different copy for first-visit vs. subsequent visits.
+ * structure of `loading.tsx` (the route-level fallback).
  */
-function ArtistFetchFallback({ isWarm }: { isWarm: boolean }) {
+function ArtistFetchFallback() {
   return (
     <div className="mx-auto max-w-[2000px] px-6 py-12">
       <div className="flex items-center gap-6">
@@ -248,9 +240,7 @@ function ArtistFetchFallback({ isWarm }: { isWarm: boolean }) {
 
       <div className="mt-12 text-center">
         <p className="text-sm text-gray-600 animate-pulse">
-          {isWarm
-            ? "Loading artist."
-            : "Indexing this artist for the first time."}
+          Loading artist.
         </p>
       </div>
 

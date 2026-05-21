@@ -19,5 +19,10 @@ dist
 # Generated
 apps/indexer/generated/
 
-# Local Netlify folder
-.netlify
+# Build artifacts
+apps/web/.next/
+apps/worker/dist/
+apps/indexer/.ponder/
+
+# Ponder codegen output (regenerate with `pnpm --filter @pin/indexer codegen`)
+apps/indexer/ponder-env.d.ts

@@ -7,5 +7,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {},
-  "dependencies": {}
+  "dependencies": {
+    "viem": "^2.21.0"
+  }
 }

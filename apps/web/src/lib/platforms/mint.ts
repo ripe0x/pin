@@ -1,56 +1,69 @@
 import "server-only"
 import type { Address } from "viem"
 import type {
-  PlatformAdapter,
-  ArtistTokenRef,
-  CollectorTokenRef,
-  AdapterLastSale,
+  PlatformAdapter, ArtistTokenRef, CollectorTokenRef, AdapterLastSale,
 } from "./types"
-import { getMintTokensFromIndexer } from "../indexer-queries"
+import { sql } from "../db"
 
-/**
- * Mint protocol (Visualize Value) platform adapter.
- *
- * As of the Ponder migration, this adapter is pure-read against
- * `ponder_v*.mint_artist_tokens`, which Ponder populates in real time
- * from Factory `Created` events plus per-clone `TransferSingle` /
- * `TransferBatch` from address(0). See `ponder/src/Mint.ts` for the
- * indexer handlers. The previous web-app-side scan path
- * (`scanMintArtistTokens`, `lazy_mint_*` tables, `mint_creators`
- * public table) is gone — migration 028 drops what's left of those.
- *
- * Mint has no marketplace integration today — collection contracts
- * are ERC-1155s with fixed-price mints handled inside the contract
- * itself; there's no auction-house event stream to surface in our
- * home grid or token-detail bid panel. `getLastSale` returns null
- * (same as Manifold).
- */
+const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+  /[^a-zA-Z0-9_]/g, "",
+)
+
 export const mintAdapter: PlatformAdapter = {
   id: "mint",
   displayName: "Mint",
 
   async discoverArtistTokens(artist: Address): Promise<ArtistTokenRef[]> {
-    const refs = await getMintTokensFromIndexer(artist)
-    if (!refs) return []
-    return refs.map((r) => ({
-      platform: "mint",
+    if (!sql) return []
+    const lower = artist.toLowerCase()
+    const rows = (await sql.unsafe(
+      `SELECT lower(contract) AS contract, token_id,
+              mint_block::text AS mint_block, mint_log_index
+       FROM artist_tokens
+       WHERE artist = $1 AND platform = 'mint'
+       ORDER BY mint_block DESC, mint_log_index DESC`,
+      [lower],
+    )) as Array<{
+      contract: string; token_id: string; mint_block: string; mint_log_index: number
+    }>
+    return rows.map((r) => ({
+      platform: "mint" as const,
       contract: r.contract as Address,
-      tokenId: r.tokenId,
-      blockNumber: r.blockNumber,
-      logIndex: r.logIndex,
+      tokenId: r.token_id,
+      blockNumber: BigInt(r.mint_block),
+      logIndex: r.mint_log_index,
       collectionName: null,
     }))
   },
 
-  async discoverCollectorTokens(): Promise<CollectorTokenRef[]> {
-    // Collector-side enumeration deferred — would need an Alchemy NFT
-    // API ownership query gated by the Mint-contract classifier. Out
-    // of scope for parity with the initial Manifold/SR/TL feature set.
-    return []
+  async discoverCollectorTokens(wallet: Address): Promise<CollectorTokenRef[]> {
+    if (!sql) return []
+    const lower = wallet.toLowerCase()
+    const rows = (await sql.unsafe(
+      `SELECT o.contract, o.token_id, o.transferred_at_block::text AS block,
+              o.tx_hash
+       FROM token_owners o
+       WHERE o.owner = $1
+         AND EXISTS (
+           SELECT 1 FROM ${schema}.mint_creators
+             WHERE lower(contract) = o.contract
+         )
+       ORDER BY o.transferred_at_block DESC LIMIT 200`,
+      [lower],
+    )) as Array<{
+      contract: string; token_id: string; block: string; tx_hash: string | null
+    }>
+    return rows.map((r) => ({
+      platform: "mint",
+      contract: r.contract as Address,
+      tokenId: r.token_id,
+      ownerWallet: lower as Address,
+      acquiredAtBlock: BigInt(r.block),
+      acquiredTxHash: r.tx_hash,
+    }))
   },
 
   async getLastSale(): Promise<AdapterLastSale | null> {
-    // No marketplace integration today (see adapter docstring).
     return null
   },
 }
