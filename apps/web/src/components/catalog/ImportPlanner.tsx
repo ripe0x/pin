@@ -79,16 +79,40 @@ export function ImportPlanner({
   const walletMatches =
     !!connected && connected.toLowerCase() === artistAddress.toLowerCase()
 
-  // Default all entries selected. The artist explicitly unchecks ones
-  // they want to skip — matches the "land + click" expectation in the
-  // brief better than "land + check every box".
-  const allKeys = useMemo(() => plan.ops.map(entryKey), [plan.ops])
+  // Extra ops added inline by the artist via the "Add a contract we
+  // missed" affordance at the bottom of the planner. Merged into
+  // effectiveOps so they ride the same multicall as the pre-fill
+  // selection. Stable EntryKey via the standard entryKey() helper.
+  const [extraOps, setExtraOps] = useState<CatalogOp[]>([])
+  const addExtraOp = (op: CatalogOp) => {
+    setExtraOps((prev) => {
+      const k = entryKey(op)
+      if (prev.some((p) => entryKey(p) === k)) return prev
+      return [...prev, op]
+    })
+  }
+  const removeExtraOp = (k: EntryKey) => {
+    setExtraOps((prev) => prev.filter((p) => entryKey(p) !== k))
+  }
+
+  // Default all entries selected (pre-fill + extras). The artist
+  // explicitly unchecks ones they want to skip — matches the "land +
+  // click" expectation in the brief better than "land + check every
+  // box".
+  const allKeys = useMemo(
+    () => [...plan.ops, ...extraOps].map(entryKey),
+    [plan.ops, extraOps],
+  )
   const [selected, setSelected] = useState<Set<EntryKey>>(
     () => new Set(allKeys),
   )
 
   useEffect(() => {
-    setSelected(new Set(allKeys))
+    setSelected((prev) => {
+      const next = new Set(prev)
+      for (const k of allKeys) next.add(k)
+      return next
+    })
   }, [allKeys])
 
   // Per-contract mode: "specific" (default, safe — emits the per-entry
@@ -97,16 +121,61 @@ export function ImportPlanner({
   // shared-contracts.ts) so an artist can't accidentally claim other
   // people's tokens. Mode survives re-renders but resets when the plan
   // identity changes.
-  const groupedOps = useMemo(() => groupByContract(plan.ops), [plan.ops])
+  const groupedOps = useMemo(
+    () => groupByContract([...plan.ops, ...extraOps]),
+    [plan.ops, extraOps],
+  )
   const [contractMode, setContractMode] = useState<
     Record<Address, ContractMode>
   >({})
+  // In "whole" mode, the entire contract becomes a single addContract
+  // op. Track per-contract selection so the artist can opt OUT of a
+  // whole contract without flipping back to specific mode + unchecking
+  // every token. Defaults to all whole-mode contracts selected.
+  const [selectedContracts, setSelectedContracts] = useState<Set<Address>>(
+    () => new Set(),
+  )
+  // Default per-contract mode: "whole" when EVERY underlying work for
+  // that contract carries `claimWholeContract: true` (signaled by the
+  // adapter when the artist owns the contract). Shared-platform
+  // contracts and any contract with mixed signals stay in "specific"
+  // mode. Re-evaluated whenever the plan identity changes.
   useEffect(() => {
-    setContractMode({})
-  }, [plan.ops])
+    const nextMode: Record<Address, ContractMode> = {}
+    const nextSelected = new Set<Address>()
+    for (const { contract, ops } of groupedOps) {
+      if (isSharedContract(contract)) continue
+      const allWorks = ops.flatMap((op) => op.works)
+      if (allWorks.length === 0) continue
+      const allClaim = allWorks.every((w) => w.claimWholeContract === true)
+      if (allClaim) {
+        nextMode[contract] = "whole"
+        nextSelected.add(contract)
+      }
+    }
+    setContractMode(nextMode)
+    setSelectedContracts(nextSelected)
+  }, [groupedOps])
 
   const setMode = (contract: Address, mode: ContractMode) => {
     setContractMode((prev) => ({ ...prev, [contract]: mode }))
+    // When flipping INTO whole mode, opt the contract in by default.
+    if (mode === "whole") {
+      setSelectedContracts((prev) => {
+        const next = new Set(prev)
+        next.add(contract)
+        return next
+      })
+    }
+  }
+
+  const toggleContract = (contract: Address) => {
+    setSelectedContracts((prev) => {
+      const next = new Set(prev)
+      if (next.has(contract)) next.delete(contract)
+      else next.add(contract)
+      return next
+    })
   }
 
   const toggle = (key: EntryKey) => {
@@ -129,6 +198,9 @@ export function ImportPlanner({
     for (const { contract, ops } of groupedOps) {
       const mode = contractMode[contract] ?? "specific"
       if (mode === "whole" && !isSharedContract(contract)) {
+        // Whole-mode contracts are gated by the contract-level checkbox.
+        // Unchecked = skip this contract entirely.
+        if (!selectedContracts.has(contract)) continue
         const allWorks = ops.flatMap((op) => op.works)
         out.push({ kind: "addContract", contract, works: allWorks })
       } else {
@@ -202,19 +274,68 @@ export function ImportPlanner({
           offChain={plan.offChain.length}
         />
       ) : (
-        <div className="mt-8 space-y-6">
-          {groupedOps.map(({ contract, ops }) => (
-            <ContractGroup
-              key={contract}
-              contract={contract}
-              ops={ops}
-              selected={selected}
-              onToggle={toggle}
-              mode={contractMode[contract] ?? "specific"}
-              onModeChange={(m) => setMode(contract, m)}
-            />
-          ))}
-        </div>
+        (() => {
+          // Split contracts into two visual categories:
+          //   - "Whole contract" group: owner-controlled contracts (artist
+          //     deployed or owns). The claim shape is identical for every
+          //     row, so we render them as a single flat list with ONE
+          //     explanation header and tight per-row chrome (no section
+          //     box per contract, no repeating description sentence).
+          //   - Everything else: shared-platform per-token claims, plus
+          //     adapter rows that don't carry a claimWholeContract hint
+          //     (Brinkman, etc.) — keep the existing per-contract section
+          //     with the mode toggle since those rows have real choices.
+          const wholeGroups: typeof groupedOps = []
+          const sharedGroups: typeof groupedOps = []
+          const otherGroups: typeof groupedOps = []
+          for (const g of groupedOps) {
+            if (isSharedContract(g.contract)) {
+              sharedGroups.push(g)
+              continue
+            }
+            const allWorks = g.ops.flatMap((op) => op.works)
+            const allClaim =
+              allWorks.length > 0 &&
+              allWorks.every((w) => w.claimWholeContract === true)
+            if (allClaim) wholeGroups.push(g)
+            else otherGroups.push(g)
+          }
+          return (
+            <div className="mt-8 space-y-6">
+              {wholeGroups.length > 0 && (
+                <WholeContractsList
+                  groups={wholeGroups}
+                  selectedContracts={selectedContracts}
+                  onSetSelected={setSelectedContracts}
+                />
+              )}
+              {sharedGroups.length > 0 && (
+                <SharedTokensList
+                  groups={sharedGroups}
+                  selected={selected}
+                  onToggle={toggle}
+                  onSetSelected={setSelected}
+                />
+              )}
+              {otherGroups.map(({ contract, ops }) => (
+                <ContractGroup
+                  key={contract}
+                  contract={contract}
+                  ops={ops}
+                  selected={selected}
+                  onToggle={toggle}
+                  mode={contractMode[contract] ?? "specific"}
+                  onModeChange={(m) => setMode(contract, m)}
+                  wholeContractSelected={selectedContracts.has(contract)}
+                  onToggleWholeContract={() => toggleContract(contract)}
+                />
+              ))}
+              <section className="border border-gray-200 rounded-md overflow-hidden">
+                <BatchAddRow onAdd={addExtraOp} />
+              </section>
+            </div>
+          )
+        })()
       )}
 
       <OffChainNotice offChain={plan.offChain} />
@@ -404,6 +525,501 @@ function groupByContract(
   return Array.from(map.entries()).map(([contract, ops]) => ({ contract, ops }))
 }
 
+/**
+ * Inline "add to selection" form. Lightweight version of AddEntryForm
+ * that builds a CatalogOp and hands it back to the parent instead of
+ * triggering its own chain write. Lets the artist add custom entries
+ * to the planner's batch so everything submits together via a single
+ * multicall — no separate transaction for hand-typed contracts.
+ *
+ * Just contract address + scope toggle. Validation is intentionally
+ * minimal: we accept any well-formed address. Catalog itself does no
+ * semantic checks, and adding into a multicall means a bad entry
+ * reverts the whole batch — so the existing AddEntryForm (full
+ * standalone) still exists for the case where the artist wants the
+ * preview + duplicate-guard.
+ */
+const ADDRESS_PATTERN = /^0x[a-fA-F0-9]{40}$/
+
+function BatchAddRow({
+  onAdd,
+}: {
+  onAdd: (op: CatalogOp) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [addr, setAddr] = useState("")
+  const [scope, setScope] = useState<"all" | "single" | "range">("all")
+  const [tokenInput, setTokenInput] = useState("")
+  const [err, setErr] = useState<string | null>(null)
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="w-full text-left text-sm text-gray-700 underline hover:text-gray-900 px-4 py-3"
+      >
+        + Add a contract we missed
+      </button>
+    )
+  }
+
+  function handleAdd() {
+    const c = addr.trim().toLowerCase() as Address
+    if (!ADDRESS_PATTERN.test(c)) {
+      setErr("Enter a valid contract address.")
+      return
+    }
+    if (scope === "all") {
+      onAdd({
+        kind: "addContract",
+        contract: c,
+        works: [
+          {
+            id: `manual:${c}`,
+            title: c,
+            chainId: 1,
+            contract: c,
+            claimWholeContract: true,
+          },
+        ],
+      })
+    } else if (scope === "single") {
+      const id = tokenInput.trim()
+      if (!/^\d+$/.test(id)) {
+        setErr("Enter a token ID (digits).")
+        return
+      }
+      const tokenId = BigInt(id)
+      onAdd({
+        kind: "addToken",
+        contract: c,
+        tokenId,
+        works: [
+          {
+            id: `manual:${c}:${id}`,
+            title: `#${id}`,
+            chainId: 1,
+            contract: c,
+            tokenId,
+          },
+        ],
+      })
+    } else {
+      const m = tokenInput.trim().match(/^(\d+)\s*[-–]\s*(\d+)$/)
+      if (!m) {
+        setErr("Enter a range like 1-100.")
+        return
+      }
+      const start = BigInt(m[1])
+      const end = BigInt(m[2])
+      if (end < start) {
+        setErr("Range end must be ≥ start.")
+        return
+      }
+      onAdd({
+        kind: "addTokenRange",
+        contract: c,
+        start,
+        end,
+        works: [
+          {
+            id: `manual:${c}:${start}-${end}`,
+            title: `#${start}–${end}`,
+            chainId: 1,
+            contract: c,
+            tokenIdStart: start,
+            tokenIdEnd: end,
+          },
+        ],
+      })
+    }
+    // Clear + leave open so the artist can add several without
+    // re-expanding.
+    setAddr("")
+    setTokenInput("")
+    setScope("all")
+    setErr(null)
+  }
+
+  return (
+    <div className="px-4 py-3 space-y-2 bg-gray-50/50">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold text-gray-700">
+          Add a contract we missed
+        </p>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="text-xs text-gray-500 hover:text-gray-900 underline"
+        >
+          Cancel
+        </button>
+      </div>
+      <input
+        type="text"
+        autoComplete="off"
+        spellCheck={false}
+        value={addr}
+        onChange={(e) => {
+          setAddr(e.target.value)
+          setErr(null)
+        }}
+        placeholder="0x... contract address"
+        className="w-full border border-gray-200 rounded-md px-3 py-2 font-mono text-xs focus:outline-none focus:border-gray-400"
+      />
+      <div className="flex items-center gap-2">
+        <div className="inline-flex border border-gray-200 rounded overflow-hidden text-[11px] font-mono">
+          {(["all", "single", "range"] as const).map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => {
+                setScope(s)
+                setErr(null)
+              }}
+              className={`px-2.5 py-1 transition-colors ${
+                scope === s
+                  ? "bg-gray-900 text-white"
+                  : "bg-white text-gray-600 hover:bg-gray-100"
+              } ${s !== "all" ? "border-l border-gray-200" : ""}`}
+            >
+              {s === "all"
+                ? "Whole contract"
+                : s === "single"
+                  ? "Single token"
+                  : "Token range"}
+            </button>
+          ))}
+        </div>
+        {scope !== "all" && (
+          <input
+            type="text"
+            value={tokenInput}
+            onChange={(e) => {
+              setTokenInput(e.target.value)
+              setErr(null)
+            }}
+            placeholder={scope === "single" ? "Token ID" : "1-100"}
+            className="flex-1 border border-gray-200 rounded-md px-3 py-1.5 font-mono text-xs focus:outline-none focus:border-gray-400"
+          />
+        )}
+        <button
+          type="button"
+          onClick={handleAdd}
+          className="text-xs px-3 py-1.5 bg-gray-900 text-white rounded hover:bg-gray-800"
+        >
+          Add to selection
+        </button>
+      </div>
+      {err && <p className="text-xs text-amber-700">{err}</p>}
+    </div>
+  )
+}
+
+/**
+ * Single-section render for owner-controlled contracts.
+ *
+ * Each owner-controlled contract has the same claim shape (addContract
+ * — claims everything past + future), so showing a separate section
+ * box per contract with the same explanation sentence on every row is
+ * just noise when the artist has 10+ collections. Render the whole
+ * group as one flat list with ONE explanation header and tight rows.
+ *
+ * Per-row content is the minimum needed for the artist to recognize +
+ * decide: checkbox, thumbnail, collection name, address. No mode
+ * toggle (it's whole-only), no body description (it's in the header).
+ */
+function WholeContractsList({
+  groups,
+  selectedContracts,
+  onSetSelected,
+}: {
+  groups: Array<{ contract: Address; ops: CatalogOp[] }>
+  selectedContracts: Set<Address>
+  onSetSelected: (
+    updater: (prev: Set<Address>) => Set<Address>,
+  ) => void
+}) {
+  const total = groups.length
+  const selectedCount = groups.filter((g) => selectedContracts.has(g.contract))
+    .length
+  const allSelected = selectedCount === total
+  const allAddresses = groups.map((g) => g.contract)
+
+  const toggleOne = (contract: Address) => {
+    onSetSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(contract)) next.delete(contract)
+      else next.add(contract)
+      return next
+    })
+  }
+  const toggleAll = () => {
+    onSetSelected((prev) => {
+      if (selectedCount === total) {
+        const next = new Set(prev)
+        for (const c of allAddresses) next.delete(c)
+        return next
+      }
+      const next = new Set(prev)
+      for (const c of allAddresses) next.add(c)
+      return next
+    })
+  }
+
+  return (
+    <section className="border border-gray-200 rounded-md overflow-hidden">
+      <header className="bg-gray-50 border-b border-gray-200 px-4 py-3">
+        <div className="flex items-baseline justify-between gap-4">
+          <h3 className="text-sm font-semibold">Your collections</h3>
+          <div className="flex items-baseline gap-3 text-xs">
+            <span className="text-gray-500 font-mono">
+              {selectedCount}/{total}
+            </span>
+            <button
+              type="button"
+              onClick={toggleAll}
+              className="text-gray-700 hover:text-gray-900 underline"
+            >
+              {allSelected ? "Deselect all" : "Select all"}
+            </button>
+          </div>
+        </div>
+        <p className="text-xs text-gray-500 mt-1">
+          One <code className="font-mono">addContract</code> call per row —
+          claims the entire contract, every existing token and every
+          future mint.
+        </p>
+      </header>
+      <ul className="divide-y divide-gray-100">
+        {groups.map(({ contract, ops }) => {
+          const allWorks = ops.flatMap((op) => op.works)
+          const firstImage = allWorks.find((w) => w.imageUrl)
+          const name =
+            allWorks.find((w) => w.collectionName)?.collectionName ?? null
+          const totalSupply = allWorks.find(
+            (w) => typeof w.contractTotalSupply === "number",
+          )?.contractTotalSupply
+          const isSelected = selectedContracts.has(contract)
+          return (
+            <li
+              key={contract}
+              className="flex items-center gap-4 px-4 py-3 hover:bg-gray-50"
+            >
+              <input
+                type="checkbox"
+                checked={isSelected}
+                onChange={() => toggleOne(contract)}
+                className="h-4 w-4 accent-emerald-600 cursor-pointer"
+                onClick={(e) => e.stopPropagation()}
+              />
+              {/*
+               * Layout: image | (name over address-link) | total-count.
+               * Image + name area is the click-target that toggles the
+               * row's checkbox. The address is a real anchor inside the
+               * name block so the artist can click it to verify on
+               * evm.now without toggling (stopPropagation).
+               */}
+              <button
+                type="button"
+                onClick={() => toggleOne(contract)}
+                className="h-10 w-10 shrink-0 bg-gray-100 rounded overflow-hidden relative cursor-pointer"
+                aria-label={`Toggle ${name ?? contract}`}
+              >
+                {firstImage?.imageUrl && (
+                  <Thumb
+                    src={firstImage.imageUrl}
+                    fallback={firstImage.imageFallbackUrl}
+                    alt=""
+                  />
+                )}
+              </button>
+              <div className="min-w-0 flex-1">
+                {name ? (
+                  <button
+                    type="button"
+                    onClick={() => toggleOne(contract)}
+                    className="block text-left text-sm font-medium truncate w-full cursor-pointer hover:underline"
+                  >
+                    {name}
+                  </button>
+                ) : null}
+                <a
+                  href={`https://evm.now/address/${contract}?chainId=1`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="font-mono text-[11px] text-gray-500 hover:text-gray-900 underline truncate block"
+                >
+                  {contract}
+                </a>
+              </div>
+              <span className="shrink-0 text-xs text-gray-500 tabular-nums">
+                {totalSupply !== undefined
+                  ? `${totalSupply.toLocaleString()} ${totalSupply === 1 ? "token" : "tokens"}`
+                  : ""}
+              </span>
+            </li>
+          )
+        })}
+      </ul>
+    </section>
+  )
+}
+
+/**
+ * Single-section render for shared-platform tokens (FND shared 1/1, SR V2
+ * shared, etc). Same principle as WholeContractsList: one consolidated
+ * section instead of N per-contract section boxes that all say the same
+ * "Specific only" thing. Tokens are grouped by platform name so the
+ * artist can see which marketplace each minted-on is.
+ */
+function SharedTokensList({
+  groups,
+  selected,
+  onToggle,
+  onSetSelected,
+}: {
+  groups: Array<{ contract: Address; ops: CatalogOp[] }>
+  selected: Set<EntryKey>
+  onToggle: (k: EntryKey) => void
+  onSetSelected: (
+    updater: (prev: Set<EntryKey>) => Set<EntryKey>,
+  ) => void
+}) {
+  // Flatten then partition by platform name, preserving order.
+  type Item = {
+    op: Exclude<CatalogOp, { kind: "addContract" }>
+    contract: Address
+    platform: string
+  }
+  const itemsByPlatform = new Map<string, Item[]>()
+  for (const g of groups) {
+    const info = sharedContractInfo(g.contract)
+    const platform = info?.platform ?? "Shared"
+    for (const op of g.ops) {
+      if (op.kind === "addContract") continue
+      const bucket = itemsByPlatform.get(platform) ?? []
+      bucket.push({ op, contract: g.contract, platform })
+      itemsByPlatform.set(platform, bucket)
+    }
+  }
+  const allItems = [...itemsByPlatform.values()].flat()
+  if (allItems.length === 0) return null
+
+  const allKeys = allItems.map((it) => entryKey(it.op))
+  const selectedCount = allKeys.filter((k) => selected.has(k)).length
+  const total = allKeys.length
+  const allSelected = selectedCount === total
+
+  const toggleAll = () => {
+    onSetSelected((prev) => {
+      if (selectedCount === total) {
+        const next = new Set(prev)
+        for (const k of allKeys) next.delete(k)
+        return next
+      }
+      const next = new Set(prev)
+      for (const k of allKeys) next.add(k)
+      return next
+    })
+  }
+
+  return (
+    <section className="border border-gray-200 rounded-md overflow-hidden">
+      <header className="bg-gray-50 border-b border-gray-200 px-4 py-3">
+        <div className="flex items-baseline justify-between gap-4">
+          <h3 className="text-sm font-semibold">Tokens on shared contracts</h3>
+          <div className="flex items-baseline gap-3 text-xs">
+            <span className="text-gray-500 font-mono">
+              {selectedCount}/{total}
+            </span>
+            <button
+              type="button"
+              onClick={toggleAll}
+              className="text-gray-700 hover:text-gray-900 underline"
+            >
+              {allSelected ? "Deselect all" : "Select all"}
+            </button>
+          </div>
+        </div>
+        <p className="text-xs text-gray-500 mt-1">
+          Per-token claims — these contracts are shared across many artists,
+          so only the specific tokens you minted are added.
+        </p>
+      </header>
+      <div className="divide-y divide-gray-100">
+        {[...itemsByPlatform.entries()].map(([platform, items]) => (
+          <div key={platform}>
+            <p className="text-[10px] uppercase tracking-wider font-mono text-gray-500 bg-gray-50/60 px-4 py-1.5">
+              {platform}
+            </p>
+            <ul className="divide-y divide-gray-100">
+              {items.map(({ op, contract }) => {
+                const k = entryKey(op)
+                const work = op.works[0]
+                const tokenIdLabel =
+                  op.kind === "addToken"
+                    ? `#${op.tokenId.toString()}`
+                    : `#${op.start.toString()}–${op.end.toString()}`
+                return (
+                  <li
+                    key={k}
+                    className="flex items-center gap-4 px-4 py-3 hover:bg-gray-50"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selected.has(k)}
+                      onChange={() => onToggle(k)}
+                      className="h-4 w-4 accent-emerald-600 cursor-pointer"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => onToggle(k)}
+                      className="h-10 w-10 shrink-0 bg-gray-100 rounded overflow-hidden relative cursor-pointer"
+                      aria-label={`Toggle ${work?.title ?? tokenIdLabel}`}
+                    >
+                      {work?.imageUrl && (
+                        <Thumb
+                          src={work.imageUrl}
+                          fallback={work.imageFallbackUrl}
+                          alt=""
+                        />
+                      )}
+                    </button>
+                    <div className="min-w-0 flex-1">
+                      <button
+                        type="button"
+                        onClick={() => onToggle(k)}
+                        className="block text-left text-sm truncate w-full cursor-pointer hover:underline"
+                      >
+                        {work?.title || tokenIdLabel}
+                      </button>
+                      <a
+                        href={`https://evm.now/address/${contract}?chainId=1`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="font-mono text-[11px] text-gray-500 hover:text-gray-900 underline truncate block"
+                      >
+                        {contract}
+                      </a>
+                    </div>
+                    <span className="shrink-0 text-xs text-gray-500 font-mono tabular-nums">
+                      {tokenIdLabel}
+                    </span>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function ContractGroup({
   contract,
   ops,
@@ -411,6 +1027,8 @@ function ContractGroup({
   onToggle,
   mode,
   onModeChange,
+  wholeContractSelected,
+  onToggleWholeContract,
 }: {
   contract: Address
   ops: CatalogOp[]
@@ -418,29 +1036,70 @@ function ContractGroup({
   onToggle: (k: EntryKey) => void
   mode: ContractMode
   onModeChange: (mode: ContractMode) => void
+  wholeContractSelected: boolean
+  onToggleWholeContract: () => void
 }) {
   const total = ops.reduce((n, op) => n + tokenCount(op), 0)
   const selectedCount = ops.filter((op) => selected.has(entryKey(op))).length
   const shared = isSharedContract(contract)
   const sharedInfo = sharedContractInfo(contract)
   const showWholeOption = !shared
+  // Hide the per-token mode toggle when the contract is owner-controlled
+  // (adapter signaled claimWholeContract on every work). For those, the
+  // addContract claim is the natural correct action and per-token mode
+  // is a false choice: the visible "X of N indexed" count is just our
+  // mints-to-artist subset, not the artist's full creation set, so
+  // exposing it would let the artist pick from a misleading menu.
+  // Specific-token curation (disavow individual tokens) is an exception
+  // case handled by post-add Catalog editing, not by this importer.
+  const allWorks = ops.flatMap((op) => op.works)
+  const allClaimWhole =
+    allWorks.length > 0 &&
+    allWorks.every((w) => w.claimWholeContract === true)
+  const showSpecificOption = shared || !allClaimWhole
+  const collectionName = allWorks.find((w) => w.collectionName)?.collectionName
 
   return (
     <section className="border border-gray-200 rounded-md overflow-hidden">
       <header className="flex items-start justify-between bg-gray-50 border-b border-gray-200 px-4 py-3 gap-4">
         <div className="min-w-0 flex-1">
-          <a
-            href={`https://evm.now/address/${contract}?chainId=1`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-mono text-xs text-gray-700 hover:text-gray-900 underline break-all"
-          >
-            {contract}
-          </a>
+          {collectionName ? (
+            <>
+              <p className="text-sm font-semibold truncate">{collectionName}</p>
+              <a
+                href={`https://evm.now/address/${contract}?chainId=1`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-mono text-[11px] text-gray-500 hover:text-gray-900 underline break-all"
+              >
+                {contract}
+              </a>
+            </>
+          ) : (
+            <a
+              href={`https://evm.now/address/${contract}?chainId=1`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono text-xs text-gray-700 hover:text-gray-900 underline break-all"
+            >
+              {contract}
+            </a>
+          )}
           <p className="text-xs text-gray-500 mt-0.5">
-            {ops.length} {pluralize("entry", "entries", ops.length)} · {total}{" "}
-            {pluralize("token", "tokens", total)}
-            {mode === "specific" && <> · {selectedCount} selected</>}
+            {mode === "whole" && showWholeOption ? (
+              // Whole-contract mode: count is intentionally absent here
+              // — addContract claims the entire contract regardless of
+              // how many tokens we've indexed, and saying "N indexed"
+              // implies the contract HAS N tokens, which is usually
+              // wrong (we typically only see the mints-to-artist subset
+              // for owner-controlled contracts).
+              <>Full contract</>
+            ) : (
+              <>
+                {total} of your works indexed ·{" "}
+                {selectedCount} selected
+              </>
+            )}
             {sharedInfo && (
               <>
                 {" "}· <span className="text-amber-700">{sharedInfo.platform}</span>
@@ -452,12 +1111,19 @@ function ContractGroup({
           mode={mode}
           onChange={onModeChange}
           showWholeOption={showWholeOption}
+          showSpecificOption={showSpecificOption}
           sharedPlatform={sharedInfo?.platform ?? null}
         />
       </header>
 
       {mode === "whole" && showWholeOption ? (
-        <WholeContractRow contract={contract} ops={ops} total={total} />
+        <WholeContractRow
+          contract={contract}
+          ops={ops}
+          total={total}
+          selected={wholeContractSelected}
+          onToggle={onToggleWholeContract}
+        />
       ) : (
         <ul className="divide-y divide-gray-100">
           {ops.map((op) => {
@@ -484,13 +1150,16 @@ function ModeRadio({
   mode,
   onChange,
   showWholeOption,
+  showSpecificOption,
   sharedPlatform,
 }: {
   mode: ContractMode
   onChange: (mode: ContractMode) => void
   showWholeOption: boolean
+  showSpecificOption: boolean
   sharedPlatform: string | null
 }) {
+  // Shared platforms: only per-token mode makes sense.
   if (!showWholeOption) {
     return (
       <span
@@ -502,6 +1171,18 @@ function ModeRadio({
         }
       >
         Specific only ({sharedPlatform ?? "shared"})
+      </span>
+    )
+  }
+  // Owner-controlled contracts: only whole-contract mode. Render as a
+  // static label, not a toggle — there's no decision to make.
+  if (!showSpecificOption) {
+    return (
+      <span
+        className="shrink-0 text-[10px] uppercase font-mono tracking-wider px-2 py-1 rounded border border-gray-200 bg-gray-900 text-white"
+        title="You own this contract. addContract is the correct claim — the whole collection, every existing and future token."
+      >
+        Full contract
       </span>
     )
   }
@@ -535,46 +1216,44 @@ function ModeRadio({
 }
 
 function WholeContractRow({
-  contract,
   ops,
-  total,
+  selected,
+  onToggle,
 }: {
   contract: Address
   ops: CatalogOp[]
   total: number
+  selected: boolean
+  onToggle: () => void
 }) {
-  const firstWorkWithImage = ops
-    .flatMap((op) => op.works)
-    .find((w) => w.imageUrl)
+  const allWorks = ops.flatMap((op) => op.works)
+  const firstWorkWithImage = allWorks.find((w) => w.imageUrl)
   return (
-    <div className="px-4 py-3">
-      <div className="flex items-center gap-4">
-        <div className="h-12 w-12 shrink-0 bg-gray-100 rounded overflow-hidden relative">
-          {firstWorkWithImage?.imageUrl && (
-            <Thumb
-              src={firstWorkWithImage.imageUrl}
-              fallback={firstWorkWithImage.imageFallbackUrl}
-              alt=""
-            />
-          )}
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium">Register the full contract</p>
-          <p className="text-xs text-gray-500 mt-0.5">
-            Claims all current ({total} {pluralize("token", "tokens", total)}{" "}
-            in your registry) AND any future tokens minted on{" "}
-            <span className="font-mono">{contract.slice(0, 10)}…</span>.
-            Replaces the {ops.length}{" "}
-            {pluralize("specific entry", "specific entries", ops.length)} for
-            this contract with a single <code className="font-mono">addContract</code>{" "}
-            call.
-          </p>
-        </div>
-        <span className="shrink-0 text-[10px] uppercase font-mono tracking-wider px-2 py-0.5 rounded bg-gray-50 text-gray-600 border border-gray-200">
-          contract
-        </span>
+    <label className="flex items-center gap-4 px-4 py-3 hover:bg-gray-50 cursor-pointer">
+      <input
+        type="checkbox"
+        checked={selected}
+        onChange={onToggle}
+        className="h-4 w-4 accent-emerald-600"
+      />
+      <div className="h-12 w-12 shrink-0 bg-gray-100 rounded overflow-hidden relative">
+        {firstWorkWithImage?.imageUrl && (
+          <Thumb
+            src={firstWorkWithImage.imageUrl}
+            fallback={firstWorkWithImage.imageFallbackUrl}
+            alt=""
+          />
+        )}
       </div>
-    </div>
+      <p className="min-w-0 flex-1 text-xs text-gray-500">
+        Claims the entire contract — every existing token (whoever holds
+        it) and every future mint, in one{" "}
+        <code className="font-mono">addContract</code> call.
+      </p>
+      <span className="shrink-0 text-[10px] uppercase font-mono tracking-wider px-2 py-0.5 rounded bg-gray-50 text-gray-600 border border-gray-200">
+        contract
+      </span>
+    </label>
   )
 }
 

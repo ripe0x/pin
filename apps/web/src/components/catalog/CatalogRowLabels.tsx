@@ -41,26 +41,40 @@ export function ContractLabel({ address }: { address: string }) {
   const { data } = useContractInfo(address)
   const name = data?.name ?? null
   return (
-    <div className="min-w-0 space-y-0.5">
+    <div className="min-w-0 space-y-0.5 flex-1">
       {name ? (
-        <a
-          href={`https://evm.now/address/${address}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-sm font-medium truncate underline-offset-2 hover:underline"
-        >
-          {name}
-        </a>
+        <p className="text-sm font-medium truncate">{name}</p>
       ) : null}
       <a
         href={`https://evm.now/address/${address}`}
         target="_blank"
         rel="noopener noreferrer"
-        className="block font-mono text-xs text-gray-500 underline-offset-2 hover:underline"
+        className="block font-mono text-xs text-gray-500 underline-offset-2 hover:underline truncate"
       >
-        {shortAddr(address)}
+        {address}
       </a>
     </div>
+  )
+}
+
+/**
+ * Right-side "1,139 tokens" badge for a contract row, fed by the same
+ * `/api/contract-info` totalSupply field surfaced in the import
+ * planner. Renders nothing when totalSupply isn't known (older
+ * contracts that don't implement the ERC-721 enumerable extension) so
+ * the row just shows name + address with no count rather than a
+ * misleading zero.
+ */
+export function ContractTotalSupplyBadge({ address }: { address: string }) {
+  const { data } = useContractInfo(address)
+  const raw = data?.totalSupply
+  if (!raw) return null
+  const n = parseInt(raw, 10)
+  if (!Number.isFinite(n) || n <= 0) return null
+  return (
+    <span className="shrink-0 text-xs text-gray-500 tabular-nums">
+      {n.toLocaleString()} {n === 1 ? "token" : "tokens"}
+    </span>
   )
 }
 

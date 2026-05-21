@@ -204,9 +204,26 @@ export function normalize(
   ops.push(...merged)
 
   // Step 3: stable sort — contract groups together, ranges before
-  // singles within each contract (purely cosmetic for the UI).
+  // singles within each contract. Contracts themselves are kept in
+  // INPUT order (the first time each contract appeared in the
+  // adapter's output dictates its position), so adapters can control
+  // the contract ordering via their SQL/source order. The pnd-indexed
+  // adapter sorts by recency (newest-deployed first); we don't want
+  // an alphabetical re-sort here to undo that.
+  const contractFirstSeen = new Map<Address, number>()
+  let nextIdx = 0
+  for (const op of ops) {
+    if (!contractFirstSeen.has(op.contract)) {
+      contractFirstSeen.set(op.contract, nextIdx++)
+    }
+  }
   ops.sort((a, b) => {
-    if (a.contract !== b.contract) return a.contract < b.contract ? -1 : 1
+    if (a.contract !== b.contract) {
+      return (
+        (contractFirstSeen.get(a.contract) ?? 0) -
+        (contractFirstSeen.get(b.contract) ?? 0)
+      )
+    }
     if (a.kind !== b.kind) return a.kind === "addTokenRange" ? -1 : 1
     if (a.kind === "addContract" || b.kind === "addContract") return 0
     const aId = rangeStart(a)
