@@ -51,6 +51,11 @@ export function BidForm({ houseAddress, auctionId, initial, ensMap }: Props) {
     args: [BigInt(auctionId)],
     query: {
       refetchInterval: 12_000,
+      // Keep polling while the tab is backgrounded — during the wallet
+      // popup / tx confirmation the tab loses focus, and without this the
+      // 12s interval pauses, so a freshly placed bid wouldn't reflect until
+      // the user refocused. One extra poll during an active bid is cheap.
+      refetchIntervalInBackground: true,
     },
   })
 
@@ -69,7 +74,7 @@ export function BidForm({ houseAddress, auctionId, initial, ensMap }: Props) {
     abi: sovereignAuctionHouseAbi,
     functionName: "getMinBidAmount",
     args: [BigInt(auctionId)],
-    query: { refetchInterval: 12_000 },
+    query: { refetchInterval: 12_000, refetchIntervalInBackground: true },
   })
   const minBidWei =
     (minBidRead.data as readonly [boolean, bigint] | undefined)?.[1] ??
