@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import { Providers } from "./providers"
-import { getConfig } from "@/lib/config"
+import { getConfig, getSiteUrl } from "@/lib/config"
 import { getArtistDisplayName } from "@/lib/artist"
 import { Navbar } from "@/components/Navbar"
 import "./globals.css"
@@ -11,6 +11,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const description =
     cfg.artistBio ?? `Live and past on-chain auctions by ${name}.`
   return {
+    metadataBase: new URL(getSiteUrl()),
     title: {
       default: `${name} — Auctions`,
       template: `%s | ${name}`,
