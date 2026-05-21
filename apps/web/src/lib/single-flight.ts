@@ -1,133 +1,61 @@
 /**
- * Single-flight: serialize concurrent expensive work on the same key.
+ * Single-flight: collapse concurrent identical work onto one in-flight call.
  *
- * Problem this solves: when a token URL gets shared on Discord and 50
- * users click within 30 seconds, all 50 server-side renders fire the
- * same expensive `getArtistGalleryPage(...)` (or similar) BEFORE any
- * of them populates the cache. 50× the RPC for the same data.
+ * Problem this solves: when a token URL gets shared and many users click
+ * within a few seconds, every server render fires the same expensive
+ * `getArtistGalleryPage(...)` BEFORE any of them populates the cache —
+ * Nx the work for one piece of data.
  *
- * Approach: wrap the expensive call in `withSingleFlight(key, fn)`.
- * The first caller for a given key acquires a Postgres lock row and
- * runs `fn`. Concurrent callers for the same key wait for the lock
- * (poll up to `waitMs`), then re-enter `fn` — by which time the
- * cache wrapped inside `fn` will hit and return without doing the
- * expensive work. Net effect: stampede of N concurrent same-key
- * callers becomes 1 expensive call + N-1 cache hits.
+ * Approach: an in-process `Map<key, Promise>`. The first caller for a key
+ * starts `fn()` and stores its promise; concurrent callers for the same
+ * key await that same promise instead of starting their own. When it
+ * settles (resolve or reject) the entry is cleared so the next call runs
+ * fresh. Net effect: a burst of N concurrent same-key callers becomes 1
+ * execution + N-1 awaiters.
  *
- * Why a custom table instead of `pg_advisory_lock`:
- *   Railway's Postgres uses PgBouncer-style pooling. In
- *   transaction-mode pooling, advisory locks acquired in one
- *   transaction don't persist for the next — silently breaking the
- *   pattern. The TTL-based table works under any pooling mode and
- *   self-heals if a holder crashes (lock expires, next acquirer
- *   reclaims it via the UPDATE branch of ON CONFLICT).
+ * Why in-memory (not a Postgres lock):
+ *   The previous implementation used a `single_flight_locks` table with a
+ *   poll-and-wait loop. That table isn't part of the v2 schema, so every
+ *   call failed to acquire, burned the full `waitMs` polling, and churned
+ *   pool connections with failing INSERTs before falling through — adding
+ *   ~3s of latency to every gallery request and tipping a small serverless
+ *   pool into connection-exhaustion failures. An in-process map needs no
+ *   DB, no table, and no network round-trip.
  *
- * Failure modes:
- *   - DB unavailable → fall through to running `fn` directly. Loses
- *     stampede protection but doesn't block the request.
- *   - Couldn't acquire lock within `waitMs` → run `fn` anyway.
- *     Better duplicate work than infinite blocking under sustained
- *     contention.
- *   - Lock holder crashes mid-fetch → lock expires after
- *     `lockTtlMs`, next acquirer takes over. Set the TTL above the
- *     longest legitimate single-flight body to avoid premature
- *     hand-off mid-render.
+ * Scope note: dedup is per-process. On serverless (one pool per instance)
+ * a key is deduped within an instance but not across instances. That's
+ * acceptable here — the wrapped `fn` is itself `unstable_cache`-backed and
+ * ISR/CDN absorbs the bulk of fan-out, so cross-instance stampede is rare
+ * and self-limits. On a long-running process (one instance) dedup is total.
+ *
+ * `options` (waitMs / lockTtlMs) are retained for call-site compatibility
+ * and ignored — the map-based approach has no wait or TTL to tune.
  */
-import { sql } from "./db"
-import { randomUUID } from "crypto"
-
-const DEFAULT_WAIT_MS = 3_000
-const DEFAULT_LOCK_TTL_MS = 30_000
-const POLL_INTERVAL_MS = 100
 
 type Options = {
-  /** Max time to wait for the lock before running `fn` directly. */
+  /** Retained for call-site compatibility; ignored. */
   waitMs?: number
-  /** TTL stamped on the lock row. Must exceed worst-case `fn` runtime. */
+  /** Retained for call-site compatibility; ignored. */
   lockTtlMs?: number
 }
+
+const inFlight = new Map<string, Promise<unknown>>()
 
 export async function withSingleFlight<T>(
   key: string,
   fn: () => Promise<T>,
-  options: Options = {},
+  _options: Options = {},
 ): Promise<T> {
-  if (!sql) return fn()
-  const waitMs = options.waitMs ?? DEFAULT_WAIT_MS
-  const lockTtlMs = options.lockTtlMs ?? DEFAULT_LOCK_TTL_MS
-  const holder = randomUUID()
-  const start = Date.now()
+  const existing = inFlight.get(key) as Promise<T> | undefined
+  if (existing) return existing
 
-  while (true) {
-    const acquired = await tryAcquire(key, holder, lockTtlMs)
-    if (acquired) {
-      try {
-        return await fn()
-      } finally {
-        await release(key, holder)
-      }
-    }
-    if (Date.now() - start >= waitMs) {
-      // Couldn't acquire in time. Run anyway — duplicate work in the
-      // worst case is preferable to making the user wait forever.
-      return fn()
-    }
-    await sleep(POLL_INTERVAL_MS)
-  }
-}
-
-async function tryAcquire(
-  key: string,
-  holder: string,
-  lockTtlMs: number,
-): Promise<boolean> {
-  if (!sql) return false
+  const promise = fn()
+  inFlight.set(key, promise)
   try {
-    // Atomic acquire-or-reclaim:
-    //   - INSERT succeeds when the row doesn't exist → we got the lock.
-    //   - On conflict, UPDATE only fires if the existing row's TTL has
-    //     passed → we reclaim it.
-    //   - If conflict + still-valid existing row → no row returned → we
-    //     didn't get it.
-    const rows = await sql<Array<{ ok: number }>>`
-      INSERT INTO single_flight_locks (key, holder, expires_at)
-      VALUES (
-        ${key},
-        ${holder},
-        NOW() + (${lockTtlMs} || ' milliseconds')::interval
-      )
-      ON CONFLICT (key) DO UPDATE
-        SET holder = EXCLUDED.holder,
-            expires_at = EXCLUDED.expires_at,
-            created_at = NOW()
-        WHERE single_flight_locks.expires_at < NOW()
-      RETURNING 1 AS ok
-    `
-    return rows.length > 0
-  } catch {
-    // DB transient failure. Treat as "not acquired" so the caller falls
-    // through to direct fn() and serves the user.
-    return false
+    return await promise
+  } finally {
+    // Clear once settled so the next call re-runs (and re-checks the
+    // wrapped cache) rather than reusing a stale resolved promise.
+    inFlight.delete(key)
   }
-}
-
-async function release(key: string, holder: string): Promise<void> {
-  if (!sql) return
-  try {
-    // Holder check ensures we don't release a lock that already
-    // expired and got reclaimed by another waiter. Without it, a
-    // slow `fn` whose lock expired could DELETE the new holder's
-    // row when it finally returns.
-    await sql`
-      DELETE FROM single_flight_locks
-      WHERE key = ${key} AND holder = ${holder}
-    `
-  } catch {
-    // Best-effort cleanup. If this fails the lock will expire on TTL
-    // and be reclaimable by the next acquirer.
-  }
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }
