@@ -103,6 +103,32 @@ export type AppConfig = {
   factoryDeployBlock: bigint
 }
 
+/**
+ * Absolute site origin for `metadataBase`, so OG/Twitter image URLs resolve
+ * to the deployed domain instead of `http://localhost:3000`. Resolution order:
+ *   1. NEXT_PUBLIC_SITE_URL  — explicit override (any host)
+ *   2. URL / DEPLOY_PRIME_URL — Netlify build-time site URLs
+ *   3. VERCEL_PROJECT_PRODUCTION_URL / VERCEL_URL — Vercel
+ *   4. localhost fallback (dev)
+ *
+ * Only consumed server-side (metadata generation). The non-`NEXT_PUBLIC_`
+ * platform vars aren't inlined into client bundles, which is fine.
+ */
+export function getSiteUrl(): string {
+  const candidates = [
+    process.env.NEXT_PUBLIC_SITE_URL,
+    process.env.URL, // Netlify: primary site URL
+    process.env.DEPLOY_PRIME_URL, // Netlify: branch / deploy-preview URL
+    process.env.VERCEL_PROJECT_PRODUCTION_URL, // Vercel: stable prod domain
+    process.env.VERCEL_URL, // Vercel: per-deployment URL
+  ]
+  for (const raw of candidates) {
+    const v = raw?.trim()
+    if (v) return v.startsWith("http") ? v : `https://${v}`
+  }
+  return "http://localhost:3000"
+}
+
 export function getConfig(): AppConfig {
   if (_config) return _config
   _config = {
