@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { BidForm } from "@/components/BidForm"
+import { RefreshMetadataButton } from "@/components/RefreshMetadataButton"
 import { BidHistory } from "@/components/BidHistory"
 import { SettledSummary } from "@/components/SettledSummary"
 import { TokenMedia } from "@/components/TokenMedia"
@@ -247,6 +248,15 @@ export default async function AuctionPage({ params }: { params: Params }) {
                 </a>
               </dd>
             </dl>
+            {/* Manual metadata refresh — for reveals / corrected metadata that
+                shouldn't wait for the 24h cache. Server-side rate-limited. */}
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <RefreshMetadataButton
+                tokenContract={auction.tokenContract}
+                tokenId={auction.tokenId}
+                auctionId={auction.auctionId}
+              />
+            </div>
           </section>
         </aside>
       </div>
