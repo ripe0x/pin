@@ -1,11 +1,25 @@
 # Deployment
 
+> **Partially pre-rebuild — read with care.** Some of this doc predates
+> the v2 rebuild (PR #69) and is stale:
+> - The indexer is now `apps/indexer/`, **not** `ponder/`. There is no
+>   `ponder/README.md`; the indexer is configured in
+>   `apps/indexer/ponder.config.ts`.
+> - The entire **"External-platform indexer"** section below (the
+>   `lazy_*` tables, `refreshArtist`, the "Refresh my work" button, the
+>   Netlify cron, migrations `022`–`024`) describes the **removed v1
+>   web-side scanning model**. Production has no `lazy_*` tables; the
+>   worker now owns all per-token scanning. See `ARCHITECTURE.md`
+>   (current) and `docs/adding-a-platform.md` (rewritten for v2).
+> - The Postgres/Netlify/Railway provisioning notes are still broadly
+>   useful. `ARCHITECTURE.md` is authoritative on data flow.
+
 Notes for self-hosting the full PND stack: Next.js app + shared Postgres
-cache + optional Ponder indexer. Each piece can run independently; the
+cache + Ponder indexer + worker. Each piece can run independently; the
 web app degrades gracefully when Postgres or Ponder is unavailable.
 
-For the indexer-specific gotchas (Ponder schema config, RPC
-requirements, recovery flows), see [`ponder/README.md`](./ponder/README.md).
+For the current indexer scope, see `apps/indexer/ponder.config.ts`; for
+the data-flow model, see `ARCHITECTURE.md`.
 
 ## Topology
 
@@ -125,10 +139,16 @@ factory + clones are sparse).
 
 ## External-platform indexer (Manifold / SuperRare V2 / Transient Labs)
 
+> **STALE — describes the removed v1 model.** Everything in this section
+> (web-side `lazy_*` tables, `refreshArtist`, the "Refresh my work"
+> button, the daily Netlify cron, migrations `022`–`024`) was replaced by
+> the v2 rebuild. Per-artist scanning now runs in `apps/worker/` and
+> writes `public.artist_tokens`; the `known_artists` view is migration
+> `011`, not `022`. Kept only for historical reference. For the current
+> approach see `docs/adding-a-platform.md` and `ARCHITECTURE.md`.
+
 To add a new external platform (KnownOrigin, Highlight, Async, Zora,
 etc.), follow [`docs/adding-a-platform.md`](./docs/adding-a-platform.md).
-This section documents the runtime architecture; the doc covers the
-contributor process.
 
 The three external NFT platforms aren't indexed by Ponder — that would
 mean polling tens of thousands of contracts globally, with cost that

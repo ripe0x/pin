@@ -1,5 +1,15 @@
 # What's done, what's left
 
+> **Historical snapshot.** This tracked the v2 rebuild as it was being
+> built. The "Not done yet" items below — Manifold scanner body, SR/TL
+> active-auction maps, ERC-1155 stats, the web data-fetch rewire — have
+> since shipped (the stack is in production on maglev/Netlify+Railway;
+> see worker `tasks/scan-manifold.ts`, `scan-srv2-active-auctions.ts`,
+> `scan-tl-active-auctions.ts`, `scan-1155-stats.ts`). Kept for history.
+> `ARCHITECTURE.md` describes the current system. Also note: the PLAN.md
+> reference below points at a `~/.claude/plans/...` path, but the plan is
+> checked in at the repo-root `PLAN.md`.
+
 Phase 0 + Phase 1 + Phase 2 + Phase 3 lib port + local-deploy verification
 all landed. The full stack boots end-to-end against a local Postgres:
 migrations apply, Ponder backfills, worker ticks, web app serves HTTP 200

@@ -1,337 +1,149 @@
 # Adding a new external NFT platform
 
+> **v2.** This doc was rewritten for the post-rebuild architecture
+> (PR #69). Per-artist platform indexing now lives in **the worker**
+> (`apps/worker/`), writing `public.artist_tokens`. The old v1 model —
+> web-side `lazy_<platform>_artist_tokens` tables, a Netlify cron, and a
+> "Refresh my work" button calling `refreshArtist()` — **no longer
+> exists**. There are no `lazy_*` tables in the production DB. If you
+> find instructions referencing `lazy-index.ts`, `external-indexer.ts`,
+> `MAX_BLOCKS_PER_SCAN`, or web-side scanning, they are pre-rebuild.
+> Read `ARCHITECTURE.md` first.
+
 How to add per-artist indexing for a third-party NFT platform
-(KnownOrigin, Highlight, Async, Zora, etc.). Pattern is the same
-across all of them — copy from SR V2, Transient Labs, or Manifold and
-adjust.
+(KnownOrigin, Highlight, Async, Zora, etc.).
 
-This is for **external** platforms only — platforms you don't control,
-where you want to surface artist work in the gallery + `/catalog`. For
-contracts **you deploy yourself** (a Sovereign V2, a Catalog extension,
-etc.), add them to Ponder — see existing patterns in `ponder/`.
+## Decide first: worker scan, or Ponder?
 
-## Architecture in one paragraph
+This choice is the whole game (see `ARCHITECTURE.md` →
+"Scope inconsistency"):
 
-The web app stores per-artist token rows in `lazy_<platform>_artist_tokens`
-in Postgres. A daily cron (`/api/cron/refresh-external-indexes`) and a
-"Refresh my work" button (`/api/refresh-artist/[address]`) both call
-`refreshArtist(address)` in `apps/web/src/lib/external-indexer.ts`,
-which calls one `scan<Platform>ArtistTokens(artist)` per platform.
-Each scan reads its cursor from `lazy_<platform>_artist_status
-.last_scanned_block`, fetches new on-chain events from chain head to
-the cursor (bounded by `MAX_BLOCKS_PER_SCAN`), writes new rows, and
-advances the cursor. The artist gallery and catalog pages read from
-the per-platform tables via `discoverArtistTokens` on each adapter —
-pure Postgres SELECTs, never external API calls.
+- **Per-artist clones / the long tail (the usual case)** → **worker
+  scan**, gated on `known_artists`. Cheap; bounded by artist count, not
+  traffic. A non-known artist's page is empty until they join the set.
+  This is the path below.
+- **A single fixed, shared contract you want indexed for *everyone***
+  (like SuperRare V2's shared 1/1 contract) → add it to **Ponder**
+  (`apps/indexer/`). Everyone's page works, but you pay to index every
+  mint on that contract. Only do this for a small, bounded contract set.
 
-Cost is bounded by the `known_artists` view (a UNION over on-chain
-ecosystem activity in Ponder) — scans for addresses outside this set
-short-circuit without spending a CU. The refresh button additionally
-rate-limits at 5 minutes per artist (bypassed during catch-up of a
-fresh artist with null cursors).
+**Never** subscribe Ponder to thousands of artist-deployed clones —
+that's the unbounded backfill the rebuild deleted on purpose.
 
-## Steps
+## Worker-scan path (per-artist)
 
-### 1. SQL migration
+The model: Ponder discovers *which artist deployed which contract* (a
+factory → creators table, e.g. `tl_creators`, `mint_creators`,
+`fnd_collections`). A worker task joins that discovery table against
+`known_artists`, scans each clone's mint events incrementally behind a
+cursor, and upserts `public.artist_tokens`. The web app reads
+`artist_tokens` via `apps/web/src/lib/reads.ts` — pure Postgres, no
+external calls.
 
-Copy `db/migrations/006_lazy_superrareV2.sql` as a template. Rename to
-`db/migrations/0NN_lazy_<platform>.sql`. Two tables:
+Use `apps/worker/src/tasks/scan-tl-clones.ts` as the reference
+implementation (simplest full example).
 
-```sql
-CREATE TABLE IF NOT EXISTS lazy_<platform>_artist_tokens (
-  creator          TEXT NOT NULL,
-  contract         TEXT NOT NULL,
-  token_id         TEXT NOT NULL,
-  block_number     BIGINT,        -- nullable if your source doesn't give it
-  log_index        INTEGER,       -- nullable if your source doesn't give it
-  -- ...any platform-specific columns (collection_name, etc.)
-  last_indexed_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  PRIMARY KEY (creator, contract, token_id)
-);
-CREATE INDEX IF NOT EXISTS lazy_<platform>_artist_tokens_creator_idx
-  ON lazy_<platform>_artist_tokens (creator, block_number DESC);
+### 1. Discovery: get the artist→contract mapping into Ponder
 
-CREATE TABLE IF NOT EXISTS lazy_<platform>_artist_status (
-  creator             TEXT PRIMARY KEY,
-  last_indexed_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  last_scanned_block  BIGINT       -- cursor; NULL = never scanned
-);
-```
+If the platform deploys clones via a factory, add that factory to
+`apps/indexer/ponder.config.ts` as a **discovery-only** contract (one row
+per deploy, no per-clone event subscription) and write a handler that
+inserts into a `<platform>_creators` table (`sender`/deployer, `contract`,
+`first_seen_block`, contract type). Mirror the existing
+`MintFactory`/`TLUniversalDeployer` handlers in `apps/indexer/src/`.
 
-Include `last_scanned_block` from the start (don't repeat the migration
-023 pattern of adding it later).
+If the platform has no factory (artists use one shared contract), you
+likely want the Ponder full-index path instead — see above.
 
-If the platform needs additional caches (e.g., Manifold has
-`lazy_manifold_contracts` for per-artist contract classification), add
-those tables in the same migration with a descriptive header comment
-explaining what they're for.
+### 2. Worker task: scan clones for known artists
 
-Apply with `npm run db:migrate`.
-
-### 2. Lazy-index helpers
-
-Add to `apps/web/src/lib/lazy-index.ts`. Pattern:
+Create `apps/worker/src/tasks/scan-<platform>-clones.ts`. Follow
+`scan-tl-clones.ts`:
 
 ```ts
-export type Lazy<Platform>ArtistToken = {
-  contract: string
-  tokenId: string
-  blockNumber: bigint        // omit if not applicable
-  logIndex: number           // omit if not applicable
-  // ...other fields
-}
+import { sql } from "../db.ts"
+import { client } from "../rpc.ts"
+import { scanArtistTokensViaTransferFromZero } from "../scanners/transfer-from-zero.ts"
+import type { TaskResult } from "../scheduler.ts"
 
-export async function read<Platform>ArtistTokens(
-  creator: string,
-): Promise<{
-  tokens: Lazy<Platform>ArtistToken[]
-  lastIndexedAt: Date
-  lastScannedBlock: bigint | null
-} | null> {
-  if (!sql) return null
-  try {
-    const status = await sql<...>`
-      SELECT last_indexed_at, last_scanned_block::text AS last_scanned_block
-      FROM lazy_<platform>_artist_status
-      WHERE creator = ${creator.toLowerCase()}
-      LIMIT 1
-    `
-    if (status.length === 0) return null
-    const rows = await sql<...>`SELECT ... FROM lazy_<platform>_artist_tokens WHERE creator = ${...} ORDER BY ...`
-    return {
-      tokens: rows.map(/* ... */),
-      lastIndexedAt: status[0].last_indexed_at,
-      lastScannedBlock: status[0].last_scanned_block != null
-        ? BigInt(status[0].last_scanned_block)
-        : null,
-    }
-  } catch {
-    return null
+const PLATFORM = "<platform>"
+const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1")
+  .replace(/[^a-zA-Z0-9_]/g, "")
+
+export async function scan<Platform>Clones(): Promise<TaskResult> {
+  // Join the discovery table against known_artists — the spend ceiling.
+  const targets = (await sql.unsafe(
+    `SELECT lower(c.sender)          AS artist,
+            lower(c.contract)        AS contract,
+            c.first_seen_block::text AS deploy_block
+     FROM ${INDEXER_SCHEMA}.<platform>_creators c
+     JOIN known_artists k ON k.address = lower(c.sender)
+     WHERE c.c_type LIKE 'ERC721%'`,   // ERC-1155 → erc1155-mints scanner
+  )) as Array<{ artist: string; contract: string; deploy_block: string }>
+
+  let totalRpc = 0, totalRows = 0
+  for (const t of targets) {
+    const r = await scanArtistTokensViaTransferFromZero({
+      sql, client,
+      taskName: "scan-<platform>-clones",
+      platform: PLATFORM,
+      artist: t.artist,
+      contract: t.contract,
+      contractDeployBlock: BigInt(t.deploy_block),
+    }).catch((err) => {
+      console.error(`[scan-<platform>-clones] ${t.artist}/${t.contract}:`, err)
+      return { rpcCalls: 0, rowsWritten: 0 }
+    })
+    totalRpc += r.rpcCalls; totalRows += r.rowsWritten
   }
-}
-
-export async function write<Platform>ArtistTokens(
-  creator: string,
-  tokens: Lazy<Platform>ArtistToken[],
-  lastScannedBlock: bigint | null = null,
-): Promise<void> {
-  // AWAITABLE — async, returns Promise<void>. Never use the
-  // `void (async () => { ... })()` fire-and-forget pattern. On Netlify
-  // the route can tear down mid-write and lose the status-row INSERT.
-  if (!sql) return
-  try {
-    for (const t of tokens) {
-      await sql`INSERT INTO lazy_<platform>_artist_tokens ... ON CONFLICT DO UPDATE ...`
-    }
-    if (lastScannedBlock != null) {
-      await sql`INSERT INTO lazy_<platform>_artist_status (creator, last_indexed_at, last_scanned_block)
-                VALUES (${...}, NOW(), ${lastScannedBlock.toString()}::bigint)
-                ON CONFLICT (creator) DO UPDATE
-                  SET last_indexed_at = NOW(),
-                      last_scanned_block = EXCLUDED.last_scanned_block`
-    } else {
-      await sql`INSERT INTO lazy_<platform>_artist_status (creator, last_indexed_at)
-                VALUES (${...}, NOW())
-                ON CONFLICT (creator) DO UPDATE SET last_indexed_at = NOW()`
-    }
-  } catch {
-    /* ignore */
-  }
+  return { scopeCount: targets.length, rpcCalls: totalRpc, rowsWritten: totalRows }
 }
 ```
 
-**Critical**: the write helper MUST be `async`/awaitable and the scan
-function MUST `await` it. The previous `void (async () => {...})()`
-fire-and-forget shape caused PR #55's data-loss bug — token rows
-persisted but the final status-row INSERT got killed by Netlify's
-function teardown.
+`scanArtistTokensViaTransferFromZero` (in
+`apps/worker/src/scanners/transfer-from-zero.ts`) handles cursor
+read/advance (`worker_cursors`), chunked `eth_getLogs` from the cursor to
+head, and the `artist_tokens` upsert. For ERC-1155 platforms use
+`scanners/erc1155-mints.ts` instead (TransferSingle/Batch from `0x0`).
 
-### 3. Adapter file
+### 3. Register the task
 
-Create `apps/web/src/lib/platforms/<platform>.ts`. Two exports:
+Add it to the scheduler in `apps/worker/src/scheduler.ts` with a sensible
+cadence (the clone scanners run ~10m). That's it — the task ticks,
+gated by `known_artists`, and writes `artist_tokens`.
 
-```ts
-import { isKnownArtist } from "../known-artists"
-import { MAX_BLOCKS_PER_SCAN } from "../external-indexer"
-import { read<Platform>ArtistTokens, write<Platform>ArtistTokens } from "../lazy-index"
-import type { PlatformAdapter, ArtistTokenRef } from "./types"
+### 4. Web reads it for free
 
-// (1) Pure-read adapter — what /catalog and /artist pages call.
-// Never touches external APIs. Returns whatever's in Postgres.
-export const <platform>Adapter: PlatformAdapter = {
-  id: "<platform>",
-  displayName: "Platform Display Name",
-  async discoverArtistTokens(artist): Promise<ArtistTokenRef[]> {
-    const cached = await read<Platform>ArtistTokens(artist)
-    if (!cached) return []
-    return cached.tokens.map((t) => ({
-      platform: "<platform>",
-      contract: t.contract as Address,
-      tokenId: t.tokenId,
-      blockNumber: t.blockNumber ?? null,
-      logIndex: t.logIndex ?? null,
-      collectionName: null,
-    }))
-  },
-  // ...other methods (discoverCollectorTokens, getLastSale, etc.)
-}
+`artist_tokens` is already aggregated into the artist gallery by
+`apps/web/src/lib/reads.ts`. A new `platform` value flows through
+automatically. If the platform needs a distinct display label or
+last-sale logic, extend the relevant `reads.ts` query — but **do not add
+any chain read under `apps/web/`** (the invariant; the only allowed
+live-chain reads are the existing functions in `lib/onchain.ts`).
 
-// (2) Scan function — the only path that hits external APIs.
-// Called from refreshArtist in external-indexer.ts.
-export async function scan<Platform>ArtistTokens(
-  artist: Address,
-): Promise<{ caughtUp: boolean }> {
-  // Gate 1: known-artist allow-list. Random addresses cost zero.
-  if (!(await isKnownArtist(artist))) return { caughtUp: true }
+## Gotchas
 
-  // Cursor: pick up where we left off, or start from platform's
-  // deploy block if first scan.
-  const existing = await read<Platform>ArtistTokens(artist)
-  const fromBlock = existing?.lastScannedBlock != null
-    ? existing.lastScannedBlock + 1n
-    : <PLATFORM_DEPLOY_BLOCK>
-
-  // Bound to chain head. Bound further by MAX_BLOCKS_PER_SCAN so a
-  // single call fits inside Netlify's 26s HTTP-function timeout.
-  const client = getClient()
-  const latest = await client.getBlockNumber()
-  if (fromBlock > latest) {
-    await write<Platform>ArtistTokens(artist, [], latest)
-    return { caughtUp: true }
-  }
-  const budgetEnd = fromBlock + MAX_BLOCKS_PER_SCAN - 1n
-  const toBlock = budgetEnd < latest ? budgetEnd : latest
-
-  // Platform-specific scan logic. Read events from `fromBlock` to
-  // `toBlock` (NOT `latest` — that's the budget cap).
-  const refs = /* eth_getLogs / Alchemy getAssetTransfers / etc. */
-
-  // Persist with the actual scan end as the new cursor.
-  await write<Platform>ArtistTokens(artist, refs, toBlock)
-  return { caughtUp: toBlock >= latest }
-}
-```
-
-If your platform's discovery is complex enough to warrant its own file
-(Manifold has separate `manifold-discovery.ts` for Etherscan + Alchemy
-NFT API orchestration), put it there and re-export from the adapter.
-
-### 4. Register the adapter
-
-In `apps/web/src/lib/platforms/index.ts`, add to the `PLATFORMS` array.
-This wires the adapter into the artist gallery's
-`discoverArtistTokenRefs` aggregator.
-
-### 5. Register the scan
-
-In `apps/web/src/lib/external-indexer.ts`, three updates:
-
-```ts
-import { scan<Platform>ArtistTokens } from "./platforms/<platform>"
-
-export async function refreshArtist(address: string): Promise<{ caughtUp: boolean }> {
-  // ...
-  const results = await Promise.all([
-    scanSrv2ArtistTokens(lower).catch(() => ({ caughtUp: false })),
-    scanTransientArtistTokens(lower).catch(() => ({ caughtUp: false })),
-    scanManifoldArtistTokens(lower).catch(() => ({ caughtUp: false })),
-    scan<Platform>ArtistTokens(lower).catch(() => ({ caughtUp: false })),  // ← new
-  ])
-  return { caughtUp: results.every((r) => r.caughtUp) }
-}
-
-export async function hasUnscannedPlatform(address: string): Promise<boolean> {
-  // Add new platform's status row to the check
-  const rows = await sql`
-    SELECT
-      (SELECT last_scanned_block FROM lazy_manifold_artist_status WHERE creator = ${...}) AS m,
-      (SELECT last_scanned_block FROM lazy_srv2_artist_status     WHERE creator = ${...}) AS s,
-      (SELECT last_scanned_block FROM lazy_tl_artist_status       WHERE creator = ${...}) AS t,
-      (SELECT last_scanned_block FROM lazy_<platform>_artist_status WHERE creator = ${...}) AS p
-  `
-  return r.m === null || r.s === null || r.t === null || r.p === null
-}
-
-export type ArtistTokenCounts = {
-  manifold: number
-  srv2: number
-  tl: number
-  <platform>: number    // ← new
-}
-
-export async function countArtistTokens(address: string): Promise<ArtistTokenCounts> {
-  // Add the new SELECT to the count query
-}
-```
-
-### 6. Update the refresh button UI
-
-In `apps/web/src/components/catalog/RefreshButton.tsx`:
-
-- Add the platform to the `Counts` type
-- Include it in `addedTotal` and `totalsTotal` calculations
-- Mention it in the user-facing message strings (e.g., "on Manifold /
-  SuperRare / Transient Labs / NewPlatform")
-
-### 7. Deploy
-
-```
-npm run db:migrate          # apply your migration
-git add ... && git commit
-gh pr create ...
-```
-
-Once the PR merges and Netlify deploys, the new platform is live:
-- Daily cron (04:00 UTC) starts including it for every known artist
-- Refresh button starts scanning it on click
-- Artist gallery surfaces its tokens via the adapter
-
-No additional config or env vars needed.
-
-## Gotchas (things that have bitten us)
-
-- **Don't use fire-and-forget writes.** The `void (async () => {...})()`
-  pattern caused PR #55's data-loss bug. Always `async function ...
-  Promise<void>` and always `await`.
-
-- **Don't call `after()` from page server components for external
-  refreshes.** Netlify tears down the function before the callback
-  completes. Use the route-handler + `maxDuration = 300` pattern in
-  `/api/refresh-artist/[address]` instead. (Note: `maxDuration` still
-  caps at ~26s on Netlify Pro for HTTP-triggered functions — that's
-  why scans are chunked.)
-
-- **Always gate on `isKnownArtist` before any external API call.**
-  This is the single point of cost control. Without it, any visitor
-  hitting `/artist/<random>` could trigger Alchemy spend.
-
-- **Bound every scan call by `MAX_BLOCKS_PER_SCAN`.** Even if the
-  platform's deploy block is recent, future drift could push the
-  scan window past the function timeout.
-
+- **Gate every scan on `known_artists`** (the SQL `JOIN`). This is the
+  single point of RPC cost control — without it, the long tail is
+  unbounded.
+- **Respect the global RPC throttle.** All worker chain reads pace
+  through `throttleRpc()` at ~2 req/s; don't bypass it for a "fast" scan.
+- **Cursor-bound, chunked scans.** Never scan deploy-block→head in one
+  `eth_getLogs`; the shared scanner already chunks. Persist the cursor so
+  reruns are incremental.
 - **Lowercase addresses everywhere.** Ponder lowercases on write;
-  the lazy tables follow the same convention. Mixed-case lookups
+  `known_artists` and `artist_tokens` follow suit. Mixed-case lookups
   miss every row.
-
-- **`ON CONFLICT DO NOTHING` (or `DO UPDATE`) on inserts** — re-orgs
-  and concurrent scans can produce duplicates that violate primary keys.
-
-- **For ERC-1155 platforms** (Manifold supports both), use
-  `TransferSingle` + `TransferBatch` events with `from = 0x0` filter
-  rather than ERC-721 `Transfer`. Edition mints share `tokenId`;
-  `ON CONFLICT DO NOTHING` dedups them correctly.
+- **Upsert, never plain insert.** Re-orgs and overlapping scan windows
+  produce duplicates; `ON CONFLICT` dedups (the shared scanners do this).
 
 ## See also
 
-- `DEPLOYMENT.md` — "External-platform indexer" section: cost model,
-  cron scheduling, kill switch
-- `apps/web/src/lib/known-artists.ts` — gate implementation
-- `db/migrations/022_known_artists_view.sql` — `known_artists` view
-  definition
-- `apps/web/src/lib/platforms/superrareV2.ts` — simplest full example
-  (single shared contract, no factory discovery)
-- `apps/web/src/lib/platforms/transient.ts` — factory-pattern example
-  (deployer event + per-clone Transfer scan)
-- `apps/web/src/lib/manifold-discovery.ts` — most complex example
-  (Etherscan contract discovery + classification cache + Alchemy
-  asset transfers for incremental scans)
+- `ARCHITECTURE.md` — the two-program model and the cost-split rationale.
+- `apps/worker/src/tasks/scan-tl-clones.ts` — reference clone scanner.
+- `apps/worker/src/tasks/scan-mint-clones.ts`,
+  `scan-fnd-collections.ts` — other discovery-driven scanners.
+- `apps/worker/src/scanners/transfer-from-zero.ts`,
+  `erc1155-mints.ts` — the shared scan engines.
+- `db/migrations/011_known_artists_view.sql` — the `known_artists` view.
+- `apps/indexer/ponder.config.ts` — factory/discovery contract definitions.

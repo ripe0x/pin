@@ -8,16 +8,17 @@ See `PLAN.md` for the full architectural rationale.
 
 ## Topology
 
-Five services, one Railway project:
-
 ```
-web (Next.js, long-running)
-indexer (Ponder, 7 contracts)
-worker (Node, per-artist scans + owners + ENS + metadata)
-postgres
+web (Next.js)                      → Netlify (build config in netlify.toml)
+indexer (Ponder, fixed contracts)  → Railway
+worker (Node, per-artist scans + owners + ENS + metadata) → Railway
+postgres (the `maglev` Railway DB) → Railway
 ```
 
-No Netlify, no scheduled functions, no cron config. The worker owns all periodic work.
+The worker owns all periodic work — there are no Netlify scheduled
+functions or cron jobs driving indexing. (The original plan put all four
+on a single Railway project; the web app currently builds and deploys on
+Netlify per `netlify.toml`. `apps/web/railway.json` is vestigial.)
 
 ## Quick start (local)
 

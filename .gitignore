@@ -26,3 +26,11 @@ apps/indexer/.ponder/
 
 # Ponder codegen output (regenerate with `pnpm --filter @pin/indexer codegen`)
 apps/indexer/ponder-env.d.ts
+
+# Netlify CLI / build state (web deploys on Netlify; this is local state)
+.netlify/
+
+# Stale pre-rebuild dir: the indexer was renamed ponder/ -> apps/indexer/
+# (PR #69). A leftover untracked ponder/ holds only generated output and
+# must never be staged. See AGENTS.md "STALE TRAP".
+/ponder/
