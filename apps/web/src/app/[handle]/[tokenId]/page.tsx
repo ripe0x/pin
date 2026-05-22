@@ -278,15 +278,6 @@ export default async function TokenPage({
                 Edition of {data.edition.toString()}
               </p>
             )}
-            {/* Re-fetch metadata if the title/image is stale or stuck. The
-                component self-gates: visible to the token's owner/creator, and
-                to site admins on every token page. Rate-limited server-side. */}
-            <RefreshMetadataButton
-              contract={data.contract}
-              tokenId={data.tokenId}
-              owner={data.owner}
-              creator={data.creator}
-            />
           </section>
 
           {/* Description (only prose section — uses Switzer) */}
@@ -403,6 +394,19 @@ export default async function TokenPage({
               </div>
             </section>
           )}
+
+          {/* Re-fetch metadata if the title/image is stale or stuck. Sits
+              under the Source list since it acts on the same source data.
+              Self-gates: visible to the token's owner/creator, and to site
+              admins on every token page. Rate-limited server-side. */}
+          <div className="pt-5">
+            <RefreshMetadataButton
+              contract={data.contract}
+              tokenId={data.tokenId}
+              owner={data.owner}
+              creator={data.creator}
+            />
+          </div>
         </aside>
       </div>
 
