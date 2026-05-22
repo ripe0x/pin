@@ -18,6 +18,24 @@ function formatDate(timestamp: number): string {
   })
 }
 
+// Address/ENS handle rendered as a link to its evm.now address page. The
+// link target is always the raw address; the handle (ENS or truncated 0x…)
+// is just the display text.
+function AddrLink({ addr, handle }: { addr?: string; handle?: string }) {
+  if (!handle) return null
+  if (!addr) return <span>{handle}</span>
+  return (
+    <a
+      href={`https://evm.now/address/${addr}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="hover:underline"
+    >
+      {handle}
+    </a>
+  )
+}
+
 export function Provenance({ entries }: { entries: ProvenanceEntry[] }) {
   if (entries.length === 0) return null
 
@@ -48,32 +66,27 @@ export function Provenance({ entries }: { entries: ProvenanceEntry[] }) {
                   // A mint's `from` is the zero address; the meaningful party
                   // is the recipient. Show "Minted by <recipient>", not
                   // "by 0x000… → <recipient>".
-                  <span>{entry.toHandle ?? entry.fromHandle}</span>
+                  <AddrLink addr={entry.to} handle={entry.toHandle ?? entry.fromHandle} />
                 ) : (
                   <>
-                    <span>{entry.fromHandle}</span>
+                    <AddrLink addr={entry.from} handle={entry.fromHandle} />
                     {entry.toHandle && (
                       <>
                         <span className="text-gray-400"> → </span>
-                        <span>{entry.toHandle}</span>
+                        <AddrLink addr={entry.to} handle={entry.toHandle} />
                       </>
                     )}
                   </>
                 )}
               </p>
-              <div className="flex items-center gap-2">
-                <p className="text-[10px] font-mono text-gray-400">
-                  {formatDate(entry.timestamp)}
-                </p>
-                <a
-                  href={`https://evm.now/tx/${entry.txHash}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[10px] font-mono text-gray-400 hover:text-fg transition-colors"
-                >
-                  ↗
-                </a>
-              </div>
+              <a
+                href={`https://evm.now/tx/${entry.txHash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[10px] font-mono text-gray-400 hover:text-fg hover:underline transition-colors"
+              >
+                {formatDate(entry.timestamp)}
+              </a>
             </div>
           </li>
         ))}

@@ -272,6 +272,11 @@ export default async function TokenPage({
             <h1 className="text-base font-mono font-medium tracking-tight">
               {data.title}
             </h1>
+            {data.isErc1155 && data.edition != null && (
+              <p className="text-[11px] font-mono text-gray-400">
+                Edition of {data.edition.toString()}
+              </p>
+            )}
           </section>
 
           {/* Description (only prose section — uses Switzer) */}
@@ -308,42 +313,14 @@ export default async function TokenPage({
             />
           )}
 
-          {/* Ownership / edition stats */}
-          {data.isErc1155 ? (
-            <section className="py-5 border-b border-gray-100">
-              <div className="grid grid-cols-3 gap-4">
-                <div className="space-y-1">
-                  <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-                    Edition
-                  </p>
-                  <p className="text-xs font-mono tabular-nums">
-                    {(data.edition ?? 0n).toString()}
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-                    Holders
-                  </p>
-                  <p className="text-xs font-mono tabular-nums">
-                    {data.ownerCount && data.ownerCount > 0 ? data.ownerCount : "—"}
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-                    Standard
-                  </p>
-                  <p className="text-xs font-mono">ERC1155</p>
-                </div>
-              </div>
-            </section>
-          ) : (
-            data.owner && (
-              <OwnerOrEscrowSection
-                owner={data.owner}
-                ownerHandle={data.ownerHandle}
-                auction={auction}
-              />
-            )
+          {/* Owner — ERC721 only. ERC1155 has no single owner; its edition
+              size shows under the title and the standard lives in Contract. */}
+          {!data.isErc1155 && data.owner && (
+            <OwnerOrEscrowSection
+              owner={data.owner}
+              ownerHandle={data.ownerHandle}
+              auction={auction}
+            />
           )}
 
           {/* Provenance — only when there's history. `Provenance` itself
@@ -378,6 +355,10 @@ export default async function TokenPage({
                 Token ID
               </dt>
               <dd className="text-[10px] font-mono">{data.tokenId}</dd>
+              <dt className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+                Standard
+              </dt>
+              <dd className="text-[10px] font-mono">{data.isErc1155 ? "ERC1155" : "ERC721"}</dd>
             </dl>
           </section>
 
