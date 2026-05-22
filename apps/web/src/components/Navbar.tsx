@@ -63,7 +63,7 @@ export function Navbar() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Find artist by address or ENS"
-          className="flex-1 bg-transparent text-sm outline-none placeholder:text-gray-400"
+          className="flex-1 bg-transparent text-sm font-mono outline-none placeholder:text-gray-400"
         />
       </div>
     </form>
@@ -73,7 +73,7 @@ export function Navbar() {
     <header className="fixed top-0 left-0 right-0 z-50 bg-surface border-b border-gray-200">
       <nav className="mx-auto flex h-16 max-w-[2000px] items-center justify-between px-6">
         {/* Left: logo / wordmark */}
-        <Link href="/" className="text-lg font-medium tracking-tight">
+        <Link href="/" className="text-base font-mono font-medium tracking-tight">
           {SITE_TITLE}
         </Link>
 
@@ -88,7 +88,7 @@ export function Navbar() {
               onClick={() => setMenuOpen((v) => !v)}
               aria-haspopup="menu"
               aria-expanded={menuOpen}
-              className="flex items-center gap-1 text-sm font-medium text-gray-600 transition-colors hover:text-fg"
+              className="flex items-center gap-1.5 text-[11px] font-mono font-medium uppercase tracking-wider text-gray-600 transition-colors hover:text-fg"
             >
               For artists
               <Chevron open={menuOpen} />
@@ -105,7 +105,7 @@ export function Navbar() {
                     href={a.href}
                     role="menuitem"
                     onClick={() => setMenuOpen(false)}
-                    className="block px-4 py-2 text-sm text-fg transition-colors hover:bg-gray-100"
+                    className="block px-4 py-2 text-xs font-mono text-fg transition-colors hover:bg-gray-100"
                   >
                     {a.label}
                   </Link>
@@ -115,7 +115,7 @@ export function Navbar() {
                     href={`/artist/${address}`}
                     role="menuitem"
                     onClick={() => setMenuOpen(false)}
-                    className="block border-t border-gray-200 px-4 py-2 text-sm text-fg transition-colors hover:bg-gray-100"
+                    className="block border-t border-gray-200 px-4 py-2 text-xs font-mono text-fg transition-colors hover:bg-gray-100"
                   >
                     Manage your work
                   </Link>
@@ -124,7 +124,7 @@ export function Navbar() {
                   href="/guides"
                   role="menuitem"
                   onClick={() => setMenuOpen(false)}
-                  className="block border-t border-gray-200 px-4 py-2 text-sm text-fg transition-colors hover:bg-gray-100"
+                  className="block border-t border-gray-200 px-4 py-2 text-xs font-mono text-fg transition-colors hover:bg-gray-100"
                 >
                   Guides
                 </Link>

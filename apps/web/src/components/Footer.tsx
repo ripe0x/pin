@@ -25,14 +25,15 @@ import { SupportersList } from "./SupportersList"
 import { ThemeToggle } from "./ThemeToggle"
 
 export function Footer() {
+  // Footer chrome shares the site's mono type system (see Navbar / artist header).
   return (
     <footer className="mt-24 border-t border-gray-200 pt-8 pb-16 px-6 md:px-8">
       <div className="mx-auto max-w-7xl space-y-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-gray-400">
+          <p className="text-xs font-mono text-gray-400">
             Artist owned infrastructure on Ethereum
           </p>
-          <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-gray-400">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs font-mono text-gray-400">
             <a href="/about" className="hover:text-fg transition-colors">
               About
             </a>

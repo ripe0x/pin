@@ -1,6 +1,6 @@
-import Link from "next/link"
 import { formatEther } from "viem"
 import type { DiscoveredToken } from "@/lib/onchain-discovery"
+import { TokenCard } from "@/components/TokenCard"
 import { getCachedEnrichedPage } from "@/lib/artist-cache"
 import { getTokensByContractAndCreator } from "@/lib/contract-tokens"
 import { getLastSalePriceForToken, type LastSale } from "@/lib/last-sale"
@@ -116,9 +116,28 @@ export function MoreFromContract({ tokens, lastSales, creatorDisplay }: Props) {
           const href = `/${token.contract}/${token.tokenId}`
           return (
             <li key={`${token.contract}:${token.tokenId}`}>
-              <Link
+              <TokenCard
                 href={href}
-                className="group block border border-gray-200 transition-colors hover:border-gray-400"
+                title={title}
+                meta={
+                  sale ? (
+                    <div className="flex items-baseline justify-between gap-2 text-[11px] font-mono">
+                      <span className="inline-flex items-baseline gap-1.5 min-w-0 text-fg-muted">
+                        <span>Last sold</span>
+                        <span className="text-fg-subtle shrink-0">
+                          {formatRelative(sale.blockTime)}
+                        </span>
+                      </span>
+                      <span className="tabular-nums text-fg shrink-0">
+                        {formatPriceEth(sale.priceWei)}
+                      </span>
+                    </div>
+                  ) : (
+                    // Keep footer heights uniform across the grid row when a
+                    // sibling has no resolved sale (only the 2 newest are priced).
+                    <p className="text-[11px] font-mono">&nbsp;</p>
+                  )
+                }
               >
                 <div className="relative aspect-square overflow-hidden bg-gray-100">
                   {token.mediaHttpUrl &&
@@ -145,25 +164,7 @@ export function MoreFromContract({ tokens, lastSales, creatorDisplay }: Props) {
                     />
                   ) : null}
                 </div>
-                <div className="p-3 space-y-1">
-                  <p className="text-xs font-mono font-medium truncate">
-                    {title}
-                  </p>
-                  {sale ? (
-                    <p className="text-[10px] font-mono uppercase tracking-wider text-gray-500">
-                      Last sold {formatPriceEth(sale.priceWei)}
-                      <span className="text-gray-400">
-                        {" · "}
-                        {formatRelative(sale.blockTime)}
-                      </span>
-                    </p>
-                  ) : (
-                    <p className="text-[10px] font-mono uppercase tracking-wider text-gray-300">
-                      &nbsp;
-                    </p>
-                  )}
-                </div>
-              </Link>
+              </TokenCard>
             </li>
           )
         })}
