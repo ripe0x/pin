@@ -102,7 +102,7 @@ A few small details about how the page works that are worth understanding:
 
 - **Wallet support.** The connect button works for any browser-extension wallet (MetaMask, Rabby, Frame, Brave Wallet, OKX, Phantom, etc.), Coinbase Wallet, and Safe — no setup needed on your part. Mobile users connecting via WalletConnect QR codes (Rainbow mobile, Trust, MetaMask Mobile) are not enabled by default to keep your deploy zero-config; if a mobile visitor needs to bid, the easiest workaround is to open your site inside their wallet's built-in browser. To enable WalletConnect mobile QR connections, see the Customize section below.
 
-- **Updating the template.** If a marketplace upgrades their contract or this template gets new features, you'll pull the latest version and redeploy. We'll publish announcements when these come out.
+- **Updating the template.** If a marketplace upgrades their contract or this template gets new features, you pull the latest version with a one-click "Sync fork" on GitHub and your host redeploys automatically. See [Getting updates](#getting-updates) for the exact steps.
 
 ---
 
@@ -120,6 +120,32 @@ Most artists won't need to change anything beyond the wallet address — ENS han
 | `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | Set this to enable WalletConnect mobile QR connections (Rainbow, Trust, MetaMask Mobile, etc). Free, takes 2 min: register at [cloud.reown.com](https://cloud.reown.com), copy the project ID, paste it here. Without this, the connect modal still shows MetaMask, Rabby, Coinbase Wallet, Safe, and other browser-extension wallets. |
 
 To customize the look itself: this is a regular Next.js codebase. Fork it, edit the components, redeploy. See **What's where** at the bottom for the file map.
+
+---
+
+## Getting updates
+
+This template ships fixes and improvements over time. How you pull them into your **Netlify** site depends on how it's linked to GitHub. Not sure which you have? Check **Netlify → Site configuration → Build & deploy → Continuous deployment** to see the linked repository.
+
+### If your site is linked to *your fork* (the recommended Netlify setup)
+
+Forks don't update themselves, but it's a one-click sync — no terminal, no Netlify step:
+
+1. Open your fork on GitHub: `https://github.com/<your-username>/sovereign-artist-site`
+2. When it's behind, GitHub shows **"This branch is N commits behind ripe0x:main"**. Click **Sync fork → Update branch**.
+3. That push triggers Netlify to rebuild and deploy automatically. That's it.
+
+Prefer the terminal? `gh repo sync <your-username>/sovereign-artist-site`.
+
+### If your site is linked *directly* to `ripe0x/sovereign-artist-site`
+
+Updates deploy **automatically** — every time the template publishes, Netlify sees the push and rebuilds. There's nothing to do.
+
+### Force a rebuild anytime
+
+If a deploy looks stale or a build misbehaved, go to **Netlify → Deploys → Trigger deploy → Clear cache and deploy site** to rebuild from scratch. You also need a redeploy after changing any environment variable — env changes don't apply to the running site until the next build.
+
+> If you've edited the code in your fork, a sync may report a merge conflict — resolve it on GitHub or locally. If you haven't customized anything, you can just reset your fork to match upstream.
 
 ---
 
