@@ -308,7 +308,7 @@ function BidInput({
             <button
               type="button"
               onClick={openConnectModal}
-              className="block w-full text-center text-sm font-medium py-3 bg-fg text-bg hover:opacity-80 transition-opacity"
+              className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-opacity"
             >
               Connect wallet to bid
             </button>
@@ -337,7 +337,7 @@ function BidInput({
         type="button"
         onClick={submit}
         disabled={tooLow || insufficient || isPending || confirming}
-        className="block w-full text-center text-sm font-medium py-3 bg-fg text-bg disabled:cursor-not-allowed disabled:opacity-60 hover:opacity-80 transition-opacity"
+        className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg disabled:cursor-not-allowed disabled:opacity-60 hover:opacity-80 transition-opacity"
       >
         {confirming
           ? "Waiting for confirmation…"
@@ -376,7 +376,7 @@ function SettleButton({
             <button
               type="button"
               onClick={openConnectModal}
-              className="block w-full text-center text-sm font-medium py-3 bg-fg text-bg hover:opacity-80 transition-opacity"
+              className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-opacity"
             >
               Connect wallet to settle
             </button>
@@ -397,7 +397,7 @@ function SettleButton({
         })
       }
       disabled={isPending || confirming}
-      className="mt-2 block w-full text-center text-sm font-medium py-3 bg-fg text-bg disabled:cursor-not-allowed disabled:opacity-60 hover:opacity-80 transition-opacity"
+      className="mt-2 block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg disabled:cursor-not-allowed disabled:opacity-60 hover:opacity-80 transition-opacity"
     >
       {confirming
         ? "Waiting for confirmation…"

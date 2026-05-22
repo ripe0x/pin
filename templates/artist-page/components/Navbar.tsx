@@ -1,11 +1,11 @@
 import Link from "next/link"
 import { ConnectButton } from "./ConnectButton"
-import { ThemeToggle } from "./ThemeToggle"
 import { getArtistDisplayName } from "@/lib/artist"
 
 /**
  * Top navbar — fixed-position single-row chrome matching the PND main app's
- * pattern. Wordmark on the left links home, theme + wallet on the right.
+ * pattern. Wordmark on the left links home, wallet on the right. (Theme
+ * toggle lives in the footer, mirroring the main site.)
  *
  * Server component so the wordmark resolves the artist's display name
  * (env var → ENS reverse → truncated address) on the server without a
@@ -21,7 +21,6 @@ export async function Navbar() {
         </Link>
 
         <div className="flex items-center gap-6">
-          <ThemeToggle />
           <ConnectButton />
         </div>
       </nav>
