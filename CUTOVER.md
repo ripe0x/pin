@@ -1,5 +1,10 @@
 # Cutover: v1 → v2
 
+> **Historical.** The cutover has happened — v2 is the live stack
+> (production reads the `maglev` Railway DB; web deploys on Netlify from
+> `main`). This is the plan that was followed, kept for reference and for
+> the post-cutover cleanup checklist. The v1 repo is `ripe0x/pin`.
+
 Strategy is fresh-repo + DNS cut. v1 stays running for a 7-day rollback
 window after cutover. The on-chain contracts at
 `0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f` (Sovereign factory) and

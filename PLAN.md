@@ -1,5 +1,13 @@
 # PND v2 — From-Scratch Rebuild
 
+> **Historical design doc.** This is the rebuild plan, written before the
+> work landed. It predates the final layout: the indexer lives at
+> `apps/indexer/` (not `ponder/`), and the `lazy_*` web-side tables it
+> discusses were removed, not kept. The plan's *intent* — "store, not
+> cache; web reads Postgres, worker owns chain scanning" — is what
+> shipped. For the system as it actually exists, read `ARCHITECTURE.md`;
+> treat this file as rationale/history.
+
 ## Context
 
 The existing PND codebase at `/Users/dd/foundation` has evolved into a
