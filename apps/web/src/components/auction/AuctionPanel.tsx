@@ -395,6 +395,8 @@ export function AuctionPanel({
       ? "bg-emerald-500"
       : phase === "ended-unsettled"
       ? "bg-amber-500"
+      : phase === "no-bids"
+      ? "bg-emerald-500" // open & awaiting a first bid — static (not "live")
       : "bg-emerald-500 animate-pulse"
   const headerLabel =
     phase === "settled"
@@ -403,6 +405,8 @@ export function AuctionPanel({
         : "Auction settled"
       : phase === "ended-unsettled"
       ? "Auction ended"
+      : phase === "no-bids"
+      ? "Awaiting first bid"
       : "Live auction"
 
   return (
