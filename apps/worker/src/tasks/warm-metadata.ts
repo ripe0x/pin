@@ -2,13 +2,14 @@
  * Resolve tokenURI + IPFS for newly-discovered tokens. Ports the loop
  * body from apps/metadata-warmer/src/index.ts (folded into worker).
  *
- * Re-resolve policy: a row is "successfully fetched" iff `raw_uri` is set
- * (the resolver only populates it when it actually retrieved the file).
- * Rows with `raw_uri` NULL are *failed* fetches — most often a brand-new
- * mint whose metadata hadn't propagated to the gateway yet — so we retry
- * them on a short cadence (RETRY_AFTER, default 5 min) until they resolve.
- * Rows WITH `raw_uri` are final (even if their name/image are sparse) and
- * are never re-fetched, so good metadata is fetched exactly once.
+ * Re-resolve policy: a row is "successfully fetched" iff it carries actual
+ * content (any of name/description/image_url/animation_url). A content-less
+ * row is a failed fetch — a brand-new mint that hadn't propagated yet, or a
+ * gateway error/garbage 200 (which the resolver may have stamped with a
+ * bogus `raw_uri`) — so we retry it on a short cadence (RETRY_AFTER, default
+ * 5 min) until it resolves. Rows with content are final and never re-fetched,
+ * so good metadata is fetched exactly once. (We deliberately do NOT trust
+ * `raw_uri` as the success signal — it gets set on non-metadata responses.)
  */
 import { sql } from "../db.ts"
 import { client } from "../rpc.ts"
@@ -84,7 +85,8 @@ async function findCandidates(): Promise<Candidate[]> {
        ON m.contract = d.contract AND m.token_id = d.token_id
      WHERE m.contract IS NULL
         OR (
-          m.raw_uri IS NULL
+          m.name IS NULL AND m.description IS NULL
+          AND m.image_url IS NULL AND m.animation_url IS NULL
           AND m.fetched_at < NOW() - INTERVAL '${RETRY_AFTER.replace(/'/g, "''")}'
         )
      LIMIT ${BATCH_SIZE}`,
