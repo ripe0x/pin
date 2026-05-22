@@ -294,24 +294,26 @@ export default async function TokenPage({
         <aside className="lg:border-l border-gray-200 dark:bg-gray-100 px-6 py-8 lg:px-8 lg:py-10">
           {/* Title + creator */}
           <section className="pb-5 border-b border-gray-100 space-y-2">
-            {data.creator && (
-              <Link
-                href={`/artist/${data.creator}`}
-                className="inline-flex items-center gap-2 text-[11px] font-mono uppercase tracking-wider text-gray-600 hover:text-fg transition-colors"
-              >
-                {data.creatorAvatarUrl && (
-                  <img
-                    src={data.creatorAvatarUrl}
-                    alt=""
-                    className="h-4 w-4 rounded-full object-cover"
-                  />
-                )}
-                <span>{data.creatorHandle}</span>
-              </Link>
-            )}
-            <h1 className="text-base font-mono font-medium tracking-tight">
-              {data.title}
-            </h1>
+            <div className="space-y-0.5">
+              {data.creator && (
+                <Link
+                  href={`/artist/${data.creator}`}
+                  className="inline-flex items-center gap-2 text-[11px] font-mono uppercase tracking-wider text-gray-600 hover:text-fg transition-colors"
+                >
+                  {data.creatorAvatarUrl && (
+                    <img
+                      src={data.creatorAvatarUrl}
+                      alt=""
+                      className="h-4 w-4 rounded-full object-cover"
+                    />
+                  )}
+                  <span>{data.creatorHandle}</span>
+                </Link>
+              )}
+              <h1 className="text-base font-mono font-medium tracking-tight">
+                {data.title}
+              </h1>
+            </div>
             {data.isErc1155 && data.edition != null && (
               <p className="text-[11px] font-mono text-gray-400">
                 Edition of {data.edition.toString()}

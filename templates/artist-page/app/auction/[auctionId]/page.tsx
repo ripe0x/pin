@@ -83,6 +83,7 @@ export default async function AuctionPage({ params }: { params: Params }) {
 
   const title = metadata?.name ?? `#${auction.tokenId}`
   const image = metadata?.image ?? null
+  const animationUrl = metadata?.animationUrl ?? null
   const isHistorical =
     auction.status === "settled" || auction.status === "cancelled"
   const settledAtTime = bids.length > 0 ? bids[0].blockTime : null
@@ -95,7 +96,7 @@ export default async function AuctionPage({ params }: { params: Params }) {
           left column is sticky-pinned artwork, right column scrolls. */}
       <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] min-h-[calc(100vh-64px)]">
         <div className="lg:sticky lg:top-16 lg:h-[calc(100vh-64px)] flex items-center justify-center bg-gray-100 dark:bg-bg p-8 lg:p-12">
-          <TokenMedia src={image} title={title} />
+          <TokenMedia image={image} animationUrl={animationUrl} title={title} />
         </div>
 
         <aside className="lg:border-l border-gray-200 dark:bg-gray-100 px-6 py-8 lg:px-8 lg:py-10">

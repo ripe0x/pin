@@ -13,6 +13,7 @@ import { TokenPinStatus } from "@/components/preserve/TokenPinStatus"
 import { DeployHouseCTA } from "@/components/auction/DeployHouseCTA"
 import { useArtistHouse } from "@/components/auction/useArtistHouse"
 import { PlatformChip } from "@/components/PlatformChip"
+import { TokenCard } from "@/components/TokenCard"
 
 export function ArtistGallery({
   artistAddress,
@@ -246,16 +247,20 @@ function GalleryCard({
     useThumbnailMedia(item.imageUrl, 800)
 
   const isActive = item.auction?.bucket === "active"
-  const borderClass = isActive
-    ? "border-fg group-hover:border-fg"
-    : "border-gray-200 group-hover:border-gray-400"
 
   return (
-    <Link href={href} className={`group block border transition-colors ${borderClass}`}>
-      {/* Artwork field. The caption sits in a tinted footer directly
-          beneath it (same bg-surface-muted + border-t treatment as the
-          auction panel's settlement block) so the title stays visually
-          anchored to its artwork rather than floating free. */}
+    <TokenCard
+      href={href}
+      title={item.title}
+      isActive={isActive}
+      meta={
+        item.auction ? (
+          <AuctionCaption auction={item.auction} />
+        ) : pinStatus ? (
+          <TokenPinStatus status={pinStatus} />
+        ) : undefined
+      }
+    >
       <div
         className="relative overflow-hidden bg-gray-100"
         style={{ aspectRatio: ratio ?? 1 }}
@@ -293,17 +298,7 @@ function GalleryCard({
           />
         )}
       </div>
-      <div className="px-3 py-2.5 bg-surface-muted border-t border-gray-100 space-y-1.5">
-        <p className="text-[11px] font-mono text-fg tracking-tight truncate group-hover:underline underline-offset-2">
-          {item.title}
-        </p>
-        {item.auction ? (
-          <AuctionCaption auction={item.auction} />
-        ) : (
-          pinStatus && <TokenPinStatus status={pinStatus} />
-        )}
-      </div>
-    </Link>
+    </TokenCard>
   )
 }
 

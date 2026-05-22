@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
 import type { ArtistIdentity } from "@/lib/artist-queries"
 import { useArtistHouse } from "@/components/auction/useArtistHouse"
 import { AddressZorb } from "@/components/AddressZorb"
@@ -23,8 +22,12 @@ export function ArtistHeader({
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  const evmNowUrl = `https://evm.now/address/${identity.address}`
+  const truncatedAddress = `${identity.address.slice(0, 6)}…${identity.address.slice(-4)}`
+
   return (
-    <div className="flex flex-col sm:flex-row items-start gap-6">
+    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
       {/* Avatar */}
       {identity.avatarUrl ? (
         <img
@@ -40,43 +43,121 @@ export function ArtistHeader({
       )}
 
       {/* Info */}
-      <div className="space-y-2 min-w-0">
-        <h1 className="text-3xl font-semibold tracking-tight truncate">
-          {identity.displayName}
-        </h1>
-        {identity.ensName && (
-          <p className="font-mono text-xs text-gray-400">
-            {identity.address.slice(0, 6)}...{identity.address.slice(-4)}
-          </p>
+      <div className="space-y-3 min-w-0">
+        {identity.ensName ? (
+          <div className="space-y-1">
+            <h1 className="text-base font-mono font-medium tracking-tight truncate">
+              {identity.displayName}
+            </h1>
+            {/* Address verifies against the canonical on-chain record on
+                evm.now; copy button hands the full address to the clipboard. */}
+            <div className="flex items-center gap-2">
+              <a
+                href={evmNowUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-mono text-[11px] text-gray-500 hover:text-fg transition-colors"
+              >
+                {truncatedAddress}
+              </a>
+              <CopyAddressButton address={identity.address} />
+            </div>
+          </div>
+        ) : (
+          // No ENS: the truncated address is the heading, linked to evm.now.
+          <div className="flex items-center gap-2 min-w-0">
+            <h1 className="text-base font-mono font-medium tracking-tight truncate min-w-0">
+              <a
+                href={evmNowUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-gray-500 transition-colors"
+              >
+                {identity.displayName}
+              </a>
+            </h1>
+            <CopyAddressButton address={identity.address} />
+          </div>
         )}
-        <div className="flex items-center gap-4 text-sm text-gray-500">
+
+        {/* Stats */}
+        <div className="flex items-center gap-3 text-[11px] font-mono text-gray-500">
           <span>
-            <strong className="text-fg">{totalWorks}</strong>{" "}
-            {totalWorks === 1 ? "work" : "works"}
+            <strong className="font-medium text-fg">{totalWorks}</strong>{" "}
+            {totalWorks === 1 ? "indexed work" : "indexed works"}
           </span>
           {activeAuctions !== null && (
-            <span>
-              <strong className="text-fg">{activeAuctions}</strong>{" "}
-              active {activeAuctions === 1 ? "auction" : "auctions"}
-            </span>
+            <>
+              <span aria-hidden className="text-gray-300">
+                ·
+              </span>
+              <span>
+                <strong className="font-medium text-fg">{activeAuctions}</strong>{" "}
+                active {activeAuctions === 1 ? "auction" : "auctions"}
+              </span>
+            </>
           )}
         </div>
 
-        {/* Actions */}
-        <div className="flex items-center flex-wrap gap-2 pt-1">
-          <a
-            href={`https://evm.now/address/${identity.address}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs border border-gray-200 px-3 py-1.5 rounded-full hover:border-gray-400 transition-colors"
-          >
-            evm.now ↗
-          </a>
-          {mounted && <HouseLinkPill artistAddress={identity.address} />}
-          <RefreshPill artistAddress={identity.address} />
-        </div>
+        {mounted && <HouseLinkPill artistAddress={identity.address} />}
       </div>
     </div>
+  )
+}
+
+/** Copies the full address to the clipboard with a brief confirmation. */
+function CopyAddressButton({ address }: { address: string }) {
+  const [copied, setCopied] = useState(false)
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(address)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // Clipboard unavailable (insecure context / denied) — no-op.
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      aria-label={copied ? "Address copied" : "Copy address"}
+      title={copied ? "Copied" : "Copy address"}
+      className="shrink-0 text-gray-400 hover:text-fg transition-colors"
+    >
+      {copied ? (
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden
+        >
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+      ) : (
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden
+        >
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </svg>
+      )}
+    </button>
   )
 }
 
@@ -86,7 +167,7 @@ function HouseLinkPill({ artistAddress }: { artistAddress: string }) {
   if (!houseAddress) return null
   return (
     <a
-      href={`https://etherscan.io/address/${houseAddress}`}
+      href={`https://evm.now/address/${houseAddress}`}
       target="_blank"
       rel="noopener noreferrer"
       title={houseAddress}
@@ -101,94 +182,3 @@ function HouseLinkPill({ artistAddress }: { artistAddress: string }) {
     </a>
   )
 }
-
-/**
- * In-page flush of the 24h gallery cache. Hits /api/revalidate (unsigned
- * path), which is rate-limited to 1 successful flush per IP per 60s. After
- * a successful flush we call router.refresh() so the SSR'd gallery re-runs
- * with fresh data.
- */
-type RefreshState =
-  | { kind: "idle" }
-  | { kind: "loading" }
-  | { kind: "done" }
-  | { kind: "rateLimited"; retryAfter: number }
-  | { kind: "error" }
-
-function RefreshPill({ artistAddress }: { artistAddress: string }) {
-  const router = useRouter()
-  const [state, setState] = useState<RefreshState>({ kind: "idle" })
-
-  // Auto-clear transient states (done/rateLimited/error) after a few seconds
-  // so the pill returns to its idle "Refresh" affordance.
-  useEffect(() => {
-    if (state.kind === "idle" || state.kind === "loading") return
-    const t = setTimeout(() => setState({ kind: "idle" }), 4000)
-    return () => clearTimeout(t)
-  }, [state])
-
-  async function handleClick() {
-    if (state.kind === "loading") return
-    setState({ kind: "loading" })
-    try {
-      const res = await fetch(
-        `/api/revalidate?artist=${encodeURIComponent(artistAddress)}`,
-        { method: "GET", cache: "no-store" },
-      )
-      if (res.status === 429) {
-        const body = (await res.json().catch(() => ({}))) as {
-          retryAfter?: number
-        }
-        setState({
-          kind: "rateLimited",
-          retryAfter: body.retryAfter ?? 60,
-        })
-        return
-      }
-      if (!res.ok) {
-        setState({ kind: "error" })
-        return
-      }
-      setState({ kind: "done" })
-      // Refetch the SSR'd gallery now that the cache is gone.
-      router.refresh()
-    } catch {
-      setState({ kind: "error" })
-    }
-  }
-
-  const label = (() => {
-    switch (state.kind) {
-      case "loading":
-        return "Refreshing…"
-      case "done":
-        return "Refreshed ✓"
-      case "rateLimited":
-        return `Try again in ${state.retryAfter}s`
-      case "error":
-        return "Failed, retry"
-      default:
-        return "↻ Refresh"
-    }
-  })()
-
-  const tone =
-    state.kind === "done"
-      ? "border-emerald-300 text-emerald-700"
-      : state.kind === "rateLimited" || state.kind === "error"
-        ? "border-amber-300 text-amber-700"
-        : "border-gray-200 text-gray-700 hover:border-gray-400"
-
-  return (
-    <button
-      type="button"
-      onClick={handleClick}
-      disabled={state.kind === "loading"}
-      title="Just minted? Force a re-read of the gallery from chain."
-      className={`inline-flex items-center gap-1.5 text-xs border px-3 py-1.5 rounded-full transition-colors disabled:opacity-60 ${tone}`}
-    >
-      <span>{label}</span>
-    </button>
-  )
-}
-
