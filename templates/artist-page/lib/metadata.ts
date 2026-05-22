@@ -144,14 +144,29 @@ async function fetchFromTokenUri(
   const json = await loadMetadataJson(uri)
   if (!json) return null
 
-  const rawImage = typeof json.image === "string" ? json.image : null
+  // A 200 doesn't guarantee real metadata — a gateway can return a
+  // rate-limit/error/empty JSON that parses fine but has none of the fields
+  // we render. Treat that as a miss (null) instead of stamping a `#tokenId`
+  // fallback into the cache; otherwise one bad fetch pins the token on a
+  // placeholder for the full 24h cache window. See the matching guard in
+  // `packages/token-metadata` on the main site.
+  const hasName = typeof json.name === "string" && json.name.length > 0
+  const hasDescription =
+    typeof json.description === "string" && json.description.length > 0
+  const hasImage = typeof json.image === "string" && json.image.length > 0
+  const hasAnimation =
+    typeof json.animation_url === "string" && json.animation_url.length > 0
+  if (!hasName && !hasDescription && !hasImage && !hasAnimation) {
+    return null
+  }
+
+  const rawImage = hasImage ? (json.image as string) : null
   const image = rawImage ? resolveImageUri(rawImage) : null
-  const rawAnimation =
-    typeof json.animation_url === "string" ? json.animation_url : null
+  const rawAnimation = hasAnimation ? (json.animation_url as string) : null
   const animationUrl = rawAnimation ? resolveImageUri(rawAnimation) : null
   return {
-    name: typeof json.name === "string" ? json.name : `#${tokenId}`,
-    description: typeof json.description === "string" ? json.description : "",
+    name: hasName ? (json.name as string) : `#${tokenId}`,
+    description: hasDescription ? (json.description as string) : "",
     image,
     imageSmall: image,
     animationUrl,
