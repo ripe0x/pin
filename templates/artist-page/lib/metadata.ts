@@ -26,10 +26,14 @@ import { type Address } from "viem"
 import { getClient } from "./rpc"
 import { erc721Abi } from "./abi"
 
+// Public IPFS gateways, raced concurrently (first valid JSON wins). Keep the
+// first entry an image host allowed in next.config.ts — `resolveImageUri`
+// routes `ipfs://` images through IPFS_GATEWAYS[0]. cloudflare-ipfs.com was
+// removed: Cloudflare shut down its public IPFS gateway, so it only ever
+// failed (and, under the old sequential loop, burned timeout doing so).
 const IPFS_GATEWAYS = [
   "https://nftstorage.link/ipfs/",
   "https://ipfs.io/ipfs/",
-  "https://cloudflare-ipfs.com/ipfs/",
   "https://dweb.link/ipfs/",
 ]
 
@@ -45,20 +49,52 @@ export type TokenMetadata = {
 }
 
 /**
- * Fetch token metadata. Cached for an hour — token metadata is essentially
- * immutable, but a short TTL covers IPFS pin propagation for newly-minted
- * pieces.
+ * Cached token-metadata fetch.
+ *
+ * Two deliberate properties:
+ *
+ *  1. **Long TTL (24h).** Minted NFT metadata is immutable, so there's no
+ *     reason to re-fetch hourly — that only adds load on flaky public
+ *     gateways and widens the window to hit a transient failure. A daily
+ *     revalidate still eventually picks up reveal collections (tokenURI
+ *     swapped from placeholder to final) and late IPFS pin propagation.
+ *
+ *  2. **Never cache a failure.** The inner function *throws* when metadata
+ *     can't be loaded instead of returning null. `unstable_cache` does not
+ *     persist a rejected promise, so a transient gateway blip isn't baked in
+ *     for the TTL — and on a *revalidation* failure of an already-cached
+ *     token, Next keeps serving the last-good value rather than replacing it
+ *     with a placeholder. The public wrapper catches the throw and returns
+ *     null so a cold miss still renders the `#tokenId` placeholder for that
+ *     one render, then retries on the next request.
  */
-export const getTokenMetadata = unstable_cache(
+const _getTokenMetadataCached = unstable_cache(
   async (
     tokenContract: Address,
     tokenId: string,
-  ): Promise<TokenMetadata | null> => {
-    return fetchFromTokenUri(tokenContract, tokenId)
+  ): Promise<TokenMetadata> => {
+    const metadata = await fetchFromTokenUri(tokenContract, tokenId)
+    if (!metadata) {
+      throw new Error(
+        `token metadata unavailable for ${tokenContract}/${tokenId}`,
+      )
+    }
+    return metadata
   },
-  ["token-metadata-v2"],
-  { revalidate: 60 * 60, tags: ["token-metadata"] },
+  ["token-metadata-v3"],
+  { revalidate: 60 * 60 * 24, tags: ["token-metadata"] },
 )
+
+export async function getTokenMetadata(
+  tokenContract: Address,
+  tokenId: string,
+): Promise<TokenMetadata | null> {
+  try {
+    return await _getTokenMetadataCached(tokenContract, tokenId)
+  } catch {
+    return null
+  }
+}
 
 async function fetchFromTokenUri(
   tokenContract: Address,
@@ -104,24 +140,42 @@ async function loadMetadataJson(
     return parseDataUrlJson(uri)
   }
   const candidates = expandIpfsUri(uri)
-  for (const url of candidates) {
-    try {
-      const res = await fetch(url, {
-        headers: { Accept: "application/json" },
-        signal: AbortSignal.timeout(8000),
-      })
-      if (!res.ok) continue
-      const text = await res.text()
-      try {
-        return JSON.parse(text) as Record<string, unknown>
-      } catch {
-        continue
-      }
-    } catch {
-      continue
-    }
+  // Race all candidates concurrently — the fastest healthy gateway wins, so
+  // one slow/dead gateway never holds up (or sinks) the fetch. For non-IPFS
+  // URLs (https/arweave) `candidates` is a single URL. Retry the whole race
+  // once to ride out a momentary blip before giving up for this render.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const json = await raceForJson(candidates)
+    if (json) return json
   }
   return null
+}
+
+/**
+ * Resolve the first candidate URL that returns valid JSON. Uses
+ * `Promise.any`, which fulfils with the first success and only rejects when
+ * *every* candidate fails — so a 404 / timeout / non-JSON body on one gateway
+ * is ignored as long as another answers.
+ */
+async function raceForJson(
+  urls: string[],
+): Promise<Record<string, unknown> | null> {
+  try {
+    return await Promise.any(urls.map(fetchJson))
+  } catch {
+    return null
+  }
+}
+
+async function fetchJson(url: string): Promise<Record<string, unknown>> {
+  const res = await fetch(url, {
+    headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(8000),
+  })
+  if (!res.ok) throw new Error(`fetch ${url} -> ${res.status}`)
+  // JSON.parse throwing on a non-JSON body counts as a rejection, so
+  // Promise.any falls through to another candidate.
+  return JSON.parse(await res.text()) as Record<string, unknown>
 }
 
 /**
