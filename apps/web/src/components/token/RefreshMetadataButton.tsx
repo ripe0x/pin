@@ -1,18 +1,20 @@
 "use client"
 import { useState } from "react"
 import { useAccount } from "wagmi"
+import { useIsGodMode } from "@/lib/useGodMode"
 
 /**
- * "Refresh metadata" button on the token page. Shown only when the connected
- * wallet is the token's owner or creator. Re-fetches this token's title/image
+ * "Refresh metadata" button on the token page. Shown to the token's owner or
+ * creator — and to site admins (the god-mode allowlist) on every token page,
+ * so they can fix any stuck/stale token. Re-fetches this token's title/image
  * when its metadata has changed (reveal, correction) or got stuck on a failed
  * fetch, without waiting for the background sweep.
  *
- * Client-side owner/creator match is purely UX — it hides the button from
- * collectors and crawlers. The server route enforces the real protection: a
- * once-per-hour-per-token rate limit. The refresh runs in the worker, so the
- * change isn't instant — we tell the user it lands within a minute and to
- * reload, and lock the button afterward so it isn't mashed.
+ * Client-side match is purely UX — it hides the button from collectors and
+ * crawlers. The server route enforces the real protection: a once-per-hour-
+ * per-token rate limit. The refresh runs in the worker, so the change isn't
+ * instant — we tell the user it lands within a minute and to reload, and lock
+ * the button afterward so it isn't mashed.
  */
 type State =
   | { kind: "idle" }
@@ -33,12 +35,14 @@ export function RefreshMetadataButton({
   creator: string
 }) {
   const { address: connected } = useAccount()
+  const isAdmin = useIsGodMode()
   const [state, setState] = useState<State>({ kind: "idle" })
 
   const lc = connected?.toLowerCase()
   const isOwnerOrCreator =
     !!lc && (lc === owner.toLowerCase() || lc === creator.toLowerCase())
-  if (!isOwnerOrCreator) return null
+  // Owner/creator see it on their own tokens; admins see it everywhere.
+  if (!isOwnerOrCreator && !isAdmin) return null
 
   async function onClick() {
     setState({ kind: "loading" })
