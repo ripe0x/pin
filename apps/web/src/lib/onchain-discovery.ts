@@ -62,6 +62,78 @@ function getClient() {
   return createPublicClient({ chain: mainnet, transport: http(url) })
 }
 
+const EXISTENCE_ABI = [
+  {
+    type: "function",
+    name: "ownerOf",
+    stateMutability: "view",
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    outputs: [{ type: "address" }],
+  },
+  {
+    type: "function",
+    name: "supportsInterface",
+    stateMutability: "view",
+    inputs: [{ name: "interfaceId", type: "bytes4" }],
+    outputs: [{ type: "bool" }],
+  },
+] as const
+
+const ERC721_INTERFACE_ID = "0x80ac58cd" // ERC-165 id for ERC-721
+
+/**
+ * On-chain existence check, for the token-not-found UI. Returns:
+ *   - `true`  — the token exists (ownerOf returned an address)
+ *   - `false` — the token definitively does NOT exist (confirmed ERC-721
+ *               contract, but ownerOf reverted)
+ *   - `null`  — can't tell (ERC-1155 / non-standard contract, or RPC error)
+ *
+ * Call this ONLY when the indexer + metadata have nothing — i.e. we're about
+ * to render a blank page. We must never 404 a real-but-unindexed token (the
+ * indexer can lag a fresh mint, and metadata may be mid-self-heal), so we act
+ * solely on a *positive* on-chain signal: ownerOf reverting on a contract we
+ * confirmed is ERC-721. If we can't confirm ERC-721 or can't reach the chain,
+ * we return null and the caller renders normally rather than claiming 404.
+ */
+export async function tokenExistsOnChain(
+  contract: string,
+  tokenId: string,
+): Promise<boolean | null> {
+  const address = contract as `0x${string}`
+  let id: bigint
+  try {
+    id = BigInt(tokenId)
+  } catch {
+    return null
+  }
+  const client = getClient()
+  try {
+    await client.readContract({
+      address,
+      abi: EXISTENCE_ABI,
+      functionName: "ownerOf",
+      args: [id],
+    })
+    return true
+  } catch {
+    // ownerOf failed: nonexistent ERC-721 token, an ERC-1155 (no ownerOf),
+    // or a transient RPC error. Only conclude "not found" if the contract is
+    // a confirmed ERC-721 AND we could actually reach it — if this second
+    // call also throws (e.g. network), we fall through to null.
+    try {
+      const is721 = (await client.readContract({
+        address,
+        abi: EXISTENCE_ABI,
+        functionName: "supportsInterface",
+        args: [ERC721_INTERFACE_ID],
+      })) as boolean
+      return is721 ? false : null
+    } catch {
+      return null
+    }
+  }
+}
+
 /**
  * Try to resolve token metadata directly via RPC + IPFS. ONLY used as
  * a courtesy fallback when the warm-metadata worker hasn't populated

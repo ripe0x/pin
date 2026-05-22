@@ -12,6 +12,7 @@ import {
   getErc1155TokenStats,
   getTokenOnChainData,
   resolveTokenMetadataDirect,
+  tokenExistsOnChain,
 } from "@/lib/onchain-discovery"
 import { getAuctionForToken, type AuctionState } from "@/lib/auctions"
 import { getSettledAuctionForToken } from "@/lib/indexer-queries"
@@ -107,7 +108,19 @@ const getTokenPageData = cache(async (handle: string, tokenId: string) => {
           txHash: t.txHash,
         }))
 
+  // If the indexer has nothing AND metadata didn't resolve, the token is
+  // either brand-new (not indexed yet / mid self-heal) or doesn't exist.
+  // Probe the chain to tell them apart, so a non-existent token gets a real
+  // "not found" instead of a blank artwork shell — without ever 404-ing a
+  // real-but-unindexed token (the probe only says false on a confirmed
+  // ERC-721 whose ownerOf reverts).
+  let notFound = false
+  if (!meta && !onChainData && !erc1155) {
+    notFound = (await tokenExistsOnChain(contract, tokenId)) === false
+  }
+
   return {
+    notFound,
     title: meta?.name ?? `#${tokenId}`,
     description: meta?.description ?? "",
     creator,
@@ -135,6 +148,9 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { handle, tokenId } = await params
   const data = await getTokenPageData(handle, tokenId)
+  if (data.notFound) {
+    return { title: `Token not found | ${SITE_TITLE}` }
+  }
   const ogTitle = `${data.title} by ${data.creatorHandle || "Unknown"} | ${SITE_TITLE}`
   const description =
     data.description ||
@@ -179,6 +195,29 @@ export default async function TokenPage({
   }
 
   const data = await getTokenPageData(handle, tokenId)
+
+  // Non-existent token (e.g. an auction id pasted into the token slot) →
+  // a clear "not found" instead of a blank artwork shell.
+  if (data.notFound) {
+    return (
+      <div className="mx-auto max-w-xl px-6 py-24 text-center space-y-3">
+        <h1 className="text-lg font-mono font-medium">Token not found</h1>
+        <p className="text-sm text-gray-500">
+          Token #{tokenId} doesn&rsquo;t exist on this contract.
+        </p>
+        <p className="text-[11px] font-mono text-gray-400 break-all">
+          {data.contract}
+        </p>
+        <Link
+          href="/"
+          className="inline-block text-xs font-mono uppercase tracking-wider text-gray-500 hover:text-fg transition-colors pt-2"
+        >
+          ← Back home
+        </Link>
+      </div>
+    )
+  }
+
   const [auction, settledAuctionRaw] = await Promise.all([
     getAuctionForToken(data.contract, tokenId).catch(() => null),
     getSettledAuctionForToken(data.contract, tokenId).catch(() => null),
