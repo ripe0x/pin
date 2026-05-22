@@ -84,6 +84,20 @@ A few small details about how the page works that are worth understanding:
 
 - **Artwork comes from each NFT directly.** Most pieces store their image data on IPFS (a decentralized file network). Brand-new pieces sometimes take a few seconds to appear the first time because the gateways serving the file are still warming up. If an image still isn't showing after a minute, hard-refresh the page.
 
+- **Token titles/images are cached for 24 hours, but you can refresh on demand.** Metadata rarely changes, so the page caches it for a day to stay fast and avoid hammering the file gateways. If a piece's metadata *does* change (a reveal, a correction, swapped media), set a `REVALIDATE_SECRET` env var and POST to `/api/revalidate` to refresh one token or the whole site without waiting:
+
+  ```bash
+  # one token
+  curl -X POST "https://yoursite.com/api/revalidate?token=0xCONTRACT:TOKENID" \
+    -H "x-revalidate-secret: YOUR_SECRET"
+
+  # everything
+  curl -X POST "https://yoursite.com/api/revalidate" \
+    -H "x-revalidate-secret: YOUR_SECRET"
+  ```
+
+  Without `REVALIDATE_SECRET` set, the endpoint is disabled. (A transient gateway hiccup no longer needs this — the page keeps showing the last-known title/image and retries automatically.)
+
 - **Your name comes from ENS.** If you have a primary ENS name set on your wallet (like `yourname.eth`), it appears as your display name automatically. Avatar, bio, and social links also come from your ENS profile if you've set those records (`avatar`, `description`, `url`, `com.twitter`, etc).
 
 - **Wallet support.** The connect button works for any browser-extension wallet (MetaMask, Rabby, Frame, Brave Wallet, OKX, Phantom, etc.), Coinbase Wallet, and Safe — no setup needed on your part. Mobile users connecting via WalletConnect QR codes (Rainbow mobile, Trust, MetaMask Mobile) are not enabled by default to keep your deploy zero-config; if a mobile visitor needs to bid, the easiest workaround is to open your site inside their wallet's built-in browser. To enable WalletConnect mobile QR connections, see the Customize section below.

@@ -68,29 +68,51 @@ export type TokenMetadata = {
  *     null so a cold miss still renders the `#tokenId` placeholder for that
  *     one render, then retries on the next request.
  */
-const _getTokenMetadataCached = unstable_cache(
-  async (
-    tokenContract: Address,
-    tokenId: string,
-  ): Promise<TokenMetadata> => {
-    const metadata = await fetchFromTokenUri(tokenContract, tokenId)
-    if (!metadata) {
-      throw new Error(
-        `token metadata unavailable for ${tokenContract}/${tokenId}`,
-      )
-    }
-    return metadata
-  },
-  ["token-metadata-v3"],
-  { revalidate: 60 * 60 * 24, tags: ["token-metadata"] },
-)
+// Module-level so the reference is stable across calls — `unstable_cache`
+// keys partly on the callback identity. Throws on failure (see
+// getTokenMetadata) so a transient miss is never persisted.
+async function fetchTokenMetadataOrThrow(
+  tokenContract: Address,
+  tokenId: string,
+): Promise<TokenMetadata> {
+  const metadata = await fetchFromTokenUri(tokenContract, tokenId)
+  if (!metadata) {
+    throw new Error(
+      `token metadata unavailable for ${tokenContract}/${tokenId}`,
+    )
+  }
+  return metadata
+}
+
+/** Per-token cache tag — lets the revalidate endpoint refresh one token. */
+export function tokenMetadataTag(
+  tokenContract: Address,
+  tokenId: string,
+): string {
+  return `token-metadata:${tokenContract.toLowerCase()}:${tokenId}`
+}
+
+/** Global tag — refreshes every token's metadata at once. */
+export const TOKEN_METADATA_TAG = "token-metadata"
 
 export async function getTokenMetadata(
   tokenContract: Address,
   tokenId: string,
 ): Promise<TokenMetadata | null> {
+  // `unstable_cache` is instantiated per call so its `tags` can include the
+  // token-specific tag (the option is otherwise static at definition time).
+  // The cache key is the stable callback + keyParts, so same-token calls
+  // still share one entry. See `app/api/revalidate` for the trigger.
+  const cached = unstable_cache(
+    fetchTokenMetadataOrThrow,
+    ["token-metadata-v3", tokenContract.toLowerCase(), tokenId],
+    {
+      revalidate: 60 * 60 * 24,
+      tags: [TOKEN_METADATA_TAG, tokenMetadataTag(tokenContract, tokenId)],
+    },
+  )
   try {
-    return await _getTokenMetadataCached(tokenContract, tokenId)
+    return await cached(tokenContract, tokenId)
   } catch {
     return null
   }
