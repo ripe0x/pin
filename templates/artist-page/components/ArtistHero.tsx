@@ -13,11 +13,10 @@ import {
   getArtistBio,
   getArtistLinks,
 } from "@/lib/artist"
-import { getArtistHouse } from "@/lib/auctions"
-import { explorerAddressUrl } from "@/lib/explorer"
 import { formatAddress } from "@/lib/format"
 import { getEnsName } from "@/lib/ens"
 import { AddressZorb } from "@/components/AddressZorb"
+import { CopyAddressButton } from "@/components/CopyAddressButton"
 
 type Props = {
   totalAuctions: number
@@ -26,18 +25,19 @@ type Props = {
 
 export async function ArtistHero({ totalAuctions, activeAuctions }: Props) {
   const cfg = getConfig()
-  const [displayName, avatarUrl, bio, links, ens, house] = await Promise.all([
+  const [displayName, avatarUrl, bio, links, ens] = await Promise.all([
     getArtistDisplayName(),
     getArtistAvatarUrl(),
     getArtistBio(),
     getArtistLinks(),
     getEnsName(cfg.artistAddress),
-    getArtistHouse(),
   ])
   const showAddressUnderName = !!ens || !!cfg.artistName
+  const evmNowUrl = `https://evm.now/address/${cfg.artistAddress}`
+  const truncatedAddress = formatAddress(cfg.artistAddress)
 
   return (
-    <div className="flex flex-col sm:flex-row items-start gap-6">
+    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
       {avatarUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -52,72 +52,76 @@ export async function ArtistHero({ totalAuctions, activeAuctions }: Props) {
         />
       )}
 
-      <div className="space-y-2 min-w-0">
-        <h1 className="text-3xl font-semibold tracking-tight truncate">
-          {displayName}
-        </h1>
-        {showAddressUnderName && (
-          <p className="font-mono text-xs text-gray-400">
-            {formatAddress(cfg.artistAddress)}
-          </p>
+      <div className="space-y-3 min-w-0">
+        {showAddressUnderName ? (
+          <div className="space-y-1">
+            <h1 className="text-base font-mono font-medium tracking-tight truncate">
+              {displayName}
+            </h1>
+            <div className="flex items-center gap-2">
+              <a
+                href={evmNowUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-mono text-[11px] text-gray-500 hover:text-fg transition-colors"
+              >
+                {truncatedAddress}
+              </a>
+              <CopyAddressButton address={cfg.artistAddress} />
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 min-w-0">
+            <h1 className="text-base font-mono font-medium tracking-tight truncate min-w-0">
+              <a
+                href={evmNowUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-gray-500 transition-colors"
+              >
+                {displayName}
+              </a>
+            </h1>
+            <CopyAddressButton address={cfg.artistAddress} />
+          </div>
         )}
         {bio ? (
           <p className="max-w-2xl text-sm text-fg-muted">{bio}</p>
         ) : null}
 
-        <div className="flex items-center gap-4 text-sm text-gray-500 pt-1">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono text-gray-500">
           <span>
-            <strong className="text-fg">{totalAuctions}</strong>{" "}
+            <strong className="font-medium text-fg">{totalAuctions}</strong>{" "}
             {totalAuctions === 1 ? "auction" : "auctions"}
           </span>
           {activeAuctions > 0 && (
-            <span>
-              <strong className="text-fg">{activeAuctions}</strong>{" "}
-              live
-            </span>
+            <>
+              <span aria-hidden className="text-gray-300">
+                ·
+              </span>
+              <span>
+                <strong className="font-medium text-fg">{activeAuctions}</strong>{" "}
+                live
+              </span>
+            </>
           )}
         </div>
 
-        <div className="flex items-center flex-wrap gap-2 pt-2">
-          <a
-            href={explorerAddressUrl(cfg.artistAddress)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs border border-gray-200 px-3 py-1.5 rounded-full hover:border-gray-400 transition-colors"
-          >
-            evm.now ↗
-          </a>
-          {house && (
-            <a
-              href={explorerAddressUrl(house)}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={house}
-              className="inline-flex items-center gap-1.5 text-xs border border-gray-200 px-3 py-1.5 rounded-full hover:border-gray-400 transition-colors"
-            >
-              <span
-                className="h-1.5 w-1.5 rounded-full bg-status-available"
-                aria-hidden
-              />
-              <span>Auction house</span>
-              <span className="font-mono text-gray-400">
-                {formatAddress(house)}
-              </span>
-              <span aria-hidden>↗</span>
-            </a>
-          )}
-          {links.map((url) => (
-            <a
-              key={url}
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs border border-gray-200 px-3 py-1.5 rounded-full hover:border-gray-400 transition-colors"
-            >
-              {prettyLinkLabel(url)} ↗
-            </a>
-          ))}
-        </div>
+        {links.length > 0 && (
+          <div className="flex items-center flex-wrap gap-2">
+            {links.map((url) => (
+              <a
+                key={url}
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs border border-gray-200 px-3 py-1.5 rounded-full hover:border-gray-400 transition-colors"
+              >
+                {prettyLinkLabel(url)} ↗
+              </a>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )

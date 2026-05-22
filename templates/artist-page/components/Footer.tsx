@@ -1,15 +1,14 @@
 /**
- * Index-page footer. Mirrors the PND main app's footer pattern: top
- * border separator, site label on the left, explorer/contract pills
- * on the right.
+ * Site footer. Mirrors the PND main app's footer pattern: top border
+ * separator, label on the left, links + theme toggle on the right (no
+ * arrows). Rendered at the bottom of every page.
  */
-import { getConfig, SOVEREIGN_FACTORY_ADDRESS } from "@/lib/config"
 import { getArtistDisplayName } from "@/lib/artist"
 import { getArtistHouse } from "@/lib/auctions"
 import { explorerAddressUrl } from "@/lib/explorer"
+import { ThemeToggle } from "./ThemeToggle"
 
 export async function Footer() {
-  const cfg = getConfig()
   const displayName = await getArtistDisplayName()
   const house = await getArtistHouse()
 
@@ -17,42 +16,28 @@ export async function Footer() {
     <footer className="border-t border-gray-200 pt-8 pb-16">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-gray-400">
-          {displayName}
-        </p>
-        <div className="flex flex-wrap gap-6 text-sm text-gray-400">
-          <a
-            href={explorerAddressUrl(cfg.artistAddress)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-fg transition-colors"
-          >
-            Wallet ↗
-          </a>
-          {house && (
+          {displayName}&rsquo;s{" "}
+          {house ? (
             <a
               href={explorerAddressUrl(house)}
               target="_blank"
               rel="noopener noreferrer"
               className="hover:text-fg transition-colors"
             >
-              Auction house ↗
+              independent auction house
             </a>
+          ) : (
+            "independent auction house"
           )}
-          <a
-            href={explorerAddressUrl(SOVEREIGN_FACTORY_ADDRESS)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-fg transition-colors"
-          >
-            Factory ↗
-          </a>
+        </p>
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-gray-400">
           <a
             href="https://pnd.ripe.wtf"
             target="_blank"
             rel="noopener noreferrer"
             className="hover:text-fg transition-colors"
           >
-            pnd.ripe.wtf ↗
+            pnd.ripe.wtf
           </a>
           <span>
             Created by{" "}
@@ -62,9 +47,10 @@ export async function Footer() {
               rel="noopener noreferrer"
               className="hover:text-fg transition-colors"
             >
-              ripe ↗
+              ripe
             </a>
           </span>
+          <ThemeToggle />
         </div>
       </div>
     </footer>

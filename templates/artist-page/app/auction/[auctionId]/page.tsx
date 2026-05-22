@@ -6,6 +6,7 @@ import { BidHistory } from "@/components/BidHistory"
 import { SettledSummary } from "@/components/SettledSummary"
 import { TokenMedia } from "@/components/TokenMedia"
 import { Provenance } from "@/components/Provenance"
+import { Footer } from "@/components/Footer"
 import { getArtistHouse, getAuctionById, getBidHistory } from "@/lib/auctions"
 import { getTokenMetadata } from "@/lib/metadata"
 import { getTokenOwner, getTokenProvenance } from "@/lib/token"
@@ -259,6 +260,9 @@ export default async function AuctionPage({ params }: { params: Params }) {
             </div>
           </section>
         </aside>
+      </div>
+      <div className="px-6 lg:px-8">
+        <Footer />
       </div>
     </div>
   )

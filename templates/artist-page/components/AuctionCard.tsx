@@ -36,20 +36,15 @@ export async function AuctionCard({ auction }: { auction: AuctionSummary }) {
   const image = metadata?.imageSmall ?? metadata?.image ?? null
   const title = metadata?.name ?? `#${auction.tokenId}`
   const bucket = bucketFor(auction)
-  const isActive = bucket === "active"
-
-  const borderClass = isActive
-    ? "border-fg hover:border-fg"
-    : "border-gray-200 hover:border-gray-400"
 
   return (
     <div
-      className={`group relative border transition-colors ${borderClass}`}
+      className="group relative border border-gray-200 transition-colors hover:border-gray-400"
     >
       <Link href={`/auction/${auction.auctionId}`} className="block">
         <AuctionCardImage src={image} alt={title} />
-        <div className="p-4 flex items-center justify-between gap-2">
-          <p className="text-base font-medium leading-tight truncate">
+        <div className="px-3 py-2.5 bg-surface-muted border-t border-gray-100 space-y-2">
+          <p className="text-[11px] font-mono text-fg tracking-tight truncate leading-none group-hover:underline underline-offset-2">
             {title}
           </p>
           <StatusCaption auction={auction} bucket={bucket} />
@@ -113,7 +108,7 @@ function Caption({
 }) {
   return (
     <span
-      className={`text-[10px] font-mono uppercase tracking-wider shrink-0 whitespace-nowrap ${
+      className={`flex items-center text-[10px] font-mono uppercase tracking-wider leading-none shrink-0 whitespace-nowrap ${
         muted ? "text-gray-500" : "text-fg"
       }`}
     >
