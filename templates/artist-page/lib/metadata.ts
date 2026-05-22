@@ -44,6 +44,12 @@ export type TokenMetadata = {
   image: string | null
   /** Same as `image` for now; reserved for future thumbnail support. */
   imageSmall: string | null
+  /**
+   * The dynamic version of the work (video / HTML art), if the metadata
+   * declares one. Resolved to a browser-loadable URL like `image`. The
+   * detail page prefers this over `image` when present.
+   */
+  animationUrl: string | null
   collectionName: string | null
   artistDisplay: string | null
 }
@@ -140,11 +146,15 @@ async function fetchFromTokenUri(
 
   const rawImage = typeof json.image === "string" ? json.image : null
   const image = rawImage ? resolveImageUri(rawImage) : null
+  const rawAnimation =
+    typeof json.animation_url === "string" ? json.animation_url : null
+  const animationUrl = rawAnimation ? resolveImageUri(rawAnimation) : null
   return {
     name: typeof json.name === "string" ? json.name : `#${tokenId}`,
     description: typeof json.description === "string" ? json.description : "",
     image,
     imageSmall: image,
+    animationUrl,
     collectionName: null,
     artistDisplay: null,
   }

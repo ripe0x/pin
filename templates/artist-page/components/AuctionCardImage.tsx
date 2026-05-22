@@ -3,10 +3,21 @@
 import { useState } from "react"
 
 const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
+const IMAGE_EXTENSIONS = [
+  ".gif",
+  ".svg",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
+  ".avif",
+]
 
-function isVideoUrl(url: string): boolean {
-  const path = url.split("?")[0].toLowerCase()
-  return VIDEO_EXTENSIONS.some((ext) => path.endsWith(ext))
+function extOf(url: string): string {
+  const path = url.split("?")[0].split("#")[0].toLowerCase()
+  const dot = path.lastIndexOf(".")
+  const slash = path.lastIndexOf("/")
+  return dot > slash ? path.slice(dot) : ""
 }
 
 /**
@@ -26,6 +37,11 @@ export function AuctionCardImage({
   alt: string
 }) {
   const [ratio, setRatio] = useState<number | null>(null)
+  // Cards stick with the static image. The one exception is a token that
+  // stuffs a video into the `image` field with no extension — there's no
+  // real image to show, so an extension-less <img> that fails to load is
+  // escalated to <video>.
+  const [escalated, setEscalated] = useState(false)
   if (!src) {
     return (
       <div
@@ -36,7 +52,9 @@ export function AuctionCardImage({
       </div>
     )
   }
-  const video = isVideoUrl(src)
+  const ext = extOf(src)
+  const ambiguous = !VIDEO_EXTENSIONS.includes(ext) && !IMAGE_EXTENSIONS.includes(ext)
+  const video = VIDEO_EXTENSIONS.includes(ext) || escalated
   return (
     <div
       className="relative overflow-hidden bg-gray-100"
@@ -69,6 +87,9 @@ export function AuctionCardImage({
             if (img.naturalWidth && img.naturalHeight) {
               setRatio(img.naturalWidth / img.naturalHeight)
             }
+          }}
+          onError={() => {
+            if (ambiguous && !escalated) setEscalated(true)
           }}
         />
       )}
