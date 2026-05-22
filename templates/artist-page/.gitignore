@@ -7,3 +7,11 @@ node_modules
 .netlify
 .DS_Store
 *.tsbuildinfo
+
+# This template uses npm (package-lock.json is the committed lockfile).
+# Ignore other package managers' lockfiles so a stray `pnpm install` /
+# `yarn install` here doesn't get committed — two lockfiles make Vercel/
+# Netlify pick the wrong package manager.
+pnpm-lock.yaml
+yarn.lock
+bun.lockb
