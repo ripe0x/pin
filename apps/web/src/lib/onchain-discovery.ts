@@ -84,8 +84,19 @@ export async function resolveTokenMetadataDirect(
   if (!sql) return null
 
   // Check the table first — covers the common case.
+  //
+  // `raw_uri` is the success signal: the resolver only sets it when it
+  // actually fetched the metadata file. So a row WITH raw_uri is final
+  // (return it, even if its name/image are sparse — that's the genuine
+  // content) and is never re-fetched. A row with raw_uri NULL means the
+  // fetch FAILED (e.g. arweave hadn't propagated a fresh mint yet) — that's
+  // not a real answer, so we treat it like a cache miss and re-resolve,
+  // throttled by a short cooldown so rapid reloads / genuinely-dead links
+  // don't fan out. This is what lets a stuck/blank token self-heal on the
+  // next view instead of staying blank until the 7-day sweep.
+  const RESOLVE_RETRY_COOLDOWN_MS = 60_000
   const rows = (await sql`
-    SELECT name, description, image_url, animation_url, raw_uri
+    SELECT name, description, image_url, animation_url, raw_uri, fetched_at
     FROM token_metadata
     WHERE contract = ${contract.toLowerCase()} AND token_id = ${tokenId}
     LIMIT 1
@@ -95,20 +106,30 @@ export async function resolveTokenMetadataDirect(
     image_url: string | null
     animation_url: string | null
     raw_uri: string | null
+    fetched_at: Date
   }>
-  if (rows.length > 0) {
-    return {
-      name: rows[0].name,
-      description: rows[0].description,
-      image: rows[0].image_url,
-      animation_url: rows[0].animation_url,
-      rawUri: rows[0].raw_uri,
+  const row = rows[0]
+  if (row) {
+    const succeeded = row.raw_uri !== null
+    const attemptedRecently =
+      Date.now() - new Date(row.fetched_at).getTime() < RESOLVE_RETRY_COOLDOWN_MS
+    if (succeeded || attemptedRecently) {
+      // Final content, OR a failed row we just attempted — return as-is
+      // rather than re-resolving (the sweep / a later view will retry).
+      return {
+        name: row.name,
+        description: row.description,
+        image: row.image_url,
+        animation_url: row.animation_url,
+        rawUri: row.raw_uri,
+      }
     }
+    // else: failed row, cooldown elapsed → fall through to re-resolve.
   }
 
-  // Cold fallback. The warm-metadata worker task should beat us to
-  // this, but if a user visits within seconds of mint discovery, we
-  // resolve here and write through.
+  // No row, or a stale failed row. The warm-metadata worker task should beat
+  // us to this, but if a user visits within seconds of mint discovery (or a
+  // prior fetch failed), we resolve here and write through.
   try {
     const meta = await resolveTokenMetadata(getClient(), contract, tokenId)
     await sql`
