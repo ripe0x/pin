@@ -8,6 +8,8 @@
  * to the raw gateway URL.
  */
 
+import { isVideoUrl } from "./media-url"
+
 const PROXYABLE_HOST_SUFFIXES = [
   "nftstorage.link",
   "dweb.link",
@@ -17,13 +19,6 @@ const PROXYABLE_HOST_SUFFIXES = [
   "arweave.net",
   "euc.li",
 ]
-
-const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
-
-function isVideoUrl(url: string): boolean {
-  const path = url.split("?")[0].toLowerCase()
-  return VIDEO_EXTENSIONS.some((ext) => path.endsWith(ext))
-}
 
 export function optimizeImageUrl(src: string, width = 800): string {
   if (!src.startsWith("http")) return src

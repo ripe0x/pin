@@ -2,20 +2,13 @@
 
 import type { DiscoveredToken } from "@/lib/onchain-discovery"
 import type { PinStatus } from "@/lib/pinning"
-import { useOptimizedImage } from "@/lib/use-optimized-image"
+import { useThumbnailMedia } from "@/lib/use-thumbnail-media"
 import { TokenPinStatus } from "./TokenPinStatus"
 
 type TokenWithPinState = {
   token: DiscoveredToken
   metadataStatus: PinStatus
   mediaStatus: PinStatus
-}
-
-const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
-
-function isVideoUrl(url: string): boolean {
-  const path = url.split("?")[0].toLowerCase()
-  return VIDEO_EXTENSIONS.some((ext) => path.endsWith(ext))
 }
 
 export function PreserveGrid({ tokens }: { tokens: TokenWithPinState[] }) {
@@ -46,34 +39,29 @@ function PreserveCard({ item }: { item: TokenWithPinState }) {
   // Combined status: worst of the two
   const combinedStatus = worstStatus(metadataStatus, mediaStatus)
 
-  const isVideo = isVideoUrl(imageUrl)
-  const {
-    src: mediaSrc,
-    onError: onMediaError,
-    ref: mediaRef,
-    failed: mediaFailed,
-  } = useOptimizedImage(imageUrl, 600)
+  const { kind, imgSrc, imgRef, onImgError, videoSrc, onVideoError } =
+    useThumbnailMedia(imageUrl, 600)
 
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden">
       <div className="relative bg-gray-100 aspect-square">
-        {mediaFailed ? null : isVideo ? (
+        {kind === "failed" ? null : kind === "video" ? (
           <video
-            src={mediaSrc}
+            src={videoSrc}
             className="w-full h-full object-cover"
             muted
             playsInline
             preload="metadata"
-            onError={onMediaError}
+            onError={onVideoError}
           />
         ) : (
           <img
-            ref={mediaRef}
-            src={mediaSrc}
+            ref={imgRef}
+            src={imgSrc}
             alt={title}
             className="w-full h-full object-cover"
             loading="lazy"
-            onError={onMediaError}
+            onError={onImgError}
           />
         )}
         {/* Pin status overlay */}

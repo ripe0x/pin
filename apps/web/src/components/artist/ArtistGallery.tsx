@@ -8,18 +8,11 @@ import { formatEther } from "viem"
 import type { GalleryItem, GalleryPage } from "@/lib/artist-queries"
 import type { SovereignAuctionLite } from "@/lib/auctions"
 import { createProvider, type PinStatus } from "@/lib/pinning"
-import { useOptimizedImage } from "@/lib/use-optimized-image"
+import { useThumbnailMedia } from "@/lib/use-thumbnail-media"
 import { TokenPinStatus } from "@/components/preserve/TokenPinStatus"
 import { DeployHouseCTA } from "@/components/auction/DeployHouseCTA"
 import { useArtistHouse } from "@/components/auction/useArtistHouse"
 import { PlatformChip } from "@/components/PlatformChip"
-
-const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
-
-function isVideoUrl(url: string): boolean {
-  const path = url.split("?")[0].toLowerCase()
-  return VIDEO_EXTENSIONS.some((ext) => path.endsWith(ext))
-}
 
 export function ArtistGallery({
   artistAddress,
@@ -247,98 +240,107 @@ function GalleryCard({
   isOwner: boolean
 }) {
   const href = `/${item.contract}/${item.tokenId}`
-  const isVideo = isVideoUrl(item.imageUrl)
   const pinStatus = hasProvider ? getItemPinStatus(item, pinStatuses) : null
   const [ratio, setRatio] = useState<number | null>(null)
-  const {
-    src: mediaSrc,
-    onError: onMediaError,
-    ref: mediaRef,
-    failed: mediaFailed,
-  } = useOptimizedImage(item.imageUrl, 800)
+  const { kind, imgSrc, imgRef, onImgError, videoSrc, onVideoError } =
+    useThumbnailMedia(item.imageUrl, 800)
 
   const isActive = item.auction?.bucket === "active"
   const borderClass = isActive
-    ? "border-fg hover:border-fg"
-    : "border-gray-200 hover:border-gray-400"
+    ? "border-fg group-hover:border-fg"
+    : "border-gray-200 group-hover:border-gray-400"
 
   return (
-    <div className={`group relative border transition-colors ${borderClass}`}>
-      <PlatformChip platform={item.platform} />
-      <Link href={href}>
-        <div
-          className="relative overflow-hidden bg-gray-100"
-          style={{ aspectRatio: ratio ?? 1 }}
-        >
-          {mediaFailed ? null : isVideo ? (
-            <video
-              src={mediaSrc}
-              className="block w-full h-auto"
-              muted
-              playsInline
-              preload="metadata"
-              onError={onMediaError}
-              onLoadedMetadata={(e) => {
-                const v = e.currentTarget
-                if (v.videoWidth && v.videoHeight) {
-                  setRatio(v.videoWidth / v.videoHeight)
-                }
-              }}
-            />
-          ) : (
-            <img
-              ref={mediaRef}
-              src={mediaSrc}
-              alt={item.title}
-              className="block w-full h-auto"
-              loading="lazy"
-              onError={onMediaError}
-              onLoad={(e) => {
-                const img = e.currentTarget
-                if (img.naturalWidth && img.naturalHeight) {
-                  setRatio(img.naturalWidth / img.naturalHeight)
-                }
-              }}
-            />
-          )}
-        </div>
-        <div className="p-4 flex items-center justify-between gap-2">
-          <p className="text-base font-medium leading-tight truncate">
-            {item.title}
-          </p>
-          {item.auction ? (
-            <AuctionCaption auction={item.auction} />
-          ) : (
-            pinStatus && <TokenPinStatus status={pinStatus} />
-          )}
-        </div>
-      </Link>
-    </div>
+    <Link href={href} className={`group block border transition-colors ${borderClass}`}>
+      {/* Artwork field. The caption sits in a tinted footer directly
+          beneath it (same bg-surface-muted + border-t treatment as the
+          auction panel's settlement block) so the title stays visually
+          anchored to its artwork rather than floating free. */}
+      <div
+        className="relative overflow-hidden bg-gray-100"
+        style={{ aspectRatio: ratio ?? 1 }}
+      >
+        <PlatformChip platform={item.platform} />
+        {kind === "failed" ? null : kind === "video" ? (
+          <video
+            src={videoSrc}
+            className="block w-full h-auto"
+            muted
+            playsInline
+            preload="metadata"
+            onError={onVideoError}
+            onLoadedMetadata={(e) => {
+              const v = e.currentTarget
+              if (v.videoWidth && v.videoHeight) {
+                setRatio(v.videoWidth / v.videoHeight)
+              }
+            }}
+          />
+        ) : (
+          <img
+            ref={imgRef}
+            src={imgSrc}
+            alt={item.title}
+            className="block w-full h-auto"
+            loading="lazy"
+            onError={onImgError}
+            onLoad={(e) => {
+              const img = e.currentTarget
+              if (img.naturalWidth && img.naturalHeight) {
+                setRatio(img.naturalWidth / img.naturalHeight)
+              }
+            }}
+          />
+        )}
+      </div>
+      <div className="px-3 py-2.5 bg-surface-muted border-t border-gray-100 space-y-1.5">
+        <p className="text-[11px] font-mono text-fg tracking-tight truncate group-hover:underline underline-offset-2">
+          {item.title}
+        </p>
+        {item.auction ? (
+          <AuctionCaption auction={item.auction} />
+        ) : (
+          pinStatus && <TokenPinStatus status={pinStatus} />
+        )}
+      </div>
+    </Link>
   )
 }
 
+// Auction status as a label/value row, borrowing the auction panel's
+// settlement/bid-history treatment: muted label on the left, fg value
+// (tabular-nums) on the right, with a live/upcoming dot and countdown
+// rendered as a subtle timestamp beside the label.
 function AuctionCaption({ auction }: { auction: SovereignAuctionLite }) {
   if (auction.bucket === "listed") {
     return (
-      <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500 shrink-0 whitespace-nowrap">
-        {formatEth(auction.reservePrice)} reserve
-      </span>
+      <div className="flex items-baseline justify-between gap-2 text-[11px] font-mono">
+        <span className="text-fg-muted">Reserve</span>
+        <span className="tabular-nums text-fg shrink-0">
+          {formatEth(auction.reservePrice)} ETH
+        </span>
+      </div>
     )
   }
-  if (auction.bucket === "ending") {
-    return (
-      <span className="text-[10px] font-mono uppercase tracking-wider text-fg shrink-0 whitespace-nowrap inline-flex items-center gap-1.5">
-        <span className="h-1.5 w-1.5 rounded-full bg-status-upcoming" aria-hidden />
-        Top bid {formatEth(auction.amount)} ETH · ending
-      </span>
-    )
-  }
+  const isLive = auction.bucket === "active"
   return (
-    <span className="text-[10px] font-mono uppercase tracking-wider text-fg shrink-0 whitespace-nowrap inline-flex items-center gap-1.5">
-      <span className="h-1.5 w-1.5 rounded-full bg-status-live animate-pulse" aria-hidden />
-      Top bid {formatEth(auction.amount)} ETH ·{" "}
-      <LiveCountdown endTimeSec={Number(auction.endTime)} />
-    </span>
+    <div className="flex items-baseline justify-between gap-2 text-[11px] font-mono">
+      <span className="inline-flex items-baseline gap-1.5 min-w-0 text-fg-muted">
+        <span
+          className={`self-center h-1.5 w-1.5 shrink-0 rounded-full ${
+            isLive ? "bg-status-live animate-pulse" : "bg-status-upcoming"
+          }`}
+          aria-hidden
+        />
+        <span>Top bid</span>
+        <span className="text-fg-subtle shrink-0 truncate">
+          {isLive ? <LiveCountdown endTimeSec={Number(auction.endTime)} /> : "ending"}
+        </span>
+      </span>
+      <span className="tabular-nums text-fg shrink-0">
+        {formatEth(auction.amount)} ETH
+      </span>
+    </div>
   )
 }
 
