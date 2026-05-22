@@ -2,9 +2,13 @@
  * Resolve tokenURI + IPFS for newly-discovered tokens. Ports the loop
  * body from apps/metadata-warmer/src/index.ts (folded into worker).
  *
- * Re-resolve policy: rows with all-null payload AND fetched_at older
- * than RETRY_AFTER (7 days) get one re-attempt; IPFS gateways
- * sometimes recover stale pins.
+ * Re-resolve policy: a row is "successfully fetched" iff `raw_uri` is set
+ * (the resolver only populates it when it actually retrieved the file).
+ * Rows with `raw_uri` NULL are *failed* fetches — most often a brand-new
+ * mint whose metadata hadn't propagated to the gateway yet — so we retry
+ * them on a short cadence (RETRY_AFTER, default 5 min) until they resolve.
+ * Rows WITH `raw_uri` are final (even if their name/image are sparse) and
+ * are never re-fetched, so good metadata is fetched exactly once.
  */
 import { sql } from "../db.ts"
 import { client } from "../rpc.ts"
@@ -13,7 +17,7 @@ import type { TaskResult } from "../scheduler.ts"
 
 const BATCH_SIZE = Number(process.env.WARMER_BATCH_SIZE ?? "50")
 const CONCURRENCY = Number(process.env.WARMER_CONCURRENCY ?? "4")
-const RETRY_AFTER = process.env.WARMER_RETRY_AFTER ?? "7 days"
+const RETRY_AFTER = process.env.WARMER_RETRY_AFTER ?? "5 minutes"
 
 const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
   /[^a-zA-Z0-9_]/g, "",
@@ -80,8 +84,7 @@ async function findCandidates(): Promise<Candidate[]> {
        ON m.contract = d.contract AND m.token_id = d.token_id
      WHERE m.contract IS NULL
         OR (
-          m.name IS NULL AND m.description IS NULL
-          AND m.image_url IS NULL AND m.animation_url IS NULL
+          m.raw_uri IS NULL
           AND m.fetched_at < NOW() - INTERVAL '${RETRY_AFTER.replace(/'/g, "''")}'
         )
      LIMIT ${BATCH_SIZE}`,
