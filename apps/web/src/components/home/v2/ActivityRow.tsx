@@ -29,6 +29,7 @@ export function ActivityRow({ event }: Props) {
     artistDisplayName,
     artistAvatarUrl,
     counterpartyDisplayName,
+    counterpartyAvatarUrl,
     tokenTitle,
     mediaUrl,
     isVideo,
@@ -53,48 +54,82 @@ export function ActivityRow({ event }: Props) {
   const isBidEvent =
     event.kind === "auction.firstBid" || event.kind === "auction.bid"
 
+  // The "actor" is the headline subject — the bidder on bid events, the
+  // artist otherwise. Its avatar (or zorb fallback) is shown as a small
+  // corner badge over the artwork so each row reads as "this person ↔ this
+  // work" at a glance.
+  const actorAddress =
+    isBidEvent && event.counterparty ? event.counterparty : event.artist
+  const actorAvatarUrl =
+    isBidEvent && event.counterparty ? counterpartyAvatarUrl : artistAvatarUrl
+  const actorName =
+    isBidEvent && event.counterparty
+      ? counterpartyDisplayName ?? truncateAddress(event.counterparty)
+      : artistDisplayName
+  const actorHref = `/artist/${actorAddress}`
+
   return (
     <li className="border-t border-gray-200 py-4 px-1">
-      <div className="flex items-start gap-4">
-        <span className="font-mono text-xs text-gray-400 tabular-nums w-12 shrink-0 pt-0.5">
+      <div className="flex items-center gap-4">
+        <span className="font-mono text-xs text-gray-400 tabular-nums w-12 shrink-0">
           {formatTimeAgo(event.blockTime)}
         </span>
 
-        <div className="h-10 w-10 shrink-0 overflow-hidden flex items-center justify-center">
+        <div className="relative w-16 shrink-0">
           {mediaUrl && tokenHref ? (
-            <Link href={tokenHref} className="block h-full w-full">
-              {isVideo ? (
-                <video
-                  src={mediaUrl}
-                  muted
-                  playsInline
-                  preload="metadata"
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <OptimizedImage
-                  src={mediaUrl}
-                  alt={tokenTitle ?? ""}
-                  width={96}
-                  className="h-full w-full object-cover"
-                />
-              )}
-            </Link>
-          ) : artistAvatarUrl ? (
-            <Link href={artistHref} className="block h-full w-full">
+            <>
+              {/* Artwork fills the column width; height follows the work's
+                  natural aspect ratio (no square crop). */}
+              <Link href={tokenHref} className="block w-full overflow-hidden">
+                {isVideo ? (
+                  <video
+                    src={mediaUrl}
+                    muted
+                    playsInline
+                    preload="metadata"
+                    className="block w-full h-auto"
+                  />
+                ) : (
+                  <OptimizedImage
+                    src={mediaUrl}
+                    alt={tokenTitle ?? ""}
+                    width={160}
+                    className="block w-full h-auto"
+                  />
+                )}
+              </Link>
+              {/* Actor PFP badge — anchored to the bottom-right of the
+                  (now variable-height) artwork. */}
+              <Link
+                href={actorHref}
+                aria-label={actorName}
+                className="absolute -bottom-1 -right-1 h-5 w-5 overflow-hidden rounded-full ring-2 ring-bg bg-bg"
+              >
+                {actorAvatarUrl ? (
+                  <OptimizedImage
+                    src={actorAvatarUrl}
+                    alt=""
+                    width={48}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <AddressZorb address={actorAddress} className="h-full w-full" />
+                )}
+              </Link>
+            </>
+          ) : actorAvatarUrl ? (
+            // No artwork — avatars have no aspect to honor, so keep them square.
+            <Link href={actorHref} className="block w-full aspect-square overflow-hidden">
               <OptimizedImage
-                src={artistAvatarUrl}
-                alt={artistDisplayName}
-                width={96}
+                src={actorAvatarUrl}
+                alt={actorName}
+                width={120}
                 className="h-full w-full object-cover"
               />
             </Link>
           ) : (
-            <Link href={artistHref} className="block h-full w-full">
-              <AddressZorb
-                address={event.artist}
-                className="h-full w-full"
-              />
+            <Link href={actorHref} className="block w-full aspect-square overflow-hidden">
+              <AddressZorb address={actorAddress} className="h-full w-full" />
             </Link>
           )}
         </div>
