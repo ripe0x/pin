@@ -325,7 +325,7 @@ export default async function TokenPage({
                     Holders
                   </p>
                   <p className="text-xs font-mono tabular-nums">
-                    {data.ownerCount ?? 0}
+                    {data.ownerCount && data.ownerCount > 0 ? data.ownerCount : "—"}
                   </p>
                 </div>
                 <div className="space-y-1">

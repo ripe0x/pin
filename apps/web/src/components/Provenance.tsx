@@ -44,11 +44,20 @@ export function Provenance({ entries }: { entries: ProvenanceEntry[] }) {
                   <span className="text-gray-400"> ×{entry.amount.toString()}</span>
                 )}
                 <span className="text-gray-400"> by </span>
-                <span>{entry.fromHandle}</span>
-                {entry.toHandle && (
+                {entry.event === "Minted" ? (
+                  // A mint's `from` is the zero address; the meaningful party
+                  // is the recipient. Show "Minted by <recipient>", not
+                  // "by 0x000… → <recipient>".
+                  <span>{entry.toHandle ?? entry.fromHandle}</span>
+                ) : (
                   <>
-                    <span className="text-gray-400"> → </span>
-                    <span>{entry.toHandle}</span>
+                    <span>{entry.fromHandle}</span>
+                    {entry.toHandle && (
+                      <>
+                        <span className="text-gray-400"> → </span>
+                        <span>{entry.toHandle}</span>
+                      </>
+                    )}
                   </>
                 )}
               </p>
