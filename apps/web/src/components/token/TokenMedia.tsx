@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import { useIpfsGatewayFallback } from "@/lib/use-ipfs-fallback"
 
 const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
@@ -22,14 +23,18 @@ function extOf(url: string): string {
   return dot > slash ? path.slice(dot) : ""
 }
 
-function classify(url: string, allowHtml: boolean): MediaKind {
+function classify(
+  url: string,
+  allowHtml: boolean,
+): { kind: MediaKind; ambiguous: boolean } {
   const ext = extOf(url)
-  if (VIDEO_EXTENSIONS.includes(ext)) return "video"
-  if (IMAGE_EXTENSIONS.includes(ext)) return "image"
+  if (VIDEO_EXTENSIONS.includes(ext)) return { kind: "video", ambiguous: false }
+  if (IMAGE_EXTENSIONS.includes(ext)) return { kind: "image", ambiguous: false }
   // Unknown extension. For animation_url this is almost always an HTML
   // page or an IPFS directory pointer, so iframe it; for a bare imageUrl
   // (including the placeholder fallback) it's just an image to render.
-  return allowHtml ? "html" : "image"
+  // The bare-image guess is fragile — see the escalation note below.
+  return { kind: allowHtml ? "html" : "image", ambiguous: true }
 }
 
 export function TokenMedia({
@@ -47,17 +52,37 @@ export function TokenMedia({
   // accidentally end up in an iframe.
   const useAnimation = !!animationUrl
   const renderUrl = useAnimation ? animationUrl! : imageUrl
-  const kind: MediaKind = classify(renderUrl, useAnimation)
+  const { kind: initialKind, ambiguous } = classify(renderUrl, useAnimation)
 
-  const { src, onError } = useIpfsGatewayFallback(renderUrl)
-  // Poster is only used by the video branch; computing it unconditionally
-  // keeps hook order stable.
+  // Some tokens stuff a video into the `image` field with no animation_url
+  // and no file extension — e.g. uri() => {"image":"ipfs://<mp4 cid>"}. That
+  // classifies as an image and renders a broken <img>. If the image fails to
+  // load across *every* gateway, escalate to <video> before giving up. Only
+  // for the ambiguous (extension-less) case, so real images that 404 on one
+  // gateway still rotate through the rest as images.
+  const [escalated, setEscalated] = useState(false)
+  const kind: MediaKind = escalated ? "video" : initialKind
+
+  const media = useIpfsGatewayFallback(renderUrl)
+  // Fresh gateway cascade for the escalated <video>, since `media` is
+  // exhausted by the time we escalate.
+  const escalatedVideo = useIpfsGatewayFallback(renderUrl)
+  // Poster is only used by the (non-escalated) video branch; computing it
+  // unconditionally keeps hook order stable.
   const poster = useIpfsGatewayFallback(imageUrl).src
 
+  function handleImageError() {
+    // Rotate to the next gateway first; only once every gateway has failed
+    // do we conclude this isn't a loadable image and try it as a video.
+    if (media.onError()) return
+    if (ambiguous && !escalated) setEscalated(true)
+  }
+
   if (kind === "video") {
+    const v = escalated ? escalatedVideo : media
     return (
       <video
-        src={src}
+        src={v.src}
         poster={useAnimation ? poster : undefined}
         className="max-h-[80vh] w-auto object-contain"
         autoPlay
@@ -65,7 +90,7 @@ export function TokenMedia({
         muted
         playsInline
         controls
-        onError={onError}
+        onError={v.onError}
       />
     )
   }
@@ -78,7 +103,7 @@ export function TokenMedia({
     // square scaled to viewport.
     return (
       <iframe
-        src={src}
+        src={media.src}
         title={title}
         sandbox="allow-scripts"
         loading="lazy"
@@ -90,10 +115,10 @@ export function TokenMedia({
 
   return (
     <img
-      src={src}
+      src={media.src}
       alt={title}
       className="max-h-[80vh] w-auto object-contain"
-      onError={onError}
+      onError={handleImageError}
     />
   )
 }
