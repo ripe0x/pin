@@ -13,10 +13,16 @@
  * "Refresh my work" button calls.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
-import { enqueueRefreshArtist, getLastTickAt, getTaskStats } from "./scheduler.ts"
+import {
+  enqueueRefreshArtist,
+  enqueueRefreshToken,
+  getLastTickAt,
+  getTaskStats,
+} from "./scheduler.ts"
 import { sql } from "./db.ts"
 
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/
+const TOKEN_ID_RE = /^[0-9]+$/
 const SECRET = process.env.REVALIDATE_SECRET ?? ""
 
 export async function startHealthServer(port: number): Promise<void> {
@@ -26,6 +32,9 @@ export async function startHealthServer(port: number): Promise<void> {
       if (req.url === "/metrics") return metrics(res)
       if (req.method === "POST" && req.url?.startsWith("/jobs/refresh-artist/")) {
         return jobsRefreshArtist(req, res)
+      }
+      if (req.method === "POST" && req.url?.startsWith("/jobs/refresh-token/")) {
+        return jobsRefreshToken(req, res)
       }
       res.statusCode = 404
       res.end()
@@ -93,6 +102,33 @@ async function jobsRefreshArtist(req: IncomingMessage, res: ServerResponse): Pro
   }
 
   const enqueued = enqueueRefreshArtist(address)
+  res.statusCode = 202
+  res.setHeader("content-type", "application/json")
+  res.end(JSON.stringify({ ok: true, enqueued }))
+}
+
+async function jobsRefreshToken(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const url = new URL(req.url ?? "", "http://localhost")
+  const secretParam = url.searchParams.get("secret")
+  if (!SECRET || secretParam !== SECRET) {
+    res.statusCode = 401
+    res.setHeader("content-type", "application/json")
+    res.end(JSON.stringify({ ok: false, error: "unauthorized" }))
+    return
+  }
+
+  // Path: /jobs/refresh-token/<contract>/<tokenId>
+  const parts = url.pathname.split("/").filter(Boolean) // ["jobs","refresh-token",contract,tokenId]
+  const contract = (parts[2] ?? "").toLowerCase()
+  const tokenId = parts[3] ?? ""
+  if (!ADDRESS_RE.test(contract) || !TOKEN_ID_RE.test(tokenId)) {
+    res.statusCode = 400
+    res.setHeader("content-type", "application/json")
+    res.end(JSON.stringify({ ok: false, error: "invalid contract or tokenId" }))
+    return
+  }
+
+  const enqueued = enqueueRefreshToken(contract, tokenId)
   res.statusCode = 202
   res.setHeader("content-type", "application/json")
   res.end(JSON.stringify({ ok: true, enqueued }))

@@ -25,6 +25,7 @@ import { scanManifold } from "./tasks/scan-manifold.ts"
 import { scanTokenTransfers } from "./tasks/scan-token-transfers.ts"
 import { ponderDriftCheck } from "./tasks/ponder-drift-check.ts"
 import { refreshArtist } from "./tasks/refresh-artist.ts"
+import { refreshToken } from "./tasks/refresh-token.ts"
 import { scan1155Stats } from "./tasks/scan-1155-stats.ts"
 import { scanSrv2ActiveAuctions } from "./tasks/scan-srv2-active-auctions.ts"
 import { scanTlActiveAuctions } from "./tasks/scan-tl-active-auctions.ts"
@@ -86,6 +87,10 @@ let lastTickAt: Date | null = null
 const refreshQueue = new Set<string>()
 const refreshInFlight = new Set<string>()
 
+// Refresh-token HTTP jobs queue. Single-flight per `contract:tokenId`.
+const refreshTokenQueue = new Set<string>()
+const refreshTokenInFlight = new Set<string>()
+
 export function getLastTickAt(): Date | null {
   return lastTickAt
 }
@@ -102,6 +107,13 @@ export function enqueueRefreshArtist(address: string): boolean {
   const lower = address.toLowerCase()
   if (refreshInFlight.has(lower) || refreshQueue.has(lower)) return false
   refreshQueue.add(lower)
+  return true
+}
+
+export function enqueueRefreshToken(contract: string, tokenId: string): boolean {
+  const key = `${contract.toLowerCase()}:${tokenId}`
+  if (refreshTokenInFlight.has(key) || refreshTokenQueue.has(key)) return false
+  refreshTokenQueue.add(key)
   return true
 }
 
@@ -177,6 +189,24 @@ async function drainRefreshQueue(): Promise<void> {
   }
 }
 
+async function drainRefreshTokenQueue(): Promise<void> {
+  if (refreshTokenQueue.size === 0) return
+  const next = refreshTokenQueue.values().next().value as string | undefined
+  if (!next) return
+  refreshTokenQueue.delete(next)
+  refreshTokenInFlight.add(next)
+  const sep = next.lastIndexOf(":")
+  const contract = next.slice(0, sep)
+  const tokenId = next.slice(sep + 1)
+  try {
+    await refreshToken(contract, tokenId)
+  } catch (err) {
+    console.error(`[worker.refresh-token] ${next}:`, err)
+  } finally {
+    refreshTokenInFlight.delete(next)
+  }
+}
+
 export async function startScheduler(): Promise<void> {
   console.log(`[worker] starting scheduler with ${tasks.length} tasks`)
 
@@ -188,6 +218,7 @@ export async function startScheduler(): Promise<void> {
     setInterval(() => void runTask(t), t.intervalMs)
   }
 
-  // Refresh-artist queue worker — drains the queue continuously.
+  // Refresh-artist + refresh-token queue workers — drain continuously.
   setInterval(() => void drainRefreshQueue(), 2_000)
+  setInterval(() => void drainRefreshTokenQueue(), 2_000)
 }

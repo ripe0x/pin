@@ -6,6 +6,7 @@ import { Provenance, type ProvenanceEntry } from "@/components/Provenance"
 import { AuctionPanel } from "@/components/auction/AuctionPanel"
 import { MoreFromContractSection } from "@/components/auction/MoreFromContract"
 import { StartAuctionCTA } from "@/components/auction/StartAuctionCTA"
+import { RefreshMetadataButton } from "@/components/token/RefreshMetadataButton"
 import { TokenMedia } from "@/components/token/TokenMedia"
 import {
   getErc1155TokenStats,
@@ -276,6 +277,16 @@ export default async function TokenPage({
               <p className="text-[11px] font-mono text-gray-400">
                 Edition of {data.edition.toString()}
               </p>
+            )}
+            {/* Owner/creator-only: re-fetch metadata if the title/image is
+                stale or stuck (shown only to those wallets, rate-limited). */}
+            {(data.owner || data.creator) && (
+              <RefreshMetadataButton
+                contract={data.contract}
+                tokenId={data.tokenId}
+                owner={data.owner}
+                creator={data.creator}
+              />
             )}
           </section>
 
