@@ -157,15 +157,15 @@ export async function resolveTokenMetadataDirect(
 
   // Check the table first — covers the common case.
   //
-  // `raw_uri` is the success signal: the resolver only sets it when it
-  // actually fetched the metadata file. So a row WITH raw_uri is final
-  // (return it, even if its name/image are sparse — that's the genuine
-  // content) and is never re-fetched. A row with raw_uri NULL means the
-  // fetch FAILED (e.g. arweave hadn't propagated a fresh mint yet) — that's
-  // not a real answer, so we treat it like a cache miss and re-resolve,
-  // throttled by a short cooldown so rapid reloads / genuinely-dead links
-  // don't fan out. This is what lets a stuck/blank token self-heal on the
-  // next view instead of staying blank until the 7-day sweep.
+  // The success signal is *content presence*, NOT `raw_uri`: the resolver
+  // stamps `raw_uri` onto any parsed JSON, including a gateway error/garbage
+  // 200 that has no metadata fields — so a row can have `raw_uri` set yet be
+  // useless. A row that has any of name/description/image/animation_url is
+  // final and never re-fetched; a content-less row is treated like a cache
+  // miss and re-resolved (throttled by a short cooldown so rapid reloads /
+  // genuinely-dead links don't fan out). This lets a stuck/blank token
+  // self-heal on the next view instead of being pinned forever by a bogus
+  // `raw_uri`.
   const RESOLVE_RETRY_COOLDOWN_MS = 60_000
   const rows = (await sql`
     SELECT name, description, image_url, animation_url, raw_uri, fetched_at
@@ -182,10 +182,12 @@ export async function resolveTokenMetadataDirect(
   }>
   const row = rows[0]
   if (row) {
-    const succeeded = row.raw_uri !== null
+    const hasContent = !!(
+      row.name || row.description || row.image_url || row.animation_url
+    )
     const attemptedRecently =
       Date.now() - new Date(row.fetched_at).getTime() < RESOLVE_RETRY_COOLDOWN_MS
-    if (succeeded || attemptedRecently) {
+    if (hasContent || attemptedRecently) {
       // Final content, OR a failed row we just attempted — return as-is
       // rather than re-resolving (the sweep / a later view will retry).
       return {

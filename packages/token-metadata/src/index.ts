@@ -115,7 +115,7 @@ export async function resolveTokenMetadata(
       if (!contentType.includes("json") && !contentType.includes("text/plain")) {
         return null
       }
-      return { ...((await res.json()) as TokenMetadata), uri: resolvedUri }
+      return metadataOrNull(await res.json(), resolvedUri)
     } catch {
       return null
     }
@@ -134,7 +134,7 @@ export async function resolveTokenMetadata(
       if (!contentType.includes("json") && !contentType.includes("text/plain")) {
         return null
       }
-      return { ...((await res.json()) as TokenMetadata), uri: resolvedUri }
+      return metadataOrNull(await res.json(), resolvedUri)
     } catch {
       return null
     }
@@ -148,10 +148,31 @@ export async function resolveTokenMetadata(
     if (!contentType.includes("json") && !contentType.includes("text/plain")) {
       return null
     }
-    return { ...((await res.json()) as TokenMetadata), uri: resolvedUri }
+    return metadataOrNull(await res.json(), resolvedUri)
   } catch {
     return null
   }
+}
+
+/**
+ * Accept a fetched body as token metadata only if it actually carries a
+ * recognizable field (name / description / image / animation_url).
+ *
+ * A 200 response can still be useless: a gateway rate-limit/error page served
+ * as JSON, an empty object, or a directory listing all parse fine but contain
+ * none of these. Treating those as "resolved" (and stamping `uri`/`raw_uri`)
+ * is what made tokens stick on a blank placeholder forever — callers key
+ * "did this resolve?" off content presence, so a content-less object must be
+ * a miss (null), not a success.
+ */
+function metadataOrNull(json: unknown, uri: string): TokenMetadata | null {
+  if (!json || typeof json !== "object") return null
+  const m = json as Record<string, unknown>
+  const has = (v: unknown): boolean => typeof v === "string" && v.length > 0
+  if (!has(m.name) && !has(m.description) && !has(m.image) && !has(m.animation_url)) {
+    return null
+  }
+  return { ...(m as TokenMetadata), uri }
 }
 
 /**
