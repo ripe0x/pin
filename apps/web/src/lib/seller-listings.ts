@@ -16,17 +16,8 @@
  * `platform` discriminator on each row lets the client dispatch cancels
  * via `cancel-calls.ts` (`buildCancelCall(listing)`).
  */
-import {
-  createPublicClient,
-  http,
-  type Address,
-  type PublicClient,
-} from "viem"
-import { mainnet } from "viem/chains"
-import { erc721Abi } from "@pin/abi"
-import { ipfsToHttp } from "@pin/shared"
+import type { Address } from "viem"
 import type { PlatformId } from "@/lib/platforms/types"
-import { getAlchemyMainnetUrl } from "./alchemy-rpc"
 
 export type AuctionListing = {
   kind: "auction"
@@ -72,15 +63,6 @@ export type SellerListing = AuctionListing | BuyNowListing
 export type SellerListingMeta = {
   displayName: string
   imageUrl: string | null
-}
-
-function getClient(): PublicClient {
-  return createPublicClient({
-    chain: mainnet,
-    transport: http(
-      getAlchemyMainnetUrl(),
-    ),
-  })
 }
 
 /**
@@ -154,66 +136,60 @@ export async function fetchSellerCancellableListings(
 }
 
 /**
- * Resolve display name + image for a batch of listings via tokenURI + IPFS.
- * Errors per token are swallowed — caller gets a placeholder display.
+ * Resolve display name + image for a batch of listings.
+ *
+ * Routes each token through the server-side `/api/meta/[contract]/[tokenId]`
+ * endpoint rather than hitting IPFS gateways from the browser. Three
+ * reasons: (1) the route is wrapped in unstable_cache + 1-year HTTP cache,
+ * so warm hits are instant; (2) the server bypasses the CORS / 302-chain
+ * issues that block browser-side fetches to nftstorage.link; (3) the
+ * tokenURI multicall happens once per token on the server and is reused
+ * across every visitor.
+ *
+ * Errors per token are swallowed — caller gets a `#<tokenId>` fallback.
  */
 export async function resolveListingMetadata(
   listings: SellerListing[],
 ): Promise<Map<string, SellerListingMeta>> {
-  const client = getClient()
   const out = new Map<string, SellerListingMeta>()
   if (listings.length === 0) return out
 
-  // Batch tokenURI calls in chunks of 50 (mirrors onchain-discovery.ts).
-  for (let i = 0; i < listings.length; i += 50) {
-    const batch = listings.slice(i, i + 50)
-    const results = await client.multicall({
-      contracts: batch.map((l) => ({
-        address: l.nftContract,
-        abi: erc721Abi,
-        functionName: "tokenURI" as const,
-        args: [BigInt(l.tokenId)] as const,
-      })),
-    })
-
-    await Promise.all(
-      batch.map(async (l, j) => {
-        const r = results[j]
-        const fallback: SellerListingMeta = {
-          displayName: `#${l.tokenId}`,
-          imageUrl: null,
+  // Concurrency-limit so a seller with hundreds of listings doesn't burst
+  // past the route's per-IP rate limit (120/min). 16 in flight keeps a
+  // 68-listing page warm in ~1 round-trip.
+  const CONCURRENCY = 16
+  let cursor = 0
+  async function worker() {
+    while (cursor < listings.length) {
+      const i = cursor++
+      const l = listings[i]
+      const fallback: SellerListingMeta = {
+        displayName: `#${l.tokenId}`,
+        imageUrl: null,
+      }
+      try {
+        const r = await fetch(
+          `/api/meta/${l.nftContract}/${l.tokenId}`,
+          { signal: AbortSignal.timeout(12_000) },
+        )
+        if (!r.ok) { out.set(l.id, fallback); continue }
+        const body = (await r.json()) as {
+          metadata: { name?: string; image?: string } | null
+          mediaUri: string | null
         }
-        if (r.status !== "success") {
-          out.set(l.id, fallback)
-          return
-        }
-        const uri = r.result as string
-        if (!uri) {
-          out.set(l.id, fallback)
-          return
-        }
-        try {
-          const res = await fetch(ipfsToHttp(uri), {
-            signal: AbortSignal.timeout(10_000),
-          })
-          if (!res.ok) {
-            out.set(l.id, fallback)
-            return
-          }
-          const meta = (await res.json()) as {
-            name?: string
-            image?: string
-          }
-          out.set(l.id, {
-            displayName: meta.name ?? fallback.displayName,
-            imageUrl: meta.image ? ipfsToHttp(meta.image) : null,
-          })
-        } catch {
-          out.set(l.id, fallback)
-        }
-      }),
-    )
+        if (!body.metadata) { out.set(l.id, fallback); continue }
+        out.set(l.id, {
+          displayName: body.metadata.name ?? fallback.displayName,
+          imageUrl: body.mediaUri,
+        })
+      } catch {
+        out.set(l.id, fallback)
+      }
+    }
   }
+  await Promise.all(
+    Array.from({ length: Math.min(CONCURRENCY, listings.length) }, worker),
+  )
 
   return out
 }
