@@ -152,73 +152,85 @@ export function useSequentialCancel() {
 
   const runBatched = useCallback(
     async (items: SellerListing[]) => {
-      // All items show "Confirm…" while the user signs the single bundle.
-      for (const item of items) updateItem(item.id, { state: "confirming" })
-
-      let bundleId: string
-      try {
-        const calls = items.map(encodeCancelCallToData)
-        const result = await sendCalls(config, { calls })
-        bundleId = result.id
-      } catch (err) {
-        const reason = friendlyError(err)
-        for (const item of items) updateItem(item.id, { state: "failed", error: reason })
-        return
+      // MetaMask's wallet_sendCalls implementation rejects bundles with more
+      // than 10 calls (documented in their EIP-5792 docs as a hard cap). Other
+      // 5792-capable wallets vary, but 10 is a safe lower bound that doesn't
+      // require per-wallet detection. For N > 10 we chunk into multiple
+      // signed bundles — the user signs ⌈N/10⌉ times instead of failing.
+      const CHUNK = 10
+      const chunks: SellerListing[][] = []
+      for (let i = 0; i < items.length; i += CHUNK) {
+        chunks.push(items.slice(i, i + CHUNK))
       }
 
-      // Bundle submitted; wallet is mining. We don't have per-call tx hashes
-      // until waitForCallsStatus resolves.
-      for (const item of items) updateItem(item.id, { state: "mining" })
+      // Initial state: everything in "confirming" so the user knows the whole
+      // run is queued. We'll narrow per-chunk as we go.
+      for (const item of items) updateItem(item.id, { state: "confirming" })
 
-      try {
-        // viem's default timeout is 60s, which isn't enough for wallets like
-        // MetaMask that implement EIP-5792 by submitting N sequential txs
-        // under one signature flow — 5 cancels at ~15s/block = ~75s before
-        // the bundle reports "confirmed". Five minutes covers slow mainnet
-        // gas conditions with comfortable headroom.
-        const result = await waitForCallsStatus(config, {
-          id: bundleId,
-          timeout: 5 * 60 * 1000,
-        })
-        const receipts = result.receipts ?? []
-        items.forEach((item, i) => {
-          const receipt = receipts[i]
-          if (receipt && receipt.status === "success") {
-            updateItem(item.id, {
-              state: "done",
-              txHash: receipt.transactionHash as `0x${string}` | undefined,
-            })
-          } else if (receipt) {
-            updateItem(item.id, {
-              state: "failed",
-              error: "Reverted on-chain",
-            })
-          } else {
-            // No receipt for this index — surface the bundle's terminal status.
-            const ok = result.status === "success"
-            updateItem(
-              item.id,
-              ok
-                ? { state: "done" }
-                : { state: "failed", error: "Bundle did not include a receipt for this call" },
-            )
-          }
-        })
-      } catch (err) {
-        // Timeouts are inconclusive — the bundle was submitted, the wallet
-        // accepted it, we just stopped waiting. Tell the user that explicitly
-        // so they don't retry and double-spend gas; a refresh shows the real
-        // on-chain state.
-        if (isTimeoutError(err)) {
-          for (const item of items) {
-            updateItem(item.id, {
-              state: "failed",
-              error: "Submitted — refresh to see status",
-            })
-          }
-        } else {
+      for (const chunk of chunks) {
+        if (stopRef.current) break
+
+        let bundleId: string
+        try {
+          const calls = chunk.map(encodeCancelCallToData)
+          const result = await sendCalls(config, { calls })
+          bundleId = result.id
+        } catch (err) {
           const reason = friendlyError(err)
-          for (const item of items) updateItem(item.id, { state: "failed", error: reason })
+          for (const item of chunk) updateItem(item.id, { state: "failed", error: reason })
+          // Partial completion is fine — earlier chunks may have succeeded.
+          // Continue to surface user-rejection on subsequent chunks immediately
+          // rather than auto-stopping.
+          continue
+        }
+
+        for (const item of chunk) updateItem(item.id, { state: "mining" })
+
+        try {
+          // viem's default timeout is 60s, which isn't enough for wallets like
+          // MetaMask that implement EIP-5792 by submitting N sequential txs
+          // under one signature flow — 10 cancels at ~15s/block = ~150s before
+          // the bundle reports "confirmed". Five minutes covers slow mainnet
+          // gas conditions with comfortable headroom.
+          const result = await waitForCallsStatus(config, {
+            id: bundleId,
+            timeout: 5 * 60 * 1000,
+          })
+          const receipts = result.receipts ?? []
+          chunk.forEach((item, i) => {
+            const receipt = receipts[i]
+            if (receipt && receipt.status === "success") {
+              updateItem(item.id, {
+                state: "done",
+                txHash: receipt.transactionHash as `0x${string}` | undefined,
+              })
+            } else if (receipt) {
+              updateItem(item.id, {
+                state: "failed",
+                error: "Reverted on-chain",
+              })
+            } else {
+              const ok = result.status === "success"
+              updateItem(
+                item.id,
+                ok
+                  ? { state: "done" }
+                  : { state: "failed", error: "Bundle did not include a receipt for this call" },
+              )
+            }
+          })
+        } catch (err) {
+          if (isTimeoutError(err)) {
+            for (const item of chunk) {
+              updateItem(item.id, {
+                state: "failed",
+                error: "Submitted — refresh to see status",
+              })
+            }
+          } else {
+            const reason = friendlyError(err)
+            for (const item of chunk) updateItem(item.id, { state: "failed", error: reason })
+          }
         }
       }
     },
