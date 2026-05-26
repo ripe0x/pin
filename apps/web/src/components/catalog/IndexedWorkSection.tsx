@@ -77,12 +77,21 @@ export function IndexedWorkSection({
           </h2>
           <p className="text-xs text-gray-500 mt-1">
             We&rsquo;ve indexed your contracts and tokens across{" "}
-            <span
-              tabIndex={0}
-              title={`Indexed: ${INDEXED_PLATFORM_NAMES.join(", ")}`}
-              className="underline decoration-dotted decoration-gray-400 underline-offset-2 cursor-help"
-            >
-              PND&rsquo;s sources
+            <span className="relative inline-block group">
+              <span
+                tabIndex={0}
+                aria-describedby="pnd-sources-tooltip"
+                className="underline decoration-dotted decoration-gray-400 underline-offset-2 cursor-help focus:outline-none"
+              >
+                PND&rsquo;s sources
+              </span>
+              <span
+                id="pnd-sources-tooltip"
+                role="tooltip"
+                className="pointer-events-none absolute left-0 top-full z-10 mt-1.5 whitespace-nowrap rounded-md bg-gray-900 px-2.5 py-1.5 text-[11px] font-medium text-white shadow-md opacity-0 transition-opacity duration-100 group-hover:opacity-100 group-focus-within:opacity-100"
+              >
+                Indexed: {INDEXED_PLATFORM_NAMES.join(", ")}
+              </span>
             </span>
             . Select what you want to declare on Catalog — one signature
             does the whole batch.
