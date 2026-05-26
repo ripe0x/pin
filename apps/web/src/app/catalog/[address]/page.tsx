@@ -28,6 +28,7 @@ import { RefreshButton } from "@/components/catalog/RefreshButton"
 // lives on this page, so the long timer costs nothing in freshness.
 export const revalidate = 3600
 import { AddressZorb } from "@/components/AddressZorb"
+import { CopyAddressButton } from "@/components/CopyAddressButton"
 import { CatalogSummary } from "@/components/catalog/CatalogSummary"
 import { AddEntrySection } from "@/components/catalog/AddEntrySection"
 import { CatalogContractsEditable } from "@/components/catalog/CatalogContractsEditable"
@@ -99,16 +100,7 @@ export default async function RecordPage({
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-10 space-y-8">
-      <header className="space-y-1">
-        <div className="text-xs uppercase tracking-wide text-gray-500">
-          Artist catalog
-        </div>
-        <h1 className="text-3xl font-semibold tracking-tight">
-          Artist catalog
-        </h1>
-      </header>
-
+    <div className="mx-auto max-w-3xl px-6 py-12 space-y-10">
       <Suspense fallback={<RecordFallback />}>
         <RecordBody address={address as Address} />
       </Suspense>
@@ -157,33 +149,67 @@ async function RecordBody({ address }: { address: Address }) {
     record.tokens.length === 0 &&
     record.tokenRanges.length === 0
 
+  const evmNowUrl = `https://evm.now/address/${address}`
+  const truncatedAddress = `${address.slice(0, 6)}…${address.slice(-4)}`
+
   return (
     <div className="space-y-10">
-      <div className="flex items-center gap-4">
-        {identity.avatarUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={identity.avatarUrl}
-            alt={identity.displayName}
-            className="h-14 w-14 rounded-full object-cover"
-          />
-        ) : (
-          <AddressZorb address={address} className="h-14 w-14 rounded-full" />
-        )}
-        <div className="min-w-0 space-y-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="text-lg font-semibold truncate">
-              {identity.displayName}
-            </div>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6 min-w-0">
+          {identity.avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={identity.avatarUrl}
+              alt={identity.displayName}
+              className="h-20 w-20 shrink-0 rounded-full object-cover"
+            />
+          ) : (
+            <AddressZorb
+              address={address}
+              className="h-20 w-20 shrink-0 rounded-full"
+            />
+          )}
+
+          <div className="space-y-3 min-w-0">
+            {identity.ensName ? (
+              <div className="space-y-1">
+                <h1 className="text-base font-mono font-medium tracking-tight truncate">
+                  {identity.displayName}
+                </h1>
+                <div className="flex items-center gap-2">
+                  <a
+                    href={evmNowUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-[11px] text-gray-500 hover:text-fg transition-colors"
+                  >
+                    {truncatedAddress}
+                  </a>
+                  <CopyAddressButton address={address} />
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 min-w-0">
+                <h1 className="text-base font-mono font-medium tracking-tight truncate min-w-0">
+                  <a
+                    href={evmNowUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-gray-500 transition-colors"
+                  >
+                    {identity.displayName}
+                  </a>
+                </h1>
+                <CopyAddressButton address={address} />
+              </div>
+            )}
+
             <EditModeIndicator artist={address} />
           </div>
-          <div className="font-mono text-xs text-gray-400">
-            {address.slice(0, 6)}...{address.slice(-4)}
-          </div>
         </div>
-      </div>
 
-      <RefreshButton artistAddress={address} />
+        <RefreshButton artistAddress={address} />
+      </div>
 
       {empty ? (
         <div className="border border-dashed border-gray-200 rounded-md p-6 text-sm text-gray-500">

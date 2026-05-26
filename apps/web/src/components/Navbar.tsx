@@ -63,7 +63,7 @@ export function Navbar() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Find artist by address or ENS"
-          className="flex-1 bg-transparent text-sm font-mono outline-none placeholder:text-gray-400"
+          className="flex-1 bg-transparent text-xs font-mono outline-none placeholder:text-gray-400"
         />
       </div>
     </form>
