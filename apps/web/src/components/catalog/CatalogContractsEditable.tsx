@@ -3,7 +3,11 @@
 import type { Address } from "viem"
 import { useIsCatalogOwner } from "./useIsCatalogOwner"
 import { RemoveRowButton } from "./RemoveRowButton"
-import { ContractLabel, ContractTotalSupplyBadge } from "./CatalogRowLabels"
+import {
+  ContractLabel,
+  ContractThumbnail,
+  ContractTotalSupplyBadge,
+} from "./CatalogRowLabels"
 
 /**
  * Contracts section. Renders the list of declared contracts. When the
@@ -14,9 +18,11 @@ import { ContractLabel, ContractTotalSupplyBadge } from "./CatalogRowLabels"
 export function CatalogContractsEditable({
   artist,
   contracts,
+  thumbnails,
 }: {
   artist: Address
   contracts: Address[]
+  thumbnails?: Record<string, string>
 }) {
   const isOwner = useIsCatalogOwner(artist)
   if (contracts.length === 0) {
@@ -29,7 +35,10 @@ export function CatalogContractsEditable({
           key={c}
           className="border border-gray-200 rounded-md px-3 py-2.5 flex items-center justify-between gap-3"
         >
-          <ContractLabel address={c} />
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <ContractThumbnail src={thumbnails?.[c.toLowerCase()]} />
+            <ContractLabel address={c} />
+          </div>
           <ContractTotalSupplyBadge address={c} />
           {isOwner && <RemoveRowButton fn="removeContract" args={[c]} />}
         </li>

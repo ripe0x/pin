@@ -27,6 +27,24 @@ function TokenThumbnail({ src, alt }: { src: string; alt: string }) {
 }
 
 /**
+ * Square thumbnail for a contract row. Uses the same optimized-image
+ * pipeline as TokenThumbnail. Renders a neutral placeholder when no
+ * image is known so the row layout doesn't shift.
+ */
+export function ContractThumbnail({
+  src,
+  alt = "",
+}: {
+  src: string | null | undefined
+  alt?: string
+}) {
+  if (!src) {
+    return <div className="h-10 w-10 rounded-md bg-gray-100 shrink-0" />
+  }
+  return <TokenThumbnail src={src} alt={alt} />
+}
+
+/**
  * Inline name + short-address label for a contract row. Renders just
  * the short address while the lookup is in flight; falls back to short
  * address if name resolution fails. Per the registry's no-semantic-

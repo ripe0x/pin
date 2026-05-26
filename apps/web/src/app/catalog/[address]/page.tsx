@@ -4,6 +4,7 @@ import { redirect } from "next/navigation"
 import type { Address } from "viem"
 import { resolveEnsAddress, getArtistIdentity } from "@/lib/artist-queries"
 import { getCachedCatalog } from "@/lib/catalog-cache"
+import { getContractThumbnails } from "@/lib/catalog-thumbs"
 import { RefreshButton } from "@/components/catalog/RefreshButton"
 
 /**
@@ -112,6 +113,18 @@ async function RecordBody({ address }: { address: Address }) {
     getArtistIdentity(address),
     getCachedCatalog(address.toLowerCase()),
   ])
+
+  // Surface a representative thumbnail per declared contract. Sourced
+  // from `token_metadata.image_url` (lowest token_id with an image),
+  // wrapped in unstable_cache + the "catalog" tag so post-write
+  // revalidation drops the entry alongside the record itself.
+  const contractAddressesForThumbs = Array.from(
+    new Set([
+      ...record.contracts,
+      ...record.tokenRanges.map((r) => r.contractAddress),
+    ]),
+  )
+  const thumbnails = await getContractThumbnails(contractAddressesForThumbs)
 
   // Pre-seed plan from PND's indexed work. Fetched server-side so the
   // empty-state check ("does this artist have anything we could
@@ -260,6 +273,7 @@ async function RecordBody({ address }: { address: Address }) {
         <CatalogContractsEditable
           artist={address}
           contracts={record.contracts}
+          thumbnails={thumbnails}
         />
       </section>
 
@@ -280,7 +294,11 @@ async function RecordBody({ address }: { address: Address }) {
             record.tokenRanges.length === 1 ? "entry" : "entries"
           }`}
         />
-        <CatalogRangesEditable artist={address} ranges={record.tokenRanges} />
+        <CatalogRangesEditable
+          artist={address}
+          ranges={record.tokenRanges}
+          thumbnails={thumbnails}
+        />
       </section>
 
       <p className="text-xs text-gray-400 pt-4 border-t border-gray-100">

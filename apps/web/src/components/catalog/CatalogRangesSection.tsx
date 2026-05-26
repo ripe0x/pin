@@ -1,13 +1,15 @@
-import { ContractLabel } from "./CatalogRowLabels"
+import { ContractLabel, ContractThumbnail } from "./CatalogRowLabels"
 
 export function CatalogRangesSection({
   ranges,
+  thumbnails,
 }: {
   ranges: Array<{
     contractAddress: string
     startTokenId: string
     endTokenId: string
   }>
+  thumbnails?: Record<string, string>
 }) {
   if (ranges.length === 0) {
     return (
@@ -19,9 +21,12 @@ export function CatalogRangesSection({
       {ranges.map((r) => (
         <li
           key={`${r.contractAddress}:${r.startTokenId}:${r.endTokenId}`}
-          className="border border-gray-200 rounded-md px-3 py-2.5 flex items-center justify-between gap-3 flex-wrap"
+          className="border border-gray-200 rounded-md px-3 py-2.5 flex items-center gap-3 flex-wrap"
         >
-          <div className="min-w-0 space-y-0.5">
+          <ContractThumbnail
+            src={thumbnails?.[r.contractAddress.toLowerCase()]}
+          />
+          <div className="min-w-0 space-y-0.5 flex-1">
             <ContractLabel address={r.contractAddress} />
             <div className="text-[11px] font-mono text-gray-500">
               Tokens {r.startTokenId}

@@ -232,8 +232,12 @@ export function ImportPlanner({
     [contractMode],
   )
 
+  // `pb-32` reserves space for the fixed-position SubmitBar so the last
+  // row isn't hidden behind it. Standalone page needs it because the
+  // planner IS the page; embedded panels don't because the host page
+  // continues past them and provides its own bottom space.
   const containerClass = embedded
-    ? "pb-32"
+    ? ""
     : "mx-auto max-w-5xl px-6 py-10 pb-32"
 
   return (
