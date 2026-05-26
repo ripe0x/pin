@@ -199,12 +199,32 @@ const cachedSupply = unstable_cache(
   { revalidate: SUPPLY_TTL_S, tags: ["contract-supply"] },
 )
 
+/**
+ * A stored row that smells like "the probe hit a transient RPC failure
+ * during the multicall and we cached all-false." Real contracts with no
+ * `name()` typically still report `is_erc721=true` from the interface
+ * check, so a row that simultaneously has bytecode AND null name AND
+ * neither ERC flag set is almost always a stale failure rather than the
+ * actual state of the contract. Re-probe once after a day so we don't
+ * keep a stuck row forever — but don't re-probe every render either.
+ */
+const REPROBE_STALE_FAILURE_MS = 24 * 60 * 60 * 1000
+
+function looksLikeStaleProbeFailure(
+  stored: StoredContractIdentity,
+): boolean {
+  if (!stored.hasBytecode) return false
+  if (stored.name !== null) return false
+  if (stored.isERC721 || stored.isERC1155) return false
+  return Date.now() - stored.fetchedAt.getTime() > REPROBE_STALE_FAILURE_MS
+}
+
 async function resolveContractInfo(address: string): Promise<ContractInfo> {
   const lower = address.toLowerCase()
 
   // Fast path: persistent identity index. One Postgres point read.
   const stored = await readContractIdentity(lower)
-  if (stored) {
+  if (stored && !looksLikeStaleProbeFailure(stored)) {
     // Identity served from the index; supply layered on top (short TTL).
     // Skip the supply read entirely if the contract has no bytecode —
     // it'd revert anyway, and we already know that's the answer.
@@ -220,7 +240,7 @@ async function resolveContractInfo(address: string): Promise<ContractInfo> {
     }
   }
 
-  // Cold path: never seen this address. One multicall + bytecode read,
+  // Cold path OR stale-failure re-probe. One multicall + bytecode read,
   // persist identity to the index, return everything.
   const probed = await probeContractIdentity(lower as Address)
   writeContractIdentity(lower, {
