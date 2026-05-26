@@ -43,7 +43,7 @@ async function fetchContractThumbnails(
   return out
 }
 
-const cachedFetch = unstable_cache(fetchContractThumbnails, ["catalog-thumbs-v1"], {
+const cachedFetch = unstable_cache(fetchContractThumbnails, ["catalog-thumbs-v2"], {
   revalidate: THUMB_TTL_S,
   tags: ["catalog"],
 })

@@ -263,43 +263,49 @@ async function RecordBody({ address }: { address: Address }) {
         }}
       />
 
-      <section className="space-y-3">
-        <SectionHeader
-          title="Contracts"
-          right={`${record.contracts.length} ${
-            record.contracts.length === 1 ? "entry" : "entries"
-          }`}
-        />
-        <CatalogContractsEditable
-          artist={address}
-          contracts={record.contracts}
-          thumbnails={thumbnails}
-        />
-      </section>
+      {record.contracts.length > 0 && (
+        <section className="space-y-3">
+          <SectionHeader
+            title="Contracts"
+            right={`${record.contracts.length} ${
+              record.contracts.length === 1 ? "entry" : "entries"
+            }`}
+          />
+          <CatalogContractsEditable
+            artist={address}
+            contracts={record.contracts}
+            thumbnails={thumbnails}
+          />
+        </section>
+      )}
 
-      <section className="space-y-3">
-        <SectionHeader
-          title="Tokens"
-          right={`${record.tokens.length} ${
-            record.tokens.length === 1 ? "entry" : "entries"
-          }`}
-        />
-        <CatalogTokensEditable artist={address} tokens={record.tokens} />
-      </section>
+      {record.tokens.length > 0 && (
+        <section className="space-y-3">
+          <SectionHeader
+            title="Tokens"
+            right={`${record.tokens.length} ${
+              record.tokens.length === 1 ? "entry" : "entries"
+            }`}
+          />
+          <CatalogTokensEditable artist={address} tokens={record.tokens} />
+        </section>
+      )}
 
-      <section className="space-y-3">
-        <SectionHeader
-          title="Token ranges"
-          right={`${record.tokenRanges.length} ${
-            record.tokenRanges.length === 1 ? "entry" : "entries"
-          }`}
-        />
-        <CatalogRangesEditable
-          artist={address}
-          ranges={record.tokenRanges}
-          thumbnails={thumbnails}
-        />
-      </section>
+      {record.tokenRanges.length > 0 && (
+        <section className="space-y-3">
+          <SectionHeader
+            title="Token ranges"
+            right={`${record.tokenRanges.length} ${
+              record.tokenRanges.length === 1 ? "entry" : "entries"
+            }`}
+          />
+          <CatalogRangesEditable
+            artist={address}
+            ranges={record.tokenRanges}
+            thumbnails={thumbnails}
+          />
+        </section>
+      )}
 
       <p className="text-xs text-gray-400 pt-4 border-t border-gray-100">
         Adding a pointer means this address added it to its public
