@@ -161,7 +161,7 @@ async function RecordBody({ address }: { address: Address }) {
     record.tokens.length === 0 &&
     record.tokenRanges.length === 0
 
-  const evmNowUrl = `https://evm.now/address/${address}`
+  const galleryUrl = `/artist/${address.toLowerCase()}`
   const truncatedAddress = `${address.slice(0, 6)}…${address.slice(-4)}`
 
   return (
@@ -193,9 +193,7 @@ async function RecordBody({ address }: { address: Address }) {
                 </h1>
                 <div className="flex items-center gap-2">
                   <a
-                    href={evmNowUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    href={galleryUrl}
                     className="font-mono text-[11px] text-gray-500 hover:text-fg transition-colors"
                   >
                     {truncatedAddress}
@@ -207,9 +205,7 @@ async function RecordBody({ address }: { address: Address }) {
               <div className="flex items-center gap-2 min-w-0">
                 <h1 className="text-base font-mono font-medium tracking-tight truncate min-w-0">
                   <a
-                    href={evmNowUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    href={galleryUrl}
                     className="hover:text-gray-500 transition-colors"
                   >
                     {identity.displayName}
