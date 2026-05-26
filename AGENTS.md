@@ -50,6 +50,28 @@ removed on purpose. To add or extend per-artist platform indexing,
 shared contract you want indexed for everyone. See
 `docs/adding-a-platform.md`.
 
+### Platforms PND currently indexes
+
+Surfaced to artists in the Catalog import flow (the "PND's sources"
+tooltip on `/catalog/[address]`) and in the refresh button on
+`/catalog/[address]` (`RefreshButton`). Adding a platform → bump all
+three.
+
+- **Foundation** — `apps/worker/src/tasks/scan-fnd-collections.ts` for
+  artist-deployed FND collections, plus the shared `FoundationNFT` 1/1
+  contract subscription in `apps/indexer/ponder.config.ts`
+  (`fnd_artist_tokens`).
+- **Manifold** — `apps/worker/src/tasks/scan-manifold.ts`
+  (+ `apps/worker/src/scanners/manifold.ts`).
+- **Mint** — `apps/worker/src/tasks/scan-mint-clones.ts`.
+- **SuperRare** — V2 shared `SuperRareNFT` contract subscription in
+  `apps/indexer/ponder.config.ts` (`srv2_artist_tokens`).
+- **Transient Labs** — `apps/worker/src/tasks/scan-tl-clones.ts`.
+
+The canonical list for the web app lives in
+`apps/web/src/lib/indexed-platforms.ts`. Keep that file, the worker
+scanners, and the Ponder config in sync when you add a platform.
+
 ## Production database
 
 - **Prod = the `maglev` Railway DB** (`maglev.proxy.rlwy.net`). Schemas:

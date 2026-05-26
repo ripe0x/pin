@@ -4,10 +4,15 @@ export default function Loading() {
       {/* Identity row */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
         <div className="h-20 w-20 shrink-0 rounded-full skeleton" />
-        <div className="space-y-2">
-          <div className="h-4 w-40 rounded skeleton" />
-          <div className="h-3 w-24 rounded skeleton" />
-          <div className="h-3 w-32 rounded skeleton" />
+        <div className="space-y-3">
+          <p className="text-[11px] font-mono font-medium uppercase tracking-wider text-gray-500">
+            Artist catalog
+          </p>
+          <div className="space-y-2">
+            <div className="h-4 w-40 rounded skeleton" />
+            <div className="h-3 w-24 rounded skeleton" />
+            <div className="h-3 w-32 rounded skeleton" />
+          </div>
         </div>
       </div>
 

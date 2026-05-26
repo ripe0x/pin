@@ -5,6 +5,7 @@ import type { Address } from "viem"
 import type { NormalizedPlan } from "@/lib/import-sources/types"
 import { useIsCatalogOwner } from "./useIsCatalogOwner"
 import { ImportPlanner } from "./ImportPlanner"
+import { INDEXED_PLATFORM_NAMES } from "@/lib/indexed-platforms"
 
 /**
  * Inline panel on `/catalog/[address]` that pre-seeds the Catalog form
@@ -75,9 +76,16 @@ export function IndexedWorkSection({
             Pre-fill from your indexed work
           </h2>
           <p className="text-xs text-gray-500 mt-1">
-            We&rsquo;ve indexed your contracts and tokens across PND&rsquo;s
-            sources. Select what you want to declare on Catalog — one
-            signature does the whole batch.
+            We&rsquo;ve indexed your contracts and tokens across{" "}
+            <span
+              tabIndex={0}
+              title={`Indexed: ${INDEXED_PLATFORM_NAMES.join(", ")}`}
+              className="underline decoration-dotted decoration-gray-400 underline-offset-2 cursor-help"
+            >
+              PND&rsquo;s sources
+            </span>
+            . Select what you want to declare on Catalog — one signature
+            does the whole batch.
           </p>
         </div>
         <button
