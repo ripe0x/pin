@@ -56,14 +56,14 @@ export function Navbar() {
       onSubmit={handleSearch}
       className={compact ? "flex w-full" : "hidden md:flex flex-1 max-w-md mx-8"}
     >
-      <div className="flex w-full items-center gap-2 rounded-full bg-gray-100 px-4 py-2">
+      <div className="flex w-full items-center gap-2 rounded-full bg-gray-100 px-3 py-1.5">
         <SearchIcon />
         <input
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Find artist by address or ENS"
-          className="flex-1 bg-transparent text-xs font-mono outline-none placeholder:text-gray-400"
+          className="flex-1 bg-transparent text-[11px] font-mono font-medium uppercase tracking-wider text-gray-600 outline-none placeholder:text-gray-400 placeholder:normal-case placeholder:tracking-normal placeholder:font-normal"
         />
       </div>
     </form>
@@ -111,14 +111,24 @@ export function Navbar() {
                   </Link>
                 ))}
                 {address && (
-                  <Link
-                    href={`/artist/${address}`}
-                    role="menuitem"
-                    onClick={() => setMenuOpen(false)}
-                    className="block border-t border-gray-200 px-4 py-2 text-xs font-mono text-fg transition-colors hover:bg-gray-100"
-                  >
-                    Manage your work
-                  </Link>
+                  <>
+                    <Link
+                      href={`/artist/${address}`}
+                      role="menuitem"
+                      onClick={() => setMenuOpen(false)}
+                      className="block border-t border-gray-200 px-4 py-2 text-xs font-mono text-fg transition-colors hover:bg-gray-100"
+                    >
+                      Manage your work
+                    </Link>
+                    <Link
+                      href={`/catalog/${address}`}
+                      role="menuitem"
+                      onClick={() => setMenuOpen(false)}
+                      className="block px-4 py-2 text-xs font-mono text-fg transition-colors hover:bg-gray-100"
+                    >
+                      Your catalog
+                    </Link>
+                  </>
                 )}
                 <Link
                   href="/guides"

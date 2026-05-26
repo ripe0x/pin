@@ -94,6 +94,7 @@ export function IndexedWorkSection({
         sourceUrl={`/artist/${artist.toLowerCase()}`}
         plan={plan}
         fetchError={fetchError}
+        embedded
       />
     </section>
   )

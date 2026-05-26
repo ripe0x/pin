@@ -8,17 +8,24 @@ export function CatalogSummary({
   ranges: number
 }) {
   const cells = [
-    { label: "Contracts", value: contracts },
-    { label: "Tokens", value: tokens },
-    { label: "Ranges", value: ranges },
+    { label: contracts === 1 ? "contract" : "contracts", value: contracts },
+    { label: tokens === 1 ? "token" : "tokens", value: tokens },
+    { label: ranges === 1 ? "range" : "ranges", value: ranges },
   ]
   return (
-    <div className="grid grid-cols-3 gap-3">
-      {cells.map((c) => (
-        <div key={c.label} className="border border-gray-200 rounded-md px-4 py-3">
-          <div className="text-2xl font-semibold">{c.value}</div>
-          <div className="text-xs text-gray-500 mt-0.5">{c.label}</div>
-        </div>
+    <div className="flex items-center gap-3 text-[11px] font-mono text-gray-500">
+      {cells.map((c, i) => (
+        <span key={c.label} className="flex items-center gap-3">
+          {i > 0 && (
+            <span aria-hidden className="text-gray-300">
+              ·
+            </span>
+          )}
+          <span>
+            <strong className="font-medium text-fg">{c.value}</strong>{" "}
+            {c.label}
+          </span>
+        </span>
       ))}
     </div>
   )

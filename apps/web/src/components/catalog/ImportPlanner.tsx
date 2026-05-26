@@ -36,6 +36,13 @@ type Props = {
   sourceUrl: string
   plan: NormalizedPlan
   fetchError: string | null
+  /**
+   * When true, the planner skips its own page-style header (eyebrow + h1
+   * + source description) and skips the outer max-width wrapper. The
+   * embedding parent owns the section title. Used by IndexedWorkSection
+   * on `/catalog/[address]` to avoid duplicate titles.
+   */
+  embedded?: boolean
 }
 
 type EntryKey = string
@@ -74,6 +81,7 @@ export function ImportPlanner({
   sourceUrl,
   plan,
   fetchError,
+  embedded = false,
 }: Props) {
   const { address: connected, isConnected } = useAccount()
   const walletMatches =
@@ -224,30 +232,36 @@ export function ImportPlanner({
     [contractMode],
   )
 
+  const containerClass = embedded
+    ? "pb-32"
+    : "mx-auto max-w-5xl px-6 py-10 pb-32"
+
   return (
-    <div className="mx-auto max-w-5xl px-6 py-10 pb-32">
-      <header className="mb-8">
-        <p className="text-xs uppercase tracking-widest text-gray-500">
-          Catalog import
-        </p>
-        <h1 className="text-3xl font-semibold mt-1">
-          Import {sourceName}&rsquo;s registry to Catalog
-        </h1>
-        <p className="text-gray-600 mt-3 text-sm leading-relaxed">
-          Source:{" "}
-          <a
-            href={sourceUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline hover:text-gray-900"
-          >
-            {sourceUrl}
-          </a>
-          . Reviewed against the on-chain Catalog for{" "}
-          <span className="font-mono text-xs">{artistAddress}</span>. Anything
-          already declared on-chain is skipped automatically.
-        </p>
-      </header>
+    <div className={containerClass}>
+      {!embedded && (
+        <header className="mb-8">
+          <p className="text-xs uppercase tracking-widest text-gray-500">
+            Catalog import
+          </p>
+          <h1 className="text-3xl font-semibold mt-1">
+            Import {sourceName}&rsquo;s registry to Catalog
+          </h1>
+          <p className="text-gray-600 mt-3 text-sm leading-relaxed">
+            Source:{" "}
+            <a
+              href={sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-gray-900"
+            >
+              {sourceUrl}
+            </a>
+            . Reviewed against the on-chain Catalog for{" "}
+            <span className="font-mono text-xs">{artistAddress}</span>. Anything
+            already declared on-chain is skipped automatically.
+          </p>
+        </header>
+      )}
 
       {fetchError && (
         <div className="mb-6 border border-amber-200 bg-amber-50 text-amber-900 px-4 py-3 rounded-md text-sm">

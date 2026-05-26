@@ -34,7 +34,6 @@ import { AddEntrySection } from "@/components/catalog/AddEntrySection"
 import { CatalogContractsEditable } from "@/components/catalog/CatalogContractsEditable"
 import { CatalogTokensEditable } from "@/components/catalog/CatalogTokensEditable"
 import { CatalogRangesEditable } from "@/components/catalog/CatalogRangesEditable"
-import { EditModeIndicator } from "@/components/catalog/EditModeIndicator"
 import { IndexedWorkSection } from "@/components/catalog/IndexedWorkSection"
 import { pndIndexedSource } from "@/lib/import-sources/pnd-indexed"
 import { normalize } from "@/lib/import-sources/normalize"
@@ -204,23 +203,23 @@ async function RecordBody({ address }: { address: Address }) {
               </div>
             )}
 
-            <EditModeIndicator artist={address} />
+            {!empty && (
+              <CatalogSummary
+                contracts={record.contracts.length}
+                tokens={record.tokens.length}
+                ranges={record.tokenRanges.length}
+              />
+            )}
           </div>
         </div>
 
         <RefreshButton artistAddress={address} />
       </div>
 
-      {empty ? (
+      {empty && (
         <div className="border border-dashed border-gray-200 rounded-md p-6 text-sm text-gray-500">
           This catalog is empty. The artist controls what appears here.
         </div>
-      ) : (
-        <CatalogSummary
-          contracts={record.contracts.length}
-          tokens={record.tokens.length}
-          ranges={record.tokenRanges.length}
-        />
       )}
 
       {indexedPlan && (
@@ -295,8 +294,8 @@ async function RecordBody({ address }: { address: Address }) {
 function SectionHeader({ title, right }: { title: string; right?: string }) {
   return (
     <div className="flex items-baseline justify-between">
-      <h2 className="text-lg font-semibold">{title}</h2>
-      {right && <span className="text-xs text-gray-500">{right}</span>}
+      <h2 className="text-sm font-medium text-gray-700">{title}</h2>
+      {right && <span className="text-[11px] font-mono text-gray-500">{right}</span>}
     </div>
   )
 }

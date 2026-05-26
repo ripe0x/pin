@@ -18,17 +18,9 @@ export function CatalogContractsSection({
       {contracts.map((c) => (
         <li
           key={c}
-          className="border border-gray-200 rounded-md p-4 flex items-center justify-between gap-3"
+          className="border border-gray-200 rounded-md px-3 py-2.5 flex items-center justify-between gap-3"
         >
           <ContractLabel address={c} />
-          <a
-            href={`https://evm.now/address/${c}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs border border-gray-200 px-3 py-1.5 rounded-full hover:border-gray-400 transition-colors shrink-0"
-          >
-            evm.now ↗
-          </a>
         </li>
       ))}
     </ul>

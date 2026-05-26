@@ -21,26 +21,17 @@ export function CatalogTokensEditable({
       {tokens.map((t) => (
         <li
           key={`${t.contractAddress}:${t.tokenId}`}
-          className="border border-gray-200 rounded-md p-4 flex items-center justify-between gap-3 flex-wrap"
+          className="border border-gray-200 rounded-md px-3 py-2.5 flex items-center justify-between gap-3 flex-wrap"
         >
           <TokenLabel
             contractAddress={t.contractAddress}
             tokenId={t.tokenId}
           />
-          {isOwner ? (
+          {isOwner && (
             <RemoveRowButton
               fn="removeToken"
               args={[t.contractAddress as `0x${string}`, BigInt(t.tokenId)]}
             />
-          ) : (
-            <a
-              href={`https://evm.now/address/${t.contractAddress}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs border border-gray-200 px-3 py-1.5 rounded-full hover:border-gray-400 transition-colors shrink-0"
-            >
-              evm.now ↗
-            </a>
           )}
         </li>
       ))}

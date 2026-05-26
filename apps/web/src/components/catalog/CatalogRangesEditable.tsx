@@ -25,16 +25,16 @@ export function CatalogRangesEditable({
       {ranges.map((r) => (
         <li
           key={`${r.contractAddress}:${r.startTokenId}:${r.endTokenId}`}
-          className="border border-gray-200 rounded-md p-4 flex items-center justify-between gap-3 flex-wrap"
+          className="border border-gray-200 rounded-md px-3 py-2.5 flex items-center justify-between gap-3 flex-wrap"
         >
-          <div className="min-w-0 space-y-1">
+          <div className="min-w-0 space-y-0.5">
             <ContractLabel address={r.contractAddress} />
-            <div className="text-xs text-gray-500">
+            <div className="text-[11px] font-mono text-gray-500">
               Tokens {r.startTokenId}
-              {r.startTokenId === r.endTokenId ? "" : ` – ${r.endTokenId}`}
+              {r.startTokenId === r.endTokenId ? "" : `–${r.endTokenId}`}
             </div>
           </div>
-          {isOwner ? (
+          {isOwner && (
             <RemoveRowButton
               fn="removeTokenRange"
               args={[
@@ -43,15 +43,6 @@ export function CatalogRangesEditable({
                 BigInt(r.endTokenId),
               ]}
             />
-          ) : (
-            <a
-              href={`https://evm.now/address/${r.contractAddress}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs border border-gray-200 px-3 py-1.5 rounded-full hover:border-gray-400 transition-colors shrink-0"
-            >
-              evm.now ↗
-            </a>
           )}
         </li>
       ))}
