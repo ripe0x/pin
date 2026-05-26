@@ -1,6 +1,7 @@
 import Link from "next/link"
 import type { Address } from "viem"
 import { getCachedCatalog } from "@/lib/catalog-cache"
+import { getContractThumbnails } from "@/lib/catalog-thumbs"
 import { CatalogContractsSection } from "@/components/catalog/CatalogContractsSection"
 import { CatalogTokensSection } from "@/components/catalog/CatalogTokensSection"
 import { CatalogRangesSection } from "@/components/catalog/CatalogRangesSection"
@@ -27,6 +28,14 @@ export async function CatalogSection({
     record.tokenRanges.length === 0
   if (empty) return null
 
+  const contractAddressesForThumbs = Array.from(
+    new Set([
+      ...record.contracts,
+      ...record.tokenRanges.map((r) => r.contractAddress),
+    ]),
+  )
+  const thumbnails = await getContractThumbnails(contractAddressesForThumbs)
+
   return (
     <section className="space-y-6">
       <div className="flex items-baseline justify-between">
@@ -45,7 +54,10 @@ export async function CatalogSection({
             title="Contracts"
             count={record.contracts.length}
           />
-          <CatalogContractsSection contracts={record.contracts} />
+          <CatalogContractsSection
+            contracts={record.contracts}
+            thumbnails={thumbnails}
+          />
         </div>
       )}
 
@@ -65,7 +77,10 @@ export async function CatalogSection({
             title="Token ranges"
             count={record.tokenRanges.length}
           />
-          <CatalogRangesSection ranges={record.tokenRanges} />
+          <CatalogRangesSection
+            ranges={record.tokenRanges}
+            thumbnails={thumbnails}
+          />
         </div>
       )}
 

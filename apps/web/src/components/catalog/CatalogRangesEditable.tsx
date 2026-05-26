@@ -3,11 +3,12 @@
 import type { Address } from "viem"
 import { useIsCatalogOwner } from "./useIsCatalogOwner"
 import { RemoveRowButton } from "./RemoveRowButton"
-import { ContractLabel } from "./CatalogRowLabels"
+import { ContractLabel, ContractThumbnail } from "./CatalogRowLabels"
 
 export function CatalogRangesEditable({
   artist,
   ranges,
+  thumbnails,
 }: {
   artist: Address
   ranges: Array<{
@@ -15,6 +16,7 @@ export function CatalogRangesEditable({
     startTokenId: string
     endTokenId: string
   }>
+  thumbnails?: Record<string, string>
 }) {
   const isOwner = useIsCatalogOwner(artist)
   if (ranges.length === 0) {
@@ -25,16 +27,21 @@ export function CatalogRangesEditable({
       {ranges.map((r) => (
         <li
           key={`${r.contractAddress}:${r.startTokenId}:${r.endTokenId}`}
-          className="border border-gray-200 rounded-md p-4 flex items-center justify-between gap-3 flex-wrap"
+          className="border border-gray-200 rounded-md px-3 py-2.5 flex items-center justify-between gap-3 flex-wrap"
         >
-          <div className="min-w-0 space-y-1">
-            <ContractLabel address={r.contractAddress} />
-            <div className="text-xs text-gray-500">
-              Tokens {r.startTokenId}
-              {r.startTokenId === r.endTokenId ? "" : ` – ${r.endTokenId}`}
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <ContractThumbnail
+              src={thumbnails?.[r.contractAddress.toLowerCase()]}
+            />
+            <div className="min-w-0 space-y-0.5 flex-1">
+              <ContractLabel address={r.contractAddress} />
+              <div className="text-[11px] font-mono text-gray-500">
+                Tokens {r.startTokenId}
+                {r.startTokenId === r.endTokenId ? "" : `–${r.endTokenId}`}
+              </div>
             </div>
           </div>
-          {isOwner ? (
+          {isOwner && (
             <RemoveRowButton
               fn="removeTokenRange"
               args={[
@@ -43,15 +50,6 @@ export function CatalogRangesEditable({
                 BigInt(r.endTokenId),
               ]}
             />
-          ) : (
-            <a
-              href={`https://evm.now/address/${r.contractAddress}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs border border-gray-200 px-3 py-1.5 rounded-full hover:border-gray-400 transition-colors shrink-0"
-            >
-              evm.now ↗
-            </a>
           )}
         </li>
       ))}

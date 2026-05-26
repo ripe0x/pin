@@ -4,6 +4,7 @@ import { redirect } from "next/navigation"
 import type { Address } from "viem"
 import { resolveEnsAddress, getArtistIdentity } from "@/lib/artist-queries"
 import { getCachedCatalog } from "@/lib/catalog-cache"
+import { getContractThumbnails } from "@/lib/catalog-thumbs"
 import { RefreshButton } from "@/components/catalog/RefreshButton"
 
 /**
@@ -28,12 +29,12 @@ import { RefreshButton } from "@/components/catalog/RefreshButton"
 // lives on this page, so the long timer costs nothing in freshness.
 export const revalidate = 3600
 import { AddressZorb } from "@/components/AddressZorb"
+import { CopyAddressButton } from "@/components/CopyAddressButton"
 import { CatalogSummary } from "@/components/catalog/CatalogSummary"
 import { AddEntrySection } from "@/components/catalog/AddEntrySection"
 import { CatalogContractsEditable } from "@/components/catalog/CatalogContractsEditable"
 import { CatalogTokensEditable } from "@/components/catalog/CatalogTokensEditable"
 import { CatalogRangesEditable } from "@/components/catalog/CatalogRangesEditable"
-import { EditModeIndicator } from "@/components/catalog/EditModeIndicator"
 import { IndexedWorkSection } from "@/components/catalog/IndexedWorkSection"
 import { pndIndexedSource } from "@/lib/import-sources/pnd-indexed"
 import { normalize } from "@/lib/import-sources/normalize"
@@ -99,16 +100,7 @@ export default async function RecordPage({
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-10 space-y-8">
-      <header className="space-y-1">
-        <div className="text-xs uppercase tracking-wide text-gray-500">
-          Artist catalog
-        </div>
-        <h1 className="text-3xl font-semibold tracking-tight">
-          Artist catalog
-        </h1>
-      </header>
-
+    <div className="mx-auto max-w-3xl px-6 py-12 space-y-10">
       <Suspense fallback={<RecordFallback />}>
         <RecordBody address={address as Address} />
       </Suspense>
@@ -121,6 +113,18 @@ async function RecordBody({ address }: { address: Address }) {
     getArtistIdentity(address),
     getCachedCatalog(address.toLowerCase()),
   ])
+
+  // Surface a representative thumbnail per declared contract. Sourced
+  // from `token_metadata.image_url` (lowest token_id with an image),
+  // wrapped in unstable_cache + the "catalog" tag so post-write
+  // revalidation drops the entry alongside the record itself.
+  const contractAddressesForThumbs = Array.from(
+    new Set([
+      ...record.contracts,
+      ...record.tokenRanges.map((r) => r.contractAddress),
+    ]),
+  )
+  const thumbnails = await getContractThumbnails(contractAddressesForThumbs)
 
   // Pre-seed plan from PND's indexed work. Fetched server-side so the
   // empty-state check ("does this artist have anything we could
@@ -157,44 +161,77 @@ async function RecordBody({ address }: { address: Address }) {
     record.tokens.length === 0 &&
     record.tokenRanges.length === 0
 
+  const galleryUrl = `/artist/${address.toLowerCase()}`
+  const truncatedAddress = `${address.slice(0, 6)}…${address.slice(-4)}`
+
   return (
     <div className="space-y-10">
-      <div className="flex items-center gap-4">
-        {identity.avatarUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={identity.avatarUrl}
-            alt={identity.displayName}
-            className="h-14 w-14 rounded-full object-cover"
-          />
-        ) : (
-          <AddressZorb address={address} className="h-14 w-14 rounded-full" />
-        )}
-        <div className="min-w-0 space-y-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="text-lg font-semibold truncate">
-              {identity.displayName}
-            </div>
-            <EditModeIndicator artist={address} />
-          </div>
-          <div className="font-mono text-xs text-gray-400">
-            {address.slice(0, 6)}...{address.slice(-4)}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6 min-w-0">
+          {identity.avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={identity.avatarUrl}
+              alt={identity.displayName}
+              className="h-20 w-20 shrink-0 rounded-full object-cover"
+            />
+          ) : (
+            <AddressZorb
+              address={address}
+              className="h-20 w-20 shrink-0 rounded-full"
+            />
+          )}
+
+          <div className="space-y-3 min-w-0">
+            <p className="text-[11px] font-mono font-medium uppercase tracking-wider text-gray-500">
+              Artist catalog
+            </p>
+            {identity.ensName ? (
+              <div className="space-y-1">
+                <h1 className="text-base font-mono font-medium tracking-tight truncate">
+                  {identity.displayName}
+                </h1>
+                <div className="flex items-center gap-2">
+                  <a
+                    href={galleryUrl}
+                    className="font-mono text-[11px] text-gray-500 hover:text-fg transition-colors"
+                  >
+                    {truncatedAddress}
+                  </a>
+                  <CopyAddressButton address={address} />
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 min-w-0">
+                <h1 className="text-base font-mono font-medium tracking-tight truncate min-w-0">
+                  <a
+                    href={galleryUrl}
+                    className="hover:text-gray-500 transition-colors"
+                  >
+                    {identity.displayName}
+                  </a>
+                </h1>
+                <CopyAddressButton address={address} />
+              </div>
+            )}
+
+            {!empty && (
+              <CatalogSummary
+                contracts={record.contracts.length}
+                tokens={record.tokens.length}
+                ranges={record.tokenRanges.length}
+              />
+            )}
           </div>
         </div>
+
+        <RefreshButton artistAddress={address} />
       </div>
 
-      <RefreshButton artistAddress={address} />
-
-      {empty ? (
+      {empty && (
         <div className="border border-dashed border-gray-200 rounded-md p-6 text-sm text-gray-500">
           This catalog is empty. The artist controls what appears here.
         </div>
-      ) : (
-        <CatalogSummary
-          contracts={record.contracts.length}
-          tokens={record.tokens.length}
-          ranges={record.tokenRanges.length}
-        />
       )}
 
       {indexedPlan && (
@@ -225,38 +262,49 @@ async function RecordBody({ address }: { address: Address }) {
         }}
       />
 
-      <section className="space-y-3">
-        <SectionHeader
-          title="Contracts"
-          right={`${record.contracts.length} ${
-            record.contracts.length === 1 ? "entry" : "entries"
-          }`}
-        />
-        <CatalogContractsEditable
-          artist={address}
-          contracts={record.contracts}
-        />
-      </section>
+      {record.contracts.length > 0 && (
+        <section className="space-y-3">
+          <SectionHeader
+            title="Contracts"
+            right={`${record.contracts.length} ${
+              record.contracts.length === 1 ? "entry" : "entries"
+            }`}
+          />
+          <CatalogContractsEditable
+            artist={address}
+            contracts={record.contracts}
+            thumbnails={thumbnails}
+          />
+        </section>
+      )}
 
-      <section className="space-y-3">
-        <SectionHeader
-          title="Tokens"
-          right={`${record.tokens.length} ${
-            record.tokens.length === 1 ? "entry" : "entries"
-          }`}
-        />
-        <CatalogTokensEditable artist={address} tokens={record.tokens} />
-      </section>
+      {record.tokens.length > 0 && (
+        <section className="space-y-3">
+          <SectionHeader
+            title="Tokens"
+            right={`${record.tokens.length} ${
+              record.tokens.length === 1 ? "entry" : "entries"
+            }`}
+          />
+          <CatalogTokensEditable artist={address} tokens={record.tokens} />
+        </section>
+      )}
 
-      <section className="space-y-3">
-        <SectionHeader
-          title="Token ranges"
-          right={`${record.tokenRanges.length} ${
-            record.tokenRanges.length === 1 ? "entry" : "entries"
-          }`}
-        />
-        <CatalogRangesEditable artist={address} ranges={record.tokenRanges} />
-      </section>
+      {record.tokenRanges.length > 0 && (
+        <section className="space-y-3">
+          <SectionHeader
+            title="Token ranges"
+            right={`${record.tokenRanges.length} ${
+              record.tokenRanges.length === 1 ? "entry" : "entries"
+            }`}
+          />
+          <CatalogRangesEditable
+            artist={address}
+            ranges={record.tokenRanges}
+            thumbnails={thumbnails}
+          />
+        </section>
+      )}
 
       <p className="text-xs text-gray-400 pt-4 border-t border-gray-100">
         Adding a pointer means this address added it to its public
@@ -269,22 +317,47 @@ async function RecordBody({ address }: { address: Address }) {
 function SectionHeader({ title, right }: { title: string; right?: string }) {
   return (
     <div className="flex items-baseline justify-between">
-      <h2 className="text-lg font-semibold">{title}</h2>
-      {right && <span className="text-xs text-gray-500">{right}</span>}
+      <h2 className="text-sm font-medium text-gray-700">{title}</h2>
+      {right && <span className="text-[11px] font-mono text-gray-500">{right}</span>}
     </div>
   )
 }
 
 function RecordFallback() {
   return (
-    <div className="space-y-4">
-      <p className="text-sm text-gray-500">Loading catalog...</p>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {Array.from({ length: 4 }).map((_, i) => (
+    <div className="space-y-10">
+      {/* Identity row */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
+        <div className="h-20 w-20 shrink-0 rounded-full skeleton" />
+        <div className="space-y-3">
+          <p className="text-[11px] font-mono font-medium uppercase tracking-wider text-gray-500">
+            Artist catalog
+          </p>
+          <div className="space-y-2">
+            <div className="h-4 w-40 rounded skeleton" />
+            <div className="h-3 w-24 rounded skeleton" />
+            <div className="h-3 w-32 rounded skeleton" />
+          </div>
+        </div>
+      </div>
+
+      {/* One section skeleton — section header + a couple of rows */}
+      <div className="space-y-3">
+        <div className="flex items-baseline justify-between">
+          <div className="h-4 w-24 rounded skeleton" />
+          <div className="h-3 w-16 rounded skeleton" />
+        </div>
+        {Array.from({ length: 2 }).map((_, i) => (
           <div
             key={i}
-            className="border border-gray-200 rounded-md px-4 py-3 h-[68px] animate-pulse"
-          />
+            className="border border-gray-200 rounded-md px-3 py-2.5 flex items-center gap-3"
+          >
+            <div className="h-10 w-10 shrink-0 rounded-md skeleton" />
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <div className="h-3 w-32 rounded skeleton" />
+              <div className="h-3 w-56 rounded skeleton" />
+            </div>
+          </div>
         ))}
       </div>
     </div>

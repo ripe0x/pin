@@ -19,10 +19,10 @@ export async function SupportersList() {
 
   return (
     <div>
-      <p className="text-xs font-mono text-gray-500">
+      <p className="text-[11px] font-mono text-gray-500">
         {totalSupporters} supporters. {totalMints} mints. Thank you.
       </p>
-      <ul className="mt-3 columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-x-6 text-xs font-mono leading-relaxed list-none p-0">
+      <ul className="mt-3 columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-x-6 text-[11px] font-mono leading-relaxed list-none p-0">
         {supporters.map((s) => (
           <li key={s.address} className="break-inside-avoid">
             <a

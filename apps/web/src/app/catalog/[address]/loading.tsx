@@ -1,14 +1,40 @@
 export default function Loading() {
   return (
-    <div className="mx-auto max-w-3xl px-6 py-10 space-y-8">
-      <header className="space-y-1">
-        <div className="text-xs uppercase tracking-wide text-gray-500">
-          Artist catalog
+    <div className="mx-auto max-w-3xl px-6 py-12 space-y-10">
+      {/* Identity row */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
+        <div className="h-20 w-20 shrink-0 rounded-full skeleton" />
+        <div className="space-y-3">
+          <p className="text-[11px] font-mono font-medium uppercase tracking-wider text-gray-500">
+            Artist catalog
+          </p>
+          <div className="space-y-2">
+            <div className="h-4 w-40 rounded skeleton" />
+            <div className="h-3 w-24 rounded skeleton" />
+            <div className="h-3 w-32 rounded skeleton" />
+          </div>
         </div>
-        <h1 className="text-3xl font-semibold tracking-tight">
-          Loading catalog...
-        </h1>
-      </header>
+      </div>
+
+      {/* One section skeleton — section header + a couple of rows */}
+      <div className="space-y-3">
+        <div className="flex items-baseline justify-between">
+          <div className="h-4 w-24 rounded skeleton" />
+          <div className="h-3 w-16 rounded skeleton" />
+        </div>
+        {Array.from({ length: 2 }).map((_, i) => (
+          <div
+            key={i}
+            className="border border-gray-200 rounded-md px-3 py-2.5 flex items-center gap-3"
+          >
+            <div className="h-10 w-10 shrink-0 rounded-md skeleton" />
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <div className="h-3 w-32 rounded skeleton" />
+              <div className="h-3 w-56 rounded skeleton" />
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
