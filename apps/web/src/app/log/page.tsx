@@ -19,6 +19,10 @@ type LogEntry = {
   summary: string
   forArtists?: string
   technical?: string
+  /** Optional in-app link, rendered as a small footer link on the
+   *  entry. Use the path as the label when it is informative on its
+   *  own (e.g. "/catalog"); otherwise pass a short verb phrase. */
+  link?: { href: string; label: string }
 }
 
 // What goes in this log
@@ -55,6 +59,81 @@ type LogEntry = {
 //
 // Newest first.
 const ENTRIES: LogEntry[] = [
+  {
+    date: "May 25, 2026",
+    title: "Smaller changes",
+    summary:
+      "A batch of polish and reliability across the site. Bulk delist now seeds from the full Foundation listing history (not just the current active snapshot), routes its metadata fetches through the cached /api/meta route, and chunks EIP-5792 batches to MetaMask's 10-call cap so wallets stop rejecting large batches. Token pages show a 'Token not found' state for non-existent IDs instead of a blank artwork shell, and reserve auctions with no bids correctly read 'Awaiting first bid' instead of 'Live auction'. Video tokens that omit a file extension on their image field now play instead of breaking the layout. Catalog import pre-populates from PND's own indexed data when available, so an artist doesn't always need a self-published feed to seed it. Various artist-page and self-hosted-template reliability fixes (bid panel updates promptly, transient metadata failures stop sticking, content-presence guard for resolved media).",
+  },
+  {
+    date: "May 22, 2026",
+    title: "Self-serve metadata refresh",
+    summary:
+      "Token pages on PND and on artist-owned sites now have a Refresh metadata button. Owners, creators, and site admins can force PND to re-fetch a token's title, image, and animation URL from the source contract, so reveals, corrections, and swapped media show up promptly instead of after the cache expires. Token metadata that failed to resolve on its first try (a transient gateway error, a slow IPFS pin) also self-heals on next view instead of staying blank for a week.",
+    forArtists:
+      "When you reveal a token, swap its media, or fix a typo in the metadata, the change shows on PND within about a minute instead of a day. New mints with metadata that takes a few minutes to propagate populate themselves the first time someone loads the page.",
+    technical:
+      "Per-token cache tag plus a single-token revalidation route, rate-limited to once per hour per token. The resolver now distinguishes 'fetch failed' from 'empty source' (only sets raw_uri on a real fetch), so failed rows are retried on a short cadence and on read, while resolved rows are still fetched exactly once.",
+  },
+  {
+    date: "May 21, 2026",
+    title: "ERC1155 edition count and mint history",
+    summary:
+      "Token pages for editions (ERC1155 tokens with multiple copies) now show the total minted count and a per-mint provenance trail. Those fields were previously blank.",
+    forArtists:
+      "If you mint editions instead of one-of-ones, the page reflects that. Collectors see how many copies exist and who minted each one.",
+    technical:
+      "Worker records one row per TransferSingle/TransferBatch from the zero address and derives total supply from SUM(amount) per token. Falls back to the on-chain totalSupply() only when the contract implements ERC1155Supply (several common edition contracts, including Mint protocol, revert on totalSupply()). Token pages read from Postgres; no per-view RPC.",
+  },
+  {
+    date: "May 21, 2026",
+    title: "Off-platform auctions populate their token pages",
+    summary:
+      "When an artist uses the Sovereign auction contract on a token from a contract PND doesn't otherwise index (a random ERC-721 they own), the token's page now shows artist, owner, image, and provenance. Previously only the auction panel rendered; the rest of the page was blank.",
+    forArtists:
+      "The /auction/new flow that lets you auction any ERC-721 you own now produces a complete token page, not a placeholder around the auction panel.",
+    technical:
+      "Worker task ingests (contract, tokenId) pairs that appear in pnd_auctions but not in artist_tokens. Mint recipient is credited as creator only when it equals an auction seller or a known artist; otherwise the row is skipped rather than asserting a wrong attribution.",
+  },
+  {
+    date: "May 21, 2026",
+    title: "IPNS token URIs and media resolve",
+    summary:
+      "Tokens whose tokenURI or embedded image points at ipns:// now load. PND previously only recognized ipfs:// and HTTPS gateways, so IPNS-backed metadata fell through to a failed fetch and the token showed a placeholder.",
+    forArtists:
+      "If your tokens use IPNS for mutable pointers (so you can update where the media lives without changing the on-chain reference), they now render on PND like any other token.",
+  },
+  {
+    date: "May 21, 2026",
+    title: "Catalog page pre-fills from PND's indexed work",
+    summary:
+      "When a catalog owner visits their own /catalog/[address] page, a checklist of work PND has indexed for that address appears inline, pre-normalized against what's already declared on-chain. The owner can tick the works they want to include and sign a batched commit without leaving the page. Catalog import via a self-published feed lives on as a separate route for sources PND doesn't index.",
+    forArtists:
+      "If your work is already on a platform PND covers (Foundation, Sovereign, Manifold, SuperRare V2, Transient Labs, Mint), declaring it in your on-chain catalog is a few clicks instead of typing each contract address by hand.",
+    technical:
+      "Server component on /catalog/[address] fetches the indexed plan via the pnd-indexed import source, normalizes it against the live Catalog snapshot, and renders IndexedWorkSection above the manual entry form. The standalone /artist/[address]/import route is unchanged and continues to cover adapter-based sources (a self-published feed like Bryan Brinkman's JSON-LD).",
+    link: { href: "/catalog", label: "/catalog" },
+  },
+  {
+    date: "May 21, 2026",
+    title: "Backend rebuild: a worker that keeps the database warm",
+    summary:
+      "PND moved to a three-app architecture. The web app reads only from Postgres. A long-running worker owns every on-chain scan, metadata fetch, and ENS lookup, and writes the results to the database the web app reads. A separate Ponder indexer tracks a small set of fixed shared contracts. The web app no longer hits the chain on a request path.",
+    forArtists:
+      "Pages load consistently even when an RPC provider is throttling or down. Anonymous traffic to PND can't accidentally burn through its RPC quota and take the site offline. The data behind your artist page is the same record every other PND page reads.",
+    technical:
+      "Worker runs 14 background tasks on its own scheduler (transfer scans, owner resolution, metadata warmup, ENS enrichment, per-platform artist refreshes, mint-history ingestion), all gated on the known_artists view so RPC work is bounded by who's actually using PND, not by anonymous traffic. The Ponder indexer is narrowed to a small set of fixed shared contracts; per-artist clone scanning lives in the worker so the indexer doesn't blow up against the long tail of artist-deployed Manifold and Mint collections. Multi-provider RPC fallback (publicnode, llamarpc, ankr, drpc, with Alchemy as a paid backstop) plus a global rate limiter survives any one provider going flaky.",
+  },
+  {
+    date: "May 15, 2026",
+    title: "Mint protocol (Visualize Value) support",
+    summary:
+      "PND now reads work minted via Mint, the open ERC-1155 minting platform from Visualize Value. Artists who deploy a Mint collection are picked up automatically, and their tokens show on artist pages alongside Foundation, Sovereign, SuperRare V2, Manifold, and Transient Labs.",
+    forArtists:
+      "If you minted on Mint, your work shows up on your artist page. Anyone who deploys a Mint collection from this point on is added to the artist index without needing to ask.",
+    technical:
+      "A topic-filtered scan of the Mint Factory's Created event returns each artist's full clone list in one call. New clones are enumerated via TransferSingle and TransferBatch from the zero address. The Factory itself is indexed into known_artists so new Mint deployers auto-promote into the per-artist scanner.",
+  },
   {
     date: "May 14, 2026",
     title: "Catalog import planner",
@@ -302,6 +381,16 @@ function TimelineItem({ entry }: { entry: LogEntry }) {
               {entry.technical}
             </p>
           </details>
+        )}
+        {entry.link && (
+          <p className="text-sm">
+            <a
+              href={entry.link.href}
+              className="font-mono text-fg underline decoration-gray-300 underline-offset-4 transition-colors hover:decoration-fg"
+            >
+              {entry.link.label}
+            </a>
+          </p>
         )}
       </article>
     </li>
