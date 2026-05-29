@@ -72,6 +72,17 @@ The canonical list for the web app lives in
 `apps/web/src/lib/indexed-platforms.ts`. Keep that file, the worker
 scanners, and the Ponder config in sync when you add a platform.
 
+### MURI (preservation overlay, NOT a mint platform)
+
+MURI is the on-chain media-permanence protocol PND surfaces and lets
+artists mint into. It is a **fixed shared singleton**
+(`0x0000000000C2A0B63ab4aA971B08B905E5875b01`), so it's indexed in Ponder
+(`MURIProtocol` subscription in `ponder.config.ts`, handlers in
+`apps/indexer/src/MURI.ts` → `muri_tokens` + `muri_contracts`), not the
+worker. It is deliberately NOT in `indexed-platforms.ts` — it's a
+preservation overlay on top of other platforms' tokens, not a mint source.
+Full notes: `docs/muri-integration.md`.
+
 ## Production database
 
 - **Prod = the `maglev` Railway DB** (`maglev.proxy.rlwy.net`). Schemas:

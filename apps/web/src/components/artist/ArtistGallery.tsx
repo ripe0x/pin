@@ -14,6 +14,7 @@ import { DeployHouseCTA } from "@/components/auction/DeployHouseCTA"
 import { useArtistHouse } from "@/components/auction/useArtistHouse"
 import { PlatformChip } from "@/components/PlatformChip"
 import { TokenCard } from "@/components/TokenCard"
+import { MuriTileBadge } from "@/components/token/MuriBadge"
 
 export function ArtistGallery({
   artistAddress,
@@ -266,6 +267,11 @@ function GalleryCard({
         style={{ aspectRatio: ratio ?? 1 }}
       >
         <PlatformChip platform={item.platform} />
+        {item.muriUriCount != null && (
+          <div className="absolute right-1.5 top-1.5 z-10">
+            <MuriTileBadge uriCount={item.muriUriCount} />
+          </div>
+        )}
         {kind === "failed" ? null : kind === "video" ? (
           <video
             src={videoSrc}

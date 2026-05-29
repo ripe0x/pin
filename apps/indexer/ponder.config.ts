@@ -8,6 +8,7 @@ import { catalogAbi } from "./abis/Catalog"
 import { mintFactoryAbi } from "./abis/MintFactory"
 import { tlUniversalDeployerAbi } from "./abis/TLUniversalDeployer"
 import { superrareNftAbi } from "./abis/SuperRareNFT"
+import { muriProtocolAbi } from "./abis/MURIProtocol"
 
 /**
  * PND v2 Ponder scope — REDUCED from v1.
@@ -68,6 +69,13 @@ const MINT_FACTORY_DEPLOY_BLOCK = 21_167_599
 // TL Universal Deployer. Discovery-only in v2.
 const TL_DEPLOYER_ADDRESS = "0x7c24805454F7972d36BEE9D139BD93423AA29f3f" as const
 const TL_DEPLOYER_DEPLOY_BLOCK = 19_062_900
+
+// MURI Protocol singleton — fixed shared media-permanence registry. Low
+// event volume; handlers read getArtwork per data-changing event to keep
+// URI counts authoritative. Mainnet deploy block verified via eth_getCode.
+const MURI_PROTOCOL_ADDRESS =
+  "0x0000000000C2A0B63ab4aA971B08B905E5875b01" as const
+const MURI_PROTOCOL_DEPLOY_BLOCK = 23_754_750
 
 // drpc.org free tier handles multi-address eth_getLogs for the PND
 // factory pattern. See docs/RPC-strategy.md for why publicnode /
@@ -184,6 +192,16 @@ export default createConfig({
       abi: tlUniversalDeployerAbi,
       address: TL_DEPLOYER_ADDRESS,
       startBlock: TL_DEPLOYER_DEPLOY_BLOCK,
+    },
+
+    // ── MURI Protocol singleton (preservation overlay) ────────────────
+    // Fixed shared contract → belongs in Ponder (per AGENTS.md), NOT the
+    // worker long tail. Drives muri_contracts + muri_tokens.
+    MURIProtocol: {
+      chain: "mainnet",
+      abi: muriProtocolAbi,
+      address: MURI_PROTOCOL_ADDRESS,
+      startBlock: MURI_PROTOCOL_DEPLOY_BLOCK,
     },
   },
 })

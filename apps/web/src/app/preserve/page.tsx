@@ -397,6 +397,15 @@ export default function PreservePage() {
           Foundation is shutting down their IPFS pinning. Use this tool to
           make sure your artwork stays permanently available.
         </p>
+        <p className="text-sm text-gray-500">
+          Minting new work on a Manifold contract? You can preserve it on-chain
+          from the start, with multiple fallback links and an integrity hash
+          baked in.{" "}
+          <Link href="/muri" className="underline hover:text-fg">
+            Mint on-chain preserved
+          </Link>
+          .
+        </p>
       </div>
 
       {/* Steps indicator */}

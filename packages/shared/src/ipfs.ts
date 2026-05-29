@@ -113,6 +113,23 @@ export function ipfsToGatewayUrl(
 }
 
 /**
+ * Expand one pinned CID into an ordered list of independent gateway URLs.
+ *
+ * This is how a single upload becomes a resilient multi-URI set for MURI:
+ * each gateway resolves the same content-addressed CID, so if one gateway
+ * disappears the others still serve the byte-identical artwork (and MURI's
+ * on-chain SHA-256 hash proves it's the real file). Order matches
+ * IPFS_GATEWAYS (most reliable first) so index 0 is the preferred source.
+ */
+export function ipfsCidToFallbackUrls(
+  cid: string,
+  gateways: readonly string[] = IPFS_GATEWAYS,
+): string[] {
+  const clean = extractCid(cid) ?? cid
+  return gateways.map((g) => ipfsToGatewayUrl(clean, g))
+}
+
+/**
  * Convert an IPFS or IPNS URI to an HTTP gateway URL.
  * Non-IPFS/IPNS URIs are returned as-is.
  */

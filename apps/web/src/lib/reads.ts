@@ -34,6 +34,9 @@ export type ArtistTokenRow = {
   imageUrl: string | null
   animationUrl: string | null
   owner: string | null
+  // MURI on-chain preservation overlay (null if the token isn't registered).
+  muriPreserved: boolean
+  muriUriCount: number | null
 }
 
 export async function getArtistTokens(
@@ -81,12 +84,15 @@ export async function getArtistTokens(
      )
      SELECT r.contract, r.token_id, r.platform,
             r.mint_block::text AS mint_block, r.mint_log_index,
-            m.name, m.image_url, m.animation_url, o.owner
+            m.name, m.image_url, m.animation_url, o.owner,
+            mu.artist_uri_count AS muri_uri_count
      FROM refs r
      LEFT JOIN token_metadata m
        ON m.contract = r.contract AND m.token_id = r.token_id
      LEFT JOIN token_owners o
        ON o.contract = r.contract AND o.token_id = r.token_id
+     LEFT JOIN ${t("muri_tokens")} mu
+       ON lower(mu.contract) = r.contract AND mu.token_id::text = r.token_id
      ORDER BY r.mint_block DESC, r.mint_log_index DESC
      LIMIT $2 OFFSET $3`,
     [lower, pageSize, offset],
@@ -100,6 +106,7 @@ export async function getArtistTokens(
     image_url: string | null
     animation_url: string | null
     owner: string | null
+    muri_uri_count: number | null
   }>
 
   return {
@@ -113,6 +120,8 @@ export async function getArtistTokens(
       imageUrl: r.image_url,
       animationUrl: r.animation_url,
       owner: r.owner,
+      muriPreserved: r.muri_uri_count != null,
+      muriUriCount: r.muri_uri_count,
     })),
     total,
   }
@@ -136,6 +145,13 @@ export type TokenDetail = {
     blockTime: bigint
     txHash: string
   }>
+  // MURI on-chain preservation overlay (null if the token isn't registered).
+  muri: {
+    artistUriCount: number
+    collectorUriCount: number
+    fileHash: string | null
+    displayMode: number | null
+  } | null
 }
 
 export async function getTokenDetail(
@@ -206,6 +222,27 @@ export async function getTokenDetail(
     tx_hash: string
   }>
 
+  // MURI preservation overlay (Postgres-only; supplemental, never gates
+  // null). Wrapped so a token page still renders if muri_tokens doesn't
+  // exist yet (indexer redeploy may lag the web deploy).
+  let muriRows: Array<{
+    artist_uri_count: number
+    collector_uri_count: number
+    file_hash: string | null
+    display_mode: number | null
+  }> = []
+  try {
+    muriRows = (await sql.unsafe(
+      `SELECT artist_uri_count, collector_uri_count, file_hash, display_mode
+         FROM ${t("muri_tokens")}
+         WHERE lower(contract) = $1 AND token_id::text = $2
+         LIMIT 1`,
+      [contractLower, tokenId],
+    )) as typeof muriRows
+  } catch {
+    muriRows = []
+  }
+
   if (!meta[0] && !owner[0] && !creatorAddr && transfers.length === 0) {
     return null
   }
@@ -226,7 +263,138 @@ export async function getTokenDetail(
       blockTime: BigInt(tr.block_time),
       txHash: tr.tx_hash,
     })),
+    muri: muriRows[0]
+      ? {
+          artistUriCount: muriRows[0].artist_uri_count,
+          collectorUriCount: muriRows[0].collector_uri_count,
+          fileHash: muriRows[0].file_hash,
+          displayMode: muriRows[0].display_mode,
+        }
+      : null,
   }
+}
+
+// ─── MURI preservation overlay (single token) ─────────────────────────────
+
+export type MuriTokenOverlay = {
+  artistUriCount: number
+  collectorUriCount: number
+  selectedIndex: number
+  fileHash: string | null
+  mimeType: string | null
+  displayMode: number | null
+}
+
+/**
+ * MURI on-chain preservation state for one token. Pure Postgres read
+ * against the indexer's muri_tokens table — no live RPC. Returns null if
+ * the token isn't registered with MURI.
+ */
+export async function getMuriToken(
+  contract: string,
+  tokenId: string,
+): Promise<MuriTokenOverlay | null> {
+  if (!sql) return null
+  const rows = (await sql.unsafe(
+    `SELECT artist_uri_count, collector_uri_count, selected_index,
+            file_hash, mime_type, display_mode
+       FROM ${t("muri_tokens")}
+       WHERE lower(contract) = $1 AND token_id::text = $2
+       LIMIT 1`,
+    [contract.toLowerCase(), tokenId],
+  )) as Array<{
+    artist_uri_count: number
+    collector_uri_count: number
+    selected_index: number
+    file_hash: string | null
+    mime_type: string | null
+    display_mode: number | null
+  }>
+  const r = rows[0]
+  if (!r) return null
+  return {
+    artistUriCount: r.artist_uri_count,
+    collectorUriCount: r.collector_uri_count,
+    selectedIndex: r.selected_index,
+    fileHash: r.file_hash,
+    mimeType: r.mime_type,
+    displayMode: r.display_mode,
+  }
+}
+
+/**
+ * Batched MURI artist-URI counts for a page of tokens. One Postgres query
+ * (no RPC), keyed by `${contract.toLowerCase()}:${tokenId}`. Tokens not
+ * registered with MURI are simply absent from the returned map.
+ */
+export async function getMuriUriCounts(
+  refs: ReadonlyArray<{ contract: string; tokenId: string }>,
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>()
+  if (!sql || refs.length === 0) return out
+
+  // Exact (contract, tokenId) pairs via a VALUES join — avoids the
+  // cross-product an `ANY($1) AND ANY($2)` filter would produce.
+  const params: string[] = []
+  const values = refs
+    .map((r, i) => {
+      params.push(r.contract.toLowerCase(), r.tokenId)
+      return `($${i * 2 + 1}, $${i * 2 + 2})`
+    })
+    .join(", ")
+
+  const rows = (await sql.unsafe(
+    `SELECT lower(m.contract) AS contract, m.token_id::text AS token_id,
+            m.artist_uri_count
+       FROM ${t("muri_tokens")} m
+       JOIN (VALUES ${values}) AS v(contract, token_id)
+         ON lower(m.contract) = v.contract AND m.token_id::text = v.token_id`,
+    params,
+  )) as Array<{ contract: string; token_id: string; artist_uri_count: number }>
+
+  for (const r of rows) {
+    out.set(`${r.contract}:${r.token_id}`, r.artist_uri_count)
+  }
+  return out
+}
+
+// ─── MURI mint eligibility ─────────────────────────────────────────────────
+
+export type MuriEligibleContract = {
+  contract: string
+  isErc721: boolean
+  isErc1155: boolean
+  collectionName: string | null
+}
+
+/**
+ * The artist's Manifold Creator Core contracts — the set a new MURI-native
+ * token can be minted on (MURI's Manifold extension only mints, never
+ * retrofits). Pure Postgres read against the worker-maintained
+ * manifold_contracts classification cache; no RPC. The connected wallet's
+ * admin rights on a chosen contract are checked live, client-side.
+ */
+export async function getMuriEligibleContracts(
+  artist: string,
+): Promise<MuriEligibleContract[]> {
+  if (!sql) return []
+  const rows = (await sql`
+    SELECT contract, is_erc721, is_erc1155, collection_name
+    FROM manifold_contracts
+    WHERE lower(artist) = ${artist.toLowerCase()} AND is_creator_core = true
+    ORDER BY classified_at DESC
+  `) as Array<{
+    contract: string
+    is_erc721: boolean
+    is_erc1155: boolean
+    collection_name: string | null
+  }>
+  return rows.map((r) => ({
+    contract: r.contract,
+    isErc721: r.is_erc721,
+    isErc1155: r.is_erc1155,
+    collectionName: r.collection_name,
+  }))
 }
 
 // ─── Collector (inverse query) ───────────────────────────────────────────
