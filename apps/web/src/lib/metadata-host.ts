@@ -87,3 +87,10 @@ export function fingerprintToken(row: {
     media: classifyUrl(row.imageUrl ?? row.animationUrl),
   }
 }
+
+// Re-export the bare-CID and Arweave-id extractors from @pin/shared
+// so the dependency report's preservation reader and the worker
+// probe task pull from the same source. (The shared module's
+// existing `extractCid` returns CID+path for rendering; preservation
+// needs the bare id as a cache key.)
+export { extractBareCid, extractArweaveId } from "@pin/shared"

@@ -30,6 +30,7 @@ import { scan1155Stats } from "./tasks/scan-1155-stats.ts"
 import { scanSrv2ActiveAuctions } from "./tasks/scan-srv2-active-auctions.ts"
 import { scanTlActiveAuctions } from "./tasks/scan-tl-active-auctions.ts"
 import { scanPndAuctionTokens } from "./tasks/scan-pnd-auction-tokens.ts"
+import { probeCidAvailability } from "./tasks/probe-cid-availability.ts"
 
 type TaskName =
   | "seed-known-artists"
@@ -46,6 +47,7 @@ type TaskName =
   | "scan-srv2-active-auctions"
   | "scan-tl-active-auctions"
   | "scan-pnd-auction-tokens"
+  | "probe-cid-availability"
   | "ponder-drift-check"
 
 export type TaskResult = {
@@ -77,6 +79,11 @@ const tasks: Task[] = [
   { name: "scan-srv2-active-auctions", intervalMs: 5  * MIN, fn: scanSrv2ActiveAuctions },
   { name: "scan-tl-active-auctions",   intervalMs: 5  * MIN, fn: scanTlActiveAuctions },
   { name: "scan-pnd-auction-tokens",   intervalMs: 15 * MIN, fn: scanPndAuctionTokens, dependsOnPonder: true },
+  // Probe public IPFS gateways for known-artists' CIDs. Free public
+  // endpoints, separate cost line from Alchemy. 10 min is plenty —
+  // pin churn is slow and the table is content-addressed (so once a
+  // CID is probed it stays probed for RETRY_AFTER_DAYS).
+  { name: "probe-cid-availability",    intervalMs: 10 * MIN, fn: probeCidAvailability },
   { name: "ponder-drift-check",        intervalMs: 60 * MIN, fn: ponderDriftCheck },
 ]
 
