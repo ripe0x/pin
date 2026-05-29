@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useCallback, useRef } from "react"
-import { useAccount } from "wagmi"
+import { useAccount, useSignMessage } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import type { DiscoveredToken } from "@/lib/onchain-discovery"
 import type { PinStatus, ProviderType, PinningProvider } from "@/lib/pinning"
@@ -9,7 +9,19 @@ import { createProvider, PROVIDER_INFO } from "@/lib/pinning"
 import { PinningSetup } from "@/components/preserve/PinningSetup"
 import { PreserveGrid } from "@/components/preserve/PreserveGrid"
 import { PinProgress, type PinStats } from "@/components/preserve/PinProgress"
+import {
+  buildWritebackMessage,
+  type ProviderId,
+} from "@/lib/preserve-writeback"
+import { extractBareCid } from "@/lib/metadata-host"
 import Link from "next/link"
+
+type WritebackState =
+  | { kind: "idle" }
+  | { kind: "signing" }
+  | { kind: "posting" }
+  | { kind: "done"; written: number }
+  | { kind: "error"; message: string }
 
 type TokenPinState = {
   token: DiscoveredToken
@@ -39,6 +51,8 @@ export default function PreservePage() {
     queued: 0,
     lastError: undefined,
   })
+  const { signMessageAsync } = useSignMessage()
+  const [writeback, setWriteback] = useState<WritebackState>({ kind: "idle" })
 
   // The address to discover — custom or connected wallet
   const targetAddress = useCustomAddress ? customAddress.trim() : address
@@ -375,6 +389,74 @@ export default function PreservePage() {
     setPinning(false)
   }
 
+  // Record the pin work with PND so it surfaces on
+  // /dependency/<address> as an "artist personally pinned" overlay.
+  // Opt-in: requires the artist to sign a message attesting the CIDs
+  // they pinned at which provider. No tokens are spent, no API key
+  // is sent — only the connected wallet's signature.
+  async function postWriteback() {
+    if (!address || !providerType) return
+    // Collect successfully-pinned CIDs across both metadata + media.
+    const cidSet = new Set<string>()
+    for (const ts of tokens) {
+      if (ts.metadataStatus === "pinned" && ts.token.metadataCid) {
+        const bare = extractBareCid(`ipfs://${ts.token.metadataCid}`) ?? ts.token.metadataCid.split(/[/?#]/)[0]
+        if (bare) cidSet.add(bare)
+      }
+      if (ts.mediaStatus === "pinned" && ts.token.mediaCid) {
+        const bare = extractBareCid(`ipfs://${ts.token.mediaCid}`) ?? ts.token.mediaCid.split(/[/?#]/)[0]
+        if (bare) cidSet.add(bare)
+      }
+    }
+    if (cidSet.size === 0) {
+      setWriteback({ kind: "error", message: "No pinned CIDs to record." })
+      return
+    }
+    const cids = [...cidSet]
+    const provider = providerType as ProviderId
+    const nonce = Math.floor(Date.now() / 1000)
+    const message = buildWritebackMessage({ artist: address, cids, provider, nonce })
+
+    setWriteback({ kind: "signing" })
+    let signature: `0x${string}`
+    try {
+      signature = await signMessageAsync({ message })
+    } catch (err) {
+      setWriteback({
+        kind: "error",
+        message: err instanceof Error ? err.message : "Signature cancelled.",
+      })
+      return
+    }
+
+    setWriteback({ kind: "posting" })
+    try {
+      const res = await fetch("/api/preserve/writeback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          artist: address,
+          cids,
+          provider,
+          status: "pinned",
+          nonce,
+          signature,
+        }),
+      })
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(err.error ?? `HTTP ${res.status}`)
+      }
+      const body = (await res.json()) as { written: number }
+      setWriteback({ kind: "done", written: body.written })
+    } catch (err) {
+      setWriteback({
+        kind: "error",
+        message: err instanceof Error ? err.message : "Writeback failed.",
+      })
+    }
+  }
+
   // Update step when wallet connects/disconnects
   if (isConnected && step === "connect") {
     setStep("discover")
@@ -600,6 +682,49 @@ export default function PreservePage() {
           )}
 
           <PreserveGrid tokens={tokens} />
+
+          {step === "done" &&
+            address &&
+            providerType &&
+            stats.pinned > 0 &&
+            writeback.kind !== "done" && (
+              <div className="border-t border-gray-200 pt-6 space-y-3">
+                <h3 className="text-sm font-medium">Record this on PND</h3>
+                <p className="text-xs text-gray-500">
+                  PND will record that this wallet pinned the following
+                  CIDs at {PROVIDER_INFO[providerType].name}; this surfaces
+                  on /dependency/&lt;address&gt; as a preservation signal.
+                  You&apos;ll be asked to sign a message — no transaction,
+                  no fee, no API key sent.
+                </p>
+                <button
+                  onClick={postWriteback}
+                  disabled={
+                    writeback.kind === "signing" ||
+                    writeback.kind === "posting"
+                  }
+                  className="w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40"
+                >
+                  {writeback.kind === "signing"
+                    ? "Waiting for signature..."
+                    : writeback.kind === "posting"
+                    ? "Recording..."
+                    : `Record ${stats.pinned} pinned CID${stats.pinned === 1 ? "" : "s"} on PND`}
+                </button>
+                {writeback.kind === "error" && (
+                  <p className="text-xs text-red-500">{writeback.message}</p>
+                )}
+              </div>
+            )}
+
+          {step === "done" && writeback.kind === "done" && (
+            <div className="border-t border-gray-200 pt-6 text-center space-y-2">
+              <p className="text-sm text-gray-700">
+                Recorded {writeback.written} CID
+                {writeback.written === 1 ? "" : "s"} on PND.
+              </p>
+            </div>
+          )}
 
           {step === "done" && discoveredAddress && (
             <div className="border-t border-gray-200 pt-6 text-center space-y-3">

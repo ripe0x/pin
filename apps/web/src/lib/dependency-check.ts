@@ -426,12 +426,13 @@ async function getPreservationSummary(
   // `retrievable` / `unretrievableCount` follow the boolean column.
   if (ipfsCids.size > 0) {
     try {
+      const ipfsCidArr = Array.from(ipfsCids)
       const rows = (await sql<
         Array<{ retrievable: boolean; count: number }>
       >`
         SELECT retrievable, COUNT(*)::int AS count
           FROM cid_availability
-         WHERE cid = ANY(${Array.from(ipfsCids)}::text[])
+         WHERE cid = ANY(${ipfsCidArr}::text[])
          GROUP BY retrievable
       `) as Array<{ retrievable: boolean; count: number }>
       let probed = 0
@@ -441,6 +442,26 @@ async function getPreservationSummary(
         probed += r.count
       }
       summary.ipfs.unprobedCount = Math.max(0, ipfsCids.size - probed)
+
+      // Overlay artist-pinned signal from token_pins (Phase 2b).
+      // Counts distinct CIDs the artist has self-declared as pinned
+      // at ANY provider; we don't break it down per-provider here
+      // because the summary line stays terse and the artist usually
+      // uses one provider at a time.
+      try {
+        const pinRows = (await sql<Array<{ count: number }>>`
+          SELECT COUNT(DISTINCT cid)::int AS count
+            FROM token_pins
+           WHERE artist = ${addrLower}
+             AND status IN ('pinned', 'queued')
+             AND cid = ANY(${ipfsCidArr}::text[])
+        `) as Array<{ count: number }>
+        summary.ipfs.artistPinnedCount = pinRows[0]?.count ?? 0
+      } catch {
+        // token_pins table missing (Phase 2b migration not yet applied)
+        // — leave artistPinnedCount at 0 and render the rest of the
+        // summary.
+      }
     } catch {
       // Table missing (migration not yet applied) or transient DB blip
       // — treat everything as unprobed. The area then renders as
