@@ -3,6 +3,7 @@ export {
   ipfsToHttp,
   extractCid,
   extractBareCid,
+  extractArweaveId,
   ipfsToGatewayUrl,
   fetchFromIpfs,
   IPFS_GATEWAYS,

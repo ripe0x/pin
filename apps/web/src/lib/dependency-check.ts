@@ -26,7 +26,12 @@ import {
 } from "./artist-inventory"
 import { getCatalog, type Catalog } from "./catalog"
 import type { PlatformId } from "./platforms/types"
-import { classifyUrl, extractBareCid, type HostBucket } from "./metadata-host"
+import {
+  classifyUrl,
+  extractArweaveId,
+  extractBareCid,
+  type HostBucket,
+} from "./metadata-host"
 
 /**
  * Assemble the Artist Dependency Report.
@@ -142,6 +147,7 @@ export type PreservationSummary = {
   arweave: {
     totalCids: number
     retrievableCount: number
+    unretrievableCount: number
     unprobedCount: number
   }
   onchain: { totalCount: number }
@@ -312,7 +318,12 @@ function emptyPreservationSummary(): PreservationSummary {
       unprobedCount: 0,
       artistPinnedCount: 0,
     },
-    arweave: { totalCids: 0, retrievableCount: 0, unprobedCount: 0 },
+    arweave: {
+      totalCids: 0,
+      retrievableCount: 0,
+      unretrievableCount: 0,
+      unprobedCount: 0,
+    },
     onchain: { totalCount: 0 },
     centralized: { totalCount: 0, reachableCount: 0, topHosts: [] },
   }
@@ -372,11 +383,15 @@ async function getPreservationSummary(
           break
         }
         case "arweave": {
-          // Arweave content addresses use the tx id; reusing
-          // extractBareCid wouldn't help (different shape). For 2a we
-          // count Arweave URLs themselves as the dedup key. A future
-          // Arweave-CID extractor can replace this.
-          if (url) arweaveCids.add(url.trim())
+          // Bare tx id is the dedup key — same cache table as IPFS
+          // CIDs, keyed by string id only. Falling back to the
+          // trimmed URL preserves the count for any Arweave-shaped
+          // URL that doesn't parse cleanly (e.g. unusual subdomain
+          // gateway) so the bucket still reflects "yes this artist
+          // uses Arweave."
+          const arId = extractArweaveId(url)
+          if (arId) arweaveCids.add(arId)
+          else if (url) arweaveCids.add(url.trim())
           break
         }
         case "onchain":
@@ -434,10 +449,31 @@ async function getPreservationSummary(
     }
   }
 
-  // Arweave gateway probe is deferred in 2a — treat every Arweave CID
-  // as unprobed. The shape is here so the renderer doesn't change
-  // when 2a-Arweave lands.
-  summary.arweave.unprobedCount = arweaveCids.size
+  // Arweave: same join as IPFS, against the shared cid_availability
+  // table. Arweave tx ids are distinguishable from CIDs by character
+  // set (43-char base64url vs Qm.../b...), so no PK collision.
+  if (arweaveCids.size > 0) {
+    try {
+      const arweaveCidArr = Array.from(arweaveCids)
+      const rows = (await sql<
+        Array<{ retrievable: boolean; count: number }>
+      >`
+        SELECT retrievable, COUNT(*)::int AS count
+          FROM cid_availability
+         WHERE cid = ANY(${arweaveCidArr}::text[])
+         GROUP BY retrievable
+      `) as Array<{ retrievable: boolean; count: number }>
+      let probed = 0
+      for (const r of rows) {
+        if (r.retrievable) summary.arweave.retrievableCount = r.count
+        else summary.arweave.unretrievableCount = r.count
+        probed += r.count
+      }
+      summary.arweave.unprobedCount = Math.max(0, arweaveCids.size - probed)
+    } catch {
+      summary.arweave.unprobedCount = arweaveCids.size
+    }
+  }
 
   return summary
 }
@@ -664,11 +700,19 @@ function formatPreservationSummary(pres: PreservationSummary): string {
     parts.push(`IPFS: ${ipfsParts.join(", ")}`)
   }
   if (pres.arweave.totalCids > 0) {
-    const arParts: string[] = [`${pres.arweave.totalCids} CIDs`]
-    if (pres.arweave.retrievableCount > 0) {
-      arParts.push(`${pres.arweave.retrievableCount} retrievable`)
-    } else if (pres.arweave.unprobedCount > 0) {
-      arParts.push("not yet probed")
+    const arParts: string[] = []
+    const probedDenom =
+      pres.arweave.retrievableCount + pres.arweave.unretrievableCount
+    if (probedDenom > 0) {
+      arParts.push(`${pres.arweave.retrievableCount}/${probedDenom} retrievable`)
+      if (pres.arweave.unretrievableCount > 0) {
+        arParts.push(`${pres.arweave.unretrievableCount} failing`)
+      }
+    } else {
+      arParts.push(`${pres.arweave.totalCids} CIDs`)
+    }
+    if (pres.arweave.unprobedCount > 0) {
+      arParts.push(`${pres.arweave.unprobedCount} not yet probed`)
     }
     parts.push(`Arweave: ${arParts.join(", ")}`)
   }
@@ -1114,7 +1158,7 @@ async function fetchAndCacheReport(
  */
 export const getDependencyReport = unstable_cache(
   fetchAndCacheReport,
-  ["artist-dependency-v7"],
+  ["artist-dependency-v8"],
   {
     revalidate: DEPENDENCY_SCAN_PARTIAL_TTL_S,
     tags: ["artist-dependency"],

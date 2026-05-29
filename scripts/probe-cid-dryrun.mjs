@@ -56,9 +56,11 @@ const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? envFile.INDEXER_SCHEMA ?? 
 const ARTIST = (process.env.DRY_RUN_ARTIST ?? "0x8469b7b08d30c63fea3a248a198de9d634b63d70").toLowerCase()
 const LIMIT = Number(process.env.DRY_RUN_LIMIT ?? "10")
 
-// ── CID extractor (mirrors packages/shared/src/ipfs.ts:extractBareCid) ─
+// ── extractors (mirror packages/shared/src/ipfs.ts) ───────────────────
 const CIDV0_RE = /^Qm[1-9A-HJ-NP-Za-km-z]{44}$/
 const CIDV1_RE = /^b[A-Za-z2-7]{58,}$/
+const ARWEAVE_ID_RE = /^[A-Za-z0-9_-]{43}$/
+
 function looksLikeCid(token) {
   return CIDV0_RE.test(token) || CIDV1_RE.test(token)
 }
@@ -77,22 +79,45 @@ function extractBareCid(uri) {
   if (pathMatch && looksLikeCid(pathMatch[1])) return pathMatch[1]
   return null
 }
+function extractArweaveId(uri) {
+  if (!uri) return null
+  const trimmed = String(uri).trim()
+  if (!trimmed) return null
+  const ar = /^ar:\/\/([^/?#]+)/i.exec(trimmed)
+  if (ar) return ARWEAVE_ID_RE.test(ar[1]) ? ar[1] : null
+  if (!/^https?:\/\//i.test(trimmed)) return null
+  let parsed
+  try { parsed = new URL(trimmed) } catch { return null }
+  const host = parsed.hostname.toLowerCase()
+  if (host !== "arweave.net" && !host.endsWith(".arweave.net")) return null
+  const m = /^\/([^/?#]+)/.exec(parsed.pathname)
+  if (!m) return null
+  return ARWEAVE_ID_RE.test(m[1]) ? m[1] : null
+}
 
-// ── Gateways (mirror the worker task's list and timing) ──────────────
-const GATEWAYS = [
+// ── Gateways per kind (mirror the worker task) ────────────────────────
+const IPFS_GATEWAYS = [
   { name: "ipfs.io",   urlFor: (cid) => `https://ipfs.io/ipfs/${cid}` },
   { name: "dweb.link", urlFor: (cid) => `https://${cid}.ipfs.dweb.link/` },
   { name: "w3s.link",  urlFor: (cid) => `https://${cid}.ipfs.w3s.link/` },
 ]
-const TIMEOUT_MS = 3000
+const ARWEAVE_GATEWAYS = [
+  { name: "arweave.net", urlFor: (id) => `https://arweave.net/${id}` },
+]
+// Same per-kind timeout split as the worker task: Arweave's canonical
+// gateway is materially slower than the IPFS pool.
+const IPFS_TIMEOUT_MS = 3000
+const ARWEAVE_TIMEOUT_MS = 8000
 
-async function probeOne(cid) {
-  const attempts = GATEWAYS.map(async (g) => {
+async function probeOne(kind, id) {
+  const gws = kind === "ipfs" ? IPFS_GATEWAYS : ARWEAVE_GATEWAYS
+  const timeout = kind === "ipfs" ? IPFS_TIMEOUT_MS : ARWEAVE_TIMEOUT_MS
+  const attempts = gws.map(async (g) => {
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+    const timer = setTimeout(() => controller.abort(), timeout)
     const started = Date.now()
     try {
-      const res = await fetch(g.urlFor(cid), {
+      const res = await fetch(g.urlFor(id), {
         method: "HEAD",
         signal: controller.signal,
         redirect: "follow",
@@ -160,31 +185,45 @@ const rows = await sql.unsafe(
   [ARTIST],
 )
 
-const cidSet = new Set()
+const ipfsSet = new Set()
+const arweaveSet = new Set()
 for (const r of rows) {
   for (const url of [r.raw_uri, r.image_url, r.animation_url]) {
     const cid = extractBareCid(url)
-    if (cid) cidSet.add(cid)
+    if (cid) ipfsSet.add(cid)
+    const ar = extractArweaveId(url)
+    if (ar) arweaveSet.add(ar)
   }
 }
 
 console.log(`Artist:           ${ARTIST}`)
 console.log(`Indexer schema:   ${INDEXER_SCHEMA} (Ponder ready: ${ready})`)
 console.log(`Payload-bearing token_metadata rows: ${rows.length}`)
-console.log(`Distinct IPFS CIDs referenced:       ${cidSet.size}`)
-console.log(`Probing first ${Math.min(LIMIT, cidSet.size)} alphabetically through gateways…\n`)
+console.log(`Distinct IPFS CIDs:    ${ipfsSet.size}`)
+console.log(`Distinct Arweave ids:  ${arweaveSet.size}`)
+console.log(`Probing first ${LIMIT} of each kind alphabetically through their gateways…\n`)
 
-const sample = [...cidSet].sort().slice(0, LIMIT)
+const ipfsSample    = [...ipfsSet].sort().slice(0, LIMIT)
+const arweaveSample = [...arweaveSet].sort().slice(0, LIMIT)
+const sample = [
+  ...ipfsSample.map((id) => ({ kind: "ipfs", id })),
+  ...arweaveSample.map((id) => ({ kind: "arweave", id })),
+]
 
 let okCount = 0
 let failCount = 0
-for (const cid of sample) {
-  const results = await probeOne(cid)
+let lastKind = ""
+for (const { kind, id } of sample) {
+  if (kind !== lastKind) {
+    console.log(`\n── ${kind.toUpperCase()} ──`)
+    lastKind = kind
+  }
+  const results = await probeOne(kind, id)
   const winner = results.find((r) => r.ok)
   const summary = winner
-    ? `OK     via ${winner.name.padEnd(9)} (${winner.status} in ${winner.ms}ms)`
+    ? `OK     via ${winner.name.padEnd(11)} (${winner.status} in ${winner.ms}ms)`
     : `FAIL   ${results.map((r) => `${r.name}:${r.status ?? r.error ?? "?"}`).join(" | ")}`
-  console.log(`  ${cid.slice(0, 20)}…  ${summary}`)
+  console.log(`  ${id.slice(0, 20)}…  ${summary}`)
   if (winner) okCount++; else failCount++
 
   if (WRITE) {
@@ -198,7 +237,7 @@ for (const cid of sample) {
       INSERT INTO cid_availability
         (cid, last_probed_at, retrievable, gateways_ok, gateways_failed, http_status)
       VALUES
-        (${cid}, NOW(), ${!!winner},
+        (${id}, NOW(), ${!!winner},
          ${gatewaysOk}::text[], ${gatewaysFailed}::text[], ${lastStatus})
       ON CONFLICT (cid) DO UPDATE SET
         last_probed_at  = NOW(),
@@ -209,7 +248,6 @@ for (const cid of sample) {
     `
   }
 
-  // Tiny pacing so we don't hammer any one gateway on a fast run.
   await new Promise((r) => setTimeout(r, 250))
 }
 

@@ -127,6 +127,53 @@ export function extractBareCid(uri: string | null): string | null {
   return null
 }
 
+// Arweave transaction IDs are 43-character URL-safe base64:
+//   characters from [A-Za-z0-9_-], length 43.
+// As with CIDs, we don't validate the underlying hash — just the
+// shape, so a malformed ID becomes a 404 at the gateway like any
+// real-but-unavailable resource.
+const ARWEAVE_ID_RE = /^[A-Za-z0-9_-]{43}$/
+
+/**
+ * Extract the bare Arweave transaction ID from a URI.
+ *
+ * Recognised shapes:
+ *   ar://<id>[/...]                       → <id>
+ *   https://arweave.net/<id>[/...]        → <id>
+ *   https://<sub>.arweave.net/<id>[/...]  → <id>
+ *
+ * Returns null for non-Arweave URIs or URIs whose id-shaped slot
+ * fails the 43-char base64url check. Pure function; no I/O.
+ *
+ * Returned IDs are usable as cache keys for the same
+ * `cid_availability` table that IPFS CIDs land in — they're
+ * distinguishable from CIDs by character set (CIDs start with `Qm`
+ * or `b` and are longer than 43 chars).
+ */
+export function extractArweaveId(uri: string | null): string | null {
+  if (!uri) return null
+  const trimmed = uri.trim()
+  if (!trimmed) return null
+
+  const arScheme = /^ar:\/\/([^/?#]+)/i.exec(trimmed)
+  if (arScheme) return ARWEAVE_ID_RE.test(arScheme[1]) ? arScheme[1] : null
+
+  if (!/^https?:\/\//i.test(trimmed)) return null
+  let parsed: URL
+  try {
+    parsed = new URL(trimmed)
+  } catch {
+    return null
+  }
+  const host = parsed.hostname.toLowerCase()
+  if (host !== "arweave.net" && !host.endsWith(".arweave.net")) return null
+
+  // Path is `/<id>[/...]`. The first non-empty segment is the tx id.
+  const pathMatch = /^\/([^/?#]+)/.exec(parsed.pathname)
+  if (!pathMatch) return null
+  return ARWEAVE_ID_RE.test(pathMatch[1]) ? pathMatch[1] : null
+}
+
 /**
  * Extract the IPNS name (+ optional path) from a URI.
  *

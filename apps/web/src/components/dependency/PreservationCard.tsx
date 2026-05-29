@@ -81,18 +81,27 @@ export function PreservationCard({
             total={arweave.totalCids}
             unit="CIDs"
             retrievable={arweave.retrievableCount}
-            denominator={arweave.retrievableCount + arweave.unprobedCount}
-            details={
-              arweave.unprobedCount > 0
-                ? [
-                    {
-                      label: "not yet probed",
-                      count: arweave.unprobedCount,
-                      tone: "muted" as const,
-                    },
-                  ]
-                : []
+            denominator={
+              arweave.retrievableCount +
+              arweave.unretrievableCount +
+              arweave.unprobedCount
             }
+            details={[
+              arweave.unretrievableCount > 0
+                ? {
+                    label: "failing",
+                    count: arweave.unretrievableCount,
+                    tone: "warn" as const,
+                  }
+                : null,
+              arweave.unprobedCount > 0
+                ? {
+                    label: "not yet probed",
+                    count: arweave.unprobedCount,
+                    tone: "muted" as const,
+                  }
+                : null,
+            ].filter((x): x is Exclude<typeof x, null> => x !== null)}
           />
 
           <Bucket

@@ -33,7 +33,7 @@
  * zero probes.
  */
 import { sql } from "../db.ts"
-import { extractBareCid } from "@pin/shared"
+import { extractArweaveId, extractBareCid } from "@pin/shared"
 import type { TaskResult } from "../scheduler.ts"
 
 const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
@@ -42,19 +42,35 @@ const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
 
 const BATCH_SIZE = Number(process.env.CID_PROBE_BATCH_SIZE ?? "50")
 const RETRY_AFTER_DAYS = Number(process.env.CID_PROBE_RETRY_AFTER_DAYS ?? "7")
-const GATEWAY_TIMEOUT_MS = Number(process.env.CID_PROBE_TIMEOUT_MS ?? "3000")
+// IPFS HEAD requests usually return within a few hundred ms via the
+// fastest gateway, so 3s is comfortable. Arweave's canonical gateway
+// is materially slower under load — observed median ~1-2s for warm
+// content and frequent 3-5s waits on cold reads. Give it more rope so
+// "failing" actually means failing, not "we got bored."
+const IPFS_TIMEOUT_MS = Number(process.env.CID_PROBE_IPFS_TIMEOUT_MS ?? "3000")
+const ARWEAVE_TIMEOUT_MS = Number(process.env.CID_PROBE_ARWEAVE_TIMEOUT_MS ?? "8000")
 const GATEWAY_DELAY_MS = Number(process.env.CID_PROBE_GATEWAY_DELAY_MS ?? "1000")
 
-// Free public IPFS gateways. Tries each one independently per CID;
-// first success wins. Throttled per-gateway so a slow round-robin
-// doesn't pile up on any single host.
-const GATEWAYS = [
+// Free public gateways per content type. Per probe we race only the
+// gateways for that content's kind (no point trying ipfs.io for an
+// Arweave tx id). Throttled per-gateway so a slow round-robin doesn't
+// pile up on any single host.
+const IPFS_GATEWAYS = [
   { name: "ipfs.io",   urlFor: (cid: string) => `https://ipfs.io/ipfs/${cid}` },
   { name: "dweb.link", urlFor: (cid: string) => `https://${cid}.ipfs.dweb.link/` },
   { name: "w3s.link",  urlFor: (cid: string) => `https://${cid}.ipfs.w3s.link/` },
 ] as const
 
-type GatewayName = (typeof GATEWAYS)[number]["name"]
+// Arweave gateways are smaller in number — arweave.net is the canonical
+// gateway. Adding more later (g8way.io, ar-io.net) is a one-line patch
+// once we see retrievable counts that don't match expected ground truth.
+const ARWEAVE_GATEWAYS = [
+  { name: "arweave.net", urlFor: (id: string) => `https://arweave.net/${id}` },
+] as const
+
+type IpfsGatewayName = (typeof IPFS_GATEWAYS)[number]["name"]
+type ArweaveGatewayName = (typeof ARWEAVE_GATEWAYS)[number]["name"]
+type GatewayName = IpfsGatewayName | ArweaveGatewayName
 
 // Per-gateway throttle: each gateway has its own next-slot timestamp.
 // We don't share with `throttleRpc` because public gateways are a
@@ -63,6 +79,17 @@ const nextSlot: Record<GatewayName, number> = {
   "ipfs.io": 0,
   "dweb.link": 0,
   "w3s.link": 0,
+  "arweave.net": 0,
+}
+
+type Kind = "ipfs" | "arweave"
+type Candidate = { kind: Kind; id: string }
+
+function gatewaysFor(kind: Kind): ReadonlyArray<{
+  name: GatewayName
+  urlFor: (id: string) => string
+}> {
+  return kind === "ipfs" ? IPFS_GATEWAYS : ARWEAVE_GATEWAYS
 }
 
 async function throttleGateway(name: GatewayName): Promise<void> {
@@ -76,28 +103,26 @@ async function throttleGateway(name: GatewayName): Promise<void> {
 }
 
 type ProbeOutcome = {
-  cid: string
+  id: string
   retrievable: boolean
   gatewaysOk: GatewayName[]
   gatewaysFailed: GatewayName[]
   httpStatus: number | null
 }
 
-async function probeOne(cid: string): Promise<ProbeOutcome> {
+async function probeOne(c: Candidate): Promise<ProbeOutcome> {
   type GatewayResult =
     | { ok: true; name: GatewayName; status: number }
     | { ok: false; name: GatewayName; status: number | null }
 
-  // Race all three gateways in parallel. `Promise.any` resolves with
-  // the first OK; if every probe rejects, it throws AggregateError
-  // and we record the failure with whatever last status we observed.
-  const attempts: Array<Promise<GatewayResult>> = GATEWAYS.map(
+  const timeout = c.kind === "ipfs" ? IPFS_TIMEOUT_MS : ARWEAVE_TIMEOUT_MS
+  const attempts: Array<Promise<GatewayResult>> = gatewaysFor(c.kind).map(
     async (g): Promise<GatewayResult> => {
       await throttleGateway(g.name)
       const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), GATEWAY_TIMEOUT_MS)
+      const timer = setTimeout(() => controller.abort(), timeout)
       try {
-        const res = await fetch(g.urlFor(cid), {
+        const res = await fetch(g.urlFor(c.id), {
           method: "HEAD",
           signal: controller.signal,
           redirect: "follow",
@@ -114,14 +139,11 @@ async function probeOne(cid: string): Promise<ProbeOutcome> {
     },
   )
 
-  // `Promise.any` ignores rejections but we never reject — every probe
-  // resolves to `GatewayResult`. We want the first `ok:true` if one
-  // exists; otherwise the per-result list.
   const results = await Promise.all(attempts)
   const winner = results.find((r) => r.ok)
   if (winner && winner.ok) {
     return {
-      cid,
+      id: c.id,
       retrievable: true,
       gatewaysOk: [winner.name],
       gatewaysFailed: results
@@ -130,15 +152,12 @@ async function probeOne(cid: string): Promise<ProbeOutcome> {
       httpStatus: winner.status,
     }
   }
-  // Every gateway failed. Surface the last observed HTTP status if any
-  // (most useful for debugging 429s), or null if everything was a
-  // transport-level abort/timeout.
   const lastStatus = results.reduce<number | null>(
     (acc, r) => (r.status !== null ? r.status : acc),
     null,
   )
   return {
-    cid,
+    id: c.id,
     retrievable: false,
     gatewaysOk: [],
     gatewaysFailed: results.map((r) => r.name),
@@ -146,7 +165,7 @@ async function probeOne(cid: string): Promise<ProbeOutcome> {
   }
 }
 
-async function findCandidates(): Promise<string[]> {
+async function findCandidates(): Promise<Candidate[]> {
   // Gate: same known_artists spend ceiling that gates warm-metadata.
   // Without this, this task would probe gateways for every shared
   // 1/1 mint in the database.
@@ -203,26 +222,42 @@ async function findCandidates(): Promise<string[]> {
     animation_url: string | null
   }>
 
-  const candidates = new Set<string>()
+  // Collect candidates per kind so we can dedup separately and tag
+  // each one. `cid_availability` is keyed by string id only — IPFS
+  // CIDs (start with Qm or b) and Arweave tx ids (43-char base64url)
+  // don't collide.
+  const ipfsIds = new Set<string>()
+  const arweaveIds = new Set<string>()
   for (const r of rows) {
     for (const url of [r.raw_uri, r.image_url, r.animation_url]) {
       const cid = extractBareCid(url)
-      if (cid) candidates.add(cid)
+      if (cid) ipfsIds.add(cid)
+      const ar = extractArweaveId(url)
+      if (ar) arweaveIds.add(ar)
     }
   }
-  if (candidates.size === 0) return []
+  const allIds = [...ipfsIds, ...arweaveIds]
+  if (allIds.length === 0) return []
 
-  // Subtract CIDs already probed inside the freshness window.
+  // Subtract IDs already probed inside the freshness window.
   const fresh = (await sql<Array<{ cid: string }>>`
     SELECT cid FROM cid_availability
      WHERE last_probed_at > NOW() - (${RETRY_AFTER_DAYS}::text || ' days')::interval
-       AND cid = ANY(${Array.from(candidates)})
+       AND cid = ANY(${allIds})
   `) as Array<{ cid: string }>
-  for (const r of fresh) candidates.delete(r.cid)
+  for (const r of fresh) {
+    ipfsIds.delete(r.cid)
+    arweaveIds.delete(r.cid)
+  }
 
-  // Stable ordering — sort lexicographically so successive batches
-  // don't reshuffle and a backlog drains in deterministic order.
-  return Array.from(candidates).sort().slice(0, BATCH_SIZE)
+  // Build a single sorted Candidate list. Sort first by kind (so
+  // each kind drains in deterministic order), then lexicographically
+  // by id within the kind.
+  const out: Candidate[] = [
+    ...[...ipfsIds].sort().map<Candidate>((id) => ({ kind: "ipfs", id })),
+    ...[...arweaveIds].sort().map<Candidate>((id) => ({ kind: "arweave", id })),
+  ]
+  return out.slice(0, BATCH_SIZE)
 }
 
 async function writeOutcome(o: ProbeOutcome): Promise<void> {
@@ -230,7 +265,7 @@ async function writeOutcome(o: ProbeOutcome): Promise<void> {
     INSERT INTO cid_availability
       (cid, last_probed_at, retrievable, gateways_ok, gateways_failed, http_status)
     VALUES
-      (${o.cid}, NOW(), ${o.retrievable},
+      (${o.id}, NOW(), ${o.retrievable},
        ${o.gatewaysOk}::text[], ${o.gatewaysFailed}::text[], ${o.httpStatus})
     ON CONFLICT (cid) DO UPDATE SET
       last_probed_at  = NOW(),
@@ -247,28 +282,32 @@ export async function probeCidAvailability(): Promise<TaskResult> {
     return { scopeCount: 0, rpcCalls: 0, rowsWritten: 0 }
   }
 
-  // Serialise per-CID — the per-gateway throttle gates the actual
-  // network rate. Running CIDs sequentially keeps the throttle queue
-  // depth at most `GATEWAYS.length` at any moment, so a slow gateway
-  // can't fan a backlog across the whole batch.
+  // Serialise per-id — the per-gateway throttle gates the actual
+  // network rate. Running candidates sequentially keeps the throttle
+  // queue depth bounded so a slow gateway can't fan a backlog across
+  // the whole batch.
   let resolved = 0
   let unresolved = 0
-  for (const cid of candidates) {
+  let ipfsCount = 0
+  let arweaveCount = 0
+  for (const c of candidates) {
+    if (c.kind === "ipfs") ipfsCount++
+    else arweaveCount++
     try {
-      const outcome = await probeOne(cid)
+      const outcome = await probeOne(c)
       await writeOutcome(outcome)
       if (outcome.retrievable) resolved++
       else unresolved++
     } catch (err) {
-      console.error(`[probe-cid-availability] ${cid}:`, err)
+      console.error(`[probe-cid-availability] ${c.kind}:${c.id}:`, err)
       unresolved++
     }
   }
 
   console.log(
-    `[probe-cid-availability] probed ${candidates.length} CIDs ` +
-      `(${resolved} retrievable, ${unresolved} unresolved) across ` +
-      `${GATEWAYS.length} gateways`,
+    `[probe-cid-availability] probed ${candidates.length} ids ` +
+      `(${ipfsCount} ipfs, ${arweaveCount} arweave) — ` +
+      `${resolved} retrievable, ${unresolved} unresolved`,
   )
 
   return {

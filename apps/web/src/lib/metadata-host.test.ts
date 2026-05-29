@@ -10,6 +10,7 @@ import { strict as assert } from "node:assert"
 import { test } from "node:test"
 import {
   classifyUrl,
+  extractArweaveId,
   extractBareCid,
   fingerprintToken,
   type HostBucket,
@@ -192,4 +193,50 @@ test("extractBareCid returns null for non-IPFS URLs", () => {
 test("extractBareCid returns null when IPFS-shaped URL has no CID-shaped token", () => {
   assert.equal(extractBareCid("ipfs://not-a-cid"), null)
   assert.equal(extractBareCid("https://ipfs.io/ipfs/totally-bogus"), null)
+})
+
+// ─── extractArweaveId ──────────────────────────────────────────────────────
+
+const ARWEAVE_ID = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLM_-12"  // 43 chars
+
+test("extractArweaveId pulls tx id from ar:// scheme", () => {
+  assert.equal(extractArweaveId(`ar://${ARWEAVE_ID}`), ARWEAVE_ID)
+})
+
+test("extractArweaveId strips trailing path", () => {
+  assert.equal(
+    extractArweaveId(`ar://${ARWEAVE_ID}/path/to/file.json`),
+    ARWEAVE_ID,
+  )
+})
+
+test("extractArweaveId pulls tx id from arweave.net host", () => {
+  assert.equal(
+    extractArweaveId(`https://arweave.net/${ARWEAVE_ID}`),
+    ARWEAVE_ID,
+  )
+  assert.equal(
+    extractArweaveId(`https://arweave.net/${ARWEAVE_ID}/foo.json`),
+    ARWEAVE_ID,
+  )
+})
+
+test("extractArweaveId accepts arweave.net subdomains", () => {
+  assert.equal(
+    extractArweaveId(`https://gateway.arweave.net/${ARWEAVE_ID}`),
+    ARWEAVE_ID,
+  )
+})
+
+test("extractArweaveId returns null for non-Arweave URLs", () => {
+  assert.equal(extractArweaveId(`ipfs://QmFoo`), null)
+  assert.equal(extractArweaveId(`https://example.com/${ARWEAVE_ID}`), null)
+  assert.equal(extractArweaveId(null), null)
+  assert.equal(extractArweaveId(""), null)
+})
+
+test("extractArweaveId rejects ids that don't match the 43-char shape", () => {
+  assert.equal(extractArweaveId("ar://short"), null)
+  assert.equal(extractArweaveId("ar://" + "x".repeat(44)), null)
+  assert.equal(extractArweaveId(`ar://${ARWEAVE_ID}!nope`), null)
 })

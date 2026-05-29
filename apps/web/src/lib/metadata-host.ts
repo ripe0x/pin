@@ -88,9 +88,9 @@ export function fingerprintToken(row: {
   }
 }
 
-// Re-export the bare-CID extractor from @pin/shared so the dependency
-// report's preservation reader and the worker probe task pull from the
-// same source. (The shared module's existing `extractCid` returns
-// CID+path for rendering; preservation needs the bare CID as a cache
-// key, so it lives in @pin/shared as `extractBareCid`.)
-export { extractBareCid } from "@pin/shared"
+// Re-export the bare-CID and Arweave-id extractors from @pin/shared
+// so the dependency report's preservation reader and the worker
+// probe task pull from the same source. (The shared module's
+// existing `extractCid` returns CID+path for rendering; preservation
+// needs the bare id as a cache key.)
+export { extractBareCid, extractArweaveId } from "@pin/shared"
