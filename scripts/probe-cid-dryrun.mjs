@@ -102,12 +102,12 @@ const IPFS_GATEWAYS = [
   { name: "w3s.link",  urlFor: (cid) => `https://${cid}.ipfs.w3s.link/` },
 ]
 const ARWEAVE_GATEWAYS = [
-  { name: "arweave.net", urlFor: (id) => `https://arweave.net/${id}` },
+  { name: "arweave.net",  urlFor: (id) => `https://arweave.net/${id}` },
+  { name: "permagate.io", urlFor: (id) => `https://permagate.io/${id}` },
 ]
-// Same per-kind timeout split as the worker task: Arweave's canonical
-// gateway is materially slower than the IPFS pool.
+// Same per-kind timeout split as the worker task.
 const IPFS_TIMEOUT_MS = 3000
-const ARWEAVE_TIMEOUT_MS = 8000
+const ARWEAVE_TIMEOUT_MS = 12000
 
 async function probeOne(kind, id) {
   const gws = kind === "ipfs" ? IPFS_GATEWAYS : ARWEAVE_GATEWAYS

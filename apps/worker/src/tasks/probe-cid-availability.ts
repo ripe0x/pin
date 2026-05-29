@@ -43,12 +43,13 @@ const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
 const BATCH_SIZE = Number(process.env.CID_PROBE_BATCH_SIZE ?? "50")
 const RETRY_AFTER_DAYS = Number(process.env.CID_PROBE_RETRY_AFTER_DAYS ?? "7")
 // IPFS HEAD requests usually return within a few hundred ms via the
-// fastest gateway, so 3s is comfortable. Arweave's canonical gateway
-// is materially slower under load — observed median ~1-2s for warm
-// content and frequent 3-5s waits on cold reads. Give it more rope so
-// "failing" actually means failing, not "we got bored."
+// fastest gateway, so 3s is comfortable. Arweave gateways are
+// materially slower and more variable. Observed via the dry-run:
+// some genuinely-available tx ids took 8.7s at arweave.net — an 8s
+// timeout was flagging them as "failing." 12s catches the slow-but-
+// real reads while still failing fast on actually-gone content.
 const IPFS_TIMEOUT_MS = Number(process.env.CID_PROBE_IPFS_TIMEOUT_MS ?? "3000")
-const ARWEAVE_TIMEOUT_MS = Number(process.env.CID_PROBE_ARWEAVE_TIMEOUT_MS ?? "8000")
+const ARWEAVE_TIMEOUT_MS = Number(process.env.CID_PROBE_ARWEAVE_TIMEOUT_MS ?? "12000")
 const GATEWAY_DELAY_MS = Number(process.env.CID_PROBE_GATEWAY_DELAY_MS ?? "1000")
 
 // Free public gateways per content type. Per probe we race only the
@@ -61,11 +62,17 @@ const IPFS_GATEWAYS = [
   { name: "w3s.link",  urlFor: (cid: string) => `https://${cid}.ipfs.w3s.link/` },
 ] as const
 
-// Arweave gateways are smaller in number — arweave.net is the canonical
-// gateway. Adding more later (g8way.io, ar-io.net) is a one-line patch
-// once we see retrievable counts that don't match expected ground truth.
+// Arweave gateway pool. `arweave.net` is the canonical gateway but its
+// cold-read latency is highly variable (observed 200ms–18s on the same
+// id within minutes). `permagate.io` is a community gateway that's
+// noticeably faster on a chunk of long-tail content the canonical
+// gateway is slow on; racing both halves the false-failure rate.
+// `g8way.io` and `ar-io.net` were also tested but don't accept direct
+// `/<txid>` paths from a HEAD request in this configuration — leaving
+// them out until we sort the AR.IO routing if we ever want more pool.
 const ARWEAVE_GATEWAYS = [
-  { name: "arweave.net", urlFor: (id: string) => `https://arweave.net/${id}` },
+  { name: "arweave.net",  urlFor: (id: string) => `https://arweave.net/${id}` },
+  { name: "permagate.io", urlFor: (id: string) => `https://permagate.io/${id}` },
 ] as const
 
 type IpfsGatewayName = (typeof IPFS_GATEWAYS)[number]["name"]
@@ -80,6 +87,7 @@ const nextSlot: Record<GatewayName, number> = {
   "dweb.link": 0,
   "w3s.link": 0,
   "arweave.net": 0,
+  "permagate.io": 0,
 }
 
 type Kind = "ipfs" | "arweave"
