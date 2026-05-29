@@ -7,28 +7,22 @@ import {
   useAccount,
   useBalance,
   useChainId,
-  usePublicClient,
   useReadContract,
   useSwitchChain,
   useWriteContract,
   useWaitForTransactionReceipt,
 } from "wagmi"
-import { foundry, mainnet } from "wagmi/chains"
-
-// When the dev server is pointed at a local Anvil fork
-// (NEXT_PUBLIC_USE_LOCAL_RPC=1), we're in fork-testing mode and the
-// *preferred* chain is foundry — sending txs on real Ethereum
-// mainnet would bypass the fork. In production this flag is unset
-// and the preferred chain is mainnet. `NEXT_PUBLIC_*` vars are
-// inlined at build time so this evaluates statically per build —
-// which is exactly why the flag is a boolean string and not the
-// Alchemy URL: anything in `NEXT_PUBLIC_*` ends up in the public
-// JS bundle, so URLs containing API keys must stay out.
-const FORK_MODE = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
-const PREFERRED_CHAIN = FORK_MODE ? foundry : mainnet
-const PREFERRED_CHAIN_LABEL = FORK_MODE ? "Foundry (local fork)" : "Ethereum"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { nftMarketAbi, sovereignAuctionHouseAbi, superrareBazaarAbi, transientAuctionHouseAbi } from "@pin/abi"
+import {
+  PREFERRED_CHAIN,
+  PREFERRED_CHAIN_LABEL,
+  formatWriteError,
+  evmNowTxUrl,
+  useChainNowSec,
+  Countdown,
+  TxSuccessBanner,
+} from "@/components/tx/tx-ui"
 import { useEthAmountInput } from "@/lib/useEthAmountInput"
 import type {
   AuctionFees,
@@ -37,46 +31,6 @@ import type {
 } from "@/lib/auctions"
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
-
-/**
- * Format a wagmi/viem write error for display. viem attaches the actual
- * revert reason on the error's `cause.cause...` chain (and a friendlier
- * `shortMessage` on the top-level error). The default Error.message is
- * a multi-line block whose first line is just "The contract function X
- * reverted with the following reason:" — useless without the next line.
- * Walk the cause chain to find the deepest message that contains the
- * actual on-chain revert string (typically prefixed `<func>::<reason>`).
- */
-function formatWriteError(err: unknown, action: "Bid" | "Settle" | "Cancel" | "Update"): string {
-  if (!err || typeof err !== "object") return `${action} failed`
-  const e = err as {
-    message?: string
-    shortMessage?: string
-    cause?: unknown
-    metaMessages?: string[]
-  }
-  if (e.message?.includes("User rejected")) return "Transaction rejected"
-  if (e.message?.includes("insufficient funds")) return "Insufficient ETH balance"
-
-  // Walk cause chain for the deepest shortMessage / reason.
-  let deepest: string | undefined = e.shortMessage
-  let cur: unknown = e.cause
-  for (let i = 0; i < 6 && cur && typeof cur === "object"; i++) {
-    const c = cur as { shortMessage?: string; reason?: string; cause?: unknown }
-    if (c.shortMessage) deepest = c.shortMessage
-    if (c.reason) deepest = c.reason
-    cur = c.cause
-  }
-  // metaMessages often holds the reverted reason as a follow-on line.
-  if (!deepest && Array.isArray(e.metaMessages)) {
-    const reasonLine = e.metaMessages.find((m) =>
-      /::|reverted|require/i.test(m),
-    )
-    if (reasonLine) deepest = reasonLine.trim()
-  }
-  if (!deepest) deepest = e.message?.split("\n")[0]
-  return `${action} failed: ${deepest ?? "unknown error"}`
-}
 
 // SuperRare Bazaar's MarketplaceSettings.getMarketplaceFeePercentage()
 // has returned 3 (i.e. 3%) for years. The fee is a buyer's premium —
@@ -161,48 +115,6 @@ function formatUsd(wei: bigint, ethPriceUsd: number): string {
  * `router.refresh()` will still fire and the next read will hit a
  * still-warm cache (worst case: 30s of stale state until natural TTL).
  */
-/**
- * Persistent confirmation banner shown after a write tx confirms.
- * Stays visible until the user dismisses (clicking Dismiss calls
- * `reset()` to clear wagmi's success state, which lets the panel
- * transition back to the regular form). Includes a link to Etherscan
- * for production txs; on fork-test runs the hash will 404 there but
- * that's the cost of one shared link target — fine for testing.
- */
-function TxSuccessBanner({
-  txHash,
-  message,
-  onDismiss,
-}: {
-  txHash: `0x${string}`
-  message: string
-  onDismiss: () => void
-}) {
-  return (
-    <div className="px-3 py-2 bg-green-50 border border-green-200 text-green-800 text-[11px] font-mono space-y-1">
-      <div className="flex items-baseline justify-between gap-2">
-        <span>{message}</span>
-        <button
-          type="button"
-          onClick={onDismiss}
-          aria-label="Dismiss"
-          className="text-green-700 hover:text-green-900 leading-none"
-        >
-          ✕
-        </button>
-      </div>
-      <a
-        href={`https://etherscan.io/tx/${txHash}`}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="block underline hover:text-green-900 break-all"
-      >
-        View tx: {txHash.slice(0, 10)}…{txHash.slice(-8)} ↗
-      </a>
-    </div>
-  )
-}
-
 function useRevalidateAuctionOnSuccess(
   isSuccess: boolean,
   auction: AuctionState,
@@ -259,94 +171,10 @@ function formatRelativeTime(unixSec: number): string {
   return `${Math.floor(mo / 12)}y ago`
 }
 
-function formatRemaining(secondsLeft: number): string {
-  if (secondsLeft <= 0) return "Ended"
-  const d = Math.floor(secondsLeft / 86400)
-  const h = Math.floor((secondsLeft % 86400) / 3600)
-  const m = Math.floor((secondsLeft % 3600) / 60)
-  const s = secondsLeft % 60
-  if (d > 0) return `${d}d ${h}h ${m}m`
-  if (h > 0) return `${h}h ${m}m ${s}s`
-  if (m > 0) return `${m}m ${s}s`
-  return `${s}s`
-}
-
 function formatBpsPct(bps: number): string {
   const pct = bps / 100
   if (Number.isInteger(pct)) return `${pct}%`
   return `${pct.toFixed(2).replace(/\.?0+$/, "")}%`
-}
-
-/**
- * Returns the chain time (seconds) for countdown rendering. Reads the
- * latest block ONCE on mount to compute an offset between chain time
- * and wall-clock time, then drives the countdown via `Date.now()` plus
- * that offset. A 1-second `setInterval` triggers re-renders so the
- * countdown ticks visibly.
- *
- * Why not `useBlock({ watch: true })`: that polls
- * `eth_getBlockByNumber` every ~4s per mounted component, dominating
- * total RPC volume on this app (measured ~75 % of all RPC traffic
- * came from one open auction page). The countdown only needs
- * sub-second visual precision and the bid button always reads fresh
- * on-chain state at click time, so polling chain time continuously is
- * pure waste.
- *
- * Why anchor to chain time at all: on a local Anvil fork
- * (`evm_increaseTime`), wall-clock time and chain time can diverge by
- * minutes. Reading once on mount catches that case for the loaded
- * frame. Within one page session, the offset is stable enough — if
- * the user hard-refreshes, we re-anchor.
- *
- * Returns 0 until the first block read resolves, so callers treat 0
- * as "unknown — don't make end-state decisions yet".
- */
-function useChainNowSec(): number {
-  const client = usePublicClient()
-  const [chainOffsetSec, setChainOffsetSec] = useState<number | null>(null)
-  const [, setTick] = useState(0)
-
-  useEffect(() => {
-    if (!client) return
-    let cancelled = false
-    void client
-      .getBlock()
-      .then((block) => {
-        if (cancelled) return
-        const wallSec = Math.floor(Date.now() / 1000)
-        setChainOffsetSec(Number(block.timestamp) - wallSec)
-      })
-      .catch(() => {
-        // RPC unavailable — fall back to wall-clock by setting offset
-        // to 0 so countdowns still render. Acceptable failure mode:
-        // browser clock is normally accurate within milliseconds.
-        if (!cancelled) setChainOffsetSec(0)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [client])
-
-  useEffect(() => {
-    const id = setInterval(() => setTick((n) => n + 1), 1000)
-    return () => clearInterval(id)
-  }, [])
-
-  if (chainOffsetSec === null) return 0
-  return Math.floor(Date.now() / 1000) + chainOffsetSec
-}
-
-function Countdown({
-  endTime,
-  nowSec,
-}: {
-  endTime: bigint
-  nowSec: number
-}) {
-  const secondsLeft = nowSec === 0
-    ? 0
-    : Math.max(0, Number(endTime) - nowSec)
-  return <span suppressHydrationWarning>{formatRemaining(secondsLeft)}</span>
 }
 
 type Phase = "live" | "no-bids" | "ended-unsettled"
@@ -505,7 +333,7 @@ function BidHistory({ bids }: { bids: BidHistoryEntry[] }) {
             className="flex items-baseline justify-between text-[11px] font-mono"
           >
             <a
-              href={`https://etherscan.io/tx/${bid.txHash}`}
+              href={evmNowTxUrl(bid.txHash, PREFERRED_CHAIN.id)}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-baseline gap-2 min-w-0 hover:opacity-70 transition-opacity"
@@ -783,6 +611,7 @@ function BidSection({
       {isSuccess && txHash && (
         <TxSuccessBanner
           txHash={txHash}
+          chainId={PREFERRED_CHAIN.id}
           message="Bid placed."
           onDismiss={reset}
         />
@@ -922,6 +751,7 @@ function SettleSection({
     return (
       <TxSuccessBanner
         txHash={txHash}
+        chainId={PREFERRED_CHAIN.id}
         message="Auction settled. NFT transferred to the winner."
         onDismiss={() => {
           reset()
@@ -1068,6 +898,7 @@ function SellerActions({
     return (
       <TxSuccessBanner
         txHash={hash}
+        chainId={PREFERRED_CHAIN.id}
         message={message}
         onDismiss={() => {
           resetCancel()

@@ -750,6 +750,45 @@ export async function getActivityFeed(
 
          UNION ALL
 
+         -- Mint protocol (mint.vv.xyz) editions. Worker-scanned into
+         -- public.artist_tokens (platform='mint'), gated on known_artists. Same
+         -- connection reaches public directly; mint_time is the first mint's
+         -- block time (precomputed so this branch is a partial-index scan). The
+         -- lateral join surfaces the first mint's recipient as the counterparty
+         -- (the collector who minted) — the row reads "<minter> minted <token>
+         -- by <artist>", with the artist (creator) as the trailing credit. The
+         -- lateral is a single indexed lookup per row (token_1155_mints is keyed
+         -- on (contract, token_id, block_number)).
+         (SELECT
+            'mint'::text,
+            ('vvmint:' || at.contract || ':' || at.token_id)::text,
+            at.mint_time::text,
+            at.artist::text,
+            m.to_addr::text,
+            at.contract::text,
+            at.token_id::text,
+            NULL::text,
+            NULL::text,
+            NULL::text,
+            NULL::text,
+            NULL::text,
+            NULL::text,
+            NULL::text
+          FROM artist_tokens at
+          JOIN LATERAL (
+            SELECT to_addr
+            FROM token_1155_mints tm
+            WHERE tm.contract = at.contract AND tm.token_id = at.token_id
+            ORDER BY tm.block_number ASC, tm.log_index ASC
+            LIMIT 1
+          ) m ON true
+          WHERE at.platform = 'mint' AND at.mint_time IS NOT NULL
+            ${branchFilter("at.mint_time")}
+          ORDER BY at.mint_time DESC
+          LIMIT ${PER_SUBQUERY_LIMIT})
+
+         UNION ALL
+
          (SELECT
             (CASE WHEN pb.first_bid THEN 'auction.firstBid'
                   ELSE 'auction.bid' END)::text,

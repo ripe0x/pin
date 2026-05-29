@@ -7,6 +7,7 @@ import { AuctionPanel } from "@/components/auction/AuctionPanel"
 import { MoreFromContractSection } from "@/components/auction/MoreFromContract"
 import { StartAuctionCTA } from "@/components/auction/StartAuctionCTA"
 import { RefreshMetadataButton } from "@/components/token/RefreshMetadataButton"
+import { MintEditionCTA } from "@/components/token/MintEditionCTA"
 import { TokenMedia } from "@/components/token/TokenMedia"
 import {
   getErc1155TokenStats,
@@ -14,6 +15,7 @@ import {
   resolveTokenMetadataDirect,
   tokenExistsOnChain,
 } from "@/lib/onchain-discovery"
+import { getMintEditionInfo } from "@/lib/reads"
 import { getAuctionForToken, type AuctionState } from "@/lib/auctions"
 import { getSettledAuctionForToken } from "@/lib/indexer-queries"
 import { SettledAuctionSummary } from "@/components/auction/SettledAuctionSummary"
@@ -40,10 +42,13 @@ const getTokenPageData = cache(async (handle: string, tokenId: string) => {
   // Fetch metadata, ERC721 on-chain data, and ERC1155 stats in parallel.
   // ERC1155 returns null on ERC721 contracts (and vice-versa for the ERC721
   // path), so we naturally end up with whichever standard the token uses.
-  const [meta, onChainData, erc1155] = await Promise.all([
+  const [meta, onChainData, erc1155, mintInfo] = await Promise.all([
     resolveTokenMetadataDirect(contract, tokenId),
     getTokenOnChainData(contract, tokenId).catch(() => null),
     getErc1155TokenStats(contract, tokenId).catch(() => null),
+    // Postgres lookup (no chain read) — non-null only for a worker-indexed Mint
+    // edition, which gates the live mint CTA below.
+    getMintEditionInfo(contract, tokenId).catch(() => null),
   ])
 
   const imageUrl = meta?.image
@@ -138,6 +143,10 @@ const getTokenPageData = cache(async (handle: string, tokenId: string) => {
     isErc1155,
     edition: isErc1155 ? erc1155!.totalSupply : null,
     ownerCount: isErc1155 ? erc1155!.ownerCount : null,
+    // Mint protocol edition: surface the first-mint time so the client CTA can
+    // derive the 24h window (closeAt = mintTime + 24h) without a chain read.
+    isMint: !!mintInfo,
+    mintTime: mintInfo?.mintTime ?? null,
   }
 })
 
@@ -352,6 +361,17 @@ export default async function TokenPage({
               nftContract={data.contract as `0x${string}`}
               tokenId={tokenId}
               tokenTitle={data.title}
+            />
+          )}
+
+          {/* Live mint — Mint protocol (mint.vv.xyz) editions, while the 24h
+              window is open. Derives the window from mintTime; the contract
+              enforces the real close. */}
+          {data.isMint && data.mintTime != null && (
+            <MintEditionCTA
+              contract={data.contract as `0x${string}`}
+              tokenId={tokenId}
+              mintTime={data.mintTime}
             />
           )}
 

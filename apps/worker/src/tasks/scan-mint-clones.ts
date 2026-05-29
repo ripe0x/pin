@@ -26,6 +26,24 @@ export async function scanMintClones(): Promise<TaskResult> {
      JOIN known_artists k ON k.address = lower(c.address)`,
   )) as Array<{ artist: string; contract: string; deploy_block: string }>
 
+  // Backfill mint_time for editions scanned before the column existed. Pure
+  // Postgres (first mint's block_time from token_1155_mints) — no RPC. Gated on
+  // mint_time IS NULL, so it's a no-op once drained.
+  await sql`
+    UPDATE artist_tokens at
+    SET mint_time = sub.min_bt
+    FROM (
+      SELECT contract, token_id, MIN(block_time) AS min_bt
+      FROM token_1155_mints
+      GROUP BY contract, token_id
+    ) sub
+    WHERE at.contract = sub.contract
+      AND at.token_id = sub.token_id
+      AND at.platform = ${PLATFORM}
+      AND at.mint_time IS NULL
+      AND sub.min_bt IS NOT NULL
+  `
+
   let totalRpc = 0
   let totalRows = 0
 
