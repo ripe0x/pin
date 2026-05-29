@@ -69,8 +69,16 @@ Flow (`/muri`, `components/muri/MuriMintFlow.tsx`):
   against the real extension ABI (validates the nested tuple) for both 721/1155.
 - The `getArtwork` ABI + `TokenDataInitialized` topic were checked against live
   mainnet MURI tokens.
-- End-to-end mint verification needs a Manifold-admin wallet on a mainnet fork
-  (the on-chain write path).
+- The on-chain mint write path is verified against an Anvil mainnet fork by
+  `apps/web/scripts/muri-fork-mint-test.mjs` (impersonates a Manifold admin and
+  runs registerExtension -> registerContract -> mint for both ERC721 and
+  ERC1155, asserting MURI stored the fallback URIs and the token metadata
+  routes through MURI's renderer). Run:
+
+  ```
+  ~/.foundry/bin/anvil --fork-url https://ethereum-rpc.publicnode.com --silent &
+  node --experimental-strip-types apps/web/scripts/muri-fork-mint-test.mjs
+  ```
 
 ## Not done yet
 
