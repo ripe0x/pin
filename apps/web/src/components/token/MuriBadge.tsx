@@ -7,7 +7,7 @@ function truncateHash(hash: string): string {
 }
 
 /**
- * Token-page section: surfaces a token's MURI on-chain preservation state
+ * Token-page section: surfaces a token's MURI onchain preservation state
  * (fallback URI count + integrity hash). Reads come from Postgres
  * (muri_tokens) — no live RPC. Render only when the overlay is non-null.
  */
@@ -24,7 +24,7 @@ export function MuriPreservationSection({
       </h3>
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
         <dt className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-          On-chain
+          Onchain
         </dt>
         <dd className="text-[10px] font-mono">
           MURI · {fallbacks} fallback{fallbacks === 1 ? "" : "s"}
@@ -45,7 +45,7 @@ export function MuriPreservationSection({
       </dl>
       <p className="mt-3 text-[10px] leading-relaxed text-gray-400">
         This artwork keeps {fallbacks} fallback link{fallbacks === 1 ? "" : "s"}{" "}
-        and a SHA-256 integrity hash on-chain via the MURI protocol, so it stays
+        and a SHA-256 integrity hash onchain via the MURI protocol, so it stays
         verifiable even if a source goes offline.
       </p>
     </section>
@@ -61,7 +61,7 @@ export function MuriTileBadge({ uriCount }: { uriCount: number | null }) {
   return (
     <span
       className="inline-flex items-center gap-1 rounded-full bg-black/70 px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wider text-white backdrop-blur"
-      title={`Preserved on-chain via MURI · ${uriCount} fallback${uriCount === 1 ? "" : "s"}`}
+      title={`Preserved onchain via MURI · ${uriCount} fallback${uriCount === 1 ? "" : "s"}`}
     >
       <svg
         viewBox="0 0 24 24"

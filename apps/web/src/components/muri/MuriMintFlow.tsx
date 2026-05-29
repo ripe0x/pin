@@ -84,7 +84,7 @@ function MuriMintFlowInner() {
       <h2 className="mb-1 text-sm font-medium">Choose a collection</h2>
       <p className="mb-4 text-xs text-gray-500">
         Your indexed Manifold Creator Core contracts. MURI mints a new
-        on-chain-preserved token on the one you pick. Existing tokens can&rsquo;t
+        onchain-preserved token on the one you pick. Existing tokens can&rsquo;t
         be converted.
       </p>
       {loadErr && <p className="text-xs text-red-600">{loadErr}</p>}
@@ -334,7 +334,7 @@ function MintForContract({
 
       {mint.isSuccess && (
         <Note tone="ok">
-          Minted. Your new token is preserved on-chain via MURI.{" "}
+          Minted. Your new token is preserved onchain via MURI.{" "}
           {mint.txHash && (
             <a
               className="underline"
@@ -437,7 +437,7 @@ function TxStatus({
   }, [isSuccess, onConfirmed])
   return (
     <p className="mt-2 text-[11px] text-gray-500">
-      {isReverted ? "Reverted on-chain. " : isSuccess ? "Confirmed. " : "Submitted, waiting… "}
+      {isReverted ? "Reverted onchain. " : isSuccess ? "Confirmed. " : "Submitted, waiting… "}
       <a
         className="underline"
         href={getEvmNowTxUrl(txHash)}

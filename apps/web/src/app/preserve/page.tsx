@@ -398,11 +398,11 @@ export default function PreservePage() {
           make sure your artwork stays permanently available.
         </p>
         <p className="text-sm text-gray-500">
-          Minting new work on a Manifold contract? You can preserve it on-chain
+          Minting new work on a Manifold contract? You can preserve it onchain
           from the start, with multiple fallback links and an integrity hash
           baked in.{" "}
           <Link href="/muri" className="underline hover:text-fg">
-            Mint on-chain preserved
+            Mint onchain preserved
           </Link>
           .
         </p>
