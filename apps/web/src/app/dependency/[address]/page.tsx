@@ -9,6 +9,7 @@ import { InventoryTotals } from "@/components/dependency/InventoryTotals"
 import { ContractMapTable } from "@/components/dependency/ContractMapTable"
 import { DependencyReadCard } from "@/components/dependency/DependencyReadCard"
 import { AreasToReview } from "@/components/dependency/AreasToReview"
+import { PreservationCard } from "@/components/dependency/PreservationCard"
 import { NextSteps } from "@/components/dependency/NextSteps"
 
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/
@@ -169,7 +170,20 @@ async function ScanBody({ address }: { address: Address }) {
           title="Areas to review"
           right={`${report.areasToReview.length} areas`}
         />
-        <AreasToReview areas={report.areasToReview} />
+        <AreasToReview
+          areas={report.areasToReview.filter((a) => a.id !== "preservation")}
+        />
+        {(() => {
+          const presEntry = report.areasToReview.find(
+            (a) => a.id === "preservation",
+          )
+          return presEntry ? (
+            <PreservationCard
+              entry={presEntry}
+              preservation={report.preservation}
+            />
+          ) : null
+        })()}
       </section>
 
       {report.recommendedNextSteps.length > 0 && (
