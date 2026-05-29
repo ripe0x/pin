@@ -1,28 +1,26 @@
 #!/usr/bin/env node
 /**
- * Dry-run the `probe-cid-availability` worker task against a live
- * database. Reads candidate CIDs the same way the real task does,
- * probes a bounded sample through the real public gateways, and
- * prints results.
+ * Dry-run (or write-through) the `probe-cid-availability` worker task
+ * against a live database. Reads candidate CIDs the same way the real
+ * task does, probes a bounded sample through the real public
+ * gateways, and prints results.
  *
- * Does NOT write to `cid_availability` — useful for validating the
- * task before the migration is applied to prod.
- *
- *   # Default: maglev DATABASE_URL from apps/web/.env.local, artist
- *   # 0x8469…d70, sample first 10 CIDs alphabetically.
+ *   # Read-only default — does NOT write to cid_availability:
  *   node scripts/probe-cid-dryrun.mjs
  *
- *   # Override:
- *   DATABASE_URL=postgres://... \
- *   DRY_RUN_ARTIST=0xabc... \
- *   DRY_RUN_LIMIT=20 \
- *   node scripts/probe-cid-dryrun.mjs
+ *   # Write-through: upserts each outcome into cid_availability AND
+ *   # busts the dependency-report L2 cache for the artist, so the
+ *   # next /dependency/<addr> page load picks up the new counts.
+ *   node scripts/probe-cid-dryrun.mjs --write
  *
- * If `DRY_RUN_ARTIST` is unset, the script falls back to the same
- * known_artists-gated UNION the worker uses. If it's set, the SQL is
- * scoped to that single artist so you can iterate quickly without
- * pulling every artist's CIDs each run.
+ *   # Bigger sample / different artist:
+ *   DRY_RUN_LIMIT=50 DRY_RUN_ARTIST=0xabc... \
+ *     node scripts/probe-cid-dryrun.mjs --write
+ *
+ * DATABASE_URL is read from apps/web/.env.local by default; override
+ * by exporting it (or `--env-file=`).
  */
+const WRITE = process.argv.includes("--write")
 import postgres from "postgres"
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
@@ -188,12 +186,48 @@ for (const cid of sample) {
     : `FAIL   ${results.map((r) => `${r.name}:${r.status ?? r.error ?? "?"}`).join(" | ")}`
   console.log(`  ${cid.slice(0, 20)}…  ${summary}`)
   if (winner) okCount++; else failCount++
+
+  if (WRITE) {
+    const gatewaysOk = winner ? [winner.name] : []
+    const gatewaysFailed = results.filter((r) => !r.ok).map((r) => r.name)
+    const lastStatus = results.reduce(
+      (acc, r) => (r.status !== null && r.status !== undefined ? r.status : acc),
+      null,
+    )
+    await sql`
+      INSERT INTO cid_availability
+        (cid, last_probed_at, retrievable, gateways_ok, gateways_failed, http_status)
+      VALUES
+        (${cid}, NOW(), ${!!winner},
+         ${gatewaysOk}::text[], ${gatewaysFailed}::text[], ${lastStatus})
+      ON CONFLICT (cid) DO UPDATE SET
+        last_probed_at  = NOW(),
+        retrievable     = EXCLUDED.retrievable,
+        gateways_ok     = EXCLUDED.gateways_ok,
+        gateways_failed = EXCLUDED.gateways_failed,
+        http_status     = EXCLUDED.http_status
+    `
+  }
+
   // Tiny pacing so we don't hammer any one gateway on a fast run.
   await new Promise((r) => setTimeout(r, 250))
 }
 
 console.log("")
 console.log(`Result: ${okCount} retrievable, ${failCount} failing (sample of ${sample.length})`)
-console.log("No rows written. The real task would upsert these into cid_availability.")
+if (WRITE) {
+  // Bust the dependency-report L2 cache for this artist so the next
+  // page load picks up the new cid_availability rows instead of the
+  // pre-write snapshot. The L1 (unstable_cache) also evicts on the
+  // dev server's revalidate window, but L2 lives in Postgres and
+  // would otherwise serve stale data for up to 5 minutes.
+  const key = `artist-dependency:${ARTIST.toLowerCase()}`
+  await sql`DELETE FROM cache_entries WHERE key = ${key}`
+  console.log(`Wrote ${sample.length} rows to cid_availability.`)
+  console.log(`Cleared cache_entries row for ${key}.`)
+  console.log(`Refresh /dependency/${ARTIST} to see the IPFS bar update.`)
+} else {
+  console.log("No rows written. Pass --write to also upsert and bust the report cache.")
+}
 
 await sql.end()
