@@ -10,6 +10,7 @@ import { strict as assert } from "node:assert"
 import { test } from "node:test"
 import {
   classifyUrl,
+  extractBareCid,
   fingerprintToken,
   type HostBucket,
 } from "./metadata-host.ts"
@@ -129,4 +130,66 @@ test("fingerprintToken handles all-null row as unresolved/unresolved", () => {
   })
   assert.equal(fp.metadata.bucket, "unresolved")
   assert.equal(fp.media.bucket, "unresolved")
+})
+
+// ─── extractBareCid ────────────────────────────────────────────────────────
+
+test("extractBareCid pulls v0 CID from ipfs:// scheme", () => {
+  assert.equal(
+    extractBareCid("ipfs://QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG"),
+    "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG",
+  )
+})
+
+test("extractBareCid pulls v1 CID from ipfs:// scheme", () => {
+  assert.equal(
+    extractBareCid("ipfs://bafybeigdyrztgcfa5fxlzg2dnpvvk6jrcljkfzfm5pn4llgf3xkqkyvcxe"),
+    "bafybeigdyrztgcfa5fxlzg2dnpvvk6jrcljkfzfm5pn4llgf3xkqkyvcxe",
+  )
+})
+
+test("extractBareCid strips trailing path and query", () => {
+  assert.equal(
+    extractBareCid("ipfs://QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG/metadata.json?key=v"),
+    "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG",
+  )
+})
+
+test("extractBareCid handles legacy ipfs://ipfs/<cid> form", () => {
+  assert.equal(
+    extractBareCid("ipfs://ipfs/QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG"),
+    "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG",
+  )
+})
+
+test("extractBareCid pulls CID from path gateway", () => {
+  assert.equal(
+    extractBareCid("https://ipfs.io/ipfs/QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG"),
+    "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG",
+  )
+  assert.equal(
+    extractBareCid("https://dweb.link/ipfs/bafybeigdyrztgcfa5fxlzg2dnpvvk6jrcljkfzfm5pn4llgf3xkqkyvcxe/foo.json"),
+    "bafybeigdyrztgcfa5fxlzg2dnpvvk6jrcljkfzfm5pn4llgf3xkqkyvcxe",
+  )
+})
+
+test("extractBareCid pulls CID from subdomain gateway", () => {
+  assert.equal(
+    extractBareCid("https://bafybeigdyrztgcfa5fxlzg2dnpvvk6jrcljkfzfm5pn4llgf3xkqkyvcxe.ipfs.dweb.link/meta.json"),
+    "bafybeigdyrztgcfa5fxlzg2dnpvvk6jrcljkfzfm5pn4llgf3xkqkyvcxe",
+  )
+})
+
+test("extractBareCid returns null for non-IPFS URLs", () => {
+  assert.equal(extractBareCid("https://arweave.net/abc123"), null)
+  assert.equal(extractBareCid("ar://abc123"), null)
+  assert.equal(extractBareCid("data:application/json;base64,xx"), null)
+  assert.equal(extractBareCid("https://artist.example.com/token/1.json"), null)
+  assert.equal(extractBareCid(null), null)
+  assert.equal(extractBareCid(""), null)
+})
+
+test("extractBareCid returns null when IPFS-shaped URL has no CID-shaped token", () => {
+  assert.equal(extractBareCid("ipfs://not-a-cid"), null)
+  assert.equal(extractBareCid("https://ipfs.io/ipfs/totally-bogus"), null)
 })

@@ -68,6 +68,65 @@ export function extractCid(uri: string): string | null {
   return null
 }
 
+// CIDs come in two shapes:
+//   v0: `Qm` + 44 base58 chars (length 46)
+//   v1: `b` + lowercase base32 (length 59 for the common bafy/bafk root)
+// We don't try to *validate* the multihash — we just identify the
+// prefix shape. The consumers (the preservation probe and the
+// dependency-report reader) treat anything that doesn't match as
+// non-IPFS, which is the right default.
+const CIDV0_RE = /^Qm[1-9A-HJ-NP-Za-km-z]{44}$/
+const CIDV1_RE = /^b[A-Za-z2-7]{58,}$/
+
+function looksLikeCid(token: string): boolean {
+  return CIDV0_RE.test(token) || CIDV1_RE.test(token)
+}
+
+/**
+ * Extract the BARE IPFS CID (no path / query / fragment) from a URI.
+ *
+ * Unlike `extractCid` above — which preserves the trailing path so
+ * callers can rebuild a gateway URL — this returns just the CID, so
+ * it can be used as a cache key for "is this CID retrievable?"
+ * style lookups.
+ *
+ * Recognised shapes:
+ *   ipfs://<cid>[/...]                  → <cid>
+ *   ipfs://ipfs/<cid>[/...]             → <cid>  (Foundation double-prefix)
+ *   https://<gateway>/ipfs/<cid>[/...]  → <cid>  (path gateway)
+ *   https://<cid>.ipfs.<gateway>/...    → <cid>  (subdomain gateway)
+ *
+ * Returns null for non-IPFS URIs or URIs whose CID-shaped slot fails
+ * the v0 / v1 shape check. Pure function; no I/O.
+ */
+export function extractBareCid(uri: string | null): string | null {
+  if (!uri) return null
+  const trimmed = uri.trim()
+  if (!trimmed) return null
+
+  const ipfsScheme = /^ipfs:\/\/(?:ipfs\/)?([^/?#]+)/i.exec(trimmed)
+  if (ipfsScheme) return looksLikeCid(ipfsScheme[1]) ? ipfsScheme[1] : null
+
+  if (!/^https?:\/\//i.test(trimmed)) return null
+
+  let parsed: URL
+  try {
+    parsed = new URL(trimmed)
+  } catch {
+    return null
+  }
+
+  // Subdomain gateway: <cid>.ipfs.<rest>
+  const subdomain = /^([^.]+)\.ipfs\./i.exec(parsed.hostname)
+  if (subdomain && looksLikeCid(subdomain[1])) return subdomain[1]
+
+  // Path gateway: /ipfs/<cid>/...
+  const pathMatch = /^\/ipfs\/([^/?#]+)/i.exec(parsed.pathname)
+  if (pathMatch && looksLikeCid(pathMatch[1])) return pathMatch[1]
+
+  return null
+}
+
 /**
  * Extract the IPNS name (+ optional path) from a URI.
  *
