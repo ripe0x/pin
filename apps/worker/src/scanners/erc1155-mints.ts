@@ -96,12 +96,16 @@ export async function scanErc1155MintsFromZero(
     for (const log of singles) {
       if (log.args.id === undefined) continue
       const tokenId = log.args.id.toString()
+      // Resolve the block time first so the artist_tokens row can carry
+      // mint_time (first mint wins via ON CONFLICT DO NOTHING). Reuses the
+      // cached block timestamp the mint-history row needs anyway — no extra RPC.
+      const ts = await blockTimeFor(log.blockNumber!)
       await sql`
         INSERT INTO artist_tokens
-          (artist, contract, token_id, platform, mint_block, mint_log_index, first_seen_at)
+          (artist, contract, token_id, platform, mint_block, mint_log_index, mint_time, first_seen_at)
         VALUES
           (${artist}, ${contract}, ${tokenId}, ${platform},
-           ${log.blockNumber!.toString()}::bigint, ${log.logIndex!}, NOW())
+           ${log.blockNumber!.toString()}::bigint, ${log.logIndex!}, ${ts.toString()}::bigint, NOW())
         ON CONFLICT (contract, token_id) DO NOTHING
       `
       rowsWritten += 1
@@ -109,7 +113,6 @@ export async function scanErc1155MintsFromZero(
       // times, so this is one row per mint event (PK includes log_index), not
       // deduped by tokenId — that's what drives edition supply (Σ amount) and
       // the mint timeline. value is the number of copies minted.
-      const ts = await blockTimeFor(log.blockNumber!)
       await sql`
         INSERT INTO token_1155_mints
           (contract, token_id, to_addr, amount, block_number, block_time, tx_hash, log_index)
@@ -142,10 +145,10 @@ export async function scanErc1155MintsFromZero(
         const tokenId = ids[i].toString()
         await sql`
           INSERT INTO artist_tokens
-            (artist, contract, token_id, platform, mint_block, mint_log_index, first_seen_at)
+            (artist, contract, token_id, platform, mint_block, mint_log_index, mint_time, first_seen_at)
           VALUES
             (${artist}, ${contract}, ${tokenId}, ${platform},
-             ${log.blockNumber!.toString()}::bigint, ${log.logIndex!}, NOW())
+             ${log.blockNumber!.toString()}::bigint, ${log.logIndex!}, ${ts.toString()}::bigint, NOW())
           ON CONFLICT (contract, token_id) DO NOTHING
         `
         rowsWritten += 1

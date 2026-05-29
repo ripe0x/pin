@@ -394,6 +394,47 @@ export async function getLastSale(
   }
 }
 
+// ─── Mint protocol editions ──────────────────────────────────────────────
+
+export type MintEditionInfo = {
+  /** Known artist (creator) who deployed the edition. */
+  artist: string
+  /**
+   * Unix seconds of the first mint. The live mint window closes 24h after
+   * the edition was created; we derive `closeAt = mintTime + 86400` rather
+   * than read the immutable `mintOpenUntil(tokenId)` on-chain (zero RPC). The
+   * contract still enforces the true window, so a stale-edge mint reverts.
+   */
+  mintTime: number | null
+}
+
+/**
+ * Mint-protocol (mint.vv.xyz) edition info for the token page, if the token is
+ * a worker-scanned Mint edition (i.e. by a known artist). Returns null for any
+ * other token — non-Mint, or a Mint edition by a non-indexed artist — in which
+ * case the page renders without the live mint CTA.
+ */
+export async function getMintEditionInfo(
+  contract: string,
+  tokenId: string,
+): Promise<MintEditionInfo | null> {
+  if (!sql) return null
+  const rows = (await sql`
+    SELECT artist, mint_time::text AS mint_time
+    FROM artist_tokens
+    WHERE contract = ${contract.toLowerCase()}
+      AND token_id = ${tokenId}
+      AND platform = 'mint'
+    LIMIT 1
+  `) as Array<{ artist: string; mint_time: string | null }>
+  const row = rows[0]
+  if (!row) return null
+  return {
+    artist: row.artist,
+    mintTime: row.mint_time === null ? null : Number(row.mint_time),
+  }
+}
+
 // ─── Platform stats (home page counters) ─────────────────────────────────
 
 export async function getPlatformStats(): Promise<{

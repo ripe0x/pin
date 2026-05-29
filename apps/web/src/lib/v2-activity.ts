@@ -27,13 +27,16 @@ function truncateAddress(address: string): string {
 }
 
 /**
- * Bid events flip subject/object in the row template — the bidder is
- * the actor. Resolve their identity so the headline reads "<bidder.eth>
- * bid 0.1 ETH on <token> by <artist.eth>" instead of a truncated 0x.
+ * Events where the counterparty is the headline actor (not the artist), so
+ * we resolve its identity. Bid events: the bidder ("<bidder.eth> bid 0.1 ETH
+ * on <token> by <artist.eth>"). Mint open-editions: the collector who minted
+ * ("<minter.eth> minted <token> by <artist.eth>"). Foundation 1/1 mints carry
+ * no counterparty, so they fall back to the artist-as-subject template.
  */
-const BIDDER_AS_SUBJECT_KINDS = new Set<ActivityEvent["kind"]>([
+const COUNTERPARTY_ACTOR_KINDS = new Set<ActivityEvent["kind"]>([
   "auction.firstBid",
   "auction.bid",
+  "mint",
 ])
 
 export async function enrichActivityEvents(
@@ -45,7 +48,7 @@ export async function enrichActivityEvents(
   const addressPool = new Set<string>()
   for (const e of events) {
     addressPool.add(e.artist.toLowerCase())
-    if (BIDDER_AS_SUBJECT_KINDS.has(e.kind) && e.counterparty) {
+    if (COUNTERPARTY_ACTOR_KINDS.has(e.kind) && e.counterparty) {
       addressPool.add(e.counterparty.toLowerCase())
     }
   }
@@ -86,7 +89,7 @@ export async function enrichActivityEvents(
       const artistId = identities.get(event.artist.toLowerCase())
 
       const counterpartyId =
-        BIDDER_AS_SUBJECT_KINDS.has(event.kind) && event.counterparty
+        COUNTERPARTY_ACTOR_KINDS.has(event.kind) && event.counterparty
           ? identities.get(event.counterparty.toLowerCase())
           : null
 

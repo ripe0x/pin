@@ -54,18 +54,31 @@ export function ActivityRow({ event }: Props) {
   const isBidEvent =
     event.kind === "auction.firstBid" || event.kind === "auction.bid"
 
-  // The "actor" is the headline subject — the bidder on bid events, the
-  // artist otherwise. Its avatar (or zorb fallback) is shown as a small
+  // Mint open-edition: the collector who minted is the headline actor and the
+  // artist (creator) gets a trailing "by" credit. Only when the minter is known
+  // AND isn't the artist themselves — a creator-minted-first edition would read
+  // redundantly ("X minted … by X"), so those fall back to artist-as-subject.
+  const isMinterEvent =
+    event.kind === "mint" &&
+    !!event.counterparty &&
+    event.counterparty.toLowerCase() !== event.artist.toLowerCase()
+
+  // When the counterparty is the actor (bid or open-edition mint), the row's
+  // subject + corner PFP badge follow the counterparty; otherwise the artist.
+  const counterpartyIsActor =
+    (isBidEvent || isMinterEvent) && !!event.counterparty
+
+  // The "actor" is the headline subject — the bidder/minter on those events,
+  // the artist otherwise. Its avatar (or zorb fallback) is shown as a small
   // corner badge over the artwork so each row reads as "this person ↔ this
   // work" at a glance.
-  const actorAddress =
-    isBidEvent && event.counterparty ? event.counterparty : event.artist
-  const actorAvatarUrl =
-    isBidEvent && event.counterparty ? counterpartyAvatarUrl : artistAvatarUrl
-  const actorName =
-    isBidEvent && event.counterparty
-      ? counterpartyDisplayName ?? truncateAddress(event.counterparty)
-      : artistDisplayName
+  const actorAddress = counterpartyIsActor ? event.counterparty! : event.artist
+  const actorAvatarUrl = counterpartyIsActor
+    ? counterpartyAvatarUrl
+    : artistAvatarUrl
+  const actorName = counterpartyIsActor
+    ? counterpartyDisplayName ?? truncateAddress(event.counterparty!)
+    : artistDisplayName
   const actorHref = `/artist/${actorAddress}`
 
   return (
@@ -147,6 +160,17 @@ export function ActivityRow({ event }: Props) {
                 artistDisplayName={artistDisplayName}
                 tokenHref={tokenHref}
                 tokenTitle={tokenTitle}
+              />
+            ) : isMinterEvent && event.counterparty ? (
+              <MintHeadline
+                minterHref={`/artist/${event.counterparty}`}
+                minterDisplayName={
+                  counterpartyDisplayName ?? truncateAddress(event.counterparty)
+                }
+                tokenHref={tokenHref}
+                tokenTitle={tokenTitle}
+                artistHref={artistHref}
+                artistDisplayName={artistDisplayName}
               />
             ) : (
               <>
@@ -241,6 +265,58 @@ function BidHeadline({
         {" "}
         bid{event.amountWei !== null ? ` ${formatEth(event.amountWei)}` : ""} on{" "}
       </span>
+      {tokenTitle ? (
+        tokenHref ? (
+          <Link
+            href={tokenHref}
+            className="text-fg hover:underline underline-offset-2"
+          >
+            {tokenTitle}
+          </Link>
+        ) : (
+          <span>{tokenTitle}</span>
+        )
+      ) : null}
+      <span className="text-gray-500"> by </span>
+      <Link
+        href={artistHref}
+        className="font-medium hover:underline underline-offset-2"
+      >
+        {artistDisplayName}
+      </Link>
+    </>
+  )
+}
+
+/**
+ * Minter-as-subject headline for open-edition mints. Reads
+ * "<minter> minted <token> by <artist>" — the collector who minted is the
+ * grammatical subject and the creator gets the trailing "by …" credit.
+ */
+function MintHeadline({
+  minterHref,
+  minterDisplayName,
+  tokenHref,
+  tokenTitle,
+  artistHref,
+  artistDisplayName,
+}: {
+  minterHref: string
+  minterDisplayName: string
+  tokenHref: string | null
+  tokenTitle: string | null
+  artistHref: string
+  artistDisplayName: string
+}) {
+  return (
+    <>
+      <Link
+        href={minterHref}
+        className="font-medium hover:underline underline-offset-2"
+      >
+        {minterDisplayName}
+      </Link>
+      <span className="text-gray-500"> minted </span>
       {tokenTitle ? (
         tokenHref ? (
           <Link

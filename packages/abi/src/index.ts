@@ -6,3 +6,4 @@ export { sovereignAuctionHouseFactoryAbi } from "./sovereignAuctionHouseFactory.
 export { superrareBazaarAbi } from "./superrareBazaar.ts"
 export { transientAuctionHouseAbi } from "./transientAuctionHouse.ts"
 export { catalogAbi } from "./catalog.ts"
+export { mintEditionAbi } from "./mintEdition.ts"
