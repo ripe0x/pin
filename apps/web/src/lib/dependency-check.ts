@@ -26,6 +26,7 @@ import {
 } from "./artist-inventory"
 import { getCatalog, type Catalog } from "./catalog"
 import type { PlatformId } from "./platforms/types"
+import { classifyUrl, type HostBucket } from "./metadata-host"
 
 /**
  * Assemble the Artist Dependency Report.
@@ -94,6 +95,14 @@ export type PlatformCoverage = {
   errors: PlatformError[]
 }
 
+export type DisplayPathSummary = {
+  totalIndexed: number
+  totalWithMetadata: number
+  metadataByBucket: Record<HostBucket, number>
+  mediaByBucket: Record<HostBucket, number>
+  topCentralizedHosts: Array<{ host: string; count: number }>
+}
+
 export type DependencyReport = {
   identity: SerializedIdentity
   inventoryTotals: InventoryTotals
@@ -102,6 +111,7 @@ export type DependencyReport = {
   areasToReview: AreaEntry[]
   recommendedNextSteps: NextStep[]
   platformCoverage: PlatformCoverage
+  displayPath: DisplayPathSummary
   generatedAt: number
   indexerHealthy: boolean
 }
@@ -120,6 +130,115 @@ async function tryIndexer<T>(
   } catch {
     return { ok: false }
   }
+}
+
+const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+  /[^a-zA-Z0-9_]/g, "",
+)
+
+const TOP_CENTRALIZED_HOSTS = 5
+
+function emptyBucketCounts(): Record<HostBucket, number> {
+  return { ipfs: 0, arweave: 0, onchain: 0, centralized: 0, unresolved: 0 }
+}
+
+function emptyDisplayPathSummary(): DisplayPathSummary {
+  return {
+    totalIndexed: 0,
+    totalWithMetadata: 0,
+    metadataByBucket: emptyBucketCounts(),
+    mediaByBucket: emptyBucketCounts(),
+    topCentralizedHosts: [],
+  }
+}
+
+/**
+ * Display-path summary: classify every indexed token's metadata URL
+ * and media URL into a HostBucket, count by bucket, and surface the
+ * top centralized hosts. Pure SQL — the worker has already pre-resolved
+ * `token_metadata` for every token whose creator is in known_artists.
+ *
+ * Single query UNION-shaped exactly like `reads.ts:getArtistTokens` so
+ * the source-of-truth for "what tokens does this artist have" stays in
+ * one place: worker `artist_tokens` + Ponder `fnd_artist_tokens` +
+ * Ponder `srv2_artist_tokens`. Joined LEFT to `token_metadata` so
+ * `totalIndexed - totalWithMetadata` gives "still warming."
+ */
+async function getDisplayPathSummary(
+  addrLower: string,
+): Promise<DisplayPathSummary> {
+  if (!sql) return emptyDisplayPathSummary()
+
+  let rows: Array<{
+    raw_uri: string | null
+    image_url: string | null
+    animation_url: string | null
+    has_metadata: boolean
+  }>
+  try {
+    rows = (await sql.unsafe(
+      `WITH refs AS (
+         SELECT lower(contract) AS contract, token_id
+         FROM artist_tokens WHERE artist = $1
+         UNION
+         SELECT lower(contract), token_id::text
+         FROM ${INDEXER_SCHEMA}.fnd_artist_tokens WHERE lower(creator) = $1
+         UNION
+         SELECT lower(contract), token_id::text
+         FROM ${INDEXER_SCHEMA}.srv2_artist_tokens WHERE lower(creator) = $1
+       )
+       SELECT m.raw_uri, m.image_url, m.animation_url,
+              (m.contract IS NOT NULL) AS has_metadata
+       FROM refs r
+       LEFT JOIN token_metadata m
+         ON m.contract = r.contract AND m.token_id = r.token_id`,
+      [addrLower],
+    )) as Array<{
+      raw_uri: string | null
+      image_url: string | null
+      animation_url: string | null
+      has_metadata: boolean
+    }>
+  } catch {
+    // Indexer schema not ready (fresh deploy) or transient DB blip —
+    // return an empty summary so the area renders as `NotYet` rather
+    // than crashing the whole report.
+    return emptyDisplayPathSummary()
+  }
+
+  const summary = emptyDisplayPathSummary()
+  summary.totalIndexed = rows.length
+
+  const centralizedHostCounts = new Map<string, number>()
+
+  for (const r of rows) {
+    if (r.has_metadata) summary.totalWithMetadata++
+
+    const metaClass = classifyUrl(r.raw_uri)
+    summary.metadataByBucket[metaClass.bucket]++
+    if (metaClass.bucket === "centralized" && metaClass.host) {
+      centralizedHostCounts.set(
+        metaClass.host,
+        (centralizedHostCounts.get(metaClass.host) ?? 0) + 1,
+      )
+    }
+
+    const mediaClass = classifyUrl(r.image_url ?? r.animation_url)
+    summary.mediaByBucket[mediaClass.bucket]++
+    if (mediaClass.bucket === "centralized" && mediaClass.host) {
+      centralizedHostCounts.set(
+        mediaClass.host,
+        (centralizedHostCounts.get(mediaClass.host) ?? 0) + 1,
+      )
+    }
+  }
+
+  summary.topCentralizedHosts = [...centralizedHostCounts.entries()]
+    .map(([host, count]) => ({ host, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, TOP_CENTRALIZED_HOSTS)
+
+  return summary
 }
 
 async function listingsWithTimeout(
@@ -323,6 +442,26 @@ type AreaInputs = {
   listings: { ok: true; value: SellerListingsPayload } | { ok: false }
   ensUrl: string | null
   platformErrors: PlatformError[]
+  displayPath: DisplayPathSummary
+}
+
+function formatBucketCounts(counts: Record<HostBucket, number>): string {
+  // Order matters for the rendered summary: IPFS first (the artist-
+  // facing "good" bucket), then arweave, on-chain, centralized,
+  // unresolved. Skip zero buckets to keep the line tight.
+  const parts: string[] = []
+  const order: Array<[HostBucket, string]> = [
+    ["ipfs", "IPFS"],
+    ["arweave", "Arweave"],
+    ["onchain", "on-chain"],
+    ["centralized", "centralized"],
+    ["unresolved", "unresolved"],
+  ]
+  for (const [bucket, label] of order) {
+    const n = counts[bucket]
+    if (n > 0) parts.push(`${n} ${label}`)
+  }
+  return parts.join(", ")
 }
 
 function buildAreasToReview(inputs: AreaInputs): AreaEntry[] {
@@ -346,17 +485,47 @@ function buildAreasToReview(inputs: AreaInputs): AreaEntry[] {
         : "PND did not identify any contracts connected to this wallet.",
   })
 
-  // 2. Display path — needs per-token metadata; deferred.
-  areas.push({
-    id: "display-path",
-    title: "Display path",
-    status: "NotYet",
-    canCheckNow: false,
-    summary:
-      "PND has not yet identified where metadata and media for each token live.",
-    whatWouldHelp:
-      "Per-token tokenURI reads plus metadata host classification (planned).",
-  })
+  // 2. Display path — classify where every indexed token's metadata
+  //    and media live. Pure SQL over the worker-warmed
+  //    `token_metadata` table; no RPC.
+  const dp = inputs.displayPath
+  if (dp.totalIndexed === 0) {
+    areas.push({
+      id: "display-path",
+      title: "Display path",
+      status: "NotYet",
+      canCheckNow: false,
+      summary: "PND hasn't indexed tokens for this wallet.",
+      whatWouldHelp:
+        "Per-token tokenURI reads plus metadata host classification (planned).",
+    })
+  } else if (dp.totalWithMetadata === 0) {
+    areas.push({
+      id: "display-path",
+      title: "Display path",
+      status: "Unable",
+      canCheckNow: false,
+      summary:
+        "PND has indexed tokens but metadata hasn't resolved yet.",
+    })
+  } else {
+    const metaLine = formatBucketCounts(dp.metadataByBucket)
+    const mediaLine = formatBucketCounts(dp.mediaByBucket)
+    const topHost = dp.topCentralizedHosts[0]
+    const topHostNote =
+      dp.metadataByBucket.centralized + dp.mediaByBucket.centralized > 0 &&
+      topHost
+        ? ` (top: ${topHost.host})`
+        : ""
+    areas.push({
+      id: "display-path",
+      title: "Display path",
+      status: "Checked",
+      canCheckNow: true,
+      summary:
+        `Metadata: ${metaLine}${topHostNote}. Media: ${mediaLine}.`,
+    })
+  }
 
   // 3. Sale path — derived from sales history, active listings, and the
   //    artist's Sovereign house presence.
@@ -480,7 +649,7 @@ export async function buildDependencyReport(
 ): Promise<DependencyReport> {
   const addrLower = address.toLowerCase()
 
-  // Six parallel calls against a `max:2` Postgres pool — keep this list
+  // Parallel calls against a `max:2` Postgres pool — keep this list
   // tight. Anything not feeding the new report shape gets dropped.
   // Active-auction/listing counts that v1 surfaced as separate cards are
   // now reflected in the sale-path area via the seller-listings payload.
@@ -493,6 +662,7 @@ export async function buildDependencyReport(
     listings,
     ensUrl,
     registryRecord,
+    displayPath,
   ] = await Promise.all([
     getArtistIdentity(address),
     tryIndexer(() => getArtistContractMap(addrLower)),
@@ -510,6 +680,7 @@ export async function buildDependencyReport(
       tokens: [],
       tokenRanges: [],
     })),
+    getDisplayPathSummary(addrLower).catch(() => emptyDisplayPathSummary()),
   ])
 
   // The set of contract addresses the artist has personally declared
@@ -539,6 +710,7 @@ export async function buildDependencyReport(
     listings,
     ensUrl,
     platformErrors: inventory.platformErrors,
+    displayPath,
   })
   const recommendedNextSteps = buildNextSteps({
     map: contractMap,
@@ -580,6 +752,7 @@ export async function buildDependencyReport(
       covered,
       errors: inventory.platformErrors,
     },
+    displayPath,
     generatedAt: Math.floor(Date.now() / 1000),
     indexerHealthy,
   }
