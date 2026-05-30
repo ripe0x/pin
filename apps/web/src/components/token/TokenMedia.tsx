@@ -96,11 +96,17 @@ export function TokenMedia({
   }
 
   if (kind === "html") {
-    // HTML animation_url is on-chain interactive art. Sandbox blocks the
-    // iframe from same-origin access (no parent DOM, no cookies) but lets
-    // its own scripts run — the standard pattern OpenSea/Zora use. The
-    // viewer has no idea what aspect ratio the art expects, so default to
-    // square scaled to viewport.
+    // HTML animation_url is on-chain interactive art (e.g. Mint protocol's
+    // gzip-packed p5 sketches). Sandbox blocks the iframe from same-origin
+    // access (no parent DOM, no cookies) but lets its own scripts run — the
+    // standard pattern OpenSea/Zora use.
+    //
+    // Size with EXPLICIT width + height. An iframe has no intrinsic content
+    // size, so `aspect-square h-[80vh]` (the previous sizing) collapsed to
+    // 0×0 as a flex child — the art ran but had no box to paint into, so the
+    // `bg-black` fill showed as a black canvas. Pinning both dimensions to
+    // 80vh keeps it square on desktop; `max-w-full` lets it shrink to fit a
+    // narrow viewport (the art canvas self-centers inside).
     return (
       <iframe
         src={media.src}
@@ -108,7 +114,7 @@ export function TokenMedia({
         sandbox="allow-scripts"
         loading="lazy"
         referrerPolicy="no-referrer"
-        className="aspect-square h-[80vh] max-h-[80vh] max-w-full bg-black"
+        className="h-[80vh] w-[80vh] max-h-[80vh] max-w-full bg-black"
       />
     )
   }
