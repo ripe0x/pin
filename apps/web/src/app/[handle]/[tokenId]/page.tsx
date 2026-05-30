@@ -54,9 +54,20 @@ const getTokenPageData = cache(async (handle: string, tokenId: string) => {
   const imageUrl = meta?.image
     ? ipfsToHttp(meta.image)
     : "https://placehold.co/1200x1500/F2F2F2/999999?text=Artwork"
-  const animationUrl = meta?.animation_url
-    ? ipfsToHttp(meta.animation_url)
-    : null
+
+  // Mint protocol (mint.vv.xyz) editions embed their animated p5 art as a
+  // ~2.4MB `data:text/html` animation_url. Rendering that data URI directly
+  // (a) overflows Next's 2MB unstable_cache and (b) the embedded sketch's
+  // camera runs away to a black frame in our iframe. Mint serves the SAME art
+  // from its content host, which sizes + runs correctly (verified rendering
+  // token 0xba1901…/566). Point Mint tokens at that hosted renderer; the tiny
+  // URL also keeps the giant data URI out of the page payload.
+  const isMint = !!mintInfo
+  const animationUrl = isMint
+    ? `https://content.mint.vv.xyz/${contract.toLowerCase()}/tokens/${tokenId}/animation`
+    : meta?.animation_url
+      ? ipfsToHttp(meta.animation_url)
+      : null
 
   // Verification links: the canonical metadata source (tokenURI) and the
   // artwork, resolved to an HTTP gateway. `data:` URIs are inline JSON with
@@ -145,7 +156,7 @@ const getTokenPageData = cache(async (handle: string, tokenId: string) => {
     ownerCount: isErc1155 ? erc1155!.ownerCount : null,
     // Mint protocol edition: surface the first-mint time so the client CTA can
     // derive the 24h window (closeAt = mintTime + 24h) without a chain read.
-    isMint: !!mintInfo,
+    isMint,
     mintTime: mintInfo?.mintTime ?? null,
   }
 })
