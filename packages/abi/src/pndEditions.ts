@@ -8,6 +8,19 @@ export const pndEditionsAbi = [
   },
   {
     "type": "function",
+    "name": "SURFACE_SHARE_BPS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "UPGRADE_INTERFACE_VERSION",
     "inputs": [],
     "outputs": [
@@ -23,11 +36,6 @@ export const pndEditionsAbi = [
     "type": "function",
     "name": "addEdge",
     "inputs": [
-      {
-        "name": "releaseId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
       {
         "name": "edgeType",
         "type": "uint8",
@@ -84,6 +92,19 @@ export const pndEditionsAbi = [
   },
   {
     "type": "function",
+    "name": "artwork",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "balanceOf",
     "inputs": [
       {
@@ -103,28 +124,16 @@ export const pndEditionsAbi = [
   },
   {
     "type": "function",
-    "name": "contractURI",
+    "name": "config",
     "inputs": [],
     "outputs": [
       {
-        "name": "",
-        "type": "string",
-        "internalType": "string"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "createRelease",
-    "inputs": [
-      {
         "name": "cfg",
         "type": "tuple",
-        "internalType": "struct ReleaseConfig",
+        "internalType": "struct EditionConfig",
         "components": [
           {
-            "name": "defaultArtworkURI",
+            "name": "artworkURI",
             "type": "string",
             "internalType": "string"
           },
@@ -132,11 +141,6 @@ export const pndEditionsAbi = [
             "name": "price",
             "type": "uint256",
             "internalType": "uint256"
-          },
-          {
-            "name": "surfaceShareBps",
-            "type": "uint16",
-            "internalType": "uint16"
           },
           {
             "name": "supplyCap",
@@ -166,7 +170,7 @@ export const pndEditionsAbi = [
           {
             "name": "kind",
             "type": "uint8",
-            "internalType": "enum ReleaseKind"
+            "internalType": "enum EditionKind"
           },
           {
             "name": "payoutAddress",
@@ -184,16 +188,32 @@ export const pndEditionsAbi = [
             "internalType": "address"
           }
         ]
-      }
-    ],
-    "outputs": [
+      },
       {
-        "name": "releaseId",
+        "name": "status",
+        "type": "uint8",
+        "internalType": "enum EditionStatus"
+      },
+      {
+        "name": "minted",
         "type": "uint256",
         "internalType": "uint256"
       }
     ],
-    "stateMutability": "nonpayable"
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "contractURI",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -210,14 +230,8 @@ export const pndEditionsAbi = [
   },
   {
     "type": "function",
-    "name": "edgesOf",
-    "inputs": [
-      {
-        "name": "releaseId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
+    "name": "edges",
+    "inputs": [],
     "outputs": [
       {
         "name": "",
@@ -300,9 +314,66 @@ export const pndEditionsAbi = [
         "internalType": "address"
       },
       {
-        "name": "upgradeable_",
-        "type": "bool",
-        "internalType": "bool"
+        "name": "cfg",
+        "type": "tuple",
+        "internalType": "struct EditionConfig",
+        "components": [
+          {
+            "name": "artworkURI",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "price",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "supplyCap",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "mintStart",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "mintEnd",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "royaltyBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "royaltyReceiver",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "kind",
+            "type": "uint8",
+            "internalType": "enum EditionKind"
+          },
+          {
+            "name": "payoutAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "renderer",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "mintHook",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
       },
       {
         "name": "defaultRenderer_",
@@ -368,11 +439,6 @@ export const pndEditionsAbi = [
     "name": "mint",
     "inputs": [
       {
-        "name": "releaseId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
         "name": "quantity",
         "type": "uint256",
         "internalType": "uint256"
@@ -393,14 +459,8 @@ export const pndEditionsAbi = [
   },
   {
     "type": "function",
-    "name": "mintHookOf",
-    "inputs": [
-      {
-        "name": "releaseId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
+    "name": "mintHook",
+    "inputs": [],
     "outputs": [
       {
         "name": "",
@@ -427,12 +487,7 @@ export const pndEditionsAbi = [
         "internalType": "struct MintMark",
         "components": [
           {
-            "name": "releaseId",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
-            "name": "indexInRelease",
+            "name": "indexInEdition",
             "type": "uint32",
             "internalType": "uint32"
           },
@@ -444,7 +499,7 @@ export const pndEditionsAbi = [
           {
             "name": "statusAtMint",
             "type": "uint8",
-            "internalType": "enum ReleaseStatus"
+            "internalType": "enum EditionStatus"
           },
           {
             "name": "surface",
@@ -584,143 +639,8 @@ export const pndEditionsAbi = [
   },
   {
     "type": "function",
-    "name": "release",
-    "inputs": [
-      {
-        "name": "releaseId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "cfg",
-        "type": "tuple",
-        "internalType": "struct ReleaseConfig",
-        "components": [
-          {
-            "name": "defaultArtworkURI",
-            "type": "string",
-            "internalType": "string"
-          },
-          {
-            "name": "price",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "surfaceShareBps",
-            "type": "uint16",
-            "internalType": "uint16"
-          },
-          {
-            "name": "supplyCap",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "mintStart",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "mintEnd",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "royaltyBps",
-            "type": "uint16",
-            "internalType": "uint16"
-          },
-          {
-            "name": "royaltyReceiver",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum ReleaseKind"
-          },
-          {
-            "name": "payoutAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "renderer",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "mintHook",
-            "type": "address",
-            "internalType": "address"
-          }
-        ]
-      },
-      {
-        "name": "status",
-        "type": "uint8",
-        "internalType": "enum ReleaseStatus"
-      },
-      {
-        "name": "minted",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "releaseArtwork",
-    "inputs": [
-      {
-        "name": "releaseId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "string",
-        "internalType": "string"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "releaseOf",
-    "inputs": [
-      {
-        "name": "tokenId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "rendererOf",
-    "inputs": [
-      {
-        "name": "releaseId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
+    "name": "renderer",
+    "inputs": [],
     "outputs": [
       {
         "name": "",
@@ -742,7 +662,7 @@ export const pndEditionsAbi = [
     "name": "royaltyInfo",
     "inputs": [
       {
-        "name": "tokenId",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -847,14 +767,67 @@ export const pndEditionsAbi = [
     "name": "setClosing",
     "inputs": [
       {
-        "name": "releaseId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
         "name": "closing",
         "type": "bool",
         "internalType": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setDefaultPath",
+    "inputs": [
+      {
+        "name": "pathType",
+        "type": "uint8",
+        "internalType": "enum PathType"
+      },
+      {
+        "name": "target",
+        "type": "tuple",
+        "internalType": "struct Ref",
+        "components": [
+          {
+            "name": "chainId",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "contractAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "id",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "kind",
+            "type": "uint8",
+            "internalType": "enum RefKind"
+          }
+        ]
+      },
+      {
+        "name": "data",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setMintHook",
+    "inputs": [
+      {
+        "name": "hook",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -912,109 +885,10 @@ export const pndEditionsAbi = [
   },
   {
     "type": "function",
-    "name": "setProjectMintHook",
+    "name": "setRenderer",
     "inputs": [
       {
-        "name": "hook",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setProjectRenderer",
-    "inputs": [
-      {
-        "name": "renderer",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setReleaseDefaultPath",
-    "inputs": [
-      {
-        "name": "releaseId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "pathType",
-        "type": "uint8",
-        "internalType": "enum PathType"
-      },
-      {
-        "name": "target",
-        "type": "tuple",
-        "internalType": "struct Ref",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "id",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum RefKind"
-          }
-        ]
-      },
-      {
-        "name": "data",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setReleaseMintHook",
-    "inputs": [
-      {
-        "name": "releaseId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "hook",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setReleaseRenderer",
-    "inputs": [
-      {
-        "name": "releaseId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "renderer",
+        "name": "renderer_",
         "type": "address",
         "internalType": "address"
       }
@@ -1079,6 +953,19 @@ export const pndEditionsAbi = [
   },
   {
     "type": "function",
+    "name": "surfaceShareBps",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
     "name": "symbol",
     "inputs": [],
     "outputs": [
@@ -1124,19 +1011,6 @@ export const pndEditionsAbi = [
         "name": "",
         "type": "string",
         "internalType": "string"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "totalReleases",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -1260,6 +1134,19 @@ export const pndEditionsAbi = [
   },
   {
     "type": "event",
+    "name": "ClosingSet",
+    "inputs": [
+      {
+        "name": "closing",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "ConsecutiveTransfer",
     "inputs": [
       {
@@ -1291,14 +1178,55 @@ export const pndEditionsAbi = [
   },
   {
     "type": "event",
-    "name": "EdgeAdded",
+    "name": "DefaultPathSet",
     "inputs": [
       {
-        "name": "releaseId",
-        "type": "uint256",
+        "name": "pathType",
+        "type": "uint8",
         "indexed": true,
-        "internalType": "uint256"
+        "internalType": "enum PathType"
       },
+      {
+        "name": "target",
+        "type": "tuple",
+        "indexed": false,
+        "internalType": "struct Ref",
+        "components": [
+          {
+            "name": "chainId",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "contractAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "id",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "kind",
+            "type": "uint8",
+            "internalType": "enum RefKind"
+          }
+        ]
+      },
+      {
+        "name": "data",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "EdgeAdded",
+    "inputs": [
       {
         "name": "edgeType",
         "type": "uint8",
@@ -1338,6 +1266,49 @@ export const pndEditionsAbi = [
   },
   {
     "type": "event",
+    "name": "EditionConfigured",
+    "inputs": [
+      {
+        "name": "kind",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "enum EditionKind"
+      },
+      {
+        "name": "price",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "supplyCap",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "mintStart",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      },
+      {
+        "name": "mintEnd",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      },
+      {
+        "name": "artworkURI",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "Initialized",
     "inputs": [
       {
@@ -1351,14 +1322,21 @@ export const pndEditionsAbi = [
   },
   {
     "type": "event",
-    "name": "Minted",
+    "name": "MintHookSet",
     "inputs": [
       {
-        "name": "releaseId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
+        "name": "hook",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Minted",
+    "inputs": [
       {
         "name": "to",
         "type": "address",
@@ -1384,12 +1362,6 @@ export const pndEditionsAbi = [
         "internalType": "uint256"
       },
       {
-        "name": "startIndexInRelease",
-        "type": "uint32",
-        "indexed": false,
-        "internalType": "uint32"
-      },
-      {
         "name": "mintBlock",
         "type": "uint48",
         "indexed": false,
@@ -1399,7 +1371,7 @@ export const pndEditionsAbi = [
         "name": "statusAtMint",
         "type": "uint8",
         "indexed": false,
-        "internalType": "enum ReleaseStatus"
+        "internalType": "enum EditionStatus"
       }
     ],
     "anonymous": false
@@ -1478,186 +1450,8 @@ export const pndEditionsAbi = [
   },
   {
     "type": "event",
-    "name": "ProjectMintHookSet",
+    "name": "RendererSet",
     "inputs": [
-      {
-        "name": "hook",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "ProjectRendererSet",
-    "inputs": [
-      {
-        "name": "renderer",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "ReleaseClosingSet",
-    "inputs": [
-      {
-        "name": "releaseId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "closing",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "ReleaseCreated",
-    "inputs": [
-      {
-        "name": "releaseId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "kind",
-        "type": "uint8",
-        "indexed": false,
-        "internalType": "enum ReleaseKind"
-      },
-      {
-        "name": "price",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "surfaceShareBps",
-        "type": "uint16",
-        "indexed": false,
-        "internalType": "uint16"
-      },
-      {
-        "name": "supplyCap",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "mintStart",
-        "type": "uint64",
-        "indexed": false,
-        "internalType": "uint64"
-      },
-      {
-        "name": "mintEnd",
-        "type": "uint64",
-        "indexed": false,
-        "internalType": "uint64"
-      },
-      {
-        "name": "defaultArtworkURI",
-        "type": "string",
-        "indexed": false,
-        "internalType": "string"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "ReleaseDefaultPathSet",
-    "inputs": [
-      {
-        "name": "releaseId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "pathType",
-        "type": "uint8",
-        "indexed": true,
-        "internalType": "enum PathType"
-      },
-      {
-        "name": "target",
-        "type": "tuple",
-        "indexed": false,
-        "internalType": "struct Ref",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "id",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum RefKind"
-          }
-        ]
-      },
-      {
-        "name": "data",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "ReleaseMintHookSet",
-    "inputs": [
-      {
-        "name": "releaseId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "hook",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "ReleaseRendererSet",
-    "inputs": [
-      {
-        "name": "releaseId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
       {
         "name": "renderer",
         "type": "address",
@@ -1677,12 +1471,6 @@ export const pndEditionsAbi = [
     "type": "event",
     "name": "SurfacePaid",
     "inputs": [
-      {
-        "name": "releaseId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
       {
         "name": "surface",
         "type": "address",

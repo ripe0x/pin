@@ -28,7 +28,6 @@ contract MockMintHook is IPNDMintHook {
 
     function beforeMint(
         address minter,
-        uint256,
         uint256 quantity,
         uint256 firstTokenId,
         address surface,
@@ -46,7 +45,6 @@ contract MockMintHook is IPNDMintHook {
     function afterMint(
         address,
         uint256,
-        uint256,
         uint256 firstTokenId,
         address,
         bytes calldata data
@@ -60,8 +58,7 @@ contract MockMintHook is IPNDMintHook {
     }
 }
 
-/// @dev A custom renderer that ignores project state and returns fixed URIs,
-///      used to prove the project delegates to a swapped renderer.
+/// @dev A custom renderer that ignores edition state and returns fixed URIs.
 contract MockRenderer is IPNDRenderer {
     function tokenURI(uint256) external pure returns (string memory) {
         return "custom://token";
@@ -79,7 +76,7 @@ contract RevertOnReceive {
     }
 }
 
-/// @dev A v2 implementation used to prove an upgradeable project can upgrade.
+/// @dev A v2 implementation used to prove an edition can upgrade.
 contract PNDEditionsV2Mock is PNDEditions {
     function version() external pure returns (uint256) {
         return 2;

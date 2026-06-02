@@ -6,7 +6,7 @@ import {Test} from "forge-std/Test.sol";
 import {PNDEditions} from "../../src/editions/PNDEditions.sol";
 import {PNDEditionsFactory} from "../../src/editions/PNDEditionsFactory.sol";
 import {PNDDefaultRenderer} from "../../src/editions/PNDDefaultRenderer.sol";
-import {ReleaseConfig, ReleaseKind, ProjectMode} from "../../src/editions/PNDEditionsTypes.sol";
+import {EditionConfig, EditionKind} from "../../src/editions/PNDEditionsTypes.sol";
 
 /// @dev Shared deployment + helpers for the PND Editions test suite.
 contract PNDEditionsBase is Test {
@@ -25,37 +25,21 @@ contract PNDEditionsBase is Test {
         factory = new PNDEditionsFactory(address(impl), address(renderer));
     }
 
-    function _project(ProjectMode mode) internal returns (PNDEditions p) {
-        p = PNDEditions(factory.createProject("Artist Project", "APJ", artist, mode));
+    function _edition(EditionConfig memory cfg) internal returns (PNDEditions p) {
+        p = PNDEditions(factory.createEdition("Artist Edition", "AED", artist, cfg));
     }
 
-    function _immutableProject() internal returns (PNDEditions) {
-        return _project(ProjectMode.ImmutableClone);
+    /// @dev A free (gas-only) standalone edition with no cap and no window.
+    function _freeConfig() internal pure returns (EditionConfig memory cfg) {
+        cfg.artworkURI = "ipfs://QmArtwork";
+        cfg.kind = EditionKind.Standalone;
     }
 
-    /// @dev A free (gas-only) standalone release with no cap and no window.
-    function _freeReleaseConfig() internal pure returns (ReleaseConfig memory cfg) {
-        cfg.defaultArtworkURI = "ipfs://QmArtwork";
-        cfg.kind = ReleaseKind.Standalone;
-    }
-
-    /// @dev A priced release. surfaceShareBps out of the price; payout = owner.
-    function _pricedReleaseConfig(uint256 price, uint16 surfaceShareBps)
-        internal
-        pure
-        returns (ReleaseConfig memory cfg)
-    {
-        cfg.defaultArtworkURI = "ipfs://QmArtwork";
-        cfg.kind = ReleaseKind.Standalone;
+    /// @dev A priced edition. Surface share is a fixed protocol constant, not
+    ///      configurable here.
+    function _pricedConfig(uint256 price) internal pure returns (EditionConfig memory cfg) {
+        cfg.artworkURI = "ipfs://QmArtwork";
+        cfg.kind = EditionKind.Standalone;
         cfg.price = price;
-        cfg.surfaceShareBps = surfaceShareBps;
-    }
-
-    function _createRelease(PNDEditions p, ReleaseConfig memory cfg)
-        internal
-        returns (uint256 id)
-    {
-        vm.prank(artist);
-        id = p.createRelease(cfg);
     }
 }

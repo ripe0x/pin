@@ -5,7 +5,7 @@ import {Base64} from "openzeppelin-contracts/contracts/utils/Base64.sol";
 import {Strings} from "openzeppelin-contracts/contracts/utils/Strings.sol";
 
 import {IPNDRenderer, IPNDEditionsView} from "./interfaces/IPNDRenderer.sol";
-import {MintMark, ReleaseStatus} from "./PNDEditionsTypes.sol";
+import {MintMark, EditionStatus} from "./PNDEditionsTypes.sol";
 
 /// @title PNDDefaultRenderer
 /// @notice The canonical built-in renderer. Wired into every project at deploy
@@ -28,7 +28,7 @@ contract PNDDefaultRenderer is IPNDRenderer {
         MintMark memory m = ed.mintMarkOf(tokenId);
 
         string memory art = ed.tokenArtwork(tokenId);
-        if (bytes(art).length == 0) art = ed.releaseArtwork(m.releaseId);
+        if (bytes(art).length == 0) art = ed.artwork();
 
         string memory json = string.concat(
             '{"name":"',
@@ -57,9 +57,7 @@ contract PNDDefaultRenderer is IPNDRenderer {
     function _attributes(MintMark memory m) internal pure returns (string memory) {
         string memory a = string.concat(
             "[",
-            _numAttr("Release", uint256(m.releaseId)),
-            ",",
-            _numAttr("Mint Order", uint256(m.indexInRelease) + 1),
+            _numAttr("Mint Order", uint256(m.indexInEdition) + 1),
             ",",
             _numAttr("Mint Block", uint256(m.mintBlock)),
             ",",
@@ -88,9 +86,9 @@ contract PNDDefaultRenderer is IPNDRenderer {
         return string.concat('{"trait_type":"', trait, '","value":"', value, '"}');
     }
 
-    function _statusLabel(ReleaseStatus s) internal pure returns (string memory) {
-        if (s == ReleaseStatus.Open) return "Open";
-        if (s == ReleaseStatus.Closing) return "Closing";
+    function _statusLabel(EditionStatus s) internal pure returns (string memory) {
+        if (s == EditionStatus.Open) return "Open";
+        if (s == EditionStatus.Closing) return "Closing";
         return "Closed";
     }
 

@@ -19,7 +19,7 @@ export const pndEditionsFactoryAbi = [
   },
   {
     "type": "function",
-    "name": "allProjects",
+    "name": "allEditions",
     "inputs": [
       {
         "name": "",
@@ -38,7 +38,7 @@ export const pndEditionsFactoryAbi = [
   },
   {
     "type": "function",
-    "name": "createProject",
+    "name": "createEdition",
     "inputs": [
       {
         "name": "name",
@@ -56,14 +56,71 @@ export const pndEditionsFactoryAbi = [
         "internalType": "address"
       },
       {
-        "name": "mode",
-        "type": "uint8",
-        "internalType": "enum ProjectMode"
+        "name": "cfg",
+        "type": "tuple",
+        "internalType": "struct EditionConfig",
+        "components": [
+          {
+            "name": "artworkURI",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "price",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "supplyCap",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "mintStart",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "mintEnd",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "royaltyBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "royaltyReceiver",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "kind",
+            "type": "uint8",
+            "internalType": "enum EditionKind"
+          },
+          {
+            "name": "payoutAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "renderer",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "mintHook",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
       }
     ],
     "outputs": [
       {
-        "name": "project",
+        "name": "edition",
         "type": "address",
         "internalType": "address"
       }
@@ -98,7 +155,7 @@ export const pndEditionsFactoryAbi = [
   },
   {
     "type": "function",
-    "name": "isProject",
+    "name": "isEdition",
     "inputs": [
       {
         "name": "",
@@ -117,7 +174,7 @@ export const pndEditionsFactoryAbi = [
   },
   {
     "type": "function",
-    "name": "totalProjects",
+    "name": "totalEditions",
     "inputs": [],
     "outputs": [
       {
@@ -130,7 +187,7 @@ export const pndEditionsFactoryAbi = [
   },
   {
     "type": "event",
-    "name": "ProjectCreated",
+    "name": "EditionCreated",
     "inputs": [
       {
         "name": "owner",
@@ -139,39 +196,12 @@ export const pndEditionsFactoryAbi = [
         "internalType": "address"
       },
       {
-        "name": "project",
+        "name": "edition",
         "type": "address",
         "indexed": true,
         "internalType": "address"
-      },
-      {
-        "name": "mode",
-        "type": "uint8",
-        "indexed": false,
-        "internalType": "enum ProjectMode"
       }
     ],
     "anonymous": false
-  },
-  {
-    "type": "error",
-    "name": "FailedDeployment",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "InsufficientBalance",
-    "inputs": [
-      {
-        "name": "balance",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "needed",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
   }
 ] as const;
