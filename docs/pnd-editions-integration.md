@@ -45,20 +45,20 @@ At this point the web app is fully live. Steps 3–5 add Postgres-backed
 discovery so artist pages / feeds can surface PND Editions without
 onchain reads.
 
-## Step 3 — Ponder discovery (factory → projects table)
+## Step 3 — Ponder discovery (factory → editions table)
 
-The ABI is ready at `apps/indexer/abis/PNDEditionsFactory.ts`. Add:
+The ABI is ready at `apps/indexer/abis/PNDEditionsFactory.ts`. Each edition
+is one contract, so discovery is one row per edition. Add:
 
 **`apps/indexer/ponder.schema.ts`** — a discovery table (mirrors
 `mintCreators`):
 
 ```ts
-export const pndEditionsProjects = onchainTable(
-  "pnd_editions_projects",
+export const pndEditions = onchainTable(
+  "pnd_editions",
   (t) => ({
-    contract: t.hex().primaryKey(), // the project
+    contract: t.hex().primaryKey(), // the edition contract
     owner: t.hex().notNull(),       // the artist
-    mode: t.integer().notNull(),    // 0 immutable clone, 1 upgradeable
     firstSeenBlock: t.bigint().notNull(),
     firstSeenTime: t.bigint().notNull(),
     txHash: t.hex().notNull(),
@@ -68,12 +68,12 @@ export const pndEditionsProjects = onchainTable(
 ```
 
 **`apps/indexer/ponder.config.ts`** — import the ABI and register the
-factory with its real address + block:
+factory with its real address + block (from Step 1):
 
 ```ts
 import { pndEditionsFactoryAbi } from "./abis/PNDEditionsFactory"
-const PND_EDITIONS_FACTORY_ADDRESS = "0x…" as const   // from Step 1
-const PND_EDITIONS_FACTORY_DEPLOY_BLOCK = 0            // from Step 1
+const PND_EDITIONS_FACTORY_ADDRESS = "0x…" as const
+const PND_EDITIONS_FACTORY_DEPLOY_BLOCK = 0
 // inside contracts: { ... }
 PNDEditionsFactory: {
   chain: "mainnet",
@@ -87,16 +87,15 @@ PNDEditionsFactory: {
 
 ```ts
 import { ponder } from "ponder:registry"
-import { pndEditionsProjects } from "ponder:schema"
+import { pndEditions } from "ponder:schema"
 
-ponder.on("PNDEditionsFactory:ProjectCreated", async ({ event, context }) => {
-  const { owner, project, mode } = event.args
+ponder.on("PNDEditionsFactory:EditionCreated", async ({ event, context }) => {
+  const { owner, edition } = event.args
   await context.db
-    .insert(pndEditionsProjects)
+    .insert(pndEditions)
     .values({
-      contract: project,
+      contract: edition,
       owner,
-      mode: Number(mode),
       firstSeenBlock: event.block.number,
       firstSeenTime: event.block.timestamp,
       txHash: event.transaction.hash,
@@ -105,41 +104,37 @@ ponder.on("PNDEditionsFactory:ProjectCreated", async ({ event, context }) => {
 })
 ```
 
-**`known_artists` view** — UNION `pnd_editions_projects.owner` in so PND
-deployers auto-promote into the scan ceiling (same as
-`mint_creators.address`). This lives in the worker's
-`seed-known-artists` SQL.
+**`known_artists` view** — UNION `pnd_editions.owner` in so PND deployers
+auto-promote into the scan ceiling (same as `mint_creators.address`). This
+lives in the worker's `seed-known-artists` SQL.
 
 Then `pnpm --filter @pin/indexer codegen` regenerates the `ponder:*`
 virtual modules and the handler typechecks.
 
-## Step 4 — worker scan (releases → Postgres)
+## Step 4 — worker enrichment (editions → Postgres)
 
-Decision to make first (Open Question for the gallery): index at the
-**release** level, not the token level. A PND release is many ERC721
-tokens sharing artwork; one gallery row per release (like Mint's
-one-row-per-1155-id) reads cleanly, whereas one row per copy would flood
-the gallery with identical thumbnails.
+One contract == one edition, so the gallery unit is the edition (one row
+each, no per-copy flood). Add `apps/worker/src/tasks/scan-pnd-editions.ts`,
+gated on `known_artists` joined to `pnd_editions`. For each edition, read
+`config()` (artwork, price, window, status) and `totalSupply()`
+(multicalled), and upsert one row per edition into a dedicated
+`public.pnd_editions_index` table (do NOT overload `artist_tokens.token_id`
+— a dedicated table is cleaner). Register the task in
+`apps/worker/src/scheduler.ts` with `dependsOnPonder: true`.
 
-Add `apps/worker/src/tasks/scan-pnd-editions.ts`, gated on
-`known_artists` joined to `pnd_editions_projects`. For each project, read
-`totalReleases()` and each `release(i)` (multicall) and upsert one
-discovery row per release into a new `public.pnd_editions_releases` table
-(or `artist_tokens` with `platform='pnd-editions'` and `token_id =
-releaseId` if you want it in the existing gallery query — but that
-overloads `token_id`, so a dedicated table is cleaner). Register the task
-in `apps/worker/src/scheduler.ts` with `dependsOnPonder: true`.
-
-Note: do NOT reuse `scanArtistTokensViaTransferFromZero` as-is — it
-filters `to: artist`, but PND collectors mint to themselves. Read
-releases (or the `Minted` event), not per-token transfers.
+Note: for the gallery you index editions via `config()`, not per-token
+transfers, so the `to: artist` filter in
+`scanArtistTokensViaTransferFromZero` is irrelevant here. If you later want
+per-token rows (e.g. a collector page), scan the `Minted` event (it carries
+`firstTokenId` + `quantity`), since collectors mint to themselves.
 
 ## Step 5 — wire web discovery to Postgres
 
-Add a `reads.ts` function (Postgres SELECT on `pnd_editions_projects` /
-`pnd_editions_releases`) and have the `/editions` landing and the artist
-gallery prefer it, falling back to the cached onchain read. This removes
-the landing's onchain factory read once the indexer is caught up.
+Add a `reads.ts` function (Postgres SELECT on `pnd_editions` /
+`pnd_editions_index`) and have the `/editions` landing and the artist
+gallery prefer it, falling back to the cached onchain read
+(`getRecentEditions` / `getEdition`). This removes the landing's onchain
+factory read once the indexer is caught up.
 
 ## Migrations
 

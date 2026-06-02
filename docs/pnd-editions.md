@@ -1,11 +1,24 @@
 # PND Editions design plan
 
-> **Status: draft v0.1 (design only, no code yet).** This is the
-> product and protocol design for PND Editions. The companion file
-> `docs/pnd-editions-spec.md` holds the Phase 0 onchain interface spec
-> (Solidity interfaces, the Mint Mark batch model, the Release Graph and
-> Token Path schemas). Read this for the "why", read the spec for the
-> "what the contract exposes".
+> **Status: design plan (historical "why").** Two things were simplified
+> after this was written. Where they differ, `docs/pnd-editions-README.md`
+> and `docs/pnd-editions-spec.md` are authoritative:
+>
+> - **One contract == one edition.** The "project holds many releases"
+>   two-level model below was collapsed — each edition is its own ERC721A
+>   contract, created in one step. Read "release" below as "edition", and
+>   "Release Graph" as "Edition Graph".
+> - **Surface Share is a fixed 10% protocol constant, not artist-set.** It
+>   is paid to whoever hosts the mint: PND on PND, the artist on their own
+>   site (self-hosting keeps 100%). So PND does earn on PND-hosted paid
+>   mints; the "no mandatory fee" framing below is superseded by this
+>   opt-out-by-self-hosting model.
+> - **Editions are always upgradeable** (UUPS) with opt-in `seal()`; the
+>   immutable-clone option below was dropped.
+>
+> Everything else (Mint Marks, the graph, Token Path, honest pricing,
+> hooks, the swappable renderer) shipped as designed. Read this for the
+> "why", the spec for the "what the contract exposes".
 
 ## The one sentence thesis
 
