@@ -14,8 +14,12 @@ export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as cons
 
 // Mirror tx-ui's PREFERRED_CHAIN selection without importing a client module.
 const FORK_MODE = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
+// Must match wagmi.ts `forkChain` (31339) so display links / URNs agree with
+// the connected wallet. Mirrored here to keep this module server-safe (no
+// wagmi/rainbowkit import).
+const FORK_CHAIN_ID = 31339
 export const PND_CHAIN = FORK_MODE ? foundry : mainnet
-export const PND_CHAIN_ID = PND_CHAIN.id
+export const PND_CHAIN_ID = FORK_MODE ? FORK_CHAIN_ID : mainnet.id
 
 /**
  * The PNDEditionsFactory address. An env override (local Anvil dev) wins over

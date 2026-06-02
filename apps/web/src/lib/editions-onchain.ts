@@ -1,6 +1,6 @@
 import "server-only"
 import { createPublicClient, http, type Address } from "viem"
-import { foundry, mainnet } from "viem/chains"
+import { mainnet } from "viem/chains"
 import { pndEditionsAbi, pndEditionsFactoryAbi } from "@pin/abi"
 import { pgCache } from "./pg-cache"
 import {
@@ -28,10 +28,14 @@ import {
 
 const FORK_MODE = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
 
+// Always use the mainnet chain object so viem resolves the canonical
+// Multicall3 (0xcA11…). In fork mode the transport points at Anvil, which —
+// because it forks mainnet — has Multicall3 deployed at that address; viem
+// does not validate chainId on reads, so this is correct for both modes.
 function getClient() {
   if (FORK_MODE) {
     const url = process.env.NEXT_PUBLIC_ANVIL_RPC_URL || "http://127.0.0.1:8545"
-    return createPublicClient({ chain: foundry, transport: http(url) })
+    return createPublicClient({ chain: mainnet, transport: http(url) })
   }
   const explicit = process.env.ALCHEMY_MAINNET_URL
   if (explicit) return createPublicClient({ chain: mainnet, transport: http(explicit) })

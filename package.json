@@ -6,6 +6,7 @@
     "dev:web": "pnpm --filter @pin/web dev",
     "dev:indexer": "pnpm --filter @pin/indexer dev",
     "dev:worker": "pnpm --filter @pin/worker dev",
+    "dev:editions": "bash scripts/dev-editions.sh",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
