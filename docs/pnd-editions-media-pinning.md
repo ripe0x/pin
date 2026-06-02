@@ -17,12 +17,17 @@
 
 A crypto-native, mainnet-only, artist-sovereign edition protocol should
 let an artist drop in an image, get a real IPFS CID and onchain-generated
-metadata without trusting PND with their files or their money, and lean on
-the persistence machinery PND already built for `/preserve` rather than
-inventing a second pinning stack or bolting on a stablecoin payment rail
-that fights the ethos.
+metadata, and **pin it to their own account**, because the point of this
+thing is to get artists to take responsibility for their own work. PND
+never holds the bytes, never pins on the artist's behalf, and never becomes
+the safety net. PND's job is to make sovereign pinning easy and to tell the
+artist the honest truth about whether their work is actually retrievable.
+It reuses the persistence machinery already built for `/preserve` rather
+than inventing a second pinning stack, and it does not bolt on a stablecoin
+payment rail that fights the ethos.
 
-Everything below serves that sentence.
+Everything below serves that sentence. The load-bearing principle, stated
+once: **PND does not pin. The artist does.**
 
 ---
 
@@ -56,10 +61,12 @@ Three things are missing, in order of how badly they bite:
    renderer is the generator), but the create flow never says so, and
    there is no path for an artist who wants richer metadata than the
    default renderer emits (video, an `animation_url`, extra attributes).
-3. **No persistence guarantee.** Nothing checks that the pasted CID is
-   actually retrievable, nothing pins it redundantly, and nothing records
-   that it was pinned. An edition can deploy pointing at a CID that is one
-   lapsed pin away from a dead image.
+3. **No persistence signal.** Nothing checks that the pasted CID is
+   actually retrievable, and nothing records that the artist pinned it. An
+   edition can deploy pointing at a CID that is one lapsed pin away from a
+   dead image, and neither the artist nor a collector is told. The fix is
+   not for PND to pin it; the fix is for PND to make the artist pin it, and
+   to show honestly whether they did.
 
 The rest of this doc closes those three, reusing as much of the existing
 `/preserve` machinery as possible.
@@ -179,9 +186,10 @@ Model A.
 2. **Paste a CID / URI** (the existing input, kept as an escape hatch).
    For artists who already have their art on IPFS or Arweave via their own
    pipeline. This is the current behavior, unchanged, never removed.
-3. **Pin-on-deploy backstop** (section 4's hybrid): whichever of the above
-   produced the CID, PND offers to add a redundant pin on its own account
-   and to record the pin, so the art survives a lapsed artist pin.
+3. **A persistence check, not a PND pin** (section 4): whichever of the
+   above produced the CID, PND verifies it is actually retrievable and
+   records the artist's own pin (signed attestation), then shows the artist
+   the honest status. PND never adds its own pin.
 
 **Why upload-then-set-`artworkURI`, not upload-a-metadata-JSON:** in Model
 A the only artifact that needs to exist before `createEdition` is the image
@@ -199,10 +207,11 @@ but the upload primitive built here is what unblocks it later.
 
 ```
 [ Artwork ]
-  ( • ) Upload image      -> browser uploads via BYO key -> ipfs://<cid>
+  ( • ) Upload image      -> browser uploads to YOUR account -> ipfs://<cid>
   ( ) I already have a CID -> ipfs://… / ar://… (current input)
 
-  [x] Also pin a backup copy on PND (recommended)   <- section 4 hybrid
+  status: pinned to your account (4everland)   <- your pin, never PND's
+  status: retrievable via public gateway        <- PND's honest check (s.4)
 ```
 
 The metadata "generated" is the onchain JSON. The doc-level point to make
@@ -211,94 +220,92 @@ read. There is no JSON file to host or lose; you only host the image."
 
 ---
 
-## 4. Pinning and who pays
+## 4. Pinning: the artist's responsibility, not PND's
 
-Three models, evaluated against PND's ethos (sovereignty, mainnet-only,
-honest costs) and against what is already built.
+The governing decision: **PND does not pin editions media.** The goal of
+the protocol is to get artists to take responsibility for their own work,
+so the only pinning model is the artist's own pin. PND makes that pin easy,
+verifies it, and reports it honestly, and stops there. What follows is the
+one model that is in, the option rejected on principle, and the option
+rejected on fit.
 
-### Option 1: Artist self-pins (BYO key, or bring a CID)
+### The model: artist self-pins (in)
 
-The artist supplies their own pinning provider key (Pinata, 4everland,
-Storacha/web3.storage, or Arweave), the file goes browser-to-provider, the
-key never touches PND. This is **exactly the `/preserve` model already in
-the repo** (`apps/web/src/lib/pinning/*`, key "stays in your browser ...
-never touches our servers"), just pointed at upload instead of re-pin.
+The artist's media goes to **their own** pinning account: Pinata,
+4everland, Storacha (web3.storage), or Arweave. The bytes go
+browser-to-provider; the credential never touches PND. This is **exactly
+the `/preserve` model already in the repo** (`apps/web/src/lib/pinning/*`,
+the key "stays in your browser ... never touches our servers"), pointed at
+upload instead of re-pin.
 
-- **Sovereignty:** maximal. The pin lives in the artist's account, under
-  their billing, forever theirs.
+- **Sovereignty:** total. The pin lives in the artist's account, under
+  their billing and their control, and it is their responsibility to keep.
 - **Cost / liability to PND:** zero. PND stores nothing, pays nothing, and
-  holds no key.
+  holds no key and no token.
 - **Honest cost to the artist:** for most, **free**. 4everland's free tier
   is 6 GB/month and supports upload; Pinata's free tier supports file
   upload (it is only *pin-by-CID* that Pinata gates behind the $20/month
   Picnic plan, which is a `/preserve` re-pin problem, not an upload
-  problem). So the upload path is actually *cheaper* for artists than the
-  existing re-pin path: uploading new bytes is on the free tier where
-  re-pinning an existing CID often is not.
-- **Friction:** the artist needs an account and a key. That is real
-  friction for a first-time releaser, and it is the reason Option 1 alone
-  is not enough.
+  problem). Uploading new bytes is actually cheaper than re-pinning an
+  existing CID.
 
-### Option 2: x402-paid pinning (PND charges per pin)
+**Lower the friction without lowering the responsibility.** The one real
+cost of this model is onboarding: the artist needs an account and a
+credential. Two things soften it without PND ever taking custody.
 
-PND runs a paid pinning endpoint and the artist pays per-pin over x402 (the
-HTTP 402 "Payment Required" protocol, with onchain stablecoin settlement).
-Detailed in section 5. Short version: it introduces a stablecoin and, in
-its canonical form, an L2 (USDC on Base) into a protocol whose entire
-identity is mainnet-only and ETH-honest. It is the wrong tool for this
-audience right now. **Recommended against for v1**, documented so the door
-stays open.
+- **The credential is paste-once-per-browser, not per-upload.** The
+  existing pinning layer persists the key in `localStorage`
+  (`lib/pinning/types.ts`), so a returning artist re-enters nothing.
+- **Storacha UCAN delegation is the sovereign "connect" path.** Storacha
+  (the web3.storage successor) supports UCAN delegation: the artist owns
+  their own storage space and delegates a **scoped, expiring, upload-only**
+  capability to PND's browser agent, instead of pasting a long-lived,
+  full-power key. The artist still owns the space, the billing, and the
+  responsibility; the delegation is revocable and can do nothing but
+  upload. This is a real "log in / connect" experience that does **not**
+  make PND a custodian, which is exactly why it fits where a full "Connect
+  with Pinata" OAuth token would not (an OAuth token that lets PND act on
+  the artist's whole account is a server-side secret with custodial reach,
+  the opposite of the principle). Adding Storacha as a provider whose
+  "connect" is a UCAN delegation is the recommended way to cut onboarding
+  friction. (Storacha's *delegation* API is live; this is distinct from its
+  legacy *pinning* API, which is in maintenance and `disabled` in
+  `PROVIDER_INFO`.)
 
-### Option 3: Hybrid (PND pins a redundant backstop by default; artist always owns the primary)
+### Rejected on principle: PND-hosted or PND-backstop pinning
 
-PND pins the edition's image CID on its **own** pinning account as a
-**redundant** copy, in addition to (never instead of) the artist's pin or
-CID. The artist's pin is the primary; PND's is a backstop so the art does
-not die if the artist's key or plan lapses.
+A "PND pins a redundant backup on its own account" option is technically
+cheap (one content-addressed image CID per edition, deduplicated globally,
+fractions of a cent each) and would remove all onboarding friction. **It is
+rejected anyway, on purpose.** The moment PND holds a pin it becomes the
+safety net, the artist stops owning the outcome, and the implicit promise
+("PND keeps my art") is one PND has no business making. A backstop also
+means PND holds a provider key server-side and carries an open-ended storage
+liability. The same reasoning rejects the frictionless Storacha flavor where
+*PND* owns the space and the artist uploads into it: convenient, but the
+data lives in PND's account, which is custody by another name. If the bytes
+are not in the artist's account, the artist has not taken responsibility,
+and that is the whole point. PND surfaces the truth instead (section 6): if
+an artist does not pin, PND shows the art as not retrievable rather than
+quietly papering over it.
 
-- This is cheap and bounded in a way general media hosting is not, for the
-  same reason `cid_availability` is a single global cache (migration 018):
-  **content addressing**. One edition is one image CID. The same CID
-  referenced by many editions or many artists is pinned once. A redundant
-  PND pin of one image per edition, deduplicated globally, is fractions of
-  a cent per edition per month on 4everland-class infrastructure. Thousands
-  of editions is single-digit dollars per month. PND can absorb this
-  without charging, and without an x402 rail.
-- It is the same `pinByCid(cid)` call the worker and `/preserve` already
-  make, against a PND-held key kept server-side (the one place a key
-  legitimately lives server-side, because it is PND's own account, not the
-  artist's).
-- The pin is recorded the same way `/preserve` records artist pins, so the
-  preservation badge (section 6) can show "artist-pinned at X" and
-  "also backed up by PND" and "retrievable via public gateway" as three
-  independent signals.
+### Rejected on fit: x402-paid pinning
 
-### Recommendation: tiered, with hybrid as the default safety net
+This only existed as an option because PND might have sold pinning. Since
+PND is not in the pinning business at all, there is nothing to charge for
+and x402 is moot. The full analysis (and why a stablecoin-on-Base rail would
+fight the mainnet-only ethos even if PND did sell pinning) is kept in
+section 5 for the record.
 
-Ship them as a ladder, not a choice the artist has to understand:
+### Recommendation
 
-1. **Default:** artist self-pins via BYO key (Option 1), reusing the
-   `/preserve` provider stack extended for upload. This is the
-   architecturally correct default for a sovereignty-first protocol.
-2. **Escape hatch:** bring your own CID (paste), unchanged.
-3. **Safety net, on by default, opt-out:** PND adds a redundant backstop
-   pin of the image CID on its own account (Option 3) and records it. The
-   artist keeps the primary pin; PND guarantees the art does not silently
-   vanish. This is the honest version of "PND pins by default": PND is not
-   the custodian, it is the backup.
-4. **Explicitly not in v1:** x402-paid pinning (Option 2).
-
-This ladder means a first-time artist with no pinning account can still
-release (PND's backstop pin carries them, and they can add their own pin
-later via `/preserve`), while a sovereignty-maximalist artist can bring
-their own CID and decline the PND backup. Both are honest about who holds
-what, and neither depends on a stablecoin.
-
-The one liability this creates for PND is the backstop pin's storage cost
-and the implied (not promised) durability. Bound it honestly in copy: "a
-redundant backup, not a permanence guarantee; pin it yourself for
-permanence," and cap/monitor the PND pinning account. The cost analysis
-above says the bound is small.
+Artist self-pin is the only pinning model. Ship it as: upload to your own
+account (BYO key, with Storacha UCAN delegation as the low-friction
+sovereign connect), or bring your own CID. PND verifies retrievability,
+records the artist's signed pin attestation, and shows the honest status.
+PND never pins, never holds a key or token for the artist, and never
+promises permanence on the artist's behalf. The artist owns the work and the
+responsibility for keeping it alive.
 
 ---
 
@@ -356,15 +363,15 @@ on Base**. So:
   different scheme entirely (a deposit-and-debit channel or a prepaid
   balance), which is a payment-channel project, not a middleware drop-in.
 
-**Verdict.** x402 is a poor fit for paying for pins in *this* protocol
-*right now*. The audience is small, the per-pin cost is sub-dollar, the
-hybrid backstop (section 4) makes paid pinning unnecessary for the common
-case, and every honest settlement option either breaks mainnet-only or is
-uneconomic. Revisit only if (a) PND wants a real paid storage tier at
-volume, and (b) a mainnet-native, ETH-settled, near-gasless micropayment
-rail exists, or PND accepts a "PND credits" prepaid balance funded once in
-ETH on mainnet and debited off-chain per pin (which is a cleaner fit than
-x402 and worth its own exploration if paid pinning ever becomes a goal).
+**Verdict.** Moot, and a poor fit even if it were not. It is moot because
+PND does not sell pinning (section 4): there is no paid endpoint for x402 to
+gate. And even if PND ever did, every honest settlement option either breaks
+mainnet-only (USDC on Base) or is uneconomic (mainnet gas dwarfs a
+sub-dollar pin, and the gasless EIP-3009 mechanic is USDC-only). Kept here
+so the decision is not relitigated. The only future worth a second look is
+unrelated to pinning-as-a-service: a "PND credits" prepaid balance funded
+once in ETH on mainnet, if PND ever sells any metered service at all, which
+is its own exploration.
 
 ---
 
@@ -413,10 +420,10 @@ the persistence half of this feature is mostly already written, for
 
 ## 7. Contract / renderer changes
 
-**For the recommended path (Model A + self-pin/hybrid): none required.**
-The upload, the BYO-key pin, the backstop pin, the attestation, and the
-availability probe are all off-chain or web/worker work. `artworkURI` is
-already the right field; the default renderer already generates metadata;
+**For the recommended path (Model A + artist self-pin): none required.**
+The upload, the artist's own pin, the attestation, and the availability
+probe are all off-chain or web/worker work. `artworkURI` is already the
+right field; the default renderer already generates metadata;
 `setTokenArtwork` already exists for per-token art. The shipped contracts
 are sufficient.
 
@@ -464,38 +471,44 @@ design is that **it adds almost no RPC load**:
 - The only chain interaction the create flow adds is the `createEdition`
   deploy transaction the user already signs.
 
-So the feature is RPC-light by construction, which is both a cost virtue
-and a reason the hybrid backstop pin is affordable without a paid rail.
+So the feature is RPC-light by construction, which is a cost virtue in its
+own right.
 
 **Honest cost summary**
 
 - **Artist self-pin:** free for most (4everland 6 GB/month free; Pinata
-  free-tier upload). Paid only if they exceed free tiers or want Arweave
-  permanence.
-- **PND backstop pin:** fractions of a cent per edition per month
-  (one content-addressed image CID, globally deduplicated). Single-digit
-  dollars per month at thousands of editions. No per-pin charge to anyone.
+  free-tier upload; Storacha free tier via UCAN delegation). Paid only if
+  they exceed free tiers or want Arweave permanence.
+- **PND:** zero pinning cost, because PND does not pin. PND holds no
+  provider account for editions media and carries no storage liability.
 - **Arweave option:** a one-time permanence fee (historically a few dollars
   per GB) if an artist wants pay-once-store-forever; an artist choice, not
   the default, and it adds a non-IPFS dependency the availability probe
   already understands (`extractArweaveId`, Arweave gateways in the probe).
-- **x402 paid pinning:** declined (section 5). The cost it would recover is
-  smaller than the ethos cost it would impose.
+- **x402 paid pinning:** moot (section 5); PND sells no pinning.
 
 ---
 
 ## 9. Risks and tradeoffs
 
-1. **BYO-key friction excludes the least technical artists.** Mitigated by
-   the hybrid backstop (a keyless artist can still release; PND's pin
-   carries the art) and by keeping paste-a-CID for those with a pipeline.
-   The residual: an artist who neither has a key nor a CID is leaning
-   entirely on PND's backstop, which is a backup, not a guarantee. Say so.
-2. **The PND backstop pin is a soft promise.** If PND pins it, artists may
-   read that as "PND keeps my art forever." It does not; it is redundancy.
-   This is a copy and expectation-management risk more than a technical
-   one. Frame it as "backup, not permanence; pin it yourself to be sure,"
-   and reuse `/preserve` as the place an artist goes to own their pin.
+1. **The responsibility model excludes the least technical artists, by
+   design.** With no PND backstop, an artist who will not set up any pinning
+   account cannot persist their work, and PND will not do it for them. This
+   is an accepted consequence of "the artist takes responsibility", not a
+   bug. Mitigate the friction, never the responsibility: Storacha UCAN
+   delegation as a low-friction sovereign connect (section 4), paste-a-CID
+   for those with a pipeline, and clear guidance. The honest failure mode is
+   that some art will not be persisted; PND's answer is to show that plainly
+   (risk 2), not to rescue it.
+2. **Some editions will point at art that rots, and that has to be visible,
+   not hidden.** Because PND never pins, an artist who lapses their pin ends
+   up with a dead image, and PND must not paper over it. The mitigation is
+   the honest mirror (section 6): show "not retrievable" when the gateway
+   probe fails, and "artist-pinned at X" only when attested, so a collector
+   sees the real persistence state before minting. The risk is reputational
+   (dead art under a PND-surfaced edition); the only honest defense is
+   transparency plus nudging the artist to fix their own pin via
+   `/preserve`.
 3. **Self-declared pins can lie.** `token_pins` is self-attested (the key
    never leaves the browser, so PND cannot confirm with the provider). This
    is already true in `/preserve` and already mitigated: `cid_availability`
@@ -523,28 +536,24 @@ and a reason the hybrid backstop pin is affordable without a paid rail.
 
 ## 10. Open questions
 
-1. **Backstop default on or off?** Recommendation: on by default, opt-out,
-   because a silently dead image is the worse failure. Confirm PND is
-   willing to hold a pinning account and its (small, bounded) cost.
-2. **Which provider does PND's backstop use, and where does its key live?**
-   Recommendation: 4everland-class free/cheap tier, key server-side in the
-   worker or an API route (PND's own account, the one legitimate
-   server-side key). Decide single-provider vs redundant double-pin for the
-   backstop itself.
-3. **`animation_url` now or later?** It is the highest-value optional
+1. **Storacha UCAN delegation in v1, or BYO key only?** UCAN delegation is
+   the lowest-friction sovereign connect and the main lever for the
+   onboarding problem (risk 1). Decide whether v1 ships it alongside the
+   Pinata / 4everland key-paste path or defers it. (It uses Storacha's
+   delegation API, which is live, not the legacy pinning API that is in
+   maintenance and `disabled` in `PROVIDER_INFO`.)
+2. **`animation_url` now or later?** It is the highest-value optional
    contract-adjacent change. Decide whether v1 of this feature is
    images-only (ship upload + pinning, defer video) or includes the default
    renderer's media slot. The pinning work is identical either way; only
    the renderer differs.
-4. **Verify-before-deploy hard gate or soft warning?** Should a failed
+3. **Verify-before-deploy hard gate or soft warning?** Should a failed
    post-upload retrievability check *block* `createEdition`, or just warn?
    Recommendation: warn, never block (the artist owns the contract and may
-   know something the gateway does not), but make the warning prominent.
-5. **Per-token art UI scope.** Out of scope for this doc, but the upload
+   know something the gateway does not), but make the warning prominent so
+   the artist owns the consequence with eyes open.
+4. **Per-token art UI scope.** Out of scope for this doc, but the upload
    primitive built here is what unblocks it. Confirm it stays deferred.
-6. **Storacha / web3.storage revival.** It is `disabled` in `PROVIDER_INFO`
-   (maintenance mode). If/when its API returns, the upload extension should
-   cover it; no design change, just a provider implementation.
 
 ---
 
@@ -571,25 +580,21 @@ art was uploaded, assert the tokenURI image resolves).
 create flow sign the CID set and POST to the existing
 `/api/preserve/writeback`, recording the pin in `token_pins`. No new route.
 
-**Phase 4: hybrid backstop pin.** Add the PND-account redundant pin (server
-side, PND-held key) of the edition image CID on deploy, opt-out in the UI,
-recorded alongside the artist's attestation. Bound and monitor the PND
-pinning account.
-
-**Phase 5: availability + preservation surface.** Extend
+**Phase 4: availability + preservation surface (the honest mirror).** Extend
 `probe-cid-availability`'s candidate query to include editions CIDs (gated
 on the editions discovery table once it exists; seed directly pre-index),
 and render the `getPreservationSummary`-based preservation badge on the
-edition and token pages ("retrievable via gateway", "artist-pinned at X",
-"backed up by PND").
+edition and token pages: "retrievable via gateway" and "artist-pinned at X"
+when attested, "not retrievable" when the probe fails. No "backed up by PND"
+line, because PND does not back it up.
 
-**Phase 6 (optional): media breadth.** If decided in open question 3, add
-the default renderer's `animation_url` slot (a contract/renderer change,
-its own Foundry tests) and/or the passthrough metadata renderer for opt-in
+**Phase 5 (optional): media breadth.** If decided in open question 2, add
+the default renderer's `animation_url` slot (a contract/renderer change, its
+own Foundry tests) and/or the passthrough metadata renderer for opt-in
 Model B.
 
-Phases 1 to 5 are the feature. Phase 6 is media-type breadth and is gated
-on a product decision, not on the pinning architecture.
+Phases 1 to 4 are the feature. Phase 5 is media-type breadth and is gated on
+a product decision, not on the pinning architecture.
 
 ---
 
@@ -601,11 +606,14 @@ on a product decision, not on the pinning architecture.
 IPFS helpers, `metadata-host.ts` `classifyUrl`.
 
 **Extended:** `PinningProvider` + concrete providers (add `pinFile` /
-`pinJSON`); `probe-cid-availability` candidate query (UNION editions CIDs);
-`CreateEditionForm` (upload affordance).
+`pinJSON`, and a Storacha UCAN-delegation provider); `probe-cid-availability`
+candidate query (UNION editions CIDs); `CreateEditionForm` (upload affordance
++ honest persistence status).
 
-**New:** the PND backstop-pin server action and its account; (optional)
-default-renderer `animation_url` slot; (optional) passthrough metadata
-renderer.
+**New:** (optional) default-renderer `animation_url` slot; (optional)
+passthrough metadata renderer. No PND pinning account, no backstop pin, no
+PND-held key or token: PND does not pin.
 
-**Declined:** x402 paid pinning, and any USDC/Base settlement dependency.
+**Declined:** PND-hosted / backstop pinning (rejected on principle: PND is
+not the safety net); x402 paid pinning and any USDC/Base settlement
+dependency (PND sells no pinning).
