@@ -93,6 +93,18 @@ export const SOVEREIGN_AUCTION_HOUSE_FACTORY: Record<number, Address> = {
   [BASE_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
 }
 
+// PNDEditionsFactory — deploys one ERC721A contract per project (artist
+// release). ImmutableClone (EIP-1167) or Upgradeable (ERC1967/UUPS) per the
+// ProjectMode chosen at createProject. Emits
+// `ProjectCreated(address indexed owner, address indexed project, uint8 mode)`
+// for discovery, mirroring Mint's MintFactory.Created. There is no protocol
+// fee. NOT yet deployed to mainnet — paste the address here after running
+// `forge script script/DeployEditions.s.sol`. For local Anvil dev, set
+// NEXT_PUBLIC_PND_EDITIONS_FACTORY instead of editing this file.
+export const PND_EDITIONS_FACTORY: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+}
+
 // Catalog — generic public registry where an artist address can
 // publish on-chain pointers (contracts, tokens, ranges) belonging to its
 // public record. Deployed via the canonical CREATE2 deterministic-deployment

@@ -8,6 +8,7 @@ optimizer_runs = 200
 remappings = [
     "openzeppelin-contracts/=lib/openzeppelin-contracts/",
     "openzeppelin-contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/",
+    "erc721a-upgradeable/=lib/ERC721A-Upgradeable/",
     "forge-std/=lib/forge-std/src/",
 ]
 
