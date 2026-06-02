@@ -4,7 +4,7 @@ import { notFound } from "next/navigation"
 import { isAddress, type Address } from "viem"
 import { OptimizedImage } from "@/components/OptimizedImage"
 import { MintMarkCard } from "@/components/editions/MintMarkCard"
-import { getEditionProject, getEditionToken } from "@/lib/editions-onchain"
+import { getEdition, getEditionToken } from "@/lib/editions-onchain"
 import {
   PATH_TYPE_LABEL,
   PND_CHAIN_ID,
@@ -17,15 +17,14 @@ import {
   shortAddress,
 } from "@/lib/pnd-editions"
 
-type Params = Promise<{ project: string; tokenId: string }>
+type Params = Promise<{ edition: string; tokenId: string }>
 
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
-  const { project, tokenId } = await params
-  if (!isAddress(project)) return { title: "Token" }
-  const p = await getEditionProject(project as Address)
-  const title = p ? `${p.name} #${tokenId}` : `Token #${tokenId}`
-  const t = await getEditionToken(project as Address, BigInt(tokenId))
-  const image = t ? ipfsToHttp(t.artwork) : undefined
+  const { edition, tokenId } = await params
+  if (!isAddress(edition)) return { title: "Token" }
+  const e = await getEdition(edition as Address)
+  const title = e ? `${e.name} #${tokenId}` : `Token #${tokenId}`
+  const image = e ? ipfsToHttp(e.cfg.artworkURI) : undefined
   return {
     title,
     openGraph: image ? { title, images: [{ url: image }] } : { title },
@@ -34,9 +33,9 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
 }
 
 export default async function TokenPage({ params }: { params: Params }) {
-  const { project, tokenId: tokenIdStr } = await params
-  if (!isAddress(project)) notFound()
-  const addr = project as Address
+  const { edition, tokenId: tokenIdStr } = await params
+  if (!isAddress(edition)) notFound()
+  const addr = edition as Address
   let tokenId: bigint
   try {
     tokenId = BigInt(tokenIdStr)
@@ -44,11 +43,9 @@ export default async function TokenPage({ params }: { params: Params }) {
     notFound()
   }
 
-  const [p, t] = await Promise.all([
-    getEditionProject(addr),
-    getEditionToken(addr, tokenId!),
-  ])
-  if (!p || !t) notFound()
+  const t = await getEditionToken(addr, tokenId!)
+  if (!t || !t.edition) notFound()
+  const e = t.edition
 
   const pathHref = t.path.pathType !== PathType.None ? refToHref(t.path.target) : null
   const pathUrn =
@@ -56,8 +53,8 @@ export default async function TokenPage({ params }: { params: Params }) {
       ? pndUrn(
           t.path.target.chainId,
           t.path.target.contractAddress,
-          t.path.target.kind === RefKind.Release
-            ? "r"
+          t.path.target.kind === RefKind.Edition
+            ? "e"
             : t.path.target.kind === RefKind.Token
               ? "t"
               : "x",
@@ -68,11 +65,12 @@ export default async function TokenPage({ params }: { params: Params }) {
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 md:py-12">
       <nav className="mb-6 text-[10px] font-mono uppercase tracking-wider text-gray-400">
-        <Link href={`/editions/${addr}`} className="underline hover:text-fg">
-          {p.name}
+        <Link href="/editions" className="underline hover:text-fg">
+          Editions
         </Link>{" "}
-        / <Link href={`/editions/${addr}/${t.mark.releaseId}`} className="underline hover:text-fg">
-          Release #{t.mark.releaseId}
+        /{" "}
+        <Link href={`/editions/${addr}`} className="underline hover:text-fg">
+          {e.name}
         </Link>{" "}
         / #{tokenId!.toString()}
       </nav>
@@ -82,7 +80,7 @@ export default async function TokenPage({ params }: { params: Params }) {
           <div className="aspect-square w-full overflow-hidden rounded-lg border border-gray-200 bg-surface-muted">
             <OptimizedImage
               src={t.artwork}
-              alt={`${p.name} #${tokenId!.toString()}`}
+              alt={`${e.name} #${tokenId!.toString()}`}
               width={1200}
               loading="eager"
               className="h-full w-full object-contain"
@@ -93,7 +91,7 @@ export default async function TokenPage({ params }: { params: Params }) {
         <div className="min-w-0 space-y-5">
           <header className="space-y-1">
             <h1 className="text-2xl font-medium tracking-tight">
-              {p.name} <span className="text-gray-400">#{tokenId!.toString()}</span>
+              {e.name} <span className="text-gray-400">#{tokenId!.toString()}</span>
             </h1>
             <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
               {t.owner ? (
@@ -116,7 +114,6 @@ export default async function TokenPage({ params }: { params: Params }) {
 
           <MintMarkCard mark={t.mark} chainId={PND_CHAIN_ID} />
 
-          {/* Token Path */}
           <div className="rounded-lg border border-gray-200 bg-surface overflow-hidden">
             <div className="px-4 py-2.5 border-b border-gray-100">
               <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500">

@@ -4,19 +4,13 @@
  */
 import {
   type EditionMintMark,
-  RELEASE_STATUS_LABEL,
+  EDITION_STATUS_LABEL,
   evmNowAddressUrl,
   shortAddress,
   ZERO_ADDRESS,
 } from "@/lib/pnd-editions"
 
-export function MintMarkCard({
-  mark,
-  chainId,
-}: {
-  mark: EditionMintMark
-  chainId: number
-}) {
+export function MintMarkCard({ mark, chainId }: { mark: EditionMintMark; chainId: number }) {
   return (
     <div className="rounded-lg border border-gray-200 bg-surface overflow-hidden">
       <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-2">
@@ -26,10 +20,9 @@ export function MintMarkCard({
         <span className="text-[10px] font-mono text-gray-400">· onchain provenance</span>
       </div>
       <dl className="divide-y divide-gray-100">
-        <Row label="Release" value={`#${mark.releaseId}`} />
-        <Row label="Mint order" value={`#${mark.indexInRelease + 1} in the release`} />
+        <Row label="Mint order" value={`#${mark.indexInEdition + 1} in the edition`} />
         <Row label="Mint block" value={mark.mintBlock.toString()} />
-        <Row label="Status at mint" value={RELEASE_STATUS_LABEL[mark.statusAtMint]} />
+        <Row label="Status at mint" value={EDITION_STATUS_LABEL[mark.statusAtMint]} />
         <Row
           label="Mint surface"
           value={
@@ -49,8 +42,8 @@ export function MintMarkCard({
         />
         {(mark.isFirst || mark.isFinal) && (
           <div className="px-4 py-3 flex flex-wrap gap-2">
-            {mark.isFirst && <Badge>First mint of the release</Badge>}
-            {mark.isFinal && <Badge>Final mint of the release</Badge>}
+            {mark.isFirst && <Badge>First mint of the edition</Badge>}
+            {mark.isFinal && <Badge>Final mint of the edition</Badge>}
           </div>
         )}
       </dl>

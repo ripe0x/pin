@@ -1,28 +1,22 @@
 /**
- * Renders a release's outgoing Release Graph edges. Reads from onchain data
- * (passed in), so it works in any interface, not just PND. Edges that point at
- * PND nodes link internally; everything else shows the canonical pnd: URN.
+ * Renders an edition's outgoing Edition Graph edges. Reads from onchain data
+ * (passed in), so it works in any interface. Edges that point at PND nodes
+ * link internally; everything else shows the canonical pnd: URN.
  */
 import Link from "next/link"
-import {
-  type EditionEdge,
-  EDGE_TYPE_LABEL,
-  pndUrn,
-  RefKind,
-  refToHref,
-} from "@/lib/pnd-editions"
+import { type EditionEdge, EDGE_TYPE_LABEL, pndUrn, RefKind, refToHref } from "@/lib/pnd-editions"
 
-export function ReleaseGraphView({ edges }: { edges: EditionEdge[] }) {
+export function EditionGraphView({ edges }: { edges: EditionEdge[] }) {
   if (edges.length === 0) return null
   return (
     <section className="py-5 border-b border-gray-100">
       <h2 className="text-[10px] font-mono uppercase tracking-wider text-gray-400 mb-3">
-        Release graph
+        Edition graph
       </h2>
       <ul className="space-y-2">
         {edges.map((e, i) => {
           const kindChar =
-            e.target.kind === RefKind.Release ? "r" : e.target.kind === RefKind.Token ? "t" : "x"
+            e.target.kind === RefKind.Edition ? "e" : e.target.kind === RefKind.Token ? "t" : "x"
           const urn = pndUrn(e.target.chainId, e.target.contractAddress, kindChar, e.target.id)
           const href = refToHref(e.target)
           return (

@@ -1,15 +1,10 @@
 "use client"
 
 /**
- * Live mint CTA for a PND Editions release.
- *
- * Honest pricing: the collector pays exactly price * quantity (no protocol
- * fee, no buffer — the price is fixed, unlike a basefee-floating mint). The
- * Surface Share is shown explicitly as a split OUT OF that price. A 0 ETH price
- * is labelled "Gas only", never "free".
- *
- * Each token keeps its own identity, so we preview the Mint Mark the collector
- * will receive (their mint order in the release, whether it's the first).
+ * Live mint CTA for a PND Edition. Honest pricing: the collector pays exactly
+ * price * quantity. The fixed Surface Share is shown explicitly as a split out
+ * of that price, paid to whoever hosts this mint (PND here, the artist on
+ * their own site). A 0 ETH price is "Gas only", never "free".
  */
 
 import { useState } from "react"
@@ -34,22 +29,21 @@ import {
   useChainNowSec,
 } from "@/components/tx/tx-ui"
 import {
+  EditionStatus,
+  EDITION_STATUS_LABEL,
+  SURFACE_SHARE_BPS,
   ZERO_ADDRESS,
   formatBps,
-  formatPriceLabel,
   isGasOnly,
   isMintable,
   lifecycleStatus,
   pndSurfaceAddress,
-  RELEASE_STATUS_LABEL,
-  ReleaseStatus,
   shortAddress,
   splitOutOfPrice,
 } from "@/lib/pnd-editions"
 
-export type MintReleaseSnapshot = {
+export type MintSnapshot = {
   price: string
-  surfaceShareBps: number
   supplyCap: string
   mintStart: string
   mintEnd: string
@@ -57,15 +51,13 @@ export type MintReleaseSnapshot = {
   status: number
 }
 
-export function MintReleaseCTA({
-  project,
-  releaseId,
-  release,
+export function MintEditionCTA({
+  edition,
+  snapshot,
   surface,
 }: {
-  project: `0x${string}`
-  releaseId: number
-  release: MintReleaseSnapshot
+  edition: `0x${string}`
+  snapshot: MintSnapshot
   /** Override the mint surface (a self-hosted page passes the artist's own
    *  address). Defaults to PND's configured surface. */
   surface?: `0x${string}`
@@ -77,11 +69,11 @@ export function MintReleaseCTA({
   const nowSec = useChainNowSec()
   const router = useRouter()
 
-  const price = BigInt(release.price)
-  const supplyCap = BigInt(release.supplyCap)
-  const minted = BigInt(release.minted)
-  const mintEnd = BigInt(release.mintEnd)
-  const mintStart = BigInt(release.mintStart)
+  const price = BigInt(snapshot.price)
+  const supplyCap = BigInt(snapshot.supplyCap)
+  const minted = BigInt(snapshot.minted)
+  const mintEnd = BigInt(snapshot.mintEnd)
+  const mintStart = BigInt(snapshot.mintStart)
   const surfaceAddr = surface ?? pndSurfaceAddress()
 
   const [amount, setAmount] = useState(1)
@@ -90,12 +82,10 @@ export function MintReleaseCTA({
   const remaining = supplyCap > 0n ? supplyCap - minted : null
   const capReached = remaining !== null && remaining <= 0n
 
-  // Resolve status from the live snapshot + chain clock so the UI agrees with
-  // what the contract would do at mint time.
   const status = lifecycleStatus(
     { mintEnd, supplyCap },
     minted,
-    release.status === ReleaseStatus.Closing,
+    snapshot.status === EditionStatus.Closing,
     nowSec,
   )
   const ready = nowSec > 0 || (mintEnd === 0n && mintStart === 0n)
@@ -106,8 +96,8 @@ export function MintReleaseCTA({
     isMintable({ mintStart, mintEnd, supplyCap }, minted, nowSec || Number(mintStart))
 
   const total = amountValid ? price * BigInt(amount) : price
-  const { surfaceCut, artistCut } = splitOutOfPrice(total, release.surfaceShareBps, surfaceAddr)
-  const showSplit = release.surfaceShareBps > 0 && surfaceAddr !== ZERO_ADDRESS
+  const { surfaceCut, artistCut } = splitOutOfPrice(total, surfaceAddr)
+  const showSplit = !isGasOnly(price) && surfaceAddr !== ZERO_ADDRESS
 
   const { data: balance } = useBalance({
     address,
@@ -128,10 +118,10 @@ export function MintReleaseCTA({
   function handleMint() {
     if (!amountValid) return
     writeContract({
-      address: project,
+      address: edition,
       abi: pndEditionsAbi,
       functionName: "mint",
-      args: [BigInt(releaseId), BigInt(amount), surfaceAddr, "0x"],
+      args: [BigInt(amount), surfaceAddr, "0x"],
       value: total,
     })
   }
@@ -141,9 +131,9 @@ export function MintReleaseCTA({
   const isFirstEver = minted === 0n
 
   const statusDot =
-    status === ReleaseStatus.Open
+    status === EditionStatus.Open
       ? "bg-emerald-500 animate-pulse"
-      : status === ReleaseStatus.Closing
+      : status === EditionStatus.Closing
         ? "bg-amber-500"
         : "bg-gray-400"
 
@@ -151,12 +141,11 @@ export function MintReleaseCTA({
     <section className="py-5 border-b border-gray-100">
       <div className="rounded-lg border border-gray-200 bg-surface overflow-hidden">
         <div className="p-5 space-y-4">
-          {/* status row */}
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <span className={`inline-block h-1.5 w-1.5 rounded-full ${statusDot}`} />
               <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500">
-                {RELEASE_STATUS_LABEL[status]}
+                {EDITION_STATUS_LABEL[status]}
               </span>
             </div>
             <span className="text-[10px] font-mono uppercase tracking-wider text-gray-400 tabular-nums">
@@ -166,7 +155,6 @@ export function MintReleaseCTA({
             </span>
           </div>
 
-          {/* price + countdown */}
           <div className="flex items-end justify-between gap-6">
             <div className="space-y-1">
               <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">Price</p>
@@ -178,13 +166,12 @@ export function MintReleaseCTA({
                   </>
                 ) : (
                   <>
-                    {formatEther(price)}{" "}
-                    <span className="text-sm font-mono text-gray-500">ETH</span>
+                    {formatEther(price)} <span className="text-sm font-mono text-gray-500">ETH</span>
                   </>
                 )}
               </p>
             </div>
-            {mintEnd > 0n && status !== ReleaseStatus.Closed && (
+            {mintEnd > 0n && status !== EditionStatus.Closed && (
               <div className="text-right space-y-1">
                 <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
                   Closes in
@@ -196,7 +183,6 @@ export function MintReleaseCTA({
             )}
           </div>
 
-          {/* success */}
           {isSuccess && txHash && (
             <TxSuccessBanner
               txHash={txHash}
@@ -211,7 +197,6 @@ export function MintReleaseCTA({
 
           {mintable && !(isSuccess && txHash) && (
             <>
-              {/* quantity */}
               <label className="block">
                 <span className="sr-only">Number of tokens to mint</span>
                 <div className="flex items-stretch border border-gray-200 focus-within:border-gray-400 transition-colors">
@@ -234,55 +219,45 @@ export function MintReleaseCTA({
                 </div>
               </label>
 
-              {/* Mint Mark preview — provenance, not rarity */}
               <div className="rounded border border-gray-200 bg-surface-muted/40 px-3 py-2.5">
                 <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400 mb-1">
                   Your Mint Mark
                 </p>
                 <p className="text-[11px] font-mono text-gray-600 leading-relaxed">
                   {amount === 1
-                    ? `Mint #${mintOrderFrom} of this release`
-                    : `Mints #${mintOrderFrom}–#${mintOrderTo} of this release`}
-                  {isFirstEver && (
-                    <span className="text-fg"> · you would hold the first token</span>
-                  )}
+                    ? `Mint #${mintOrderFrom} of this edition`
+                    : `Mints #${mintOrderFrom}–#${mintOrderTo} of this edition`}
+                  {isFirstEver && <span className="text-fg"> · you would hold the first token</span>}
                 </p>
               </div>
 
-              {/* honest split disclosure */}
               {!isGasOnly(price) && (
                 <div className="space-y-2">
                   <div className="flex items-baseline justify-between">
                     <span className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
                       You pay
                     </span>
-                    <span className="text-sm font-mono tabular-nums">
-                      {formatEther(total)} ETH
-                    </span>
+                    <span className="text-sm font-mono tabular-nums">{formatEther(total)} ETH</span>
                   </div>
                   {showSplit ? (
                     <div className="space-y-1.5">
                       <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
-                        <div
-                          className="bg-fg"
-                          style={{ width: `${100 - release.surfaceShareBps / 100}%` }}
-                        />
+                        <div className="bg-fg" style={{ width: `${100 - SURFACE_SHARE_BPS / 100}%` }} />
                         <div
                           className="bg-status-live"
-                          style={{ width: `${release.surfaceShareBps / 100}%` }}
+                          style={{ width: `${SURFACE_SHARE_BPS / 100}%` }}
                         />
                       </div>
                       <div className="flex justify-between text-[10px] font-mono text-gray-500 tabular-nums">
                         <span>{formatEther(artistCut)} ETH to artist</span>
                         <span>
-                          {formatEther(surfaceCut)} ETH to this surface (
-                          {formatBps(release.surfaceShareBps)})
+                          {formatEther(surfaceCut)} ETH to this surface ({formatBps(SURFACE_SHARE_BPS)})
                         </span>
                       </div>
                     </div>
                   ) : (
                     <p className="text-[10px] font-mono text-gray-500">
-                      100% to the artist. PND takes no fee.
+                      100% to the artist on this surface.
                     </p>
                   )}
                 </div>
@@ -296,7 +271,6 @@ export function MintReleaseCTA({
                 </div>
               )}
 
-              {/* action */}
               {!address ? (
                 <ConnectButton.Custom>
                   {({ openConnectModal }) => (
@@ -341,10 +315,8 @@ export function MintReleaseCTA({
 
               <p className="text-[10px] font-mono text-gray-400 leading-relaxed">
                 Minting on{" "}
-                {surfaceAddr === ZERO_ADDRESS
-                  ? "this surface"
-                  : `surface ${shortAddress(surfaceAddr)}`}
-                . You receive a distinct ERC721 token with its own onchain Mint Mark.
+                {surfaceAddr === ZERO_ADDRESS ? "this surface" : `surface ${shortAddress(surfaceAddr)}`}.
+                You receive a distinct ERC721 token with its own onchain Mint Mark.
               </p>
             </>
           )}
@@ -352,10 +324,10 @@ export function MintReleaseCTA({
           {!mintable && !(isSuccess && txHash) && ready && (
             <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
               {notStarted
-                ? "This release has not opened yet."
+                ? "This edition has not opened yet."
                 : capReached
-                  ? "This release has reached its cap."
-                  : "This release is closed."}
+                  ? "This edition has reached its cap."
+                  : "This edition is closed."}
             </p>
           )}
         </div>

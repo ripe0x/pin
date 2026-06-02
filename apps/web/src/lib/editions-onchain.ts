@@ -4,34 +4,28 @@ import { mainnet } from "viem/chains"
 import { pndEditionsAbi, pndEditionsFactoryAbi } from "@pin/abi"
 import { pgCache } from "./pg-cache"
 import {
+  decodeConfig,
   decodeMintMark,
-  decodeReleaseConfig,
+  type Edition,
   type EditionEdge,
   type EditionMintMark,
   type EditionPath,
-  type EditionProject,
-  type EditionRelease,
+  EditionStatus,
   PND_CHAIN_ID,
-  ReleaseStatus,
 } from "./pnd-editions"
 
 /**
- * Live, cached onchain reads for PND Editions. These are the project's own
+ * Live, cached onchain reads for PND Editions. These are the edition's own
  * contracts (no indexer backfill required for the live mint/provenance
- * surfaces). Every function is pgCache-wrapped and batches with multicall, so
- * upstream call volume stays low. Immutable data (mint marks) caches long;
- * live mint state (price/supply/window) caches briefly.
+ * surfaces). pgCache short-circuits to a fresh read when no DATABASE_URL.
  *
- * Listing/discovery (artist catalogs, feeds) reads Postgres via the worker
- * scanner, not this module.
+ * Always uses the mainnet chain object so viem resolves the canonical
+ * Multicall3; in fork mode the transport points at Anvil (which forks mainnet,
+ * so Multicall3 is present). viem doesn't validate chainId on reads.
  */
 
 const FORK_MODE = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
 
-// Always use the mainnet chain object so viem resolves the canonical
-// Multicall3 (0xcA11…). In fork mode the transport points at Anvil, which —
-// because it forks mainnet — has Multicall3 deployed at that address; viem
-// does not validate chainId on reads, so this is correct for both modes.
 function getClient() {
   if (FORK_MODE) {
     const url = process.env.NEXT_PUBLIC_ANVIL_RPC_URL || "http://127.0.0.1:8545"
@@ -49,34 +43,44 @@ function getClient() {
 
 const lc = (a: string) => a.toLowerCase()
 
-/** Project header: identity, owner, counts, mutability. */
-export async function getEditionProject(project: Address): Promise<EditionProject | null> {
-  return pgCache(`pnd-project:${lc(project)}`, 60, async () => {
+type RawConfigReturn = readonly [Parameters<typeof decodeConfig>[0], number, bigint]
+type RawPath = {
+  pathType: number
+  target: { chainId: bigint; contractAddress: Address; id: bigint; kind: number }
+  data: `0x${string}`
+}
+
+/** Full edition: identity, config, live status + minted count. Short TTL. */
+export async function getEdition(address: Address): Promise<Edition | null> {
+  return pgCache(`pnd-edition:${lc(address)}`, 20, async () => {
     const client = getClient()
-    const base = { address: project, abi: pndEditionsAbi } as const
+    const base = { address, abi: pndEditionsAbi } as const
     try {
-      const [name, symbol, owner, totalReleases, totalSupply, upgradeable, sealedFlag] =
+      const [name, symbol, owner, totalSupply, upgradeable, sealedFlag, cfgRes] =
         await client.multicall({
           allowFailure: false,
           contracts: [
             { ...base, functionName: "name" },
             { ...base, functionName: "symbol" },
             { ...base, functionName: "owner" },
-            { ...base, functionName: "totalReleases" },
             { ...base, functionName: "totalSupply" },
             { ...base, functionName: "isUpgradeable" },
             { ...base, functionName: "isSealed" },
+            { ...base, functionName: "config" },
           ],
         })
+      const [cfgRaw, status, minted] = cfgRes as RawConfigReturn
       return {
-        address: project,
+        address,
         name: name as string,
         symbol: symbol as string,
         owner: owner as Address,
-        totalReleases: Number(totalReleases),
         totalSupply: totalSupply as bigint,
         isUpgradeable: upgradeable as boolean,
         isSealed: sealedFlag as boolean,
+        cfg: decodeConfig(cfgRaw),
+        status: Number(status) as EditionStatus,
+        minted: minted as bigint,
       }
     } catch {
       return null
@@ -84,87 +88,15 @@ export async function getEditionProject(project: Address): Promise<EditionProjec
   })
 }
 
-/** One release's full state. Short TTL: this is live mint state. */
-export async function getEditionRelease(
-  project: Address,
-  releaseId: number,
-): Promise<EditionRelease | null> {
-  return pgCache(`pnd-release:${lc(project)}:${releaseId}`, 20, async () => {
-    const client = getClient()
-    try {
-      const result = (await client.readContract({
-        address: project,
-        abi: pndEditionsAbi,
-        functionName: "release",
-        args: [BigInt(releaseId)],
-      })) as readonly [Parameters<typeof decodeReleaseConfig>[0], number, bigint]
-      const [cfg, status, minted] = result
-      return {
-        releaseId,
-        cfg: decodeReleaseConfig(cfg),
-        status: Number(status) as ReleaseStatus,
-        minted,
-      }
-    } catch {
-      return null
-    }
-  })
-}
-
-/** All releases in a project (bounded by totalReleases). For the project page. */
-export async function getEditionReleases(
-  project: Address,
-  totalReleases: number,
-): Promise<EditionRelease[]> {
-  if (totalReleases <= 0) return []
-  return pgCache(`pnd-releases:${lc(project)}:${totalReleases}`, 30, async () => {
-    const client = getClient()
-    const ids = Array.from({ length: totalReleases }, (_, i) => i)
-    try {
-      const results = await client.multicall({
-        allowFailure: true,
-        contracts: ids.map((i) => ({
-          address: project,
-          abi: pndEditionsAbi,
-          functionName: "release" as const,
-          args: [BigInt(i)] as const,
-        })),
-      })
-      const out: EditionRelease[] = []
-      results.forEach((r, i) => {
-        if (r.status !== "success") return
-        const [cfg, status, minted] = r.result as readonly [
-          Parameters<typeof decodeReleaseConfig>[0],
-          number,
-          bigint,
-        ]
-        out.push({
-          releaseId: i,
-          cfg: decodeReleaseConfig(cfg),
-          status: Number(status) as ReleaseStatus,
-          minted,
-        })
-      })
-      return out
-    } catch {
-      return []
-    }
-  })
-}
-
-/** Release Graph edges for a release. */
-export async function getEditionEdges(
-  project: Address,
-  releaseId: number,
-): Promise<EditionEdge[]> {
-  return pgCache(`pnd-edges:${lc(project)}:${releaseId}`, 120, async () => {
+/** Edition Graph edges for an edition. */
+export async function getEditionEdges(address: Address): Promise<EditionEdge[]> {
+  return pgCache(`pnd-edges:${lc(address)}`, 120, async () => {
     const client = getClient()
     try {
       const edges = (await client.readContract({
-        address: project,
+        address,
         abi: pndEditionsAbi,
-        functionName: "edgesOf",
-        args: [BigInt(releaseId)],
+        functionName: "edges",
       })) as ReadonlyArray<{
         edgeType: number
         target: { chainId: bigint; contractAddress: Address; id: bigint; kind: number }
@@ -190,17 +122,17 @@ export type EditionTokenView = {
   mark: EditionMintMark
   artwork: string
   path: EditionPath
-  release: EditionRelease | null
+  edition: Edition | null
 }
 
 /** Everything the token page needs: Mint Mark, art, path, owner. */
 export async function getEditionToken(
-  project: Address,
+  address: Address,
   tokenId: bigint,
 ): Promise<EditionTokenView | null> {
-  return pgCache(`pnd-token:${lc(project)}:${tokenId.toString()}`, 60, async () => {
+  return pgCache(`pnd-token:${lc(address)}:${tokenId.toString()}`, 60, async () => {
     const client = getClient()
-    const base = { address: project, abi: pndEditionsAbi } as const
+    const base = { address, abi: pndEditionsAbi } as const
     try {
       const [markRes, artRes, pathRes, ownerRes] = await client.multicall({
         allowFailure: true,
@@ -212,20 +144,11 @@ export async function getEditionToken(
         ],
       })
       if (markRes.status !== "success") return null
-      const mark = decodeMintMark(
-        markRes.result as Parameters<typeof decodeMintMark>[0],
-      )
-      const release = await getEditionRelease(project, mark.releaseId)
+      const mark = decodeMintMark(markRes.result as Parameters<typeof decodeMintMark>[0])
+      const edition = await getEdition(address)
       const tokenArt = artRes.status === "success" ? (artRes.result as string) : ""
-      const artwork = tokenArt && tokenArt.length > 0 ? tokenArt : release?.cfg.defaultArtworkURI ?? ""
-      const rawPath =
-        pathRes.status === "success"
-          ? (pathRes.result as {
-              pathType: number
-              target: { chainId: bigint; contractAddress: Address; id: bigint; kind: number }
-              data: `0x${string}`
-            })
-          : null
+      const artwork = tokenArt && tokenArt.length > 0 ? tokenArt : edition?.cfg.artworkURI ?? ""
+      const rawPath = pathRes.status === "success" ? (pathRes.result as RawPath) : null
       const path: EditionPath = rawPath
         ? {
             pathType: Number(rawPath.pathType),
@@ -237,14 +160,18 @@ export async function getEditionToken(
             },
             data: rawPath.data,
           }
-        : { pathType: 0, target: { chainId: PND_CHAIN_ID, contractAddress: project, id: 0n, kind: 0 }, data: "0x" as `0x${string}` }
+        : {
+            pathType: 0,
+            target: { chainId: PND_CHAIN_ID, contractAddress: address, id: 0n, kind: 0 },
+            data: "0x" as `0x${string}`,
+          }
       return {
         tokenId,
         owner: ownerRes.status === "success" ? (ownerRes.result as Address) : null,
         mark,
         artwork,
         path,
-        release,
+        edition,
       }
     } catch {
       return null
@@ -252,18 +179,15 @@ export async function getEditionToken(
   })
 }
 
-/** Recent projects from the factory, newest first. For the editions landing. */
-export async function getRecentProjects(
-  factory: Address,
-  limit = 8,
-): Promise<EditionProject[]> {
+/** Recent editions from the factory, newest first. For the landing. */
+export async function getRecentEditions(factory: Address, limit = 8): Promise<Edition[]> {
   return pgCache(`pnd-recent:${lc(factory)}:${limit}`, 60, async () => {
     const client = getClient()
     try {
       const total = (await client.readContract({
         address: factory,
         abi: pndEditionsFactoryAbi,
-        functionName: "totalProjects",
+        functionName: "totalEditions",
       })) as bigint
       const n = Number(total)
       if (n === 0) return []
@@ -274,15 +198,15 @@ export async function getRecentProjects(
         contracts: idxs.map((i) => ({
           address: factory,
           abi: pndEditionsFactoryAbi,
-          functionName: "allProjects" as const,
+          functionName: "allEditions" as const,
           args: [BigInt(i)] as const,
         })),
       })
       const addrs = addrResults
         .filter((r) => r.status === "success")
         .map((r) => r.result as Address)
-      const projects = await Promise.all(addrs.map((a) => getEditionProject(a)))
-      return projects.filter((p): p is EditionProject => p !== null)
+      const editions = await Promise.all(addrs.map((a) => getEdition(a)))
+      return editions.filter((e): e is Edition => e !== null)
     } catch {
       return []
     }
