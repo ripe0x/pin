@@ -41,9 +41,15 @@ command -v anvil >/dev/null 2>&1 || { echo "error: anvil not found (install Foun
 FORK_RPC="${FORK_RPC:-https://ethereum-rpc.publicnode.com}"
 CHAIN_ID=31339                      # must match wagmi.ts forkChain id
 IMPERSONATE="${IMPERSONATE:-0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266}"  # Anvil acct 0
-WEB_PORT="${WEB_PORT:-3000}"
 
-# 1) free port, starting above the common 8545 dev node.
+# Web dev port: honor an explicit WEB_PORT, else first free port >= 3000 so we
+# don't collide with other dev servers (Next would otherwise fail EADDRINUSE).
+if [ -z "${WEB_PORT:-}" ]; then
+  WEB_PORT=3000
+  while lsof -iTCP:"$WEB_PORT" -sTCP:LISTEN >/dev/null 2>&1; do WEB_PORT=$((WEB_PORT + 1)); done
+fi
+
+# 1) free anvil port, starting above the common 8545 dev node.
 PORT=8546
 while lsof -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; do PORT=$((PORT + 1)); done
 RPC="http://127.0.0.1:$PORT"
@@ -109,4 +115,6 @@ echo "────────────────────────�
 echo
 
 # 5) start the web dev server in the foreground (Ctrl+C stops both).
-pnpm --filter @pin/web dev -- --port "$WEB_PORT"
+# Call `next` directly (not `pnpm run dev -- --port`): pnpm forwards `--`
+# literally, which Next then treats as the project dir.
+pnpm --filter @pin/web exec next dev --turbopack --port "$WEB_PORT"
