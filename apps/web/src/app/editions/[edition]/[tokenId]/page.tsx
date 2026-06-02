@@ -63,32 +63,29 @@ export default async function TokenPage({ params }: { params: Params }) {
       : null
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8 md:py-12">
-      <nav className="mb-6 text-[10px] font-mono uppercase tracking-wider text-gray-400">
-        <Link href="/editions" className="underline hover:text-fg">
-          Editions
-        </Link>{" "}
-        /{" "}
-        <Link href={`/editions/${addr}`} className="underline hover:text-fg">
-          {e.name}
-        </Link>{" "}
-        / #{tokenId!.toString()}
-      </nav>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-10">
-        <div className="md:sticky md:top-20 md:self-start">
-          <div className="aspect-square w-full overflow-hidden rounded-lg border border-gray-200 bg-surface-muted">
-            <OptimizedImage
-              src={t.artwork}
-              alt={`${e.name} #${tokenId!.toString()}`}
-              width={1200}
-              loading="eager"
-              className="h-full w-full object-contain"
-            />
-          </div>
+    <div>
+      <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] min-h-[calc(100vh-64px)]">
+        <div className="lg:sticky lg:top-16 lg:h-[calc(100vh-64px)] flex items-center justify-center bg-gray-100 dark:bg-bg p-8 lg:p-12">
+          <OptimizedImage
+            src={t.artwork}
+            alt={`${e.name} #${tokenId!.toString()}`}
+            width={1200}
+            loading="eager"
+            className="max-h-[78vh] max-w-full object-contain"
+          />
         </div>
 
-        <div className="min-w-0 space-y-5">
+        <aside className="lg:border-l border-gray-200 px-6 py-8 lg:px-8 lg:py-10 space-y-5">
+          <nav className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+            <Link href="/editions" className="underline hover:text-fg">
+              Editions
+            </Link>{" "}
+            /{" "}
+            <Link href={`/editions/${addr}`} className="underline hover:text-fg">
+              {e.name}
+            </Link>
+          </nav>
+
           <header className="space-y-1">
             <h1 className="text-2xl font-medium tracking-tight">
               {e.name} <span className="text-gray-400">#{tokenId!.toString()}</span>
@@ -144,7 +141,7 @@ export default async function TokenPage({ params }: { params: Params }) {
               )}
             </div>
           </div>
-        </div>
+        </aside>
       </div>
     </div>
   )

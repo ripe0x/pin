@@ -48,6 +48,11 @@ test("create an edition then mint it end to end", async ({ page, state }) => {
   })
   await page.screenshot({ path: `${SHOTS}/03-mint-success.png`, fullPage: true })
 
+  // Mint history populates in the sidebar after a reload.
+  await page.reload()
+  await expect(page.getByText("Mint history")).toBeVisible({ timeout: 30_000 })
+  await page.screenshot({ path: `${SHOTS}/04-mint-history.png`, fullPage: true })
+
   // ── assert onchain state directly from the fork ────────────────────────────
   const client = createPublicClient({
     chain: forkChain(state.rpcUrl),

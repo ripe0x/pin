@@ -4,8 +4,9 @@ import { notFound } from "next/navigation"
 import { isAddress, type Address } from "viem"
 import { OptimizedImage } from "@/components/OptimizedImage"
 import { MintEditionCTA } from "@/components/editions/MintEditionCTA"
+import { MintHistory } from "@/components/editions/MintHistory"
 import { EditionGraphView } from "@/components/editions/EditionGraphView"
-import { getEdition, getEditionEdges } from "@/lib/editions-onchain"
+import { getEdition, getEditionEdges, getEditionMintHistory } from "@/lib/editions-onchain"
 import {
   EDITION_KIND_LABEL,
   PND_CHAIN_ID,
@@ -36,34 +37,37 @@ export default async function EditionPage({ params }: { params: Params }) {
   const { edition } = await params
   if (!isAddress(edition)) notFound()
   const addr = edition as Address
-  const [e, edges] = await Promise.all([getEdition(addr), getEditionEdges(addr)])
+  const e = await getEdition(addr)
   if (!e) notFound()
+  const [edges, history] = await Promise.all([
+    getEditionEdges(addr),
+    getEditionMintHistory(addr, e.minted),
+  ])
 
   const mutability = e.isSealed ? "Sealed (immutable)" : "Upgradeable"
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8 md:py-12">
-      <nav className="mb-6 text-[10px] font-mono uppercase tracking-wider text-gray-400">
-        <Link href="/editions" className="underline hover:text-fg">
-          Editions
-        </Link>{" "}
-        / {e.name}
-      </nav>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-10">
-        <div className="md:sticky md:top-20 md:self-start">
-          <div className="aspect-square w-full overflow-hidden rounded-lg border border-gray-200 bg-surface-muted">
-            <OptimizedImage
-              src={e.cfg.artworkURI}
-              alt={e.name}
-              width={1200}
-              loading="eager"
-              className="h-full w-full object-contain"
-            />
-          </div>
+    <div>
+      <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] min-h-[calc(100vh-64px)]">
+        {/* Artwork: full-bleed gray field, sticky on desktop. */}
+        <div className="lg:sticky lg:top-16 lg:h-[calc(100vh-64px)] flex items-center justify-center bg-gray-100 dark:bg-bg p-8 lg:p-12">
+          <OptimizedImage
+            src={e.cfg.artworkURI}
+            alt={e.name}
+            width={1200}
+            loading="eager"
+            className="max-h-[78vh] max-w-full object-contain"
+          />
         </div>
 
-        <div className="min-w-0">
+        {/* Sidebar */}
+        <aside className="lg:border-l border-gray-200 px-6 py-8 lg:px-8 lg:py-10">
+          <nav className="mb-4 text-[10px] font-mono uppercase tracking-wider text-gray-400">
+            <Link href="/editions" className="underline hover:text-fg">
+              Editions
+            </Link>
+          </nav>
+
           <header className="pb-5 border-b border-gray-100 space-y-2">
             <h1 className="text-2xl font-medium tracking-tight">{e.name}</h1>
             <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
@@ -83,6 +87,8 @@ export default async function EditionPage({ params }: { params: Params }) {
             }}
           />
 
+          <MintHistory entries={history} chainId={PND_CHAIN_ID} />
+
           <EditionGraphView edges={edges} />
 
           <section className="py-5 border-b border-gray-100 space-y-2 text-[11px] font-mono">
@@ -93,7 +99,10 @@ export default async function EditionPage({ params }: { params: Params }) {
               label="Royalty"
               value={e.cfg.royaltyBps > 0 ? formatBps(e.cfg.royaltyBps) : "none"}
             />
-            <Fact label="Surface share" value={`${formatBps(SURFACE_SHARE_BPS)} (to the mint surface)`} />
+            <Fact
+              label="Surface share"
+              value={`${formatBps(SURFACE_SHARE_BPS)} (to the mint surface)`}
+            />
             <Fact
               label="Payout"
               value={
@@ -114,7 +123,7 @@ export default async function EditionPage({ params }: { params: Params }) {
             </div>
           </section>
 
-          <section className="py-5">
+          <section className="pt-5">
             <h2 className="text-[10px] font-mono uppercase tracking-wider text-gray-400 mb-2">
               Self host this mint
             </h2>
@@ -126,7 +135,7 @@ export default async function EditionPage({ params }: { params: Params }) {
               {formatBps(SURFACE_SHARE_BPS)} surface share routes to you, not PND.
             </p>
           </section>
-        </div>
+        </aside>
       </div>
     </div>
   )

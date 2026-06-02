@@ -179,6 +179,68 @@ export async function getEditionToken(
   })
 }
 
+export type MintHistoryEntry = {
+  holder: Address
+  mintBlock: bigint
+  firstTokenId: bigint
+  count: number
+}
+
+/**
+ * Recent mint history for an edition, newest first, grouped into batches by
+ * (holder, block). Read per-token via multicall (ownerOf + mintMarkOf) rather
+ * than getLogs, so it works identically on a fork and on mainnet without
+ * log-range limits. `minted` (= the edition's total minted, from getEdition)
+ * is passed in to avoid a redundant read.
+ */
+export async function getEditionMintHistory(
+  address: Address,
+  minted: bigint,
+  limit = 40,
+): Promise<MintHistoryEntry[]> {
+  const total = Number(minted)
+  if (total === 0) return []
+  return pgCache(`pnd-history:${lc(address)}:${total}`, 30, async () => {
+    const client = getClient()
+    const base = { address, abi: pndEditionsAbi } as const
+    const startTok = Math.max(1, total - limit + 1)
+    const ids: bigint[] = []
+    for (let t = total; t >= startTok; t--) ids.push(BigInt(t)) // newest first
+
+    const calls = ids.flatMap((id) => [
+      { ...base, functionName: "ownerOf" as const, args: [id] as const },
+      { ...base, functionName: "mintMarkOf" as const, args: [id] as const },
+    ])
+    const res = await client.multicall({ allowFailure: true, contracts: calls })
+
+    const grouped: MintHistoryEntry[] = []
+    for (let i = 0; i < ids.length; i++) {
+      const ownerR = res[i * 2]
+      const markR = res[i * 2 + 1]
+      if (ownerR.status !== "success") continue // burned / unreadable
+      const holder = ownerR.result as Address
+      const mark = markR.status === "success" ? (markR.result as { mintBlock: number | bigint }) : null
+      const mintBlock = mark ? BigInt(mark.mintBlock) : 0n
+      const tokenId = ids[i]
+      const last = grouped[grouped.length - 1]
+      // Iterating newest-first; extend a batch when the next (lower) token has
+      // the same holder + block and is contiguous.
+      if (
+        last &&
+        last.holder.toLowerCase() === holder.toLowerCase() &&
+        last.mintBlock === mintBlock &&
+        last.firstTokenId === tokenId + 1n
+      ) {
+        last.firstTokenId = tokenId
+        last.count += 1
+      } else {
+        grouped.push({ holder, mintBlock, firstTokenId: tokenId, count: 1 })
+      }
+    }
+    return grouped
+  })
+}
+
 /** Recent editions from the factory, newest first. For the landing. */
 export async function getRecentEditions(factory: Address, limit = 8): Promise<Edition[]> {
   return pgCache(`pnd-recent:${lc(factory)}:${limit}`, 60, async () => {
