@@ -139,6 +139,7 @@ export type Edition = {
   totalSupply: bigint
   isUpgradeable: boolean
   isSealed: boolean
+  isMetadataFrozen: boolean
   cfg: EditionConfig
   status: EditionStatus
   minted: bigint

@@ -49,6 +49,12 @@ contract PNDEditions is
     bytes4 private constant INTERFACE_ID_ERC2981 = 0x2a55205a;
 
     bool private _sealedMode;
+    bool private _metadataFrozen;
+
+    // Pull-payment balances: mint() accrues here; recipients claim via
+    // withdraw(). No external transfer happens during mint, so a reverting
+    // recipient can never brick minting.
+    mapping(address => uint256) private _pending;
 
     address public defaultRenderer; // canonical fallback, set at init
     address private _renderer; // edition renderer override; 0 = default
@@ -103,12 +109,26 @@ contract PNDEditions is
     // Mint
     // ─────────────────────────────────────────────────────────────────────────
 
-    function mint(uint256 quantity, address surface, bytes calldata hookData)
+    /// @notice Simple mint. The surface defaults to address(0), so the full
+    ///         price goes to the artist (no surface share is taken). This is
+    ///         the honest default path: a direct minter gives the artist 100%.
+    function mint(uint256 quantity) external payable override nonReentrant {
+        _mintCore(quantity, address(0), "");
+    }
+
+    /// @notice Mint crediting a `surface` its share (PND on PND, the artist on
+    ///         their own self-hosted page). surface == 0 folds the share back
+    ///         to the artist. `hookData` is forwarded to the mint hook if set.
+    function mintWithRewards(uint256 quantity, address surface, bytes calldata hookData)
         external
         payable
         override
         nonReentrant
     {
+        _mintCore(quantity, surface, hookData);
+    }
+
+    function _mintCore(uint256 quantity, address surface, bytes memory hookData) private {
         require(quantity > 0, "PND: zero qty");
         require(block.timestamp >= _cfg.mintStart, "PND: not started");
         require(_cfg.mintEnd == 0 || block.timestamp < _cfg.mintEnd, "PND: ended");
@@ -140,23 +160,36 @@ contract PNDEditions is
         emit Minted(msg.sender, surface, firstTokenId, quantity, uint48(block.number), statusAtMint);
     }
 
-    /// @dev Split `total` out of the price between surface (fixed share) and
-    ///      artist payout. surface == 0 folds the whole amount to the artist.
+    /// @dev Accrue `total` (pull-payment) split between the surface share and
+    ///      the artist payout. surface == 0 folds the whole amount to the
+    ///      artist. No external call here — recipients claim via withdraw() —
+    ///      so a reverting recipient can never brick a mint.
     function _settle(uint256 total, address surface) private {
+        if (total == 0) return;
         uint256 surfaceCut = surface == address(0) ? 0 : (total * SURFACE_SHARE_BPS) / BPS;
         if (surfaceCut > 0) {
-            _pay(surface, surfaceCut);
+            _pending[surface] += surfaceCut;
             emit SurfacePaid(surface, surfaceCut);
         }
         uint256 artistCut = total - surfaceCut;
         if (artistCut > 0) {
-            _pay(_cfg.payoutAddress == address(0) ? owner() : _cfg.payoutAddress, artistCut);
+            _pending[_cfg.payoutAddress == address(0) ? owner() : _cfg.payoutAddress] += artistCut;
         }
     }
 
-    function _pay(address to, uint256 amount) private {
-        (bool ok,) = payable(to).call{value: amount}("");
-        require(ok, "PND: pay failed");
+    /// @notice Withdraw the balance owed to `account`, to `account`.
+    ///         Permissionless trigger; funds only ever go to the owed address.
+    function withdraw(address account) external override nonReentrant {
+        uint256 amount = _pending[account];
+        require(amount > 0, "PND: nothing to withdraw");
+        _pending[account] = 0;
+        (bool ok,) = payable(account).call{value: amount}("");
+        require(ok, "PND: withdraw failed");
+        emit Withdrawn(account, amount);
+    }
+
+    function pendingWithdrawal(address account) external view override returns (uint256) {
+        return _pending[account];
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -169,11 +202,13 @@ contract PNDEditions is
     }
 
     function setRenderer(address renderer_) external override onlyOwner {
+        require(!_metadataFrozen, "PND: metadata frozen");
         _renderer = renderer_;
         emit RendererSet(renderer_);
     }
 
     function setTokenArtwork(uint256 tokenId, string calldata cid) external override onlyOwner {
+        require(!_metadataFrozen, "PND: metadata frozen");
         require(_wasMinted(tokenId), "PND: not minted");
         _tokenArtwork[tokenId] = cid;
         emit TokenArtworkSet(tokenId, cid);
@@ -184,6 +219,7 @@ contract PNDEditions is
         override
         onlyOwner
     {
+        require(!_metadataFrozen, "PND: metadata frozen");
         require(tokenIds.length == cids.length, "PND: length");
         for (uint256 i = 0; i < tokenIds.length; i++) {
             require(_wasMinted(tokenIds[i]), "PND: not minted");
@@ -195,6 +231,27 @@ contract PNDEditions is
     function setMintHook(address hook) external override onlyOwner {
         _mintHook = hook;
         emit MintHookSet(hook);
+    }
+
+    /// @notice Update where the artist's share accrues for FUTURE mints. Past
+    ///         accruals remain claimable at the old address. Fixes a bad payout
+    ///         without an upgrade.
+    function setPayoutAddress(address payoutAddress) external override onlyOwner {
+        _cfg.payoutAddress = payoutAddress;
+        emit PayoutAddressSet(payoutAddress);
+    }
+
+    /// @notice One-way: renounce the ability to change the renderer or per-token
+    ///         artwork, so collectors get a permanence guarantee. Independent of
+    ///         seal() (which only stops upgrades).
+    function freezeMetadata() external override onlyOwner {
+        require(!_metadataFrozen, "PND: already frozen");
+        _metadataFrozen = true;
+        emit MetadataFrozen();
+    }
+
+    function isMetadataFrozen() external view override returns (bool) {
+        return _metadataFrozen;
     }
 
     // ─────────────────────────────────────────────────────────────────────────

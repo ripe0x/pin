@@ -16,8 +16,15 @@ Three onchain layers, each readable by any interface (not just PND):
 
 1. **Edition** — one `PNDEditions` (ERC721A) contract. Honest fixed price, a
    fixed built-in **Surface Share**, per-batch Mint Marks, EIP-2981, a
-   swappable renderer, and pre/post mint hooks. Always deployed upgradeable
-   (UUPS); the owner can `seal()` to renounce upgradeability forever.
+   swappable renderer, and pre/post mint hooks. Two mint entrypoints:
+   `mint(quantity)` (the honest default; no surface, artist gets 100%) and
+   `mintWithRewards(quantity, surface, hookData)` (credits a host the share).
+   Proceeds accrue per-address (pull payments) and are claimed with
+   `withdraw(account)`, so a bad recipient can never brick minting; the artist
+   can repoint future proceeds with `setPayoutAddress`. Always deployed
+   upgradeable (UUPS); the owner can `seal()` to renounce upgrades and
+   `freezeMetadata()` to renounce renderer/artwork changes (independent
+   one-way switches, both surfaced in the UI).
 2. **Edition Graph** — typed, append-only edges from one edition to other
    nodes (`BelongsTo`, `StudyOf`, `PhaseOf`, `Continues`, `Source`, `Access`),
    addressable across contracts and artists.
@@ -26,17 +33,22 @@ Three onchain layers, each readable by any interface (not just PND):
 
 ## Pricing model (honest money)
 
-The collector pays exactly `price * quantity`. A **fixed 10% Surface Share**
-is taken out of that price and paid to whoever hosts the mint:
+The collector pays exactly `price * quantity`. There are two mint paths:
 
-- Mint **on PND** → the share goes to PND.
-- Mint on the artist's **own self-hosted page** (passing their own address as
-  the surface) → the artist keeps it, so they keep 100%.
-- A direct mint with no surface folds the share back to the artist.
+- **`mint(quantity)`** — the honest default. No surface, so the artist gets
+  **100%**. This is what a direct mint does.
+- **`mintWithRewards(quantity, surface, hookData)`** — credits a host a
+  **fixed 10% Surface Share** out of the price. Mint **on PND** → PND's
+  frontend passes PND's address → PND earns the 10%. Mint on the artist's
+  **own self-hosted page** → they pass their own address → they keep 100%. A
+  `surface` of `address(0)` folds the share back to the artist.
 
-So PND earns only on PND-hosted **paid** mints, and any artist can opt out by
-self-hosting. Gas-only editions (price 0) share nothing. The share is a fixed
-protocol constant (`SURFACE_SHARE_BPS = 1000`), not artist-configurable.
+So the share is open (any caller can pass any surface), but the default path
+gives the artist everything; PND earns only when a mint goes through PND with
+its address as the surface, and any artist opts out by self-hosting. Gas-only
+editions (price 0) share nothing. The rate is a fixed protocol constant
+(`SURFACE_SHARE_BPS = 1000`), not artist-configurable. Proceeds are pull
+payments: they accrue per-address and are claimed via `withdraw(account)`.
 
 ## Status
 

@@ -277,6 +277,13 @@ export const pndEditionsAbi = [
   },
   {
     "type": "function",
+    "name": "freezeMetadata",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "getApproved",
     "inputs": [
       {
@@ -410,6 +417,19 @@ export const pndEditionsAbi = [
   },
   {
     "type": "function",
+    "name": "isMetadataFrozen",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "isSealed",
     "inputs": [],
     "outputs": [
@@ -442,16 +462,6 @@ export const pndEditionsAbi = [
         "name": "quantity",
         "type": "uint256",
         "internalType": "uint256"
-      },
-      {
-        "name": "surface",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "hookData",
-        "type": "bytes",
-        "internalType": "bytes"
       }
     ],
     "outputs": [],
@@ -520,6 +530,29 @@ export const pndEditionsAbi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "mintWithRewards",
+    "inputs": [
+      {
+        "name": "quantity",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "surface",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "hookData",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "payable"
   },
   {
     "type": "function",
@@ -620,6 +653,25 @@ export const pndEditionsAbi = [
             "internalType": "bytes32"
           }
         ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "pendingWithdrawal",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -885,6 +937,19 @@ export const pndEditionsAbi = [
   },
   {
     "type": "function",
+    "name": "setPayoutAddress",
+    "inputs": [
+      {
+        "name": "payoutAddress",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setRenderer",
     "inputs": [
       {
@@ -1081,6 +1146,19 @@ export const pndEditionsAbi = [
     ],
     "outputs": [],
     "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "withdraw",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "event",
@@ -1322,6 +1400,12 @@ export const pndEditionsAbi = [
   },
   {
     "type": "event",
+    "name": "MetadataFrozen",
+    "inputs": [],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "MintHookSet",
     "inputs": [
       {
@@ -1450,6 +1534,19 @@ export const pndEditionsAbi = [
   },
   {
     "type": "event",
+    "name": "PayoutAddressSet",
+    "inputs": [
+      {
+        "name": "payoutAddress",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "RendererSet",
     "inputs": [
       {
@@ -1539,6 +1636,25 @@ export const pndEditionsAbi = [
         "type": "address",
         "indexed": true,
         "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Withdrawn",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false

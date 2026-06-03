@@ -77,6 +77,9 @@ interface IPNDEditions is IPNDMintMarks, IPNDEditionGraph, IPNDTokenPath {
     event MintHookSet(address hook);
     event TokenArtworkSet(uint256 indexed tokenId, string cid);
     event Sealed();
+    event Withdrawn(address indexed account, uint256 amount);
+    event PayoutAddressSet(address payoutAddress);
+    event MetadataFrozen();
 
     // ── init + config (owner) ────────────────────────────────────────────────
     function initialize(
@@ -92,14 +95,27 @@ interface IPNDEditions is IPNDMintMarks, IPNDEditionGraph, IPNDTokenPath {
     function setTokenArtwork(uint256 tokenId, string calldata cid) external;
     function setTokenArtworkBatch(uint256[] calldata tokenIds, string[] calldata cids) external;
     function setMintHook(address hook) external;
+    function setPayoutAddress(address payoutAddress) external;
+    function freezeMetadata() external;
     function seal() external;
 
     // ── mint ──────────────────────────────────────────────────────────────────
-    /// @param surface  The mint surface payout address. PND's frontend passes
-    ///                 PND's address; a self-hosted page passes the artist's
-    ///                 address; address(0) folds the share back to the artist.
-    /// @param hookData Opaque payload forwarded to the mint hook (if any).
-    function mint(uint256 quantity, address surface, bytes calldata hookData) external payable;
+    /// @notice Simple mint: surface defaults to address(0) so the artist gets
+    ///         the full price (no surface share). The honest default path.
+    function mint(uint256 quantity) external payable;
+
+    /// @notice Mint crediting a surface its share. PND's frontend passes PND's
+    ///         address; a self-hosted page passes the artist's address;
+    ///         address(0) folds the share back to the artist. `hookData` is
+    ///         forwarded to the mint hook (if any).
+    function mintWithRewards(uint256 quantity, address surface, bytes calldata hookData)
+        external
+        payable;
+
+    /// @notice Withdraw the pull-payment balance owed to `account`, to `account`.
+    function withdraw(address account) external;
+
+    function pendingWithdrawal(address account) external view returns (uint256);
 
     // ── reads ───────────────────────────────────────────────────────────────
     function config()
@@ -116,4 +132,5 @@ interface IPNDEditions is IPNDMintMarks, IPNDEditionGraph, IPNDTokenPath {
     function mintHook() external view returns (address);
     function isUpgradeable() external view returns (bool);
     function isSealed() external view returns (bool);
+    function isMetadataFrozen() external view returns (bool);
 }

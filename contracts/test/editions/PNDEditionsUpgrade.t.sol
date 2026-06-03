@@ -16,7 +16,7 @@ contract PNDEditionsUpgradeTest is PNDEditionsBase {
     function test_ownerCanUpgradeAndStatePersists() public {
         PNDEditions p = _edition(_freeConfig());
         vm.prank(collector);
-        p.mint(2, address(0), "");
+        p.mint(2);
 
         PNDEditionsV2Mock v2 = new PNDEditionsV2Mock();
         vm.prank(artist);

@@ -4,6 +4,7 @@ import { notFound } from "next/navigation"
 import { isAddress, type Address } from "viem"
 import { OptimizedImage } from "@/components/OptimizedImage"
 import { MintEditionCTA } from "@/components/editions/MintEditionCTA"
+import { WithdrawPanel } from "@/components/editions/WithdrawPanel"
 import { MintHistory } from "@/components/editions/MintHistory"
 import { EditionGraphView } from "@/components/editions/EditionGraphView"
 import { getEdition, getEditionEdges, getEditionMintHistory } from "@/lib/editions-onchain"
@@ -44,7 +45,8 @@ export default async function EditionPage({ params }: { params: Params }) {
     getEditionMintHistory(addr, e.minted),
   ])
 
-  const mutability = e.isSealed ? "Sealed (immutable)" : "Upgradeable"
+  const mutability = e.isSealed ? "Sealed (no upgrades)" : "Upgradeable by the artist"
+  const metadataState = e.isMetadataFrozen ? "Frozen" : "Mutable by the artist"
 
   return (
     <div>
@@ -87,6 +89,8 @@ export default async function EditionPage({ params }: { params: Params }) {
             }}
           />
 
+          <WithdrawPanel edition={addr} />
+
           <MintHistory entries={history} chainId={PND_CHAIN_ID} />
 
           <EditionGraphView edges={edges} />
@@ -95,6 +99,7 @@ export default async function EditionPage({ params }: { params: Params }) {
             <Fact label="Contract" value={shortAddress(addr)} />
             <Fact label="Standard" value="ERC721 (ERC721A)" />
             <Fact label="Mutability" value={mutability} />
+            <Fact label="Metadata" value={metadataState} />
             <Fact
               label="Royalty"
               value={e.cfg.royaltyBps > 0 ? formatBps(e.cfg.royaltyBps) : "none"}
@@ -121,6 +126,12 @@ export default async function EditionPage({ params }: { params: Params }) {
                 View contract ↗
               </a>
             </div>
+            {(!e.isSealed || !e.isMetadataFrozen) && (
+              <p className="pt-2 text-[10px] font-mono text-gray-400 normal-case leading-relaxed">
+                {!e.isSealed ? "The artist can upgrade this contract until they seal it. " : ""}
+                {!e.isMetadataFrozen ? "Artwork can change until the artist freezes metadata." : ""}
+              </p>
+            )}
           </section>
 
           <section className="pt-5">
@@ -130,7 +141,7 @@ export default async function EditionPage({ params }: { params: Params }) {
             <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
               This edition is your own contract and can be minted from any
               interface. From your own page, call{" "}
-              <code className="text-fg">mint(qty, yourAddress, 0x)</code> on{" "}
+              <code className="text-fg">mintWithRewards(qty, yourAddress, 0x)</code> on{" "}
               <code className="break-all text-fg">{addr}</code> so the{" "}
               {formatBps(SURFACE_SHARE_BPS)} surface share routes to you, not PND.
             </p>

@@ -22,7 +22,7 @@ contract PNDEditionsHooksTest is PNDEditionsBase {
         assertEq(p.mintHook(), address(hook));
 
         vm.prank(collector);
-        p.mint(3, surface, bytes("payload"));
+        p.mintWithRewards(3, surface, bytes("payload"));
 
         assertEq(hook.beforeCount(), 1);
         assertEq(hook.afterCount(), 1);
@@ -40,7 +40,7 @@ contract PNDEditionsHooksTest is PNDEditionsBase {
         hook.setAllow(false);
         vm.expectRevert(bytes("PND: hook rejected"));
         vm.prank(collector);
-        p.mint(1, address(0), "");
+        p.mint(1);
     }
 
     function test_hook_revertBubblesUp() public {
@@ -50,7 +50,7 @@ contract PNDEditionsHooksTest is PNDEditionsBase {
         hook.setRevertBefore(true);
         vm.expectRevert(bytes("hook: revert"));
         vm.prank(collector);
-        p.mint(1, address(0), "");
+        p.mint(1);
     }
 
     function test_hook_configuredAtDeploy() public {
@@ -64,7 +64,7 @@ contract PNDEditionsHooksTest is PNDEditionsBase {
         assertEq(p.mintHook(), address(deployHook));
 
         vm.prank(collector);
-        p.mint(1, address(0), "");
+        p.mint(1);
         assertEq(deployHook.beforeCount(), 1);
         assertEq(deployHook.afterCount(), 1);
     }

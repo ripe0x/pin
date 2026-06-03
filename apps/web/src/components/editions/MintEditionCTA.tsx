@@ -117,13 +117,25 @@ export function MintEditionCTA({
 
   function handleMint() {
     if (!amountValid) return
-    writeContract({
-      address: edition,
-      abi: pndEditionsAbi,
-      functionName: "mint",
-      args: [BigInt(amount), surfaceAddr, "0x"],
-      value: total,
-    })
+    // No surface to credit (PND treasury unset / direct) → simple mint, which
+    // gives the artist 100%. Otherwise mintWithRewards credits the surface.
+    if (surfaceAddr === ZERO_ADDRESS) {
+      writeContract({
+        address: edition,
+        abi: pndEditionsAbi,
+        functionName: "mint",
+        args: [BigInt(amount)],
+        value: total,
+      })
+    } else {
+      writeContract({
+        address: edition,
+        abi: pndEditionsAbi,
+        functionName: "mintWithRewards",
+        args: [BigInt(amount), surfaceAddr, "0x"],
+        value: total,
+      })
+    }
   }
 
   const mintOrderFrom = Number(minted) + 1

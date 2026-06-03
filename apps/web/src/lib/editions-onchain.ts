@@ -56,7 +56,7 @@ export async function getEdition(address: Address): Promise<Edition | null> {
     const client = getClient()
     const base = { address, abi: pndEditionsAbi } as const
     try {
-      const [name, symbol, owner, totalSupply, upgradeable, sealedFlag, cfgRes] =
+      const [name, symbol, owner, totalSupply, upgradeable, sealedFlag, frozen, cfgRes] =
         await client.multicall({
           allowFailure: false,
           contracts: [
@@ -66,6 +66,7 @@ export async function getEdition(address: Address): Promise<Edition | null> {
             { ...base, functionName: "totalSupply" },
             { ...base, functionName: "isUpgradeable" },
             { ...base, functionName: "isSealed" },
+            { ...base, functionName: "isMetadataFrozen" },
             { ...base, functionName: "config" },
           ],
         })
@@ -78,6 +79,7 @@ export async function getEdition(address: Address): Promise<Edition | null> {
         totalSupply: totalSupply as bigint,
         isUpgradeable: upgradeable as boolean,
         isSealed: sealedFlag as boolean,
+        isMetadataFrozen: frozen as boolean,
         cfg: decodeConfig(cfgRaw),
         status: Number(status) as EditionStatus,
         minted: minted as bigint,
