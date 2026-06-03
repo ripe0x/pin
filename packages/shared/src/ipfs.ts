@@ -235,9 +235,12 @@ export function ipfsCidToFallbackUrls(
   return gateways.map((g) => ipfsToGatewayUrl(clean, g))
 }
 
+/** Arweave HTTP gateway used to resolve `ar://` URIs for display. */
+export const ARWEAVE_GATEWAY = "https://arweave.net" as const
+
 /**
- * Convert an IPFS or IPNS URI to an HTTP gateway URL.
- * Non-IPFS/IPNS URIs are returned as-is.
+ * Convert an IPFS, IPNS, or Arweave URI to an HTTP gateway URL.
+ * Non-IPFS/IPNS/Arweave URIs are returned as-is.
  */
 export function ipfsToHttp(uri: string, gateway?: string): string {
   // IPNS first: an `ipns://` URI has no CID for extractCid to find, so
@@ -245,6 +248,13 @@ export function ipfsToHttp(uri: string, gateway?: string): string {
   if (uri.startsWith("ipns://")) {
     const path = extractIpnsPath(uri)
     return path ? ipnsToGatewayUrl(path, DEFAULT_IPNS_GATEWAY) : uri
+  }
+  // Arweave: `ar://<id>[/path]` → arweave.net gateway. PND Editions can store
+  // artwork on Arweave (via Irys), and the app renders it through this same
+  // resolver (edition/token pages already call ipfsToHttp on artworkURI).
+  if (uri.startsWith("ar://")) {
+    const idPath = uri.slice("ar://".length)
+    return idPath ? `${ARWEAVE_GATEWAY}/${idPath}` : uri
   }
   const cid = extractCid(uri)
   if (!cid) return uri

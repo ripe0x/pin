@@ -23,7 +23,7 @@ import {
 } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { pndEditionsFactoryAbi, splitMainAbi } from "@pin/abi"
-import { OptimizedImage } from "@/components/OptimizedImage"
+import { ArtworkInput } from "@/components/editions/ArtworkInput"
 import { PREFERRED_CHAIN, PREFERRED_CHAIN_LABEL, formatWriteError } from "@/components/tx/tx-ui"
 import { useEthAmountInput } from "@/lib/useEthAmountInput"
 import {
@@ -269,33 +269,7 @@ export function CreateEditionForm() {
         </div>
       </div>
 
-      <div>
-        <label className={LABEL} htmlFor="ed-art">
-          Artwork URI
-        </label>
-        <input
-          id="ed-art"
-          className={INPUT}
-          value={artworkURI}
-          onChange={(e) => setArtworkURI(e.target.value.trim())}
-          placeholder="ipfs://…"
-          disabled={busy}
-        />
-        <p className={HELP}>
-          The shared art for this edition. ipfs:// recommended. Tokens can carry
-          unique art later. PND can pin it via Preserve.
-        </p>
-        {artworkURI.startsWith("ipfs://") || artworkURI.startsWith("https://") ? (
-          <div className="mt-3 aspect-square w-28 overflow-hidden rounded border border-gray-200 bg-surface-muted">
-            <OptimizedImage
-              src={artworkURI}
-              alt="Artwork preview"
-              width={224}
-              className="h-full w-full object-cover"
-            />
-          </div>
-        ) : null}
-      </div>
+      <ArtworkInput value={artworkURI} onChange={setArtworkURI} disabled={busy} />
 
       <div>
         <label className={LABEL} htmlFor="ed-price">

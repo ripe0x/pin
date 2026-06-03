@@ -12,6 +12,9 @@
     "test:e2e:install": "playwright install chromium"
   },
   "dependencies": {
+    "@irys/web-upload": "^0.0.15",
+    "@irys/web-upload-ethereum": "^0.0.16",
+    "@irys/web-upload-ethereum-viem-v2": "^0.0.17",
     "@pin/abi": "workspace:*",
     "@pin/addresses": "workspace:*",
     "@pin/shared": "workspace:*",
