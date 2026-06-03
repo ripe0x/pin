@@ -4,7 +4,9 @@ import { notFound } from "next/navigation"
 import { isAddress, type Address } from "viem"
 import { OptimizedImage } from "@/components/OptimizedImage"
 import { MintMarkCard } from "@/components/editions/MintMarkCard"
+import { PreservationBadge } from "@/components/editions/PreservationBadge"
 import { getEdition, getEditionToken } from "@/lib/editions-onchain"
+import { getArtworkPersistence } from "@/lib/editions-persistence"
 import {
   PATH_TYPE_LABEL,
   PND_CHAIN_ID,
@@ -46,6 +48,7 @@ export default async function TokenPage({ params }: { params: Params }) {
   const t = await getEditionToken(addr, tokenId!)
   if (!t || !t.edition) notFound()
   const e = t.edition
+  const persistence = await getArtworkPersistence(t.artwork, e.owner)
 
   const pathHref = t.path.pathType !== PathType.None ? refToHref(t.path.target) : null
   const pathUrn =
@@ -110,6 +113,15 @@ export default async function TokenPage({ params }: { params: Params }) {
           </header>
 
           <MintMarkCard mark={t.mark} chainId={PND_CHAIN_ID} />
+
+          {persistence.status !== "none" && (
+            <div className="flex items-baseline justify-between gap-4">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+                Artwork
+              </span>
+              <PreservationBadge persistence={persistence} />
+            </div>
+          )}
 
           <div className="rounded-lg border border-gray-200 bg-surface overflow-hidden">
             <div className="px-4 py-2.5 border-b border-gray-100">
