@@ -19,12 +19,45 @@ export type ProvenanceEntry = {
   salePlatform?: "sovereign" | "foundation"
 }
 
-function formatDate(timestamp: number): string {
+function formatDate(timestamp: number): string | null {
+  // The worker stores block_time = 0 for ERC-721 transfers it hasn't
+  // resolved a block timestamp for (and for old ERC-1155 mints predating the
+  // block-time resolver). Never render the Unix epoch as a real date — show
+  // no date rather than "Jan 1, 1970".
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return null
   return new Date(timestamp * 1000).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
   })
+}
+
+// The date sub-label under each provenance entry. Doubles as the tx link.
+// When the timestamp is missing (block_time not yet resolved) we still keep
+// the tx link — it's verifiable proof — but drop the bogus date.
+function ProvenanceDate({
+  timestamp,
+  txHash,
+}: {
+  timestamp: number
+  txHash: string
+}) {
+  const date = formatDate(timestamp)
+  if (txHash) {
+    return (
+      <a
+        href={`https://evm.now/tx/${txHash}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-[10px] font-mono text-gray-400 hover:text-fg hover:underline transition-colors"
+      >
+        {date ?? "Transaction ↗"}
+      </a>
+    )
+  }
+  return date ? (
+    <span className="text-[10px] font-mono text-gray-400">{date}</span>
+  ) : null
 }
 
 // Address/ENS handle rendered as a link to its evm.now address page. The
@@ -122,20 +155,7 @@ export function Provenance({ entries }: { entries: ProvenanceEntry[] }) {
                   )}
                 </p>
               )}
-              {entry.txHash ? (
-                <a
-                  href={`https://evm.now/tx/${entry.txHash}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[10px] font-mono text-gray-400 hover:text-fg hover:underline transition-colors"
-                >
-                  {formatDate(entry.timestamp)}
-                </a>
-              ) : (
-                <span className="text-[10px] font-mono text-gray-400">
-                  {formatDate(entry.timestamp)}
-                </span>
-              )}
+              <ProvenanceDate timestamp={entry.timestamp} txHash={entry.txHash} />
             </div>
           </li>
         ))}
