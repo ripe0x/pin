@@ -34,6 +34,7 @@ import {
   formatBps,
   pndEditionsFactory,
   pndSplitMain,
+  pndMuriRenderer,
   validateCollaborators,
 } from "@/lib/pnd-editions"
 
@@ -55,6 +56,9 @@ export function CreateEditionForm() {
 
   const factory = pndEditionsFactory()
   const splitMain = pndSplitMain()
+  // The MURI bridge is deploy-gated: only offer the Permanent tier where the
+  // opt-in renderer is configured (mainnet pending; set on the dev fork).
+  const muriRenderer = pndMuriRenderer()
 
   const [title, setTitle] = useState("")
   const [symbol, setSymbol] = useState("")
@@ -72,6 +76,7 @@ export function CreateEditionForm() {
     { address: "", percent: "" },
     { address: "", percent: "" },
   ])
+  const [tier, setTier] = useState<"standard" | "permanent">("standard")
 
   // Two-step deploy: optional split first, then the edition pointing at it.
   const split = useWriteContract()
@@ -182,7 +187,10 @@ export function CreateEditionForm() {
       royaltyReceiver: ZERO_ADDRESS as Address,
       kind: EditionKind.Standalone,
       payoutAddress: payoutAddr,
-      renderer: ZERO_ADDRESS as Address,
+      // Permanent tier presets the MURI renderer (safe: it falls back to the
+      // edition's own artwork() until the artist anchors). Standard uses the
+      // default renderer.
+      renderer: (tier === "permanent" && muriRenderer ? muriRenderer : ZERO_ADDRESS) as Address,
       mintHook: ZERO_ADDRESS as Address,
     }
   }
@@ -270,6 +278,25 @@ export function CreateEditionForm() {
       </div>
 
       <ArtworkInput value={artworkURI} onChange={setArtworkURI} disabled={busy} />
+
+      {muriRenderer && (
+        <div>
+          <label className={LABEL}>Preservation</label>
+          <div className="mb-1.5 flex gap-1">
+            <TierTab active={tier === "standard"} disabled={busy} onClick={() => setTier("standard")}>
+              Standard
+            </TierTab>
+            <TierTab active={tier === "permanent"} disabled={busy} onClick={() => setTier("permanent")}>
+              Permanent (MURI)
+            </TierTab>
+          </div>
+          <p className={HELP}>
+            {tier === "standard"
+              ? "Your artwork stays where you uploaded it and you keep it pinned. You can make it permanent later from the edition page."
+              : "Adds onchain media permanence via MURI: multiple fallback URIs, a SHA-256 integrity hash, and an onchain viewer that shows the first surviving copy. After deploy you finish anchoring (2 transactions) on the edition page. Your tokens keep their live Mint Marks, and PND never holds your media."}
+          </p>
+        </div>
+      )}
 
       <div>
         <label className={LABEL} htmlFor="ed-price">
@@ -463,6 +490,20 @@ export function CreateEditionForm() {
         )}
       </div>
 
+      <div className="rounded border border-gray-100 px-3 py-2">
+        <p className="mb-1 text-[10px] font-mono uppercase tracking-wider text-gray-400">
+          Costs, kept separate
+        </p>
+        <p className={`${HELP} !mt-0`}>
+          Storage is handled in the artwork step (free under 100 KB on Arweave,
+          or your own IPFS plan; paid once from your wallet if larger). Deploying
+          this edition is gas only, in ETH.
+          {tier === "permanent" && muriRenderer
+            ? " Permanent adds 2 anchor transactions (gas only) after deploy."
+            : ""}
+        </p>
+      </div>
+
       <button onClick={submit} disabled={!canSubmit || busy} className={BTN}>
         {btnLabel}
       </button>
@@ -473,6 +514,31 @@ export function CreateEditionForm() {
         </p>
       )}
     </div>
+  )
+}
+
+function TierTab({
+  active,
+  disabled,
+  onClick,
+  children,
+}: {
+  active: boolean
+  disabled?: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`px-2.5 py-1.5 text-[10px] font-mono uppercase tracking-wider border transition-colors disabled:opacity-40 ${
+        active ? "border-fg bg-fg text-bg" : "border-gray-200 text-gray-500 hover:border-gray-400"
+      }`}
+    >
+      {children}
+    </button>
   )
 }
 

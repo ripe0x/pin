@@ -93,7 +93,11 @@ function MuriAnchorPanelInner({
   const renderer = pndMuriRenderer()
   const muri = muriProtocolAddress()
 
-  const [open, setOpen] = useState(false)
+  // Auto-expand when this edition already uses the MURI renderer (the artist
+  // picked the Permanent tier at create), nudging them to finish anchoring.
+  const [open, setOpen] = useState(
+    () => !!renderer && currentRenderer.toLowerCase() === renderer.toLowerCase(),
+  )
   const [preparing, setPreparing] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
