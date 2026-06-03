@@ -5,6 +5,10 @@
  * edition mints you your own ERC721A contract, set up with your artwork and
  * mint conditions in a single transaction. Crypto-native: wallet-first,
  * decoded, honest pricing language.
+ *
+ * Optional collaboration: add collaborators and we deploy an immutable 0xSplits
+ * split first, then point the edition's payout at it (two transactions), so
+ * proceeds are divided onchain and land outside the artist's upgradeable edition.
  */
 
 import { useEffect, useState } from "react"
@@ -18,7 +22,7 @@ import {
   useWriteContract,
 } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
-import { pndEditionsFactoryAbi } from "@pin/abi"
+import { pndEditionsFactoryAbi, splitMainAbi } from "@pin/abi"
 import { OptimizedImage } from "@/components/OptimizedImage"
 import { PREFERRED_CHAIN, PREFERRED_CHAIN_LABEL, formatWriteError } from "@/components/tx/tx-ui"
 import { useEthAmountInput } from "@/lib/useEthAmountInput"
@@ -26,8 +30,11 @@ import {
   EditionKind,
   SURFACE_SHARE_BPS,
   ZERO_ADDRESS,
+  buildSplitArgs,
   formatBps,
   pndEditionsFactory,
+  pndSplitMain,
+  validateCollaborators,
 } from "@/lib/pnd-editions"
 
 const LABEL = "block text-[10px] font-mono uppercase tracking-wider text-gray-400 mb-1.5"
@@ -37,6 +44,8 @@ const BTN =
   "block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
 const HELP = "mt-1.5 text-[10px] font-mono text-gray-400 leading-relaxed"
 
+type CollabRow = { address: string; percent: string }
+
 export function CreateEditionForm() {
   const { address } = useAccount()
   const chainId = useChainId()
@@ -45,6 +54,7 @@ export function CreateEditionForm() {
   const router = useRouter()
 
   const factory = pndEditionsFactory()
+  const splitMain = pndSplitMain()
 
   const [title, setTitle] = useState("")
   const [symbol, setSymbol] = useState("")
@@ -57,28 +67,58 @@ export function CreateEditionForm() {
   const [endAt, setEndAt] = useState("")
   const [royaltyPct, setRoyaltyPct] = useState("10")
   const [payout, setPayout] = useState("")
+  const [splitOn, setSplitOn] = useState(false)
+  const [collabs, setCollabs] = useState<CollabRow[]>([
+    { address: "", percent: "" },
+    { address: "", percent: "" },
+  ])
 
-  const { writeContract, data: txHash, isPending, error, reset } = useWriteContract()
-  const { data: receipt, isLoading: mining } = useWaitForTransactionReceipt({ hash: txHash })
+  // Two-step deploy: optional split first, then the edition pointing at it.
+  const split = useWriteContract()
+  const edition = useWriteContract()
+  const { data: splitReceipt, isLoading: splitMining } = useWaitForTransactionReceipt({
+    hash: split.data,
+  })
+  const { data: editionReceipt, isLoading: editionMining } = useWaitForTransactionReceipt({
+    hash: edition.data,
+  })
 
+  // Step 1 confirmed: deploy the edition with the freshly-created split as payout.
   useEffect(() => {
-    if (!receipt || !txHash) return
+    if (!splitReceipt) return
+    try {
+      const logs = parseEventLogs({
+        abi: splitMainAbi,
+        logs: splitReceipt.logs,
+        eventName: "CreateSplit",
+      })
+      const addr = (logs[0]?.args as { split?: Address } | undefined)?.split
+      if (addr) deployEdition(addr)
+    } catch {
+      // user can retry
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [splitReceipt])
+
+  // Step 2 confirmed: go to the new edition.
+  useEffect(() => {
+    if (!editionReceipt) return
     try {
       const logs = parseEventLogs({
         abi: pndEditionsFactoryAbi,
-        logs: receipt.logs,
+        logs: editionReceipt.logs,
         eventName: "EditionCreated",
       })
       const created = logs[0]?.args as { edition?: Address } | undefined
       if (created?.edition) {
-        reset()
+        edition.reset()
         router.push(`/editions/${created.edition}`)
       }
     } catch {
-      // fall through; user can retry
+      // user can retry
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [receipt, txHash])
+  }, [editionReceipt])
 
   if (!address) {
     return (
@@ -109,9 +149,11 @@ export function CreateEditionForm() {
   }
 
   const royaltyBps = Math.round(Number(royaltyPct || "0") * 100)
-  const royaltyOk = royaltyBps >= 0 && royaltyBps <= 10_000
+  const royaltyOk = royaltyBps >= 0 && royaltyBps <= 5_000 // matches MAX_ROYALTY_BPS
   const capOk = openEdition || (Number(supplyCap) > 0 && Number.isFinite(Number(supplyCap)))
   const payoutOk = payout === "" || isAddress(payout)
+  const collabCheck = validateCollaborators(collabs)
+  const splitOk = !splitOn || (collabCheck.ok && !!splitMain)
   const canSubmit =
     !!factory &&
     !!address &&
@@ -121,7 +163,7 @@ export function CreateEditionForm() {
     (price.isEmpty || price.isValid) &&
     royaltyOk &&
     capOk &&
-    payoutOk
+    (splitOn ? splitOk : payoutOk)
 
   function toUnix(local: string): bigint {
     if (!local) return 0n
@@ -129,9 +171,8 @@ export function CreateEditionForm() {
     return Number.isNaN(ms) ? 0n : BigInt(Math.floor(ms / 1000))
   }
 
-  function submit() {
-    if (!canSubmit || !factory || !address) return
-    const cfg = {
+  function buildCfg(payoutAddr: Address) {
+    return {
       artworkURI: artworkURI.trim(),
       price: price.wei ?? 0n,
       supplyCap: openEdition ? 0n : BigInt(Math.floor(Number(supplyCap))),
@@ -140,19 +181,56 @@ export function CreateEditionForm() {
       royaltyBps,
       royaltyReceiver: ZERO_ADDRESS as Address,
       kind: EditionKind.Standalone,
-      payoutAddress: (payout === "" ? ZERO_ADDRESS : payout) as Address,
+      payoutAddress: payoutAddr,
       renderer: ZERO_ADDRESS as Address,
       mintHook: ZERO_ADDRESS as Address,
     }
-    writeContract({
+  }
+
+  function deployEdition(payoutAddr: Address) {
+    if (!factory || !address) return
+    edition.writeContract({
       address: factory,
       abi: pndEditionsFactoryAbi,
       functionName: "createEdition",
-      args: [title.trim(), symbol.trim(), address, cfg],
+      args: [title.trim(), symbol.trim(), address, buildCfg(payoutAddr)],
     })
   }
 
-  const busy = isPending || mining
+  function submit() {
+    if (!canSubmit || !factory || !address) return
+    if (splitOn) {
+      if (!splitMain) return
+      const { accounts, allocations } = buildSplitArgs(collabCheck.parsed)
+      // Immutable split: distributorFee 0, controller 0. Receipt -> edition.
+      split.writeContract({
+        address: splitMain,
+        abi: splitMainAbi,
+        functionName: "createSplit",
+        args: [accounts, allocations, 0, ZERO_ADDRESS as Address],
+      })
+    } else {
+      deployEdition((payout === "" ? ZERO_ADDRESS : payout) as Address)
+    }
+  }
+
+  const busy = split.isPending || splitMining || edition.isPending || editionMining
+  const btnLabel = split.isPending
+    ? "Confirm split in wallet…"
+    : splitMining
+      ? "Deploying split…"
+      : edition.isPending
+        ? "Confirm in wallet…"
+        : editionMining
+          ? "Deploying edition…"
+          : splitOn
+            ? "Deploy split + edition"
+            : "Deploy edition"
+  const writeError = split.error ?? edition.error
+
+  function setCollab(i: number, field: keyof CollabRow, value: string) {
+    setCollabs((rows) => rows.map((r, j) => (j === i ? { ...r, [field]: value } : r)))
+  }
 
   return (
     <div className="rounded-lg border border-gray-200 bg-surface p-5 space-y-5">
@@ -231,9 +309,10 @@ export function CreateEditionForm() {
           disabled={busy}
         />
         <p className={HELP}>
-          0 = gas only (never called free). On paid mints, a fixed{" "}
-          {formatBps(SURFACE_SHARE_BPS)} surface share goes to PND when minted here. Deploy
-          your own site and you keep it.
+          0 = gas only (never called free). The artist always keeps at least{" "}
+          {formatBps(10_000 - SURFACE_SHARE_BPS)} of a paid mint; the fixed{" "}
+          {formatBps(SURFACE_SHARE_BPS)} surface share goes to PND when minted here, and you
+          keep 100% by minting on your own site.
         </p>
         {price.error && <p className="mt-1 text-[10px] font-mono text-red-500">{price.error}</p>}
       </div>
@@ -318,31 +397,105 @@ export function CreateEditionForm() {
             onChange={(e) => setRoyaltyPct(e.target.value.replace(/[^0-9.]/g, ""))}
             disabled={busy}
           />
-          <p className={HELP}>EIP-2981, honored by marketplaces.</p>
+          <p className={HELP}>EIP-2981, honored by marketplaces. Max 50%.</p>
         </div>
-        <div>
-          <label className={LABEL} htmlFor="ed-payout">
-            Payout (optional)
-          </label>
+        {!splitOn && (
+          <div>
+            <label className={LABEL} htmlFor="ed-payout">
+              Payout (optional)
+            </label>
+            <input
+              id="ed-payout"
+              className={INPUT}
+              value={payout}
+              onChange={(e) => setPayout(e.target.value.trim())}
+              placeholder="defaults to you"
+              disabled={busy}
+            />
+            {!payoutOk && (
+              <p className="mt-1 text-[10px] font-mono text-red-500">Invalid address</p>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <label className="flex items-center gap-2 mb-2">
           <input
-            id="ed-payout"
-            className={INPUT}
-            value={payout}
-            onChange={(e) => setPayout(e.target.value.trim())}
-            placeholder="defaults to you"
-            disabled={busy}
+            type="checkbox"
+            checked={splitOn}
+            onChange={(e) => setSplitOn(e.target.checked)}
+            disabled={busy || !splitMain}
           />
-          {!payoutOk && <p className="mt-1 text-[10px] font-mono text-red-500">Invalid address</p>}
-        </div>
+          <span className="text-[11px] font-mono text-gray-600">
+            Split proceeds with collaborators
+          </span>
+        </label>
+        {splitOn && (
+          <div className="space-y-2">
+            {collabs.map((row, i) => (
+              <div key={i} className="grid grid-cols-[1fr_72px_28px] gap-2">
+                <input
+                  className={INPUT}
+                  value={row.address}
+                  onChange={(e) => setCollab(i, "address", e.target.value.trim())}
+                  placeholder="0x… collaborator"
+                  disabled={busy}
+                />
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  step={1}
+                  className={INPUT}
+                  value={row.percent}
+                  onChange={(e) => setCollab(i, "percent", e.target.value)}
+                  placeholder="%"
+                  disabled={busy}
+                />
+                <button
+                  type="button"
+                  className="text-[11px] font-mono text-gray-400 hover:text-red-500 disabled:opacity-30"
+                  onClick={() => setCollabs((rows) => rows.filter((_, j) => j !== i))}
+                  disabled={busy || collabs.length <= 2}
+                  aria-label="Remove collaborator"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              className="text-[10px] font-mono uppercase tracking-wider text-gray-500 hover:text-fg disabled:opacity-30"
+              onClick={() => setCollabs((rows) => [...rows, { address: "", percent: "" }])}
+              disabled={busy}
+            >
+              + Add collaborator
+            </button>
+            <p className={HELP}>
+              Deploys an immutable 0xSplits split and routes payout to it. Shares are
+              whole percentages and must total 100. Two transactions: the split, then
+              the edition.
+            </p>
+            {!splitMain && (
+              <p className="text-[10px] font-mono text-red-500">
+                0xSplits is not available on this network.
+              </p>
+            )}
+            {collabCheck.error && (
+              <p className="text-[10px] font-mono text-red-500">{collabCheck.error}</p>
+            )}
+          </div>
+        )}
       </div>
 
       <button onClick={submit} disabled={!canSubmit || busy} className={BTN}>
-        {isPending ? "Confirm in wallet…" : mining ? "Deploying edition…" : "Deploy edition"}
+        {btnLabel}
       </button>
 
-      {error && (
+      {writeError && (
         <p className="text-[11px] font-mono text-red-500 break-words">
-          {formatWriteError(error, "Deploy")}
+          {formatWriteError(writeError, "Deploy")}
         </p>
       )}
     </div>

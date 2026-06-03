@@ -47,6 +47,10 @@ export default async function EditionPage({ params }: { params: Params }) {
 
   const mutability = e.isSealed ? "Sealed (no upgrades)" : "Upgradeable by the artist"
   const metadataState = e.isMetadataFrozen ? "Frozen" : "Mutable by the artist"
+  // Mirrors PNDEditions.isPermanent(): art is permanent only when the contract
+  // is sealed (no upgrades) AND metadata is frozen. Freezing alone is not
+  // permanence, an unsealed owner could still upgrade to change the art.
+  const permanent = e.isSealed && e.isMetadataFrozen
 
   return (
     <div>
@@ -100,6 +104,7 @@ export default async function EditionPage({ params }: { params: Params }) {
             <Fact label="Standard" value="ERC721 (ERC721A)" />
             <Fact label="Mutability" value={mutability} />
             <Fact label="Metadata" value={metadataState} />
+            <Fact label="Permanence" value={permanent ? "Permanent" : "Not yet permanent"} />
             <Fact
               label="Royalty"
               value={e.cfg.royaltyBps > 0 ? formatBps(e.cfg.royaltyBps) : "none"}
@@ -126,7 +131,12 @@ export default async function EditionPage({ params }: { params: Params }) {
                 View contract ↗
               </a>
             </div>
-            {(!e.isSealed || !e.isMetadataFrozen) && (
+            {permanent ? (
+              <p className="pt-2 text-[10px] font-mono text-gray-400 normal-case leading-relaxed">
+                Permanent: the contract is sealed (no further upgrades) and metadata is
+                frozen, so the artwork and code cannot change.
+              </p>
+            ) : (
               <p className="pt-2 text-[10px] font-mono text-gray-400 normal-case leading-relaxed">
                 {!e.isSealed ? "The artist can upgrade this contract until they seal it. " : ""}
                 {!e.isMetadataFrozen ? "Artwork can change until the artist freezes metadata." : ""}
