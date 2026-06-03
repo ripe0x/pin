@@ -1,5 +1,9 @@
 import "server-only"
+import { NFT_MARKET, MAINNET_CHAIN_ID } from "@pin/addresses"
 import { sql } from "./db"
+
+/** Foundation NFTMarket address — used as the `[house]` segment for FND auctions. */
+const FND_MARKET = NFT_MARKET[MAINNET_CHAIN_ID]
 
 /**
  * Read-side queries against the tables Ponder writes (`pnd_auctions`,
@@ -155,6 +159,89 @@ export async function getSettledAuctionForToken(
       })),
     }
   })
+}
+
+/**
+ * One completed auction sale for a token (PND `settled` or FND `finalized`,
+ * always with a winner). Powers the merged Provenance timeline on the token
+ * page — a token can have many, hence no `LIMIT 1`. `marketAddress` +
+ * `auctionId` reconstruct the per-auction page link target.
+ */
+export type TokenAuctionSale = {
+  source: "sovereign" | "foundation"
+  marketAddress: string
+  auctionId: string
+  seller: string
+  winner: string
+  amountWei: bigint
+  settledAtTime: number
+  settlementTxHash: string | null
+}
+
+/**
+ * Every completed sale for a token across PND houses and Foundation, newest
+ * first. Pure Postgres (zero RPC); both branches hit the existing
+ * `(token_contract, token_id)` / `(nft_contract, token_id)` indexes. Wrapped
+ * in `withTimeout` because this is an *additive* read on the hot token render
+ * — a slow indexer must not block the page; it just degrades to plain
+ * transfers. Returns `[]` on miss / unavailable.
+ */
+export async function getTokenAuctionSales(
+  tokenContract: string,
+  tokenId: string,
+): Promise<TokenAuctionSale[]> {
+  if (INDEXER_DISABLED || !sql) return []
+  const db = sql
+
+  const result = await withTimeout(async () => {
+    const contract = tokenContract.toLowerCase()
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+      /[^a-zA-Z0-9_]/g,
+      "",
+    )
+
+    // settled_at stays a bigint (NOT cast to text) so the UNION's final
+    // ORDER BY sorts numerically, not lexicographically.
+    const rows = (await db.unsafe(
+      `(SELECT 'sovereign' AS source, lower(house) AS market,
+               auction_id::text AS auction_id,
+               lower(seller) AS seller, lower(winner) AS winner,
+               (coalesce(seller_proceeds,0) + coalesce(protocol_fee,0))::text AS amount,
+               settled_at_time AS settled_at, lifecycle_tx_hash AS tx_hash
+        FROM ${schema}.pnd_auctions
+        WHERE lower(token_contract) = $1 AND token_id::text = $2
+          AND status = 'settled' AND winner IS NOT NULL)
+       UNION ALL
+       (SELECT 'foundation' AS source, $3 AS market,
+               auction_id::text AS auction_id,
+               lower(seller) AS seller, lower(highest_bidder) AS winner,
+               (coalesce(finalized_total_fees,0) + coalesce(finalized_creator_rev,0)
+                + coalesce(finalized_seller_rev,0))::text AS amount,
+               finalized_at_time AS settled_at, finalized_tx_hash AS tx_hash
+        FROM ${schema}.fnd_auctions
+        WHERE lower(nft_contract) = $1 AND token_id::text = $2
+          AND status = 'finalized' AND highest_bidder IS NOT NULL)
+       ORDER BY settled_at DESC`,
+      [contract, tokenId, FND_MARKET.toLowerCase()],
+    )) as Array<{
+      source: string; market: string; auction_id: string;
+      seller: string; winner: string; amount: string;
+      settled_at: string; tx_hash: string | null
+    }>
+
+    return rows.map((r) => ({
+      source: r.source as "sovereign" | "foundation",
+      marketAddress: r.market,
+      auctionId: r.auction_id,
+      seller: r.seller,
+      winner: r.winner,
+      amountWei: BigInt(r.amount),
+      settledAtTime: Number(r.settled_at),
+      settlementTxHash: r.tx_hash,
+    }))
+  })
+
+  return result ?? []
 }
 
 export type ActivePndAuction = {
