@@ -23,10 +23,20 @@ interface IPNDMintMarks {
 /// @notice Directed, typed, append-only edges from this edition to any node.
 interface IPNDEditionGraph {
     event EdgeAdded(EdgeType indexed edgeType, Ref target);
+    event EdgeAcknowledged(EdgeType indexed edgeType, Ref source, bool ack);
 
     function addEdge(EdgeType edgeType, Ref calldata target) external;
 
     function edges() external view returns (Edge[] memory);
+
+    /// @notice B acknowledges (ack=true) or revokes an inbound edge claimed by
+    ///         `source` (A), making the A->B relationship verifiable as mutual.
+    function acknowledgeEdge(EdgeType edgeType, Ref calldata source, bool ack) external;
+
+    function isEdgeAcknowledged(EdgeType edgeType, Ref calldata source)
+        external
+        view
+        returns (bool);
 }
 
 /// @title IPNDTokenPath
@@ -80,6 +90,7 @@ interface IPNDEditions is IPNDMintMarks, IPNDEditionGraph, IPNDTokenPath {
     event Withdrawn(address indexed account, uint256 amount);
     event PayoutAddressSet(address payoutAddress);
     event MetadataFrozen();
+    event StrayETHRescued(address indexed to, uint256 amount);
 
     // ── init + config (owner) ────────────────────────────────────────────────
     function initialize(
@@ -117,6 +128,9 @@ interface IPNDEditions is IPNDMintMarks, IPNDEditionGraph, IPNDTokenPath {
 
     function pendingWithdrawal(address account) external view returns (uint256);
 
+    /// @notice Owner-only sweep of ETH not owed to any payee (force-fed stray ETH).
+    function rescueStrayETH(address to) external;
+
     // ── reads ───────────────────────────────────────────────────────────────
     function config()
         external
@@ -133,4 +147,6 @@ interface IPNDEditions is IPNDMintMarks, IPNDEditionGraph, IPNDTokenPath {
     function isUpgradeable() external view returns (bool);
     function isSealed() external view returns (bool);
     function isMetadataFrozen() external view returns (bool);
+    /// @notice sealed && metadataFrozen: the true art-permanence guarantee.
+    function isPermanent() external view returns (bool);
 }

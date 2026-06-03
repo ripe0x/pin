@@ -105,6 +105,30 @@ export const PND_EDITIONS_FACTORY: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
 }
 
+// PND reference mint hooks (public goods). One shared instance per hook,
+// configured per-edition by each edition's owner; an artist opts in by pointing
+// setMintHook at one. Deployed alongside the factory by
+// script/DeployEditions.s.sol — paste the addresses here post-deploy.
+export const PND_PER_WALLET_CAP_HOOK: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+}
+export const PND_ALLOWLIST_HOOK: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+}
+export const PND_HOLDS_EDITION_HOOK: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+}
+
+// 0xSplits SplitMain (canonical, immutable). Same address across mainnet and
+// most L2s via deterministic deploy. Used to deploy an immutable payment split
+// (controller = 0) as an edition's payoutAddress when an artist adds
+// collaborators, so collaborator funds land in 0xSplits, not the artist's
+// upgradeable edition. Verify the address per chain at https://docs.splits.org.
+export const SPLIT_MAIN: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x2ed6c4B5dA6378c7897AC67Ba9e43102Feb694EE",
+  [BASE_CHAIN_ID]: "0x2ed6c4B5dA6378c7897AC67Ba9e43102Feb694EE",
+}
+
 // Catalog — generic public registry where an artist address can
 // publish on-chain pointers (contracts, tokens, ranges) belonging to its
 // public record. Deployed via the canonical CREATE2 deterministic-deployment

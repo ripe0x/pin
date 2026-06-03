@@ -92,22 +92,63 @@ contract PNDDefaultRenderer is IPNDRenderer {
         return "Closed";
     }
 
-    /// @dev Minimal JSON-string escaping: backslash and double-quote only.
-    ///      Sufficient for project names and ipfs/https/data artwork URIs.
+    /// @dev JSON string escaping per RFC 8259: backslash, double-quote, and all
+    ///      control characters U+0000-U+001F (named escapes for the common ones,
+    ///      \u00XX for the rest). Owner-set names/URIs therefore cannot break the
+    ///      JSON structure or emit output that strict parsers reject.
     function _escape(string memory s) internal pure returns (string memory) {
         bytes memory b = bytes(s);
-        uint256 extra = 0;
+        uint256 len = 0;
         for (uint256 i = 0; i < b.length; i++) {
-            if (b[i] == '"' || b[i] == "\\") extra++;
+            uint8 c = uint8(b[i]);
+            if (
+                c == 0x22 || c == 0x5c || c == 0x08 || c == 0x09 || c == 0x0a || c == 0x0c
+                    || c == 0x0d
+            ) {
+                len += 2; // \" \\ \b \t \n \f \r
+            } else if (c < 0x20) {
+                len += 6; // \u00XX
+            } else {
+                len += 1;
+            }
         }
-        if (extra == 0) return s;
-        bytes memory out = new bytes(b.length + extra);
+        if (len == b.length) return s; // nothing to escape
+        bytes memory hexc = "0123456789abcdef";
+        bytes memory out = new bytes(len);
         uint256 j = 0;
         for (uint256 i = 0; i < b.length; i++) {
-            if (b[i] == '"' || b[i] == "\\") {
+            uint8 c = uint8(b[i]);
+            if (c == 0x22) {
                 out[j++] = "\\";
+                out[j++] = '"';
+            } else if (c == 0x5c) {
+                out[j++] = "\\";
+                out[j++] = "\\";
+            } else if (c == 0x08) {
+                out[j++] = "\\";
+                out[j++] = "b";
+            } else if (c == 0x09) {
+                out[j++] = "\\";
+                out[j++] = "t";
+            } else if (c == 0x0a) {
+                out[j++] = "\\";
+                out[j++] = "n";
+            } else if (c == 0x0c) {
+                out[j++] = "\\";
+                out[j++] = "f";
+            } else if (c == 0x0d) {
+                out[j++] = "\\";
+                out[j++] = "r";
+            } else if (c < 0x20) {
+                out[j++] = "\\";
+                out[j++] = "u";
+                out[j++] = "0";
+                out[j++] = "0";
+                out[j++] = hexc[c >> 4];
+                out[j++] = hexc[c & 0x0f];
+            } else {
+                out[j++] = b[i];
             }
-            out[j++] = b[i];
         }
         return string(out);
     }

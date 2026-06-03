@@ -2,8 +2,8 @@
 pragma solidity ^0.8.24;
 
 import {ERC721AUpgradeable} from "erc721a-upgradeable/contracts/ERC721AUpgradeable.sol";
-import {OwnableUpgradeable} from
-    "openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
+import {Ownable2StepUpgradeable} from
+    "openzeppelin-contracts-upgradeable/contracts/access/Ownable2StepUpgradeable.sol";
 import {UUPSUpgradeable} from
     "openzeppelin-contracts-upgradeable/contracts/proxy/utils/UUPSUpgradeable.sol";
 import {ReentrancyGuardUpgradeable} from
@@ -37,7 +37,7 @@ import {
 ///         seal() to renounce upgradeability forever.
 contract PNDEditions is
     ERC721AUpgradeable,
-    OwnableUpgradeable,
+    Ownable2StepUpgradeable,
     UUPSUpgradeable,
     ReentrancyGuardUpgradeable,
     IPNDEditions
@@ -46,6 +46,11 @@ contract PNDEditions is
     /// @notice Fixed protocol surface share: 10%. Paid to the mint surface
     ///         (PND on PND, the artist on their own site). Not artist-set.
     uint16 public constant SURFACE_SHARE_BPS = 1_000;
+    /// @notice Hard ceiling on the artist-set EIP-2981 royalty (50%). 2981 is
+    ///         advisory, but a sane cap avoids a footgun, and a permissionless
+    ///         deployer setting an absurd royalty on an edition owned by someone
+    ///         else.
+    uint16 private constant MAX_ROYALTY_BPS = 5_000;
     bytes4 private constant INTERFACE_ID_ERC2981 = 0x2a55205a;
 
     bool private _sealedMode;
@@ -55,6 +60,10 @@ contract PNDEditions is
     // withdraw(). No external transfer happens during mint, so a reverting
     // recipient can never brick minting.
     mapping(address => uint256) private _pending;
+    // Running sum of every _pending balance. _authorizeUpgrade requires this to
+    // be zero, so a malicious upgrade can never sweep funds owed to the surface,
+    // the artist payout, or collaborators: they must be settled (paid out) first.
+    uint256 private _totalPending;
 
     address public defaultRenderer; // canonical fallback, set at init
     address private _renderer; // edition renderer override; 0 = default
@@ -73,6 +82,17 @@ contract PNDEditions is
     mapping(uint256 => bool) private _tokenPathSet;
     Path private _defaultPath;
 
+    // Bilateral Edition Graph: an edge A --edgeType--> B is "claimed" by A via
+    // addEdge; B acknowledges it here so a reader can show "verified mutual" vs
+    // "claimed", with no central registry. Keyed by keccak256(edgeType, source).
+    mapping(bytes32 => bool) private _inboundAck;
+
+    // Append-only storage. New state variables go directly ABOVE this gap; never
+    // reorder or insert among existing slots. The base contracts use namespaced
+    // (OZ ERC-7201) / diamond (ERC721A) storage, so these sequential slots belong
+    // to PNDEditions alone, and appending before the gap stays upgrade-safe.
+    uint256[49] private __gap;
+
     constructor() {
         _disableInitializers();
     }
@@ -86,7 +106,7 @@ contract PNDEditions is
     ) external override initializerERC721A initializer {
         require(owner_ != address(0), "PND: owner required");
         require(defaultRenderer_ != address(0), "PND: renderer required");
-        require(cfg.royaltyBps <= BPS, "PND: royalty bps");
+        require(cfg.royaltyBps <= MAX_ROYALTY_BPS, "PND: royalty too high");
         require(cfg.mintEnd == 0 || cfg.mintEnd > cfg.mintStart, "PND: bad window");
         __ERC721A_init(name_, symbol_);
         __Ownable_init(owner_);
@@ -166,6 +186,9 @@ contract PNDEditions is
     ///      so a reverting recipient can never brick a mint.
     function _settle(uint256 total, address surface) private {
         if (total == 0) return;
+        // Track the running owed total so _authorizeUpgrade can require it to be
+        // zero (surfaceCut + artistCut == total, so one add covers both legs).
+        _totalPending += total;
         uint256 surfaceCut = surface == address(0) ? 0 : (total * SURFACE_SHARE_BPS) / BPS;
         if (surfaceCut > 0) {
             _pending[surface] += surfaceCut;
@@ -180,9 +203,11 @@ contract PNDEditions is
     /// @notice Withdraw the balance owed to `account`, to `account`.
     ///         Permissionless trigger; funds only ever go to the owed address.
     function withdraw(address account) external override nonReentrant {
+        require(account != address(0), "PND: zero account");
         uint256 amount = _pending[account];
         require(amount > 0, "PND: nothing to withdraw");
         _pending[account] = 0;
+        _totalPending -= amount;
         (bool ok,) = payable(account).call{value: amount}("");
         require(ok, "PND: withdraw failed");
         emit Withdrawn(account, amount);
@@ -190,6 +215,18 @@ contract PNDEditions is
 
     function pendingWithdrawal(address account) external view override returns (uint256) {
         return _pending[account];
+    }
+
+    /// @notice Sweep ONLY ETH that is not owed to any payee (e.g. force-fed via
+    ///         selfdestruct or a block reward). Pull-payment balances are
+    ///         untouchable: only the surplus above _totalPending is ever sent.
+    function rescueStrayETH(address to) external override onlyOwner nonReentrant {
+        require(to != address(0), "PND: zero account");
+        uint256 stray = address(this).balance - _totalPending;
+        require(stray > 0, "PND: no stray eth");
+        (bool ok,) = payable(to).call{value: stray}("");
+        require(ok, "PND: rescue failed");
+        emit StrayETHRescued(to, stray);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -229,6 +266,7 @@ contract PNDEditions is
     }
 
     function setMintHook(address hook) external override onlyOwner {
+        require(!_sealedMode, "PND: sealed");
         _mintHook = hook;
         emit MintHookSet(hook);
     }
@@ -267,6 +305,29 @@ contract PNDEditions is
         return _edges;
     }
 
+    /// @notice Acknowledge (ack=true) or revoke (ack=false) an inbound edge
+    ///         claimed by `source`. An edge A --edgeType--> B is one-directional
+    ///         and unauthenticated on A's side; B calls this so a reader can
+    ///         verify the relationship is mutual (A claims it AND B acknowledges
+    ///         it), with no central registry. Idempotent.
+    function acknowledgeEdge(EdgeType edgeType, Ref calldata source, bool ack)
+        external
+        override
+        onlyOwner
+    {
+        _inboundAck[keccak256(abi.encode(edgeType, source))] = ack;
+        emit EdgeAcknowledged(edgeType, source, ack);
+    }
+
+    function isEdgeAcknowledged(EdgeType edgeType, Ref calldata source)
+        external
+        view
+        override
+        returns (bool)
+    {
+        return _inboundAck[keccak256(abi.encode(edgeType, source))];
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Token Path (owner in v1; pointer layer only)
     // ─────────────────────────────────────────────────────────────────────────
@@ -300,6 +361,15 @@ contract PNDEditions is
     // Upgradeability
     // ─────────────────────────────────────────────────────────────────────────
 
+    /// @notice Disabled. Renouncing would orphan the edition: default proceeds
+    ///         would accrue to owner() == address(0) (burnable by a
+    ///         permissionless withdraw), and every admin lever (seal, freeze,
+    ///         payout, upgrade) would be permanently bricked. Use seal() to
+    ///         renounce upgradeability without orphaning the contract.
+    function renounceOwnership() public pure override {
+        revert("PND: renounce disabled");
+    }
+
     function seal() external override onlyOwner {
         require(!_sealedMode, "PND: already sealed");
         _sealedMode = true;
@@ -314,8 +384,23 @@ contract PNDEditions is
         return _sealedMode;
     }
 
+    /// @notice True only when the edition is BOTH sealed (no upgrades) and
+    ///         metadata-frozen (no renderer/artwork changes). This is the real
+    ///         permanence guarantee: freezeMetadata() alone does NOT make art
+    ///         permanent, because an unsealed owner can still upgrade to a new
+    ///         implementation that changes the rendered art. Surfaces should
+    ///         claim "permanent" only when this is true.
+    function isPermanent() external view override returns (bool) {
+        return _sealedMode && _metadataFrozen;
+    }
+
     function _authorizeUpgrade(address) internal view override onlyOwner {
         require(!_sealedMode, "PND: sealed");
+        // Settle-before-upgrade: an upgrade is only authorized when nothing is
+        // owed, so a malicious upgrade target cannot sweep accrued pull-payment
+        // balances (the surface share, the artist payout, or collaborators).
+        // withdraw() is permissionless, so anyone can flush every payee first.
+        require(_totalPending == 0, "PND: settle pending");
     }
 
     // ─────────────────────────────────────────────────────────────────────────

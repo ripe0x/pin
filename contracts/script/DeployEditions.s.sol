@@ -5,6 +5,9 @@ import {Script, console2} from "forge-std/Script.sol";
 import {PNDEditions} from "../src/editions/PNDEditions.sol";
 import {PNDEditionsFactory} from "../src/editions/PNDEditionsFactory.sol";
 import {PNDDefaultRenderer} from "../src/editions/PNDDefaultRenderer.sol";
+import {PNDPerWalletCapHook} from "../src/editions/hooks/PNDPerWalletCapHook.sol";
+import {PNDAllowlistHook} from "../src/editions/hooks/PNDAllowlistHook.sol";
+import {PNDHoldsEditionHook} from "../src/editions/hooks/PNDHoldsEditionHook.sol";
 
 /// @notice Deploy script for the PND Editions system: the built-in default
 ///         renderer, the shared PNDEditions implementation, and the factory.
@@ -26,6 +29,12 @@ contract DeployEditions is Script {
         PNDDefaultRenderer renderer = new PNDDefaultRenderer();
         PNDEditions impl = new PNDEditions();
         PNDEditionsFactory factory = new PNDEditionsFactory(address(impl), address(renderer));
+        // Reference hook library (public goods; one shared instance serves many
+        // editions, configured per-edition by each edition's owner). Optional:
+        // an artist opts in by pointing setMintHook at one of these.
+        PNDPerWalletCapHook perWalletCapHook = new PNDPerWalletCapHook();
+        PNDAllowlistHook allowlistHook = new PNDAllowlistHook();
+        PNDHoldsEditionHook holdsEditionHook = new PNDHoldsEditionHook();
         vm.stopBroadcast();
 
         require(factory.implementation() == address(impl), "impl mismatch");
@@ -36,6 +45,9 @@ contract DeployEditions is Script {
         console2.log("PNDDefaultRenderer:   ", address(renderer));
         console2.log("PNDEditions impl:     ", address(impl));
         console2.log("PNDEditionsFactory:   ", address(factory));
+        console2.log("PNDPerWalletCapHook:  ", address(perWalletCapHook));
+        console2.log("PNDAllowlistHook:     ", address(allowlistHook));
+        console2.log("PNDHoldsEditionHook:  ", address(holdsEditionHook));
         console2.log("Post-deploy assertions: OK");
         console2.log("");
         console2.log("Add to packages/addresses/src/index.ts:");

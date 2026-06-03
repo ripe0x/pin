@@ -34,6 +34,58 @@ export const pndEditionsAbi = [
   },
   {
     "type": "function",
+    "name": "acceptOwnership",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "acknowledgeEdge",
+    "inputs": [
+      {
+        "name": "edgeType",
+        "type": "uint8",
+        "internalType": "enum EdgeType"
+      },
+      {
+        "name": "source",
+        "type": "tuple",
+        "internalType": "struct Ref",
+        "components": [
+          {
+            "name": "chainId",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "contractAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "id",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "kind",
+            "type": "uint8",
+            "internalType": "enum RefKind"
+          }
+        ]
+      },
+      {
+        "name": "ack",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "addEdge",
     "inputs": [
       {
@@ -417,7 +469,66 @@ export const pndEditionsAbi = [
   },
   {
     "type": "function",
+    "name": "isEdgeAcknowledged",
+    "inputs": [
+      {
+        "name": "edgeType",
+        "type": "uint8",
+        "internalType": "enum EdgeType"
+      },
+      {
+        "name": "source",
+        "type": "tuple",
+        "internalType": "struct Ref",
+        "components": [
+          {
+            "name": "chainId",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "contractAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "id",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "kind",
+            "type": "uint8",
+            "internalType": "enum RefKind"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "isMetadataFrozen",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isPermanent",
     "inputs": [],
     "outputs": [
       {
@@ -659,6 +770,19 @@ export const pndEditionsAbi = [
   },
   {
     "type": "function",
+    "name": "pendingOwner",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "pendingWithdrawal",
     "inputs": [
       {
@@ -706,6 +830,19 @@ export const pndEditionsAbi = [
     "type": "function",
     "name": "renounceOwnership",
     "inputs": [],
+    "outputs": [],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "rescueStrayETH",
+    "inputs": [
+      {
+        "name": "to",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
     "outputs": [],
     "stateMutability": "nonpayable"
   },
@@ -1303,6 +1440,53 @@ export const pndEditionsAbi = [
   },
   {
     "type": "event",
+    "name": "EdgeAcknowledged",
+    "inputs": [
+      {
+        "name": "edgeType",
+        "type": "uint8",
+        "indexed": true,
+        "internalType": "enum EdgeType"
+      },
+      {
+        "name": "source",
+        "type": "tuple",
+        "indexed": false,
+        "internalType": "struct Ref",
+        "components": [
+          {
+            "name": "chainId",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "contractAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "id",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "kind",
+            "type": "uint8",
+            "internalType": "enum RefKind"
+          }
+        ]
+      },
+      {
+        "name": "ack",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "EdgeAdded",
     "inputs": [
       {
@@ -1462,6 +1646,25 @@ export const pndEditionsAbi = [
   },
   {
     "type": "event",
+    "name": "OwnershipTransferStarted",
+    "inputs": [
+      {
+        "name": "previousOwner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "newOwner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "OwnershipTransferred",
     "inputs": [
       {
@@ -1562,6 +1765,25 @@ export const pndEditionsAbi = [
     "type": "event",
     "name": "Sealed",
     "inputs": [],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "StrayETHRescued",
+    "inputs": [
+      {
+        "name": "to",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
     "anonymous": false
   },
   {

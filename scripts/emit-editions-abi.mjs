@@ -34,3 +34,20 @@ emit({
   exportName: "pndEditionsFactoryAbi",
   outFile: "pndEditionsFactory.ts",
 });
+
+// Reference mint-hook library (public goods, one shared instance per hook).
+emit({
+  artifact: "PNDPerWalletCapHook.sol/PNDPerWalletCapHook.json",
+  exportName: "pndPerWalletCapHookAbi",
+  outFile: "pndPerWalletCapHook.ts",
+});
+emit({
+  artifact: "PNDAllowlistHook.sol/PNDAllowlistHook.json",
+  exportName: "pndAllowlistHookAbi",
+  outFile: "pndAllowlistHook.ts",
+});
+emit({
+  artifact: "PNDHoldsEditionHook.sol/PNDHoldsEditionHook.json",
+  exportName: "pndHoldsEditionHookAbi",
+  outFile: "pndHoldsEditionHook.ts",
+});
