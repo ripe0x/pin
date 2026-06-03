@@ -54,7 +54,7 @@ payments: they accrue per-address and are claimed via `withdraw(account)`.
 
 | Area | State |
 |---|---|
-| Contracts + tests | Done. 40 Foundry tests pass (incl. 256-run fuzz on the split). |
+| Contracts + tests | Done + hardened. 67 Foundry tests pass (core, fuzz, hooks, upgrade, security regressions, continuity). |
 | Web create + mint UI | Done. Typechecks, production build green, **e2e passes in a real browser**. |
 | Local dev + e2e harness | Done. `pnpm dev:editions` and `pnpm --filter @pin/web test:e2e`. |
 | Mainnet deploy | Not done. No factory address yet. |
@@ -70,6 +70,10 @@ payments: they accrue per-address and are claimed via `withdraw(account)`.
   renderer, hooks, graph, path, factory. The "what the contract exposes".
 - **[pnd-editions-integration.md](./pnd-editions-integration.md)** — deploy +
   post-deploy indexing runbook (deploy-gated).
+- **[pnd-editions-security-review.md](./pnd-editions-security-review.md)** — the
+  adversarial security review, with the resolution status for each finding.
+- **[pnd-editions-design-review.md](./pnd-editions-design-review.md)** — the
+  positive-sum design read: the continuity hooks, the graph handshake, and splits.
 - **[../apps/web/tests/e2e/README.md](../apps/web/tests/e2e/README.md)** — the
   browser-driven e2e harness.
 
@@ -89,10 +93,12 @@ src/editions/
                               tx. Emits EditionCreated.
   PNDDefaultRenderer.sol      Built-in renderer: base64 onchain JSON with the
                               Mint Mark as provenance attributes.
+  hooks/                      Reference mint hooks (public goods): PerWalletCap,
+                              Allowlist (Merkle), HoldsEdition (continuity gate).
   interfaces/                 IPNDEditions, IPNDRenderer (+IPNDEditionsView),
                               IPNDMintHook.
-script/DeployEditions.s.sol   Deploy renderer + impl + factory, asserts wiring.
-test/editions/                40 tests (core + fuzz, hooks, upgrade).
+script/DeployEditions.s.sol   Deploy renderer + impl + factory + hooks, asserts wiring.
+test/editions/                67 tests (core, fuzz, hooks, upgrade, security, continuity).
 ```
 
 ### ABIs + addresses (`packages/`, `scripts/`)

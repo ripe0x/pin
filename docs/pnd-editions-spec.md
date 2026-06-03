@@ -1,7 +1,12 @@
 # PND Editions — interface spec
 
-> **Status: v2, matches the shipped contracts** in
-> `contracts/src/editions/`. The onchain interfaces and storage models.
+> **Status: v2, updated for the hardened contracts** in
+> `contracts/src/editions/` (the contract is the source of truth). Since the
+> original v2 the mint API split into `mint` / `mintWithRewards`, proceeds became
+> pull payments (`withdraw`), and the contract gained `setPayoutAddress`,
+> `freezeMetadata` / `isPermanent`, settle-before-upgrade, two-step ownership, a
+> reference mint-hook library, and the bilateral graph handshake. See
+> `docs/pnd-editions-security-review.md` and `docs/pnd-editions-design-review.md`.
 > Read `docs/pnd-editions-README.md` for the overview and
 > `docs/pnd-editions.md` for the product rationale.
 >
@@ -82,6 +87,10 @@ interface IPNDEditions is IPNDMintMarks, IPNDEditionGraph, IPNDTokenPath {
     event MintHookSet(address hook);
     event TokenArtworkSet(uint256 indexed tokenId, string cid);
     event Sealed();
+    event Withdrawn(address indexed account, uint256 amount);
+    event PayoutAddressSet(address payoutAddress);
+    event MetadataFrozen();
+    event StrayETHRescued(address indexed to, uint256 amount);
 
     // init + config (owner)
     function initialize(
@@ -95,10 +104,25 @@ interface IPNDEditions is IPNDMintMarks, IPNDEditionGraph, IPNDTokenPath {
     function setMintHook(address hook) external;
     function seal() external;
 
+    // config (owner), cont.
+    function setPayoutAddress(address payoutAddress) external;
+    function freezeMetadata() external;            // one-way; see isPermanent()
+    function rescueStrayETH(address to) external;  // only ETH not owed to a payee
+
     // mint
-    /// @param surface  receives the fixed Surface Share. address(0) folds it to the artist.
-    /// @param hookData opaque payload forwarded to the mint hook (if any).
-    function mint(uint256 quantity, address surface, bytes calldata hookData) external payable;
+    /// @notice Honest default: surface = 0, the artist gets 100%.
+    function mint(uint256 quantity) external payable;
+    /// @notice Credits `surface` the fixed Surface Share (address(0) folds it to
+    ///         the artist). `hookData` is forwarded to the mint hook if set.
+    function mintWithRewards(uint256 quantity, address surface, bytes calldata hookData)
+        external
+        payable;
+
+    // pull payments: proceeds accrue per-address; claim them here. withdraw is
+    // permissionless (funds only ever go to `account`); upgrades are blocked
+    // until all accrued balances are withdrawn (settle-before-upgrade).
+    function withdraw(address account) external;
+    function pendingWithdrawal(address account) external view returns (uint256);
 
     // reads
     function config() external view returns (EditionConfig memory cfg, EditionStatus status, uint256 minted);
@@ -109,6 +133,8 @@ interface IPNDEditions is IPNDMintMarks, IPNDEditionGraph, IPNDTokenPath {
     function mintHook() external view returns (address);
     function isUpgradeable() external view returns (bool);
     function isSealed() external view returns (bool);
+    function isMetadataFrozen() external view returns (bool);
+    function isPermanent() external view returns (bool); // sealed && frozen
 }
 ```
 
@@ -118,8 +144,9 @@ interface IPNDEditions is IPNDMintMarks, IPNDEditionGraph, IPNDTokenPath {
 total      = price * quantity                   // must equal msg.value
 surfaceCut = surface == address(0) ? 0 : total * SURFACE_SHARE_BPS / 10000
 artistCut  = total - surfaceCut
-pay surfaceCut -> surface           (emit SurfacePaid)
-pay artistCut  -> payoutAddress (or owner)
+accrue surfaceCut -> _pending[surface]              (emit SurfacePaid)
+accrue artistCut  -> _pending[payoutAddress | owner]
+// claimed later via withdraw(); _totalPending gates upgrades (no drain).
 ```
 
 Reentrancy-guarded. The hook (if set) is called before mint (must return
@@ -181,8 +208,13 @@ enum EdgeType { BelongsTo, StudyOf, PhaseOf, Continues, Source, Access }
 struct Edge { EdgeType edgeType; Ref target; }
 interface IPNDEditionGraph {
     event EdgeAdded(EdgeType indexed edgeType, Ref target);
+    event EdgeAcknowledged(EdgeType indexed edgeType, Ref source, bool ack);
     function addEdge(EdgeType edgeType, Ref calldata target) external;  // owner, append-only
     function edges() external view returns (Edge[] memory);
+    // Bilateral handshake: B acknowledges an inbound edge claimed by A, so a
+    // reader can show "verified mutual" vs "claimed" with no central registry.
+    function acknowledgeEdge(EdgeType edgeType, Ref calldata source, bool ack) external;
+    function isEdgeAcknowledged(EdgeType edgeType, Ref calldata source) external view returns (bool);
 }
 
 enum PathType { None, Continuation, Migration, Claim, Reveal, Burn, Custom }

@@ -104,9 +104,15 @@ ponder.on("PNDEditionsFactory:EditionCreated", async ({ event, context }) => {
 })
 ```
 
-**`known_artists` view** — UNION `pnd_editions.owner` in so PND deployers
-auto-promote into the scan ceiling (same as `mint_creators.address`). This
-lives in the worker's `seed-known-artists` SQL.
+**`known_artists` view** — do NOT blindly UNION `pnd_editions.owner` in.
+`createEdition` is permissionless and takes `owner` as a caller-supplied
+argument (see the security review, M5), so an attacker can deploy editions
+naming arbitrary owners and, if `owner` auto-promotes, force the worker to scan
+those addresses across every platform (a denial-of-wallet on RPC spend). Promote
+into the scan ceiling only on a verified signal: the deploy `tx.origin`/sender
+equals `owner`, or an explicit onchain claim by the owner, or a manual
+allowlist. Indexing the `pnd_editions` row itself (for discovery) is fine; it is
+the scan-ceiling expansion from an unauthenticated field that must be gated.
 
 Then `pnpm --filter @pin/indexer codegen` regenerates the `ponder:*`
 virtual modules and the handler typechecks.
