@@ -24,6 +24,7 @@ import {
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { pndEditionsFactoryAbi, splitMainAbi } from "@pin/abi"
 import { ArtworkInput } from "@/components/editions/ArtworkInput"
+import { Field, Hint, Segmented, inputCls, labelCls, primaryBtnCls } from "@/components/editions/form-ui"
 import { PREFERRED_CHAIN, PREFERRED_CHAIN_LABEL, formatWriteError } from "@/components/tx/tx-ui"
 import { useEthAmountInput } from "@/lib/useEthAmountInput"
 import {
@@ -33,17 +34,10 @@ import {
   buildSplitArgs,
   formatBps,
   pndEditionsFactory,
-  pndSplitMain,
   pndMuriRenderer,
+  pndSplitMain,
   validateCollaborators,
 } from "@/lib/pnd-editions"
-
-const LABEL = "block text-[10px] font-mono uppercase tracking-wider text-gray-400 mb-1.5"
-const INPUT =
-  "w-full px-3 py-2 text-xs font-mono bg-surface border border-gray-200 focus:border-gray-400 outline-none transition-colors disabled:opacity-40"
-const BTN =
-  "block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-const HELP = "mt-1.5 text-[10px] font-mono text-gray-400 leading-relaxed"
 
 type CollabRow = { address: string; percent: string }
 
@@ -130,7 +124,7 @@ export function CreateEditionForm() {
       <Shell>
         <ConnectButton.Custom>
           {({ openConnectModal }) => (
-            <button onClick={openConnectModal} className={BTN}>
+            <button onClick={openConnectModal} className={primaryBtnCls}>
               Connect wallet to start
             </button>
           )}
@@ -145,7 +139,7 @@ export function CreateEditionForm() {
         <button
           onClick={() => switchChain({ chainId: PREFERRED_CHAIN.id })}
           disabled={isSwitchPending}
-          className={BTN}
+          className={primaryBtnCls}
         >
           {isSwitchPending ? "Switching…" : `Switch to ${PREFERRED_CHAIN_LABEL}`}
         </button>
@@ -241,311 +235,344 @@ export function CreateEditionForm() {
   }
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-surface p-5 space-y-5">
+    <div className="overflow-hidden rounded-lg border border-border bg-surface">
       {!factory && (
-        <p className="text-[11px] font-mono text-red-500">
+        <p className="border-b border-border px-6 py-3 text-xs text-red-500">
           No PND Editions factory is configured for this network.
         </p>
       )}
 
-      <div className="grid grid-cols-3 gap-3">
-        <div className="col-span-2">
-          <label className={LABEL} htmlFor="ed-title">
-            Title
-          </label>
-          <input
-            id="ed-title"
-            className={INPUT}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Studies in Grey"
-            disabled={busy}
-          />
-        </div>
-        <div>
-          <label className={LABEL} htmlFor="ed-symbol">
-            Symbol
-          </label>
-          <input
-            id="ed-symbol"
-            className={INPUT}
-            value={symbol}
-            onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-            placeholder="GREY"
-            disabled={busy}
-          />
-        </div>
-      </div>
-
-      <ArtworkInput value={artworkURI} onChange={setArtworkURI} disabled={busy} />
-
-      {muriRenderer && (
-        <div>
-          <label className={LABEL}>Preservation</label>
-          <div className="mb-1.5 flex gap-1">
-            <TierTab active={tier === "standard"} disabled={busy} onClick={() => setTier("standard")}>
-              Standard
-            </TierTab>
-            <TierTab active={tier === "permanent"} disabled={busy} onClick={() => setTier("permanent")}>
-              Permanent (MURI)
-            </TierTab>
-          </div>
-          <p className={HELP}>
-            {tier === "standard"
-              ? "Your artwork stays where you uploaded it and you keep it pinned. You can make it permanent later from the edition page."
-              : "Adds onchain media permanence via MURI: multiple fallback URIs, a SHA-256 integrity hash, and an onchain viewer that shows the first surviving copy. After deploy you finish anchoring (2 transactions) on the edition page. Your tokens keep their live Mint Marks, and PND never holds your media."}
-          </p>
-        </div>
-      )}
-
-      <div>
-        <label className={LABEL} htmlFor="ed-price">
-          Price (ETH)
-        </label>
-        <input
-          id="ed-price"
-          {...price.inputProps}
-          placeholder="0"
-          className={INPUT}
-          disabled={busy}
-        />
-        <p className={HELP}>
-          0 = gas only (never called free). The artist always keeps at least{" "}
-          {formatBps(10_000 - SURFACE_SHARE_BPS)} of a paid mint; the fixed{" "}
-          {formatBps(SURFACE_SHARE_BPS)} surface share goes to PND when minted here, and you
-          keep 100% by minting on your own site.
-        </p>
-        {price.error && <p className="mt-1 text-[10px] font-mono text-red-500">{price.error}</p>}
-      </div>
-
-      <div>
-        <label className="flex items-center gap-2 mb-2">
-          <input
-            type="checkbox"
-            checked={openEdition}
-            onChange={(e) => setOpenEdition(e.target.checked)}
-            disabled={busy}
-          />
-          <span className="text-[11px] font-mono text-gray-600">Open edition (no cap)</span>
-        </label>
-        {!openEdition && (
-          <input
-            type="number"
-            min={1}
-            step={1}
-            className={INPUT}
-            value={supplyCap}
-            onChange={(e) => setSupplyCap(e.target.value)}
-            disabled={busy}
-            placeholder="Max supply"
-          />
-        )}
-      </div>
-
-      <div>
-        <label className="flex items-center gap-2 mb-2">
-          <input
-            type="checkbox"
-            checked={hasWindow}
-            onChange={(e) => setHasWindow(e.target.checked)}
-            disabled={busy}
-          />
-          <span className="text-[11px] font-mono text-gray-600">Set a mint window</span>
-        </label>
-        {hasWindow && (
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={LABEL} htmlFor="ed-start">
-                Opens
-              </label>
-              <input
-                id="ed-start"
-                type="datetime-local"
-                className={INPUT}
-                value={startAt}
-                onChange={(e) => setStartAt(e.target.value)}
-                disabled={busy}
-              />
-            </div>
-            <div>
-              <label className={LABEL} htmlFor="ed-end">
-                Closes
-              </label>
-              <input
-                id="ed-end"
-                type="datetime-local"
-                className={INPUT}
-                value={endAt}
-                onChange={(e) => setEndAt(e.target.value)}
-                disabled={busy}
-              />
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className={LABEL} htmlFor="ed-royalty">
-            Royalty (%)
-          </label>
-          <input
-            id="ed-royalty"
-            type="text"
-            inputMode="decimal"
-            className={INPUT}
-            value={royaltyPct}
-            onChange={(e) => setRoyaltyPct(e.target.value.replace(/[^0-9.]/g, ""))}
-            disabled={busy}
-          />
-          <p className={HELP}>EIP-2981, honored by marketplaces. Max 50%.</p>
-        </div>
-        {!splitOn && (
-          <div>
-            <label className={LABEL} htmlFor="ed-payout">
-              Payout (optional)
-            </label>
-            <input
-              id="ed-payout"
-              className={INPUT}
-              value={payout}
-              onChange={(e) => setPayout(e.target.value.trim())}
-              placeholder="defaults to you"
-              disabled={busy}
-            />
-            {!payoutOk && (
-              <p className="mt-1 text-[10px] font-mono text-red-500">Invalid address</p>
-            )}
-          </div>
-        )}
-      </div>
-
-      <div>
-        <label className="flex items-center gap-2 mb-2">
-          <input
-            type="checkbox"
-            checked={splitOn}
-            onChange={(e) => setSplitOn(e.target.checked)}
-            disabled={busy || !splitMain}
-          />
-          <span className="text-[11px] font-mono text-gray-600">
-            Split proceeds with collaborators
-          </span>
-        </label>
-        {splitOn && (
-          <div className="space-y-2">
-            {collabs.map((row, i) => (
-              <div key={i} className="grid grid-cols-[1fr_72px_28px] gap-2">
+      <div className="divide-y divide-border">
+        {/* Details */}
+        <Section title="Details">
+          <div className="grid grid-cols-3 gap-3">
+            <div className="col-span-2">
+              <Field label="Title" htmlFor="ed-title">
                 <input
-                  className={INPUT}
-                  value={row.address}
-                  onChange={(e) => setCollab(i, "address", e.target.value.trim())}
-                  placeholder="0x… collaborator"
+                  id="ed-title"
+                  className={inputCls}
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Studies in Grey"
                   disabled={busy}
                 />
+              </Field>
+            </div>
+            <Field label="Symbol" htmlFor="ed-symbol">
+              <input
+                id="ed-symbol"
+                className={inputCls}
+                value={symbol}
+                onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+                placeholder="GREY"
+                disabled={busy}
+              />
+            </Field>
+          </div>
+        </Section>
+
+        {/* Artwork + preservation */}
+        <Section title="Artwork">
+          <ArtworkInput value={artworkURI} onChange={setArtworkURI} disabled={busy} />
+
+          {muriRenderer && (
+            <div className="space-y-2">
+              <span className={labelCls}>Preservation</span>
+              <div className="grid grid-cols-2 gap-2">
+                <OptionCard
+                  active={tier === "standard"}
+                  disabled={busy}
+                  onClick={() => setTier("standard")}
+                  title="Standard"
+                  desc="Artwork lives where you uploaded it; you keep it pinned."
+                />
+                <OptionCard
+                  active={tier === "permanent"}
+                  disabled={busy}
+                  onClick={() => setTier("permanent")}
+                  title="Permanent"
+                  desc="Onchain fallbacks, an integrity hash, and a viewer via MURI."
+                />
+              </div>
+              {tier === "permanent" && (
+                <Hint>
+                  After deploy you finish anchoring (2 transactions) on the edition
+                  page. Your tokens keep their live Mint Marks, and PND never holds
+                  your media.
+                </Hint>
+              )}
+            </div>
+          )}
+        </Section>
+
+        {/* Mint settings */}
+        <Section title="Mint">
+          <Field
+            label="Price"
+            htmlFor="ed-price"
+            hint={
+              <>
+                0 is gas only, never called free. On paid mints a fixed{" "}
+                {formatBps(SURFACE_SHARE_BPS)} surface share goes to PND when minted here;
+                deploy your own page and you keep it.
+              </>
+            }
+          >
+            <div className="flex items-stretch border border-border transition-colors focus-within:border-border-strong">
+              <input
+                id="ed-price"
+                {...price.inputProps}
+                placeholder="0"
+                className="flex-1 bg-surface px-3 py-2.5 text-sm font-mono tabular-nums outline-none disabled:opacity-40"
+                disabled={busy}
+              />
+              <span className="flex items-center border-l border-border px-3 text-[10px] font-mono uppercase tracking-[0.1em] text-fg-subtle">
+                ETH
+              </span>
+            </div>
+          </Field>
+          {price.error && <p className="text-xs text-red-500">{price.error}</p>}
+
+          <div className="space-y-2">
+            <span className={labelCls}>Edition size</span>
+            <div className="flex flex-wrap items-center gap-3">
+              <Segmented
+                value={openEdition ? "open" : "limited"}
+                onChange={(v) => setOpenEdition(v === "open")}
+                disabled={busy}
+                options={[
+                  { value: "open", label: "Open" },
+                  { value: "limited", label: "Limited" },
+                ]}
+              />
+              {!openEdition && (
                 <input
                   type="number"
                   min={1}
-                  max={100}
                   step={1}
-                  className={INPUT}
-                  value={row.percent}
-                  onChange={(e) => setCollab(i, "percent", e.target.value)}
-                  placeholder="%"
+                  className={`${inputCls} w-32 tabular-nums`}
+                  value={supplyCap}
+                  onChange={(e) => setSupplyCap(e.target.value)}
+                  disabled={busy}
+                  placeholder="Max supply"
+                />
+              )}
+            </div>
+          </div>
+
+          <label className="flex items-center gap-2.5">
+            <input
+              type="checkbox"
+              checked={hasWindow}
+              onChange={(e) => setHasWindow(e.target.checked)}
+              disabled={busy}
+              className="h-3.5 w-3.5 accent-fg"
+            />
+            <span className="text-sm text-fg-muted">Set a mint window</span>
+          </label>
+          {hasWindow && (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Opens" htmlFor="ed-start">
+                <input
+                  id="ed-start"
+                  type="datetime-local"
+                  className={inputCls}
+                  value={startAt}
+                  onChange={(e) => setStartAt(e.target.value)}
                   disabled={busy}
                 />
-                <button
-                  type="button"
-                  className="text-[11px] font-mono text-gray-400 hover:text-red-500 disabled:opacity-30"
-                  onClick={() => setCollabs((rows) => rows.filter((_, j) => j !== i))}
-                  disabled={busy || collabs.length <= 2}
-                  aria-label="Remove collaborator"
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
-            <button
-              type="button"
-              className="text-[10px] font-mono uppercase tracking-wider text-gray-500 hover:text-fg disabled:opacity-30"
-              onClick={() => setCollabs((rows) => [...rows, { address: "", percent: "" }])}
-              disabled={busy}
-            >
-              + Add collaborator
-            </button>
-            <p className={HELP}>
-              Deploys an immutable 0xSplits split and routes payout to it. Shares are
-              whole percentages and must total 100. Two transactions: the split, then
-              the edition.
-            </p>
-            {!splitMain && (
-              <p className="text-[10px] font-mono text-red-500">
-                0xSplits is not available on this network.
-              </p>
-            )}
-            {collabCheck.error && (
-              <p className="text-[10px] font-mono text-red-500">{collabCheck.error}</p>
+              </Field>
+              <Field label="Closes" htmlFor="ed-end">
+                <input
+                  id="ed-end"
+                  type="datetime-local"
+                  className={inputCls}
+                  value={endAt}
+                  onChange={(e) => setEndAt(e.target.value)}
+                  disabled={busy}
+                />
+              </Field>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Royalty %" htmlFor="ed-royalty" hint="EIP-2981, honored by marketplaces. Max 50%.">
+              <input
+                id="ed-royalty"
+                type="text"
+                inputMode="decimal"
+                className={`${inputCls} tabular-nums`}
+                value={royaltyPct}
+                onChange={(e) => setRoyaltyPct(e.target.value.replace(/[^0-9.]/g, ""))}
+                disabled={busy}
+              />
+            </Field>
+            {!splitOn && (
+              <Field label="Payout" htmlFor="ed-payout" hint="Defaults to you.">
+                <input
+                  id="ed-payout"
+                  className={inputCls}
+                  value={payout}
+                  onChange={(e) => setPayout(e.target.value.trim())}
+                  placeholder="0x… (optional)"
+                  disabled={busy}
+                />
+                {!payoutOk && <p className="mt-1 text-xs text-red-500">Invalid address</p>}
+              </Field>
             )}
           </div>
-        )}
+
+          {/* Optional collaborator splits (0xSplits) */}
+          <div className="space-y-2">
+            <label className="flex items-center gap-2.5">
+              <input
+                type="checkbox"
+                checked={splitOn}
+                onChange={(e) => setSplitOn(e.target.checked)}
+                disabled={busy || !splitMain}
+                className="h-3.5 w-3.5 accent-fg"
+              />
+              <span className="text-sm text-fg-muted">Split proceeds with collaborators</span>
+            </label>
+            {splitOn && (
+              <div className="space-y-2">
+                {collabs.map((row, i) => (
+                  <div key={i} className="grid grid-cols-[1fr_72px_28px] gap-2">
+                    <input
+                      className={inputCls}
+                      value={row.address}
+                      onChange={(e) => setCollab(i, "address", e.target.value.trim())}
+                      placeholder="0x… collaborator"
+                      disabled={busy}
+                    />
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      step={1}
+                      className={`${inputCls} tabular-nums`}
+                      value={row.percent}
+                      onChange={(e) => setCollab(i, "percent", e.target.value)}
+                      placeholder="%"
+                      disabled={busy}
+                    />
+                    <button
+                      type="button"
+                      className="text-xs font-mono text-fg-subtle hover:text-red-500 disabled:opacity-30"
+                      onClick={() => setCollabs((rows) => rows.filter((_, j) => j !== i))}
+                      disabled={busy || collabs.length <= 2}
+                      aria-label="Remove collaborator"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  className="text-[10px] font-mono uppercase tracking-[0.1em] text-fg-subtle hover:text-fg disabled:opacity-30"
+                  onClick={() => setCollabs((rows) => [...rows, { address: "", percent: "" }])}
+                  disabled={busy}
+                >
+                  + Add collaborator
+                </button>
+                <Hint>
+                  Deploys an immutable 0xSplits split and routes payout to it. Shares are
+                  whole percentages and must total 100. Two transactions: the split, then
+                  the edition.
+                </Hint>
+                {!splitMain && (
+                  <p className="text-xs text-red-500">0xSplits is not available on this network.</p>
+                )}
+                {collabCheck.error && <p className="text-xs text-red-500">{collabCheck.error}</p>}
+              </div>
+            )}
+          </div>
+        </Section>
+
+        {/* Deploy */}
+        <div className="space-y-4 p-6">
+          <div className="space-y-2 border border-border bg-surface-muted/40 px-4 py-3">
+            <p className={labelCls}>Costs, kept separate</p>
+            <CostRow label="Storage" value="Free under 100 KB (Arweave), else wallet-paid" />
+            <CostRow label="Deploy" value="Network gas, in ETH" />
+            {splitOn && <CostRow label="Split" value="One transaction before deploy, gas only" />}
+            {tier === "permanent" && muriRenderer && (
+              <CostRow label="Anchor" value="2 transactions after deploy, gas only" />
+            )}
+          </div>
+
+          <button onClick={submit} disabled={!canSubmit || busy} className={primaryBtnCls}>
+            {btnLabel}
+          </button>
+
+          {writeError && (
+            <p className="text-xs text-red-500 break-words">
+              {formatWriteError(writeError, "Deploy")}
+            </p>
+          )}
+        </div>
       </div>
-
-      <div className="rounded border border-gray-100 px-3 py-2">
-        <p className="mb-1 text-[10px] font-mono uppercase tracking-wider text-gray-400">
-          Costs, kept separate
-        </p>
-        <p className={`${HELP} !mt-0`}>
-          Storage is handled in the artwork step (free under 100 KB on Arweave,
-          or your own IPFS plan; paid once from your wallet if larger). Deploying
-          this edition is gas only, in ETH.
-          {tier === "permanent" && muriRenderer
-            ? " Permanent adds 2 anchor transactions (gas only) after deploy."
-            : ""}
-        </p>
-      </div>
-
-      <button onClick={submit} disabled={!canSubmit || busy} className={BTN}>
-        {btnLabel}
-      </button>
-
-      {writeError && (
-        <p className="text-[11px] font-mono text-red-500 break-words">
-          {formatWriteError(writeError, "Deploy")}
-        </p>
-      )}
     </div>
   )
 }
 
-function TierTab({
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="space-y-4 p-6">
+      <h3 className="text-[10px] font-mono uppercase tracking-[0.18em] text-fg">{title}</h3>
+      {children}
+    </section>
+  )
+}
+
+function OptionCard({
   active,
   disabled,
   onClick,
-  children,
+  title,
+  desc,
 }: {
   active: boolean
   disabled?: boolean
   onClick: () => void
-  children: React.ReactNode
+  title: string
+  desc: string
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`px-2.5 py-1.5 text-[10px] font-mono uppercase tracking-wider border transition-colors disabled:opacity-40 ${
-        active ? "border-fg bg-fg text-bg" : "border-gray-200 text-gray-500 hover:border-gray-400"
+      className={`flex flex-col items-start gap-1.5 border p-3 text-left transition-colors disabled:opacity-40 ${
+        active ? "border-fg bg-surface-muted/50" : "border-border hover:border-border-strong"
       }`}
     >
-      {children}
+      <span className="flex w-full items-center justify-between">
+        <span className="text-sm font-medium">{title}</span>
+        <span
+          className={`h-2.5 w-2.5 rounded-full border ${
+            active ? "border-fg bg-fg" : "border-border-strong"
+          }`}
+        />
+      </span>
+      <span className="text-xs leading-snug text-fg-muted">{desc}</span>
     </button>
+  )
+}
+
+function CostRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 text-xs">
+      <span className="font-mono uppercase tracking-[0.1em] text-fg-subtle">{label}</span>
+      <span className="text-right text-fg-muted">{value}</span>
+    </div>
   )
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-surface p-5 space-y-4">
-      <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
+    <div className="space-y-4 rounded-lg border border-border bg-surface p-6">
+      <p className="text-sm leading-relaxed text-fg-muted">
         Deploying an edition mints you your own ERC721A contract, set up with your
         artwork and mint conditions in one transaction. You own it. Each token a
         collector mints keeps its own identity and onchain Mint Mark.

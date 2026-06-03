@@ -8,37 +8,27 @@
  * honest status. PND never custodies, pins, or pays for the bytes.
  *
  *   - Arweave via Irys (default): account-less, paid once from the connected
- *     wallet in ETH, free under 100 KB. See lib/storage/arweave.ts. (We frame
- *     this as "via Irys" rather than claiming permanence until a live upload
- *     confirms the current Irys endpoint settles to Arweave.)
+ *     wallet in ETH, free under 100 KB. See lib/storage/arweave.ts. (Framed as
+ *     "via Irys" rather than claiming permanence until a live upload confirms
+ *     the current Irys endpoint settles to Arweave.)
  *   - IPFS via the artist's own Pinata key (BYO, stored only in the browser),
  *     mirroring the /muri + /preserve upload pattern. Pinned while their plan
  *     is active; not permanent.
  *   - Paste a URI you already host (escape hatch, never removed).
- *
- * The deploy transaction is unchanged: it still passes `cfg.artworkURI`. The
- * upload is a browser pre-step, not a new on-chain step and not a PND server.
  */
 
 import { useCallback, useEffect, useState } from "react"
 import { usePublicClient, useWalletClient } from "wagmi"
 import { ipfsToHttp, sha256HexOfBlob } from "@pin/shared"
-import { OptimizedImage } from "@/components/OptimizedImage"
 import { IRYS_FREE_LIMIT_BYTES, uploadToArweave } from "@/lib/storage/arweave"
 import { uploadToIpfs } from "@/lib/storage/ipfs"
 import type { StorageBackend, StorageUploadResult } from "@/lib/storage/types"
+import { Hint, Segmented, inputCls, labelCls, primaryBtnCls } from "./form-ui"
 
 // Same BYOK localStorage slots /preserve and /muri use, so an artist who has
 // already pasted their Pinata key elsewhere re-enters nothing.
 const PINATA_KEY_LS = "cg_pin_key"
 const PINATA_PROVIDER_LS = "cg_pin_provider"
-
-const LABEL = "block text-[10px] font-mono uppercase tracking-wider text-gray-400 mb-1.5"
-const INPUT =
-  "w-full px-3 py-2 text-xs font-mono bg-surface border border-gray-200 focus:border-gray-400 outline-none transition-colors disabled:opacity-40"
-const HELP = "mt-1.5 text-[10px] font-mono text-gray-400 leading-relaxed"
-const UPLOAD_BTN =
-  "text-[10px] font-mono font-medium uppercase tracking-wider px-4 py-2 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
 
 type Mode = "upload" | "uri"
 
@@ -48,11 +38,16 @@ type Uploaded = StorageUploadResult & {
   retrievable: boolean | null
 }
 
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
+
 /**
  * Probe whether a URL resolves as a loadable image. Uses an <img> load (not
  * fetch HEAD) so it works without the gateway sending CORS headers. The
- * honest-status signal: we only say "retrievable" when the bytes actually
- * come back.
+ * honest-status signal: we only say "retrievable" when the bytes come back.
  */
 function imageResolves(url: string, timeoutMs = 8000): Promise<boolean> {
   return new Promise((resolve) => {
@@ -89,8 +84,10 @@ export function ArtworkInput({
   const [file, setFile] = useState<File | null>(null)
   const [jwt, setJwt] = useState("")
   const [busy, setBusy] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [uploaded, setUploaded] = useState<Uploaded | null>(null)
+  const [localPreview, setLocalPreview] = useState<string | null>(null)
 
   const { data: walletClient } = useWalletClient()
   const publicClient = usePublicClient()
@@ -99,6 +96,23 @@ export function ArtworkInput({
     const provider = localStorage.getItem(PINATA_PROVIDER_LS)
     const key = localStorage.getItem(PINATA_KEY_LS)
     if (provider === "pinata" && key) setJwt(key)
+  }, [])
+
+  // Local object-URL preview for the picked file (revoked on change/unmount).
+  useEffect(() => {
+    if (!file) {
+      setLocalPreview(null)
+      return
+    }
+    const url = URL.createObjectURL(file)
+    setLocalPreview(url)
+    return () => URL.revokeObjectURL(url)
+  }, [file])
+
+  const pickFile = useCallback((f: File | null) => {
+    setFile(f)
+    setUploaded(null)
+    setError(null)
   }, [])
 
   const onUpload = useCallback(async () => {
@@ -116,13 +130,11 @@ export function ArtworkInput({
       } else {
         if (!jwt) throw new Error("Enter your Pinata key to upload to IPFS")
         result = await uploadToIpfs(file, jwt)
-        // Persist the key for reuse (same BYOK slots as /preserve and /muri).
         localStorage.setItem(PINATA_PROVIDER_LS, "pinata")
         localStorage.setItem(PINATA_KEY_LS, jwt)
       }
       onChange(result.uri)
       setUploaded({ ...result, fileHash, retrievable: null })
-      // Honest status: don't claim retrievable until the bytes actually load.
       const ok = await imageResolves(result.gatewayUrl)
       setUploaded((u) => (u && u.uri === result.uri ? { ...u, retrievable: ok } : u))
     } catch (e) {
@@ -134,34 +146,90 @@ export function ArtworkInput({
 
   const busyAll = busy || !!disabled
   const overFree = !!file && file.size >= IRYS_FREE_LIMIT_BYTES
-  // Prefer the just-uploaded gateway URL (serves immediately); else resolve
-  // whatever URI is currently set (handles ipfs://, ar://, https://).
-  const previewUrl = uploaded?.gatewayUrl ?? (value ? ipfsToHttp(value) : "")
+  const previewUrl =
+    uploaded?.gatewayUrl ?? localPreview ?? (value && mode === "uri" ? ipfsToHttp(value) : null)
+  const showPreview = !!previewUrl && (previewUrl.startsWith("http") || previewUrl.startsWith("blob:"))
   const canUpload =
-    !busyAll && !!file && (backend === "arweave" ? !!walletClient : jwt.length > 0)
+    !busyAll && !!file && !uploaded && (backend === "arweave" ? !!walletClient : jwt.length > 0)
 
   return (
-    <div>
-      <label className={LABEL}>Artwork</label>
-
-      <div className="mb-3 flex gap-1">
-        <Tab active={mode === "upload"} disabled={busyAll} onClick={() => setMode("upload")}>
-          Upload a file
-        </Tab>
-        <Tab active={mode === "uri"} disabled={busyAll} onClick={() => setMode("uri")}>
-          I have a URI
-        </Tab>
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        <Segmented
+          value={mode}
+          onChange={(v) => setMode(v as Mode)}
+          disabled={busyAll}
+          options={[
+            { value: "upload", label: "Upload" },
+            { value: "uri", label: "Paste URI" },
+          ]}
+        />
       </div>
 
       {mode === "upload" ? (
         <div className="space-y-3">
-          <div className="flex gap-1">
-            <Tab active={backend === "arweave"} disabled={busyAll} onClick={() => setBackend("arweave")}>
-              Arweave via Irys
-            </Tab>
-            <Tab active={backend === "ipfs"} disabled={busyAll} onClick={() => setBackend("ipfs")}>
-              IPFS (your Pinata key)
-            </Tab>
+          {/* Dropzone */}
+          <label
+            onDragOver={(e) => {
+              e.preventDefault()
+              if (!busyAll) setDragOver(true)
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => {
+              e.preventDefault()
+              setDragOver(false)
+              if (!busyAll) pickFile(e.dataTransfer.files?.[0] ?? null)
+            }}
+            className={`group relative flex h-44 w-full cursor-pointer items-center justify-center overflow-hidden border border-dashed bg-surface-muted/40 transition-colors ${
+              dragOver ? "border-border-strong bg-surface-muted" : "border-border hover:border-border-strong"
+            } ${busyAll ? "pointer-events-none opacity-60" : ""}`}
+          >
+            <input
+              type="file"
+              accept="image/*"
+              disabled={busyAll}
+              onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
+              className="sr-only"
+            />
+            {showPreview ? (
+              <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={previewUrl!} alt="Artwork preview" className="h-full w-full object-contain" />
+                <span className="absolute bottom-2 right-2 bg-fg/80 px-2 py-1 text-[9px] font-mono uppercase tracking-[0.1em] text-bg opacity-0 transition-opacity group-hover:opacity-100">
+                  Replace
+                </span>
+              </>
+            ) : (
+              <div className="px-6 text-center">
+                <p className="text-sm text-fg-muted">
+                  Drop an image, or <span className="text-fg underline">choose a file</span>
+                </p>
+                <p className="mt-1 text-[10px] font-mono uppercase tracking-[0.1em] text-fg-subtle">
+                  PNG · JPG · GIF · SVG
+                </p>
+              </div>
+            )}
+          </label>
+
+          {file && (
+            <div className="flex items-center justify-between gap-3 text-[11px] font-mono text-fg-muted">
+              <span className="truncate">{file.name}</span>
+              <span className="shrink-0 tabular-nums text-fg-subtle">{formatBytes(file.size)}</span>
+            </div>
+          )}
+
+          {/* Backend + (for IPFS) key */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={labelCls}>Store on</span>
+            <Segmented
+              value={backend}
+              onChange={(v) => setBackend(v as StorageBackend)}
+              disabled={busyAll}
+              options={[
+                { value: "arweave", label: "Arweave (Irys)" },
+                { value: "ipfs", label: "IPFS (your key)" },
+              ]}
+            />
           </div>
 
           {backend === "ipfs" && (
@@ -170,117 +238,85 @@ export function ArtworkInput({
               value={jwt}
               onChange={(e) => setJwt(e.target.value)}
               placeholder="Pinata JWT (stored in your browser only)"
-              className={INPUT}
+              className={inputCls}
               disabled={busyAll}
             />
           )}
 
-          <input
-            type="file"
-            accept="image/*"
-            onChange={(e) => {
-              setFile(e.target.files?.[0] ?? null)
-              setUploaded(null)
-              setError(null)
-            }}
-            disabled={busyAll}
-            className="block w-full text-[11px] font-mono text-gray-500 file:mr-3 file:border file:border-gray-200 file:bg-surface file:px-3 file:py-1.5 file:text-[10px] file:font-mono file:uppercase file:tracking-wider file:text-gray-600 disabled:opacity-40"
-          />
-
-          {file && (
-            <p className={HELP}>
+          {file && !uploaded && (
+            <Hint>
               {backend === "arweave"
                 ? overFree
                   ? "Uploaded via Irys, paid once from your wallet in ETH. Storage cost is separate from the deploy gas."
-                  : "Under 100 KB: uploaded via Irys for free, no funding transaction."
-                : "Uploaded to IPFS via your own Pinata account. The key stays in your browser. Pinned while your plan is active, not permanent."}
-            </p>
+                  : "Under 100 KB, so this uploads via Irys for free, with no funding transaction."
+                : "Uploaded to IPFS via your own Pinata account; the key stays in your browser. Pinned while your plan is active, not permanent."}
+            </Hint>
           )}
 
-          <button onClick={() => void onUpload()} disabled={!canUpload} className={UPLOAD_BTN}>
-            {busy
-              ? "Uploading…"
-              : backend === "arweave"
-                ? "Upload via Irys"
-                : "Upload to IPFS"}
-          </button>
-
-          {backend === "arweave" && !walletClient && (
-            <p className={HELP}>Connect your wallet to upload via Irys.</p>
+          {file && !uploaded && (
+            <button onClick={() => void onUpload()} disabled={!canUpload} className={primaryBtnCls}>
+              {busy
+                ? "Uploading…"
+                : backend === "arweave"
+                  ? "Upload via Irys"
+                  : "Upload to IPFS"}
+            </button>
           )}
-          {error && <p className="text-[10px] font-mono text-red-500 break-words">{error}</p>}
+
+          {file && backend === "arweave" && !walletClient && !uploaded && (
+            <Hint>Connect your wallet to upload via Irys.</Hint>
+          )}
+          {error && <p className="text-xs text-red-500">{error}</p>}
         </div>
       ) : (
-        <div>
+        <div className="space-y-3">
           <input
-            className={INPUT}
+            className={inputCls}
             value={value}
             onChange={(e) => {
               onChange(e.target.value.trim())
               setUploaded(null)
             }}
-            placeholder="ipfs://… / ar://… / https://…"
+            placeholder="ipfs://…  ·  ar://…  ·  https://…"
             disabled={busyAll}
           />
-          <p className={HELP}>
+          <Hint>
             Paste a CID or URI you already host. The artwork stays yours to keep
             pinned. PND does not host or pin it.
-          </p>
+          </Hint>
+          {showPreview && (
+            <div className="h-44 w-full overflow-hidden border border-border bg-surface-muted/40">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={previewUrl!} alt="Artwork preview" className="h-full w-full object-contain" />
+            </div>
+          )}
         </div>
       )}
 
       {uploaded && (
-        <p className={`${HELP} mt-2`}>
-          {uploaded.backend === "arweave"
-            ? "Uploaded via Irys"
-            : "Uploaded to IPFS (your Pinata account)"}{" "}
-          · <span className="break-all">{uploaded.uri.slice(0, 30)}…</span> · SHA-256{" "}
-          {uploaded.fileHash.slice(0, 10)}… ·{" "}
-          {uploaded.retrievable === null
-            ? "checking retrievability…"
-            : uploaded.retrievable
-              ? "retrievable"
-              : "uploaded; the gateway may take a moment to serve it"}
-        </p>
-      )}
-
-      {previewUrl.startsWith("http") && (
-        <div className="mt-3 aspect-square w-28 overflow-hidden rounded border border-gray-200 bg-surface-muted">
-          <OptimizedImage
-            src={previewUrl}
-            alt="Artwork preview"
-            width={224}
-            className="h-full w-full object-cover"
-          />
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-border pt-3 text-[10px] font-mono">
+          <span className="inline-flex items-center gap-1.5 uppercase tracking-[0.1em] text-fg">
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${
+                uploaded.retrievable === null
+                  ? "bg-fg-subtle"
+                  : uploaded.retrievable
+                    ? "bg-status-available"
+                    : "bg-status-upcoming"
+              }`}
+            />
+            {uploaded.backend === "arweave" ? "Uploaded via Irys" : "Uploaded to IPFS"}
+          </span>
+          <span className="text-fg-subtle">
+            {uploaded.retrievable === null
+              ? "checking…"
+              : uploaded.retrievable
+                ? "retrievable"
+                : "gateway may take a moment"}
+          </span>
+          <span className="ml-auto text-fg-subtle">SHA-256 {uploaded.fileHash.slice(0, 10)}…</span>
         </div>
       )}
     </div>
-  )
-}
-
-function Tab({
-  active,
-  disabled,
-  onClick,
-  children,
-}: {
-  active: boolean
-  disabled?: boolean
-  onClick: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={`px-2.5 py-1.5 text-[10px] font-mono uppercase tracking-wider border transition-colors disabled:opacity-40 ${
-        active
-          ? "border-fg bg-fg text-bg"
-          : "border-gray-200 text-gray-500 hover:border-gray-400"
-      }`}
-    >
-      {children}
-    </button>
   )
 }

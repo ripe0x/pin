@@ -16,36 +16,36 @@ const STATUS_UI: Record<
 > = {
   retrievable: {
     label: "Retrievable",
-    dot: "bg-emerald-500",
-    text: "text-emerald-700",
+    dot: "bg-status-available",
+    text: "text-status-available",
     title:
       "A public gateway served this artwork at the last preservation check (cached, not a live read).",
   },
   "artist-pinned": {
     label: "Artist-pinned",
-    dot: "bg-amber-500",
-    text: "text-amber-700",
+    dot: "bg-status-upcoming",
+    text: "text-status-upcoming",
     title:
       "The artist attested a pin of this artwork. Not yet independently verified on a public gateway.",
   },
   unretrievable: {
     label: "Not retrievable",
     dot: "bg-red-500",
-    text: "text-red-600",
+    text: "text-red-500",
     title:
       "No public gateway served this artwork at the last check. The artist should re-pin it.",
   },
   unprobed: {
     label: "Not yet checked",
-    dot: "bg-gray-300",
-    text: "text-gray-500",
+    dot: "bg-fg-subtle",
+    text: "text-fg-subtle",
     title:
       "Content-addressed artwork that the preservation checker has not probed yet.",
   },
   external: {
     label: "Centralized link",
-    dot: "bg-gray-300",
-    text: "text-gray-500",
+    dot: "bg-fg-subtle",
+    text: "text-fg-subtle",
     title:
       "This artwork is a direct URL, not a content-addressed CID, so it depends on a single host staying online.",
   },

@@ -49,10 +49,10 @@ import { getEvmNowTxUrl } from "@/lib/explorer"
 
 const CANONICAL_TOKEN_ID = 0n
 
-const LABEL = "text-[10px] font-mono uppercase tracking-wider text-gray-400"
-const HELP = "text-[11px] font-mono text-gray-500 leading-relaxed"
+const LABEL = "text-[10px] font-mono uppercase tracking-[0.1em] text-fg-subtle"
+const HELP = "text-xs leading-relaxed text-fg-muted"
 const BTN =
-  "rounded bg-fg px-3 py-1.5 text-[11px] font-mono uppercase tracking-wider text-bg hover:opacity-80 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+  "shrink-0 bg-fg px-3 py-1.5 text-[10px] font-mono uppercase tracking-[0.1em] text-bg hover:opacity-80 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
 
 type Props = {
   edition: Address
@@ -200,13 +200,13 @@ function MuriAnchorPanelInner({
   }, [renderer, edition, writeContract])
 
   return (
-    <section className="py-5 border-b border-gray-100">
+    <section className="border-b border-border py-5">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between"
+        className="flex w-full items-center justify-between text-left"
       >
         <span className={LABEL}>Preserve onchain (MURI)</span>
-        <span className="text-[10px] font-mono text-gray-400">{open ? "−" : "+"}</span>
+        <span className="font-mono text-[11px] text-fg-subtle">{open ? "−" : "+"}</span>
       </button>
 
       {open && (
@@ -222,41 +222,43 @@ function MuriAnchorPanelInner({
                 Anchor this edition&rsquo;s artwork onchain via MURI: multiple
                 fallback URIs plus a SHA-256 integrity hash, with an onchain
                 viewer that shows the first surviving copy. Your tokens keep
-                their live Mint Marks. PND never holds your media.
+                their live Mint Marks, and PND never holds your media.
               </p>
 
-              <Step
-                done={isRegistered}
-                n={1}
-                label="Register this edition with MURI"
-                actionLabel="Register"
-                busy={busy}
-                onAction={register}
-              />
-              <Step
-                done={isAnchored}
-                n={2}
-                label="Anchor the artwork (fallbacks + hash)"
-                actionLabel={preparing ? "Preparing…" : "Anchor"}
-                busy={busy}
-                disabled={!isRegistered}
-                onAction={() => void anchor()}
-              />
-              <Step
-                done={isRendererSet}
-                n={3}
-                label="Use the MURI renderer for this edition"
-                actionLabel="Switch renderer"
-                busy={busy}
-                disabled={!isAnchored}
-                onAction={switchRenderer}
-              />
+              <div className="space-y-2.5 border border-border bg-surface-muted/40 p-3">
+                <Step
+                  done={isRegistered}
+                  n={1}
+                  label="Register this edition with MURI"
+                  actionLabel="Register"
+                  busy={busy}
+                  onAction={register}
+                />
+                <Step
+                  done={isAnchored}
+                  n={2}
+                  label="Anchor the artwork (fallbacks + hash)"
+                  actionLabel={preparing ? "Preparing…" : "Anchor"}
+                  busy={busy}
+                  disabled={!isRegistered}
+                  onAction={() => void anchor()}
+                />
+                <Step
+                  done={isRendererSet}
+                  n={3}
+                  label="Use the MURI renderer for this edition"
+                  actionLabel="Switch renderer"
+                  busy={busy}
+                  disabled={!isAnchored}
+                  onAction={switchRenderer}
+                />
+              </div>
 
               {txHash && (
-                <p className="text-[10px] font-mono text-gray-500">
+                <p className="text-[10px] font-mono text-fg-subtle">
                   {mining ? "Confirming… " : mined ? "Confirmed. " : "Submitted… "}
                   <a
-                    className="underline"
+                    className="underline hover:text-fg"
                     href={getEvmNowTxUrl(txHash)}
                     target="_blank"
                     rel="noopener noreferrer"
@@ -265,7 +267,7 @@ function MuriAnchorPanelInner({
                   </a>
                 </p>
               )}
-              {err && <p className="text-[10px] font-mono text-red-500 break-words">{err}</p>}
+              {err && <p className="text-xs text-red-500 break-words">{err}</p>}
             </>
           )}
         </div>
@@ -293,8 +295,17 @@ function Step({
 }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <span className={`text-[11px] font-mono ${done ? "text-emerald-600" : "text-gray-700"}`}>
-        {done ? "✓" : n + "."} {label}
+      <span className="flex items-center gap-2 text-xs">
+        <span
+          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-mono ${
+            done
+              ? "bg-status-available text-white"
+              : "border border-border-strong text-fg-subtle"
+          }`}
+        >
+          {done ? "✓" : n}
+        </span>
+        <span className={done ? "text-fg-muted" : "text-fg"}>{label}</span>
       </span>
       {!done && (
         <button onClick={onAction} disabled={busy || disabled} className={BTN}>
