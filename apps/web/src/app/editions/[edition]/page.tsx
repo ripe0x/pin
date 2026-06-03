@@ -7,6 +7,7 @@ import { MintEditionCTA } from "@/components/editions/MintEditionCTA"
 import { WithdrawPanel } from "@/components/editions/WithdrawPanel"
 import { MintHistory } from "@/components/editions/MintHistory"
 import { EditionGraphView } from "@/components/editions/EditionGraphView"
+import { MuriAnchorPanel } from "@/components/editions/MuriAnchorPanel"
 import { getEdition, getEditionEdges, getEditionMintHistory } from "@/lib/editions-onchain"
 import {
   EDITION_KIND_LABEL,
@@ -143,6 +144,14 @@ export default async function EditionPage({ params }: { params: Params }) {
               </p>
             )}
           </section>
+
+          <MuriAnchorPanel
+            edition={addr}
+            owner={e.owner}
+            currentRenderer={e.cfg.renderer}
+            artworkURI={e.cfg.artworkURI}
+            editionName={e.name}
+          />
 
           <section className="pt-5">
             <h2 className="text-[10px] font-mono uppercase tracking-wider text-gray-400 mb-2">

@@ -88,6 +88,10 @@ DEPLOY_OUT="$(cd contracts && forge script script/DeployEditions.s.sol \
 FACTORY="$(echo "$DEPLOY_OUT" | grep -i "PNDEditionsFactory:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
 [ -n "$FACTORY" ] || { echo "$DEPLOY_OUT" | tail -30; echo "error: could not parse factory address"; exit 1; }
 echo "▸ Factory deployed: $FACTORY"
+# The MURI bridge (deployed because the fork has the MURIProtocol singleton).
+OPERATOR="$(echo "$DEPLOY_OUT" | grep -i "PNDEditionsMuriOperator:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
+MURI_RENDERER="$(echo "$DEPLOY_OUT" | grep -i "PNDMuriRenderer:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
+[ -n "$OPERATOR" ] && echo "▸ MURI operator: $OPERATOR" && echo "▸ MURI renderer: $MURI_RENDERER"
 
 # 4) write dev env (non-destructive: .env.development.local wins over
 #    .env.local only in `next dev`, and is gitignored).
@@ -98,6 +102,8 @@ cat > "$ENV_DEV" <<EOF
 NEXT_PUBLIC_USE_LOCAL_RPC=1
 NEXT_PUBLIC_ANVIL_RPC_URL=$RPC
 NEXT_PUBLIC_PND_EDITIONS_FACTORY=$FACTORY
+NEXT_PUBLIC_PND_EDITIONS_MURI_OPERATOR=$OPERATOR
+NEXT_PUBLIC_PND_MURI_RENDERER=$MURI_RENDERER
 NEXT_PUBLIC_DEV_IMPERSONATE=$IMPERSONATE
 EOF
 echo "▸ Wrote $ENV_DEV  (delete it to restore prod env)"

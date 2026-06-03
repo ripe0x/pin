@@ -51,3 +51,10 @@ emit({
   exportName: "pndHoldsEditionHookAbi",
   outFile: "pndHoldsEditionHook.ts",
 });
+
+// PND Editions MURI bridge operator.
+emit({
+  artifact: "PNDEditionsMuriOperator.sol/PNDEditionsMuriOperator.json",
+  exportName: "pndEditionsMuriOperatorAbi",
+  outFile: "pndEditionsMuriOperator.ts",
+});
