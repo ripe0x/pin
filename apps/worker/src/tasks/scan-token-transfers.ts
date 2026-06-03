@@ -13,6 +13,13 @@
  * The web app reads token_owners directly. After this task has caught
  * up, every /collector/[address] inverse query is a Postgres point
  * lookup with zero external API calls.
+ *
+ * Block timestamps: every transfer/owner row carries the real block time,
+ * resolved once per block (deduped + globally throttled). Rows this scanner
+ * wrote before it resolved times were stored with block_time = 0; the inline
+ * `backfillBlockTimes` step drains those to real values over subsequent ticks.
+ * This is what makes the token page's provenance timeline show true dates
+ * instead of the Unix epoch.
  */
 import { sql } from "../db.ts"
 import { client } from "../rpc.ts"
@@ -32,6 +39,14 @@ const MAX_BLOCKS_PER_SCAN = 9_500n
 // the others under drpc's free-tier budget.
 const MAX_CHUNKS_PER_CONTRACT = 10n
 const TASK = "scan-token-transfers"
+// One-time historical backfill of real block timestamps into rows this scanner
+// wrote with block_time = 0 before it resolved timestamps. Bounded per tick so
+// the drain spreads across many runs and never dominates the shared 2 req/s RPC
+// budget; a no-op once every row has a real time. Tunable — raising it drains
+// faster at the cost of a bigger per-tick RPC share. eth_getBlockByNumber is
+// served by the free public RPCs (Alchemy is only the last-resort backstop), so
+// the dollar cost of the drain is ~zero; this bound is purely about pacing.
+const MAX_BACKFILL_BLOCKS_PER_RUN = 100
 
 async function getContracts(): Promise<string[]> {
   // Exclude shared-platform contracts (Foundation shared 1/1, SR V2
@@ -85,10 +100,77 @@ async function tokenIsKnown(contract: string, tokenId: bigint): Promise<boolean>
   return rows.length > 0
 }
 
+/**
+ * Resolve and persist real block timestamps for transfer/owner rows written
+ * before this scanner carried block times (stored with block_time = 0 /
+ * transferred_at_time = 0 to save an eth_getBlockByNumber). Processes a bounded
+ * batch of DISTINCT zero-time blocks per call. Block timestamps are immutable,
+ * so each block is resolved exactly once, ever, and that one timestamp fills
+ * every transfer in the block plus the matching current-owner row. Both updates
+ * are guarded on the 0 sentinel, so the drain is idempotent and never clobbers
+ * a real time. Self-draining: returns 0 work once no zero-time rows remain.
+ */
+async function backfillBlockTimes(
+  blockTimeFor: (bn: bigint) => Promise<bigint>,
+): Promise<number> {
+  const blocks = (await sql`
+    SELECT DISTINCT block_number::text AS block_number
+    FROM token_transfers
+    WHERE block_time = 0
+    ORDER BY block_number
+    LIMIT ${MAX_BACKFILL_BLOCKS_PER_RUN}
+  `) as Array<{ block_number: string }>
+
+  let rowsWritten = 0
+  for (const { block_number } of blocks) {
+    const bn = BigInt(block_number)
+    let ts: bigint
+    try {
+      ts = await blockTimeFor(bn)
+    } catch (err) {
+      console.error(`[${TASK}] backfill getBlock ${bn}:`, err)
+      continue
+    }
+    const updated = (await sql`
+      UPDATE token_transfers
+      SET block_time = ${ts.toString()}::bigint
+      WHERE block_number = ${bn.toString()}::bigint AND block_time = 0
+      RETURNING 1 AS n
+    `) as Array<{ n: number }>
+    rowsWritten += updated.length
+    await sql`
+      UPDATE token_owners
+      SET transferred_at_time = ${ts.toString()}::bigint
+      WHERE transferred_at_block = ${bn.toString()}::bigint
+        AND transferred_at_time = 0
+    `
+  }
+  return rowsWritten
+}
+
 export async function scanTokenTransfers(): Promise<TaskResult> {
   const contracts = await getContracts()
   let rpcCalls = 0
   let rowsWritten = 0
+
+  // Resolve each distinct block's timestamp at most once (block times are
+  // immutable, so the cache is valid for the whole run). Shared by the
+  // historical backfill and the forward scan below — a block touched by both
+  // costs a single eth_getBlockByNumber.
+  const blockTimeCache = new Map<bigint, bigint>()
+  const blockTimeFor = async (bn: bigint): Promise<bigint> => {
+    const cached = blockTimeCache.get(bn)
+    if (cached !== undefined) return cached
+    await throttleRpc()
+    const blk = await client.getBlock({ blockNumber: bn })
+    rpcCalls += 1
+    blockTimeCache.set(bn, blk.timestamp)
+    return blk.timestamp
+  }
+
+  // Drain a bounded batch of pre-existing zero-time rows before the forward
+  // scan. No-op once fully backfilled.
+  rowsWritten += await backfillBlockTimes(blockTimeFor)
 
   const headBlock = await client.getBlockNumber()
   rpcCalls += 1
@@ -124,7 +206,10 @@ export async function scanTokenTransfers(): Promise<TaskResult> {
           if (!log.args.tokenId) continue
           const tokenId = log.args.tokenId
           if (!(await tokenIsKnown(contract, tokenId))) continue
-          const blockTime = 0n // timestamp can be filled lazily if needed; skip the eth_getBlockByNumber to save RPC
+          // Real block timestamp so provenance/history rows carry true dates.
+          // Deduped per block + globally throttled via blockTimeFor, so a block
+          // with many known-token transfers costs one eth_getBlockByNumber.
+          const blockTime = await blockTimeFor(log.blockNumber!)
 
           await sql.begin(async (tx) => {
             await tx`
