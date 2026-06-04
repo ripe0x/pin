@@ -1,0 +1,6 @@
+
+# PND Editions e2e harness
+/tests/e2e/.e2e-state.json
+/tests/e2e/screenshots/
+/playwright-report/
+/test-results/

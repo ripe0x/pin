@@ -11,7 +11,8 @@
 
 import { useEffect, useState } from "react"
 import { usePublicClient } from "wagmi"
-import { foundry, mainnet } from "wagmi/chains"
+import { mainnet } from "wagmi/chains"
+import { forkChain } from "@/lib/wagmi"
 
 // When the dev server is pointed at a local Anvil fork
 // (NEXT_PUBLIC_USE_LOCAL_RPC=1), we're in fork-testing mode and the
@@ -20,8 +21,13 @@ import { foundry, mainnet } from "wagmi/chains"
 // mainnet. NEXT_PUBLIC_* vars are inlined at build time so this evaluates
 // statically per build.
 export const FORK_MODE = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
-export const PREFERRED_CHAIN = FORK_MODE ? foundry : mainnet
-export const PREFERRED_CHAIN_LABEL = FORK_MODE ? "Foundry (local fork)" : "Ethereum"
+// In fork mode the preferred chain is the SAME custom Anvil chain the wagmi
+// config registers (forkChain, id 31339), so wrongNetwork checks and
+// switchChain targets agree with the connected wallet. (Previously this used
+// upstream `foundry` at 31337, which never matched the configured fork chain,
+// leaving tx buttons stuck on "wrong network" in local fork testing.)
+export const PREFERRED_CHAIN = FORK_MODE ? forkChain : mainnet
+export const PREFERRED_CHAIN_LABEL = FORK_MODE ? forkChain.name : "Ethereum"
 
 /** evm.now tx URL, chain-aware via the chainId query param. */
 export function evmNowTxUrl(txHash: string, chainId: number): string {

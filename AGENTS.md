@@ -165,8 +165,21 @@ never cleanly merge into `main`; don't revive or build on them:
 `rpc-public-fallback`. (`tl-into-ponder` and `rpc-public-fallback` have
 WIP stashes attached — leave those alone.)
 
+## PND Editions (native protocol)
+
+PND's own ERC721A edition protocol (artist-owned contracts, honest pricing
+with no protocol fee, per-token Mint Marks, Release Graph, Token Path). This
+is distinct from the external platforms above (Foundation/Manifold/Mint/etc.)
+that PND *indexes* for catalogs — Editions is a protocol PND *ships*. Lives in
+`contracts/src/editions/`, `apps/web/src/app/editions/` +
+`components/editions/`, with `pnpm dev:editions` for local fork testing.
+Discovery indexing is deploy-gated. **Start at `docs/pnd-editions-README.md`.**
+
 ## See also
 
+- `docs/pnd-editions-README.md` — PND Editions: overview, file map, dev/test/
+  deploy, verification status (entry point; links the design plan, interface
+  spec, integration runbook, and e2e harness).
 - `ARCHITECTURE.md` — the accurate, current deep-dive (two-program model,
   known_artists, RPC strategy). Trust this one.
 - `apps/indexer/ponder.config.ts` — the indexed/discovery-only contract list.
