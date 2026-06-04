@@ -7,7 +7,10 @@ import { MintEditionCTA } from "@/components/editions/MintEditionCTA"
 import { WithdrawPanel } from "@/components/editions/WithdrawPanel"
 import { MintHistory } from "@/components/editions/MintHistory"
 import { EditionGraphView } from "@/components/editions/EditionGraphView"
+import { MuriAnchorPanel } from "@/components/editions/MuriAnchorPanel"
+import { PreservationBadge } from "@/components/editions/PreservationBadge"
 import { getEdition, getEditionEdges, getEditionMintHistory } from "@/lib/editions-onchain"
+import { getArtworkPersistence } from "@/lib/editions-persistence"
 import {
   EDITION_KIND_LABEL,
   PND_CHAIN_ID,
@@ -40,9 +43,10 @@ export default async function EditionPage({ params }: { params: Params }) {
   const addr = edition as Address
   const e = await getEdition(addr)
   if (!e) notFound()
-  const [edges, history] = await Promise.all([
+  const [edges, history, persistence] = await Promise.all([
     getEditionEdges(addr),
     getEditionMintHistory(addr, e.minted),
+    getArtworkPersistence(e.cfg.artworkURI, e.owner),
   ])
 
   const mutability = e.isSealed ? "Sealed (no upgrades)" : "Upgradeable by the artist"
@@ -121,6 +125,14 @@ export default async function EditionPage({ params }: { params: Params }) {
                   : shortAddress(e.cfg.payoutAddress)
               }
             />
+            {persistence.status !== "none" && (
+              <div className="flex items-baseline justify-between gap-4">
+                <span className="text-[10px] uppercase tracking-wider text-gray-400">
+                  Artwork
+                </span>
+                <PreservationBadge persistence={persistence} />
+              </div>
+            )}
             <div className="pt-1">
               <a
                 href={evmNowAddressUrl(addr, PND_CHAIN_ID)}
@@ -143,6 +155,14 @@ export default async function EditionPage({ params }: { params: Params }) {
               </p>
             )}
           </section>
+
+          <MuriAnchorPanel
+            edition={addr}
+            owner={e.owner}
+            currentRenderer={e.cfg.renderer}
+            artworkURI={e.cfg.artworkURI}
+            editionName={e.name}
+          />
 
           <section className="pt-5">
             <h2 className="text-[10px] font-mono uppercase tracking-wider text-gray-400 mb-2">

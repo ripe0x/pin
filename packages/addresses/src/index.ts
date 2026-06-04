@@ -129,6 +129,20 @@ export const SPLIT_MAIN: Record<number, Address> = {
   [BASE_CHAIN_ID]: "0x2ed6c4B5dA6378c7897AC67Ba9e43102Feb694EE",
 }
 
+// PND Editions MURI bridge — deployed alongside the factory by DeployEditions.
+// PND_EDITIONS_MURI_OPERATOR is the shared IMURIProtocolCreator operator an
+// edition registers with to anchor its shared artwork in MURI; PND_MURI_RENDERER
+// is the opt-in renderer that sources the artwork from MURI while keeping live
+// Mint Marks. NOT yet on mainnet — paste after deploy, or set
+// NEXT_PUBLIC_PND_EDITIONS_MURI_OPERATOR / NEXT_PUBLIC_PND_MURI_RENDERER for
+// local Anvil dev (mirrors NEXT_PUBLIC_PND_EDITIONS_FACTORY).
+export const PND_EDITIONS_MURI_OPERATOR: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+}
+export const PND_MURI_RENDERER: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+}
+
 // Catalog — generic public registry where an artist address can
 // publish on-chain pointers (contracts, tokens, ranges) belonging to its
 // public record. Deployed via the canonical CREATE2 deterministic-deployment

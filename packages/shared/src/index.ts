@@ -8,6 +8,7 @@ export {
   ipfsCidToFallbackUrls,
   fetchFromIpfs,
   IPFS_GATEWAYS,
+  ARWEAVE_GATEWAY,
   extractIpnsPath,
   ipnsToGatewayUrl,
   fetchFromIpns,

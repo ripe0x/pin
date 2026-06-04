@@ -7,7 +7,15 @@
  */
 import { type Address, formatEther, isAddress } from "viem"
 import { foundry, mainnet } from "wagmi/chains"
-import { PND_EDITIONS_FACTORY, SPLIT_MAIN, getAddressOrNull } from "@pin/addresses"
+import {
+  MAINNET_CHAIN_ID,
+  MURI_PROTOCOL,
+  PND_EDITIONS_FACTORY,
+  PND_EDITIONS_MURI_OPERATOR,
+  PND_MURI_RENDERER,
+  SPLIT_MAIN,
+  getAddressOrNull,
+} from "@pin/addresses"
 
 export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
 
@@ -25,6 +33,36 @@ export function pndEditionsFactory(chainId: number = PND_CHAIN_ID): Address | nu
   const env = process.env.NEXT_PUBLIC_PND_EDITIONS_FACTORY
   if (env && isAddress(env)) return env as Address
   return getAddressOrNull(PND_EDITIONS_FACTORY, chainId)
+}
+
+/**
+ * The shared editions-on-MURI operator (IMURIProtocolCreator). An edition
+ * registers with it to anchor its shared artwork in MURI. Env override wins for
+ * local dev (the dev:editions fork deploys a fresh one). Null until deployed.
+ */
+export function pndEditionsMuriOperator(chainId: number = PND_CHAIN_ID): Address | null {
+  const env = process.env.NEXT_PUBLIC_PND_EDITIONS_MURI_OPERATOR
+  if (env && isAddress(env)) return env as Address
+  return getAddressOrNull(PND_EDITIONS_MURI_OPERATOR, chainId)
+}
+
+/**
+ * The opt-in renderer that sources artwork from MURI while keeping live Mint
+ * Marks. An artist points their edition at it via setRenderer. Null until
+ * deployed; env override wins for local dev.
+ */
+export function pndMuriRenderer(chainId: number = PND_CHAIN_ID): Address | null {
+  const env = process.env.NEXT_PUBLIC_PND_MURI_RENDERER
+  if (env && isAddress(env)) return env as Address
+  return getAddressOrNull(PND_MURI_RENDERER, chainId)
+}
+
+/**
+ * The MURIProtocol singleton. Same vanity address on mainnet and any mainnet
+ * fork, so the mainnet entry is correct in both (registerContract targets it).
+ */
+export function muriProtocolAddress(): Address {
+  return MURI_PROTOCOL[MAINNET_CHAIN_ID]
 }
 
 /**

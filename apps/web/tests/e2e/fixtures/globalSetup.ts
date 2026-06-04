@@ -26,6 +26,8 @@ export const STATE_FILE = resolve(__dirname, "../.e2e-state.json")
 export type GlobalState = {
   rpcUrl: string
   factory: `0x${string}`
+  muriRenderer: `0x${string}` | null
+  muriOperator: `0x${string}` | null
   appPort: number
   impersonate: `0x${string}`
   anvilPid: number
@@ -119,6 +121,15 @@ export default async function globalSetup() {
   const factory = m[1] as `0x${string}`
   console.log(`[e2e] factory: ${factory}`)
 
+  // The MURI bridge deploys too (the fork has the MURIProtocol singleton), so
+  // wire its renderer/operator into the dev env — that's what unhides the
+  // Permanent tier in the create form (pndMuriRenderer() reads the env var).
+  const rm = out.match(/PNDMuriRenderer:\s*(0x[0-9a-fA-F]{40})/)
+  const om = out.match(/PNDEditionsMuriOperator:\s*(0x[0-9a-fA-F]{40})/)
+  const muriRenderer = (rm?.[1] as `0x${string}` | undefined) ?? null
+  const muriOperator = (om?.[1] as `0x${string}` | undefined) ?? null
+  console.log(`[e2e] muri renderer: ${muriRenderer ?? "(none)"}`)
+
   // 3) Next dev server with the fork env + mock-connector impersonation.
   console.log(`[e2e] starting Next dev server on :${APP_PORT}`)
   const app: ChildProcess = spawn(
@@ -132,6 +143,8 @@ export default async function globalSetup() {
         NEXT_PUBLIC_USE_LOCAL_RPC: "1",
         NEXT_PUBLIC_ANVIL_RPC_URL: rpcUrl,
         NEXT_PUBLIC_PND_EDITIONS_FACTORY: factory,
+        ...(muriRenderer ? { NEXT_PUBLIC_PND_MURI_RENDERER: muriRenderer } : {}),
+        ...(muriOperator ? { NEXT_PUBLIC_PND_EDITIONS_MURI_OPERATOR: muriOperator } : {}),
         NEXT_PUBLIC_DEV_IMPERSONATE: IMPERSONATE,
       },
       detached: true,
@@ -151,6 +164,8 @@ export default async function globalSetup() {
   const state: GlobalState = {
     rpcUrl,
     factory,
+    muriRenderer,
+    muriOperator,
     appPort: APP_PORT,
     impersonate: IMPERSONATE,
     anvilPid: anvil.pid ?? 0,

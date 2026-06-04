@@ -244,6 +244,25 @@ async function findCandidates(): Promise<Candidate[]> {
       if (ar) arweaveIds.add(ar)
     }
   }
+
+  // Also probe CIDs the artist has self-attested as pinned (`token_pins`,
+  // written by the /preserve writeback and reused by PND Editions). The
+  // gateway probe is the corroborating ground truth for those self-
+  // declarations — a pin claim can lie, the probe can't (migration 019 note).
+  // Gated on known_artists via tp.artist, the same spend ceiling. token_pins
+  // holds bare IPFS CIDs (its providers are all IPFS), so they go in ipfsIds.
+  // This is also how an edition's attested artwork CID enters the probe before
+  // editions discovery indexing lands.
+  const pinRows = (await sql`
+    SELECT DISTINCT tp.cid AS cid
+      FROM token_pins tp
+      JOIN known_artists k ON k.address = tp.artist
+     WHERE tp.status IN ('pinned', 'queued')
+  `) as Array<{ cid: string }>
+  for (const r of pinRows) {
+    if (r.cid) ipfsIds.add(r.cid)
+  }
+
   const allIds = [...ipfsIds, ...arweaveIds]
   if (allIds.length === 0) return []
 
