@@ -131,15 +131,6 @@ function MuriAnchorPanelInner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mined])
 
-  // Don't surface anything to the public — only the artist manages this.
-  if (!isOwner) return null
-
-  const notConfigured = !operator || !renderer
-  const isRegistered = registeredOperator === true
-  const isAnchored = !!artwork && (artwork as { artistUris: readonly string[] }).artistUris.length > 0
-  const isRendererSet = currentRenderer.toLowerCase() === (renderer ?? "").toLowerCase()
-  const busy = isPending || mining || preparing
-
   const register = useCallback(() => {
     if (!operator) return
     setErr(null)
@@ -198,6 +189,17 @@ function MuriAnchorPanelInner({
       args: [renderer],
     })
   }, [renderer, edition, writeContract])
+
+  // Don't surface anything to the public — only the artist manages this. This
+  // gate (and the derived consts) must stay below every hook above, or the
+  // hook order changes when the wallet connects (isOwner flips false->true).
+  if (!isOwner) return null
+
+  const notConfigured = !operator || !renderer
+  const isRegistered = registeredOperator === true
+  const isAnchored = !!artwork && (artwork as { artistUris: readonly string[] }).artistUris.length > 0
+  const isRendererSet = currentRenderer.toLowerCase() === (renderer ?? "").toLowerCase()
+  const busy = isPending || mining || preparing
 
   return (
     <section className="border-b border-border py-5">

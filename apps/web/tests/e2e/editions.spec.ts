@@ -156,11 +156,11 @@ test("create a Permanent-tier edition with collaborator splits", async ({ page, 
 
   // The payout is the freshly-deployed 0xSplits split: a real contract, not the
   // artist and not zero.
-  const [cfg] = (await client.readContract({
+  const [cfg] = await client.readContract({
     address: editionAddr,
     abi: pndEditionsAbi,
     functionName: "config",
-  })) as [{ payoutAddress: Address }, unknown, unknown]
+  })
   const payout = cfg.payoutAddress
   expect(isAddress(payout)).toBe(true)
   expect(payout.toLowerCase()).not.toBe(zeroAddress)
