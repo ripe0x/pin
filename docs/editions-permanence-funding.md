@@ -370,13 +370,30 @@ Flow:
   deal (pay-once-ish, deal-term-bounded). Slotted as a `storacha-filecoin`
   rail behind the same interface so the floor backend is swappable.
 
-> **OPEN — must verify before relying on this (see §7 Phase 0):** that
-> Irys mainnet-ETH funding works end-to-end *today* (fund balance in
-> mainnet ETH → upload → retrievable `ar://` id → permanence settled on
-> Arweave). Repo notes flag this as unconfirmed. If Irys mainnet-ETH
-> funding is degraded, the floor rail falls back to the Storacha/Filecoin
-> alternative, and the "no bridge needed for the floor" claim must be
-> re-checked.
+> **PHASE 0 FINDINGS (resolved 2026-06):**
+> - **Mainnet-ETH funding: CONFIRMED.** The shipped #106 substrate
+>   `apps/web/src/lib/storage/arweave.ts` already funds Irys in native
+>   mainnet ETH from the artist's wallet (`@irys/web-upload-ethereum`
+>   `WebEthereum` adapter, `getPrice → wei`, `fund`). No bridge / Base /
+>   USDC for the floor. The Phase 2 rail wraps this substrate rather than
+>   re-integrating Irys.
+> - **Arweave permanence: GENUINELY AMBIGUOUS, so EARNED not assumed.**
+>   Irys launched its own L1 (mainnet late 2025), so whether an upload via
+>   `uploader.irys.xyz` settles to Arweave (`arweave.net/<id>`-resolvable)
+>   vs lives only on Irys's datachain cannot be confirmed without a live
+>   probe. The rail therefore labels output **`permanent-floor` only when
+>   `arweave.net/<id>` actually resolves**; otherwise honestly
+>   **`irys-stored`** (durable, Arweave settlement unconfirmed). See
+>   `editions-rails.ts` (`arweaveDurability`) + `editions-rail-irys.ts`
+>   (`checkArweaveSettlement`). This turns the open question into a
+>   verifiable, per-upload earned label and removes the blocker: the system
+>   never over-claims permanence. arweave.net can lag finalization, so a
+>   fresh upload is typically `irys-stored` and upgrades to
+>   `permanent-floor` on a later re-check (the Phase 3 decay monitor).
+> - **Remaining:** a live sub-100 KB upload to confirm `arweave.net/<id>`
+>   does eventually resolve at all (i.e. that the floor can ever be earned).
+>   If it never does, the floor backend switches to the Storacha/Filecoin
+>   alternative behind the same `SpendRail`.
 
 ### 3.3 Rail 2 — Recurring hot redundancy: Pinata via x402 (rented, USDC on Base)
 
@@ -654,11 +671,14 @@ relitigated):**
 
 ## 7. Open questions
 
-1. **Verify Irys mainnet-ETH funding end-to-end.** The floor rail's "no
-   bridge needed" claim rests on this and repo notes flag it unconfirmed.
-   Phase 0 blocker: fund an Irys balance in mainnet ETH, upload, confirm a
-   retrievable `ar://` id and Arweave settlement. If degraded, fall back to
-   the Storacha/Filecoin floor and re-check the "floor stays mainnet" claim.
+1. **Verify Irys mainnet-ETH funding end-to-end.** ~~Blocker~~ **Largely
+   resolved (Phase 0, see §3.2):** mainnet-ETH funding is confirmed by the
+   shipped substrate; Arweave settlement is now an EARNED per-upload label
+   (`permanent-floor` only when `arweave.net/<id>` resolves), so it no longer
+   blocks. The one remaining live check: confirm a sub-100 KB upload's
+   `arweave.net/<id>` *ever* resolves (that the floor can be earned at all);
+   if never, switch the floor backend to Storacha/Filecoin behind the same
+   `SpendRail`.
 2. **Native vs bridged USDC on Base.** Does Pinata's x402 facilitator
    require *native* USDC (favoring CCTP) or accept a bridged variant
    (allowing a one-shot aggregator)? Resolves the §4.3 route choice.
