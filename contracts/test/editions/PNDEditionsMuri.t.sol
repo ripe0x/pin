@@ -86,7 +86,7 @@ contract PNDEditionsMuriTest is PNDEditionsBase {
     function _anchoredEdition() internal returns (PNDEditions p) {
         p = _edition(_freeConfig());
         vm.prank(collector);
-        p.mint(1, address(0), "");
+        p.mint(1);
 
         vm.prank(artist);
         p.setRenderer(address(muriRenderer));
@@ -144,7 +144,7 @@ contract PNDEditionsMuriTest is PNDEditionsBase {
         }
         PNDEditions p = _edition(_freeConfig());
         vm.prank(collector);
-        p.mint(1, address(0), "");
+        p.mint(1);
         vm.prank(artist);
         p.setRenderer(address(muriRenderer));
 
@@ -160,7 +160,7 @@ contract PNDEditionsMuriTest is PNDEditionsBase {
         }
         PNDEditions p = _edition(_freeConfig());
         vm.prank(collector);
-        p.mint(1, address(0), "");
+        p.mint(1);
         vm.prank(artist);
         p.setRenderer(address(muriRenderer));
         string memory before = p.tokenURI(1);
