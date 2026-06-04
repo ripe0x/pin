@@ -1,12 +1,19 @@
 import { formatEther, type Address } from "viem"
-import { EditionStatus, evmNowAddressUrl, formatBps, shortAddress } from "@/lib/pnd-editions"
-import { estimatePinYears, pinYearsLabel } from "@/lib/editions-durability"
+import {
+  EditionStatus,
+  SURFACE_SHARE_BPS,
+  evmNowAddressUrl,
+  formatBps,
+  shortAddress,
+} from "@/lib/pnd-editions"
+import { pinYearsLabel, pinYearsPerMint } from "@/lib/editions-durability"
 
 // Rough, clearly-labeled assumptions for the ETH→"years of pinning" estimate.
 // Pinata pay-to-pin ≈ $0.10/GB/mo = $1.20/GB/yr; a reference work size; a rough
-// ETH price. These are stated in the UI tooltip, not hidden.
-const EST_ETH_USD = 3_000
-const EST_ARTWORK_BYTES = 25_000_000 // ~25 MB reference work
+// ETH price. Stated in the UI tooltip, not hidden. Same cost model the hot-pin
+// card uses (pinYearsPerMint), so the two always agree.
+const DEFAULT_ETH_USD = 3_000
+const DEFAULT_ARTWORK_BYTES = 25_000_000 // ~25 MB reference work
 
 /**
  * Public, mid-mint view of how an edition's mints fund its own permanence
@@ -39,6 +46,8 @@ export function PermanenceFundingPanel({
   supplyCap,
   status,
   chainId,
+  ethUsd = DEFAULT_ETH_USD,
+  artworkBytes = DEFAULT_ARTWORK_BYTES,
 }: {
   vault: Address
   bps: number
@@ -47,15 +56,23 @@ export function PermanenceFundingPanel({
   supplyCap: bigint
   status: EditionStatus
   chainId: number
+  ethUsd?: number
+  artworkBytes?: number
 }) {
   // Proceeds earmarked for permanence so far ≈ minted × price × bps / 10000.
   const accrued = (minted * price * BigInt(bps)) / 10_000n
   const perMint = (price * BigInt(bps)) / 10_000n
   const live = status === EditionStatus.Open
-  // Rough estimate of IPFS pinning that buys (clamped; assumptions in tooltip).
-  const pinYears = pinYearsLabel(
-    estimatePinYears({ accruedWei: accrued, ethUsd: EST_ETH_USD, artworkBytes: EST_ARTWORK_BYTES }),
-  )
+  // Years of IPFS pinning the funds buy — same cost model as the hot-pin card,
+  // surface netted out (clamped for display; assumptions in the tooltip).
+  const yearsPerMint = pinYearsPerMint({
+    priceWei: price,
+    permanenceBps: bps,
+    surfaceBps: SURFACE_SHARE_BPS,
+    ethUsd,
+    artworkBytes,
+  })
+  const pinYears = pinYearsLabel(Number(minted) * yearsPerMint)
   const capped = supplyCap > 0n
   const pct = capped && supplyCap > 0n ? Number((minted * 100n) / supplyCap) : 0
 
@@ -88,7 +105,7 @@ export function PermanenceFundingPanel({
         {pinYears !== "—" && (
           <p
             className="text-[10px] font-mono text-gray-500"
-            title={`Estimate: IPFS pinning at ~$0.10/GB/mo for a ~25 MB work, ETH ≈ $${EST_ETH_USD.toLocaleString()}. A pay-once Arweave floor is separate and cheaper.`}
+            title={`Estimate: IPFS pinning at ~$0.10/GB/mo for a ~${Math.round(artworkBytes / 1_000_000)} MB work, ETH ≈ $${ethUsd.toLocaleString()}, surface share netted out. A pay-once Arweave floor is separate and cheaper.`}
           >
             ≈ funds {pinYears} of IPFS pinning
           </p>

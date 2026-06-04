@@ -94,27 +94,47 @@ export function fundedForLabel(fundedThroughSec: number, nowSec: number): string
   return `~${months} month${months === 1 ? "" : "s"}`
 }
 
-/**
- * Rough estimate of how many years of IPFS pinning the accrued permanence funds
- * buy, for a work of `artworkBytes`. Pinning is USD-priced (~$0.10/GB/mo =
- * $1.20/GB/yr by default), so this needs an ETH→USD assumption. It is an
- * ESTIMATE — the UI must show the assumptions and the figure is clamped for
- * display (see pinYearsLabel), because small works are so cheap to pin that any
- * meaningful slice over-funds them by orders of magnitude (which is the point:
- * permanence is cheap). The Arweave floor is pay-once and separate.
- */
-export function estimatePinYears(opts: {
-  accruedWei: bigint
+// ── pinning cost model (single source of truth for the mint↔year ratio) ──────
+//
+// Pinning is USD-priced (Pinata pay-to-pin ≈ $0.10/GB/mo = $1.20/GB/yr by
+// default), so converting an ETH mint into "years pinned" needs an ETH→USD
+// assumption and the work's size. These are ESTIMATES — the UI shows the
+// assumptions. The mint↔year ratio is entirely size-driven: a small image is so
+// cheap to pin that one mint funds it for ages; a multi-GB video is closer to
+// ~1 mint ≈ 1 year. Both the funding panel and the hot-pin card derive from
+// these functions so they always agree.
+
+export type PinCostInput = {
+  /** Mint price in wei. */
+  priceWei: bigint
+  /** Permanence slice of the mint, in bps. */
+  permanenceBps: number
+  /** Surface share taken BEFORE the slice, in bps (net it out). 0 = direct mint. */
+  surfaceBps?: number
+  /** Assumed ETH price in USD. */
   ethUsd: number
+  /** Work size in bytes. */
   artworkBytes: number
+  /** Pinning cost in USD per GB per year (default $1.20 = $0.10/GB/mo). */
   usdPerGbYear?: number
-}): number {
-  const usdPerGbYear = opts.usdPerGbYear ?? 1.2
-  const gb = opts.artworkBytes / 1e9
-  if (gb <= 0 || opts.ethUsd <= 0 || usdPerGbYear <= 0) return 0
-  const accruedEth = Number(opts.accruedWei) / 1e18
-  const usd = accruedEth * opts.ethUsd
-  return usd / (gb * usdPerGbYear)
+}
+
+/** USD that one mint routes to the permanence vault, AFTER the surface share. */
+export function perMintPinUsd(
+  o: Pick<PinCostInput, "priceWei" | "permanenceBps" | "surfaceBps" | "ethUsd">,
+): number {
+  const priceEth = Number(o.priceWei) / 1e18
+  const afterSurface = priceEth * (1 - (o.surfaceBps ?? 0) / 10_000)
+  const slice = afterSurface * (o.permanenceBps / 10_000)
+  return slice * o.ethUsd
+}
+
+/** How many years of IPFS pinning ONE mint buys for this work. */
+export function pinYearsPerMint(o: PinCostInput): number {
+  const gb = o.artworkBytes / 1e9
+  const usdPerGbYear = o.usdPerGbYear ?? 1.2
+  if (gb <= 0 || usdPerGbYear <= 0) return 0
+  return perMintPinUsd(o) / (gb * usdPerGbYear)
 }
 
 /** Display label for an estimated pin-years figure, clamped so it never reads
@@ -128,6 +148,18 @@ export function pinYearsLabel(years: number): string {
   }
   const m = Math.max(1, Math.round(years * 12))
   return `~${m} month${m === 1 ? "" : "s"}`
+}
+
+/** Compact "per mint" label from a years-per-mint figure: "+1 yr / mint" or
+ *  "+30 d / mint". */
+export function perMintLabel(yearsPerMint: number): string {
+  if (!(yearsPerMint > 0)) return "—"
+  if (yearsPerMint >= 1) {
+    const r = Math.round(yearsPerMint)
+    return `+${r} yr / mint`
+  }
+  const d = Math.max(1, Math.round(yearsPerMint * 365))
+  return `+${d} d / mint`
 }
 
 /** Honest human label for a durability state. */

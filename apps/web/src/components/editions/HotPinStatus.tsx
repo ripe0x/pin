@@ -1,38 +1,56 @@
-import { fundedForLabel, formatFundedThrough } from "@/lib/editions-durability"
+import {
+  formatFundedThrough,
+  perMintLabel,
+  pinYearsLabel,
+  pinYearsPerMint,
+  type PinCostInput,
+} from "@/lib/editions-durability"
 
 /**
  * Hot redundancy status: a renewable IPFS pin via Pinata (the Phase 5 rail of
  * docs/editions-permanence-funding.md), funded ahead by the accumulated mint
- * slice. Shows HOW MANY YEARS the pin is funded for, a runway bar, the mints
- * that funded it (the value prop: minting buys pinning), and the Pinata path.
+ * slice. Everything here derives from the SAME cost model the funding panel uses
+ * (pinYearsPerMint, surface netted out), so the mint↔year ratio is consistent
+ * and real, not illustrative:
+ *   yearsPerMint = (price × (1−surface) × slice × ethUSD) / (sizeGB × $/GB/yr)
+ *   yearsFunded  = mints × yearsPerMint
  *
- * Honest by construction: this is RENTED availability, not permanence — it
- * lapses when the funding runs out, so it shows a funded-for duration + a
- * lapse date, never "permanent". Presentational (pure props), so it renders in
- * the preview route and, once the hot rail lands, on the live edition page.
+ * Honest: rented availability, never "permanent" — it shows a funded-for
+ * duration + lapse date. Presentational (pure props).
  */
 
 const PINATA_GATEWAY = "https://gateway.pinata.cloud"
 const YEAR = 365 * 86_400
-// Visual scale for the runway bar: a full bar reads as "a decade funded".
-const HORIZON_YEARS = 10
+const HORIZON_YEARS = 10 // visual scale for open editions
 
 export function HotPinStatus({
   cid,
-  fundedThrough,
   nowSec,
   mints,
+  supplyCap,
+  cost,
 }: {
   cid: string
-  fundedThrough: number
   nowSec: number
-  /** How many mints have funded this pin (the value-prop caption). */
-  mints?: number
+  /** Mints that have funded this pin. */
+  mints: number
+  /** Edition cap (0 = open edition). Drives the bar when capped. */
+  supplyCap?: number
+  /** The pinning cost inputs — the single source of truth for the ratio. */
+  cost: PinCostInput
 }) {
-  const lapsed = fundedThrough <= nowSec
-  const years = Math.max(0, (fundedThrough - nowSec) / YEAR)
-  const pct = lapsed ? 0 : Math.min(100, Math.max(3, (years / HORIZON_YEARS) * 100))
-  const perMintDays = mints && mints > 0 ? Math.round((years * 365) / mints) : null
+  const yearsPerMint = pinYearsPerMint(cost)
+  const yearsFunded = mints * yearsPerMint
+  const fundedThrough = Math.round(nowSec + yearsFunded * YEAR)
+  const lapsed = yearsFunded <= 0
+
+  const capped = !!supplyCap && supplyCap > 0
+  const pct = lapsed
+    ? 0
+    : capped
+      ? Math.min(100, Math.max(3, (mints / supplyCap) * 100))
+      : Math.min(100, Math.max(3, (yearsFunded / HORIZON_YEARS) * 100))
+
   const path = `ipfs://${cid}`
   const url = `${PINATA_GATEWAY}/ipfs/${cid}`
 
@@ -47,11 +65,11 @@ export function HotPinStatus({
           Pinned on IPFS · Pinata
         </span>
         <span className="text-sm font-mono font-medium tabular-nums">
-          {lapsed ? "lapsed" : fundedForLabel(fundedThrough, nowSec)}
+          {lapsed ? "not yet funded" : pinYearsLabel(yearsFunded)}
         </span>
       </div>
 
-      {/* Runway bar: how far the pin is funded, on a ~decade scale. */}
+      {/* Runway bar: mints contributed (capped) or funded years (open). */}
       <div className="space-y-1.5">
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-bg">
           <div
@@ -61,19 +79,15 @@ export function HotPinStatus({
         </div>
         <div className="flex items-baseline justify-between gap-3 text-[10px] font-mono text-gray-500">
           <span>
-            {mints != null
-              ? `${mints} mint${mints === 1 ? "" : "s"} funded this pin`
-              : "funded by mints"}
+            {capped ? `${mints} / ${supplyCap} mints` : `${mints} mint${mints === 1 ? "" : "s"}`} funded
           </span>
-          {perMintDays != null && !lapsed && (
-            <span className="tabular-nums text-fg-subtle">≈ +{perMintDays}d / mint</span>
-          )}
+          {!lapsed && <span className="tabular-nums text-fg-subtle">{perMintLabel(yearsPerMint)}</span>}
         </div>
       </div>
 
       <div className="flex items-baseline justify-between gap-3 text-[10px] font-mono uppercase tracking-wider text-gray-400">
-        <span>{lapsed ? "Lapsed" : "Funded through"}</span>
-        <span className="tabular-nums">{formatFundedThrough(fundedThrough)}</span>
+        <span>{lapsed ? "—" : "Pinned through"}</span>
+        <span className="tabular-nums">{lapsed ? "—" : formatFundedThrough(fundedThrough)}</span>
       </div>
 
       <a
@@ -85,11 +99,6 @@ export function HotPinStatus({
       >
         {path}
       </a>
-
-      <p className="text-[10px] font-mono leading-relaxed text-gray-500">
-        Rented availability, renewed from the work&rsquo;s permanence vault — not
-        permanent on its own. The Arweave floor is the durable copy.
-      </p>
     </div>
   )
 }

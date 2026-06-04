@@ -17,6 +17,19 @@ import type { ArtworkPersistence } from "@/lib/editions-persistence"
 
 const VAULT = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8" as const
 
+// One set of demo economics, shared by the funding panel and the hot-pin card so
+// they agree. Sized (~3.4 GB work) so the real cost model lands at ~1 mint ≈ 1
+// year — the ratio is size-driven; a small image would over-fund (100+ yrs).
+const DEMO = {
+  priceWei: 50_000_000_000_000_000n, // 0.05 ETH
+  permanenceBps: 300, // 3%
+  surfaceBps: 1000, // 10% surface, netted out
+  ethUsd: 3_000,
+  artworkBytes: 3_375_000_000, // ~3.4 GB (video-sized work) → ~1 yr / mint
+  minted: 37,
+  supplyCap: 150,
+} as const
+
 const hotFunded: ArtworkPersistence = {
   kind: "ipfs",
   status: "retrievable",
@@ -67,12 +80,14 @@ export default function PermanencePreviewPage() {
         <div className="px-3">
           <PermanenceFundingPanel
             vault={VAULT}
-            bps={300}
-            price={50_000_000_000_000_000n} // 0.05 ETH
-            minted={37n}
-            supplyCap={150n}
+            bps={DEMO.permanenceBps}
+            price={DEMO.priceWei}
+            minted={BigInt(DEMO.minted)}
+            supplyCap={BigInt(DEMO.supplyCap)}
             status={EditionStatus.Open}
             chainId={PND_CHAIN_ID}
+            ethUsd={DEMO.ethUsd}
+            artworkBytes={DEMO.artworkBytes}
           />
         </div>
       </Card>
@@ -103,9 +118,16 @@ export default function PermanencePreviewPage() {
         <div className="p-3">
           <HotPinStatus
             cid="bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
-            fundedThrough={1_824_600_000} // ≈2027-10
-            nowSec={1_729_900_800} // fixed ref ≈2024-10 → "~3 years"
-            mints={37}
+            nowSec={1_729_900_800} // fixed ref ≈2024-10
+            mints={DEMO.minted}
+            supplyCap={DEMO.supplyCap}
+            cost={{
+              priceWei: DEMO.priceWei,
+              permanenceBps: DEMO.permanenceBps,
+              surfaceBps: DEMO.surfaceBps,
+              ethUsd: DEMO.ethUsd,
+              artworkBytes: DEMO.artworkBytes,
+            }}
           />
         </div>
       </Card>

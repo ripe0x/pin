@@ -13,10 +13,12 @@ import { test } from "node:test"
 import {
   durabilityIsPermanent,
   durabilityLabel,
-  estimatePinYears,
   formatFundedThrough,
   fundedForLabel,
+  perMintLabel,
+  perMintPinUsd,
   pinYearsLabel,
+  pinYearsPerMint,
   renewalSignal,
   resolveArtworkDurability,
 } from "./editions-durability.ts"
@@ -109,16 +111,51 @@ test("formatFundedThrough is deterministic UTC YYYY-MM-DD", () => {
   assert.equal(formatFundedThrough(1_800_000_000), "2027-01-15")
 })
 
-test("estimatePinYears scales with funds and inverse with size", () => {
-  // 1 ETH @ $3000, 1 GB, $1.2/GB/yr -> 3000/1.2 = 2500 years
-  const y = estimatePinYears({ accruedWei: 10n ** 18n, ethUsd: 3000, artworkBytes: 1e9 })
-  assert.ok(Math.abs(y - 2500) < 1, `got ${y}`)
-  // half the funds -> half the years
-  const half = estimatePinYears({ accruedWei: 5n * 10n ** 17n, ethUsd: 3000, artworkBytes: 1e9 })
-  assert.ok(Math.abs(half - 1250) < 1, `got ${half}`)
-  // guards
-  assert.equal(estimatePinYears({ accruedWei: 0n, ethUsd: 3000, artworkBytes: 1e9 }), 0)
-  assert.equal(estimatePinYears({ accruedWei: 10n ** 18n, ethUsd: 0, artworkBytes: 1e9 }), 0)
+test("perMintPinUsd nets out the surface share", () => {
+  // 0.05 ETH, 3% slice, 10% surface, $3000 -> 0.05*0.9*0.03*3000 = $4.05
+  const usd = perMintPinUsd({
+    priceWei: 50_000_000_000_000_000n,
+    permanenceBps: 300,
+    surfaceBps: 1000,
+    ethUsd: 3000,
+  })
+  assert.ok(Math.abs(usd - 4.05) < 1e-6, `got ${usd}`)
+  // no surface -> $4.50
+  const direct = perMintPinUsd({
+    priceWei: 50_000_000_000_000_000n,
+    permanenceBps: 300,
+    surfaceBps: 0,
+    ethUsd: 3000,
+  })
+  assert.ok(Math.abs(direct - 4.5) < 1e-6, `got ${direct}`)
+})
+
+test("pinYearsPerMint: ~1 year per mint for a ~3.375 GB work", () => {
+  // perMintUsd $4.05 / (3.375 GB * $1.2/GB/yr = $4.05) = 1.0 year per mint
+  const y = pinYearsPerMint({
+    priceWei: 50_000_000_000_000_000n,
+    permanenceBps: 300,
+    surfaceBps: 1000,
+    ethUsd: 3000,
+    artworkBytes: 3_375_000_000,
+  })
+  assert.ok(Math.abs(y - 1) < 0.01, `got ${y}`)
+  // a tiny 25 MB work is far cheaper -> many years per mint
+  const tiny = pinYearsPerMint({
+    priceWei: 50_000_000_000_000_000n,
+    permanenceBps: 300,
+    surfaceBps: 1000,
+    ethUsd: 3000,
+    artworkBytes: 25_000_000,
+  })
+  assert.ok(tiny > 100, `got ${tiny}`)
+})
+
+test("perMintLabel renders +yr / +days / —", () => {
+  assert.equal(perMintLabel(1), "+1 yr / mint")
+  assert.equal(perMintLabel(2.4), "+2 yr / mint")
+  assert.equal(perMintLabel(0.08), "+29 d / mint")
+  assert.equal(perMintLabel(0), "—")
 })
 
 test("pinYearsLabel clamps and never shows an absurd number", () => {
