@@ -94,6 +94,42 @@ export function fundedForLabel(fundedThroughSec: number, nowSec: number): string
   return `~${months} month${months === 1 ? "" : "s"}`
 }
 
+/**
+ * Rough estimate of how many years of IPFS pinning the accrued permanence funds
+ * buy, for a work of `artworkBytes`. Pinning is USD-priced (~$0.10/GB/mo =
+ * $1.20/GB/yr by default), so this needs an ETH→USD assumption. It is an
+ * ESTIMATE — the UI must show the assumptions and the figure is clamped for
+ * display (see pinYearsLabel), because small works are so cheap to pin that any
+ * meaningful slice over-funds them by orders of magnitude (which is the point:
+ * permanence is cheap). The Arweave floor is pay-once and separate.
+ */
+export function estimatePinYears(opts: {
+  accruedWei: bigint
+  ethUsd: number
+  artworkBytes: number
+  usdPerGbYear?: number
+}): number {
+  const usdPerGbYear = opts.usdPerGbYear ?? 1.2
+  const gb = opts.artworkBytes / 1e9
+  if (gb <= 0 || opts.ethUsd <= 0 || usdPerGbYear <= 0) return 0
+  const accruedEth = Number(opts.accruedWei) / 1e18
+  const usd = accruedEth * opts.ethUsd
+  return usd / (gb * usdPerGbYear)
+}
+
+/** Display label for an estimated pin-years figure, clamped so it never reads
+ *  as an absurd number ("100+ years" past a century). */
+export function pinYearsLabel(years: number): string {
+  if (!(years > 0)) return "—"
+  if (years >= 100) return "100+ years"
+  if (years >= 1) {
+    const r = Math.round(years)
+    return `~${r} year${r === 1 ? "" : "s"}`
+  }
+  const m = Math.max(1, Math.round(years * 12))
+  return `~${m} month${m === 1 ? "" : "s"}`
+}
+
 /** Honest human label for a durability state. */
 export function durabilityLabel(d: ArtworkDurability, fundedThrough?: number | null): string {
   switch (d) {

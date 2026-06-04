@@ -13,8 +13,10 @@ import { test } from "node:test"
 import {
   durabilityIsPermanent,
   durabilityLabel,
+  estimatePinYears,
   formatFundedThrough,
   fundedForLabel,
+  pinYearsLabel,
   renewalSignal,
   resolveArtworkDurability,
 } from "./editions-durability.ts"
@@ -105,6 +107,27 @@ test("durabilityLabel shows the funded-through date for hot-funded", () => {
 
 test("formatFundedThrough is deterministic UTC YYYY-MM-DD", () => {
   assert.equal(formatFundedThrough(1_800_000_000), "2027-01-15")
+})
+
+test("estimatePinYears scales with funds and inverse with size", () => {
+  // 1 ETH @ $3000, 1 GB, $1.2/GB/yr -> 3000/1.2 = 2500 years
+  const y = estimatePinYears({ accruedWei: 10n ** 18n, ethUsd: 3000, artworkBytes: 1e9 })
+  assert.ok(Math.abs(y - 2500) < 1, `got ${y}`)
+  // half the funds -> half the years
+  const half = estimatePinYears({ accruedWei: 5n * 10n ** 17n, ethUsd: 3000, artworkBytes: 1e9 })
+  assert.ok(Math.abs(half - 1250) < 1, `got ${half}`)
+  // guards
+  assert.equal(estimatePinYears({ accruedWei: 0n, ethUsd: 3000, artworkBytes: 1e9 }), 0)
+  assert.equal(estimatePinYears({ accruedWei: 10n ** 18n, ethUsd: 0, artworkBytes: 1e9 }), 0)
+})
+
+test("pinYearsLabel clamps and never shows an absurd number", () => {
+  assert.equal(pinYearsLabel(2500), "100+ years")
+  assert.equal(pinYearsLabel(100), "100+ years")
+  assert.equal(pinYearsLabel(3), "~3 years")
+  assert.equal(pinYearsLabel(1), "~1 year")
+  assert.equal(pinYearsLabel(0.5), "~6 months")
+  assert.equal(pinYearsLabel(0), "—")
 })
 
 test("fundedForLabel renders years / months / lapsed", () => {
