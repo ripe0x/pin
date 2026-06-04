@@ -140,6 +140,27 @@ export const ARTIST_RECORD_REGISTRY: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x467a9c39e03C595EC3075D856f19C7386b6b915d",
 }
 
+// MURI Protocol singleton — on-chain media-permanence registry (multi-URI
+// fallbacks + SHA-256 integrity hash + default on-chain HTML viewer). Same
+// vanity address cross-chain (mainnet/Base/Sepolia). Mainnet deploy block
+// 23754750 (verified via eth_getCode binary search) — used as the Ponder
+// subscription startBlock.
+export const MURI_PROTOCOL: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x0000000000C2A0B63ab4aA971B08B905E5875b01",
+}
+
+export const MURI_PROTOCOL_START_BLOCK: Record<number, number> = {
+  [MAINNET_CHAIN_ID]: 23754750,
+}
+
+// MURIProtocolManifoldExtension — the Manifold Creator Extension PND mints
+// through. Register it on a Manifold contract (registerExtension) + register
+// the contract with MURI (registerContract), then mintERC721/mintERC1155.
+// Same address cross-chain.
+export const MURI_MANIFOLD_EXTENSION: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x0FFc4A1906157248ae64F28fD259bB7a2790606C",
+}
+
 // Helper for the address-or-null pattern: returns null when no factory is
 // configured for the chain (instead of throwing like getAddress).
 export function getAddressOrNull(

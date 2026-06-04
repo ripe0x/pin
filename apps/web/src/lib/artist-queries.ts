@@ -28,6 +28,7 @@ import {
   EnrichmentEmpty,
 } from "./artist-cache"
 import { getArtistSovereignAuctionMap, type SovereignAuctionLite } from "./auctions"
+import { getMuriUriCounts } from "./reads"
 import { extractCid, ipfsToHttp } from "@pin/shared"
 
 // Module-level singleton used for ENS lookups + a multicall in
@@ -442,6 +443,11 @@ export type GalleryItem = ReturnType<typeof tokenToDisplayData> & {
    * and timestamps as decimal strings (JSON can't carry bigint).
    */
   auction: SovereignAuctionLite | null
+  /**
+   * Artist fallback-URI count if the token is preserved on-chain via MURI,
+   * else null. Drives the gallery-tile MURI badge. Postgres-only.
+   */
+  muriUriCount: number | null
 }
 
 export type GalleryPage = {
@@ -471,7 +477,7 @@ export async function getArtistGalleryPage(
     return { tokens: [], total, page, pageSize, hasMore: false }
   }
 
-  const [enriched, prices, auctionMap] = await Promise.all([
+  const [enriched, prices, auctionMap, muriCounts] = await Promise.all([
     // `getCachedEnrichedPage` throws `EnrichmentEmpty` when every token
     // in the slice enriches to null (transient RPC/IPFS hiccup, not a
     // real empty gallery) — the throw stops `unstable_cache` from
@@ -485,6 +491,10 @@ export async function getArtistGalleryPage(
     getArtistSovereignAuctionMap(artistAddress).catch(
       (): Record<string, SovereignAuctionLite> => ({}),
     ),
+    // Postgres-only MURI preservation counts for this page (no RPC).
+    getMuriUriCounts(slice.map((r) => ({ contract: r.contract, tokenId: r.tokenId }))).catch(
+      (): Map<string, number> => new Map(),
+    ),
   ])
 
   const tokens: GalleryItem[] = enriched.map((token) => {
@@ -494,6 +504,7 @@ export async function getArtistGalleryPage(
       ...display,
       buyPrice: prices.get(key) ?? null,
       auction: auctionMap[key] ?? null,
+      muriUriCount: muriCounts.get(key) ?? null,
     }
   })
 
