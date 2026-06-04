@@ -1,30 +1,7 @@
 import { formatEther } from "viem"
+import Link from "next/link"
 import type { SettledAuction } from "@/lib/indexer-queries"
-
-function formatEthAmount(wei: bigint): string {
-  // Match the rest of the site: drop trailing zeros so 0.190 → 0.19,
-  // but preserve all 18 decimals' worth of precision the user might
-  // need to verify the on-chain value.
-  const s = formatEther(wei)
-  if (!s.includes(".")) return s
-  const trimmed = s.replace(/0+$/, "").replace(/\.$/, "")
-  return trimmed
-}
-
-function formatRelativeTime(unixSec: number): string {
-  if (unixSec === 0) return ""
-  const diffSec = Math.max(0, Math.floor(Date.now() / 1000) - unixSec)
-  if (diffSec < 60) return `${diffSec}s ago`
-  const m = Math.floor(diffSec / 60)
-  if (m < 60) return `${m}m ago`
-  const h = Math.floor(m / 60)
-  if (h < 24) return `${h}h ago`
-  const d = Math.floor(h / 24)
-  if (d < 30) return `${d}d ago`
-  const mo = Math.floor(d / 30)
-  if (mo < 12) return `${mo}mo ago`
-  return `${Math.floor(mo / 12)}y ago`
-}
+import { formatEthAmount, formatRelativeTime } from "@/lib/format-eth"
 
 function isAddress(display: string): boolean {
   return display.startsWith("0x")
@@ -32,17 +9,34 @@ function isAddress(display: string): boolean {
 
 export function SettledAuctionSummary({
   auction,
+  auctionHref,
 }: {
   auction: SettledAuction
+  /**
+   * When set, render a "View auction ↗" link to the full per-auction page.
+   * Used on the token page's headline card; omitted on the auction page
+   * itself (which would link to itself).
+   */
+  auctionHref?: string
 }) {
   return (
     <div className="rounded-lg border border-gray-200 bg-surface overflow-hidden">
       <div className="p-5 space-y-5">
-        <div className="flex items-center gap-2">
-          <span className="inline-block h-1.5 w-1.5 rounded-full bg-gray-400" />
-          <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500">
-            Auction settled
-          </span>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-gray-400" />
+            <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500">
+              Auction settled
+            </span>
+          </div>
+          {auctionHref && (
+            <Link
+              href={auctionHref}
+              className="text-[10px] font-mono text-gray-400 hover:text-fg hover:underline transition-colors shrink-0"
+            >
+              View auction ↗
+            </Link>
+          )}
         </div>
 
         <div className="flex items-end justify-between gap-6">
@@ -86,7 +80,7 @@ export function SettledAuctionSummary({
                 className="flex items-baseline justify-between text-[11px] font-mono"
               >
                 <a
-                  href={`https://etherscan.io/tx/${bid.txHash}`}
+                  href={`https://evm.now/tx/${bid.txHash}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-baseline gap-2 min-w-0 hover:opacity-70 transition-opacity"

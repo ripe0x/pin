@@ -7,6 +7,7 @@ import { AuctionPanel } from "@/components/auction/AuctionPanel"
 import { MoreFromContractSection } from "@/components/auction/MoreFromContract"
 import { StartAuctionCTA } from "@/components/auction/StartAuctionCTA"
 import { RefreshMetadataButton } from "@/components/token/RefreshMetadataButton"
+import { MintEditionCTA } from "@/components/token/MintEditionCTA"
 import { TokenMedia } from "@/components/token/TokenMedia"
 import {
   getErc1155TokenStats,
@@ -14,8 +15,13 @@ import {
   resolveTokenMetadataDirect,
   tokenExistsOnChain,
 } from "@/lib/onchain-discovery"
+import { getMintEditionInfo } from "@/lib/reads"
 import { getAuctionForToken, type AuctionState } from "@/lib/auctions"
-import { getSettledAuctionForToken } from "@/lib/indexer-queries"
+import {
+  getSettledAuctionForToken,
+  getTokenAuctionSales,
+  type TokenAuctionSale,
+} from "@/lib/indexer-queries"
 import { SettledAuctionSummary } from "@/components/auction/SettledAuctionSummary"
 import { getArtistIdentity, resolveDisplayNames } from "@/lib/artist-queries"
 import { getMuriToken } from "@/lib/reads"
@@ -27,6 +33,64 @@ type Params = Promise<{ handle: string; tokenId: string }>
 
 function truncateAddress(addr: string): string {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`
+}
+
+/**
+ * Merge completed auction sales into the transfer-based provenance timeline,
+ * replacing escrow-leg transfers with rich "Sold" entries.
+ *
+ * An auction settlement emits raw transfers (seller→house on listing,
+ * house→winner on settle) that otherwise show as confusing "transferred to a
+ * contract" rows. We drop:
+ *   - the house→winner settle leg, matched by settlement tx hash (the
+ *     settle/finalize call transfers the NFT in the same tx — verified on
+ *     maglev: 30/30 settled PND auctions where transfer data exists), and
+ *   - any transfer into/out of a known auction house (listing leg,
+ *     cancel-return), matched by address.
+ * `activeMarket` (the current live auction's house, if any) is added to the
+ * drop-set so an in-progress auction's escrow-in doesn't surface as a bare
+ * transfer — the live AuctionPanel + "Held in escrow" block already convey it.
+ *
+ * Everything else (mint, gifts, direct transfers) is kept. Result is sorted
+ * newest-first. ERC721 only — callers skip this for auction-free ERC1155.
+ */
+function mergeAuctionSalesIntoProvenance(
+  transferEntries: ProvenanceEntry[],
+  sales: TokenAuctionSale[],
+  activeMarket: string | null,
+): ProvenanceEntry[] {
+  if (sales.length === 0) return transferEntries
+
+  const salesByTx = new Map<string, TokenAuctionSale>()
+  const marketSet = new Set<string>()
+  for (const s of sales) {
+    if (s.settlementTxHash) salesByTx.set(s.settlementTxHash.toLowerCase(), s)
+    marketSet.add(s.marketAddress.toLowerCase())
+  }
+  if (activeMarket) marketSet.add(activeMarket.toLowerCase())
+
+  const kept = transferEntries.filter((t) => {
+    if (salesByTx.has(t.txHash.toLowerCase())) return false // settle leg
+    const from = t.from.toLowerCase()
+    const to = (t.to ?? "").toLowerCase()
+    if (marketSet.has(from) || marketSet.has(to)) return false // escrow plumbing
+    return true
+  })
+
+  const soldEntries: ProvenanceEntry[] = sales.map((s) => ({
+    event: "Sold",
+    from: s.seller,
+    fromHandle: truncateAddress(s.seller),
+    to: s.winner,
+    toHandle: truncateAddress(s.winner),
+    timestamp: s.settledAtTime,
+    txHash: s.settlementTxHash ?? "",
+    auctionHref: `/auction/${s.marketAddress}/${s.auctionId}`,
+    priceWei: s.amountWei,
+    salePlatform: s.source,
+  }))
+
+  return [...kept, ...soldEntries].sort((a, b) => b.timestamp - a.timestamp)
 }
 
 // Wrapped in React's `cache()` so calls within the same request — there
@@ -42,13 +106,20 @@ const getTokenPageData = cache(async (handle: string, tokenId: string) => {
   // Fetch metadata, ERC721 on-chain data, and ERC1155 stats in parallel.
   // ERC1155 returns null on ERC721 contracts (and vice-versa for the ERC721
   // path), so we naturally end up with whichever standard the token uses.
-  const [meta, onChainData, erc1155, muri] = await Promise.all([
-    resolveTokenMetadataDirect(contract, tokenId),
-    getTokenOnChainData(contract, tokenId).catch(() => null),
-    getErc1155TokenStats(contract, tokenId).catch(() => null),
-    // Postgres-only preservation overlay (muri_tokens) — no live RPC.
-    getMuriToken(contract, tokenId).catch(() => null),
-  ])
+  const [meta, onChainData, erc1155, mintInfo, auctionSales, muri] =
+    await Promise.all([
+      resolveTokenMetadataDirect(contract, tokenId),
+      getTokenOnChainData(contract, tokenId).catch(() => null),
+      getErc1155TokenStats(contract, tokenId).catch(() => null),
+      // Postgres lookup (no chain read) — non-null only for a worker-indexed Mint
+      // edition, which gates the live mint CTA below.
+      getMintEditionInfo(contract, tokenId).catch(() => null),
+      // Completed auction sales (PND + FND) for the merged provenance timeline.
+      // Postgres-only; [] when none / indexer unavailable.
+      getTokenAuctionSales(contract, tokenId).catch(() => [] as TokenAuctionSale[]),
+      // Postgres-only preservation overlay (muri_tokens) — no live RPC.
+      getMuriToken(contract, tokenId).catch(() => null),
+    ])
 
   const imageUrl = meta?.image
     ? ipfsToHttp(meta.image)
@@ -143,6 +214,11 @@ const getTokenPageData = cache(async (handle: string, tokenId: string) => {
     isErc1155,
     edition: isErc1155 ? erc1155!.totalSupply : null,
     ownerCount: isErc1155 ? erc1155!.ownerCount : null,
+    // Mint protocol edition: surface the first-mint time so the client CTA can
+    // derive the 24h window (closeAt = mintTime + 24h) without a chain read.
+    isMint: !!mintInfo,
+    mintTime: mintInfo?.mintTime ?? null,
+    auctionSales,
   }
 })
 
@@ -229,13 +305,38 @@ export default async function TokenPage({
   ])
   const settledAuction = !auction ? settledAuctionRaw : null
 
+  // Merge completed auction sales into the provenance timeline (ERC721 only;
+  // ERC1155 is auction-free). The live auction's house is passed so its
+  // escrow-in transfer is folded out alongside the settled escrow legs.
+  let provenance: ProvenanceEntry[] = data.isErc1155
+    ? data.provenance
+    : mergeAuctionSalesIntoProvenance(
+        data.provenance,
+        data.auctionSales,
+        auction?.marketAddress ?? null,
+      )
+
+  // Link the headline settled card to the exact auction it shows. The PND-only
+  // settled lookup carries no auction id, so match it against the full sales
+  // list by settle time + winner.
+  const headlineSale = settledAuction
+    ? data.auctionSales.find(
+        (s) =>
+          s.settledAtTime === settledAuction.settledAtTime &&
+          s.winner.toLowerCase() === settledAuction.winner.toLowerCase(),
+      )
+    : undefined
+  const headlineSaleHref = headlineSale
+    ? `/auction/${headlineSale.marketAddress}/${headlineSale.auctionId}`
+    : undefined
+
   // Upgrade truncated 0x… handles to ENS where available — for the creator,
   // the owner, AND every distinct address in the provenance timeline so the
   // history reads as `alice.eth → bob.eth ×3` instead of raw 0x….
   const addressSet = new Set<string>()
   if (data.creator) addressSet.add(data.creator.toLowerCase())
   if (data.owner) addressSet.add(data.owner.toLowerCase())
-  for (const entry of data.provenance) {
+  for (const entry of provenance) {
     addressSet.add(entry.from.toLowerCase())
     if (entry.to) addressSet.add(entry.to.toLowerCase())
   }
@@ -256,7 +357,7 @@ export default async function TokenPage({
     if (data.owner) {
       data.ownerHandle = names.get(data.owner.toLowerCase()) ?? data.ownerHandle
     }
-    data.provenance = data.provenance.map((entry) => ({
+    provenance = provenance.map((entry) => ({
       ...entry,
       fromHandle: names.get(entry.from.toLowerCase()) ?? entry.fromHandle,
       toHandle: entry.to
@@ -345,7 +446,10 @@ export default async function TokenPage({
           )}
           {!auction && settledAuction && (
             <section className="py-5 border-b border-gray-100">
-              <SettledAuctionSummary auction={settledAuction} />
+              <SettledAuctionSummary
+                auction={settledAuction}
+                auctionHref={headlineSaleHref}
+              />
             </section>
           )}
           {/* StartAuctionCTA renders its own bordered section only when the
@@ -357,6 +461,17 @@ export default async function TokenPage({
               nftContract={data.contract as `0x${string}`}
               tokenId={tokenId}
               tokenTitle={data.title}
+            />
+          )}
+
+          {/* Live mint — Mint protocol (mint.vv.xyz) editions, while the 24h
+              window is open. Derives the window from mintTime; the contract
+              enforces the real close. */}
+          {data.isMint && data.mintTime != null && (
+            <MintEditionCTA
+              contract={data.contract as `0x${string}`}
+              tokenId={tokenId}
+              mintTime={data.mintTime}
             />
           )}
 
@@ -373,9 +488,9 @@ export default async function TokenPage({
           {/* Provenance — only when there's history. `Provenance` itself
               renders nothing for an empty list, so without this guard the
               section's padding + border-b leave an empty bordered band. */}
-          {data.provenance.length > 0 && (
+          {provenance.length > 0 && (
             <section className="py-5 border-b border-gray-100">
-              <Provenance entries={data.provenance} />
+              <Provenance entries={provenance} />
             </section>
           )}
 

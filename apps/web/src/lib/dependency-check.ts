@@ -26,6 +26,12 @@ import {
 } from "./artist-inventory"
 import { getCatalog, type Catalog } from "./catalog"
 import type { PlatformId } from "./platforms/types"
+import {
+  classifyUrl,
+  extractArweaveId,
+  extractBareCid,
+  type HostBucket,
+} from "./metadata-host"
 
 /**
  * Assemble the Artist Dependency Report.
@@ -94,6 +100,64 @@ export type PlatformCoverage = {
   errors: PlatformError[]
 }
 
+export type DisplayPathSummary = {
+  totalIndexed: number
+  totalWithMetadata: number
+  metadataByBucket: Record<HostBucket, number>
+  mediaByBucket: Record<HostBucket, number>
+  topCentralizedHosts: Array<{ host: string; count: number }>
+}
+
+/**
+ * Per-bucket preservation signal. Populated by the worker's
+ * `probe-cid-availability` task (writes `cid_availability`) and, in
+ * Phase 2b, by the `/preserve` writeback (writes `token_pins`).
+ *
+ *   ipfs.totalCids        — distinct CIDs referenced by this artist
+ *                           (across metadata + media URLs)
+ *   ipfs.retrievableCount — CIDs whose latest probe came back ok
+ *   ipfs.unretrievableCount — CIDs whose latest probe failed every gateway
+ *   ipfs.unprobedCount    — CIDs not yet in cid_availability (the
+ *                           worker hasn't reached them yet)
+ *   ipfs.artistPinnedCount — CIDs the artist self-declared as pinned
+ *                           (Phase 2b; always 0 here)
+ *
+ *   arweave / onchain     — analogous; arweave gets a probe loop
+ *                           parallel to ipfs (deferred; counters
+ *                           reported as unprobed in 2a-only mode);
+ *                           onchain is trivially preserved.
+ *
+ *   centralized.totalCount — count of URLs (not CIDs) — centralized
+ *                            hosts don't have a content-address key
+ *                            so they're counted per-URL.
+ *   centralized.reachableCount — populated by a future HEAD probe;
+ *                                always 0 in this initial 2a (the
+ *                                URL-liveness probe is deliberately
+ *                                deferred).
+ *   centralized.topHosts  — top 5 hosts by URL count.
+ */
+export type PreservationSummary = {
+  ipfs: {
+    totalCids: number
+    retrievableCount: number
+    unretrievableCount: number
+    unprobedCount: number
+    artistPinnedCount: number
+  }
+  arweave: {
+    totalCids: number
+    retrievableCount: number
+    unretrievableCount: number
+    unprobedCount: number
+  }
+  onchain: { totalCount: number }
+  centralized: {
+    totalCount: number
+    reachableCount: number
+    topHosts: Array<{ host: string; count: number }>
+  }
+}
+
 export type DependencyReport = {
   identity: SerializedIdentity
   inventoryTotals: InventoryTotals
@@ -102,6 +166,8 @@ export type DependencyReport = {
   areasToReview: AreaEntry[]
   recommendedNextSteps: NextStep[]
   platformCoverage: PlatformCoverage
+  displayPath: DisplayPathSummary
+  preservation: PreservationSummary
   generatedAt: number
   indexerHealthy: boolean
 }
@@ -120,6 +186,317 @@ async function tryIndexer<T>(
   } catch {
     return { ok: false }
   }
+}
+
+const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+  /[^a-zA-Z0-9_]/g, "",
+)
+
+const TOP_CENTRALIZED_HOSTS = 5
+
+function emptyBucketCounts(): Record<HostBucket, number> {
+  return { ipfs: 0, arweave: 0, onchain: 0, centralized: 0, unresolved: 0 }
+}
+
+function emptyDisplayPathSummary(): DisplayPathSummary {
+  return {
+    totalIndexed: 0,
+    totalWithMetadata: 0,
+    metadataByBucket: emptyBucketCounts(),
+    mediaByBucket: emptyBucketCounts(),
+    topCentralizedHosts: [],
+  }
+}
+
+type ArtistTokenMetadataRow = {
+  raw_uri: string | null
+  image_url: string | null
+  animation_url: string | null
+  has_metadata: boolean
+}
+
+/**
+ * Shared row source for the Display path + Preservation summaries.
+ *
+ * UNION over the same three tables `reads.ts:getArtistTokens` uses —
+ * worker `artist_tokens` + Ponder `fnd_artist_tokens` + Ponder
+ * `srv2_artist_tokens` — LEFT JOIN to `token_metadata`. Returns one
+ * row per (contract, token_id), so callers can derive their own
+ * counts without re-running the UNION.
+ *
+ * `has_metadata` here is ROW-PRESENCE (`m.contract IS NOT NULL`), so
+ * downstream code can distinguish "indexed but not warmed yet" from
+ * "warmed but payload all-null." The preservation summary applies an
+ * additional payload-presence filter on top.
+ *
+ * Catches schema-not-ready (fresh deploy) and returns an empty list so
+ * the report renders gracefully.
+ */
+async function getArtistTokenMetadataRows(
+  addrLower: string,
+): Promise<ArtistTokenMetadataRow[]> {
+  if (!sql) return []
+  try {
+    return (await sql.unsafe(
+      `WITH refs AS (
+         SELECT lower(contract) AS contract, token_id
+         FROM artist_tokens WHERE artist = $1
+         UNION
+         SELECT lower(contract), token_id::text
+         FROM ${INDEXER_SCHEMA}.fnd_artist_tokens WHERE lower(creator) = $1
+         UNION
+         SELECT lower(contract), token_id::text
+         FROM ${INDEXER_SCHEMA}.srv2_artist_tokens WHERE lower(creator) = $1
+       )
+       SELECT m.raw_uri, m.image_url, m.animation_url,
+              (m.contract IS NOT NULL) AS has_metadata
+       FROM refs r
+       LEFT JOIN token_metadata m
+         ON m.contract = r.contract AND m.token_id = r.token_id`,
+      [addrLower],
+    )) as ArtistTokenMetadataRow[]
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Display-path summary: classify every indexed token's metadata URL
+ * and media URL into a HostBucket, count by bucket, and surface the
+ * top centralized hosts. Pure SQL — the worker has already pre-resolved
+ * `token_metadata` for every token whose creator is in known_artists.
+ *
+ * Source rows from `getArtistTokenMetadataRows` so the UNION-query
+ * shape stays in one place; the Preservation summary uses the same
+ * rows.
+ */
+async function getDisplayPathSummary(
+  addrLower: string,
+): Promise<DisplayPathSummary> {
+  const rows = await getArtistTokenMetadataRows(addrLower)
+  const summary = emptyDisplayPathSummary()
+  summary.totalIndexed = rows.length
+
+  const centralizedHostCounts = new Map<string, number>()
+
+  for (const r of rows) {
+    if (r.has_metadata) summary.totalWithMetadata++
+
+    const metaClass = classifyUrl(r.raw_uri)
+    summary.metadataByBucket[metaClass.bucket]++
+    if (metaClass.bucket === "centralized" && metaClass.host) {
+      centralizedHostCounts.set(
+        metaClass.host,
+        (centralizedHostCounts.get(metaClass.host) ?? 0) + 1,
+      )
+    }
+
+    const mediaClass = classifyUrl(r.image_url ?? r.animation_url)
+    summary.mediaByBucket[mediaClass.bucket]++
+    if (mediaClass.bucket === "centralized" && mediaClass.host) {
+      centralizedHostCounts.set(
+        mediaClass.host,
+        (centralizedHostCounts.get(mediaClass.host) ?? 0) + 1,
+      )
+    }
+  }
+
+  summary.topCentralizedHosts = [...centralizedHostCounts.entries()]
+    .map(([host, count]) => ({ host, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, TOP_CENTRALIZED_HOSTS)
+
+  return summary
+}
+
+function emptyPreservationSummary(): PreservationSummary {
+  return {
+    ipfs: {
+      totalCids: 0,
+      retrievableCount: 0,
+      unretrievableCount: 0,
+      unprobedCount: 0,
+      artistPinnedCount: 0,
+    },
+    arweave: {
+      totalCids: 0,
+      retrievableCount: 0,
+      unretrievableCount: 0,
+      unprobedCount: 0,
+    },
+    onchain: { totalCount: 0 },
+    centralized: { totalCount: 0, reachableCount: 0, topHosts: [] },
+  }
+}
+
+/**
+ * Preservation summary — composite per-bucket signal.
+ *
+ *   IPFS:        gateway-retrievable from `cid_availability` (probed
+ *                by `apps/worker/src/tasks/probe-cid-availability.ts`).
+ *   Arweave:     same `cid_availability` table conceptually, but the
+ *                worker doesn't probe Arweave gateways yet — so every
+ *                Arweave CID is counted as `unprobed` until that ships.
+ *   Onchain:     trivially preserved — data lives on-chain.
+ *   Centralized: counts URLs (not CIDs — there's no content-address
+ *                key) and surfaces the top hosts. `reachableCount` is
+ *                always 0 in this initial Phase 2a; URL-liveness probe
+ *                is deferred per the planning doc.
+ *
+ * Distinct-CID semantics: the same IPFS CID can be referenced by both
+ * a metadata URL and a media URL on the same row, or across rows for
+ * the same artist (a manifold-style "all tokens point at one cover
+ * image"). We de-duplicate by CID before counting so the totals match
+ * the cache table's PK shape.
+ *
+ * Payload-presence filter (matches the planned Phase 1 review fix):
+ * skip rows whose raw_uri / image_url / animation_url are all null —
+ * a warmed row with no payload contributes nothing to preservation.
+ */
+async function getPreservationSummary(
+  addrLower: string,
+): Promise<PreservationSummary> {
+  if (!sql) return emptyPreservationSummary()
+
+  const rows = await getArtistTokenMetadataRows(addrLower)
+  const summary = emptyPreservationSummary()
+
+  // Per-bucket sets. CIDs (ipfs/arweave) dedupe via Set; centralized
+  // host counts are weighted by occurrence.
+  const ipfsCids = new Set<string>()
+  const arweaveCids = new Set<string>()
+  let onchainCount = 0
+  let centralizedCount = 0
+  const centralizedHostCounts = new Map<string, number>()
+
+  for (const r of rows) {
+    // Payload-presence: an all-null row contributes nothing.
+    if (!r.raw_uri && !r.image_url && !r.animation_url) continue
+
+    const urls = [r.raw_uri, r.image_url ?? r.animation_url]
+    for (const url of urls) {
+      const classification = classifyUrl(url)
+      switch (classification.bucket) {
+        case "ipfs": {
+          const cid = extractBareCid(url)
+          if (cid) ipfsCids.add(cid)
+          break
+        }
+        case "arweave": {
+          // Bare tx id is the dedup key — same cache table as IPFS
+          // CIDs, keyed by string id only. Falling back to the
+          // trimmed URL preserves the count for any Arweave-shaped
+          // URL that doesn't parse cleanly (e.g. unusual subdomain
+          // gateway) so the bucket still reflects "yes this artist
+          // uses Arweave."
+          const arId = extractArweaveId(url)
+          if (arId) arweaveCids.add(arId)
+          else if (url) arweaveCids.add(url.trim())
+          break
+        }
+        case "onchain":
+          onchainCount++
+          break
+        case "centralized":
+          centralizedCount++
+          if (classification.host) {
+            centralizedHostCounts.set(
+              classification.host,
+              (centralizedHostCounts.get(classification.host) ?? 0) + 1,
+            )
+          }
+          break
+        case "unresolved":
+          break
+      }
+    }
+  }
+
+  summary.ipfs.totalCids = ipfsCids.size
+  summary.arweave.totalCids = arweaveCids.size
+  summary.onchain.totalCount = onchainCount
+  summary.centralized.totalCount = centralizedCount
+  summary.centralized.topHosts = [...centralizedHostCounts.entries()]
+    .map(([host, count]) => ({ host, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, TOP_CENTRALIZED_HOSTS)
+
+  // Join the IPFS CIDs against cid_availability in a single query.
+  // `unprobed` = no row in the cache yet (worker hasn't reached it);
+  // `retrievable` / `unretrievableCount` follow the boolean column.
+  if (ipfsCids.size > 0) {
+    try {
+      const ipfsCidArr = Array.from(ipfsCids)
+      const rows = (await sql<
+        Array<{ retrievable: boolean; count: number }>
+      >`
+        SELECT retrievable, COUNT(*)::int AS count
+          FROM cid_availability
+         WHERE cid = ANY(${ipfsCidArr}::text[])
+         GROUP BY retrievable
+      `) as Array<{ retrievable: boolean; count: number }>
+      let probed = 0
+      for (const r of rows) {
+        if (r.retrievable) summary.ipfs.retrievableCount = r.count
+        else summary.ipfs.unretrievableCount = r.count
+        probed += r.count
+      }
+      summary.ipfs.unprobedCount = Math.max(0, ipfsCids.size - probed)
+
+      // Overlay artist-pinned signal from token_pins (Phase 2b).
+      // Counts distinct CIDs the artist has self-declared as pinned
+      // at ANY provider; we don't break it down per-provider here
+      // because the summary line stays terse and the artist usually
+      // uses one provider at a time.
+      try {
+        const pinRows = (await sql<Array<{ count: number }>>`
+          SELECT COUNT(DISTINCT cid)::int AS count
+            FROM token_pins
+           WHERE artist = ${addrLower}
+             AND status IN ('pinned', 'queued')
+             AND cid = ANY(${ipfsCidArr}::text[])
+        `) as Array<{ count: number }>
+        summary.ipfs.artistPinnedCount = pinRows[0]?.count ?? 0
+      } catch {
+        // token_pins table missing (Phase 2b migration not yet applied)
+        // — leave artistPinnedCount at 0 and render the rest of the
+        // summary.
+      }
+    } catch {
+      // Table missing (migration not yet applied) or transient DB blip
+      // — treat everything as unprobed. The area then renders as
+      // `Unable` rather than crashing the whole report.
+      summary.ipfs.unprobedCount = ipfsCids.size
+    }
+  }
+
+  // Arweave: same join as IPFS, against the shared cid_availability
+  // table. Arweave tx ids are distinguishable from CIDs by character
+  // set (43-char base64url vs Qm.../b...), so no PK collision.
+  if (arweaveCids.size > 0) {
+    try {
+      const arweaveCidArr = Array.from(arweaveCids)
+      const rows = (await sql<
+        Array<{ retrievable: boolean; count: number }>
+      >`
+        SELECT retrievable, COUNT(*)::int AS count
+          FROM cid_availability
+         WHERE cid = ANY(${arweaveCidArr}::text[])
+         GROUP BY retrievable
+      `) as Array<{ retrievable: boolean; count: number }>
+      let probed = 0
+      for (const r of rows) {
+        if (r.retrievable) summary.arweave.retrievableCount = r.count
+        else summary.arweave.unretrievableCount = r.count
+        probed += r.count
+      }
+      summary.arweave.unprobedCount = Math.max(0, arweaveCids.size - probed)
+    } catch {
+      summary.arweave.unprobedCount = arweaveCids.size
+    }
+  }
+
+  return summary
 }
 
 async function listingsWithTimeout(
@@ -323,6 +700,75 @@ type AreaInputs = {
   listings: { ok: true; value: SellerListingsPayload } | { ok: false }
   ensUrl: string | null
   platformErrors: PlatformError[]
+  displayPath: DisplayPathSummary
+  preservation: PreservationSummary
+}
+
+function formatPreservationSummary(pres: PreservationSummary): string {
+  const parts: string[] = []
+  if (pres.ipfs.totalCids > 0) {
+    const ipfsParts: string[] = []
+    ipfsParts.push(`${pres.ipfs.retrievableCount}/${pres.ipfs.totalCids} retrievable`)
+    if (pres.ipfs.unretrievableCount > 0) {
+      ipfsParts.push(`${pres.ipfs.unretrievableCount} failing`)
+    }
+    if (pres.ipfs.unprobedCount > 0) {
+      ipfsParts.push(`${pres.ipfs.unprobedCount} not yet probed`)
+    }
+    if (pres.ipfs.artistPinnedCount > 0) {
+      ipfsParts.push(`${pres.ipfs.artistPinnedCount} artist-pinned`)
+    }
+    parts.push(`IPFS: ${ipfsParts.join(", ")}`)
+  }
+  if (pres.arweave.totalCids > 0) {
+    const arParts: string[] = []
+    const probedDenom =
+      pres.arweave.retrievableCount + pres.arweave.unretrievableCount
+    if (probedDenom > 0) {
+      arParts.push(`${pres.arweave.retrievableCount}/${probedDenom} retrievable`)
+      if (pres.arweave.unretrievableCount > 0) {
+        arParts.push(`${pres.arweave.unretrievableCount} failing`)
+      }
+    } else {
+      arParts.push(`${pres.arweave.totalCids} CIDs`)
+    }
+    if (pres.arweave.unprobedCount > 0) {
+      arParts.push(`${pres.arweave.unprobedCount} not yet probed`)
+    }
+    parts.push(`Arweave: ${arParts.join(", ")}`)
+  }
+  if (pres.onchain.totalCount > 0) {
+    parts.push(`On-chain: ${pres.onchain.totalCount}`)
+  }
+  if (pres.centralized.totalCount > 0) {
+    const topHost = pres.centralized.topHosts[0]
+    parts.push(
+      `Centralized: ${pres.centralized.totalCount}` +
+        (topHost ? ` (top: ${topHost.host})` : ""),
+    )
+  }
+  return parts.length > 0
+    ? parts.join(". ") + "."
+    : "PND found no media or metadata URLs to evaluate."
+}
+
+function formatBucketCounts(counts: Record<HostBucket, number>): string {
+  // Order matters for the rendered summary: IPFS first (the artist-
+  // facing "good" bucket), then arweave, on-chain, centralized,
+  // unresolved. Skip zero buckets to keep the line tight.
+  const parts: string[] = []
+  const order: Array<[HostBucket, string]> = [
+    ["ipfs", "IPFS"],
+    ["arweave", "Arweave"],
+    ["onchain", "on-chain"],
+    ["centralized", "centralized"],
+    ["unresolved", "unresolved"],
+  ]
+  for (const [bucket, label] of order) {
+    const n = counts[bucket]
+    if (n > 0) parts.push(`${n} ${label}`)
+  }
+  return parts.join(", ")
 }
 
 function buildAreasToReview(inputs: AreaInputs): AreaEntry[] {
@@ -346,17 +792,47 @@ function buildAreasToReview(inputs: AreaInputs): AreaEntry[] {
         : "PND did not identify any contracts connected to this wallet.",
   })
 
-  // 2. Display path — needs per-token metadata; deferred.
-  areas.push({
-    id: "display-path",
-    title: "Display path",
-    status: "NotYet",
-    canCheckNow: false,
-    summary:
-      "PND has not yet identified where metadata and media for each token live.",
-    whatWouldHelp:
-      "Per-token tokenURI reads plus metadata host classification (planned).",
-  })
+  // 2. Display path — classify where every indexed token's metadata
+  //    and media live. Pure SQL over the worker-warmed
+  //    `token_metadata` table; no RPC.
+  const dp = inputs.displayPath
+  if (dp.totalIndexed === 0) {
+    areas.push({
+      id: "display-path",
+      title: "Display path",
+      status: "NotYet",
+      canCheckNow: false,
+      summary: "PND hasn't indexed tokens for this wallet.",
+      whatWouldHelp:
+        "Per-token tokenURI reads plus metadata host classification (planned).",
+    })
+  } else if (dp.totalWithMetadata === 0) {
+    areas.push({
+      id: "display-path",
+      title: "Display path",
+      status: "Unable",
+      canCheckNow: false,
+      summary:
+        "PND has indexed tokens but metadata hasn't resolved yet.",
+    })
+  } else {
+    const metaLine = formatBucketCounts(dp.metadataByBucket)
+    const mediaLine = formatBucketCounts(dp.mediaByBucket)
+    const topHost = dp.topCentralizedHosts[0]
+    const topHostNote =
+      dp.metadataByBucket.centralized + dp.mediaByBucket.centralized > 0 &&
+      topHost
+        ? ` (top: ${topHost.host})`
+        : ""
+    areas.push({
+      id: "display-path",
+      title: "Display path",
+      status: "Checked",
+      canCheckNow: true,
+      summary:
+        `Metadata: ${metaLine}${topHostNote}. Media: ${mediaLine}.`,
+    })
+  }
 
   // 3. Sale path — derived from sales history, active listings, and the
   //    artist's Sovereign house presence.
@@ -382,17 +858,47 @@ function buildAreasToReview(inputs: AreaInputs): AreaEntry[] {
         : "PND did not identify any sale paths connected to this wallet.",
   })
 
-  // 4. Preservation — would need pin-status writeback from /preserve.
-  areas.push({
-    id: "preservation",
-    title: "Preservation",
-    status: "NotYet",
-    canCheckNow: false,
-    summary:
-      "PND has not yet checked whether the underlying media and metadata are pinned.",
-    whatWouldHelp:
-      "Pin-status writeback from the /preserve flow (planned).",
-  })
+  // 4. Preservation — composite per-bucket signal sourced from
+  //    `cid_availability` (worker probe) + later `token_pins`
+  //    (writeback). See `getPreservationSummary` for the layering.
+  const pres = inputs.preservation
+  if (inputs.displayPath.totalIndexed === 0) {
+    areas.push({
+      id: "preservation",
+      title: "Preservation",
+      status: "NotYet",
+      canCheckNow: false,
+      summary:
+        "PND has not yet checked whether the underlying media and metadata are pinned.",
+      whatWouldHelp:
+        "Pin-status writeback from the /preserve flow (planned).",
+    })
+  } else {
+    const checkedAny =
+      pres.ipfs.retrievableCount > 0 ||
+      pres.arweave.retrievableCount > 0 ||
+      pres.onchain.totalCount > 0
+    const probedAny =
+      pres.ipfs.retrievableCount + pres.ipfs.unretrievableCount > 0 ||
+      pres.arweave.retrievableCount > 0 ||
+      pres.onchain.totalCount > 0
+    const status: CheckStatus = checkedAny
+      ? "Checked"
+      : probedAny
+        ? "Unable"
+        : "Unable"
+    areas.push({
+      id: "preservation",
+      title: "Preservation",
+      status,
+      canCheckNow: status === "Checked",
+      summary: formatPreservationSummary(pres),
+      whatWouldHelp:
+        status === "Unable"
+          ? "Worker hasn't probed CIDs for this artist yet; check back in a few minutes."
+          : undefined,
+    })
+  }
 
   // 5. Public context — checkable via ENS url record.
   areas.push({
@@ -480,7 +986,7 @@ export async function buildDependencyReport(
 ): Promise<DependencyReport> {
   const addrLower = address.toLowerCase()
 
-  // Six parallel calls against a `max:2` Postgres pool — keep this list
+  // Parallel calls against a `max:2` Postgres pool — keep this list
   // tight. Anything not feeding the new report shape gets dropped.
   // Active-auction/listing counts that v1 surfaced as separate cards are
   // now reflected in the sale-path area via the seller-listings payload.
@@ -493,6 +999,8 @@ export async function buildDependencyReport(
     listings,
     ensUrl,
     registryRecord,
+    displayPath,
+    preservation,
   ] = await Promise.all([
     getArtistIdentity(address),
     tryIndexer(() => getArtistContractMap(addrLower)),
@@ -510,6 +1018,8 @@ export async function buildDependencyReport(
       tokens: [],
       tokenRanges: [],
     })),
+    getDisplayPathSummary(addrLower).catch(() => emptyDisplayPathSummary()),
+    getPreservationSummary(addrLower).catch(() => emptyPreservationSummary()),
   ])
 
   // The set of contract addresses the artist has personally declared
@@ -539,6 +1049,8 @@ export async function buildDependencyReport(
     listings,
     ensUrl,
     platformErrors: inventory.platformErrors,
+    displayPath,
+    preservation,
   })
   const recommendedNextSteps = buildNextSteps({
     map: contractMap,
@@ -580,6 +1092,8 @@ export async function buildDependencyReport(
       covered,
       errors: inventory.platformErrors,
     },
+    displayPath,
+    preservation,
     generatedAt: Math.floor(Date.now() / 1000),
     indexerHealthy,
   }
@@ -665,7 +1179,7 @@ async function fetchAndCacheReport(
  */
 export const getDependencyReport = unstable_cache(
   fetchAndCacheReport,
-  ["artist-dependency-v6"],
+  ["artist-dependency-v8"],
   {
     revalidate: DEPENDENCY_SCAN_PARTIAL_TTL_S,
     tags: ["artist-dependency"],

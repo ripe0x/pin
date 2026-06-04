@@ -258,6 +258,200 @@ export async function getSovereignAuctionByHouse(
   return readPndAuctionForToken(rows[0].contract, rows[0].token_id)
 }
 
+// ─── AuctionDetail: status-agnostic by-id lookup (per-auction page) ──────
+
+export type AuctionDetailStatus = "active" | "settled" | "cancelled"
+
+/**
+ * Full state of ONE auction, looked up by its on-chain identity (house +
+ * auctionId for PND; the global auctionId for Foundation) with NO status
+ * filter — so it resolves settled and cancelled auctions, not just the live
+ * one (unlike `getSovereignAuctionByHouse`/`getFoundationAuction`, which route
+ * through the `status='active'` token reader). Powers the per-auction page
+ * `/auction/[house]/[auctionId]` and is the link target for Provenance "Sold"
+ * entries.
+ *
+ * `live` is a ready-to-render `AuctionState` (for `AuctionPanel`) only while
+ * the auction is active; settled/cancelled auctions render from the summary
+ * fields (`winner`, `finalPriceWei`, `bids`, …).
+ */
+export type AuctionDetail = {
+  source: "sovereign" | "foundation"
+  marketAddress: Address
+  auctionId: string
+  nftContract: Address
+  tokenId: string
+  seller: Address
+  sellerDisplay: string
+  winner: Address | null
+  winnerDisplay: string
+  finalPriceWei: bigint | null
+  settledAtTime: number | null
+  settlementTxHash: string | null
+  status: AuctionDetailStatus
+  bids: BidHistoryEntry[]
+  live: AuctionState | null
+}
+
+function mapPndStatus(s: string): AuctionDetailStatus {
+  return s === "settled" ? "settled" : s === "cancelled" ? "cancelled" : "active"
+}
+function mapFndStatus(s: string): AuctionDetailStatus {
+  return s === "finalized"
+    ? "settled"
+    : s === "canceled" || s === "invalidated"
+      ? "cancelled"
+      : "active"
+}
+
+/**
+ * Resolve one auction by its route identity. `house === FND_MARKET` selects
+ * the Foundation lookup; any other address is treated as a PND sovereign
+ * house. Returns null when no such auction exists.
+ *
+ * Not pgCached: `AuctionDetail` carries bigints, and pg-cache requires callers
+ * to string-serialize bigints first (raw wei exceeds 2^53 and loses precision
+ * as a JSON number). The per-auction page is low-traffic and already gets
+ * Next.js route-segment caching + request-scoped `cache()`, so a couple of
+ * indexed point-lookups per render is the right cost.
+ */
+export async function getAuctionDetail(
+  house: string,
+  auctionId: string,
+): Promise<AuctionDetail | null> {
+  if (!sql) return null
+  return house.toLowerCase() === FND_MARKET.toLowerCase()
+    ? getFndAuctionDetailById(auctionId)
+    : getPndAuctionDetailById(house, auctionId)
+}
+
+async function getPndAuctionDetailById(
+  house: string,
+  auctionId: string,
+): Promise<AuctionDetail | null> {
+  if (!sql) return null
+  const rows = (await sql.unsafe(
+    `SELECT id, lower(house) AS house, auction_id::text AS auction_id,
+            lower(token_contract) AS contract, token_id::text AS token_id,
+            lower(seller) AS seller, lower(winner) AS winner,
+            amount::text AS amount,
+            seller_proceeds::text AS seller_proceeds,
+            protocol_fee::text AS protocol_fee,
+            settled_at_time::text AS settled_at_time,
+            lifecycle_tx_hash, status
+     FROM ${schema}.pnd_auctions
+     WHERE lower(house) = $1 AND auction_id::text = $2 LIMIT 1`,
+    [house.toLowerCase(), auctionId],
+  )) as Array<{
+    id: string; house: string; auction_id: string; contract: string;
+    token_id: string; seller: string; winner: string | null;
+    amount: string; seller_proceeds: string | null; protocol_fee: string | null;
+    settled_at_time: string | null; lifecycle_tx_hash: string | null; status: string
+  }>
+  if (rows.length === 0) return null
+  const r = rows[0]
+  const status = mapPndStatus(r.status)
+  const winner =
+    r.winner && r.winner !== ZERO_ADDRESS ? (r.winner as Address) : null
+
+  const displays = await resolveDisplayNames(
+    [r.seller, winner ?? ""].filter(Boolean) as string[],
+  )
+  // Active auctions render via `live` (which carries its own bid history);
+  // only fetch the standalone history for settled/cancelled auctions.
+  const bids = status === "active" ? [] : await readPndBidHistory(r.id, displays)
+
+  const finalPriceWei =
+    status === "settled"
+      ? BigInt(r.seller_proceeds ?? "0") + BigInt(r.protocol_fee ?? "0")
+      : null
+
+  const live =
+    status === "active"
+      ? await readPndAuctionForToken(r.contract, r.token_id)
+      : null
+
+  return {
+    source: "sovereign",
+    marketAddress: r.house as Address,
+    auctionId: r.auction_id,
+    nftContract: r.contract as Address,
+    tokenId: r.token_id,
+    seller: r.seller as Address,
+    sellerDisplay: displays.get(r.seller) ?? r.seller,
+    winner,
+    winnerDisplay: winner ? (displays.get(winner) ?? winner) : "",
+    finalPriceWei,
+    settledAtTime: r.settled_at_time ? Number(r.settled_at_time) : null,
+    settlementTxHash: r.lifecycle_tx_hash,
+    status,
+    bids,
+    live,
+  }
+}
+
+async function getFndAuctionDetailById(
+  auctionId: string,
+): Promise<AuctionDetail | null> {
+  if (!sql) return null
+  const rows = (await sql.unsafe(
+    `SELECT auction_id::text AS auction_id, lower(nft_contract) AS contract,
+            token_id::text AS token_id, lower(seller) AS seller,
+            lower(highest_bidder) AS bidder, highest_bid::text AS amount,
+            finalized_total_fees::text AS f_fees,
+            finalized_creator_rev::text AS f_creator,
+            finalized_seller_rev::text AS f_seller,
+            finalized_at_time::text AS finalized_at_time,
+            finalized_tx_hash, status
+     FROM ${schema}.fnd_auctions
+     WHERE auction_id::text = $1 LIMIT 1`,
+    [auctionId],
+  )) as Array<{
+    auction_id: string; contract: string; token_id: string; seller: string;
+    bidder: string | null; amount: string;
+    f_fees: string | null; f_creator: string | null; f_seller: string | null;
+    finalized_at_time: string | null; finalized_tx_hash: string | null; status: string
+  }>
+  if (rows.length === 0) return null
+  const r = rows[0]
+  const status = mapFndStatus(r.status)
+  const winner =
+    r.bidder && r.bidder !== ZERO_ADDRESS ? (r.bidder as Address) : null
+
+  const displays = await resolveDisplayNames(
+    [r.seller, winner ?? ""].filter(Boolean) as string[],
+  )
+  const bids = status === "active" ? [] : await readFndBidHistory(r.auction_id, displays)
+
+  const finalPriceWei =
+    status === "settled"
+      ? BigInt(r.f_fees ?? "0") + BigInt(r.f_creator ?? "0") + BigInt(r.f_seller ?? "0")
+      : null
+
+  const live =
+    status === "active"
+      ? await readFndAuctionForToken(r.contract, r.token_id)
+      : null
+
+  return {
+    source: "foundation",
+    marketAddress: FND_MARKET,
+    auctionId: r.auction_id,
+    nftContract: r.contract as Address,
+    tokenId: r.token_id,
+    seller: r.seller as Address,
+    sellerDisplay: displays.get(r.seller) ?? r.seller,
+    winner,
+    winnerDisplay: winner ? (displays.get(winner) ?? winner) : "",
+    finalPriceWei,
+    settledAtTime: r.finalized_at_time ? Number(r.finalized_at_time) : null,
+    settlementTxHash: r.finalized_tx_hash,
+    status,
+    bids,
+    live,
+  }
+}
+
 // ─── getActiveAuctionCount ───────────────────────────────────────────────
 
 export async function getActiveAuctionCount(
