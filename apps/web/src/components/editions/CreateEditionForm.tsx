@@ -28,15 +28,17 @@ import { Field, Hint, Segmented, inputCls, labelCls, primaryBtnCls } from "@/com
 import { PREFERRED_CHAIN, PREFERRED_CHAIN_LABEL, formatWriteError } from "@/components/tx/tx-ui"
 import { useEthAmountInput } from "@/lib/useEthAmountInput"
 import {
+  type Collaborator,
   EditionKind,
   SURFACE_SHARE_BPS,
   ZERO_ADDRESS,
-  buildSplitArgs,
+  buildSplitArgsWithPermanence,
   formatBps,
   pndEditionsFactory,
   pndMuriRenderer,
   pndSplitMain,
   validateCollaborators,
+  validatePermanence,
 } from "@/lib/pnd-editions"
 
 type CollabRow = { address: string; percent: string }
@@ -70,6 +72,12 @@ export function CreateEditionForm() {
     { address: "", percent: "" },
     { address: "", percent: "" },
   ])
+  // Phase 1 of mint-funded permanence (docs/editions-permanence-funding.md):
+  // route a slice of every mint to an artist-owned vault by adding it as a
+  // recipient in the payout split. No core-contract change — it rides 0xSplits.
+  const [permanenceOn, setPermanenceOn] = useState(false)
+  const [permanenceVault, setPermanenceVault] = useState("")
+  const [permanencePct, setPermanencePct] = useState("1")
   const [tier, setTier] = useState<"standard" | "permanent">("standard")
 
   // Two-step deploy: optional split first, then the edition pointing at it.
@@ -153,6 +161,18 @@ export function CreateEditionForm() {
   const payoutOk = payout === "" || isAddress(payout)
   const collabCheck = validateCollaborators(collabs)
   const splitOk = !splitOn || (collabCheck.ok && !!splitMain)
+  // The non-permanence payout recipients, used both to validate the vault is
+  // distinct and to build the split. With collaborators it's their rows; alone
+  // it's just the artist (payout override, or the connected wallet).
+  const baseAddresses = splitOn
+    ? collabCheck.parsed.map((r) => r.address)
+    : [(payout === "" ? (address ?? ZERO_ADDRESS) : payout)]
+  const permCheck = validatePermanence(permanenceVault, permanencePct, baseAddresses)
+  // Routing a slice to a distinct vault needs a >=2-recipient split, so 0xSplits
+  // must be available whenever permanence is on.
+  const permanenceOk = !permanenceOn || (permCheck.ok && !!splitMain)
+  // Permanence forces a split even when no collaborators are configured.
+  const usingSplit = splitOn || permanenceOn
   const canSubmit =
     !!factory &&
     !!address &&
@@ -162,7 +182,8 @@ export function CreateEditionForm() {
     (price.isEmpty || price.isValid) &&
     royaltyOk &&
     capOk &&
-    (splitOn ? splitOk : payoutOk)
+    (splitOn ? splitOk : payoutOk) &&
+    permanenceOk
 
   function toUnix(local: string): bigint {
     if (!local) return 0n
@@ -201,9 +222,17 @@ export function CreateEditionForm() {
 
   function submit() {
     if (!canSubmit || !factory || !address) return
-    if (splitOn) {
+    if (usingSplit) {
       if (!splitMain) return
-      const { accounts, allocations } = buildSplitArgs(collabCheck.parsed)
+      // Base recipients: collaborators if configured, else the artist alone.
+      // The optional permanence vault is carved in as one more recipient.
+      const baseRows: Collaborator[] = splitOn
+        ? collabCheck.parsed
+        : [{ address: (payout === "" ? address : (payout as Address)), percent: 100 }]
+      const { accounts, allocations } = buildSplitArgsWithPermanence(
+        baseRows,
+        permanenceOn ? permCheck.parsed : null,
+      )
       // Immutable split: distributorFee 0, controller 0. Receipt -> edition.
       split.writeContract({
         address: splitMain,
@@ -225,7 +254,7 @@ export function CreateEditionForm() {
         ? "Confirm in wallet…"
         : editionMining
           ? "Deploying edition…"
-          : splitOn
+          : usingSplit
             ? "Deploy split + edition"
             : "Deploy edition"
   const writeError = split.error ?? edition.error
@@ -487,6 +516,56 @@ export function CreateEditionForm() {
               </div>
             )}
           </div>
+
+          {/* Optional: fund this work's permanence (Phase 1, Option A) */}
+          <div className="space-y-2">
+            <label className="flex items-center gap-2.5">
+              <input
+                type="checkbox"
+                checked={permanenceOn}
+                onChange={(e) => setPermanenceOn(e.target.checked)}
+                disabled={busy || !splitMain}
+                className="h-3.5 w-3.5 accent-fg"
+              />
+              <span className="text-sm text-fg-muted">Fund this work&rsquo;s permanence</span>
+            </label>
+            {permanenceOn && (
+              <div className="space-y-2">
+                <div className="grid grid-cols-[1fr_72px] gap-2">
+                  <input
+                    className={inputCls}
+                    value={permanenceVault}
+                    onChange={(e) => setPermanenceVault(e.target.value.trim())}
+                    placeholder="0x… permanence vault"
+                    disabled={busy}
+                  />
+                  <input
+                    type="number"
+                    min={1}
+                    max={99}
+                    step={1}
+                    className={`${inputCls} tabular-nums`}
+                    value={permanencePct}
+                    onChange={(e) => setPermanencePct(e.target.value)}
+                    placeholder="%"
+                    disabled={busy}
+                  />
+                </div>
+                <Hint>
+                  Routes {permCheck.ok ? `${permanencePct}%` : "a slice"} of every mint to an
+                  address you control, earmarked for keeping this work alive. Carved from
+                  your payout (collectors still pay exactly the price), so it
+                  proportionally reduces your{splitOn ? " and your collaborators’" : ""}{" "}
+                  share. This is a funding pot, not permanence on its own: later you fund a
+                  pay-once Arweave copy or renewable pinning from it. PND never holds it.
+                </Hint>
+                {!splitMain && (
+                  <p className="text-xs text-red-500">0xSplits is not available on this network.</p>
+                )}
+                {permCheck.error && <p className="text-xs text-red-500">{permCheck.error}</p>}
+              </div>
+            )}
+          </div>
         </Section>
 
         {/* Deploy */}
@@ -495,7 +574,13 @@ export function CreateEditionForm() {
             <p className={labelCls}>Costs, kept separate</p>
             <CostRow label="Storage" value="Free under 100 KB (Arweave), else wallet-paid" />
             <CostRow label="Deploy" value="Network gas, in ETH" />
-            {splitOn && <CostRow label="Split" value="One transaction before deploy, gas only" />}
+            {usingSplit && <CostRow label="Split" value="One transaction before deploy, gas only" />}
+            {permanenceOn && permCheck.ok && (
+              <CostRow
+                label="Permanence"
+                value={`${permanencePct}% of each mint routes to your vault`}
+              />
+            )}
             {tier === "permanent" && muriRenderer && (
               <CostRow label="Anchor" value="2 transactions after deploy, gas only" />
             )}

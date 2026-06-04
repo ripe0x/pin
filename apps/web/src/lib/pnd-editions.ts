@@ -277,51 +277,17 @@ export function pndSplitMain(): Address | null {
   return getAddressOrNull(SPLIT_MAIN, mainnet.id)
 }
 
-/** A collaborator row: an address and an integer percent (1-100). */
-export type Collaborator = { address: Address; percent: number }
-
-/**
- * Build sorted 0xSplits `createSplit` args from collaborator rows. 0xSplits
- * requires accounts sorted ascending and allocations on the 1e6 scale (1% =
- * 10_000). Integer percents summing to 100 therefore sum to exactly 1_000_000.
- */
-export function buildSplitArgs(rows: Collaborator[]): {
-  accounts: Address[]
-  allocations: number[]
-} {
-  const sorted = [...rows].sort((a, b) =>
-    a.address.toLowerCase() < b.address.toLowerCase() ? -1 : 1,
-  )
-  return {
-    accounts: sorted.map((r) => r.address),
-    allocations: sorted.map((r) => r.percent * 10_000),
-  }
-}
-
-/** Validate collaborator rows for a 0xSplits split (>=2 unique, percents = 100). */
-export function validateCollaborators(rows: { address: string; percent: string }[]): {
-  ok: boolean
-  error: string | null
-  parsed: Collaborator[]
-} {
-  const filled = rows.filter((r) => r.address.trim() !== "" || r.percent.trim() !== "")
-  if (filled.length < 2) return { ok: false, error: "Add at least two collaborators", parsed: [] }
-  const parsed: Collaborator[] = []
-  const seen = new Set<string>()
-  for (const r of filled) {
-    if (!isAddress(r.address)) return { ok: false, error: "Invalid collaborator address", parsed: [] }
-    const lower = r.address.toLowerCase()
-    if (seen.has(lower)) return { ok: false, error: "Duplicate collaborator address", parsed: [] }
-    seen.add(lower)
-    const pct = Number(r.percent)
-    if (!Number.isInteger(pct) || pct < 1 || pct > 100)
-      return { ok: false, error: "Each share must be a whole number, 1-100", parsed: [] }
-    parsed.push({ address: r.address as Address, percent: pct })
-  }
-  const sum = parsed.reduce((acc, r) => acc + r.percent, 0)
-  if (sum !== 100) return { ok: false, error: `Shares must total 100% (now ${sum}%)`, parsed: [] }
-  return { ok: true, error: null, parsed }
-}
+// Payout split math (0xSplits) + the Phase 1 permanence slice live in the
+// enum-free `editions-split` module so they can be unit-tested under Node's
+// type-stripping runner. Re-exported here so existing import sites are unchanged.
+export {
+  buildSplitArgs,
+  buildSplitArgsWithPermanence,
+  validateCollaborators,
+  validatePermanence,
+  type Collaborator,
+  type PermanenceSlice,
+} from "./editions-split"
 
 /** The fixed Surface Share split of `total`, out of the price. */
 export function splitOutOfPrice(total: bigint, surface: Address): {
