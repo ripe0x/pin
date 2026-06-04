@@ -17,12 +17,14 @@ import { isAddress, parseEventLogs, type Address } from "viem"
 import {
   useAccount,
   useChainId,
+  useSignMessage,
   useSwitchChain,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { pndEditionsFactoryAbi, splitMainAbi } from "@pin/abi"
+import { buildPermanenceMessage } from "@/lib/editions-permanence-writeback"
 import { ArtworkInput } from "@/components/editions/ArtworkInput"
 import { Field, Hint, Segmented, inputCls, labelCls, primaryBtnCls } from "@/components/editions/form-ui"
 import { PREFERRED_CHAIN, PREFERRED_CHAIN_LABEL, formatWriteError } from "@/components/tx/tx-ui"
@@ -83,6 +85,10 @@ export function CreateEditionForm() {
   // Two-step deploy: optional split first, then the edition pointing at it.
   const split = useWriteContract()
   const edition = useWriteContract()
+  const { signMessageAsync } = useSignMessage()
+  // The split address from step 1, kept so the post-deploy permanence writeback
+  // can record which split routes the vault its slice.
+  const [deployedSplit, setDeployedSplit] = useState<Address | null>(null)
   const { data: splitReceipt, isLoading: splitMining } = useWaitForTransactionReceipt({
     hash: split.data,
   })
@@ -100,7 +106,10 @@ export function CreateEditionForm() {
         eventName: "CreateSplit",
       })
       const addr = (logs[0]?.args as { split?: Address } | undefined)?.split
-      if (addr) deployEdition(addr)
+      if (addr) {
+        setDeployedSplit(addr)
+        deployEdition(addr)
+      }
     } catch {
       // user can retry
     }
@@ -118,8 +127,16 @@ export function CreateEditionForm() {
       })
       const created = logs[0]?.args as { edition?: Address } | undefined
       if (created?.edition) {
-        edition.reset()
-        router.push(`/editions/${created.edition}`)
+        const editionAddr = created.edition
+        // Best-effort permanence writeback (artist-signed), then navigate. A
+        // declined signature or failed POST never blocks: the edition is
+        // deployed and the slice already routes on-chain; the page surface just
+        // won't show the permanence fact until re-attested.
+        void (async () => {
+          await recordPermanence(editionAddr)
+          edition.reset()
+          router.push(`/editions/${editionAddr}`)
+        })()
       }
     } catch {
       // user can retry
@@ -218,6 +235,33 @@ export function CreateEditionForm() {
       functionName: "createEdition",
       args: [title.trim(), symbol.trim(), address, buildCfg(payoutAddr)],
     })
+  }
+
+  // Record the per-edition permanence slice so the edition page can surface it.
+  // Artist-signed (proves they control `artist`); the server corroborates the
+  // split against the edition's on-chain payoutAddress. Best-effort by design.
+  async function recordPermanence(editionAddr: Address) {
+    if (!permanenceOn || !deployedSplit || !permCheck.parsed || !address) return
+    try {
+      const nonce = Math.floor(Date.now() / 1000)
+      const bps = permCheck.parsed.percent * 100
+      const payload = {
+        edition: editionAddr,
+        split: deployedSplit,
+        vault: permCheck.parsed.vault,
+        bps,
+        artist: address,
+        nonce,
+      }
+      const signature = await signMessageAsync({ message: buildPermanenceMessage(payload) })
+      await fetch("/api/editions/permanence", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...payload, signature }),
+      })
+    } catch {
+      // Swallow: deployment already succeeded; the writeback is non-critical.
+    }
   }
 
   function submit() {

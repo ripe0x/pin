@@ -8,9 +8,11 @@ import { WithdrawPanel } from "@/components/editions/WithdrawPanel"
 import { MintHistory } from "@/components/editions/MintHistory"
 import { EditionGraphView } from "@/components/editions/EditionGraphView"
 import { MuriAnchorPanel } from "@/components/editions/MuriAnchorPanel"
+import { PermanenceVaultPanel } from "@/components/editions/PermanenceVaultPanel"
 import { PreservationBadge } from "@/components/editions/PreservationBadge"
 import { getEdition, getEditionEdges, getEditionMintHistory } from "@/lib/editions-onchain"
 import { getArtworkPersistence } from "@/lib/editions-persistence"
+import { getPermanenceConfig } from "@/lib/editions-permanence-config"
 import {
   EDITION_KIND_LABEL,
   PND_CHAIN_ID,
@@ -43,11 +45,21 @@ export default async function EditionPage({ params }: { params: Params }) {
   const addr = edition as Address
   const e = await getEdition(addr)
   if (!e) notFound()
-  const [edges, history, persistence] = await Promise.all([
+  const [edges, history, persistence, permanenceRaw] = await Promise.all([
     getEditionEdges(addr),
     getEditionMintHistory(addr, e.minted),
     getArtworkPersistence(e.cfg.artworkURI, e.owner),
+    getPermanenceConfig(addr),
   ])
+
+  // Corroborate the recorded permanence slice (self-declared) against the
+  // edition's actual on-chain payout: only surface it when the recorded split
+  // IS the edition's payoutAddress. Free check — payoutAddress is already read.
+  const permanence =
+    permanenceRaw &&
+    permanenceRaw.split.toLowerCase() === e.cfg.payoutAddress.toLowerCase()
+      ? permanenceRaw
+      : null
 
   const mutability = e.isSealed ? "Sealed (no upgrades)" : "Upgradeable by the artist"
   const metadataState = e.isMetadataFrozen ? "Frozen" : "Mutable by the artist"
@@ -99,6 +111,15 @@ export default async function EditionPage({ params }: { params: Params }) {
 
           <WithdrawPanel edition={addr} />
 
+          {permanence && (
+            <PermanenceVaultPanel
+              vault={permanence.vault}
+              bps={permanence.bps}
+              owner={e.owner}
+              chainId={PND_CHAIN_ID}
+            />
+          )}
+
           <MintHistory entries={history} chainId={PND_CHAIN_ID} />
 
           <EditionGraphView edges={edges} />
@@ -125,6 +146,12 @@ export default async function EditionPage({ params }: { params: Params }) {
                   : shortAddress(e.cfg.payoutAddress)
               }
             />
+            {permanence && (
+              <Fact
+                label="Permanence"
+                value={`${formatBps(permanence.bps)} of each mint to a vault`}
+              />
+            )}
             {persistence.status !== "none" && (
               <div className="flex items-baseline justify-between gap-4">
                 <span className="text-[10px] uppercase tracking-wider text-gray-400">
@@ -142,6 +169,16 @@ export default async function EditionPage({ params }: { params: Params }) {
               >
                 View contract ↗
               </a>
+              {permanence && (
+                <a
+                  href={evmNowAddressUrl(permanence.vault, PND_CHAIN_ID)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ml-3 text-[10px] uppercase tracking-wider text-gray-400 underline hover:text-fg"
+                >
+                  Permanence vault ↗
+                </a>
+              )}
             </div>
             {permanent ? (
               <p className="pt-2 text-[10px] font-mono text-gray-400 normal-case leading-relaxed">
