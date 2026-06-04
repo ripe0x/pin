@@ -14,6 +14,7 @@ import {
   durabilityIsPermanent,
   durabilityLabel,
   formatFundedThrough,
+  fundedForLabel,
   renewalSignal,
   resolveArtworkDurability,
 } from "./editions-durability.ts"
@@ -104,4 +105,13 @@ test("durabilityLabel shows the funded-through date for hot-funded", () => {
 
 test("formatFundedThrough is deterministic UTC YYYY-MM-DD", () => {
   assert.equal(formatFundedThrough(1_800_000_000), "2027-01-15")
+})
+
+test("fundedForLabel renders years / months / lapsed", () => {
+  const YEAR = 365 * 86_400
+  assert.equal(fundedForLabel(NOW + 3 * YEAR, NOW), "~3 years")
+  assert.equal(fundedForLabel(NOW + YEAR, NOW), "~1 year")
+  assert.equal(fundedForLabel(NOW + Math.round(1.5 * YEAR), NOW), "~1.5 years")
+  assert.equal(fundedForLabel(NOW + 8 * 30 * 86_400, NOW), "~8 months")
+  assert.equal(fundedForLabel(NOW - DAY, NOW), "lapsed")
 })

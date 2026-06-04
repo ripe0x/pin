@@ -75,6 +75,25 @@ export function formatFundedThrough(sec: number): string {
   return new Date(sec * 1000).toISOString().slice(0, 10)
 }
 
+/**
+ * Human label for HOW LONG a hot pin is funded ahead, from now to its
+ * funded-through date — e.g. "~3 years", "~8 months", "~1 year". This is the
+ * "years pinned on IPFS" figure: the renewable Pinata term the accumulated mint
+ * funding has bought ahead. "lapsed" once the date has passed.
+ */
+export function fundedForLabel(fundedThroughSec: number, nowSec: number): string {
+  const secs = fundedThroughSec - nowSec
+  if (secs <= 0) return "lapsed"
+  const years = secs / (365 * 86_400)
+  if (years >= 1) {
+    const r = Math.round(years * 10) / 10
+    const n = Number.isInteger(r) ? String(r) : r.toFixed(1)
+    return `~${n} year${r === 1 ? "" : "s"}`
+  }
+  const months = Math.max(1, Math.round(secs / (30 * 86_400)))
+  return `~${months} month${months === 1 ? "" : "s"}`
+}
+
 /** Honest human label for a durability state. */
 export function durabilityLabel(d: ArtworkDurability, fundedThrough?: number | null): string {
   switch (d) {

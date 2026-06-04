@@ -2,6 +2,7 @@
 
 import { PermanenceFundingPanel } from "@/components/editions/PermanenceFundingPanel"
 import { PermanenceFloorStatus } from "@/components/editions/PermanenceFloorStatus"
+import { HotPinStatus } from "@/components/editions/HotPinStatus"
 import { PreservationBadge } from "@/components/editions/PreservationBadge"
 import { EditionStatus, PND_CHAIN_ID } from "@/lib/pnd-editions"
 import type { ArtworkPersistence } from "@/lib/editions-persistence"
@@ -94,6 +95,16 @@ export default function PermanencePreviewPage() {
             state="floored"
             arweaveUri="ar://Hq3…f2A"
             chainId={PND_CHAIN_ID}
+          />
+        </div>
+      </Card>
+
+      <Card title="Hot redundancy · IPFS via Pinata">
+        <div className="p-3">
+          <HotPinStatus
+            cid="bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
+            fundedThrough={1_824_600_000} // ≈2027-10
+            nowSec={1_729_900_800} // fixed ref ≈2024-10 → "~3 years"
           />
         </div>
       </Card>
