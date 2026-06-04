@@ -8,6 +8,7 @@ import { WithdrawPanel } from "@/components/editions/WithdrawPanel"
 import { MintHistory } from "@/components/editions/MintHistory"
 import { EditionGraphView } from "@/components/editions/EditionGraphView"
 import { MuriAnchorPanel } from "@/components/editions/MuriAnchorPanel"
+import { PermanenceFloorPanel } from "@/components/editions/PermanenceFloorPanel"
 import { PermanenceFundingPanel } from "@/components/editions/PermanenceFundingPanel"
 import { PermanenceVaultPanel } from "@/components/editions/PermanenceVaultPanel"
 import { PreservationBadge } from "@/components/editions/PreservationBadge"
@@ -213,6 +214,15 @@ export default async function EditionPage({ params }: { params: Params }) {
             artworkURI={e.cfg.artworkURI}
             editionName={e.name}
           />
+
+          {permanence && (
+            <PermanenceFloorPanel
+              edition={addr}
+              owner={e.owner}
+              artworkURI={e.cfg.artworkURI}
+              chainId={PND_CHAIN_ID}
+            />
+          )}
 
           <section className="pt-5">
             <h2 className="text-[10px] font-mono uppercase tracking-wider text-gray-400 mb-2">
