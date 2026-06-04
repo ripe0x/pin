@@ -5,6 +5,7 @@ export {
   extractBareCid,
   extractArweaveId,
   ipfsToGatewayUrl,
+  ipfsCidToFallbackUrls,
   fetchFromIpfs,
   IPFS_GATEWAYS,
   extractIpnsPath,
@@ -12,3 +13,4 @@ export {
   fetchFromIpns,
   IPNS_GATEWAYS,
 } from "./ipfs.ts"
+export { sha256Hex, sha256HexOfBlob } from "./hash.ts"

@@ -314,3 +314,50 @@ export const srv2ArtistTokens = onchainTable(
     contractTokenIdx: index().on(table.contract, table.tokenId),
   }),
 )
+
+// ─── MURI Protocol (on-chain media-permanence overlay) ───────────────────
+// Fixed shared singleton (0x0000000000C2A0B63ab4aA971B08B905E5875b01).
+// `muri_contracts` = which NFT contracts have registered with MURI (one row
+// per ContractRegistered). `muri_tokens` = per-token preservation state used
+// by the web "preserved on-chain · N fallbacks" badge. Counts are read from
+// `getArtwork` on each data-changing event (the init event carries no count).
+
+export const muriContracts = onchainTable(
+  "muri_contracts",
+  (t) => ({
+    // The NFT contract registered with MURI (MURI's `contractAddress`).
+    contract: t.hex().primaryKey(),
+    // The operator/implementation (e.g. the Manifold extension).
+    operator: t.hex().notNull(),
+    registerer: t.hex().notNull(),
+    registeredAtBlock: t.bigint().notNull(),
+    registeredAtTime: t.bigint().notNull(),
+    txHash: t.hex().notNull(),
+  }),
+  (table) => ({
+    operatorIdx: index().on(table.operator),
+  }),
+)
+
+export const muriTokens = onchainTable(
+  "muri_tokens",
+  (t) => ({
+    id: t.text().primaryKey(), // `${contract}-${tokenId}`
+    // MURI's `creator` arg IS the NFT contract address.
+    contract: t.hex().notNull(),
+    tokenId: t.bigint().notNull(),
+    artistUriCount: t.integer().notNull(),
+    collectorUriCount: t.integer().notNull(),
+    selectedIndex: t.integer().notNull(),
+    mimeType: t.text(),
+    fileHash: t.text(),
+    isAnimationUri: t.boolean().notNull(),
+    displayMode: t.integer(), // 0 DIRECT_FILE, 1 HTML; null until a DisplayModeUpdated event
+    registeredAtBlock: t.bigint().notNull(),
+    registeredAtTime: t.bigint().notNull(),
+    updatedAtBlock: t.bigint().notNull(),
+  }),
+  (table) => ({
+    contractTokenIdx: index().on(table.contract, table.tokenId),
+  }),
+)

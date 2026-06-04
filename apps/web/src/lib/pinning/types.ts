@@ -33,6 +33,15 @@ export interface PinningProvider {
   /** Pin an existing CID (no re-upload — the data is already on IPFS). */
   pinByCid(cid: string, name?: string): Promise<PinResult>
 
+  /**
+   * Upload new file bytes to IPFS and return the resulting CID. Optional:
+   * only providers that support direct file upload implement it (the UI
+   * gates the MURI mint uploader on `typeof provider.uploadFile`). Pinata
+   * supports this on the free tier via pinFileToIPFS; 4EVERLAND's pinning
+   * API is pin-by-CID only and does not implement it.
+   */
+  uploadFile?(file: Blob, name?: string): Promise<{ cid: string }>
+
   /** Check if a CID is already pinned by this provider. */
   checkPin(cid: string): Promise<PinStatus>
 

@@ -1,0 +1,537 @@
+// ABI for MURIProtocolManifoldExtension (0x0FFc4A1906157248ae64F28fD259bB7a2790606C).
+// Source: github.com/ygtdmn/muri-protocol frontend/src/abis/muri-manifold-extension-abi.ts (verbatim).
+export const muriProtocolManifoldExtensionAbi = [
+	{
+		type: "constructor",
+		inputs: [
+			{ name: "_muriProtocol", type: "address", internalType: "address" },
+		],
+		stateMutability: "nonpayable",
+	},
+	{
+		type: "function",
+		name: "approveAdmin",
+		inputs: [{ name: "admin", type: "address", internalType: "address" }],
+		outputs: [],
+		stateMutability: "nonpayable",
+	},
+	{
+		type: "function",
+		name: "getAdmins",
+		inputs: [],
+		outputs: [{ name: "admins", type: "address[]", internalType: "address[]" }],
+		stateMutability: "view",
+	},
+	{
+		type: "function",
+		name: "getMURIProtocol",
+		inputs: [],
+		outputs: [{ name: "", type: "address", internalType: "address" }],
+		stateMutability: "view",
+	},
+	{
+		type: "function",
+		name: "isAdmin",
+		inputs: [{ name: "admin", type: "address", internalType: "address" }],
+		outputs: [{ name: "", type: "bool", internalType: "bool" }],
+		stateMutability: "view",
+	},
+	{
+		type: "function",
+		name: "isTokenOwner",
+		inputs: [
+			{ name: "creatorContract", type: "address", internalType: "address" },
+			{ name: "account", type: "address", internalType: "address" },
+			{ name: "tokenId", type: "uint256", internalType: "uint256" },
+		],
+		outputs: [{ name: "", type: "bool", internalType: "bool" }],
+		stateMutability: "view",
+	},
+	{
+		type: "function",
+		name: "lockRescue",
+		inputs: [{ name: "locksToSet", type: "uint256", internalType: "uint256" }],
+		outputs: [],
+		stateMutability: "payable",
+	},
+	{
+		type: "function",
+		name: "mintERC1155",
+		inputs: [
+			{ name: "contractAddress", type: "address", internalType: "address" },
+			{ name: "recipients", type: "address[]", internalType: "address[]" },
+			{ name: "quantities", type: "uint256[]", internalType: "uint256[]" },
+			{
+				name: "config",
+				type: "tuple",
+				internalType: "struct IMURIProtocol.InitConfig",
+				components: [
+					{ name: "metadata", type: "string", internalType: "string" },
+					{
+						name: "artwork",
+						type: "tuple",
+						internalType: "struct IMURIProtocol.Artwork",
+						components: [
+							{
+								name: "artistUris",
+								type: "string[]",
+								internalType: "string[]",
+							},
+							{
+								name: "collectorUris",
+								type: "string[]",
+								internalType: "string[]",
+							},
+							{ name: "mimeType", type: "string", internalType: "string" },
+							{ name: "fileHash", type: "string", internalType: "string" },
+							{ name: "isAnimationUri", type: "bool", internalType: "bool" },
+							{
+								name: "selectedArtistUriIndex",
+								type: "uint256",
+								internalType: "uint256",
+							},
+						],
+					},
+					{
+						name: "thumbnail",
+						type: "tuple",
+						internalType: "struct IMURIProtocol.Thumbnail",
+						components: [
+							{
+								name: "kind",
+								type: "uint8",
+								internalType: "enum IMURIProtocol.ThumbnailKind",
+							},
+							{
+								name: "onChain",
+								type: "tuple",
+								internalType: "struct IMURIProtocol.OnChainThumbnail",
+								components: [
+									{ name: "mimeType", type: "string", internalType: "string" },
+									{
+										name: "chunks",
+										type: "address[]",
+										internalType: "address[]",
+									},
+									{ name: "zipped", type: "bool", internalType: "bool" },
+								],
+							},
+							{
+								name: "offChain",
+								type: "tuple",
+								internalType: "struct IMURIProtocol.OffChainThumbnail",
+								components: [
+									{ name: "uris", type: "string[]", internalType: "string[]" },
+									{
+										name: "selectedUriIndex",
+										type: "uint256",
+										internalType: "uint256",
+									},
+								],
+							},
+						],
+					},
+					{
+						name: "displayMode",
+						type: "uint8",
+						internalType: "enum IMURIProtocol.DisplayMode",
+					},
+					{
+						name: "permissions",
+						type: "tuple",
+						internalType: "struct IMURIProtocol.Permissions",
+						components: [
+							{ name: "flags", type: "uint16", internalType: "uint16" },
+						],
+					},
+					{
+						name: "htmlTemplate",
+						type: "tuple",
+						internalType: "struct IMURIProtocol.HtmlTemplate",
+						components: [
+							{ name: "chunks", type: "address[]", internalType: "address[]" },
+							{ name: "zipped", type: "bool", internalType: "bool" },
+						],
+					},
+				],
+			},
+			{ name: "thumbnailChunks", type: "bytes[]", internalType: "bytes[]" },
+			{
+				name: "htmlTemplateChunks",
+				type: "string[]",
+				internalType: "string[]",
+			},
+		],
+		outputs: [],
+		stateMutability: "payable",
+	},
+	{
+		type: "function",
+		name: "mintERC721",
+		inputs: [
+			{ name: "contractAddress", type: "address", internalType: "address" },
+			{ name: "recipient", type: "address", internalType: "address" },
+			{
+				name: "config",
+				type: "tuple",
+				internalType: "struct IMURIProtocol.InitConfig",
+				components: [
+					{ name: "metadata", type: "string", internalType: "string" },
+					{
+						name: "artwork",
+						type: "tuple",
+						internalType: "struct IMURIProtocol.Artwork",
+						components: [
+							{
+								name: "artistUris",
+								type: "string[]",
+								internalType: "string[]",
+							},
+							{
+								name: "collectorUris",
+								type: "string[]",
+								internalType: "string[]",
+							},
+							{ name: "mimeType", type: "string", internalType: "string" },
+							{ name: "fileHash", type: "string", internalType: "string" },
+							{ name: "isAnimationUri", type: "bool", internalType: "bool" },
+							{
+								name: "selectedArtistUriIndex",
+								type: "uint256",
+								internalType: "uint256",
+							},
+						],
+					},
+					{
+						name: "thumbnail",
+						type: "tuple",
+						internalType: "struct IMURIProtocol.Thumbnail",
+						components: [
+							{
+								name: "kind",
+								type: "uint8",
+								internalType: "enum IMURIProtocol.ThumbnailKind",
+							},
+							{
+								name: "onChain",
+								type: "tuple",
+								internalType: "struct IMURIProtocol.OnChainThumbnail",
+								components: [
+									{ name: "mimeType", type: "string", internalType: "string" },
+									{
+										name: "chunks",
+										type: "address[]",
+										internalType: "address[]",
+									},
+									{ name: "zipped", type: "bool", internalType: "bool" },
+								],
+							},
+							{
+								name: "offChain",
+								type: "tuple",
+								internalType: "struct IMURIProtocol.OffChainThumbnail",
+								components: [
+									{ name: "uris", type: "string[]", internalType: "string[]" },
+									{
+										name: "selectedUriIndex",
+										type: "uint256",
+										internalType: "uint256",
+									},
+								],
+							},
+						],
+					},
+					{
+						name: "displayMode",
+						type: "uint8",
+						internalType: "enum IMURIProtocol.DisplayMode",
+					},
+					{
+						name: "permissions",
+						type: "tuple",
+						internalType: "struct IMURIProtocol.Permissions",
+						components: [
+							{ name: "flags", type: "uint16", internalType: "uint16" },
+						],
+					},
+					{
+						name: "htmlTemplate",
+						type: "tuple",
+						internalType: "struct IMURIProtocol.HtmlTemplate",
+						components: [
+							{ name: "chunks", type: "address[]", internalType: "address[]" },
+							{ name: "zipped", type: "bool", internalType: "bool" },
+						],
+					},
+				],
+			},
+			{ name: "thumbnailChunks", type: "bytes[]", internalType: "bytes[]" },
+			{
+				name: "htmlTemplateChunks",
+				type: "string[]",
+				internalType: "string[]",
+			},
+		],
+		outputs: [],
+		stateMutability: "payable",
+	},
+	{
+		type: "function",
+		name: "muriProtocol",
+		inputs: [],
+		outputs: [
+			{ name: "", type: "address", internalType: "contract IMURIProtocol" },
+		],
+		stateMutability: "view",
+	},
+	{
+		type: "function",
+		name: "owner",
+		inputs: [],
+		outputs: [{ name: "", type: "address", internalType: "address" }],
+		stateMutability: "view",
+	},
+	{
+		type: "function",
+		name: "renounceOwnership",
+		inputs: [],
+		outputs: [],
+		stateMutability: "nonpayable",
+	},
+	{
+		type: "function",
+		name: "rescueERC1155",
+		inputs: [
+			{ name: "token", type: "address", internalType: "address" },
+			{ name: "to", type: "address", internalType: "address" },
+			{ name: "id", type: "uint256", internalType: "uint256" },
+			{ name: "amount", type: "uint256", internalType: "uint256" },
+			{ name: "data", type: "bytes", internalType: "bytes" },
+		],
+		outputs: [],
+		stateMutability: "payable",
+	},
+	{
+		type: "function",
+		name: "rescueERC20",
+		inputs: [
+			{ name: "token", type: "address", internalType: "address" },
+			{ name: "to", type: "address", internalType: "address" },
+			{ name: "amount", type: "uint256", internalType: "uint256" },
+		],
+		outputs: [],
+		stateMutability: "payable",
+	},
+	{
+		type: "function",
+		name: "rescueERC6909",
+		inputs: [
+			{ name: "token", type: "address", internalType: "address" },
+			{ name: "to", type: "address", internalType: "address" },
+			{ name: "id", type: "uint256", internalType: "uint256" },
+			{ name: "amount", type: "uint256", internalType: "uint256" },
+		],
+		outputs: [],
+		stateMutability: "payable",
+	},
+	{
+		type: "function",
+		name: "rescueERC721",
+		inputs: [
+			{ name: "token", type: "address", internalType: "address" },
+			{ name: "to", type: "address", internalType: "address" },
+			{ name: "id", type: "uint256", internalType: "uint256" },
+		],
+		outputs: [],
+		stateMutability: "payable",
+	},
+	{
+		type: "function",
+		name: "rescueETH",
+		inputs: [
+			{ name: "to", type: "address", internalType: "address" },
+			{ name: "amount", type: "uint256", internalType: "uint256" },
+		],
+		outputs: [],
+		stateMutability: "payable",
+	},
+	{
+		type: "function",
+		name: "rescueLocked",
+		inputs: [],
+		outputs: [{ name: "locks", type: "uint256", internalType: "uint256" }],
+		stateMutability: "view",
+	},
+	{
+		type: "function",
+		name: "revokeAdmin",
+		inputs: [{ name: "admin", type: "address", internalType: "address" }],
+		outputs: [],
+		stateMutability: "nonpayable",
+	},
+	{
+		type: "function",
+		name: "setMURIProtocol",
+		inputs: [
+			{ name: "_muriProtocol", type: "address", internalType: "address" },
+		],
+		outputs: [],
+		stateMutability: "nonpayable",
+	},
+	{
+		type: "function",
+		name: "supportsInterface",
+		inputs: [{ name: "interfaceId", type: "bytes4", internalType: "bytes4" }],
+		outputs: [{ name: "", type: "bool", internalType: "bool" }],
+		stateMutability: "view",
+	},
+	{
+		type: "function",
+		name: "tokenURI",
+		inputs: [
+			{ name: "creator", type: "address", internalType: "address" },
+			{ name: "tokenId", type: "uint256", internalType: "uint256" },
+		],
+		outputs: [{ name: "", type: "string", internalType: "string" }],
+		stateMutability: "view",
+	},
+	{
+		type: "function",
+		name: "transferOwnership",
+		inputs: [{ name: "newOwner", type: "address", internalType: "address" }],
+		outputs: [],
+		stateMutability: "nonpayable",
+	},
+	{
+		type: "event",
+		name: "AdminApproved",
+		inputs: [
+			{
+				name: "account",
+				type: "address",
+				indexed: true,
+				internalType: "address",
+			},
+			{
+				name: "sender",
+				type: "address",
+				indexed: true,
+				internalType: "address",
+			},
+		],
+		anonymous: false,
+	},
+	{
+		type: "event",
+		name: "AdminRevoked",
+		inputs: [
+			{
+				name: "account",
+				type: "address",
+				indexed: true,
+				internalType: "address",
+			},
+			{
+				name: "sender",
+				type: "address",
+				indexed: true,
+				internalType: "address",
+			},
+		],
+		anonymous: false,
+	},
+	{
+		type: "event",
+		name: "MURIProtocolUpdated",
+		inputs: [
+			{
+				name: "newMURIProtocol",
+				type: "address",
+				indexed: true,
+				internalType: "address",
+			},
+		],
+		anonymous: false,
+	},
+	{
+		type: "event",
+		name: "OwnershipTransferred",
+		inputs: [
+			{
+				name: "previousOwner",
+				type: "address",
+				indexed: true,
+				internalType: "address",
+			},
+			{
+				name: "newOwner",
+				type: "address",
+				indexed: true,
+				internalType: "address",
+			},
+		],
+		anonymous: false,
+	},
+	{
+		type: "event",
+		name: "TokenMintedERC1155",
+		inputs: [
+			{
+				name: "creator",
+				type: "address",
+				indexed: true,
+				internalType: "address",
+			},
+			{
+				name: "tokenId",
+				type: "uint256",
+				indexed: true,
+				internalType: "uint256",
+			},
+			{
+				name: "recipients",
+				type: "address[]",
+				indexed: true,
+				internalType: "address[]",
+			},
+			{
+				name: "quantities",
+				type: "uint256[]",
+				indexed: false,
+				internalType: "uint256[]",
+			},
+		],
+		anonymous: false,
+	},
+	{
+		type: "event",
+		name: "TokenMintedERC721",
+		inputs: [
+			{
+				name: "creator",
+				type: "address",
+				indexed: true,
+				internalType: "address",
+			},
+			{
+				name: "tokenId",
+				type: "uint256",
+				indexed: true,
+				internalType: "uint256",
+			},
+			{
+				name: "recipient",
+				type: "address",
+				indexed: true,
+				internalType: "address",
+			},
+		],
+		anonymous: false,
+	},
+	{ type: "error", name: "InvalidIndexRange", inputs: [] },
+	{ type: "error", name: "InvalidRecipient", inputs: [] },
+	{ type: "error", name: "MURIProtocolNotSet", inputs: [] },
+	{ type: "error", name: "RescueTransferFailed", inputs: [] },
+	{ type: "error", name: "RescueUnauthorizedOrLocked", inputs: [] },
+	{ type: "error", name: "WalletNotAdmin", inputs: [] },
+] as const;

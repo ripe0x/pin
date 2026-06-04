@@ -80,6 +80,56 @@ export class PinataProvider implements PinningProvider {
     throw new Error("Pinata pin failed after retries")
   }
 
+  /**
+   * Upload new file bytes to IPFS via pinFileToIPFS (multipart). Works on
+   * Pinata's free tier (unlike pinByHash, which needs a paid plan). Returns
+   * the CID Pinata assigns. Do NOT set Content-Type — fetch derives the
+   * multipart boundary from the FormData body.
+   */
+  async uploadFile(file: Blob, name?: string): Promise<{ cid: string }> {
+    const form = new FormData()
+    form.append("file", file, name ?? "artwork")
+    form.append(
+      "pinataMetadata",
+      JSON.stringify({ name: name ?? "MURI artwork" }),
+    )
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const res = await fetch(`${PINATA_API}/pinning/pinFileToIPFS`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${this.jwt}` },
+        body: form,
+      })
+
+      if (res.ok) {
+        const data = (await res.json()) as { IpfsHash?: string }
+        if (!data.IpfsHash) {
+          throw new Error("Pinata upload succeeded but returned no CID")
+        }
+        return { cid: data.IpfsHash }
+      }
+
+      if (res.status === 429 && attempt < 2) {
+        await new Promise((r) => setTimeout(r, (attempt + 1) * 2000))
+        continue
+      }
+
+      const text = await res.text().catch(() => "")
+      if (res.status === 401 || res.status === 403) {
+        throw new Error(
+          "Pinata API key is invalid or missing 'pinFileToIPFS' permission. Regenerate your key with file pinning enabled.",
+        )
+      }
+      if (res.status === 402) {
+        throw new Error(
+          "Pinata storage limit reached. Free up space or upgrade your plan.",
+        )
+      }
+      throw new Error(`Pinata upload failed (${res.status}): ${text.slice(0, 200)}`)
+    }
+    throw new Error("Pinata upload failed after retries")
+  }
+
   async checkPin(cid: string): Promise<PinStatus> {
     const hash = baseCid(cid)
     try {
