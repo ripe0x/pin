@@ -105,6 +105,7 @@ export default function PermanencePreviewPage() {
             cid="bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             fundedThrough={1_824_600_000} // ≈2027-10
             nowSec={1_729_900_800} // fixed ref ≈2024-10 → "~3 years"
+            mints={37}
           />
         </div>
       </Card>
