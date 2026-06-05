@@ -6,8 +6,9 @@ import {
   type ArtworkPersistenceKind,
   type ArtworkPersistenceStatus,
 } from "./editions-persistence-status"
+import { resolveArtworkDurability, type ArtworkDurability } from "./editions-durability"
 
-export type { ArtworkPersistenceKind, ArtworkPersistenceStatus }
+export type { ArtworkPersistenceKind, ArtworkPersistenceStatus, ArtworkDurability }
 
 /**
  * Honest persistence status for an edition's artwork, the Phase 4 "honest
@@ -31,6 +32,14 @@ export type ArtworkPersistence = {
   status: ArtworkPersistenceStatus
   /** The CID / Arweave tx id used as the cache key, if content-addressed. */
   key: string | null
+  /**
+   * The durability dimension (Phase 3), orthogonal to `status`. "permanent-floor"
+   * when a resolved Arweave copy exists; "hot-funded"/"hot-lapsed" once a hot-pin
+   * funded-through date is recorded (Phase 5 producer); else "none".
+   */
+  durability: ArtworkDurability
+  /** unix seconds a hot pin is funded through; null until Phase 5 records it. */
+  fundedThrough: number | null
 }
 
 export async function getArtworkPersistence(
@@ -38,10 +47,11 @@ export async function getArtworkPersistence(
   artist?: string,
 ): Promise<ArtworkPersistence> {
   const { kind, key } = classifyArtworkKey(artworkURI)
-  if (kind === "none") return { kind, status: "none", key }
-  if (kind === "external" || !key) return { kind: "external", status: "external", key: null }
+  if (kind === "none") return { kind, status: "none", key, durability: "none", fundedThrough: null }
+  if (kind === "external" || !key)
+    return { kind: "external", status: "external", key: null, durability: "none", fundedThrough: null }
 
-  if (!sql) return { kind, status: "unprobed", key }
+  if (!sql) return { kind, status: "unprobed", key, durability: "none", fundedThrough: null }
 
   const artistFilter = artist ? sql`AND tp.artist = ${artist.toLowerCase()}` : sql``
 
@@ -59,5 +69,22 @@ export async function getArtworkPersistence(
   const retrievable = rows[0]?.retrievable ?? null
   const pinned = rows[0]?.pinned ?? false
 
-  return { kind, status: resolveArtworkStatus(retrievable, pinned), key }
+  // fundedThrough has no producer until Phase 5 (the hot-pin renewal records),
+  // so durability today resolves to "permanent-floor" (resolved Arweave) or
+  // "none". The hot-funded/hot-lapsed states activate when that join lands.
+  const fundedThrough: number | null = null
+  const durability = resolveArtworkDurability({
+    kind,
+    retrievable,
+    fundedThrough,
+    nowSec: Math.floor(Date.now() / 1000),
+  })
+
+  return {
+    kind,
+    status: resolveArtworkStatus(retrievable, pinned),
+    key,
+    durability,
+    fundedThrough,
+  }
 }
