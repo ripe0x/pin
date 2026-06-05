@@ -59,8 +59,7 @@ export function PermanenceFundingPanel({
   ethUsd?: number
   artworkBytes?: number
 }) {
-  // Proceeds earmarked for permanence so far ≈ minted × price × bps / 10000.
-  const accrued = (minted * price * BigInt(bps)) / 10_000n
+  // Per-mint ETH routed to the permanence vault (for the per-mint caption).
   const perMint = (price * BigInt(bps)) / 10_000n
   const live = status === EditionStatus.Open
   // Years of IPFS pinning the funds buy — same cost model as the hot-pin card,
@@ -95,21 +94,15 @@ export function PermanenceFundingPanel({
 
         <div className="flex items-baseline justify-between">
           <span className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-            Set aside so far
+            Pinned for
           </span>
-          <span className="text-lg font-mono font-medium tabular-nums">
-            ≈ {trimEth(accrued)} <span className="text-xs text-gray-500">ETH</span>
-          </span>
-        </div>
-
-        {pinYears !== "—" && (
-          <p
-            className="text-[10px] font-mono text-gray-500"
+          <span
+            className="text-lg font-mono font-medium tabular-nums"
             title={`Estimate: IPFS pinning at ~$0.10/GB/mo for a ~${Math.round(artworkBytes / 1_000_000)} MB work, ETH ≈ $${ethUsd.toLocaleString()}, surface share netted out. A pay-once Arweave floor is separate and cheaper.`}
           >
-            ≈ funds {pinYears} of IPFS pinning
-          </p>
-        )}
+            {pinYears}
+          </span>
+        </div>
 
         <div className="space-y-1.5">
           <div className="flex items-baseline justify-between text-[10px] font-mono uppercase tracking-wider text-gray-400">
@@ -130,8 +123,7 @@ export function PermanenceFundingPanel({
 
         <p className="text-[10px] font-mono leading-relaxed text-gray-500">
           Routes to the artist&rsquo;s permanence vault to fund a pay-once Arweave
-          copy or renewable pinning. Not &ldquo;permanent&rdquo; until funded —
-          the badge shows the honest status. PND never holds it.
+          copy or renewable pinning.
         </p>
 
         <a

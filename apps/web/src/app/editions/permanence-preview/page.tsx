@@ -22,10 +22,10 @@ const VAULT = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8" as const
 // year — the ratio is size-driven; a small image would over-fund (100+ yrs).
 const DEMO = {
   priceWei: 50_000_000_000_000_000n, // 0.05 ETH
-  permanenceBps: 300, // 3%
+  permanenceBps: 100, // 1%
   surfaceBps: 1000, // 10% surface, netted out
   ethUsd: 3_000,
-  artworkBytes: 3_375_000_000, // ~3.4 GB (video-sized work) → ~1 yr / mint
+  artworkBytes: 1_125_000_000, // ~1.1 GB work → ~1 yr / mint at a 1% slice
   minted: 37,
   supplyCap: 150,
 } as const
