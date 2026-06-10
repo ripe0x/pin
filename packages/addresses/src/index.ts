@@ -105,6 +105,19 @@ export const PND_EDITIONS_FACTORY: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
 }
 
+// ReleaseFactory — the Releases protocol (open editions). Full-deploys one
+// immutable ERC721A Release contract per artist release (no proxies, no
+// clones); emits ReleaseCreated(release, artist, surfaceFee, params) with the
+// complete initial config so discovery needs zero follow-up reads. Holds the
+// per-token surface fee constant (owner-set under an immutable cap,
+// snapshotted immutably into each release). NOT yet deployed to mainnet —
+// paste the address here after running `forge script
+// script/DeployReleases.s.sol`. For local Anvil dev, set
+// NEXT_PUBLIC_RELEASE_FACTORY instead of editing this file.
+export const RELEASE_FACTORY: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+}
+
 // PND reference mint hooks (public goods). One shared instance per hook,
 // configured per-edition by each edition's owner; an artist opts in by pointing
 // setMintHook at one. Deployed alongside the factory by

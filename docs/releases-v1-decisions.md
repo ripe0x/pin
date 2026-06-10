@@ -92,6 +92,30 @@ not spelled out in it:
    ≈ 69k execution gas (≈ 90k with base tx cost). The plan's full-deploy
    bet holds without trimming.
 
+## Implementation deltas — integration phase
+
+10. **Indexer: ABIs staged, wiring deploy-gated** (plan §14 step 3 said
+    "schema + handlers"). Followed the editions precedent instead:
+    `apps/indexer/abis/ReleaseFactory.ts` + `Release.ts` are staged, but
+    schema tables and handlers land with the post-deploy wiring — Ponder
+    handlers can't typecheck against a contract that isn't registered in
+    `ponder.config.ts`, and registration needs the deployed address +
+    start block. The table shapes are specified in the plan (§9).
+11. **Web reads are chain-direct until the indexer wires up**, mirroring
+    how editions shipped: `releases-onchain.ts` is server-only, every
+    read multicalled + pgCache'd (20s release summary, 60s lists, 30s
+    owners, 1h metadata images, 5m factory fee). No client polling
+    anywhere; the only client reads are one `getBlock` for chain time,
+    one approval check for burn gates, and wagmi's balance read on the
+    connected account. Claim validation (not source owner, already used)
+    is left to contract reverts surfaced via formatWriteError — zero
+    preflight RPC.
+12. **`/releases` routes sit alongside `/editions`** for now, and the
+    For-artists menu gained "Open a release" above "Release an edition".
+    Both disappear in the old-system removal PR (item 3 above).
+13. **The e2e surface is Anvil account 1**, so the harness can assert the
+    fee leg landed with a real address (`state.releaseSurface`).
+
 ## Verification status (contracts phase)
 
 - 90 unit/fuzz/invariant/reentrancy tests pass; fuzz suites re-run at
@@ -102,3 +126,17 @@ not spelled out in it:
   the impersonated real holder, cross-release BURN, deploy-script dry
   run, end-to-end economics (PND-served + direct mints, both legs
   drained exactly).
+
+## Verification status (web phase)
+
+- `pnpm --filter @pin/web typecheck` clean; production build green (all
+  four `/releases` routes compile).
+- Browser e2e (`pnpm --filter @pin/web test:e2e`): 3/3 pass in real
+  Chromium against a real Anvil mainnet fork —
+  1. the existing editions create+mint spec (regression),
+  2. open a **priced** release through the UI, mint it, then assert
+     onchain: `artistBalance == price`, `owed(surface) == 0.0005 ETH`,
+     collector owns token 1,
+  3. open a **free** release, mint through PND's surface, then assert
+     onchain: contract balance 0, surface owed 0 — free meant gas only.
+- Local click-through harness: `pnpm dev:releases`.
