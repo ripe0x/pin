@@ -9,6 +9,7 @@ remappings = [
     "openzeppelin-contracts/=lib/openzeppelin-contracts/",
     "openzeppelin-contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/",
     "erc721a-upgradeable/=lib/ERC721A-Upgradeable/",
+    "erc721a/=lib/ERC721A/",
     "forge-std/=lib/forge-std/src/",
 ]
 

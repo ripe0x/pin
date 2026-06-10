@@ -26,6 +26,9 @@ export const STATE_FILE = resolve(__dirname, "../.e2e-state.json")
 export type GlobalState = {
   rpcUrl: string
   factory: `0x${string}`
+  releaseFactory: `0x${string}`
+  /** Surface address the app passes on served release mints. */
+  releaseSurface: `0x${string}`
   appPort: number
   impersonate: `0x${string}`
   anvilPid: number
@@ -119,6 +122,23 @@ export default async function globalSetup() {
   const factory = m[1] as `0x${string}`
   console.log(`[e2e] factory: ${factory}`)
 
+  // 2b) Deploy the Releases protocol factory alongside.
+  console.log("[e2e] deploying releases factory…")
+  const relOut = execSync(
+    `forge script script/DeployReleases.s.sol --rpc-url ${rpcUrl} --broadcast --sender ${IMPERSONATE} --unlocked`,
+    { cwd: CONTRACTS_DIR, env: ENV_WITH_FOUNDRY, encoding: "utf8" },
+  )
+  const relM = relOut.match(/ReleaseFactory:\s*(0x[0-9a-fA-F]{40})/)
+  if (!relM) {
+    console.error(relOut)
+    throw new Error("e2e: could not parse release factory address from deploy output")
+  }
+  const releaseFactory = relM[1] as `0x${string}`
+  // Anvil account 1 — a visible, assertable surface for the fee leg.
+  const releaseSurface =
+    "0x70997970C51812dc3A010C7d01b50e0d17dc79C8" as `0x${string}`
+  console.log(`[e2e] release factory: ${releaseFactory}`)
+
   // 3) Next dev server with the fork env + mock-connector impersonation.
   console.log(`[e2e] starting Next dev server on :${APP_PORT}`)
   const app: ChildProcess = spawn(
@@ -132,6 +152,8 @@ export default async function globalSetup() {
         NEXT_PUBLIC_USE_LOCAL_RPC: "1",
         NEXT_PUBLIC_ANVIL_RPC_URL: rpcUrl,
         NEXT_PUBLIC_PND_EDITIONS_FACTORY: factory,
+        NEXT_PUBLIC_RELEASE_FACTORY: releaseFactory,
+        NEXT_PUBLIC_PND_SURFACE_ADDRESS: releaseSurface,
         NEXT_PUBLIC_DEV_IMPERSONATE: IMPERSONATE,
       },
       detached: true,
@@ -151,6 +173,8 @@ export default async function globalSetup() {
   const state: GlobalState = {
     rpcUrl,
     factory,
+    releaseFactory,
+    releaseSurface,
     appPort: APP_PORT,
     impersonate: IMPERSONATE,
     anvilPid: anvil.pid ?? 0,
