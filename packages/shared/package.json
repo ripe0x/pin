@@ -8,6 +8,13 @@
     "./config": "./src/config.ts",
     "./ipfs": "./src/ipfs.ts"
   },
-  "scripts": {},
-  "dependencies": {}
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test src/*.test.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
 }

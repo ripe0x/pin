@@ -40,6 +40,9 @@ const CID_RE = /(Qm[1-9A-HJ-NP-Za-km-z]{44}|baf[a-z0-9]{50,})/
  * Recognized forms:
  *   - `ipfs://<cid>[/<path>]`
  *   - `ipfs://ipfs/<cid>[/<path>]` (Foundation's double-prefix bug)
+ *   - `ipfs://https://<gateway>/ipfs/<cid>[/<path>]` (minter pasted a full
+ *     gateway URL into a field the contract prefixes with `ipfs://` — seen
+ *     on Foundation shared-contract mints)
  *   - `https://<gateway>/ipfs/<cid>[/<path>]` (any HTTP IPFS gateway —
  *     custom Pinata domains, ipfs.io, dweb.link, etc.). Covers tokens
  *     whose metadata embeds gateway URLs with hotlink protection that
@@ -52,6 +55,11 @@ export function extractCid(uri: string): string | null {
     let cid = uri.replace("ipfs://", "")
     // Fix Foundation's double-prefix bug: ipfs://ipfs/Qm...
     if (cid.startsWith("ipfs/")) cid = cid.replace("ipfs/", "")
+    // Nested gateway URL: the remainder is itself an HTTP URL, so peel
+    // the ipfs:// and extract from the embedded gateway form instead.
+    if (cid.startsWith("http://") || cid.startsWith("https://")) {
+      return extractCid(cid)
+    }
     return cid || null
   }
   if (uri.startsWith("http://") || uri.startsWith("https://")) {
@@ -93,6 +101,7 @@ function looksLikeCid(token: string): boolean {
  * Recognised shapes:
  *   ipfs://<cid>[/...]                  → <cid>
  *   ipfs://ipfs/<cid>[/...]             → <cid>  (Foundation double-prefix)
+ *   ipfs://https://<gw>/ipfs/<cid>[/...]→ <cid>  (pasted gateway URL)
  *   https://<gateway>/ipfs/<cid>[/...]  → <cid>  (path gateway)
  *   https://<cid>.ipfs.<gateway>/...    → <cid>  (subdomain gateway)
  *
@@ -103,6 +112,11 @@ export function extractBareCid(uri: string | null): string | null {
   if (!uri) return null
   const trimmed = uri.trim()
   if (!trimmed) return null
+
+  // Nested gateway URL (minter pasted an HTTPS URL into a field the
+  // contract prefixes with ipfs://): peel the scheme and re-extract.
+  const nested = /^ipfs:\/\/(?:ipfs\/)?(https?:\/\/.+)/i.exec(trimmed)
+  if (nested) return extractBareCid(nested[1])
 
   const ipfsScheme = /^ipfs:\/\/(?:ipfs\/)?([^/?#]+)/i.exec(trimmed)
   if (ipfsScheme) return looksLikeCid(ipfsScheme[1]) ? ipfsScheme[1] : null
