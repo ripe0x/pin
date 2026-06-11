@@ -13,7 +13,7 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
     !!connectedAddress &&
     connectedAddress.toLowerCase() === artistAddress.toLowerCase()
 
-  const { state, refresh, removeIds } = useSellerListings(artistAddress, {
+  const { state, refresh } = useSellerListings(artistAddress, {
     enabled: isOwner,
   })
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -27,13 +27,14 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
     walletLabel,
   } = useSequentialCancel()
 
-  // After a run completes, drop done rows, clear their selection, and
-  // invalidate the seller-listings cache so the next read (here or on the
-  // /delist page or another tab) doesn't return the just-cancelled rows from
-  // the 1h pg/L1 cache. Skipped rows (pre-flight found them already
-  // inactive on-chain) stay visible with their badge so the user sees why
-  // nothing was signed for them — but they prove the cached listing data
-  // is stale, so they trigger the revalidate too.
+  // After a run completes: cancelled and skipped rows STAY in the list
+  // with their status badges — rows vanishing right after the user acted
+  // on them reads as the app losing their work. Refresh (or the next
+  // visit) reconciles the list from fresh data. We still clear done rows
+  // from the selection so the count is honest and a re-run can't
+  // re-include them, and we invalidate the seller-listings cache so the
+  // next read (here, /delist, another tab) doesn't serve the
+  // just-cancelled rows from the 1h pg/L1 cache.
   useEffect(() => {
     if (status !== "done" || state.kind !== "loaded") return
     const doneIds = new Set<string>()
@@ -44,7 +45,6 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
     }
     if (doneIds.size === 0 && skippedCount === 0) return
     if (doneIds.size > 0) {
-      removeIds(doneIds)
       setSelected((prev) => {
         const next = new Set<string>()
         for (const id of prev) if (!doneIds.has(id)) next.add(id)
@@ -55,7 +55,7 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
       `/api/seller-listings/revalidate?seller=${artistAddress.toLowerCase()}`,
       { method: "POST" },
     ).catch(() => {})
-  }, [status, perItemStatus, state.kind, removeIds, artistAddress])
+  }, [status, perItemStatus, state.kind, artistAddress])
 
   if (!isOwner) return null
   if (state.kind === "idle" || state.kind === "loading") {
@@ -106,6 +106,8 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
   const allItems: SellerListing[] = [...state.auctions, ...state.buyNows]
   const allSelected = selected.size === total
   const isRunning = status === "running"
+  let doneCount = 0
+  for (const [, s] of perItemStatus) if (s.state === "done") doneCount++
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -138,6 +140,7 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
           <p className="text-xs text-gray-500 mt-0.5">
             {total} active {total === 1 ? "listing" : "listings"} across
             third-party marketplaces
+            {doneCount > 0 && ` · ${doneCount} cancelled this run`}
           </p>
         </div>
         <button
@@ -215,12 +218,21 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
       />
 
       {status === "done" && (
-        <button
-          onClick={refresh}
-          className="mt-3 text-xs font-medium underline text-gray-700 hover:text-fg"
-        >
-          Refresh listings
-        </button>
+        <div className="mt-3">
+          {doneCount > 0 && (
+            <p className="text-xs text-gray-500 mb-2">
+              Cancelled pieces are unlisted and back under your control —
+              Foundation holds listed work in escrow and returns it to your
+              wallet when you cancel.
+            </p>
+          )}
+          <button
+            onClick={refresh}
+            className="text-xs font-medium underline text-gray-700 hover:text-fg"
+          >
+            Refresh listings
+          </button>
+        </div>
       )}
     </Section>
   )

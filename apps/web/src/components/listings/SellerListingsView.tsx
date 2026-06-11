@@ -246,7 +246,7 @@ function RowStatus({ status }: { status: ItemStatus | undefined }) {
       <TxLabel
         txHash={status.txHash}
         className={`${base} text-emerald-600`}
-        label="Cancelled"
+        label="Listing cancelled"
       />
     )
   if (status.state === "skipped")

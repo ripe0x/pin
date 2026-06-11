@@ -69,22 +69,5 @@ export function useSellerListings(
     refresh()
   }, [enabled, address, refresh])
 
-  /**
-   * Drop rows from the loaded state by id. Used after a cancel run to
-   * remove rows whose cancel transaction confirmed, without re-fetching.
-   */
-  const removeIds = useCallback((ids: Set<string>) => {
-    setState((prev) => {
-      if (prev.kind !== "loaded") return prev
-      return {
-        kind: "loaded",
-        auctions: prev.auctions.filter((a) => !ids.has(a.id)),
-        buyNows: prev.buyNows.filter((b) => !ids.has(b.id)),
-        meta: prev.meta,
-        partial: prev.partial,
-      }
-    })
-  }, [])
-
-  return { state, refresh, removeIds }
+  return { state, refresh }
 }
