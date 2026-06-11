@@ -423,12 +423,7 @@ function FeesBreakdown({
           ["Seller receives", fees.sellerBps],
           [`${fees.platformLabel} fee`, fees.protocolFeeBps],
         ] as Array<[string, number]>)
-  ).filter(([label, bps]) => {
-    // Always show the Foundation platform fee row, even at 0%, so the
-    // breakdown makes the platform's take explicit on Foundation auctions.
-    if (isFoundation && label === `${fees.platformLabel} fee`) return true
-    return bps > 0
-  })
+  ).filter(([, bps]) => bps > 0)
 
   // Base amount each percentage row is computed against. Use the user's
   // typed bid when available; fall back to the current bid / reserve
