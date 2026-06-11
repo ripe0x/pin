@@ -13,9 +13,10 @@
  */
 import "server-only"
 import { resolveTokenMetadata } from "@pin/token-metadata"
-import { createPublicClient, http } from "viem"
+import { createPublicClient, http, parseAbi } from "viem"
 import { mainnet } from "viem/chains"
 import { sql } from "./db"
+import { pgCache } from "./pg-cache"
 
 export type TokenRef = {
   contract: `0x${string}`
@@ -312,6 +313,117 @@ export type TokenOnChainData = {
   }>
 }
 
+const CREATOR_ABI = parseAbi([
+  "function tokenCreator(uint256 tokenId) view returns (address)",
+  "function owner() view returns (address)",
+])
+
+const TRANSFER_EVENT = parseAbi([
+  "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
+])[0]
+
+type FallbackTransfer = {
+  from: string
+  to: string
+  blockNumber: string
+  timestamp: number
+  txHash: string
+}
+
+/**
+ * Courtesy per-token transfer-history fallback for tokens the worker has
+ * never scanned (artist outside known_artists). Same role as the tokenURI
+ * metadata fallback above: ONE token's own history on demand, not a scan —
+ * a single topic-filtered eth_getLogs (from, to, tokenId are all indexed)
+ * plus one block-timestamp read per distinct block, capped at the 50 most
+ * recent legs to mirror the Postgres path. 6h pgCache: escrowed/idle
+ * tokens (the entire unindexed FND set) have frozen history, so steady
+ * state is a pg point lookup.
+ *
+ * Degrades to [] on any RPC failure (free-tier providers cap getLogs
+ * ranges) — the page then simply shows no provenance, as it did before.
+ */
+async function readTokenTransfersOnchain(
+  contract: string,
+  tokenId: string,
+): Promise<FallbackTransfer[]> {
+  return pgCache(`token-transfers:${contract}:${tokenId}`, 60 * 60 * 6, async () => {
+    const client = getClient()
+    const logs = await client.getLogs({
+      address: contract as `0x${string}`,
+      event: TRANSFER_EVENT,
+      args: { tokenId: BigInt(tokenId) },
+      fromBlock: 0n,
+      toBlock: "latest",
+    })
+    const recent = logs.slice(-50)
+    const tsByBlock = new Map<bigint, number>()
+    for (const log of recent) {
+      if (log.blockNumber === null || tsByBlock.has(log.blockNumber)) continue
+      const block = await client.getBlock({ blockNumber: log.blockNumber })
+      tsByBlock.set(log.blockNumber, Number(block.timestamp))
+    }
+    return recent
+      .filter((l) => l.blockNumber !== null && l.args.from && l.args.to)
+      .map((l) => ({
+        from: l.args.from!.toLowerCase(),
+        to: l.args.to!.toLowerCase(),
+        blockNumber: l.blockNumber!.toString(),
+        timestamp: tsByBlock.get(l.blockNumber!) ?? 0,
+        txHash: l.transactionHash ?? "",
+      }))
+  })
+}
+
+const ZERO_ADDR = "0x0000000000000000000000000000000000000000"
+
+/**
+ * On-chain creator fallback for tokens PND hasn't indexed (artist not in
+ * known_artists, contract not in any discovery table). Without this the
+ * token page silently drops the artist byline while title/description —
+ * which DO have an on-chain fallback via tokenURI — render fine.
+ *
+ * Ladder: `tokenCreator(tokenId)` first (Foundation shared + collection
+ * clones and SuperRare V2 all implement it, and it's per-token correct),
+ * then `owner()` (artist-deployed Ownable clones — FND/TL/Manifold/Mint
+ * style — where the artist owns the contract). Shared multi-artist
+ * contracts all implement tokenCreator, so the owner() rung only fires
+ * for single-artist clones where owner ≈ creator.
+ *
+ * Creator is immutable in practice → 30-day pgCache; at most two
+ * eth_calls per unindexed token per month.
+ */
+async function readTokenCreatorOnchain(
+  contract: string,
+  tokenId: string,
+): Promise<string | null> {
+  return pgCache(`token-creator:${contract}:${tokenId}`, 60 * 60 * 24 * 30, async () => {
+    const client = getClient()
+    try {
+      const c = await client.readContract({
+        address: contract as `0x${string}`,
+        abi: CREATOR_ABI,
+        functionName: "tokenCreator",
+        args: [BigInt(tokenId)],
+      })
+      if (c.toLowerCase() !== ZERO_ADDR) return c.toLowerCase()
+    } catch {
+      // contract doesn't implement tokenCreator — try owner()
+    }
+    try {
+      const o = await client.readContract({
+        address: contract as `0x${string}`,
+        abi: CREATOR_ABI,
+        functionName: "owner",
+      })
+      if (o.toLowerCase() !== ZERO_ADDR) return o.toLowerCase()
+    } catch {
+      // not Ownable either — no attribution available
+    }
+    return null
+  })
+}
+
 export async function getTokenOnChainData(
   contract: string,
   tokenId: string,
@@ -366,19 +478,60 @@ export async function getTokenOnChainData(
       if (sr[0]) creator = sr[0].creator
     }
   }
+  // Unindexed token (artist outside known_artists, contract in no
+  // discovery table): resolve attribution from the chain instead of
+  // silently dropping the byline.
+  if (!creator) {
+    creator = await readTokenCreatorOnchain(c, tokenId).catch(() => null)
+  }
 
-  if (owners.length === 0 && transfers.length === 0 && !creator) return null
+  // Unindexed token: no worker-scanned transfer history. Pull the
+  // token's own history from the chain (cached courtesy read) so the
+  // provenance timeline and owner/escrow line render instead of
+  // silently vanishing.
+  let chainTransfers: FallbackTransfer[] = []
+  if (transfers.length === 0) {
+    chainTransfers = await readTokenTransfersOnchain(c, tokenId).catch(() => [])
+  }
+
+  if (
+    owners.length === 0 &&
+    transfers.length === 0 &&
+    chainTransfers.length === 0 &&
+    !creator
+  )
+    return null
+
+  const mappedTransfers =
+    transfers.length > 0
+      ? transfers.map((t) => ({
+          from: t.from_addr,
+          to: t.to_addr,
+          blockNumber: BigInt(t.block_number),
+          timestamp: Number(t.block_time),
+          txHash: t.tx_hash,
+        }))
+      : chainTransfers
+          .map((t) => ({
+            from: t.from,
+            to: t.to,
+            blockNumber: BigInt(t.blockNumber),
+            timestamp: t.timestamp,
+            txHash: t.txHash,
+          }))
+          // getLogs returns oldest-first; the pg path is newest-first
+          .reverse()
 
   return {
-    owner: owners[0]?.owner ?? null,
+    // chainTransfers are oldest-first, so the last one's `to` is the
+    // current holder — gives the owner/escrow section a value for
+    // unindexed tokens too.
+    owner:
+      owners[0]?.owner ??
+      chainTransfers[chainTransfers.length - 1]?.to ??
+      null,
     creator,
-    transfers: transfers.map((t) => ({
-      from: t.from_addr,
-      to: t.to_addr,
-      blockNumber: BigInt(t.block_number),
-      timestamp: Number(t.block_time),
-      txHash: t.tx_hash,
-    })),
+    transfers: mappedTransfers,
   }
 }
 

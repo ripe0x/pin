@@ -1,8 +1,8 @@
 "use client"
 
-import Image from "next/image"
 import Link from "next/link"
 import { formatEther } from "viem"
+import { useThumbnailMedia } from "@/lib/use-thumbnail-media"
 import type {
   SellerListing,
   SellerListingMeta,
@@ -200,21 +200,18 @@ function ListingRow({
           aria-label={`Select ${displayName}`}
         />
       )}
-      <div className="h-10 w-10 shrink-0 bg-gray-100 overflow-hidden">
-        {imageUrl && (
-          <Image
-            src={imageUrl}
-            alt=""
-            width={40}
-            height={40}
-            className="h-full w-full object-cover"
-            unoptimized
-          />
-        )}
-      </div>
+      {imageUrl ? (
+        <RowThumb url={imageUrl} alt={displayName} />
+      ) : (
+        <div className="h-10 w-10 shrink-0 bg-gray-100" />
+      )}
       <div className="min-w-0 flex-1">
         <Link
           href={tokenHref}
+          // New tab: this list carries in-flight state (selections, run
+          // progress) that in-place navigation would throw away.
+          target="_blank"
+          rel="noopener noreferrer"
           className="block text-sm font-medium text-gray-900 truncate hover:underline"
         >
           {displayName}
@@ -228,6 +225,44 @@ function ListingRow({
   )
 }
 
+/**
+ * 40px row thumbnail that handles the full FND media reality: many works
+ * (this artist's entire catalog) put a VIDEO file in `metadata.image` /
+ * `mediaUri`, which a plain <img>/<Image> renders as a broken icon.
+ * `useThumbnailMedia` is the shared escalation logic from ArtistGallery /
+ * PreserveGrid: known-extension videos render as a muted <video> (the
+ * browser shows the first frame as a still thumb), extension-less URLs
+ * try the image gateway cascade first and escalate to <video> when it's
+ * exhausted, and plain images rotate IPFS gateways on failure.
+ */
+function RowThumb({ url, alt }: { url: string; alt: string }) {
+  const { kind, imgSrc, imgRef, onImgError, videoSrc, onVideoError } =
+    useThumbnailMedia(url, 160)
+  return (
+    <div className="h-10 w-10 shrink-0 bg-gray-100 overflow-hidden">
+      {kind === "failed" ? null : kind === "video" ? (
+        <video
+          src={videoSrc}
+          className="h-full w-full object-cover"
+          muted
+          playsInline
+          preload="metadata"
+          onError={onVideoError}
+        />
+      ) : (
+        <img
+          ref={imgRef}
+          src={imgSrc}
+          alt={alt}
+          className="h-full w-full object-cover"
+          loading="lazy"
+          onError={onImgError}
+        />
+      )}
+    </div>
+  )
+}
+
 function RowStatus({ status }: { status: ItemStatus | undefined }) {
   if (!status || status.state === "idle") return null
   const base = "text-xs tabular-nums shrink-0"
@@ -235,25 +270,28 @@ function RowStatus({ status }: { status: ItemStatus | undefined }) {
     return <span className={`${base} text-gray-500`}>Confirm…</span>
   if (status.state === "mining")
     return (
-      <a
-        href={`https://etherscan.io/tx/${status.txHash}`}
-        target="_blank"
-        rel="noopener noreferrer"
-        className={`${base} text-amber-600 hover:underline`}
-      >
-        Cancelling…
-      </a>
+      <TxLabel
+        txHash={status.txHash}
+        className={`${base} text-amber-600`}
+        label="Cancelling…"
+      />
     )
   if (status.state === "done")
     return (
-      <a
-        href={`https://etherscan.io/tx/${status.txHash}`}
-        target="_blank"
-        rel="noopener noreferrer"
-        className={`${base} text-emerald-600 hover:underline`}
+      <TxLabel
+        txHash={status.txHash}
+        className={`${base} text-emerald-600`}
+        label="Listing cancelled"
+      />
+    )
+  if (status.state === "skipped")
+    return (
+      <span
+        className={`${base} text-gray-400 max-w-[200px] truncate`}
+        title={status.reason}
       >
-        Cancelled
-      </a>
+        Skipped — already inactive
+      </span>
     )
   return (
     <span
@@ -262,5 +300,31 @@ function RowStatus({ status }: { status: ItemStatus | undefined }) {
     >
       {status.error}
     </span>
+  )
+}
+
+/**
+ * Tx-linked status label. Batched (EIP-5792) runs don't always have a
+ * per-call hash — render plain text rather than a link to /tx/undefined.
+ */
+function TxLabel({
+  txHash,
+  className,
+  label,
+}: {
+  txHash: `0x${string}` | undefined
+  className: string
+  label: string
+}) {
+  if (!txHash) return <span className={className}>{label}</span>
+  return (
+    <a
+      href={`https://evm.now/tx/${txHash}?chainId=1`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`${className} hover:underline`}
+    >
+      {label}
+    </a>
   )
 }

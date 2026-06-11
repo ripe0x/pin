@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { formatEther } from "viem"
 import {
@@ -189,9 +190,20 @@ function getPhase(auction: AuctionState, nowSec: number): Phase {
 
 export function AuctionPanel({
   auction,
+  creator,
 }: {
   auction: AuctionState
+  /**
+   * Token creator (lowercased ok). Lets the panel say WHO is selling:
+   * "the artist" on a primary listing vs an explicit secondary-sale
+   * label when a collector relists — without it, a Foundation listing
+   * with the static secondary fee split reads as a resale even when the
+   * artist is the seller.
+   */
+  creator?: string
 }) {
+  const sellerIsCreator =
+    !!creator && auction.seller.toLowerCase() === creator.toLowerCase()
   const nowSec = useChainNowSec()
   const rawPhase = getPhase(auction, nowSec)
 
@@ -240,11 +252,30 @@ export function AuctionPanel({
   return (
     <div className="rounded-lg border border-gray-200 bg-surface overflow-hidden">
       <div className="p-5 space-y-5">
-        <div className="flex items-center gap-2">
-          <span className={`inline-block h-1.5 w-1.5 rounded-full ${dotColor}`} />
-          <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500">
-            {headerLabel}
-          </span>
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2">
+            <span className={`inline-block h-1.5 w-1.5 rounded-full ${dotColor}`} />
+            <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500">
+              {headerLabel}
+            </span>
+          </div>
+          {auction.sellerDisplay && (
+            <p className="text-[11px] font-mono text-gray-500">
+              Listed by{" "}
+              <Link
+                href={`/artist/${auction.seller}`}
+                className="text-gray-700 hover:underline"
+              >
+                {auction.sellerDisplay}
+              </Link>
+              {creator &&
+                (sellerIsCreator ? (
+                  <span className="text-gray-400"> · the artist</span>
+                ) : (
+                  <span className="text-gray-400"> · secondary sale</span>
+                ))}
+            </p>
+          )}
         </div>
 
         <div className="flex items-end justify-between gap-6">
@@ -314,6 +345,7 @@ export function AuctionPanel({
           fees={fees}
           auction={auction}
           bidWei={bid.wei ?? undefined}
+          sellerIsCreator={sellerIsCreator}
         />
       )}
     </div>
@@ -359,6 +391,7 @@ function FeesBreakdown({
   fees,
   auction,
   bidWei,
+  sellerIsCreator,
 }: {
   fees: AuctionFees
   // Auction context lets us show the buyer's premium footer for
@@ -369,16 +402,27 @@ function FeesBreakdown({
   // premium total. When 0n / undefined we fall back to the current
   // amount on the auction so the row still shows a meaningful preview.
   bidWei?: bigint
+  // Primary listing (seller IS the token creator). Foundation's fee
+  // object is the published SECONDARY schedule (10% royalty / 75%
+  // seller / 15% fee); on a primary the artist-as-seller takes the
+  // royalty and seller legs together, and splitting them reads as
+  // "someone is reselling this". Collapse to artist 85% / platform 15%.
+  sellerIsCreator?: boolean
 }) {
   const ethPriceUsd = useEthPriceUsd()
 
   const isFoundation = auction?.source === "foundation"
   const rows: Array<[string, number]> = (
-    [
-      [isFoundation ? "Artist receives" : "Creator royalty", fees.creatorRoyaltyBps],
-      ["Seller receives", fees.sellerBps],
-      [`${fees.platformLabel} fee`, fees.protocolFeeBps],
-    ] as Array<[string, number]>
+    isFoundation && sellerIsCreator
+      ? ([
+          ["Artist receives", fees.creatorRoyaltyBps + fees.sellerBps],
+          [`${fees.platformLabel} fee`, fees.protocolFeeBps],
+        ] as Array<[string, number]>)
+      : ([
+          [isFoundation ? "Artist receives" : "Creator royalty", fees.creatorRoyaltyBps],
+          ["Seller receives", fees.sellerBps],
+          [`${fees.platformLabel} fee`, fees.protocolFeeBps],
+        ] as Array<[string, number]>)
   ).filter(([label, bps]) => {
     // Always show the Foundation platform fee row, even at 0%, so the
     // breakdown makes the platform's take explicit on Foundation auctions.

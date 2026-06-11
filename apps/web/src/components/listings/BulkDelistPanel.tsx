@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { useAccount } from "wagmi"
 import type { SellerListing } from "@/lib/seller-listings"
 import { useSellerListings } from "@/lib/useSellerListings"
-import { useSequentialCancel } from "@/lib/useSequentialCancel"
+import { BATCH_CHUNK_SIZE, useSequentialCancel } from "@/lib/useSequentialCancel"
 import { SellerListingsView } from "@/components/listings/SellerListingsView"
 
 export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
@@ -13,7 +13,7 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
     !!connectedAddress &&
     connectedAddress.toLowerCase() === artistAddress.toLowerCase()
 
-  const { state, refresh, removeIds } = useSellerListings(artistAddress, {
+  const { state, refresh } = useSellerListings(artistAddress, {
     enabled: isOwner,
   })
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -27,28 +27,35 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
     walletLabel,
   } = useSequentialCancel()
 
-  // After a run completes, drop done rows, clear their selection, and
-  // invalidate the seller-listings cache so the next read (here or on the
-  // /delist page or another tab) doesn't return the just-cancelled rows from
-  // the 1h pg/L1 cache.
+  // After a run completes: cancelled and skipped rows STAY in the list
+  // with their status badges — rows vanishing right after the user acted
+  // on them reads as the app losing their work. Refresh (or the next
+  // visit) reconciles the list from fresh data. We still clear done rows
+  // from the selection so the count is honest and a re-run can't
+  // re-include them, and we invalidate the seller-listings cache so the
+  // next read (here, /delist, another tab) doesn't serve the
+  // just-cancelled rows from the 1h pg/L1 cache.
   useEffect(() => {
     if (status !== "done" || state.kind !== "loaded") return
     const doneIds = new Set<string>()
+    let skippedCount = 0
     for (const [id, s] of perItemStatus) {
       if (s.state === "done") doneIds.add(id)
+      if (s.state === "skipped") skippedCount++
     }
-    if (doneIds.size === 0) return
-    removeIds(doneIds)
-    setSelected((prev) => {
-      const next = new Set<string>()
-      for (const id of prev) if (!doneIds.has(id)) next.add(id)
-      return next
-    })
+    if (doneIds.size === 0 && skippedCount === 0) return
+    if (doneIds.size > 0) {
+      setSelected((prev) => {
+        const next = new Set<string>()
+        for (const id of prev) if (!doneIds.has(id)) next.add(id)
+        return next
+      })
+    }
     void fetch(
       `/api/seller-listings/revalidate?seller=${artistAddress.toLowerCase()}`,
       { method: "POST" },
     ).catch(() => {})
-  }, [status, perItemStatus, state.kind, removeIds, artistAddress])
+  }, [status, perItemStatus, state.kind, artistAddress])
 
   if (!isOwner) return null
   if (state.kind === "idle" || state.kind === "loading") {
@@ -99,6 +106,8 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
   const allItems: SellerListing[] = [...state.auctions, ...state.buyNows]
   const allSelected = selected.size === total
   const isRunning = status === "running"
+  let doneCount = 0
+  for (const [, s] of perItemStatus) if (s.state === "done") doneCount++
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -131,6 +140,7 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
           <p className="text-xs text-gray-500 mt-0.5">
             {total} active {total === 1 ? "listing" : "listings"} across
             third-party marketplaces
+            {doneCount > 0 && ` · ${doneCount} cancelled this run`}
           </p>
         </div>
         <button
@@ -171,7 +181,9 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
           {selected.size} selected
           {isRunning &&
             (mode === "batched"
-              ? " — sign the bundle in your wallet"
+              ? selected.size > BATCH_CHUNK_SIZE
+                ? " — sign each batch in your wallet"
+                : " — sign the bundle in your wallet"
               : " — sign each cancel in your wallet")}
         </p>
         {isRunning ? (
@@ -206,12 +218,21 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
       />
 
       {status === "done" && (
-        <button
-          onClick={refresh}
-          className="mt-3 text-xs font-medium underline text-gray-700 hover:text-fg"
-        >
-          Refresh listings
-        </button>
+        <div className="mt-3">
+          {doneCount > 0 && (
+            <p className="text-xs text-gray-500 mb-2">
+              Cancelled pieces are unlisted and back under your control —
+              Foundation holds listed work in escrow and returns it to your
+              wallet when you cancel.
+            </p>
+          )}
+          <button
+            onClick={refresh}
+            className="text-xs font-medium underline text-gray-700 hover:text-fg"
+          >
+            Refresh listings
+          </button>
+        </div>
       )}
     </Section>
   )
@@ -223,7 +244,15 @@ function cancelButtonLabel(
 ): string {
   const noun = count === 1 ? "listing" : "listings"
   if (count === 0) return "Cancel listings"
-  if (mode === "batched") return `Cancel ${count} ${noun}`
+  if (mode === "batched") {
+    // Wallets cap EIP-5792 bundles (BATCH_CHUNK_SIZE calls), so a big
+    // selection means several signed batches — say so before the click,
+    // not after the second popup surprises them.
+    const bundles = Math.ceil(count / BATCH_CHUNK_SIZE)
+    return bundles > 1
+      ? `Cancel ${count} ${noun} (${bundles} signatures)`
+      : `Cancel ${count} ${noun}`
+  }
   // For sequential, signal up-front that they'll see N popups so it isn't
   // a surprise after they click.
   return `Cancel ${count} ${noun} (${count} ${count === 1 ? "signature" : "signatures"})`
@@ -247,6 +276,17 @@ function ModeExplainer({
   if (mode === "loading" || selectedCount < 2 || isRunning) return null
 
   if (mode === "batched") {
+    const bundles = Math.ceil(selectedCount / BATCH_CHUNK_SIZE)
+    if (bundles > 1) {
+      return (
+        <p className="mt-2 text-[11px] text-gray-400 leading-relaxed">
+          Wallets cap one signature at {BATCH_CHUNK_SIZE} cancels, so this
+          runs as {bundles} signed batches. Each batch is checked onchain
+          right before signing — listings that already sold or were
+          cancelled elsewhere get skipped instead of failing the batch.
+        </p>
+      )
+    }
     return (
       <p className="mt-2 text-[11px] text-gray-400">
         {walletLabel

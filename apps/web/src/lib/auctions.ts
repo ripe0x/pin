@@ -194,7 +194,7 @@ async function readFndAuctionForToken(
     amount: string; reserve: string; duration: string;
     end_time: string; status: string
   }>
-  if (rows.length === 0) return null
+  if (rows.length === 0) return readFndSeedAuctionForToken(contract, tokenId)
   const r = rows[0]
   const awaitingFirstBid = !r.bidder
   const amount = awaitingFirstBid ? BigInt(r.reserve) : BigInt(r.amount)
@@ -226,6 +226,82 @@ async function readFndAuctionForToken(
     awaitingSettlement,
     fees,
     bidHistory,
+  }
+}
+
+/**
+ * Fallback for FND auctions older than the indexer window. Ponder watches
+ * NFTMarket from FND_START_BLOCK (~Oct 2025), but ~174k still-open FND
+ * reserve auctions predate it — `fnd_auctions` has no row for them, which
+ * is why token pages showed nothing for work that's visibly listed on
+ * Foundation. The full-history seed (`public.fnd_cancellable_listings`,
+ * migration 022) knows their auctionIds; one getReserveAuction read
+ * returns the live struct, and the chain is ground truth — cancelled or
+ * finalized auctions come back zero-filled and render nothing.
+ *
+ * The caller (`getAuctionForToken`) wraps this in a 30s pgCache, so the
+ * cost is at most one eth_call per viewed token per 30s. Bid history
+ * stays empty: pre-window bids aren't indexed, and a bid starts FND's
+ * 24h end clock so bid-bearing auctions finalize out of this set fast.
+ */
+async function readFndSeedAuctionForToken(
+  contract: string, tokenId: string,
+): Promise<AuctionState | null> {
+  if (!sql) return null
+  const seed = (await sql.unsafe(
+    `SELECT auction_id FROM fnd_cancellable_listings
+     WHERE kind = 'auction' AND contract = $1 AND token_id = $2
+     LIMIT 1`,
+    [contract, tokenId],
+  )) as Array<{ auction_id: string | null }>
+  const auctionId = seed[0]?.auction_id
+  if (!auctionId) return null
+
+  const a = await getClient("token-auction-fnd-seed").readContract({
+    address: FND_MARKET,
+    abi: nftMarketAbi,
+    functionName: "getReserveAuction",
+    args: [BigInt(auctionId)],
+  }) as {
+    nftContract: Address; tokenId: bigint; seller: Address;
+    duration: bigint; extensionDuration: bigint; endTime: bigint;
+    bidder: Address; amount: bigint
+  }
+  const seller = a.seller.toLowerCase()
+  if (seller === ZERO_ADDRESS) return null
+
+  const bidderLower = a.bidder.toLowerCase()
+  const awaitingFirstBid = bidderLower === ZERO_ADDRESS
+  const bidder = bidderLower as Address
+  // FND's struct `amount` is the reserve until the first bid, then the
+  // current high bid — same meaning AuctionState expects either way.
+  const amount = a.amount
+  const now = BigInt(Math.floor(Date.now() / 1000))
+  const awaitingSettlement =
+    !awaitingFirstBid && a.endTime !== 0n && a.endTime <= now
+
+  const displays = await resolveDisplayNames([seller, bidderLower])
+  const fees = await readFndFees(amount).catch(() => null)
+
+  return {
+    source: "foundation",
+    marketAddress: FND_MARKET,
+    auctionId,
+    nftContract: contract as Address,
+    tokenId,
+    seller: seller as Address,
+    sellerDisplay: displays.get(seller) ?? seller,
+    amount,
+    bidder,
+    bidderDisplay:
+      bidderLower === ZERO_ADDRESS ? "" : (displays.get(bidderLower) ?? bidderLower),
+    endTime: a.endTime,
+    duration: a.duration,
+    minBidWei: awaitingFirstBid ? amount : (amount * 105n) / 100n,
+    awaitingFirstBid,
+    awaitingSettlement,
+    fees,
+    bidHistory: [],
   }
 }
 
