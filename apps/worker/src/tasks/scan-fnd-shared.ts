@@ -59,6 +59,32 @@ export async function scanFndShared(): Promise<TaskResult> {
     return { scopeCount: 0, rpcCalls: 0, rowsWritten: 0 }
   }
 
+  // Historical backfill from the frozen seed (migration 023). The chunk
+  // sweep below filters Minted events by known_artists AT SCAN TIME, so
+  // an artist admitted after the cursor passed their mint blocks would
+  // never get their historical shared 1/1s. This pure-SQL copy (zero
+  // RPC, idempotent per tick) heals that for every admission path.
+  let seededRows = 0
+  try {
+    const seeded = await sql`
+      INSERT INTO artist_tokens
+        (artist, contract, token_id, platform, mint_block, mint_log_index, first_seen_at)
+      SELECT s.creator, ${FOUNDATION_NFT}, s.token_id, 'fnd-shared',
+             s.mint_block, s.mint_log_index, NOW()
+      FROM fnd_shared_mints_seed s
+      JOIN known_artists k ON k.address = s.creator
+      ON CONFLICT (contract, token_id) DO NOTHING
+    `
+    seededRows = seeded.count ?? 0
+    if (seededRows > 0) {
+      console.log(`[${TASK}] seeded ${seededRows} historical shared mints`)
+    }
+  } catch (err) {
+    // Seed table may not exist yet on an un-migrated environment —
+    // the live sweep still runs.
+    console.error(`[${TASK}] seed copy failed:`, err)
+  }
+
   const head = await client.getBlockNumber()
   let rpcCalls = 1
 
@@ -124,5 +150,9 @@ export async function scanFndShared(): Promise<TaskResult> {
     chunks += 1n
   }
 
-  return { scopeCount: knownArtists.size, rpcCalls, rowsWritten }
+  return {
+    scopeCount: knownArtists.size,
+    rpcCalls,
+    rowsWritten: rowsWritten + seededRows,
+  }
 }
