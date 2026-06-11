@@ -49,7 +49,10 @@ export class EnrichmentEmpty extends Error {
 export const getCachedTokenRefs = unstable_cache(
   async (artistAddress: string): Promise<TokenRef[]> =>
     discoverArtistTokenRefs(artistAddress),
-  ["artist-token-refs", "v5"],
+  // v6: seed-backed discovery for unadmitted artists (FND shared mints +
+  // on-demand collection enumeration) — clears every cached empty-refs
+  // entry written while those artists had no indexed rows.
+  ["artist-token-refs", "v6"],
   { revalidate: 86_400, tags: ["artist-refs"] },
 )
 
