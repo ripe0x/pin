@@ -206,7 +206,7 @@ async function readFndAuctionForToken(
   const displays = await resolveDisplayNames([r.seller, bidder])
   const bidHistory = await readFndBidHistory(r.auction_id, displays)
 
-  const fees = await readFndFees(amount).catch(() => null)
+  const fees = await readFndFees(contract, tokenId, amount).catch(() => null)
 
   return {
     source: "foundation",
@@ -281,7 +281,7 @@ async function readFndSeedAuctionForToken(
     !awaitingFirstBid && a.endTime !== 0n && a.endTime <= now
 
   const displays = await resolveDisplayNames([seller, bidderLower])
-  const fees = await readFndFees(amount).catch(() => null)
+  const fees = await readFndFees(contract, tokenId, amount).catch(() => null)
 
   return {
     source: "foundation",
@@ -678,17 +678,36 @@ async function readFndBidHistory(
 
 // ─── Foundation fees (live chain read; small + needed for accurate UI) ───
 
-async function readFndFees(_price: bigint): Promise<AuctionFees | null> {
-  // Foundation's per-price fee call (getFeesAndRecipients) has shape
-  // variance across NFTMarket versions; rather than couple to a specific
-  // tuple decoding, surface the published Foundation schedule (15%
-  // protocol fee, 10% creator royalty on secondaries) as a UI hint. The
-  // on-chain settle event carries the actual split that gets paid out.
+async function readFndFees(
+  nftContract: string,
+  tokenId: string,
+  price: bigint,
+): Promise<AuctionFees | null> {
+  // Live per-token split from the market itself. Foundation has changed
+  // its protocol fee over time — settle events show 15% historically,
+  // 5% through ~block 24.96M, and 0% since ~block 25.1M (2026-05) — so
+  // the static "published schedule" hint this used to return both
+  // overstated the platform's take and made primary listings read like
+  // resales. getFeesAndRecipients is the same math the settle call pays
+  // out, including per-token royalty overrides and split recipients.
+  // Callers sit inside getAuctionForToken's 30s pgCache, so this costs
+  // one eth_call per viewed FND token per 30s; on failure callers catch
+  // to null and the fee box simply doesn't render — honest over wrong.
+  if (price <= 0n) return null
+  const [totalFees, creatorRev, , , sellerRev] = (await getClient(
+    "fnd-fees",
+  ).readContract({
+    address: FND_MARKET,
+    abi: nftMarketAbi,
+    functionName: "getFeesAndRecipients",
+    args: [nftContract as Address, BigInt(tokenId), price],
+  })) as readonly [bigint, bigint, readonly Address[], readonly bigint[], bigint, Address]
+  const bps = (x: bigint) => Number((x * 10000n) / price)
   return {
     platformLabel: "Foundation",
-    protocolFeeBps: 1500,
-    creatorRoyaltyBps: 1000,
-    sellerBps: 7500,
+    protocolFeeBps: bps(totalFees),
+    creatorRoyaltyBps: bps(creatorRev),
+    sellerBps: bps(sellerRev),
   }
 }
 
