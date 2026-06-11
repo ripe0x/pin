@@ -235,25 +235,28 @@ function RowStatus({ status }: { status: ItemStatus | undefined }) {
     return <span className={`${base} text-gray-500`}>Confirm…</span>
   if (status.state === "mining")
     return (
-      <a
-        href={`https://etherscan.io/tx/${status.txHash}`}
-        target="_blank"
-        rel="noopener noreferrer"
-        className={`${base} text-amber-600 hover:underline`}
-      >
-        Cancelling…
-      </a>
+      <TxLabel
+        txHash={status.txHash}
+        className={`${base} text-amber-600`}
+        label="Cancelling…"
+      />
     )
   if (status.state === "done")
     return (
-      <a
-        href={`https://etherscan.io/tx/${status.txHash}`}
-        target="_blank"
-        rel="noopener noreferrer"
-        className={`${base} text-emerald-600 hover:underline`}
+      <TxLabel
+        txHash={status.txHash}
+        className={`${base} text-emerald-600`}
+        label="Cancelled"
+      />
+    )
+  if (status.state === "skipped")
+    return (
+      <span
+        className={`${base} text-gray-400 max-w-[200px] truncate`}
+        title={status.reason}
       >
-        Cancelled
-      </a>
+        Skipped — already inactive
+      </span>
     )
   return (
     <span
@@ -262,5 +265,31 @@ function RowStatus({ status }: { status: ItemStatus | undefined }) {
     >
       {status.error}
     </span>
+  )
+}
+
+/**
+ * Tx-linked status label. Batched (EIP-5792) runs don't always have a
+ * per-call hash — render plain text rather than a link to /tx/undefined.
+ */
+function TxLabel({
+  txHash,
+  className,
+  label,
+}: {
+  txHash: `0x${string}` | undefined
+  className: string
+  label: string
+}) {
+  if (!txHash) return <span className={className}>{label}</span>
+  return (
+    <a
+      href={`https://evm.now/tx/${txHash}?chainId=1`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`${className} hover:underline`}
+    >
+      {label}
+    </a>
   )
 }

@@ -22,6 +22,7 @@
 import { useCallback, useMemo, useRef, useState } from "react"
 import { useAccount, useCapabilities, useConfig } from "wagmi"
 import {
+  estimateGas,
   sendCalls,
   waitForCallsStatus,
   waitForTransactionReceipt,
@@ -35,12 +36,23 @@ import {
 
 export type CancelMode = "loading" | "batched" | "sequential"
 
+/**
+ * Calls per EIP-5792 bundle. MetaMask's wallet_sendCalls implementation
+ * rejects bundles with more than 10 calls (documented hard cap); other
+ * 5792 wallets vary but 10 is a safe lower bound that needs no per-wallet
+ * detection. Gas is nowhere near binding at this size: a cancel measures
+ * ~110-135k gas, so a full chunk is ~1.3M — ~2% of a block and far below
+ * typical bundler userOp caps (~10M).
+ */
+export const BATCH_CHUNK_SIZE = 10
+
 export type ItemStatus =
   | { state: "idle" }
   | { state: "confirming" }
   | { state: "mining"; txHash?: `0x${string}` }
   | { state: "done"; txHash?: `0x${string}` }
   | { state: "failed"; error: string }
+  | { state: "skipped"; reason: string }
 
 export type RunStatus = "idle" | "running" | "done"
 
@@ -68,10 +80,30 @@ function isTimeoutError(err: unknown): boolean {
   return /Timed out while waiting for call bundle/i.test(err.message)
 }
 
+/**
+ * Did this error come from the EVM rejecting the call (vs the transport
+ * failing to deliver it)? The distinction decides the pre-flight outcome:
+ * a revert means the listing is verifiably gone — drop it; a transport
+ * error (timeout, 429, 5xx) means we know nothing — keep the call in the
+ * run and let the wallet/chain be the judge. The revert reason lives in
+ * viem's `.cause` chain, so walk it.
+ */
+function isRevertError(err: unknown): boolean {
+  let cur: unknown = err
+  for (let depth = 0; depth < 6 && cur instanceof Error; depth++) {
+    const e = cur as Error & { shortMessage?: string; cause?: unknown }
+    if (/revert/i.test(e.message) || /revert/i.test(e.shortMessage ?? "")) {
+      return true
+    }
+    cur = e.cause
+  }
+  return false
+}
+
 
 export function useSequentialCancel() {
   const config = useConfig()
-  const { isConnected, chainId, connector } = useAccount()
+  const { address, isConnected, chainId, connector } = useAccount()
   const { data: capabilities, isLoading: capabilitiesLoading } = useCapabilities({
     query: { enabled: isConnected },
   })
@@ -122,11 +154,54 @@ export function useSequentialCancel() {
     setPerItemStatus(new Map())
   }, [])
 
+  /**
+   * Pre-flight a cancel via `eth_estimateGas` with `from` = the connected
+   * seller, just before it's signed. Listings die out from under the page
+   * (a bid lands, a sale settles, the data is up to 1h cached), and in an
+   * ATOMIC bundle one stale call reverts the entire chunk — which is how
+   * "delisting too many at once fails" presents to users. Estimation
+   * reverts for a stale listing, so we can drop it before any signature.
+   *
+   * Goes through the app transport (`/api/rpc` in prod: eth_estimateGas is
+   * allowlisted, Alchemy→public fallbacks behind it). Called per chunk at
+   * sign time — ≤10 estimates per signature — so it stays far inside the
+   * proxy's 240/min per-IP budget and the result can't go stale during a
+   * long multi-chunk run.
+   */
+  const preflight = useCallback(
+    async (item: SellerListing): Promise<"live" | "stale" | "unknown"> => {
+      try {
+        const call = encodeCancelCallToData(item)
+        await estimateGas(config, {
+          account: address,
+          to: call.to,
+          data: call.data,
+          value: call.value,
+        })
+        return "live"
+      } catch (err) {
+        // Only a verifiable EVM revert condemns the row; transport noise
+        // must not silently drop a cancellable listing.
+        return isRevertError(err) ? "stale" : "unknown"
+      }
+    },
+    [config, address],
+  )
+
+  const SKIP_REASON = "Already inactive on-chain — no cancel needed"
+
   const runSequential = useCallback(
     async (items: SellerListing[]) => {
       for (const item of items) {
         if (stopRef.current) break
         updateItem(item.id, { state: "confirming" })
+
+        // Stale rows get skipped before the wallet popup instead of
+        // making the user sign a transaction that's doomed to revert.
+        if ((await preflight(item)) === "stale") {
+          updateItem(item.id, { state: "skipped", reason: SKIP_REASON })
+          continue
+        }
 
         try {
           const call = buildCancelCall(item)
@@ -147,28 +222,40 @@ export function useSequentialCancel() {
         }
       }
     },
-    [config, updateItem],
+    [config, preflight, updateItem],
   )
 
   const runBatched = useCallback(
     async (items: SellerListing[]) => {
-      // MetaMask's wallet_sendCalls implementation rejects bundles with more
-      // than 10 calls (documented in their EIP-5792 docs as a hard cap). Other
-      // 5792-capable wallets vary, but 10 is a safe lower bound that doesn't
-      // require per-wallet detection. For N > 10 we chunk into multiple
-      // signed bundles — the user signs ⌈N/10⌉ times instead of failing.
-      const CHUNK = 10
+      // For N > BATCH_CHUNK_SIZE we chunk into multiple signed bundles —
+      // the user signs ⌈N/10⌉ times instead of the wallet rejecting the
+      // oversized bundle outright.
       const chunks: SellerListing[][] = []
-      for (let i = 0; i < items.length; i += CHUNK) {
-        chunks.push(items.slice(i, i + CHUNK))
+      for (let i = 0; i < items.length; i += BATCH_CHUNK_SIZE) {
+        chunks.push(items.slice(i, i + BATCH_CHUNK_SIZE))
       }
 
       // Initial state: everything in "confirming" so the user knows the whole
       // run is queued. We'll narrow per-chunk as we go.
       for (const item of items) updateItem(item.id, { state: "confirming" })
 
-      for (const chunk of chunks) {
+      for (const rawChunk of chunks) {
         if (stopRef.current) break
+
+        // Pre-flight the chunk at sign time. These bundles are atomic on
+        // smart wallets: one stale call reverts all ten, so every call we
+        // submit must be known-good moments before the signature.
+        const checks = await Promise.all(rawChunk.map(preflight))
+        const chunk: SellerListing[] = []
+        rawChunk.forEach((item, i) => {
+          if (checks[i] === "stale") {
+            updateItem(item.id, { state: "skipped", reason: SKIP_REASON })
+          } else {
+            chunk.push(item)
+          }
+        })
+        // Whole chunk already dead — nothing to sign.
+        if (chunk.length === 0) continue
 
         let bundleId: string
         try {
@@ -234,7 +321,7 @@ export function useSequentialCancel() {
         }
       }
     },
-    [config, updateItem],
+    [config, preflight, updateItem],
   )
 
   const run = useCallback(
