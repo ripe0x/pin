@@ -17,6 +17,11 @@
     "postgres": "^3.4.9",
     "typescript": "^5.7.0"
   },
+  "pnpm": {
+    "overrides": {
+      "qr": "0.5.5"
+    }
+  },
   "engines": {
     "node": ">=20",
     "pnpm": ">=9"
