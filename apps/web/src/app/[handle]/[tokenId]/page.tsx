@@ -441,7 +441,7 @@ export default async function TokenPage({
               for ERC1155 tokens. */}
           {auction && (
             <section className="py-5 border-b border-gray-100">
-              <AuctionPanel auction={auction} />
+              <AuctionPanel auction={auction} creator={data.creator || undefined} />
             </section>
           )}
           {!auction && settledAuction && (
