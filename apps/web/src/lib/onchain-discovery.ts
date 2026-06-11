@@ -24,6 +24,9 @@ export type TokenRef = {
   creator: `0x${string}`
   collectionName: string | null
   platform: string
+  /** Mint block as a decimal string (refs must stay bigint-free for
+   * unstable_cache hashing). Used only for newest-first ordering. */
+  mintBlock?: string
 }
 
 /**
@@ -274,13 +277,134 @@ export async function discoverArtistTokenRefs(
     mint_log_index: number
   }>
 
-  return rows.map((r) => ({
+  const indexed = rows.map((r) => ({
     contract: r.contract as `0x${string}`,
     tokenId: r.token_id,
     creator: artist as `0x${string}`,
     collectionName: null,
     platform: r.platform,
+    mintBlock: r.mint_block,
   }))
+
+  // Unclaimed-artist fallback: artists outside known_artists have no
+  // worker-scanned rows, but the frozen FND discovery seeds (migration
+  // 023) know their shared-contract mints token-by-token and their
+  // deployed collections contract-by-contract. Shared mints come
+  // straight from Postgres; collection tokens are enumerated on demand
+  // from the chain (one cached getLogs per collection). Indexed rows
+  // win on dedup, so an artist's page upgrades in place when they get
+  // admitted and the worker takes over.
+  const seeded = await discoverSeedTokenRefs(
+    artist,
+    new Set(indexed.map((r) => `${r.contract}:${r.tokenId}`)),
+    new Set(indexed.map((r) => r.contract as string)),
+  ).catch(() => [] as TokenRef[])
+
+  return [...indexed, ...seeded].sort((a, b) => {
+    const ab = BigInt(a.mintBlock ?? 0)
+    const bb = BigInt(b.mintBlock ?? 0)
+    return ab === bb ? 0 : ab > bb ? -1 : 1
+  })
+}
+
+/** Per-artist seed discovery for the unclaimed-page path. */
+async function discoverSeedTokenRefs(
+  artist: string,
+  haveToken: Set<string>,
+  haveContract: Set<string>,
+): Promise<TokenRef[]> {
+  if (!sql) return []
+  const FND_SHARED = "0x3b3ee1931dc30c1957379fac9aba94d1c48a5405"
+
+  const [sharedMints, collections] = await Promise.all([
+    sql.unsafe(
+      `SELECT token_id, mint_block::text AS mint_block, mint_log_index
+       FROM fnd_shared_mints_seed WHERE creator = $1`,
+      [artist],
+    ) as Promise<Array<{ token_id: string; mint_block: string; mint_log_index: number }>>,
+    // Cap the on-demand enumeration: p99 of creators have ≤8 collections,
+    // but the max is 467 — a page view must not fan out hundreds of
+    // getLogs. Newest 40 collections cover real artists; outliers get
+    // full coverage if and when they're admitted and the worker scans.
+    sql.unsafe(
+      `SELECT collection, deploy_block::text AS deploy_block
+       FROM fnd_collections_seed WHERE creator = $1
+       ORDER BY deploy_block DESC LIMIT 40`,
+      [artist],
+    ) as Promise<Array<{ collection: string; deploy_block: string }>>,
+  ])
+
+  const refs: TokenRef[] = []
+  for (const m of sharedMints) {
+    if (haveToken.has(`${FND_SHARED}:${m.token_id}`)) continue
+    refs.push({
+      contract: FND_SHARED as `0x${string}`,
+      tokenId: m.token_id,
+      creator: artist as `0x${string}`,
+      collectionName: null,
+      platform: "fnd-shared",
+      mintBlock: m.mint_block,
+    })
+  }
+
+  // Worker-scanned collections already contribute their tokens via
+  // artist_tokens — only enumerate collections the index doesn't cover.
+  const unscanned = collections.filter((c) => !haveContract.has(c.collection))
+  const enumerated = await Promise.all(
+    unscanned.map((c) =>
+      readCollectionMintRefsOnchain(c.collection, artist, c.deploy_block).catch(
+        () => [] as Array<{ tokenId: string; mintBlock: string }>,
+      ),
+    ),
+  )
+  enumerated.forEach((mints, i) => {
+    for (const m of mints) {
+      if (haveToken.has(`${unscanned[i].collection}:${m.tokenId}`)) continue
+      refs.push({
+        contract: unscanned[i].collection as `0x${string}`,
+        tokenId: m.tokenId,
+        creator: artist as `0x${string}`,
+        collectionName: null,
+        platform: "fnd-collection",
+        mintBlock: m.mintBlock,
+      })
+    }
+  })
+  return refs
+}
+
+/**
+ * Enumerate an FND collection clone's mints to its artist — the same
+ * Transfer-from-zero semantics the worker scanner uses, as a courtesy
+ * read for unadmitted artists. One full-range topic-filtered getLogs
+ * per (collection, artist), 24h pgCache; degrades to [] on RPC failure
+ * (free-tier providers cap getLogs ranges), which renders as "fewer
+ * works shown" rather than an error.
+ */
+async function readCollectionMintRefsOnchain(
+  contract: string,
+  artist: string,
+  deployBlock: string,
+): Promise<Array<{ tokenId: string; mintBlock: string }>> {
+  return pgCache(`collection-mints:${contract}:${artist}`, 60 * 60 * 24, async () => {
+    const client = getClient()
+    const logs = await client.getLogs({
+      address: contract as `0x${string}`,
+      event: TRANSFER_EVENT,
+      args: {
+        from: "0x0000000000000000000000000000000000000000",
+        to: artist as `0x${string}`,
+      },
+      fromBlock: BigInt(deployBlock),
+      toBlock: "latest",
+    })
+    return logs
+      .filter((l) => l.args.tokenId !== undefined && l.blockNumber !== null)
+      .map((l) => ({
+        tokenId: l.args.tokenId!.toString(),
+        mintBlock: l.blockNumber!.toString(),
+      }))
+  })
 }
 
 /**
