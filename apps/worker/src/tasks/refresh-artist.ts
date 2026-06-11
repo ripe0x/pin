@@ -31,10 +31,28 @@ export async function refreshArtist(address: string): Promise<void> {
 
   // Each platform in parallel, isolated failure.
   await Promise.allSettled([
-    // FND collections this artist deployed
+    // FND shared 1/1s: copy this artist's historical mints from the
+    // frozen seed (migration 023). Pure SQL, zero RPC — the scheduled
+    // scan-fnd-shared sweep only catches mints for artists known when
+    // its cursor passed their blocks, so on-admission refresh needs this.
+    sql.unsafe(
+      `INSERT INTO artist_tokens
+         (artist, contract, token_id, platform, mint_block, mint_log_index, first_seen_at)
+       SELECT s.creator, '0x3b3ee1931dc30c1957379fac9aba94d1c48a5405', s.token_id,
+              'fnd-shared', s.mint_block, s.mint_log_index, NOW()
+       FROM fnd_shared_mints_seed s
+       WHERE s.creator = $1
+       ON CONFLICT (contract, token_id) DO NOTHING`,
+      [lower],
+    ),
+    // FND collections this artist deployed — Ponder's live factory
+    // subscription UNION the pre-window full-history seed (023).
     sql.unsafe(
       `SELECT lower(collection) AS contract, created_at_block::text AS deploy_block
-       FROM ${INDEXER_SCHEMA}.fnd_collections WHERE lower(creator) = $1`,
+       FROM ${INDEXER_SCHEMA}.fnd_collections WHERE lower(creator) = $1
+       UNION
+       SELECT collection AS contract, deploy_block::text AS deploy_block
+       FROM fnd_collections_seed WHERE creator = $1`,
       [lower],
     ).then(async (rows: unknown) => {
       const list = rows as Array<{ contract: string; deploy_block: string }>
