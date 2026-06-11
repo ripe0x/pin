@@ -310,9 +310,15 @@ async function resolveEnsIdentityLive(
   lowerAddress: string,
 ): Promise<{ ensName: string | null; avatarUrl: string | null }> {
   const efp = await resolveEfpEnsCached(lowerAddress)
-  if (efp !== null) {
+  if (efp !== null && efp.name) {
     return { ensName: efp.name, avatarUrl: efp.avatar }
   }
+  // EFP unreachable OR returned a record with no name. EFP's coverage is
+  // its social graph, not all of ENS — a name-less EFP record cannot
+  // conclude "no reverse record" (seen in prod: djkero.eth reverse-
+  // resolves via ENS RPC while EFP returns name:null, which permanently
+  // persisted a truncated-address identity). Check the RPC before
+  // persisting anything.
   const [ensName, avatarUrl] = await Promise.all([
     resolveEnsNameCached(lowerAddress),
     resolveEnsAvatarCached(lowerAddress),

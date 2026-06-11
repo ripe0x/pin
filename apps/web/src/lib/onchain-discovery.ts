@@ -13,9 +13,10 @@
  */
 import "server-only"
 import { resolveTokenMetadata } from "@pin/token-metadata"
-import { createPublicClient, http } from "viem"
+import { createPublicClient, http, parseAbi } from "viem"
 import { mainnet } from "viem/chains"
 import { sql } from "./db"
+import { pgCache } from "./pg-cache"
 
 export type TokenRef = {
   contract: `0x${string}`
@@ -312,6 +313,60 @@ export type TokenOnChainData = {
   }>
 }
 
+const CREATOR_ABI = parseAbi([
+  "function tokenCreator(uint256 tokenId) view returns (address)",
+  "function owner() view returns (address)",
+])
+
+const ZERO_ADDR = "0x0000000000000000000000000000000000000000"
+
+/**
+ * On-chain creator fallback for tokens PND hasn't indexed (artist not in
+ * known_artists, contract not in any discovery table). Without this the
+ * token page silently drops the artist byline while title/description —
+ * which DO have an on-chain fallback via tokenURI — render fine.
+ *
+ * Ladder: `tokenCreator(tokenId)` first (Foundation shared + collection
+ * clones and SuperRare V2 all implement it, and it's per-token correct),
+ * then `owner()` (artist-deployed Ownable clones — FND/TL/Manifold/Mint
+ * style — where the artist owns the contract). Shared multi-artist
+ * contracts all implement tokenCreator, so the owner() rung only fires
+ * for single-artist clones where owner ≈ creator.
+ *
+ * Creator is immutable in practice → 30-day pgCache; at most two
+ * eth_calls per unindexed token per month.
+ */
+async function readTokenCreatorOnchain(
+  contract: string,
+  tokenId: string,
+): Promise<string | null> {
+  return pgCache(`token-creator:${contract}:${tokenId}`, 60 * 60 * 24 * 30, async () => {
+    const client = getClient()
+    try {
+      const c = await client.readContract({
+        address: contract as `0x${string}`,
+        abi: CREATOR_ABI,
+        functionName: "tokenCreator",
+        args: [BigInt(tokenId)],
+      })
+      if (c.toLowerCase() !== ZERO_ADDR) return c.toLowerCase()
+    } catch {
+      // contract doesn't implement tokenCreator — try owner()
+    }
+    try {
+      const o = await client.readContract({
+        address: contract as `0x${string}`,
+        abi: CREATOR_ABI,
+        functionName: "owner",
+      })
+      if (o.toLowerCase() !== ZERO_ADDR) return o.toLowerCase()
+    } catch {
+      // not Ownable either — no attribution available
+    }
+    return null
+  })
+}
+
 export async function getTokenOnChainData(
   contract: string,
   tokenId: string,
@@ -365,6 +420,12 @@ export async function getTokenOnChainData(
       )) as Array<{ creator: string }>
       if (sr[0]) creator = sr[0].creator
     }
+  }
+  // Unindexed token (artist outside known_artists, contract in no
+  // discovery table): resolve attribution from the chain instead of
+  // silently dropping the byline.
+  if (!creator) {
+    creator = await readTokenCreatorOnchain(c, tokenId).catch(() => null)
   }
 
   if (owners.length === 0 && transfers.length === 0 && !creator) return null
