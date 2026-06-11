@@ -639,6 +639,26 @@ export async function getActivityFeed(
     const FND_NOT_QUICK_CANCEL = `NOT (status = 'canceled' AND finalized_at_time IS NOT NULL AND finalized_at_time - created_at_time < ${SHORT_LIFE_SECONDS})`
     const PND_LONG_LIVED_CANCEL = `status = 'cancelled' AND settled_at_time IS NOT NULL AND settled_at_time - created_at_time >= ${SHORT_LIFE_SECONDS}`
 
+    // Hide "minted" rows whose tokenURI is broken. Three states, keyed on
+    // the LEFT-JOINed token_metadata row (alias `m`):
+    //   - no row yet            → SHOW. Resolution hasn't been attempted;
+    //     rendering the row is what triggers the enrichment attempt +
+    //     write-through, so hiding it would leave the token unresolved
+    //     forever (chicken-and-egg).
+    //   - row with any content  → SHOW.
+    //   - all-null row + mint older than the grace window → HIDE. The
+    //     fetch was attempted and failed; past the window that's a broken
+    //     tokenURI, not propagation lag (e.g. FND #133282's
+    //     ipfs://https://… double-scheme URI). Dropping the event also
+    //     stops the render path from re-resolving the dead URI on every
+    //     feed revalidation.
+    const MINT_METADATA_GRACE_SECONDS = 3600
+    const mintNotBroken = (timeCol: string) =>
+      `(m.contract IS NULL
+        OR m.name IS NOT NULL OR m.description IS NOT NULL
+        OR m.image_url IS NOT NULL OR m.animation_url IS NOT NULL
+        OR ${timeCol} > EXTRACT(EPOCH FROM NOW()) - ${MINT_METADATA_GRACE_SECONDS})`
+
     // Cursor-aware branch filters. Each branch limits to its top-N
     // strictly-older-than-cursor rows; the outer query enforces the
     // (blockTime, id) tiebreak globally. Without the per-branch
@@ -817,12 +837,12 @@ export async function getActivityFeed(
 
          (SELECT
             'mint'::text,
-            ('mint:' || id)::text,
-            block_time::text,
-            creator::text,
+            ('mint:' || t.id)::text,
+            t.block_time::text,
+            t.creator::text,
             NULL::text,
-            contract::text,
-            token_id::text,
+            t.contract::text,
+            t.token_id::text,
             NULL::text,
             NULL::text,
             NULL::text,
@@ -830,9 +850,11 @@ export async function getActivityFeed(
             NULL::text,
             NULL::text,
             NULL::text
-          FROM ${schema}.fnd_artist_tokens
-          ${where(null, "block_time")}
-          ORDER BY block_time DESC
+          FROM ${schema}.fnd_artist_tokens t
+          LEFT JOIN token_metadata m
+            ON m.contract = lower(t.contract) AND m.token_id = t.token_id::text
+          ${where(mintNotBroken("t.block_time"), "t.block_time")}
+          ORDER BY t.block_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})
 
          UNION ALL
@@ -851,7 +873,7 @@ export async function getActivityFeed(
             ('vvmint:' || at.contract || ':' || at.token_id)::text,
             at.mint_time::text,
             at.artist::text,
-            m.to_addr::text,
+            fm.to_addr::text,
             at.contract::text,
             at.token_id::text,
             NULL::text,
@@ -868,8 +890,11 @@ export async function getActivityFeed(
             WHERE tm.contract = at.contract AND tm.token_id = at.token_id
             ORDER BY tm.block_number ASC, tm.log_index ASC
             LIMIT 1
-          ) m ON true
+          ) fm ON true
+          LEFT JOIN token_metadata m
+            ON m.contract = lower(at.contract) AND m.token_id = at.token_id
           WHERE at.platform = 'mint' AND at.mint_time IS NOT NULL
+            AND ${mintNotBroken("at.mint_time")}
             ${branchFilter("at.mint_time")}
           ORDER BY at.mint_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})
