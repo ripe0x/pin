@@ -301,11 +301,65 @@ export async function getArtistIdentity(
 }
 
 /**
- * Live ENS resolution (EFP HTTPS first, ENS RPC fallback). Used internally
- * by `getArtistIdentity` for the cold-path (row missing from
+ * Live ENS resolution for the cold path (row missing from
  * `ens_identities`); the resolved value is then persisted so subsequent
  * reads stay on the pg point-lookup path.
+ *
+ * Ladder, cheapest-and-richest first, all offchain until the last rung:
+ *   1. EFP (HTTPS) — social-graph members, includes avatar/records.
+ *   2. enstate.rs → ensideas.com (HTTPS) — full-ENS coverage with a
+ *      definitive no-record signal, so "no ENS" persists null with zero
+ *      chain reads.
+ *   3. ENS RPC — ground-truth backstop, only when every offchain
+ *      service is unreachable.
  */
+/**
+ * Full-ENS offchain reverse resolution — no RPC. Unlike EFP (which only
+ * covers its social graph), enstate.rs and ensideas.com resolve all of
+ * ENS server-side, and both give a DEFINITIVE no-record signal (enstate:
+ * HTTP 404; ensideas: 200 with name:null) — which is what lets us
+ * distinguish "this address has no ENS, persist null" from "the service
+ * is down, fall through" before writing to the permanent table.
+ */
+type OffchainEnsResult =
+  | { kind: "found"; name: string; avatar: string | null }
+  | { kind: "none" }
+  | { kind: "unavailable" }
+
+async function fetchOffchainEnsRecord(
+  lowerAddress: string,
+): Promise<OffchainEnsResult> {
+  // enstate.rs: 200 = record found, 404 = definitively no reverse record.
+  try {
+    const res = await fetch(`https://enstate.rs/a/${lowerAddress}`, {
+      signal: AbortSignal.timeout(EFP_TIMEOUT_MS),
+    })
+    if (res.status === 404) return { kind: "none" }
+    if (res.ok) {
+      const j = (await res.json()) as { name?: string | null; avatar?: string | null }
+      if (j.name) return { kind: "found", name: j.name, avatar: j.avatar ?? null }
+      return { kind: "none" }
+    }
+  } catch {
+    // timeout / network — try the next service
+  }
+  // ensideas: always 200; name:null = definitively no reverse record.
+  try {
+    const res = await fetch(
+      `https://api.ensideas.com/ens/resolve/${lowerAddress}`,
+      { signal: AbortSignal.timeout(EFP_TIMEOUT_MS) },
+    )
+    if (res.ok) {
+      const j = (await res.json()) as { name?: string | null; avatar?: string | null }
+      if (j.name) return { kind: "found", name: j.name, avatar: j.avatar ?? null }
+      return { kind: "none" }
+    }
+  } catch {
+    // both services unreachable
+  }
+  return { kind: "unavailable" }
+}
+
 async function resolveEnsIdentityLive(
   lowerAddress: string,
 ): Promise<{ ensName: string | null; avatarUrl: string | null }> {
@@ -316,9 +370,20 @@ async function resolveEnsIdentityLive(
   // EFP unreachable OR returned a record with no name. EFP's coverage is
   // its social graph, not all of ENS — a name-less EFP record cannot
   // conclude "no reverse record" (seen in prod: djkero.eth reverse-
-  // resolves via ENS RPC while EFP returns name:null, which permanently
-  // persisted a truncated-address identity). Check the RPC before
-  // persisting anything.
+  // resolves fine while EFP returns name:null, which permanently
+  // persisted a truncated-address identity). Resolve via the full-ENS
+  // offchain services next; their definitive no-record answer means the
+  // common no-ENS case persists null without ever touching the chain.
+  const offchain = await fetchOffchainEnsRecord(lowerAddress)
+  if (offchain.kind === "found") {
+    return { ensName: offchain.name, avatarUrl: offchain.avatar }
+  }
+  if (offchain.kind === "none") {
+    return { ensName: null, avatarUrl: null }
+  }
+  // Every offchain service is down — the RPC is the last-resort ground
+  // truth so identity resolution degrades instead of permanently
+  // persisting a wrong null. In steady state this rung never fires.
   const [ensName, avatarUrl] = await Promise.all([
     resolveEnsNameCached(lowerAddress),
     resolveEnsAvatarCached(lowerAddress),
