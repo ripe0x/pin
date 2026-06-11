@@ -215,6 +215,10 @@ function ListingRow({
       <div className="min-w-0 flex-1">
         <Link
           href={tokenHref}
+          // New tab: this list carries in-flight state (selections, run
+          // progress) that in-place navigation would throw away.
+          target="_blank"
+          rel="noopener noreferrer"
           className="block text-sm font-medium text-gray-900 truncate hover:underline"
         >
           {displayName}
