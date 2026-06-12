@@ -15,7 +15,6 @@
  * substitution, IPFS gateway fallback) are fixed in one place.
  */
 import type { Address, PublicClient } from "viem"
-import { erc721Abi } from "@pin/abi"
 import { extractCid, fetchFromIpfs, extractIpnsPath, fetchFromIpns } from "@pin/shared"
 
 const erc1155UriAbi = [
@@ -28,6 +27,44 @@ const erc1155UriAbi = [
   },
 ] as const
 
+// tokenURI plus the custom errors a token-no-longer-exists revert decodes
+// to. Including the error fragments lets viem name the revert (so we can
+// tell a burned token apart from an IPFS hiccup) directly from the
+// `tokenURI` read — no extra `ownerOf` call. Covers OZ v5
+// (`ERC721NonexistentToken`) and ERC721A
+// (`URIQueryForNonexistentToken` / `OwnerQueryForNonexistentToken`).
+const tokenUriAbi = [
+  {
+    type: "function",
+    name: "tokenURI",
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    outputs: [{ type: "string" }],
+    stateMutability: "view",
+  },
+  { type: "error", name: "ERC721NonexistentToken", inputs: [{ name: "tokenId", type: "uint256" }] },
+  { type: "error", name: "URIQueryForNonexistentToken", inputs: [] },
+  { type: "error", name: "OwnerQueryForNonexistentToken", inputs: [] },
+] as const
+
+// Revert signals that mean "this token does not exist on-chain" (burned or
+// never minted). Matched against the decoded error name, the raw 4-byte
+// selector in the revert data, and legacy string reverts (OZ < 5). All
+// lowercased before comparison.
+const NONEXISTENT_ERROR_NAMES = [
+  "erc721nonexistenttoken",
+  "uriqueryfornonexistenttoken",
+  "ownerqueryfornonexistenttoken",
+]
+const NONEXISTENT_SELECTORS = [
+  "0x7e273289", // ERC721NonexistentToken(uint256)
+  "0xa14c4b50", // URIQueryForNonexistentToken()
+  "0xceea21b6", // OwnerQueryForNonexistentToken()
+]
+const NONEXISTENT_STRINGS = [
+  "nonexistent token", // "ERC721Metadata: URI query for nonexistent token", etc.
+  "invalid token id", // OZ v4.8+: "ERC721: invalid token ID"
+]
+
 export type TokenMetadata = {
   name?: string
   description?: string
@@ -39,6 +76,21 @@ export type TokenMetadata = {
    * substitution). Persisted as `raw_uri` so the UI can link to the
    * canonical source for verification. Omitted for inline `data:` URIs. */
   uri?: string
+}
+
+export type TokenMetadataResult = {
+  metadata: TokenMetadata | null
+  /**
+   * Whether the token still exists on-chain, derived from the `tokenURI`
+   * read:
+   *  - `true`  — a URI resolved (token exists; `metadata` may still be null
+   *              if the off-chain JSON didn't fetch — transient, not a burn).
+   *  - `false` — definitive: `tokenURI` reverted with a nonexistent-token
+   *              error (burned, or never minted).
+   *  - `null`  — indeterminate (RPC error / unclassifiable revert). Callers
+   *              must NOT flip a persisted burned flag on null.
+   */
+  exists: boolean | null
 }
 
 /**
@@ -58,33 +110,84 @@ export async function resolveTokenMetadata(
   tokenId: string,
   options?: { fetchTimeoutMs?: number },
 ): Promise<TokenMetadata | null> {
+  return (
+    await resolveTokenMetadataWithState(client, contractAddress, tokenId, options)
+  ).metadata
+}
+
+/**
+ * Same resolution as `resolveTokenMetadata`, but also reports whether the
+ * token still EXISTS on-chain (see `TokenMetadataResult.exists`). The
+ * existence signal falls out of the `tokenURI` call we already make, so
+ * callers get burn detection without a separate `ownerOf` read — which is
+ * what lets burned works be filtered from grids and 404'd on the token
+ * page while honoring the project's RPC-minimization rule.
+ */
+export async function resolveTokenMetadataWithState(
+  client: PublicClient,
+  contractAddress: string,
+  tokenId: string,
+  options?: { fetchTimeoutMs?: number },
+): Promise<TokenMetadataResult> {
   const id = BigInt(tokenId)
   const contract = contractAddress as Address
   const fetchTimeoutMs = options?.fetchTimeoutMs ?? 10_000
 
-  const uriString = await client
-    .readContract({
+  const { uri, exists } = await readTokenUriWithState(client, contract, id)
+  if (!uri) return { metadata: null, exists }
+
+  // A URI resolved → the token exists, even if the off-chain JSON fails to
+  // fetch below (transient gateway miss). Never downgrade to exists=false here.
+  const metadata = await fetchMetadataForUri(uri, id, fetchTimeoutMs)
+  return { metadata, exists: true }
+}
+
+/**
+ * Acquire a token's metadata URI and classify existence in one pass. Tries
+ * ERC-721 `tokenURI(id)`; a revert with a recognized nonexistent-token
+ * error is a definitive burn (exists=false). Any OTHER tokenURI revert
+ * means the contract is ERC-1155 or doesn't implement the call — fall back
+ * to `uri(id)`. If both fail for an unclassifiable reason, existence is
+ * indeterminate (null) and no burned flag should be written.
+ */
+async function readTokenUriWithState(
+  client: PublicClient,
+  contract: Address,
+  id: bigint,
+): Promise<{ uri: string | null; exists: boolean | null }> {
+  try {
+    const u = await client.readContract({
       address: contract,
-      abi: erc721Abi,
+      abi: tokenUriAbi,
       functionName: "tokenURI",
       args: [id],
     })
-    .catch(() =>
-      client
-        .readContract({
-          address: contract,
-          abi: erc1155UriAbi,
-          functionName: "uri",
-          args: [id],
-        })
-        .catch(() => null),
-    )
+    return { uri: u as string, exists: true }
+  } catch (err) {
+    if (isNonexistentTokenError(err)) return { uri: null, exists: false }
+    try {
+      const u = await client.readContract({
+        address: contract,
+        abi: erc1155UriAbi,
+        functionName: "uri",
+        args: [id],
+      })
+      return { uri: u as string, exists: true }
+    } catch {
+      return { uri: null, exists: null }
+    }
+  }
+}
 
-  if (!uriString) return null
-
+/** Fetch + parse the off-chain JSON behind a resolved tokenURI/uri. */
+async function fetchMetadataForUri(
+  uriString: string,
+  id: bigint,
+  fetchTimeoutMs: number,
+): Promise<TokenMetadata | null> {
   // ERC-1155 spec: substitute {id} with hex-padded token id (lowercase, 64 chars).
   const idHex = id.toString(16).padStart(64, "0")
-  const resolvedUri = (uriString as string).replace(/\{id\}/g, idHex)
+  const resolvedUri = uriString.replace(/\{id\}/g, idHex)
 
   // On-chain renderers (e.g. zorbs) return inline `data:application/json,…`
   // URIs. Don't hand these to fetch() — Node's fetch treats `#` as a URL
@@ -206,4 +309,52 @@ function parseDataUriJson(uri: string): TokenMetadata | null {
     }
     return null
   }
+}
+
+/**
+ * Does this viem error mean "the token does not exist on-chain" (burned or
+ * never minted), as opposed to a transient RPC failure or an unrelated
+ * revert? We check three independent signals because providers surface the
+ * revert differently: the viem-decoded error name (when the ABI carries the
+ * error fragment), the raw 4-byte selector embedded in the revert data, and
+ * legacy string reverts from pre-custom-error contracts. Conservative by
+ * design — returns true ONLY on a positive match, so a renderer failure or
+ * a generic revert never gets misclassified as a burn.
+ */
+function isNonexistentTokenError(err: unknown): boolean {
+  const parts: string[] = []
+  let cur: unknown = err
+  let depth = 0
+  while (cur && depth < 8) {
+    if (typeof cur === "string") {
+      parts.push(cur)
+      break
+    }
+    if (typeof cur === "object") {
+      const o = cur as Record<string, unknown>
+      for (const k of ["message", "shortMessage", "details", "reason", "signature"]) {
+        if (typeof o[k] === "string") parts.push(o[k] as string)
+      }
+      if (Array.isArray(o.metaMessages)) {
+        for (const m of o.metaMessages) if (typeof m === "string") parts.push(m)
+      }
+      // viem ContractFunctionRevertedError: decoded name + raw data live under `.data`.
+      const data = o.data as { errorName?: unknown; data?: unknown } | string | undefined
+      if (typeof data === "string") parts.push(data)
+      else if (data && typeof data === "object") {
+        if (typeof data.errorName === "string") parts.push(data.errorName)
+        if (typeof data.data === "string") parts.push(data.data)
+      }
+      cur = o.cause
+    } else {
+      break
+    }
+    depth++
+  }
+  const hay = parts.join("  ").toLowerCase()
+  return (
+    NONEXISTENT_ERROR_NAMES.some((n) => hay.includes(n)) ||
+    NONEXISTENT_SELECTORS.some((s) => hay.includes(s)) ||
+    NONEXISTENT_STRINGS.some((s) => hay.includes(s))
+  )
 }

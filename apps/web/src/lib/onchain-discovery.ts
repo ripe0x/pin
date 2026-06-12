@@ -12,7 +12,7 @@
  * call-site rewires happen.
  */
 import "server-only"
-import { resolveTokenMetadata } from "@pin/token-metadata"
+import { resolveTokenMetadataWithState } from "@pin/token-metadata"
 import { createPublicClient, http, parseAbi } from "viem"
 import { mainnet } from "viem/chains"
 import { sql } from "./db"
@@ -151,6 +151,13 @@ export type DirectTokenMetadata = {
   animation_url: string | null
   /** Canonical tokenURI the metadata came from (for "verify source" links). */
   rawUri: string | null
+  /**
+   * Token no longer exists on-chain (burned / never minted) — the `tokenURI`
+   * read reverted with a nonexistent-token error. Definitive: the token page
+   * 404s on it and artist grids filter it out. Resolved for free from the
+   * metadata read, so no extra `ownerOf` call.
+   */
+  burned: boolean
 }
 
 export async function resolveTokenMetadataDirect(
@@ -172,7 +179,7 @@ export async function resolveTokenMetadataDirect(
   // `raw_uri`.
   const RESOLVE_RETRY_COOLDOWN_MS = 60_000
   const rows = (await sql`
-    SELECT name, description, image_url, animation_url, raw_uri, fetched_at
+    SELECT name, description, image_url, animation_url, raw_uri, fetched_at, burned
     FROM token_metadata
     WHERE contract = ${contract.toLowerCase()} AND token_id = ${tokenId}
     LIMIT 1
@@ -183,9 +190,22 @@ export async function resolveTokenMetadataDirect(
     animation_url: string | null
     raw_uri: string | null
     fetched_at: Date
+    burned: boolean
   }>
   const row = rows[0]
   if (row) {
+    // Burned/nonexistent is permanent — return the verdict immediately and
+    // never re-resolve (the contract will keep reverting tokenURI forever).
+    if (row.burned) {
+      return {
+        name: row.name,
+        description: row.description,
+        image: row.image_url,
+        animation_url: row.animation_url,
+        rawUri: row.raw_uri,
+        burned: true,
+      }
+    }
     const hasContent = !!(
       row.name || row.description || row.image_url || row.animation_url
     )
@@ -200,6 +220,7 @@ export async function resolveTokenMetadataDirect(
         image: row.image_url,
         animation_url: row.animation_url,
         rawUri: row.raw_uri,
+        burned: false,
       }
     }
     // else: failed row, cooldown elapsed → fall through to re-resolve.
@@ -209,19 +230,27 @@ export async function resolveTokenMetadataDirect(
   // us to this, but if a user visits within seconds of mint discovery (or a
   // prior fetch failed), we resolve here and write through.
   try {
-    const meta = await resolveTokenMetadata(getClient(), contract, tokenId)
+    const { metadata: meta, exists } = await resolveTokenMetadataWithState(
+      getClient(),
+      contract,
+      tokenId,
+    )
+    // exists === false is a definitive burn; null is indeterminate (don't
+    // assert a burn we couldn't confirm).
+    const burned = exists === false
     await sql`
       INSERT INTO token_metadata
-        (contract, token_id, name, description, image_url, animation_url, raw_uri, fetched_at)
+        (contract, token_id, name, description, image_url, animation_url, raw_uri, burned, fetched_at)
       VALUES
         (${contract.toLowerCase()}, ${tokenId},
          ${meta?.name ?? null}, ${meta?.description ?? null},
          ${meta?.image ?? null}, ${meta?.animation_url ?? null},
-         ${meta?.uri ?? null}, NOW())
+         ${meta?.uri ?? null}, ${burned}, NOW())
       ON CONFLICT (contract, token_id) DO UPDATE SET
         name = EXCLUDED.name, description = EXCLUDED.description,
         image_url = EXCLUDED.image_url, animation_url = EXCLUDED.animation_url,
-        raw_uri = COALESCE(EXCLUDED.raw_uri, token_metadata.raw_uri), fetched_at = NOW()
+        raw_uri = COALESCE(EXCLUDED.raw_uri, token_metadata.raw_uri),
+        burned = EXCLUDED.burned, fetched_at = NOW()
     `
     return {
       name: meta?.name ?? null,
@@ -229,6 +258,7 @@ export async function resolveTokenMetadataDirect(
       image: meta?.image ?? null,
       animation_url: meta?.animation_url ?? null,
       rawUri: meta?.uri ?? null,
+      burned,
     }
   } catch {
     return null
@@ -300,11 +330,61 @@ export async function discoverArtistTokenRefs(
     new Set(indexed.map((r) => r.contract as string)),
   ).catch(() => [] as TokenRef[])
 
-  return [...indexed, ...seeded].sort((a, b) => {
+  const merged = [...indexed, ...seeded].sort((a, b) => {
     const ab = BigInt(a.mintBlock ?? 0)
     const bb = BigInt(b.mintBlock ?? 0)
     return ab === bb ? 0 : ab > bb ? -1 : 1
   })
+
+  // Drop works that no longer exist on-chain so burned tokens don't sit in
+  // the artist's grid as blank tiles. Two persisted signals, both written by
+  // the data layer (never a per-tile RPC here): `token_metadata.burned` (set
+  // when a tokenURI read reverts nonexistent — covers the seed/unclaimed
+  // path) and `token_owners.owner = 0x0` (the worker's burn Transfer —
+  // covers admitted artists). Filtering at the ref level keeps gallery
+  // totals and pagination correct.
+  // Degrade to "no filtering" if the lookup fails (e.g. the burned column
+  // hasn't been migrated onto this DB yet) — a missing existence signal must
+  // never 500 an artist page, just show what it would have shown before.
+  const gone = await findGoneTokens(merged).catch(() => new Set<string>())
+  return gone.size === 0
+    ? merged
+    : merged.filter(
+        (r) => !gone.has(`${r.contract.toLowerCase()}:${r.tokenId}`),
+      )
+}
+
+/**
+ * Given a set of token refs, return the keys (`contract:tokenId`, contract
+ * lowercased) of those confirmed to no longer exist on-chain — burned per
+ * `token_metadata.burned`, or owned by the zero address per `token_owners`.
+ * One bounded Postgres query, no RPC.
+ */
+async function findGoneTokens(
+  refs: ReadonlyArray<{ contract: string; tokenId: string }>,
+): Promise<Set<string>> {
+  if (!sql || refs.length === 0) return new Set()
+  const contracts = refs.map((r) => r.contract.toLowerCase())
+  const tokenIds = refs.map((r) => String(r.tokenId))
+  const rows = (await sql`
+    WITH wanted (contract, token_id) AS (
+      SELECT DISTINCT * FROM unnest(
+        ${contracts}::text[],
+        ${tokenIds}::text[]
+      ) AS t(contract, token_id)
+    )
+    SELECT w.contract, w.token_id
+    FROM wanted w
+    WHERE EXISTS (
+      SELECT 1 FROM token_metadata m
+      WHERE m.contract = w.contract AND m.token_id = w.token_id AND m.burned
+    ) OR EXISTS (
+      SELECT 1 FROM token_owners o
+      WHERE o.contract = w.contract AND o.token_id = w.token_id
+        AND o.owner = '0x0000000000000000000000000000000000000000'
+    )
+  `) as Array<{ contract: string; token_id: string }>
+  return new Set(rows.map((r) => `${r.contract}:${r.token_id}`))
 }
 
 /** Per-artist seed discovery for the unclaimed-page path. */

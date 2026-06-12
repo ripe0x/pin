@@ -13,7 +13,7 @@
  */
 import { sql } from "../db.ts"
 import { client } from "../rpc.ts"
-import { resolveTokenMetadata } from "@pin/token-metadata"
+import { resolveTokenMetadataWithState } from "@pin/token-metadata"
 import type { TaskResult } from "../scheduler.ts"
 
 const BATCH_SIZE = Number(process.env.WARMER_BATCH_SIZE ?? "50")
@@ -87,6 +87,8 @@ async function findCandidates(): Promise<Candidate[]> {
         OR (
           m.name IS NULL AND m.description IS NULL
           AND m.image_url IS NULL AND m.animation_url IS NULL
+          -- Burned/nonexistent is permanent — never re-attempt it.
+          AND NOT m.burned
           AND m.fetched_at < NOW() - INTERVAL '${RETRY_AFTER.replace(/'/g, "''")}'
         )
      LIMIT ${BATCH_SIZE}`,
@@ -96,19 +98,26 @@ async function findCandidates(): Promise<Candidate[]> {
 
 async function processOne(c: Candidate): Promise<"resolved" | "empty"> {
   try {
-    const meta = await resolveTokenMetadata(client, c.contract, c.tokenId)
+    const { metadata: meta, exists } = await resolveTokenMetadataWithState(
+      client,
+      c.contract,
+      c.tokenId,
+    )
+    // exists === false is a definitive burn; null is indeterminate (leave the
+    // flag at its default false so we don't hide a token we couldn't confirm).
+    const burned = exists === false
     await sql`
       INSERT INTO token_metadata
-        (contract, token_id, name, description, image_url, animation_url, raw_uri, fetched_at)
+        (contract, token_id, name, description, image_url, animation_url, raw_uri, burned, fetched_at)
       VALUES
         (${c.contract}, ${c.tokenId},
          ${meta?.name ?? null}, ${meta?.description ?? null},
          ${meta?.image ?? null}, ${meta?.animation_url ?? null},
-         ${meta?.uri ?? null}, NOW())
+         ${meta?.uri ?? null}, ${burned}, NOW())
       ON CONFLICT (contract, token_id) DO UPDATE SET
         name = EXCLUDED.name, description = EXCLUDED.description,
         image_url = EXCLUDED.image_url, animation_url = EXCLUDED.animation_url,
-        raw_uri = EXCLUDED.raw_uri, fetched_at = NOW()
+        raw_uri = EXCLUDED.raw_uri, burned = EXCLUDED.burned, fetched_at = NOW()
     `
     const hasContent = meta && (meta.name || meta.description || meta.image || meta.animation_url)
     return hasContent ? "resolved" : "empty"

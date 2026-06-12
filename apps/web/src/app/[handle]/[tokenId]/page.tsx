@@ -189,8 +189,15 @@ const getTokenPageData = cache(async (handle: string, tokenId: string) => {
   // "not found" instead of a blank artwork shell — without ever 404-ing a
   // real-but-unindexed token (the probe only says false on a confirmed
   // ERC-721 whose ownerOf reverts).
+  //
+  // A burned token (`meta.burned`) is a definitive nonexistence already
+  // resolved from the tokenURI read — 404 it directly, even when a stale
+  // metadata row still carries the old title/image, so it doesn't render as
+  // a blank/ghost artwork. No extra chain probe needed.
   let notFound = false
-  if (!meta && !onChainData && !erc1155) {
+  if (meta?.burned) {
+    notFound = true
+  } else if (!meta && !onChainData && !erc1155) {
     notFound = (await tokenExistsOnChain(contract, tokenId)) === false
   }
 
