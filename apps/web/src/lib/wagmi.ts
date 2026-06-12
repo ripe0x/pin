@@ -74,13 +74,29 @@ export const forkChain = foundry
 // segment, into every visitor's browser. The flag stays a flag (`"1"`
 // or unset), so there's nothing in the bundle worth scraping.
 const isLocalRpc = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
-const mainnetTransport = isLocalRpc
-  ? http(anvilUrl)
-  : // In production, route browser RPC through our server-side
-    // `/api/rpc` proxy so the Alchemy API key never reaches the bundle.
-    // The proxy enforces a method allowlist + per-IP rate limit, which
-    // keeps anonymous abuse from burning through the monthly CU cap.
-    http("/api/rpc")
+
+// In production, route browser RPC through our server-side `/api/rpc` proxy
+// so the Alchemy API key never reaches the bundle. The proxy enforces a
+// method allowlist + per-IP rate limit, which keeps anonymous abuse from
+// burning through the monthly CU cap.
+//
+// This URL MUST be absolute on the client. viem's own `http` transport
+// happily resolves a relative "/api/rpc" against the document base, but
+// WalletConnect's AppKit/UniversalProvider builds its OWN JSON-RPC HTTP
+// providers from these transports and validates each URL as an absolute
+// http(s) URL. A relative path makes it throw
+//   "Provided URL is not compatible with HTTP connection: /api/rpc"
+// from `checkStorage -> createProviders` while it restores a persisted
+// session — which silently aborts the WalletConnect AND Rainbow connect
+// flows for every visitor who has connected before (the session survives a
+// hard refresh). So resolve it against the current origin in the browser;
+// during SSR there's no WC provider and wagmi makes no live reads through
+// this transport, so the relative path is fine there.
+const rpcProxyUrl =
+  typeof window === "undefined"
+    ? "/api/rpc"
+    : new URL("/api/rpc", window.location.origin).toString()
+const mainnetTransport = isLocalRpc ? http(anvilUrl) : http(rpcProxyUrl)
 
 const transports = {
   [mainnet.id]: mainnetTransport,
