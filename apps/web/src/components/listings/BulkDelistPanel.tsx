@@ -7,7 +7,19 @@ import { useSellerListings } from "@/lib/useSellerListings"
 import { BATCH_CHUNK_SIZE, useSequentialCancel } from "@/lib/useSequentialCancel"
 import { SellerListingsView } from "@/components/listings/SellerListingsView"
 
-export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
+export function BulkDelistPanel({
+  artistAddress,
+  showEmptyState = false,
+}: {
+  artistAddress: string
+  /**
+   * When true, a clean zero-listings result renders a quiet
+   * confirmation card instead of nothing. The artist page historically
+   * hid the panel entirely; on a dedicated studio page an empty render
+   * reads as broken.
+   */
+  showEmptyState?: boolean
+}) {
   const { address: connectedAddress } = useAccount()
   const isOwner =
     !!connectedAddress &&
@@ -101,7 +113,16 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
     )
   }
 
-  if (total === 0) return null
+  if (total === 0) {
+    if (!showEmptyState) return null
+    return (
+      <Section>
+        <p className="text-sm text-gray-500">
+          No active listings on Foundation or SuperRare.
+        </p>
+      </Section>
+    )
+  }
 
   const allItems: SellerListing[] = [...state.auctions, ...state.buyNows]
   const allSelected = selected.size === total
@@ -162,6 +183,30 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
           >
             Refresh
           </button>
+        </div>
+      )}
+
+      {/* Rows render immediately; names + thumbnails stream in behind
+          them (see useSellerListings.metaProgress). For a 294-listing
+          seller this turns ~30s of blank "loading" into instant rows
+          plus a visible fill-in. */}
+      {state.metaProgress && (
+        <div className="mb-4" aria-live="polite">
+          <p className="text-[11px] font-mono text-gray-500 mb-1.5 tabular-nums">
+            Loading artwork details… {state.metaProgress.resolved}/
+            {state.metaProgress.total}
+          </p>
+          <div className="h-1 w-full bg-gray-100 overflow-hidden">
+            <div
+              className="h-full bg-fg transition-[width] duration-300"
+              style={{
+                width: `${Math.round(
+                  (state.metaProgress.resolved / state.metaProgress.total) *
+                    100,
+                )}%`,
+              }}
+            />
+          </div>
         </div>
       )}
 

@@ -8,7 +8,8 @@ import { useRouter } from "next/navigation"
 /**
  * Three plain-text entry points for the home hero. Two of them
  * (deploy / sell) require a connected wallet — they open the connect
- * modal when disconnected, otherwise route to the artist's own page.
+ * modal when disconnected, otherwise route to the artist's studio
+ * auctions tab, where deploying and listing both live.
  */
 export function HomeEntryPoints() {
   const { address } = useAccount()
@@ -18,7 +19,7 @@ export function HomeEntryPoints() {
   function handleConnectGated(e: React.MouseEvent) {
     e.preventDefault()
     if (address) {
-      router.push(`/artist/${address}`)
+      router.push(`/studio/${address.toLowerCase()}/auctions`)
     } else {
       openConnectModal?.()
     }

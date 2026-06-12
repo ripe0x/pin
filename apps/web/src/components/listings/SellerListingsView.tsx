@@ -50,16 +50,8 @@ type Props = {
 export function SellerListingsView(props: Props) {
   const { auctions, buyNows, meta } = props
 
-  // Single platform: keep the original "Reserve auctions / Buy now"
-  // headers (less noise). Multi-platform: add a top-level platform
-  // header so the sections are unambiguous.
-  const platformsWithRows = PLATFORM_ORDER.filter((p) => {
-    const a = auctions.some((x) => x.platform === p)
-    const b = buyNows.some((x) => x.platform === p)
-    return a || b
-  })
-  const showPlatformHeader = platformsWithRows.length > 1
-
+  // Always group by platform with a labeled header — even when only one
+  // platform has rows, the label answers "listed where?" at a glance.
   return (
     <>
       {PLATFORM_ORDER.map((platform) => {
@@ -69,16 +61,11 @@ export function SellerListingsView(props: Props) {
           return null
 
         return (
-          <div
-            key={platform}
-            className={showPlatformHeader ? "mb-5 last:mb-0" : ""}
-          >
-            {showPlatformHeader && (
-              <p className="text-[11px] uppercase tracking-[0.08em] text-gray-500 mb-2">
-                {PLATFORM_LABELS[platform]} ·{" "}
-                {platformAuctions.length + platformBuyNows.length}
-              </p>
-            )}
+          <div key={platform} className="mb-5 last:mb-0">
+            <p className="text-[11px] uppercase tracking-[0.08em] text-gray-500 mb-2">
+              {PLATFORM_LABELS[platform]} ·{" "}
+              {platformAuctions.length + platformBuyNows.length}
+            </p>
             {platformAuctions.length > 0 && (
               <Group title="Reserve auctions (no bids)">
                 {platformAuctions.map((a) => (

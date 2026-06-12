@@ -10,6 +10,9 @@ import type { MetadataRoute } from "next"
  *  - ?page= deep pagination — gallery pages beyond the first fan out
  *    enrichment work per page; bots get everything they need from
  *    page one.
+ *  - /studio — owner workspaces (also noindex'd at the layout); no
+ *    crawlable content, and every page would cost a per-address
+ *    identity resolve.
  *
  * crawlDelay paces the polite crawlers across the ~49k artist URLs so
  * a full-site sweep trickles instead of bursting. Impolite bots ignore
@@ -21,7 +24,7 @@ export default function robots(): MetadataRoute.Robots {
     rules: [
       {
         userAgent: "*",
-        disallow: ["/api/", "/*?page="],
+        disallow: ["/api/", "/studio", "/*?page="],
         crawlDelay: 2,
       },
     ],

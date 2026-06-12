@@ -147,12 +147,22 @@ export async function fetchSellerCancellableListings(
  * across every visitor.
  *
  * Errors per token are swallowed — caller gets a `#<tokenId>` fallback.
+ *
+ * `onItem` (optional) fires as each token resolves, so callers can
+ * stream results into the UI instead of blocking on the full batch —
+ * a 294-listing seller resolves over many seconds, and waiting for all
+ * of it before rendering anything reads as a hung page.
  */
 export async function resolveListingMetadata(
   listings: SellerListing[],
+  opts?: { onItem?: (id: string, meta: SellerListingMeta) => void },
 ): Promise<Map<string, SellerListingMeta>> {
   const out = new Map<string, SellerListingMeta>()
   if (listings.length === 0) return out
+  const emit = (id: string, meta: SellerListingMeta) => {
+    out.set(id, meta)
+    opts?.onItem?.(id, meta)
+  }
 
   // Concurrency-limit so a seller with hundreds of listings doesn't burst
   // past the route's per-IP rate limit (120/min). 16 in flight keeps a
@@ -172,18 +182,18 @@ export async function resolveListingMetadata(
           `/api/meta/${l.nftContract}/${l.tokenId}`,
           { signal: AbortSignal.timeout(12_000) },
         )
-        if (!r.ok) { out.set(l.id, fallback); continue }
+        if (!r.ok) { emit(l.id, fallback); continue }
         const body = (await r.json()) as {
           metadata: { name?: string; image?: string } | null
           mediaUri: string | null
         }
-        if (!body.metadata) { out.set(l.id, fallback); continue }
-        out.set(l.id, {
+        if (!body.metadata) { emit(l.id, fallback); continue }
+        emit(l.id, {
           displayName: body.metadata.name ?? fallback.displayName,
           imageUrl: body.mediaUri,
         })
       } catch {
-        out.set(l.id, fallback)
+        emit(l.id, fallback)
       }
     }
   }

@@ -53,9 +53,9 @@ shared contract you want indexed for everyone. See
 ### Platforms PND currently indexes
 
 Surfaced to artists in the Catalog import flow (the "PND's sources"
-tooltip on `/catalog/[address]`) and in the refresh button on
-`/catalog/[address]` (`RefreshButton`). Adding a platform → bump all
-three.
+tooltip on `/studio/[address]/catalog`) and in the refresh button on
+the same studio page (`RefreshButton`); `/catalog/[address]` is the
+read-only public record. Adding a platform → bump all three.
 
 - **Foundation** — `apps/worker/src/tasks/scan-fnd-collections.ts` for
   artist-deployed FND collections, plus the shared `FoundationNFT` 1/1

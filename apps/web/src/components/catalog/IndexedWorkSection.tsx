@@ -3,14 +3,15 @@
 import { useState } from "react"
 import type { Address } from "viem"
 import type { NormalizedPlan } from "@/lib/import-sources/types"
-import { useIsCatalogOwner } from "./useIsCatalogOwner"
+import { useIsStudioOwner } from "@/components/studio/useIsStudioOwner"
 import { ImportPlanner } from "./ImportPlanner"
 import { INDEXED_PLATFORM_NAMES } from "@/lib/indexed-platforms"
 
 /**
- * Inline panel on `/catalog/[address]` that pre-seeds the Catalog form
- * with the artist's already-indexed work. Only shown when the connected
- * wallet matches the URL artist (same gate as `AddEntrySection`).
+ * Inline panel on `/studio/[address]/catalog` that pre-seeds the
+ * Catalog form with the artist's already-indexed work. Only shown when
+ * the connected wallet matches the studio artist (same gate as
+ * `AddEntrySection`).
  *
  * The plan is fetched server-side by the page (so the empty-state check
  * doesn't require a client roundtrip) and passed in fully-normalized.
@@ -19,9 +20,9 @@ import { INDEXED_PLATFORM_NAMES } from "@/lib/indexed-platforms"
  *
  * Wraps the existing `ImportPlanner` UI 1:1 — same checkbox + per-
  * contract "whole vs specific" mode + multicall signing flow that lives
- * at `/artist/[address]/import?source=pnd-indexed`. We render it here
- * too so artists don't have to navigate away from /catalog to seed
- * their declarations from indexed data.
+ * at `/studio/[address]/catalog/import?source=pnd-indexed`. We render
+ * it here too so artists don't have to navigate away from the catalog
+ * tab to seed their declarations from indexed data.
  */
 export function IndexedWorkSection({
   artist,
@@ -32,7 +33,7 @@ export function IndexedWorkSection({
   plan: NormalizedPlan
   fetchError: string | null
 }) {
-  const isOwner = useIsCatalogOwner(artist)
+  const isOwner = useIsStudioOwner(artist)
   const [minimized, setMinimized] = useState(false)
   if (!isOwner) return null
   if (plan.ops.length === 0 && plan.alreadyIndexed.length === 0) return null

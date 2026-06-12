@@ -10,8 +10,6 @@ import type { SovereignAuctionLite } from "@/lib/auctions"
 import { createProvider, type PinStatus } from "@/lib/pinning"
 import { useThumbnailMedia } from "@/lib/use-thumbnail-media"
 import { TokenPinStatus } from "@/components/preserve/TokenPinStatus"
-import { DeployHouseCTA } from "@/components/auction/DeployHouseCTA"
-import { useArtistHouse } from "@/components/auction/useArtistHouse"
 import { PlatformChip } from "@/components/PlatformChip"
 import { TokenCard } from "@/components/TokenCard"
 import { MuriTileBadge } from "@/components/token/MuriBadge"
@@ -23,12 +21,13 @@ export function ArtistGallery({
   artistAddress: string
   initialPage: GalleryPage
 }) {
+  // isOwner only feeds per-card pin-status affordances now — the
+  // deploy/list CTAs moved to /studio/[address]/auctions so the public
+  // gallery stays pure for everyone, including the artist.
   const { address: connectedAddress } = useAccount()
   const isOwner =
     !!connectedAddress &&
     connectedAddress.toLowerCase() === artistAddress.toLowerCase()
-  const { houseAddress } = useArtistHouse(artistAddress)
-  const showStartAuctionLink = isOwner && !!houseAddress
 
   const {
     data,
@@ -151,19 +150,6 @@ export function ArtistGallery({
   if (initialPage.total === 0) {
     return (
       <div className="space-y-6">
-        {isOwner && (
-          <div className="max-w-xl space-y-3">
-            <DeployHouseCTA artistAddress={artistAddress} />
-            {showStartAuctionLink && (
-              <Link
-                href="/auction/new"
-                className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors"
-              >
-                Start an auction →
-              </Link>
-            )}
-          </div>
-        )}
         <div className="text-center py-16 text-gray-400">
           <p className="text-lg">No works found</p>
           <p className="text-sm mt-1">
@@ -177,19 +163,6 @@ export function ArtistGallery({
 
   return (
     <div className="space-y-6">
-      {isOwner && (
-        <div className="max-w-xl space-y-3">
-          <DeployHouseCTA artistAddress={artistAddress} />
-          {showStartAuctionLink && (
-            <Link
-              href="/auction/new"
-              className="block w-full text-center text-sm font-medium py-3 border border-gray-200 hover:border-gray-400 transition-colors"
-            >
-              Start an auction →
-            </Link>
-          )}
-        </div>
-      )}
       <div className="columns-1 sm:columns-2 lg:columns-4 gap-6 [&>*]:mb-6 [&>*]:break-inside-avoid">
         {items.map((item) => (
           <GalleryCard

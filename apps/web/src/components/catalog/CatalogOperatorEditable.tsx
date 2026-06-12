@@ -1,7 +1,7 @@
 "use client"
 
 import type { Address } from "viem"
-import { useIsCatalogOwner } from "./useIsCatalogOwner"
+import { useIsStudioOwner } from "@/components/studio/useIsStudioOwner"
 import { OperatorEditPanel } from "./OperatorEditPanel"
 
 /**
@@ -11,7 +11,7 @@ import { OperatorEditPanel } from "./OperatorEditPanel"
  * the record.
  */
 export function CatalogOperatorEditable({ artist }: { artist: Address }) {
-  const isOwner = useIsCatalogOwner(artist)
+  const isOwner = useIsStudioOwner(artist)
   if (!isOwner) return null
   return (
     <section className="space-y-3">
