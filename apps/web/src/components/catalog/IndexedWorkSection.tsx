@@ -88,7 +88,7 @@ export function IndexedWorkSection({
               <span
                 id="pnd-sources-tooltip"
                 role="tooltip"
-                className="pointer-events-none absolute left-0 top-full z-10 mt-1.5 whitespace-nowrap rounded-md bg-gray-900 px-2.5 py-1.5 text-[11px] font-medium text-white shadow-md opacity-0 transition-opacity duration-100 group-hover:opacity-100 group-focus-within:opacity-100"
+                className="pointer-events-none absolute left-0 top-full z-10 mt-1.5 whitespace-nowrap rounded-md bg-fg px-2.5 py-1.5 text-[11px] font-medium text-bg shadow-md opacity-0 transition-opacity duration-100 group-hover:opacity-100 group-focus-within:opacity-100"
               >
                 Indexed: {INDEXED_PLATFORM_NAMES.join(", ")}
               </span>

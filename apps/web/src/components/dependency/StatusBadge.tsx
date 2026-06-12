@@ -11,7 +11,7 @@ const LABELS: Record<CheckStatus, string> = {
 const STYLES: Record<CheckStatus, string> = {
   Detected: "border-emerald-300 text-emerald-700 bg-emerald-50",
   Checked: "border-emerald-300 text-emerald-700 bg-emerald-50",
-  NotFound: "border-gray-200 text-gray-500 bg-white",
+  NotFound: "border-gray-200 text-gray-500 bg-surface",
   NotYet: "border-gray-200 text-gray-400 bg-gray-50",
   Unable: "border-gray-200 text-gray-400 bg-gray-50",
 }

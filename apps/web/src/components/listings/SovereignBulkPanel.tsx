@@ -896,7 +896,7 @@ function TokenRow({
         checked={checked}
         onChange={onToggle}
         disabled={disabled}
-        className="h-4 w-4 shrink-0 accent-black disabled:opacity-40"
+        className="h-4 w-4 shrink-0 accent-fg disabled:opacity-40"
         aria-label={`Select ${displayName}`}
       />
       <div className="h-10 w-10 shrink-0 bg-gray-100 overflow-hidden">
