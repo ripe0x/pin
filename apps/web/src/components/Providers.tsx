@@ -5,10 +5,38 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { WagmiProvider } from "wagmi"
 import { useEffect, useState, type ReactNode } from "react"
 import { ThemeProvider, useTheme } from "next-themes"
+import { reconnect } from "@wagmi/core"
 import { config } from "@/lib/wagmi"
 import { DevImpersonate } from "@/components/DevImpersonate"
+import { repairWalletConnectRpcStorage } from "@/lib/wc-rpc-storage-repair"
 
 import "@rainbow-me/rainbowkit/styles.css"
+
+/**
+ * Repairs WalletConnect storage poisoned by an old build's relative "/api/rpc"
+ * RPC URL, then triggers wagmi's reconnect — in that order.
+ *
+ * Ordering is the whole point. WagmiProvider is mounted with
+ * `reconnectOnMount={false}` so it does NOT auto-create the WalletConnect
+ * provider on load. If it did, that provider would read the still-poisoned
+ * rpcMap from IndexedDB and cache a relative URL in memory (racing — and
+ * beating — a fire-and-forget repair), which later throws
+ * "Provided URL is not compatible with HTTP connection: /api/rpc" the moment
+ * the user clicks Rainbow/WalletConnect. Repairing first, then reconnecting,
+ * guarantees the provider only ever sees the absolute URL.
+ */
+function WalletConnectRepairGate() {
+  useEffect(() => {
+    let cancelled = false
+    repairWalletConnectRpcStorage().finally(() => {
+      if (!cancelled) void reconnect(config)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+  return null
+}
 
 const rkLight = lightTheme({
   accentColor: "#000000",
@@ -63,8 +91,9 @@ export function Providers({ children }: { children: ReactNode }) {
       storageKey="foundation-theme"
       disableTransitionOnChange
     >
-      <WagmiProvider config={config}>
+      <WagmiProvider config={config} reconnectOnMount={false}>
         <QueryClientProvider client={queryClient}>
+          <WalletConnectRepairGate />
           <RainbowKitWithTheme>
             <DevImpersonate />
             {children}
