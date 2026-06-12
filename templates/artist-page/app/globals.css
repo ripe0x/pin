@@ -5,13 +5,23 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  /* Color system — base swatches */
+  /* Color system — base swatches.
+     The full neutral ramp is pure gray (no blue cast). Defining every
+     shade here keeps Tailwind's blue-tinted defaults (gray-50, -300,
+     -500, -700, -800, -900, -950) from leaking into the palette. */
   --color-white: #FFFFFF;
   --color-black: #000000;
+  --color-gray-50: #FAFAFA;
   --color-gray-100: #F2F2F2;
   --color-gray-200: #E6E6E6;
+  --color-gray-300: #CCCCCC;
   --color-gray-400: #999999;
+  --color-gray-500: #808080;
   --color-gray-600: #666666;
+  --color-gray-700: #4D4D4D;
+  --color-gray-800: #333333;
+  --color-gray-900: #1A1A1A;
+  --color-gray-950: #0D0D0D;
 
   /* Semantic theme tokens (light defaults; overridden under .dark) */
   --color-bg: #FFFFFF;
@@ -70,11 +80,34 @@
   --color-border-strong: #3A3A3A;
 
   /* Re-tune the neutral scale for dark mode so existing gray-* utilities
-     flip automatically without per-class dark: variants. */
+     flip automatically without per-class dark: variants. The ramp keeps
+     its role, not its lightness: low shades stay surfaces, high shades
+     stay text, so gray-50 is "barely above bg" and gray-900 is "almost fg"
+     in both themes.
+
+     Mapping intent (light → dark):
+       gray-50  (barely-there bg)     FAFAFA → 161616
+       gray-100 (subtle surface bg)   F2F2F2 → 1C1C1C
+       gray-200 (subtle border)       E6E6E6 → 262626
+       gray-300 (mid border)          CCCCCC → 303030
+       gray-400 (placeholder, subtle) 999999 → 6E6E6E
+       gray-500 (tertiary text)       808080 → 858585
+       gray-600 (secondary text)      666666 → 9E9E9E  (lighter for legibility)
+       gray-700 (strong secondary)    4D4D4D → B8B8B8
+       gray-800 (near-fg text)        333333 → D0D0D0
+       gray-900 (fg-strength ink)     1A1A1A → E8E8E8
+       gray-950 (max ink)             0D0D0D → F5F5F5 */
+  --color-gray-50: #161616;
   --color-gray-100: #1C1C1C;
   --color-gray-200: #262626;
+  --color-gray-300: #303030;
   --color-gray-400: #6E6E6E;
+  --color-gray-500: #858585;
   --color-gray-600: #9E9E9E;
+  --color-gray-700: #B8B8B8;
+  --color-gray-800: #D0D0D0;
+  --color-gray-900: #E8E8E8;
+  --color-gray-950: #F5F5F5;
 
   --color-status-available: #3FCB6B;
   --color-status-live: #CBA1FC;
