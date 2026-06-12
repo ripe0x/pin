@@ -33,23 +33,6 @@ const DURATION_OPTIONS = [
   { label: "7 days", seconds: 7 * 24 * 60 * 60 },
 ] as const
 
-/**
- * Bust the cached auction state for a batch of tokens after a bulk write
- * succeeds. Mirrors the `useRevalidateAuctionOnSuccess` pattern in
- * `AuctionPanel.tsx` but for arbitrary lists. Failures are swallowed —
- * `router.refresh()` and the existing 30s TTL are the user's safety net.
- */
-function revalidateAuctionsForTokens(
-  pairs: Array<{ contract: string; tokenId: string }>,
-) {
-  for (const { contract, tokenId } of pairs) {
-    const url = `/api/auction/revalidate?contract=${encodeURIComponent(
-      contract,
-    )}&tokenId=${encodeURIComponent(tokenId)}`
-    fetch(url, { method: "POST" }).catch(() => {})
-  }
-}
-
 const PAGE_SIZE = 100
 
 const auctionCreatedEvent = parseAbiItem(
@@ -324,13 +307,6 @@ function BulkListSection({
           args: [contract, tokenIds, reserveWei, BigInt(durationSec)],
         })
         await waitForTransactionReceipt(wagmiConfig, { hash: createHash })
-
-        // Surgically invalidate the cached auction state for each token
-        // we just listed so any open page renders fresh on the next hit
-        // (instead of serving stale "no auction" for ~30s).
-        revalidateAuctionsForTokens(
-          items.map((i) => ({ contract: i.contract, tokenId: i.tokenId })),
-        )
       }
 
       setRunning(null)
@@ -505,17 +481,17 @@ function BulkCancelSection({
     refresh()
   }, [refresh])
 
-  // After cancel tx confirms: revalidate the cached auction state for each
-  // affected token (so other open browsers render fresh on next hit), then
-  // refresh local + router state.
+  // After cancel tx confirms: refresh local + router state. The 30s
+  // auction-state cache TTL covers other open browsers. (This used to
+  // also POST /api/auction/revalidate per token, but that route was
+  // removed in the v2 rebuild — the calls 404'd silently.)
   useEffect(() => {
     if (!isSuccess) return
-    revalidateAuctionsForTokens(pendingCancels)
     setPendingCancels([])
     router.refresh()
     refresh()
     resetWrite()
-  }, [isSuccess, refresh, resetWrite, router, pendingCancels])
+  }, [isSuccess, refresh, resetWrite, router])
 
   if (load.kind === "loading") {
     return (
