@@ -1,7 +1,7 @@
 "use client"
 
 import type { Address } from "viem"
-import { useIsCatalogOwner } from "./useIsCatalogOwner"
+import { useIsStudioOwner } from "@/components/studio/useIsStudioOwner"
 import { RemoveRowButton } from "./RemoveRowButton"
 import { TokenLabel } from "./CatalogRowLabels"
 
@@ -12,7 +12,7 @@ export function CatalogTokensEditable({
   artist: Address
   tokens: Array<{ contractAddress: string; tokenId: string }>
 }) {
-  const isOwner = useIsCatalogOwner(artist)
+  const isOwner = useIsStudioOwner(artist)
   if (tokens.length === 0) {
     return <p className="text-sm text-gray-500">No tokens declared yet.</p>
   }

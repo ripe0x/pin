@@ -5,39 +5,30 @@ import type { Address } from "viem"
 import { resolveEnsAddress, getArtistIdentity } from "@/lib/artist-queries"
 import { getCachedCatalog } from "@/lib/catalog-cache"
 import { getContractThumbnails } from "@/lib/catalog-thumbs"
-import { RefreshButton } from "@/components/catalog/RefreshButton"
 
 /**
+ * The public, read-only record of an artist's self-declared catalog.
+ * Management (pre-fill planner, manual add, removes, refresh,
+ * operators) lives in /studio/[address]/catalog — the owner sees a
+ * "Manage in studio" link here where the edit UI used to render.
+ *
  * Incremental Static Regeneration — the rendered HTML is cached at the
  * CDN per-URL on first hit and regenerated in the background at most
- * once every 60s. Most visitors hit a static response; the function
- * only fires on revalidation, and when it does the underlying read is
- * a handful of Postgres SELECTs (see `lib/catalog.ts`) instead of a
- * viem multicall against the chain. Combined cost in steady state is
- * ~nothing per visitor.
- *
- * The post-write `useCatalogWrite` flow still fires
- * `revalidateTag("catalog")` from `/api/catalog/[address]/revalidate`,
- * which evicts every ISR entry that touched `getCachedCatalog`.
+ * once an hour. Catalog records change rarely (artist-initiated edits)
+ * and every write fires `revalidateTag("catalog")` from
+ * `/api/catalog/[address]/revalidate`, which evicts every ISR entry
+ * that touched `getCachedCatalog` — so the timer is only a backstop,
+ * and visitors read a handful of cached Postgres SELECTs, never the
+ * chain.
  */
-// 1 hour. Catalog records change rarely (artist-initiated edits) and
-// every write fires revalidateTag("catalog") for instant freshness, so
-// this timer is only a backstop. A short timer would needlessly
-// re-run the page's server work (pnd-indexed plan + per-contract
-// Alchemy getContractMetadata calls + DB connections) every minute for
-// data that's effectively static between edits. No live-auction data
-// lives on this page, so the long timer costs nothing in freshness.
 export const revalidate = 3600
 import { AddressZorb } from "@/components/AddressZorb"
 import { CopyAddressButton } from "@/components/CopyAddressButton"
 import { CatalogSummary } from "@/components/catalog/CatalogSummary"
-import { AddEntrySection } from "@/components/catalog/AddEntrySection"
-import { CatalogContractsEditable } from "@/components/catalog/CatalogContractsEditable"
-import { CatalogTokensEditable } from "@/components/catalog/CatalogTokensEditable"
-import { CatalogRangesEditable } from "@/components/catalog/CatalogRangesEditable"
-import { IndexedWorkSection } from "@/components/catalog/IndexedWorkSection"
-import { pndIndexedSource } from "@/lib/import-sources/pnd-indexed"
-import { normalize } from "@/lib/import-sources/normalize"
+import { ManageInStudioLink } from "@/components/catalog/ManageInStudioLink"
+import { CatalogContractsSection } from "@/components/catalog/CatalogContractsSection"
+import { CatalogTokensSection } from "@/components/catalog/CatalogTokensSection"
+import { CatalogRangesSection } from "@/components/catalog/CatalogRangesSection"
 
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/
 
@@ -126,36 +117,6 @@ async function RecordBody({ address }: { address: Address }) {
   )
   const thumbnails = await getContractThumbnails(contractAddressesForThumbs)
 
-  // Pre-seed plan from PND's indexed work. Fetched server-side so the
-  // empty-state check ("does this artist have anything we could
-  // pre-fill?") doesn't require a client round-trip. The IndexedWorkSection
-  // component itself gates rendering on (a) wallet ownership matches
-  // and (b) plan is non-empty.
-  let indexedPlan: ReturnType<typeof normalize> | null = null
-  let indexedPlanError: string | null = null
-  try {
-    const source = pndIndexedSource(address)
-    const fetched = await source.fetchWorks()
-    indexedPlan = normalize(
-      fetched.works,
-      {
-        contracts: record.contracts.map((c) => c.toLowerCase() as Address),
-        tokens: record.tokens.map((t) => ({
-          contractAddress: t.contractAddress.toLowerCase() as Address,
-          tokenId: t.tokenId,
-        })),
-        tokenRanges: record.tokenRanges.map((r) => ({
-          contractAddress: r.contractAddress.toLowerCase() as Address,
-          startTokenId: r.startTokenId,
-          endTokenId: r.endTokenId,
-        })),
-      },
-      fetched.skipped,
-    )
-  } catch (e) {
-    indexedPlanError =
-      e instanceof Error ? e.message : "Failed to load indexed work."
-  }
   const empty =
     record.contracts.length === 0 &&
     record.tokens.length === 0 &&
@@ -225,7 +186,7 @@ async function RecordBody({ address }: { address: Address }) {
           </div>
         </div>
 
-        <RefreshButton artistAddress={address} />
+        <ManageInStudioLink artist={address} />
       </div>
 
       {empty && (
@@ -233,34 +194,6 @@ async function RecordBody({ address }: { address: Address }) {
           This catalog is empty. The artist controls what appears here.
         </div>
       )}
-
-      {indexedPlan && (
-        <IndexedWorkSection
-          artist={address}
-          plan={indexedPlan}
-          fetchError={indexedPlanError}
-        />
-      )}
-
-      <AddEntrySection
-        artist={address}
-        prefillPanelPresent={
-          !!indexedPlan &&
-          (indexedPlan.ops.length > 0 || indexedPlan.alreadyIndexed.length > 0)
-        }
-        existing={{
-          contracts: record.contracts.map((c) => c.toLowerCase()),
-          tokens: record.tokens.map((t) => ({
-            contractAddress: t.contractAddress.toLowerCase(),
-            tokenId: t.tokenId,
-          })),
-          tokenRanges: record.tokenRanges.map((r) => ({
-            contractAddress: r.contractAddress.toLowerCase(),
-            startTokenId: r.startTokenId,
-            endTokenId: r.endTokenId,
-          })),
-        }}
-      />
 
       {record.contracts.length > 0 && (
         <section className="space-y-3">
@@ -270,8 +203,7 @@ async function RecordBody({ address }: { address: Address }) {
               record.contracts.length === 1 ? "entry" : "entries"
             }`}
           />
-          <CatalogContractsEditable
-            artist={address}
+          <CatalogContractsSection
             contracts={record.contracts}
             thumbnails={thumbnails}
           />
@@ -286,7 +218,7 @@ async function RecordBody({ address }: { address: Address }) {
               record.tokens.length === 1 ? "entry" : "entries"
             }`}
           />
-          <CatalogTokensEditable artist={address} tokens={record.tokens} />
+          <CatalogTokensSection tokens={record.tokens} />
         </section>
       )}
 
@@ -298,8 +230,7 @@ async function RecordBody({ address }: { address: Address }) {
               record.tokenRanges.length === 1 ? "entry" : "entries"
             }`}
           />
-          <CatalogRangesEditable
-            artist={address}
+          <CatalogRangesSection
             ranges={record.tokenRanges}
             thumbnails={thumbnails}
           />

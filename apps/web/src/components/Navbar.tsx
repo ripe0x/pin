@@ -7,15 +7,7 @@ import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { SITE_TITLE } from "@pin/shared"
 import { useAccount } from "wagmi"
 import { GodModePanel } from "@/components/GodModePanel"
-
-type ArtistAction = { href: string; label: string }
-
-const ARTIST_ACTIONS: ArtistAction[] = [
-  { href: "/preserve", label: "Preserve work" },
-  { href: "/delist", label: "Leave platforms" },
-  { href: "/auction/new", label: "Deploy your auction" },
-  { href: "/sites", label: "Run your own site" },
-]
+import { PUBLIC_ARTIST_LINKS, studioToolHref } from "@/lib/studio-tools"
 
 export function Navbar() {
   const { address } = useAccount()
@@ -99,7 +91,38 @@ export function Navbar() {
                 aria-label="For artists"
                 className="absolute right-0 mt-2 w-56 rounded-md border border-gray-200 bg-surface py-1 shadow-lg"
               >
-                {ARTIST_ACTIONS.map((a) => (
+                {/* Connected wallets lead with their own spaces: the
+                    studio (management) and their public page. */}
+                {address ? (
+                  <>
+                    <Link
+                      href={studioToolHref(address)}
+                      role="menuitem"
+                      onClick={() => setMenuOpen(false)}
+                      className="block px-4 py-2 text-xs font-mono font-medium text-fg transition-colors hover:bg-gray-100"
+                    >
+                      Your studio
+                    </Link>
+                    <Link
+                      href={`/artist/${address.toLowerCase()}`}
+                      role="menuitem"
+                      onClick={() => setMenuOpen(false)}
+                      className="block border-b border-gray-200 px-4 py-2 text-xs font-mono font-medium text-fg transition-colors hover:bg-gray-100"
+                    >
+                      Your page
+                    </Link>
+                  </>
+                ) : (
+                  <Link
+                    href="/studio"
+                    role="menuitem"
+                    onClick={() => setMenuOpen(false)}
+                    className="block border-b border-gray-200 px-4 py-2 text-xs font-mono font-medium text-fg transition-colors hover:bg-gray-100"
+                  >
+                    Studio
+                  </Link>
+                )}
+                {PUBLIC_ARTIST_LINKS.map((a) => (
                   <Link
                     key={a.href}
                     href={a.href}
@@ -110,37 +133,20 @@ export function Navbar() {
                     {a.label}
                   </Link>
                 ))}
-                {address && (
-                  <>
-                    <Link
-                      href={`/artist/${address}`}
-                      role="menuitem"
-                      onClick={() => setMenuOpen(false)}
-                      className="block border-t border-gray-200 px-4 py-2 text-xs font-mono text-fg transition-colors hover:bg-gray-100"
-                    >
-                      Manage your work
-                    </Link>
-                    <Link
-                      href={`/catalog/${address}`}
-                      role="menuitem"
-                      onClick={() => setMenuOpen(false)}
-                      className="block px-4 py-2 text-xs font-mono text-fg transition-colors hover:bg-gray-100"
-                    >
-                      Your catalog
-                    </Link>
-                  </>
-                )}
-                <Link
-                  href="/guides"
-                  role="menuitem"
-                  onClick={() => setMenuOpen(false)}
-                  className="block border-t border-gray-200 px-4 py-2 text-xs font-mono text-fg transition-colors hover:bg-gray-100"
-                >
-                  Guides
-                </Link>
               </div>
             )}
           </div>
+          {/* First-class studio entry for connected wallets — the
+              dropdown row alone buries the management home one click
+              too deep. */}
+          {address && (
+            <Link
+              href={studioToolHref(address)}
+              className="hidden sm:block text-[11px] font-mono font-medium uppercase tracking-wider text-gray-600 transition-colors hover:text-fg"
+            >
+              Studio
+            </Link>
+          )}
           {/* God-mode panel — only renders for allowlisted wallets, so
               this is a no-op for everyone else and adds zero affordance
               clutter on the navbar. */}

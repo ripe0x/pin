@@ -1,7 +1,7 @@
 "use client"
 
 import type { Address } from "viem"
-import { useIsCatalogOwner } from "./useIsCatalogOwner"
+import { useIsStudioOwner } from "@/components/studio/useIsStudioOwner"
 import { AddEntryForm, type ExistingRecord } from "./AddEntryForm"
 import { ChainSwitcher } from "./ChainSwitcher"
 
@@ -36,7 +36,7 @@ export function AddEntrySection({
    */
   prefillPanelPresent?: boolean
 }) {
-  const isOwner = useIsCatalogOwner(artist)
+  const isOwner = useIsStudioOwner(artist)
   if (!isOwner) return null
 
   // When the IndexedWorkSection is rendering the planner above this on

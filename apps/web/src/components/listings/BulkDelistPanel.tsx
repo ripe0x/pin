@@ -7,7 +7,19 @@ import { useSellerListings } from "@/lib/useSellerListings"
 import { BATCH_CHUNK_SIZE, useSequentialCancel } from "@/lib/useSequentialCancel"
 import { SellerListingsView } from "@/components/listings/SellerListingsView"
 
-export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
+export function BulkDelistPanel({
+  artistAddress,
+  showEmptyState = false,
+}: {
+  artistAddress: string
+  /**
+   * When true, a clean zero-listings result renders a quiet
+   * confirmation card instead of nothing. The artist page historically
+   * hid the panel entirely; on a dedicated studio page an empty render
+   * reads as broken.
+   */
+  showEmptyState?: boolean
+}) {
   const { address: connectedAddress } = useAccount()
   const isOwner =
     !!connectedAddress &&
@@ -101,7 +113,16 @@ export function BulkDelistPanel({ artistAddress }: { artistAddress: string }) {
     )
   }
 
-  if (total === 0) return null
+  if (total === 0) {
+    if (!showEmptyState) return null
+    return (
+      <Section>
+        <p className="text-sm text-gray-500">
+          No active listings on Foundation or SuperRare.
+        </p>
+      </Section>
+    )
+  }
 
   const allItems: SellerListing[] = [...state.auctions, ...state.buyNows]
   const allSelected = selected.size === total

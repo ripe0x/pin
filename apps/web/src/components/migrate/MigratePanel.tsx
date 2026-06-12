@@ -735,7 +735,7 @@ function MigrateRow({
               </Link>
               {state.txHash && (
                 <a
-                  href={`https://etherscan.io/tx/${state.txHash}`}
+                  href={`https://evm.now/tx/${state.txHash}?chainId=1`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="font-medium text-gray-600 hover:underline"
@@ -904,7 +904,7 @@ function RowStatus({
   if (!state || state.step === "idle") return null
   const base = "text-[11px] tabular-nums shrink-0"
   const link = state.txHash
-    ? `https://etherscan.io/tx/${state.txHash}`
+    ? `https://evm.now/tx/${state.txHash}?chainId=1`
     : null
   const labels: Record<Step, string> = {
     idle: "",
