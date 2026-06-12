@@ -72,6 +72,9 @@ export const getCachedEnrichedPage = unstable_cache(
     }
     return enriched
   },
-  ["artist-enriched-page", "v6"],
+  // v7: enrichTokens now courtesy-resolves missing metadata (unclaimed
+  // artists' seed works rendered as bare "NFT #id" placeholders and the
+  // placeholder pages were cached for 24h — bump clears them on deploy).
+  ["artist-enriched-page", "v7"],
   { revalidate: 86_400, tags: ["artist-enriched"] },
 )
