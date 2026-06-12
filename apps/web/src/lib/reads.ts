@@ -63,7 +63,15 @@ export async function getArtistTokens(
               block_number, log_index
        FROM ${t("srv2_artist_tokens")} WHERE lower(creator) = $1
      )
-     SELECT count(*)::int AS n FROM refs`,
+     SELECT count(*)::int AS n FROM refs r
+     WHERE NOT EXISTS (
+       SELECT 1 FROM token_metadata bm
+       WHERE bm.contract = r.contract AND bm.token_id = r.token_id AND bm.burned
+     ) AND NOT EXISTS (
+       SELECT 1 FROM token_owners bo
+       WHERE bo.contract = r.contract AND bo.token_id = r.token_id
+         AND bo.owner = '0x0000000000000000000000000000000000000000'
+     )`,
     [lower],
   )) as Array<{ n: number }>
   const total = totalRows[0]?.n ?? 0
@@ -93,6 +101,8 @@ export async function getArtistTokens(
        ON o.contract = r.contract AND o.token_id = r.token_id
      LEFT JOIN ${t("muri_tokens")} mu
        ON lower(mu.contract) = r.contract AND mu.token_id::text = r.token_id
+     WHERE COALESCE(m.burned, false) = false
+       AND (o.owner IS NULL OR o.owner <> '0x0000000000000000000000000000000000000000')
      ORDER BY r.mint_block DESC, r.mint_log_index DESC
      LIMIT $2 OFFSET $3`,
     [lower, pageSize, offset],

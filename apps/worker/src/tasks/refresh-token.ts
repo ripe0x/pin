@@ -15,7 +15,7 @@
  */
 import { sql } from "../db.ts"
 import { client } from "../rpc.ts"
-import { resolveTokenMetadata } from "@pin/token-metadata"
+import { resolveTokenMetadataWithState } from "@pin/token-metadata"
 
 export async function refreshToken(
   contract: string,
@@ -23,30 +23,51 @@ export async function refreshToken(
 ): Promise<"resolved" | "empty"> {
   const c = contract.toLowerCase()
   try {
-    const meta = await resolveTokenMetadata(client, c, tokenId)
+    const { metadata: meta, exists } = await resolveTokenMetadataWithState(
+      client,
+      c,
+      tokenId,
+    )
     const hasContent =
       meta && (meta.name || meta.description || meta.image || meta.animation_url)
 
     if (hasContent) {
       await sql`
         INSERT INTO token_metadata
-          (contract, token_id, name, description, image_url, animation_url, raw_uri, fetched_at)
+          (contract, token_id, name, description, image_url, animation_url, raw_uri, burned, fetched_at)
         VALUES
           (${c}, ${tokenId},
            ${meta.name ?? null}, ${meta.description ?? null},
            ${meta.image ?? null}, ${meta.animation_url ?? null},
-           ${meta.uri ?? null}, NOW())
+           ${meta.uri ?? null}, FALSE, NOW())
         ON CONFLICT (contract, token_id) DO UPDATE SET
           name = EXCLUDED.name, description = EXCLUDED.description,
           image_url = EXCLUDED.image_url, animation_url = EXCLUDED.animation_url,
-          raw_uri = EXCLUDED.raw_uri, fetched_at = NOW()
+          raw_uri = EXCLUDED.raw_uri, burned = FALSE, fetched_at = NOW()
       `
       console.log(`[refresh-token] ${c}/${tokenId}: resolved`)
       return "resolved"
     }
 
-    // Resolved nothing — bump fetched_at only, preserving any existing
-    // content (don't clobber a previously-good row with a sentinel).
+    // Definitive burn (tokenURI reverted nonexistent) — flag it so the token
+    // page 404s and it drops out of artist grids. Leave content columns
+    // untouched (a refresh must never make a good row worse); the flag alone
+    // is what the readers gate on.
+    if (exists === false) {
+      await sql`
+        INSERT INTO token_metadata
+          (contract, token_id, name, description, image_url, animation_url, raw_uri, burned, fetched_at)
+        VALUES (${c}, ${tokenId}, NULL, NULL, NULL, NULL, NULL, TRUE, NOW())
+        ON CONFLICT (contract, token_id) DO UPDATE SET
+          burned = TRUE, fetched_at = NOW()
+      `
+      console.log(`[refresh-token] ${c}/${tokenId}: burned`)
+      return "empty"
+    }
+
+    // Resolved nothing, existence indeterminate (transient upstream) — bump
+    // fetched_at only, preserving any existing content (don't clobber a
+    // previously-good row with a sentinel).
     await bumpFetchedAt(c, tokenId)
     console.log(`[refresh-token] ${c}/${tokenId}: empty (content preserved)`)
     return "empty"
