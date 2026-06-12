@@ -274,7 +274,7 @@ function MintForContract({
               <button
                 onClick={() => void onUpload()}
                 disabled={!file || !jwt || uploading}
-                className="self-start rounded bg-black px-3 py-1.5 text-xs text-white disabled:opacity-40"
+                className="self-start rounded bg-fg px-3 py-1.5 text-xs text-bg disabled:opacity-40"
               >
                 {uploading ? "Uploading…" : "Upload artwork"}
               </button>
@@ -315,7 +315,7 @@ function MintForContract({
               <button
                 onClick={doMint}
                 disabled={!name.trim() || mint.busy}
-                className="self-start rounded bg-black px-4 py-2 text-sm text-white disabled:opacity-40"
+                className="self-start rounded bg-fg px-4 py-2 text-sm text-bg disabled:opacity-40"
               >
                 {mint.busy ? "Minting…" : "Mint MURI-native token"}
               </button>
@@ -412,7 +412,7 @@ function StepRow({
         <button
           onClick={onAction}
           disabled={busy || disabled}
-          className="rounded bg-black px-2.5 py-1 text-[11px] text-white disabled:opacity-40"
+          className="rounded bg-fg px-2.5 py-1 text-[11px] text-bg disabled:opacity-40"
         >
           {actionLabel}
         </button>

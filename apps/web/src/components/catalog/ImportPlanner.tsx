@@ -698,8 +698,8 @@ function BatchAddRow({
               }}
               className={`px-2.5 py-1 transition-colors ${
                 scope === s
-                  ? "bg-gray-900 text-white"
-                  : "bg-white text-gray-600 hover:bg-gray-100"
+                  ? "bg-fg text-bg"
+                  : "bg-surface text-gray-600 hover:bg-gray-100"
               } ${s !== "all" ? "border-l border-gray-200" : ""}`}
             >
               {s === "all"
@@ -725,7 +725,7 @@ function BatchAddRow({
         <button
           type="button"
           onClick={handleAdd}
-          className="text-xs px-3 py-1.5 bg-gray-900 text-white rounded hover:bg-gray-800"
+          className="text-xs px-3 py-1.5 bg-fg text-bg rounded hover:opacity-80 transition-opacity"
         >
           Add to selection
         </button>
@@ -1197,7 +1197,7 @@ function ModeRadio({
   if (!showSpecificOption) {
     return (
       <span
-        className="shrink-0 text-[10px] uppercase font-mono tracking-wider px-2 py-1 rounded border border-gray-200 bg-gray-900 text-white"
+        className="shrink-0 text-[10px] uppercase font-mono tracking-wider px-2 py-1 rounded border border-gray-200 bg-fg text-bg"
         title="You own this contract. addContract is the correct claim — the whole collection, every existing and future token."
       >
         Full contract
@@ -1211,8 +1211,8 @@ function ModeRadio({
         onClick={() => onChange("specific")}
         className={`px-2.5 py-1 transition-colors ${
           mode === "specific"
-            ? "bg-gray-900 text-white"
-            : "bg-white text-gray-600 hover:bg-gray-100"
+            ? "bg-fg text-bg"
+            : "bg-surface text-gray-600 hover:bg-gray-100"
         }`}
       >
         By token ID
@@ -1222,8 +1222,8 @@ function ModeRadio({
         onClick={() => onChange("whole")}
         className={`px-2.5 py-1 border-l border-gray-200 transition-colors ${
           mode === "whole"
-            ? "bg-gray-900 text-white"
-            : "bg-white text-gray-600 hover:bg-gray-100"
+            ? "bg-fg text-bg"
+            : "bg-surface text-gray-600 hover:bg-gray-100"
         }`}
         title="Register the full contract: cheaper gas, claims all current AND future tokens minted on it. Only safe if YOU own this contract."
       >
@@ -1545,7 +1545,7 @@ function SubmitBar({
   const disabled = !walletMatches || isRunning || selectedOps.length === 0
 
   return (
-    <div className="fixed bottom-0 inset-x-0 border-t border-gray-200 bg-white/95 backdrop-blur px-6 py-4 z-50">
+    <div className="fixed bottom-0 inset-x-0 border-t border-gray-200 bg-surface/95 backdrop-blur px-6 py-4 z-50">
       <div className="mx-auto max-w-5xl flex items-center justify-between gap-4">
         <div className="min-w-0 text-xs text-gray-600">
           {!isConnected && (
@@ -1625,7 +1625,7 @@ function SubmitBar({
             type="button"
             onClick={onStart}
             disabled={disabled}
-            className="px-5 py-2.5 bg-emerald-600 text-white text-sm font-medium rounded-md hover:bg-emerald-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+            className="px-5 py-2.5 bg-emerald-600 text-bg text-sm font-medium rounded-md hover:bg-emerald-700 disabled:bg-surface-muted disabled:text-fg-subtle disabled:cursor-not-allowed transition-colors"
           >
             {buttonLabel}
           </button>

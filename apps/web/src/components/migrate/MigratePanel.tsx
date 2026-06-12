@@ -670,7 +670,7 @@ function MigrateRow({
           checked={checked}
           onChange={onToggle}
           disabled={checkboxDisabled}
-          className="h-4 w-4 mt-3 shrink-0 accent-black disabled:opacity-40"
+          className="h-4 w-4 mt-3 shrink-0 accent-fg disabled:opacity-40"
           aria-label={`Select ${displayName}`}
         />
         <div className="h-12 w-12 mt-1 shrink-0 bg-gray-100 overflow-hidden rounded">
@@ -788,7 +788,7 @@ function MigrateRow({
                   <span className="text-[10px] uppercase tracking-[0.08em] text-gray-500">
                     Reserve
                   </span>
-                  <div className="flex items-stretch border border-gray-200 focus-within:border-gray-400 rounded bg-white max-w-[200px]">
+                  <div className="flex items-stretch border border-gray-200 focus-within:border-gray-400 rounded bg-surface max-w-[200px]">
                     <input
                       type="text"
                       inputMode="decimal"

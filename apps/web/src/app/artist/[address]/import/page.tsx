@@ -155,8 +155,8 @@ function SourcePicker({
               href={`/artist/${artistAddress}/import?source=${s.id}`}
               className={`px-3 py-2 transition-colors ${
                 active
-                  ? "bg-gray-900 text-white"
-                  : "bg-white text-gray-700 hover:bg-gray-100"
+                  ? "bg-fg text-bg"
+                  : "bg-surface text-gray-700 hover:bg-gray-100"
               }`}
             >
               {s.displayName}
