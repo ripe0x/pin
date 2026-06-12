@@ -2,21 +2,18 @@
 
 import Link from "next/link"
 import { useAccount } from "wagmi"
-
-type ArtistAction = { href: string; label: string }
-
-const ARTIST_ACTIONS: ArtistAction[] = [
-  { href: "/preserve", label: "Preserve work" },
-  { href: "/delist", label: "Leave platforms" },
-  { href: "/auction/new", label: "Deploy your auction" },
-  { href: "/sites", label: "Run your own site" },
-]
+import { PUBLIC_ARTIST_LINKS, studioToolHref } from "@/lib/studio-tools"
 
 /**
- * The "For artists" link list. Rendered both in the desktop dropdown and the
- * mobile hamburger panel, so it lives in one place. The caller supplies the
- * `role="menu"` container; each item is a `menuitem`. `onNavigate` closes the
- * surrounding menu on click.
+ * The "For artists" menu contents. Rendered both in the desktop dropdown
+ * and the mobile hamburger panel, so it lives in one place. The caller
+ * supplies the `role="menu"` container; each item is a `menuitem`.
+ * `onNavigate` closes the surrounding menu on click.
+ *
+ * Connected wallets lead with their own spaces — the studio (management)
+ * and their public page — then everyone gets the public landing links.
+ * Sourced from the studio-tools registry so the dropdown can't drift from
+ * what the studio actually contains.
  */
 export function ArtistActionLinks({ onNavigate }: { onNavigate?: () => void }) {
   const { address } = useAccount()
@@ -25,7 +22,36 @@ export function ArtistActionLinks({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <>
-      {ARTIST_ACTIONS.map((a) => (
+      {address ? (
+        <>
+          <Link
+            href={studioToolHref(address)}
+            role="menuitem"
+            onClick={onNavigate}
+            className={`${item} font-medium`}
+          >
+            Your studio
+          </Link>
+          <Link
+            href={`/artist/${address.toLowerCase()}`}
+            role="menuitem"
+            onClick={onNavigate}
+            className={`border-b border-gray-200 ${item} font-medium`}
+          >
+            Your page
+          </Link>
+        </>
+      ) : (
+        <Link
+          href="/studio"
+          role="menuitem"
+          onClick={onNavigate}
+          className={`border-b border-gray-200 ${item} font-medium`}
+        >
+          Studio
+        </Link>
+      )}
+      {PUBLIC_ARTIST_LINKS.map((a) => (
         <Link
           key={a.href}
           href={a.href}
@@ -36,34 +62,6 @@ export function ArtistActionLinks({ onNavigate }: { onNavigate?: () => void }) {
           {a.label}
         </Link>
       ))}
-      {address && (
-        <>
-          <Link
-            href={`/artist/${address}`}
-            role="menuitem"
-            onClick={onNavigate}
-            className={`border-t border-gray-200 ${item}`}
-          >
-            Manage your work
-          </Link>
-          <Link
-            href={`/catalog/${address}`}
-            role="menuitem"
-            onClick={onNavigate}
-            className={item}
-          >
-            Your catalog
-          </Link>
-        </>
-      )}
-      <Link
-        href="/guides"
-        role="menuitem"
-        onClick={onNavigate}
-        className={`border-t border-gray-200 ${item}`}
-      >
-        Guides
-      </Link>
     </>
   )
 }

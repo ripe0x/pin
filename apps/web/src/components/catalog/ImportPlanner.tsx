@@ -15,6 +15,7 @@ import {
   sharedContractInfo,
 } from "@/lib/import-sources/shared-contracts"
 import { useCatalogMulticall } from "./useCatalogMulticall"
+import { useThumbnailMedia } from "@/lib/use-thumbnail-media"
 
 /**
  * Import planner.
@@ -1276,30 +1277,18 @@ function WholeContractRow({
 }
 
 /**
- * <img> wrapper with a graceful three-stage failure path. Source
- * registries link out to a grab-bag of hosts (artist personal sites,
- * IPFS gateways with expired DNS, NFT CDNs with stale TLS certs, etc.).
+ * Row thumbnail driven by the shared `useThumbnailMedia` escalation
+ * (same logic as ArtistGallery / PreserveGrid / SellerListingsView):
+ * `ipfs://` URIs resolve through the gateway + proxy cascade — a plain
+ * <img src="ipfs://…"> never even fires onError, which is how this
+ * panel used to render a wall of broken icons — and works that put a
+ * VIDEO file in `metadata.image` (whole catalogs do) escalate to a
+ * muted <video> whose first frame acts as the still thumb.
  *
- * Fallback chain:
- *   1. primary `src`               — what the source feed gave us
- *   2. `fallback` (e.g. IPFS pin) — if the mapper populated it
- *   3. weserv image proxy          — fetches the primary server-side,
- *                                    bypassing expired certs / CORS
- *
- * Stage 3 always exists (the proxy is public + free), so any image
- * the server can fetch will ultimately render. Stage 3 only fires
- * after stages 1+2 have both errored — so for the ~99% case where
- * the primary works, we don't add a third-party hop.
+ * When the primary URL exhausts the cascade and the mapper supplied a
+ * distinct `fallback` (e.g. the raw on-chain tokenURI), retry the whole
+ * cascade once with that URL before giving up to the gray placeholder.
  */
-const WESERV_PROXY = "https://images.weserv.nl/?url="
-
-function weservProxyUrl(src: string): string {
-  // weserv accepts URLs with or without protocol; stripping `https://`
-  // and `http://` keeps the encoded path shorter.
-  const stripped = src.replace(/^https?:\/\//, "")
-  return `${WESERV_PROXY}${encodeURIComponent(stripped)}`
-}
-
 function Thumb({
   src,
   fallback,
@@ -1309,41 +1298,35 @@ function Thumb({
   fallback?: string
   alt: string
 }) {
-  // 0 = primary, 1 = fallback, 2 = proxy, 3 = give up (hide).
-  // Keyed off `src` so a row swap (re-render with new primary URL)
-  // resets the chain.
-  const [stage, setStage] = useState(0)
-  useEffect(() => {
-    setStage(0)
-  }, [src])
-
-  const active = (() => {
-    if (stage === 0) return src
-    if (stage === 1 && fallback) return fallback
-    return weservProxyUrl(src)
-  })()
-
+  const media = useThumbnailMedia(src, 160)
+  if (media.kind === "failed") {
+    if (fallback && fallback !== src) {
+      return <Thumb src={fallback} alt={alt} />
+    }
+    // Give up — the sized gray wrapper behind shows through.
+    return null
+  }
+  if (media.kind === "video") {
+    return (
+      <video
+        src={media.videoSrc}
+        className="h-full w-full object-cover"
+        muted
+        playsInline
+        preload="metadata"
+        onError={media.onVideoError}
+      />
+    )
+  }
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={active}
+      ref={media.imgRef}
+      src={media.imgSrc}
       alt={alt}
       className="h-full w-full object-cover"
       loading="lazy"
-      onError={(e) => {
-        // Stage 0 fail → try `fallback` if present, otherwise skip to proxy.
-        if (stage === 0) {
-          setStage(fallback ? 1 : 2)
-          return
-        }
-        if (stage === 1) {
-          setStage(2)
-          return
-        }
-        // Stage 2 (proxy) failed — last resort, hide the element so
-        // the gray placeholder behind shows through.
-        ;(e.currentTarget as HTMLImageElement).style.display = "none"
-      }}
+      onError={media.onImgError}
     />
   )
 }

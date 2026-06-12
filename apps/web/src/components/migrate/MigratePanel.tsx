@@ -1,7 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
-import Image from "next/image"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { formatEther, type Address } from "viem"
 import { cleanEthAmountInput, parseEthAmount } from "@/lib/parseEthAmount"
@@ -36,6 +35,7 @@ import {
 } from "@/lib/platforms/migration-savings"
 import type { PlatformId } from "@/lib/platforms/types"
 import { useArtistHouse } from "@/components/auction/useArtistHouse"
+import { useThumbnailMedia } from "@/lib/use-thumbnail-media"
 
 // Display names for the platform-section headers. New platforms slot in
 // here when their adapter starts surfacing cancellable listings.
@@ -206,14 +206,32 @@ function Inner({
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [rowState, setRowState] = useState<Map<string, RowState>>(new Map())
   const [running, setRunning] = useState(false)
+  /** Non-null while per-token names/thumbnails are still streaming in. */
+  const [metaProgress, setMetaProgress] = useState<{
+    resolved: number
+    total: number
+  } | null>(null)
+  // Bumped per refresh so a superseded run's late metadata can't write
+  // into the next run's rows.
+  const loadGenRef = useRef(0)
+
+  /** Throttle for streaming meta into rows — one re-render per batch
+   * instead of one per resolved token. */
+  const META_FLUSH_MS = 250
 
   const refresh = useCallback(async () => {
+    const gen = ++loadGenRef.current
     setLoad({ kind: "loading" })
+    setMetaProgress(null)
     try {
       const { auctions, buyNows } =
         await fetchSellerCancellableListings(artistAddress)
+      if (loadGenRef.current !== gen) return
       const all: SellerListing[] = [...auctions, ...buyNows]
-      const meta = await resolveListingMetadata(all)
+
+      // Rows render immediately — reserve/duration prefill comes from
+      // the listing itself. Names + thumbnails stream in behind them
+      // (same treatment as the bulk-delist panel).
       const rows = all.map((source): Row => {
         const reserveWei =
           source.kind === "auction" ? source.reserveWei : source.priceWei
@@ -222,7 +240,7 @@ function Inner({
         return {
           id: source.id,
           source,
-          meta: meta.get(source.id),
+          meta: undefined,
           reserveInput: formatEther(reserveWei),
           durationSec: snapDuration(sourceDuration),
         }
@@ -230,11 +248,51 @@ function Inner({
       setLoad({ kind: "loaded", rows })
       setSelected(new Set(rows.map((r) => r.id)))
       setRowState(new Map())
+      if (all.length === 0) return
+      setMetaProgress({ resolved: 0, total: all.length })
+
+      const resolved = new Map<string, SellerListingMeta>()
+      let flushTimer: ReturnType<typeof setTimeout> | null = null
+      const flush = (final: boolean) => {
+        if (loadGenRef.current !== gen) return
+        // Merge by spreading the existing row so in-flight user edits
+        // (reserveInput, durationSec) survive the metadata arriving.
+        setLoad((prev) =>
+          prev.kind === "loaded"
+            ? {
+                ...prev,
+                rows: prev.rows.map((r) =>
+                  resolved.has(r.id) && !r.meta
+                    ? { ...r, meta: resolved.get(r.id) }
+                    : r,
+                ),
+              }
+            : prev,
+        )
+        setMetaProgress(
+          final ? null : { resolved: resolved.size, total: all.length },
+        )
+      }
+      await resolveListingMetadata(all, {
+        onItem: (id, meta) => {
+          resolved.set(id, meta)
+          if (flushTimer === null) {
+            flushTimer = setTimeout(() => {
+              flushTimer = null
+              flush(false)
+            }, META_FLUSH_MS)
+          }
+        },
+      })
+      if (flushTimer !== null) clearTimeout(flushTimer)
+      flush(true)
     } catch (err) {
+      if (loadGenRef.current !== gen) return
       setLoad({
         kind: "error",
         message: err instanceof Error ? err.message : "Failed to load listings",
       })
+      setMetaProgress(null)
     }
   }, [artistAddress])
 
@@ -529,6 +587,25 @@ function Inner({
         </div>
       )}
 
+      {metaProgress && (
+        <div className="mb-4" aria-live="polite">
+          <p className="text-[11px] font-mono text-gray-500 mb-1.5 tabular-nums">
+            Loading artwork details… {metaProgress.resolved}/
+            {metaProgress.total}
+          </p>
+          <div className="h-1 w-full bg-gray-100 overflow-hidden">
+            <div
+              className="h-full bg-fg transition-[width] duration-300"
+              style={{
+                width: `${Math.round(
+                  (metaProgress.resolved / metaProgress.total) * 100,
+                )}%`,
+              }}
+            />
+          </div>
+        </div>
+      )}
+
       {!allDone && (
         <div className="flex items-center justify-between mb-3">
           <button
@@ -605,6 +682,41 @@ function Inner({
 // ─── Row component ─────────────────────────────────────────────────────────
 
 /**
+ * 48px row thumbnail using the shared `useThumbnailMedia` escalation:
+ * resolves `ipfs://` through the gateway cascade and renders works whose
+ * media is a video (whole FND catalogs) as a muted <video> first-frame
+ * still, instead of the broken-icon a plain <img> would show.
+ */
+function RowThumb({ url, alt }: { url: string; alt: string }) {
+  const { kind, imgSrc, imgRef, onImgError, videoSrc, onVideoError } =
+    useThumbnailMedia(url, 160)
+  if (kind === "failed") return null
+  if (kind === "video") {
+    return (
+      <video
+        src={videoSrc}
+        className="h-full w-full object-cover"
+        muted
+        playsInline
+        preload="metadata"
+        onError={onVideoError}
+      />
+    )
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      ref={imgRef}
+      src={imgSrc}
+      alt={alt}
+      className="h-full w-full object-cover"
+      loading="lazy"
+      onError={onImgError}
+    />
+  )
+}
+
+/**
  * Per-row migrate UI: a "this → that" comparison showing what the seller
  * receives at the source platform vs on their Sovereign house. The
  * destination's "you receive" line is in semibold (no color accent — the
@@ -674,16 +786,7 @@ function MigrateRow({
           aria-label={`Select ${displayName}`}
         />
         <div className="h-12 w-12 mt-1 shrink-0 bg-gray-100 overflow-hidden rounded">
-          {imageUrl && (
-            <Image
-              src={imageUrl}
-              alt=""
-              width={48}
-              height={48}
-              className="h-full w-full object-cover"
-              unoptimized
-            />
-          )}
+          {imageUrl && <RowThumb url={imageUrl} alt={displayName} />}
         </div>
 
         <div className="min-w-0 flex-1">
@@ -735,7 +838,7 @@ function MigrateRow({
               </Link>
               {state.txHash && (
                 <a
-                  href={`https://etherscan.io/tx/${state.txHash}`}
+                  href={`https://evm.now/tx/${state.txHash}?chainId=1`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="font-medium text-gray-600 hover:underline"
@@ -746,29 +849,46 @@ function MigrateRow({
             </div>
           ) : (
             <>
-              {/* This → That comparison */}
-              <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-                <SideCard
-                  label={sourcePlatformLabel}
-                  reserveEth={row.reserveInput}
-                  duration={durationLabel(row.durationSec)}
-                  feeBps={sourceFeeBps}
-                  emphasis="regular"
-                />
-                <span
-                  className="text-gray-300 text-base leading-none select-none"
-                  aria-hidden
-                >
-                  →
-                </span>
-                <SideCard
-                  label="Your Sovereign auction house"
-                  reserveEth={row.reserveInput}
-                  duration={durationLabel(row.durationSec)}
-                  feeBps={0}
-                  emphasis="strong"
-                />
-              </div>
+              {sourceFeeBps > 0 ? (
+                /* This → That comparison — only meaningful when the
+                   source charges a fee the Sovereign house doesn't.
+                   Foundation removed its protocol fee, so FND rows fall
+                   through to the plain terms line below. */
+                <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+                  <SideCard
+                    label={sourcePlatformLabel}
+                    reserveEth={row.reserveInput}
+                    duration={durationLabel(row.durationSec)}
+                    feeBps={sourceFeeBps}
+                    emphasis="regular"
+                  />
+                  <span
+                    className="text-gray-300 text-base leading-none select-none"
+                    aria-hidden
+                  >
+                    →
+                  </span>
+                  <SideCard
+                    label="Your Sovereign auction house"
+                    reserveEth={row.reserveInput}
+                    duration={durationLabel(row.durationSec)}
+                    feeBps={0}
+                    emphasis="strong"
+                  />
+                </div>
+              ) : (
+                /* No fee delta to show — just the relisting terms. */
+                <div className="mt-3 flex items-center gap-2 text-[11px] text-gray-500 tabular-nums">
+                  <span className="text-gray-300 leading-none" aria-hidden>
+                    →
+                  </span>
+                  <span className="min-w-0">
+                    Relisting on your Sovereign auction house ·{" "}
+                    {row.reserveInput} ETH reserve ·{" "}
+                    {durationLabel(row.durationSec)}
+                  </span>
+                </div>
+              )}
 
               {/* Edit toggle */}
               <div className="mt-2 flex items-center justify-end">
@@ -904,7 +1024,7 @@ function RowStatus({
   if (!state || state.step === "idle") return null
   const base = "text-[11px] tabular-nums shrink-0"
   const link = state.txHash
-    ? `https://etherscan.io/tx/${state.txHash}`
+    ? `https://evm.now/tx/${state.txHash}?chainId=1`
     : null
   const labels: Record<Step, string> = {
     idle: "",

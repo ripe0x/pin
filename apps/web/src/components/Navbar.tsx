@@ -3,14 +3,17 @@
 import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { SITE_TITLE } from "@pin/shared"
+import { useAccount } from "wagmi"
 import { ArtistActionLinks } from "@/components/ArtistActionLinks"
 import { GodModePanel } from "@/components/GodModePanel"
 import { HeaderSearch } from "@/components/HeaderSearch"
 import { Logo } from "@/components/Logo"
 import { MobileMenu } from "@/components/MobileMenu"
 import { WalletButton } from "@/components/WalletButton"
+import { studioToolHref } from "@/lib/studio-tools"
 
 export function Navbar() {
+  const { address } = useAccount()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
 
@@ -69,6 +72,17 @@ export function Navbar() {
               </div>
             )}
           </div>
+          {/* First-class studio entry for connected wallets — the
+              dropdown row alone buries the management home one click
+              too deep. */}
+          {address && (
+            <Link
+              href={studioToolHref(address)}
+              className="text-[11px] font-mono font-medium uppercase tracking-wider text-gray-600 transition-colors hover:text-fg"
+            >
+              Studio
+            </Link>
+          )}
           {/* God-mode panel — only renders for allowlisted wallets, so
               this is a no-op for everyone else and adds zero affordance
               clutter on the navbar. */}

@@ -1,7 +1,7 @@
 "use client"
 
 import type { Address } from "viem"
-import { useIsCatalogOwner } from "./useIsCatalogOwner"
+import { useIsStudioOwner } from "@/components/studio/useIsStudioOwner"
 import { RemoveRowButton } from "./RemoveRowButton"
 import { ContractLabel, ContractThumbnail } from "./CatalogRowLabels"
 
@@ -18,7 +18,7 @@ export function CatalogRangesEditable({
   }>
   thumbnails?: Record<string, string>
 }) {
-  const isOwner = useIsCatalogOwner(artist)
+  const isOwner = useIsStudioOwner(artist)
   if (ranges.length === 0) {
     return <p className="text-sm text-gray-500">No token ranges declared yet.</p>
   }

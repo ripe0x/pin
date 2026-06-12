@@ -13,8 +13,8 @@ import { CatalogRangesSection } from "@/components/catalog/CatalogRangesSection"
  * record-page visit and an artist-page visit share one cache entry.
  *
  * Returns `null` when the record is empty so cold artists don't see an
- * empty section. The artist's own management view lives at
- * `/record/[address]`; the link below the lists routes there.
+ * empty section. The full public record lives at `/catalog/[address]`;
+ * the artist's management view is `/studio/[address]/catalog`.
  */
 export async function CatalogSection({
   address,
@@ -44,7 +44,7 @@ export async function CatalogSection({
           href={`/catalog/${address.toLowerCase()}`}
           className="text-xs text-gray-500 hover:text-gray-900 underline-offset-2 hover:underline"
         >
-          Manage →
+          Full record →
         </Link>
       </div>
 

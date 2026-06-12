@@ -16,10 +16,7 @@ import { PLATFORMS } from "@/lib/platforms"
 import { ArtistHeader } from "@/components/artist/ArtistHeader"
 import { ArtistGallery } from "@/components/artist/ArtistGallery"
 import { CatalogSection } from "@/components/artist/CatalogSection"
-import { BulkDelistPanel } from "@/components/listings/BulkDelistPanel"
-import { SovereignBulkPanel } from "@/components/listings/SovereignBulkPanel"
-import { MigrationBanner } from "@/components/migrate/MigrationBanner"
-import { SitePanel } from "@/components/sites/SitePanel"
+import { StudioBar } from "@/components/artist/StudioBar"
 
 const INITIAL_PAGE_SIZE = 24
 
@@ -179,6 +176,10 @@ async function ArtistPageBody({ address }: { address: string }) {
   // noise. null hides the element in ArtistHeader.
   const activeAuctions = sovereignHouse ? activeAuctionCount : null
 
+  // This page is the artist's public face — gallery first, no admin
+  // chrome. Management lives in /studio/[address]; the only owner
+  // affordance here is the slim StudioBar ribbon (which renders null
+  // for everyone else).
   return (
     <div className="mx-auto max-w-[2000px] px-6 py-12">
       <ArtistHeader
@@ -188,23 +189,7 @@ async function ArtistPageBody({ address }: { address: string }) {
       />
 
       <div className="mt-8">
-        <MigrationBanner artistAddress={address} />
-      </div>
-
-      <div className="mt-4">
-        <BulkDelistPanel artistAddress={address} />
-      </div>
-
-      <div className="mt-4">
-        <SovereignBulkPanel artistAddress={address} />
-      </div>
-
-      <div className="mt-4">
-        <SitePanel artistAddress={address} />
-      </div>
-
-      <div className="mt-12">
-        <CatalogSection address={address as `0x${string}`} />
+        <StudioBar artistAddress={address} />
       </div>
 
       <div className="mt-12">
@@ -212,6 +197,10 @@ async function ArtistPageBody({ address }: { address: string }) {
           artistAddress={address}
           initialPage={firstPage}
         />
+      </div>
+
+      <div className="mt-12">
+        <CatalogSection address={address as `0x${string}`} />
       </div>
     </div>
   )

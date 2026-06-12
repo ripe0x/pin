@@ -1,5 +1,5 @@
 /**
- * Tiny presentational helpers for transaction + address feedback. Etherscan
+ * Tiny presentational helpers for transaction + address feedback. evm.now
  * links resolve on real mainnet; on a local fork they return 404 but the hash
  * is still useful for debugging the local chain via `cast tx <hash>`.
  */
@@ -21,7 +21,7 @@ export function TxLink({
 }) {
   return (
     <a
-      href={`https://etherscan.io/tx/${hash}`}
+      href={`https://evm.now/tx/${hash}?chainId=1`}
       target="_blank"
       rel="noopener noreferrer"
       className="inline-flex items-baseline gap-1 text-xs text-gray-600 hover:text-fg underline-offset-2 hover:underline"
@@ -42,7 +42,7 @@ export function AddressLink({
 }) {
   return (
     <a
-      href={`https://etherscan.io/address/${address}`}
+      href={`https://evm.now/address/${address}?chainId=1`}
       target="_blank"
       rel="noopener noreferrer"
       className="inline-flex items-baseline gap-1 text-xs text-gray-600 hover:text-fg underline-offset-2 hover:underline"

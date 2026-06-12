@@ -1,7 +1,7 @@
 "use client"
 
 import type { Address } from "viem"
-import { useIsCatalogOwner } from "./useIsCatalogOwner"
+import { useIsStudioOwner } from "@/components/studio/useIsStudioOwner"
 import { RemoveRowButton } from "./RemoveRowButton"
 import {
   ContractLabel,
@@ -24,7 +24,7 @@ export function CatalogContractsEditable({
   contracts: Address[]
   thumbnails?: Record<string, string>
 }) {
-  const isOwner = useIsCatalogOwner(artist)
+  const isOwner = useIsStudioOwner(artist)
   if (contracts.length === 0) {
     return <p className="text-sm text-gray-500">No contracts declared yet.</p>
   }
