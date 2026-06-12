@@ -11,7 +11,6 @@ import { GodModePanel } from "@/components/GodModePanel"
 type ArtistAction = { href: string; label: string }
 
 const ARTIST_ACTIONS: ArtistAction[] = [
-  { href: "/editions/new", label: "Release an edition" },
   { href: "/preserve", label: "Preserve work" },
   { href: "/delist", label: "Leave platforms" },
   { href: "/auction/new", label: "Deploy your auction" },
