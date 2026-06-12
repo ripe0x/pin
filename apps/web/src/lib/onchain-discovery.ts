@@ -798,8 +798,42 @@ export async function discoverFoundationPinnedTokens(
  * Per-page enrichment. v1 multicalled ownerOf + per-token metadata; v2
  * reads from `token_owners` + `token_metadata`. Pure SELECT.
  */
+// Layer-2 abuse backstop for the courtesy metadata resolution below: a
+// per-instance budget of resolutions per minute. The layer-1 defense is
+// the crawler user-agent gate at the gallery call site (declared bots
+// get a Postgres-only render), but user agents can be spoofed — this
+// bucket hard-caps what a spoofed sweep can spend. Humans browsing a few
+// pages a minute never hit it; over budget, tiles render as placeholders
+// and self-heal on a later view (the resolver writes through, so every
+// granted resolution is permanent progress).
+const RESOLVE_BUDGET_PER_WINDOW = 120
+const RESOLVE_WINDOW_MS = 60_000
+let resolveWindowStart = 0
+let resolveBudgetSpent = 0
+function takeResolveBudget(wanted: number): number {
+  const now = Date.now()
+  if (now - resolveWindowStart > RESOLVE_WINDOW_MS) {
+    resolveWindowStart = now
+    resolveBudgetSpent = 0
+  }
+  const granted = Math.max(
+    0,
+    Math.min(wanted, RESOLVE_BUDGET_PER_WINDOW - resolveBudgetSpent),
+  )
+  resolveBudgetSpent += granted
+  return granted
+}
+
 export async function enrichTokens(
   refs: readonly TokenRef[],
+  opts?: {
+    /**
+     * Resolve missing metadata from the chain (default true). Pass false
+     * for crawler-triggered renders: bots get whatever token_metadata
+     * already holds, and never spend tokenURI/IPFS reads.
+     */
+    resolveMissing?: boolean
+  },
 ): Promise<DiscoveredToken[]> {
   if (refs.length === 0 || !sql) return []
 
@@ -844,12 +878,15 @@ export async function enrichTokens(
   // in one render (uncapped remainder fills on subsequent views).
   const MISSING_RESOLVE_CAP = 30
   const RESOLVE_CONCURRENCY = 8
-  const missing = refs
-    .filter((ref) => {
-      const r = byKey.get(`${ref.contract.toLowerCase()}:${ref.tokenId}`)
-      return !r || !(r.name || r.description || r.image_url || r.animation_url)
-    })
-    .slice(0, MISSING_RESOLVE_CAP)
+  const wanted = opts?.resolveMissing === false
+    ? []
+    : refs
+        .filter((ref) => {
+          const r = byKey.get(`${ref.contract.toLowerCase()}:${ref.tokenId}`)
+          return !r || !(r.name || r.description || r.image_url || r.animation_url)
+        })
+        .slice(0, MISSING_RESOLVE_CAP)
+  const missing = wanted.slice(0, takeResolveBudget(wanted.length))
   if (missing.length > 0) {
     let cursor = 0
     await Promise.all(
