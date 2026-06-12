@@ -835,6 +835,48 @@ export async function enrichTokens(
   const byKey = new Map<string, typeof rows[number]>()
   for (const r of rows) byKey.set(`${r.contract}:${r.token_id}`, r)
 
+  // Courtesy fill for tokens the worker never warmed (unclaimed artists'
+  // seed-discovered works): resolve missing metadata on the spot via
+  // resolveTokenMetadataDirect, which writes through to token_metadata —
+  // each token resolves once ever, then everyone reads it from Postgres.
+  // Bounded: gallery pages call this with ~24 refs; the cap keeps legacy
+  // full-array callers from fanning out hundreds of tokenURI+IPFS reads
+  // in one render (uncapped remainder fills on subsequent views).
+  const MISSING_RESOLVE_CAP = 30
+  const RESOLVE_CONCURRENCY = 8
+  const missing = refs
+    .filter((ref) => {
+      const r = byKey.get(`${ref.contract.toLowerCase()}:${ref.tokenId}`)
+      return !r || !(r.name || r.description || r.image_url || r.animation_url)
+    })
+    .slice(0, MISSING_RESOLVE_CAP)
+  if (missing.length > 0) {
+    let cursor = 0
+    await Promise.all(
+      Array.from({ length: Math.min(RESOLVE_CONCURRENCY, missing.length) }, async () => {
+        while (cursor < missing.length) {
+          const ref = missing[cursor++]
+          const meta = await resolveTokenMetadataDirect(
+            ref.contract,
+            ref.tokenId,
+          ).catch(() => null)
+          if (!meta) continue
+          byKey.set(`${ref.contract.toLowerCase()}:${ref.tokenId}`, {
+            contract: ref.contract.toLowerCase(),
+            token_id: ref.tokenId,
+            name: meta.name,
+            description: meta.description,
+            image_url: meta.image,
+            animation_url: meta.animation_url,
+            owner:
+              byKey.get(`${ref.contract.toLowerCase()}:${ref.tokenId}`)?.owner ??
+              null,
+          })
+        }
+      }),
+    )
+  }
+
   const { ipfsToHttp, extractCid } = await import("@pin/shared")
 
   return refs.map((ref) => {
