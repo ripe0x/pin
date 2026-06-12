@@ -64,9 +64,10 @@ export default function RootLayout({
       <body className="min-h-screen antialiased" suppressHydrationWarning>
         <Providers>
           <Navbar />
-          {/* pt clears the fixed navbar: a 64px nav row on every viewport,
-              plus the mobile-only search row that stacks below it. */}
-          <main className="pt-28 md:pt-16">{children}</main>
+          {/* pt clears the fixed navbar: a 64px nav row on every viewport.
+              (Search now lives in the navbar/hamburger, so there's no longer
+              a mobile search row stacking extra height below the bar.) */}
+          <main className="pt-16">{children}</main>
           <Footer />
         </Providers>
       </body>
