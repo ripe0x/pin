@@ -849,29 +849,46 @@ function MigrateRow({
             </div>
           ) : (
             <>
-              {/* This → That comparison */}
-              <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-                <SideCard
-                  label={sourcePlatformLabel}
-                  reserveEth={row.reserveInput}
-                  duration={durationLabel(row.durationSec)}
-                  feeBps={sourceFeeBps}
-                  emphasis="regular"
-                />
-                <span
-                  className="text-gray-300 text-base leading-none select-none"
-                  aria-hidden
-                >
-                  →
-                </span>
-                <SideCard
-                  label="Your Sovereign auction house"
-                  reserveEth={row.reserveInput}
-                  duration={durationLabel(row.durationSec)}
-                  feeBps={0}
-                  emphasis="strong"
-                />
-              </div>
+              {sourceFeeBps > 0 ? (
+                /* This → That comparison — only meaningful when the
+                   source charges a fee the Sovereign house doesn't.
+                   Foundation removed its protocol fee, so FND rows fall
+                   through to the plain terms line below. */
+                <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+                  <SideCard
+                    label={sourcePlatformLabel}
+                    reserveEth={row.reserveInput}
+                    duration={durationLabel(row.durationSec)}
+                    feeBps={sourceFeeBps}
+                    emphasis="regular"
+                  />
+                  <span
+                    className="text-gray-300 text-base leading-none select-none"
+                    aria-hidden
+                  >
+                    →
+                  </span>
+                  <SideCard
+                    label="Your Sovereign auction house"
+                    reserveEth={row.reserveInput}
+                    duration={durationLabel(row.durationSec)}
+                    feeBps={0}
+                    emphasis="strong"
+                  />
+                </div>
+              ) : (
+                /* No fee delta to show — just the relisting terms. */
+                <div className="mt-3 flex items-center gap-2 text-[11px] text-gray-500 tabular-nums">
+                  <span className="text-gray-300 leading-none" aria-hidden>
+                    →
+                  </span>
+                  <span className="min-w-0">
+                    Relisting on your Sovereign auction house ·{" "}
+                    {row.reserveInput} ETH reserve ·{" "}
+                    {durationLabel(row.durationSec)}
+                  </span>
+                </div>
+              )}
 
               {/* Edit toggle */}
               <div className="mt-2 flex items-center justify-end">

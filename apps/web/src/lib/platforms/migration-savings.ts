@@ -10,11 +10,11 @@
  * (the premium is paid by the bidder, not the seller, so it doesn't
  * affect seller savings).
  *
- * Foundation: contract-side `protocolFeeBps` is parameterized but has been
- * 500 (5%) on mainnet for the lifetime of the v2 NFTMarket. We hard-code
- * the 5% display value rather than per-row RPC reads — the migrate row
- * is a hint, not a settlement quote, and the on-chain numbers are the
- * source of truth at settle time.
+ * Foundation: the v2 NFTMarket charged a 500 (5%) protocol fee for years,
+ * but Foundation has since removed the seller-side protocol fee — it's now
+ * 0. With both source and destination at 0%, there's no fee delta to show,
+ * so the migrate row suppresses the "you receive" comparison for any 0-fee
+ * source (see `MigrateRow`) and just shows the relisting terms.
  *
  * SuperRare: the fee bps depends on primary vs secondary, which we don't
  * cheaply know per row in the cancellable-listings stream. We surface
@@ -28,7 +28,7 @@ import { formatEther } from "viem"
 import type { PlatformId } from "./types"
 
 const FEE_BPS_BY_PLATFORM: Partial<Record<PlatformId, number>> = {
-  foundation: 500, // 5% protocol fee
+  foundation: 0, // Foundation removed the seller-side protocol fee
   superrareV2: 1500, // up to 15% (primary sale DAO Treasury cut)
 }
 
