@@ -1,4 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" fill="#000"/>
-  <text x="16" y="22" text-anchor="middle" font-family="system-ui,sans-serif" font-size="16" font-weight="600" fill="#fff">CG</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-240 -1139.67 3130.37 3130.37">
+  <!-- Black tile + white PND wordmark. A solid tile (not a currentColor mark)
+       so the favicon reads on both light and dark browser chrome — favicons
+       can't inherit page theme. Paths match the navbar Logo, centered in a
+       square with the wordmark at ~85% width. -->
+  <rect x="-400" y="-1300" width="3600" height="3600" fill="#000"/>
+  <path d="M2650.37 0V850.42H1799.96V600.3H2400.24V250.13H1799.96V0H2650.37Z" fill="#fff"/>
+  <path d="M1799.96 300.328H2050.08V550.458H1799.96V300.328Z" fill="#fff"/>
+  <path d="M850.41 550.901L0 550.461V300.331L600.29 300.771V250.741H0V0.621094H850.41V550.901Z" fill="#fff"/>
+  <path d="M0 600.91H250.11V851.04H0V600.91Z" fill="#fff"/>
+  <path d="M896.09 0H1746.51V850.42H1496.39V250.12H1146.22V850.42H896.09V0Z" fill="#fff"/>
 </svg>
