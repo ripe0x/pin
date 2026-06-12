@@ -149,17 +149,25 @@ async function fetchPndIndexedWorks(
 
   const works: RawWork[] = rows.map((r) => {
     const tokenId = BigInt(r.token_id)
-    const primary = r.image_url ?? undefined
+    const rawImage = r.image_url ?? undefined
     const rawUri = r.raw_uri ?? undefined
-    // Fallback strategy: if primary is IPFS, swap gateway; otherwise
-    // fall back to raw_uri (often the on-chain tokenURI itself, which
-    // Thumb can resolve via the IPFS gateway / weserv proxy chain).
-    const fallback =
-      primary && isIpfsLike(primary)
-        ? swapIpfsGateway(primary)
-        : isIpfsLike(rawUri)
-          ? toIpfsHttpUrl(rawUri)
-          : rawUri
+    // `image_url` is stored exactly as the contract wrote it — often a
+    // raw `ipfs://` URI. Browsers can't load that scheme directly (an
+    // <img>/<video> won't even fire onError for it, so no fallback
+    // chain ever starts) — resolve to an https gateway up front and
+    // keep a *different* gateway as the second hop. Non-IPFS URLs pass
+    // through; their fallback comes from raw_uri as before.
+    let primary = rawImage
+    let fallback: string | undefined
+    if (rawImage?.startsWith("ipfs://")) {
+      const path = rawImage.slice("ipfs://".length)
+      primary = `https://ipfs.io/ipfs/${path}`
+      fallback = `https://dweb.link/ipfs/${path}`
+    } else if (rawImage && isIpfsLike(rawImage)) {
+      fallback = swapIpfsGateway(rawImage)
+    } else {
+      fallback = isIpfsLike(rawUri) ? toIpfsHttpUrl(rawUri) : rawUri
+    }
     return {
       id: `${r.contract}:${r.token_id}`,
       title: r.name && r.name.trim() ? r.name : `#${r.token_id}`,

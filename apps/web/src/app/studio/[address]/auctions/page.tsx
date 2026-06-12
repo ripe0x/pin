@@ -1,6 +1,6 @@
-import Link from "next/link"
 import { notFound } from "next/navigation"
 import { DeployHouseCTA } from "@/components/auction/DeployHouseCTA"
+import { StartSingleAuctionCard } from "@/components/auction/StartSingleAuctionCard"
 import { SovereignBulkPanel } from "@/components/listings/SovereignBulkPanel"
 
 /**
@@ -38,20 +38,8 @@ export default async function StudioAuctionsPage({
       {/* Renders only when no house is deployed yet. */}
       <DeployHouseCTA artistAddress={address} />
 
-      <div className="border border-gray-200 rounded-md p-4 flex items-center justify-between gap-4">
-        <div className="space-y-0.5">
-          <p className="text-sm font-medium">List a single work</p>
-          <p className="text-xs text-gray-500">
-            Paste any ERC-721 you own, or pick from your indexed works.
-          </p>
-        </div>
-        <Link
-          href="/auction/new"
-          className="shrink-0 text-[11px] font-mono font-medium uppercase tracking-wider px-4 py-2 border border-gray-300 hover:border-fg transition-colors"
-        >
-          Start an auction →
-        </Link>
-      </div>
+      {/* Link activates only once the house exists. */}
+      <StartSingleAuctionCard artistAddress={address} />
 
       {/* Bulk list + cancel pending; renders only when a house exists. */}
       <SovereignBulkPanel artistAddress={address} />

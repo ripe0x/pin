@@ -33,8 +33,6 @@ export default async function StudioListingsPage({
         </p>
       </header>
 
-      <BulkDelistPanel artistAddress={address} showEmptyState />
-
       <div className="border border-gray-200 rounded-md p-4 flex items-center justify-between gap-4">
         <div className="space-y-0.5">
           <p className="text-sm font-medium">
@@ -52,6 +50,8 @@ export default async function StudioListingsPage({
           Migrate →
         </Link>
       </div>
+
+      <BulkDelistPanel artistAddress={address} showEmptyState />
     </div>
   )
 }
