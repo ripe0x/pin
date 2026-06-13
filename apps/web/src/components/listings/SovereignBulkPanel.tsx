@@ -444,12 +444,6 @@ function BulkCancelSection({
   const router = useRouter()
   const [load, setLoad] = useState<CancelLoadState>({ kind: "loading" })
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  // Snapshot of which tokens the in-flight tx is cancelling. Captured at
-  // submission time so we can fire revalidation requests after the receipt
-  // confirms — `selected` may change between submit and confirmation.
-  const [pendingCancels, setPendingCancels] = useState<
-    Array<{ contract: string; tokenId: string }>
-  >([])
 
   const {
     writeContract,
@@ -487,7 +481,6 @@ function BulkCancelSection({
   // removed in the v2 rebuild — the calls 404'd silently.)
   useEffect(() => {
     if (!isSuccess) return
-    setPendingCancels([])
     router.refresh()
     refresh()
     resetWrite()
@@ -538,11 +531,6 @@ function BulkCancelSection({
     if (load.kind !== "loaded") return
     const targets = load.auctions.filter((a) => selected.has(a.auctionId))
     if (targets.length === 0) return
-    // Capture (contract, tokenId) pairs now so the post-confirm effect can
-    // revalidate them — `selected` may change while the tx is mining.
-    setPendingCancels(
-      targets.map((a) => ({ contract: a.contract, tokenId: a.tokenId })),
-    )
     writeContract({
       address: houseAddress,
       abi: sovereignAuctionHouseAbi,
