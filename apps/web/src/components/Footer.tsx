@@ -30,9 +30,33 @@ export function Footer() {
     <footer className="mt-24 border-t border-gray-200 pt-8 pb-16 px-6 md:px-8">
       <div className="mx-auto max-w-7xl space-y-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-xs font-mono text-gray-400">
-            Artist owned infrastructure on Ethereum
-          </p>
+          <div className="flex flex-col gap-1">
+            <p className="text-xs font-mono text-gray-400">
+              Artist owned infrastructure on Ethereum
+            </p>
+            <div className="mt-4 flex flex-col gap-1">
+              <p className="text-[10px] font-mono text-gray-400">
+                Created by{" "}
+                <a
+                  href="https://x.com/ripe0x"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-fg transition-colors"
+                >
+                  ripe
+                </a>
+              </p>
+              <p className="text-[10px] font-mono text-gray-400">
+                PND logo by{" "}
+                <a
+                  href="/artist/0xc83e83677dd95618686ac9af2cd48972f1b72c22"
+                  className="hover:text-fg transition-colors"
+                >
+                  djkero
+                </a>
+              </p>
+            </div>
+          </div>
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs font-mono text-gray-400">
             <a href="/about" className="hover:text-fg transition-colors">
               About
@@ -53,14 +77,6 @@ export function Footer() {
               className="hover:text-fg transition-colors"
             >
               GitHub
-            </a>
-            <a
-              href="https://x.com/ripe0x"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-fg transition-colors"
-            >
-              Created by ripe
             </a>
             <ThemeToggle />
           </div>
