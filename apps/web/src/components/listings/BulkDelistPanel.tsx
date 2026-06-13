@@ -1,11 +1,27 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useAccount } from "wagmi"
-import type { SellerListing } from "@/lib/seller-listings"
+import type {
+  AuctionListing,
+  BuyNowListing,
+  SellerListing,
+} from "@/lib/seller-listings"
 import { useSellerListings } from "@/lib/useSellerListings"
 import { BATCH_CHUNK_SIZE, useSequentialCancel } from "@/lib/useSequentialCancel"
-import { SellerListingsView } from "@/components/listings/SellerListingsView"
+import {
+  SellerListingsView,
+  PLATFORM_ORDER,
+} from "@/components/listings/SellerListingsView"
+
+// Render + resolve metadata for one page at a time. The full listing set
+// is cheap to fetch, but resolving a name/thumbnail per token (and
+// mounting that many <img>/<video> elements) is the heavy part — an
+// artist with hundreds of listings shouldn't pay it all at once. The
+// selection + cancel path still operates across every page (cancelling
+// needs only contract/tokenId, never metadata), so "select all" remains
+// "leave every platform."
+const PAGE_SIZE = 30
 
 export function BulkDelistPanel({
   artistAddress,
@@ -25,10 +41,14 @@ export function BulkDelistPanel({
     !!connectedAddress &&
     connectedAddress.toLowerCase() === artistAddress.toLowerCase()
 
-  const { state, refresh } = useSellerListings(artistAddress, {
+  // autoResolveMeta:false — we drive metadata resolution per visible page
+  // (see the effect below) instead of resolving the whole set up front.
+  const { state, refresh, resolveMeta } = useSellerListings(artistAddress, {
     enabled: isOwner,
+    autoResolveMeta: false,
   })
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [page, setPage] = useState(0)
   const {
     run,
     stop,
@@ -38,6 +58,51 @@ export function BulkDelistPanel({
     mode,
     walletLabel,
   } = useSequentialCancel()
+
+  // Flat listing set in the SAME order SellerListingsView renders it
+  // (grouped by PLATFORM_ORDER, auctions before buy-nows within each) so
+  // page boundaries line up with what's on screen. Memoized on the
+  // underlying arrays, which only change on refresh — not when metadata
+  // streams in — so paging doesn't thrash.
+  const loadedAuctions = state.kind === "loaded" ? state.auctions : undefined
+  const loadedBuyNows = state.kind === "loaded" ? state.buyNows : undefined
+  const orderedItems = useMemo<SellerListing[]>(() => {
+    if (!loadedAuctions || !loadedBuyNows) return []
+    const out: SellerListing[] = []
+    for (const p of PLATFORM_ORDER) {
+      for (const a of loadedAuctions) if (a.platform === p) out.push(a)
+      for (const b of loadedBuyNows) if (b.platform === p) out.push(b)
+    }
+    return out
+  }, [loadedAuctions, loadedBuyNows])
+
+  const pageCount = Math.max(1, Math.ceil(orderedItems.length / PAGE_SIZE))
+  const pageItems = useMemo(
+    () => orderedItems.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE),
+    [orderedItems, page],
+  )
+
+  // Reset to page 1 when the artist changes; clamp if the list shrank
+  // (e.g. after cancelling rows reduced the count below the current page).
+  useEffect(() => {
+    setPage(0)
+  }, [artistAddress])
+  useEffect(() => {
+    setPage((p) => Math.min(p, pageCount - 1))
+  }, [pageCount])
+
+  // Resolve names + thumbnails only for the visible page. resolveMeta
+  // skips anything already resolved, so flipping back to a seen page is
+  // instant and re-renders from meta don't re-fetch.
+  useEffect(() => {
+    if (pageItems.length === 0) return
+    void resolveMeta(pageItems)
+  }, [pageItems, resolveMeta])
+
+  const handleRefresh = useCallback(() => {
+    setPage(0)
+    refresh()
+  }, [refresh])
 
   // After a run completes: cancelled and skipped rows STAY in the list
   // with their status badges — rows vanishing right after the user acted
@@ -82,7 +147,7 @@ export function BulkDelistPanel({
       <Section>
         <p className="text-sm text-red-500">{state.message}</p>
         <button
-          onClick={refresh}
+          onClick={handleRefresh}
           className="mt-3 text-xs font-medium underline text-gray-700 hover:text-fg"
         >
           Try again
@@ -91,7 +156,7 @@ export function BulkDelistPanel({
     )
   }
 
-  const total = state.auctions.length + state.buyNows.length
+  const total = orderedItems.length
 
   // Partial empty result: the scan didn't complete, so we can't honestly
   // say "you have no listings" — show a refresh prompt instead of
@@ -104,7 +169,7 @@ export function BulkDelistPanel({
           limited or down.
         </p>
         <button
-          onClick={refresh}
+          onClick={handleRefresh}
           className="mt-3 text-xs font-medium underline text-gray-700 hover:text-fg"
         >
           Try again
@@ -124,9 +189,19 @@ export function BulkDelistPanel({
     )
   }
 
-  const allItems: SellerListing[] = [...state.auctions, ...state.buyNows]
-  const allSelected = selected.size === total
+  const allItems: SellerListing[] = orderedItems
+  const allSelected = total > 0 && selected.size === total
   const isRunning = status === "running"
+
+  // The page slice, split back into the shape SellerListingsView wants.
+  const pageAuctions = pageItems.filter(
+    (i): i is AuctionListing => i.kind === "auction",
+  )
+  const pageBuyNows = pageItems.filter(
+    (i): i is BuyNowListing => i.kind === "buyNow",
+  )
+  const rangeStart = page * PAGE_SIZE + 1
+  const rangeEnd = Math.min(page * PAGE_SIZE + PAGE_SIZE, total)
   let doneCount = 0
   for (const [, s] of perItemStatus) if (s.state === "done") doneCount++
 
@@ -178,7 +253,7 @@ export function BulkDelistPanel({
           One of the marketplace scans didn&rsquo;t complete. The list below
           may be missing rows.{" "}
           <button
-            onClick={refresh}
+            onClick={handleRefresh}
             className="font-medium underline hover:text-amber-700"
           >
             Refresh
@@ -186,10 +261,16 @@ export function BulkDelistPanel({
         </div>
       )}
 
-      {/* Rows render immediately; names + thumbnails stream in behind
-          them (see useSellerListings.metaProgress). For a 294-listing
-          seller this turns ~30s of blank "loading" into instant rows
-          plus a visible fill-in. */}
+      {pageCount > 1 && (
+        <p className="mb-3 text-[11px] font-mono text-gray-500 tabular-nums">
+          Showing {rangeStart}&ndash;{rangeEnd} of {total}
+        </p>
+      )}
+
+      {/* Per-page rows render immediately; names + thumbnails stream in
+          behind them (see useSellerListings.metaProgress). Only the
+          visible page resolves metadata, so a 294-listing seller pays
+          ~30 /api/meta calls per page instead of 294 up front. */}
       {state.metaProgress && (
         <div className="mb-4" aria-live="polite">
           <p className="text-[11px] font-mono text-gray-500 mb-1.5 tabular-nums">
@@ -212,14 +293,39 @@ export function BulkDelistPanel({
 
       <SellerListingsView
         mode="interactive"
-        auctions={state.auctions}
-        buyNows={state.buyNows}
+        auctions={pageAuctions}
+        buyNows={pageBuyNows}
         meta={state.meta}
         selected={selected}
         onToggle={toggle}
         perItemStatus={perItemStatus}
         isRunning={isRunning}
       />
+
+      {pageCount > 1 && (
+        <nav
+          className="mt-4 flex items-center justify-between gap-3 border-t border-gray-100 pt-4"
+          aria-label="Listings pages"
+        >
+          <button
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            disabled={page === 0}
+            className="text-[11px] font-mono font-medium uppercase tracking-wider px-3 py-1.5 border border-gray-300 hover:border-fg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            ← Prev
+          </button>
+          <span className="text-[11px] font-mono text-gray-500 tabular-nums">
+            Page {page + 1} of {pageCount}
+          </span>
+          <button
+            onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+            disabled={page >= pageCount - 1}
+            className="text-[11px] font-mono font-medium uppercase tracking-wider px-3 py-1.5 border border-gray-300 hover:border-fg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Next →
+          </button>
+        </nav>
+      )}
 
       <footer className="mt-5 flex items-center justify-between gap-3 border-t border-gray-100 pt-4">
         <p className="text-xs text-gray-500">
@@ -272,7 +378,7 @@ export function BulkDelistPanel({
             </p>
           )}
           <button
-            onClick={refresh}
+            onClick={handleRefresh}
             className="text-xs font-medium underline text-gray-700 hover:text-fg"
           >
             Refresh listings

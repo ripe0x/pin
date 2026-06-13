@@ -25,10 +25,11 @@ export type SellerListingsState =
        * so a refresh re-runs the scan fresh. */
       partial: boolean
       /**
-       * Non-null while per-token metadata (names + thumbnails) is still
-       * resolving in the background. Rows are renderable immediately
-       * with `#tokenId` fallbacks; `meta` fills in incrementally. Null
-       * once every token has resolved.
+       * Non-null while a batch of per-token metadata (names + thumbnails)
+       * is resolving — `{ resolved, total }` for that batch. Rows are
+       * renderable immediately with `#tokenId` fallbacks; `meta` fills in
+       * incrementally. With paginated callers the batch is one page; with
+       * the default auto-resolve it's the whole set. Null when idle.
        */
       metaProgress: { resolved: number; total: number } | null
     }
@@ -45,9 +46,17 @@ const META_FLUSH_MS = 250
  * the per-token display metadata (name + image).
  *
  * The listing set itself is one cached API call and resolves fast; the
- * per-token metadata fan-out is the slow part for large sellers, so the
- * hook goes to `loaded` as soon as the listings arrive and streams
- * `meta` in afterwards (see `metaProgress`).
+ * per-token metadata fan-out (one `/api/meta` call + one thumbnail load
+ * per token) is the slow, heavy part for large sellers. So:
+ *
+ *  - The hook goes to `loaded` as soon as the listing set arrives.
+ *  - Metadata is resolved in throttled batches via `resolveMeta`, which
+ *    skips anything already resolved and merges into `meta`.
+ *  - `autoResolveMeta: true` (default) resolves the whole set in one
+ *    batch — the right behavior for the read-only `/delist` preview.
+ *  - `autoResolveMeta: false` leaves resolution to the caller, which is
+ *    how the paginated bulk-delist panel resolves only the visible page,
+ *    bounding the fan-out for artists with hundreds of listings.
  *
  * Shared by the studio listings tab and the public `/delist` page. The
  * underlying API is pg cached for 5 min keyed on the lowercase address,
@@ -58,16 +67,88 @@ const META_FLUSH_MS = 250
  */
 export function useSellerListings(
   address: string | undefined,
-  { enabled = true }: { enabled?: boolean } = {},
+  {
+    enabled = true,
+    autoResolveMeta = true,
+  }: { enabled?: boolean; autoResolveMeta?: boolean } = {},
 ) {
   const [state, setState] = useState<SellerListingsState>({ kind: "idle" })
   // Bumped on every refresh; in-flight work from a superseded run checks
   // it before touching state so two overlapping refreshes can't interleave.
   const genRef = useRef(0)
+  // Accumulated resolved metadata across (paged) resolveMeta calls.
+  // Mirrors `state.meta` but lets the resolver dedup + merge without a
+  // stale closure. Reset on each refresh.
+  const metaRef = useRef<Map<string, SellerListingMeta>>(new Map())
+  // Bumped per resolveMeta call so that, with overlapping page batches,
+  // only the most recent batch drives the visible progress bar (every
+  // batch still merges its resolved metadata — that data is always good).
+  const batchRef = useRef(0)
+
+  /**
+   * Resolve display metadata for `listings`, skipping any already
+   * resolved, streaming results into `meta` and tracking `metaProgress`
+   * for this batch. Safe to call repeatedly (e.g. per page) — disjoint
+   * or overlapping subsets both behave correctly.
+   */
+  const resolveMeta = useCallback(async (listings: SellerListing[]) => {
+    const gen = genRef.current
+    const batch = ++batchRef.current
+    const pending = listings.filter((l) => !metaRef.current.has(l.id))
+
+    // Fully resolved already (e.g. revisiting a page): just clear any
+    // stale progress this batch is responsible for.
+    if (pending.length === 0) {
+      if (genRef.current === gen && batchRef.current === batch) {
+        setState((prev) =>
+          prev.kind === "loaded" ? { ...prev, metaProgress: null } : prev,
+        )
+      }
+      return
+    }
+
+    const total = pending.length
+    // Push a state update: always merge the latest resolved map; only the
+    // newest batch (and only if not superseded by a refresh) owns the
+    // progress bar.
+    const push = (resolved: number, final: boolean) => {
+      if (genRef.current !== gen) return // superseded by a refresh — drop
+      setState((prev) => {
+        if (prev.kind !== "loaded") return prev
+        const next: SellerListingsState = {
+          ...prev,
+          meta: new Map(metaRef.current),
+        }
+        if (batchRef.current === batch) {
+          next.metaProgress = final ? null : { resolved, total }
+        }
+        return next
+      })
+    }
+
+    push(0, false)
+    let done = 0
+    let flushTimer: ReturnType<typeof setTimeout> | null = null
+    await resolveListingMetadata(pending, {
+      onItem: (id, meta) => {
+        metaRef.current.set(id, meta)
+        done++
+        if (flushTimer === null) {
+          flushTimer = setTimeout(() => {
+            flushTimer = null
+            push(done, false)
+          }, META_FLUSH_MS)
+        }
+      },
+    })
+    if (flushTimer !== null) clearTimeout(flushTimer)
+    push(done, true)
+  }, [])
 
   const refresh = useCallback(async () => {
     if (!address) return
     const gen = ++genRef.current
+    metaRef.current = new Map()
     setState({ kind: "loading" })
     try {
       const { auctions, buyNows, partial } =
@@ -75,49 +156,17 @@ export function useSellerListings(
       if (genRef.current !== gen) return
       const all: SellerListing[] = [...auctions, ...buyNows]
 
-      // Render the rows now; stream names + thumbnails in behind them.
+      // Render the rows now; metadata streams in behind them.
       setState({
         kind: "loaded",
         auctions,
         buyNows,
         meta: new Map(),
         partial,
-        metaProgress:
-          all.length > 0 ? { resolved: 0, total: all.length } : null,
+        metaProgress: null,
       })
       if (all.length === 0) return
-
-      const resolved = new Map<string, SellerListingMeta>()
-      let flushTimer: ReturnType<typeof setTimeout> | null = null
-      const flush = (final: boolean) => {
-        if (genRef.current !== gen) return
-        const snapshot = new Map(resolved)
-        setState((prev) =>
-          prev.kind === "loaded"
-            ? {
-                ...prev,
-                meta: snapshot,
-                metaProgress: final
-                  ? null
-                  : { resolved: snapshot.size, total: all.length },
-              }
-            : prev,
-        )
-      }
-
-      await resolveListingMetadata(all, {
-        onItem: (id, meta) => {
-          resolved.set(id, meta)
-          if (flushTimer === null) {
-            flushTimer = setTimeout(() => {
-              flushTimer = null
-              flush(false)
-            }, META_FLUSH_MS)
-          }
-        },
-      })
-      if (flushTimer !== null) clearTimeout(flushTimer)
-      flush(true)
+      if (autoResolveMeta) void resolveMeta(all)
     } catch (err) {
       if (genRef.current !== gen) return
       setState({
@@ -126,12 +175,12 @@ export function useSellerListings(
           err instanceof Error ? err.message : "Failed to load listings",
       })
     }
-  }, [address])
+  }, [address, autoResolveMeta, resolveMeta])
 
   useEffect(() => {
     if (!enabled || !address) return
     refresh()
   }, [enabled, address, refresh])
 
-  return { state, refresh }
+  return { state, refresh, resolveMeta }
 }
