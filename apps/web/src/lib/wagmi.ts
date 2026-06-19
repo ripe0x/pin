@@ -35,7 +35,11 @@ const anvilUrl = process.env.NEXT_PUBLIC_ANVIL_RPC_URL ?? "http://localhost:8545
 // (31338) so it lands as a brand-new MetaMask entry, and override the
 // default RPC URL so reads, writes, mock-connector calls, and wallet
 // labels all agree on the same endpoint.
-export const FORK_CHAIN_ID = 31339
+// Default 31339 (deliberately distinct from Hardhat's 31337 — see above), but
+// overridable via NEXT_PUBLIC_FORK_CHAIN_ID so the UI can target an anvil that's
+// already running on a different id (e.g. a cubes-witness fork on 31337) without
+// restarting it. Literal env read so Next inlines it into the client bundle.
+export const FORK_CHAIN_ID = Number(process.env.NEXT_PUBLIC_FORK_CHAIN_ID || "31339")
 export const FORK_CHAIN_NAME = "Anvil fork (PND)"
 // Cast through `unknown` because the upstream `foundry` chain object
 // has `id: 31337` as a literal — TypeScript correctly notices we're

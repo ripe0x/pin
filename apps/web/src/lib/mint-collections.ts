@@ -20,7 +20,8 @@ import { vouchAbi, cubeRendererAbi } from "@pin/abi"
 // the chain is the wagmi `forkChain` (id 31339) so wallet/network checks agree;
 // otherwise Ethereum mainnet. NEXT_PUBLIC_* is inlined at build time.
 const FORK_MODE = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
-const FORK_CHAIN_ID = 31339
+// Honors the same NEXT_PUBLIC_FORK_CHAIN_ID override as wagmi.ts (default 31339).
+const FORK_CHAIN_ID = Number(process.env.NEXT_PUBLIC_FORK_CHAIN_ID || "31339")
 export const MINT_CHAIN_ID = FORK_MODE ? FORK_CHAIN_ID : 1
 
 // ── descriptor shape ────────────────────────────────────────────────────────

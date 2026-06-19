@@ -43,6 +43,40 @@ function getClient(): PublicClient {
 
 const lc = (a: string) => a.toLowerCase()
 
+type CallResult = { status: "success"; result: unknown } | { status: "failure"; result?: undefined }
+
+/**
+ * Multicall that degrades gracefully to individual `eth_call`s. On production
+ * mainnet, Multicall3 is present and this is one batched call. On a local anvil
+ * fork whose upstream prunes archive state (e.g. forked from publicnode, then
+ * the head moves on), the lazy fetch of Multicall3's own code 403s, so the
+ * aggregate returns failures (or throws) even though direct calls to the
+ * locally-deployed contracts still work. We retry only the failed entries
+ * individually — zero extra cost when the multicall succeeds.
+ */
+async function multicallResilient(
+  client: PublicClient,
+  contracts: ContractFunctionParameters[],
+): Promise<CallResult[]> {
+  let results: CallResult[]
+  try {
+    results = (await client.multicall({ allowFailure: true, contracts })) as CallResult[]
+  } catch {
+    results = contracts.map(() => ({ status: "failure" }))
+  }
+  await Promise.all(
+    results.map(async (r, i) => {
+      if (r.status === "success") return
+      try {
+        results[i] = { status: "success", result: await client.readContract(contracts[i]) }
+      } catch {
+        /* leave as failure */
+      }
+    }),
+  )
+  return results
+}
+
 // ── data-URI metadata decoding (onchain generative tokenURI) ─────────────────
 
 /**
@@ -124,7 +158,7 @@ export async function getMintSnapshot(desc: MintCollection): Promise<MintSnapsho
       calls.push({ ...base, functionName: desc.window.endFn })
     }
 
-    const res = await client.multicall({ allowFailure: true, contracts: calls })
+    const res = await multicallResilient(client, calls)
     const val = (i: number): bigint =>
       i >= 0 && res[i]?.status === "success" ? BigInt(res[i].result as bigint) : 0n
 
@@ -218,7 +252,7 @@ export async function getAggregateStats(desc: MintCollection): Promise<Aggregate
       { ...base, functionName: "activeVouchCount" },
       { ...base, functionName: "relationshipMaintained" },
     ]
-    const r = await client.multicall({ allowFailure: true, contracts: calls })
+    const r = await multicallResilient(client, calls)
     const num = (i: number): number =>
       r[i]?.status === "success" ? Number(r[i].result as bigint) : 0
     return {
@@ -336,7 +370,7 @@ export async function getPieceToken(
       calls.push({ ...base, functionName: life.freshnessFn, args: [tokenId] })
     }
 
-    const r = await client.multicall({ allowFailure: true, contracts: calls })
+    const r = await multicallResilient(client, calls)
     if (r[0]?.status !== "success") return null // not minted / no such token
     const art = artFromJson(decodeDataUriJson(r[0].result as string))
     const owner = r[1]?.status === "success" ? (r[1].result as Address) : null

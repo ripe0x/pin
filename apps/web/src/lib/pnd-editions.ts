@@ -15,8 +15,9 @@ export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as cons
 export const SURFACE_SHARE_BPS = 1000 // 10%
 
 const FORK_MODE = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
-// Must match wagmi.ts `forkChain` (31339) so wallet/link/chain checks agree.
-const FORK_CHAIN_ID = 31339
+// Must match wagmi.ts `forkChain` so wallet/link/chain checks agree. Honors the
+// same NEXT_PUBLIC_FORK_CHAIN_ID override (default 31339).
+const FORK_CHAIN_ID = Number(process.env.NEXT_PUBLIC_FORK_CHAIN_ID || "31339")
 export const PND_CHAIN = FORK_MODE ? foundry : mainnet
 export const PND_CHAIN_ID = FORK_MODE ? FORK_CHAIN_ID : mainnet.id
 
