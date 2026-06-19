@@ -1,0 +1,364 @@
+import "server-only"
+import {
+  createPublicClient,
+  http,
+  type Address,
+  type ContractFunctionParameters,
+  type PublicClient,
+} from "viem"
+import { mainnet } from "viem/chains"
+import { pgCache } from "./pg-cache"
+import type { MintCollection } from "./mint-collections"
+
+/**
+ * Live, cached onchain reads for the generic ERC-721 mint surface. Modeled on
+ * `editions-onchain.ts`: one short-TTL `pgCache` around a batched multicall per
+ * read, the canonical mainnet chain object so viem resolves Multicall3 (the
+ * fork forks mainnet, so it's present there too), and graceful failure on
+ * minimalist/older contracts (every read tolerates a revert).
+ *
+ * Decision (locked with the user): cached live reads ONLY — no indexer, no
+ * worker, no getLogs. Mint provenance that needs events (the original minter,
+ * the mint tx) is intentionally out of scope; the "recent" surfaces show
+ * current onchain state (occupancy), which is what these reads can serve
+ * cheaply.
+ */
+
+const FORK_MODE = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
+
+function getClient(): PublicClient {
+  if (FORK_MODE) {
+    const url = process.env.NEXT_PUBLIC_ANVIL_RPC_URL || "http://127.0.0.1:8545"
+    return createPublicClient({ chain: mainnet, transport: http(url) })
+  }
+  const explicit = process.env.ALCHEMY_MAINNET_URL
+  if (explicit) return createPublicClient({ chain: mainnet, transport: http(explicit) })
+  const key = process.env.ALCHEMY_API_KEY
+  const url =
+    key && !key.startsWith("set-")
+      ? `https://eth-mainnet.g.alchemy.com/v2/${key}`
+      : "https://eth.drpc.org"
+  return createPublicClient({ chain: mainnet, transport: http(url) })
+}
+
+const lc = (a: string) => a.toLowerCase()
+
+// ── data-URI metadata decoding (onchain generative tokenURI) ─────────────────
+
+/**
+ * Decode a `data:application/json[;base64],…` tokenURI body into an object.
+ * Onchain renderers (Vouch) emit base64 JSON; the utf8/plain forms are handled
+ * too for other contracts. Returns null on any non-data or malformed URI.
+ */
+function decodeDataUriJson(uri: string): Record<string, unknown> | null {
+  if (!uri.startsWith("data:")) return null
+  const comma = uri.indexOf(",")
+  if (comma === -1) return null
+  const meta = uri.slice(5, comma)
+  const raw = uri.slice(comma + 1)
+  try {
+    const body = /;base64/i.test(meta)
+      ? Buffer.from(raw, "base64").toString("utf8")
+      : decodeURIComponent(raw)
+    return JSON.parse(body) as Record<string, unknown>
+  } catch {
+    return null
+  }
+}
+
+function str(v: unknown): string | null {
+  return typeof v === "string" && v.length > 0 ? v : null
+}
+
+export type TokenArt = {
+  imageUrl: string
+  animationUrl: string | null
+  name: string | null
+  description: string | null
+}
+
+function artFromJson(json: Record<string, unknown> | null): TokenArt {
+  return {
+    imageUrl: str(json?.image) ?? str(json?.image_url) ?? "",
+    animationUrl: str(json?.animation_url) ?? str(json?.animation),
+    name: str(json?.name),
+    description: str(json?.description),
+  }
+}
+
+// ── snapshot (price / supply / window) ───────────────────────────────────────
+
+export type MintSnapshot = {
+  /** All fields are decimal strings (bigint-safe across the RSC boundary). */
+  priceWei: string
+  minted: string
+  cap: string // "0" == uncapped
+  mintStart: string // unix seconds; "0" == no explicit start
+  mintEnd: string // unix seconds; "0" == open-ended
+}
+
+export async function getMintSnapshot(desc: MintCollection): Promise<MintSnapshot> {
+  return pgCache(`mint-snap:${lc(desc.address)}`, 20, async () => {
+    const client = getClient()
+    const base = { address: desc.address, abi: desc.abi } as const
+
+    const calls: ContractFunctionParameters[] = [{ ...base, functionName: desc.mintedFn }]
+    let priceIdx = -1
+    let capIdx = -1
+    let startIdx = -1
+    let endIdx = -1
+    if (desc.price.kind === "getter") {
+      priceIdx = calls.length
+      calls.push({ ...base, functionName: desc.price.fn })
+    }
+    if (desc.cap.kind === "getter") {
+      capIdx = calls.length
+      calls.push({ ...base, functionName: desc.cap.fn })
+    }
+    if (desc.window.kind === "start-duration" || desc.window.kind === "start-end") {
+      startIdx = calls.length
+      calls.push({ ...base, functionName: desc.window.startFn })
+    }
+    if (desc.window.kind === "start-end") {
+      endIdx = calls.length
+      calls.push({ ...base, functionName: desc.window.endFn })
+    }
+
+    const res = await client.multicall({ allowFailure: true, contracts: calls })
+    const val = (i: number): bigint =>
+      i >= 0 && res[i]?.status === "success" ? BigInt(res[i].result as bigint) : 0n
+
+    const minted = val(0)
+    const priceWei = desc.price.kind === "const" ? desc.price.wei : val(priceIdx)
+    const cap =
+      desc.cap.kind === "const"
+        ? desc.cap.value
+        : desc.cap.kind === "open"
+          ? 0n
+          : val(capIdx)
+    const start = startIdx >= 0 ? val(startIdx) : 0n
+    let end = 0n
+    if (desc.window.kind === "start-duration")
+      end = start > 0n ? start + BigInt(desc.window.durationSec) : 0n
+    else if (desc.window.kind === "start-end") end = val(endIdx)
+
+    return {
+      priceWei: priceWei.toString(),
+      minted: minted.toString(),
+      cap: cap.toString(),
+      mintStart: start.toString(),
+      mintEnd: end.toString(),
+    }
+  })
+}
+
+// ── collection hero art ──────────────────────────────────────────────────────
+
+async function readUriString(
+  client: PublicClient,
+  address: Address,
+  abi: MintCollection["abi"],
+  fn: string,
+  tokenId: bigint,
+): Promise<string | null> {
+  try {
+    return (await client.readContract({
+      address,
+      abi,
+      functionName: fn,
+      args: [tokenId],
+    })) as string
+  } catch {
+    return null
+  }
+}
+
+export async function getCollectionArt(desc: MintCollection): Promise<TokenArt | null> {
+  return pgCache(`mint-art:${lc(desc.address)}`, 90, async () => {
+    const client = getClient()
+    if (desc.hero.kind === "static") {
+      return {
+        imageUrl: desc.hero.url,
+        animationUrl: null,
+        name: desc.name,
+        description: desc.description ?? null,
+      }
+    }
+    const uri =
+      desc.hero.kind === "renderer-contract"
+        ? await readUriString(client, desc.hero.address, desc.hero.abi, desc.hero.fn, desc.hero.tokenId)
+        : await readUriString(client, desc.address, desc.abi, "tokenURI", desc.hero.tokenId)
+    if (!uri) return null
+    return artFromJson(decodeDataUriJson(uri))
+  })
+}
+
+// ── shared-aggregate stat block (Vouch cube getters) ─────────────────────────
+
+export type AggregateStats = {
+  trustBps: number
+  coherenceBps: number
+  thresholdBps: number
+  activeCount: number
+  maintained: boolean
+}
+
+export async function getAggregateStats(desc: MintCollection): Promise<AggregateStats | null> {
+  if (!desc.aggregate) return null
+  const agg = desc.aggregate
+  return pgCache(`mint-agg:${lc(agg.address)}`, 30, async () => {
+    const client = getClient()
+    const base = { address: agg.address, abi: agg.abi } as const
+    // Cube aggregate shape (CubeRenderer). Only the shared-aggregate layout has
+    // these getters, and Vouch is the sole such collection today.
+    const calls: ContractFunctionParameters[] = [
+      { ...base, functionName: "trustBps" },
+      { ...base, functionName: "coherenceBps" },
+      { ...base, functionName: "thresholdBps" },
+      { ...base, functionName: "activeVouchCount" },
+      { ...base, functionName: "relationshipMaintained" },
+    ]
+    const r = await client.multicall({ allowFailure: true, contracts: calls })
+    const num = (i: number): number =>
+      r[i]?.status === "success" ? Number(r[i].result as bigint) : 0
+    return {
+      trustBps: num(0),
+      coherenceBps: num(1),
+      thresholdBps: num(2),
+      activeCount: num(3),
+      maintained: r[4]?.status === "success" ? Boolean(r[4].result) : false,
+    }
+  })
+}
+
+// ── per-seat states (shared-aggregate grid + recent list) ────────────────────
+
+type RawRenderState = {
+  minted: boolean
+  active: boolean
+  freshnessBps: number | bigint
+  expiresAt: bigint
+  positionKey: bigint
+  owner: Address
+}
+
+export type SeatState = {
+  tokenId: number
+  minted: boolean
+  active: boolean
+  freshnessBps: number
+  owner: Address | null
+}
+
+async function readCap(client: PublicClient, desc: MintCollection): Promise<bigint> {
+  if (desc.cap.kind === "const") return desc.cap.value
+  if (desc.cap.kind === "open") return 0n
+  try {
+    return BigInt(
+      (await client.readContract({
+        address: desc.address,
+        abi: desc.abi,
+        functionName: desc.cap.fn,
+      })) as bigint,
+    )
+  } catch {
+    return 0n
+  }
+}
+
+/**
+ * All seats in one `getRenderStates(1, cap)` call (shared-aggregate only). Backs
+ * both the seat grid and the "recent" list. Empty array for non-aggregate
+ * layouts or if the read fails (e.g. struct shape drifted from the ABI).
+ */
+export async function getSeatStates(desc: MintCollection): Promise<SeatState[]> {
+  if (desc.layout !== "shared-aggregate") return []
+  return pgCache(`mint-seats:${lc(desc.address)}`, 30, async () => {
+    const client = getClient()
+    const cap = await readCap(client, desc)
+    if (cap <= 0n) return []
+    try {
+      const states = (await client.readContract({
+        address: desc.address,
+        abi: desc.abi,
+        functionName: "getRenderStates",
+        args: [1n, cap],
+      })) as ReadonlyArray<RawRenderState>
+      return states.map((s, i) => ({
+        tokenId: i + 1,
+        minted: s.minted,
+        active: s.active,
+        freshnessBps: Number(s.freshnessBps),
+        owner: s.minted ? s.owner : null,
+      }))
+    } catch {
+      return []
+    }
+  })
+}
+
+// ── single piece (token page) ────────────────────────────────────────────────
+
+export type PieceToken = {
+  tokenId: number
+  owner: Address | null
+  imageUrl: string
+  animationUrl: string | null
+  name: string | null
+  description: string | null
+  active: boolean
+  expiresAt: number // unix seconds, 0 if not applicable
+  freshnessBps: number
+}
+
+export async function getPieceToken(
+  desc: MintCollection,
+  tokenId: bigint,
+): Promise<PieceToken | null> {
+  return pgCache(`mint-piece:${lc(desc.address)}:${tokenId.toString()}`, 45, async () => {
+    const client = getClient()
+    const base = { address: desc.address, abi: desc.abi } as const
+    const life = desc.lifecycle
+
+    const calls: ContractFunctionParameters[] = [
+      { ...base, functionName: "tokenURI", args: [tokenId] },
+      { ...base, functionName: "ownerOf", args: [tokenId] },
+    ]
+    let activeIdx = -1
+    let expiresIdx = -1
+    let freshIdx = -1
+    if (life) {
+      activeIdx = calls.length
+      calls.push({ ...base, functionName: life.activeFn, args: [tokenId] })
+      expiresIdx = calls.length
+      calls.push({ ...base, functionName: life.expiresFn, args: [tokenId] })
+      freshIdx = calls.length
+      calls.push({ ...base, functionName: life.freshnessFn, args: [tokenId] })
+    }
+
+    const r = await client.multicall({ allowFailure: true, contracts: calls })
+    if (r[0]?.status !== "success") return null // not minted / no such token
+    const art = artFromJson(decodeDataUriJson(r[0].result as string))
+    const owner = r[1]?.status === "success" ? (r[1].result as Address) : null
+    const active =
+      activeIdx >= 0 && r[activeIdx]?.status === "success" ? Boolean(r[activeIdx].result) : false
+    const expiresAt =
+      expiresIdx >= 0 && r[expiresIdx]?.status === "success"
+        ? Number(r[expiresIdx].result as bigint)
+        : 0
+    const freshnessBps =
+      freshIdx >= 0 && r[freshIdx]?.status === "success" ? Number(r[freshIdx].result as bigint) : 0
+
+    return {
+      tokenId: Number(tokenId),
+      owner,
+      imageUrl: art.imageUrl,
+      animationUrl: art.animationUrl,
+      name: art.name,
+      description: art.description,
+      active,
+      expiresAt,
+      freshnessBps,
+    }
+  })
+}

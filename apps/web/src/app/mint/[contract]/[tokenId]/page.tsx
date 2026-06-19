@@ -1,0 +1,114 @@
+import type { Metadata } from "next"
+import Link from "next/link"
+import { notFound } from "next/navigation"
+import { OnchainArt } from "@/components/mint/OnchainArt"
+import { SeatLifecyclePanel } from "@/components/mint/SeatLifecyclePanel"
+import { getMintSnapshot, getPieceToken } from "@/lib/mint-onchain"
+import { resolveMintCollection } from "@/lib/mint-collections"
+import { evmNowAddressUrl, shortAddress } from "@/lib/pnd-editions"
+
+type Params = Promise<{ contract: string; tokenId: string }>
+
+function parseTokenId(raw: string): bigint | null {
+  if (!/^\d+$/.test(raw)) return null
+  const id = BigInt(raw)
+  return id >= 1n ? id : null
+}
+
+export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
+  const { contract, tokenId } = await params
+  const desc = resolveMintCollection(contract)
+  const id = parseTokenId(tokenId)
+  if (!desc || id === null) return { title: "Token" }
+  const piece = await getPieceToken(desc, id)
+  const title = piece?.name ?? `${desc.name} #${tokenId}`
+  return { title, twitter: { card: "summary_large_image", title } }
+}
+
+export default async function MintPiecePage({ params }: { params: Params }) {
+  const { contract, tokenId } = await params
+  const desc = resolveMintCollection(contract)
+  if (!desc) notFound()
+  const id = parseTokenId(tokenId)
+  if (id === null) notFound()
+
+  const [piece, snapshot] = await Promise.all([
+    getPieceToken(desc, id),
+    getMintSnapshot(desc),
+  ])
+  if (!piece) notFound()
+
+  const title = piece.name ?? `${desc.name} #${tokenId}`
+  const pieceAspect = desc.pieceAspect ?? "1 / 1"
+
+  return (
+    <div>
+      <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] min-h-[calc(100vh-64px)]">
+        {/* Artwork */}
+        <div className="lg:sticky lg:top-16 lg:h-[calc(100vh-64px)] flex items-center justify-center bg-gray-100 dark:bg-bg p-6 lg:p-10">
+          <OnchainArt
+            imageUrl={piece.imageUrl}
+            animationUrl={piece.animationUrl}
+            title={title}
+            className="h-[64vh] max-h-[78vh] w-auto"
+            aspectRatio={pieceAspect}
+          />
+        </div>
+
+        {/* Sidebar */}
+        <aside className="lg:border-l border-gray-200 px-6 py-8 lg:px-8 lg:py-10">
+          <nav className="mb-4 text-[10px] font-mono uppercase tracking-wider text-gray-400">
+            <Link href={`/mint/${contract}`} className="underline hover:text-fg">
+              ← {desc.name}
+            </Link>
+          </nav>
+
+          <header className="pb-5 border-b border-gray-100 space-y-2">
+            <h1 className="text-2xl font-medium tracking-tight">{title}</h1>
+            {piece.description && (
+              <p className="text-[11px] font-mono text-gray-500 leading-relaxed">{piece.description}</p>
+            )}
+          </header>
+
+          {desc.lifecycle && (
+            <SeatLifecyclePanel
+              collectionId={contract}
+              tokenId={piece.tokenId}
+              owner={piece.owner}
+              active={piece.active}
+              expiresAt={piece.expiresAt}
+              freshnessBps={piece.freshnessBps}
+              priceWei={snapshot.priceWei}
+            />
+          )}
+
+          <section className="py-5 border-b border-gray-100 space-y-2 text-[11px] font-mono">
+            <Fact label={`${desc.tokenNoun} #`} value={String(piece.tokenId)} />
+            <Fact label="Owner" value={piece.owner ? shortAddress(piece.owner) : "—"} />
+            <Fact label="Contract" value={shortAddress(desc.address)} />
+            <Fact label="Art" value="Fully onchain" />
+            <div className="pt-1">
+              <a
+                href={evmNowAddressUrl(desc.address, desc.chainId)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[10px] uppercase tracking-wider text-gray-400 underline hover:text-fg"
+              >
+                View contract ↗
+              </a>
+            </div>
+          </section>
+        </aside>
+      </div>
+    </div>
+  )
+}
+
+function Fact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4">
+      <span className="text-gray-400 uppercase tracking-wider text-[10px]">{label}</span>
+      <span className="tabular-nums text-right">{value}</span>
+    </div>
+  )
+}

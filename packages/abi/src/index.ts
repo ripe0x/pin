@@ -12,6 +12,8 @@ export { ierc721CreatorCoreAbi, ierc1155CreatorCoreAbi } from "./manifoldCreator
 export { mintEditionAbi } from "./mintEdition.ts"
 export { pndEditionsAbi } from "./pndEditions.ts"
 export { pndEditionsFactoryAbi } from "./pndEditionsFactory.ts"
+export { vouchAbi } from "./vouch.ts"
+export { cubeRendererAbi } from "./cubeRenderer.ts"
 export { pndPerWalletCapHookAbi } from "./pndPerWalletCapHook.ts"
 export { pndAllowlistHookAbi } from "./pndAllowlistHook.ts"
 export { pndHoldsEditionHookAbi } from "./pndHoldsEditionHook.ts"
