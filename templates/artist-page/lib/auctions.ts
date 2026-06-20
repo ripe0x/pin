@@ -15,7 +15,7 @@
 import "server-only"
 import { unstable_cache } from "next/cache"
 import { parseAbiItem, type Address } from "viem"
-import { getClient, getLogsChunked } from "./rpc"
+import { getClient, getLogsChunked, withDeadline } from "./rpc"
 import {
   sovereignAuctionHouseAbi,
   sovereignAuctionHouseFactoryAbi,
@@ -181,9 +181,19 @@ const _getAllAuctionsCached = unstable_cache(
   { revalidate: 60, tags: ["all-auctions"] },
 )
 
+// Hard ceiling on the homepage's cold scan. Healthy scans finish in a few
+// seconds; this only bites when the RPC chain is failing. Kept well under the
+// host's 60s per-page prerender budget so a flaky provider degrades the page
+// (empty list, backfilled by ISR) instead of failing the whole build.
+const ALL_AUCTIONS_DEADLINE_MS = 25_000
+
 export async function getAllAuctions(): Promise<AuctionSummary[]> {
   const { artistAddress } = getConfig()
-  return _getAllAuctionsCached(artistAddress)
+  return withDeadline(
+    _getAllAuctionsCached(artistAddress),
+    ALL_AUCTIONS_DEADLINE_MS,
+    [],
+  )
 }
 
 /**
