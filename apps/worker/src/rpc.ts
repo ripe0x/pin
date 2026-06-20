@@ -1,23 +1,38 @@
 /**
  * Shared viem mainnet client for worker tasks.
  *
- * RPC strategy: multi-provider fallback chain across free public RPCs.
- * No single provider is reliable enough at our request volume; drpc
- * free tier times out under load, individual public RPCs have varying
- * uptime. Fallback transports try each in order on failure, transparently.
+ * RPC strategy: multi-provider fallback chain, free public RPCs first,
+ * paid Alchemy only as a last-resort backstop. No single provider is
+ * reliable enough at our request volume; fallback transports try each in
+ * order on failure, transparently.
  *
- * Order (most-reliable first, observed empirically):
- *   1. publicnode      — most reliable for eth_getLogs + eth_call
- *   2. llamarpc        — solid backup
- *   3. ankr            — solid backup
- *   4. drpc            — works for short windows; included so its
- *                        free-tier quota actually gets used
- *   5. alchemy (paid)  — last-resort backstop. The worker's call volume
- *                        is bounded by `known_artists × scan cadence`,
- *                        not by traffic, so even falling all the way
- *                        through to paid Alchemy is pennies/day in
- *                        practice — not a recurrence of the v1
- *                        "every page render fires chain reads" bill.
+ * The worker scans the long tail incrementally, which means *archive*
+ * eth_getLogs — reading logs older than the ~128 most recent blocks. The
+ * free RPCs have changed under us and most no longer serve those:
+ *   - publicnode now 403s archive getLogs ("Archive requests require a
+ *     personal token") — still great for eth_call/multicall at `latest`.
+ *   - llamarpc has been 5xx-ing (Cloudflare 521) and prunes archive state.
+ *   - ankr (rpc.ankr.com/eth) is now fully key-gated — even eth_call returns
+ *     -32000 Unauthorized without a key — so it was pure dead weight and is
+ *     dropped from the chain.
+ * Left unaddressed, every archive getLogs fell through all the free
+ * providers to *paid* Alchemy. Tenderly's public gateway serves full-range
+ * archive getLogs (and eth_call) with no token, so it now sits right behind
+ * publicnode to catch those scans for free before we ever reach Alchemy.
+ *
+ * Order (free first, paid last):
+ *   1. publicnode      — primary for the high-volume eth_call/multicall
+ *                        traffic; archive getLogs token-gated (rotates off).
+ *   2. tenderly        — archive getLogs + eth_call, no token. Catches the
+ *                        historical scans publicnode refuses.
+ *   3. llamarpc        — deep free eth_call fallback (self-heals; fast-fails
+ *                        when its origin is down).
+ *   4. drpc            — getLogs in short (<=10k) windows + trace; free tier.
+ *   5. alchemy (paid)  — last-resort backstop. The worker's call volume is
+ *                        bounded by `known_artists × scan cadence`, not by
+ *                        traffic, so the rare fall-through here is pennies —
+ *                        not a recurrence of the v1 "every page render fires
+ *                        chain reads" bill.
  *
  * Per-transport `timeout: 8_000` keeps a stuck provider from blocking
  * the whole chain. `batch: true` reduces RPC count when viem can batch
@@ -27,6 +42,8 @@ import { createPublicClient, fallback, http, type PublicClient } from "viem"
 import { mainnet } from "viem/chains"
 
 function getTransports() {
+  // drpc is stored under ALCHEMY_MAINNET_URL for legacy reasons — see the
+  // workspace's env conventions.
   const drpcUrl = process.env.ALCHEMY_MAINNET_URL
   const alchemyKey = process.env.ALCHEMY_API_KEY
   const alchemyUrl =
@@ -36,30 +53,27 @@ function getTransports() {
 
   const opts = { batch: true, timeout: 8_000 } as const
 
-  const transports = [
-    http("https://ethereum-rpc.publicnode.com", opts),
-    http("https://eth.llamarpc.com", opts),
-    http("https://rpc.ankr.com/eth", opts),
+  // Free public RPCs first, then the env-provided drpc + paid Alchemy
+  // backstop (see the order rationale in the file header).
+  const urls: (string | null | undefined)[] = [
+    "https://ethereum-rpc.publicnode.com",
+    "https://gateway.tenderly.co/public/mainnet",
+    "https://eth.llamarpc.com",
+    drpcUrl,
+    alchemyUrl,
   ]
 
-  // drpc (currently stored under ALCHEMY_MAINNET_URL for legacy reasons —
-  // see the workspace's env conventions). Only add if it's actually a
-  // distinct URL, not pointing back at one of the public RPCs above.
-  if (drpcUrl && !transports.some((_, i) =>
-    [
-      "https://ethereum-rpc.publicnode.com",
-      "https://eth.llamarpc.com",
-      "https://rpc.ankr.com/eth",
-    ][i] === drpcUrl,
-  )) {
-    transports.push(http(drpcUrl, opts))
+  // De-dupe while preserving order — drpcUrl/alchemyUrl can collide with a
+  // public URL (or each other) depending on how the service env is set.
+  const seen = new Set<string>()
+  const ordered: string[] = []
+  for (const u of urls) {
+    if (!u || seen.has(u)) continue
+    seen.add(u)
+    ordered.push(u)
   }
 
-  if (alchemyUrl && alchemyUrl !== drpcUrl) {
-    transports.push(http(alchemyUrl, opts))
-  }
-
-  return transports
+  return ordered.map((u) => http(u, opts))
 }
 
 export const client: PublicClient = createPublicClient({
@@ -69,7 +83,7 @@ export const client: PublicClient = createPublicClient({
 
 /**
  * Dedicated trace_filter client. The free public RPCs in our fallback
- * chain (publicnode, llamarpc, ankr) don't implement trace_filter at
+ * chain (publicnode, tenderly, llamarpc) don't implement trace_filter at
  * all — but they take ~8s to time out before viem's fallback moves on
  * to drpc. That wasted latency stacks: per-artist scan-manifold does
  * ~200 trace chunks × ~24s wasted overhead = ~80 min of pure stall.
