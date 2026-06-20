@@ -345,6 +345,79 @@ export type PieceToken = {
   freshnessBps: number
 }
 
+// ── full collection (gallery) ────────────────────────────────────────────────
+
+export type GalleryToken = {
+  tokenId: number
+  imageUrl: string
+  active: boolean
+  owner: Address | null
+}
+
+/**
+ * Every minted token's thumbnail art for the collection gallery. Fetched
+ * on-demand (the gallery toggle), not on the collection page's initial render,
+ * so a page view that never opens the gallery pays nothing. For shared-aggregate
+ * collections the minted set + active/owner come from one `getRenderStates`
+ * read; otherwise we walk 1..totalMinted. `limit` caps the per-request work —
+ * large collections should paginate (a follow-up); Vouch's 52 fits in one page.
+ */
+export async function getCollectionTokens(
+  desc: MintCollection,
+  limit = 200,
+): Promise<GalleryToken[]> {
+  return pgCache(`mint-gallery:${lc(desc.address)}`, 30, async () => {
+    const client = getClient()
+
+    let minted: Array<{ tokenId: number; active: boolean; owner: Address | null }> = []
+    const seats = await getSeatStates(desc)
+    if (seats.length > 0) {
+      minted = seats
+        .filter((s) => s.minted)
+        .map((s) => ({ tokenId: s.tokenId, active: s.active, owner: s.owner }))
+    } else {
+      // Generic sequential fallback (standard collections, ids 1..totalMinted).
+      let total = 0
+      try {
+        total = Number(
+          (await client.readContract({
+            address: desc.address,
+            abi: desc.abi,
+            functionName: desc.mintedFn,
+          })) as bigint,
+        )
+      } catch {
+        total = 0
+      }
+      for (let t = 1; t <= total; t++) minted.push({ tokenId: t, active: true, owner: null })
+    }
+
+    minted = minted.slice(0, limit)
+    if (minted.length === 0) return []
+
+    const calls: ContractFunctionParameters[] = minted.map((m) => ({
+      address: desc.address,
+      abi: desc.abi,
+      functionName: "tokenURI",
+      args: [BigInt(m.tokenId)],
+    }))
+    const res = await multicallResilient(client, calls)
+
+    return minted
+      .map((m, i) => {
+        const r = res[i]
+        const art = r?.status === "success" ? artFromJson(decodeDataUriJson(r.result as string)) : null
+        return {
+          tokenId: m.tokenId,
+          imageUrl: art?.imageUrl ?? "",
+          active: m.active,
+          owner: m.owner,
+        }
+      })
+      .filter((t) => t.imageUrl.length > 0)
+  })
+}
+
 export async function getPieceToken(
   desc: MintCollection,
   tokenId: bigint,

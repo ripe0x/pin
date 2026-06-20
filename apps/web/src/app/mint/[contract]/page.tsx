@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { MintPanel } from "@/components/mint/MintPanel"
-import { OnchainArt } from "@/components/mint/OnchainArt"
+import { CollectionStage } from "@/components/mint/CollectionStage"
 import { AggregateStats } from "@/components/mint/AggregateStats"
 import { SeatGrid } from "@/components/mint/SeatGrid"
 import { RecentMints } from "@/components/mint/RecentMints"
@@ -49,12 +49,14 @@ export default async function MintCollectionPage({ params }: { params: Params })
         {/* Artwork: full-bleed, sticky on desktop. */}
         <div className="lg:sticky lg:top-16 lg:h-[calc(100vh-64px)] flex items-center justify-center bg-gray-100 dark:bg-bg p-6 lg:p-10">
           {art ? (
-            <OnchainArt
-              imageUrl={art.imageUrl}
-              animationUrl={art.animationUrl}
+            <CollectionStage
+              collectionId={contract}
+              cubeImageUrl={art.imageUrl}
+              cubeAnimationUrl={art.animationUrl}
               title={desc.name}
-              className="w-full max-w-[860px]"
-              aspectRatio={heroAspect}
+              heroAspect={heroAspect}
+              pieceAspect={desc.pieceAspect}
+              aggregateLabel={desc.layout === "shared-aggregate" ? "Cube" : "Cover"}
             />
           ) : (
             <div className="text-[11px] font-mono text-gray-400">Artwork unavailable</div>
