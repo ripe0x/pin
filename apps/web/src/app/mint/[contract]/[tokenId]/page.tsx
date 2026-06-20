@@ -3,7 +3,8 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { OnchainArt } from "@/components/mint/OnchainArt"
 import { SeatLifecyclePanel } from "@/components/mint/SeatLifecyclePanel"
-import { TokenMetadataViewer } from "@/components/mint/TokenMetadataViewer"
+import { TokenAttributes } from "@/components/mint/TokenAttributes"
+import { MetadataDrawer } from "@/components/mint/MetadataDrawer"
 import { getMintSnapshot, getPieceToken } from "@/lib/mint-onchain"
 import { resolveMintCollection } from "@/lib/mint-collections"
 import { evmNowAddressUrl, shortAddress } from "@/lib/pnd-editions"
@@ -83,6 +84,8 @@ export default async function MintPiecePage({ params }: { params: Params }) {
             />
           )}
 
+          <TokenAttributes metadata={piece.metadata} />
+
           <section className="py-5 border-b border-gray-100 space-y-2 text-[11px] font-mono">
             <Fact label={`${desc.tokenNoun} #`} value={String(piece.tokenId)} />
             <Fact label="Owner" value={piece.owner ? shortAddress(piece.owner) : "—"} />
@@ -100,7 +103,7 @@ export default async function MintPiecePage({ params }: { params: Params }) {
             </div>
           </section>
 
-          <TokenMetadataViewer rawTokenUri={piece.rawTokenUri} metadata={piece.metadata} />
+          <MetadataDrawer rawTokenUri={piece.rawTokenUri} metadata={piece.metadata} />
         </aside>
       </div>
     </div>
