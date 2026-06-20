@@ -343,6 +343,10 @@ export type PieceToken = {
   active: boolean
   expiresAt: number // unix seconds, 0 if not applicable
   freshnessBps: number
+  /** Raw `tokenURI(tokenId)` string straight from the contract. */
+  rawTokenUri: string
+  /** The decoded tokenURI JSON (name, description, image, attributes, …). */
+  metadata: Record<string, unknown> | null
 }
 
 // ── full collection (gallery) ────────────────────────────────────────────────
@@ -445,7 +449,9 @@ export async function getPieceToken(
 
     const r = await multicallResilient(client, calls)
     if (r[0]?.status !== "success") return null // not minted / no such token
-    const art = artFromJson(decodeDataUriJson(r[0].result as string))
+    const rawTokenUri = r[0].result as string
+    const metadata = decodeDataUriJson(rawTokenUri)
+    const art = artFromJson(metadata)
     const owner = r[1]?.status === "success" ? (r[1].result as Address) : null
     const active =
       activeIdx >= 0 && r[activeIdx]?.status === "success" ? Boolean(r[activeIdx].result) : false
@@ -466,6 +472,8 @@ export async function getPieceToken(
       active,
       expiresAt,
       freshnessBps,
+      rawTokenUri,
+      metadata,
     }
   })
 }

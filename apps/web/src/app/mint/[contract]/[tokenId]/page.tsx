@@ -3,6 +3,7 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { OnchainArt } from "@/components/mint/OnchainArt"
 import { SeatLifecyclePanel } from "@/components/mint/SeatLifecyclePanel"
+import { TokenMetadataViewer } from "@/components/mint/TokenMetadataViewer"
 import { getMintSnapshot, getPieceToken } from "@/lib/mint-onchain"
 import { resolveMintCollection } from "@/lib/mint-collections"
 import { evmNowAddressUrl, shortAddress } from "@/lib/pnd-editions"
@@ -98,6 +99,8 @@ export default async function MintPiecePage({ params }: { params: Params }) {
               </a>
             </div>
           </section>
+
+          <TokenMetadataViewer rawTokenUri={piece.rawTokenUri} metadata={piece.metadata} />
         </aside>
       </div>
     </div>
