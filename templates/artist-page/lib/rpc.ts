@@ -25,13 +25,33 @@ import { mainnet } from "viem/chains"
 import { getConfig } from "./config"
 
 // Curated public RPCs for chain 1, ordered by suitability for the read
-// patterns this page actually uses (eth_call + eth_getLogs).
+// patterns this page actually uses (eth_call + archive eth_getLogs).
 //
-// 1. PublicNode — generous getLogs range, reliable.
-// 2. drpc.org — decentralized, also good getLogs support.
-// 3. LlamaRPC — additional fallback.
-// 4. Cloudflare — last resort; getLogs capped at ~1024 blocks so demoted.
+// The homepage enriches past (settled/cancelled) auctions by scanning the
+// house's event history from its creation block forward. That is an *archive*
+// getLogs query — it reads logs far older than the ~128 most recent blocks —
+// and the bundled free RPCs have quietly stopped serving those for free:
+//   - PublicNode now 403s archive getLogs ("Archive requests require a
+//     personal token") — still fine for eth_call at `latest`, useless here.
+//   - drpc free tier rejects ranges over 10k blocks.
+//   - LlamaRPC has been intermittently 5xx-ing (Cloudflare 521).
+//   - Cloudflare caps the range and errors generically on anything wider.
+// With all four failing, viem retries + rotates across them per window and
+// the build-time prerender of `/` blows past the host's 60s per-page budget.
+//
+// Tenderly's public gateway serves full-range archive getLogs (and eth_call)
+// with no token and no signup — it answered the whole house scan in ~1.4s in
+// testing — so it leads. The others stay on as fallbacks for eth_call and
+// recent-log reads. Power users should still set NEXT_PUBLIC_RPC_URL to their
+// own archive endpoint; it slots in ahead of all of these (see getRpcUrls).
+//
+// 1. Tenderly gateway — archive getLogs + eth_call, no token. Primary.
+// 2. PublicNode — fast eth_call / recent logs; archive getLogs token-gated.
+// 3. drpc.org — eth_call + getLogs in <=10k windows (the chunker shrinks to fit).
+// 4. LlamaRPC — additional fallback.
+// 5. Cloudflare — last resort; narrow getLogs range so demoted.
 const PUBLIC_RPCS = [
+  "https://gateway.tenderly.co/public/mainnet",
   "https://ethereum-rpc.publicnode.com",
   "https://eth.drpc.org",
   "https://eth.llamarpc.com",
@@ -76,12 +96,13 @@ export function getClient() {
   return _client
 }
 
-// Initial chunk size for `getLogs`. Public RPCs cap the `eth_getLogs` block
-// range far more tightly than they used to — observed live caps: PublicNode
-// 50k, drpc free tier 10k, Cloudflare 800. Starting at 45k keeps the common
-// path (PublicNode primary) to a single query per window with no wasted
-// oversized first attempt; if a smaller-capped provider answers, we shrink.
-const INITIAL_CHUNK = 45_000n
+// Initial chunk size for `getLogs`. The primary provider (Tenderly gateway)
+// accepts very wide ranges — it answered a ~390k-block window in one call —
+// so we start high to minimize round-trips on the happy path. If a
+// smaller-capped fallback answers instead (drpc 10k, Cloudflare 800), the
+// shrink-on-error logic below narrows the window to fit. Observed caps:
+// PublicNode 50k, drpc free tier 10k, Cloudflare ~800.
+const INITIAL_CHUNK = 100_000n
 // The smallest chunk we'll bother with before giving up. Kept below
 // Cloudflare's ~800-block cap so even the stingiest provider can answer.
 const MIN_CHUNK = 500n
@@ -186,4 +207,42 @@ export async function getLogsChunked<TEvent extends AbiEvent>(
     cursor = end + 1n
   }
   return all
+}
+
+/**
+ * Race a promise against a hard deadline, resolving to `fallback` on timeout
+ * instead of hanging.
+ *
+ * This is the backstop that keeps the build deterministic. The homepage
+ * prerenders at build time and cold-scans this house's whole auction history;
+ * a healthy scan finishes in a few seconds, but if every RPC in the chain is
+ * failing or slow (exactly what broke this build when PublicNode started
+ * 403-ing archive getLogs), viem's retry/rotate can drag the render past the
+ * host's per-page budget (Netlify aborts a static page after 60s) and fail the
+ * whole deploy. With a deadline we instead degrade to `fallback` (an empty
+ * auction list) and let ISR (`revalidate`) repopulate on a later request once
+ * the providers recover.
+ *
+ * The losing promise is intentionally left to settle in the background: if it
+ * resolves after the deadline, its `unstable_cache` wrapper still stores the
+ * real result, so the next request is served warm rather than rescanning.
+ */
+export function withDeadline<T>(
+  promise: Promise<T>,
+  ms: number,
+  fallback: T,
+): Promise<T> {
+  return new Promise<T>((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      () => {
+        clearTimeout(timer)
+        resolve(fallback)
+      },
+    )
+  })
 }

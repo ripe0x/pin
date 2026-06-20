@@ -7,7 +7,13 @@ import {
   type AuctionSummary,
 } from "@/lib/auctions"
 
-export const revalidate = 60
+// Rendered on demand, not prerendered at build, so a deploy never crawls the
+// chain (archive eth_getLogs at build time is exactly what used to fail the
+// build). The expensive reads live behind `unstable_cache` (see
+// lib/auctions.ts): live auctions refresh ~60s via stale-while-revalidate and
+// immutable past auctions are cached until a new one settles, so request-time
+// rendering is cheap and the build ships zero RPC.
+export const dynamic = "force-dynamic"
 
 const BUCKET_RANK: Record<ReturnType<typeof bucketFor>, number> = {
   active: 0,

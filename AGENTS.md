@@ -114,7 +114,12 @@ accidentally staged; delete the directory if you see it.
 `apps/worker/src/rpc.ts` + `apps/worker/src/throttle.ts`:
 
 - Multi-provider viem `fallback`, free public RPCs first:
-  publicnode → llamarpc → ankr → drpc → **Alchemy (last-resort backstop)**.
+  publicnode → tenderly → llamarpc → drpc → **Alchemy (last-resort backstop)**.
+  publicnode now 403s *archive* `eth_getLogs` ("Archive requests require a
+  personal token"), so Tenderly's public gateway sits right behind it to serve
+  the worker's historical log scans for free before anything reaches paid
+  Alchemy. `ankr` was dropped — `rpc.ankr.com/eth` is now fully key-gated
+  (even `eth_call` returns -32000 without a key).
 - A single **global throttle** (`throttleRpc()`) paces ALL tasks at
   ~2 req/s (`RPC_DELAY_MS=500`). One global limiter because drpc's free
   tier rate-limits at the account level.
