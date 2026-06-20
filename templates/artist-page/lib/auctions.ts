@@ -181,11 +181,13 @@ const _getAllAuctionsCached = unstable_cache(
   { revalidate: 60, tags: ["all-auctions"] },
 )
 
-// Hard ceiling on the homepage's cold scan. Healthy scans finish in a few
-// seconds; this only bites when the RPC chain is failing. Kept well under the
-// host's 60s per-page prerender budget so a flaky provider degrades the page
-// (empty list, backfilled by ISR) instead of failing the whole build.
-const ALL_AUCTIONS_DEADLINE_MS = 25_000
+// Hard ceiling on a cold scan. The page renders on demand (not at build), so
+// this guards the request path: a true cache miss must finish before the host
+// kills the serverless function (~10s default on Netlify/Vercel). Healthy
+// scans finish in a couple seconds; on RPC trouble we degrade to an empty list
+// (the cache stays unpopulated, so the next request retries) rather than 500.
+// Steady-state requests hit the warm cache and never reach this.
+const ALL_AUCTIONS_DEADLINE_MS = 9_000
 
 export async function getAllAuctions(): Promise<AuctionSummary[]> {
   const { artistAddress } = getConfig()
@@ -203,9 +205,22 @@ export async function getAllAuctions(): Promise<AuctionSummary[]> {
  * `auctions(id)` getter.
  *
  * All values are plain strings so the result is JSON-serializable for
- * `unstable_cache`'s disk layer (bigints are not). Cached for 5 minutes:
- * settled/cancelled history is effectively append-only, so we don't need to
- * rescan it on every 60s auction-list refresh.
+ * `unstable_cache`'s disk layer (bigints are not).
+ *
+ * Caching is the load-bearing part: a settled/cancelled auction is *immutable*
+ * (the contract deleted its storage; the only record is in logs that never
+ * change), so we should derive it from an archive `eth_getLogs` scan exactly
+ * once, not on a timer and never at build. Two mechanisms get us there:
+ *   - `pastCount` (the number of storage-deleted auctions) is threaded in as
+ *     an argument purely so it becomes part of the cache key. It increments
+ *     exactly when a new auction settles or cancels — i.e. exactly when this
+ *     blob needs to grow — so the cached value is reused untouched until then.
+ *   - `revalidate` is a long 24h window rather than minutes: it's only a
+ *     self-heal backstop (a scan can return partial data if an RPC window
+ *     fails — see getLogsChunked — so we don't want to cache a gap forever),
+ *     not the normal refresh trigger.
+ * Net effect: zero archive scans at build, and at runtime a scan only when a
+ * new past auction appears (or once a day to self-heal), instead of every 5m.
  */
 type HouseEventData = {
   created: Record<
@@ -223,7 +238,14 @@ type HouseEventData = {
 }
 
 const _getHouseEventDataCached = unstable_cache(
-  async (artistAddress: Address, house: Address): Promise<HouseEventData> => {
+  // `pastCount` is unused in the body — it only varies the cache key (see the
+  // doc comment above). `artistAddress` is keyed for the same multi-tenant
+  // reason as elsewhere in this file.
+  async (
+    artistAddress: Address,
+    house: Address,
+    pastCount: number,
+  ): Promise<HouseEventData> => {
     const client = getClient()
     const latest = await client.getBlockNumber().catch(() => null)
     if (latest === null) return { created: {}, settled: {}, cancelled: [] }
@@ -263,8 +285,8 @@ const _getHouseEventDataCached = unstable_cache(
     }
     return data
   },
-  ["house-event-data-v1"],
-  { revalidate: 60 * 5, tags: ["all-auctions"] },
+  ["house-event-data-v2"],
+  { revalidate: 60 * 60 * 24, tags: ["all-auctions"] },
 )
 
 async function fetchAllAuctionsForHouse(
@@ -343,7 +365,13 @@ async function fetchAllAuctionsForHouse(
   //    whose auctions are all still live never runs a single getLogs call.
   const auctions: AuctionSummary[] = [...liveById.values()]
   if (deletedIds.length > 0) {
-    const events = await _getHouseEventDataCached(artistAddress, house)
+    // Pass the past-auction count as the cache key signal: the event blob is
+    // immutable per count, so this rescans only when a new auction settles.
+    const events = await _getHouseEventDataCached(
+      artistAddress,
+      house,
+      deletedIds.length,
+    )
     for (const idStr of deletedIds) {
       const c = events.created[idStr]
       const settled = events.settled[idStr]
