@@ -149,7 +149,11 @@ export async function getMintSnapshot(desc: MintCollection): Promise<MintSnapsho
       capIdx = calls.length
       calls.push({ ...base, functionName: desc.cap.fn })
     }
-    if (desc.window.kind === "start-duration" || desc.window.kind === "start-end") {
+    if (
+      desc.window.kind === "start-duration" ||
+      desc.window.kind === "start-end" ||
+      desc.window.kind === "start-only"
+    ) {
       startIdx = calls.length
       calls.push({ ...base, functionName: desc.window.startFn })
     }

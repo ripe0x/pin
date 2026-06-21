@@ -21,11 +21,17 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   const { contract } = await params
   const desc = resolveMintCollection(contract)
   if (!desc) return { title: "Mint" }
+  // Title/description come from the token's onchain metadata (tokenURI JSON);
+  // the descriptor is only a fallback when the art can't be read. getCollectionArt
+  // is cached, so this shares the fetch with the page render below.
+  const art = await getCollectionArt(desc).catch(() => null)
+  const name = art?.name ?? desc.name
+  const description = art?.description ?? desc.description
   return {
-    title: `Mint · ${desc.name}`,
-    description: desc.description,
-    openGraph: { title: desc.name, description: desc.description },
-    twitter: { card: "summary_large_image", title: desc.name },
+    title: `Mint · ${name}`,
+    description,
+    openGraph: { title: name, description },
+    twitter: { card: "summary_large_image", title: name },
   }
 }
 
@@ -42,6 +48,10 @@ export default async function MintCollectionPage({ params }: { params: Params })
   ])
 
   const heroAspect = desc.heroAspect ?? "1 / 1"
+  // Prefer the onchain metadata (name/description from the tokenURI JSON); fall
+  // back to the descriptor only when the art couldn't be read.
+  const title = art?.name ?? desc.name
+  const description = art?.description ?? desc.description
 
   return (
     <div>
@@ -53,7 +63,7 @@ export default async function MintCollectionPage({ params }: { params: Params })
               collectionId={contract}
               cubeImageUrl={art.imageUrl}
               cubeAnimationUrl={art.animationUrl}
-              title={desc.name}
+              title={title}
               heroAspect={heroAspect}
               pieceAspect={desc.pieceAspect}
               aggregateLabel={desc.layout === "shared-aggregate" ? "Cube" : "Cover"}
@@ -72,9 +82,9 @@ export default async function MintCollectionPage({ params }: { params: Params })
           </nav>
 
           <header className="pb-5 border-b border-gray-100 space-y-2">
-            <h1 className="text-2xl font-medium tracking-tight">{desc.name}</h1>
-            {desc.description && (
-              <p className="text-[11px] font-mono text-gray-500 leading-relaxed">{desc.description}</p>
+            <h1 className="text-2xl font-medium tracking-tight">{title}</h1>
+            {description && (
+              <p className="text-[11px] font-mono text-gray-500 leading-relaxed">{description}</p>
             )}
           </header>
 

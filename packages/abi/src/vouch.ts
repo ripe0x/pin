@@ -1,10 +1,11 @@
 /**
  * Vouch — onchain-generative ERC-721 (cubes-witness / `Vouch.sol`).
  *
- * One seat per token (52 max), no-arg one-per-wallet `mint()` inside a fixed
- * 24h window at a contract-read price (`MINT_PRICE`), then a seat lifecycle:
- * free `renew()` keeps the 30-day clock alive, a lapsed seat is reclaimable by
- * anyone via `claim()` at the mint price. Art is fully onchain — `tokenURI`
+ * One seat per token (52 max), no-arg one-per-wallet `mint()` open from
+ * `mintStart` until sold out, at a contract-read, owner-settable price
+ * (`mintPrice`), then a seat lifecycle: free `renew()` keeps the 52-day clock
+ * alive, a lapsed seat is reclaimable by anyone via `claim()` at the mint
+ * price. Art is fully onchain — `tokenURI`
  * delegates to a swappable renderer that returns a `data:application/json`
  * blob with an inline SVG.
  *
@@ -75,14 +76,7 @@ export const vouchAbi = [
   },
   {
     type: "function",
-    name: "MINT_PRICE",
-    inputs: [],
-    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "MINT_WINDOW",
+    name: "mintPrice",
     inputs: [],
     outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
     stateMutability: "view",

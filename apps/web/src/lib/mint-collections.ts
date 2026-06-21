@@ -39,8 +39,9 @@ export type CapSource =
 
 /** Mint window. */
 export type WindowSource =
-  | { kind: "start-duration"; startFn: string; durationSec: number } // Vouch: mintStart + 24h
+  | { kind: "start-duration"; startFn: string; durationSec: number }
   | { kind: "start-end"; startFn: string; endFn: string }
+  | { kind: "start-only"; startFn: string } // Vouch: opens at start, no time close (supply-capped)
   | { kind: "open" } // always open
 
 /** Where the collection-level hero artwork comes from. */
@@ -116,14 +117,14 @@ function vouchCollection(): MintCollection | null {
     slug: "vouch",
     name: "Vouch",
     description:
-      "Each Vouch is a 30-day seat in a shared onchain cube. Owning one places a unique contour in the artwork; let it lapse and anyone can reclaim the seat.",
+      "Each Vouch is a 52-day seat in a shared onchain cube. Owning one places a unique contour in the artwork; let it lapse and anyone can reclaim the seat.",
     chainId: MINT_CHAIN_ID,
     address: VOUCH_ADDRESS as Address,
     abi: vouchAbi as unknown as Abi,
     mintedFn: "totalMinted",
     cap: { kind: "getter", fn: "MAX_SUPPLY" },
-    price: { kind: "getter", fn: "MINT_PRICE" },
-    window: { kind: "start-duration", startFn: "mintStart", durationSec: 24 * 60 * 60 },
+    price: { kind: "getter", fn: "mintPrice" },
+    window: { kind: "start-only", startFn: "mintStart" },
     alreadyMintedFn: "hasMinted",
     mintFn: "mint",
     quantity: false,
@@ -144,8 +145,8 @@ function vouchCollection(): MintCollection | null {
       freshnessFn: "freshnessBps",
     },
     tokenNoun: "seat",
-    heroAspect: "900 / 620", // CubeRenderer viewBox
-    pieceAspect: "180 / 220", // VouchRenderer portrait viewBox
+    heroAspect: "1 / 1", // CubeRenderer viewBox (520×520, square)
+    pieceAspect: "1 / 1", // VouchRenderer viewBox (200×200, square)
   }
 }
 
