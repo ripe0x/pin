@@ -9,6 +9,7 @@ import { mintFactoryAbi } from "./abis/MintFactory"
 import { tlUniversalDeployerAbi } from "./abis/TLUniversalDeployer"
 import { superrareNftAbi } from "./abis/SuperRareNFT"
 import { muriProtocolAbi } from "./abis/MURIProtocol"
+import { homageAbi } from "./abis/Homage"
 
 /**
  * PND v2 Ponder scope — REDUCED from v1.
@@ -76,6 +77,43 @@ const TL_DEPLOYER_DEPLOY_BLOCK = 19_062_900
 const MURI_PROTOCOL_ADDRESS =
   "0x0000000000C2A0B63ab4aA971B08B905E5875b01" as const
 const MURI_PROTOCOL_DEPLOY_BLOCK = 23_754_750
+
+// Homage ("Homage to the Punk") — fixed shared singleton, DEPLOY-GATED.
+// Not deployed yet, so it is registered ONLY when both HOMAGE_ADDRESS and
+// HOMAGE_START_BLOCK are set in the env. Until then the indexer runs
+// exactly as before (the contract entry is omitted, no extra RPC work).
+// At launch: set HOMAGE_ADDRESS=<deployed contract> and
+// HOMAGE_START_BLOCK=<deploy block> and redeploy Ponder — backfill from the
+// deploy block is trivial (single fixed contract, low event volume).
+//
+// Env is the single wiring lever (mirrors PNDEditionsFactory's post-deploy
+// story); no address/block is hardcoded because neither exists pre-audit.
+const HOMAGE_ADDRESS_RAW = process.env.HOMAGE_ADDRESS
+const HOMAGE_START_BLOCK_RAW = process.env.HOMAGE_START_BLOCK
+const HOMAGE_ENABLED = Boolean(HOMAGE_ADDRESS_RAW && HOMAGE_START_BLOCK_RAW)
+
+if (HOMAGE_ADDRESS_RAW && !/^0x[0-9a-fA-F]{40}$/.test(HOMAGE_ADDRESS_RAW)) {
+  throw new Error(
+    `HOMAGE_ADDRESS is set but not a valid 20-byte address: ${HOMAGE_ADDRESS_RAW}`,
+  )
+}
+if (HOMAGE_ADDRESS_RAW && !HOMAGE_START_BLOCK_RAW) {
+  throw new Error(
+    "HOMAGE_ADDRESS is set but HOMAGE_START_BLOCK is not. Set both (the " +
+      "deploy block) so backfill starts at deploy, or unset both to disable.",
+  )
+}
+
+const homageContract = HOMAGE_ENABLED
+  ? {
+      Homage: {
+        chain: "mainnet" as const,
+        abi: homageAbi,
+        address: HOMAGE_ADDRESS_RAW as `0x${string}`,
+        startBlock: Number(HOMAGE_START_BLOCK_RAW),
+      },
+    }
+  : {}
 
 // drpc.org free tier handles multi-address eth_getLogs for the PND
 // factory pattern. See docs/RPC-strategy.md for why publicnode /
@@ -203,5 +241,12 @@ export default createConfig({
       address: MURI_PROTOCOL_ADDRESS,
       startBlock: MURI_PROTOCOL_DEPLOY_BLOCK,
     },
+
+    // ── Homage singleton (DEPLOY-GATED via HOMAGE_ADDRESS env) ────────
+    // Spread in only when the env vars are set (see homageContract above).
+    // Fixed shared contract → belongs in Ponder (per AGENTS.md), NOT the
+    // worker long tail. Drives homage_tokens + homage_activity +
+    // homage_config; web reads the phase schedule/supply from Postgres.
+    ...homageContract,
   },
 })

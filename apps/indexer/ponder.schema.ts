@@ -361,3 +361,94 @@ export const muriTokens = onchainTable(
     contractTokenIdx: index().on(table.contract, table.tokenId),
   }),
 )
+
+// ─── Homage ("Homage to the Punk") — fixed shared singleton ──────────────
+// Deploy-gated: only populated once HOMAGE_ADDRESS + HOMAGE_START_BLOCK are
+// set in the indexer env (see ponder.config.ts). `tokenId == punkId` (1:1
+// with CryptoPunks, supply 10,000). redeem() burns a homage and returns its
+// id to the mintable pool, so ids CHURN — a punkId can be minted, redeemed,
+// and re-minted. Web reads the phase schedule + supply from these tables
+// (Postgres), not RPC (indexer-first).
+
+// Per-punkId current state. One row per punkId ever minted; `outstanding`
+// flips false on redeem and true again on the next mint. Because ids churn,
+// this table is the authoritative "who holds punk N's homage right now" and
+// "is it currently outstanding" source; full history lives in homage_activity.
+export const homageTokens = onchainTable(
+  "homage_tokens",
+  (t) => ({
+    // punkId as text (tokenId == punkId, 0..9999). Stable pk across churn.
+    punkId: t.bigint().primaryKey(),
+    // Current holder (address(0) while redeemed / not outstanding).
+    holder: t.hex().notNull(),
+    // True while a homage for this punkId exists on-chain; false after redeem.
+    outstanding: t.boolean().notNull(),
+    // How the CURRENT (most recent) mint entered: "claim" (Claimed event),
+    // "allowlist" or "public" (Minted event, disambiguated by mint timestamp
+    // vs the indexed schedule in homage_config). null only if a Minted fired
+    // before any ScheduleSet was indexed (shouldn't happen in practice).
+    mintPhase: t.text(),
+    // Economics of the CURRENT mint (from Minted/Claimed args). ethSwapped is
+    // the ETH the contract swapped into $111; received111 the $111 it got.
+    ethSwapped: t.bigint(),
+    received111: t.bigint(),
+    // First time this punkId was ever minted, and the most recent mint time.
+    firstMintedAtTime: t.bigint().notNull(),
+    lastMintedAtTime: t.bigint().notNull(),
+    lastMintedAtBlock: t.bigint().notNull(),
+    // Number of times this punkId has been redeemed (churn counter).
+    redeemCount: t.integer().notNull(),
+  }),
+  (table) => ({
+    holderIdx: index().on(table.holder),
+    outstandingIdx: index().on(table.outstanding),
+  }),
+)
+
+// Append-only activity log. One row per Minted / Claimed / Redeemed /
+// Transfer (secondary only — mint/burn Transfers are skipped, already
+// captured as mint/claim/redeem). Drives the per-token provenance timeline.
+export const homageActivity = onchainTable(
+  "homage_activity",
+  (t) => ({
+    id: t.text().primaryKey(), // `${txHash}-${logIndex}`
+    // "mint" | "claim" | "redeem" | "transfer"
+    type: t.text().notNull(),
+    punkId: t.bigint().notNull(),
+    from: t.hex(), // null for mint/claim (from = address(0))
+    to: t.hex(), // null for redeem (to = address(0))
+    // Populated for mint/claim (ethSwapped/received111) and redeem (amount111).
+    ethSwapped: t.bigint(),
+    received111: t.bigint(),
+    amount111: t.bigint(),
+    // For mint/claim rows: which window ("claim" | "allowlist" | "public").
+    mintPhase: t.text(),
+    blockNumber: t.bigint().notNull(),
+    blockTime: t.bigint().notNull(),
+    logIndex: t.integer().notNull(),
+    txHash: t.hex().notNull(),
+  }),
+  (table) => ({
+    punkIdx: index().on(table.punkId, table.blockNumber),
+    typeIdx: index().on(table.type, table.blockNumber),
+  }),
+)
+
+// Single-row collection config, keyed on the contract address. Mirrors the
+// on-chain owner-set schedule + fee knobs from ScheduleSet /
+// AllowlistRootSet / MaxPerAllowlistedSet / FeeScheduleSet / ExitFeeSet.
+// This is what lets the web read the phase schedule from Postgres instead
+// of RPC. Fields are null until their setter event has fired.
+export const homageConfig = onchainTable("homage_config", (t) => ({
+  contract: t.hex().primaryKey(),
+  claimStart: t.bigint(), // uint64 timestamps; 0/null = unscheduled/closed
+  allowlistStart: t.bigint(),
+  publicStart: t.bigint(),
+  allowlistRoot: t.hex(),
+  maxPerAllowlisted: t.bigint(),
+  baseFee: t.bigint(),
+  feeGrowthBps: t.bigint(),
+  exitFee: t.bigint(),
+  updatedAtBlock: t.bigint().notNull(),
+  updatedAtTime: t.bigint().notNull(),
+}))
