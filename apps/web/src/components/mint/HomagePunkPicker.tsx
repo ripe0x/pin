@@ -46,12 +46,12 @@ export function HomagePunkPicker({
       const res = await verifyPunkClaimable(client as PublicClient, typedId, address)
       if (res.ok) {
         onSelect(typedId)
-        setCheckNote(`You hold #${typedId}${res.wrapped ? " (wrapped)" : ""} — ready to mint.`)
+        setCheckNote(`You hold #${typedId}${res.wrapped ? " (wrapped)" : ""}. Ready to mint.`)
       } else {
         setCheckNote(res.reason ?? `This wallet doesn't hold #${typedId}.`)
       }
     } catch {
-      setCheckNote("Couldn't check ownership — try again.")
+      setCheckNote("Couldn't check ownership. Try again.")
     } finally {
       setChecking(false)
     }
@@ -102,7 +102,7 @@ export function HomagePunkPicker({
             setIdText(e.target.value.replace(/[^\d]/g, "").slice(0, 4))
             setCheckNote(null)
           }}
-          placeholder="Or enter a punk id (0–9999)"
+          placeholder="Or enter a punk id (0-9999)"
           inputMode="numeric"
           disabled={disabled}
           className="flex-1 px-3 py-2 text-[12px] font-mono tabular-nums bg-transparent outline-none disabled:opacity-40"
@@ -121,7 +121,7 @@ export function HomagePunkPicker({
       )}
       <p className="text-[10px] font-mono text-gray-400 leading-relaxed">
         Dashed chips are wrapped punks found in your wallet whose homage is unminted. Hold a raw
-        punk? Enter its id and verify — the homage carries the same number as the punk.
+        punk? Enter its id and verify. The homage carries the same number as the punk.
       </p>
     </div>
   )

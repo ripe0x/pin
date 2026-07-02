@@ -278,7 +278,7 @@ export async function verifyPunkClaimable(
     ],
   })
   if (ownerRes.status !== "success" || mintedRes.status !== "success")
-    return { ok: false, reason: "couldn't check ownership — try again" }
+    return { ok: false, reason: "couldn't check ownership. Try again" }
   if (mintedRes.result === true) return { ok: false, reason: `#${id} has already been minted` }
   const rawOwner = ownerRes.result as Address
   if (rawOwner.toLowerCase() === wallet.toLowerCase()) return { ok: true, wrapped: false }
@@ -293,7 +293,7 @@ export async function verifyPunkClaimable(
       })) as Address
       if (holder.toLowerCase() === wallet.toLowerCase()) return { ok: true, wrapped: true }
     } catch {
-      return { ok: false, reason: "couldn't check the wrapper — try again" }
+      return { ok: false, reason: "couldn't check the wrapper. Try again" }
     }
   }
   return { ok: false, reason: `this wallet doesn't hold #${id}` }
@@ -324,7 +324,7 @@ registerEligibilityProvider("homage-allowlist", async ({ client, wallet }) => {
   if (rootRes.status === "success" && (rootRes.result as string) !== HOMAGE_ALLOWLIST_ROOT) {
     return {
       eligible: false,
-      reason: "The onchain allowlist root doesn't match this build's proofs — mint on the Homage site.",
+      reason: "The onchain allowlist root doesn't match this build's proofs. Mint on the Homage site.",
     }
   }
   const max = maxRes.status === "success" ? Number(maxRes.result as bigint) : 0
@@ -343,7 +343,7 @@ registerEligibilityProvider("homage-allowlist", async ({ client, wallet }) => {
 
 registerArgsBuilder("homage-allowlist", ({ eligibilityData }) => {
   const proof = (eligibilityData as HomageAllowlistData | undefined)?.proof
-  if (!proof) throw new Error("Allowlist proof unavailable — reconnect your wallet")
+  if (!proof) throw new Error("Allowlist proof unavailable. Reconnect your wallet")
   return [proof]
 })
 
@@ -356,7 +356,7 @@ export function homageCollection(chainId: number): MintCollection | null {
     slug: "homage",
     name: "Homage to the Punk",
     description:
-      "Redeemable, $111-backed homages to the CryptoPunks — one per punk, art derived from its pixels. Your ETH is swapped onchain into 50,000 $111 and escrowed inside the piece; redeem any time to burn it and take the coins back out.",
+      "Redeemable, $111-backed homages to the CryptoPunks: one per punk, art derived from its pixels. Your ETH is swapped onchain into 50,000 $111 and escrowed inside the piece; redeem any time to burn it and take the coins back out.",
     chainId,
     address: HOMAGE_ADDRESS as Address,
     abi: homageAbi as unknown as Abi,

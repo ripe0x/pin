@@ -99,7 +99,7 @@ export function HomageRedeemPanel({ collectionId, tokenId, owner }: LifecyclePan
         functionName: "exitFee",
       })) as bigint
     } catch {
-      setFeeError("Couldn't read the current exit fee — try again.")
+      setFeeError("Couldn't read the current exit fee. Try again.")
       return
     }
     writeContract({
