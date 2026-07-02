@@ -1,19 +1,20 @@
 /**
  * Vouch — onchain-generative ERC-721 (cubes-witness / `Vouch.sol`).
  *
- * One seat per token (52 max), no-arg one-per-wallet `mint()` open from
- * `mintStart` until sold out, at a contract-read, owner-settable price
- * (`mintPrice`), then a seat lifecycle: free `renew()` keeps the 52-day clock
- * alive, a lapsed seat is reclaimable by anyone via `claim()` at the mint
- * price. Art is fully onchain — `tokenURI`
- * delegates to a swappable renderer that returns a `data:application/json`
- * blob with an inline SVG.
+ * One seat per token (112 max — one per voxel of CryptoCube #52), one-per-
+ * wallet **chosen-seat** `mint(uint256 tokenId)` open from `mintStart` until
+ * sold out, at a contract-read, owner-settable price (`mintPrice`), then a
+ * seat lifecycle: free `renew()` keeps the 52-day clock alive, a lapsed seat
+ * is reclaimable by anyone via `claim()` at the mint price. Art is fully
+ * onchain — `tokenURI` delegates to a swappable renderer that returns a
+ * `data:application/json` blob with an inline SVG.
  *
- * NOTE: hand-synced from the cubes-witness working tree (commit 6e48a75 + local
- * edits). That contract is still in flux — regenerate this ABI from the
- * compiled artifact when it's finalized. The `RenderState` tuple in particular
- * recently gained a trailing `owner` field; keep the components in lockstep
- * with `src/VouchTypes.sol`.
+ * NOTE: hand-synced from the cubes-witness working tree (commit 919e6de).
+ * That contract is still in flux — regenerate this ABI from the compiled
+ * artifact when it's finalized. Earlier snapshots declared a no-arg `mint()`;
+ * the deployed contract takes the chosen seat id ("every Vouch is a chosen
+ * voxel" — there is no lowest-available overload) and the no-arg selector
+ * reverts. Keep the `RenderState` tuple in lockstep with `src/VouchTypes.sol`.
  */
 export const vouchAbi = [
   // ── Events ──────────────────────────────────────────────────────────
@@ -50,7 +51,13 @@ export const vouchAbi = [
   },
 
   // ── Mint / lifecycle (writes) ───────────────────────────────────────
-  { type: "function", name: "mint", inputs: [], outputs: [], stateMutability: "payable" },
+  {
+    type: "function",
+    name: "mint",
+    inputs: [{ name: "tokenId", type: "uint256", internalType: "uint256" }],
+    outputs: [],
+    stateMutability: "payable",
+  },
   {
     type: "function",
     name: "renew",
