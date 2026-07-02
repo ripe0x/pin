@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { OnchainArt } from "@/components/mint/OnchainArt"
-import { SeatLifecyclePanel } from "@/components/mint/SeatLifecyclePanel"
+import { LifecyclePanelSlot } from "@/components/mint/mint-slots"
 import { TokenAttributes } from "@/components/mint/TokenAttributes"
 import { MetadataDrawer } from "@/components/mint/MetadataDrawer"
 import { getMintSnapshot, getPieceToken } from "@/lib/mint-onchain"
@@ -72,8 +72,11 @@ export default async function MintPiecePage({ params }: { params: Params }) {
             )}
           </header>
 
-          {desc.lifecycle && (
-            <SeatLifecyclePanel
+          {/* Per-collection lifecycle panel (2.6): rendered from the registry
+              keyed by the descriptor, not hardcoded to Vouch's seat shape. */}
+          {desc.lifecyclePanel && (
+            <LifecyclePanelSlot
+              panelKey={desc.lifecyclePanel}
               collectionId={contract}
               tokenId={piece.tokenId}
               owner={piece.owner}

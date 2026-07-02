@@ -9,6 +9,7 @@ import {
 import { mainnet } from "viem/chains"
 import { pgCache } from "./pg-cache"
 import type { MintCollection } from "./mint-collections"
+import type { PhaseWindow } from "./mint-phases"
 
 /**
  * Live, cached onchain reads for the generic ERC-721 mint surface. Modeled on
@@ -42,6 +43,21 @@ function getClient(): PublicClient {
 }
 
 const lc = (a: string) => a.toLowerCase()
+
+/**
+ * Live-metadata TTLs (2.7). When a collection declares `liveMetadata`, its
+ * tokenURI output changes with onchain state, so reads are cached at the
+ * declared short TTL and NEVER persisted as canonical — everything below is
+ * pgCache-only (expiring rows), no writes to any token-metadata table. The
+ * gallery grid multiplies the TTL: a slightly stale status color across a
+ * large grid is an accepted tradeoff for not re-rendering N tokens per view.
+ */
+function pieceTtlSec(desc: MintCollection, fallback: number): number {
+  return desc.liveMetadata?.ttlSec ?? fallback
+}
+function galleryTtlSec(desc: MintCollection): number {
+  return desc.liveMetadata ? Math.max(desc.liveMetadata.ttlSec * 4, 120) : 30
+}
 
 type CallResult = { status: "success"; result: unknown } | { status: "failure"; result?: undefined }
 
@@ -124,11 +140,18 @@ function artFromJson(json: Record<string, unknown> | null): TokenArt {
 
 export type MintSnapshot = {
   /** All fields are decimal strings (bigint-safe across the RSC boundary). */
-  priceWei: string
+  priceWei: string // "0" for quote-priced collections (resolved client-side)
   minted: string
   cap: string // "0" == uncapped
   mintStart: string // unix seconds; "0" == no explicit start
   mintEnd: string // unix seconds; "0" == open-ended
+  /**
+   * Present only for phased descriptors: raw per-phase window bounds, in
+   * descriptor order. Resolution against a clock (which phase is live, what
+   * opens next) is `resolvePhaseState` in mint-phases.ts — pure, so the
+   * server page and MintPanel's ticking clock share it with zero extra RPC.
+   */
+  phases?: PhaseWindow[]
 }
 
 export async function getMintSnapshot(desc: MintCollection): Promise<MintSnapshot> {
@@ -149,17 +172,31 @@ export async function getMintSnapshot(desc: MintCollection): Promise<MintSnapsho
       capIdx = calls.length
       calls.push({ ...base, functionName: desc.cap.fn })
     }
-    if (
-      desc.window.kind === "start-duration" ||
-      desc.window.kind === "start-end" ||
-      desc.window.kind === "start-only"
-    ) {
-      startIdx = calls.length
-      calls.push({ ...base, functionName: desc.window.startFn })
-    }
-    if (desc.window.kind === "start-end") {
-      endIdx = calls.length
-      calls.push({ ...base, functionName: desc.window.endFn })
+    // Phases supersede the single window: read every phase's start/end getter
+    // (deduped — a phase's endFn is conventionally the next phase's startFn)
+    // in this SAME multicall, so a phased schedule costs zero extra requests.
+    const phaseGetterIdx = new Map<string, number>()
+    if (desc.phases) {
+      for (const p of desc.phases) {
+        for (const fn of [p.window.startFn, p.window.endFn]) {
+          if (!fn || phaseGetterIdx.has(fn)) continue
+          phaseGetterIdx.set(fn, calls.length)
+          calls.push({ ...base, functionName: fn })
+        }
+      }
+    } else {
+      if (
+        desc.window.kind === "start-duration" ||
+        desc.window.kind === "start-end" ||
+        desc.window.kind === "start-only"
+      ) {
+        startIdx = calls.length
+        calls.push({ ...base, functionName: desc.window.startFn })
+      }
+      if (desc.window.kind === "start-end") {
+        endIdx = calls.length
+        calls.push({ ...base, functionName: desc.window.endFn })
+      }
     }
 
     const res = await multicallResilient(client, calls)
@@ -167,13 +204,44 @@ export async function getMintSnapshot(desc: MintCollection): Promise<MintSnapsho
       i >= 0 && res[i]?.status === "success" ? BigInt(res[i].result as bigint) : 0n
 
     const minted = val(0)
-    const priceWei = desc.price.kind === "const" ? desc.price.wei : val(priceIdx)
+    const priceWei =
+      desc.price.kind === "const"
+        ? desc.price.wei
+        : desc.price.kind === "quote"
+          ? 0n // quote-priced: MintPanel resolves msg.value via the provider
+          : val(priceIdx)
     const cap =
       desc.cap.kind === "const"
         ? desc.cap.value
         : desc.cap.kind === "open"
           ? 0n
           : val(capIdx)
+
+    if (desc.phases) {
+      // A failed/absent getter reads as 0n via val(), i.e. "unscheduled" —
+      // exactly the closed-window semantics mint-phases.ts documents.
+      const g = (fn: string | undefined): bigint =>
+        fn !== undefined ? val(phaseGetterIdx.get(fn) ?? -1) : 0n
+      const phases: PhaseWindow[] = desc.phases.map((p) => ({
+        key: p.key,
+        label: p.label,
+        start: g(p.window.startFn).toString(),
+        end: g(p.window.endFn).toString(),
+      }))
+      // Overall bounds for consumers that don't understand phases: opens at
+      // the earliest scheduled phase, and (phases being open-ended) no close.
+      const starts = phases.map((p) => BigInt(p.start)).filter((s) => s > 0n)
+      const overallStart = starts.length > 0 ? starts.reduce((a, b) => (b < a ? b : a)) : 0n
+      return {
+        priceWei: priceWei.toString(),
+        minted: minted.toString(),
+        cap: cap.toString(),
+        mintStart: overallStart.toString(),
+        mintEnd: "0",
+        phases,
+      }
+    }
+
     const start = startIdx >= 0 ? val(startIdx) : 0n
     let end = 0n
     if (desc.window.kind === "start-duration")
@@ -212,7 +280,7 @@ async function readUriString(
 }
 
 export async function getCollectionArt(desc: MintCollection): Promise<TokenArt | null> {
-  return pgCache(`mint-art:${lc(desc.address)}`, 90, async () => {
+  return pgCache(`mint-art:${lc(desc.address)}`, pieceTtlSec(desc, 90), async () => {
     const client = getClient()
     if (desc.hero.kind === "static") {
       return {
@@ -374,7 +442,7 @@ export async function getCollectionTokens(
   desc: MintCollection,
   limit = 200,
 ): Promise<GalleryToken[]> {
-  return pgCache(`mint-gallery:${lc(desc.address)}`, 30, async () => {
+  return pgCache(`mint-gallery:${lc(desc.address)}`, galleryTtlSec(desc), async () => {
     const client = getClient()
 
     let minted: Array<{ tokenId: number; active: boolean; owner: Address | null }> = []
@@ -430,7 +498,7 @@ export async function getPieceToken(
   desc: MintCollection,
   tokenId: bigint,
 ): Promise<PieceToken | null> {
-  return pgCache(`mint-piece:${lc(desc.address)}:${tokenId.toString()}`, 45, async () => {
+  return pgCache(`mint-piece:${lc(desc.address)}:${tokenId.toString()}`, pieceTtlSec(desc, 45), async () => {
     const client = getClient()
     const base = { address: desc.address, abi: desc.abi } as const
     const life = desc.lifecycle

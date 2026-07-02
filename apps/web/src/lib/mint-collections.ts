@@ -6,15 +6,23 @@
  * with a standard mint function: how to read price/supply/window, how to gate
  * (one-per-wallet), how to write the mint, and how to render its art. Adding
  * another collection that follows this shape is a new entry here — not new
- * components. The first entry is **Vouch** (cubes-witness): a no-arg,
- * one-per-wallet, 24h-window mint of an onchain-generative seat, with a shared
- * aggregate "cube" as the collection hero and a post-mint seat lifecycle.
+ * components. The first entry is **Vouch** (cubes-witness): a one-per-wallet,
+ * chosen-seat `mint(uint256 tokenId)` of an onchain-generative seat, with a
+ * shared aggregate "cube" as the collection hero and a post-mint seat
+ * lifecycle. Vouch's seat choice flows through the generic selector + args-
+ * builder machinery (mint-slots.tsx / mint-registries.ts).
  *
  * No server-only imports: this module is consumed by both server reads
  * (`mint-onchain.ts`, the route pages) and client components (`MintPanel`).
  */
 import { type Abi, type Address, isAddress } from "viem"
 import { vouchAbi, cubeRendererAbi } from "@pin/abi"
+import type { MintPhase } from "./mint-phases"
+import { registerArgsBuilder } from "./mint-registries"
+import type { RevealSource } from "./mint-reveal"
+
+export type { MintPhase } from "./mint-phases"
+export type { RevealSource } from "./mint-reveal"
 
 // Mirror the fork/mainnet split used by the editions + tx-ui code. In fork mode
 // the chain is the wagmi `forkChain` (id 31339) so wallet/network checks agree;
@@ -30,6 +38,11 @@ export const MINT_CHAIN_ID = FORK_MODE ? FORK_CHAIN_ID : 1
 export type PriceSource =
   | { kind: "getter"; fn: string } // read a uint256 wei price getter, e.g. MINT_PRICE()
   | { kind: "const"; wei: bigint }
+  // Dynamic pricing resolved client-side through the quote-provider registry
+  // (mint-registries.ts) — e.g. a v4 quoter probe for a swap-backed mint. The
+  // server snapshot carries no price ("0"); MintPanel fetches the quote with a
+  // visibility-gated refresh (mint-hooks.ts) and uses its value as msg.value.
+  | { kind: "quote"; provider: string }
 
 /** Supply ceiling. */
 export type CapSource =
@@ -57,7 +70,14 @@ export type HeroSource =
   | { kind: "token-uri"; tokenId: bigint } // decode the collection's own tokenURI(tokenId)
   | { kind: "static"; url: string }
 
-/** Optional post-mint seat lifecycle (Vouch). */
+/**
+ * Optional per-token lifecycle READ fns (Vouch's seat clock). These enrich
+ * `getPieceToken` server-side (active/expires/freshness in one multicall).
+ * The lifecycle UI itself is no longer derived from this shape — the token
+ * page renders whatever panel component the collection registered under
+ * `lifecyclePanel` (mint-slots.tsx), so a collection can ship a panel (e.g. a
+ * redeem flow) without these getters existing at all.
+ */
 export type MintLifecycle = {
   renewFn: string // renew(tokenId): free, owner-only, keeps the active clock alive
   claimFn: string // claim(tokenId): payable, reclaims a lapsed seat at the mint price
@@ -78,18 +98,63 @@ export type MintCollection = {
   cap: CapSource
   price: PriceSource
   window: WindowSource
+  /**
+   * Phased schedule (claim → allowlist → public). When present it SUPERSEDES
+   * the single `window` (set `window: { kind: "open" }` for clarity): the
+   * snapshot reads every phase's start/end getter in the same multicall, and
+   * MintPanel drives status/mintFn/args/price from the resolved active phase.
+   * See mint-phases.ts for the window semantics (0 = unscheduled, a phase
+   * ends where the next begins, last phase open-ended).
+   */
+  phases?: MintPhase[]
   alreadyMintedFn: string | null // hasMinted(addr) -> bool; null when repeatable
   // write
-  mintFn: string // e.g. "mint"
+  mintFn: string // e.g. "mint" (phased collections: per-phase mintFn wins)
   quantity: boolean // true: quantity selector + value = price * qty; false: single, value = price
+  /**
+   * Collection-level provider keys for non-phased mints — same registries as
+   * the per-phase keys (mint-registries.ts / mint-slots.tsx); when `phases`
+   * is present the active phase's own keys take precedence. Vouch uses
+   * argsBuilder + selector for its chosen-seat `mint(uint256 tokenId)`.
+   */
+  eligibility?: string
+  argsBuilder?: string
+  selector?: string
+  /**
+   * Post-mint reveal: how to pull the drawn tokenId out of the mint receipt
+   * so the success state can link to `/mint/[contract]/[tokenId]`. Omit for
+   * no reveal step (Vouch: seat id is the wallet's choice-free next slot and
+   * the shared cube is the artwork — nothing to reveal).
+   */
+  reveal?: RevealSource
   // presentation
   layout: "shared-aggregate" | "standard"
   hero: HeroSource
   /** Shared aggregate stat block source (Vouch cube getters). */
   aggregate?: { address: Address; abi: Abi }
   lifecycle?: MintLifecycle
+  /**
+   * Key into the lifecycle-panel component registry (mint-slots.tsx). The
+   * token page renders the registered panel for this collection; unset = no
+   * per-token action panel.
+   */
+  lifecyclePanel?: string
   /** Noun for one token in UI copy ("seat", "piece", "token"). */
   tokenNoun: string
+  /**
+   * How the minted/cap counter reads. "outstanding" is the churn-aware label
+   * for collections where a burn/redeem returns ids to the mintable pool
+   * ("N of M outstanding" — the count can go down). Default "minted".
+   */
+  supplyLabel?: "minted" | "outstanding"
+  /**
+   * When set, tokenURI reads for this collection are treated as LIVE: served
+   * through short-TTL pgCache at this TTL and never persisted as canonical
+   * (the art re-renders when underlying onchain state changes). Token page
+   * reads use `ttlSec` directly; the gallery grid uses a longer multiple —
+   * status-color staleness in a grid is an accepted tradeoff.
+   */
+  liveMetadata?: { ttlSec: number }
   /** CSS aspect-ratio for the collection hero / per-piece art (defaults square). */
   heroAspect?: string
   pieceAspect?: string
@@ -109,6 +174,16 @@ const VOUCH_ADDRESS = process.env.NEXT_PUBLIC_VOUCH_ADDRESS
 const VOUCH_CUBE_RENDERER = process.env.NEXT_PUBLIC_VOUCH_CUBE_RENDERER
 const VOUCH_RENDERED_TOKEN_ID = BigInt(process.env.NEXT_PUBLIC_VOUCH_RENDERED_TOKEN_ID || "52")
 
+// Vouch's mint takes the CHOSEN seat id — `mint(uint256 tokenId)`, "every
+// Vouch is a chosen voxel", no lowest-available overload. The seat comes from
+// the VouchSeatPicker selector (registered in mint-slots.tsx under the same
+// key); this builder just validates and shapes it into calldata.
+registerArgsBuilder("vouch-seat", ({ selection }) => {
+  const seat = typeof selection === "number" && Number.isInteger(selection) ? selection : null
+  if (seat === null || seat < 1) throw new Error("Pick an open seat first")
+  return [BigInt(seat)]
+})
+
 function vouchCollection(): MintCollection | null {
   if (!VOUCH_ADDRESS || !isAddress(VOUCH_ADDRESS)) return null
   if (!VOUCH_CUBE_RENDERER || !isAddress(VOUCH_CUBE_RENDERER)) return null
@@ -126,8 +201,10 @@ function vouchCollection(): MintCollection | null {
     price: { kind: "getter", fn: "mintPrice" },
     window: { kind: "start-only", startFn: "mintStart" },
     alreadyMintedFn: "hasMinted",
-    mintFn: "mint",
+    mintFn: "mint", // mint(uint256 tokenId) — args from the vouch-seat builder
     quantity: false,
+    argsBuilder: "vouch-seat",
+    selector: "vouch-seat",
     layout: "shared-aggregate",
     hero: {
       kind: "renderer-contract",
@@ -144,6 +221,8 @@ function vouchCollection(): MintCollection | null {
       expiresFn: "expiresAt",
       freshnessFn: "freshnessBps",
     },
+    // Registered in mint-slots.tsx → SeatLifecyclePanel (renew/claim UI).
+    lifecyclePanel: "vouch-seat",
     tokenNoun: "seat",
     heroAspect: "1 / 1", // CubeRenderer viewBox (520×520, square)
     pieceAspect: "1 / 1", // VouchRenderer viewBox (200×200, square)

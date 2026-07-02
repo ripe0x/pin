@@ -88,7 +88,9 @@ export default async function MintCollectionPage({ params }: { params: Params })
             )}
           </header>
 
-          <MintPanel collectionId={contract} snapshot={snapshot} />
+          {/* `seats` doubles as selector context (Vouch's chosen-seat picker)
+              — the same getSeatStates read that feeds SeatGrid/RecentMints. */}
+          <MintPanel collectionId={contract} snapshot={snapshot} selectorData={seats} />
 
           {stats && <AggregateStats stats={stats} />}
 
