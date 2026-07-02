@@ -11,10 +11,11 @@ import { evmNowAddressUrl, shortAddress } from "@/lib/pnd-editions"
 
 type Params = Promise<{ contract: string; tokenId: string }>
 
+// Token id 0 is legitimate (Homage: tokenId == punkId, ids run 0..9999); a
+// collection with no token 0 (Vouch) just fails the read and 404s as before.
 function parseTokenId(raw: string): bigint | null {
   if (!/^\d+$/.test(raw)) return null
-  const id = BigInt(raw)
-  return id >= 1n ? id : null
+  return BigInt(raw)
 }
 
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {

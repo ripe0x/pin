@@ -137,11 +137,22 @@ export function MintPanel({
     error: writeError,
     reset,
   } = useWriteContract()
+  // `error` here covers txs that landed but REVERTED onchain: wagmi's
+  // waitForTransactionReceipt throws on a reverted receipt (most wallets
+  // catch reverts at estimation time, but anvil impersonation — and a user
+  // overriding their wallet's warning — mines them). Without surfacing it
+  // the panel would sit silent after a failed mint.
+  // retry: false — the only way this query FAILS is wagmi's throw on a
+  // receipt whose tx REVERTED onchain, which is terminal (the mined status
+  // never changes); retrying just re-fetches the same receipt three times
+  // and delays the error surfacing by ~10s. Transient RPC errors during the
+  // wait are already retried inside viem's poll loop + http transport.
   const {
     isLoading: isTxPending,
     isSuccess,
     data: receipt,
-  } = useWaitForTransactionReceipt({ hash: txHash })
+    error: receiptError,
+  } = useWaitForTransactionReceipt({ hash: txHash, query: { retry: false } })
   const isPending = isWritePending || isTxPending
 
   // ── post-mint reveal (2.4) — pure parse of the already-fetched receipt ────
@@ -524,9 +535,9 @@ export function MintPanel({
                 </button>
               )}
 
-              {(writeError || buildError) && (
+              {(writeError || receiptError || buildError) && (
                 <p className="text-[11px] font-mono text-red-500 break-words">
-                  {buildError ?? formatWriteError(writeError, "Mint")}
+                  {buildError ?? formatWriteError(writeError ?? receiptError, "Mint")}
                 </p>
               )}
             </>

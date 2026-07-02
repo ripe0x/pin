@@ -53,6 +53,15 @@ const foundry = {
     ...foundryBase.rpcUrls,
     default: { ...foundryBase.rpcUrls.default, http: [anvilUrl] },
   },
+  // The dev anvil always FORKS MAINNET, so the canonical Multicall3 exists at
+  // its usual address. viem's base `foundry` chain doesn't declare it, which
+  // makes every client-side `client.multicall` throw ("does not support
+  // contract multicall3") — declaring it here lets the mint providers batch
+  // their reads on the fork exactly as they do on mainnet.
+  contracts: {
+    ...foundryBase.contracts,
+    multicall3: { address: "0xcA11bde05977b3631167028862bE2a173976CA11" as const },
+  },
 } as unknown as typeof foundryBase
 
 // Re-export the customized chain so dapp code (ChainSwitcher etc.) sees

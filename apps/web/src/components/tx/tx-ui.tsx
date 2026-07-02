@@ -54,22 +54,43 @@ export function formatWriteError(err: unknown, action: string): string {
   if (e.message?.includes("User rejected")) return "Transaction rejected"
   if (e.message?.includes("insufficient funds")) return "Insufficient ETH balance"
 
-  // Walk cause chain for the deepest shortMessage / reason.
+  // Walk cause chain for the deepest shortMessage / reason. A decoded custom
+  // error (ContractFunctionRevertedError with the error in the ABI) carries
+  // its name in `data.errorName` — that is the most authoritative signal at
+  // ANY depth (deeper layers are generic RPC wrappers), so it wins outright:
+  // the user sees `NotPunkOwner()`, not "RPC Request failed."
   let deepest: string | undefined = e.shortMessage
+  let named: string | undefined
   let cur: unknown = e.cause
   for (let i = 0; i < 6 && cur && typeof cur === "object"; i++) {
-    const c = cur as { shortMessage?: string; reason?: string; cause?: unknown }
+    const c = cur as {
+      shortMessage?: string
+      reason?: string
+      details?: string
+      cause?: unknown
+      data?: { errorName?: string; args?: readonly unknown[] }
+    }
     if (c.shortMessage) deepest = c.shortMessage
+    // `details` is the raw provider string ("execution reverted: custom error
+    // 0x…") — more specific than the generic shortMessage layers above it.
+    if (c.details) deepest = c.details
     if (c.reason) deepest = c.reason
+    if (c.data?.errorName && c.data.errorName !== "Error") {
+      const args = c.data.args?.length ? c.data.args.map(String).join(", ") : ""
+      named = `${c.data.errorName}(${args})`
+    }
     cur = c.cause
   }
+  if (named) deepest = named
   // metaMessages often holds the reverted reason as a follow-on line.
   if (!deepest && Array.isArray(e.metaMessages)) {
     const reasonLine = e.metaMessages.find((m) => /::|reverted|require/i.test(m))
     if (reasonLine) deepest = reasonLine.trim()
   }
   if (!deepest) deepest = e.message?.split("\n")[0]
-  return `${action} failed: ${deepest ?? "unknown error"}`
+  // A mined-but-reverted custom-error tx surfaces (via wagmi's receipt
+  // rethrow) as an Error with an empty/garbage message — name it honestly.
+  return `${action} failed: ${deepest?.trim() || "transaction reverted onchain"}`
 }
 
 export function formatRemaining(secondsLeft: number): string {
