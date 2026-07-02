@@ -6,6 +6,7 @@ import { CollectionStage } from "@/components/mint/CollectionStage"
 import { AggregateStats } from "@/components/mint/AggregateStats"
 import { SeatGrid } from "@/components/mint/SeatGrid"
 import { RecentMints } from "@/components/mint/RecentMints"
+import { OwnedHomages } from "@/components/mint/OwnedHomages"
 import {
   getAggregateStats,
   getCollectionArt,
@@ -97,6 +98,11 @@ export default async function MintCollectionPage({ params }: { params: Params })
           {/* `seats` doubles as selector context (Vouch's chosen-seat picker)
               — the same getSeatStates read that feeds SeatGrid/RecentMints. */}
           <MintPanel collectionId={contract} snapshot={snapshot} selectorData={seats} />
+
+          {/* Redeem discovery (Phase 4.4): the connected wallet's outstanding
+              homages, each linking to its token page. Indexer-backed, renders
+              nothing until a wallet with holdings connects. */}
+          {desc.provenanceSource === "homage" && <OwnedHomages collectionId={contract} />}
 
           {stats && <AggregateStats stats={stats} />}
 

@@ -419,5 +419,10 @@ export function homageCollection(chainId: number): MintCollection | null {
     liveMetadata: { ttlSec: 60 },
     heroAspect: "1 / 1",
     pieceAspect: "1 / 1",
+    // Record surfaces (provenance timeline, indexer-first supply/schedule,
+    // gallery id list, wallet-owned discovery) read from the homage_* Ponder
+    // tables via lib/homage-queries.ts. Every one degrades to the RPC snapshot
+    // when the tables are absent (pre-deploy), so this is safe to set now.
+    provenanceSource: "homage",
   }
 }

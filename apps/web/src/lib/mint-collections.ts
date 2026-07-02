@@ -170,6 +170,18 @@ export type MintCollection = {
   /** CSS aspect-ratio for the collection hero / per-piece art (defaults square). */
   heroAspect?: string
   pieceAspect?: string
+  /**
+   * Which indexer read-family backs this collection's record surfaces
+   * (provenance timeline, indexer-first supply/schedule, gallery id list,
+   * wallet-owned discovery). A keyed string — NOT hardcoded per-page — so the
+   * token/collection pages stay collection-agnostic and a new indexed
+   * collection is one descriptor field + one query module. Only "homage"
+   * exists today (lib/homage-queries.ts). Absent = no indexer record surfaces
+   * (the RPC/cached-reads-only path Vouch uses). Every read degrades to the
+   * RPC snapshot when the tables are missing/empty, so setting this before the
+   * indexer deploys is safe.
+   */
+  provenanceSource?: "homage"
 }
 
 // ── env-driven addresses ─────────────────────────────────────────────────────

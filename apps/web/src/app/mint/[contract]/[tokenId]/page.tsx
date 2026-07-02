@@ -5,7 +5,9 @@ import { OnchainArt } from "@/components/mint/OnchainArt"
 import { LifecyclePanelSlot } from "@/components/mint/mint-slots"
 import { TokenAttributes } from "@/components/mint/TokenAttributes"
 import { MetadataDrawer } from "@/components/mint/MetadataDrawer"
+import { HomageProvenance } from "@/components/mint/HomageProvenance"
 import { getMintSnapshot, getPieceToken } from "@/lib/mint-onchain"
+import { getHomageProvenance, type HomageActivityEntry } from "@/lib/homage-queries"
 import { resolveMintCollection } from "@/lib/mint-collections"
 import { evmNowAddressUrl, shortAddress } from "@/lib/pnd-editions"
 
@@ -35,9 +37,15 @@ export default async function MintPiecePage({ params }: { params: Params }) {
   const id = parseTokenId(tokenId)
   if (id === null) notFound()
 
-  const [piece, snapshot] = await Promise.all([
+  // Provenance is descriptor-driven (`provenanceSource`), never hardcoded to a
+  // slug; it reads from the indexer and degrades to `[]` (section omitted) when
+  // the tables don't exist yet — so this branch ships before the contract does.
+  const [piece, snapshot, provenance] = await Promise.all([
     getPieceToken(desc, id),
     getMintSnapshot(desc),
+    desc.provenanceSource === "homage"
+      ? getHomageProvenance(desc.address, id.toString())
+      : Promise.resolve([] as HomageActivityEntry[]),
   ])
   if (!piece) notFound()
 
@@ -89,6 +97,10 @@ export default async function MintPiecePage({ params }: { params: Params }) {
           )}
 
           <TokenAttributes metadata={piece.metadata} />
+
+          {/* Indexer-backed provenance timeline (mint phase, transfers,
+              redeems, re-mints). Renders nothing until indexing is live. */}
+          <HomageProvenance entries={provenance} />
 
           <section className="py-5 border-b border-gray-100 space-y-2 text-[11px] font-mono">
             <Fact label={`${desc.tokenNoun} #`} value={String(piece.tokenId)} />

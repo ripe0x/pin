@@ -10,6 +10,12 @@ import { mainnet } from "viem/chains"
 import { pgCache } from "./pg-cache"
 import type { MintCollection } from "./mint-collections"
 import type { PhaseWindow } from "./mint-phases"
+import {
+  getHomageConfig,
+  getHomageOutstandingCount,
+  getHomageOutstandingIds,
+} from "./homage-queries"
+import { overlayPhaseWindows, overallStartFromWindows } from "./mint-snapshot-overlay"
 
 /**
  * Live, cached onchain reads for the generic ERC-721 mint surface. Modeled on
@@ -154,7 +160,67 @@ export type MintSnapshot = {
   phases?: PhaseWindow[]
 }
 
+/**
+ * Indexer-first overlay (Phase 4.2). For a collection whose schedule + supply
+ * are indexed (`provenanceSource`), prefer the Postgres values over the RPC
+ * snapshot: the phase windows come from `homage_config` and `minted` becomes
+ * the live OUTSTANDING count from `homage_tokens`. Both degrade to the RPC base
+ * when the tables are absent/empty (pre-deploy, fork, or a slow indexer), so
+ * the RPC path is never removed — it's the fallback and the fork-mode path.
+ *
+ * Overlaying only REPLACES values the indexer can serve more cheaply/correctly;
+ * price stays a client-side quote and the RPC base still carries the phase
+ * shape (labels/keys) so a partially-synced config doesn't drop phases.
+ */
+async function applyIndexerSnapshotOverlay(
+  desc: MintCollection,
+  base: MintSnapshot,
+): Promise<MintSnapshot> {
+  if (desc.provenanceSource !== "homage") return base
+
+  const [config, outstanding] = await Promise.all([
+    getHomageConfig(desc.address).catch(() => null),
+    getHomageOutstandingCount(desc.address).catch(() => null),
+  ])
+
+  let phases = base.phases
+  // Map the indexed schedule onto the descriptor's phase windows by the getter
+  // name each phase declares (claimStart / allowlistStart / publicStart). A
+  // null indexed value leaves the RPC value in place (partial sync). Pure math
+  // lives in mint-snapshot-overlay.ts (unit-tested).
+  if (config && base.phases && desc.phases) {
+    phases = overlayPhaseWindows(
+      base.phases,
+      desc.phases.map((p) => p.window),
+      config,
+    )
+  }
+
+  const overallStart = phases
+    ? overallStartFromWindows(phases, base.mintStart)
+    : base.mintStart
+
+  return {
+    ...base,
+    // Live outstanding count wins when the indexer has it (churn-aware); else
+    // the RPC totalMinted from the base snapshot.
+    minted: outstanding != null ? String(outstanding) : base.minted,
+    mintStart: phases ? overallStart : base.mintStart,
+    phases,
+  }
+}
+
 export async function getMintSnapshot(desc: MintCollection): Promise<MintSnapshot> {
+  const base = await getMintSnapshotRpc(desc)
+  return applyIndexerSnapshotOverlay(desc, base)
+}
+
+/**
+ * The RPC/cached snapshot (price / supply / window) — the pre-deploy + fork
+ * path, and the fallback the indexer overlay degrades to. Named `…Rpc` because
+ * `getMintSnapshot` layers the indexer-first overlay on top (Phase 4.2).
+ */
+async function getMintSnapshotRpc(desc: MintCollection): Promise<MintSnapshot> {
   return pgCache(`mint-snap:${lc(desc.address)}`, 20, async () => {
     const client = getClient()
     const base = { address: desc.address, abi: desc.abi } as const
@@ -446,8 +512,19 @@ export async function getCollectionTokens(
     const client = getClient()
 
     let minted: Array<{ tokenId: number; active: boolean; owner: Address | null }> = []
+    // Indexer-backed gallery (Phase 4.3): for a collection whose outstanding
+    // set is indexed, the id list comes from `homage_tokens` — NEVER a live
+    // 1..10k enumeration. The tokenURI thumbnails below still read (short-TTL
+    // cached), but only for the ids the indexer says exist. Empty result (pre-
+    // deploy / unsynced) falls through to the sequential RPC path below.
+    const indexedIds =
+      desc.provenanceSource === "homage"
+        ? await getHomageOutstandingIds(desc.address, limit).catch(() => [])
+        : []
     const seats = await getSeatStates(desc)
-    if (seats.length > 0) {
+    if (indexedIds.length > 0) {
+      minted = indexedIds.map((tokenId) => ({ tokenId, active: true, owner: null }))
+    } else if (seats.length > 0) {
       minted = seats
         .filter((s) => s.minted)
         .map((s) => ({ tokenId: s.tokenId, active: s.active, owner: s.owner }))
