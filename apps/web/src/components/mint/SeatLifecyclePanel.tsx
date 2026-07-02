@@ -67,7 +67,15 @@ export function SeatLifecyclePanel({
     error: writeError,
     reset,
   } = useWriteContract()
-  const { isLoading: isTxPending, isSuccess } = useWaitForTransactionReceipt({ hash: txHash })
+  // receipt `error` = tx landed but REVERTED (wagmi throws on reverted
+  // receipts) — surface it instead of sitting silent, same fix as MintPanel /
+  // HomageRedeemPanel. retry: false because a reverted receipt is terminal
+  // (its mined status never changes; retrying just re-fetches + delays).
+  const {
+    isLoading: isTxPending,
+    isSuccess,
+    error: receiptError,
+  } = useWaitForTransactionReceipt({ hash: txHash, query: { retry: false } })
   const isPending = isWritePending || isTxPending
 
   const life = desc?.lifecycle
@@ -201,9 +209,9 @@ export function SeatLifecyclePanel({
                 </button>
               )}
 
-              {writeError && (
+              {(writeError || receiptError) && (
                 <p className="text-[11px] font-mono text-red-500 break-words">
-                  {formatWriteError(writeError, active ? "Renew" : "Claim")}
+                  {formatWriteError(writeError ?? receiptError, active ? "Renew" : "Claim")}
                 </p>
               )}
             </>
