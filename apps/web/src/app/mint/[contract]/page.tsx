@@ -21,12 +21,16 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   const { contract } = await params
   const desc = resolveMintCollection(contract)
   if (!desc) return { title: "Mint" }
-  // Title/description come from the token's onchain metadata (tokenURI JSON);
-  // the descriptor is only a fallback when the art can't be read. getCollectionArt
-  // is cached, so this shares the fetch with the page render below.
+  // Title/description come from the token's onchain metadata (tokenURI JSON)
+  // when the hero carries the collection identity (Vouch's shared cube); the
+  // descriptor is the fallback — and the only source when `identityFromHero`
+  // is false (Homage: the hero is just a sample token whose own name would
+  // mislabel the page). getCollectionArt is cached, so this shares the fetch
+  // with the page render below.
   const art = await getCollectionArt(desc).catch(() => null)
-  const name = art?.name ?? desc.name
-  const description = art?.description ?? desc.description
+  const heroIdentity = desc.identityFromHero !== false
+  const name = (heroIdentity ? art?.name : null) ?? desc.name
+  const description = (heroIdentity ? art?.description : null) ?? desc.description
   return {
     title: `Mint · ${name}`,
     description,
@@ -48,10 +52,12 @@ export default async function MintCollectionPage({ params }: { params: Params })
   ])
 
   const heroAspect = desc.heroAspect ?? "1 / 1"
-  // Prefer the onchain metadata (name/description from the tokenURI JSON); fall
-  // back to the descriptor only when the art couldn't be read.
-  const title = art?.name ?? desc.name
-  const description = art?.description ?? desc.description
+  // Prefer the onchain metadata (name/description from the tokenURI JSON) when
+  // the hero carries the collection identity; otherwise (identityFromHero:
+  // false — the hero is a sample token) the descriptor always names the page.
+  const heroIdentity = desc.identityFromHero !== false
+  const title = (heroIdentity ? art?.name : null) ?? desc.name
+  const description = (heroIdentity ? art?.description : null) ?? desc.description
 
   return (
     <div>

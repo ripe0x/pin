@@ -20,6 +20,10 @@ import { vouchAbi, cubeRendererAbi } from "@pin/abi"
 import type { MintPhase } from "./mint-phases"
 import { registerArgsBuilder } from "./mint-registries"
 import type { RevealSource } from "./mint-reveal"
+// Homage module: importing it registers the homage-* quote/eligibility/args
+// providers at module scope (the side-effect pattern mint-registries.ts
+// documents); the factory contributes the descriptor below.
+import { homageCollection } from "./mint-modules/homage"
 
 export type { MintPhase } from "./mint-phases"
 export type { RevealSource } from "./mint-reveal"
@@ -130,6 +134,14 @@ export type MintCollection = {
   // presentation
   layout: "shared-aggregate" | "standard"
   hero: HeroSource
+  /**
+   * Whether the hero art's decoded tokenURI metadata (name/description) may
+   * retitle the collection page. Default true (Vouch: the shared cube's
+   * onchain metadata IS the collection identity). Set false when the hero is
+   * just a representative token render (Homage: a sample punk) whose own
+   * name would mislabel the page.
+   */
+  identityFromHero?: boolean
   /** Shared aggregate stat block source (Vouch cube getters). */
   aggregate?: { address: Address; abi: Abi }
   lifecycle?: MintLifecycle
@@ -231,9 +243,10 @@ function vouchCollection(): MintCollection | null {
 
 // ── registry + resolver ──────────────────────────────────────────────────────
 
-export const MINT_COLLECTIONS: MintCollection[] = [vouchCollection()].filter(
-  (c): c is MintCollection => c !== null,
-)
+export const MINT_COLLECTIONS: MintCollection[] = [
+  vouchCollection(),
+  homageCollection(MINT_CHAIN_ID),
+].filter((c): c is MintCollection => c !== null)
 
 /** Resolve a `/mint/[contract]` segment — either a slug or a contract address. */
 export function resolveMintCollection(idOrAddress: string): MintCollection | null {

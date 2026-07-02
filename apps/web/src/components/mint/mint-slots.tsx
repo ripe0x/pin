@@ -21,6 +21,8 @@
  */
 
 import type { ComponentType } from "react"
+import { HomagePunkPicker } from "./HomagePunkPicker"
+import { HomageRedeemPanel } from "./HomageRedeemPanel"
 import { SeatLifecyclePanel } from "./SeatLifecyclePanel"
 import { VouchSeatPicker } from "./VouchSeatPicker"
 
@@ -70,6 +72,10 @@ export function LifecyclePanelSlot({
 // its descriptor via `lifecyclePanel: "vouch-seat"`.
 registerLifecyclePanel("vouch-seat", SeatLifecyclePanel)
 
+// Homage's redeem panel (burn → 50k $111 back, punk id returns to the pool) —
+// referenced by its descriptor via `lifecyclePanel: "homage-redeem"`.
+registerLifecyclePanel("homage-redeem", HomageRedeemPanel)
+
 // ── phase selectors (2.3 companion) ─────────────────────────────────────────
 
 export type PhaseSelectorProps = {
@@ -111,3 +117,7 @@ export function PhaseSelectorSlot({
 // Vouch's chosen-seat picker — the descriptor's `selector: "vouch-seat"`,
 // paired with the args builder registered under the same key.
 registerPhaseSelector("vouch-seat", VouchSeatPicker)
+
+// Homage's claim-phase punk picker (wrapped-punk chips + verified manual id)
+// — the claim phase's `selector: "homage-claim"`, paired with its args builder.
+registerPhaseSelector("homage-claim", HomagePunkPicker)
