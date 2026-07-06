@@ -331,22 +331,40 @@ surface, worker, indexer, artist-page template, Catalog).
 - Artist template embed + factory discovery indexing: about a week
   combined.
 
-### 8.5 Open decisions
+### 8.5 Decision record (Phase 0, locked 2026-07-06)
 
-- **Immutable clones vs UUPS-until-seal** for the core. Leaning
-  immutable: the slots and companions now carry all variability, and
-  immutability is the stronger trust story. Decide once, before
-  anything deploys.
-- Naming: decided. Contracts carry no PND prefix, since PND is a
+- **Immutable EIP-1167 clones, no UUPS.** The slots and companions
+  carry all variability; immutability deletes the proxy, upgrade, and
+  seal surface from the audit and is the stronger trust story. Core
+  evolution happens by factory-offered versions; deployed collections
+  never change. Consequence: the editions upgrade test suite is
+  retired, not ported.
+- **FixedPrice is a stored field, not a contract.** The collection
+  holds a `price` used when the strategy slot is unset; a set
+  `IPriceStrategy` overrides it. Simple collections deploy nothing
+  extra; TBAM-shaped pricing plugs in by setting the slot.
+- **Hooks run on all mint paths**, built-in and extension `mintTo`,
+  so gating composes with custom minters instead of being
+  reimplemented inside them.
+- **Interface names**: `ISovereignCollection` (view surface:
+  `tokenSeed`, `mintMarkOf`, `workConfig`, sale state),
+  `IRenderer` (`tokenURI(address collection, uint256 tokenId)`),
+  `IPriceStrategy` (`priceOf(collection, minter, qty, data)`, view),
+  `IMintHook` (`beforeMint`/`afterMint`, non-payable, magic-value
+  gated, carried from the editions spec).
+- **Naming**: contracts carry no PND prefix, since PND is a
   stepping stone and the contracts must outlive it. The core family is
   `SovereignCollection` / `SovereignCollectionFactory`, consistent with
   the existing `SovereignAuctionHouse` and the sovereign-artist-site
   template. Singletons stay unprefixed in the Catalog idiom
   (`Attribution`, `GenerativeRenderer`, `SVGRenderer`).
-- Extension-path surface share policy (convention + official minter
-  set, or something stricter).
-- BackedMinter launch guardrails (vetted coins vs permissionless with
-  liquidity checks).
+- **Extension-path surface share**: convention plus an official,
+  reviewed minter set surfaced by the studio. PND-shipped minters
+  honor the share in code; a custom minter is the artist's visible,
+  onchain choice.
+
+Still open (gates Phase 5 only, not v1): BackedMinter launch
+guardrails (vetted coins vs permissionless with liquidity checks).
 
 ### 8.6 Timeline
 

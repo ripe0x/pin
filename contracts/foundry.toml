@@ -10,6 +10,7 @@ remappings = [
     "openzeppelin-contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/",
     "erc721a-upgradeable/=lib/ERC721A-Upgradeable/",
     "forge-std/=lib/forge-std/src/",
+    "solady/=lib/solady/src/",
 ]
 
 [rpc_endpoints]
