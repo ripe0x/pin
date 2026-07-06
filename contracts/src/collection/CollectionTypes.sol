@@ -98,11 +98,20 @@ struct Path {
     bytes32 data; // optional aux payload
 }
 
+/// @notice How a stored file must be emitted into the assembled HTML.
+///         Script = plain JS; ScriptGzip = gzipped JS (the renderer loads a
+///         gunzip helper and emits it as a gzip data-URI script tag).
+enum CodeKind {
+    Script,
+    ScriptGzip
+}
+
 /// @notice An onchain-addressable file: a named entry in a scripty v2
 ///         storage contract or an EthFS FileStore.
 struct CodeRef {
     address store;
     string name;
+    CodeKind kind;
 }
 
 /// @notice What the work is, executably. Interpreted by renderers, stored and
