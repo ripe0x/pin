@@ -1,5 +1,5 @@
 import "server-only"
-import { createPublicClient, http, type Address } from "viem"
+import { createPublicClient, decodeFunctionResult, encodeFunctionData, http, type Address } from "viem"
 import { mainnet } from "viem/chains"
 import { attributionAbi, catalogAbi, sovereignCollectionAbi, sovereignCollectionFactoryAbi } from "@pin/abi"
 import { ARTIST_RECORD_REGISTRY, ATTRIBUTION, MAINNET_CHAIN_ID, getAddressOrNull } from "@pin/addresses"
@@ -121,14 +121,13 @@ export async function getCollectionToken(
     const client = getClient()
     const base = { address, abi: sovereignCollectionAbi } as const
     try {
-      const [ownerRes, seedRes, markRes, artRes, uriRes] = await client.multicall({
+      const [ownerRes, seedRes, markRes, artRes] = await client.multicall({
         allowFailure: true,
         contracts: [
           { ...base, functionName: "ownerOf", args: [tokenId] },
           { ...base, functionName: "tokenSeed", args: [tokenId] },
           { ...base, functionName: "mintMarkOf", args: [tokenId] },
           { ...base, functionName: "tokenArtwork", args: [tokenId] },
-          { ...base, functionName: "tokenURI", args: [tokenId] },
         ],
       })
       if (markRes.status !== "success") return null // never minted / burned
@@ -136,7 +135,33 @@ export async function getCollectionToken(
       const collection = ownerRes.status === "success" ? await getCollection(address) : null
       const tokenArt = artRes.status === "success" ? (artRes.result as string) : ""
       const artwork = tokenArt && tokenArt.length > 0 ? tokenArt : collection?.cfg.artworkURI ?? ""
-      const rawTokenUri = uriRes.status === "success" ? (uriRes.result as string) : null
+
+      // tokenURI gets its own call with an explicit gas ceiling, NEVER the
+      // multicall: assembling a full onchain HTML document (GenerativeRenderer
+      // over a gzipped p5) measures 60-120M gas, far beyond the ~30M default
+      // eth_call cap and any multicall budget. Elevated-gas eth_call is the
+      // standard way heavyweight onchain-HTML tokenURIs are served; consumers
+      // with lower caps use the capture worker's static image instead.
+      const rawTokenUri = await client
+        .call({
+          to: address,
+          data: encodeFunctionData({
+            abi: sovereignCollectionAbi,
+            functionName: "tokenURI",
+            args: [tokenId],
+          }),
+          gas: 300_000_000n,
+        })
+        .then(({ data }) =>
+          data
+            ? (decodeFunctionResult({
+                abi: sovereignCollectionAbi,
+                functionName: "tokenURI",
+                data,
+              }) as string)
+            : null,
+        )
+        .catch(() => null)
 
       // Decode the already-fetched tokenURI (no extra RPC call) to recover
       // `image` / `animation_url` the same way every other token page on

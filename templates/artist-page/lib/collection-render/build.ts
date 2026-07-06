@@ -18,8 +18,8 @@
  *     <script type="text/javascript+gzip" src="data:text/javascript;base64,CONTENT"></script>
  *     where CONTENT is the stored bytes VERBATIM (gzipped files are stored
  *     as base64 text onchain; scripty never re-encodes tag content)
- *   - body order: gunzip helper (only when any following tag is gzipped),
- *     dependencies, the tokenData injection, artist code
+ *   - body order: dependencies, the tokenData injection, artist code,
+ *     gunzip helper LAST (it replaces the gzip tags that precede it)
  *
  * Divergence between this file and the onchain renderer is a bug by
  * definition; the fork e2e (web plan D8) asserts equality.
@@ -74,6 +74,12 @@ function gzipTag(base64Content: string): string {
   );
 }
 
+function b64ScriptTag(base64Content: string): string {
+  return (
+    '<script src="data:text/javascript;base64,' + base64Content + '"></script>'
+  );
+}
+
 function fileTag(ref: CodeRefLike, content: string): string {
   return ref.kind === CODE_KIND.ScriptGzip ? gzipTag(content) : scriptTag(content);
 }
@@ -110,11 +116,17 @@ export async function buildTokenHTML(
     codeContents,
   ]);
 
+  // Order per the convention: deps, context, code, gunzip helper LAST.
+  // The helper decompresses by scanning the gzip tags that PRECEDE it and
+  // replacing each with an executing script tag; placed first it finds
+  // nothing and gzipped libraries never execute.
   const body: string[] = [];
-  if (needsGunzip) body.push(scriptTag(gunzip));
   work.deps.forEach((ref, i) => body.push(fileTag(ref, deps[i])));
   body.push(scriptTag(buildContextJs(tokenData)));
   work.code.forEach((ref, i) => body.push(fileTag(ref, code[i])));
+  // The gunzip helper is stored as base64 text on EthFS (its data-URI
+  // design), so it ships as a base64 data-URI script src, never inlined.
+  if (needsGunzip) body.push(b64ScriptTag(gunzip));
 
   return (
     "<html><head>" +

@@ -40,6 +40,7 @@ import { client } from "../rpc.ts"
 import { throttleRpc } from "../throttle.ts"
 import { sovereignCollectionAbi } from "@pin/abi"
 import { SOVEREIGN_COLLECTION_FACTORY, MAINNET_CHAIN_ID, getAddressOrNull } from "@pin/addresses"
+import { decodeFunctionResult, encodeFunctionData } from "viem"
 import type { Address } from "viem"
 import type { TaskResult } from "../scheduler.ts"
 
@@ -162,12 +163,23 @@ async function captureOne(c: Candidate): Promise<{ rpc: number; wrote: boolean }
   let tokenUri: string
   try {
     await throttleRpc()
-    tokenUri = (await client.readContract({
-      address: c.collection as Address,
+    // Explicit gas ceiling: onchain-HTML tokenURIs (GenerativeRenderer over
+    // gzipped libs) measure 60-120M gas, beyond the default eth_call cap.
+    const uriCall = await client.call({
+      to: c.collection as Address,
+      data: encodeFunctionData({
+        abi: sovereignCollectionAbi,
+        functionName: "tokenURI",
+        args: [BigInt(c.tokenId)],
+      }),
+      gas: 300_000_000n,
+    })
+    if (!uriCall.data) throw new Error("empty tokenURI return")
+    tokenUri = decodeFunctionResult({
       abi: sovereignCollectionAbi,
       functionName: "tokenURI",
-      args: [BigInt(c.tokenId)],
-    })) as string
+      data: uriCall.data,
+    }) as string
     rpc += 1
   } catch (err) {
     console.error(`[${TASK}] tokenURI ${c.collection}/${c.tokenId}:`, err)

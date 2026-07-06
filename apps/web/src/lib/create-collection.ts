@@ -10,7 +10,7 @@
  */
 
 import { bytesToHex, keccak256, type Address } from "viem"
-import { ETHFS_V2_FILE_STORAGE, getAddressOrNull } from "@pin/addresses"
+import { ETHFS_V2_FILE_STORAGE, SCRIPTY_STORAGE_V2, getAddressOrNull } from "@pin/addresses"
 import { CodeKind, type CodeRef } from "./sovereign-collection"
 
 export { CodeKind }
@@ -62,8 +62,22 @@ export const KNOWN_DEPENDENCIES: {
   },
 ]
 
+// The scripty/EthFS contracts are chain-agnostic singletons; dev chains
+// fork mainnet, so the mainnet entry is the fallback for chain ids without
+// their own entry. Use these resolvers instead of raw getAddressOrNull for
+// anything scripty-related.
+export function scriptyStorageAddress(chainId: number) {
+  return getAddressOrNull(SCRIPTY_STORAGE_V2, chainId) ?? getAddressOrNull(SCRIPTY_STORAGE_V2, 1)
+}
+
+export function ethfsStorageAddress(chainId: number) {
+  return (
+    getAddressOrNull(ETHFS_V2_FILE_STORAGE, chainId) ?? getAddressOrNull(ETHFS_V2_FILE_STORAGE, 1)
+  )
+}
+
 export function dependencyCodeRef(file: string, chainId: number): CodeRef | null {
-  const store = getAddressOrNull(ETHFS_V2_FILE_STORAGE, chainId)
+  const store = ethfsStorageAddress(chainId)
   return store ? { store, name: file, kind: CodeKind.ScriptGzip } : null
 }
 

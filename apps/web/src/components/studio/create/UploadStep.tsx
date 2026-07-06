@@ -33,7 +33,6 @@ import {
   useWaitForTransactionReceipt,
 } from "wagmi"
 import { scriptyStorageAbi } from "@pin/abi"
-import { SCRIPTY_STORAGE_V2, getAddressOrNull } from "@pin/addresses"
 import { formatWriteError } from "@/components/tx/tx-ui"
 import {
   chunkScript,
@@ -42,6 +41,7 @@ import {
   scriptCodeHash,
   slugify,
   toHexChunk,
+  scriptyStorageAddress,
 } from "@/lib/create-collection"
 import type { WizardState } from "./types"
 import { BTN, BTN_SECONDARY, ERROR, HELP } from "./wizard-ui"
@@ -60,7 +60,7 @@ export function UploadStep({
   const { address } = useAccount()
   const publicClient = usePublicClient()
   const chainId = useChainId()
-  const storage = getAddressOrNull(SCRIPTY_STORAGE_V2, chainId)
+  const storage = scriptyStorageAddress(chainId)
 
   const bytes = scriptBytes(state.script)
   const chunks = chunkScript(bytes)

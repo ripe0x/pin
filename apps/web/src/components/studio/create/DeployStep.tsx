@@ -27,9 +27,8 @@ import {
   sovereignCollectionFactory,
   generativeRenderer,
 } from "@/lib/sovereign-collection"
-import { KNOWN_DEPENDENCIES, dependencyCodeRef, CodeKind } from "@/lib/create-collection"
+import { KNOWN_DEPENDENCIES, dependencyCodeRef, CodeKind, scriptyStorageAddress } from "@/lib/create-collection"
 import { studioToolHref } from "@/lib/studio-tools"
-import { SCRIPTY_STORAGE_V2, getAddressOrNull } from "@pin/addresses"
 import { validateCollaborators } from "./SharedFields"
 import type { WizardState } from "./types"
 import { BTN, BTN_SECONDARY, ERROR } from "./wizard-ui"
@@ -53,7 +52,7 @@ export function DeployStep({
   const chainId = useChainId()
   const factory = sovereignCollectionFactory(chainId)
   const renderer = generativeRenderer(chainId)
-  const scriptyStorage = getAddressOrNull(SCRIPTY_STORAGE_V2, chainId)
+  const scriptyStorage = scriptyStorageAddress(chainId)
 
   const deploy = useWriteContract()
   const { data: receipt, isLoading: mining } = useWaitForTransactionReceipt({

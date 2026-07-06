@@ -9,7 +9,7 @@
 import { hexToBytes } from "viem";
 import type { Address, PublicClient } from "viem";
 import { scriptyStorageAbi } from "@pin/abi";
-import { ETHFS_V2_FILE_STORAGE, getAddress as getKnownAddress } from "@pin/addresses";
+import { ETHFS_V2_FILE_STORAGE, getAddressOrNull } from "@pin/addresses";
 
 import type { CodeRefLike, ContentResolver, GunzipRef } from "./types";
 
@@ -72,13 +72,17 @@ export function layeredResolver(
 
 /**
  * The canonical gunzip helper (a GenerativeRenderer constructor immutable,
- * not part of WorkConfig). Same address on the fork because dev forks
- * mainnet. Overridable per collection by reading the renderer's own
- * gunzipStore()/gunzipFile() when it ever differs.
+ * not part of WorkConfig). Chain-agnostic singleton: dev chains fork
+ * mainnet, so the mainnet entry is valid there and serves as the fallback
+ * for any chain id without its own entry. Overridable per collection by
+ * reading the renderer's own gunzipStore()/gunzipFile() when it differs.
  */
 export function defaultGunzip(chainId: number): GunzipRef {
+  const store =
+    getAddressOrNull(ETHFS_V2_FILE_STORAGE, chainId) ?? getAddressOrNull(ETHFS_V2_FILE_STORAGE, 1);
+  if (!store) throw new Error("collection-render: EthFS address unavailable");
   return {
-    store: getKnownAddress(ETHFS_V2_FILE_STORAGE, chainId) as Address,
+    store: store as Address,
     name: "gunzipScripts-0.0.1.js",
   };
 }
