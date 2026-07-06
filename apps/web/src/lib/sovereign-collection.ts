@@ -14,6 +14,7 @@ import { type Address, formatEther, isAddress } from "viem"
 import { foundry, mainnet } from "wagmi/chains"
 import {
   ATTRIBUTION,
+  GENERATIVE_RENDERER,
   SOVEREIGN_COLLECTION_FACTORY,
   getAddressOrNull,
 } from "@pin/addresses"
@@ -41,6 +42,20 @@ export function attributionAddress(chainId: number = PND_CHAIN_ID): Address | nu
   const env = process.env.NEXT_PUBLIC_ATTRIBUTION
   if (env && isAddress(env)) return env as Address
   return getAddressOrNull(ATTRIBUTION, chainId)
+}
+
+/**
+ * The GenerativeRenderer singleton address (env override for local dev
+ * wins). A SovereignCollectionFactory's baked-in `defaultRenderer` is
+ * DefaultRenderer (static/SVG works) — the create wizard's GENERATIVE
+ * preset must pass this address explicitly as `cfg.renderer` rather than
+ * relying on the zero-address default. See
+ * contracts/script/DeployCollectionSystem.s.sol deploy order.
+ */
+export function generativeRenderer(chainId: number = PND_CHAIN_ID): Address | null {
+  const env = process.env.NEXT_PUBLIC_GENERATIVE_RENDERER
+  if (env && isAddress(env)) return env as Address
+  return getAddressOrNull(GENERATIVE_RENDERER, chainId)
 }
 
 /**

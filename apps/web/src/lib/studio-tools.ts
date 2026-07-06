@@ -24,6 +24,9 @@
  *   }
  */
 
+import { MAINNET_CHAIN_ID } from "@pin/addresses"
+import { sovereignCollectionFactory } from "./sovereign-collection"
+
 export type StudioTool = {
   /** Route segment under /studio/[address]/ */
   id: string
@@ -41,6 +44,13 @@ export type StudioTool = {
 }
 
 export const STUDIO_TOOLS: StudioTool[] = [
+  {
+    id: "create",
+    label: "Create a collection",
+    description:
+      "Ship a generative or edition collection with no Solidity: deploy your own onchain contract in one guided flow.",
+    available: () => sovereignCollectionFactory(MAINNET_CHAIN_ID) !== null,
+  },
   {
     id: "listings",
     label: "Listings",
