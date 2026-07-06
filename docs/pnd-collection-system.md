@@ -283,9 +283,11 @@ surface, worker, indexer, artist-page template, Catalog).
 ## 7. What exists today
 
 - **Deployed and done**: Catalog.sol, scripty v2 / EthFS, MURI, the
-  studio shell and tool registry, the generic mint surface (Homage
-  launches through it), worker + indexer, artist-page template
-  pipeline.
+  studio shell and tool registry, worker + indexer, artist-page
+  template pipeline. (The generic mint surface lives on the unmerged
+  `generic-mint-surface` branch with the Homage launch work; it is not
+  on main, and collection descriptor integration is deferred until it
+  merges. See docs/pnd-collection-web-plan.md.)
 - **Exists, gets reworked**: the editions contracts (846 lines:
   PNDEditions.sol, factory, types, default renderer, hooks) and their
   fork-test suite; the spec docs.
