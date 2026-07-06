@@ -361,3 +361,92 @@ export const muriTokens = onchainTable(
     contractTokenIdx: index().on(table.contract, table.tokenId),
   }),
 )
+
+// ─── PND Collection System (contracts/src/collection/) ──────────────────
+// DEPLOY-GATED (see ponder.config.ts): these tables exist regardless, but
+// stay empty until SovereignCollectionFactory + SovereignCollection are
+// wired into `contracts`. One row per artist collection deployed via the
+// factory (`collections`), one row per live token incl. pooled re-mints
+// (`collection_tokens`), and an append-only mint log (`collection_mints`).
+// Handlers are kept minimal per AGENTS.md — enrichment (metadata, rendered
+// art, etc.) is the worker's/web's job reading these rows, not Ponder's.
+
+export const collections = onchainTable(
+  "collections",
+  (t) => ({
+    // The deployed SovereignCollection clone address.
+    collection: t.hex().primaryKey(),
+    owner: t.hex().notNull(),
+    createdAtBlock: t.bigint().notNull(),
+    createdAtTime: t.bigint().notNull(),
+    createdTxHash: t.hex().notNull(),
+  }),
+  (table) => ({
+    ownerIdx: index().on(table.owner),
+  }),
+)
+
+// Current state per token. Pooled collections can burn-then-remint the
+// same tokenId as a new instance (see ISovereignCollection.mintToAt) — a
+// re-mint UPDATEs this row in place (fresh mark fields, burned reset to
+// false) rather than inserting a new one, so `id` stays the durable
+// per-(collection,tokenId) identity across the token's burn/remint cycles.
+export const collectionTokens = onchainTable(
+  "collection_tokens",
+  (t) => ({
+    id: t.text().primaryKey(), // `${collection}-${tokenId}`
+    collection: t.hex().notNull(),
+    tokenId: t.bigint().notNull(),
+    // Current holder. For built-in paid mints (Minted event `to`) this is
+    // the minter; extension mints (mintTo/mintToAt) also resolve `to` from
+    // the same event, so no separate "minter" vs "owner" split is needed
+    // here — Ponder does not track post-mint Transfer for this contract
+    // (that's an owner-tracking concern the web/worker layer can add via
+    // Transfer if/when needed).
+    mintedTo: t.hex().notNull(),
+    surface: t.hex().notNull(),
+    mintBlock: t.bigint().notNull(),
+    // Offset of this tokenId within its own Minted call's
+    // [firstTokenId, firstTokenId + quantity - 1] range (0 for extension
+    // mints, which always emit quantity 1). NOT the contract's global
+    // per-collection mint order (MintRecord.mintIndex / mintMarkOf()) —
+    // that value isn't emitted by Minted and reading it back onchain per
+    // event would mean an extra RPC call per mint, which these handlers
+    // deliberately avoid (see AGENTS.md: worker/web enrich, Ponder stays
+    // dumb). Read mintMarkOf(tokenId) directly if the global index is
+    // ever needed.
+    mintOffset: t.integer().notNull(),
+    statusAtMint: t.integer().notNull(), // CollectionStatus enum (0 Open, 1 Closing, 2 Closed)
+    burned: t.boolean().notNull(),
+    updatedAtBlock: t.bigint().notNull(),
+    updatedAtTime: t.bigint().notNull(),
+  }),
+  (table) => ({
+    collectionIdx: index().on(table.collection, table.tokenId),
+    mintedToIdx: index().on(table.mintedTo),
+  }),
+)
+
+// Append-only: one row per Minted event, including every re-mint of a
+// previously-burned pooled id. Never updated — the immutable mint history
+// that `collection_tokens` (current state) is derived from.
+export const collectionMints = onchainTable(
+  "collection_mints",
+  (t) => ({
+    id: t.text().primaryKey(), // `${txHash}-${logIndex}`
+    collection: t.hex().notNull(),
+    firstTokenId: t.bigint().notNull(),
+    quantity: t.bigint().notNull(),
+    to: t.hex().notNull(),
+    surface: t.hex().notNull(),
+    mintBlock: t.bigint().notNull(),
+    statusAtMint: t.integer().notNull(),
+    blockNumber: t.bigint().notNull(),
+    blockTime: t.bigint().notNull(),
+    txHash: t.hex().notNull(),
+  }),
+  (table) => ({
+    collectionIdx: index().on(table.collection, table.blockNumber),
+    toIdx: index().on(table.to),
+  }),
+)

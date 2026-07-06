@@ -9,6 +9,8 @@ import { mintFactoryAbi } from "./abis/MintFactory"
 import { tlUniversalDeployerAbi } from "./abis/TLUniversalDeployer"
 import { superrareNftAbi } from "./abis/SuperRareNFT"
 import { muriProtocolAbi } from "./abis/MURIProtocol"
+import { sovereignCollectionAbi } from "./abis/SovereignCollection"
+import { sovereignCollectionFactoryAbi } from "./abis/SovereignCollectionFactory"
 
 /**
  * PND v2 Ponder scope — REDUCED from v1.
@@ -19,6 +21,9 @@ import { muriProtocolAbi } from "./abis/MURIProtocol"
  *   - FoundationNFT shared 1/1 contract
  *   - SuperRareNFT shared 1/1 contract
  *   - Catalog
+ *   - SovereignCollectionFactory + every clone (PND Collection System —
+ *     DEPLOY-GATED, see the sentinel + conditional spread below; absent
+ *     from `contracts` entirely until the factory is deployed)
  *
  * Discovery-only (one row per artist-deploys-a-clone, NO per-clone events):
  *   - NFTCollectionFactoryV1 + V2 → fnd_collections
@@ -32,10 +37,10 @@ import { muriProtocolAbi } from "./abis/MURIProtocol"
  *   - MintCollection per-clone TransferSingle/Batch subscription
  *   - TLCollection per-clone Transfer subscription
  *
- * The "factory()" pattern is now used ONLY by PND. All other per-clone
- * scanning happens in apps/worker/, gated by `known_artists`. This
- * eliminates the multi-address eth_getLogs work that drove most of v1's
- * Ponder RPC cost.
+ * The "factory()" pattern is used by PND-owned factories (SovereignAuction
+ * House, SovereignCollection). All other per-clone scanning happens in
+ * apps/worker/, gated by `known_artists`. This eliminates the multi-address
+ * eth_getLogs work that drove most of v1's Ponder RPC cost.
  */
 
 const FACTORY_ADDRESS = "0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f" as const
@@ -76,6 +81,38 @@ const TL_DEPLOYER_DEPLOY_BLOCK = 19_062_900
 const MURI_PROTOCOL_ADDRESS =
   "0x0000000000C2A0B63ab4aA971B08B905E5875b01" as const
 const MURI_PROTOCOL_DEPLOY_BLOCK = 23_754_750
+
+// PND Collection System (contracts/src/collection/) — the general
+// SovereignCollection core (Editions preset + generative + backed/pooled
+// forms), deployed via a single SovereignCollectionFactory. Mirrors the
+// SovereignAuctionHouse(Factory) pattern above: one fixed factory indexed
+// for discovery (CollectionCreated), and `factory()` for full per-clone
+// event indexing of every deployed collection.
+//
+// NOT yet deployed — sentinel zero address. When the sentinel is unset
+// (zero), both SovereignCollectionFactory and SovereignCollection are
+// EXCLUDED from `contracts` below so the config stays valid pre-deploy.
+// At mainnet deploy: set SOVEREIGN_COLLECTION_FACTORY_ADDRESS to the real
+// factory address and SOVEREIGN_COLLECTION_FACTORY_DEPLOY_BLOCK to its
+// actual deploy block (do NOT leave the placeholder below — it is not a
+// safe lower bound, just a marker).
+//
+// Typed as a widened `0x${string}` (NOT `as const`) so the sentinel
+// equality check below stays valid TypeScript both before AND after the
+// real address is substituted in — two different address literals
+// compared with `as const` on both sides is a TS2367 compile error
+// ("no overlap"), which would otherwise break the moment this constant
+// is updated at deploy time.
+const ZERO_ADDRESS_SENTINEL: `0x${string}` =
+  "0x0000000000000000000000000000000000000000"
+const SOVEREIGN_COLLECTION_FACTORY_ADDRESS: `0x${string}` =
+  ZERO_ADDRESS_SENTINEL
+const SOVEREIGN_COLLECTION_FACTORY_IS_DEPLOYED =
+  SOVEREIGN_COLLECTION_FACTORY_ADDRESS !== ZERO_ADDRESS_SENTINEL
+// LOUD PLACEHOLDER — set this to the real deploy block the moment the
+// factory goes live on mainnet. Left wrong, backfill silently starts at
+// block 0 and re-scans the entire chain.
+const SOVEREIGN_COLLECTION_FACTORY_DEPLOY_BLOCK = 0
 
 // drpc.org free tier handles multi-address eth_getLogs for the PND
 // factory pattern. See docs/RPC-strategy.md for why publicnode /
@@ -203,5 +240,43 @@ export default createConfig({
       address: MURI_PROTOCOL_ADDRESS,
       startBlock: MURI_PROTOCOL_DEPLOY_BLOCK,
     },
+
+    // ── PND Collection System (DEPLOY-GATED — see sentinel above) ─────
+    // Both entries are conditionally spread in: while
+    // SOVEREIGN_COLLECTION_FACTORY_ADDRESS is the zero-address sentinel,
+    // neither key exists on `contracts` at all (not "disabled", just
+    // absent), so this file stays a valid, runnable Ponder config before
+    // deploy. Fill in the real factory address + deploy block, and both
+    // entries activate together.
+    ...(SOVEREIGN_COLLECTION_FACTORY_IS_DEPLOYED
+      ? {
+          // Fixed factory — discovery (one CollectionCreated per artist
+          // deploy) exactly like SovereignAuctionHouseFactory above.
+          SovereignCollectionFactory: {
+            chain: "mainnet",
+            abi: sovereignCollectionFactoryAbi,
+            address: SOVEREIGN_COLLECTION_FACTORY_ADDRESS,
+            startBlock: SOVEREIGN_COLLECTION_FACTORY_DEPLOY_BLOCK,
+          },
+          // Full per-clone indexing of every deployed collection, via
+          // Ponder's factory() child-address pattern (same mechanism as
+          // SovereignAuctionHouse). This is a PND-owned factory, so full
+          // state-machine indexing here is in-bounds per AGENTS.md — it
+          // is NOT the long-tail per-artist-platform scanning that
+          // belongs in the worker.
+          SovereignCollection: {
+            chain: "mainnet",
+            abi: sovereignCollectionAbi,
+            address: factory({
+              address: SOVEREIGN_COLLECTION_FACTORY_ADDRESS,
+              event: parseAbiItem(
+                "event CollectionCreated(address indexed owner, address indexed collection)",
+              ),
+              parameter: "collection",
+            }),
+            startBlock: SOVEREIGN_COLLECTION_FACTORY_DEPLOY_BLOCK,
+          },
+        }
+      : {}),
   },
 })
