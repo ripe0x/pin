@@ -1,10 +1,20 @@
-# PND Editions e2e (browser-driven)
+# PND Collections e2e (browser-driven)
 
 Headless end-to-end verification of the release + mint UI: a real Chromium
 browser drives the actual Next app against a real Anvil mainnet fork, and the
 spec asserts the resulting onchain state. Modeled on the
 `permanent-collection` UI debug system (Anvil signs server-side; drive the
 real browser, not a mocked wagmi config).
+
+**Status: `editions.spec.ts` is stale and currently broken.** It drives
+`/editions/new` (`CreateEditionForm`), which no longer exists — Editions was
+retired in favor of Collections (`/collections`), and `/editions/*` routes
+now just redirect. `fixtures/globalSetup.ts` has been updated to deploy the
+Collections system (`DeployCollectionSystem.s.sol`), but the spec itself
+still exercises the old create-then-mint UI flow and needs to be rewritten
+against the Collections creation flow (owned by the studio work,
+`apps/web/src/app/studio/[address]/create/`) once that lands. Rename to
+`collections.spec.ts` at that point.
 
 ## Run
 

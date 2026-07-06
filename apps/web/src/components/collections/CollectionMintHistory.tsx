@@ -1,18 +1,40 @@
 /**
- * Mint history for an edition, newest first, batched by (holder, block).
- * Styled to match the auction page's bid-history list.
+ * Mint history for a collection, newest first, batched by (holder, block).
+ * Styled to match the auction page's bid-history list. Sequential-mode
+ * collections show the reconstructed history; Pooled-mode collections have no
+ * such reconstruction available from a web-safe read (see
+ * getCollectionMintHistory's doc comment in lib/collection-onchain.ts), so
+ * this renders the "not available" notice instead.
  */
-import { type MintHistoryEntry } from "@/lib/editions-onchain"
-import { evmNowAddressUrl, shortAddress } from "@/lib/pnd-editions"
+import { type CollectionMintHistoryResult } from "@/lib/collection-onchain"
+import { evmNowAddressUrl, shortAddress } from "@/lib/sovereign-collection"
 
-export function MintHistory({
-  entries,
+export function CollectionMintHistory({
+  history,
   chainId,
 }: {
-  entries: MintHistoryEntry[]
+  history: CollectionMintHistoryResult
   chainId: number
 }) {
+  if (history.unsupported === "pooled") {
+    return (
+      <section className="py-5 border-b border-gray-100">
+        <h2 className="text-[10px] font-mono font-medium uppercase tracking-wider text-gray-400 mb-3">
+          Mint history
+        </h2>
+        <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
+          Pooled collections mint through an authorized minter with arbitrary
+          token ids, so mint history is not reconstructable from a direct
+          onchain read. It will appear here once the indexer picks up this
+          collection.
+        </p>
+      </section>
+    )
+  }
+
+  const entries = history.entries
   if (entries.length === 0) return null
+
   return (
     <section className="py-5 border-b border-gray-100">
       <h2 className="text-[10px] font-mono font-medium uppercase tracking-wider text-gray-400 mb-3">

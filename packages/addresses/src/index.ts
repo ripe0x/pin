@@ -93,22 +93,27 @@ export const SOVEREIGN_AUCTION_HOUSE_FACTORY: Record<number, Address> = {
   [BASE_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
 }
 
-// PNDEditionsFactory — deploys one ERC721A contract per project (artist
+// SUPERSEDED — PND Editions (PNDEditionsFactory + reference mint hooks) is
+// retired in favor of the SovereignCollection system (see
+// SOVEREIGN_COLLECTION_FACTORY + ATTRIBUTION below). The editions contracts
+// (contracts/src/editions/*) and DeployEditions.s.sol are deleted; these
+// addresses were never deployed to mainnet (still zero) and are kept only as
+// harmless history / in case any external reference still points at these
+// exported names. Do not wire up new code against these.
+//
+// PNDEditionsFactory — deployed one ERC721A contract per project (artist
 // release). ImmutableClone (EIP-1167) or Upgradeable (ERC1967/UUPS) per the
-// ProjectMode chosen at createProject. Emits
+// ProjectMode chosen at createProject. Emitted
 // `ProjectCreated(address indexed owner, address indexed project, uint8 mode)`
-// for discovery, mirroring Mint's MintFactory.Created. There is no protocol
-// fee. NOT yet deployed to mainnet — paste the address here after running
-// `forge script script/DeployEditions.s.sol`. For local Anvil dev, set
-// NEXT_PUBLIC_PND_EDITIONS_FACTORY instead of editing this file.
+// for discovery, mirroring Mint's MintFactory.Created. There was no protocol
+// fee.
 export const PND_EDITIONS_FACTORY: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
 }
 
-// PND reference mint hooks (public goods). One shared instance per hook,
-// configured per-edition by each edition's owner; an artist opts in by pointing
-// setMintHook at one. Deployed alongside the factory by
-// script/DeployEditions.s.sol — paste the addresses here post-deploy.
+// SUPERSEDED (see note above) — PND reference mint hooks (public goods). One
+// shared instance per hook, configured per-edition by each edition's owner;
+// an artist opted in by pointing setMintHook at one.
 export const PND_PER_WALLET_CAP_HOOK: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
 }

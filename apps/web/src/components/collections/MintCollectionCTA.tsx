@@ -1,10 +1,24 @@
 "use client"
 
 /**
- * Live mint CTA for a PND Edition. Honest pricing: the collector pays exactly
- * price * quantity. The fixed Surface Share is shown explicitly as a split out
- * of that price, paid to whoever hosts this mint (PND here, the artist on
- * their own site). A 0 ETH price is "Gas only", never "free".
+ * Live mint CTA for a Sovereign Collection. Honest pricing: for a fixed-price
+ * collection the collector pays exactly price * quantity, shown up front. For
+ * a collection with a price strategy (hasPriceStrategy), the price can change
+ * block to block (e.g. a basefee-driven strategy), so this reads a live quote
+ * via currentPrice on a slow poll (12s — never tighter, this is a paid RPC
+ * path) and sends that quoted value as msg.value. The contract accepts
+ * `msg.value >= currentPrice` and pull-refunds any excess to the pending
+ * withdrawal balance, so a quote that goes slightly stale between read and
+ * broadcast still succeeds — it just leaves a small refund claimable via
+ * WithdrawPanel instead of reverting.
+ *
+ * The fixed Surface Share is shown explicitly as a split out of the price,
+ * paid to whoever hosts this mint (PND here, the artist on their own site). A
+ * 0 ETH price is "Gas only", never "free".
+ *
+ * Pooled-mode collections (sellsViaMinterOnly) never sell through this direct
+ * path — they mint exclusively through an authorized minter extension — so
+ * this component renders a quiet notice instead of a buy flow.
  */
 
 import { useState } from "react"
@@ -14,12 +28,13 @@ import {
   useAccount,
   useBalance,
   useChainId,
+  useReadContract,
   useSwitchChain,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
-import { pndEditionsAbi } from "@pin/abi"
+import { sovereignCollectionAbi } from "@pin/abi"
 import {
   Countdown,
   PREFERRED_CHAIN,
@@ -29,35 +44,39 @@ import {
   useChainNowSec,
 } from "@/components/tx/tx-ui"
 import {
-  EditionStatus,
-  EDITION_STATUS_LABEL,
+  CollectionStatus,
+  COLLECTION_STATUS_LABEL,
   SURFACE_SHARE_BPS,
   ZERO_ADDRESS,
   formatBps,
+  hasPriceStrategy,
   isGasOnly,
   isMintable,
   lifecycleStatus,
   pndSurfaceAddress,
+  sellsViaMinterOnly,
   shortAddress,
-  splitOutOfPrice,
-} from "@/lib/pnd-editions"
+  type IdMode,
+} from "@/lib/sovereign-collection"
 
-export type MintSnapshot = {
+export type MintCollectionSnapshot = {
   price: string
   supplyCap: string
   mintStart: string
   mintEnd: string
   minted: string
   status: number
+  priceStrategy: `0x${string}`
+  idMode: IdMode
 }
 
-export function MintEditionCTA({
-  edition,
+export function MintCollectionCTA({
+  collection,
   snapshot,
   surface,
 }: {
-  edition: `0x${string}`
-  snapshot: MintSnapshot
+  collection: `0x${string}`
+  snapshot: MintCollectionSnapshot
   /** Override the mint surface (a self-hosted page passes the artist's own
    *  address). Defaults to PND's configured surface. */
   surface?: `0x${string}`
@@ -69,15 +88,31 @@ export function MintEditionCTA({
   const nowSec = useChainNowSec()
   const router = useRouter()
 
-  const price = BigInt(snapshot.price)
+  const storedPrice = BigInt(snapshot.price)
   const supplyCap = BigInt(snapshot.supplyCap)
   const minted = BigInt(snapshot.minted)
   const mintEnd = BigInt(snapshot.mintEnd)
   const mintStart = BigInt(snapshot.mintStart)
   const surfaceAddr = surface ?? pndSurfaceAddress()
+  const strategy = hasPriceStrategy(snapshot.priceStrategy)
+  const pooled = sellsViaMinterOnly(snapshot.idMode)
 
   const [amount, setAmount] = useState(1)
   const amountValid = Number.isInteger(amount) && amount >= 1
+
+  // Live price quote for strategy collections. 12s poll — this is a paid RPC
+  // read (currentPrice), never tighten below this without checking the RPC
+  // budget. Fixed-price collections skip the read entirely (query.enabled).
+  const { data: liveQuote } = useReadContract({
+    address: collection,
+    abi: sovereignCollectionAbi,
+    functionName: "currentPrice",
+    args: [address ?? ZERO_ADDRESS, BigInt(amountValid ? amount : 1), "0x"],
+    query: {
+      enabled: strategy,
+      refetchInterval: 12_000,
+    },
+  })
 
   const remaining = supplyCap > 0n ? supplyCap - minted : null
   const capReached = remaining !== null && remaining <= 0n
@@ -85,7 +120,7 @@ export function MintEditionCTA({
   const status = lifecycleStatus(
     { mintEnd, supplyCap },
     minted,
-    snapshot.status === EditionStatus.Closing,
+    snapshot.status === CollectionStatus.Closing,
     nowSec,
   )
   const ready = nowSec > 0 || (mintEnd === 0n && mintStart === 0n)
@@ -95,9 +130,17 @@ export function MintEditionCTA({
     !notStarted &&
     isMintable({ mintStart, mintEnd, supplyCap }, minted, nowSec || Number(mintStart))
 
-  const total = amountValid ? price * BigInt(amount) : price
+  // For a strategy collection, `total` is the live quote for the current
+  // quantity (already scaled by quantity by currentPrice itself). For a
+  // fixed-price collection it's simply price * quantity.
+  const total = strategy
+    ? (liveQuote as bigint | undefined) ?? 0n
+    : amountValid
+      ? storedPrice * BigInt(amount)
+      : storedPrice
+  const perTokenPrice = strategy ? (amountValid && amount > 0 ? total / BigInt(amount) : total) : storedPrice
   const { surfaceCut, artistCut } = splitOutOfPrice(total, surfaceAddr)
-  const showSplit = !isGasOnly(price) && surfaceAddr !== ZERO_ADDRESS
+  const showSplit = !isGasOnly(total) && surfaceAddr !== ZERO_ADDRESS
 
   const { data: balance } = useBalance({
     address,
@@ -117,25 +160,13 @@ export function MintEditionCTA({
 
   function handleMint() {
     if (!amountValid) return
-    // No surface to credit (PND treasury unset / direct) → simple mint, which
-    // gives the artist 100%. Otherwise mintWithRewards credits the surface.
-    if (surfaceAddr === ZERO_ADDRESS) {
-      writeContract({
-        address: edition,
-        abi: pndEditionsAbi,
-        functionName: "mint",
-        args: [BigInt(amount)],
-        value: total,
-      })
-    } else {
-      writeContract({
-        address: edition,
-        abi: pndEditionsAbi,
-        functionName: "mintWithRewards",
-        args: [BigInt(amount), surfaceAddr, "0x"],
-        value: total,
-      })
-    }
+    writeContract({
+      address: collection,
+      abi: sovereignCollectionAbi,
+      functionName: "mintWithRewards",
+      args: [BigInt(amount), surfaceAddr, "0x"],
+      value: total,
+    })
   }
 
   const mintOrderFrom = Number(minted) + 1
@@ -143,11 +174,24 @@ export function MintEditionCTA({
   const isFirstEver = minted === 0n
 
   const statusDot =
-    status === EditionStatus.Open
+    status === CollectionStatus.Open
       ? "bg-emerald-500 animate-pulse"
-      : status === EditionStatus.Closing
+      : status === CollectionStatus.Closing
         ? "bg-amber-500"
         : "bg-gray-400"
+
+  if (pooled) {
+    return (
+      <section className="py-5 border-b border-gray-100">
+        <div className="rounded-lg border border-gray-200 bg-surface p-5">
+          <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
+            This collection mints through its minter. It does not sell directly
+            through this page.
+          </p>
+        </div>
+      </section>
+    )
+  }
 
   return (
     <section className="py-5 border-b border-gray-100">
@@ -157,7 +201,7 @@ export function MintEditionCTA({
             <div className="flex items-center gap-2">
               <span className={`inline-block h-1.5 w-1.5 rounded-full ${statusDot}`} />
               <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500">
-                {EDITION_STATUS_LABEL[status]}
+                {COLLECTION_STATUS_LABEL[status]}
               </span>
             </div>
             <span className="text-[10px] font-mono uppercase tracking-wider text-gray-400 tabular-nums">
@@ -171,19 +215,27 @@ export function MintEditionCTA({
             <div className="space-y-1">
               <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">Price</p>
               <p className="text-2xl font-mono font-medium tabular-nums tracking-tight leading-none">
-                {isGasOnly(price) ? (
+                {isGasOnly(perTokenPrice) && !strategy ? (
                   <>
                     Gas only{" "}
                     <span className="text-sm font-mono text-gray-500">· you pay network gas</span>
                   </>
                 ) : (
                   <>
-                    {formatEther(price)} <span className="text-sm font-mono text-gray-500">ETH</span>
+                    {formatEther(perTokenPrice)}{" "}
+                    <span className="text-sm font-mono text-gray-500">ETH</span>
                   </>
                 )}
               </p>
+              {strategy && (
+                <p className="text-[10px] font-mono text-gray-400">
+                  Live quote, updates automatically. The final amount may
+                  include an automatic refund if the price moves between quote
+                  and confirmation.
+                </p>
+              )}
             </div>
-            {mintEnd > 0n && status !== EditionStatus.Closed && (
+            {mintEnd > 0n && status !== CollectionStatus.Closed && (
               <div className="text-right space-y-1">
                 <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
                   Closes in
@@ -237,13 +289,13 @@ export function MintEditionCTA({
                 </p>
                 <p className="text-[11px] font-mono text-gray-600 leading-relaxed">
                   {amount === 1
-                    ? `Mint #${mintOrderFrom} of this edition`
-                    : `Mints #${mintOrderFrom}–#${mintOrderTo} of this edition`}
+                    ? `Mint #${mintOrderFrom} of this collection`
+                    : `Mints #${mintOrderFrom}–#${mintOrderTo} of this collection`}
                   {isFirstEver && <span className="text-fg"> · you would hold the first token</span>}
                 </p>
               </div>
 
-              {!isGasOnly(price) && (
+              {!isGasOnly(total) && (
                 <div className="space-y-2">
                   <div className="flex items-baseline justify-between">
                     <span className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
@@ -306,14 +358,14 @@ export function MintEditionCTA({
               ) : (
                 <button
                   onClick={handleMint}
-                  disabled={isPending || !amountValid}
+                  disabled={isPending || !amountValid || (strategy && liveQuote === undefined)}
                   className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {isWritePending
                     ? "Confirm in wallet…"
                     : isTxPending
                       ? "Minting…"
-                      : isGasOnly(price)
+                      : isGasOnly(total)
                         ? "Mint (gas only)"
                         : `Mint for ${formatEther(total)} ETH`}
                 </button>
@@ -336,14 +388,23 @@ export function MintEditionCTA({
           {!mintable && !(isSuccess && txHash) && ready && (
             <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
               {notStarted
-                ? "This edition has not opened yet."
+                ? "This collection has not opened yet."
                 : capReached
-                  ? "This edition has reached its cap."
-                  : "This edition is closed."}
+                  ? "This collection has reached its cap."
+                  : "This collection is closed."}
             </p>
           )}
         </div>
       </div>
     </section>
   )
+}
+
+/** The fixed Surface Share split of `total`, out of the price. */
+function splitOutOfPrice(
+  total: bigint,
+  surface: `0x${string}`,
+): { surfaceCut: bigint; artistCut: bigint } {
+  const surfaceCut = surface === ZERO_ADDRESS ? 0n : (total * BigInt(SURFACE_SHARE_BPS)) / 10_000n
+  return { surfaceCut, artistCut: total - surfaceCut }
 }

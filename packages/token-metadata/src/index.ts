@@ -179,11 +179,20 @@ async function readTokenUriWithState(
   }
 }
 
-/** Fetch + parse the off-chain JSON behind a resolved tokenURI/uri. */
-async function fetchMetadataForUri(
+/**
+ * Fetch + parse the off-chain JSON behind an already-resolved tokenURI/uri
+ * string. Exported (unlike the rest of this module's internals) for callers
+ * that already have the raw tokenURI in hand from their own contract read
+ * (e.g. a multicall that fetched `tokenURI` alongside other fields) and want
+ * the same data:/IPFS/IPNS/HTTP parsing this module uses elsewhere, without
+ * triggering a second on-chain `tokenURI` call via `resolveTokenMetadata`.
+ * `id` is only used for the ERC-1155 `{id}` placeholder substitution; pass
+ * the token id even for ERC-721 callers (harmless no-op when absent).
+ */
+export async function fetchMetadataForUri(
   uriString: string,
   id: bigint,
-  fetchTimeoutMs: number,
+  fetchTimeoutMs = 10_000,
 ): Promise<TokenMetadata | null> {
   // ERC-1155 spec: substitute {id} with hex-padded token id (lowercase, 64 chars).
   const idHex = id.toString(16).padStart(64, "0")

@@ -15,10 +15,9 @@ export { muriProtocolAbi } from "./muriProtocol.ts"
 export { muriProtocolManifoldExtensionAbi } from "./muriProtocolManifoldExtension.ts"
 export { ierc721CreatorCoreAbi, ierc1155CreatorCoreAbi } from "./manifoldCreatorCore.ts"
 export { mintEditionAbi } from "./mintEdition.ts"
-export { pndEditionsAbi } from "./pndEditions.ts"
-export { pndEditionsFactoryAbi } from "./pndEditionsFactory.ts"
-export { pndPerWalletCapHookAbi } from "./pndPerWalletCapHook.ts"
-export { pndAllowlistHookAbi } from "./pndAllowlistHook.ts"
-export { pndHoldsEditionHookAbi } from "./pndHoldsEditionHook.ts"
+// PND Editions is fully retired in favor of Collections
+// (sovereignCollectionAbi above); its ABIs and the editions e2e spec were
+// deleted with the /editions routes. A collections e2e spec replaces the
+// old create-then-mint flow.
 export { splitMainAbi } from "./splitMain.ts"
 export { scriptyStorageAbi } from "./scriptyStorage.ts"

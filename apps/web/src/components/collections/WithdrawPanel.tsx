@@ -1,11 +1,12 @@
 "use client"
 
 /**
- * Pull-payment withdraw panel. Editions accrue mint proceeds (artist share +
- * surface share) to per-address balances; recipients claim them here. Renders
- * only when the connected wallet has something to withdraw, so it is invisible
- * to ordinary viewers and shows up for the artist (or a surface/host) with a
- * pending balance.
+ * Pull-payment withdraw panel. Collections accrue mint proceeds (artist share
+ * + surface share) to per-address balances; recipients claim them here.
+ * Renders only when the connected wallet has something to withdraw, so it is
+ * invisible to ordinary viewers and shows up for the artist (or a
+ * surface/host) with a pending balance. withdraw(account) is permissionless —
+ * anyone can trigger the payout to `account`, they just can't redirect it.
  */
 
 import { formatEther } from "viem"
@@ -15,14 +16,14 @@ import {
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi"
-import { pndEditionsAbi } from "@pin/abi"
+import { sovereignCollectionAbi } from "@pin/abi"
 import { PREFERRED_CHAIN, TxSuccessBanner, formatWriteError } from "@/components/tx/tx-ui"
 
-export function WithdrawPanel({ edition }: { edition: `0x${string}` }) {
+export function WithdrawPanel({ collection }: { collection: `0x${string}` }) {
   const { address } = useAccount()
   const { data: pending, refetch } = useReadContract({
-    address: edition,
-    abi: pndEditionsAbi,
+    address: collection,
+    abi: sovereignCollectionAbi,
     functionName: "pendingWithdrawal",
     args: address ? [address] : undefined,
     query: { enabled: !!address },
@@ -65,8 +66,8 @@ export function WithdrawPanel({ edition }: { edition: `0x${string}` }) {
           <button
             onClick={() =>
               writeContract({
-                address: edition,
-                abi: pndEditionsAbi,
+                address: collection,
+                abi: sovereignCollectionAbi,
                 functionName: "withdraw",
                 args: [address],
               })

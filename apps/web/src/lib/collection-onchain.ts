@@ -3,6 +3,7 @@ import { createPublicClient, http, type Address } from "viem"
 import { mainnet } from "viem/chains"
 import { attributionAbi, catalogAbi, sovereignCollectionAbi, sovereignCollectionFactoryAbi } from "@pin/abi"
 import { ARTIST_RECORD_REGISTRY, ATTRIBUTION, MAINNET_CHAIN_ID, getAddressOrNull } from "@pin/addresses"
+import { fetchMetadataForUri } from "@pin/token-metadata"
 import { pgCache } from "./pg-cache"
 import {
   decodeCollectionConfig,
@@ -101,6 +102,14 @@ export type CollectionTokenView = {
   seed: `0x${string}` | null
   artwork: string
   tokenURI: string | null
+  /** Decoded from tokenURI (data:/IPFS/HTTP JSON). Falls back to `artwork`
+   *  when tokenURI didn't resolve or carries no image field, so a renderer
+   *  that doesn't emit metadata JSON still has something to show. */
+  image: string
+  /** Decoded from tokenURI. Present when the active renderer emits an
+   *  animation_url (e.g. GenerativeRenderer's built HTML document); null for
+   *  a static-image renderer (e.g. DefaultRenderer). */
+  animationUrl: string | null
 }
 
 /** Everything a token page needs: owner, seed, Mint Mark, art, tokenURI. */
@@ -127,13 +136,30 @@ export async function getCollectionToken(
       const collection = ownerRes.status === "success" ? await getCollection(address) : null
       const tokenArt = artRes.status === "success" ? (artRes.result as string) : ""
       const artwork = tokenArt && tokenArt.length > 0 ? tokenArt : collection?.cfg.artworkURI ?? ""
+      const rawTokenUri = uriRes.status === "success" ? (uriRes.result as string) : null
+
+      // Decode the already-fetched tokenURI (no extra RPC call) to recover
+      // `image` / `animation_url` the same way every other token page on
+      // this site does — see @pin/token-metadata's doc comment. A renderer
+      // that emits an animation_url (GenerativeRenderer) needs this to show
+      // the live/generative work rather than just its poster image.
+      let image = artwork
+      let animationUrl: string | null = null
+      if (rawTokenUri) {
+        const meta = await fetchMetadataForUri(rawTokenUri, tokenId, 8_000).catch(() => null)
+        if (meta?.image) image = meta.image
+        if (meta?.animation_url) animationUrl = meta.animation_url
+      }
+
       return {
         tokenId,
         owner: ownerRes.status === "success" ? (ownerRes.result as Address) : null,
         mark,
         seed: seedRes.status === "success" ? (seedRes.result as `0x${string}`) : null,
         artwork,
-        tokenURI: uriRes.status === "success" ? (uriRes.result as string) : null,
+        tokenURI: rawTokenUri,
+        image,
+        animationUrl,
       }
     } catch {
       return null
