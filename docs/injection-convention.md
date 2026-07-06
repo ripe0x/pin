@@ -61,14 +61,18 @@ honest about that fragility: the archival form of any live work is
 
 Body tag order in the assembled HTML:
 
-1. gunzip helper (plain script, from onchain storage) — present only
-   when any following tag is gzipped
-2. dependencies (`WorkConfig.deps`, each per its `CodeKind`).
-   Dependencies are libraries: they MUST NOT read `tokenData`, which is
-   why they load before it.
-3. the context injection tag (inline `tagContent`, exactly the object
+1. dependencies (`WorkConfig.deps`, each per its `CodeKind`).
+   Dependencies are libraries: they MUST NOT read `tokenData`.
+2. the context injection tag (inline `tagContent`, exactly the object
    above)
-4. the artist's code (`WorkConfig.code`, each per its `CodeKind`)
+3. the artist's code (`WorkConfig.code`, each per its `CodeKind`)
+4. gunzip helper (plain script, from onchain storage), LAST, present
+   only when any tag is gzipped. The helper decompresses at its own
+   parse time by scanning the gzip tags that PRECEDE it and replacing
+   each with an executing script tag in document order; placed earlier
+   it would find nothing. Gzipped tags do not execute at parse time, so
+   execution order remains: deps, then (already-parsed) context, then
+   code, with libraries like p5 auto-starting off the late load.
 
 The document is emitted by ScriptyBuilderV2 (`getEncodedHTMLString`) and
 returned as `data:text/html;base64,…` in the metadata `animation_url`.

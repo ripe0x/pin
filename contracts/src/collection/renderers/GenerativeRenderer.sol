@@ -105,8 +105,13 @@ contract GenerativeRenderer is IRenderer {
     // HTML assembly
     // ─────────────────────────────────────────────────────────────────────────
 
-    /// @dev Body tag order per the injection convention: gunzip helper (only
-    ///      when needed) → dependencies → token context → artist code.
+    /// @dev Body tag order per the injection convention: dependencies →
+    ///      token context → artist code → gunzip helper LAST when any tag is
+    ///      gzipped. The helper (gunzipScripts-0.0.1.js) decompresses at its
+    ///      own parse time by scanning the gzip tags that precede it in the
+    ///      document and replacing each with an executing script tag, in
+    ///      document order; placed first it would find nothing. This matches
+    ///      scripty's own gzip examples.
     function _buildHTML(
         address collection,
         uint256 tokenId,
@@ -121,12 +126,6 @@ contract GenerativeRenderer is IRenderer {
         HTMLTag[] memory body = new HTMLTag[](n);
         uint256 i = 0;
 
-        if (needsGunzip) {
-            body[i].name = gunzipFile;
-            body[i].contractAddress = gunzipStore;
-            body[i].tagType = HTMLTagType.script;
-            i++;
-        }
         for (uint256 d = 0; d < work.deps.length; d++) {
             body[i] = _fileTag(work.deps[d]);
             i++;
@@ -136,6 +135,12 @@ contract GenerativeRenderer is IRenderer {
         i++;
         for (uint256 s = 0; s < work.code.length; s++) {
             body[i] = _fileTag(work.code[s]);
+            i++;
+        }
+        if (needsGunzip) {
+            body[i].name = gunzipFile;
+            body[i].contractAddress = gunzipStore;
+            body[i].tagType = HTMLTagType.script;
             i++;
         }
 
