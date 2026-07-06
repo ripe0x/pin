@@ -45,6 +45,12 @@ import {
 ///         upgrade path, no seal: what deploys is what runs, forever. The
 ///         upgradeable-variant base contracts are used only for their
 ///         initializer pattern, which clones require.
+// Note (slither missing-inheritance, triaged won't-fix): SovereignCollection
+// deliberately does NOT inherit ICollectionView. That interface is the
+// renderer-side typing of this contract's public surface; inheriting it
+// forces passthrough re-overrides of name/symbol/owner against the OZ bases
+// for zero behavior. The surface is enforced by the renderer test suites,
+// which call every ICollectionView function against this real contract.
 contract SovereignCollection is
     ERC721Upgradeable,
     Ownable2StepUpgradeable,

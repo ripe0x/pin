@@ -49,11 +49,11 @@ contract BackedPoolMinter {
     error PoolEmpty();
     error NotHolder();
 
-    constructor(address collection_, MockCoin coin_, uint256 escrowPerToken_, uint256 poolSize) {
+    constructor(address collection_, MockCoin coin_, uint256 escrowPerToken_, uint256 poolSize_) {
         collection = SovereignCollection(collection_);
         coin = coin_;
         escrowPerToken = escrowPerToken_;
-        for (uint256 i = 0; i < poolSize; i++) {
+        for (uint256 i = 0; i < poolSize_; i++) {
             pool.push(i); // id 0 is a legal pooled id, deliberately included
         }
     }

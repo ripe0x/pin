@@ -92,14 +92,14 @@ interface ISovereignCollection is IMintMarks, ICollectionGraph, ITokenPath {
     event Burned(uint256 indexed tokenId);
     event SurfacePaid(address indexed surface, uint256 amount);
     event ClosingSet(bool closing);
-    event RendererSet(address renderer);
-    event MintHookSet(address hook);
-    event PriceStrategySet(address strategy);
+    event RendererSet(address indexed renderer);
+    event MintHookSet(address indexed hook);
+    event PriceStrategySet(address indexed strategy);
     event MinterSet(address indexed minter, bool allowed);
     event TokenArtworkSet(uint256 indexed tokenId, string cid);
     event WorkLocked();
     event Withdrawn(address indexed account, uint256 amount);
-    event PayoutAddressSet(address payoutAddress);
+    event PayoutAddressSet(address indexed payoutAddress);
     event MetadataFrozen();
     event StrayETHRescued(address indexed to, uint256 amount);
 
