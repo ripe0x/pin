@@ -161,6 +161,58 @@ export const MURI_MANIFOLD_EXTENSION: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0FFc4A1906157248ae64F28fD259bB7a2790606C",
 }
 
+// SovereignCollectionFactory — deploys one SovereignCollection per work as an
+// immutable EIP-1167 clone (no protocol fee; Surface Share is fixed inside the
+// collection). NOT yet deployed to mainnet — paste the address here after
+// running the collection deploy script. For local Anvil dev, set the
+// corresponding NEXT_PUBLIC_* env var instead of editing this file.
+export const SOVEREIGN_COLLECTION_FACTORY: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+}
+
+// Attribution — singleton roster contract for optional collaborator writes at
+// collection deploy. NOT yet deployed to mainnet — paste the address here
+// after deploy.
+export const ATTRIBUTION: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+}
+
+// GenerativeRenderer — on-chain renderer for generative-script collections
+// (wired into a SovereignCollection at deploy or swapped later by the
+// owner). NOT yet deployed to mainnet — paste the address here after deploy.
+export const GENERATIVE_RENDERER: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+}
+
+// DefaultRenderer — the canonical built-in renderer every
+// SovereignCollectionFactory wires into its clones unless the owner swaps it.
+// NOT yet deployed to mainnet — paste the address here after deploy.
+export const DEFAULT_RENDERER: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+}
+
+// Scripty V2 Builder — assembles HTML/JS from ScriptyStorage-held chunks at
+// render time. Deterministic deploy, same address on mainnet and most other
+// EVM chains. See https://github.com/intartnft/scripty.sol.
+export const SCRIPTY_BUILDER_V2: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0xD7587F110E08F4D120A231bA97d3B577A81Df022",
+}
+
+// Scripty V2 Storage — content-addressed chunk storage for on-chain
+// scripts (see packages/abi/src/scriptyStorage.ts for the hand-written ABI
+// and its source-verification notes). Deterministic deploy, same address on
+// mainnet and most other EVM chains.
+export const SCRIPTY_STORAGE_V2: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0xbD11994aABB55Da86DC246EBB17C1Be0af5b7699",
+}
+
+// EthFS V2 File Storage — the underlying file store Scripty V2 Storage
+// deploys chunk pointers against. Deterministic deploy, same address on
+// mainnet and most other EVM chains.
+export const ETHFS_V2_FILE_STORAGE: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x8FAA1AAb9DA8c75917C43Fb24fDdb513edDC3245",
+}
+
 // Helper for the address-or-null pattern: returns null when no factory is
 // configured for the chain (instead of throwing like getAddress).
 export function getAddressOrNull(
