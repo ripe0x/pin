@@ -140,7 +140,11 @@ contract GenerativeRenderer is IRenderer {
         if (needsGunzip) {
             body[i].name = gunzipFile;
             body[i].contractAddress = gunzipStore;
-            body[i].tagType = HTMLTagType.script;
+            // EthFS v1 stores files as base64 TEXT (its data-URI design), so
+            // the helper must ship as a base64 data-URI script src; inlined
+            // raw it is a guaranteed syntax error. Verified against the
+            // deployed file's actual bytes.
+            body[i].tagType = HTMLTagType.scriptBase64DataURI;
             i++;
         }
 
