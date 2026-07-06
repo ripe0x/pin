@@ -119,10 +119,10 @@ contract SovereignCollection is
     }
 
     function initialize(InitParams calldata p) external override initializer {
-        require(p.owner != address(0), "SC: owner required");
-        require(p.defaultRenderer != address(0), "SC: renderer required");
-        require(p.cfg.royaltyBps <= MAX_ROYALTY_BPS, "SC: royalty too high");
-        require(p.cfg.mintEnd == 0 || p.cfg.mintEnd > p.cfg.mintStart, "SC: bad window");
+        if (!(p.owner != address(0))) revert OwnerRequired();
+        if (!(p.defaultRenderer != address(0))) revert RendererRequired();
+        if (!(p.cfg.royaltyBps <= MAX_ROYALTY_BPS)) revert RoyaltyTooHigh();
+        if (!(p.cfg.mintEnd == 0 || p.cfg.mintEnd > p.cfg.mintStart)) revert BadMintWindow();
         __ERC721_init(p.name, p.symbol);
         __Ownable_init(p.owner);
         __Ownable2Step_init();
@@ -135,7 +135,7 @@ contract SovereignCollection is
         defaultRenderer = p.defaultRenderer;
         _nextId = 1;
         for (uint256 i = 0; i < p.initialMinters.length; i++) {
-            require(p.initialMinters[i] != address(0), "SC: zero minter");
+            if (!(p.initialMinters[i] != address(0))) revert ZeroMinter();
             _minters[p.initialMinters[i]] = true;
             emit MinterSet(p.initialMinters[i], true);
         }
@@ -197,13 +197,13 @@ contract SovereignCollection is
     }
 
     function _mintPaid(uint256 quantity, address surface, bytes memory hookData) private {
-        require(quantity > 0, "SC: zero qty");
-        require(block.timestamp >= _cfg.mintStart, "SC: not started");
-        require(_cfg.mintEnd == 0 || block.timestamp < _cfg.mintEnd, "SC: ended");
+        if (!(quantity > 0)) revert ZeroQuantity();
+        if (!(block.timestamp >= _cfg.mintStart)) revert MintNotStarted();
+        if (!(_cfg.mintEnd == 0 || block.timestamp < _cfg.mintEnd)) revert MintEnded();
         // Built-in paid mints are sequential-mode sales. Pooled collections
         // sell exclusively through their authorized minter, which owns the id
         // pool.
-        require(_cfg.idMode == IdMode.Sequential, "SC: pooled sells via minter");
+        if (!(_cfg.idMode == IdMode.Sequential)) revert PooledSellsViaMinter();
         _checkCap(quantity);
 
         // Payment: exact match on the stored fixed price (honest pricing);
@@ -216,11 +216,11 @@ contract SovereignCollection is
         address strategy = _priceStrategy;
         if (strategy == address(0)) {
             required = _cfg.price * quantity;
-            require(msg.value == required, "SC: wrong payment");
+            if (!(msg.value == required)) revert WrongPayment();
         } else {
             required =
                 IPriceStrategy(strategy).priceOf(address(this), msg.sender, quantity, hookData);
-            require(msg.value >= required, "SC: underpayment");
+            if (!(msg.value >= required)) revert Underpayment();
             uint256 excess = msg.value - required;
             if (excess > 0) {
                 _pending[msg.sender] += excess;
@@ -260,8 +260,8 @@ contract SovereignCollection is
         nonReentrant
         returns (uint256 tokenId)
     {
-        require(_minters[msg.sender], "SC: not minter");
-        require(_cfg.idMode == IdMode.Sequential, "SC: pooled needs mintToAt");
+        if (!(_minters[msg.sender])) revert NotMinter();
+        if (!(_cfg.idMode == IdMode.Sequential)) revert PooledNeedsMintToAt();
         _checkCap(1);
         tokenId = _nextId;
         _runBeforeHook(to, 1, tokenId, surface, hookData);
@@ -282,8 +282,8 @@ contract SovereignCollection is
         override
         nonReentrant
     {
-        require(_minters[msg.sender], "SC: not minter");
-        require(_cfg.idMode == IdMode.Pooled, "SC: sequential assigns ids");
+        if (!(_minters[msg.sender])) revert NotMinter();
+        if (!(_cfg.idMode == IdMode.Pooled)) revert SequentialAssignsIds();
         _checkCap(1);
         _runBeforeHook(to, 1, tokenId, surface, hookData);
         CollectionStatus statusAtMint = _statusForMark();
@@ -317,7 +317,7 @@ contract SovereignCollection is
     ///         again in pooled mode.
     function burn(uint256 tokenId) external override nonReentrant {
         address tokenOwner = _requireOwned(tokenId);
-        require(_isAuthorized(tokenOwner, msg.sender, tokenId), "SC: not authorized");
+        if (!(_isAuthorized(tokenOwner, msg.sender, tokenId))) revert NotAuthorized();
         _burn(tokenId);
         _burnedCount += 1;
         emit Burned(tokenId);
@@ -332,9 +332,9 @@ contract SovereignCollection is
         uint256 cap = _cfg.supplyCap;
         if (cap == 0) return;
         if (_cfg.idMode == IdMode.Sequential) {
-            require(_mintedEver + quantity <= cap, "SC: exceeds cap");
+            if (!(_mintedEver + quantity <= cap)) revert ExceedsCap();
         } else {
-            require(totalSupply() + quantity <= cap, "SC: exceeds cap");
+            if (!(totalSupply() + quantity <= cap)) revert ExceedsCap();
         }
     }
 
@@ -356,11 +356,8 @@ contract SovereignCollection is
     ) private {
         address hook = _mintHook;
         if (hook != address(0)) {
-            require(
-                IMintHook(hook).beforeMint(minter, quantity, firstTokenId, surface, hookData)
-                    == IMintHook.beforeMint.selector,
-                "SC: hook rejected"
-            );
+            if (!(IMintHook(hook).beforeMint(minter, quantity, firstTokenId, surface, hookData)
+                    == IMintHook.beforeMint.selector)) revert HookRejected();
         }
     }
 
@@ -398,13 +395,13 @@ contract SovereignCollection is
     /// @notice Withdraw the balance owed to `account`, to `account`.
     ///         Permissionless trigger; funds only ever go to the owed address.
     function withdraw(address account) external override nonReentrant {
-        require(account != address(0), "SC: zero account");
+        if (!(account != address(0))) revert ZeroAccount();
         uint256 amount = _pending[account];
-        require(amount > 0, "SC: nothing to withdraw");
+        if (!(amount > 0)) revert NothingToWithdraw();
         _pending[account] = 0;
         _totalPending -= amount;
         (bool ok,) = payable(account).call{value: amount}("");
-        require(ok, "SC: withdraw failed");
+        if (!(ok)) revert WithdrawFailed();
         emit Withdrawn(account, amount);
     }
 
@@ -416,11 +413,11 @@ contract SovereignCollection is
     ///         selfdestruct). Pull-payment balances are untouchable: only the
     ///         surplus above _totalPending is ever sent.
     function rescueStrayETH(address to) external override onlyOwner nonReentrant {
-        require(to != address(0), "SC: zero account");
+        if (!(to != address(0))) revert ZeroAccount();
         uint256 stray = address(this).balance - _totalPending;
-        require(stray > 0, "SC: no stray eth");
+        if (!(stray > 0)) revert NoStrayETH();
         (bool ok,) = payable(to).call{value: stray}("");
-        require(ok, "SC: rescue failed");
+        if (!(ok)) revert RescueFailed();
         emit StrayETHRescued(to, stray);
     }
 
@@ -434,7 +431,7 @@ contract SovereignCollection is
     }
 
     function setRenderer(address renderer_) external override onlyOwner {
-        require(!_metadataFrozen, "SC: metadata frozen");
+        if (!(!_metadataFrozen)) revert MetadataIsFrozen();
         _renderer = renderer_;
         emit RendererSet(renderer_);
     }
@@ -454,14 +451,14 @@ contract SovereignCollection is
     ///         choice, and revoking it is the artist's lever over a minter's
     ///         schedule and behavior.
     function setMinter(address minter, bool allowed) external override onlyOwner {
-        require(minter != address(0), "SC: zero minter");
+        if (!(minter != address(0))) revert ZeroMinter();
         _minters[minter] = allowed;
         emit MinterSet(minter, allowed);
     }
 
     function setTokenArtwork(uint256 tokenId, string calldata cid) external override onlyOwner {
-        require(!_metadataFrozen, "SC: metadata frozen");
-        require(_wasMinted(tokenId), "SC: not minted");
+        if (!(!_metadataFrozen)) revert MetadataIsFrozen();
+        if (!(_wasMinted(tokenId))) revert NotMinted();
         _tokenArtwork[tokenId] = cid;
         emit TokenArtworkSet(tokenId, cid);
     }
@@ -471,10 +468,10 @@ contract SovereignCollection is
         override
         onlyOwner
     {
-        require(!_metadataFrozen, "SC: metadata frozen");
-        require(tokenIds.length == cids.length, "SC: length");
+        if (!(!_metadataFrozen)) revert MetadataIsFrozen();
+        if (!(tokenIds.length == cids.length)) revert LengthMismatch();
         for (uint256 i = 0; i < tokenIds.length; i++) {
-            require(_wasMinted(tokenIds[i]), "SC: not minted");
+            if (!(_wasMinted(tokenIds[i]))) revert NotMinted();
             _tokenArtwork[tokenIds[i]] = cids[i];
             emit TokenArtworkSet(tokenIds[i], cids[i]);
         }
@@ -491,7 +488,7 @@ contract SovereignCollection is
     ///         per-token artwork, so collectors get a presentation-permanence
     ///         guarantee.
     function freezeMetadata() external override onlyOwner {
-        require(!_metadataFrozen, "SC: already frozen");
+        if (!(!_metadataFrozen)) revert AlreadyFrozen();
         _metadataFrozen = true;
         emit MetadataFrozen();
     }
@@ -500,7 +497,7 @@ contract SovereignCollection is
     ///         Together with freezeMetadata this is the art-permanence
     ///         guarantee; the contract itself is immutable from deploy.
     function lockWork() external override onlyOwner {
-        require(!_workLocked, "SC: already locked");
+        if (!(!_workLocked)) revert WorkAlreadyLocked();
         _workLocked = true;
         emit WorkLocked();
     }
@@ -510,7 +507,7 @@ contract SovereignCollection is
     ///         lever would be permanently bricked. Immutability comes from the
     ///         clone having no upgrade path, not from burning the owner.
     function renounceOwnership() public pure override {
-        revert("SC: renounce disabled");
+        revert RenounceDisabled();
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -565,7 +562,7 @@ contract SovereignCollection is
         override
         onlyOwner
     {
-        require(_wasMinted(tokenId), "SC: not minted");
+        if (!(_wasMinted(tokenId))) revert NotMinted();
         _tokenPath[tokenId] = Path({pathType: pathType, target: target, data: data});
         _tokenPathSet[tokenId] = true;
         emit PathSet(tokenId, pathType, target, data);
@@ -584,7 +581,7 @@ contract SovereignCollection is
     ///         Readable for burned ids until a pooled re-mint overwrites them.
     function mintMarkOf(uint256 tokenId) public view override returns (MintMark memory m) {
         MintRecord storage r = _record[tokenId];
-        require(r.mintBlock != 0, "SC: never minted");
+        if (!(r.mintBlock != 0)) revert NeverMinted();
         m = MintMark({
             mintIndex: r.mintIndex,
             mintBlock: r.mintBlock,
@@ -600,7 +597,7 @@ contract SovereignCollection is
     ///         transaction. Derived from prevrandao: acceptable unpredictability
     ///         for art, not for lotteries.
     function tokenSeed(uint256 tokenId) external view override returns (bytes32) {
-        require(_record[tokenId].mintBlock != 0, "SC: never minted");
+        if (!(_record[tokenId].mintBlock != 0)) revert NeverMinted();
         return _seed[tokenId];
     }
 

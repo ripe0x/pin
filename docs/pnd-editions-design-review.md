@@ -1,5 +1,13 @@
 # PND Editions design review
 
+> **SUPERSEDED (2026-07-06).** The Editions contract was reworked into the
+> SovereignCollection system (OZ ERC721 core, four slots, id modes); see
+> docs/pnd-collection-system.md and docs/pnd-collection-contracts-plan.md.
+> This document describes the pre-rework ERC721A design; payment-split,
+> hook, and graph concepts carry over, token-layer specifics do not.
+> Contracts now live in contracts/src/collection/ (src/editions/ was
+> removed).
+
 > A positive-sum read of the protocol against PND's own ethos (honest money, no
 > mandatory protocol fee, artist sovereignty, per-token identity, anti-
 > financialization, permanence), and the improvements shipped on this branch.

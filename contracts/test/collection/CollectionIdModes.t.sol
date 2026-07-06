@@ -32,7 +32,7 @@ contract CollectionIdModesTest is CollectionBase {
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
-        vm.expectRevert(bytes("SC: sequential assigns ids"));
+        vm.expectRevert(ISovereignCollection.SequentialAssignsIds.selector);
         minter.callMintToAt(ISovereignCollection(address(c)), collector, 1, address(0), "");
     }
 
@@ -41,20 +41,20 @@ contract CollectionIdModesTest is CollectionBase {
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
-        vm.expectRevert(bytes("SC: pooled needs mintToAt"));
+        vm.expectRevert(ISovereignCollection.PooledNeedsMintToAt.selector);
         minter.callMintTo(ISovereignCollection(address(c)), collector, address(0), "");
     }
 
     function test_pooled_rejectsPaidMint() public {
         SovereignCollection c = _collection(_pooledConfig());
-        vm.expectRevert(bytes("SC: pooled sells via minter"));
+        vm.expectRevert(ISovereignCollection.PooledSellsViaMinter.selector);
         vm.prank(collector);
         c.mint(1);
     }
 
     function test_pooled_rejectsPaidMintWithRewards() public {
         SovereignCollection c = _collection(_pooledConfig());
-        vm.expectRevert(bytes("SC: pooled sells via minter"));
+        vm.expectRevert(ISovereignCollection.PooledSellsViaMinter.selector);
         vm.prank(collector);
         c.mintWithRewards(1, surface, "");
     }
@@ -117,7 +117,7 @@ contract CollectionIdModesTest is CollectionBase {
 
         minter.callMintToAt(ISovereignCollection(address(c)), collector, 1, address(0), "");
         // At cap: a second distinct id cannot be minted while the first is alive.
-        vm.expectRevert(bytes("SC: exceeds cap"));
+        vm.expectRevert(ISovereignCollection.ExceedsCap.selector);
         minter.callMintToAt(ISovereignCollection(address(c)), collector, 2, address(0), "");
 
         vm.prank(collector);
@@ -191,7 +191,7 @@ contract CollectionIdModesTest is CollectionBase {
         vm.prank(collector);
         c.burn(1); // live supply now 1, but mintedEver stays 2
 
-        vm.expectRevert(bytes("SC: exceeds cap"));
+        vm.expectRevert(ISovereignCollection.ExceedsCap.selector);
         vm.prank(collector);
         c.mint(1); // cap bounds EVER minted, burn does not free a slot
 
@@ -208,7 +208,7 @@ contract CollectionIdModesTest is CollectionBase {
 
         minter.callMintToAt(ISovereignCollection(address(c)), collector, 1, address(0), "");
         minter.callMintToAt(ISovereignCollection(address(c)), collector, 2, address(0), "");
-        vm.expectRevert(bytes("SC: exceeds cap"));
+        vm.expectRevert(ISovereignCollection.ExceedsCap.selector);
         minter.callMintToAt(ISovereignCollection(address(c)), collector, 3, address(0), "");
 
         vm.prank(collector);
@@ -221,7 +221,7 @@ contract CollectionIdModesTest is CollectionBase {
         minter.callMintToAt(ISovereignCollection(address(c)), collector, 4, address(0), "");
         assertEq(c.totalSupply(), 2);
 
-        vm.expectRevert(bytes("SC: exceeds cap"));
+        vm.expectRevert(ISovereignCollection.ExceedsCap.selector);
         minter.callMintToAt(ISovereignCollection(address(c)), collector, 5, address(0), "");
     }
 

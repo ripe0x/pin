@@ -170,15 +170,19 @@ never cleanly merge into `main`; don't revive or build on them:
 `rpc-public-fallback`. (`tl-into-ponder` and `rpc-public-fallback` have
 WIP stashes attached — leave those alone.)
 
-## PND Editions (native protocol)
+## PND Collection System (native protocol)
 
-PND's own ERC721A edition protocol (artist-owned contracts, honest pricing
-with no protocol fee, per-token Mint Marks, Release Graph, Token Path). This
-is distinct from the external platforms above (Foundation/Manifold/Mint/etc.)
-that PND *indexes* for catalogs — Editions is a protocol PND *ships*. Lives in
-`contracts/src/editions/`, `apps/web/src/app/editions/` +
-`components/editions/`, with `pnpm dev:editions` for local fork testing.
-Discovery indexing is deploy-gated. **Start at `docs/pnd-editions-README.md`.**
+PND's own onchain collection protocol (artist-owned contracts, honest
+pricing with no protocol fee, per-token Mint Marks, Release Graph, Token
+Path). This is distinct from the external platforms above
+(Foundation/Manifold/Mint/etc.) that PND *indexes* for catalogs, the
+collection system is a protocol PND *ships*. A single OZ ERC721 core with
+four swappable slots (minter, price, renderer, hooks) and per-token id
+modes; Editions is now one preset of this general core, not a separate
+contract. Lives in `contracts/src/collection/` (`src/editions/` was
+removed). **Start at `docs/pnd-collection-system.md` and
+`docs/pnd-collection-contracts-plan.md`**, with `docs/injection-convention.md`
+for the onchain-render data contract.
 
 ## See also
 

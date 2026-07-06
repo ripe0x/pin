@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {ERC20} from "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 
 import {SovereignCollection} from "../../../src/collection/SovereignCollection.sol";
+import {ISovereignCollection} from "../../../src/collection/interfaces/ISovereignCollection.sol";
 import {SovereignCollectionFactory} from "../../../src/collection/SovereignCollectionFactory.sol";
 import {
     CollectionConfig,
@@ -245,7 +246,7 @@ contract PooledBackedTest is Test {
     function test_paidPathBlockedInPooledMode() public {
         vm.deal(alice, 1 ether);
         vm.prank(alice);
-        vm.expectRevert(bytes("SC: pooled sells via minter"));
+        vm.expectRevert(ISovereignCollection.PooledSellsViaMinter.selector);
         collection.mint{value: 0}(1);
     }
 }

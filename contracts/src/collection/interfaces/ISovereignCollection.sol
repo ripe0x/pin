@@ -66,6 +66,39 @@ interface ITokenPath {
 ///         other protocol fee. There is no upgrade path and no seal: what
 ///         deploys is what runs, forever.
 interface ISovereignCollection is IMintMarks, ICollectionGraph, ITokenPath {
+    // ── errors ──────────────────────────────────────────────────────────────
+    error OwnerRequired();
+    error RendererRequired();
+    error RoyaltyTooHigh();
+    error BadMintWindow();
+    error ZeroMinter();
+    error ZeroQuantity();
+    error MintNotStarted();
+    error MintEnded();
+    /// @notice Built-in paid mints are sequential-mode sales; pooled
+    ///         collections sell exclusively through their authorized minter.
+    error PooledSellsViaMinter();
+    error WrongPayment();
+    error Underpayment();
+    error NotMinter();
+    error PooledNeedsMintToAt();
+    error SequentialAssignsIds();
+    error ExceedsCap();
+    error HookRejected();
+    error NotAuthorized();
+    error ZeroAccount();
+    error NothingToWithdraw();
+    error WithdrawFailed();
+    error NoStrayETH();
+    error RescueFailed();
+    error MetadataIsFrozen();
+    error NotMinted();
+    error LengthMismatch();
+    error AlreadyFrozen();
+    error WorkAlreadyLocked();
+    error NeverMinted();
+    error RenounceDisabled();
+
     // ── events ──────────────────────────────────────────────────────────────
     event CollectionConfigured(
         CollectionKind kind,

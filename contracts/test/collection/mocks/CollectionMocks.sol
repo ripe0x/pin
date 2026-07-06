@@ -142,7 +142,7 @@ contract RevertingHook is IMintHook {
 }
 
 /// @dev Always returns the wrong selector (as opposed to reverting), so
-///      tests can distinguish "SC: hook rejected" from a hook-thrown reason.
+///      tests can distinguish HookRejected() from a hook-thrown reason.
 contract RejectingSelectorHook is IMintHook {
     function beforeMint(address, uint256, uint256, address, bytes calldata) external pure override returns (bytes4) {
         return bytes4(0xffffffff);

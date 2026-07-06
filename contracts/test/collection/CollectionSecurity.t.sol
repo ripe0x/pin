@@ -95,11 +95,11 @@ contract CollectionSecurityTest is CollectionBase {
         SovereignCollection seq = _collection(_freeConfig());
         SovereignCollection pooled = _collection(_pooledConfig());
 
-        vm.expectRevert(bytes("SC: not minter"));
+        vm.expectRevert(ISovereignCollection.NotMinter.selector);
         vm.prank(stranger);
         seq.mintTo(stranger, address(0), "");
 
-        vm.expectRevert(bytes("SC: not minter"));
+        vm.expectRevert(ISovereignCollection.NotMinter.selector);
         vm.prank(stranger);
         pooled.mintToAt(stranger, 1, address(0), "");
     }
@@ -109,7 +109,7 @@ contract CollectionSecurityTest is CollectionBase {
         vm.prank(collector);
         c.mint(1);
 
-        vm.expectRevert(bytes("SC: not authorized"));
+        vm.expectRevert(ISovereignCollection.NotAuthorized.selector);
         vm.prank(stranger);
         c.burn(1);
 
@@ -170,9 +170,9 @@ contract CollectionSecurityTest is CollectionBase {
         // withdraw's internal call to r.receive() re-enters withdraw(); the
         // reentrant call reverts (guard), which bubbles up through the
         // outer `.call` as `ok == false`, which the outer withdraw()
-        // reports as "SC: withdraw failed" rather than propagating the raw
+        // reports as WithdrawFailed() rather than propagating the raw
         // ReentrancyGuardReentrantCall selector.
-        vm.expectRevert(bytes("SC: withdraw failed"));
+        vm.expectRevert(ISovereignCollection.WithdrawFailed.selector);
         r.pull();
         // Balance is untouched: the reentrant attempt did not partially drain.
         assertEq(c.pendingWithdrawal(address(r)), 1 ether);
@@ -222,7 +222,7 @@ contract CollectionSecurityTest is CollectionBase {
         SovereignCollection c = _collection(cfg);
 
         vm.deal(collector, 1 ether);
-        vm.expectRevert(bytes("SC: underpayment"));
+        vm.expectRevert(ISovereignCollection.Underpayment.selector);
         vm.prank(collector);
         c.mintWithRewards{value: 0.5 ether}(1, surface, "");
     }
@@ -248,14 +248,14 @@ contract CollectionSecurityTest is CollectionBase {
 
     function test_unauthorizedMinter_cannotMintTo() public {
         SovereignCollection c = _collection(_freeConfig());
-        vm.expectRevert(bytes("SC: not minter"));
+        vm.expectRevert(ISovereignCollection.NotMinter.selector);
         vm.prank(stranger);
         c.mintTo(stranger, address(0), "");
     }
 
     function test_unauthorizedMinter_cannotMintToAt() public {
         SovereignCollection c = _collection(_pooledConfig());
-        vm.expectRevert(bytes("SC: not minter"));
+        vm.expectRevert(ISovereignCollection.NotMinter.selector);
         vm.prank(stranger);
         c.mintToAt(stranger, 1, address(0), "");
     }
@@ -270,13 +270,13 @@ contract CollectionSecurityTest is CollectionBase {
         c.setMinter(address(minter), false);
         assertFalse(c.isMinter(address(minter)));
 
-        vm.expectRevert(bytes("SC: not minter"));
+        vm.expectRevert(ISovereignCollection.NotMinter.selector);
         minter.callMintTo(ISovereignCollection(address(c)), collector, address(0), "");
     }
 
     function test_setMinter_rejectsZeroAddress() public {
         SovereignCollection c = _collection(_freeConfig());
-        vm.expectRevert(bytes("SC: zero minter"));
+        vm.expectRevert(ISovereignCollection.ZeroMinter.selector);
         vm.prank(artist);
         c.setMinter(address(0), true);
     }

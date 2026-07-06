@@ -72,7 +72,7 @@ contract CollectionHooksTest is CollectionBase {
         SovereignCollection c = _collection(_freeConfig());
         vm.prank(artist);
         c.setMintHook(address(rejectingSelectorHook));
-        vm.expectRevert(bytes("SC: hook rejected"));
+        vm.expectRevert(ISovereignCollection.HookRejected.selector);
         vm.prank(collector);
         c.mint(1);
     }

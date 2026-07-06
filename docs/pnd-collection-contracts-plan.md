@@ -208,10 +208,13 @@ reference fixtures green, slither triaged, gas documented.
 
 ## Phase 4: deploy readiness (~2 to 3 days, execution gated)
 
-- `script/DeployCollectionSystem.s.sol`: singletons (Attribution,
-  GenerativeRenderer, DefaultRenderer) via the canonical CREATE2 proxy
-  with pinned toolchain (same discipline as `Catalog.sol` documents),
-  then implementation + factory.
+- `script/DeployCollectionSystem.s.sol`: Attribution via the canonical
+  CREATE2 proxy with pinned toolchain (same discipline as `Catalog.sol`
+  documents; it has no constructor args, so the deterministic address
+  holds cross-chain). The renderers deploy via plain CREATE: constructor
+  args (GenerativeRenderer) and no cross-chain-parity requirement make
+  CREATE2 ceremony there cost without benefit. Then implementation +
+  factory.
 - Etherscan verification wired through the existing `foundry.toml`
   config.
 - Docs landing in the same PR: supersession banners on

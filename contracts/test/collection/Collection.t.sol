@@ -8,6 +8,7 @@ import {
 } from "./mocks/CollectionMocks.sol";
 
 import {SovereignCollection} from "../../src/collection/SovereignCollection.sol";
+import {ISovereignCollection} from "../../src/collection/interfaces/ISovereignCollection.sol";
 import {
     CollectionConfig,
     CollectionStatus,
@@ -30,7 +31,7 @@ contract CollectionTest is CollectionBase {
         InitParams memory p = _rawInitParams(_freeConfig());
         p.owner = address(0);
         SovereignCollection clone = _freshClone();
-        vm.expectRevert(bytes("SC: owner required"));
+        vm.expectRevert(ISovereignCollection.OwnerRequired.selector);
         clone.initialize(p);
     }
 
@@ -38,7 +39,7 @@ contract CollectionTest is CollectionBase {
         InitParams memory p = _rawInitParams(_freeConfig());
         p.defaultRenderer = address(0);
         SovereignCollection clone = _freshClone();
-        vm.expectRevert(bytes("SC: renderer required"));
+        vm.expectRevert(ISovereignCollection.RendererRequired.selector);
         clone.initialize(p);
     }
 
@@ -47,7 +48,7 @@ contract CollectionTest is CollectionBase {
         cfg.royaltyBps = 5001; // > 50% cap
         InitParams memory p = _rawInitParams(cfg);
         SovereignCollection clone = _freshClone();
-        vm.expectRevert(bytes("SC: royalty too high"));
+        vm.expectRevert(ISovereignCollection.RoyaltyTooHigh.selector);
         clone.initialize(p);
     }
 
@@ -66,7 +67,7 @@ contract CollectionTest is CollectionBase {
         cfg.mintEnd = 100;
         InitParams memory p = _rawInitParams(cfg);
         SovereignCollection clone = _freshClone();
-        vm.expectRevert(bytes("SC: bad window"));
+        vm.expectRevert(ISovereignCollection.BadMintWindow.selector);
         clone.initialize(p);
     }
 
@@ -76,7 +77,7 @@ contract CollectionTest is CollectionBase {
         cfg.mintEnd = 100;
         InitParams memory p = _rawInitParams(cfg);
         SovereignCollection clone = _freshClone();
-        vm.expectRevert(bytes("SC: bad window"));
+        vm.expectRevert(ISovereignCollection.BadMintWindow.selector);
         clone.initialize(p);
     }
 
@@ -94,7 +95,7 @@ contract CollectionTest is CollectionBase {
         CollectionConfig memory cfg = _pooledConfig();
         address[] memory minters = new address[](1);
         minters[0] = address(0);
-        vm.expectRevert(bytes("SC: zero minter"));
+        vm.expectRevert(ISovereignCollection.ZeroMinter.selector);
         _collectionWithMinters(cfg, minters);
     }
 
@@ -158,7 +159,7 @@ contract CollectionTest is CollectionBase {
 
     function test_mint_zeroQuantityReverts() public {
         SovereignCollection c = _collection(_freeConfig());
-        vm.expectRevert(bytes("SC: zero qty"));
+        vm.expectRevert(ISovereignCollection.ZeroQuantity.selector);
         vm.prank(collector);
         c.mint(0);
     }
@@ -166,14 +167,14 @@ contract CollectionTest is CollectionBase {
     function test_mint_gasOnly_rejectsValue() public {
         SovereignCollection c = _collection(_freeConfig());
         vm.deal(collector, 1 ether);
-        vm.expectRevert(bytes("SC: wrong payment"));
+        vm.expectRevert(ISovereignCollection.WrongPayment.selector);
         vm.prank(collector);
         c.mint{value: 1 wei}(1);
     }
 
     function test_mint_pooledRejectsPaidPath() public {
         SovereignCollection c = _collection(_pooledConfig());
-        vm.expectRevert(bytes("SC: pooled sells via minter"));
+        vm.expectRevert(ISovereignCollection.PooledSellsViaMinter.selector);
         vm.prank(collector);
         c.mint(1);
     }
@@ -183,7 +184,7 @@ contract CollectionTest is CollectionBase {
     function test_mint_priced_requiresExactValue_under() public {
         SovereignCollection c = _collection(_pricedConfig(0.1 ether));
         vm.deal(collector, 1 ether);
-        vm.expectRevert(bytes("SC: wrong payment"));
+        vm.expectRevert(ISovereignCollection.WrongPayment.selector);
         vm.prank(collector);
         c.mint{value: 0.05 ether}(1);
     }
@@ -191,7 +192,7 @@ contract CollectionTest is CollectionBase {
     function test_mint_priced_requiresExactValue_over() public {
         SovereignCollection c = _collection(_pricedConfig(0.1 ether));
         vm.deal(collector, 1 ether);
-        vm.expectRevert(bytes("SC: wrong payment"));
+        vm.expectRevert(ISovereignCollection.WrongPayment.selector);
         vm.prank(collector);
         c.mint{value: 0.2 ether}(1);
     }
@@ -309,13 +310,13 @@ contract CollectionTest is CollectionBase {
 
     function test_withdraw_nothingReverts() public {
         SovereignCollection c = _collection(_freeConfig());
-        vm.expectRevert(bytes("SC: nothing to withdraw"));
+        vm.expectRevert(ISovereignCollection.NothingToWithdraw.selector);
         c.withdraw(stranger);
     }
 
     function test_withdraw_rejectsZeroAccount() public {
         SovereignCollection c = _collection(_freeConfig());
-        vm.expectRevert(bytes("SC: zero account"));
+        vm.expectRevert(ISovereignCollection.ZeroAccount.selector);
         c.withdraw(address(0));
     }
 
@@ -332,7 +333,7 @@ contract CollectionTest is CollectionBase {
         assertEq(c.balanceOf(collector), 1);
         assertEq(c.pendingWithdrawal(address(bad)), 1 ether);
 
-        vm.expectRevert(bytes("SC: withdraw failed"));
+        vm.expectRevert(ISovereignCollection.WithdrawFailed.selector);
         c.withdraw(address(bad));
 
         // Funds remain intact and claimable if the payee later routes payout
@@ -372,7 +373,7 @@ contract CollectionTest is CollectionBase {
         c.withdraw(artist);
         assertEq(artist.balance, 1 ether);
 
-        vm.expectRevert(bytes("SC: no stray eth"));
+        vm.expectRevert(ISovereignCollection.NoStrayETH.selector);
         vm.prank(artist);
         c.rescueStrayETH(dest);
     }
@@ -388,7 +389,7 @@ contract CollectionTest is CollectionBase {
     function test_rescueStrayETH_rejectsZeroAccount() public {
         SovereignCollection c = _collection(_freeConfig());
         vm.deal(address(c), 1 ether);
-        vm.expectRevert(bytes("SC: zero account"));
+        vm.expectRevert(ISovereignCollection.ZeroAccount.selector);
         vm.prank(artist);
         c.rescueStrayETH(address(0));
     }
@@ -426,7 +427,7 @@ contract CollectionTest is CollectionBase {
 
         vm.prank(collector);
         c.mint(2);
-        vm.expectRevert(bytes("SC: exceeds cap"));
+        vm.expectRevert(ISovereignCollection.ExceedsCap.selector);
         vm.prank(collector);
         c.mint(2);
         vm.prank(collector);
@@ -445,7 +446,7 @@ contract CollectionTest is CollectionBase {
         cfg.mintEnd = uint64(block.timestamp + 200);
         SovereignCollection c = _collection(cfg);
 
-        vm.expectRevert(bytes("SC: not started"));
+        vm.expectRevert(ISovereignCollection.MintNotStarted.selector);
         vm.prank(collector);
         c.mint(1);
 
@@ -454,7 +455,7 @@ contract CollectionTest is CollectionBase {
         c.mint(1);
 
         vm.warp(block.timestamp + 100); // past mintEnd
-        vm.expectRevert(bytes("SC: ended"));
+        vm.expectRevert(ISovereignCollection.MintEnded.selector);
         vm.prank(collector);
         c.mint(1);
     }
@@ -535,7 +536,7 @@ contract CollectionTest is CollectionBase {
     function test_tokenPath_setPath_requiresMintedToken() public {
         SovereignCollection c = _collection(_freeConfig());
         Ref memory ref = Ref(1, address(c), 0, RefKind.Collection);
-        vm.expectRevert(bytes("SC: not minted"));
+        vm.expectRevert(ISovereignCollection.NotMinted.selector);
         vm.prank(artist);
         c.setPath(1, PathType.Burn, ref, bytes32(0));
     }
@@ -616,7 +617,7 @@ contract CollectionTest is CollectionBase {
         SovereignCollection c = _collection(_freeConfig());
         vm.prank(artist);
         c.freezeMetadata();
-        vm.expectRevert(bytes("SC: metadata frozen"));
+        vm.expectRevert(ISovereignCollection.MetadataIsFrozen.selector);
         vm.prank(artist);
         c.setRenderer(makeAddr("newRenderer"));
     }
@@ -663,14 +664,14 @@ contract CollectionTest is CollectionBase {
         c.mint(1);
         uint256[] memory ids = new uint256[](2);
         string[] memory cids = new string[](1);
-        vm.expectRevert(bytes("SC: length"));
+        vm.expectRevert(ISovereignCollection.LengthMismatch.selector);
         vm.prank(artist);
         c.setTokenArtworkBatch(ids, cids);
     }
 
     function test_tokenArtwork_requiresMintedToken() public {
         SovereignCollection c = _collection(_freeConfig());
-        vm.expectRevert(bytes("SC: not minted"));
+        vm.expectRevert(ISovereignCollection.NotMinted.selector);
         vm.prank(artist);
         c.setTokenArtwork(1, "ipfs://Qm");
     }
@@ -681,7 +682,7 @@ contract CollectionTest is CollectionBase {
         c.mint(1);
         vm.prank(artist);
         c.freezeMetadata();
-        vm.expectRevert(bytes("SC: metadata frozen"));
+        vm.expectRevert(ISovereignCollection.MetadataIsFrozen.selector);
         vm.prank(artist);
         c.setTokenArtwork(1, "ipfs://QmNope");
     }
@@ -693,7 +694,7 @@ contract CollectionTest is CollectionBase {
         vm.prank(artist);
         c.freezeMetadata();
         assertTrue(c.isMetadataFrozen());
-        vm.expectRevert(bytes("SC: already frozen"));
+        vm.expectRevert(ISovereignCollection.AlreadyFrozen.selector);
         vm.prank(artist);
         c.freezeMetadata();
     }
@@ -703,7 +704,7 @@ contract CollectionTest is CollectionBase {
         vm.prank(artist);
         c.lockWork();
         assertTrue(c.isWorkLocked());
-        vm.expectRevert(bytes("SC: already locked"));
+        vm.expectRevert(ISovereignCollection.WorkAlreadyLocked.selector);
         vm.prank(artist);
         c.lockWork();
     }
@@ -726,7 +727,7 @@ contract CollectionTest is CollectionBase {
     function test_renounceOwnership_disabled() public {
         SovereignCollection c = _collection(_pricedConfig(1 ether));
         vm.prank(artist);
-        vm.expectRevert(bytes("SC: renounce disabled"));
+        vm.expectRevert(ISovereignCollection.RenounceDisabled.selector);
         c.renounceOwnership();
         assertEq(c.owner(), artist);
     }
