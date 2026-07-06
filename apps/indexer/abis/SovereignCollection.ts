@@ -1957,6 +1957,12 @@ export const sovereignCollectionAbi = [
         "internalType": "uint256"
       },
       {
+        "name": "firstMintIndex",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
         "name": "mintBlock",
         "type": "uint48",
         "indexed": false,

@@ -415,7 +415,7 @@ export const collectionTokens = onchainTable(
     // deliberately avoid (see AGENTS.md: worker/web enrich, Ponder stays
     // dumb). Read mintMarkOf(tokenId) directly if the global index is
     // ever needed.
-    mintOffset: t.integer().notNull(),
+    mintIndex: t.integer().notNull(),
     statusAtMint: t.integer().notNull(), // CollectionStatus enum (0 Open, 1 Closing, 2 Closed)
     burned: t.boolean().notNull(),
     updatedAtBlock: t.bigint().notNull(),

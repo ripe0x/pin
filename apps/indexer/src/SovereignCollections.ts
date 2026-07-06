@@ -75,12 +75,13 @@ on("SovereignCollectionFactory:CollectionCreated", async ({ event, context }) =>
 // (collection, tokenId) at any time; collection_mints is the immutable
 // history of every mint call, including re-mints).
 on("SovereignCollection:Minted", async ({ event, context }) => {
-  const { to, surface, firstTokenId, quantity, mintBlock, statusAtMint } =
+  const { to, surface, firstTokenId, quantity, firstMintIndex, mintBlock, statusAtMint } =
     event.args as {
       to: `0x${string}`
       surface: `0x${string}`
       firstTokenId: bigint
       quantity: bigint
+      firstMintIndex: bigint
       mintBlock: bigint
       statusAtMint: number
     }
@@ -107,7 +108,7 @@ on("SovereignCollection:Minted", async ({ event, context }) => {
     const tokenId = firstTokenId + i
     const id = tokenRowId(collection, tokenId)
     const existing = await context.db.find(collectionTokens, { id })
-    const mintOffset = Number(i)
+    const mintIndex = Number(firstMintIndex + i)
 
     if (existing) {
       // Pooled re-mint of a previously burned id: fresh mark, live again.
@@ -115,7 +116,7 @@ on("SovereignCollection:Minted", async ({ event, context }) => {
         mintedTo: to,
         surface,
         mintBlock,
-        mintOffset,
+        mintIndex,
         statusAtMint,
         burned: false,
         updatedAtBlock: event.block.number,
@@ -129,7 +130,7 @@ on("SovereignCollection:Minted", async ({ event, context }) => {
         mintedTo: to,
         surface,
         mintBlock,
-        mintOffset,
+        mintIndex,
         statusAtMint,
         burned: false,
         updatedAtBlock: event.block.number,
