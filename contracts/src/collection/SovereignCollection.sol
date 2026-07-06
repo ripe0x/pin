@@ -232,6 +232,7 @@ contract SovereignCollection is
         _runBeforeHook(msg.sender, quantity, firstTokenId, surface, hookData);
 
         CollectionStatus statusAtMint = _statusForMark(); // Open or Closing here
+        uint256 firstMintIndex = _mintedEver;
         for (uint256 i = 0; i < quantity; i++) {
             _mintOne(msg.sender, firstTokenId + i, surface, statusAtMint);
         }
@@ -240,7 +241,15 @@ contract SovereignCollection is
         _settle(required, surface);
         _runAfterHook(msg.sender, quantity, firstTokenId, surface, hookData);
 
-        emit Minted(msg.sender, surface, firstTokenId, quantity, uint48(block.number), statusAtMint);
+        emit Minted(
+            msg.sender,
+            surface,
+            firstTokenId,
+            quantity,
+            firstMintIndex,
+            uint48(block.number),
+            statusAtMint
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -266,10 +275,11 @@ contract SovereignCollection is
         tokenId = _nextId;
         _runBeforeHook(to, 1, tokenId, surface, hookData);
         CollectionStatus statusAtMint = _statusForMark();
+        uint256 mintIndex = _mintedEver;
         _mintOne(to, tokenId, surface, statusAtMint);
         _nextId = tokenId + 1;
         _runAfterHook(to, 1, tokenId, surface, hookData);
-        emit Minted(to, surface, tokenId, 1, uint48(block.number), statusAtMint);
+        emit Minted(to, surface, tokenId, 1, mintIndex, uint48(block.number), statusAtMint);
     }
 
     /// @notice Pooled mode only: the minter supplies the id (tokenId ==
@@ -287,9 +297,10 @@ contract SovereignCollection is
         _checkCap(1);
         _runBeforeHook(to, 1, tokenId, surface, hookData);
         CollectionStatus statusAtMint = _statusForMark();
+        uint256 mintIndex = _mintedEver;
         _mintOne(to, tokenId, surface, statusAtMint);
         _runAfterHook(to, 1, tokenId, surface, hookData);
-        emit Minted(to, surface, tokenId, 1, uint48(block.number), statusAtMint);
+        emit Minted(to, surface, tokenId, 1, mintIndex, uint48(block.number), statusAtMint);
     }
 
     /// @dev Shared per-token mint effects: ownership, Mint Mark, entropy.

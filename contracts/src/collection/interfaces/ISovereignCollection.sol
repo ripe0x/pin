@@ -113,11 +113,17 @@ interface ISovereignCollection is IMintMarks, ICollectionGraph, ITokenPath {
     /// @notice One event per mint call. Built-in paths cover
     ///         [firstTokenId, firstTokenId + quantity - 1]; extension mints
     ///         emit quantity 1 with firstTokenId = the minted id.
+    ///         firstMintIndex is the global mint order of the call's first
+    ///         token (token k's mintIndex = firstMintIndex + k), carried in
+    ///         the event so indexers never need per-token mintMarkOf reads,
+    ///         including for pooled re-mints where order is not derivable
+    ///         from ids.
     event Minted(
         address indexed to,
         address indexed surface,
         uint256 firstTokenId,
         uint256 quantity,
+        uint256 firstMintIndex,
         uint48 mintBlock,
         CollectionStatus statusAtMint
     );
