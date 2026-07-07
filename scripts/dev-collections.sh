@@ -152,6 +152,24 @@ if [ "${SEED_SAMPLE:-1}" = "1" ]; then
   echo "$SEED_OUT" | grep -E "Orbit Studies|Signal Drift|Field Notes" | sed 's/^/  /'
 fi
 
+# 3c) optional Homage to the Punk seed (SEED_HOMAGE=1, default on): the sibling
+#     `homage to the punk` repo's own Sovereign-core deploy script
+#     (DeployDevSovereign.s.sol), run against THIS factory/fork so the collection
+#     shows up in the same local Collections UI. Silently skipped (not a hard
+#     failure) when the sibling repo isn't checked out next to this one.
+HOMAGE_REPO="${HOMAGE_REPO:-$HOME/CascadeProjects/homage to the punk}"
+if [ "${SEED_HOMAGE:-1}" = "1" ] && [ -d "$HOMAGE_REPO/contracts" ]; then
+  echo "▸ Seeding Homage to the Punk…"
+  SEED_HOMAGE_OUT="$(cd "$HOMAGE_REPO/contracts" && FACTORY="$FACTORY" PRIVATE_KEY="$ANVIL_ACCOUNT_0_PK" \
+    forge script script/DeployDevSovereign.s.sol --rpc-url "$RPC" --broadcast 2>&1)" || {
+    echo "$SEED_HOMAGE_OUT" | tail -20
+    echo "warning: Homage seeding failed (harness continues)"
+  }
+  echo "$SEED_HOMAGE_OUT" | grep -E "PermanenceRendererSovereign:|HomageCollection:|HomageMinter:|HomageFeeSplitter:|Collection page:" | sed 's/^/  /'
+elif [ "${SEED_HOMAGE:-1}" = "1" ]; then
+  echo "▸ Homage seeding skipped: $HOMAGE_REPO/contracts not found"
+fi
+
 # 4) write dev env (non-destructive: .env.development.local wins over
 #    .env.local only in `next dev`, and is gitignored).
 ENV_DEV="apps/web/.env.development.local"
@@ -174,6 +192,9 @@ echo "  PND Collections local test is ready."
 echo "    Fork RPC : $RPC  (chain id $CHAIN_ID)"
 echo "    Factory  : $FACTORY"
 echo "    Acting as: $IMPERSONATE  (auto-connected, no wallet needed)"
+if [ "${SEED_HOMAGE:-1}" = "1" ] && [ -d "$HOMAGE_REPO/contracts" ]; then
+  echo "    Homage   : seeded from $HOMAGE_REPO (see HomageCollection above)"
+fi
 echo
 echo "    Open:  http://localhost:$WEB_PORT/collections"
 echo "    Stop:  Ctrl+C  (then: rm $ENV_DEV)"
