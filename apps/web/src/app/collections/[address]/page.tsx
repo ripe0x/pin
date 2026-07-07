@@ -56,7 +56,9 @@ export default async function CollectionPage({ params }: { params: Params }) {
     getAttribution(addr),
   ])
 
-  const mutability = c.isWorkLocked ? "Locked (no upgrades)" : "Upgradeable by the artist"
+  // The contract itself is an immutable clone (no upgrade path, ever); what
+  // the artist can still change pre-lock is the work definition and renderer.
+  const mutability = c.isWorkLocked ? "Work locked" : "Work editable by the artist"
   const metadataState = c.isMetadataFrozen ? "Frozen" : "Mutable by the artist"
   const permanent = c.isPermanent
   const pooled = sellsViaMinterOnly(c.cfg.idMode)
@@ -148,13 +150,15 @@ export default async function CollectionPage({ params }: { params: Params }) {
             </div>
             {permanent ? (
               <p className="pt-2 text-[10px] font-mono text-gray-400 normal-case leading-relaxed">
-                Permanent: the contract is locked (no further upgrades) and
-                metadata is frozen, so the artwork and code cannot change.
+                Permanent: the work is locked and metadata is frozen, so the
+                artwork and code cannot change. The contract itself has no
+                upgrade path from deploy.
               </p>
             ) : (
               <p className="pt-2 text-[10px] font-mono text-gray-400 normal-case leading-relaxed">
-                {!c.isWorkLocked ? "The artist can upgrade this contract until they lock it. " : ""}
-                {!c.isMetadataFrozen ? "Artwork can change until the artist freezes metadata." : ""}
+                The contract is immutable from deploy.{" "}
+                {!c.isWorkLocked ? "The artist can edit the work definition until they lock it. " : ""}
+                {!c.isMetadataFrozen ? "Artwork and renderer can change until the artist freezes metadata." : ""}
               </p>
             )}
           </section>

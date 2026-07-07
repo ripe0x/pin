@@ -6,6 +6,7 @@ import { ARTIST_RECORD_REGISTRY, ATTRIBUTION, MAINNET_CHAIN_ID, getAddressOrNull
 import { fetchMetadataForUri } from "@pin/token-metadata"
 import { pgCache } from "./pg-cache"
 import {
+  attributionAddress,
   decodeCollectionConfig,
   decodeMintMark,
   type Collection,
@@ -363,7 +364,10 @@ export type AttributionEntry = { artist: Address; claimed: boolean }
  */
 export async function getAttribution(collection: Address): Promise<AttributionEntry[]> {
   return pgCache(`sc-attribution:${lc(collection)}`, 60, async () => {
-    const attribution = getAddressOrNull(ATTRIBUTION, MAINNET_CHAIN_ID)
+    // attributionAddress() honors the NEXT_PUBLIC_ATTRIBUTION env override
+    // (the dev fork harness sets it); the static entry is a zero sentinel
+    // until mainnet deploy, so reading it directly returns [] forever.
+    const attribution = attributionAddress()
     if (!attribution) return []
     const client = getClient()
     try {

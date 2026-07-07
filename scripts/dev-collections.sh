@@ -136,6 +136,22 @@ echo "▸ GenerativeRenderer:         $GENERATIVE_RENDERER"
 echo "▸ SovereignCollection impl:   $IMPLEMENTATION"
 echo "▸ SovereignCollectionFactory: $FACTORY"
 
+# 3b) optional sample world (SEED_SAMPLE=1, default on): a generative
+#     collection with mints (sketch uploaded to the real forked
+#     ScriptyStorageV2), an edition with an inline-SVG cover, and a collab
+#     roster with one claimed + one unclaimed artist — so every UI surface
+#     has content immediately. SEED_SAMPLE=0 skips for a blank slate.
+if [ "${SEED_SAMPLE:-1}" = "1" ]; then
+  echo "▸ Seeding sample collections…"
+  SEED_OUT="$(cd contracts && FACTORY="$FACTORY" GENERATIVE_RENDERER="$GENERATIVE_RENDERER" \
+    PRIVATE_KEY="$ANVIL_ACCOUNT_0_PK" forge script script/SeedDevCollections.s.sol \
+    --rpc-url "$RPC" --broadcast 2>&1)" || {
+    echo "$SEED_OUT" | tail -20
+    echo "warning: sample seeding failed (harness continues unseeded)"
+  }
+  echo "$SEED_OUT" | grep -E "Orbit Studies|Field Notes" | sed 's/^/  /'
+fi
+
 # 4) write dev env (non-destructive: .env.development.local wins over
 #    .env.local only in `next dev`, and is gitignored).
 ENV_DEV="apps/web/.env.development.local"
