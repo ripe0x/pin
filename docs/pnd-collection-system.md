@@ -1,12 +1,15 @@
 # PND Collection System
 
-> **Status: design overview, agreed 2026-07-06. Not yet implemented.**
+> **Status: built, pre-deploy (2026-07-06).** Contracts phase on PR #133
+> (`collection-contracts-v1`: docs/pnd-collection-contracts-plan.md, all
+> phases complete, 367 tests + deep invariants green). Web phase on
+> PR #134 (`collection-web-v1`, stacked: docs/pnd-collection-web-plan.md,
+> fork-verified end to end incl. byte-parity of the offchain renderer
+> against onchain tokenURI). Mainnet deploy, indexer/worker enablement,
+> and Phase 5 minters (BackedMinter/PooledIdMinter) remain gated.
 > This document supersedes the *framing* of `docs/pnd-editions-*.md`:
-> the Editions contract becomes one preset of the general collection core
-> described here, and the core moves from ERC721A to OZ ERC721. The
-> editions docs remain the reference for payment-split, hook, and graph
-> details until the rework lands; their token-layer specifics (ERC721A,
-> MintBatch machinery) are superseded.
+> Editions is one preset of the general collection core, which moved
+> from ERC721A to OZ ERC721; `contracts/src/editions/` was removed.
 
 ## 1. What we're building
 

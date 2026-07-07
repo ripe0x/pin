@@ -38,14 +38,12 @@ export const PRESET_DESCRIPTION: Record<Preset, string> = {
  * Known gzipped library files already stored on the EthFS v2 file store,
  * offered as checkboxes in the GENERATIVE preset's dependency picker.
  *
- * Only "p5-v1.5.0.min.js.gz" is verified in this repo: it's the exact
- * filename constant (P5_GZ_FILE) exercised by
- * contracts/test/collection/renderers/GenerativeRendererFork.t.sol against
- * the real mainnet EthFS store on a fork. The three.js entry is included
- * for the same well-known EthFS naming convention but has NOT been
- * independently verified present/correct on this repo's fork — confirm it
- * resolves (a non-empty getContent read) before shipping it to real artists,
- * and before adding any further library to this list.
+ * Both entries are verified against the real mainnet EthFS store:
+ * p5 via contracts/test/collection/renderers/GenerativeRendererFork.t.sol,
+ * three.js via a direct getContent probe (407KB of content at exactly
+ * "three-v0.147.0.min.js.gz", 2026-07-06). Any further library added to
+ * this list must pass the same check: a non-empty getContent read at the
+ * exact name, before it ships to artists.
  */
 export const KNOWN_DEPENDENCIES: {
   id: string
@@ -58,7 +56,7 @@ export const KNOWN_DEPENDENCIES: {
     id: "three",
     label: "three.js 0.147.0",
     file: "three-v0.147.0.min.js.gz",
-    verified: false,
+    verified: true,
   },
 ]
 
