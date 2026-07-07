@@ -233,6 +233,8 @@ export type Collection = {
   renderer: Address
   priceStrategy: Address
   cfg: CollectionConfig
+  /** What the work is, executably (empty code for renderer-native works). */
+  work: WorkConfig
   status: CollectionStatus
   minted: bigint
 }

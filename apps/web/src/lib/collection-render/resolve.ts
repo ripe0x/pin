@@ -51,6 +51,30 @@ export function chainResolver(client: PublicClient): ContentResolver {
   };
 }
 
+// Onchain file content is immutable per (store, name), so one module-level
+// cache serves every renderer on a page: the ~230KB p5 dependency is fetched
+// once and shared across any number of hero/grid iframes.
+const contentCache = new Map<string, Promise<string>>();
+
+/**
+ * Chain resolver with a shared in-memory content cache. Use this for any
+ * surface rendering multiple tokens of the same work (hero + grids); the
+ * dependency bytes are fetched once per session.
+ */
+export function cachedChainResolver(client: PublicClient): ContentResolver {
+  const inner = chainResolver(client);
+  return (ref) => {
+    const key = fileKey(ref);
+    let hit = contentCache.get(key);
+    if (!hit) {
+      hit = inner(ref);
+      contentCache.set(key, hit);
+      hit.catch(() => contentCache.delete(key));
+    }
+    return hit;
+  };
+}
+
 /**
  * Layered resolver: local bytes win (files mid-upload in the studio),
  * everything else falls through to the chain.

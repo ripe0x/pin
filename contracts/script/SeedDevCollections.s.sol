@@ -89,23 +89,31 @@ contract SeedDevCollections is Script {
         address generativeRenderer = vm.envAddress("GENERATIVE_RENDERER");
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address artist = vm.addr(pk);
-        // Anvil account 1: the unclaimed collaborator on the roster.
-        address collab = 0x70997970C51812dc3A010C7d01b50e0d17dc79C8;
 
         vm.startBroadcast(pk);
 
-        // 1) Upload the sketch to the real ScriptyStorageV2 on the fork.
         IScriptyStorageWrite store = IScriptyStorageWrite(SCRIPTY_STORAGE_V2);
         store.createContent(SKETCH_NAME, "");
         store.addChunkToContent(SKETCH_NAME, bytes(SKETCH));
 
-        // 2) "Orbit Studies": generative, collab roster, 3 mints.
+        address orbits = _seedOrbits(factory, generativeRenderer, artist);
+        address drift = _seedDrift(factory, generativeRenderer, artist);
+        address field = _seedField(factory, artist);
+
+        vm.stopBroadcast();
+
+        console2.log("Seeded sample collections:");
+        console2.log("  Orbit Studies (generative):", orbits);
+        console2.log("  Signal Drift (unminted):   ", drift);
+        console2.log("  Field Notes (edition):     ", field);
+    }
+
+    function _orbitWork() private pure returns (WorkConfig memory work) {
         CodeRef[] memory code = new CodeRef[](1);
         code[0] = CodeRef({store: SCRIPTY_STORAGE_V2, name: SKETCH_NAME, kind: CodeKind.Script});
         CodeRef[] memory deps = new CodeRef[](1);
         deps[0] = CodeRef({store: ETHFS_V2_FILE_STORAGE, name: P5_GZ, kind: CodeKind.ScriptGzip});
-
-        WorkConfig memory orbitWork = WorkConfig({
+        work = WorkConfig({
             code: code,
             deps: deps,
             codeURI: "",
@@ -114,47 +122,64 @@ contract SeedDevCollections is Script {
             injectionVersion: 1,
             renderParams: "aspect=1:1"
         });
+    }
 
-        CollectionConfig memory orbitCfg;
-        orbitCfg.price = 0.005 ether;
-        orbitCfg.supplyCap = 64;
-        orbitCfg.kind = CollectionKind.Standalone;
-        orbitCfg.renderer = generativeRenderer;
-        orbitCfg.idMode = IdMode.Sequential;
+    /// @dev Generative with a collab roster and 3 mints; the artist's half of
+    ///      the attribution handshake is filed in the real Catalog, the
+    ///      collab (anvil account 1) deliberately stays unclaimed.
+    function _seedOrbits(address factory, address generativeRenderer, address artist)
+        private
+        returns (address orbits)
+    {
+        CollectionConfig memory cfg;
+        cfg.price = 0.005 ether;
+        cfg.supplyCap = 64;
+        cfg.kind = CollectionKind.Standalone;
+        cfg.renderer = generativeRenderer;
+        cfg.idMode = IdMode.Sequential;
 
-        address[] memory noMinters = new address[](0);
         address[] memory roster = new address[](2);
         roster[0] = artist;
-        roster[1] = collab;
+        roster[1] = 0x70997970C51812dc3A010C7d01b50e0d17dc79C8;
 
-        address orbits = SovereignCollectionFactory(factory).createCollection(
-            "Orbit Studies", "ORBIT", artist, orbitCfg, orbitWork, noMinters, roster
+        orbits = SovereignCollectionFactory(factory).createCollection(
+            "Orbit Studies", "ORBIT", artist, cfg, _orbitWork(), new address[](0), roster
         );
         SovereignCollection(orbits).mintWithRewards{value: 0.015 ether}(3, address(0), "");
-
-        // The artist's half of the attribution handshake, in the real Catalog;
-        // the collab (account 1) deliberately stays unclaimed so the roster UI
-        // shows both states.
         ICatalogClaim(CATALOG).addContract(orbits);
+    }
 
-        // 3) "Field Notes": edition preset, inline-SVG cover, 2 mints.
+    /// @dev Generative, ZERO mints: exercises the pre-mint collection page
+    ///      (deterministic preview-seed hero, no grid).
+    function _seedDrift(address factory, address generativeRenderer, address artist)
+        private
+        returns (address drift)
+    {
+        CollectionConfig memory cfg;
+        cfg.price = 0.003 ether;
+        cfg.supplyCap = 32;
+        cfg.kind = CollectionKind.Standalone;
+        cfg.renderer = generativeRenderer;
+        cfg.idMode = IdMode.Sequential;
+
+        drift = SovereignCollectionFactory(factory).createCollection(
+            "Signal Drift", "DRIFT", artist, cfg, _orbitWork(), new address[](0), new address[](0)
+        );
+    }
+
+    /// @dev Edition preset with an inline-SVG cover and 2 mints.
+    function _seedField(address factory, address artist) private returns (address field) {
         WorkConfig memory emptyWork;
-        CollectionConfig memory fieldCfg;
-        fieldCfg.artworkURI = FIELD_COVER;
-        fieldCfg.price = 0.002 ether;
-        fieldCfg.supplyCap = 25;
-        fieldCfg.kind = CollectionKind.Standalone;
-        fieldCfg.idMode = IdMode.Sequential;
+        CollectionConfig memory cfg;
+        cfg.artworkURI = FIELD_COVER;
+        cfg.price = 0.002 ether;
+        cfg.supplyCap = 25;
+        cfg.kind = CollectionKind.Standalone;
+        cfg.idMode = IdMode.Sequential;
 
-        address field = SovereignCollectionFactory(factory).createCollection(
-            "Field Notes", "FIELD", artist, fieldCfg, emptyWork, noMinters, new address[](0)
+        field = SovereignCollectionFactory(factory).createCollection(
+            "Field Notes", "FIELD", artist, cfg, emptyWork, new address[](0), new address[](0)
         );
         SovereignCollection(field).mintWithRewards{value: 0.004 ether}(2, address(0), "");
-
-        vm.stopBroadcast();
-
-        console2.log("Seeded sample collections:");
-        console2.log("  Orbit Studies (generative):", orbits);
-        console2.log("  Field Notes (edition):     ", field);
     }
 }

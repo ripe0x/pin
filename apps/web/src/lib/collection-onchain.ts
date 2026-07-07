@@ -9,6 +9,7 @@ import {
   attributionAddress,
   decodeCollectionConfig,
   decodeMintMark,
+  decodeWorkConfig,
   type Collection,
   type MintMark,
   CollectionStatus,
@@ -60,7 +61,7 @@ export async function getCollection(address: Address): Promise<Collection | null
     const client = getClient()
     const base = { address, abi: sovereignCollectionAbi } as const
     try {
-      const [name, symbol, owner, workLocked, metadataFrozen, permanent, renderer, priceStrategy, cfgRes] =
+      const [name, symbol, owner, workLocked, metadataFrozen, permanent, renderer, priceStrategy, cfgRes, workRaw] =
         await client.multicall({
           allowFailure: false,
           contracts: [
@@ -73,6 +74,7 @@ export async function getCollection(address: Address): Promise<Collection | null
             { ...base, functionName: "renderer" },
             { ...base, functionName: "priceStrategy" },
             { ...base, functionName: "config" },
+            { ...base, functionName: "workConfig" },
           ],
         })
       const [cfgRaw, status, minted] = cfgRes as RawConfigReturn
@@ -87,6 +89,7 @@ export async function getCollection(address: Address): Promise<Collection | null
         renderer: renderer as Address,
         priceStrategy: priceStrategy as Address,
         cfg: decodeCollectionConfig(cfgRaw),
+        work: decodeWorkConfig(workRaw as Parameters<typeof decodeWorkConfig>[0]),
         status: Number(status) as CollectionStatus,
         minted: minted as bigint,
       }
@@ -362,6 +365,61 @@ export type AttributionEntry = { artist: Address; claimed: boolean }
  * Returns an empty array when Attribution isn't configured for the current
  * chain, or when the collection's roster is empty/unset.
  */
+export type RecentTokenEntry = {
+  tokenId: string
+  seed: `0x${string}`
+  mintIndex: number
+  mintBlock: number
+}
+
+/**
+ * Seeds + marks for the latest mints, newest first: everything a client-side
+ * parity render needs (tokenData for real tokens), at one cheap slot read per
+ * field instead of the 60-120M-gas tokenURI. Sequential collections only
+ * (pooled ids arrive with the indexer, same rationale as mint history).
+ */
+export async function getRecentTokenMarks(
+  address: Address,
+  minted: bigint,
+  idMode: IdMode,
+  limit = 8,
+): Promise<RecentTokenEntry[]> {
+  if (idMode !== IdMode.Sequential || minted === 0n) return []
+  return pgCache(`sc-recent-marks:${lc(address)}:${minted.toString()}:${limit}`, 60, async () => {
+    const client = getClient()
+    const base = { address, abi: sovereignCollectionAbi } as const
+    const from = minted
+    const to = minted > BigInt(limit) ? minted - BigInt(limit) + 1n : 1n
+    const ids: bigint[] = []
+    for (let id = from; id >= to; id--) ids.push(id)
+    try {
+      const res = await client.multicall({
+        allowFailure: true,
+        contracts: ids.flatMap((id) => [
+          { ...base, functionName: "tokenSeed", args: [id] } as const,
+          { ...base, functionName: "mintMarkOf", args: [id] } as const,
+        ]),
+      })
+      const entries: RecentTokenEntry[] = []
+      ids.forEach((id, i) => {
+        const seedRes = res[i * 2]
+        const markRes = res[i * 2 + 1]
+        if (seedRes.status !== "success" || markRes.status !== "success") return
+        const mark = decodeMintMark(markRes.result as Parameters<typeof decodeMintMark>[0])
+        entries.push({
+          tokenId: id.toString(),
+          seed: seedRes.result as `0x${string}`,
+          mintIndex: mark.mintIndex,
+          mintBlock: Number(mark.mintBlock),
+        })
+      })
+      return entries
+    } catch {
+      return []
+    }
+  })
+}
+
 export async function getAttribution(collection: Address): Promise<AttributionEntry[]> {
   return pgCache(`sc-attribution:${lc(collection)}`, 60, async () => {
     // attributionAddress() honors the NEXT_PUBLIC_ATTRIBUTION env override

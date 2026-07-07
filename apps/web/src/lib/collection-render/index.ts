@@ -1,6 +1,7 @@
 export { buildTokenHTML, buildContextJs, HEAD_STYLE_CONTENT } from "./build";
 export {
   bytesResolver,
+  cachedChainResolver,
   chainResolver,
   layeredResolver,
   defaultGunzip,

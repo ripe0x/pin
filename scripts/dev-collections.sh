@@ -149,7 +149,7 @@ if [ "${SEED_SAMPLE:-1}" = "1" ]; then
     echo "$SEED_OUT" | tail -20
     echo "warning: sample seeding failed (harness continues unseeded)"
   }
-  echo "$SEED_OUT" | grep -E "Orbit Studies|Field Notes" | sed 's/^/  /'
+  echo "$SEED_OUT" | grep -E "Orbit Studies|Signal Drift|Field Notes" | sed 's/^/  /'
 fi
 
 # 4) write dev env (non-destructive: .env.development.local wins over

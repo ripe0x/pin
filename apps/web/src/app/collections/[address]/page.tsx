@@ -7,10 +7,13 @@ import { MintCollectionCTA } from "@/components/collections/MintCollectionCTA"
 import { WithdrawPanel } from "@/components/collections/WithdrawPanel"
 import { CollectionMintHistory } from "@/components/collections/CollectionMintHistory"
 import { AttributionRoster } from "@/components/collections/AttributionRoster"
+import { GenerativeHero, RecentMintsGrid } from "@/components/collections/GenerativeViews"
 import {
   getAttribution,
   getCollection,
   getCollectionMintHistory,
+  getCollectionToken,
+  getRecentTokenMarks,
 } from "@/lib/collection-onchain"
 import {
   COLLECTION_KIND_LABEL,
@@ -51,10 +54,23 @@ export default async function CollectionPage({ params }: { params: Params }) {
   const addr = address as Address
   const c = await getCollection(addr)
   if (!c) notFound()
-  const [history, attribution] = await Promise.all([
+  const [history, attribution, recent] = await Promise.all([
     getCollectionMintHistory(addr, c.minted, c.cfg.idMode),
     getAttribution(addr),
+    getRecentTokenMarks(addr, c.minted, c.cfg.idMode),
   ])
+
+  // Hero cascade: the artist's explicit cover always wins; a coverless
+  // generative work shows a live render (latest mint's real seed, or a
+  // deterministic preview seed pre-mint); a coverless renderer-native work
+  // falls back to its first token's image once one exists.
+  const hasCover = c.cfg.artworkURI.length > 0
+  const hasWork = c.work.code.length > 0
+  const latest = recent[0] ?? null
+  const firstTokenImage =
+    !hasCover && !hasWork && c.minted > 0n
+      ? (await getCollectionToken(addr, 1n))?.image ?? ""
+      : ""
 
   // The contract itself is an immutable clone (no upgrade path, ever); what
   // the artist can still change pre-lock is the work definition and renderer.
@@ -69,13 +85,29 @@ export default async function CollectionPage({ params }: { params: Params }) {
       <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] min-h-[calc(100vh-64px)]">
         {/* Artwork: full-bleed gray field, sticky on desktop. */}
         <div className="lg:sticky lg:top-16 lg:h-[calc(100vh-64px)] flex items-center justify-center bg-gray-100 dark:bg-bg p-8 lg:p-12">
-          <OptimizedImage
-            src={c.cfg.artworkURI}
-            alt={c.name}
-            width={1200}
-            loading="eager"
-            className="max-h-[78vh] max-w-full object-contain"
-          />
+          {hasCover ? (
+            <OptimizedImage
+              src={c.cfg.artworkURI}
+              alt={c.name}
+              width={1200}
+              loading="eager"
+              className="max-h-[78vh] max-w-full object-contain"
+            />
+          ) : hasWork ? (
+            <GenerativeHero collection={addr} work={c.work} latest={latest} />
+          ) : firstTokenImage ? (
+            <OptimizedImage
+              src={firstTokenImage}
+              alt={`${c.name} #1`}
+              width={1200}
+              loading="eager"
+              className="max-h-[78vh] max-w-full object-contain"
+            />
+          ) : (
+            <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+              No artwork yet
+            </p>
+          )}
         </div>
 
         {/* Sidebar */}
@@ -177,6 +209,18 @@ export default async function CollectionPage({ params }: { params: Params }) {
           </section>
         </aside>
       </div>
+
+      {/* Recent mints: live renders from real seeds via the parity builder
+          (one shared deps fetch, no tokenURI calls). Skipped when the hero
+          already shows the only mint. */}
+      {hasWork && recent.length > 1 && (
+        <section className="border-t border-gray-200 px-6 py-10 lg:px-12">
+          <h2 className="mb-4 text-[10px] font-mono uppercase tracking-wider text-gray-400">
+            Recent mints
+          </h2>
+          <RecentMintsGrid collection={addr} work={c.work} entries={recent} />
+        </section>
+      )}
     </div>
   )
 }
