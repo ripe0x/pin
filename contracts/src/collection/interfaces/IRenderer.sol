@@ -8,7 +8,7 @@ import {MintMark, WorkConfig, IdMode} from "../CollectionTypes.sol";
 ///         delegate to its renderer. The collection is an explicit parameter
 ///         (not msg.sender) so one renderer instance serves every collection,
 ///         offchain callers can eth_call it directly for any collection, and
-///         bespoke contracts can adopt it by implementing ICollectionView.
+///         any contract can adopt it by implementing ICollectionView.
 ///
 ///         Renderers are onchain views with full EVM read access: seed,
 ///         owner, sibling tokens, companion state, foreign contracts, block
@@ -24,8 +24,8 @@ interface IRenderer {
 
 /// @title ICollectionView
 /// @notice The read surface a renderer uses to build metadata. Implemented in
-///         full by SovereignCollection; bespoke contracts implement whatever
-///         subset their chosen renderer actually reads.
+///         full by SovereignCollection; any adopting contract implements
+///         whatever subset its chosen renderer actually reads.
 interface ICollectionView {
     function name() external view returns (string memory);
 

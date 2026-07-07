@@ -45,8 +45,8 @@ contract SovereignCollectionFactory {
     /// @param owner The artist. Taken explicitly so a deploy helper can create
     ///        on the artist's behalf.
     /// @param initialMinters Extension minters granted at init (pooled/backed
-    ///        forms deploy fully wired in one tx). Empty for plain editions
-    ///        and generative collections.
+    ///        forms deploy fully wired in one tx). Empty for collections that
+    ///        sell through the built-in fixed-price path.
     /// @param artists Optional Attribution roster (collabs). The collection
     ///        writes it to the Attribution singleton during its own init (the
     ///        singleton authorizes the collection itself); each artist

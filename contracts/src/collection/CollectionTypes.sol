@@ -4,10 +4,10 @@ pragma solidity ^0.8.24;
 // ─────────────────────────────────────────────────────────────────────────────
 // Sovereign Collection — shared types
 //
-// One OZ ERC721 contract == one collection. A collection is an edition, a
-// generative collection, or a backed/pooled work depending on which modules
-// fill its slots; the core stores ownership, money paths, and provenance
-// only. See docs/pnd-collection-system.md.
+// One OZ ERC721 contract == one collection. A collection is a fixed-price
+// edition, a generative collection, or a backed/pooled work depending on which
+// modules fill its slots; the core stores ownership, money paths, and
+// provenance only.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// @dev How a Ref's `id` is interpreted.
@@ -123,7 +123,7 @@ struct WorkConfig {
     string codeURI; // offchain pointer for oversized code; hash-verified
     bytes32 codeHash; // integrity hash of the assembled script ("" refs ok)
     Liveness liveness;
-    uint8 injectionVersion; // docs/injection-convention.md version
+    uint8 injectionVersion; // version of the render-context injection convention
     string renderParams; // renderer-interpreted settings (aspect, versions)
 }
 
@@ -162,17 +162,18 @@ struct InitParams {
 }
 
 /// @notice Per-token mint record, stored packed in a single slot
-///         (48 + 32 + 8 + 160 = 248 bits).
+///         (48 + 40 + 8 + 160 = 256 bits). `mintIndex` is uint40 so the record fills the
+///         slot exactly; 2^40 mints is unreachable, so the count never truncates.
 struct MintRecord {
     uint48 mintBlock;
-    uint32 mintIndex; // 0-based global mint order across the collection
+    uint40 mintIndex; // 0-based global mint order across the collection
     uint8 statusAtMint; // CollectionStatus
     address surface;
 }
 
 /// @notice The derived, public Mint Mark for a single token.
 struct MintMark {
-    uint32 mintIndex;
+    uint40 mintIndex;
     uint48 mintBlock;
     CollectionStatus statusAtMint;
     address surface;

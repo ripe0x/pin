@@ -136,6 +136,7 @@ interface ISovereignCollection is IMintMarks, ICollectionGraph, ITokenPath {
     event PriceStrategySet(address indexed strategy);
     event MinterSet(address indexed minter, bool allowed);
     event TokenArtworkSet(uint256 indexed tokenId, string cid);
+    event WorkSet(bytes32 codeHash);
     event WorkLocked();
     event Withdrawn(address indexed account, uint256 amount);
     event PayoutAddressSet(address indexed payoutAddress);
@@ -164,7 +165,10 @@ interface ISovereignCollection is IMintMarks, ICollectionGraph, ITokenPath {
     function setTokenArtworkBatch(uint256[] calldata tokenIds, string[] calldata cids) external;
     function setPayoutAddress(address payoutAddress) external;
     function freezeMetadata() external;
-    /// @notice Permanently lock the work config. Irreversible.
+    /// @notice Replace the work definition (the algorithm the renderer runs). Allowed until
+    ///         `lockWork`; reverts once locked.
+    function setWork(WorkConfig calldata work) external;
+    /// @notice Permanently lock the work config, so it can never change again. Irreversible.
     function lockWork() external;
 
     // ── mint: built-in paid paths (value custody stays in the core) ─────────

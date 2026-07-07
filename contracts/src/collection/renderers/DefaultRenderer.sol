@@ -21,12 +21,9 @@ import {MintMark, CollectionStatus} from "../CollectionTypes.sol";
 ///         unique-per-token art, generative art, or fully onchain media
 ///         points at its own IRenderer instead (e.g. an SVGRenderer).
 ///
-///         Ported from src/editions/PNDDefaultRenderer.sol for the new
-///         collection system. Behavioral continuity, not byte parity: same
-///         JSON structure and fields, adapted to the new explicit-collection
-///         IRenderer/ICollectionView surface and the new MintMark shape
-///         (`mintIndex` replaces `indexInEdition`; `statusAtMint` is now
-///         `CollectionStatus` instead of `EditionStatus`, same three values).
+///         Builds the JSON envelope (name, description, image, attributes)
+///         from the collection's own views and per-token Mint Mark, reading
+///         them through the IRenderer/ICollectionView surface.
 contract DefaultRenderer is IRenderer {
     using Strings for uint256;
 

@@ -93,8 +93,7 @@ contract CollectionEntropyTest is CollectionBase {
         minter.callMintToAt(ISovereignCollection(address(c)), collector, 1, address(0), "");
         bytes32 seed1 = c.tokenSeed(1);
 
-        vm.prank(collector);
-        c.burn(1);
+        minter.callBurn(ISovereignCollection(address(c)), 1);
 
         vm.prevrandao(bytes32(uint256(12345)));
         minter.callMintToAt(ISovereignCollection(address(c)), collector, 1, address(0), "");
@@ -116,8 +115,7 @@ contract CollectionEntropyTest is CollectionBase {
             bytes32 seed = c.tokenSeed(7);
             assertTrue(seed != prevSeed, "each re-mint cycle must re-roll the seed");
             prevSeed = seed;
-            vm.prank(collector);
-            c.burn(7);
+            minter.callBurn(ISovereignCollection(address(c)), 7);
         }
     }
 
@@ -152,8 +150,7 @@ contract CollectionEntropyTest is CollectionBase {
         assertEq(c.mintMarkOf(1).mintIndex, 0);
         assertEq(c.mintMarkOf(2).mintIndex, 1);
 
-        vm.prank(collector);
-        c.burn(1);
+        minter.callBurn(ISovereignCollection(address(c)), 1);
         minter.callMintToAt(ISovereignCollection(address(c)), collector, 1, address(0), ""); // mintIndex 2, NOT 0 again
         assertEq(c.mintMarkOf(1).mintIndex, 2);
 

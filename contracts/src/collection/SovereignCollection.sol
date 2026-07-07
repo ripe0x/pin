@@ -45,12 +45,11 @@ import {
 ///         upgrade path, no seal: what deploys is what runs, forever. The
 ///         upgradeable-variant base contracts are used only for their
 ///         initializer pattern, which clones require.
-// Note (slither missing-inheritance, triaged won't-fix): SovereignCollection
-// deliberately does NOT inherit ICollectionView. That interface is the
-// renderer-side typing of this contract's public surface; inheriting it
-// forces passthrough re-overrides of name/symbol/owner against the OZ bases
-// for zero behavior. The surface is enforced by the renderer test suites,
-// which call every ICollectionView function against this real contract.
+// SovereignCollection deliberately does NOT inherit ICollectionView. That
+// interface is the renderer-side typing of this contract's public surface;
+// inheriting it would force passthrough re-overrides of name/symbol/owner
+// against the OZ bases for zero behavior. The read surface is exercised
+// directly against this contract by every renderer that reads it.
 contract SovereignCollection is
     ERC721Upgradeable,
     Ownable2StepUpgradeable,
@@ -314,7 +313,7 @@ contract SovereignCollection is
         _mint(to, tokenId);
         _record[tokenId] = MintRecord({
             mintBlock: uint48(block.number),
-            mintIndex: uint32(mintIndex),
+            mintIndex: uint40(mintIndex),
             statusAtMint: uint8(statusAtMint),
             surface: surface
         });
@@ -322,13 +321,21 @@ contract SovereignCollection is
             keccak256(abi.encode(block.prevrandao, address(this), tokenId, to, mintIndex));
     }
 
-    /// @notice Burn by owner or approved. Vaults and pooled-id minters redeem
-    ///         through standard approval. The Mint Mark and seed of the burned
-    ///         instance remain readable until (and unless) the id is minted
-    ///         again in pooled mode.
+    /// @notice Burn a token. Burn authority depends on the id mode:
+    ///         - Sequential: the standard owner-or-approved burn.
+    ///         - Pooled: only an authorized minter may burn. A pooled collection issues and
+    ///           retires its tokens exclusively through its minter (which owns the id pool and
+    ///           any per-token backing), so a holder or approved operator cannot destroy a
+    ///           token out-of-band and strand its backing or desync the pool.
+    ///         The Mint Mark and seed of the burned instance remain readable until (and
+    ///         unless) the id is minted again in pooled mode.
     function burn(uint256 tokenId) external override nonReentrant {
         address tokenOwner = _requireOwned(tokenId);
-        if (!(_isAuthorized(tokenOwner, msg.sender, tokenId))) revert NotAuthorized();
+        if (_cfg.idMode == IdMode.Pooled) {
+            if (!_minters[msg.sender]) revert NotAuthorized();
+        } else if (!_isAuthorized(tokenOwner, msg.sender, tokenId)) {
+            revert NotAuthorized();
+        }
         _burn(tokenId);
         _burnedCount += 1;
         emit Burned(tokenId);
@@ -504,8 +511,18 @@ contract SovereignCollection is
         emit MetadataFrozen();
     }
 
-    /// @notice One-way: permanently lock the work config (what the work IS).
-    ///         Together with freezeMetadata this is the art-permanence
+    /// @notice Replace the work definition (script refs, deps, render spec) — the algorithm
+    ///         the renderer runs. The artist may refine it until they lock it; reverts once
+    ///         `lockWork` has been called.
+    function setWork(WorkConfig calldata work) external override onlyOwner {
+        if (_workLocked) revert WorkAlreadyLocked();
+        delete _work; // clear the previous code/deps arrays before re-copying
+        _copyWork(work);
+        emit WorkSet(work.codeHash);
+    }
+
+    /// @notice One-way: permanently lock the work config (what the work IS), so `setWork` can
+    ///         never change it again. Together with freezeMetadata this is the art-permanence
     ///         guarantee; the contract itself is immutable from deploy.
     function lockWork() external override onlyOwner {
         if (!(!_workLocked)) revert WorkAlreadyLocked();

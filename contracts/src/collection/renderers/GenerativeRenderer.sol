@@ -18,10 +18,10 @@ import {HTMLRequest, HTMLTag, HTMLTagType} from "../vendor/scripty/core/ScriptyS
 ///         is a data:text/html;base64 URI. The live view is a pure function
 ///         of chain state: no server, no pin, nothing to keep alive.
 ///
-///         The injected context implements docs/injection-convention.md v1:
+///         The injected context (render-context convention v1) is
 ///         window.tokenData = { hash, tokenId, mintIndex, mintBlock,
-///         collection, chainId, version } — hash/tokenId are Art
-///         Blocks-compatible so existing AB-style sketches run unmodified.
+///         collection, chainId, version } — hash/tokenId use the widely-adopted
+///         long-form-generative shape so existing sketches run unmodified.
 ///
 /// @dev    Immutable configuration only; per-work variability lives entirely
 ///         in each collection's WorkConfig. Anyone may point any contract
@@ -173,8 +173,8 @@ contract GenerativeRenderer is IRenderer {
         return false;
     }
 
-    /// @dev docs/injection-convention.md v1. hash/tokenId shapes match Art
-    ///      Blocks' tokenData for sketch portability.
+    /// @dev Render-context convention v1. hash/tokenId use the standard
+    ///      long-form-generative tokenData shape for sketch portability.
     function _contextJs(
         address collection,
         uint256 tokenId,

@@ -154,7 +154,7 @@ contract PooledBackedTest is Test {
         assertEq(collection.totalSupply(), POOL_SIZE);
 
         bytes32 seedBefore = collection.tokenSeed(b);
-        uint32 indexBefore = collection.mintMarkOf(b).mintIndex;
+        uint40 indexBefore = collection.mintMarkOf(b).mintIndex;
         uint256 aliceCoinBefore = coin.balanceOf(alice);
 
         // Redeem: burn, principal back, id returns to the pool.

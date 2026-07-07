@@ -84,8 +84,7 @@ contract CollectionIdModesTest is CollectionBase {
         assertEq(firstMark.mintIndex, 0);
         assertEq(firstMark.surface, surface);
 
-        vm.prank(collector);
-        c.burn(5);
+        minter.callBurn(ISovereignCollection(address(c)), 5);
         assertEq(c.totalSupply(), 0);
         // Mark and seed remain readable for the burned instance until re-mint.
         assertEq(c.mintMarkOf(5).mintIndex, firstMark.mintIndex);
@@ -120,8 +119,7 @@ contract CollectionIdModesTest is CollectionBase {
         vm.expectRevert(ISovereignCollection.ExceedsCap.selector);
         minter.callMintToAt(ISovereignCollection(address(c)), collector, 2, address(0), "");
 
-        vm.prank(collector);
-        c.burn(1);
+        minter.callBurn(ISovereignCollection(address(c)), 1);
         // Burning frees the pooled cap budget (bounds LIVE supply, not
         // mints-ever), so a new id can now be minted.
         minter.callMintToAt(ISovereignCollection(address(c)), collector, 2, address(0), "");
@@ -211,10 +209,8 @@ contract CollectionIdModesTest is CollectionBase {
         vm.expectRevert(ISovereignCollection.ExceedsCap.selector);
         minter.callMintToAt(ISovereignCollection(address(c)), collector, 3, address(0), "");
 
-        vm.prank(collector);
-        c.burn(1);
-        vm.prank(collector);
-        c.burn(2);
+        minter.callBurn(ISovereignCollection(address(c)), 1);
+        minter.callBurn(ISovereignCollection(address(c)), 2);
         // Even though mintedEver is already 2 == cap, LIVE supply is 0, so
         // pooled mode allows re-minting well past "2 mints ever."
         minter.callMintToAt(ISovereignCollection(address(c)), collector, 3, address(0), "");

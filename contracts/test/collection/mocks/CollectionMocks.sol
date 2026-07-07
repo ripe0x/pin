@@ -123,6 +123,11 @@ contract MockMinter {
     ) external {
         collection.mintToAt(to, tokenId, surface, hookData);
     }
+
+    /// @dev Burn as an authorized minter — the only path that can retire a pooled token.
+    function callBurn(ISovereignCollection collection, uint256 tokenId) external {
+        collection.burn(tokenId);
+    }
 }
 
 /// @dev Always reverts beforeMint. Used to prove a rejecting hook blocks
