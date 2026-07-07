@@ -27,6 +27,7 @@ export const STATE_FILE = resolve(__dirname, "../.e2e-state.json")
 export type GlobalState = {
   rpcUrl: string
   factory: `0x${string}`
+  generativeRenderer: `0x${string}`
   appPort: number
   impersonate: `0x${string}`
   anvilPid: number
@@ -126,6 +127,25 @@ export default async function globalSetup() {
   const factory = m[1] as `0x${string}`
   console.log(`[e2e] factory: ${factory}`)
 
+  // The GENERATIVE preset's DeployStep hard-requires generativeRenderer(chainId)
+  // to resolve (see DeployStep.tsx: "No GenerativeRenderer is configured for
+  // this network" blocks the deploy button) and GENERATIVE_RENDERER's static
+  // mainnet entry in @pin/addresses is still the zero address — only the
+  // NEXT_PUBLIC_GENERATIVE_RENDERER env override resolves it pre-mainnet-deploy.
+  // Same story for Attribution (not load-bearing for any assertion here, but
+  // wired through for parity with scripts/dev-collections.sh so a missing env
+  // var here never becomes the next surprise).
+  const rendererMatch = out.match(/GenerativeRenderer:\s*(0x[0-9a-fA-F]{40})/)
+  if (!rendererMatch) {
+    console.error(out)
+    throw new Error("e2e: could not parse GenerativeRenderer address from deploy output")
+  }
+  const generativeRenderer = rendererMatch[1] as `0x${string}`
+  console.log(`[e2e] generativeRenderer: ${generativeRenderer}`)
+
+  const attributionMatch = out.match(/Attribution:\s*(0x[0-9a-fA-F]{40})/)
+  const attribution = attributionMatch ? (attributionMatch[1] as `0x${string}`) : undefined
+
   // 3) Next dev server with the fork env + mock-connector impersonation.
   console.log(`[e2e] starting Next dev server on :${APP_PORT}`)
   const app: ChildProcess = spawn(
@@ -139,6 +159,8 @@ export default async function globalSetup() {
         NEXT_PUBLIC_USE_LOCAL_RPC: "1",
         NEXT_PUBLIC_ANVIL_RPC_URL: rpcUrl,
         NEXT_PUBLIC_SOVEREIGN_COLLECTION_FACTORY: factory,
+        NEXT_PUBLIC_GENERATIVE_RENDERER: generativeRenderer,
+        ...(attribution ? { NEXT_PUBLIC_ATTRIBUTION: attribution } : {}),
         NEXT_PUBLIC_DEV_IMPERSONATE: IMPERSONATE,
       },
       detached: true,
@@ -158,6 +180,7 @@ export default async function globalSetup() {
   const state: GlobalState = {
     rpcUrl,
     factory,
+    generativeRenderer,
     appPort: APP_PORT,
     impersonate: IMPERSONATE,
     anvilPid: anvil.pid ?? 0,
