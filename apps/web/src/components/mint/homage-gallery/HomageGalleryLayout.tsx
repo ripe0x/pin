@@ -155,15 +155,9 @@ export default function HomageGalleryLayout({ collectionId, snapshot, selectorDa
             )}
           </div>
         </div>
-        <h1 className="display mt-5 max-w-[16ch]">A homage for every punk</h1>
+        <h1 className="display mt-5 max-w-[16ch]">Homage to the Punk</h1>
         <p className="text-[14px] leading-[1.75] text-(--dim) mt-7 max-w-[54ch]">
-          Ten thousand generative artworks. One for each cryptopunk. Each composed from the
-          punk&rsquo;s onchain data and its live market state.
-        </p>
-        <p className="text-[14px] leading-[1.75] text-(--dim) mt-5 max-w-[54ch]">
-          Every piece is backed by 50,000&nbsp;<span className="text-(--accent)">$111</span> sealed
-          inside, redeemable in full at any time. Half of every fee feeds the Permanent Collection,
-          a pool that buys real punks and holds them for good.
+          One homage for every cryptopunk
         </p>
 
         {preMint ? (
