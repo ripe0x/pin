@@ -12,6 +12,7 @@
     "test:e2e:install": "playwright install chromium"
   },
   "dependencies": {
+    "@networked-art/punks-sdk": "^0.1.0",
     "@pin/abi": "workspace:*",
     "@pin/addresses": "workspace:*",
     "@pin/shared": "workspace:*",

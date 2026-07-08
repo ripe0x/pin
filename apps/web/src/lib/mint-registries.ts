@@ -112,10 +112,20 @@ export type ArgsBuilderCtx = EligibilityCtx & {
 }
 
 /**
- * Builds the mint call's args at click time. May be async (e.g. lazy-load a
- * proof artifact); throwing aborts the write and surfaces the message.
+ * A fully-shaped mint call: args plus an optional function-name override for
+ * selections that change WHICH function is called, not just its args (Homage
+ * claim routing: `claim(id)` for the holder, `claimFor(id, vault)` for a
+ * delegate.xyz delegate, `claimTo(id)` for a pay-for-holder mint).
  */
-export type ArgsBuilder = (ctx: ArgsBuilderCtx) => unknown[] | Promise<unknown[]>
+export type BuiltCall = { fn?: string; args: unknown[] }
+
+/**
+ * Builds the mint call at click time — either bare args (the phase/descriptor
+ * mintFn is used) or a BuiltCall with a fn override. May be async (e.g.
+ * lazy-load a proof artifact); throwing aborts the write and surfaces the
+ * message.
+ */
+export type ArgsBuilder = (ctx: ArgsBuilderCtx) => unknown[] | BuiltCall | Promise<unknown[] | BuiltCall>
 
 const argsBuilders = new Map<string, ArgsBuilder>()
 

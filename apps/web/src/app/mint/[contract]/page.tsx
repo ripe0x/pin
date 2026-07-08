@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { MintPanel } from "@/components/mint/MintPanel"
+import { CuratedLayoutSlot } from "@/components/mint/curated-layouts"
 import { CollectionStage } from "@/components/mint/CollectionStage"
 import { AggregateStats } from "@/components/mint/AggregateStats"
 import { SeatGrid } from "@/components/mint/SeatGrid"
@@ -51,6 +52,21 @@ export default async function MintCollectionPage({ params }: { params: Params })
     getAggregateStats(desc),
     getSeatStates(desc),
   ])
+
+  // Curated collections own the whole page (descriptor `customLayout`): the
+  // registered client layout gets the same server-fetched data the standard
+  // surface would use. Metadata/OG above are shared either way.
+  if (desc.customLayout) {
+    return (
+      <CuratedLayoutSlot
+        layoutKey={desc.customLayout}
+        collectionId={contract}
+        snapshot={snapshot}
+        art={art}
+        selectorData={seats}
+      />
+    )
+  }
 
   const heroAspect = desc.heroAspect ?? "1 / 1"
   // Prefer the onchain metadata (name/description from the tokenURI JSON) when

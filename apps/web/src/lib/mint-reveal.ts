@@ -53,22 +53,30 @@ export function extractRevealTokenId(opts: {
   /** The collection contract — logs from other contracts are ignored. */
   collection: string
   abi: Abi
-  /** When given, transfer-log matches only mints TO this address. */
+  /**
+   * When given, transfer-log PREFERS mints to this address but falls back to
+   * the first collection mint in the receipt. The receipt is the caller's own
+   * tx, so any Transfer(from=0) the collection emitted IS a token this tx
+   * minted — just not necessarily to the payer (Homage's claimFor mints to
+   * the delegate's vault, claimTo to the punk's holder). A strict to==minter
+   * filter would silently drop the reveal for those routed mints.
+   */
   minter?: string
 }): bigint | null {
   const { reveal, logs, collection, abi, minter } = opts
   const collectionLc = collection.toLowerCase()
 
   if (reveal.kind === "transfer-log") {
+    let fallback: bigint | null = null
     for (const log of logs) {
       if (log.address.toLowerCase() !== collectionLc) continue
       if (log.topics.length !== 4) continue // ERC-721 shape (all params indexed)
       if (log.topics[0] !== TRANSFER_TOPIC) continue
       if (BigInt(log.topics[1]) !== 0n) continue // from == address(0): a mint
-      if (minter && BigInt(log.topics[2]) !== BigInt(minter)) continue
-      return BigInt(log.topics[3])
+      if (!minter || BigInt(log.topics[2]) === BigInt(minter)) return BigInt(log.topics[3])
+      if (fallback === null) fallback = BigInt(log.topics[3])
     }
-    return null
+    return fallback
   }
 
   // kind === "event": decode the named event against the collection ABI.

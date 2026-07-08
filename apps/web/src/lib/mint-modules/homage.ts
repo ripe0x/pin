@@ -32,7 +32,7 @@
  *   - args builders: zero RPC (shape client-held data into calldata).
  */
 
-import { isAddress, parseAbi, zeroAddress, type Address, type PublicClient } from "viem"
+import { isAddress, parseAbi, zeroAddress, zeroHash, type Address, type PublicClient } from "viem"
 import { homageAbi, permanenceRendererAbi } from "@pin/abi"
 import type { Abi } from "viem"
 import type { MintCollection } from "../mint-collections"
@@ -81,6 +81,15 @@ const POOL_KEY = {
  *  true holder is the wrapper's `ownerOf`. */
 export const CRYPTOPUNKS_MARKET = "0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB" as const
 export const WRAPPED_PUNKS = "0xb7F7F6C52F2e2fdb1963Eab30438024864c313F6" as const
+
+/** delegate.xyz v2 registry (canonical, all chains) — Homage.claimFor accepts
+ *  a delegate of the punk's holder (empty rights), mirroring the Homage site. */
+export const DELEGATE_REGISTRY = "0x00000000000000447e69651d841bD8D104Bed493" as const
+const delegateRegistryAbi = parseAbi([
+  "struct Delegation { uint8 type_; address to; address from; bytes32 rights; address contract_; uint256 tokenId; uint256 amount; }",
+  "function checkDelegateForERC721(address to, address from, address contract_, uint256 tokenId, bytes32 rights) view returns (bool)",
+  "function getIncomingDelegations(address to) view returns (Delegation[] delegations)",
+])
 
 // Aux read-only ABIs — module-private plumbing for external canonical
 // contracts (not PND adapters), so they live here rather than @pin/abi.
@@ -183,12 +192,87 @@ registerQuoteProvider("homage-quote", async ({ client, wallet, phaseKey }) => {
 })
 
 // ── claim phase: eligibility + args ("homage-claim") ─────────────────────────
+// Full claim-routing parity with the Homage site (Homage.sol's three paths):
+//   claim(id)          — the connected wallet holds the punk (raw or wrapped)
+//   claimFor(id,vault) — a delegate.xyz delegate mints; the homage goes to the vault
+//   claimTo(id)        — anyone pays; the homage mints to the punk's holder
 
-/** One claimable punk offered by the picker. */
-export type HomagePunkPick = { id: number; wrapped: boolean }
+/** How a claim routes — mirrors the write path Homage.sol accepts for it. */
+export type HomageClaimRoute =
+  | { via: "self" }
+  | { via: "delegated"; vault: Address }
+  | { via: "anyone"; holder: Address }
+
+/** The claim picker's selection: which punk, and through which route. */
+export type HomageClaimSelection = { id: number; route: HomageClaimRoute }
+
+/** One claimable punk offered by the picker. `vault` set = delegated (mints
+ *  to the vault via claimFor). */
+export type HomagePunkPick = { id: number; wrapped: boolean; vault?: Address }
 
 /** The claim eligibility payload handed to the HomagePunkPicker selector. */
 export type HomageClaimData = { punks: HomagePunkPick[] }
+
+// Vault-wide delegations enumerated per connect, RPC-bounded (mirrors the
+// Homage site's MAX_DELEGATION_VAULTS).
+const MAX_DELEGATION_VAULTS = 4
+
+/** The wallet's wrapped punks (ERC721Enumerable — exact, no log scan):
+ *  1 read + ≤1 multicall. */
+async function wrappedPunksOf(client: PublicClient, who: Address): Promise<bigint[]> {
+  const bal = (await client.readContract({
+    address: WRAPPED_PUNKS,
+    abi: wrappedPunksAbi,
+    functionName: "balanceOf",
+    args: [who],
+  })) as bigint
+  if (bal === 0n) return []
+  const idxReads = await client.multicall({
+    allowFailure: true,
+    contracts: Array.from({ length: Number(bal) }, (_, i) => ({
+      address: WRAPPED_PUNKS,
+      abi: wrappedPunksAbi,
+      functionName: "tokenOfOwnerByIndex",
+      args: [who, BigInt(i)] as const,
+    })),
+  })
+  return idxReads.filter((r) => r.status === "success").map((r) => r.result as bigint)
+}
+
+/** Incoming delegate.xyz delegations relevant to punk claims (1 read): vaults
+ *  that delegated `who` wallet-wide or for a punk contract, plus token-level
+ *  (id, vault) candidates. Rights-scoped delegations are skipped —
+ *  Homage.claimFor checks empty rights. Mirrors the Homage site. */
+async function claimDelegations(
+  client: PublicClient,
+  who: Address,
+): Promise<{ vaults: Address[]; tokens: { id: bigint; vault: Address }[] }> {
+  const raw = (await client.readContract({
+    address: DELEGATE_REGISTRY,
+    abi: delegateRegistryAbi,
+    functionName: "getIncomingDelegations",
+    args: [who],
+  })) as readonly {
+    type_: number
+    to: Address
+    from: Address
+    rights: `0x${string}`
+    contract_: Address
+    tokenId: bigint
+    amount: bigint
+  }[]
+  const isPunkSource = (c: string) =>
+    c.toLowerCase() === CRYPTOPUNKS_MARKET.toLowerCase() || c.toLowerCase() === WRAPPED_PUNKS.toLowerCase()
+  const vaults = new Set<Address>()
+  const tokens: { id: bigint; vault: Address }[] = []
+  for (const d of raw) {
+    if (d.rights !== zeroHash) continue
+    // DelegationType: 1 = ALL, 2 = CONTRACT, 3 = ERC721
+    if (d.type_ === 1 || (d.type_ === 2 && isPunkSource(d.contract_))) vaults.add(d.from)
+    else if (d.type_ === 3 && isPunkSource(d.contract_) && d.tokenId <= 9_999n) tokens.push({ id: d.tokenId, vault: d.from })
+  }
+  return { vaults: Array.from(vaults).slice(0, MAX_DELEGATION_VAULTS), tokens }
+}
 
 registerEligibilityProvider("homage-claim", async ({ client, wallet }) => {
   if (!HOMAGE_ADDRESS || !isAddress(HOMAGE_ADDRESS)) throw new Error("Homage is not configured")
@@ -197,77 +281,159 @@ registerEligibilityProvider("homage-claim", async ({ client, wallet }) => {
   }
   const homage = HOMAGE_ADDRESS as Address
 
-  // Wrapped punks: ERC721Enumerable, so balanceOf + tokenOfOwnerByIndex lists
-  // them exactly — no log scan. (The market reports the wrapper as the raw
-  // owner for these; claim() resolves the true holder through the wrapper.)
-  const wBal = (await client.readContract({
-    address: WRAPPED_PUNKS,
-    abi: wrappedPunksAbi,
-    functionName: "balanceOf",
-    args: [wallet],
-  })) as bigint
-  let ids: bigint[] = []
-  if (wBal > 0n) {
-    const idxReads = await client.multicall({
-      allowFailure: true,
-      contracts: Array.from({ length: Number(wBal) }, (_, i) => ({
-        address: WRAPPED_PUNKS,
-        abi: wrappedPunksAbi,
-        functionName: "tokenOfOwnerByIndex",
-        args: [wallet, BigInt(i)] as const,
-      })),
-    })
-    ids = idxReads.filter((r) => r.status === "success").map((r) => r.result as bigint)
+  // Wrapped punks held directly: ERC721Enumerable, so balanceOf +
+  // tokenOfOwnerByIndex lists them exactly — no log scan. (The market reports
+  // the wrapper as the raw owner for these; claim() resolves the true holder
+  // through the wrapper.)
+  const ownIds = await wrappedPunksOf(client, wallet)
+
+  // Delegated punks (delegate.xyz, 1 read): vaults that delegated this wallet
+  // contribute their WRAPPED punks (enumerable — raw vault punks fall through
+  // to the manual-id entry, same no-log-scan stance as the wallet's own);
+  // token-level delegations are verified individually below.
+  let candidates: { id: bigint; wrapped: boolean; vault?: Address }[] = ownIds.map((id) => ({
+    id,
+    wrapped: true,
+  }))
+  try {
+    const { vaults, tokens } = await claimDelegations(client, wallet)
+    for (const vault of vaults) {
+      const vIds = await wrappedPunksOf(client, vault)
+      for (const id of vIds) candidates.push({ id, wrapped: true, vault })
+    }
+    if (tokens.length > 0) {
+      // Token-level delegations name (id, vault) directly — confirm the vault
+      // still holds each punk (raw owner, or wrapper ownerOf) in ≤2 multicalls.
+      const ownerReads = await client.multicall({
+        allowFailure: true,
+        contracts: tokens.map((t) => ({
+          address: CRYPTOPUNKS_MARKET,
+          abi: punksMarketAbi,
+          functionName: "punkIndexToAddress",
+          args: [t.id] as const,
+        })),
+      })
+      const wrappedIdx = tokens.filter(
+        (_, i) =>
+          ownerReads[i]?.status === "success" &&
+          (ownerReads[i].result as Address).toLowerCase() === WRAPPED_PUNKS.toLowerCase(),
+      )
+      const wrappedOwnerReads =
+        wrappedIdx.length > 0
+          ? await client.multicall({
+              allowFailure: true,
+              contracts: wrappedIdx.map((t) => ({
+                address: WRAPPED_PUNKS,
+                abi: wrappedPunksAbi,
+                functionName: "ownerOf",
+                args: [t.id] as const,
+              })),
+            })
+          : []
+      tokens.forEach((t, i) => {
+        const ownerRes = ownerReads[i]
+        if (ownerRes?.status !== "success") return
+        const rawOwner = (ownerRes.result as Address).toLowerCase()
+        if (rawOwner === t.vault.toLowerCase()) {
+          candidates.push({ id: t.id, wrapped: false, vault: t.vault })
+        } else if (rawOwner === WRAPPED_PUNKS.toLowerCase()) {
+          const wi = wrappedIdx.indexOf(t)
+          const holderRes = wrappedOwnerReads[wi]
+          if (
+            holderRes?.status === "success" &&
+            (holderRes.result as Address).toLowerCase() === t.vault.toLowerCase()
+          ) {
+            candidates.push({ id: t.id, wrapped: true, vault: t.vault })
+          }
+        }
+      })
+    }
+  } catch {
+    // Delegation discovery is best-effort — the manual-id path (which checks
+    // delegation per id) still covers a delegate whose discovery read failed.
   }
+
+  // Dedupe (a punk may arrive held AND token-delegated) — held wins.
+  const seen = new Set<number>()
+  candidates = candidates
+    .sort((a, b) => Number(a.vault ? 1 : 0) - Number(b.vault ? 1 : 0))
+    .filter((c) => {
+      const n = Number(c.id)
+      if (seen.has(n)) return false
+      seen.add(n)
+      return true
+    })
 
   // Filter to punks whose homage is still unminted (tokenId == punkId).
   let punks: HomagePunkPick[] = []
-  if (ids.length > 0) {
+  if (candidates.length > 0) {
     const mintedReads = await client.multicall({
       allowFailure: true,
-      contracts: ids.map((id) => ({
+      contracts: candidates.map((c) => ({
         address: homage,
         abi: homageAbi as Abi,
         functionName: "isMinted",
-        args: [id] as const,
+        args: [c.id] as const,
       })),
     })
-    punks = ids
+    punks = candidates
       .filter((_, i) => mintedReads[i]?.status === "success" && mintedReads[i].result === false)
-      .map((id) => ({ id: Number(id), wrapped: true }))
+      .map((c) => ({ id: Number(c.id), wrapped: c.wrapped, vault: c.vault }))
       .sort((a, b) => a.id - b.id)
   }
 
   // Raw punks can't be enumerated cheaply (the 2017 market isn't ERC-721 and
-  // we don't log-scan), so a wallet with no wrapped punks is still ELIGIBLE:
-  // the picker's manual id input verifies raw ownership per id.
+  // we don't log-scan), so a wallet with no offered punks is still ELIGIBLE:
+  // the picker's manual id input verifies ownership/delegation per id — and
+  // claimTo() lets ANYONE pay for a holder's homage, so the window is open to
+  // every wallet.
+  const delegatedCount = punks.filter((p) => p.vault).length
   const data: HomageClaimData = { punks }
   return {
     eligible: true,
     reason:
       punks.length > 0
-        ? `You hold ${punks.length} punk${punks.length === 1 ? "" : "s"} with an unminted homage.`
-        : "No wrapped punks with an unminted homage found in this wallet. Hold a raw punk? Enter its id below.",
+        ? `${punks.length} punk${punks.length === 1 ? "" : "s"} with an unminted homage${delegatedCount > 0 ? ` (${delegatedCount} via delegation)` : ""}.`
+        : "No wrapped punks with an unminted homage found for this wallet. Hold or manage a raw punk? Enter its id below.",
     data,
   }
 })
 
 registerArgsBuilder("homage-claim", ({ selection }) => {
-  const id = typeof selection === "number" && Number.isInteger(selection) ? selection : null
-  if (id === null || id < 0 || id > 9999) throw new Error("Pick the punk to claim first")
-  return [BigInt(id)]
+  // Back-compat: a bare number routes as the holder's own claim.
+  const sel: HomageClaimSelection | null =
+    typeof selection === "number" && Number.isInteger(selection)
+      ? { id: selection, route: { via: "self" } }
+      : selection && typeof selection === "object" && "id" in selection
+        ? (selection as HomageClaimSelection)
+        : null
+  if (!sel || sel.id < 0 || sel.id > 9999) throw new Error("Pick the punk to claim first")
+  const id = BigInt(sel.id)
+  switch (sel.route.via) {
+    case "delegated":
+      return { fn: "claimFor", args: [id, sel.route.vault] }
+    case "anyone":
+      return { fn: "claimTo", args: [id] }
+    default:
+      return { fn: "claim", args: [id] }
+  }
 })
 
 /**
- * Verify `wallet` holds punk `id` (mirrors Homage._isPunkHolder) and that its
- * homage is unminted — the picker's manual-id path, fired ONLY on an explicit
- * user action (never per keystroke/render). 1 multicall + at most 1 read.
+ * Verify punk `id` is claimable through `wallet` (mirrors Homage's three claim
+ * paths) and that its homage is unminted — the picker's manual-id path, fired
+ * ONLY on an explicit user action (never per keystroke/render). 1 multicall +
+ * ≤2 reads.
+ *
+ * Resolution order matches Homage.sol: the wallet holds it (claim) → the
+ * holder delegated the wallet via delegate.xyz (claimFor, mints to the vault)
+ * → anyone pays (claimTo, mints to the holder).
  */
 export async function verifyPunkClaimable(
   client: PublicClient,
   id: number,
   wallet: Address,
-): Promise<{ ok: boolean; reason?: string; wrapped?: boolean }> {
+): Promise<{ ok: boolean; reason?: string; wrapped?: boolean; route?: HomageClaimRoute }> {
   if (!HOMAGE_ADDRESS || !isAddress(HOMAGE_ADDRESS)) return { ok: false, reason: "not configured" }
   const homage = HOMAGE_ADDRESS as Address
   const [ownerRes, mintedRes] = await client.multicall({
@@ -281,22 +447,62 @@ export async function verifyPunkClaimable(
     return { ok: false, reason: "couldn't check ownership. Try again" }
   if (mintedRes.result === true) return { ok: false, reason: `#${id} has already been minted` }
   const rawOwner = ownerRes.result as Address
-  if (rawOwner.toLowerCase() === wallet.toLowerCase()) return { ok: true, wrapped: false }
-  if (rawOwner.toLowerCase() === WRAPPED_PUNKS.toLowerCase()) {
-    // Wrapped: the true holder is the wrapper's ownerOf — one extra read.
+  if (rawOwner === zeroAddress) return { ok: false, reason: `couldn't resolve #${id}'s holder` }
+  const wrapped = rawOwner.toLowerCase() === WRAPPED_PUNKS.toLowerCase()
+
+  // The true holder: the raw owner, or the wrapper's ownerOf — one extra read.
+  let holder = rawOwner
+  if (wrapped) {
     try {
-      const holder = (await client.readContract({
+      holder = (await client.readContract({
         address: WRAPPED_PUNKS,
         abi: wrappedPunksAbi,
         functionName: "ownerOf",
         args: [BigInt(id)],
       })) as Address
-      if (holder.toLowerCase() === wallet.toLowerCase()) return { ok: true, wrapped: true }
     } catch {
       return { ok: false, reason: "couldn't check the wrapper. Try again" }
     }
   }
-  return { ok: false, reason: `this wallet doesn't hold #${id}` }
+  if (holder.toLowerCase() === wallet.toLowerCase()) {
+    return { ok: true, wrapped, route: { via: "self" } }
+  }
+
+  // Not the holder — delegate.xyz next (hierarchical check, keyed against the
+  // contract ownership lives in, mirroring Homage.claimFor). One read.
+  const source = wrapped ? WRAPPED_PUNKS : CRYPTOPUNKS_MARKET
+  try {
+    const delegated = (await client.readContract({
+      address: DELEGATE_REGISTRY,
+      abi: delegateRegistryAbi,
+      functionName: "checkDelegateForERC721",
+      args: [wallet, holder, source, BigInt(id), zeroHash],
+    })) as boolean
+    if (delegated) return { ok: true, wrapped, route: { via: "delegated", vault: holder } }
+  } catch {
+    // fall through to the permissionless path
+  }
+
+  // Permissionless: anyone pays, the homage mints to the holder (claimTo).
+  return { ok: true, wrapped, route: { via: "anyone", holder } }
+}
+
+/**
+ * Does this write failure look like Homage's `Slippage(received, needed)`
+ * revert (the pool moved between quote and mine)? Walks the viem cause chain —
+ * the decoded custom-error name is usually 2-3 levels deep.
+ */
+export function isSlippageError(e: unknown): boolean {
+  let cur: unknown = e
+  for (let depth = 0; cur && depth < 6; depth++) {
+    if (cur instanceof Error) {
+      if (/\bSlippage\b/.test(cur.message)) return true
+      cur = (cur as Error & { cause?: unknown }).cause
+    } else {
+      return typeof cur === "string" && /\bSlippage\b/.test(cur)
+    }
+  }
+  return false
 }
 
 // ── allowlist phase: eligibility + args ("homage-allowlist") ─────────────────
@@ -400,6 +606,11 @@ export function homageCollection(chainId: number): MintCollection | null {
     // mint). tokenId == punkId, so the revealed id IS the drawn punk.
     reveal: { kind: "transfer-log" },
     layout: "standard",
+    // Homage owns its whole page: the gallery wall (anonymized 10k quilt,
+    // rendered locally via the punks SDK — zero RPC) with the mint register
+    // in its lockup. components/mint/curated-layouts.tsx registers the
+    // component; curated-chrome.ts gives the route its immersive site chrome.
+    customLayout: "homage-gallery",
     hero: {
       kind: "renderer-contract",
       address: HOMAGE_RENDERER as Address,

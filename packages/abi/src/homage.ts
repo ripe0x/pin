@@ -80,6 +80,23 @@ export const homageAbi = [
   },
   {
     type: "function",
+    name: "claimFor",
+    inputs: [
+      { name: "punkId", type: "uint256", internalType: "uint256" },
+      { name: "vault", type: "address", internalType: "address" },
+    ],
+    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+    stateMutability: "payable",
+  },
+  {
+    type: "function",
+    name: "claimTo",
+    inputs: [{ name: "punkId", type: "uint256", internalType: "uint256" }],
+    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+    stateMutability: "payable",
+  },
+  {
+    type: "function",
     name: "allowlistMint",
     inputs: [{ name: "proof", type: "bytes32[]", internalType: "bytes32[]" }],
     outputs: [{ name: "", type: "uint256", internalType: "uint256" }],

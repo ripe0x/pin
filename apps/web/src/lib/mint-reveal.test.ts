@@ -107,7 +107,9 @@ test("transfer-log: skips ERC-20-shaped Transfers (3 topics) in the same receipt
   assert.equal(id, 3n)
 })
 
-test("transfer-log: minter filter rejects mints to someone else", () => {
+test("transfer-log: a mint to someone else still reveals (routed claims)", () => {
+  // Homage's claimFor/claimTo mint to the vault / punk holder, not the payer.
+  // The receipt is still the payer's own tx, so the mint must reveal.
   const id = extractRevealTokenId({
     reveal: { kind: "transfer-log" },
     logs: [transferLog({ to: OTHER_CONTRACT, tokenId: 4n })],
@@ -115,7 +117,18 @@ test("transfer-log: minter filter rejects mints to someone else", () => {
     abi: erc721Abi,
     minter: MINTER,
   })
-  assert.equal(id, null)
+  assert.equal(id, 4n)
+})
+
+test("transfer-log: the minter's own mint is preferred over earlier routed mints", () => {
+  const id = extractRevealTokenId({
+    reveal: { kind: "transfer-log" },
+    logs: [transferLog({ to: OTHER_CONTRACT, tokenId: 4n }), transferLog({ tokenId: 5n })],
+    collection: COLLECTION,
+    abi: erc721Abi,
+    minter: MINTER,
+  })
+  assert.equal(id, 5n)
 })
 
 test("transfer-log: first mint wins on a multi-token receipt", () => {

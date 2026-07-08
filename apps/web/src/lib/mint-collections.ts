@@ -133,6 +133,16 @@ export type MintCollection = {
   reveal?: RevealSource
   // presentation
   layout: "shared-aggregate" | "standard"
+  /**
+   * Key into the curated-layout registry (components/mint/curated-layouts.tsx).
+   * When set, `/mint/[contract]` delegates the ENTIRE page body to the
+   * registered component — the server still fetches the standard data
+   * (snapshot, hero art, selector context) and passes it through, and
+   * generateMetadata/OG are unchanged. Unset = the standard surface. Site
+   * chrome for these pages is the separate lean map in curated-chrome.ts
+   * (kept in sync by curated-chrome.test.ts).
+   */
+  customLayout?: string
   hero: HeroSource
   /**
    * Whether the hero art's decoded tokenURI metadata (name/description) may
