@@ -37,9 +37,16 @@ storefront admin, still the root of the keyring).
 - New modifier:
   `onlyOwnerOrAdmin = (msg.sender == owner() || _admins[msg.sender])`,
   reverting `NotAuthorized` otherwise.
-- New functions: `setAdmin(address account, bool allowed)` (`onlyOwner`,
-  reverts `ZeroAccount` on the zero address, emits `AdminSet`) and
-  `isAdmin(address) view`. Both added to `ISovereignCollection`.
+- New functions, all added to `ISovereignCollection`:
+  - `addAdmin(address account)` (`onlyOwner`; reverts `ZeroAccount` on the
+    zero address, `AlreadyAdmin` if already granted; emits
+    `AdminSet(account, true)`).
+  - `removeAdmin(address account)` (`onlyOwner`; reverts `NotAnAdmin` if the
+    account is not currently an admin, so a typo or double-remove fails
+    loudly; emits `AdminSet(account, false)`). No last-admin guard: removing
+    every admin is safe because the owner keeps full access.
+  - `isAdmin(address) view`.
+  New errors: `AlreadyAdmin`, `NotAnAdmin`.
 
 ### Authority diff (this is the whole review surface)
 
@@ -47,7 +54,7 @@ Reserved to the owner (unchanged, `onlyOwner`):
 
 | Function | Why owner-only |
 |---|---|
-| `setAdmin` | the keyring: only the owner grants/revokes admins, so a rogue admin can never mint peers or lock out the owner |
+| `addAdmin` / `removeAdmin` | the keyring: only the owner grants/revokes admins, so a rogue admin can never mint peers or lock out the owner |
 | `transferOwnership` / `acceptOwnership` (Ownable2Step) | ownership is the root authority and the marketplace `owner()` |
 | `renounceOwnership` | still disabled (reverts `RenounceDisabled`) |
 
@@ -86,9 +93,9 @@ Consequences a reviewer should confirm are intended, not accidental:
 
 1. The modifier only widens the caller set; it introduces no new external
    call, so pull-payment and reentrancy properties are unchanged.
-2. No admin path escalates to owner or to admin-management (`setAdmin`,
-   `transferOwnership` stay `onlyOwner`). Covered by
-   `test_admin_cannotManageAdmins`, `test_admin_cannotTransferOwnership`.
+2. No admin path escalates to owner or to admin-management
+   (`addAdmin`/`removeAdmin`, `transferOwnership` stay `onlyOwner`). Covered
+   by `test_admin_cannotManageAdmins`, `test_admin_cannotTransferOwnership`.
 3. `_admins` and `_minters` are separate maps; being an admin does not
    grant `mintTo`/`mintToAt`, and being a minter does not grant admin.
 4. Freeze/lock ordering (auth gate before the frozen/locked check) holds
@@ -108,12 +115,13 @@ Consequences a reviewer should confirm are intended, not accidental:
 
 ### Test coverage
 
-- New `test/collection/CollectionAdmin.t.sol` (11 tests): grant/revoke +
-  event, zero-address rejection, `setAdmin` owner-only, admin runs every
-  widened setter, admin redirects payouts (functional proof), the two
+- New `test/collection/CollectionAdmin.t.sol` (15 tests): grant/revoke +
+  events, addAdmin guards (zero address, already-admin) + owner-only,
+  removeAdmin guards (not-an-admin, double-remove) + owner-only, admin runs
+  every widened setter, admin redirects payouts (functional proof), the two
   owner-only carve-outs, revoked-admin loses access, non-admin rejected,
   owner stays authorized, freeze blocks admin artwork.
 - Existing suites updated: unauthorized-caller assertions on the 16
   widened functions now expect `NotAuthorized` (was
   `OwnableUnauthorizedAccount`).
-- Full collection suite: **197 passed / 0 failed** (fork tests excluded).
+- Full collection suite: **201 passed / 0 failed** (fork tests excluded).

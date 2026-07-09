@@ -88,12 +88,13 @@ contract SovereignCollection is
     ///      mintTo/mintToAt (non-payable); all value handling is theirs.
     mapping(address => bool) private _minters;
 
-    /// @dev Admins, granted by the owner via setAdmin. An admin may call every
-    ///      management function the owner can, with two exceptions reserved to
-    ///      the owner: managing the admin set (setAdmin) and transferring
-    ///      ownership. That keeps the owner the single root that hands out and
-    ///      revokes keys and that marketplaces read as owner(). Owner is an
-    ///      implicit admin. A grant is a bare mapping flag, revocable any time.
+    /// @dev Admins, granted by the owner via addAdmin/removeAdmin. An admin may
+    ///      call every management function the owner can, with two exceptions
+    ///      reserved to the owner: managing the admin set (addAdmin/removeAdmin)
+    ///      and transferring ownership. That keeps the owner the single root
+    ///      that hands out and revokes keys and that marketplaces read as
+    ///      owner(). Owner is an implicit admin. A grant is a bare mapping flag,
+    ///      revocable any time.
     mapping(address => bool) private _admins;
 
     CollectionConfig private _cfg;
@@ -452,21 +453,35 @@ contract SovereignCollection is
     // ─────────────────────────────────────────────────────────────────────────
 
     /// @dev Owner is always authorized; additionally any address the owner has
-    ///      granted via setAdmin. Gates every management function except
-    ///      setAdmin and ownership transfer, which stay owner-only.
+    ///      granted via addAdmin. Gates every management function except admin
+    ///      management (addAdmin/removeAdmin) and ownership transfer, which stay
+    ///      owner-only.
     modifier onlyOwnerOrAdmin() {
         if (msg.sender != owner() && !_admins[msg.sender]) revert NotAuthorized();
         _;
     }
 
-    /// @notice Grant or revoke an admin. An admin can call every management
-    ///         function the owner can, except managing admins and transferring
-    ///         ownership. Owner-only: the owner is the root that hands out and
-    ///         revokes keys.
-    function setAdmin(address account, bool allowed) external override onlyOwner {
+    /// @notice Grant an admin. An admin can call every management function the
+    ///         owner can, except managing admins (addAdmin/removeAdmin) and
+    ///         transferring ownership. Owner-only. Reverts if `account` is the
+    ///         zero address or is already an admin (so every grant is an
+    ///         explicit, single state change with a matching event).
+    function addAdmin(address account) external override onlyOwner {
         if (!(account != address(0))) revert ZeroAccount();
-        _admins[account] = allowed;
-        emit AdminSet(account, allowed);
+        if (_admins[account]) revert AlreadyAdmin();
+        _admins[account] = true;
+        emit AdminSet(account, true);
+    }
+
+    /// @notice Revoke an admin. Owner-only. Reverts if `account` is not
+    ///         currently an admin, so a typo or double-remove fails loudly
+    ///         rather than emitting a misleading event. Removing every admin is
+    ///         safe: the owner keeps full access, so there is no last-admin
+    ///         lockout to guard against.
+    function removeAdmin(address account) external override onlyOwner {
+        if (!(_admins[account])) revert NotAnAdmin();
+        _admins[account] = false;
+        emit AdminSet(account, false);
     }
 
     /// @notice Whether `account` holds an explicit admin grant. Owner is an

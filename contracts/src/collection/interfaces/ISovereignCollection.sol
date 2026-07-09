@@ -98,6 +98,8 @@ interface ISovereignCollection is IMintMarks, ICollectionGraph, ITokenPath {
     error WorkAlreadyLocked();
     error NeverMinted();
     error RenounceDisabled();
+    error AlreadyAdmin();
+    error NotAnAdmin();
 
     // ── events ──────────────────────────────────────────────────────────────
     event CollectionConfigured(
@@ -162,10 +164,14 @@ interface ISovereignCollection is IMintMarks, ICollectionGraph, ITokenPath {
     ///         evented: authorizing a minter is the artist's visible, onchain
     ///         choice.
     function setMinter(address minter, bool allowed) external;
-    /// @notice Grant or revoke an admin. An admin can call every management
-    ///         function the owner can, except managing admins (this function)
-    ///         and transferring ownership. Owner-only.
-    function setAdmin(address account, bool allowed) external;
+    /// @notice Grant an admin. An admin can call every management function the
+    ///         owner can, except managing admins (addAdmin/removeAdmin) and
+    ///         transferring ownership. Owner-only; reverts AlreadyAdmin if the
+    ///         account is already an admin, ZeroAccount for the zero address.
+    function addAdmin(address account) external;
+    /// @notice Revoke an admin. Owner-only; reverts NotAnAdmin if the account
+    ///         is not currently an admin.
+    function removeAdmin(address account) external;
     function setTokenArtwork(uint256 tokenId, string calldata cid) external;
     function setTokenArtworkBatch(uint256[] calldata tokenIds, string[] calldata cids) external;
     function setPayoutAddress(address payoutAddress) external;
