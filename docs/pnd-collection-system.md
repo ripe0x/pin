@@ -1,12 +1,31 @@
 # PND Collection System
 
-> **Status: built, pre-deploy (2026-07-06).** Contracts phase on PR #133
-> (`collection-contracts-v1`: docs/pnd-collection-contracts-plan.md, all
-> phases complete, 367 tests + deep invariants green). Web phase on
-> PR #134 (`collection-web-v1`, stacked: docs/pnd-collection-web-plan.md,
-> fork-verified end to end incl. byte-parity of the offchain renderer
-> against onchain tokenURI). Mainnet deploy, indexer/worker enablement,
-> and Phase 5 minters (BackedMinter/PooledIdMinter) remain gated.
+> **Status: built, pre-deploy; SVG-first launch prep (updated 2026-07-09).**
+> The core is one OZ ERC721, `Collection` + `CollectionFactory` (renamed from
+> `SovereignCollection`), audited at the `43f4ae7` baseline by two independent
+> reviews. All work now lives on **`collection-web-v1` (PR #134, OPEN, not yet
+> merged to `main`)**, which on top of that baseline adds: the full web/studio
+> surface (create wizard, mint pages, discovery), a **multi-admin** access
+> delta (owner + flat, full-access admins via `addAdmin` / `removeAdmin`, owner
+> stays the keyring root), and terminology renames (`mintToId`, `referral`).
+> The collection suite is 202 unit tests + opt-in mainnet-fork probes, green.
+>
+> **The multi-admin delta is UN-REVIEWED and is the deploy gate.** Before the
+> immutable mainnet deploy it needs an external review covering the core + the
+> admin delta + the launch project's SVG renderer, plus a one-line
+> `isAdmin(owner)` fix (planned, not yet in code). The running review log is
+> `docs/pnd-collection-reaudit-notes.md`.
+>
+> **The first launch project is all-SVG**, so the HTML-generative thumbnail
+> problem does not gate it. That work (a MURI preservation overlay + client-side
+> capture; needs a small shared MURI operator adapter) is deferred post-deploy
+> and tracked in `ripe0x/pin#138`; `docs/pnd-collection-thumbnails.md` is the
+> design but is partly stale vs that issue. Indexer/worker enablement and Phase
+> 5 minters (BackedMinter/PooledIdMinter) remain gated. Deploy is scripted:
+> `DeployCollectionSystem.s.sol` for the singletons, then the project renderer +
+> collection via script (the studio create wizard exists but is unverified, so
+> it is NOT the launch path).
+>
 > This document supersedes the *framing* of `docs/pnd-editions-*.md`:
 > Editions is one preset of the general collection core, which moved
 > from ERC721A to OZ ERC721; `contracts/src/editions/` was removed.
