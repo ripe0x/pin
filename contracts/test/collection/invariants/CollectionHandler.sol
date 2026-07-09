@@ -19,7 +19,7 @@ import {MockMinter} from "../mocks/CollectionMocks.sol";
 ///           both the built-in paid path (mint/mintWithReferral) AND a granted
 ///           MockMinter (mintTo).
 ///         - Pooled collection: no built-in paid path (the core rejects it);
-///           sells exclusively through a granted MockMinter calling mintToAt
+///           sells exclusively through a granted MockMinter calling mintToId
 ///           with ids bounded to [0, POOLED_ID_MAX], so burn -> re-mint of the
 ///           same id is exercised constantly. Also supply-capped, bounding
 ///           LIVE totalSupply per pooled cap semantics.
@@ -39,7 +39,7 @@ contract CollectionHandler is StdInvariant, Test {
     SovereignCollection public immutable seq; // Sequential mode
     SovereignCollection public immutable pooled; // Pooled mode
     MockMinter public immutable seqMinter; // granted on seq (mintTo)
-    MockMinter public immutable pooledMinter; // granted on pooled (mintToAt)
+    MockMinter public immutable pooledMinter; // granted on pooled (mintToId)
 
     uint256 public immutable seqPrice;
     uint256 public immutable seqCap;
@@ -318,7 +318,7 @@ contract CollectionHandler is StdInvariant, Test {
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // ACTION: extension mintToAt on the pooled collection (bounded id space,
+    // ACTION: extension mintToId on the pooled collection (bounded id space,
     // including deliberate re-mints of previously burned ids)
     // ─────────────────────────────────────────────────────────────────────
 
@@ -333,7 +333,7 @@ contract CollectionHandler is StdInvariant, Test {
             if (liveSupply >= pooledCap) return;
         }
 
-        try pooledMinter.callMintToAt(ISovereignCollection(address(pooled)), to, tokenId, referrer, "") {
+        try pooledMinter.callMintToId(ISovereignCollection(address(pooled)), to, tokenId, referrer, "") {
             callsMintPooledExtension++;
             _pooledLiveAdd(tokenId);
             uint256 mintIndex = ghostPooledMints;
@@ -343,7 +343,7 @@ contract CollectionHandler is StdInvariant, Test {
             pooledHasMinted = true;
             pooledLastMintIndex = ghostPooledMints;
         } catch {
-            revert("handler: authorized pooled mintToAt unexpectedly reverted");
+            revert("handler: authorized pooled mintToId unexpectedly reverted");
         }
     }
 
@@ -446,7 +446,7 @@ contract CollectionHandler is StdInvariant, Test {
         } catch {}
     }
 
-    /// @dev Wrong-mode mint calls: mintToAt on the sequential collection
+    /// @dev Wrong-mode mint calls: mintToId on the sequential collection
     ///      (sequential assigns its own ids) and mint()/mintTo() on the
     ///      pooled collection (pooled has no built-in paid path and no
     ///      sequential extension entrypoint).
@@ -455,9 +455,9 @@ contract CollectionHandler is StdInvariant, Test {
         address actor = _actor(actorSeed);
         uint256 id = bound(idSeed, 0, POOLED_ID_MAX);
 
-        // (a) mintToAt on Sequential, via the granted seq minter (authorized,
+        // (a) mintToId on Sequential, via the granted seq minter (authorized,
         // but wrong mode — must fail on mode, not on authorization).
-        try seqMinter.callMintToAt(ISovereignCollection(address(seq)), actor, id, address(0), "") {
+        try seqMinter.callMintToId(ISovereignCollection(address(seq)), actor, id, address(0), "") {
             ghostWrongModeMintSucceeded = true;
         } catch {}
 

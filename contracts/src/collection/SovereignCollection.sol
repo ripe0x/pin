@@ -94,7 +94,7 @@ contract SovereignCollection is
     address private _priceStrategy; // 0 = stored fixed price
 
     /// @dev Extension minters, granted explicitly by the owner. They may call
-    ///      mintTo/mintToAt (non-payable); all value handling is theirs.
+    ///      mintTo/mintToId (non-payable); all value handling is theirs.
     mapping(address => bool) private _minters;
 
     /// @dev Admins, granted by the owner via addAdmin/removeAdmin. An admin may
@@ -287,7 +287,7 @@ contract SovereignCollection is
         returns (uint256 tokenId)
     {
         if (!(_minters[msg.sender])) revert NotMinter();
-        if (!(_cfg.idMode == IdMode.Sequential)) revert PooledNeedsMintToAt();
+        if (!(_cfg.idMode == IdMode.Sequential)) revert PooledNeedsMintToId();
         _checkCap(1);
         tokenId = _nextId;
         _runBeforeHook(to, 1, tokenId, referrer, hookData);
@@ -304,7 +304,7 @@ contract SovereignCollection is
     ///         again as a NEW instance: fresh Mint Mark, fresh entropy. The
     ///         prior instance's history persists in events and offchain
     ///         indexing.
-    function mintToAt(address to, uint256 tokenId, address referrer, bytes calldata hookData)
+    function mintToId(address to, uint256 tokenId, address referrer, bytes calldata hookData)
         external
         override
         nonReentrant

@@ -23,7 +23,7 @@ import {MockRenderer} from "../mocks/CollectionMocks.sol";
 //      burn → id-returns → re-mint-same-id cycle, with the re-minted id a
 //      fresh instance (new seed, new mark, new escrow);
 //   2. ALL economics (coin custody, escrow, redemption) live in the minter;
-//      the core's involvement is exactly mintToAt + approval-gated burn;
+//      the core's involvement is exactly mintToId + approval-gated burn;
 //   3. the pooled supply cap bounds LIVE supply, so redemption reopens room;
 //   4. Mint Marks stay truthful on the extension path: a re-mint after the
 //      sale window records statusAtMint == Closed.
@@ -73,7 +73,7 @@ contract BackedPoolMinter {
 
         coin.transferFrom(msg.sender, address(this), escrowPerToken);
         escrowOf[tokenId] = escrowPerToken;
-        collection.mintToAt(msg.sender, tokenId, address(0), "");
+        collection.mintToId(msg.sender, tokenId, address(0), "");
     }
 
     /// @dev Holder redeems: burn (via approval) + principal back + id to pool.

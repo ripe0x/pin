@@ -81,7 +81,7 @@ interface ISovereignCollection is IMintMarks, ICollectionGraph, ITokenPath {
     error WrongPayment();
     error Underpayment();
     error NotMinter();
-    error PooledNeedsMintToAt();
+    error PooledNeedsMintToId();
     error SequentialAssignsIds();
     error ExceedsCap();
     error HookRejected();
@@ -207,7 +207,7 @@ interface ISovereignCollection is IMintMarks, ICollectionGraph, ITokenPath {
     /// @notice Pooled mode only: the minter supplies the id (tokenId ==
     ///         sourceId forms). A previously burned id mints again as a new
     ///         instance with fresh mark and entropy. Hooks run.
-    function mintToAt(address to, uint256 tokenId, address referrer, bytes calldata hookData)
+    function mintToId(address to, uint256 tokenId, address referrer, bytes calldata hookData)
         external;
 
     /// @notice Burn by owner or approved (vaults redeem through approval).

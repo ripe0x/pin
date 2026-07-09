@@ -107,7 +107,7 @@ Consequences a reviewer should confirm are intended, not accidental:
    `test_admin_cannotAddOrRemovePeers`, `test_admin_canRenounceSelf`,
    `test_admin_cannotTransferOwnership`, `test_removeAdmin_rejectsUnrelatedCaller`.
 3. `_admins` and `_minters` are separate maps; being an admin does not
-   grant `mintTo`/`mintToAt`, and being a minter does not grant admin.
+   grant `mintTo`/`mintToId`, and being a minter does not grant admin.
 4. Freeze/lock ordering (auth gate before the frozen/locked check) holds
    for every widened setter.
 

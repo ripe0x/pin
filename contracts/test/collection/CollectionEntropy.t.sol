@@ -90,13 +90,13 @@ contract CollectionEntropyTest is CollectionBase {
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
-        minter.callMintToAt(ISovereignCollection(address(c)), collector, 1, address(0), "");
+        minter.callMintToId(ISovereignCollection(address(c)), collector, 1, address(0), "");
         bytes32 seed1 = c.tokenSeed(1);
 
         minter.callBurn(ISovereignCollection(address(c)), 1);
 
         vm.prevrandao(bytes32(uint256(12345)));
-        minter.callMintToAt(ISovereignCollection(address(c)), collector, 1, address(0), "");
+        minter.callMintToId(ISovereignCollection(address(c)), collector, 1, address(0), "");
         bytes32 seed2 = c.tokenSeed(1);
 
         assertTrue(seed1 != seed2, "re-mint must produce a fresh seed");
@@ -111,7 +111,7 @@ contract CollectionEntropyTest is CollectionBase {
         bytes32 prevSeed = bytes32(0);
         for (uint256 i = 0; i < cycles; i++) {
             vm.prevrandao(bytes32(uint256(keccak256(abi.encode("cycle", i)))));
-            minter.callMintToAt(ISovereignCollection(address(c)), collector, 7, address(0), "");
+            minter.callMintToId(ISovereignCollection(address(c)), collector, 7, address(0), "");
             bytes32 seed = c.tokenSeed(7);
             assertTrue(seed != prevSeed, "each re-mint cycle must re-roll the seed");
             prevSeed = seed;
@@ -145,16 +145,16 @@ contract CollectionEntropyTest is CollectionBase {
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
-        minter.callMintToAt(ISovereignCollection(address(c)), collector, 1, address(0), ""); // mintIndex 0
-        minter.callMintToAt(ISovereignCollection(address(c)), collector, 2, address(0), ""); // mintIndex 1
+        minter.callMintToId(ISovereignCollection(address(c)), collector, 1, address(0), ""); // mintIndex 0
+        minter.callMintToId(ISovereignCollection(address(c)), collector, 2, address(0), ""); // mintIndex 1
         assertEq(c.mintMarkOf(1).mintIndex, 0);
         assertEq(c.mintMarkOf(2).mintIndex, 1);
 
         minter.callBurn(ISovereignCollection(address(c)), 1);
-        minter.callMintToAt(ISovereignCollection(address(c)), collector, 1, address(0), ""); // mintIndex 2, NOT 0 again
+        minter.callMintToId(ISovereignCollection(address(c)), collector, 1, address(0), ""); // mintIndex 2, NOT 0 again
         assertEq(c.mintMarkOf(1).mintIndex, 2);
 
-        minter.callMintToAt(ISovereignCollection(address(c)), collector, 3, address(0), ""); // mintIndex 3
+        minter.callMintToId(ISovereignCollection(address(c)), collector, 3, address(0), ""); // mintIndex 3
         assertEq(c.mintMarkOf(3).mintIndex, 3);
     }
 

@@ -102,7 +102,7 @@ contract CollectionSecurityTest is CollectionBase {
 
         vm.expectRevert(ISovereignCollection.NotMinter.selector);
         vm.prank(stranger);
-        pooled.mintToAt(stranger, 1, address(0), "");
+        pooled.mintToId(stranger, 1, address(0), "");
     }
 
     function test_accessControl_burnRequiresOwnerOrApproved() public {
@@ -244,7 +244,7 @@ contract CollectionSecurityTest is CollectionBase {
     }
 
     // ════════════════════════════════════════════════════════════════════
-    // Unauthorized mintTo / mintToAt in the wrong id mode.
+    // Unauthorized mintTo / mintToId in the wrong id mode.
     // ════════════════════════════════════════════════════════════════════
 
     function test_unauthorizedMinter_cannotMintTo() public {
@@ -254,11 +254,11 @@ contract CollectionSecurityTest is CollectionBase {
         c.mintTo(stranger, address(0), "");
     }
 
-    function test_unauthorizedMinter_cannotMintToAt() public {
+    function test_unauthorizedMinter_cannotMintToId() public {
         SovereignCollection c = _collection(_pooledConfig());
         vm.expectRevert(ISovereignCollection.NotMinter.selector);
         vm.prank(stranger);
-        c.mintToAt(stranger, 1, address(0), "");
+        c.mintToId(stranger, 1, address(0), "");
     }
 
     function test_revokedMinter_losesAccess() public {

@@ -90,7 +90,7 @@ contract CollectionInvariants is StdInvariant, CollectionBase {
         assertEq(address(pooled).balance, sumPending, "pooled balance != sum(pendingWithdrawal)");
     }
 
-    /// @dev Pooled mode has no built-in paid path in this suite (mintToAt is
+    /// @dev Pooled mode has no built-in paid path in this suite (mintToId is
     ///      always called with referrer but zero underlying value moved by the
     ///      core), so its ghostTotalPaidIn contribution is 0 — all paid-in
     ///      ETH in this suite flows through the sequential collection. The

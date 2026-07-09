@@ -68,8 +68,8 @@ on("SovereignCollectionFactory:CollectionCreated", async ({ event, context }) =>
 
 // One event per mint call. Built-in paid paths cover the contiguous range
 // [firstTokenId, firstTokenId + quantity - 1]; extension mints (mintTo,
-// mintToAt) always emit quantity 1. A pooled collection may re-mint a
-// previously burned tokenId (mintToAt) — same id, new instance: the row
+// mintToId) always emit quantity 1. A pooled collection may re-mint a
+// previously burned tokenId (mintToId) — same id, new instance: the row
 // is UPDATEd in place with fresh mark fields and burned reset to false,
 // not inserted as a second row (there is exactly one live row per
 // (collection, tokenId) at any time; collection_mints is the immutable

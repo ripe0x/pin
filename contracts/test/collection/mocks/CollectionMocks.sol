@@ -104,7 +104,7 @@ contract MaliciousPriceStrategy is IPriceStrategy {
     }
 }
 
-/// @dev Extension minter that calls mintTo / mintToAt. Stands in for a real
+/// @dev Extension minter that calls mintTo / mintToId. Stands in for a real
 ///      minter module (BackedMinter, PooledIdMinter, etc.) in tests.
 contract MockMinter {
     function callMintTo(ISovereignCollection collection, address to, address referrer, bytes calldata hookData)
@@ -114,14 +114,14 @@ contract MockMinter {
         return collection.mintTo(to, referrer, hookData);
     }
 
-    function callMintToAt(
+    function callMintToId(
         ISovereignCollection collection,
         address to,
         uint256 tokenId,
         address referrer,
         bytes calldata hookData
     ) external {
-        collection.mintToAt(to, tokenId, referrer, hookData);
+        collection.mintToId(to, tokenId, referrer, hookData);
     }
 
     /// @dev Burn as an authorized minter — the only path that can retire a pooled token.
@@ -167,7 +167,7 @@ contract AcceptingHook is IMintHook {
 
 /// @dev Records every arg passed to beforeMint/afterMint, keyed by call index,
 ///      so tests can assert exact forwarding on both mint paths (built-in
-///      paid mints AND the extension mintTo/mintToAt paths).
+///      paid mints AND the extension mintTo/mintToId paths).
 contract RecordingHook is IMintHook {
     struct Call {
         address minter;

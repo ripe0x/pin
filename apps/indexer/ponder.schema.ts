@@ -387,7 +387,7 @@ export const collections = onchainTable(
 )
 
 // Current state per token. Pooled collections can burn-then-remint the
-// same tokenId as a new instance (see ISovereignCollection.mintToAt) — a
+// same tokenId as a new instance (see ISovereignCollection.mintToId) — a
 // re-mint UPDATEs this row in place (fresh mark fields, burned reset to
 // false) rather than inserting a new one, so `id` stays the durable
 // per-(collection,tokenId) identity across the token's burn/remint cycles.
@@ -398,7 +398,7 @@ export const collectionTokens = onchainTable(
     collection: t.hex().notNull(),
     tokenId: t.bigint().notNull(),
     // Current holder. For built-in paid mints (Minted event `to`) this is
-    // the minter; extension mints (mintTo/mintToAt) also resolve `to` from
+    // the minter; extension mints (mintTo/mintToId) also resolve `to` from
     // the same event, so no separate "minter" vs "owner" split is needed
     // here — Ponder does not track post-mint Transfer for this contract
     // (that's an owner-tracking concern the web/worker layer can add via

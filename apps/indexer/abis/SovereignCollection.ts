@@ -846,7 +846,7 @@ export const sovereignCollectionAbi = [
   },
   {
     "type": "function",
-    "name": "mintToAt",
+    "name": "mintToId",
     "inputs": [
       {
         "name": "to",
@@ -2445,7 +2445,7 @@ export const sovereignCollectionAbi = [
   },
   {
     "type": "error",
-    "name": "PooledNeedsMintToAt",
+    "name": "PooledNeedsMintToId",
     "inputs": []
   },
   {

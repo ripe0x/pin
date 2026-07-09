@@ -141,16 +141,16 @@ contract CollectionHooksTest is CollectionBase {
         minter.callMintTo(ISovereignCollection(address(c)), collector, referrer, "");
     }
 
-    // ── hooks fire identically on mintToAt (Pooled extension path) ──────────
+    // ── hooks fire identically on mintToId (Pooled extension path) ──────────
 
-    function test_hook_firesOnMintToAt_withCorrectArgs() public {
+    function test_hook_firesOnMintToId_withCorrectArgs() public {
         SovereignCollection c = _collection(_pooledConfig());
         vm.prank(artist);
         c.setMintHook(address(recordingHook));
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
-        minter.callMintToAt(ISovereignCollection(address(c)), collector, 42, referrer, bytes("pooled-data"));
+        minter.callMintToId(ISovereignCollection(address(c)), collector, 42, referrer, bytes("pooled-data"));
 
         assertEq(recordingHook.beforeCallCount(), 1);
         assertEq(recordingHook.afterCallCount(), 1);
@@ -162,24 +162,24 @@ contract CollectionHooksTest is CollectionBase {
         assertEq(data, bytes("pooled-data"));
     }
 
-    function test_hook_rejectsMintToAt() public {
+    function test_hook_rejectsMintToId() public {
         SovereignCollection c = _collection(_pooledConfig());
         vm.prank(artist);
         c.setMintHook(address(revertingHook));
         vm.prank(artist);
         c.setMinter(address(minter), true);
         vm.expectRevert(bytes("hook: nope"));
-        minter.callMintToAt(ISovereignCollection(address(c)), collector, 42, referrer, "");
+        minter.callMintToId(ISovereignCollection(address(c)), collector, 42, referrer, "");
     }
 
-    function test_hook_firesOnMintToAt_id0() public {
+    function test_hook_firesOnMintToId_id0() public {
         SovereignCollection c = _collection(_pooledConfig());
         vm.prank(artist);
         c.setMintHook(address(recordingHook));
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
-        minter.callMintToAt(ISovereignCollection(address(c)), collector, 0, referrer, "");
+        minter.callMintToId(ISovereignCollection(address(c)), collector, 0, referrer, "");
         assertEq(recordingHook.beforeCallCount(), 1);
         (,, uint256 fid,,) = _decodeBefore(recordingHook, 0);
         assertEq(fid, 0);
