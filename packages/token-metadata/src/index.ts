@@ -15,7 +15,14 @@
  * substitution, IPFS gateway fallback) are fixed in one place.
  */
 import type { Address, PublicClient } from "viem"
-import { extractCid, fetchFromIpfs, extractIpnsPath, fetchFromIpns } from "@pin/shared"
+import {
+  extractCid,
+  fetchFromIpfs,
+  extractIpnsPath,
+  fetchFromIpns,
+  extractArweavePath,
+  fetchFromArweave,
+} from "@pin/shared"
 
 const erc1155UriAbi = [
   {
@@ -214,6 +221,31 @@ async function fetchMetadataForUri(
   if (ipnsPath) {
     try {
       const res = await fetchFromIpns(ipnsPath, { headers, cache: "no-store" })
+      const contentType = res.headers.get("content-type") ?? ""
+      if (!contentType.includes("json") && !contentType.includes("text/plain")) {
+        return null
+      }
+      return metadataOrNull(await res.json(), resolvedUri)
+    } catch {
+      return null
+    }
+  }
+
+  // Arweave URI (`ar://` or an arweave.net gateway URL, including
+  // path-manifest sub-paths like `<manifestId>/5`). arweave.net can 404 a
+  // freshly-uploaded bundle for hours — even indefinitely, if the bundle was
+  // served optimistically but never posted to L1 — while other ar.io gateways
+  // that received the data already serve it. So try the gateway set in turn
+  // rather than trusting arweave.net alone. `raw_uri` keeps the canonical
+  // arweave.net URL regardless of which gateway actually served the bytes.
+  const arweavePath = extractArweavePath(resolvedUri)
+  if (arweavePath) {
+    try {
+      const res = await fetchFromArweave(arweavePath, {
+        headers,
+        cache: "no-store",
+        timeoutMs: fetchTimeoutMs,
+      })
       const contentType = res.headers.get("content-type") ?? ""
       if (!contentType.includes("json") && !contentType.includes("text/plain")) {
         return null

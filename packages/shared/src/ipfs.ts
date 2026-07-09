@@ -189,6 +189,153 @@ export function extractArweaveId(uri: string | null): string | null {
 }
 
 /**
+ * Public Arweave / ar.io gateways, ordered by preference. arweave.net is
+ * canonical and fastest once it has seeded a bundle, but a freshly-uploaded
+ * (or optimistically-served, not-yet-L1-posted) bundle can 404 on arweave.net
+ * for hours while other ar.io gateways that received the data already serve
+ * it — the exact failure that pins a fresh Arweave-hosted token on a blank
+ * placeholder. Mirrors IPFS_GATEWAYS: try each in turn, first 200 wins.
+ * Content is content-addressed by tx id (and, for MURI-anchored media, an
+ * on-chain SHA-256), so any gateway serving the file is equivalent.
+ */
+export const ARWEAVE_GATEWAYS = [
+  "https://arweave.net",
+  "https://vilenarios.com",
+  "https://frostor.xyz",
+  "https://permagate.io",
+] as const
+
+const DEFAULT_ARWEAVE_GATEWAY = ARWEAVE_GATEWAYS[0]
+
+const ARWEAVE_GATEWAY_HOSTS = new Set(
+  ARWEAVE_GATEWAYS.map((g) => new URL(g).host),
+)
+
+function isArweaveHost(host: string): boolean {
+  const h = host.toLowerCase()
+  return h === "arweave.net" || h.endsWith(".arweave.net") || ARWEAVE_GATEWAY_HOSTS.has(h)
+}
+
+/**
+ * Extract the Arweave tx id PLUS any trailing path from a URI, preserving the
+ * path-manifest sub-path (`<manifestId>/5`) that `extractArweaveId` drops.
+ * Unlike `extractArweaveId` (bare id, for cache keys), this returns the full
+ * `<id>[/<path>]` needed to rebuild a gateway URL.
+ *
+ * Recognized shapes (first path segment must be a 43-char base64url id, and
+ * for HTTP URLs the host must be an Arweave/ar.io gateway — so a URL already
+ * rotated onto a fallback gateway still re-extracts, which is what lets the
+ * client image cascade advance):
+ *   ar://<id>[/<path>]
+ *   https://arweave.net/<id>[/<path>]
+ *   https://<sub>.arweave.net/<id>[/<path>]
+ *   https://<known-arweave-gateway>/<id>[/<path>]
+ *
+ * Returns `<id>[/<path>]` (query/fragment dropped) or null.
+ */
+export function extractArweavePath(uri: string | null): string | null {
+  if (!uri) return null
+  const trimmed = uri.trim()
+  if (!trimmed) return null
+
+  const arScheme = /^ar:\/\/(.+)$/i.exec(trimmed)
+  if (arScheme) {
+    const path = arScheme[1].split(/[?#]/)[0].replace(/^\/+/, "")
+    const id = path.split("/")[0]
+    return ARWEAVE_ID_RE.test(id) ? path : null
+  }
+
+  if (!/^https?:\/\//i.test(trimmed)) return null
+  let parsed: URL
+  try {
+    parsed = new URL(trimmed)
+  } catch {
+    return null
+  }
+  if (!isArweaveHost(parsed.hostname)) return null
+  const path = parsed.pathname.replace(/^\/+/, "")
+  const id = path.split("/")[0]
+  return ARWEAVE_ID_RE.test(id) ? path : null
+}
+
+/** Build a gateway URL from an Arweave `<id>[/<path>]`. */
+export function arweaveToGatewayUrl(
+  idAndPath: string,
+  gateway: string = DEFAULT_ARWEAVE_GATEWAY,
+): string {
+  return `${gateway}/${idAndPath}`
+}
+
+/**
+ * Convert an `ar://` or Arweave-gateway URL to an HTTP gateway URL on the
+ * preferred gateway. Non-Arweave URLs are returned unchanged.
+ */
+export function arweaveToHttp(uri: string, gateway?: string): string {
+  const path = extractArweavePath(uri)
+  if (!path) return uri
+  return arweaveToGatewayUrl(path, gateway ?? DEFAULT_ARWEAVE_GATEWAY)
+}
+
+/**
+ * Expand one Arweave `<id>[/<path>]` into an ordered list of gateway URLs —
+ * the Arweave analog of `ipfsCidToFallbackUrls`.
+ */
+export function arweavePathToFallbackUrls(
+  idAndPath: string,
+  gateways: readonly string[] = ARWEAVE_GATEWAYS,
+): string[] {
+  const clean = extractArweavePath(idAndPath) ?? idAndPath
+  return gateways.map((g) => arweaveToGatewayUrl(clean, g))
+}
+
+/**
+ * Fetch content from Arweave, trying multiple gateways in sequence.
+ * Returns the first successful Response, or throws if all fail. Mirrors
+ * `fetchFromIpfs`.
+ */
+export async function fetchFromArweave(
+  idAndPath: string,
+  options?: {
+    timeoutMs?: number
+    signal?: AbortSignal
+    headers?: HeadersInit
+    cache?: RequestCache
+  },
+): Promise<Response> {
+  const timeoutMs = options?.timeoutMs ?? 8_000
+
+  for (const gateway of ARWEAVE_GATEWAYS) {
+    try {
+      const url = arweaveToGatewayUrl(idAndPath, gateway)
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), timeoutMs)
+
+      if (options?.signal) {
+        options.signal.addEventListener("abort", () => controller.abort(), {
+          once: true,
+        })
+      }
+
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: options?.headers,
+        cache: options?.cache,
+        // arweave.net path-manifest access 302-redirects to a sandbox
+        // subdomain; follow it.
+        redirect: "follow",
+      })
+      clearTimeout(timeout)
+
+      if (res.ok) return res
+    } catch {
+      // Try next gateway
+    }
+  }
+
+  throw new Error(`Failed to fetch Arweave content for: ${idAndPath}`)
+}
+
+/**
  * Extract the IPNS name (+ optional path) from a URI.
  *
  * Recognized forms:
