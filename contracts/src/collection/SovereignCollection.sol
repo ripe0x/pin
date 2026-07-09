@@ -50,8 +50,17 @@ import {
 // inheriting it would force passthrough re-overrides of name/symbol/owner
 // against the OZ bases for zero behavior. The read surface is exercised
 // directly against this contract by every renderer that reads it.
+//
+// On the "Upgradeable" bases below: these are OpenZeppelin's initializer-based
+// variants (an `initialize()` in place of a constructor). They are used ONLY
+// because an EIP-1167 clone runs no constructor and must set up its per-clone
+// storage after deploy via `initialize()`. They do NOT make this contract
+// upgradeable: there is no proxy admin, no UUPS / `upgradeTo`, no
+// `_authorizeUpgrade`. A deployed collection is immutable — the core evolves
+// only by deploying a new implementation + factory version, never by changing
+// a live collection.
 contract SovereignCollection is
-    ERC721Upgradeable,
+    ERC721Upgradeable, // initializer-based ERC721 for the clone — NOT an upgrade proxy
     Ownable2StepUpgradeable,
     ReentrancyGuardUpgradeable,
     ISovereignCollection
