@@ -28,6 +28,7 @@ import { useRouter } from "next/navigation"
 import { evmNowTxUrl, PREFERRED_CHAIN } from "@/components/tx/tx-ui"
 import type { CuratedLayoutProps } from "../curated-layouts"
 import { useMintEngine, type MintEngine } from "../use-mint-engine"
+import { AllowlistCheck } from "./AllowlistCheck"
 import { CrossfadeArt } from "./CrossfadeArt"
 import { makeDealer, randomSpan, type Piece } from "./gallery-deck"
 import { HomageTermMint } from "./HomageTermMint"
@@ -159,11 +160,27 @@ export default function HomageGalleryLayout({ collectionId, snapshot, selectorDa
         <p className="text-[14px] leading-[1.75] text-(--dim) mt-7 max-w-[54ch]">
           One homage for every cryptopunk
         </p>
+        <p className="text-[14px] leading-[1.75] text-(--dim) mt-5 max-w-[54ch]">
+          Ten thousand generative artworks. Each composed from the punk&rsquo;s onchain data and
+          its live market state.
+        </p>
+        <p className="text-[14px] leading-[1.75] text-(--dim) mt-5 max-w-[54ch]">
+          Every piece is backed by 50,000&nbsp;<span className="text-(--accent)">$111</span> sealed
+          inside, redeemable in full at any time. Half of every fee feeds the Permanent Collection,
+          a pool that buys real punks and holds them for good.
+        </p>
 
         {preMint ? (
-          <p className="mt-6 font-mono text-[11px] tracking-[0.12em] uppercase text-(--faint)">
-            Minting isn&rsquo;t live yet. Coming soon.
-          </p>
+          <>
+            <p className="mt-6 font-mono text-[11px] tracking-[0.12em] uppercase text-(--faint)">
+              Minting isn&rsquo;t live yet. Coming soon.
+            </p>
+            {/* Let visitors check allowlist eligibility during the teaser,
+                before the window opens — the mint block isn't mounted yet. */}
+            <div className="mt-5 max-w-[380px]">
+              <AllowlistCheck />
+            </div>
+          </>
         ) : (
           <>
             <p className="mt-6 font-mono text-[11px] tracking-[0.12em] uppercase text-(--faint)">

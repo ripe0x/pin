@@ -10,13 +10,13 @@
 // claimable punks + verified manual id — a superset of the original's bare id
 // field, with the same delegate.xyz / pay-for-holder routing).
 
-import { useState } from "react"
 import { formatEther } from "viem"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { PREFERRED_CHAIN, PREFERRED_CHAIN_LABEL } from "@/components/tx/tx-ui"
-import { allowlistProofFor, isSlippageError } from "@/lib/mint-modules/homage"
+import { isSlippageError } from "@/lib/mint-modules/homage"
 import { PhaseSelectorSlot } from "../mint-slots"
 import type { MintEngine } from "../use-mint-engine"
+import { AllowlistCheck } from "./AllowlistCheck"
 
 function eth(wei: bigint): string {
   const s = formatEther(wei)
@@ -196,15 +196,13 @@ export function HomageTermMint({ m, selectorData }: { m: MintEngine; selectorDat
         </details>
       )}
 
-      {/* allowlist checker — pure client lookup against the baked proofs */}
-      {phaseKey === "allowlist" && (
-        <details className="mt-3 group">
-          <summary className="font-mono text-[11px] text-(--dim) hover:text-(--ink) cursor-pointer list-none marker:content-none">
-            <span className="group-open:hidden">▸ check an address against the allowlist</span>
-            <span className="hidden group-open:inline">▾ allowlist checker</span>
-          </summary>
-          <AllowlistChecker />
-        </details>
+      {/* Allowlist checker — shown in every phase up to public (claim +
+          allowlist here; the pre-mint teaser renders it directly from the
+          layout, where this block doesn't mount). Moot once public opens. */}
+      {phaseKey !== "public" && (
+        <div className="mt-3">
+          <AllowlistCheck />
+        </div>
       )}
     </div>
   )
@@ -212,27 +210,4 @@ export function HomageTermMint({ m, selectorData }: { m: MintEngine; selectorDat
 
 function firstLine(s: string): string {
   return s.split("\n")[0]
-}
-
-/** Check any address against the build's baked merkle proofs — zero RPC. */
-function AllowlistChecker() {
-  const [text, setText] = useState("")
-  const trimmed = text.trim()
-  const valid = /^0x[0-9a-fA-F]{40}$/.test(trimmed)
-  const listed = valid ? allowlistProofFor(trimmed) !== null : null
-  return (
-    <div className="mt-2">
-      <input
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder="0x…"
-        spellCheck={false}
-        className="w-full bg-transparent font-mono text-[12px] text-(--ink) outline-none border-b border-(--line) focus:border-(--ink) py-1"
-        aria-label="address to check against the allowlist"
-      />
-      <p className="mt-1.5 font-mono text-[11px] min-h-4 text-(--dim)">
-        {!trimmed ? "" : !valid ? "not an address" : listed ? "on the allowlist ✓" : "not on the allowlist"}
-      </p>
-    </div>
-  )
 }
