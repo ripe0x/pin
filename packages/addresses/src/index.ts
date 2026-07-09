@@ -167,7 +167,7 @@ export const MURI_MANIFOLD_EXTENSION: Record<number, Address> = {
 }
 
 // SovereignCollectionFactory — deploys one SovereignCollection per work as an
-// immutable EIP-1167 clone (no protocol fee; Surface Share is fixed inside the
+// immutable EIP-1167 clone (no protocol fee; Referral Share is fixed inside the
 // collection). NOT yet deployed to mainnet — paste the address here after
 // running the collection deploy script. For local Anvil dev, set the
 // corresponding NEXT_PUBLIC_* env var instead of editing this file.

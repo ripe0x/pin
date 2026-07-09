@@ -52,11 +52,11 @@ contract CollectionIdModesTest is CollectionBase {
         c.mint(1);
     }
 
-    function test_pooled_rejectsPaidMintWithRewards() public {
+    function test_pooled_rejectsPaidMintWithReferral() public {
         SovereignCollection c = _collection(_pooledConfig());
         vm.expectRevert(ISovereignCollection.PooledSellsViaMinter.selector);
         vm.prank(collector);
-        c.mintWithRewards(1, surface, "");
+        c.mintWithReferral(1, referrer, "");
     }
 
     function test_sequential_mintToWorks() public {
@@ -77,12 +77,12 @@ contract CollectionIdModesTest is CollectionBase {
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
-        minter.callMintToAt(ISovereignCollection(address(c)), collector, 5, surface, "");
+        minter.callMintToAt(ISovereignCollection(address(c)), collector, 5, referrer, "");
         assertEq(c.totalSupply(), 1);
         MintMark memory firstMark = c.mintMarkOf(5);
         bytes32 firstSeed = c.tokenSeed(5);
         assertEq(firstMark.mintIndex, 0);
-        assertEq(firstMark.surface, surface);
+        assertEq(firstMark.referrer, referrer);
 
         minter.callBurn(ISovereignCollection(address(c)), 5);
         assertEq(c.totalSupply(), 0);
@@ -93,14 +93,14 @@ contract CollectionIdModesTest is CollectionBase {
         // Vary prevrandao so the re-minted seed is guaranteed to differ, not
         // just incidentally different.
         vm.prevrandao(bytes32(uint256(999)));
-        address newSurface = makeAddr("newSurface");
-        minter.callMintToAt(ISovereignCollection(address(c)), stranger, 5, newSurface, "");
+        address newReferrer = makeAddr("newReferrer");
+        minter.callMintToAt(ISovereignCollection(address(c)), stranger, 5, newReferrer, "");
 
         assertEq(c.ownerOf(5), stranger);
         assertEq(c.totalSupply(), 1);
         MintMark memory secondMark = c.mintMarkOf(5);
         assertEq(secondMark.mintIndex, 1); // mintedEver keeps advancing, never reused
-        assertEq(secondMark.surface, newSurface);
+        assertEq(secondMark.referrer, newReferrer);
         assertFalse(secondMark.isFirst); // index 1, not 0
 
         bytes32 secondSeed = c.tokenSeed(5);

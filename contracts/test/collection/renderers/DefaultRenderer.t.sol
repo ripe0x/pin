@@ -119,7 +119,7 @@ contract DefaultRendererTest is Test {
 
         assertTrue(_contains(json, '"trait_type":"Mint Order","value":1'), "wrong Mint Order");
         assertTrue(_contains(json, '"trait_type":"Mint Block"'), "missing Mint Block");
-        assertTrue(_contains(json, '"trait_type":"Mint Surface"'), "missing Mint Surface");
+        assertTrue(_contains(json, '"trait_type":"Referrer"'), "missing Referrer");
         assertTrue(
             _contains(json, '"trait_type":"Status at Mint","value":"Open"'),
             "wrong Status at Mint"
@@ -143,14 +143,14 @@ contract DefaultRendererTest is Test {
         );
     }
 
-    function test_tokenURI_mintSurface_reflectsSurfaceParam() public {
-        address surface = makeAddr("surface");
+    function test_tokenURI_mintReferrer_reflectsReferrerParam() public {
+        address referrer = makeAddr("referrer");
         vm.prank(collector);
-        collection.mintWithRewards(1, surface, "");
+        collection.mintWithReferral(1, referrer, "");
 
         string memory json = _decode(collection.tokenURI(1));
-        // lowercase hex of the surface address must appear as the trait value
-        assertTrue(_contains(json, _toHexString(surface)), "expected surface address in attributes");
+        // lowercase hex of the referrer address must appear as the trait value
+        assertTrue(_contains(json, _toHexString(referrer)), "expected referrer address in attributes");
     }
 
     // ── contractURI shape ────────────────────────────────────────────────────

@@ -125,7 +125,7 @@ contract CollectionTest is CollectionBase {
         assertEq(c.symbol(), "ACOL");
         assertTrue(factory.isCollection(address(c)));
         assertEq(factory.totalCollections(), 1);
-        assertEq(c.surfaceShareBps(), 1000);
+        assertEq(c.referralShareBps(), 1000);
         assertFalse(c.isMetadataFrozen());
         assertFalse(c.isWorkLocked());
         assertFalse(c.isPermanent());
@@ -205,10 +205,10 @@ contract CollectionTest is CollectionBase {
         assertEq(c.balanceOf(collector), 3);
     }
 
-    // ── surface share math ───────────────────────────────────────────────────
+    // ── referral share math ───────────────────────────────────────────────────
 
     function test_simpleMint_foldsFullPriceToArtist() public {
-        // mint(quantity) defaults surface to 0 -> artist gets 100%.
+        // mint(quantity) defaults referrer to 0 -> artist gets 100%.
         SovereignCollection c = _collection(_pricedConfig(1 ether));
         vm.deal(collector, 1 ether);
         vm.prank(collector);
@@ -217,41 +217,41 @@ contract CollectionTest is CollectionBase {
         assertEq(address(c).balance, 1 ether); // held until withdraw
     }
 
-    function test_mintWithRewards_fixedTenPercentSplit() public {
+    function test_mintWithReferral_fixedTenPercentSplit() public {
         SovereignCollection c = _collection(_pricedConfig(1 ether));
         vm.deal(collector, 2 ether);
         vm.prank(collector);
-        c.mintWithRewards{value: 2 ether}(2, surface, ""); // 2 tokens * 1 ETH
+        c.mintWithReferral{value: 2 ether}(2, referrer, ""); // 2 tokens * 1 ETH
 
-        assertEq(c.pendingWithdrawal(surface), 0.2 ether); // fixed 10% of 2 ETH
+        assertEq(c.pendingWithdrawal(referrer), 0.2 ether); // fixed 10% of 2 ETH
         assertEq(c.pendingWithdrawal(artist), 1.8 ether); // remainder to artist payout
         assertEq(c.balanceOf(collector), 2);
     }
 
-    function test_mintWithRewards_zeroSurfaceFoldsToArtist() public {
+    function test_mintWithReferral_zeroReferrerFoldsToArtist() public {
         SovereignCollection c = _collection(_pricedConfig(1 ether));
         vm.deal(collector, 1 ether);
         vm.prank(collector);
-        c.mintWithRewards{value: 1 ether}(1, address(0), "");
+        c.mintWithReferral{value: 1 ether}(1, address(0), "");
         assertEq(c.pendingWithdrawal(artist), 1 ether);
     }
 
-    function test_selfHostSurfaceKeepsEverything() public {
-        // Artist passes their OWN address as surface: the 10% comes back to
+    function test_selfHostReferrerKeepsEverything() public {
+        // Artist passes their OWN address as referrer: the 10% comes back to
         // them too (100% total).
         SovereignCollection c = _collection(_pricedConfig(1 ether));
         vm.deal(collector, 1 ether);
         vm.prank(collector);
-        c.mintWithRewards{value: 1 ether}(1, artist, "");
+        c.mintWithReferral{value: 1 ether}(1, artist, "");
         assertEq(c.pendingWithdrawal(artist), 1 ether);
     }
 
-    function test_surfaceShare_exactBpsMath() public {
+    function test_referralShare_exactBpsMath() public {
         SovereignCollection c = _collection(_pricedConfig(1 ether));
         vm.deal(collector, 10 ether);
         vm.prank(collector);
-        c.mintWithRewards{value: 10 ether}(10, surface, "");
-        assertEq(c.pendingWithdrawal(surface), 1 ether); // 10% of 10 ETH
+        c.mintWithReferral{value: 10 ether}(10, referrer, "");
+        assertEq(c.pendingWithdrawal(referrer), 1 ether); // 10% of 10 ETH
         assertEq(c.pendingWithdrawal(artist), 9 ether);
     }
 
@@ -759,7 +759,7 @@ contract CollectionTest is CollectionBase {
         uint256 qty = bound(qtyRaw, 1, 50);
 
         address payout = makeAddr("fuzzPayout");
-        address surf = makeAddr("fuzzSurface");
+        address surf = makeAddr("fuzzReferrer");
         CollectionConfig memory cfg = _pricedConfig(price);
         cfg.payoutAddress = payout;
         SovereignCollection c = _collection(cfg); // fresh collection each run
@@ -768,14 +768,14 @@ contract CollectionTest is CollectionBase {
         address buyer = makeAddr("fuzzBuyer");
         vm.deal(buyer, total);
         vm.prank(buyer);
-        c.mintWithRewards{value: total}(qty, surf, "");
+        c.mintWithReferral{value: total}(qty, surf, "");
 
-        uint256 expectedSurface = (total * 1000) / 10_000; // fixed 10%
-        assertEq(c.pendingWithdrawal(surf), expectedSurface, "surface cut");
-        assertEq(c.pendingWithdrawal(payout), total - expectedSurface, "artist cut");
+        uint256 expectedReferrer = (total * 1000) / 10_000; // fixed 10%
+        assertEq(c.pendingWithdrawal(surf), expectedReferrer, "referrer cut");
+        assertEq(c.pendingWithdrawal(payout), total - expectedReferrer, "artist cut");
         assertEq(address(c).balance, total, "all funds held for withdrawal");
         assertEq(c.balanceOf(buyer), qty);
-        // No wei lost or created: surface + artist == total paid.
+        // No wei lost or created: referrer + artist == total paid.
         assertEq(c.pendingWithdrawal(surf) + c.pendingWithdrawal(payout), total);
     }
 }

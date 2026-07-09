@@ -107,21 +107,21 @@ contract MaliciousPriceStrategy is IPriceStrategy {
 /// @dev Extension minter that calls mintTo / mintToAt. Stands in for a real
 ///      minter module (BackedMinter, PooledIdMinter, etc.) in tests.
 contract MockMinter {
-    function callMintTo(ISovereignCollection collection, address to, address surface, bytes calldata hookData)
+    function callMintTo(ISovereignCollection collection, address to, address referrer, bytes calldata hookData)
         external
         returns (uint256 tokenId)
     {
-        return collection.mintTo(to, surface, hookData);
+        return collection.mintTo(to, referrer, hookData);
     }
 
     function callMintToAt(
         ISovereignCollection collection,
         address to,
         uint256 tokenId,
-        address surface,
+        address referrer,
         bytes calldata hookData
     ) external {
-        collection.mintToAt(to, tokenId, surface, hookData);
+        collection.mintToAt(to, tokenId, referrer, hookData);
     }
 
     /// @dev Burn as an authorized minter — the only path that can retire a pooled token.
@@ -173,7 +173,7 @@ contract RecordingHook is IMintHook {
         address minter;
         uint256 quantity;
         uint256 firstTokenId;
-        address surface;
+        address referrer;
         bytes hookData;
     }
 
@@ -192,11 +192,11 @@ contract RecordingHook is IMintHook {
         address minter,
         uint256 quantity,
         uint256 firstTokenId,
-        address surface,
+        address referrer,
         bytes calldata hookData
     ) external override returns (bytes4) {
         beforeCalls.push(
-            Call({minter: minter, quantity: quantity, firstTokenId: firstTokenId, surface: surface, hookData: hookData})
+            Call({minter: minter, quantity: quantity, firstTokenId: firstTokenId, referrer: referrer, hookData: hookData})
         );
         return IMintHook.beforeMint.selector;
     }
@@ -205,11 +205,11 @@ contract RecordingHook is IMintHook {
         address minter,
         uint256 quantity,
         uint256 firstTokenId,
-        address surface,
+        address referrer,
         bytes calldata hookData
     ) external override {
         afterCalls.push(
-            Call({minter: minter, quantity: quantity, firstTokenId: firstTokenId, surface: surface, hookData: hookData})
+            Call({minter: minter, quantity: quantity, firstTokenId: firstTokenId, referrer: referrer, hookData: hookData})
         );
     }
 }

@@ -16,7 +16,7 @@ import {MockMinter} from "../mocks/CollectionMocks.sol";
 ///
 /// @dev    Design notes:
 ///         - Sequential collection: fixed price, supply-capped, sells through
-///           both the built-in paid path (mint/mintWithRewards) AND a granted
+///           both the built-in paid path (mint/mintWithReferral) AND a granted
 ///           MockMinter (mintTo).
 ///         - Pooled collection: no built-in paid path (the core rejects it);
 ///           sells exclusively through a granted MockMinter calling mintToAt
@@ -125,7 +125,7 @@ contract CollectionHandler is StdInvariant, Test {
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // Actor / surface helpers — small bounded universes so collisions and
+    // Actor / referrer helpers — small bounded universes so collisions and
     // repeat interactions (re-approve, re-burn, re-withdraw) happen often.
     // ─────────────────────────────────────────────────────────────────────
 
@@ -134,12 +134,12 @@ contract CollectionHandler is StdInvariant, Test {
         return payable(address(uint160(uint256(keccak256(abi.encode("collection-invariant-actor", idx))))));
     }
 
-    function _surface(uint256 seed) internal pure returns (address) {
-        // Include address(0) in the surface universe deliberately: surface==0
+    function _referrer(uint256 seed) internal pure returns (address) {
+        // Include address(0) in the referrer universe deliberately: referrer==0
         // folds the whole amount to the artist, a distinct accounting path.
         uint256 idx = seed % (NUM_ACTORS + 1);
         if (idx == NUM_ACTORS) return address(0);
-        return address(uint160(uint256(keccak256(abi.encode("collection-invariant-surface", idx)))));
+        return address(uint160(uint256(keccak256(abi.encode("collection-invariant-referrer", idx)))));
     }
 
     function _trackPayee(address payee) internal {
@@ -209,22 +209,22 @@ contract CollectionHandler is StdInvariant, Test {
 
     // ─────────────────────────────────────────────────────────────────────
     // Shared settle-accounting mirror: replicates SovereignCollection's
-    // _settle() split exactly (10% surface share, folds to artist when
-    // surface == 0), so ghostPending matches pendingWithdrawal() precisely.
+    // _settle() split exactly (10% referral share, folds to artist when
+    // referrer == 0), so ghostPending matches pendingWithdrawal() precisely.
     // ─────────────────────────────────────────────────────────────────────
 
     uint16 private constant BPS = 10_000;
-    uint16 private constant SURFACE_SHARE_BPS = 1_000;
+    uint16 private constant REFERRAL_SHARE_BPS = 1_000;
 
-    function _mirrorSettle(uint256 total, address surface, address artistPayout) internal {
+    function _mirrorSettle(uint256 total, address referrer, address artistPayout) internal {
         if (total == 0) return;
         ghostTotalPaidIn += total;
-        uint256 surfaceCut = surface == address(0) ? 0 : (total * SURFACE_SHARE_BPS) / BPS;
-        if (surfaceCut > 0) {
-            ghostPending[surface] += surfaceCut;
-            _trackPayee(surface);
+        uint256 referralCut = referrer == address(0) ? 0 : (total * REFERRAL_SHARE_BPS) / BPS;
+        if (referralCut > 0) {
+            ghostPending[referrer] += referralCut;
+            _trackPayee(referrer);
         }
-        uint256 artistCut = total - surfaceCut;
+        uint256 artistCut = total - referralCut;
         if (artistCut > 0) {
             ghostPending[artistPayout] += artistCut;
             _trackPayee(artistPayout);
@@ -232,12 +232,12 @@ contract CollectionHandler is StdInvariant, Test {
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // ACTION: paid mint on the sequential collection (mint / mintWithRewards)
+    // ACTION: paid mint on the sequential collection (mint / mintWithReferral)
     // ─────────────────────────────────────────────────────────────────────
 
-    function mintSeqPaid(uint256 actorSeed, uint256 surfaceSeed, uint256 qtySeed, bool useRewards) external {
+    function mintSeqPaid(uint256 actorSeed, uint256 referrerSeed, uint256 qtySeed, bool useReferral) external {
         address payable buyer = _actor(actorSeed);
-        address surface = useRewards ? _surface(surfaceSeed) : address(0);
+        address referrer = useReferral ? _referrer(referrerSeed) : address(0);
         uint256 quantity = bound(qtySeed, 1, 4);
 
         // Respect the cap so this is a "normal" action, not a probe: bound
@@ -252,12 +252,12 @@ contract CollectionHandler is StdInvariant, Test {
         uint256 value = seqPrice * quantity;
         vm.deal(buyer, value);
         vm.prank(buyer);
-        if (useRewards) {
-            try seq.mintWithRewards{value: value}(quantity, surface, "") {
-                _afterSeqMint(quantity, surface, value);
+        if (useReferral) {
+            try seq.mintWithReferral{value: value}(quantity, referrer, "") {
+                _afterSeqMint(quantity, referrer, value);
                 callsMintSeqPaid++;
             } catch {
-                revert("handler: sequential mintWithRewards unexpectedly reverted");
+                revert("handler: sequential mintWithReferral unexpectedly reverted");
             }
         } else {
             try seq.mint{value: value}(quantity) {
@@ -269,7 +269,7 @@ contract CollectionHandler is StdInvariant, Test {
         }
     }
 
-    function _afterSeqMint(uint256 quantity, address surface, uint256 value) internal {
+    function _afterSeqMint(uint256 quantity, address referrer, uint256 value) internal {
         // firstTokenId is whatever _nextId was before this call, which is
         // ghostSeqMints + 1 (sequential ids start at 1, never recycle).
         uint256 firstTokenId = ghostSeqMints + 1;
@@ -284,20 +284,20 @@ contract CollectionHandler is StdInvariant, Test {
         seqHasMinted = true;
         seqLastMintIndex = ghostSeqMints; // next expected mintIndex
 
-        _mirrorSettle(value, surface, seq.owner());
+        _mirrorSettle(value, referrer, seq.owner());
     }
 
     // ─────────────────────────────────────────────────────────────────────
     // ACTION: extension mintTo on the sequential collection
     // ─────────────────────────────────────────────────────────────────────
 
-    function mintSeqExtension(uint256 actorSeed, uint256 surfaceSeed) external {
+    function mintSeqExtension(uint256 actorSeed, uint256 referrerSeed) external {
         address to = _actor(actorSeed);
-        address surface = _surface(surfaceSeed);
+        address referrer = _referrer(referrerSeed);
 
         if (seqCap != 0 && ghostSeqMints >= seqCap) return;
 
-        try seqMinter.callMintTo(ISovereignCollection(address(seq)), to, surface, "") returns (uint256 tokenId) {
+        try seqMinter.callMintTo(ISovereignCollection(address(seq)), to, referrer, "") returns (uint256 tokenId) {
             callsMintSeqExtension++;
             uint256 expectedId = ghostSeqMints + 1;
             require(tokenId == expectedId, "handler: seq mintTo id mismatch");
@@ -322,9 +322,9 @@ contract CollectionHandler is StdInvariant, Test {
     // including deliberate re-mints of previously burned ids)
     // ─────────────────────────────────────────────────────────────────────
 
-    function mintPooledExtension(uint256 actorSeed, uint256 surfaceSeed, uint256 idSeed) external {
+    function mintPooledExtension(uint256 actorSeed, uint256 referrerSeed, uint256 idSeed) external {
         address to = _actor(actorSeed);
-        address surface = _surface(surfaceSeed);
+        address referrer = _referrer(referrerSeed);
         uint256 tokenId = bound(idSeed, 0, POOLED_ID_MAX);
 
         if (pooledIsLive[tokenId]) return; // OZ _mint reverts on a live id; skip (not this action's probe)
@@ -333,7 +333,7 @@ contract CollectionHandler is StdInvariant, Test {
             if (liveSupply >= pooledCap) return;
         }
 
-        try pooledMinter.callMintToAt(ISovereignCollection(address(pooled)), to, tokenId, surface, "") {
+        try pooledMinter.callMintToAt(ISovereignCollection(address(pooled)), to, tokenId, referrer, "") {
             callsMintPooledExtension++;
             _pooledLiveAdd(tokenId);
             uint256 mintIndex = ghostPooledMints;

@@ -9,7 +9,7 @@
 
 import { isAddress } from "viem"
 import type { UseEthAmountInputResult } from "@/lib/useEthAmountInput"
-import { formatBps, SURFACE_SHARE_BPS } from "@/lib/sovereign-collection"
+import { formatBps, REFERRAL_SHARE_BPS } from "@/lib/sovereign-collection"
 import type { CollabRow, WizardState } from "./types"
 import { LABEL, INPUT, HELP, ERROR } from "./wizard-ui"
 
@@ -82,8 +82,8 @@ export function PriceSupplyWindowFields({
         />
         <p className={HELP}>
           0 = gas only (never called free). The artist always keeps at least{" "}
-          {formatBps(10_000 - SURFACE_SHARE_BPS)} of a paid mint; the fixed{" "}
-          {formatBps(SURFACE_SHARE_BPS)} surface share goes to PND when minted here, and
+          {formatBps(10_000 - REFERRAL_SHARE_BPS)} of a paid mint; the fixed{" "}
+          {formatBps(REFERRAL_SHARE_BPS)} referral share goes to PND when minted here, and
           you keep 100% by minting on your own site.
         </p>
         {price.error && <p className={ERROR}>{price.error}</p>}

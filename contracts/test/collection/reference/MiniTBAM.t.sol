@@ -180,7 +180,7 @@ contract MiniTBAMTest is Test {
     function _mint(address who) internal returns (uint256 id) {
         uint256 price = collection.currentPrice(who, 1, "");
         vm.prank(who);
-        collection.mintWithRewards{value: price}(1, address(0), "");
+        collection.mintWithReferral{value: price}(1, address(0), "");
         (,, uint256 minted) = collection.config();
         return minted; // sequential ids start at 1
     }
@@ -215,7 +215,7 @@ contract MiniTBAMTest is Test {
     function test_dynamicPricePullRefundsExcess() public {
         uint256 quote = collection.currentPrice(alice, 1, "");
         vm.prank(alice);
-        collection.mintWithRewards{value: quote + 0.5 ether}(1, address(0), "");
+        collection.mintWithReferral{value: quote + 0.5 ether}(1, address(0), "");
         assertEq(collection.pendingWithdrawal(alice), 0.5 ether, "excess accrues as pull-refund");
     }
 

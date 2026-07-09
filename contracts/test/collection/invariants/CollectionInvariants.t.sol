@@ -91,7 +91,7 @@ contract CollectionInvariants is StdInvariant, CollectionBase {
     }
 
     /// @dev Pooled mode has no built-in paid path in this suite (mintToAt is
-    ///      always called with surface but zero underlying value moved by the
+    ///      always called with referrer but zero underlying value moved by the
     ///      core), so its ghostTotalPaidIn contribution is 0 — all paid-in
     ///      ETH in this suite flows through the sequential collection. The
     ///      invariant is still stated over the combined ghost totals so it

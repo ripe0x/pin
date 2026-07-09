@@ -16,7 +16,7 @@ interface IMintHook {
         address minter,
         uint256 quantity,
         uint256 firstTokenId,
-        address surface,
+        address referrer,
         bytes calldata hookData
     ) external returns (bytes4);
 
@@ -25,7 +25,7 @@ interface IMintHook {
         address minter,
         uint256 quantity,
         uint256 firstTokenId,
-        address surface,
+        address referrer,
         bytes calldata hookData
     ) external;
 }

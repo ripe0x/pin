@@ -218,7 +218,7 @@ contract SVGRendererTest is Test {
 
         assertTrue(_contains(json, '"trait_type":"Mint Order","value":1'), "wrong Mint Order");
         assertTrue(_contains(json, '"trait_type":"Mint Block"'), "missing Mint Block");
-        assertTrue(_contains(json, '"trait_type":"Mint Surface"'), "missing Mint Surface");
+        assertTrue(_contains(json, '"trait_type":"Referrer"'), "missing Referrer");
         assertTrue(
             _contains(json, '"trait_type":"Status at Mint","value":"Open"'),
             "wrong Status at Mint"

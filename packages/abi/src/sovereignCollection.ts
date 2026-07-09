@@ -8,7 +8,7 @@ export const sovereignCollectionAbi = [
   },
   {
     "type": "function",
-    "name": "SURFACE_SHARE_BPS",
+    "name": "REFERRAL_SHARE_BPS",
     "inputs": [],
     "outputs": [
       {
@@ -796,7 +796,7 @@ export const sovereignCollectionAbi = [
             "internalType": "enum CollectionStatus"
           },
           {
-            "name": "surface",
+            "name": "referrer",
             "type": "address",
             "internalType": "address"
           },
@@ -825,7 +825,7 @@ export const sovereignCollectionAbi = [
         "internalType": "address"
       },
       {
-        "name": "surface",
+        "name": "referrer",
         "type": "address",
         "internalType": "address"
       },
@@ -859,7 +859,7 @@ export const sovereignCollectionAbi = [
         "internalType": "uint256"
       },
       {
-        "name": "surface",
+        "name": "referrer",
         "type": "address",
         "internalType": "address"
       },
@@ -874,7 +874,7 @@ export const sovereignCollectionAbi = [
   },
   {
     "type": "function",
-    "name": "mintWithRewards",
+    "name": "mintWithReferral",
     "inputs": [
       {
         "name": "quantity",
@@ -882,7 +882,7 @@ export const sovereignCollectionAbi = [
         "internalType": "uint256"
       },
       {
-        "name": "surface",
+        "name": "referrer",
         "type": "address",
         "internalType": "address"
       },
@@ -1409,7 +1409,7 @@ export const sovereignCollectionAbi = [
   },
   {
     "type": "function",
-    "name": "surfaceShareBps",
+    "name": "referralShareBps",
     "inputs": [],
     "outputs": [
       {
@@ -1939,7 +1939,7 @@ export const sovereignCollectionAbi = [
         "internalType": "address"
       },
       {
-        "name": "surface",
+        "name": "referrer",
         "type": "address",
         "indexed": true,
         "internalType": "address"
@@ -2147,10 +2147,10 @@ export const sovereignCollectionAbi = [
   },
   {
     "type": "event",
-    "name": "SurfacePaid",
+    "name": "ReferralPaid",
     "inputs": [
       {
-        "name": "surface",
+        "name": "referrer",
         "type": "address",
         "indexed": true,
         "internalType": "address"

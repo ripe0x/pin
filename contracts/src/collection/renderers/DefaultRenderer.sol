@@ -73,7 +73,7 @@ contract DefaultRenderer is IRenderer {
             ",",
             _numAttr("Mint Block", uint256(m.mintBlock)),
             ",",
-            _strAttr("Mint Surface", Strings.toHexString(uint256(uint160(m.surface)), 20)),
+            _strAttr("Referrer", Strings.toHexString(uint256(uint160(m.referrer)), 20)),
             ",",
             _strAttr("Status at Mint", _statusLabel(m.statusAtMint))
         );

@@ -21,8 +21,8 @@ import {
 
 export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
 
-/** Fixed protocol surface share, in bps. Must match SovereignCollection.SURFACE_SHARE_BPS. */
-export const SURFACE_SHARE_BPS = 1000 // 10%
+/** Fixed protocol referral share, in bps. Must match SovereignCollection.REFERRAL_SHARE_BPS. */
+export const REFERRAL_SHARE_BPS = 1000 // 10%
 
 const FORK_MODE = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
 // Must match wagmi.ts `forkChain` (31339) so wallet/link/chain checks agree.
@@ -59,12 +59,12 @@ export function generativeRenderer(chainId: number = PND_CHAIN_ID): Address | nu
 }
 
 /**
- * The surface address PND passes when a mint happens on this app — it
- * receives the fixed surface share. A self-hosted page passes the artist's
+ * The referrer address PND passes when a mint happens on this app — it
+ * receives the fixed referral share. A self-hosted page passes the artist's
  * own address instead (so the artist keeps it). Defaults to zero (PND
  * collects nothing) until a treasury is configured.
  */
-export function pndSurfaceAddress(): Address {
+export function pndReferrerAddress(): Address {
   const env = process.env.NEXT_PUBLIC_PND_SURFACE_ADDRESS
   if (env && isAddress(env)) return env as Address
   return ZERO_ADDRESS
@@ -243,7 +243,7 @@ export type MintMark = {
   mintIndex: number
   mintBlock: bigint
   statusAtMint: CollectionStatus
-  surface: Address
+  referrer: Address
   isFirst: boolean
   isFinal: boolean
 }
@@ -321,7 +321,7 @@ export function decodeMintMark(raw: {
   mintIndex: number | bigint
   mintBlock: number | bigint
   statusAtMint: number
-  surface: Address
+  referrer: Address
   isFirst: boolean
   isFinal: boolean
 }): MintMark {
@@ -329,7 +329,7 @@ export function decodeMintMark(raw: {
     mintIndex: Number(raw.mintIndex),
     mintBlock: BigInt(raw.mintBlock),
     statusAtMint: Number(raw.statusAtMint) as CollectionStatus,
-    surface: raw.surface,
+    referrer: raw.referrer,
     isFirst: raw.isFirst,
     isFinal: raw.isFinal,
   }

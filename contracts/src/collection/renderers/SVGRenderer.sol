@@ -107,7 +107,7 @@ abstract contract SVGRenderer is IRenderer {
             ",",
             _numAttr("Mint Block", uint256(m.mintBlock)),
             ",",
-            _strAttr("Mint Surface", m.surface.toHexString()),
+            _strAttr("Referrer", m.referrer.toHexString()),
             ",",
             _strAttr("Status at Mint", _statusLabel(m.statusAtMint))
         );

@@ -24,18 +24,18 @@ export function CollectionMintMarkCard({ mark, chainId }: { mark: MintMark; chai
         <Row label="Mint block" value={mark.mintBlock.toString()} />
         <Row label="Status at mint" value={COLLECTION_STATUS_LABEL[mark.statusAtMint]} />
         <Row
-          label="Mint surface"
+          label="Referrer"
           value={
-            mark.surface === ZERO_ADDRESS ? (
+            mark.referrer === ZERO_ADDRESS ? (
               <span className="text-gray-400">none (direct)</span>
             ) : (
               <a
-                href={evmNowAddressUrl(mark.surface, chainId)}
+                href={evmNowAddressUrl(mark.referrer, chainId)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="underline hover:text-fg"
               >
-                {shortAddress(mark.surface)} ↗
+                {shortAddress(mark.referrer)} ↗
               </a>
             )
           }

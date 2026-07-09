@@ -33,7 +33,7 @@ import {
 ///         its own identity: a per-token Mint Mark (provenance), mint-time
 ///         entropy (tokenSeed), and a Token Path (forward pointer). Honest
 ///         pricing: the collector pays exactly the resolved price. A fixed
-///         protocol Surface Share is paid out of that price to whoever hosts
+///         protocol Referral Share is paid out of that price to whoever hosts
 ///         the mint (PND on PND; the artist on their own site; folded back to
 ///         the artist on a direct mint).
 ///
@@ -66,9 +66,9 @@ contract SovereignCollection is
     ISovereignCollection
 {
     uint16 private constant BPS = 10_000;
-    /// @notice Fixed protocol surface share: 10%. Paid to the mint surface
+    /// @notice Fixed protocol referral share: 10%. Paid to the mint referrer
     ///         (PND on PND, the artist on their own site). Not artist-set.
-    uint16 public constant SURFACE_SHARE_BPS = 1_000;
+    uint16 public constant REFERRAL_SHARE_BPS = 1_000;
     /// @notice Hard ceiling on the artist-set EIP-2981 royalty (50%). 2981 is
     ///         advisory, but a sane cap avoids a footgun, and a permissionless
     ///         deployer setting an absurd royalty on a collection owned by
@@ -193,27 +193,27 @@ contract SovereignCollection is
     // Mint: built-in paid paths (value custody stays here)
     // ─────────────────────────────────────────────────────────────────────────
 
-    /// @notice Simple mint. The surface defaults to address(0), so the full
-    ///         price goes to the artist (no surface share is taken). This is
+    /// @notice Simple mint. The referrer defaults to address(0), so the full
+    ///         price goes to the artist (no referral share is taken). This is
     ///         the honest default path: a direct minter gives the artist 100%.
     function mint(uint256 quantity) external payable override nonReentrant {
         _mintPaid(quantity, address(0), "");
     }
 
-    /// @notice Mint crediting a `surface` its share (PND on PND, the artist on
-    ///         their own self-hosted page). surface == 0 folds the share back
+    /// @notice Mint crediting a `referrer` its share (PND on PND, the artist on
+    ///         their own self-hosted page). referrer == 0 folds the share back
     ///         to the artist. `hookData` is forwarded to the mint hook and the
     ///         price strategy (one blob, both readers).
-    function mintWithRewards(uint256 quantity, address surface, bytes calldata hookData)
+    function mintWithReferral(uint256 quantity, address referrer, bytes calldata hookData)
         external
         payable
         override
         nonReentrant
     {
-        _mintPaid(quantity, surface, hookData);
+        _mintPaid(quantity, referrer, hookData);
     }
 
-    function _mintPaid(uint256 quantity, address surface, bytes memory hookData) private {
+    function _mintPaid(uint256 quantity, address referrer, bytes memory hookData) private {
         if (!(quantity > 0)) revert ZeroQuantity();
         if (!(block.timestamp >= _cfg.mintStart)) revert MintNotStarted();
         if (!(_cfg.mintEnd == 0 || block.timestamp < _cfg.mintEnd)) revert MintEnded();
@@ -246,21 +246,21 @@ contract SovereignCollection is
         }
 
         uint256 firstTokenId = _nextId;
-        _runBeforeHook(msg.sender, quantity, firstTokenId, surface, hookData);
+        _runBeforeHook(msg.sender, quantity, firstTokenId, referrer, hookData);
 
         CollectionStatus statusAtMint = _statusForMark(); // Open or Closing here
         uint256 firstMintIndex = _mintedEver;
         for (uint256 i = 0; i < quantity; i++) {
-            _mintOne(msg.sender, firstTokenId + i, surface, statusAtMint);
+            _mintOne(msg.sender, firstTokenId + i, referrer, statusAtMint);
         }
         _nextId = firstTokenId + quantity;
 
-        _settle(required, surface);
-        _runAfterHook(msg.sender, quantity, firstTokenId, surface, hookData);
+        _settle(required, referrer);
+        _runAfterHook(msg.sender, quantity, firstTokenId, referrer, hookData);
 
         emit Minted(
             msg.sender,
-            surface,
+            referrer,
             firstTokenId,
             quantity,
             firstMintIndex,
@@ -275,12 +275,12 @@ contract SovereignCollection is
 
     /// @notice Sequential mode only. Non-payable: the calling minter carries
     ///         all value handling (and, if it takes payment, honors the
-    ///         surface share by convention). Hooks run here too, so gating
+    ///         referral share by convention). Hooks run here too, so gating
     ///         composes with custom minters. Cap and id assignment are
     ///         enforced exactly as on the paid path; the sale window is not:
     ///         an extension minter owns its own schedule, and the artist's
     ///         lever is revoking the grant.
-    function mintTo(address to, address surface, bytes calldata hookData)
+    function mintTo(address to, address referrer, bytes calldata hookData)
         external
         override
         nonReentrant
@@ -290,13 +290,13 @@ contract SovereignCollection is
         if (!(_cfg.idMode == IdMode.Sequential)) revert PooledNeedsMintToAt();
         _checkCap(1);
         tokenId = _nextId;
-        _runBeforeHook(to, 1, tokenId, surface, hookData);
+        _runBeforeHook(to, 1, tokenId, referrer, hookData);
         CollectionStatus statusAtMint = _statusForMark();
         uint256 mintIndex = _mintedEver;
-        _mintOne(to, tokenId, surface, statusAtMint);
+        _mintOne(to, tokenId, referrer, statusAtMint);
         _nextId = tokenId + 1;
-        _runAfterHook(to, 1, tokenId, surface, hookData);
-        emit Minted(to, surface, tokenId, 1, mintIndex, uint48(block.number), statusAtMint);
+        _runAfterHook(to, 1, tokenId, referrer, hookData);
+        emit Minted(to, referrer, tokenId, 1, mintIndex, uint48(block.number), statusAtMint);
     }
 
     /// @notice Pooled mode only: the minter supplies the id (tokenId ==
@@ -304,7 +304,7 @@ contract SovereignCollection is
     ///         again as a NEW instance: fresh Mint Mark, fresh entropy. The
     ///         prior instance's history persists in events and offchain
     ///         indexing.
-    function mintToAt(address to, uint256 tokenId, address surface, bytes calldata hookData)
+    function mintToAt(address to, uint256 tokenId, address referrer, bytes calldata hookData)
         external
         override
         nonReentrant
@@ -312,18 +312,18 @@ contract SovereignCollection is
         if (!(_minters[msg.sender])) revert NotMinter();
         if (!(_cfg.idMode == IdMode.Pooled)) revert SequentialAssignsIds();
         _checkCap(1);
-        _runBeforeHook(to, 1, tokenId, surface, hookData);
+        _runBeforeHook(to, 1, tokenId, referrer, hookData);
         CollectionStatus statusAtMint = _statusForMark();
         uint256 mintIndex = _mintedEver;
-        _mintOne(to, tokenId, surface, statusAtMint);
-        _runAfterHook(to, 1, tokenId, surface, hookData);
-        emit Minted(to, surface, tokenId, 1, mintIndex, uint48(block.number), statusAtMint);
+        _mintOne(to, tokenId, referrer, statusAtMint);
+        _runAfterHook(to, 1, tokenId, referrer, hookData);
+        emit Minted(to, referrer, tokenId, 1, mintIndex, uint48(block.number), statusAtMint);
     }
 
     /// @dev Shared per-token mint effects: ownership, Mint Mark, entropy.
     ///      OZ _mint reverts on an existing id, which is the whole pooled-mode
     ///      correctness argument: a live id can never be minted over.
-    function _mintOne(address to, uint256 tokenId, address surface, CollectionStatus statusAtMint)
+    function _mintOne(address to, uint256 tokenId, address referrer, CollectionStatus statusAtMint)
         private
     {
         uint256 mintIndex = _mintedEver;
@@ -333,7 +333,7 @@ contract SovereignCollection is
             mintBlock: uint48(block.number),
             mintIndex: uint40(mintIndex),
             statusAtMint: uint8(statusAtMint),
-            surface: surface
+            referrer: referrer
         });
         _seed[tokenId] =
             keccak256(abi.encode(block.prevrandao, address(this), tokenId, to, mintIndex));
@@ -387,12 +387,12 @@ contract SovereignCollection is
         address minter,
         uint256 quantity,
         uint256 firstTokenId,
-        address surface,
+        address referrer,
         bytes memory hookData
     ) private {
         address hook = _mintHook;
         if (hook != address(0)) {
-            if (!(IMintHook(hook).beforeMint(minter, quantity, firstTokenId, surface, hookData)
+            if (!(IMintHook(hook).beforeMint(minter, quantity, firstTokenId, referrer, hookData)
                     == IMintHook.beforeMint.selector)) revert HookRejected();
         }
     }
@@ -401,28 +401,28 @@ contract SovereignCollection is
         address minter,
         uint256 quantity,
         uint256 firstTokenId,
-        address surface,
+        address referrer,
         bytes memory hookData
     ) private {
         address hook = _mintHook;
         if (hook != address(0)) {
-            IMintHook(hook).afterMint(minter, quantity, firstTokenId, surface, hookData);
+            IMintHook(hook).afterMint(minter, quantity, firstTokenId, referrer, hookData);
         }
     }
 
-    /// @dev Accrue `total` (pull-payment) split between the surface share and
-    ///      the artist payout. surface == 0 folds the whole amount to the
+    /// @dev Accrue `total` (pull-payment) split between the referral share and
+    ///      the artist payout. referrer == 0 folds the whole amount to the
     ///      artist. No external call here; recipients claim via withdraw(), so
     ///      a reverting recipient can never brick a mint.
-    function _settle(uint256 total, address surface) private {
+    function _settle(uint256 total, address referrer) private {
         if (total == 0) return;
         _totalPending += total;
-        uint256 surfaceCut = surface == address(0) ? 0 : (total * SURFACE_SHARE_BPS) / BPS;
-        if (surfaceCut > 0) {
-            _pending[surface] += surfaceCut;
-            emit SurfacePaid(surface, surfaceCut);
+        uint256 referralCut = referrer == address(0) ? 0 : (total * REFERRAL_SHARE_BPS) / BPS;
+        if (referralCut > 0) {
+            _pending[referrer] += referralCut;
+            emit ReferralPaid(referrer, referralCut);
         }
-        uint256 artistCut = total - surfaceCut;
+        uint256 artistCut = total - referralCut;
         if (artistCut > 0) {
             _pending[_cfg.payoutAddress == address(0) ? owner() : _cfg.payoutAddress] += artistCut;
         }
@@ -678,7 +678,7 @@ contract SovereignCollection is
             mintIndex: r.mintIndex,
             mintBlock: r.mintBlock,
             statusAtMint: CollectionStatus(r.statusAtMint),
-            surface: r.surface,
+            referrer: r.referrer,
             isFirst: r.mintIndex == 0,
             isFinal: _lifecycleStatus() == CollectionStatus.Closed
                 && r.mintIndex == _mintedEver - 1
@@ -724,8 +724,8 @@ contract SovereignCollection is
         minted = _mintedEver;
     }
 
-    function surfaceShareBps() external pure override returns (uint16) {
-        return SURFACE_SHARE_BPS;
+    function referralShareBps() external pure override returns (uint16) {
+        return REFERRAL_SHARE_BPS;
     }
 
     function currentPrice(address minter, uint256 quantity, bytes calldata data)

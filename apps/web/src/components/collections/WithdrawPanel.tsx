@@ -2,10 +2,10 @@
 
 /**
  * Pull-payment withdraw panel. Collections accrue mint proceeds (artist share
- * + surface share) to per-address balances; recipients claim them here.
+ * + referral share) to per-address balances; recipients claim them here.
  * Renders only when the connected wallet has something to withdraw, so it is
  * invisible to ordinary viewers and shows up for the artist (or a
- * surface/host) with a pending balance. withdraw(account) is permissionless —
+ * referrer) with a pending balance. withdraw(account) is permissionless —
  * anyone can trigger the payout to `account`, they just can't redirect it.
  */
 

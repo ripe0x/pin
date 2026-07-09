@@ -404,7 +404,7 @@ export const collectionTokens = onchainTable(
     // (that's an owner-tracking concern the web/worker layer can add via
     // Transfer if/when needed).
     mintedTo: t.hex().notNull(),
-    surface: t.hex().notNull(),
+    referrer: t.hex().notNull(),
     mintBlock: t.bigint().notNull(),
     // Offset of this tokenId within its own Minted call's
     // [firstTokenId, firstTokenId + quantity - 1] range (0 for extension
@@ -438,7 +438,7 @@ export const collectionMints = onchainTable(
     firstTokenId: t.bigint().notNull(),
     quantity: t.bigint().notNull(),
     to: t.hex().notNull(),
-    surface: t.hex().notNull(),
+    referrer: t.hex().notNull(),
     mintBlock: t.bigint().notNull(),
     statusAtMint: t.integer().notNull(),
     blockNumber: t.bigint().notNull(),

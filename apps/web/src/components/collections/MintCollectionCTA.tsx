@@ -12,7 +12,7 @@
  * broadcast still succeeds — it just leaves a small refund claimable via
  * WithdrawPanel instead of reverting.
  *
- * The fixed Surface Share is shown explicitly as a split out of the price,
+ * The fixed Referral Share is shown explicitly as a split out of the price,
  * paid to whoever hosts this mint (PND here, the artist on their own site). A
  * 0 ETH price is "Gas only", never "free".
  *
@@ -46,14 +46,14 @@ import {
 import {
   CollectionStatus,
   COLLECTION_STATUS_LABEL,
-  SURFACE_SHARE_BPS,
+  REFERRAL_SHARE_BPS,
   ZERO_ADDRESS,
   formatBps,
   hasPriceStrategy,
   isGasOnly,
   isMintable,
   lifecycleStatus,
-  pndSurfaceAddress,
+  pndReferrerAddress,
   sellsViaMinterOnly,
   shortAddress,
   type IdMode,
@@ -73,13 +73,13 @@ export type MintCollectionSnapshot = {
 export function MintCollectionCTA({
   collection,
   snapshot,
-  surface,
+  referrer,
 }: {
   collection: `0x${string}`
   snapshot: MintCollectionSnapshot
-  /** Override the mint surface (a self-hosted page passes the artist's own
-   *  address). Defaults to PND's configured surface. */
-  surface?: `0x${string}`
+  /** Override the mint referrer (a self-hosted page passes the artist's own
+   *  address). Defaults to PND's configured referrer. */
+  referrer?: `0x${string}`
 }) {
   const { address } = useAccount()
   const chainId = useChainId()
@@ -93,7 +93,7 @@ export function MintCollectionCTA({
   const minted = BigInt(snapshot.minted)
   const mintEnd = BigInt(snapshot.mintEnd)
   const mintStart = BigInt(snapshot.mintStart)
-  const surfaceAddr = surface ?? pndSurfaceAddress()
+  const referrerAddr = referrer ?? pndReferrerAddress()
   const strategy = hasPriceStrategy(snapshot.priceStrategy)
   const pooled = sellsViaMinterOnly(snapshot.idMode)
 
@@ -139,8 +139,8 @@ export function MintCollectionCTA({
       ? storedPrice * BigInt(amount)
       : storedPrice
   const perTokenPrice = strategy ? (amountValid && amount > 0 ? total / BigInt(amount) : total) : storedPrice
-  const { surfaceCut, artistCut } = splitOutOfPrice(total, surfaceAddr)
-  const showSplit = !isGasOnly(total) && surfaceAddr !== ZERO_ADDRESS
+  const { referralCut, artistCut } = splitOutOfPrice(total, referrerAddr)
+  const showSplit = !isGasOnly(total) && referrerAddr !== ZERO_ADDRESS
 
   const { data: balance } = useBalance({
     address,
@@ -163,8 +163,8 @@ export function MintCollectionCTA({
     writeContract({
       address: collection,
       abi: sovereignCollectionAbi,
-      functionName: "mintWithRewards",
-      args: [BigInt(amount), surfaceAddr, "0x"],
+      functionName: "mintWithReferral",
+      args: [BigInt(amount), referrerAddr, "0x"],
       value: total,
     })
   }
@@ -306,22 +306,22 @@ export function MintCollectionCTA({
                   {showSplit ? (
                     <div className="space-y-1.5">
                       <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
-                        <div className="bg-fg" style={{ width: `${100 - SURFACE_SHARE_BPS / 100}%` }} />
+                        <div className="bg-fg" style={{ width: `${100 - REFERRAL_SHARE_BPS / 100}%` }} />
                         <div
                           className="bg-status-live"
-                          style={{ width: `${SURFACE_SHARE_BPS / 100}%` }}
+                          style={{ width: `${REFERRAL_SHARE_BPS / 100}%` }}
                         />
                       </div>
                       <div className="flex justify-between text-[10px] font-mono text-gray-500 tabular-nums">
                         <span>{formatEther(artistCut)} ETH to artist</span>
                         <span>
-                          {formatEther(surfaceCut)} ETH to this surface ({formatBps(SURFACE_SHARE_BPS)})
+                          {formatEther(referralCut)} ETH to referrer ({formatBps(REFERRAL_SHARE_BPS)})
                         </span>
                       </div>
                     </div>
                   ) : (
                     <p className="text-[10px] font-mono text-gray-500">
-                      100% to the artist on this surface.
+                      100% to the artist (no referrer).
                     </p>
                   )}
                 </div>
@@ -379,7 +379,7 @@ export function MintCollectionCTA({
 
               <p className="text-[10px] font-mono text-gray-400 leading-relaxed">
                 Minting on{" "}
-                {surfaceAddr === ZERO_ADDRESS ? "this surface" : `surface ${shortAddress(surfaceAddr)}`}.
+                {referrerAddr === ZERO_ADDRESS ? "directly" : `via referrer ${shortAddress(referrerAddr)}`}.
                 You receive a distinct ERC721 token with its own onchain Mint Mark.
               </p>
             </>
@@ -400,11 +400,11 @@ export function MintCollectionCTA({
   )
 }
 
-/** The fixed Surface Share split of `total`, out of the price. */
+/** The fixed Referral Share split of `total`, out of the price. */
 function splitOutOfPrice(
   total: bigint,
-  surface: `0x${string}`,
-): { surfaceCut: bigint; artistCut: bigint } {
-  const surfaceCut = surface === ZERO_ADDRESS ? 0n : (total * BigInt(SURFACE_SHARE_BPS)) / 10_000n
-  return { surfaceCut, artistCut: total - surfaceCut }
+  referrer: `0x${string}`,
+): { referralCut: bigint; artistCut: bigint } {
+  const referralCut = referrer === ZERO_ADDRESS ? 0n : (total * BigInt(REFERRAL_SHARE_BPS)) / 10_000n
+  return { referralCut, artistCut: total - referralCut }
 }

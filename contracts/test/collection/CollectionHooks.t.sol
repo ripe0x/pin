@@ -47,7 +47,7 @@ contract CollectionHooksTest is CollectionBase {
         assertEq(c.mintHook(), address(recordingHook));
 
         vm.prank(collector);
-        c.mintWithRewards(3, surface, bytes("payload"));
+        c.mintWithReferral(3, referrer, bytes("payload"));
 
         assertEq(recordingHook.beforeCallCount(), 1);
         assertEq(recordingHook.afterCallCount(), 1);
@@ -55,7 +55,7 @@ contract CollectionHooksTest is CollectionBase {
         assertEq(m, collector);
         assertEq(q, 3);
         assertEq(fid, 1);
-        assertEq(s, surface);
+        assertEq(s, referrer);
         assertEq(data, bytes("payload"));
     }
 
@@ -118,7 +118,7 @@ contract CollectionHooksTest is CollectionBase {
         c.setMinter(address(minter), true);
 
         vm.prank(artist); // caller identity doesn't matter for the minter grant path
-        uint256 tokenId = minter.callMintTo(ISovereignCollection(address(c)), collector, surface, bytes("ext-data"));
+        uint256 tokenId = minter.callMintTo(ISovereignCollection(address(c)), collector, referrer, bytes("ext-data"));
 
         assertEq(tokenId, 1);
         assertEq(recordingHook.beforeCallCount(), 1);
@@ -127,7 +127,7 @@ contract CollectionHooksTest is CollectionBase {
         assertEq(m, collector); // `to` is forwarded as the hook's "minter" arg
         assertEq(q, 1);
         assertEq(fid, 1);
-        assertEq(s, surface);
+        assertEq(s, referrer);
         assertEq(data, bytes("ext-data"));
     }
 
@@ -138,7 +138,7 @@ contract CollectionHooksTest is CollectionBase {
         vm.prank(artist);
         c.setMinter(address(minter), true);
         vm.expectRevert(bytes("hook: nope"));
-        minter.callMintTo(ISovereignCollection(address(c)), collector, surface, "");
+        minter.callMintTo(ISovereignCollection(address(c)), collector, referrer, "");
     }
 
     // ── hooks fire identically on mintToAt (Pooled extension path) ──────────
@@ -150,7 +150,7 @@ contract CollectionHooksTest is CollectionBase {
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
-        minter.callMintToAt(ISovereignCollection(address(c)), collector, 42, surface, bytes("pooled-data"));
+        minter.callMintToAt(ISovereignCollection(address(c)), collector, 42, referrer, bytes("pooled-data"));
 
         assertEq(recordingHook.beforeCallCount(), 1);
         assertEq(recordingHook.afterCallCount(), 1);
@@ -158,7 +158,7 @@ contract CollectionHooksTest is CollectionBase {
         assertEq(m, collector);
         assertEq(q, 1);
         assertEq(fid, 42); // firstTokenId == the explicit pooled id
-        assertEq(s, surface);
+        assertEq(s, referrer);
         assertEq(data, bytes("pooled-data"));
     }
 
@@ -169,7 +169,7 @@ contract CollectionHooksTest is CollectionBase {
         vm.prank(artist);
         c.setMinter(address(minter), true);
         vm.expectRevert(bytes("hook: nope"));
-        minter.callMintToAt(ISovereignCollection(address(c)), collector, 42, surface, "");
+        minter.callMintToAt(ISovereignCollection(address(c)), collector, 42, referrer, "");
     }
 
     function test_hook_firesOnMintToAt_id0() public {
@@ -179,7 +179,7 @@ contract CollectionHooksTest is CollectionBase {
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
-        minter.callMintToAt(ISovereignCollection(address(c)), collector, 0, surface, "");
+        minter.callMintToAt(ISovereignCollection(address(c)), collector, 0, referrer, "");
         assertEq(recordingHook.beforeCallCount(), 1);
         (,, uint256 fid,,) = _decodeBefore(recordingHook, 0);
         assertEq(fid, 0);
@@ -196,7 +196,7 @@ contract CollectionHooksTest is CollectionBase {
 
         bytes memory blob = abi.encode(uint256(7), "tier-A");
         vm.prank(collector);
-        c.mintWithRewards(1, surface, blob);
+        c.mintWithReferral(1, referrer, blob);
         (,,,, bytes memory got) = _decodeBefore(recordingHook, 0);
         assertEq(got, blob);
     }
@@ -209,7 +209,7 @@ contract CollectionHooksTest is CollectionBase {
         vm.prank(artist);
         c.setMintHook(address(allow));
 
-        // Build a 2-leaf tree: collector + surface, using the OZ
+        // Build a 2-leaf tree: collector + referrer, using the OZ
         // standard-merkle-tree double-hash leaf convention the hook expects.
         bytes32 leafCollector = keccak256(bytes.concat(keccak256(abi.encode(collector))));
         bytes32 leafStranger = keccak256(bytes.concat(keccak256(abi.encode(stranger))));
@@ -220,13 +220,13 @@ contract CollectionHooksTest is CollectionBase {
         vm.prank(artist);
         allow.setRoot(address(c), root);
 
-        // hookData only travels through mintWithRewards; the plain mint()
+        // hookData only travels through mintWithReferral; the plain mint()
         // path has no hookData parameter, so a Merkle-gated hook can only be
-        // satisfied via mintWithRewards even for a "free" (price 0) mint.
+        // satisfied via mintWithReferral even for a "free" (price 0) mint.
         bytes32[] memory proofForCollector = new bytes32[](1);
         proofForCollector[0] = leafStranger;
         vm.prank(collector);
-        c.mintWithRewards(1, address(0), abi.encode(proofForCollector));
+        c.mintWithReferral(1, address(0), abi.encode(proofForCollector));
         assertEq(c.balanceOf(collector), 1);
 
         // A wallet not in the tree fails verification even with a
@@ -235,7 +235,7 @@ contract CollectionHooksTest is CollectionBase {
         badProof[0] = leafCollector;
         vm.expectRevert(bytes("SC: not allowlisted"));
         vm.prank(makeAddr("notInTree"));
-        c.mintWithRewards(1, address(0), abi.encode(badProof));
+        c.mintWithReferral(1, address(0), abi.encode(badProof));
     }
 
     // ── stock hook: HoldsCollectionHook ──────────────────────────────────────
@@ -302,8 +302,8 @@ contract CollectionHooksTest is CollectionBase {
     function _decodeBefore(RecordingHook hook, uint256 idx)
         internal
         view
-        returns (address minter_, uint256 quantity, uint256 firstTokenId, address surface_, bytes memory hookData)
+        returns (address minter_, uint256 quantity, uint256 firstTokenId, address referrer_, bytes memory hookData)
     {
-        (minter_, quantity, firstTokenId, surface_, hookData) = hook.beforeCalls(idx);
+        (minter_, quantity, firstTokenId, referrer_, hookData) = hook.beforeCalls(idx);
     }
 }

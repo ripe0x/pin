@@ -10,7 +10,7 @@ import {CollectionConfig, InitParams, WorkConfig} from "./CollectionTypes.sol";
 /// @notice Deploys one SovereignCollection per work, configured atomically at
 ///         deploy, as an immutable EIP-1167 clone: no proxy admin, no upgrade
 ///         path, what deploys is what runs. There is no protocol fee here;
-///         the Surface Share is a fixed constant inside the collection, paid
+///         the Referral Share is a fixed constant inside the collection, paid
 ///         to whoever hosts the mint.
 ///
 ///         This is the single fixed contract an indexer watches for discovery

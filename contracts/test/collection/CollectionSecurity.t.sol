@@ -200,19 +200,19 @@ contract CollectionSecurityTest is CollectionBase {
         // quantity=2 (even) -> required = 2 * 1 ETH = 2 ETH
         vm.deal(collector, 10 ether);
         vm.prank(collector);
-        c.mintWithRewards{value: 2 ether}(2, surface, "");
+        c.mintWithReferral{value: 2 ether}(2, referrer, "");
         uint256 total1 = 2 ether;
-        uint256 expectedSurface1 = (total1 * 1000) / 10_000;
-        assertEq(c.pendingWithdrawal(surface), expectedSurface1);
-        assertEq(c.pendingWithdrawal(artist), total1 - expectedSurface1);
+        uint256 expectedReferrer1 = (total1 * 1000) / 10_000;
+        assertEq(c.pendingWithdrawal(referrer), expectedReferrer1);
+        assertEq(c.pendingWithdrawal(artist), total1 - expectedReferrer1);
         assertEq(address(c).balance, total1, "balance == sum of both accruals for qty=2");
 
         // quantity=3 (odd) -> required = 3 * 2 ETH = 6 ETH
         vm.prank(collector);
-        c.mintWithRewards{value: 6 ether}(3, surface, "");
+        c.mintWithReferral{value: 6 ether}(3, referrer, "");
         uint256 total2 = 6 ether;
-        uint256 expectedSurfaceCumulative = ((total1 + total2) * 1000) / 10_000;
-        assertEq(c.pendingWithdrawal(surface), expectedSurfaceCumulative);
+        uint256 expectedReferrerCumulative = ((total1 + total2) * 1000) / 10_000;
+        assertEq(c.pendingWithdrawal(referrer), expectedReferrerCumulative);
         assertEq(address(c).balance, total1 + total2, "conservation holds across both mints");
     }
 
@@ -225,7 +225,7 @@ contract CollectionSecurityTest is CollectionBase {
         vm.deal(collector, 1 ether);
         vm.expectRevert(ISovereignCollection.Underpayment.selector);
         vm.prank(collector);
-        c.mintWithRewards{value: 0.5 ether}(1, surface, "");
+        c.mintWithReferral{value: 0.5 ether}(1, referrer, "");
     }
 
     function test_priceStrategy_overpaymentAccruesRefundToPayer() public {
@@ -236,7 +236,7 @@ contract CollectionSecurityTest is CollectionBase {
 
         vm.deal(collector, 2 ether);
         vm.prank(collector);
-        c.mintWithRewards{value: 1.5 ether}(1, address(0), "");
+        c.mintWithReferral{value: 1.5 ether}(1, address(0), "");
 
         assertEq(c.pendingWithdrawal(artist), 1 ether); // exact required amount
         assertEq(c.pendingWithdrawal(collector), 0.5 ether); // excess refunded as pull

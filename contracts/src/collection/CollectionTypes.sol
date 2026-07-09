@@ -128,8 +128,8 @@ struct WorkConfig {
 }
 
 /// @notice The artist-supplied collection configuration, set at init. There is
-///         no surface-share field: the share is a fixed protocol constant
-///         (SURFACE_SHARE_BPS) paid to whoever hosts the mint.
+///         no referrer-share field: the share is a fixed protocol constant
+///         (REFERRAL_SHARE_BPS) paid to whoever hosts the mint.
 struct CollectionConfig {
     string artworkURI; // shared/cover art; per-token overridable
     uint256 price; // wei; used when priceStrategy is unset. 0 = gas only
@@ -168,7 +168,7 @@ struct MintRecord {
     uint48 mintBlock;
     uint40 mintIndex; // 0-based global mint order across the collection
     uint8 statusAtMint; // CollectionStatus
-    address surface;
+    address referrer;
 }
 
 /// @notice The derived, public Mint Mark for a single token.
@@ -176,7 +176,7 @@ struct MintMark {
     uint40 mintIndex;
     uint48 mintBlock;
     CollectionStatus statusAtMint;
-    address surface;
+    address referrer;
     bool isFirst; // mintIndex == 0
     bool isFinal; // collection Closed && mintIndex == last ever assigned
 }

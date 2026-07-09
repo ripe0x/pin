@@ -62,7 +62,7 @@ interface ITokenPath {
 ///         provenance (per-token Mint Marks + mint-time entropy); all
 ///         variability lives in four slots (renderer, price strategy, mint
 ///         hook, extension minters) and optional companion contracts.
-///         Honest fixed pricing with a fixed built-in Surface Share; no
+///         Honest fixed pricing with a fixed built-in Referral Share; no
 ///         other protocol fee. There is no upgrade path and no seal: what
 ///         deploys is what runs, forever.
 interface ISovereignCollection is IMintMarks, ICollectionGraph, ITokenPath {
@@ -122,7 +122,7 @@ interface ISovereignCollection is IMintMarks, ICollectionGraph, ITokenPath {
     ///         from ids.
     event Minted(
         address indexed to,
-        address indexed surface,
+        address indexed referrer,
         uint256 firstTokenId,
         uint256 quantity,
         uint256 firstMintIndex,
@@ -131,7 +131,7 @@ interface ISovereignCollection is IMintMarks, ICollectionGraph, ITokenPath {
     );
 
     event Burned(uint256 indexed tokenId);
-    event SurfacePaid(address indexed surface, uint256 amount);
+    event ReferralPaid(address indexed referrer, uint256 amount);
     event ClosingSet(bool closing);
     event RendererSet(address indexed renderer);
     event MintHookSet(address indexed hook);
@@ -185,29 +185,29 @@ interface ISovereignCollection is IMintMarks, ICollectionGraph, ITokenPath {
     function lockWork() external;
 
     // ── mint: built-in paid paths (value custody stays in the core) ─────────
-    /// @notice Simple mint: surface defaults to address(0) so the artist gets
-    ///         the full price (no surface share). The honest default path.
+    /// @notice Simple mint: referrer defaults to address(0) so the artist gets
+    ///         the full price (no referral share). The honest default path.
     function mint(uint256 quantity) external payable;
 
-    /// @notice Mint crediting a surface its share. PND's frontend passes PND's
+    /// @notice Mint crediting a referrer its share. PND's frontend passes PND's
     ///         address; a self-hosted page passes the artist's address;
     ///         address(0) folds the share back to the artist. `hookData` is
     ///         forwarded to the mint hook (if any).
-    function mintWithRewards(uint256 quantity, address surface, bytes calldata hookData)
+    function mintWithReferral(uint256 quantity, address referrer, bytes calldata hookData)
         external
         payable;
 
     // ── mint: extension path (economics live in the authorized minter) ──────
     /// @notice Sequential mode only. Non-payable; the calling minter carries
     ///         all value handling. Hooks run. Returns the assigned id.
-    function mintTo(address to, address surface, bytes calldata hookData)
+    function mintTo(address to, address referrer, bytes calldata hookData)
         external
         returns (uint256 tokenId);
 
     /// @notice Pooled mode only: the minter supplies the id (tokenId ==
     ///         sourceId forms). A previously burned id mints again as a new
     ///         instance with fresh mark and entropy. Hooks run.
-    function mintToAt(address to, uint256 tokenId, address surface, bytes calldata hookData)
+    function mintToAt(address to, uint256 tokenId, address referrer, bytes calldata hookData)
         external;
 
     /// @notice Burn by owner or approved (vaults redeem through approval).
@@ -228,8 +228,8 @@ interface ISovereignCollection is IMintMarks, ICollectionGraph, ITokenPath {
         view
         returns (CollectionConfig memory cfg, CollectionStatus status, uint256 minted);
 
-    /// @notice The fixed protocol surface-share, in bps (constant).
-    function surfaceShareBps() external view returns (uint16);
+    /// @notice The fixed protocol referrer-share, in bps (constant).
+    function referralShareBps() external view returns (uint16);
 
     /// @notice Resolved price for a prospective mint: the strategy if set,
     ///         else the stored fixed price times quantity.

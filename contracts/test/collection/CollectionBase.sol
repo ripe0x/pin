@@ -24,7 +24,7 @@ contract CollectionBase is Test {
 
     address internal artist = makeAddr("artist");
     address internal collector = makeAddr("collector");
-    address internal surface = makeAddr("surface");
+    address internal referrer = makeAddr("referrer");
     address internal stranger = makeAddr("stranger");
 
     function setUp() public virtual {
@@ -44,7 +44,7 @@ contract CollectionBase is Test {
         cfg.idMode = IdMode.Sequential;
     }
 
-    /// @dev A priced sequential collection. Surface share is a fixed protocol
+    /// @dev A priced sequential collection. Referral share is a fixed protocol
     ///      constant, not configurable here.
     function _pricedConfig(uint256 price) internal pure returns (CollectionConfig memory cfg) {
         cfg.artworkURI = "ipfs://QmArtwork";

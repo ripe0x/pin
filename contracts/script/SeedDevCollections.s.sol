@@ -145,7 +145,7 @@ contract SeedDevCollections is Script {
         orbits = SovereignCollectionFactory(factory).createCollection(
             "Orbit Studies", "ORBIT", artist, cfg, _orbitWork(), new address[](0), roster
         );
-        SovereignCollection(orbits).mintWithRewards{value: 0.015 ether}(3, address(0), "");
+        SovereignCollection(orbits).mintWithReferral{value: 0.015 ether}(3, address(0), "");
         ICatalogClaim(CATALOG).addContract(orbits);
     }
 
@@ -180,6 +180,6 @@ contract SeedDevCollections is Script {
         field = SovereignCollectionFactory(factory).createCollection(
             "Field Notes", "FIELD", artist, cfg, emptyWork, new address[](0), new address[](0)
         );
-        SovereignCollection(field).mintWithRewards{value: 0.004 ether}(2, address(0), "");
+        SovereignCollection(field).mintWithReferral{value: 0.004 ether}(2, address(0), "");
     }
 }

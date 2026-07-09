@@ -18,7 +18,7 @@ import {
 import {
   COLLECTION_KIND_LABEL,
   PND_CHAIN_ID,
-  SURFACE_SHARE_BPS,
+  REFERRAL_SHARE_BPS,
   ZERO_ADDRESS,
   evmNowAddressUrl,
   formatBps,
@@ -157,8 +157,8 @@ export default async function CollectionPage({ params }: { params: Params }) {
               value={c.cfg.royaltyBps > 0 ? formatBps(c.cfg.royaltyBps) : "none"}
             />
             <Fact
-              label="Surface share"
-              value={`${formatBps(SURFACE_SHARE_BPS)} (to the mint surface)`}
+              label="Referral share"
+              value={`${formatBps(REFERRAL_SHARE_BPS)} (to the referrer)`}
             />
             <Fact label="Pricing" value={strategy ? "Live strategy" : "Fixed"} />
             <Fact label="Sale mode" value={pooled ? "Pooled (via minter)" : "Sequential"} />
@@ -202,9 +202,9 @@ export default async function CollectionPage({ params }: { params: Params }) {
             <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
               This collection is your own contract and can be minted from any
               interface. From your own page, call{" "}
-              <code className="text-fg">mintWithRewards(qty, yourAddress, 0x)</code> on{" "}
+              <code className="text-fg">mintWithReferral(qty, yourAddress, 0x)</code> on{" "}
               <code className="break-all text-fg">{addr}</code> so the{" "}
-              {formatBps(SURFACE_SHARE_BPS)} surface share routes to you, not PND.
+              {formatBps(REFERRAL_SHARE_BPS)} referral share routes to you, not PND.
             </p>
           </section>
         </aside>
