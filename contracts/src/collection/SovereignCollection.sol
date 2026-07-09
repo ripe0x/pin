@@ -473,12 +473,16 @@ contract SovereignCollection is
         emit AdminSet(account, true);
     }
 
-    /// @notice Revoke an admin. Owner-only. Reverts if `account` is not
-    ///         currently an admin, so a typo or double-remove fails loudly
+    /// @notice Revoke an admin. The owner may remove any admin; an admin may
+    ///         renounce itself by passing its own address (self-removal only
+    ///         reduces privilege, so no escalation is possible). Any other
+    ///         caller reverts NotAuthorized. Reverts NotAnAdmin if `account` is
+    ///         not currently an admin, so a typo or double-remove fails loudly
     ///         rather than emitting a misleading event. Removing every admin is
     ///         safe: the owner keeps full access, so there is no last-admin
     ///         lockout to guard against.
-    function removeAdmin(address account) external override onlyOwner {
+    function removeAdmin(address account) external override {
+        if (msg.sender != owner() && msg.sender != account) revert NotAuthorized();
         if (!(_admins[account])) revert NotAnAdmin();
         _admins[account] = false;
         emit AdminSet(account, false);

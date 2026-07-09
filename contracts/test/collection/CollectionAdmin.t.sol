@@ -89,14 +89,34 @@ contract CollectionAdminTest is CollectionBase {
         vm.stopPrank();
     }
 
-    function test_removeAdmin_onlyOwner_notStranger() public {
+    function test_removeAdmin_rejectsUnrelatedCaller() public {
         SovereignCollection c = _collection(_freeConfig());
         vm.prank(artist);
         c.addAdmin(admin);
 
-        vm.expectRevert(ownableUnauthStranger);
+        // a caller who is neither the owner nor the account itself is rejected
+        vm.expectRevert(ISovereignCollection.NotAuthorized.selector);
         vm.prank(stranger);
         c.removeAdmin(admin);
+    }
+
+    function test_admin_canRenounceSelf() public {
+        SovereignCollection c = _collection(_freeConfig());
+        vm.prank(artist);
+        c.addAdmin(admin);
+        assertTrue(c.isAdmin(admin));
+
+        // an admin may drop its own key by passing its own address
+        vm.expectEmit(true, false, false, true, address(c));
+        emit ISovereignCollection.AdminSet(admin, false);
+        vm.prank(admin);
+        c.removeAdmin(admin);
+        assertFalse(c.isAdmin(admin));
+
+        // and having renounced, it can no longer manage
+        vm.expectRevert(ISovereignCollection.NotAuthorized.selector);
+        vm.prank(admin);
+        c.setClosing(true);
     }
 
     // ── admin has full management access ──────────────────────────────────────
@@ -149,20 +169,24 @@ contract CollectionAdminTest is CollectionBase {
 
     // ── the two owner-only exceptions ─────────────────────────────────────────
 
-    function test_admin_cannotManageAdmins() public {
+    function test_admin_cannotAddOrRemovePeers() public {
         SovereignCollection c = _collection(_freeConfig());
-        vm.prank(artist);
+        address admin2 = makeAddr("admin2");
+        vm.startPrank(artist);
         c.addAdmin(admin);
+        c.addAdmin(admin2);
+        vm.stopPrank();
 
-        // an admin cannot mint peers nor revoke them: the keyring is the
-        // owner's alone.
+        // an admin cannot grant new admins (addAdmin stays owner-only)...
         vm.expectRevert(ownableUnauthAdmin);
         vm.prank(admin);
         c.addAdmin(makeAddr("other"));
 
-        vm.expectRevert(ownableUnauthAdmin);
+        // ...nor revoke a PEER: removeAdmin allows only the owner or the
+        // account itself, so an admin removing a different admin is rejected.
+        vm.expectRevert(ISovereignCollection.NotAuthorized.selector);
         vm.prank(admin);
-        c.removeAdmin(admin);
+        c.removeAdmin(admin2);
     }
 
     function test_admin_cannotTransferOwnership() public {

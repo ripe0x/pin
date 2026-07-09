@@ -41,10 +41,13 @@ storefront admin, still the root of the keyring).
   - `addAdmin(address account)` (`onlyOwner`; reverts `ZeroAccount` on the
     zero address, `AlreadyAdmin` if already granted; emits
     `AdminSet(account, true)`).
-  - `removeAdmin(address account)` (`onlyOwner`; reverts `NotAnAdmin` if the
-    account is not currently an admin, so a typo or double-remove fails
-    loudly; emits `AdminSet(account, false)`). No last-admin guard: removing
-    every admin is safe because the owner keeps full access.
+  - `removeAdmin(address account)` (owner-or-self: reverts `NotAuthorized`
+    unless the caller is the owner or `account` itself, so the owner can
+    revoke anyone and an admin can renounce ITSELF; reverts `NotAnAdmin` if
+    the account is not currently an admin; emits `AdminSet(account, false)`).
+    Self-removal only reduces privilege, so it is no escalation. No
+    last-admin guard: removing every admin is safe because the owner keeps
+    full access.
   - `isAdmin(address) view`.
   New errors: `AlreadyAdmin`, `NotAnAdmin`.
 
@@ -54,9 +57,14 @@ Reserved to the owner (unchanged, `onlyOwner`):
 
 | Function | Why owner-only |
 |---|---|
-| `addAdmin` / `removeAdmin` | the keyring: only the owner grants/revokes admins, so a rogue admin can never mint peers or lock out the owner |
+| `addAdmin` | granting is owner-only, so a rogue admin can never mint peers |
 | `transferOwnership` / `acceptOwnership` (Ownable2Step) | ownership is the root authority and the marketplace `owner()` |
 | `renounceOwnership` | still disabled (reverts `RenounceDisabled`) |
+
+`removeAdmin` is **owner-or-self**, not purely owner-only: the owner may
+revoke any admin, and an admin may renounce ITSELF by passing its own
+address, but an admin can never revoke a peer. Self-removal only reduces
+privilege, so there is no escalation path.
 
 Widened from `onlyOwner` to `onlyOwnerOrAdmin` (16 functions):
 
@@ -93,9 +101,11 @@ Consequences a reviewer should confirm are intended, not accidental:
 
 1. The modifier only widens the caller set; it introduces no new external
    call, so pull-payment and reentrancy properties are unchanged.
-2. No admin path escalates to owner or to admin-management
-   (`addAdmin`/`removeAdmin`, `transferOwnership` stay `onlyOwner`). Covered
-   by `test_admin_cannotManageAdmins`, `test_admin_cannotTransferOwnership`.
+2. No admin path escalates. `addAdmin` and `transferOwnership` stay
+   `onlyOwner`; `removeAdmin` is owner-or-self so an admin can renounce
+   itself but never revoke a peer or grant a new admin. Covered by
+   `test_admin_cannotAddOrRemovePeers`, `test_admin_canRenounceSelf`,
+   `test_admin_cannotTransferOwnership`, `test_removeAdmin_rejectsUnrelatedCaller`.
 3. `_admins` and `_minters` are separate maps; being an admin does not
    grant `mintTo`/`mintToAt`, and being a minter does not grant admin.
 4. Freeze/lock ordering (auth gate before the frozen/locked check) holds
@@ -115,13 +125,14 @@ Consequences a reviewer should confirm are intended, not accidental:
 
 ### Test coverage
 
-- New `test/collection/CollectionAdmin.t.sol` (15 tests): grant/revoke +
+- New `test/collection/CollectionAdmin.t.sol` (16 tests): grant/revoke +
   events, addAdmin guards (zero address, already-admin) + owner-only,
-  removeAdmin guards (not-an-admin, double-remove) + owner-only, admin runs
-  every widened setter, admin redirects payouts (functional proof), the two
-  owner-only carve-outs, revoked-admin loses access, non-admin rejected,
-  owner stays authorized, freeze blocks admin artwork.
+  removeAdmin guards (not-an-admin, double-remove), owner-or-self auth
+  (unrelated caller rejected, admin renounces self, admin cannot revoke a
+  peer), admin runs every widened setter, admin redirects payouts
+  (functional proof), owner-only carve-outs, revoked-admin loses access,
+  non-admin rejected, owner stays authorized, freeze blocks admin artwork.
 - Existing suites updated: unauthorized-caller assertions on the 16
   widened functions now expect `NotAuthorized` (was
   `OwnableUnauthorizedAccount`).
-- Full collection suite: **201 passed / 0 failed** (fork tests excluded).
+- Full collection suite: **202 passed / 0 failed** (fork tests excluded).

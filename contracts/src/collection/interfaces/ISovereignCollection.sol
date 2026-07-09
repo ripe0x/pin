@@ -169,8 +169,10 @@ interface ISovereignCollection is IMintMarks, ICollectionGraph, ITokenPath {
     ///         transferring ownership. Owner-only; reverts AlreadyAdmin if the
     ///         account is already an admin, ZeroAccount for the zero address.
     function addAdmin(address account) external;
-    /// @notice Revoke an admin. Owner-only; reverts NotAnAdmin if the account
-    ///         is not currently an admin.
+    /// @notice Revoke an admin. The owner may remove any admin; an admin may
+    ///         renounce itself by passing its own address. Any other caller
+    ///         reverts NotAuthorized; reverts NotAnAdmin if the account is not
+    ///         currently an admin.
     function removeAdmin(address account) external;
     function setTokenArtwork(uint256 tokenId, string calldata cid) external;
     function setTokenArtworkBatch(uint256[] calldata tokenIds, string[] calldata cids) external;
