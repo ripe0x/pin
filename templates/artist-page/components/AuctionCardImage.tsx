@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useMediaFallback } from "@/lib/use-media-fallback"
 
 const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
 const IMAGE_EXTENSIONS = [
@@ -42,6 +43,8 @@ export function AuctionCardImage({
   // real image to show, so an extension-less <img> that fails to load is
   // escalated to <video>.
   const [escalated, setEscalated] = useState(false)
+  // Rotate IPFS/Arweave gateways on load error before escalating.
+  const media = useMediaFallback(src)
   if (!src) {
     return (
       <div
@@ -55,6 +58,7 @@ export function AuctionCardImage({
   const ext = extOf(src)
   const ambiguous = !VIDEO_EXTENSIONS.includes(ext) && !IMAGE_EXTENSIONS.includes(ext)
   const video = VIDEO_EXTENSIONS.includes(ext) || escalated
+  const url = media.src ?? src
   return (
     <div
       className="relative overflow-hidden bg-gray-100"
@@ -63,7 +67,7 @@ export function AuctionCardImage({
       {video ? (
         // eslint-disable-next-line jsx-a11y/media-has-caption
         <video
-          src={src}
+          src={url}
           className="block w-full h-auto"
           muted
           playsInline
@@ -74,11 +78,14 @@ export function AuctionCardImage({
               setRatio(v.videoWidth / v.videoHeight)
             }
           }}
+          onError={() => {
+            media.onError()
+          }}
         />
       ) : (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={src}
+          src={url}
           alt={alt}
           className="block w-full h-auto"
           loading="lazy"
@@ -89,6 +96,9 @@ export function AuctionCardImage({
             }
           }}
           onError={() => {
+            // Rotate gateways first; only then treat an extension-less
+            // image as a misclassified video.
+            if (media.onError()) return
             if (ambiguous && !escalated) setEscalated(true)
           }}
         />

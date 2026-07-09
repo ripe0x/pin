@@ -25,17 +25,13 @@ import { unstable_cache } from "next/cache"
 import { type Address } from "viem"
 import { getClient } from "./rpc"
 import { erc721Abi } from "./abi"
+import { gatewayCandidates, resolveMediaUrl } from "./media-fallback"
 
-// Public IPFS gateways, raced concurrently (first valid JSON wins). Keep the
-// first entry an image host allowed in next.config.ts — `resolveImageUri`
-// routes `ipfs://` images through IPFS_GATEWAYS[0]. cloudflare-ipfs.com was
-// removed: Cloudflare shut down its public IPFS gateway, so it only ever
-// failed (and, under the old sequential loop, burned timeout doing so).
-const IPFS_GATEWAYS = [
-  "https://nftstorage.link/ipfs/",
-  "https://ipfs.io/ipfs/",
-  "https://dweb.link/ipfs/",
-]
+// IPFS + Arweave gateway lists and expansion live in ./media-fallback so the
+// client image components share the same fallback. Metadata JSON is fetched by
+// racing the full candidate list (gatewayCandidates); media URLs are rewritten
+// to a browser-loadable primary (resolveMediaUrl) and rotated client-side on
+// error by useMediaFallback.
 
 export type TokenMetadata = {
   name: string
@@ -161,9 +157,9 @@ async function fetchFromTokenUri(
   }
 
   const rawImage = hasImage ? (json.image as string) : null
-  const image = rawImage ? resolveImageUri(rawImage) : null
+  const image = rawImage ? resolveMediaUrl(rawImage) : null
   const rawAnimation = hasAnimation ? (json.animation_url as string) : null
-  const animationUrl = rawAnimation ? resolveImageUri(rawAnimation) : null
+  const animationUrl = rawAnimation ? resolveMediaUrl(rawAnimation) : null
   return {
     name: hasName ? (json.name as string) : `#${tokenId}`,
     description: hasDescription ? (json.description as string) : "",
@@ -186,11 +182,12 @@ async function loadMetadataJson(
   if (uri.startsWith("data:")) {
     return parseDataUrlJson(uri)
   }
-  const candidates = expandIpfsUri(uri)
+  const candidates = gatewayCandidates(uri)
   // Race all candidates concurrently — the fastest healthy gateway wins, so
-  // one slow/dead gateway never holds up (or sinks) the fetch. For non-IPFS
-  // URLs (https/arweave) `candidates` is a single URL. Retry the whole race
-  // once to ride out a momentary blip before giving up for this render.
+  // one slow/dead gateway never holds up (or sinks) the fetch. IPFS and
+  // Arweave URLs expand to their full gateway lists (so an arweave.net 404 on
+  // a fresh/optimistic bundle falls through to a gateway that has it); plain
+  // HTTPS is a single URL. Retry the whole race once to ride out a blip.
   for (let attempt = 0; attempt < 2; attempt++) {
     const json = await raceForJson(candidates)
     if (json) return json
@@ -280,27 +277,3 @@ function parseDataUrlJson(url: string): Record<string, unknown> | null {
   }
 }
 
-/**
- * Expand an `ipfs://` URI into a list of gateway URLs to race. Pass-through
- * for everything else.
- */
-function expandIpfsUri(uri: string): string[] {
-  if (uri.startsWith("ipfs://")) {
-    const path = uri.slice("ipfs://".length).replace(/^ipfs\//, "")
-    return IPFS_GATEWAYS.map((g) => g + path)
-  }
-  return [uri]
-}
-
-/**
- * Rewrite the metadata's `image` field to something a browser `<img>` /
- * `next/image` can render directly. `data:` URLs and HTTPS URLs pass through
- * unchanged; `ipfs://` gets resolved through the first gateway.
- */
-function resolveImageUri(uri: string): string {
-  if (uri.startsWith("ipfs://")) {
-    const path = uri.slice("ipfs://".length).replace(/^ipfs\//, "")
-    return IPFS_GATEWAYS[0] + path
-  }
-  return uri
-}

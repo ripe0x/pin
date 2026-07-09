@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useMediaFallback } from "@/lib/use-media-fallback"
 
 const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
 const IMAGE_EXTENSIONS = [
@@ -59,6 +60,9 @@ export function TokenMedia({
 
   const useAnimation = !!animationUrl
   const renderUrl = useAnimation ? animationUrl! : image
+  // Rotate IPFS/Arweave gateways on load error before giving up. A fresh
+  // arweave.net bundle can 404 while another gateway already serves it.
+  const media = useMediaFallback(renderUrl)
 
   if (!renderUrl) {
     return (
@@ -70,12 +74,13 @@ export function TokenMedia({
 
   const { kind: initialKind, ambiguous } = classify(renderUrl, useAnimation)
   const kind: MediaKind = escalated ? "video" : initialKind
+  const src = media.src ?? renderUrl
 
   if (kind === "video") {
     return (
       // eslint-disable-next-line jsx-a11y/media-has-caption
       <video
-        src={renderUrl}
+        src={src}
         poster={useAnimation && image ? image : undefined}
         className="max-h-[80vh] w-auto object-contain"
         autoPlay
@@ -83,6 +88,9 @@ export function TokenMedia({
         muted
         playsInline
         controls
+        onError={() => {
+          media.onError()
+        }}
       />
     )
   }
@@ -93,7 +101,7 @@ export function TokenMedia({
     // viewer can't know the intended aspect ratio, so default to square.
     return (
       <iframe
-        src={renderUrl}
+        src={src}
         title={title}
         sandbox="allow-scripts"
         loading="lazy"
@@ -106,10 +114,13 @@ export function TokenMedia({
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={renderUrl}
+      src={src}
       alt={title}
       className="max-h-[80vh] w-auto object-contain"
       onError={() => {
+        // Rotate gateways first; only once they're exhausted treat an
+        // extension-less image as a misclassified video.
+        if (media.onError()) return
         if (ambiguous && !escalated) setEscalated(true)
       }}
     />
