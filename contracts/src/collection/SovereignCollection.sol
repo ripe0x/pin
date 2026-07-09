@@ -88,6 +88,14 @@ contract SovereignCollection is
     ///      mintTo/mintToAt (non-payable); all value handling is theirs.
     mapping(address => bool) private _minters;
 
+    /// @dev Admins, granted by the owner via setAdmin. An admin may call every
+    ///      management function the owner can, with two exceptions reserved to
+    ///      the owner: managing the admin set (setAdmin) and transferring
+    ///      ownership. That keeps the owner the single root that hands out and
+    ///      revokes keys and that marketplaces read as owner(). Owner is an
+    ///      implicit admin. A grant is a bare mapping flag, revocable any time.
+    mapping(address => bool) private _admins;
+
     CollectionConfig private _cfg;
     WorkConfig private _work;
     bool private _closing;
@@ -430,7 +438,7 @@ contract SovereignCollection is
     /// @notice Sweep ONLY ETH that is not owed to any payee (e.g. force-fed via
     ///         selfdestruct). Pull-payment balances are untouchable: only the
     ///         surplus above _totalPending is ever sent.
-    function rescueStrayETH(address to) external override onlyOwner nonReentrant {
+    function rescueStrayETH(address to) external override onlyOwnerOrAdmin nonReentrant {
         if (!(to != address(0))) revert ZeroAccount();
         uint256 stray = address(this).balance - _totalPending;
         if (!(stray > 0)) revert NoStrayETH();
@@ -440,26 +448,54 @@ contract SovereignCollection is
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Config (owner)
+    // Admins (owner-managed operational delegates)
     // ─────────────────────────────────────────────────────────────────────────
 
-    function setClosing(bool closing) external override onlyOwner {
+    /// @dev Owner is always authorized; additionally any address the owner has
+    ///      granted via setAdmin. Gates every management function except
+    ///      setAdmin and ownership transfer, which stay owner-only.
+    modifier onlyOwnerOrAdmin() {
+        if (msg.sender != owner() && !_admins[msg.sender]) revert NotAuthorized();
+        _;
+    }
+
+    /// @notice Grant or revoke an admin. An admin can call every management
+    ///         function the owner can, except managing admins and transferring
+    ///         ownership. Owner-only: the owner is the root that hands out and
+    ///         revokes keys.
+    function setAdmin(address account, bool allowed) external override onlyOwner {
+        if (!(account != address(0))) revert ZeroAccount();
+        _admins[account] = allowed;
+        emit AdminSet(account, allowed);
+    }
+
+    /// @notice Whether `account` holds an explicit admin grant. Owner is an
+    ///         implicit admin and is not required to appear here.
+    function isAdmin(address account) external view override returns (bool) {
+        return _admins[account];
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Config (owner root; every setter below also accepts admins)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function setClosing(bool closing) external override onlyOwnerOrAdmin {
         _closing = closing;
         emit ClosingSet(closing);
     }
 
-    function setRenderer(address renderer_) external override onlyOwner {
+    function setRenderer(address renderer_) external override onlyOwnerOrAdmin {
         if (!(!_metadataFrozen)) revert MetadataIsFrozen();
         _renderer = renderer_;
         emit RendererSet(renderer_);
     }
 
-    function setMintHook(address hook) external override onlyOwner {
+    function setMintHook(address hook) external override onlyOwnerOrAdmin {
         _mintHook = hook;
         emit MintHookSet(hook);
     }
 
-    function setPriceStrategy(address strategy) external override onlyOwner {
+    function setPriceStrategy(address strategy) external override onlyOwnerOrAdmin {
         _priceStrategy = strategy;
         emit PriceStrategySet(strategy);
     }
@@ -468,13 +504,13 @@ contract SovereignCollection is
     ///         evented: authorizing a minter is the artist's visible, onchain
     ///         choice, and revoking it is the artist's lever over a minter's
     ///         schedule and behavior.
-    function setMinter(address minter, bool allowed) external override onlyOwner {
+    function setMinter(address minter, bool allowed) external override onlyOwnerOrAdmin {
         if (!(minter != address(0))) revert ZeroMinter();
         _minters[minter] = allowed;
         emit MinterSet(minter, allowed);
     }
 
-    function setTokenArtwork(uint256 tokenId, string calldata cid) external override onlyOwner {
+    function setTokenArtwork(uint256 tokenId, string calldata cid) external override onlyOwnerOrAdmin {
         if (!(!_metadataFrozen)) revert MetadataIsFrozen();
         if (!(_wasMinted(tokenId))) revert NotMinted();
         _tokenArtwork[tokenId] = cid;
@@ -484,7 +520,7 @@ contract SovereignCollection is
     function setTokenArtworkBatch(uint256[] calldata tokenIds, string[] calldata cids)
         external
         override
-        onlyOwner
+        onlyOwnerOrAdmin
     {
         if (!(!_metadataFrozen)) revert MetadataIsFrozen();
         if (!(tokenIds.length == cids.length)) revert LengthMismatch();
@@ -497,7 +533,7 @@ contract SovereignCollection is
 
     /// @notice Update where the artist's share accrues for FUTURE mints. Past
     ///         accruals remain claimable at the old address.
-    function setPayoutAddress(address payoutAddress) external override onlyOwner {
+    function setPayoutAddress(address payoutAddress) external override onlyOwnerOrAdmin {
         _cfg.payoutAddress = payoutAddress;
         emit PayoutAddressSet(payoutAddress);
     }
@@ -505,7 +541,7 @@ contract SovereignCollection is
     /// @notice One-way: renounce the ability to change the renderer or
     ///         per-token artwork, so collectors get a presentation-permanence
     ///         guarantee.
-    function freezeMetadata() external override onlyOwner {
+    function freezeMetadata() external override onlyOwnerOrAdmin {
         if (!(!_metadataFrozen)) revert AlreadyFrozen();
         _metadataFrozen = true;
         emit MetadataFrozen();
@@ -514,7 +550,7 @@ contract SovereignCollection is
     /// @notice Replace the work definition (script refs, deps, render spec) — the algorithm
     ///         the renderer runs. The artist may refine it until they lock it; reverts once
     ///         `lockWork` has been called.
-    function setWork(WorkConfig calldata work) external override onlyOwner {
+    function setWork(WorkConfig calldata work) external override onlyOwnerOrAdmin {
         if (_workLocked) revert WorkAlreadyLocked();
         delete _work; // clear the previous code/deps arrays before re-copying
         _copyWork(work);
@@ -524,7 +560,7 @@ contract SovereignCollection is
     /// @notice One-way: permanently lock the work config (what the work IS), so `setWork` can
     ///         never change it again. Together with freezeMetadata this is the art-permanence
     ///         guarantee; the contract itself is immutable from deploy.
-    function lockWork() external override onlyOwner {
+    function lockWork() external override onlyOwnerOrAdmin {
         if (!(!_workLocked)) revert WorkAlreadyLocked();
         _workLocked = true;
         emit WorkLocked();
@@ -542,7 +578,7 @@ contract SovereignCollection is
     // Collection Graph (owner, append-only)
     // ─────────────────────────────────────────────────────────────────────────
 
-    function addEdge(EdgeType edgeType, Ref calldata target) external override onlyOwner {
+    function addEdge(EdgeType edgeType, Ref calldata target) external override onlyOwnerOrAdmin {
         _edges.push(Edge({edgeType: edgeType, target: target}));
         emit EdgeAdded(edgeType, target);
     }
@@ -557,7 +593,7 @@ contract SovereignCollection is
     function acknowledgeEdge(EdgeType edgeType, Ref calldata source, bool ack)
         external
         override
-        onlyOwner
+        onlyOwnerOrAdmin
     {
         _inboundAck[keccak256(abi.encode(edgeType, source))] = ack;
         emit EdgeAcknowledged(edgeType, source, ack);
@@ -579,7 +615,7 @@ contract SovereignCollection is
     function setDefaultPath(PathType pathType, Ref calldata target, bytes32 data)
         external
         override
-        onlyOwner
+        onlyOwnerOrAdmin
     {
         _defaultPath = Path({pathType: pathType, target: target, data: data});
         emit DefaultPathSet(pathType, target, data);
@@ -588,7 +624,7 @@ contract SovereignCollection is
     function setPath(uint256 tokenId, PathType pathType, Ref calldata target, bytes32 data)
         external
         override
-        onlyOwner
+        onlyOwnerOrAdmin
     {
         if (!(_wasMinted(tokenId))) revert NotMinted();
         _tokenPath[tokenId] = Path({pathType: pathType, target: target, data: data});

@@ -91,7 +91,7 @@ contract CollectionHooksTest is CollectionBase {
 
     function test_hook_onlyOwnerCanSet() public {
         SovereignCollection c = _collection(_freeConfig());
-        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", stranger));
+        vm.expectRevert(ISovereignCollection.NotAuthorized.selector);
         vm.prank(stranger);
         c.setMintHook(address(recordingHook));
     }

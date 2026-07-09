@@ -26,13 +26,14 @@ contract CollectionSecurityTest is CollectionBase {
     }
 
     // ════════════════════════════════════════════════════════════════════
-    // Access control matrix: every onlyOwner / minter-gated / approval-gated
-    // function, called by a wrong caller, must revert.
+    // Access control matrix: every owner-or-admin / minter-gated /
+    // approval-gated function, called by a wrong caller (neither owner nor
+    // admin), must revert NotAuthorized.
     // ════════════════════════════════════════════════════════════════════
 
     function test_accessControl_onlyOwnerFunctions() public {
         SovereignCollection c = _collection(_freeConfig());
-        bytes memory unauth = abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", stranger);
+        bytes memory unauth = abi.encodeWithSelector(ISovereignCollection.NotAuthorized.selector);
 
         vm.startPrank(stranger);
 
@@ -74,7 +75,7 @@ contract CollectionSecurityTest is CollectionBase {
         SovereignCollection c = _collection(_freeConfig());
         vm.prank(collector);
         c.mint(1);
-        bytes memory unauth = abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", stranger);
+        bytes memory unauth = abi.encodeWithSelector(ISovereignCollection.NotAuthorized.selector);
 
         vm.startPrank(stranger);
 

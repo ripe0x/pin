@@ -135,6 +135,7 @@ interface ISovereignCollection is IMintMarks, ICollectionGraph, ITokenPath {
     event MintHookSet(address indexed hook);
     event PriceStrategySet(address indexed strategy);
     event MinterSet(address indexed minter, bool allowed);
+    event AdminSet(address indexed account, bool allowed);
     event TokenArtworkSet(uint256 indexed tokenId, string cid);
     event WorkSet(bytes32 codeHash);
     event WorkLocked();
@@ -161,6 +162,10 @@ interface ISovereignCollection is IMintMarks, ICollectionGraph, ITokenPath {
     ///         evented: authorizing a minter is the artist's visible, onchain
     ///         choice.
     function setMinter(address minter, bool allowed) external;
+    /// @notice Grant or revoke an admin. An admin can call every management
+    ///         function the owner can, except managing admins (this function)
+    ///         and transferring ownership. Owner-only.
+    function setAdmin(address account, bool allowed) external;
     function setTokenArtwork(uint256 tokenId, string calldata cid) external;
     function setTokenArtworkBatch(uint256[] calldata tokenIds, string[] calldata cids) external;
     function setPayoutAddress(address payoutAddress) external;
@@ -237,6 +242,9 @@ interface ISovereignCollection is IMintMarks, ICollectionGraph, ITokenPath {
     function mintHook() external view returns (address);
     function priceStrategy() external view returns (address);
     function isMinter(address minter) external view returns (bool);
+    /// @notice Whether `account` holds an explicit admin grant (owner is an
+    ///         implicit admin and need not appear here).
+    function isAdmin(address account) external view returns (bool);
     function isMetadataFrozen() external view returns (bool);
     /// @notice metadataFrozen && workLocked: the art-permanence guarantee.
     ///         (The contract itself is immutable from deploy.)

@@ -289,7 +289,7 @@ contract CollectionTest is CollectionBase {
 
     function test_setPayoutAddress_onlyOwner() public {
         SovereignCollection c = _collection(_freeConfig());
-        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", stranger));
+        vm.expectRevert(ISovereignCollection.NotAuthorized.selector);
         vm.prank(stranger);
         c.setPayoutAddress(stranger);
     }
@@ -381,7 +381,7 @@ contract CollectionTest is CollectionBase {
     function test_rescueStrayETH_onlyOwner() public {
         SovereignCollection c = _collection(_freeConfig());
         vm.deal(address(c), 1 ether);
-        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", stranger));
+        vm.expectRevert(ISovereignCollection.NotAuthorized.selector);
         vm.prank(stranger);
         c.rescueStrayETH(stranger);
     }
@@ -413,7 +413,7 @@ contract CollectionTest is CollectionBase {
 
     function test_setClosing_onlyOwner() public {
         SovereignCollection c = _collection(_freeConfig());
-        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", stranger));
+        vm.expectRevert(ISovereignCollection.NotAuthorized.selector);
         vm.prank(stranger);
         c.setClosing(true);
     }
@@ -482,7 +482,7 @@ contract CollectionTest is CollectionBase {
     function test_graph_onlyOwner() public {
         SovereignCollection c = _collection(_freeConfig());
         Ref memory ref = Ref(1, address(c), 0, RefKind.Collection);
-        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", stranger));
+        vm.expectRevert(ISovereignCollection.NotAuthorized.selector);
         vm.prank(stranger);
         c.addEdge(EdgeType.BelongsTo, ref);
     }
@@ -509,7 +509,7 @@ contract CollectionTest is CollectionBase {
     function test_graph_acknowledgeEdge_onlyOwner() public {
         SovereignCollection c = _collection(_freeConfig());
         Ref memory src = Ref(1, makeAddr("source"), 0, RefKind.Collection);
-        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", stranger));
+        vm.expectRevert(ISovereignCollection.NotAuthorized.selector);
         vm.prank(stranger);
         c.acknowledgeEdge(EdgeType.StudyOf, src, true);
     }
@@ -546,7 +546,7 @@ contract CollectionTest is CollectionBase {
         vm.prank(collector);
         c.mint(1);
         Ref memory ref = Ref(1, address(c), 0, RefKind.Collection);
-        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", collector));
+        vm.expectRevert(ISovereignCollection.NotAuthorized.selector);
         vm.prank(collector);
         c.setPath(1, PathType.Burn, ref, bytes32(0));
     }
@@ -554,7 +554,7 @@ contract CollectionTest is CollectionBase {
     function test_tokenPath_setDefaultPath_onlyOwner() public {
         SovereignCollection c = _collection(_freeConfig());
         Ref memory ref = Ref(1, address(c), 0, RefKind.Collection);
-        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", stranger));
+        vm.expectRevert(ISovereignCollection.NotAuthorized.selector);
         vm.prank(stranger);
         c.setDefaultPath(PathType.Burn, ref, bytes32(0));
     }
@@ -624,7 +624,7 @@ contract CollectionTest is CollectionBase {
 
     function test_setRenderer_onlyOwner() public {
         SovereignCollection c = _collection(_freeConfig());
-        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", stranger));
+        vm.expectRevert(ISovereignCollection.NotAuthorized.selector);
         vm.prank(stranger);
         c.setRenderer(makeAddr("newRenderer"));
     }
