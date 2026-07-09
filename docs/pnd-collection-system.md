@@ -30,6 +30,11 @@
 > Editions is one preset of the general collection core, which moved
 > from ERC721A to OZ ERC721; `contracts/src/editions/` was removed.
 
+> **New here?** Start with the [glossary](collection-glossary.md) for plain
+> definitions, and [getting started](collection-getting-started.md) for a
+> hands-on walkthrough (deploy, mint, read). This document is the design
+> rationale: *why* the system is built the way it is.
+
 ## 1. What we're building
 
 A modular collection protocol plus the product around it, letting PND
@@ -89,14 +94,16 @@ the rules.
   anyone can call forever; a token's live view is computed from chain
   data, not served by anyone's infrastructure. If PND disappears, every
   work still renders.
-- **Cut until it hurts.** Decisions made along the way: no
-  token-contract-agnostic seed binder (all cost, hypothetical benefit),
-  no separate WorkRegistry in v1 (work config lives on the collection;
-  a registry is cleanly retrofittable later if the
-  "declare a work independent of any sale" preservation product earns
-  it), no dutch-auction strategy in v1 (the price slot is justified by
-  TBAM's dynamic pricing; implementations are additive forever), no
-  second token variant (one OZ core with an id-mode flag).
+- **Cut until it hurts.** Several things were deliberately left out of v1,
+  each for a reason:
+  - No token-contract-agnostic seed binder: all cost, only hypothetical
+    benefit.
+  - No separate WorkRegistry: the work config lives on the collection. A
+    registry is cleanly retrofittable later, if a "declare a work independent
+    of any sale" preservation product ever earns it.
+  - No dutch-auction strategy: the price slot already covers TBAM's dynamic
+    pricing, and new strategies are additive forever.
+  - No second token variant: one OZ core with an id-mode flag does the job.
 
 ## 3. The onchain system
 
@@ -108,7 +115,7 @@ SINGLETONS (deployed once, ownerless)
 
 COLLECTION LAYER (per artist, via factory)
   CollectionFactory ── clones ──► Collection (the core)
-    fixed: OZ ERC721, sale states, 10% surface share,
+    fixed: OZ ERC721, sale states, 10% referral share,
            per-token Mint Mark + entropy → tokenSeed(),
            work config (set at init, lockable), graph refs,
            id mode: sequential | pooled (set at init)
@@ -141,7 +148,7 @@ the payment split, hooks interface, sale states, and graph carry over;
 the token layer is new.
 
 - **OZ ERC721** with two mint paths: the built-in path (assigns
-  `nextId++`, takes payment, enforces surface share) and a role-gated
+  `nextId++`, takes payment, enforces referral share) and a role-gated
   `mintTo(recipient, tokenId)` for authorized extension minters. An
   init-time flag sets the id mode: sequential collections never accept
   minter-supplied ids; pooled collections require them. Approval-gated
@@ -158,7 +165,7 @@ the token layer is new.
   machinery. A re-minted pooled id is a new instance: fresh mark, fresh
   entropy, fresh escrow; the prior instance's history persists in events
   and the indexer.
-- **Surface share**: unchanged from the Editions spec. A fixed 10% of
+- **Referral share**: unchanged from the Editions spec. A fixed 10% of
   the price to whoever hosts the mint; folded back to the artist on a
   direct or self-hosted mint. No other protocol fee. On the
   extension-minter path this becomes convention rather than contract
@@ -295,7 +302,7 @@ surface, worker, indexer, artist-page template, Catalog).
   gets a competitor none of the system it plugs into.
 - **Revenue without breaking the no-fee origin**: PND's promise was
   zero rent, not zero revenue: no platform standing between artist and
-  collector. Auctions and secondary stay at zero. The surface share
+  collector. Auctions and secondary stay at zero. The referral share
   pays whoever actually hosts a mint, and the artist keeps it on their
   own site. Generative drops are where that share is material (higher
   price points, mint-window velocity), and comparable platforms charge
@@ -382,7 +389,7 @@ surface, worker, indexer, artist-page template, Catalog).
   the existing `SovereignAuctionHouse` and the sovereign-artist-site
   template. Singletons stay unprefixed in the Catalog idiom
   (`Attribution`, `GenerativeRenderer`, `SVGRenderer`).
-- **Extension-path surface share**: convention plus an official,
+- **Extension-path referral share**: convention plus an official,
   reviewed minter set surfaced by the studio. PND-shipped minters
   honor the share in code; a custom minter is the artist's visible,
   onchain choice.
@@ -404,7 +411,7 @@ An artist opens the studio, uploads an algorithm or points at a
 renderer contract, watches test seeds render exactly as they will
 onchain, and deploys a collection they own in one transaction,
 cataloged under their address, minted on pnd.ripe.wtf and on their own
-site, where they keep the surface share. The code lives in shared
+site, where they keep the referral share. The code lives in shared
 onchain storage; the seed is stamped at mint; the live view is a pure
 function of chain state that anyone can evaluate forever. Holders can
 act on works, works can read the network, and value can live inside

@@ -228,7 +228,7 @@ interface ICollection is IMintMarks, ICollectionGraph, ITokenPath {
         view
         returns (CollectionConfig memory cfg, CollectionStatus status, uint256 minted);
 
-    /// @notice The fixed protocol referrer-share, in bps (constant).
+    /// @notice The fixed protocol referral share, in bps (constant).
     function referralShareBps() external view returns (uint16);
 
     /// @notice Resolved price for a prospective mint: the strategy if set,
