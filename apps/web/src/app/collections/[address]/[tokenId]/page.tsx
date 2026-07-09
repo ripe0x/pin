@@ -6,7 +6,7 @@ import { TokenMedia } from "@/components/token/TokenMedia"
 import { CopyAddressButton } from "@/components/CopyAddressButton"
 import { CollectionMintMarkCard } from "@/components/collections/CollectionMintMarkCard"
 import { getCollection, getCollectionToken } from "@/lib/collection-onchain"
-import { PND_CHAIN_ID, evmNowAddressUrl, ipfsToHttp, shortAddress } from "@/lib/sovereign-collection"
+import { PND_CHAIN_ID, evmNowAddressUrl, ipfsToHttp, shortAddress } from "@/lib/collection"
 
 type Params = Promise<{ address: string; tokenId: string }>
 

@@ -1,4 +1,4 @@
-# SovereignCollection: re-audit notes (post-`43f4ae7`)
+# Collection: re-audit notes (post-`43f4ae7`)
 
 > **Purpose.** A running log of changes made to the collection contracts
 > AFTER the audited baseline, so a re-review can be done against this
@@ -7,7 +7,7 @@
 >
 > **Audited baseline: commit `43f4ae7`** (`fix(collection): security-audit
 > fixes`). That commit applies the notes from **two independent security
-> reviews** of SovereignCollection + Homage (pooled-burn restricted to
+> reviews** of Collection + Homage (pooled-burn restricted to
 > authorized minters, mintIndex widened to uint40, `setWork`/`lockWork`
 > honesty, comment cleanup). The baseline access-control model is
 > **single-owner** (`Ownable2StepUpgradeable`); every management function
@@ -19,7 +19,7 @@
 ## Change 1: Multi-admin access control
 
 **Branch:** `claude/elated-swirles-0cc8e7`. **Touches:**
-`SovereignCollection.sol`, `interfaces/ISovereignCollection.sol`, and the
+`Collection.sol`, `interfaces/ICollection.sol`, and the
 collection test suite.
 
 ### Summary
@@ -37,7 +37,7 @@ storefront admin, still the root of the keyring).
 - New modifier:
   `onlyOwnerOrAdmin = (msg.sender == owner() || _admins[msg.sender])`,
   reverting `NotAuthorized` otherwise.
-- New functions, all added to `ISovereignCollection`:
+- New functions, all added to `ICollection`:
   - `addAdmin(address account)` (`onlyOwner`; reverts `ZeroAccount` on the
     zero address, `AlreadyAdmin` if already granted; emits
     `AdminSet(account, true)`).

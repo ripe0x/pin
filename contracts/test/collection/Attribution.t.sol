@@ -7,8 +7,8 @@ import {Ownable2StepUpgradeable} from
 
 import {Attribution} from "../../src/collection/Attribution.sol";
 import {Catalog} from "../../src/Catalog.sol";
-import {SovereignCollection} from "../../src/collection/SovereignCollection.sol";
-import {SovereignCollectionFactory} from "../../src/collection/SovereignCollectionFactory.sol";
+import {Collection} from "../../src/collection/Collection.sol";
+import {CollectionFactory} from "../../src/collection/CollectionFactory.sol";
 import {
     CollectionConfig,
     WorkConfig,
@@ -29,7 +29,7 @@ contract NonOwnableCollection {
     }
 
     /// @dev Lets the test drive a "collection calls Attribution itself"
-    ///      scenario, mirroring what SovereignCollection.initialize() does.
+    ///      scenario, mirroring what Collection.initialize() does.
     function callSetArtists(address[] calldata artists) external {
         attribution.setArtists(address(this), artists);
     }
@@ -136,7 +136,7 @@ contract AttributionTest is Test {
     // ─── Authority matrix: Ownable collection ───────────────────────
 
     function test_ownableCollection_ownerPath_succeeds() public {
-        (SovereignCollection collection,) = _deployCollection(new address[](0));
+        (Collection collection,) = _deployCollection(new address[](0));
         address collOwner = collection.owner();
 
         vm.expectEmit(true, true, false, true, address(attribution));
@@ -149,7 +149,7 @@ contract AttributionTest is Test {
     }
 
     function test_ownableCollection_strangerPath_reverts() public {
-        (SovereignCollection collection,) = _deployCollection(new address[](0));
+        (Collection collection,) = _deployCollection(new address[](0));
 
         vm.prank(stranger);
         vm.expectRevert(Attribution.NotAuthorized.selector);
@@ -162,7 +162,7 @@ contract AttributionTest is Test {
         // approved anywhere — Attribution has no operator concept, so this
         // is just another stranger flavor, confirmed distinct from the
         // owner in setup).
-        (SovereignCollection collection,) = _deployCollection(new address[](0));
+        (Collection collection,) = _deployCollection(new address[](0));
         address operatorOfNothing = makeAddr("operatorOfNothing");
         assertTrue(operatorOfNothing != collection.owner());
 
@@ -330,7 +330,7 @@ contract AttributionTest is Test {
     // ─── Integration: real factory + real Catalog, handshake intersection ──
 
     function test_integration_factoryRosterAndCatalogIntersection() public {
-        (SovereignCollection collection, Catalog catalog) = _deployCollectionWithCatalog();
+        (Collection collection, Catalog catalog) = _deployCollectionWithCatalog();
 
         address[] memory roster = new address[](2);
         roster[0] = artistA;
@@ -338,7 +338,7 @@ contract AttributionTest is Test {
 
         // Redeploy through the factory WITH a 2-artist roster this time, so
         // we can assert the collection-self path fired during init.
-        SovereignCollectionFactory factory = _newFactory();
+        CollectionFactory factory = _newFactory();
         address created = factory.createCollection(
             "Collab Collection",
             "COLLAB",
@@ -382,7 +382,7 @@ contract AttributionTest is Test {
     }
 
     function test_integration_ownerCanUpdateRosterAfterDeploy_thenLock() public {
-        (SovereignCollection collection,) = _deployCollectionWithCatalog();
+        (Collection collection,) = _deployCollectionWithCatalog();
         address collOwner = collection.owner();
 
         // Owner (not the collection itself) updates the roster post-deploy
@@ -410,31 +410,31 @@ contract AttributionTest is Test {
 
     function _emptyWork() internal pure returns (WorkConfig memory) {}
 
-    function _newFactory() internal returns (SovereignCollectionFactory factory) {
+    function _newFactory() internal returns (CollectionFactory factory) {
         MockRenderer renderer = new MockRenderer();
-        SovereignCollection impl = new SovereignCollection();
-        factory = new SovereignCollectionFactory(address(impl), address(renderer), address(attribution));
+        Collection impl = new Collection();
+        factory = new CollectionFactory(address(impl), address(renderer), address(attribution));
     }
 
     /// @dev Deploys a factory-created collection (no roster) plus a fresh
     ///      real Catalog instance, wired against this test's Attribution.
     function _deployCollection(address[] memory artists)
         internal
-        returns (SovereignCollection collection, MockRenderer renderer)
+        returns (Collection collection, MockRenderer renderer)
     {
         renderer = new MockRenderer();
-        SovereignCollection impl = new SovereignCollection();
-        SovereignCollectionFactory factory =
-            new SovereignCollectionFactory(address(impl), address(renderer), address(attribution));
+        Collection impl = new Collection();
+        CollectionFactory factory =
+            new CollectionFactory(address(impl), address(renderer), address(attribution));
         address created = factory.createCollection(
             "Artist Collection", "ACOL", artistA, _freeConfig(), _emptyWork(), new address[](0), artists
         );
-        collection = SovereignCollection(created);
+        collection = Collection(created);
     }
 
     function _deployCollectionWithCatalog()
         internal
-        returns (SovereignCollection collection, Catalog catalog)
+        returns (Collection collection, Catalog catalog)
     {
         catalog = new Catalog();
         (collection,) = _deployCollection(new address[](0));

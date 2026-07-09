@@ -8,7 +8,7 @@ import {Ownable2StepUpgradeable} from
 import {ReentrancyGuardUpgradeable} from
     "openzeppelin-contracts-upgradeable/contracts/utils/ReentrancyGuardUpgradeable.sol";
 
-import {ISovereignCollection} from "./interfaces/ISovereignCollection.sol";
+import {ICollection} from "./interfaces/ICollection.sol";
 import {IRenderer} from "./interfaces/IRenderer.sol";
 import {IMintHook} from "./interfaces/IMintHook.sol";
 import {IPriceStrategy} from "./interfaces/IPriceStrategy.sol";
@@ -28,7 +28,7 @@ import {
     Ref
 } from "./CollectionTypes.sol";
 
-/// @title SovereignCollection
+/// @title Collection
 /// @notice One artist collection. An OZ ERC721 where every minted token keeps
 ///         its own identity: a per-token Mint Mark (provenance), mint-time
 ///         entropy (tokenSeed), and a Token Path (forward pointer). Honest
@@ -45,7 +45,7 @@ import {
 ///         upgrade path, no seal: what deploys is what runs, forever. The
 ///         upgradeable-variant base contracts are used only for their
 ///         initializer pattern, which clones require.
-// SovereignCollection deliberately does NOT inherit ICollectionView. That
+// Collection deliberately does NOT inherit ICollectionView. That
 // interface is the renderer-side typing of this contract's public surface;
 // inheriting it would force passthrough re-overrides of name/symbol/owner
 // against the OZ bases for zero behavior. The read surface is exercised
@@ -59,11 +59,11 @@ import {
 // `_authorizeUpgrade`. A deployed collection is immutable — the core evolves
 // only by deploying a new implementation + factory version, never by changing
 // a live collection.
-contract SovereignCollection is
+contract Collection is
     ERC721Upgradeable, // initializer-based ERC721 for the clone — NOT an upgrade proxy
     Ownable2StepUpgradeable,
     ReentrancyGuardUpgradeable,
-    ISovereignCollection
+    ICollection
 {
     uint16 private constant BPS = 10_000;
     /// @notice Fixed protocol referral share: 10%. Paid to the mint referrer

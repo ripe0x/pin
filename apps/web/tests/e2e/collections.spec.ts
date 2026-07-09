@@ -8,7 +8,7 @@
  *
  *   1. EDITION preset, full create -> deploy -> mint -> verify Mint Mark.
  *      Exercises the whole write path: createCollection on
- *      SovereignCollectionFactory, then mintWithReferral on the deployed
+ *      CollectionFactory, then mintWithReferral on the deployed
  *      clone, then reads the collection + token pages for the resulting
  *      state (name, status, price, minted count, Mint Mark, seed).
  *

@@ -56,7 +56,7 @@ interface ITokenPath {
         external;
 }
 
-/// @title ISovereignCollection
+/// @title ICollection
 /// @notice One artist collection: an OZ ERC721 deployed as an immutable
 ///         EIP-1167 clone. The core holds ownership, money paths, and
 ///         provenance (per-token Mint Marks + mint-time entropy); all
@@ -65,7 +65,7 @@ interface ITokenPath {
 ///         Honest fixed pricing with a fixed built-in Referral Share; no
 ///         other protocol fee. There is no upgrade path and no seal: what
 ///         deploys is what runs, forever.
-interface ISovereignCollection is IMintMarks, ICollectionGraph, ITokenPath {
+interface ICollection is IMintMarks, ICollectionGraph, ITokenPath {
     // ── errors ──────────────────────────────────────────────────────────────
     error OwnerRequired();
     error RendererRequired();

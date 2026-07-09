@@ -94,7 +94,7 @@ export const SOVEREIGN_AUCTION_HOUSE_FACTORY: Record<number, Address> = {
 }
 
 // SUPERSEDED — PND Editions (PNDEditionsFactory + reference mint hooks) is
-// retired in favor of the SovereignCollection system (see
+// retired in favor of the Collection system (see
 // SOVEREIGN_COLLECTION_FACTORY + ATTRIBUTION below). The editions contracts
 // (contracts/src/editions/*) and DeployEditions.s.sol are deleted; these
 // addresses were never deployed to mainnet (still zero) and are kept only as
@@ -166,7 +166,7 @@ export const MURI_MANIFOLD_EXTENSION: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0FFc4A1906157248ae64F28fD259bB7a2790606C",
 }
 
-// SovereignCollectionFactory — deploys one SovereignCollection per work as an
+// CollectionFactory — deploys one Collection per work as an
 // immutable EIP-1167 clone (no protocol fee; Referral Share is fixed inside the
 // collection). NOT yet deployed to mainnet — paste the address here after
 // running the collection deploy script. For local Anvil dev, set the
@@ -183,14 +183,14 @@ export const ATTRIBUTION: Record<number, Address> = {
 }
 
 // GenerativeRenderer — on-chain renderer for generative-script collections
-// (wired into a SovereignCollection at deploy or swapped later by the
+// (wired into a Collection at deploy or swapped later by the
 // owner). NOT yet deployed to mainnet — paste the address here after deploy.
 export const GENERATIVE_RENDERER: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
 }
 
 // DefaultRenderer — the canonical built-in renderer every
-// SovereignCollectionFactory wires into its clones unless the owner swaps it.
+// CollectionFactory wires into its clones unless the owner swaps it.
 // NOT yet deployed to mainnet — paste the address here after deploy.
 export const DEFAULT_RENDERER: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",

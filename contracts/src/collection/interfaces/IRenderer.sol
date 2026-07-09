@@ -24,7 +24,7 @@ interface IRenderer {
 
 /// @title ICollectionView
 /// @notice The read surface a renderer uses to build metadata. Implemented in
-///         full by SovereignCollection; any adopting contract implements
+///         full by Collection; any adopting contract implements
 ///         whatever subset its chosen renderer actually reads.
 interface ICollectionView {
     function name() external view returns (string memory);

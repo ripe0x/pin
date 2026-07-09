@@ -4,8 +4,8 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {Clones} from "openzeppelin-contracts/contracts/proxy/Clones.sol";
 
-import {SovereignCollection} from "../../src/collection/SovereignCollection.sol";
-import {SovereignCollectionFactory} from "../../src/collection/SovereignCollectionFactory.sol";
+import {Collection} from "../../src/collection/Collection.sol";
+import {CollectionFactory} from "../../src/collection/CollectionFactory.sol";
 import {
     CollectionConfig,
     WorkConfig,
@@ -16,11 +16,11 @@ import {
 
 import {MockRenderer} from "./mocks/CollectionMocks.sol";
 
-/// @dev Shared deployment + helpers for the SovereignCollection test suite.
+/// @dev Shared deployment + helpers for the Collection test suite.
 contract CollectionBase is Test {
     MockRenderer internal renderer;
-    SovereignCollection internal impl;
-    SovereignCollectionFactory internal factory;
+    Collection internal impl;
+    CollectionFactory internal factory;
 
     address internal artist = makeAddr("artist");
     address internal collector = makeAddr("collector");
@@ -29,10 +29,10 @@ contract CollectionBase is Test {
 
     function setUp() public virtual {
         renderer = new MockRenderer();
-        impl = new SovereignCollection();
+        impl = new Collection();
         // address(0) attribution: the roster-write integration is out of
         // scope for this suite (owned by the Attribution test agent).
-        factory = new SovereignCollectionFactory(address(impl), address(renderer), address(0));
+        factory = new CollectionFactory(address(impl), address(renderer), address(0));
     }
 
     // ── config builders ──────────────────────────────────────────────────────
@@ -65,10 +65,10 @@ contract CollectionBase is Test {
 
     // ── deploy helpers ───────────────────────────────────────────────────────
 
-    function _collection(CollectionConfig memory cfg) internal returns (SovereignCollection c) {
+    function _collection(CollectionConfig memory cfg) internal returns (Collection c) {
         address[] memory noMinters = new address[](0);
         address[] memory noArtists = new address[](0);
-        c = SovereignCollection(
+        c = Collection(
             factory.createCollection(
                 "Artist Collection", "ACOL", artist, cfg, _emptyWork(), noMinters, noArtists
             )
@@ -77,18 +77,18 @@ contract CollectionBase is Test {
 
     function _collectionWithMinters(CollectionConfig memory cfg, address[] memory minters)
         internal
-        returns (SovereignCollection c)
+        returns (Collection c)
     {
         address[] memory noArtists = new address[](0);
-        c = SovereignCollection(
+        c = Collection(
             factory.createCollection("Artist Collection", "ACOL", artist, cfg, _emptyWork(), minters, noArtists)
         );
     }
 
     /// @dev A fresh, uninitialized EIP-1167 clone of `impl`, for tests that
     ///      drive `initialize()` directly (init validation, double-init).
-    function _freshClone() internal returns (SovereignCollection) {
-        return SovereignCollection(Clones.clone(address(impl)));
+    function _freshClone() internal returns (Collection) {
+        return Collection(Clones.clone(address(impl)));
     }
 
     /// @dev Full InitParams with sane defaults, for tests that need to

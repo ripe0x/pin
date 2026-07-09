@@ -1,6 +1,6 @@
-// Auto-extracted from contracts/out/SovereignCollection.sol/SovereignCollection.json.
+// Auto-extracted from contracts/out/Collection.sol/Collection.json.
 // Re-run: node scripts/emit-collection-abi.mjs
-export const sovereignCollectionAbi = [
+export const collectionAbi = [
   {
     "type": "constructor",
     "inputs": [],

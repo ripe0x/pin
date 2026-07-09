@@ -38,8 +38,8 @@
 ### D1. Packages: ABI + addresses sync
 
 `scripts/emit-collection-abi.mjs` following the existing emit-script
-convention; new `@pin/abi` exports: `sovereignCollectionAbi`,
-`sovereignCollectionFactoryAbi`, `attributionAbi`,
+convention; new `@pin/abi` exports: `collectionAbi`,
+`collectionFactoryAbi`, `attributionAbi`,
 `generativeRendererAbi`, plus a minimal hand-written
 `scriptyStorageAbi` (createContent/addChunkToContent/getContent) for
 studio uploads. `@pin/addresses`: `SOVEREIGN_COLLECTION_FACTORY`,
@@ -75,7 +75,7 @@ Parity is verified in D8 by comparing against the real
 
 ### D4. Web data layer
 
-`lib/sovereign-collection.ts` (client-safe: enums, config/mark/work
+`lib/collection.ts` (client-safe: enums, config/mark/work
 decoders mirroring `CollectionTypes.sol`, lifecycle + pricing helpers,
 factory address resolution with `NEXT_PUBLIC_SOVEREIGN_COLLECTION_FACTORY`
 override) and `lib/collection-onchain.ts` (server-only pgCache reads:
@@ -118,7 +118,7 @@ address; route to the new collection page.
 
 ### D7. Periphery (each deploy-gated where it touches prod data)
 
-- **Indexer**: `SovereignCollectionFactory` entry in
+- **Indexer**: `CollectionFactory` entry in
   `ponder.config.ts` using the `factory()` pattern (the
   SovereignAuctionHouse precedent), handlers for
   CollectionCreated/Minted/Burned into new `ponder` tables; excluded

@@ -364,7 +364,7 @@ export const muriTokens = onchainTable(
 
 // ─── PND Collection System (contracts/src/collection/) ──────────────────
 // DEPLOY-GATED (see ponder.config.ts): these tables exist regardless, but
-// stay empty until SovereignCollectionFactory + SovereignCollection are
+// stay empty until CollectionFactory + Collection are
 // wired into `contracts`. One row per artist collection deployed via the
 // factory (`collections`), one row per live token incl. pooled re-mints
 // (`collection_tokens`), and an append-only mint log (`collection_mints`).
@@ -374,7 +374,7 @@ export const muriTokens = onchainTable(
 export const collections = onchainTable(
   "collections",
   (t) => ({
-    // The deployed SovereignCollection clone address.
+    // The deployed Collection clone address.
     collection: t.hex().primaryKey(),
     owner: t.hex().notNull(),
     createdAtBlock: t.bigint().notNull(),
@@ -387,7 +387,7 @@ export const collections = onchainTable(
 )
 
 // Current state per token. Pooled collections can burn-then-remint the
-// same tokenId as a new instance (see ISovereignCollection.mintToId) — a
+// same tokenId as a new instance (see ICollection.mintToId) — a
 // re-mint UPDATEs this row in place (fresh mark fields, burned reset to
 // false) rather than inserting a new one, so `id` stays the durable
 // per-(collection,tokenId) identity across the token's burn/remint cycles.

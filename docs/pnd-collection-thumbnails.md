@@ -6,7 +6,7 @@
 > should be mirrored into injection-convention v2 so the onchain
 > assembler, studio, mint surface, and artist embed all agree on the
 > canonical frame). The contract mechanics referenced here already ship
-> on PR #133: `SovereignCollection.artworkURI` / `setTokenArtwork` /
+> on PR #133: `Collection.artworkURI` / `setTokenArtwork` /
 > `setTokenArtworkBatch` / `freezeMetadata`, and the `image` resolution
 > in `DefaultRenderer` and `GenerativeRenderer`. Nothing here needs a
 > contract change for v1.

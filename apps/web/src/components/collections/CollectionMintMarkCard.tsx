@@ -8,7 +8,7 @@ import {
   evmNowAddressUrl,
   shortAddress,
   type MintMark,
-} from "@/lib/sovereign-collection"
+} from "@/lib/collection"
 
 export function CollectionMintMarkCard({ mark, chainId }: { mark: MintMark; chainId: number }) {
   return (

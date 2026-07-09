@@ -6,8 +6,8 @@
 > is the build plan for section 3 of that doc, with comprehensive
 > testing as a first-class deliverable, not a trailing phase.
 >
-> Naming follows the overview: **SovereignCollection** /
-> **SovereignCollectionFactory**, consistent with the existing
+> Naming follows the overview: **Collection** /
+> **CollectionFactory**, consistent with the existing
 > `SovereignAuctionHouse` family in `contracts/src/`.
 
 ## Ground rules
@@ -51,7 +51,7 @@ any code. All three are one-way once deployed.
    on **all** mint paths, built-in and extension `mintTo`, so gating
    composes with custom minters instead of being reimplemented inside
    them.
-4. **Interface names**: `ISovereignCollection` (view surface:
+4. **Interface names**: `ICollection` (view surface:
    `tokenSeed`, `mintMarkOf`, `workConfig`, `artistOf`, sale state),
    `IRenderer` (`tokenURI(address collection, uint256 tokenId)`),
    `IPriceStrategy` (`priceOf(collection, minter, qty, data)` view),
@@ -62,7 +62,7 @@ any code. All three are one-way once deployed.
 
 ### Contracts
 
-- `SovereignCollection.sol`: OZ ERC721 core.
+- `Collection.sol`: OZ ERC721 core.
   - Carries over from `PNDEditions.sol`: payment split math and the
     surface-share flow, sale states, graph refs (`Ref`, Edition Graph,
     Token Path), hook invocation points, per-token artwork override.
@@ -79,7 +79,7 @@ any code. All three are one-way once deployed.
     ids, sequential mode forbids them); approval-gated `burn`; minter
     authorization (grant/revoke by owner, evented); renderer slot
     switched to the explicit-param `IRenderer`.
-- `SovereignCollectionFactory.sol`: EIP-1167 clone + init in one tx
+- `CollectionFactory.sol`: EIP-1167 clone + init in one tx
   (id mode, work config, price, payout, renderer, hook, minter grants,
   optional Attribution roster write, single discovery event).
 - `CollectionTypes.sol`: port of `PNDEditionsTypes.sol` minus batch

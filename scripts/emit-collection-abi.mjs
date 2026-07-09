@@ -25,14 +25,14 @@ function emit({ artifact, exportName, outFile }) {
 }
 
 emit({
-  artifact: "SovereignCollection.sol/SovereignCollection.json",
-  exportName: "sovereignCollectionAbi",
-  outFile: "sovereignCollection.ts",
+  artifact: "Collection.sol/Collection.json",
+  exportName: "collectionAbi",
+  outFile: "collection.ts",
 });
 emit({
-  artifact: "SovereignCollectionFactory.sol/SovereignCollectionFactory.json",
-  exportName: "sovereignCollectionFactoryAbi",
-  outFile: "sovereignCollectionFactory.ts",
+  artifact: "CollectionFactory.sol/CollectionFactory.json",
+  exportName: "collectionFactoryAbi",
+  outFile: "collectionFactory.ts",
 });
 emit({
   artifact: "Attribution.sol/Attribution.json",

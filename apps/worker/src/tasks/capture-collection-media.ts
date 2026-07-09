@@ -11,7 +11,7 @@
  *
  * Indexer-readiness gated, separately: the source of "which tokens need
  * a capture" is `${INDEXER_SCHEMA}.collection_tokens` (+ `.collections`),
- * written by a concurrent Ponder task for the SovereignCollectionFactory
+ * written by a concurrent Ponder task for the CollectionFactory
  * discovery indexing (see docs/pnd-collection-web-plan.md D7). Those
  * tables don't exist yet on this branch — probed via information_schema,
  * same pattern as warm-metadata's ponderReady probe — so until they
@@ -38,7 +38,7 @@ import sharp from "sharp"
 import { sql } from "../db.ts"
 import { client } from "../rpc.ts"
 import { throttleRpc } from "../throttle.ts"
-import { sovereignCollectionAbi } from "@pin/abi"
+import { collectionAbi } from "@pin/abi"
 import { SOVEREIGN_COLLECTION_FACTORY, MAINNET_CHAIN_ID, getAddressOrNull } from "@pin/addresses"
 import { decodeFunctionResult, encodeFunctionData } from "viem"
 import type { Address } from "viem"
@@ -168,7 +168,7 @@ async function captureOne(c: Candidate): Promise<{ rpc: number; wrote: boolean }
     const uriCall = await client.call({
       to: c.collection as Address,
       data: encodeFunctionData({
-        abi: sovereignCollectionAbi,
+        abi: collectionAbi,
         functionName: "tokenURI",
         args: [BigInt(c.tokenId)],
       }),
@@ -176,7 +176,7 @@ async function captureOne(c: Candidate): Promise<{ rpc: number; wrote: boolean }
     })
     if (!uriCall.data) throw new Error("empty tokenURI return")
     tokenUri = decodeFunctionResult({
-      abi: sovereignCollectionAbi,
+      abi: collectionAbi,
       functionName: "tokenURI",
       data: uriCall.data,
     }) as string

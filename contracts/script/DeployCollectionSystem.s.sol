@@ -5,11 +5,11 @@ import {Script, console2} from "forge-std/Script.sol";
 import {Attribution} from "../src/collection/Attribution.sol";
 import {DefaultRenderer} from "../src/collection/renderers/DefaultRenderer.sol";
 import {GenerativeRenderer} from "../src/collection/renderers/GenerativeRenderer.sol";
-import {SovereignCollection} from "../src/collection/SovereignCollection.sol";
-import {SovereignCollectionFactory} from "../src/collection/SovereignCollectionFactory.sol";
+import {Collection} from "../src/collection/Collection.sol";
+import {CollectionFactory} from "../src/collection/CollectionFactory.sol";
 
-/// @notice Deploy script for the SovereignCollection system: Attribution,
-///         DefaultRenderer, GenerativeRenderer, the SovereignCollection
+/// @notice Deploy script for the Collection system: Attribution,
+///         DefaultRenderer, GenerativeRenderer, the Collection
 ///         implementation, and the factory that clones it.
 ///
 /// @dev    CREATE2 discipline (Attribution only): Attribution has no
@@ -24,7 +24,7 @@ import {SovereignCollectionFactory} from "../src/collection/SovereignCollectionF
 ///         `runs`), same source. Pin the toolchain (solc 0.8.24, optimizer
 ///         runs = 200, per `foundry.toml`) — salt alone is not enough.
 ///
-///         DefaultRenderer, the SovereignCollection implementation, and the
+///         DefaultRenderer, the Collection implementation, and the
 ///         factory have no constructor args either, but are deployed via
 ///         plain CREATE here (not CREATE2) since nothing downstream needs
 ///         them at a predicted address ahead of time and a plain `new` keeps
@@ -50,10 +50,10 @@ import {SovereignCollectionFactory} from "../src/collection/SovereignCollectionF
 ///           1. Attribution              (CREATE2, no args)
 ///           2. DefaultRenderer          (CREATE, no args)
 ///           3. GenerativeRenderer       (CREATE, scriptyBuilder/gunzipStore/gunzipFile)
-///           4. SovereignCollection impl (CREATE, no args; constructor calls
+///           4. Collection impl (CREATE, no args; constructor calls
 ///                                        _disableInitializers so the impl
 ///                                        itself can never be initialized)
-///           5. SovereignCollectionFactory(impl, defaultRenderer, attribution)
+///           5. CollectionFactory(impl, defaultRenderer, attribution)
 ///
 ///         Run with (mainnet):
 ///           forge script script/DeployCollectionSystem.s.sol \
@@ -137,15 +137,15 @@ contract DeployCollectionSystemScript is Script {
         vm.stopBroadcast();
         console2.log("GenerativeRenderer deployed at:", address(generativeRenderer));
 
-        // ── 4. SovereignCollection implementation — plain CREATE, no args ──
+        // ── 4. Collection implementation — plain CREATE, no args ──
         vm.startBroadcast(deployerPk);
-        SovereignCollection implementation = new SovereignCollection();
+        Collection implementation = new Collection();
         vm.stopBroadcast();
-        console2.log("SovereignCollection implementation deployed at:", address(implementation));
+        console2.log("Collection implementation deployed at:", address(implementation));
 
-        // ── 5. SovereignCollectionFactory(implementation, defaultRenderer, attribution) ──
+        // ── 5. CollectionFactory(implementation, defaultRenderer, attribution) ──
         vm.startBroadcast(deployerPk);
-        SovereignCollectionFactory factory = new SovereignCollectionFactory(
+        CollectionFactory factory = new CollectionFactory(
             address(implementation), address(defaultRenderer), attribution
         );
         vm.stopBroadcast();
@@ -156,14 +156,14 @@ contract DeployCollectionSystemScript is Script {
         require(address(implementation).code.length > 0, "impl has no code");
         require(address(factory).code.length > 0, "factory has no code");
 
-        console2.log("SovereignCollectionFactory deployed at:", address(factory));
+        console2.log("CollectionFactory deployed at:", address(factory));
         console2.log("Post-deploy assertions: OK");
         console2.log("");
         console2.log("Summary:");
         console2.log("  Attribution:               ", attribution);
         console2.log("  DefaultRenderer:           ", address(defaultRenderer));
         console2.log("  GenerativeRenderer:        ", address(generativeRenderer));
-        console2.log("  SovereignCollection impl:  ", address(implementation));
-        console2.log("  SovereignCollectionFactory:", address(factory));
+        console2.log("  Collection impl:  ", address(implementation));
+        console2.log("  CollectionFactory:", address(factory));
     }
 }

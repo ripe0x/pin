@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# One command to test the SovereignCollection system fully locally before
+# One command to test the Collection system fully locally before
 # deploying.
 #
 #   pnpm dev:collections
@@ -13,7 +13,7 @@
 #      auto-impersonate on. Forking mainnet means Multicall3 (0xcA11…) and ENS
 #      are present, so every PND surface works, not just collections.
 #   3. Deploys the collection system (Attribution, DefaultRenderer,
-#      GenerativeRenderer, SovereignCollection implementation, and the
+#      GenerativeRenderer, Collection implementation, and the
 #      factory that clones it) via DeployCollectionSystem.s.sol.
 #   4. Funds an impersonated wallet so you can click through create + mint with
 #      NO real wallet or signing — the app auto-connects as that address.
@@ -115,8 +115,8 @@ DEPLOY_OUT="$(cd contracts && PRIVATE_KEY="$ANVIL_ACCOUNT_0_PK" forge script scr
 ATTRIBUTION="$(echo "$DEPLOY_OUT" | grep -i "Attribution:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
 DEFAULT_RENDERER="$(echo "$DEPLOY_OUT" | grep -i "DefaultRenderer:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
 GENERATIVE_RENDERER="$(echo "$DEPLOY_OUT" | grep -i "GenerativeRenderer:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
-IMPLEMENTATION="$(echo "$DEPLOY_OUT" | grep -i "SovereignCollection impl:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
-FACTORY="$(echo "$DEPLOY_OUT" | grep -i "SovereignCollectionFactory:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
+IMPLEMENTATION="$(echo "$DEPLOY_OUT" | grep -i "Collection impl:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
+FACTORY="$(echo "$DEPLOY_OUT" | grep -i "CollectionFactory:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
 
 for pair in "ATTRIBUTION:$ATTRIBUTION" "DEFAULT_RENDERER:$DEFAULT_RENDERER" \
             "GENERATIVE_RENDERER:$GENERATIVE_RENDERER" "IMPLEMENTATION:$IMPLEMENTATION" \
@@ -133,8 +133,8 @@ done
 echo "▸ Attribution:               $ATTRIBUTION"
 echo "▸ DefaultRenderer:            $DEFAULT_RENDERER"
 echo "▸ GenerativeRenderer:         $GENERATIVE_RENDERER"
-echo "▸ SovereignCollection impl:   $IMPLEMENTATION"
-echo "▸ SovereignCollectionFactory: $FACTORY"
+echo "▸ Collection impl:   $IMPLEMENTATION"
+echo "▸ CollectionFactory: $FACTORY"
 
 # 3b) optional sample world (SEED_SAMPLE=1, default on): a generative
 #     collection with mints (sketch uploaded to the real forked

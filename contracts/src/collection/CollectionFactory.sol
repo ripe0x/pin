@@ -3,11 +3,11 @@ pragma solidity ^0.8.24;
 
 import {Clones} from "openzeppelin-contracts/contracts/proxy/Clones.sol";
 
-import {SovereignCollection} from "./SovereignCollection.sol";
+import {Collection} from "./Collection.sol";
 import {CollectionConfig, InitParams, WorkConfig} from "./CollectionTypes.sol";
 
-/// @title SovereignCollectionFactory
-/// @notice Deploys one SovereignCollection per work, configured atomically at
+/// @title CollectionFactory
+/// @notice Deploys one Collection per work, configured atomically at
 ///         deploy, as an immutable EIP-1167 clone: no proxy admin, no upgrade
 ///         path, what deploys is what runs. There is no protocol fee here;
 ///         the Referral Share is a fixed constant inside the collection, paid
@@ -17,8 +17,8 @@ import {CollectionConfig, InitParams, WorkConfig} from "./CollectionTypes.sol";
 ///         (one CollectionCreated event per collection). Core evolution
 ///         happens by deploying a new implementation + factory, never by
 ///         changing deployed collections.
-contract SovereignCollectionFactory {
-    /// @notice The SovereignCollection implementation every clone points at.
+contract CollectionFactory {
+    /// @notice The Collection implementation every clone points at.
     address public immutable implementation;
 
     /// @notice The canonical built-in renderer wired into every collection.
@@ -64,7 +64,7 @@ contract SovereignCollectionFactory {
     ) external returns (address collection) {
         require(owner != address(0), "owner required");
         collection = Clones.clone(implementation);
-        SovereignCollection(collection).initialize(
+        Collection(collection).initialize(
             InitParams({
                 name: name,
                 symbol: symbol,

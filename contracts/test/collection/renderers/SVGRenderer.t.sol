@@ -5,8 +5,8 @@ import {Test} from "forge-std/Test.sol";
 import {Base64} from "solady/utils/Base64.sol";
 import {LibString} from "solady/utils/LibString.sol";
 
-import {SovereignCollection} from "../../../src/collection/SovereignCollection.sol";
-import {SovereignCollectionFactory} from "../../../src/collection/SovereignCollectionFactory.sol";
+import {Collection} from "../../../src/collection/Collection.sol";
+import {CollectionFactory} from "../../../src/collection/CollectionFactory.sol";
 import {DefaultRenderer} from "../../../src/collection/renderers/DefaultRenderer.sol";
 import {TestSVGRenderer} from "./TestSVGRenderer.sol";
 import {
@@ -18,16 +18,16 @@ import {
 
 /// @notice Output-shape tests for the SVGRenderer abstract base, exercised
 ///         through TestSVGRenderer (a minimal seed-derived rect). Deploys a
-///         real SovereignCollection via the factory, then swaps in the SVG
+///         real Collection via the factory, then swaps in the SVG
 ///         renderer as the collection's active renderer.
 contract SVGRendererTest is Test {
     using LibString for uint256;
 
     DefaultRenderer internal defaultRenderer;
     TestSVGRenderer internal svgRenderer;
-    SovereignCollection internal impl;
-    SovereignCollectionFactory internal factory;
-    SovereignCollection internal collection;
+    Collection internal impl;
+    CollectionFactory internal factory;
+    Collection internal collection;
 
     address internal artist = makeAddr("artist");
     address internal collector = makeAddr("collector");
@@ -38,9 +38,9 @@ contract SVGRendererTest is Test {
         // choosing a generative/onchain work post-deploy.
         defaultRenderer = new DefaultRenderer();
         svgRenderer = new TestSVGRenderer();
-        impl = new SovereignCollection();
+        impl = new Collection();
         factory =
-            new SovereignCollectionFactory(address(impl), address(defaultRenderer), address(0));
+            new CollectionFactory(address(impl), address(defaultRenderer), address(0));
 
         CollectionConfig memory cfg;
         cfg.artworkURI = "";
@@ -54,7 +54,7 @@ contract SVGRendererTest is Test {
         address[] memory noMinters = new address[](0);
         address[] memory noArtists = new address[](0);
 
-        collection = SovereignCollection(
+        collection = Collection(
             factory.createCollection(
                 "SVG Collection", "SVGC", artist, cfg, work, noMinters, noArtists
             )

@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {IRenderer} from "../../../src/collection/interfaces/IRenderer.sol";
 import {IMintHook} from "../../../src/collection/interfaces/IMintHook.sol";
 import {IPriceStrategy} from "../../../src/collection/interfaces/IPriceStrategy.sol";
-import {ISovereignCollection} from "../../../src/collection/interfaces/ISovereignCollection.sol";
+import {ICollection} from "../../../src/collection/interfaces/ICollection.sol";
 
 /// @dev Deterministic renderer: returns strings derived from the collection
 ///      address + tokenId, so tests can assert delegation without depending
@@ -107,7 +107,7 @@ contract MaliciousPriceStrategy is IPriceStrategy {
 /// @dev Extension minter that calls mintTo / mintToId. Stands in for a real
 ///      minter module (BackedMinter, PooledIdMinter, etc.) in tests.
 contract MockMinter {
-    function callMintTo(ISovereignCollection collection, address to, address referrer, bytes calldata hookData)
+    function callMintTo(ICollection collection, address to, address referrer, bytes calldata hookData)
         external
         returns (uint256 tokenId)
     {
@@ -115,7 +115,7 @@ contract MockMinter {
     }
 
     function callMintToId(
-        ISovereignCollection collection,
+        ICollection collection,
         address to,
         uint256 tokenId,
         address referrer,
@@ -125,7 +125,7 @@ contract MockMinter {
     }
 
     /// @dev Burn as an authorized minter — the only path that can retire a pooled token.
-    function callBurn(ISovereignCollection collection, uint256 tokenId) external {
+    function callBurn(ICollection collection, uint256 tokenId) external {
         collection.burn(tokenId);
     }
 }
@@ -218,12 +218,12 @@ contract RecordingHook is IMintHook {
 ///      to prove nonReentrant actually blocks reentrancy on every guarded
 ///      entrypoint.
 contract ReenteringHook is IMintHook {
-    ISovereignCollection public target;
+    ICollection public target;
     bool public reenterOnBefore;
     bool public reenterOnAfter;
     bool public reenterQuantityOne = true;
 
-    function arm(ISovereignCollection target_, bool onBefore, bool onAfter) external {
+    function arm(ICollection target_, bool onBefore, bool onAfter) external {
         target = target_;
         reenterOnBefore = onBefore;
         reenterOnAfter = onAfter;
@@ -247,13 +247,13 @@ contract ReenteringHook is IMintHook {
 ///      brick minting (pull payments) and only fails their own withdraw.
 ///      Mirrors RevertingReceiver.sol's style but scoped to this suite so it
 ///      also exposes a `pull` helper mirroring the withdraw entrypoint name
-///      used by SovereignCollection.
+///      used by Collection.
 contract RevertingPayee {
     receive() external payable {
         revert("payee: nope");
     }
 
-    function pull(ISovereignCollection collection) external {
+    function pull(ICollection collection) external {
         collection.withdraw(address(this));
     }
 }
@@ -261,10 +261,10 @@ contract RevertingPayee {
 /// @dev Re-enters withdraw() from receive(), to prove withdraw's
 ///      nonReentrant guard blocks a classic reentrant-drain attempt.
 contract ReenteringWithdrawer {
-    ISovereignCollection public target;
+    ICollection public target;
     bool public armed;
 
-    function arm(ISovereignCollection target_) external {
+    function arm(ICollection target_) external {
         target = target_;
         armed = true;
     }

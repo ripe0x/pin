@@ -10,8 +10,8 @@ import {
     MockMinter
 } from "./mocks/CollectionMocks.sol";
 
-import {SovereignCollection} from "../../src/collection/SovereignCollection.sol";
-import {ISovereignCollection} from "../../src/collection/interfaces/ISovereignCollection.sol";
+import {Collection} from "../../src/collection/Collection.sol";
+import {ICollection} from "../../src/collection/interfaces/ICollection.sol";
 import {CollectionConfig} from "../../src/collection/CollectionTypes.sol";
 
 import {AllowlistHook} from "../../src/collection/hooks/AllowlistHook.sol";
@@ -41,7 +41,7 @@ contract CollectionHooksTest is CollectionBase {
     // ── generic hook wiring on the paid path ─────────────────────────────────
 
     function test_hook_calledBeforeAndAfter_onPaidMint() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         vm.prank(artist);
         c.setMintHook(address(recordingHook));
         assertEq(c.mintHook(), address(recordingHook));
@@ -60,7 +60,7 @@ contract CollectionHooksTest is CollectionBase {
     }
 
     function test_hook_rejection_revertsMint_gasOnly() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         vm.prank(artist);
         c.setMintHook(address(revertingHook));
         vm.expectRevert(bytes("hook: nope"));
@@ -69,10 +69,10 @@ contract CollectionHooksTest is CollectionBase {
     }
 
     function test_hook_rejection_wrongSelectorReverts() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         vm.prank(artist);
         c.setMintHook(address(rejectingSelectorHook));
-        vm.expectRevert(ISovereignCollection.HookRejected.selector);
+        vm.expectRevert(ICollection.HookRejected.selector);
         vm.prank(collector);
         c.mint(1);
     }
@@ -80,7 +80,7 @@ contract CollectionHooksTest is CollectionBase {
     function test_hook_configuredAtDeploy() public {
         CollectionConfig memory cfg = _freeConfig();
         cfg.mintHook = address(recordingHook);
-        SovereignCollection c = _collection(cfg);
+        Collection c = _collection(cfg);
         assertEq(c.mintHook(), address(recordingHook));
 
         vm.prank(collector);
@@ -90,14 +90,14 @@ contract CollectionHooksTest is CollectionBase {
     }
 
     function test_hook_onlyOwnerCanSet() public {
-        SovereignCollection c = _collection(_freeConfig());
-        vm.expectRevert(ISovereignCollection.NotAuthorized.selector);
+        Collection c = _collection(_freeConfig());
+        vm.expectRevert(ICollection.NotAuthorized.selector);
         vm.prank(stranger);
         c.setMintHook(address(recordingHook));
     }
 
     function test_hook_removedByUnsetting() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         vm.prank(artist);
         c.setMintHook(address(revertingHook));
         vm.prank(artist);
@@ -111,14 +111,14 @@ contract CollectionHooksTest is CollectionBase {
 
     function test_hook_firesOnMintTo_withCorrectArgs() public {
         CollectionConfig memory cfg = _freeConfig();
-        SovereignCollection c = _collection(cfg);
+        Collection c = _collection(cfg);
         vm.prank(artist);
         c.setMintHook(address(recordingHook));
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
         vm.prank(artist); // caller identity doesn't matter for the minter grant path
-        uint256 tokenId = minter.callMintTo(ISovereignCollection(address(c)), collector, referrer, bytes("ext-data"));
+        uint256 tokenId = minter.callMintTo(ICollection(address(c)), collector, referrer, bytes("ext-data"));
 
         assertEq(tokenId, 1);
         assertEq(recordingHook.beforeCallCount(), 1);
@@ -132,25 +132,25 @@ contract CollectionHooksTest is CollectionBase {
     }
 
     function test_hook_rejectsMintTo() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         vm.prank(artist);
         c.setMintHook(address(revertingHook));
         vm.prank(artist);
         c.setMinter(address(minter), true);
         vm.expectRevert(bytes("hook: nope"));
-        minter.callMintTo(ISovereignCollection(address(c)), collector, referrer, "");
+        minter.callMintTo(ICollection(address(c)), collector, referrer, "");
     }
 
     // ── hooks fire identically on mintToId (Pooled extension path) ──────────
 
     function test_hook_firesOnMintToId_withCorrectArgs() public {
-        SovereignCollection c = _collection(_pooledConfig());
+        Collection c = _collection(_pooledConfig());
         vm.prank(artist);
         c.setMintHook(address(recordingHook));
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
-        minter.callMintToId(ISovereignCollection(address(c)), collector, 42, referrer, bytes("pooled-data"));
+        minter.callMintToId(ICollection(address(c)), collector, 42, referrer, bytes("pooled-data"));
 
         assertEq(recordingHook.beforeCallCount(), 1);
         assertEq(recordingHook.afterCallCount(), 1);
@@ -163,23 +163,23 @@ contract CollectionHooksTest is CollectionBase {
     }
 
     function test_hook_rejectsMintToId() public {
-        SovereignCollection c = _collection(_pooledConfig());
+        Collection c = _collection(_pooledConfig());
         vm.prank(artist);
         c.setMintHook(address(revertingHook));
         vm.prank(artist);
         c.setMinter(address(minter), true);
         vm.expectRevert(bytes("hook: nope"));
-        minter.callMintToId(ISovereignCollection(address(c)), collector, 42, referrer, "");
+        minter.callMintToId(ICollection(address(c)), collector, 42, referrer, "");
     }
 
     function test_hook_firesOnMintToId_id0() public {
-        SovereignCollection c = _collection(_pooledConfig());
+        Collection c = _collection(_pooledConfig());
         vm.prank(artist);
         c.setMintHook(address(recordingHook));
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
-        minter.callMintToId(ISovereignCollection(address(c)), collector, 0, referrer, "");
+        minter.callMintToId(ICollection(address(c)), collector, 0, referrer, "");
         assertEq(recordingHook.beforeCallCount(), 1);
         (,, uint256 fid,,) = _decodeBefore(recordingHook, 0);
         assertEq(fid, 0);
@@ -190,7 +190,7 @@ contract CollectionHooksTest is CollectionBase {
 
     function test_hookData_forwardedVerbatim_acrossPaths() public {
         CollectionConfig memory cfg = _freeConfig();
-        SovereignCollection c = _collection(cfg);
+        Collection c = _collection(cfg);
         vm.prank(artist);
         c.setMintHook(address(recordingHook));
 
@@ -204,7 +204,7 @@ contract CollectionHooksTest is CollectionBase {
     // ── stock hook: AllowlistHook ────────────────────────────────────────────
 
     function test_stockHook_allowlist_gatesMint() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         AllowlistHook allow = new AllowlistHook();
         vm.prank(artist);
         c.setMintHook(address(allow));
@@ -241,8 +241,8 @@ contract CollectionHooksTest is CollectionBase {
     // ── stock hook: HoldsCollectionHook ──────────────────────────────────────
 
     function test_stockHook_holdsCollection_gatesOnBalance() public {
-        SovereignCollection gate = _collection(_freeConfig()); // the "earlier" collection
-        SovereignCollection c = _collection(_freeConfig()); // the gated collection
+        Collection gate = _collection(_freeConfig()); // the "earlier" collection
+        Collection c = _collection(_freeConfig()); // the gated collection
 
         HoldsCollectionHook holds = new HoldsCollectionHook();
         vm.prank(artist);
@@ -266,7 +266,7 @@ contract CollectionHooksTest is CollectionBase {
     // ── stock hook: PerWalletCapHook ─────────────────────────────────────────
 
     function test_stockHook_perWalletCap_enforcesAcrossCalls() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         PerWalletCapHook cap = new PerWalletCapHook();
         vm.prank(artist);
         c.setMintHook(address(cap));
@@ -285,7 +285,7 @@ contract CollectionHooksTest is CollectionBase {
     }
 
     function test_stockHook_perWalletCap_singleTxOverCapReverts() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         PerWalletCapHook cap = new PerWalletCapHook();
         vm.prank(artist);
         c.setMintHook(address(cap));

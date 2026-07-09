@@ -3,8 +3,8 @@ pragma solidity ^0.8.24;
 
 import {Script, console2} from "forge-std/Script.sol";
 
-import {SovereignCollectionFactory} from "../src/collection/SovereignCollectionFactory.sol";
-import {SovereignCollection} from "../src/collection/SovereignCollection.sol";
+import {CollectionFactory} from "../src/collection/CollectionFactory.sol";
+import {Collection} from "../src/collection/Collection.sol";
 import {
     CodeKind,
     CodeRef,
@@ -142,10 +142,10 @@ contract SeedDevCollections is Script {
         roster[0] = artist;
         roster[1] = 0x70997970C51812dc3A010C7d01b50e0d17dc79C8;
 
-        orbits = SovereignCollectionFactory(factory).createCollection(
+        orbits = CollectionFactory(factory).createCollection(
             "Orbit Studies", "ORBIT", artist, cfg, _orbitWork(), new address[](0), roster
         );
-        SovereignCollection(orbits).mintWithReferral{value: 0.015 ether}(3, address(0), "");
+        Collection(orbits).mintWithReferral{value: 0.015 ether}(3, address(0), "");
         ICatalogClaim(CATALOG).addContract(orbits);
     }
 
@@ -162,7 +162,7 @@ contract SeedDevCollections is Script {
         cfg.renderer = generativeRenderer;
         cfg.idMode = IdMode.Sequential;
 
-        drift = SovereignCollectionFactory(factory).createCollection(
+        drift = CollectionFactory(factory).createCollection(
             "Signal Drift", "DRIFT", artist, cfg, _orbitWork(), new address[](0), new address[](0)
         );
     }
@@ -177,9 +177,9 @@ contract SeedDevCollections is Script {
         cfg.kind = CollectionKind.Standalone;
         cfg.idMode = IdMode.Sequential;
 
-        field = SovereignCollectionFactory(factory).createCollection(
+        field = CollectionFactory(factory).createCollection(
             "Field Notes", "FIELD", artist, cfg, emptyWork, new address[](0), new address[](0)
         );
-        SovereignCollection(field).mintWithReferral{value: 0.004 ether}(2, address(0), "");
+        Collection(field).mintWithReferral{value: 0.004 ether}(2, address(0), "");
     }
 }

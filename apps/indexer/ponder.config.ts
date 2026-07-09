@@ -2,15 +2,15 @@ import { createConfig, factory } from "ponder"
 import { http, parseAbiItem } from "viem"
 import { sovereignAuctionHouseAbi } from "./abis/SovereignAuctionHouse"
 import { sovereignAuctionHouseFactoryAbi } from "./abis/SovereignAuctionHouseFactory"
-import { foundationNftAbi, collectionFactoryAbi } from "./abis/FoundationNFT"
+import { foundationNftAbi, nftCollectionFactoryAbi } from "./abis/FoundationNFT"
 import { nftMarketAbi } from "./abis/NFTMarket"
 import { catalogAbi } from "./abis/Catalog"
 import { mintFactoryAbi } from "./abis/MintFactory"
 import { tlUniversalDeployerAbi } from "./abis/TLUniversalDeployer"
 import { superrareNftAbi } from "./abis/SuperRareNFT"
 import { muriProtocolAbi } from "./abis/MURIProtocol"
-import { sovereignCollectionAbi } from "./abis/SovereignCollection"
-import { sovereignCollectionFactoryAbi } from "./abis/SovereignCollectionFactory"
+import { collectionAbi } from "./abis/Collection"
+import { collectionFactoryAbi } from "./abis/CollectionFactory"
 
 /**
  * PND v2 Ponder scope — REDUCED from v1.
@@ -21,7 +21,7 @@ import { sovereignCollectionFactoryAbi } from "./abis/SovereignCollectionFactory
  *   - FoundationNFT shared 1/1 contract
  *   - SuperRareNFT shared 1/1 contract
  *   - Catalog
- *   - SovereignCollectionFactory + every clone (PND Collection System —
+ *   - CollectionFactory + every clone (PND Collection System —
  *     DEPLOY-GATED, see the sentinel + conditional spread below; absent
  *     from `contracts` entirely until the factory is deployed)
  *
@@ -38,7 +38,7 @@ import { sovereignCollectionFactoryAbi } from "./abis/SovereignCollectionFactory
  *   - TLCollection per-clone Transfer subscription
  *
  * The "factory()" pattern is used by PND-owned factories (SovereignAuction
- * House, SovereignCollection). All other per-clone scanning happens in
+ * House, Collection). All other per-clone scanning happens in
  * apps/worker/, gated by `known_artists`. This eliminates the multi-address
  * eth_getLogs work that drove most of v1's Ponder RPC cost.
  */
@@ -83,14 +83,14 @@ const MURI_PROTOCOL_ADDRESS =
 const MURI_PROTOCOL_DEPLOY_BLOCK = 23_754_750
 
 // PND Collection System (contracts/src/collection/) — the general
-// SovereignCollection core (Editions preset + generative + backed/pooled
-// forms), deployed via a single SovereignCollectionFactory. Mirrors the
+// Collection core (Editions preset + generative + backed/pooled
+// forms), deployed via a single CollectionFactory. Mirrors the
 // SovereignAuctionHouse(Factory) pattern above: one fixed factory indexed
 // for discovery (CollectionCreated), and `factory()` for full per-clone
 // event indexing of every deployed collection.
 //
 // NOT yet deployed — sentinel zero address. When the sentinel is unset
-// (zero), both SovereignCollectionFactory and SovereignCollection are
+// (zero), both CollectionFactory and Collection are
 // EXCLUDED from `contracts` below so the config stays valid pre-deploy.
 // At mainnet deploy: set SOVEREIGN_COLLECTION_FACTORY_ADDRESS to the real
 // factory address and SOVEREIGN_COLLECTION_FACTORY_DEPLOY_BLOCK to its
@@ -186,13 +186,13 @@ export default createConfig({
     // clone Transfer events here in v2 — that work moves to the worker.
     NFTCollectionFactoryV1: {
       chain: "mainnet",
-      abi: collectionFactoryAbi,
+      abi: nftCollectionFactoryAbi,
       address: NFT_COLLECTION_FACTORY_V1_ADDRESS,
       startBlock: FND_START_BLOCK,
     },
     NFTCollectionFactoryV2: {
       chain: "mainnet",
-      abi: collectionFactoryAbi,
+      abi: nftCollectionFactoryAbi,
       address: NFT_COLLECTION_FACTORY_V2_ADDRESS,
       startBlock: FND_START_BLOCK,
     },
@@ -252,9 +252,9 @@ export default createConfig({
       ? {
           // Fixed factory — discovery (one CollectionCreated per artist
           // deploy) exactly like SovereignAuctionHouseFactory above.
-          SovereignCollectionFactory: {
+          CollectionFactory: {
             chain: "mainnet",
-            abi: sovereignCollectionFactoryAbi,
+            abi: collectionFactoryAbi,
             address: SOVEREIGN_COLLECTION_FACTORY_ADDRESS,
             startBlock: SOVEREIGN_COLLECTION_FACTORY_DEPLOY_BLOCK,
           },
@@ -264,9 +264,9 @@ export default createConfig({
           // state-machine indexing here is in-bounds per AGENTS.md — it
           // is NOT the long-tail per-artist-platform scanning that
           // belongs in the worker.
-          SovereignCollection: {
+          Collection: {
             chain: "mainnet",
-            abi: sovereignCollectionAbi,
+            abi: collectionAbi,
             address: factory({
               address: SOVEREIGN_COLLECTION_FACTORY_ADDRESS,
               event: parseAbiItem(

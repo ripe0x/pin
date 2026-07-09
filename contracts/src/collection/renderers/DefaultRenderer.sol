@@ -8,7 +8,7 @@ import {IRenderer, ICollectionView} from "../interfaces/IRenderer.sol";
 import {MintMark, CollectionStatus} from "../CollectionTypes.sol";
 
 /// @title DefaultRenderer
-/// @notice The canonical built-in renderer for SovereignCollection. Wired
+/// @notice The canonical built-in renderer for Collection. Wired
 ///         into every collection at deploy (`defaultRenderer` in InitParams)
 ///         and used unless the artist sets a custom renderer. It reads
 ///         collection state back through ICollectionView, given the

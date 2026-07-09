@@ -4,8 +4,8 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {Base64} from "solady/utils/Base64.sol";
 
-import {SovereignCollection} from "../../../src/collection/SovereignCollection.sol";
-import {SovereignCollectionFactory} from "../../../src/collection/SovereignCollectionFactory.sol";
+import {Collection} from "../../../src/collection/Collection.sol";
+import {CollectionFactory} from "../../../src/collection/CollectionFactory.sol";
 import {DefaultRenderer} from "../../../src/collection/renderers/DefaultRenderer.sol";
 import {
     CollectionConfig,
@@ -16,14 +16,14 @@ import {
 
 /// @notice Output-shape tests for DefaultRenderer: tokenURI/contractURI shape,
 ///         image field (default vs per-token override), and Mint Mark
-///         provenance attributes. Deploys a real SovereignCollection via the
+///         provenance attributes. Deploys a real Collection via the
 ///         factory so the renderer is exercised against the actual
 ///         ICollectionView implementation, not a mock.
 contract DefaultRendererTest is Test {
     DefaultRenderer internal renderer;
-    SovereignCollection internal impl;
-    SovereignCollectionFactory internal factory;
-    SovereignCollection internal collection;
+    Collection internal impl;
+    CollectionFactory internal factory;
+    Collection internal collection;
 
     address internal artist = makeAddr("artist");
     address internal collector = makeAddr("collector");
@@ -32,8 +32,8 @@ contract DefaultRendererTest is Test {
 
     function setUp() public {
         renderer = new DefaultRenderer();
-        impl = new SovereignCollection();
-        factory = new SovereignCollectionFactory(address(impl), address(renderer), address(0));
+        impl = new Collection();
+        factory = new CollectionFactory(address(impl), address(renderer), address(0));
 
         CollectionConfig memory cfg;
         cfg.artworkURI = ARTWORK;
@@ -47,7 +47,7 @@ contract DefaultRendererTest is Test {
         address[] memory noMinters = new address[](0);
         address[] memory noArtists = new address[](0);
 
-        collection = SovereignCollection(
+        collection = Collection(
             factory.createCollection(
                 "Test Collection", "TCOL", artist, cfg, work, noMinters, noArtists
             )

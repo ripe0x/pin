@@ -34,7 +34,7 @@ import {
   useWriteContract,
 } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
-import { sovereignCollectionAbi } from "@pin/abi"
+import { collectionAbi } from "@pin/abi"
 import {
   Countdown,
   PREFERRED_CHAIN,
@@ -57,7 +57,7 @@ import {
   sellsViaMinterOnly,
   shortAddress,
   type IdMode,
-} from "@/lib/sovereign-collection"
+} from "@/lib/collection"
 
 export type MintCollectionSnapshot = {
   price: string
@@ -105,7 +105,7 @@ export function MintCollectionCTA({
   // budget. Fixed-price collections skip the read entirely (query.enabled).
   const { data: liveQuote } = useReadContract({
     address: collection,
-    abi: sovereignCollectionAbi,
+    abi: collectionAbi,
     functionName: "currentPrice",
     args: [address ?? ZERO_ADDRESS, BigInt(amountValid ? amount : 1), "0x"],
     query: {
@@ -162,7 +162,7 @@ export function MintCollectionCTA({
     if (!amountValid) return
     writeContract({
       address: collection,
-      abi: sovereignCollectionAbi,
+      abi: collectionAbi,
       functionName: "mintWithReferral",
       args: [BigInt(amount), referrerAddr, "0x"],
       value: total,

@@ -4,12 +4,12 @@ pragma solidity ^0.8.24;
 import {StdInvariant} from "forge-std/StdInvariant.sol";
 import {Test} from "forge-std/Test.sol";
 
-import {SovereignCollection} from "../../../src/collection/SovereignCollection.sol";
-import {ISovereignCollection} from "../../../src/collection/interfaces/ISovereignCollection.sol";
+import {Collection} from "../../../src/collection/Collection.sol";
+import {ICollection} from "../../../src/collection/interfaces/ICollection.sol";
 import {MockMinter} from "../mocks/CollectionMocks.sol";
 
 /// @title CollectionHandler
-/// @notice Bounded random-walk handler driving two SovereignCollection
+/// @notice Bounded random-walk handler driving two Collection
 ///         instances (one Sequential, one Pooled) through every public mint /
 ///         burn / withdraw entrypoint, while maintaining ghost-truth state the
 ///         invariant test asserts against.
@@ -36,8 +36,8 @@ contract CollectionHandler is StdInvariant, Test {
     // Fixed setup
     // ─────────────────────────────────────────────────────────────────────
 
-    SovereignCollection public immutable seq; // Sequential mode
-    SovereignCollection public immutable pooled; // Pooled mode
+    Collection public immutable seq; // Sequential mode
+    Collection public immutable pooled; // Pooled mode
     MockMinter public immutable seqMinter; // granted on seq (mintTo)
     MockMinter public immutable pooledMinter; // granted on pooled (mintToId)
 
@@ -107,8 +107,8 @@ contract CollectionHandler is StdInvariant, Test {
     uint256 public callsNegativeProbes;
 
     constructor(
-        SovereignCollection seq_,
-        SovereignCollection pooled_,
+        Collection seq_,
+        Collection pooled_,
         MockMinter seqMinter_,
         MockMinter pooledMinter_,
         uint256 seqPrice_,
@@ -208,7 +208,7 @@ contract CollectionHandler is StdInvariant, Test {
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // Shared settle-accounting mirror: replicates SovereignCollection's
+    // Shared settle-accounting mirror: replicates Collection's
     // _settle() split exactly (10% referral share, folds to artist when
     // referrer == 0), so ghostPending matches pendingWithdrawal() precisely.
     // ─────────────────────────────────────────────────────────────────────
@@ -297,7 +297,7 @@ contract CollectionHandler is StdInvariant, Test {
 
         if (seqCap != 0 && ghostSeqMints >= seqCap) return;
 
-        try seqMinter.callMintTo(ISovereignCollection(address(seq)), to, referrer, "") returns (uint256 tokenId) {
+        try seqMinter.callMintTo(ICollection(address(seq)), to, referrer, "") returns (uint256 tokenId) {
             callsMintSeqExtension++;
             uint256 expectedId = ghostSeqMints + 1;
             require(tokenId == expectedId, "handler: seq mintTo id mismatch");
@@ -333,7 +333,7 @@ contract CollectionHandler is StdInvariant, Test {
             if (liveSupply >= pooledCap) return;
         }
 
-        try pooledMinter.callMintToId(ISovereignCollection(address(pooled)), to, tokenId, referrer, "") {
+        try pooledMinter.callMintToId(ICollection(address(pooled)), to, tokenId, referrer, "") {
             callsMintPooledExtension++;
             _pooledLiveAdd(tokenId);
             uint256 mintIndex = ghostPooledMints;
@@ -457,7 +457,7 @@ contract CollectionHandler is StdInvariant, Test {
 
         // (a) mintToId on Sequential, via the granted seq minter (authorized,
         // but wrong mode — must fail on mode, not on authorization).
-        try seqMinter.callMintToId(ISovereignCollection(address(seq)), actor, id, address(0), "") {
+        try seqMinter.callMintToId(ICollection(address(seq)), actor, id, address(0), "") {
             ghostWrongModeMintSucceeded = true;
         } catch {}
 
@@ -470,7 +470,7 @@ contract CollectionHandler is StdInvariant, Test {
 
         // (c) extension mintTo on Pooled, via the granted pooled minter
         // (authorized, but wrong entrypoint for pooled mode).
-        try pooledMinter.callMintTo(ISovereignCollection(address(pooled)), actor, address(0), "") returns (uint256) {
+        try pooledMinter.callMintTo(ICollection(address(pooled)), actor, address(0), "") returns (uint256) {
             ghostWrongModeMintSucceeded = true;
         } catch {}
     }

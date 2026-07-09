@@ -4,9 +4,9 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {ERC20} from "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 
-import {SovereignCollection} from "../../../src/collection/SovereignCollection.sol";
-import {ISovereignCollection} from "../../../src/collection/interfaces/ISovereignCollection.sol";
-import {SovereignCollectionFactory} from "../../../src/collection/SovereignCollectionFactory.sol";
+import {Collection} from "../../../src/collection/Collection.sol";
+import {ICollection} from "../../../src/collection/interfaces/ICollection.sol";
+import {CollectionFactory} from "../../../src/collection/CollectionFactory.sol";
 import {
     CollectionConfig,
     CollectionStatus,
@@ -40,7 +40,7 @@ contract MockCoin is ERC20 {
 /// @dev The whole Homage-shaped economy in one test-grade minter: an id pool
 ///      with a pseudo-random draw, per-token coin escrow, and burn-to-redeem.
 contract BackedPoolMinter {
-    SovereignCollection public immutable collection;
+    Collection public immutable collection;
     MockCoin public immutable coin;
     uint256 public immutable escrowPerToken;
 
@@ -51,7 +51,7 @@ contract BackedPoolMinter {
     error NotHolder();
 
     constructor(address collection_, MockCoin coin_, uint256 escrowPerToken_, uint256 poolSize_) {
-        collection = SovereignCollection(collection_);
+        collection = Collection(collection_);
         coin = coin_;
         escrowPerToken = escrowPerToken_;
         for (uint256 i = 0; i < poolSize_; i++) {
@@ -91,7 +91,7 @@ contract PooledBackedTest is Test {
     uint256 constant POOL_SIZE = 3;
     uint256 constant ESCROW = 50_000 ether;
 
-    SovereignCollection collection;
+    Collection collection;
     BackedPoolMinter minter;
     MockCoin coin;
 
@@ -100,9 +100,9 @@ contract PooledBackedTest is Test {
     address bob = makeAddr("bob");
 
     function setUp() public {
-        SovereignCollection impl = new SovereignCollection();
-        SovereignCollectionFactory factory =
-            new SovereignCollectionFactory(address(impl), address(new MockRenderer()), address(0));
+        Collection impl = new Collection();
+        CollectionFactory factory =
+            new CollectionFactory(address(impl), address(new MockRenderer()), address(0));
         coin = new MockCoin();
 
         CollectionConfig memory cfg;
@@ -120,7 +120,7 @@ contract PooledBackedTest is Test {
         address[] memory minters = new address[](1);
         minters[0] = predictedMinter;
 
-        collection = SovereignCollection(
+        collection = Collection(
             factory.createCollection(
                 "Pooled Backed", "PB", artist, cfg, work, minters, new address[](0)
             )
@@ -246,7 +246,7 @@ contract PooledBackedTest is Test {
     function test_paidPathBlockedInPooledMode() public {
         vm.deal(alice, 1 ether);
         vm.prank(alice);
-        vm.expectRevert(ISovereignCollection.PooledSellsViaMinter.selector);
+        vm.expectRevert(ICollection.PooledSellsViaMinter.selector);
         collection.mint{value: 0}(1);
     }
 }

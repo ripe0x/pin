@@ -10,8 +10,8 @@ import {
     MockPriceStrategy
 } from "./mocks/CollectionMocks.sol";
 
-import {SovereignCollection} from "../../src/collection/SovereignCollection.sol";
-import {ISovereignCollection} from "../../src/collection/interfaces/ISovereignCollection.sol";
+import {Collection} from "../../src/collection/Collection.sol";
+import {ICollection} from "../../src/collection/interfaces/ICollection.sol";
 import {CollectionConfig, InitParams, IdMode} from "../../src/collection/CollectionTypes.sol";
 
 /// @dev Access-control matrix, reentrancy attempts, malicious-strategy
@@ -32,8 +32,8 @@ contract CollectionSecurityTest is CollectionBase {
     // ════════════════════════════════════════════════════════════════════
 
     function test_accessControl_onlyOwnerFunctions() public {
-        SovereignCollection c = _collection(_freeConfig());
-        bytes memory unauth = abi.encodeWithSelector(ISovereignCollection.NotAuthorized.selector);
+        Collection c = _collection(_freeConfig());
+        bytes memory unauth = abi.encodeWithSelector(ICollection.NotAuthorized.selector);
 
         vm.startPrank(stranger);
 
@@ -72,10 +72,10 @@ contract CollectionSecurityTest is CollectionBase {
         // "not minted" before the caller check would even matter for an
         // unminted id, so exercise them against a MINTED token to isolate
         // the access-control revert specifically.
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         vm.prank(collector);
         c.mint(1);
-        bytes memory unauth = abi.encodeWithSelector(ISovereignCollection.NotAuthorized.selector);
+        bytes memory unauth = abi.encodeWithSelector(ICollection.NotAuthorized.selector);
 
         vm.startPrank(stranger);
 
@@ -93,24 +93,24 @@ contract CollectionSecurityTest is CollectionBase {
     }
 
     function test_accessControl_minterGatedFunctions() public {
-        SovereignCollection seq = _collection(_freeConfig());
-        SovereignCollection pooled = _collection(_pooledConfig());
+        Collection seq = _collection(_freeConfig());
+        Collection pooled = _collection(_pooledConfig());
 
-        vm.expectRevert(ISovereignCollection.NotMinter.selector);
+        vm.expectRevert(ICollection.NotMinter.selector);
         vm.prank(stranger);
         seq.mintTo(stranger, address(0), "");
 
-        vm.expectRevert(ISovereignCollection.NotMinter.selector);
+        vm.expectRevert(ICollection.NotMinter.selector);
         vm.prank(stranger);
         pooled.mintToId(stranger, 1, address(0), "");
     }
 
     function test_accessControl_burnRequiresOwnerOrApproved() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         vm.prank(collector);
         c.mint(1);
 
-        vm.expectRevert(ISovereignCollection.NotAuthorized.selector);
+        vm.expectRevert(ICollection.NotAuthorized.selector);
         vm.prank(stranger);
         c.burn(1);
 
@@ -123,7 +123,7 @@ contract CollectionSecurityTest is CollectionBase {
     }
 
     function test_accessControl_burnRequiresExistingToken() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         vm.expectRevert(abi.encodeWithSignature("ERC721NonexistentToken(uint256)", 1));
         c.burn(1);
     }
@@ -134,11 +134,11 @@ contract CollectionSecurityTest is CollectionBase {
     // ════════════════════════════════════════════════════════════════════
 
     function test_reentrancy_hookReenteringMint_onBefore_blocked() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         ReenteringHook reenter = new ReenteringHook();
         vm.prank(artist);
         c.setMintHook(address(reenter));
-        reenter.arm(ISovereignCollection(address(c)), true, false);
+        reenter.arm(ICollection(address(c)), true, false);
 
         vm.expectRevert(abi.encodeWithSignature("ReentrancyGuardReentrantCall()"));
         vm.prank(collector);
@@ -146,11 +146,11 @@ contract CollectionSecurityTest is CollectionBase {
     }
 
     function test_reentrancy_hookReenteringMint_onAfter_blocked() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         ReenteringHook reenter = new ReenteringHook();
         vm.prank(artist);
         c.setMintHook(address(reenter));
-        reenter.arm(ISovereignCollection(address(c)), false, true);
+        reenter.arm(ICollection(address(c)), false, true);
 
         vm.expectRevert(abi.encodeWithSignature("ReentrancyGuardReentrantCall()"));
         vm.prank(collector);
@@ -161,19 +161,19 @@ contract CollectionSecurityTest is CollectionBase {
         ReenteringWithdrawer r = new ReenteringWithdrawer();
         CollectionConfig memory cfg = _pricedConfig(1 ether);
         cfg.payoutAddress = address(r);
-        SovereignCollection c = _collection(cfg);
+        Collection c = _collection(cfg);
 
         vm.deal(collector, 1 ether);
         vm.prank(collector);
         c.mint{value: 1 ether}(1);
 
-        r.arm(ISovereignCollection(address(c)));
+        r.arm(ICollection(address(c)));
         // withdraw's internal call to r.receive() re-enters withdraw(); the
         // reentrant call reverts (guard), which bubbles up through the
         // outer `.call` as `ok == false`, which the outer withdraw()
         // reports as WithdrawFailed() rather than propagating the raw
         // ReentrancyGuardReentrantCall selector.
-        vm.expectRevert(ISovereignCollection.WithdrawFailed.selector);
+        vm.expectRevert(ICollection.WithdrawFailed.selector);
         r.pull();
         // Balance is untouched: the reentrant attempt did not partially drain.
         assertEq(c.pendingWithdrawal(address(r)), 1 ether);
@@ -195,7 +195,7 @@ contract CollectionSecurityTest is CollectionBase {
         MaliciousPriceStrategy evil = new MaliciousPriceStrategy(1 ether, 2 ether);
         CollectionConfig memory cfg = _freeConfig();
         cfg.priceStrategy = address(evil);
-        SovereignCollection c = _collection(cfg);
+        Collection c = _collection(cfg);
 
         // quantity=2 (even) -> required = 2 * 1 ETH = 2 ETH
         vm.deal(collector, 10 ether);
@@ -220,10 +220,10 @@ contract CollectionSecurityTest is CollectionBase {
         MaliciousPriceStrategy evil = new MaliciousPriceStrategy(1 ether, 1 ether);
         CollectionConfig memory cfg = _freeConfig();
         cfg.priceStrategy = address(evil);
-        SovereignCollection c = _collection(cfg);
+        Collection c = _collection(cfg);
 
         vm.deal(collector, 1 ether);
-        vm.expectRevert(ISovereignCollection.Underpayment.selector);
+        vm.expectRevert(ICollection.Underpayment.selector);
         vm.prank(collector);
         c.mintWithReferral{value: 0.5 ether}(1, referrer, "");
     }
@@ -232,7 +232,7 @@ contract CollectionSecurityTest is CollectionBase {
         MockPriceStrategy strat = new MockPriceStrategy(1 ether);
         CollectionConfig memory cfg = _freeConfig();
         cfg.priceStrategy = address(strat);
-        SovereignCollection c = _collection(cfg);
+        Collection c = _collection(cfg);
 
         vm.deal(collector, 2 ether);
         vm.prank(collector);
@@ -248,21 +248,21 @@ contract CollectionSecurityTest is CollectionBase {
     // ════════════════════════════════════════════════════════════════════
 
     function test_unauthorizedMinter_cannotMintTo() public {
-        SovereignCollection c = _collection(_freeConfig());
-        vm.expectRevert(ISovereignCollection.NotMinter.selector);
+        Collection c = _collection(_freeConfig());
+        vm.expectRevert(ICollection.NotMinter.selector);
         vm.prank(stranger);
         c.mintTo(stranger, address(0), "");
     }
 
     function test_unauthorizedMinter_cannotMintToId() public {
-        SovereignCollection c = _collection(_pooledConfig());
-        vm.expectRevert(ISovereignCollection.NotMinter.selector);
+        Collection c = _collection(_pooledConfig());
+        vm.expectRevert(ICollection.NotMinter.selector);
         vm.prank(stranger);
         c.mintToId(stranger, 1, address(0), "");
     }
 
     function test_revokedMinter_losesAccess() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         vm.prank(artist);
         c.setMinter(address(minter), true);
         assertTrue(c.isMinter(address(minter)));
@@ -271,13 +271,13 @@ contract CollectionSecurityTest is CollectionBase {
         c.setMinter(address(minter), false);
         assertFalse(c.isMinter(address(minter)));
 
-        vm.expectRevert(ISovereignCollection.NotMinter.selector);
-        minter.callMintTo(ISovereignCollection(address(c)), collector, address(0), "");
+        vm.expectRevert(ICollection.NotMinter.selector);
+        minter.callMintTo(ICollection(address(c)), collector, address(0), "");
     }
 
     function test_setMinter_rejectsZeroAddress() public {
-        SovereignCollection c = _collection(_freeConfig());
-        vm.expectRevert(ISovereignCollection.ZeroMinter.selector);
+        Collection c = _collection(_freeConfig());
+        vm.expectRevert(ICollection.ZeroMinter.selector);
         vm.prank(artist);
         c.setMinter(address(0), true);
     }
@@ -287,7 +287,7 @@ contract CollectionSecurityTest is CollectionBase {
     // ════════════════════════════════════════════════════════════════════
 
     function test_confirm_doubleInitReverts() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         InitParams memory p = _rawInitParams(_freeConfig());
         vm.expectRevert(abi.encodeWithSignature("InvalidInitialization()"));
         c.initialize(p);

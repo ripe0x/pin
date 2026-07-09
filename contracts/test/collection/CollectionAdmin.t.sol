@@ -3,8 +3,8 @@ pragma solidity ^0.8.24;
 
 import {CollectionBase} from "./CollectionBase.sol";
 
-import {SovereignCollection} from "../../src/collection/SovereignCollection.sol";
-import {ISovereignCollection} from "../../src/collection/interfaces/ISovereignCollection.sol";
+import {Collection} from "../../src/collection/Collection.sol";
+import {ICollection} from "../../src/collection/interfaces/ICollection.sol";
 import {
     CollectionConfig,
     CollectionStatus,
@@ -28,17 +28,17 @@ contract CollectionAdminTest is CollectionBase {
     // ── grant / revoke lifecycle ──────────────────────────────────────────────
 
     function test_owner_grantsAndRevokesAdmin() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         assertFalse(c.isAdmin(admin));
 
         vm.expectEmit(true, false, false, true, address(c));
-        emit ISovereignCollection.AdminSet(admin, true);
+        emit ICollection.AdminSet(admin, true);
         vm.prank(artist);
         c.addAdmin(admin);
         assertTrue(c.isAdmin(admin));
 
         vm.expectEmit(true, false, false, true, address(c));
-        emit ISovereignCollection.AdminSet(admin, false);
+        emit ICollection.AdminSet(admin, false);
         vm.prank(artist);
         c.removeAdmin(admin);
         assertFalse(c.isAdmin(admin));
@@ -47,23 +47,23 @@ contract CollectionAdminTest is CollectionBase {
     // ── addAdmin guards ───────────────────────────────────────────────────────
 
     function test_addAdmin_rejectsZeroAccount() public {
-        SovereignCollection c = _collection(_freeConfig());
-        vm.expectRevert(ISovereignCollection.ZeroAccount.selector);
+        Collection c = _collection(_freeConfig());
+        vm.expectRevert(ICollection.ZeroAccount.selector);
         vm.prank(artist);
         c.addAdmin(address(0));
     }
 
     function test_addAdmin_rejectsAlreadyAdmin() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         vm.startPrank(artist);
         c.addAdmin(admin);
-        vm.expectRevert(ISovereignCollection.AlreadyAdmin.selector);
+        vm.expectRevert(ICollection.AlreadyAdmin.selector);
         c.addAdmin(admin);
         vm.stopPrank();
     }
 
     function test_addAdmin_onlyOwner_notStranger() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         vm.expectRevert(ownableUnauthStranger);
         vm.prank(stranger);
         c.addAdmin(stranger);
@@ -72,49 +72,49 @@ contract CollectionAdminTest is CollectionBase {
     // ── removeAdmin guards ────────────────────────────────────────────────────
 
     function test_removeAdmin_rejectsNotAnAdmin() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         // never granted
-        vm.expectRevert(ISovereignCollection.NotAnAdmin.selector);
+        vm.expectRevert(ICollection.NotAnAdmin.selector);
         vm.prank(artist);
         c.removeAdmin(admin);
     }
 
     function test_removeAdmin_rejectsDoubleRemove() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         vm.startPrank(artist);
         c.addAdmin(admin);
         c.removeAdmin(admin);
-        vm.expectRevert(ISovereignCollection.NotAnAdmin.selector);
+        vm.expectRevert(ICollection.NotAnAdmin.selector);
         c.removeAdmin(admin); // second remove has nothing to revoke
         vm.stopPrank();
     }
 
     function test_removeAdmin_rejectsUnrelatedCaller() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         vm.prank(artist);
         c.addAdmin(admin);
 
         // a caller who is neither the owner nor the account itself is rejected
-        vm.expectRevert(ISovereignCollection.NotAuthorized.selector);
+        vm.expectRevert(ICollection.NotAuthorized.selector);
         vm.prank(stranger);
         c.removeAdmin(admin);
     }
 
     function test_admin_canRenounceSelf() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         vm.prank(artist);
         c.addAdmin(admin);
         assertTrue(c.isAdmin(admin));
 
         // an admin may drop its own key by passing its own address
         vm.expectEmit(true, false, false, true, address(c));
-        emit ISovereignCollection.AdminSet(admin, false);
+        emit ICollection.AdminSet(admin, false);
         vm.prank(admin);
         c.removeAdmin(admin);
         assertFalse(c.isAdmin(admin));
 
         // and having renounced, it can no longer manage
-        vm.expectRevert(ISovereignCollection.NotAuthorized.selector);
+        vm.expectRevert(ICollection.NotAuthorized.selector);
         vm.prank(admin);
         c.setClosing(true);
     }
@@ -122,7 +122,7 @@ contract CollectionAdminTest is CollectionBase {
     // ── admin has full management access ──────────────────────────────────────
 
     function test_admin_canRunEveryManagementFunction() public {
-        SovereignCollection c = _collection(_pricedConfig(1 ether));
+        Collection c = _collection(_pricedConfig(1 ether));
         vm.prank(artist);
         c.addAdmin(admin);
 
@@ -152,7 +152,7 @@ contract CollectionAdminTest is CollectionBase {
     ///      artist's proceeds. This is the deliberate power of the model, and
     ///      the test documents it so nobody grants an admin key casually.
     function test_admin_setPayoutAddress_redirectsFutureProceeds() public {
-        SovereignCollection c = _collection(_pricedConfig(1 ether));
+        Collection c = _collection(_pricedConfig(1 ether));
         vm.prank(artist);
         c.addAdmin(admin);
 
@@ -170,7 +170,7 @@ contract CollectionAdminTest is CollectionBase {
     // ── the two owner-only exceptions ─────────────────────────────────────────
 
     function test_admin_cannotAddOrRemovePeers() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         address admin2 = makeAddr("admin2");
         vm.startPrank(artist);
         c.addAdmin(admin);
@@ -184,13 +184,13 @@ contract CollectionAdminTest is CollectionBase {
 
         // ...nor revoke a PEER: removeAdmin allows only the owner or the
         // account itself, so an admin removing a different admin is rejected.
-        vm.expectRevert(ISovereignCollection.NotAuthorized.selector);
+        vm.expectRevert(ICollection.NotAuthorized.selector);
         vm.prank(admin);
         c.removeAdmin(admin2);
     }
 
     function test_admin_cannotTransferOwnership() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         vm.prank(artist);
         c.addAdmin(admin);
 
@@ -202,26 +202,26 @@ contract CollectionAdminTest is CollectionBase {
     // ── revocation + non-admins ───────────────────────────────────────────────
 
     function test_revokedAdmin_losesAccess() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         vm.startPrank(artist);
         c.addAdmin(admin);
         c.removeAdmin(admin);
         vm.stopPrank();
 
-        vm.expectRevert(ISovereignCollection.NotAuthorized.selector);
+        vm.expectRevert(ICollection.NotAuthorized.selector);
         vm.prank(admin);
         c.setClosing(true);
     }
 
     function test_nonAdmin_cannotManage() public {
-        SovereignCollection c = _collection(_freeConfig());
-        vm.expectRevert(ISovereignCollection.NotAuthorized.selector);
+        Collection c = _collection(_freeConfig());
+        vm.expectRevert(ICollection.NotAuthorized.selector);
         vm.prank(stranger);
         c.setClosing(true);
     }
 
     function test_owner_remainsAuthorizedAlongsideAdmins() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         vm.prank(artist);
         c.addAdmin(admin);
 
@@ -235,7 +235,7 @@ contract CollectionAdminTest is CollectionBase {
     // ── freeze still supreme over admins ──────────────────────────────────────
 
     function test_freeze_blocksAdminArtwork() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         vm.prank(collector);
         c.mint(1);
 
@@ -247,7 +247,7 @@ contract CollectionAdminTest is CollectionBase {
         vm.prank(admin);
         c.freezeMetadata();
 
-        vm.expectRevert(ISovereignCollection.MetadataIsFrozen.selector);
+        vm.expectRevert(ICollection.MetadataIsFrozen.selector);
         vm.prank(admin);
         c.setTokenArtwork(1, "ipfs://after-freeze");
     }

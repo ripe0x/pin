@@ -5,8 +5,8 @@ import {Test} from "forge-std/Test.sol";
 import {Base64} from "solady/utils/Base64.sol";
 import {LibString} from "solady/utils/LibString.sol";
 
-import {SovereignCollection} from "../../../src/collection/SovereignCollection.sol";
-import {SovereignCollectionFactory} from "../../../src/collection/SovereignCollectionFactory.sol";
+import {Collection} from "../../../src/collection/Collection.sol";
+import {CollectionFactory} from "../../../src/collection/CollectionFactory.sol";
 import {GenerativeRenderer} from "../../../src/collection/renderers/GenerativeRenderer.sol";
 import {
     CodeKind,
@@ -56,7 +56,7 @@ contract GenerativeRendererForkTest is Test {
     string constant ARTIST_MARKER =
         "function setup(){/*sovereign-fork-proof*/createCanvas(64,64)}";
 
-    SovereignCollection collection;
+    Collection collection;
     bool forked;
 
     function setUp() public {
@@ -79,9 +79,9 @@ contract GenerativeRendererForkTest is Test {
         MockScriptStore artistStore = new MockScriptStore();
         artistStore.put(ARTIST_FILE, bytes(ARTIST_MARKER));
 
-        SovereignCollection impl = new SovereignCollection();
-        SovereignCollectionFactory factory =
-            new SovereignCollectionFactory(address(impl), address(renderer), address(0));
+        Collection impl = new Collection();
+        CollectionFactory factory =
+            new CollectionFactory(address(impl), address(renderer), address(0));
 
         CollectionConfig memory cfg;
         cfg.supplyCap = 10;
@@ -95,7 +95,7 @@ contract GenerativeRendererForkTest is Test {
         work.liveness = Liveness.Pure;
         work.injectionVersion = 1;
 
-        collection = SovereignCollection(
+        collection = Collection(
             factory.createCollection(
                 "Fork Proof",
                 "FORK",

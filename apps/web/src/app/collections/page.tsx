@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { getRecentCollections } from "@/lib/collection-onchain"
-import { formatPriceLabel, shortAddress, sovereignCollectionFactory } from "@/lib/sovereign-collection"
+import { formatPriceLabel, shortAddress, collectionFactory } from "@/lib/collection"
 
 export const metadata: Metadata = {
   title: "Collections",
@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 export const revalidate = 3600
 
 export default async function CollectionsHome() {
-  const factory = sovereignCollectionFactory()
+  const factory = collectionFactory()
   const recent = factory ? await getRecentCollections(factory, 8) : []
 
   return (

@@ -30,7 +30,7 @@ import {
   type TokenData,
   type WorkInput,
 } from "@/lib/collection-render"
-import type { WorkConfig } from "@/lib/sovereign-collection"
+import type { WorkConfig } from "@/lib/collection"
 
 export type RenderEntry = {
   tokenId: string

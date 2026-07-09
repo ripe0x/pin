@@ -7,7 +7,7 @@
  * this renders the "not available" notice instead.
  */
 import { type CollectionMintHistoryResult } from "@/lib/collection-onchain"
-import { evmNowAddressUrl, shortAddress } from "@/lib/sovereign-collection"
+import { evmNowAddressUrl, shortAddress } from "@/lib/collection"
 
 export function CollectionMintHistory({
   history,

@@ -4,12 +4,12 @@ import { collections, collectionMints, collectionTokens } from "ponder:schema"
 /**
  * PND Collection System (contracts/src/collection/) handlers.
  *
- * DEPLOY-GATED: SovereignCollectionFactory + SovereignCollection are only
+ * DEPLOY-GATED: CollectionFactory + Collection are only
  * present in ponder.config.ts's `contracts` once the real factory address
  * replaces the zero-address sentinel there. Until then, Ponder's generated
  * `EventNames` type structurally does not include
- * "SovereignCollectionFactory:CollectionCreated" /
- * "SovereignCollection:Minted" / "SovereignCollection:Burned" — there is
+ * "CollectionFactory:CollectionCreated" /
+ * "Collection:Minted" / "Collection:Burned" — there is
  * nothing in `contracts` for those strings to refer to.
  *
  * `ponder.on` is deliberately typed generically over the live config (see
@@ -50,7 +50,7 @@ const tokenRowId = (collection: string, tokenId: bigint) =>
 
 // ─── Factory discovery ────────────────────────────────────────────────────
 
-on("SovereignCollectionFactory:CollectionCreated", async ({ event, context }) => {
+on("CollectionFactory:CollectionCreated", async ({ event, context }) => {
   const { owner, collection } = event.args
   await context.db
     .insert(collections)
@@ -74,7 +74,7 @@ on("SovereignCollectionFactory:CollectionCreated", async ({ event, context }) =>
 // not inserted as a second row (there is exactly one live row per
 // (collection, tokenId) at any time; collection_mints is the immutable
 // history of every mint call, including re-mints).
-on("SovereignCollection:Minted", async ({ event, context }) => {
+on("Collection:Minted", async ({ event, context }) => {
   const { to, referrer, firstTokenId, quantity, firstMintIndex, mintBlock, statusAtMint } =
     event.args as {
       to: `0x${string}`
@@ -140,7 +140,7 @@ on("SovereignCollection:Minted", async ({ event, context }) => {
   }
 })
 
-on("SovereignCollection:Burned", async ({ event, context }) => {
+on("Collection:Burned", async ({ event, context }) => {
   const { tokenId } = event.args as { tokenId: bigint }
   const collection = event.log.address as `0x${string}`
   const id = tokenRowId(collection, tokenId)

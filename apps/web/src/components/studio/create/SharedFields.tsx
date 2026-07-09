@@ -9,7 +9,7 @@
 
 import { isAddress } from "viem"
 import type { UseEthAmountInputResult } from "@/lib/useEthAmountInput"
-import { formatBps, REFERRAL_SHARE_BPS } from "@/lib/sovereign-collection"
+import { formatBps, REFERRAL_SHARE_BPS } from "@/lib/collection"
 import type { CollabRow, WizardState } from "./types"
 import { LABEL, INPUT, HELP, ERROR } from "./wizard-ui"
 

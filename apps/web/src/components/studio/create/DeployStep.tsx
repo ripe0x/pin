@@ -2,7 +2,7 @@
 
 /**
  * Final step for all three presets: a single createCollection write on
- * SovereignCollectionFactory, ported from CreateEditionForm's
+ * CollectionFactory, ported from CreateEditionForm's
  * useWriteContract + useWaitForTransactionReceipt + parseEventLogs pattern.
  * Builds CollectionConfig + WorkConfig from wizard state per preset:
  *
@@ -18,15 +18,15 @@
 import { useRouter } from "next/navigation"
 import { parseEventLogs, type Address, type TransactionReceipt } from "viem"
 import { useAccount, useChainId, useWriteContract, useWaitForTransactionReceipt } from "wagmi"
-import { sovereignCollectionFactoryAbi } from "@pin/abi"
+import { collectionFactoryAbi } from "@pin/abi"
 import { formatWriteError } from "@/components/tx/tx-ui"
 import {
   ZERO_ADDRESS,
   IdMode,
   Liveness,
-  sovereignCollectionFactory,
+  collectionFactory,
   generativeRenderer,
-} from "@/lib/sovereign-collection"
+} from "@/lib/collection"
 import { KNOWN_DEPENDENCIES, dependencyCodeRef, CodeKind, scriptyStorageAddress } from "@/lib/create-collection"
 import { studioToolHref } from "@/lib/studio-tools"
 import { validateCollaborators } from "./SharedFields"
@@ -50,7 +50,7 @@ export function DeployStep({
 }) {
   const { address } = useAccount()
   const chainId = useChainId()
-  const factory = sovereignCollectionFactory(chainId)
+  const factory = collectionFactory(chainId)
   const renderer = generativeRenderer(chainId)
   const scriptyStorage = scriptyStorageAddress(chainId)
 
@@ -137,7 +137,7 @@ export function DeployStep({
     const artists = collabCheck.ok ? collabCheck.parsed : []
     deploy.writeContract({
       address: factory,
-      abi: sovereignCollectionFactoryAbi,
+      abi: collectionFactoryAbi,
       functionName: "createCollection",
       args: [state.name.trim(), state.symbol.trim(), address, buildCfg(), buildWorkCfg(), [], artists],
     })
@@ -160,7 +160,7 @@ export function DeployStep({
       </header>
 
       {!factory && (
-        <p className={ERROR}>No SovereignCollectionFactory is configured for this network.</p>
+        <p className={ERROR}>No CollectionFactory is configured for this network.</p>
       )}
       {state.preset === "generative" && !renderer && (
         <p className={ERROR}>No GenerativeRenderer is configured for this network.</p>
@@ -183,7 +183,7 @@ function useDeployedAddress(receipt: TransactionReceipt | undefined): Address | 
   if (!receipt) return null
   try {
     const logs = parseEventLogs({
-      abi: sovereignCollectionFactoryAbi,
+      abi: collectionFactoryAbi,
       logs: receipt.logs,
       eventName: "CollectionCreated",
     })

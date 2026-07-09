@@ -4,8 +4,8 @@ pragma solidity ^0.8.24;
 import {CollectionBase} from "./CollectionBase.sol";
 import {MockMinter} from "./mocks/CollectionMocks.sol";
 
-import {SovereignCollection} from "../../src/collection/SovereignCollection.sol";
-import {ISovereignCollection} from "../../src/collection/interfaces/ISovereignCollection.sol";
+import {Collection} from "../../src/collection/Collection.sol";
+import {ICollection} from "../../src/collection/interfaces/ICollection.sol";
 import {CollectionConfig, MintMark} from "../../src/collection/CollectionTypes.sol";
 
 /// @dev tokenSeed() + mintIndex provenance: nonzero, distinct across tokens
@@ -25,7 +25,7 @@ contract CollectionEntropyTest is CollectionBase {
     function testFuzz_seed_neverZero(uint8 qtyRaw, uint256 prevrandaoSeed) public {
         uint256 qty = bound(qtyRaw, 1, 20);
         vm.prevrandao(bytes32(prevrandaoSeed));
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         vm.prank(collector);
         c.mint(qty);
         for (uint256 t = 1; t <= qty; t++) {
@@ -36,7 +36,7 @@ contract CollectionEntropyTest is CollectionBase {
     // ── seeds distinct across tokens minted in ONE tx ────────────────────
 
     function test_seed_distinctAcrossTokensInOneTx() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         vm.prank(collector);
         c.mint(5); // ids 1..5, all in one tx / one block
 
@@ -55,7 +55,7 @@ contract CollectionEntropyTest is CollectionBase {
 
     function testFuzz_seed_distinctAcrossTxs(uint256 randaoA, uint256 randaoB) public {
         vm.assume(randaoA != randaoB);
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
 
         vm.prevrandao(bytes32(randaoA));
         vm.prank(collector);
@@ -71,7 +71,7 @@ contract CollectionEntropyTest is CollectionBase {
     // ── seed is stable across transfers ──────────────────────────────────
 
     function test_seed_stableAcrossTransfer() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         vm.prank(collector);
         c.mint(1);
         bytes32 before = c.tokenSeed(1);
@@ -86,17 +86,17 @@ contract CollectionEntropyTest is CollectionBase {
     // ── seed is re-rolled on pooled re-mint ──────────────────────────────
 
     function test_seed_reRolledOnPooledRemint() public {
-        SovereignCollection c = _collection(_pooledConfig());
+        Collection c = _collection(_pooledConfig());
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
-        minter.callMintToId(ISovereignCollection(address(c)), collector, 1, address(0), "");
+        minter.callMintToId(ICollection(address(c)), collector, 1, address(0), "");
         bytes32 seed1 = c.tokenSeed(1);
 
-        minter.callBurn(ISovereignCollection(address(c)), 1);
+        minter.callBurn(ICollection(address(c)), 1);
 
         vm.prevrandao(bytes32(uint256(12345)));
-        minter.callMintToId(ISovereignCollection(address(c)), collector, 1, address(0), "");
+        minter.callMintToId(ICollection(address(c)), collector, 1, address(0), "");
         bytes32 seed2 = c.tokenSeed(1);
 
         assertTrue(seed1 != seed2, "re-mint must produce a fresh seed");
@@ -104,25 +104,25 @@ contract CollectionEntropyTest is CollectionBase {
 
     function testFuzz_seed_reRolledAcrossManyPooledCycles(uint8 cyclesRaw) public {
         uint256 cycles = bound(cyclesRaw, 1, 8);
-        SovereignCollection c = _collection(_pooledConfig());
+        Collection c = _collection(_pooledConfig());
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
         bytes32 prevSeed = bytes32(0);
         for (uint256 i = 0; i < cycles; i++) {
             vm.prevrandao(bytes32(uint256(keccak256(abi.encode("cycle", i)))));
-            minter.callMintToId(ISovereignCollection(address(c)), collector, 7, address(0), "");
+            minter.callMintToId(ICollection(address(c)), collector, 7, address(0), "");
             bytes32 seed = c.tokenSeed(7);
             assertTrue(seed != prevSeed, "each re-mint cycle must re-roll the seed");
             prevSeed = seed;
-            minter.callBurn(ISovereignCollection(address(c)), 7);
+            minter.callBurn(ICollection(address(c)), 7);
         }
     }
 
     // ── mintIndex is monotonic across BOTH mint paths ────────────────────
 
     function test_mintIndex_monotonic_acrossPaidAndExtensionPaths() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
@@ -131,7 +131,7 @@ contract CollectionEntropyTest is CollectionBase {
         assertEq(c.mintMarkOf(1).mintIndex, 0);
         assertEq(c.mintMarkOf(2).mintIndex, 1);
 
-        uint256 tokenId3 = minter.callMintTo(ISovereignCollection(address(c)), collector, address(0), "");
+        uint256 tokenId3 = minter.callMintTo(ICollection(address(c)), collector, address(0), "");
         assertEq(tokenId3, 3);
         assertEq(c.mintMarkOf(3).mintIndex, 2); // continues the same counter
 
@@ -141,26 +141,26 @@ contract CollectionEntropyTest is CollectionBase {
     }
 
     function test_mintIndex_monotonic_pooledMode_acrossBurnRemint() public {
-        SovereignCollection c = _collection(_pooledConfig());
+        Collection c = _collection(_pooledConfig());
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
-        minter.callMintToId(ISovereignCollection(address(c)), collector, 1, address(0), ""); // mintIndex 0
-        minter.callMintToId(ISovereignCollection(address(c)), collector, 2, address(0), ""); // mintIndex 1
+        minter.callMintToId(ICollection(address(c)), collector, 1, address(0), ""); // mintIndex 0
+        minter.callMintToId(ICollection(address(c)), collector, 2, address(0), ""); // mintIndex 1
         assertEq(c.mintMarkOf(1).mintIndex, 0);
         assertEq(c.mintMarkOf(2).mintIndex, 1);
 
-        minter.callBurn(ISovereignCollection(address(c)), 1);
-        minter.callMintToId(ISovereignCollection(address(c)), collector, 1, address(0), ""); // mintIndex 2, NOT 0 again
+        minter.callBurn(ICollection(address(c)), 1);
+        minter.callMintToId(ICollection(address(c)), collector, 1, address(0), ""); // mintIndex 2, NOT 0 again
         assertEq(c.mintMarkOf(1).mintIndex, 2);
 
-        minter.callMintToId(ISovereignCollection(address(c)), collector, 3, address(0), ""); // mintIndex 3
+        minter.callMintToId(ICollection(address(c)), collector, 3, address(0), ""); // mintIndex 3
         assertEq(c.mintMarkOf(3).mintIndex, 3);
     }
 
     function testFuzz_mintIndex_monotonic_interleavedBatchesAndSingles(uint8 batchesRaw) public {
         uint256 batches = bound(batchesRaw, 1, 10);
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
@@ -177,7 +177,7 @@ contract CollectionEntropyTest is CollectionBase {
                     expectedIndex++;
                 }
             } else {
-                uint256 tokenId = minter.callMintTo(ISovereignCollection(address(c)), collector, address(0), "");
+                uint256 tokenId = minter.callMintTo(ICollection(address(c)), collector, address(0), "");
                 assertEq(tokenId, nextTokenId);
                 assertEq(c.mintMarkOf(tokenId).mintIndex, expectedIndex);
                 nextTokenId++;

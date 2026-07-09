@@ -88,7 +88,7 @@ SINGLETONS (deployed once, ownerless)
                                   + injection convention  for Solidity SVG
 
 COLLECTION LAYER (per artist, via factory)
-  SovereignCollectionFactory ── clones ──► SovereignCollection (the core)
+  CollectionFactory ── clones ──► Collection (the core)
     fixed: OZ ERC721, sale states, 10% surface share,
            per-token Mint Mark + entropy → tokenSeed(),
            work config (set at init, lockable), graph refs,
@@ -115,7 +115,7 @@ RAILS (serve every contract, including bespoke)
     confirmed attribution = roster entry ∩ the artist's own Catalog claim
 ```
 
-### 3.1 SovereignCollection core
+### 3.1 Collection core
 
 Rewritten from `contracts/src/editions/PNDEditions.sol` with salvage:
 the payment split, hooks interface, sale states, and graph carry over;
@@ -301,7 +301,7 @@ surface, worker, indexer, artist-page template, Catalog).
 
 ### 8.1 Rework (blocks everything, including the Editions deploy)
 
-- PNDEditions core rewritten as **SovereignCollection** on OZ ERC721: delete
+- PNDEditions core rewritten as **Collection** on OZ ERC721: delete
   the ERC721A batch machinery, add per-token marks + entropy, the
   minter slot (`mintTo`/`burn` roles, id-mode flag), the price strategy
   slot, and the explicit-param renderer interface. Salvage the payment
@@ -351,7 +351,7 @@ surface, worker, indexer, artist-page template, Catalog).
 - **Hooks run on all mint paths**, built-in and extension `mintTo`,
   so gating composes with custom minters instead of being
   reimplemented inside them.
-- **Interface names**: `ISovereignCollection` (view surface:
+- **Interface names**: `ICollection` (view surface:
   `tokenSeed`, `mintMarkOf`, `workConfig`, sale state),
   `IRenderer` (`tokenURI(address collection, uint256 tokenId)`),
   `IPriceStrategy` (`priceOf(collection, minter, qty, data)`, view),
@@ -359,7 +359,7 @@ surface, worker, indexer, artist-page template, Catalog).
   gated, carried from the editions spec).
 - **Naming**: contracts carry no PND prefix, since PND is a
   stepping stone and the contracts must outlive it. The core family is
-  `SovereignCollection` / `SovereignCollectionFactory`, consistent with
+  `Collection` / `CollectionFactory`, consistent with
   the existing `SovereignAuctionHouse` and the sovereign-artist-site
   template. Singletons stay unprefixed in the Catalog idiom
   (`Attribution`, `GenerativeRenderer`, `SVGRenderer`).

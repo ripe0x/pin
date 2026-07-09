@@ -7,12 +7,12 @@ import {CollectionBase} from "../CollectionBase.sol";
 import {MockMinter} from "../mocks/CollectionMocks.sol";
 import {CollectionHandler} from "./CollectionHandler.sol";
 
-import {SovereignCollection} from "../../../src/collection/SovereignCollection.sol";
+import {Collection} from "../../../src/collection/Collection.sol";
 import {CollectionConfig, MintMark} from "../../../src/collection/CollectionTypes.sol";
 
 /// @title CollectionInvariants
 /// @notice Bounded random-walk invariant suite over ONE Sequential-mode and
-///         ONE Pooled-mode SovereignCollection, driven by CollectionHandler.
+///         ONE Pooled-mode Collection, driven by CollectionHandler.
 ///         See CollectionHandler.sol for the action set and ghost-state
 ///         design. Run recipe for a deep pass (no fork involved):
 ///
@@ -24,8 +24,8 @@ import {CollectionConfig, MintMark} from "../../../src/collection/CollectionType
 contract CollectionInvariants is StdInvariant, CollectionBase {
     CollectionHandler internal handler;
 
-    SovereignCollection internal seq;
-    SovereignCollection internal pooled;
+    Collection internal seq;
+    Collection internal pooled;
     MockMinter internal seqMinter;
     MockMinter internal pooledMinter;
 
@@ -105,7 +105,7 @@ contract CollectionInvariants is StdInvariant, CollectionBase {
         );
     }
 
-    function _sumGhostPendingOn(SovereignCollection c) internal view returns (uint256 sum) {
+    function _sumGhostPendingOn(Collection c) internal view returns (uint256 sum) {
         uint256 n = handler.ghostPayeeCount();
         for (uint256 i = 0; i < n; i++) {
             address payee = handler.ghostPayeesEver(i);
@@ -241,7 +241,7 @@ contract CollectionInvariants is StdInvariant, CollectionBase {
     // ════════════════════════════════════════════════════════════════════
     // CAPS: sequential ghostMints <= cap always; pooled totalSupply() <= cap
     // always (cap semantics differ deliberately by mode — see
-    // SovereignCollection._checkCap).
+    // Collection._checkCap).
     // ════════════════════════════════════════════════════════════════════
 
     function invariant_seqMintsNeverExceedCap() public view {

@@ -5,8 +5,8 @@ import {Test} from "forge-std/Test.sol";
 import {IERC721} from "openzeppelin-contracts/contracts/token/ERC721/IERC721.sol";
 import {LibString} from "solady/utils/LibString.sol";
 
-import {SovereignCollection} from "../../../src/collection/SovereignCollection.sol";
-import {SovereignCollectionFactory} from "../../../src/collection/SovereignCollectionFactory.sol";
+import {Collection} from "../../../src/collection/Collection.sol";
+import {CollectionFactory} from "../../../src/collection/CollectionFactory.sol";
 import {IRenderer, ICollectionView} from "../../../src/collection/interfaces/IRenderer.sol";
 import {IPriceStrategy} from "../../../src/collection/interfaces/IPriceStrategy.sol";
 import {
@@ -123,7 +123,7 @@ contract FrameRenderer is IRenderer {
 }
 
 contract MiniTBAMTest is Test {
-    SovereignCollection collection;
+    Collection collection;
     FrameLock frameLock;
     LockCurvePriceStrategy strategy;
     FrameRenderer renderer;
@@ -133,9 +133,9 @@ contract MiniTBAMTest is Test {
     address bob = makeAddr("bob");
 
     function setUp() public {
-        SovereignCollection impl = new SovereignCollection();
-        SovereignCollectionFactory factory =
-            new SovereignCollectionFactory(address(impl), address(new MockRenderer()), address(0));
+        Collection impl = new Collection();
+        CollectionFactory factory =
+            new CollectionFactory(address(impl), address(new MockRenderer()), address(0));
 
         frameLock = new FrameLock();
         strategy = new LockCurvePriceStrategy(frameLock);
@@ -148,7 +148,7 @@ contract MiniTBAMTest is Test {
         cfg.renderer = address(renderer);
         WorkConfig memory work; // renderer-native: the renderer IS the work
 
-        collection = SovereignCollection(
+        collection = Collection(
             factory.createCollection(
                 "Mini TBAM", "MTBAM", artist, cfg, work, new address[](0), new address[](0)
             )

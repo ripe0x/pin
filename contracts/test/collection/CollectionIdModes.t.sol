@@ -4,8 +4,8 @@ pragma solidity ^0.8.24;
 import {CollectionBase} from "./CollectionBase.sol";
 import {MockMinter} from "./mocks/CollectionMocks.sol";
 
-import {SovereignCollection} from "../../src/collection/SovereignCollection.sol";
-import {ISovereignCollection} from "../../src/collection/interfaces/ISovereignCollection.sol";
+import {Collection} from "../../src/collection/Collection.sol";
+import {ICollection} from "../../src/collection/interfaces/ICollection.sol";
 import {CollectionConfig, CollectionStatus, IdMode, MintMark} from "../../src/collection/CollectionTypes.sol";
 
 /// @dev Sequential vs Pooled id-mode semantics: which mint paths are legal in
@@ -26,44 +26,44 @@ contract CollectionIdModesTest is CollectionBase {
     // ════════════════════════════════════════════════════════════════════
 
     function test_sequential_rejectsMintToId() public {
-        SovereignCollection c = _collection(_freeConfig()); // Sequential
+        Collection c = _collection(_freeConfig()); // Sequential
         address[] memory minters = new address[](1);
         minters[0] = address(minter);
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
-        vm.expectRevert(ISovereignCollection.SequentialAssignsIds.selector);
-        minter.callMintToId(ISovereignCollection(address(c)), collector, 1, address(0), "");
+        vm.expectRevert(ICollection.SequentialAssignsIds.selector);
+        minter.callMintToId(ICollection(address(c)), collector, 1, address(0), "");
     }
 
     function test_pooled_rejectsMintTo() public {
-        SovereignCollection c = _collection(_pooledConfig());
+        Collection c = _collection(_pooledConfig());
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
-        vm.expectRevert(ISovereignCollection.PooledNeedsMintToId.selector);
-        minter.callMintTo(ISovereignCollection(address(c)), collector, address(0), "");
+        vm.expectRevert(ICollection.PooledNeedsMintToId.selector);
+        minter.callMintTo(ICollection(address(c)), collector, address(0), "");
     }
 
     function test_pooled_rejectsPaidMint() public {
-        SovereignCollection c = _collection(_pooledConfig());
-        vm.expectRevert(ISovereignCollection.PooledSellsViaMinter.selector);
+        Collection c = _collection(_pooledConfig());
+        vm.expectRevert(ICollection.PooledSellsViaMinter.selector);
         vm.prank(collector);
         c.mint(1);
     }
 
     function test_pooled_rejectsPaidMintWithReferral() public {
-        SovereignCollection c = _collection(_pooledConfig());
-        vm.expectRevert(ISovereignCollection.PooledSellsViaMinter.selector);
+        Collection c = _collection(_pooledConfig());
+        vm.expectRevert(ICollection.PooledSellsViaMinter.selector);
         vm.prank(collector);
         c.mintWithReferral(1, referrer, "");
     }
 
     function test_sequential_mintToWorks() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         vm.prank(artist);
         c.setMinter(address(minter), true);
-        uint256 tokenId = minter.callMintTo(ISovereignCollection(address(c)), collector, address(0), "");
+        uint256 tokenId = minter.callMintTo(ICollection(address(c)), collector, address(0), "");
         assertEq(tokenId, 1);
         assertEq(c.ownerOf(1), collector);
     }
@@ -73,18 +73,18 @@ contract CollectionIdModesTest is CollectionBase {
     // ════════════════════════════════════════════════════════════════════
 
     function test_pooled_burnThenRemintSameId_freshMarkAndSeed() public {
-        SovereignCollection c = _collection(_pooledConfig());
+        Collection c = _collection(_pooledConfig());
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
-        minter.callMintToId(ISovereignCollection(address(c)), collector, 5, referrer, "");
+        minter.callMintToId(ICollection(address(c)), collector, 5, referrer, "");
         assertEq(c.totalSupply(), 1);
         MintMark memory firstMark = c.mintMarkOf(5);
         bytes32 firstSeed = c.tokenSeed(5);
         assertEq(firstMark.mintIndex, 0);
         assertEq(firstMark.referrer, referrer);
 
-        minter.callBurn(ISovereignCollection(address(c)), 5);
+        minter.callBurn(ICollection(address(c)), 5);
         assertEq(c.totalSupply(), 0);
         // Mark and seed remain readable for the burned instance until re-mint.
         assertEq(c.mintMarkOf(5).mintIndex, firstMark.mintIndex);
@@ -94,7 +94,7 @@ contract CollectionIdModesTest is CollectionBase {
         // just incidentally different.
         vm.prevrandao(bytes32(uint256(999)));
         address newReferrer = makeAddr("newReferrer");
-        minter.callMintToId(ISovereignCollection(address(c)), stranger, 5, newReferrer, "");
+        minter.callMintToId(ICollection(address(c)), stranger, 5, newReferrer, "");
 
         assertEq(c.ownerOf(5), stranger);
         assertEq(c.totalSupply(), 1);
@@ -110,39 +110,39 @@ contract CollectionIdModesTest is CollectionBase {
     function test_pooled_burnReturnsSlotToCapBudget() public {
         CollectionConfig memory cfg = _pooledConfig();
         cfg.supplyCap = 1; // live-supply cap of 1
-        SovereignCollection c = _collection(cfg);
+        Collection c = _collection(cfg);
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
-        minter.callMintToId(ISovereignCollection(address(c)), collector, 1, address(0), "");
+        minter.callMintToId(ICollection(address(c)), collector, 1, address(0), "");
         // At cap: a second distinct id cannot be minted while the first is alive.
-        vm.expectRevert(ISovereignCollection.ExceedsCap.selector);
-        minter.callMintToId(ISovereignCollection(address(c)), collector, 2, address(0), "");
+        vm.expectRevert(ICollection.ExceedsCap.selector);
+        minter.callMintToId(ICollection(address(c)), collector, 2, address(0), "");
 
-        minter.callBurn(ISovereignCollection(address(c)), 1);
+        minter.callBurn(ICollection(address(c)), 1);
         // Burning frees the pooled cap budget (bounds LIVE supply, not
         // mints-ever), so a new id can now be minted.
-        minter.callMintToId(ISovereignCollection(address(c)), collector, 2, address(0), "");
+        minter.callMintToId(ICollection(address(c)), collector, 2, address(0), "");
         assertEq(c.totalSupply(), 1);
     }
 
     function test_pooled_liveIdCannotBeMintedOver() public {
-        SovereignCollection c = _collection(_pooledConfig());
+        Collection c = _collection(_pooledConfig());
         vm.prank(artist);
         c.setMinter(address(minter), true);
-        minter.callMintToId(ISovereignCollection(address(c)), collector, 1, address(0), "");
+        minter.callMintToId(ICollection(address(c)), collector, 1, address(0), "");
 
         // OZ _mint reverts on an existing id: this IS the pooled-mode
         // correctness argument (a live id can never be minted over).
         vm.expectRevert(abi.encodeWithSignature("ERC721InvalidSender(address)", address(0)));
-        minter.callMintToId(ISovereignCollection(address(c)), stranger, 1, address(0), "");
+        minter.callMintToId(ICollection(address(c)), stranger, 1, address(0), "");
     }
 
     function test_pooled_id0IsMintable() public {
-        SovereignCollection c = _collection(_pooledConfig());
+        Collection c = _collection(_pooledConfig());
         vm.prank(artist);
         c.setMinter(address(minter), true);
-        minter.callMintToId(ISovereignCollection(address(c)), collector, 0, address(0), "");
+        minter.callMintToId(ICollection(address(c)), collector, 0, address(0), "");
         assertEq(c.ownerOf(0), collector);
         assertEq(c.totalSupply(), 1);
         assertTrue(c.mintMarkOf(0).isFirst);
@@ -153,7 +153,7 @@ contract CollectionIdModesTest is CollectionBase {
     // ════════════════════════════════════════════════════════════════════
 
     function test_sequential_idsNeverRecycleAfterBurn() public {
-        SovereignCollection c = _collection(_freeConfig());
+        Collection c = _collection(_freeConfig());
         vm.prank(collector);
         c.mint(3); // ids 1,2,3
 
@@ -182,14 +182,14 @@ contract CollectionIdModesTest is CollectionBase {
     function test_sequential_capBoundsMintsEver_burnDoesNotFreeSlots() public {
         CollectionConfig memory cfg = _freeConfig();
         cfg.supplyCap = 2;
-        SovereignCollection c = _collection(cfg);
+        Collection c = _collection(cfg);
 
         vm.prank(collector);
         c.mint(2); // ids 1,2 -> mintedEver == cap
         vm.prank(collector);
         c.burn(1); // live supply now 1, but mintedEver stays 2
 
-        vm.expectRevert(ISovereignCollection.ExceedsCap.selector);
+        vm.expectRevert(ICollection.ExceedsCap.selector);
         vm.prank(collector);
         c.mint(1); // cap bounds EVER minted, burn does not free a slot
 
@@ -200,33 +200,33 @@ contract CollectionIdModesTest is CollectionBase {
     function test_pooled_capBoundsLiveSupply_notMintsEver() public {
         CollectionConfig memory cfg = _pooledConfig();
         cfg.supplyCap = 2;
-        SovereignCollection c = _collection(cfg);
+        Collection c = _collection(cfg);
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
-        minter.callMintToId(ISovereignCollection(address(c)), collector, 1, address(0), "");
-        minter.callMintToId(ISovereignCollection(address(c)), collector, 2, address(0), "");
-        vm.expectRevert(ISovereignCollection.ExceedsCap.selector);
-        minter.callMintToId(ISovereignCollection(address(c)), collector, 3, address(0), "");
+        minter.callMintToId(ICollection(address(c)), collector, 1, address(0), "");
+        minter.callMintToId(ICollection(address(c)), collector, 2, address(0), "");
+        vm.expectRevert(ICollection.ExceedsCap.selector);
+        minter.callMintToId(ICollection(address(c)), collector, 3, address(0), "");
 
-        minter.callBurn(ISovereignCollection(address(c)), 1);
-        minter.callBurn(ISovereignCollection(address(c)), 2);
+        minter.callBurn(ICollection(address(c)), 1);
+        minter.callBurn(ICollection(address(c)), 2);
         // Even though mintedEver is already 2 == cap, LIVE supply is 0, so
         // pooled mode allows re-minting well past "2 mints ever."
-        minter.callMintToId(ISovereignCollection(address(c)), collector, 3, address(0), "");
-        minter.callMintToId(ISovereignCollection(address(c)), collector, 4, address(0), "");
+        minter.callMintToId(ICollection(address(c)), collector, 3, address(0), "");
+        minter.callMintToId(ICollection(address(c)), collector, 4, address(0), "");
         assertEq(c.totalSupply(), 2);
 
-        vm.expectRevert(ISovereignCollection.ExceedsCap.selector);
-        minter.callMintToId(ISovereignCollection(address(c)), collector, 5, address(0), "");
+        vm.expectRevert(ICollection.ExceedsCap.selector);
+        minter.callMintToId(ICollection(address(c)), collector, 5, address(0), "");
     }
 
     function test_pooled_zeroCapIsOpenSupply() public {
-        SovereignCollection c = _collection(_pooledConfig()); // supplyCap == 0
+        Collection c = _collection(_pooledConfig()); // supplyCap == 0
         vm.prank(artist);
         c.setMinter(address(minter), true);
         for (uint256 i = 0; i < 10; i++) {
-            minter.callMintToId(ISovereignCollection(address(c)), collector, i, address(0), "");
+            minter.callMintToId(ICollection(address(c)), collector, i, address(0), "");
         }
         assertEq(c.totalSupply(), 10);
     }

@@ -1,7 +1,7 @@
 # PND Editions media: upload, metadata, and pinning
 
 > **SUPERSEDED (2026-07-06).** The Editions contract was reworked into the
-> SovereignCollection system (OZ ERC721 core, four slots, id modes); see
+> Collection system (OZ ERC721 core, four slots, id modes); see
 > docs/pnd-collection-system.md and docs/pnd-collection-contracts-plan.md.
 > This document describes the pre-rework ERC721A design; payment-split,
 > hook, and graph concepts carry over, token-layer specifics do not.

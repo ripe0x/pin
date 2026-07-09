@@ -26,7 +26,7 @@ import {
   ipfsToHttp,
   sellsViaMinterOnly,
   shortAddress,
-} from "@/lib/sovereign-collection"
+} from "@/lib/collection"
 
 // TODO: Collection Graph (edges) is not yet exposed by the data layer —
 // lib/collection-onchain.ts has no getCollectionEdges export (unlike

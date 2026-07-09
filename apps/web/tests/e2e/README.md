@@ -42,7 +42,7 @@ with `E2E_FORK_RPC`).
    picker depend on.
 2. Deploys the Sovereign Collection system
    (`forge script DeployCollectionSystem.s.sol`: Attribution, DefaultRenderer,
-   GenerativeRenderer, the SovereignCollection implementation, and the
+   GenerativeRenderer, the Collection implementation, and the
    factory that clones it) and parses the **factory** and
    **GenerativeRenderer** addresses out of the script's console output.
    Both are exported as `NEXT_PUBLIC_*` env vars to the dev server — as of
