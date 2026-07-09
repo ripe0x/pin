@@ -1,0 +1,60 @@
+# PND onchain protocols
+
+> The onchain protocols PND ships for artists. Each is a self-contained set of contracts with an API reference below. Collections are artist-owned ERC721 contracts built on one core with four swappable slots. Auctions are per-owner English-auction houses for any ERC721. More protocols land here as they ship.
+
+Machine-readable addresses + ABIs: https://pnd.ripe.wtf/protocol-manifest.json (ABIs under https://pnd.ripe.wtf/abis/).
+
+## Introduction
+
+- [Overview](https://pnd.ripe.wtf/docs/introduction/overview): The onchain protocols PND ships for artists, and how this reference is organized.
+- [Addresses](https://pnd.ripe.wtf/docs/introduction/addresses): The shared singletons of each PND onchain protocol, with ABI and reference links.
+- [Conventions](https://pnd.ripe.wtf/docs/introduction/conventions): How to read examples, addresses, and terms across this reference.
+
+## Collections
+
+- [Overview](https://pnd.ripe.wtf/docs/collections/overview): What the PND Collection System is, its parts, and how this reference is organized.
+- [The four slots](https://pnd.ripe.wtf/docs/collections/concepts/four-slots): Renderer, price strategy, mint hook, and extension minter, the swappable modules every collection composes from.
+- [Id modes](https://pnd.ripe.wtf/docs/collections/concepts/id-modes): Sequential and pooled, the two token id assignment models, fixed at init.
+- [Mint Marks and entropy](https://pnd.ripe.wtf/docs/collections/concepts/mint-marks-and-entropy): The per-token provenance snapshot and the mint-time seed renderers draw from.
+- [The Release Graph and Token Path](https://pnd.ripe.wtf/docs/collections/concepts/collection-graph-and-token-path): Directed edges between collections, and per-token forward pointers.
+- [Types](https://pnd.ripe.wtf/docs/collections/concepts/types): The shared enums and structs in CollectionTypes.sol, the data-only surface with no ABI functions of its own.
+- [SovereignCollection](https://pnd.ripe.wtf/docs/collections/contracts/sovereign-collection): The one core of the PND Collection System: a single OpenZeppelin ERC721 that holds ownership, ETH payment paths, and per-token provenance, and nothing else.
+- [SovereignCollectionFactory](https://pnd.ripe.wtf/docs/collections/contracts/factory): SovereignCollectionFactory deploys one [SovereignCollection](/docs/collections/contracts/sovereign-collection) per work as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs.
+- [Attribution](https://pnd.ripe.wtf/docs/collections/contracts/attribution): Attribution is generic, immutable, public infrastructure recording the works-to-artists half of the bilateral attribution handshake.
+- [DefaultRenderer](https://pnd.ripe.wtf/docs/collections/contracts/default-renderer): The canonical built-in renderer for [SovereignCollection](/docs/collections/contracts/sovereign-collection).
+- [GenerativeRenderer](https://pnd.ripe.wtf/docs/collections/contracts/generative-renderer): The default renderer for script-based generative collections: a stateless shared singleton that assembles a complete HTML document per token and returns it as the `animation_url` of the token's metadata.
+- [AllowlistHook](https://pnd.ripe.wtf/docs/collections/contracts/allowlist-hook): A reference [mint hook](/docs/collections/contracts/i-mint-hook) gating minting to a Merkle allowlist, the standard shape for a presale.
+- [PerWalletCapHook](https://pnd.ripe.wtf/docs/collections/contracts/per-wallet-cap-hook): A reference [mint hook](/docs/collections/contracts/i-mint-hook) capping how many tokens any single wallet can mint from a collection, so a capped drop can't be bought out by one address in a single transaction (or across several).
+- [HoldsCollectionHook](https://pnd.ripe.wtf/docs/collections/contracts/holds-collection-hook): A reference [mint hook](/docs/collections/contracts/i-mint-hook) gating a mint on the minter holding a token from another collection, typically an earlier collection by the same artist.
+- [IMintHook](https://pnd.ripe.wtf/docs/collections/contracts/i-mint-hook): IMintHook is the interface a contract implements to occupy a collection's hook slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [SovereignCollection](/docs/collections/contracts/sovereign-collection) core.
+- [IPriceStrategy](https://pnd.ripe.wtf/docs/collections/contracts/i-price-strategy): IPriceStrategy is the interface a contract implements to occupy a collection's price slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [SovereignCollection](/docs/collections/contracts/sovereign-collection) core.
+- [IRenderer](https://pnd.ripe.wtf/docs/collections/contracts/i-renderer): IRenderer is the interface a contract implements to occupy a collection's renderer slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [SovereignCollection](/docs/collections/contracts/sovereign-collection) core.
+- [ICollectionView](https://pnd.ripe.wtf/docs/collections/contracts/i-collection-view): ICollectionView is the read surface a collection exposes for its swappable slots, [renderer](/docs/collections/contracts/i-renderer), [price strategy](/docs/collections/contracts/i-price-strategy), and any minter, to read without depending on the full…
+- [Deploy a collection](https://pnd.ripe.wtf/docs/collections/guides/deploy-a-collection): Call the factory to deploy an owned, immutable SovereignCollection clone, and what each config field controls.
+- [Mint](https://pnd.ripe.wtf/docs/collections/guides/mint): The built-in paid mint paths, price resolution, sale windows, and the reverts to handle.
+- [Write a minter](https://pnd.ripe.wtf/docs/collections/guides/write-a-minter): Implement an extension minter, get authorized via setMinter, and mint through mintTo or mintToAt.
+- [Write a price strategy](https://pnd.ripe.wtf/docs/collections/guides/write-a-price-strategy): Implement IPriceStrategy's view-only priceOf, install it with setPriceStrategy, and two worked examples.
+- [Write a mint hook](https://pnd.ripe.wtf/docs/collections/guides/write-a-mint-hook): Implement IMintHook's beforeMint/afterMint, install it with setMintHook, and the three reference hooks to start from.
+- [Write a renderer](https://pnd.ripe.wtf/docs/collections/guides/write-a-renderer): Implement IRenderer against ICollectionView, the three built-in renderers, and how metadata freezing and work locking work.
+- [Access control](https://pnd.ripe.wtf/docs/collections/reference/access-control): Every state-changing function in the Collections contracts and who may call it.
+- [Errors index](https://pnd.ripe.wtf/docs/collections/reference/errors): Every custom error in the Collections contracts, its contract, and the condition that raises it.
+- [Events index](https://pnd.ripe.wtf/docs/collections/reference/events): Every event the Collections contracts emit, grouped by contract.
+- [Injection convention](https://pnd.ripe.wtf/docs/collections/reference/injection-convention): How a generative work's code receives its token context, onchain and off, and the determinism rules that make a preview the render.
+
+## Auctions
+
+- [Overview](https://pnd.ripe.wtf/docs/auctions/overview): The PND Sovereign Auction House: a per-owner, onchain English-auction house for any ERC721.
+- [Auction lifecycle](https://pnd.ripe.wtf/docs/auctions/concepts/auction-lifecycle): The full path an auction takes: create and escrow, bid, extend, end, or cancel, plus refunds and the fee math.
+- [SovereignAuctionHouse](https://pnd.ripe.wtf/docs/auctions/contracts/sovereign-auction-house): An onchain English auction house for ERC721 tokens, denominated in ETH.
+- [SovereignAuctionHouseFactory](https://pnd.ripe.wtf/docs/auctions/contracts/auction-house-factory): SovereignAuctionHouseFactory deploys one [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house) per owner as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs.
+- [Deploy an auction house](https://pnd.ripe.wtf/docs/auctions/guides/deploy-an-auction-house): Call the factory to deploy your own per-owner auction house, and predict its address ahead of time.
+- [Run an auction](https://pnd.ripe.wtf/docs/auctions/guides/run-an-auction): The seller flow: approve the NFT, create one or many auctions, adjust the reserve, cancel, and end.
+- [Bid and settle](https://pnd.ripe.wtf/docs/auctions/guides/bid-and-settle): The bidder flow: read the minimum, place a bid, handle being outbid and refunds, and settle a finished auction.
+- [Access control](https://pnd.ripe.wtf/docs/auctions/reference/access-control): Every state-changing function in the Auctions contracts and who may call it.
+- [Errors index](https://pnd.ripe.wtf/docs/auctions/reference/errors): Every custom error in the Auctions contracts, its contract, and the condition that raises it.
+- [Events index](https://pnd.ripe.wtf/docs/auctions/reference/events): Every event the Auctions contracts emit, grouped by contract.
+
+## Off-chain
+
+- [ABIs and the protocol manifest](https://pnd.ripe.wtf/docs/offchain/abis-and-manifest): Where integrators get machine-readable data: served ABI files, the @pin/abi package, the protocol manifest, llms.txt, and the docs search index.
+- [AI agents](https://pnd.ripe.wtf/docs/offchain/ai-agents): Where to start as an agent or integrator: the manifest, llms.txt, per-contract ABIs, and how to discover per-owner clones through each factory.
