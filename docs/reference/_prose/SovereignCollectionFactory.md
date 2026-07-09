@@ -1,0 +1,142 @@
+---
+title: SovereignCollectionFactory
+---
+
+# summary
+
+SovereignCollectionFactory deploys one [SovereignCollection](/docs/collections/contracts/sovereign-collection)
+per work as an immutable EIP-1167 clone of a fixed implementation: no proxy
+admin, no upgrade path, what deploys is what runs. `createCollection` clones
+and initializes the collection in a single transaction, wiring in the shared
+default renderer and, optionally, an opening [Attribution](/docs/collections/contracts/attribution)
+roster. There is no protocol fee in the factory; the Surface Share is a fixed
+constant inside the core, paid to whoever hosts the mint.
+
+The factory is also the single fixed contract an indexer watches for
+discovery: one `CollectionCreated` event per collection, plus an
+`allCollections` array and an `isCollection` membership map for cheap
+onchain enumeration. Core evolution happens by deploying a new
+implementation and a new factory alongside it, never by changing collections
+that already exist.
+
+# concepts
+
+### Clone-and-initialize is one transaction
+
+`createCollection` clones `implementation` with OpenZeppelin `Clones.clone`
+and calls `initialize` on the fresh clone in the same call. The collection
+comes into existence already owned, priced, windowed, and (optionally)
+minter-wired and attributed; there is no window between deploy and
+configuration for anyone to front-run. See
+[the four slots](/docs/collections/concepts/four-slots) for what `CollectionConfig` and
+`WorkConfig` configure, and the
+[deploy a collection guide](/docs/collections/guides/deploy-a-collection) for a worked
+example of the call.
+
+### The optional Attribution write
+
+When `artists` is non-empty and the factory was deployed with a non-zero
+`attribution` address, the new collection writes its opening roster to the
+[Attribution](/docs/collections/contracts/attribution) singleton during its own
+`initialize`, with `msg.sender == address(this) == collection`, which is one
+of Attribution's two authorized caller paths. If `artists` is empty, or the
+factory has no attribution wired, the write is skipped entirely and the
+collection starts with no roster. The owner can still call
+`Attribution.setArtists` directly at any later point, subject to the same
+authorization rules.
+
+## function createCollection
+
+access: permissionless (anyone may deploy; ongoing control over the result
+belongs to the `owner` argument, which becomes the collection's `Ownable`
+owner)
+
+Deploys an EIP-1167 clone of `implementation` and initializes it atomically
+with the given name, symbol, owner, `CollectionConfig`, `WorkConfig`,
+extension minters, and attribution roster. Reverts with `owner required` if
+`owner` is the zero address.
+
+`initialMinters` grants extension-minter status at init, so pooled or backed
+forms that sell exclusively through a custom minter deploy fully wired in
+one transaction; leave it empty for collections that sell through the
+core's built-in fixed-price path. `artists` is the opening
+[Attribution](/docs/collections/contracts/attribution) roster; each listed artist still
+needs to claim the collection in their own Catalog for the credit to read as
+mutually confirmed.
+
+On success, marks the new address in `isCollection`, appends it to
+`allCollections`, and emits `CollectionCreated`.
+
+```solidity
+address collection = factory.createCollection(
+    "My Collection",
+    "MC",
+    artistAddress,
+    cfg,
+    workCfg,
+    initialMinters,
+    artists
+);
+```
+
+## function allCollections
+
+Every collection address the factory has deployed, in deployment order.
+Indexers typically watch `CollectionCreated` rather than paging this array,
+but it's available for direct onchain enumeration.
+
+## function attribution
+
+The [Attribution](/docs/collections/contracts/attribution) singleton wired into every
+collection created by this factory. The zero address disables the
+opening-roster integration: `createCollection` skips the Attribution write
+regardless of what `artists` is passed.
+
+```bash
+cast call {{addr:collectionFactory}} "attribution()(address)" \
+  --rpc-url https://ethereum-rpc.publicnode.com
+```
+
+## function defaultRenderer
+
+The canonical built-in renderer address wired into every collection this
+factory creates. A collection's owner can still swap its own renderer slot
+after deploy; this is only the value new collections start with.
+
+## function implementation
+
+The `SovereignCollection` implementation address every clone points at via
+`DELEGATECALL`. Fixed at factory construction; there is no setter, so every
+collection this factory has ever created or will create shares the exact
+same core logic.
+
+## function isCollection
+
+Whether `address` is a collection this factory deployed. Cheaper than
+scanning `allCollections` when a caller only needs a membership check.
+
+## function totalCollections
+
+The length of `allCollections`: the total number of collections this factory
+has deployed.
+
+## event CollectionCreated
+
+Emitted once per successful `createCollection` call, with `owner` and
+`collection` both indexed. This is the single event an indexer needs to
+discover every collection this factory has produced; it fires in the same
+transaction that initializes the collection, so any indexer following it can
+assume the collection is already fully configured.
+
+## error FailedDeployment
+
+Inherited from OpenZeppelin `Clones`. The EIP-1167 clone deployment failed
+at the `CREATE` opcode level. Not expected in normal operation against a
+valid `implementation`.
+
+## error InsufficientBalance
+
+Inherited from OpenZeppelin `Clones`. Raised by the value-forwarding clone
+variants when the factory's own ETH balance is less than the value being
+forwarded to the new clone. `createCollection` does not forward value, so
+this is not reachable through the factory's public surface today.

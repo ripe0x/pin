@@ -1,0 +1,414 @@
+/* Collection System reference (/docs) — layout + prose typography.
+   Uses the site's semantic theme tokens so it flips with light/dark. The
+   article HTML is pre-rendered by scripts/generate-docs.ts (marked + shiki). */
+
+.doc-shell {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: var(--spacing-8);
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: var(--spacing-8) var(--spacing-6) var(--spacing-24);
+}
+
+@media (max-width: 900px) {
+  .doc-shell {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--spacing-4);
+  }
+}
+
+/* ── Sidebar nav ─────────────────────────────────────────────────── */
+
+.doc-sidebar {
+  align-self: start;
+  position: sticky;
+  top: calc(64px + var(--spacing-4));
+  max-height: calc(100vh - 64px - var(--spacing-8));
+  overflow-y: auto;
+  font-size: 0.875rem;
+}
+
+@media (max-width: 900px) {
+  .doc-sidebar {
+    position: static;
+    max-height: none;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-3) var(--spacing-4);
+  }
+}
+
+.doc-sidebar-toggle {
+  display: none;
+  width: 100%;
+  text-align: left;
+  font-weight: 600;
+  background: none;
+  border: none;
+  color: var(--color-fg);
+  cursor: pointer;
+  padding: 0;
+}
+
+@media (max-width: 900px) {
+  .doc-sidebar-toggle {
+    display: block;
+  }
+  .doc-sidebar-nav[data-collapsed="true"] {
+    display: none;
+  }
+}
+
+.doc-sidebar-group {
+  margin-bottom: var(--spacing-6);
+}
+
+.doc-sidebar-group-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-fg);
+  padding: var(--spacing-1) 0;
+  margin-bottom: var(--spacing-2);
+}
+
+.doc-sidebar-group-title:hover {
+  color: var(--color-fg-muted);
+}
+
+.doc-sidebar-group-chevron {
+  color: var(--color-fg-subtle);
+  font-size: 0.625rem;
+}
+
+.doc-sidebar-section {
+  margin-bottom: var(--spacing-4);
+}
+
+.doc-sidebar-section-title {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-fg-subtle);
+  font-weight: 600;
+  margin-bottom: var(--spacing-2);
+}
+
+.doc-sidebar-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.doc-sidebar-link {
+  display: block;
+  padding: var(--spacing-1) var(--spacing-2);
+  border-radius: var(--radius-sm);
+  color: var(--color-fg-muted);
+  text-decoration: none;
+  line-height: 1.4;
+}
+
+.doc-sidebar-link:hover {
+  color: var(--color-fg);
+  background: var(--color-surface-muted);
+}
+
+.doc-sidebar-link[aria-current="page"] {
+  color: var(--color-fg);
+  background: var(--color-surface-muted);
+  font-weight: 500;
+}
+
+/* ── Article + right-rail TOC ────────────────────────────────────── */
+
+.doc-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 200px;
+  gap: var(--spacing-8);
+}
+
+@media (max-width: 1200px) {
+  .doc-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .doc-toc {
+    display: none;
+  }
+}
+
+.doc-toc {
+  align-self: start;
+  position: sticky;
+  top: calc(64px + var(--spacing-4));
+  max-height: calc(100vh - 64px - var(--spacing-8));
+  overflow-y: auto;
+  font-size: 0.8125rem;
+}
+
+.doc-toc-title {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-fg-subtle);
+  font-weight: 600;
+  margin-bottom: var(--spacing-2);
+}
+
+.doc-toc a {
+  display: block;
+  padding: 2px 0;
+  color: var(--color-fg-muted);
+  text-decoration: none;
+  line-height: 1.4;
+}
+
+.doc-toc a:hover {
+  color: var(--color-fg);
+}
+
+.doc-toc a[data-depth="3"] {
+  padding-left: var(--spacing-3);
+  font-size: 0.75rem;
+}
+
+/* ── Prose typography ────────────────────────────────────────────── */
+
+.doc-body {
+  max-width: 46rem;
+  color: var(--color-fg-muted);
+  line-height: 1.65;
+  font-size: 0.9375rem;
+}
+
+.doc-body h1 {
+  font-size: 1.875rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--color-fg);
+  margin-bottom: var(--spacing-4);
+  line-height: 1.15;
+}
+
+.doc-body h2 {
+  font-size: 1.375rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-fg);
+  margin-top: var(--spacing-12);
+  margin-bottom: var(--spacing-3);
+  padding-bottom: var(--spacing-2);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.doc-body h3 {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: var(--color-fg);
+  margin-top: var(--spacing-8);
+  margin-bottom: var(--spacing-2);
+}
+
+.doc-body p,
+.doc-body ul,
+.doc-body ol {
+  margin-bottom: var(--spacing-4);
+}
+
+.doc-body ul,
+.doc-body ol {
+  padding-left: var(--spacing-6);
+}
+
+.doc-body li {
+  margin-bottom: var(--spacing-1);
+}
+
+.doc-body a {
+  color: var(--color-fg);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--color-border-strong);
+}
+
+.doc-body a:hover {
+  text-decoration-color: var(--color-fg);
+}
+
+.doc-body strong {
+  color: var(--color-fg);
+  font-weight: 600;
+}
+
+/* Inline code */
+.doc-body :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 0.1em 0.35em;
+  color: var(--color-fg);
+}
+
+/* Heading anchors */
+.doc-body .doc-anchor {
+  color: inherit;
+  text-decoration: none;
+}
+
+.doc-body .doc-anchor:hover {
+  text-decoration: none;
+}
+
+/* Access line (bold **Access:** paragraph the generator emits) */
+.doc-body h3 + p > strong:first-child {
+  color: var(--color-fg);
+}
+
+/* Tables */
+.doc-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: var(--spacing-6);
+  font-size: 0.875rem;
+}
+
+.doc-body th,
+.doc-body td {
+  text-align: left;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--color-border);
+  vertical-align: top;
+}
+
+.doc-body th {
+  background: var(--color-surface-muted);
+  color: var(--color-fg);
+  font-weight: 600;
+}
+
+/* Blockquote (used for pre-deploy / interface header notes) */
+.doc-body blockquote {
+  border-left: 3px solid var(--color-border-strong);
+  padding: var(--spacing-1) var(--spacing-4);
+  margin: 0 0 var(--spacing-4);
+  color: var(--color-fg-muted);
+  background: var(--color-surface-muted);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.doc-body blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+/* ── Code blocks (shiki, dual-theme) ─────────────────────────────── */
+
+.doc-code {
+  position: relative;
+  margin-bottom: var(--spacing-4);
+}
+
+.doc-code .shiki {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-4);
+  overflow-x: auto;
+}
+
+.doc-code-lang {
+  position: absolute;
+  top: 0;
+  right: var(--spacing-12);
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-fg-subtle);
+  padding: 2px var(--spacing-2);
+}
+
+.doc-copy {
+  position: absolute;
+  top: var(--spacing-2);
+  right: var(--spacing-2);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--color-fg-muted);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 2px var(--spacing-2);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s var(--ease-out);
+}
+
+.doc-code:hover .doc-copy {
+  opacity: 1;
+}
+
+.doc-copy:hover {
+  color: var(--color-fg);
+  border-color: var(--color-border-strong);
+}
+
+/* Dual-theme shiki: swap to the dark palette under .dark. */
+.dark .doc-code .shiki,
+.dark .doc-code .shiki span {
+  color: var(--shiki-dark, inherit) !important;
+}
+
+.dark .doc-code .shiki {
+  background-color: var(--shiki-dark-bg, var(--color-surface)) !important;
+}
+
+/* ── Article header / footer nav ─────────────────────────────────── */
+
+.doc-pagenav {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-4);
+  margin-top: var(--spacing-16);
+  padding-top: var(--spacing-6);
+  border-top: 1px solid var(--color-border);
+}
+
+.doc-pagenav a {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-decoration: none;
+  color: var(--color-fg-muted);
+  font-size: 0.875rem;
+}
+
+.doc-pagenav a:hover {
+  color: var(--color-fg);
+}
+
+.doc-pagenav .doc-pagenav-next {
+  text-align: right;
+  margin-left: auto;
+}
+
+.doc-pagenav span {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-fg-subtle);
+}
