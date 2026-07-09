@@ -111,6 +111,27 @@ Consequences a reviewer should confirm are intended, not accidental:
 4. Freeze/lock ordering (auth gate before the frozen/locked check) holds
    for every widened setter.
 
+### MURI integration finding, and a planned `isAdmin(owner)` change
+
+The MURI media-permanence protocol (post-deploy work, tracked in issue #138)
+gates its `registerContract` on `isAdmin(msg.sender)` of the target contract.
+`contracts/test/collection/MuriIntegrationFork.t.sol` proves against live
+mainnet MURI that Collection satisfies this via the multi-admin
+`isAdmin`: a collection admin can register it, no Manifold-specific contract
+type required. This is a reason the multi-admin delta is being kept in the
+deploy rather than stripped to the audited baseline: without `isAdmin`, these
+immutable collections could never plug into MURI.
+
+The same test surfaced that `isAdmin(owner())` returns false today (the owner
+is an implicit, unlisted admin), so the OWNER cannot register directly.
+
+**Planned change, decided but NOT yet in code:** make `isAdmin` return
+`account == owner() || _admins[account]`, so the owner passes MURI's check
+directly. The owner already holds every admin power (the `onlyOwnerOrAdmin`
+modifier's `|| owner()` arm), so this only makes the view honest; it changes
+no authorization, just what `isAdmin` reports for the owner. To be landed
+before the review so the review covers the final code.
+
 ### Open decision to resolve before the re-audit
 
 - **Should `setPayoutAddress` be carved back to `onlyOwner`?** It is the
@@ -136,3 +157,8 @@ Consequences a reviewer should confirm are intended, not accidental:
   widened functions now expect `NotAuthorized` (was
   `OwnableUnauthorizedAccount`).
 - Full collection suite: **202 passed / 0 failed** (fork tests excluded).
+- New `test/collection/MuriIntegrationFork.t.sol` (2 tests, opt-in behind
+  `MAINNET_RPC_URL`): probes the live MURI singleton and encodes the two
+  findings above (MURI gates on `isAdmin(msg.sender)`; the operator must be a
+  contract, so MURI wiring needs a separate operator adapter, issue #138). It
+  does not touch the core; it is evidence for the `isAdmin(owner)` change.
