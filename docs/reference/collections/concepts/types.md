@@ -127,31 +127,7 @@ within legacy-codegen stack limits and can grow without signature churn.
 | `attribution` | `address` | The `Attribution` singleton; `0` skips the roster write entirely |
 | `artists` | `address[]` | The collab roster, written to `attribution` by the collection itself during init |
 
-### `MintRecord`
-
-The compact, storage-packed form of a token's mint provenance: exactly the
-facts the onchain renderer must read synchronously (both are injected into
-the render context), in one storage slot. Internal; derived into the public
-`MintMark` by `mintMarkOf`. Everything else about a mint — the referrer,
-the lifecycle status at that moment — is event-only provenance on `Minted`,
-never stored.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `mintBlock` | `uint48` | Block number the token was minted in; `!= 0` doubles as the was-ever-minted sentinel |
-| `mintIndex` | `uint40` | 0-based global mint order across the collection |
-
-### `MintMark`
-
-The derived, public Mint Mark for a single token, returned by
-`mintMarkOf(tokenId)`.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `mintIndex` | `uint40` | 0-based global mint order across the collection |
-| `mintBlock` | `uint48` | Block number the token was minted in |
-| `isFirst` | `bool` | Derived: `mintIndex == 0` |
-| `isFinal` | `bool` | Derived: the collection is `Closed` and this is the highest `mintIndex` ever assigned |
-
-See [Mint Marks and entropy](/docs/collections/concepts/mint-marks-and-entropy) for how
-this is produced and read.
+See [Mint Marks and entropy](/docs/collections/concepts/mint-marks-and-entropy) for
+per-token provenance: the seed is the only per-token storage (there is no
+mint-record struct), and the Mint Mark is derived from the id, the live
+config, and the `Minted` event.

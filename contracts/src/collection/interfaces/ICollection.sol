@@ -6,15 +6,8 @@ import {
     CollectionStatus,
     IdMode,
     InitParams,
-    MintMark,
     WorkConfig
 } from "../CollectionTypes.sol";
-
-/// @title IMintMarks
-/// @notice Derived, per-token provenance.
-interface IMintMarks {
-    function mintMarkOf(uint256 tokenId) external view returns (MintMark memory);
-}
 
 /// @title ICollection
 /// @notice One artist collection: an OZ ERC721 deployed as an immutable
@@ -23,10 +16,12 @@ interface IMintMarks {
 ///         variability lives in four slots (renderer, price strategy, mint
 ///         hook, extension minters) and optional companion contracts.
 ///         Relationship/graph semantics live in companions, never here.
+///         Per-token provenance is the seed plus the Minted event; the core
+///         stores nothing derivable (sequential mint order IS the token id).
 ///         Honest fixed pricing with a fixed built-in Referral Share; no
 ///         other protocol fee. There is no upgrade path and no seal: what
 ///         deploys is what runs, forever.
-interface ICollection is IMintMarks {
+interface ICollection {
     // ── errors ──────────────────────────────────────────────────────────────
     error OwnerRequired();
     error RendererRequired();
@@ -78,21 +73,21 @@ interface ICollection is IMintMarks {
     event MetadataUpdate(uint256 _tokenId);
     event BatchMetadataUpdate(uint256 _fromTokenId, uint256 _toTokenId);
 
-    /// @notice One event per mint call. Built-in paths cover
-    ///         [firstTokenId, firstTokenId + quantity - 1]; extension mints
-    ///         emit quantity 1 with firstTokenId = the minted id.
-    ///         firstMintIndex is the global mint order of the call's first
-    ///         token (token k's mintIndex = firstMintIndex + k), carried in
-    ///         the event so indexers never need per-token mintMarkOf reads,
-    ///         including for pooled re-mints where order is not derivable
-    ///         from ids.
+    /// @notice One event per mint call — THE permanent per-mint provenance
+    ///         record. Built-in paths cover [firstTokenId, firstTokenId +
+    ///         quantity - 1]; extension mints emit quantity 1 with
+    ///         firstTokenId = the minted id. firstMintIndex is the global
+    ///         mint order of the call's first token (token k's index =
+    ///         firstMintIndex + k) — explicit because pooled order is not
+    ///         derivable from ids. The mint block is the log's own block;
+    ///         statusAtMint is the lifecycle status derived at mint time.
+    ///         None of this is stored per token; indexers read it here.
     event Minted(
         address indexed to,
         address indexed referrer,
         uint256 firstTokenId,
         uint256 quantity,
         uint256 firstMintIndex,
-        uint48 mintBlock,
         CollectionStatus statusAtMint
     );
 

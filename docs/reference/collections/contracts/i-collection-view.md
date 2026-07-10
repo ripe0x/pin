@@ -26,6 +26,19 @@ function artwork() external view returns (string)
 view; the collection's shared or cover artwork URI, used when no per-token
 override is set via `tokenArtwork`.
 
+### config
+
+```solidity
+function config() external view returns (CollectionConfig cfg, CollectionStatus status, uint256 minted)
+```
+
+view; the live collection configuration, the derived lifecycle status
+(`Scheduled`, `Open`, or `Closed`), and the minted-ever count. A renderer
+derives provenance from these: in Sequential mode the token id IS the mint
+order, first = id 1, and final = the status is `Closed` and the id equals
+`minted`. See
+[Mint Marks and entropy](/docs/collections/concepts/mint-marks-and-entropy).
+
 ### idMode
 
 ```solidity
@@ -44,19 +57,6 @@ function isWorkLocked() external view returns (bool)
 
 view; whether the collection's work configuration has been permanently
 frozen. A locked work's `workConfig` can never change again.
-
-### mintMarkOf
-
-```solidity
-function mintMarkOf(uint256 tokenId) external view returns (MintMark)
-```
-
-view; the derived Mint Mark for `tokenId`, the provenance record capturing
-mint order, mint block, and whether the token was first or final (the
-referrer and lifecycle status at mint are event-only provenance on the
-collection's `Minted` event). See
-[Mint Marks and entropy](/docs/collections/concepts/mint-marks-and-entropy) for how the
-mark is derived.
 
 ### name
 

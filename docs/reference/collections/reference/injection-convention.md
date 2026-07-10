@@ -12,8 +12,6 @@ Injected as a plain script, before dependencies and before the artist's code:
 window.tokenData = {
   hash: "0x…",        // 32-byte tokenSeed as 0x-prefixed hex (64 chars)
   tokenId: "123",      // decimal string
-  mintIndex: 7,         // 0-based mint order (number)
-  mintBlock: 19876543,
   collection: "0x…",    // checksum-agnostic lowercase hex address
   chainId: 1,
   version: 1             // == WorkConfig.injectionVersion

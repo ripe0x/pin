@@ -170,13 +170,6 @@ export type Collection = {
   minted: bigint
 }
 
-export type MintMark = {
-  mintIndex: number
-  mintBlock: bigint
-  isFirst: boolean
-  isFinal: boolean
-}
-
 // ── ABI-return decoders ──────────────────────────────────────────────────────
 
 type RawCodeRef = {
@@ -240,21 +233,6 @@ export function decodeCollectionConfig(raw: RawCollectionConfig): CollectionConf
     mintHook: raw.mintHook,
     priceStrategy: raw.priceStrategy,
     idMode: Number(raw.idMode),
-  }
-}
-
-export function decodeMintMark(raw: {
-  // viem decodes <=48-bit uints as number, >48-bit as bigint.
-  mintIndex: number | bigint
-  mintBlock: number | bigint
-  isFirst: boolean
-  isFinal: boolean
-}): MintMark {
-  return {
-    mintIndex: Number(raw.mintIndex),
-    mintBlock: BigInt(raw.mintBlock),
-    isFirst: raw.isFirst,
-    isFinal: raw.isFinal,
   }
 }
 

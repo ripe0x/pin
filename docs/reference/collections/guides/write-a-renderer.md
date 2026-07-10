@@ -22,7 +22,10 @@ interface ICollectionView {
     function owner() external view returns (address);
     function totalSupply() external view returns (uint256);
     function tokenSeed(uint256 tokenId) external view returns (bytes32);
-    function mintMarkOf(uint256 tokenId) external view returns (MintMark memory);
+    function config()
+        external
+        view
+        returns (CollectionConfig memory cfg, CollectionStatus status, uint256 minted);
     function artwork() external view returns (string memory);
     function tokenArtwork(uint256 tokenId) external view returns (string memory);
     function workConfig() external view returns (WorkConfig memory);

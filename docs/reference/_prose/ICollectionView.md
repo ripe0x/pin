@@ -31,14 +31,15 @@ each mode means for id assignment and reuse after burn.
 view; whether the collection's work configuration has been permanently
 frozen. A locked work's `workConfig` can never change again.
 
-## function mintMarkOf
+## function config
 
-view; the derived Mint Mark for `tokenId`, the provenance record capturing
-mint order, mint block, and whether the token was first or final (the
-referrer and lifecycle status at mint are event-only provenance on the
-collection's `Minted` event). See
-[Mint Marks and entropy](/docs/collections/concepts/mint-marks-and-entropy) for how the
-mark is derived.
+view; the live collection configuration, the derived lifecycle status
+(`Scheduled`, `Open`, or `Closed`), and the minted-ever count. A renderer
+derives provenance from these: in Sequential mode the token id IS the mint
+order, first = id 1, and final = the status is `Closed` and the id equals
+`minted`. See
+[Mint Marks and entropy](/docs/collections/concepts/mint-marks-and-entropy).
+
 
 ## function name
 

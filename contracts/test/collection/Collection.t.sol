@@ -13,8 +13,7 @@ import {
     CollectionConfig,
     CollectionStatus,
     IdMode,
-    InitParams,
-    MintMark
+    InitParams
 } from "../../src/collection/CollectionTypes.sol";
 
 contract CollectionTest is CollectionBase {
@@ -418,34 +417,31 @@ contract CollectionTest is CollectionBase {
         (, CollectionStatus open,) = c.config();
         assertEq(uint8(open), uint8(CollectionStatus.Open));
         vm.expectEmit(true, true, false, true, address(c));
-        emit ICollection.Minted(
-            collector, address(0), 1, 1, 0, uint48(block.number), CollectionStatus.Open
-        );
+        emit ICollection.Minted(collector, address(0), 1, 1, 0, CollectionStatus.Open);
         vm.prank(collector);
         c.mint(1);
     }
 
-    /// @dev `isFinal` is derived live, so reopening a window that had ended
-    ///      un-finalizes prior tokens.
-    function test_setMintWindow_reopenUnfinalizes() public {
+    /// @dev Status is derived live, so reopening a window that had ended
+    ///      flips Closed back to Open — and with it everything renderers
+    ///      derive from status (a "Final mint" trait un-finalizes; see the
+    ///      DefaultRenderer tests for the trait-level assertion).
+    function test_setMintWindow_reopenFlipsDerivedStatus() public {
         CollectionConfig memory cfg = _freeConfig();
         cfg.mintEnd = uint64(block.timestamp + 100);
         Collection c = _collection(cfg);
 
         vm.prank(collector);
         c.mint(1);
-        assertFalse(c.mintMarkOf(1).isFinal, "within window: not final");
 
         vm.warp(cfg.mintEnd); // window ended
         (, CollectionStatus closed,) = c.config();
         assertEq(uint8(closed), uint8(CollectionStatus.Closed));
-        assertTrue(c.mintMarkOf(1).isFinal, "last token of a closed window is final");
 
         vm.prank(artist);
         c.setMintWindow(0, uint64(block.timestamp + 100)); // reopen
         (, CollectionStatus reopened,) = c.config();
         assertEq(uint8(reopened), uint8(CollectionStatus.Open));
-        assertFalse(c.mintMarkOf(1).isFinal, "reopened window un-finalizes prior tokens");
     }
 
     function test_setMintWindow_rejectsBadWindow() public {
@@ -481,9 +477,7 @@ contract CollectionTest is CollectionBase {
 
         // ...but the authorized minter mints, and the event says Scheduled.
         vm.expectEmit(true, true, false, true, address(c));
-        emit ICollection.Minted(
-            collector, address(0), 1, 1, 0, uint48(block.number), CollectionStatus.Scheduled
-        );
+        emit ICollection.Minted(collector, address(0), 1, 1, 0, CollectionStatus.Scheduled);
         vm.prank(minter);
         c.mintTo(collector, address(0), "");
     }

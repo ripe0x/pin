@@ -107,23 +107,3 @@ struct InitParams {
     address attribution; // Attribution singleton; 0 skips the roster write
     address[] artists; // collab roster, written by the collection during init
 }
-
-/// @notice Per-token mint record: exactly the facts the onchain renderer must
-///         read synchronously (both are injected into the render context), in
-///         one packed slot. Everything else about a mint — referrer, lifecycle
-///         status — is event-only provenance (`Minted`), reconstructed by
-///         indexers, never stored. `mintBlock != 0` doubles as the
-///         was-ever-minted sentinel. `mintIndex` is uint40; 2^40 mints is
-///         unreachable, so the count never truncates.
-struct MintRecord {
-    uint48 mintBlock;
-    uint40 mintIndex; // 0-based global mint order across the collection
-}
-
-/// @notice The derived, public Mint Mark for a single token.
-struct MintMark {
-    uint40 mintIndex;
-    uint48 mintBlock;
-    bool isFirst; // mintIndex == 0
-    bool isFinal; // collection Closed && mintIndex == last ever assigned
-}

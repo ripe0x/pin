@@ -155,7 +155,6 @@ contract PooledBackedTest is Test {
         assertEq(collection.totalSupply(), POOL_SIZE);
 
         bytes32 seedBefore = collection.tokenSeed(b);
-        uint40 indexBefore = collection.mintMarkOf(b).mintIndex;
         uint256 aliceCoinBefore = coin.balanceOf(alice);
 
         // Redeem: burn, principal back, id returns to the pool.
@@ -167,8 +166,8 @@ contract PooledBackedTest is Test {
         vm.expectRevert();
         collection.ownerOf(b); // burned
 
-        // The mark of the dead instance stays readable (history).
-        assertEq(collection.mintMarkOf(b).mintIndex, indexBefore);
+        // The seed of the dead instance stays readable (history).
+        assertEq(collection.tokenSeed(b), seedBefore);
 
         // Re-mint: pool has exactly one id, so bob must draw `b` again.
         vm.roll(block.number + 5); // fresh prevrandao context
@@ -177,9 +176,9 @@ contract PooledBackedTest is Test {
         assertEq(again, b, "the returned id is re-issued");
         assertEq(collection.ownerOf(b), bob);
 
-        // Fresh instance: new seed, new mintIndex, new escrow.
+        // Fresh instance: new seed, new escrow. (The advancing mint order is
+        // stamped in the Minted event; see _lastMintedStatus for decoding.)
         assertTrue(collection.tokenSeed(b) != seedBefore, "re-mint re-rolls entropy");
-        assertGt(collection.mintMarkOf(b).mintIndex, indexBefore, "re-mint is a new mint event");
         assertEq(minter.escrowOf(b), ESCROW);
 
         // Silence unused-var lints for the ids we only minted for pool math.
@@ -250,13 +249,11 @@ contract PooledBackedTest is Test {
     ///      recorded logs (the last non-indexed field in the event data).
     function _lastMintedStatus() internal returns (CollectionStatus status) {
         Vm.Log[] memory logs = vm.getRecordedLogs();
-        bytes32 sig = keccak256(
-            "Minted(address,address,uint256,uint256,uint256,uint48,uint8)"
-        );
+        bytes32 sig = keccak256("Minted(address,address,uint256,uint256,uint256,uint8)");
         for (uint256 i = logs.length; i > 0; i--) {
             if (logs[i - 1].topics[0] == sig) {
-                (,,,, uint8 s) =
-                    abi.decode(logs[i - 1].data, (uint256, uint256, uint256, uint48, uint8));
+                (,,, uint8 s) =
+                    abi.decode(logs[i - 1].data, (uint256, uint256, uint256, uint8));
                 return CollectionStatus(s);
             }
         }

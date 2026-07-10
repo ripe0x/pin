@@ -6,7 +6,7 @@ import {MockMinter} from "./mocks/CollectionMocks.sol";
 
 import {Collection} from "../../src/collection/Collection.sol";
 import {ICollection} from "../../src/collection/interfaces/ICollection.sol";
-import {CollectionConfig, CollectionStatus, IdMode, MintMark} from "../../src/collection/CollectionTypes.sol";
+import {CollectionConfig, CollectionStatus, IdMode} from "../../src/collection/CollectionTypes.sol";
 
 /// @dev Sequential vs Pooled id-mode semantics: which mint paths are legal in
 ///      which mode, burn/re-mint behavior, and cap semantics per mode (cap
@@ -72,41 +72,35 @@ contract CollectionIdModesTest is CollectionBase {
     // Pooled burn -> re-mint same id: fresh mark, fresh seed, correct supply.
     // ════════════════════════════════════════════════════════════════════
 
-    function test_pooled_burnThenRemintSameId_freshMarkAndSeed() public {
+    function test_pooled_burnThenRemintSameId_freshSeedAndIndex() public {
         Collection c = _collection(_pooledConfig());
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
+        // First instance: the Minted event stamps firstMintIndex 0.
+        vm.expectEmit(true, true, false, true, address(c));
+        emit ICollection.Minted(collector, referrer, 5, 1, 0, CollectionStatus.Open);
         minter.callMintToId(ICollection(address(c)), collector, 5, referrer, "");
         assertEq(c.totalSupply(), 1);
-        MintMark memory firstMark = c.mintMarkOf(5);
         bytes32 firstSeed = c.tokenSeed(5);
-        assertEq(firstMark.mintIndex, 0);
 
         minter.callBurn(ICollection(address(c)), 5);
         assertEq(c.totalSupply(), 0);
-        // Mark and seed remain readable for the burned instance until re-mint.
-        assertEq(c.mintMarkOf(5).mintIndex, firstMark.mintIndex);
+        // The seed remains readable for the burned instance until re-mint.
         assertEq(c.tokenSeed(5), firstSeed);
 
         // Vary prevrandao so the re-minted seed is guaranteed to differ, not
         // just incidentally different.
         vm.prevrandao(bytes32(uint256(999)));
         address newReferrer = makeAddr("newReferrer");
-        // The re-mint's Minted event carries the NEW instance's context
-        // (referrer is event-only provenance; the record stores block + order).
-        vm.expectEmit(true, true, false, false, address(c));
-        emit ICollection.Minted(
-            stranger, newReferrer, 5, 1, 1, uint48(block.number), CollectionStatus.Open
-        );
+        // The re-mint's Minted event carries the NEW instance's context:
+        // mint order advances to 1 (never reused), fresh referrer stamped.
+        vm.expectEmit(true, true, false, true, address(c));
+        emit ICollection.Minted(stranger, newReferrer, 5, 1, 1, CollectionStatus.Open);
         minter.callMintToId(ICollection(address(c)), stranger, 5, newReferrer, "");
 
         assertEq(c.ownerOf(5), stranger);
         assertEq(c.totalSupply(), 1);
-        MintMark memory secondMark = c.mintMarkOf(5);
-        assertEq(secondMark.mintIndex, 1); // mintedEver keeps advancing, never reused
-        assertFalse(secondMark.isFirst); // index 1, not 0
-
         bytes32 secondSeed = c.tokenSeed(5);
         assertTrue(secondSeed != firstSeed, "seed must be re-rolled on pooled re-mint");
     }
@@ -146,10 +140,12 @@ contract CollectionIdModesTest is CollectionBase {
         Collection c = _collection(_pooledConfig());
         vm.prank(artist);
         c.setMinter(address(minter), true);
+        vm.expectEmit(true, true, false, true, address(c));
+        emit ICollection.Minted(collector, address(0), 0, 1, 0, CollectionStatus.Open);
         minter.callMintToId(ICollection(address(c)), collector, 0, address(0), "");
         assertEq(c.ownerOf(0), collector);
         assertEq(c.totalSupply(), 1);
-        assertTrue(c.mintMarkOf(0).isFirst);
+        assertTrue(c.tokenSeed(0) != bytes32(0), "id 0 minted with entropy stamped");
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -170,12 +166,12 @@ contract CollectionIdModesTest is CollectionBase {
         assertEq(c.ownerOf(4), collector);
         assertEq(c.totalSupply(), 3);
 
-        // id 2 stays burned; its mark is still readable, but it is not
+        // id 2 stays burned; its seed is still readable, but it is not
         // re-mintable via the sequential path (no id-choosing entrypoint
         // exists for Sequential mode at all).
         vm.expectRevert(abi.encodeWithSignature("ERC721NonexistentToken(uint256)", 2));
         c.ownerOf(2);
-        assertTrue(c.mintMarkOf(2).mintBlock != 0); // mark persists post-burn
+        assertTrue(c.tokenSeed(2) != bytes32(0)); // seed persists post-burn
     }
 
     // ════════════════════════════════════════════════════════════════════

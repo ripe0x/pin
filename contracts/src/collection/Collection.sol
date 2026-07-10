@@ -18,15 +18,14 @@ import {
     CollectionStatus,
     IdMode,
     InitParams,
-    MintRecord,
-    MintMark,
     WorkConfig
 } from "./CollectionTypes.sol";
 
 /// @title Collection
 /// @notice One artist collection. An OZ ERC721 where every minted token keeps
-///         its own identity: a per-token Mint Mark (provenance) and mint-time
-///         entropy (tokenSeed). Honest
+///         its own identity: mint-time entropy (tokenSeed), with the rest of
+///         its provenance derivable (sequential order IS the id) or stamped
+///         into the Minted event. Honest
 ///         pricing: the collector pays exactly the resolved price. A fixed
 ///         protocol Referral Share is paid out of that price to whoever hosts
 ///         the mint (PND on PND; the artist on their own site; folded back to
@@ -109,8 +108,13 @@ contract Collection is
     uint256 private _mintedEver;
     uint256 private _burnedCount;
 
-    mapping(uint256 => MintRecord) private _record; // current instance's mark
-    mapping(uint256 => bytes32) private _seed; // current instance's entropy
+    // Current instance's entropy. The ONLY per-token provenance the core
+    // stores: it is the render input that can never be retrofitted, and a
+    // nonzero seed doubles as the was-ever-minted sentinel (keccak output is
+    // never zero). Everything else derives (sequential order == tokenId) or
+    // lives in the Minted event. Works needing more mint-time data (block,
+    // pooled order) record it themselves via a mint hook or minter.
+    mapping(uint256 => bytes32) private _seed;
 
     mapping(uint256 => string) private _tokenArtwork;
 
@@ -240,15 +244,7 @@ contract Collection is
         _settle(required, referrer);
         _runAfterHook(msg.sender, quantity, firstTokenId, referrer, hookData);
 
-        emit Minted(
-            msg.sender,
-            referrer,
-            firstTokenId,
-            quantity,
-            firstMintIndex,
-            uint48(block.number),
-            statusAtMint
-        );
+        emit Minted(msg.sender, referrer, firstTokenId, quantity, firstMintIndex, statusAtMint);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -278,7 +274,7 @@ contract Collection is
         _mintOne(to, tokenId);
         _nextId = tokenId + 1;
         _runAfterHook(to, 1, tokenId, referrer, hookData);
-        emit Minted(to, referrer, tokenId, 1, mintIndex, uint48(block.number), statusAtMint);
+        emit Minted(to, referrer, tokenId, 1, mintIndex, statusAtMint);
     }
 
     /// @notice Pooled mode only: the minter supplies the id (tokenId ==
@@ -299,22 +295,18 @@ contract Collection is
         uint256 mintIndex = _mintedEver;
         _mintOne(to, tokenId);
         _runAfterHook(to, 1, tokenId, referrer, hookData);
-        emit Minted(to, referrer, tokenId, 1, mintIndex, uint48(block.number), statusAtMint);
+        emit Minted(to, referrer, tokenId, 1, mintIndex, statusAtMint);
     }
 
-    /// @dev Shared per-token mint effects: ownership, Mint Mark, entropy.
-    ///      OZ _mint reverts on an existing id, which is the whole pooled-mode
-    ///      correctness argument: a live id can never be minted over.
-    ///      The record stores only what the onchain renderer must read
-    ///      synchronously (block + order, both injected into the render
-    ///      context); referrer and lifecycle status are event-only provenance
-    ///      on the Minted event.
+    /// @dev Shared per-token mint effects: ownership + entropy. OZ _mint
+    ///      reverts on an existing id, which is the whole pooled-mode
+    ///      correctness argument: a live id can never be minted over. The
+    ///      seed is the only per-token store; order and block live in the
+    ///      Minted event (and sequential order == tokenId).
     function _mintOne(address to, uint256 tokenId) private {
         uint256 mintIndex = _mintedEver;
         _mintedEver = mintIndex + 1;
         _mint(to, tokenId);
-        _record[tokenId] =
-            MintRecord({mintBlock: uint48(block.number), mintIndex: uint40(mintIndex)});
         _seed[tokenId] =
             keccak256(abi.encode(block.prevrandao, address(this), tokenId, to, mintIndex));
     }
@@ -656,35 +648,24 @@ contract Collection is
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Mint Marks + reads
+    // Provenance + reads
     // ─────────────────────────────────────────────────────────────────────────
-
-    /// @notice The Mint Mark of a token's CURRENT (or most recent) instance.
-    ///         Readable for burned ids until a pooled re-mint overwrites them.
-    function mintMarkOf(uint256 tokenId) public view override returns (MintMark memory m) {
-        MintRecord storage r = _record[tokenId];
-        if (!(r.mintBlock != 0)) revert NeverMinted();
-        m = MintMark({
-            mintIndex: r.mintIndex,
-            mintBlock: r.mintBlock,
-            isFirst: r.mintIndex == 0,
-            isFinal: _lifecycleStatus() == CollectionStatus.Closed
-                && r.mintIndex == _mintedEver - 1
-        });
-    }
 
     /// @notice Mint-time entropy of the current instance, stamped in the mint
     ///         transaction. Derived from prevrandao: acceptable unpredictability
-    ///         for art, not for lotteries.
+    ///         for art, not for lotteries. Readable for a burned id until a
+    ///         pooled re-mint overwrites it.
     function tokenSeed(uint256 tokenId) external view override returns (bytes32) {
-        if (!(_record[tokenId].mintBlock != 0)) revert NeverMinted();
-        return _seed[tokenId];
+        bytes32 seed = _seed[tokenId];
+        if (!(seed != bytes32(0))) revert NeverMinted();
+        return seed;
     }
 
-    /// @dev "Was ever minted" (any instance). Sequential: id below the
-    ///      counter. Pooled: a mint record exists.
+    /// @dev "Was ever minted" (any instance): the seed is stamped on every
+    ///      mint and keccak256 output is never zero, so a nonzero seed is the
+    ///      existence sentinel — no separate record needed.
     function _wasMinted(uint256 tokenId) internal view returns (bool) {
-        return _record[tokenId].mintBlock != 0;
+        return _seed[tokenId] != bytes32(0);
     }
 
     /// @dev Status is a pure function of the window, the cap, and the current

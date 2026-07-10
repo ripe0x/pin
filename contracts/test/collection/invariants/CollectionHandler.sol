@@ -83,7 +83,8 @@ contract CollectionHandler is StdInvariant, Test {
 
     // mintIndex bookkeeping (order invariant): mintIndex must strictly
     // increase across BOTH paths, on a single shared counter, and never
-    // repeat. mintMarkOf(id).mintIndex is 0-based and global per collection.
+    // repeat. Mint order is 0-based and global per collection, stamped in
+    // the Minted event (sequential id == index + 1); ghosts derive it.
     uint256 public seqLastMintIndex; // last observed mintIndex + 1 (0 means "none yet")
     bool public seqHasMinted;
     uint256 public pooledLastMintIndex;

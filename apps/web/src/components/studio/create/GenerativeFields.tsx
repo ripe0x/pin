@@ -96,7 +96,7 @@ export function GenerativeFields({
           <p className={HELP}>Loaded from {state.scriptFileName}</p>
         )}
         <p className={HELP}>
-          Reads window.tokenData for its seed (hash, tokenId, mintIndex, mintBlock,
+          Reads window.tokenData for its seed (hash, tokenId,
           collection, chainId, version). Stored onchain as raw JS, unmodified.
         </p>
       </div>

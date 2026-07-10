@@ -84,7 +84,12 @@ export default async function CollectionTokenPage({ params }: { params: Params }
             </p>
           </header>
 
-          <CollectionMintMarkCard mark={t.mark} />
+          <CollectionMintMarkCard
+            mintOrder={t.mintOrder}
+            seed={null /* the dedicated Seed card below shows it in full */}
+            status={c.status}
+            minted={c.minted}
+          />
 
           {t.seed && (
             <div className="rounded-lg border border-gray-200 bg-surface overflow-hidden">

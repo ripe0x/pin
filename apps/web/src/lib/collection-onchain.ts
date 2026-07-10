@@ -8,10 +8,8 @@ import { pgCache } from "./pg-cache"
 import {
   attributionAddress,
   decodeCollectionConfig,
-  decodeMintMark,
   decodeWorkConfig,
   type Collection,
-  type MintMark,
   CollectionStatus,
   IdMode,
 } from "./collection"
@@ -102,7 +100,8 @@ export async function getCollection(address: Address): Promise<Collection | null
 export type CollectionTokenView = {
   tokenId: bigint
   owner: Address | null
-  mark: MintMark
+  /** Sequential: the token id IS the mint order; null for pooled. */
+  mintOrder: number | null
   seed: `0x${string}` | null
   artwork: string
   tokenURI: string | null
@@ -125,17 +124,21 @@ export async function getCollectionToken(
     const client = getClient()
     const base = { address, abi: collectionAbi } as const
     try {
-      const [ownerRes, seedRes, markRes, artRes] = await client.multicall({
+      const [ownerRes, seedRes, modeRes, artRes] = await client.multicall({
         allowFailure: true,
         contracts: [
           { ...base, functionName: "ownerOf", args: [tokenId] },
           { ...base, functionName: "tokenSeed", args: [tokenId] },
-          { ...base, functionName: "mintMarkOf", args: [tokenId] },
+          { ...base, functionName: "idMode", args: [] },
           { ...base, functionName: "tokenArtwork", args: [tokenId] },
         ],
       })
-      if (markRes.status !== "success") return null // never minted / burned
-      const mark = decodeMintMark(markRes.result as Parameters<typeof decodeMintMark>[0])
+      // The seed is the was-ever-minted sentinel (tokenSeed reverts otherwise).
+      if (seedRes.status !== "success") return null // never minted
+      const mintOrder =
+        modeRes.status === "success" && Number(modeRes.result) === IdMode.Sequential
+          ? Number(tokenId)
+          : null
       const collection = ownerRes.status === "success" ? await getCollection(address) : null
       const tokenArt = artRes.status === "success" ? (artRes.result as string) : ""
       const artwork = tokenArt && tokenArt.length > 0 ? tokenArt : collection?.cfg.artworkURI ?? ""
@@ -183,7 +186,7 @@ export async function getCollectionToken(
       return {
         tokenId,
         owner: ownerRes.status === "success" ? (ownerRes.result as Address) : null,
-        mark,
+        mintOrder,
         seed: seedRes.status === "success" ? (seedRes.result as `0x${string}`) : null,
         artwork,
         tokenURI: rawTokenUri,
@@ -198,7 +201,6 @@ export async function getCollectionToken(
 
 export type CollectionMintHistoryEntry = {
   holder: Address
-  mintBlock: bigint
   firstTokenId: bigint
   count: number
 }
@@ -209,9 +211,10 @@ export type CollectionMintHistoryResult =
 
 /**
  * Recent mint history for a collection, newest first, grouped into batches
- * by (holder, block). Read per-token via multicall (ownerOf + mintMarkOf)
+ * of contiguous ids per holder. Read per-token via multicall (ownerOf)
  * rather than getLogs, matching the editions history reader — this works
- * identically on a fork and on mainnet without log-range limits.
+ * identically on a fork and on mainnet without log-range limits. Mint
+ * blocks/timestamps are event data and arrive with the indexer.
  *
  * Sequential-mode only. In Sequential mode token ids are exactly 1..minted
  * (the core assigns `nextId++`, never reused after burn), so "the last N
@@ -247,35 +250,29 @@ export async function getCollectionMintHistory(
     const ids: bigint[] = []
     for (let t = total; t >= startTok; t--) ids.push(BigInt(t)) // newest first
 
-    const calls = ids.flatMap((id) => [
-      { ...base, functionName: "ownerOf" as const, args: [id] as const },
-      { ...base, functionName: "mintMarkOf" as const, args: [id] as const },
-    ])
+    const calls = ids.map(
+      (id) => ({ ...base, functionName: "ownerOf" as const, args: [id] as const }),
+    )
     const res = await client.multicall({ allowFailure: true, contracts: calls })
 
     const grouped: CollectionMintHistoryEntry[] = []
     for (let i = 0; i < ids.length; i++) {
-      const ownerR = res[i * 2]
-      const markR = res[i * 2 + 1]
+      const ownerR = res[i]
       if (ownerR.status !== "success") continue // burned / unreadable
       const holder = ownerR.result as Address
-      const mark =
-        markR.status === "success" ? (markR.result as { mintBlock: number | bigint }) : null
-      const mintBlock = mark ? BigInt(mark.mintBlock) : 0n
       const tokenId = ids[i]
       const last = grouped[grouped.length - 1]
       // Iterating newest-first; extend a batch when the next (lower) token
-      // has the same holder + block and is contiguous.
+      // has the same holder and is contiguous.
       if (
         last &&
         last.holder.toLowerCase() === holder.toLowerCase() &&
-        last.mintBlock === mintBlock &&
         last.firstTokenId === tokenId + 1n
       ) {
         last.firstTokenId = tokenId
         last.count += 1
       } else {
-        grouped.push({ holder, mintBlock, firstTokenId: tokenId, count: 1 })
+        grouped.push({ holder, firstTokenId: tokenId, count: 1 })
       }
     }
     return { unsupported: false, entries: grouped }
@@ -368,15 +365,13 @@ export type AttributionEntry = { artist: Address; claimed: boolean }
 export type RecentTokenEntry = {
   tokenId: string
   seed: `0x${string}`
-  mintIndex: number
-  mintBlock: number
 }
 
 /**
- * Seeds + marks for the latest mints, newest first: everything a client-side
- * parity render needs (tokenData for real tokens), at one cheap slot read per
- * field instead of the 60-120M-gas tokenURI. Sequential collections only
- * (pooled ids arrive with the indexer, same rationale as mint history).
+ * Seeds for the latest mints, newest first: everything a client-side parity
+ * render needs (tokenData is hash + tokenId), at one cheap slot read instead
+ * of the 60-120M-gas tokenURI. Sequential collections only (pooled ids
+ * arrive with the indexer, same rationale as mint history).
  */
 export async function getRecentTokenMarks(
   address: Address,
@@ -395,23 +390,13 @@ export async function getRecentTokenMarks(
     try {
       const res = await client.multicall({
         allowFailure: true,
-        contracts: ids.flatMap((id) => [
-          { ...base, functionName: "tokenSeed", args: [id] } as const,
-          { ...base, functionName: "mintMarkOf", args: [id] } as const,
-        ]),
+        contracts: ids.map((id) => ({ ...base, functionName: "tokenSeed", args: [id] }) as const),
       })
       const entries: RecentTokenEntry[] = []
       ids.forEach((id, i) => {
-        const seedRes = res[i * 2]
-        const markRes = res[i * 2 + 1]
-        if (seedRes.status !== "success" || markRes.status !== "success") return
-        const mark = decodeMintMark(markRes.result as Parameters<typeof decodeMintMark>[0])
-        entries.push({
-          tokenId: id.toString(),
-          seed: seedRes.result as `0x${string}`,
-          mintIndex: mark.mintIndex,
-          mintBlock: Number(mark.mintBlock),
-        })
+        const seedRes = res[i]
+        if (seedRes.status !== "success") return
+        entries.push({ tokenId: id.toString(), seed: seedRes.result as `0x${string}` })
       })
       return entries
     } catch {

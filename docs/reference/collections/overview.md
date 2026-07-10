@@ -30,7 +30,7 @@ different modules plugged into the same four sockets. See
 
 `Collection` itself. It holds the ERC721 token logic, the sale
 paths, the payment split, and every read an indexer or renderer needs:
-`tokenSeed`, `mintMarkOf`, `workConfig`, `config`. Nothing about a specific
+`tokenSeed`, `workConfig`, `config`. Nothing about a specific
 work's rendering, pricing, or gating logic lives here; those are the slots.
 
 ## The four slots
@@ -53,20 +53,16 @@ Full detail: [The four slots](/docs/collections/concepts/four-slots).
 
 ## Provenance and identity
 
-Every mint stamps two pieces of per-token state that never change after the
-fact:
-
-- **Mint Mark**: when and in what order a token was minted — `mintIndex`
-  and `mintBlock`, plus derived `isFirst`/`isFinal` flags. Read via
-  `mintMarkOf`
-- **Entropy** (`tokenSeed`): a `bytes32` stamped at mint time, stable
-  across transfers, the seed a generative renderer draws from
-
-The rest of a mint's provenance — the `referrer` that hosted it and the
-collection's lifecycle status at that moment — is stamped into the `Minted`
-event, the permanent onchain log, rather than stored per token. The core
-stores exactly what the onchain renderer must read synchronously; indexers
-read everything else from events. See
+Every mint stamps exactly one piece of per-token state: the token's
+**entropy** (`tokenSeed`), a `bytes32` stable across transfers — the seed a
+generative renderer draws from, and the one fact that can never be
+reconstructed later. The rest of a token's **Mint Mark** is derived or
+event-recorded: in Sequential mode the token id IS the mint order (with
+first/final derived against the live status and minted count), and every
+`Minted` event permanently records the order, the `referrer` that hosted the
+mint, and the lifecycle status at that moment. The core stores nothing
+derivable; works needing more mint-time data record it themselves via a
+mint hook. See
 [Mint Marks and entropy](/docs/collections/concepts/mint-marks-and-entropy).
 
 ## Live settings and the three locks

@@ -5,7 +5,7 @@ import {Base64} from "solady/utils/Base64.sol";
 import {LibString} from "solady/utils/LibString.sol";
 
 import {IRenderer, ICollectionView} from "../interfaces/IRenderer.sol";
-import {CodeKind, CodeRef, MintMark, WorkConfig} from "../CollectionTypes.sol";
+import {CodeKind, CodeRef, IdMode, WorkConfig} from "../CollectionTypes.sol";
 import {IScriptyBuilderV2} from "../vendor/scripty/interfaces/IScriptyBuilderV2.sol";
 import {HTMLRequest, HTMLTag, HTMLTagType} from "../vendor/scripty/core/ScriptyStructs.sol";
 
@@ -58,11 +58,10 @@ contract GenerativeRenderer is IRenderer {
     {
         ICollectionView c = ICollectionView(collection);
         WorkConfig memory work = c.workConfig();
-        MintMark memory mark = c.mintMarkOf(tokenId);
         bytes32 seed = c.tokenSeed(tokenId);
 
         // getEncodedHTMLString returns a complete data:text/html;base64 URI.
-        string memory htmlUri = _buildHTML(collection, tokenId, work, mark, seed);
+        string memory htmlUri = _buildHTML(collection, tokenId, work, seed);
         string memory image = _imageFor(c, tokenId);
 
         bytes memory json = abi.encodePacked(
@@ -77,7 +76,7 @@ contract GenerativeRenderer is IRenderer {
                 ? string(abi.encodePacked(',"image":"', image, '"'))
                 : "",
             ',"attributes":',
-            _attributes(mark, seed),
+            _attributes(c, tokenId, seed),
             "}"
         );
         return string(
@@ -116,7 +115,6 @@ contract GenerativeRenderer is IRenderer {
         address collection,
         uint256 tokenId,
         WorkConfig memory work,
-        MintMark memory mark,
         bytes32 seed
     ) private view returns (string memory) {
         require(work.code.length > 0, "GR: no code");
@@ -131,7 +129,7 @@ contract GenerativeRenderer is IRenderer {
             i++;
         }
         body[i].tagType = HTMLTagType.script;
-        body[i].tagContent = _contextJs(collection, tokenId, mark, seed, work.injectionVersion);
+        body[i].tagContent = _contextJs(collection, tokenId, seed, work.injectionVersion);
         i++;
         for (uint256 s = 0; s < work.code.length; s++) {
             body[i] = _fileTag(work.code[s]);
@@ -173,12 +171,15 @@ contract GenerativeRenderer is IRenderer {
         return false;
     }
 
-    /// @dev Render-context convention v1. hash/tokenId use the standard
-    ///      long-form-generative tokenData shape for sketch portability.
+    /// @dev Render-context convention v1: hash + tokenId, the standard
+    ///      long-form-generative tokenData shape for sketch portability. In
+    ///      Sequential mode the token id IS the mint order, so art keyed to
+    ///      order reads tokenId; works needing other mint-time inputs (block,
+    ///      pooled order) record them via a hook/minter and read them through
+    ///      their own renderer.
     function _contextJs(
         address collection,
         uint256 tokenId,
-        MintMark memory mark,
         bytes32 seed,
         uint8 version
     ) private view returns (bytes memory) {
@@ -187,11 +188,7 @@ contract GenerativeRenderer is IRenderer {
             uint256(seed).toHexString(32),
             '","tokenId":"',
             tokenId.toString(),
-            '","mintIndex":',
-            uint256(mark.mintIndex).toString(),
-            ',"mintBlock":',
-            uint256(mark.mintBlock).toString(),
-            ',"collection":"',
+            '","collection":"',
             collection.toHexString(),
             '","chainId":',
             block.chainid.toString(),
@@ -213,21 +210,20 @@ contract GenerativeRenderer is IRenderer {
         return LibString.escapeJSON(art);
     }
 
-    /// @dev Mint Mark provenance (trait names shared with DefaultRenderer)
-    ///      plus the seed.
-    function _attributes(MintMark memory mark, bytes32 seed)
+    /// @dev Provenance traits, derived (trait names shared with
+    ///      DefaultRenderer): in Sequential mode the token id is the mint
+    ///      order, so Mint Order = tokenId. Pooled ids are not mint order, so
+    ///      pooled works get the seed only.
+    function _attributes(ICollectionView c, uint256 tokenId, bytes32 seed)
         private
-        pure
+        view
         returns (bytes memory)
     {
+        bytes memory order = c.idMode() == IdMode.Sequential
+            ? abi.encodePacked('{"trait_type":"Mint Order","value":', tokenId.toString(), "},")
+            : bytes("");
         return abi.encodePacked(
-            '[{"trait_type":"Mint Order","value":',
-            uint256(mark.mintIndex + 1).toString(),
-            '},{"trait_type":"Mint Block","value":',
-            uint256(mark.mintBlock).toString(),
-            '},{"trait_type":"Seed","value":"',
-            uint256(seed).toHexString(32),
-            '"}]'
+            "[", order, '{"trait_type":"Seed","value":"', uint256(seed).toHexString(32), '"}]'
         );
     }
 }

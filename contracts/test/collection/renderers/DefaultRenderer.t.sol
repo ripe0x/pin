@@ -119,8 +119,10 @@ contract DefaultRendererTest is Test {
         uint256 tokenId = _mint();
         string memory json = _decode(collection.tokenURI(tokenId));
 
+        // Mint Order is DERIVED: sequential token id IS the order. Mint Block
+        // is no longer a trait (nothing per-token is stored beyond the seed).
         assertTrue(_contains(json, '"trait_type":"Mint Order","value":1'), "wrong Mint Order");
-        assertTrue(_contains(json, '"trait_type":"Mint Block"'), "missing Mint Block");
+        assertFalse(_contains(json, '"trait_type":"Mint Block"'), "Mint Block trait was removed");
         // Referrer / Status at Mint are deliberately NOT traits: both are
         // event-only provenance on Minted, no longer stored per token.
         assertFalse(_contains(json, '"trait_type":"Referrer"'), "Referrer trait was removed");
@@ -143,6 +145,35 @@ contract DefaultRendererTest is Test {
         assertFalse(
             _contains(json, "First mint of the collection"),
             "second mint should not carry First provenance"
+        );
+    }
+
+    /// @dev Final provenance is derived live from status + minted count, so
+    ///      it appears when the window closes and DISAPPEARS if the window
+    ///      reopens — the un-finalize behavior that stored marks could never
+    ///      express honestly.
+    function test_tokenURI_finalProvenance_derivedAndReversible() public {
+        vm.warp(1000);
+        vm.prank(artist);
+        collection.setMintWindow(0, uint64(block.timestamp + 100));
+        uint256 tokenId = _mint();
+
+        string memory open_ = _decode(collection.tokenURI(tokenId));
+        assertFalse(_contains(open_, "Final mint of the collection"), "open: not final");
+
+        vm.warp(block.timestamp + 100); // window ends -> derived Closed
+        string memory closed = _decode(collection.tokenURI(tokenId));
+        assertTrue(
+            _contains(closed, "Final mint of the collection"),
+            "closed: last minted token derives Final"
+        );
+
+        vm.prank(artist);
+        collection.setMintWindow(0, 0); // reopen
+        string memory reopened = _decode(collection.tokenURI(tokenId));
+        assertFalse(
+            _contains(reopened, "Final mint of the collection"),
+            "reopened: Final derives away"
         );
     }
 

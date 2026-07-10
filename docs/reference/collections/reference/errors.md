@@ -74,7 +74,7 @@ A paid mint was attempted at or after a non-zero `mintEnd`.
 A paid mint was attempted before `mintStart`.
 
 **`NeverMinted`** · [Collection](/docs/collections/contracts/collection#errors)\
-`tokenSeed` or `mintMarkOf` was read for an id that has no mint record.
+`tokenSeed` was read for an id that was never minted (its seed slot is zero).
 
 **`NoStrayETH`** · [Collection](/docs/collections/contracts/collection#errors)\
 `rescueStrayETH` found no ETH above the owed pull-payment balances to sweep.

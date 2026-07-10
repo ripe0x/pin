@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity ^0.8.24;
 
-import {MintMark, WorkConfig, IdMode} from "../CollectionTypes.sol";
+import {CollectionConfig, CollectionStatus, WorkConfig, IdMode} from "../CollectionTypes.sol";
 
 /// @title IRenderer
 /// @notice Swappable metadata renderer. A collection's tokenURI/contractURI
@@ -36,10 +36,19 @@ interface ICollectionView {
     function totalSupply() external view returns (uint256);
 
     /// @notice Mint-time entropy for a token, stamped in the mint tx.
+    ///         Reverts NeverMinted for an id with no mint; a nonzero seed is
+    ///         the was-ever-minted sentinel.
     function tokenSeed(uint256 tokenId) external view returns (bytes32);
 
-    /// @notice Derived Mint Mark for a token (provenance).
-    function mintMarkOf(uint256 tokenId) external view returns (MintMark memory);
+    /// @notice Live config + derived lifecycle status + mints-ever. A
+    ///         renderer derives provenance from these: in Sequential mode the
+    ///         token id IS the mint order (first = id 1; final = Closed and
+    ///         id == minted). Pooled works record their own mint-time data
+    ///         via a hook/minter if their art needs it.
+    function config()
+        external
+        view
+        returns (CollectionConfig memory cfg, CollectionStatus status, uint256 minted);
 
     /// @notice The collection's shared/cover artwork URI.
     function artwork() external view returns (string memory);

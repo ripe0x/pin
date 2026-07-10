@@ -23,8 +23,6 @@ export function makeTestTokenData(params: {
   return {
     hash: testSeed(index),
     tokenId: String(index + 1),
-    mintIndex: index,
-    mintBlock: 0,
     collection: (params.collection ?? "0x" + "0".repeat(40)).toLowerCase(),
     chainId: params.chainId ?? 1,
     version: params.injectionVersion ?? 1,

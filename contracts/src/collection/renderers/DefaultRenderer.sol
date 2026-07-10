@@ -5,7 +5,7 @@ import {Base64} from "openzeppelin-contracts/contracts/utils/Base64.sol";
 import {Strings} from "openzeppelin-contracts/contracts/utils/Strings.sol";
 
 import {IRenderer, ICollectionView} from "../interfaces/IRenderer.sol";
-import {MintMark} from "../CollectionTypes.sol";
+import {CollectionConfig, CollectionStatus, IdMode} from "../CollectionTypes.sol";
 
 /// @title DefaultRenderer
 /// @notice The canonical built-in renderer for Collection. Wired
@@ -37,7 +37,6 @@ contract DefaultRenderer is IRenderer {
         returns (string memory)
     {
         ICollectionView cv = ICollectionView(collection);
-        MintMark memory m = cv.mintMarkOf(tokenId);
 
         string memory art = cv.tokenArtwork(tokenId);
         if (bytes(art).length == 0) art = cv.artwork();
@@ -52,7 +51,7 @@ contract DefaultRenderer is IRenderer {
             '","image":"',
             _escape(art),
             '","attributes":',
-            _attributes(m),
+            _attributes(cv, tokenId),
             "}"
         );
         return string.concat("data:application/json;base64,", Base64.encode(bytes(json)));
@@ -66,17 +65,26 @@ contract DefaultRenderer is IRenderer {
 
     // ── attributes (provenance, not rarity) ───────────────────────────────────
 
-    function _attributes(MintMark memory m) internal pure returns (string memory) {
-        string memory a = string.concat(
-            "[",
-            _numAttr("Mint Order", uint256(m.mintIndex) + 1),
-            ",",
-            _numAttr("Mint Block", uint256(m.mintBlock))
-        );
-        if (m.isFirst) {
+    /// @dev Provenance traits, fully derived — nothing per-token is stored
+    ///      beyond the seed. Sequential mode: the token id IS the mint order
+    ///      (ids assigned 1,2,3..., never reused), so Mint Order = tokenId,
+    ///      First = id 1, and Final = the collection is Closed and this is
+    ///      the highest id ever assigned (minted == mints-ever == last id).
+    ///      Pooled ids are not mint order, so pooled tokens get no order
+    ///      traits here; a pooled work wanting them records its own mint-time
+    ///      data via a hook/minter and reads it in a custom renderer.
+    function _attributes(ICollectionView cv, uint256 tokenId)
+        internal
+        view
+        returns (string memory)
+    {
+        if (cv.idMode() != IdMode.Sequential) return "[]";
+        (, CollectionStatus status, uint256 minted) = cv.config();
+        string memory a = string.concat("[", _numAttr("Mint Order", tokenId));
+        if (tokenId == 1) {
             a = string.concat(a, ",", _strAttr("Provenance", "First mint of the collection"));
         }
-        if (m.isFinal) {
+        if (status == CollectionStatus.Closed && tokenId == minted) {
             a = string.concat(a, ",", _strAttr("Provenance", "Final mint of the collection"));
         }
         return string.concat(a, "]");

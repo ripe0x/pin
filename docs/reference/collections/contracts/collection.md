@@ -19,10 +19,11 @@ path. Payment is honest: the collector pays exactly the resolved price. A fixed
 protocol Referral Share of 10% (`REFERRAL_SHARE_BPS = 1000`) is paid out of that
 price to whoever hosts the mint, and folds back to the artist on a direct mint.
 
-Each minted token carries its own identity: a per-token Mint Mark (mint block and
-global mint order, stamped at mint) and mint-time entropy read via `tokenSeed`.
-The rest of a mint's provenance — the referrer and the lifecycle status at mint —
-is stamped into the `Minted` event, never stored. The
+Each minted token carries its own identity: mint-time entropy read via
+`tokenSeed`, the one per-token fact that can never be reconstructed later. All
+other provenance derives or is event-stamped: in Sequential mode the token id IS
+the mint order, and every `Minted` event permanently records the order, the
+referrer, and the lifecycle status at that moment. The
 [id mode](/docs/collections/concepts/id-modes) is fixed at init: Sequential (the
 core assigns ids, never reused after burn) or Pooled (an authorized minter
 supplies ids, and a burned id can be minted again as a fresh instance). Every
@@ -76,15 +77,18 @@ and burn. See [id modes](/docs/collections/concepts/id-modes).
 
 ### Mint Marks and entropy
 
-Every mint stamps a per-token Mint Mark (mint block and global mint order) and
-one `bytes32` of entropy derived from `prevrandao`, the collection address, the
-token id, the recipient, and the mint index. Read the Mint Mark with `mintMarkOf`
-and the entropy with `tokenSeed`. The core stores exactly what the onchain
-renderer must read synchronously; the referrer and the lifecycle status at mint
-are event-only provenance on `Minted`, reconstructed by indexers. Entropy lives
-in the core because it can never be retrofitted: randomness only exists at mint
-time. It is `prevrandao`-derived, which is acceptable unpredictability for art
-but not for lotteries. See
+Every mint stamps one `bytes32` of entropy derived from `prevrandao`, the
+collection address, the token id, the recipient, and the mint index — read it
+with `tokenSeed`. That seed is the only per-token storage: it can never be
+retrofitted (randomness only exists at mint time), and a nonzero seed doubles as
+the was-ever-minted sentinel. The Mint Mark itself is fully derived: in
+Sequential mode the token id IS the mint order (first = id 1; final = the
+collection is Closed and the id equals the minted count), and the `Minted` event
+permanently records order, referrer, and status for indexers. A work whose art
+or mechanics need other mint-time data (the mint block, pooled order) records it
+to its own storage with a one-line mint hook — the cost lands only on works that
+opt in. The seed is `prevrandao`-derived: acceptable unpredictability for art,
+not for lotteries. See
 [mint marks and entropy](/docs/collections/concepts/mint-marks-and-entropy).
 
 ### Lifecycle status
@@ -700,19 +704,6 @@ function mintHook() external view returns (address)
 
 The current mint hook address, or zero when no hook is set.
 
-### mintMarkOf
-
-```solidity
-function mintMarkOf(uint256 tokenId) external view returns (MintMark m)
-```
-
-The derived Mint Mark of a token's current (or most recent) instance: mint index,
-mint block, and the `isFirst` and `isFinal` flags (both derived live — reopening
-a closed window un-finalizes). The referrer and the lifecycle status at mint are
-event-only provenance on `Minted`, not part of the stored mark. Readable for a
-burned id until a pooled re-mint overwrites it. Reverts `NeverMinted` if the id
-has no mint record.
-
 ### name
 
 ```solidity
@@ -845,8 +836,10 @@ set.
 function tokenSeed(uint256 tokenId) external view returns (bytes32)
 ```
 
-The mint-time entropy for a token, stamped in the mint transaction. Reverts
-`NeverMinted` for an id that has no mint record. For a pooled re-mint this is the
+The mint-time entropy for a token, stamped in the mint transaction — the only
+per-token storage on the contract. Reverts `NeverMinted` for an id that was
+never minted (a nonzero seed is the existence sentinel). Stays readable for a
+burned id until a pooled re-mint overwrites it; for a pooled re-mint this is the
 current instance's fresh seed.
 
 ### tokenURI
@@ -965,18 +958,19 @@ Marketplaces subscribe to this to re-fetch a token's metadata.
 ### Minted
 
 ```solidity
-event Minted(address indexed to, address indexed referrer, uint256 firstTokenId, uint256 quantity, uint256 firstMintIndex, uint48 mintBlock, CollectionStatus statusAtMint)
+event Minted(address indexed to, address indexed referrer, uint256 firstTokenId, uint256 quantity, uint256 firstMintIndex, CollectionStatus statusAtMint)
 ```
 
-One event per mint call. Built-in paths cover `[firstTokenId, firstTokenId +
-quantity - 1]`; extension mints emit quantity 1 with `firstTokenId` the minted id.
-Indexed by `to` and `referrer`. Carries `firstMintIndex` (the global mint order of
-the call's first token; token k's mint index is `firstMintIndex + k`), the mint
-block, and `statusAtMint` — the lifecycle status derived at mint time (a pooled
-re-mint after the window truthfully says Closed; an extension mint before the
-public window says Scheduled). This event is the permanent record of the referrer
-and status; neither is stored per token, so indexers read them here and never
-need a per-token `mintMarkOf` call.
+One event per mint call — THE permanent per-mint provenance record. Built-in
+paths cover `[firstTokenId, firstTokenId + quantity - 1]`; extension mints emit
+quantity 1 with `firstTokenId` the minted id. Indexed by `to` and `referrer`.
+Carries `firstMintIndex` (the global mint order of the call's first token; token
+k's mint index is `firstMintIndex + k` — explicit because pooled order is not
+derivable from reused ids) and `statusAtMint`, the lifecycle status derived at
+mint time (a pooled re-mint after the window truthfully says Closed; an
+extension mint before the public window says Scheduled). The mint block is the
+log's own block number. Nothing here is stored per token; indexers read this
+event and never need per-token calls.
 
 ### MinterSet
 
@@ -1235,7 +1229,7 @@ owner reschedules it with `setMintWindow`.
 
 **`NeverMinted()`**
 
-`tokenSeed` or `mintMarkOf` was read for an id that has no mint record.
+`tokenSeed` was read for an id that was never minted (its seed slot is zero).
 
 **`NoStrayETH()`**
 

@@ -8,7 +8,7 @@ import {MockMinter} from "../mocks/CollectionMocks.sol";
 import {CollectionHandler} from "./CollectionHandler.sol";
 
 import {Collection} from "../../../src/collection/Collection.sol";
-import {CollectionConfig, MintMark} from "../../../src/collection/CollectionTypes.sol";
+import {CollectionConfig} from "../../../src/collection/CollectionTypes.sol";
 
 /// @title CollectionInvariants
 /// @notice Bounded random-walk invariant suite over ONE Sequential-mode and
@@ -200,41 +200,43 @@ contract CollectionInvariants is StdInvariant, CollectionBase {
     }
 
     // ════════════════════════════════════════════════════════════════════
-    // ORDER: mintIndex (via mintMarkOf) strictly increases with every
-    // successful mint across BOTH paths (paid + extension for sequential;
-    // extension for pooled), and never repeats within a collection. The
-    // handler already asserts non-repetition at call time (seqMintIndexSeen /
-    // pooledMintIndexSeen); here we reassert strict monotonicity end-to-end
-    // by checking that the mintIndex of every live AND every ever-burned id
-    // falls inside [0, mintedEver) with no gaps, sampled via ghost live ids
-    // (whose mintMarkOf is still readable) plus the ghost's own counters.
+    // ORDER: mint order strictly increases with every successful mint across
+    // BOTH paths and never repeats. Order is no longer stored per token — the
+    // Minted event stamps it, and in Sequential mode the token id IS the
+    // order (id == index + 1, ids never recycle). The handler asserts the
+    // contract's id assignment against the ghost counter at call time; here
+    // we reassert end-to-end coherence: every live sequential id maps into
+    // the ghost-tracked index space with no id above the counter, and both
+    // contracts' mintedEver counters match the ghosts exactly.
     // ════════════════════════════════════════════════════════════════════
 
     function invariant_seqMintIndexOrderHolds() public view {
-        // Every live id's stamped mintIndex must be < ghostSeqMints (the
-        // count of all mints ever), and the handler's seqMintIndexSeen
-        // bookkeeping (asserted at call time) guarantees no repeats. Cross
-        // check a sample of live ids against the ghost's "seen" map here so
-        // a regression in the live contract's counter would still show up
-        // as a mismatch against the ghost-tracked mintIndex space.
         uint256 mintedEver = handler.ghostSeqMints();
+        (,, uint256 contractMinted) = seq.config();
+        assertEq(contractMinted, mintedEver, "seq mintedEver diverged from ghost");
         uint256 n = handler.seqLiveCount();
         for (uint256 i = 0; i < n; i++) {
             uint256 id = handler.seqLiveIds(i);
-            MintMark memory mark = seq.mintMarkOf(id);
-            assertTrue(mark.mintIndex < mintedEver, "seq live mintIndex out of range");
-            assertTrue(handler.seqMintIndexSeen(mark.mintIndex), "seq live mintIndex not in seen set");
+            // Sequential id IS the order: id - 1 is the mint index.
+            assertTrue(id >= 1 && id <= mintedEver, "seq live id outside minted id space");
+            assertTrue(handler.seqMintIndexSeen(id - 1), "seq live id's index not in seen set");
+            assertTrue(seq.tokenSeed(id) != bytes32(0), "seq live id missing entropy");
         }
     }
 
     function invariant_pooledMintIndexOrderHolds() public view {
         uint256 mintedEver = handler.ghostPooledMints();
+        (,, uint256 contractMinted) = pooled.config();
+        assertEq(contractMinted, mintedEver, "pooled mintedEver diverged from ghost");
+        // Pooled order is event-only (ids are reused); the handler's seen-map
+        // bookkeeping at call time covers non-repetition. Here: every live id
+        // carries entropy, the was-minted sentinel.
         uint256 n = handler.pooledLiveCount();
         for (uint256 i = 0; i < n; i++) {
-            uint256 id = handler.pooledLiveIds(i);
-            MintMark memory mark = pooled.mintMarkOf(id);
-            assertTrue(mark.mintIndex < mintedEver, "pooled live mintIndex out of range");
-            assertTrue(handler.pooledMintIndexSeen(mark.mintIndex), "pooled live mintIndex not in seen set");
+            assertTrue(
+                pooled.tokenSeed(handler.pooledLiveIds(i)) != bytes32(0),
+                "pooled live id missing entropy"
+            );
         }
     }
 

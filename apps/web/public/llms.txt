@@ -15,7 +15,7 @@ Machine-readable addresses + ABIs: https://pnd.ripe.wtf/protocol-manifest.json (
 - [Overview](https://pnd.ripe.wtf/docs/collections/overview): What the PND Collection System is, its parts, and how this reference is organized.
 - [The four slots](https://pnd.ripe.wtf/docs/collections/concepts/four-slots): Renderer, price strategy, mint hook, and extension minter, the swappable modules every collection composes from.
 - [Id modes](https://pnd.ripe.wtf/docs/collections/concepts/id-modes): Sequential and pooled, the two token id assignment models, fixed at init.
-- [Mint Marks and entropy](https://pnd.ripe.wtf/docs/collections/concepts/mint-marks-and-entropy): The per-token provenance snapshot and the mint-time seed renderers draw from.
+- [Mint Marks and entropy](https://pnd.ripe.wtf/docs/collections/concepts/mint-marks-and-entropy): The derived per-token provenance and the mint-time seed renderers draw from.
 - [Types](https://pnd.ripe.wtf/docs/collections/concepts/types): The shared enums and structs in CollectionTypes.sol, the data-only surface with no ABI functions of its own.
 - [Collection](https://pnd.ripe.wtf/docs/collections/contracts/collection): The one core of the PND Collection System: a single OpenZeppelin ERC721 that holds ownership, ETH payment paths, and per-token provenance, and nothing else.
 - [CollectionFactory](https://pnd.ripe.wtf/docs/collections/contracts/factory): CollectionFactory deploys one [Collection](/docs/collections/contracts/collection) per work as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs.

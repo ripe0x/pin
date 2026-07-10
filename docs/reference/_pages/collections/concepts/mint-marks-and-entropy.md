@@ -1,55 +1,39 @@
 ---
 title: Mint Marks and entropy
-description: The per-token provenance snapshot and the mint-time seed renderers draw from.
+description: The derived per-token provenance and the mint-time seed renderers draw from.
 ---
 
 # Mint Marks and entropy
 
-Every token carries two pieces of state stamped once, at mint time, and
-never touched again by any later action on the token (transfers, approvals,
-metadata changes): its **Mint Mark** and its **entropy**. Both are defined
-in `CollectionTypes.sol` and read from the collection directly, so a
-renderer or an indexer never has to reconstruct them from event history.
+Every token's identity rests on one stored fact and a set of derived ones.
+The stored fact is its **entropy** — a `bytes32` seed stamped once at mint.
+Everything else that makes up a token's **Mint Mark** (its mint order, first/
+final standing, referrer, and the collection's status at that moment) is
+either derivable from the id or permanently recorded in the `Minted` event.
+The core stores nothing derivable.
 
-## Mint Mark
+## The Mint Mark (derived)
 
-`mintMarkOf(uint256 tokenId)` returns a `MintMark`:
+In **Sequential** mode the token id IS the mint order: ids are assigned
+1, 2, 3… and never reused after burn, so:
 
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `mintIndex` | `uint40` | 0-based global mint order across the whole collection, assigned from a counter that only ever increases (`_mintedEver`) |
-| `mintBlock` | `uint48` | The block number the token was minted in |
-| `isFirst` | `bool` | Derived: `mintIndex == 0` |
-| `isFinal` | `bool` | Derived: the collection is currently `Closed` **and** this token's `mintIndex` is the highest ever assigned |
+| Fact | Derivation |
+| --- | --- |
+| Mint order | `tokenId` (1-based) |
+| First mint | `tokenId == 1` |
+| Final mint | the collection is `Closed` **and** `tokenId == minted` (mints-ever) |
 
-Onchain, this is stored compactly as a `MintRecord` (`mintBlock`,
-`mintIndex`) packed into a single storage slot; `mintMarkOf` derives the
-public `MintMark`, including the two boolean flags, from that record plus
-the collection's current lifecycle state. `mintMarkOf` reverts with
-`NeverMinted` for a `tokenId` that has no record at all.
+The bundled renderers compute exactly these as provenance attributes at
+`tokenURI` time — zero storage, and honestly live: reopening a closed window
+un-finalizes the last token, because "final" was always a claim about the
+collection's current state, not the token's past.
 
-The record deliberately stores **only what the onchain renderer must read
-synchronously** — both fields are injected into the generative render
-context, and `mintBlock` doubles as the was-ever-minted sentinel. The rest
-of a mint's provenance is event-only: the `Minted` event permanently
-records the `referrer` that hosted the mint and `statusAtMint`, the
-lifecycle status derived at that moment (`Scheduled`, `Open`, or `Closed` —
-a pooled re-mint after the window truthfully says `Closed`). Events are
-chain data forever; storing copies of them per token would add cost without
-adding permanence.
-
-A token's Mint Mark is a snapshot of the mint that produced its **current
-instance**. In sequential mode there is exactly one instance per id ever,
-so the mark is permanent history. In pooled mode, a burned id minted again
-gets a brand-new `MintRecord` overwriting the old one: the new instance's
-mark reflects the new mint, and the prior instance's mark is no longer
-readable from `mintMarkOf` (though it remains in past `Minted`/`Burned`
-event logs and offchain indexing). See [Id modes](/docs/collections/concepts/id-modes).
-
-`isFinal` is meaningful for editions and generative drops with a fixed
-run: it tells a renderer or a collector, without comparing against
-`totalSupply()` or the cap separately, whether this token was the last one
-minted before the collection closed.
+In **Pooled** mode ids are source ids (reused across burn/re-mint), so mint
+order is not derivable from the id. Order still exists — every `Minted`
+event stamps `firstMintIndex` from a counter that never repeats — but it is
+event provenance for indexers, not an onchain read. A pooled work whose art
+or mechanics need order (or any other mint-time fact, like the mint block)
+records it to its own storage with a one-line mint hook; see below.
 
 ## Entropy (`tokenSeed`)
 
@@ -60,39 +44,46 @@ time as:
 keccak256(abi.encode(block.prevrandao, address(this), tokenId, to, mintIndex))
 ```
 
-- **Nonzero**: every minted token has a nonzero seed; `tokenSeed` reverts
-  with `NeverMinted` for an id with no record, mirroring `mintMarkOf`
-- **Stored, not recomputed**: the value is written to storage at mint and
-  read back verbatim on every later call. It is not derived from anything
-  that changes after mint (it does not depend on current owner, current
-  block, or anything mutable), so it is stable
+- **The only per-token storage**: the seed is the one fact that can never
+  be reconstructed later — randomness only exists at mint time. Everything
+  else about a mint is derivable or event-recorded, so nothing else is
+  stored. This is also the gas story: one provenance slot per mint, not two
+- **The existence sentinel**: keccak output is never zero, so a nonzero
+  seed doubles as "was ever minted" — `tokenSeed` reverts `NeverMinted`
+  for an id with no mint
 - **Stable across transfer**: transferring a token has no effect on its
-  seed. A generative renderer's output for a given token does not change
-  when the token changes hands
-- **Re-rolls on pooled re-mint**: because entropy is stamped fresh in
-  `_mintOne` on every mint, a pooled id that is burned and minted again
-  gets a new, independent seed alongside its new Mint Mark. The new
-  instance is a different draw from the same algorithm, not a repeat of
-  the old one
+  seed; a generative renderer's output does not change when the token
+  changes hands
+- **Readable after burn**: a burned id's seed stays readable (history)
+  until a pooled re-mint of the same id overwrites it
+- **Re-rolls on pooled re-mint**: a re-minted id is a NEW instance with a
+  new, independent seed — a different draw from the same algorithm
 
 `prevrandao`-derived entropy is unpredictable enough for generative art
 (nobody can force a specific outcome except with proposer-level influence
-over the block, which is acceptable risk for visual output) but is
-explicitly not suitable as a source of randomness for anything
-value-bearing like a lottery or a rarity-weighted drop with financial
-stakes.
+over the block) but explicitly not suitable for anything value-bearing like
+a lottery.
+
+## Bring-your-own mint-time data
+
+A work that needs mint-time facts the core doesn't store — the mint block
+for time-based mechanics, pooled mint order, a timestamp — records them
+itself with a mint hook (`afterMint` receives the full id range and runs on
+every mint path) and reads them back in its own renderer or companion. The
+MiniTBAM reference does exactly this with a one-line `MintClock` hook. The
+cost lands only on works that opt in, instead of every mint of every
+collection paying for fields most works never read. See
+[Write a mint hook](/docs/collections/guides/write-a-mint-hook).
 
 ## What reads these
 
-- **Renderers** read `tokenSeed` as the entropy input to whatever
-  algorithm produces the token's visual output, and may read `mintMarkOf`
-  to condition rendering on mint order (for example, marking the first or
-  final token in a run)
-- **Indexers** read the `Minted` event, which carries everything: the id
-  range, `firstMintIndex`, `mintBlock`, the `referrer`, and `statusAtMint`
-  for the whole batch — no per-token `mintMarkOf` calls or history replay
-  needed
+- **Renderers** read `tokenSeed` as the entropy input to the algorithm, and
+  derive order/first/final from the id against `config()` when they want
+  provenance attributes
+- **Indexers** read the `Minted` event, which carries the id range,
+  `firstMintIndex`, the `referrer`, and `statusAtMint` for every mint — the
+  mint block is the log's own block — with no per-token calls at all
 
-See [CollectionTypes reference](/docs/collections/concepts/types) for the exact struct
-definitions, and [Write a renderer](/docs/collections/guides/write-a-renderer) for
-using the seed in an algorithm.
+See [Types](/docs/collections/concepts/types) for the exact definitions, and
+[Write a renderer](/docs/collections/guides/write-a-renderer) for using the
+seed in an algorithm.

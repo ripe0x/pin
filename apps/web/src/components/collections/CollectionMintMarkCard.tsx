@@ -1,10 +1,26 @@
 /**
- * Provenance display for a token's Mint Mark. Framed as provenance, never as
- * rarity: no rank, no score, no floor. A stamp on the back of the print.
+ * Provenance display for a token's Mint Mark — fully DERIVED, matching the
+ * onchain renderers: sequential token id IS the mint order; First/Final
+ * derive from the id against the live minted count and status. Framed as
+ * provenance, never as rarity: no rank, no score, no floor.
  */
-import { type MintMark } from "@/lib/collection"
+import { CollectionStatus } from "@/lib/collection"
 
-export function CollectionMintMarkCard({ mark }: { mark: MintMark }) {
+export function CollectionMintMarkCard({
+  mintOrder,
+  seed,
+  status,
+  minted,
+}: {
+  /** Sequential: the token id (== mint order). Null for pooled ids. */
+  mintOrder: number | null
+  seed: `0x${string}` | null
+  status: CollectionStatus
+  minted: bigint
+}) {
+  const isFirst = mintOrder === 1
+  const isFinal =
+    mintOrder !== null && status === CollectionStatus.Closed && BigInt(mintOrder) === minted
   return (
     <div className="rounded-lg border border-gray-200 bg-surface overflow-hidden">
       <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-2">
@@ -14,12 +30,14 @@ export function CollectionMintMarkCard({ mark }: { mark: MintMark }) {
         <span className="text-[10px] font-mono text-gray-400">· onchain provenance</span>
       </div>
       <dl className="divide-y divide-gray-100">
-        <Row label="Mint order" value={`#${mark.mintIndex + 1} in the collection`} />
-        <Row label="Mint block" value={mark.mintBlock.toString()} />
-        {(mark.isFirst || mark.isFinal) && (
+        {mintOrder !== null && (
+          <Row label="Mint order" value={`#${mintOrder} in the collection`} />
+        )}
+        {seed && <Row label="Seed" value={`${seed.slice(0, 10)}…${seed.slice(-8)}`} />}
+        {(isFirst || isFinal) && (
           <div className="px-4 py-3 flex flex-wrap gap-2">
-            {mark.isFirst && <Badge>First mint of the collection</Badge>}
-            {mark.isFinal && <Badge>Final mint of the collection</Badge>}
+            {isFirst && <Badge>First mint of the collection</Badge>}
+            {isFinal && <Badge>Final mint of the collection</Badge>}
           </div>
         )}
       </dl>

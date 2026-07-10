@@ -40,8 +40,6 @@ export type TokenData = {
   hash: string;
   /** Decimal string. */
   tokenId: string;
-  mintIndex: number;
-  mintBlock: number;
   /** 0x + 40 lowercase hex. */
   collection: string;
   chainId: number;

@@ -16,6 +16,91 @@ export const iCollectionViewAbi = [
   },
   {
     "type": "function",
+    "name": "config",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "cfg",
+        "type": "tuple",
+        "internalType": "struct CollectionConfig",
+        "components": [
+          {
+            "name": "artworkURI",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "price",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "supplyCap",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "mintStart",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "mintEnd",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "royaltyBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "royaltyReceiver",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "payoutAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "renderer",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "mintHook",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "priceStrategy",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "idMode",
+            "type": "uint8",
+            "internalType": "enum IdMode"
+          }
+        ]
+      },
+      {
+        "name": "status",
+        "type": "uint8",
+        "internalType": "enum CollectionStatus"
+      },
+      {
+        "name": "minted",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "idMode",
     "inputs": [],
     "outputs": [
@@ -36,47 +121,6 @@ export const iCollectionViewAbi = [
         "name": "",
         "type": "bool",
         "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "mintMarkOf",
-    "inputs": [
-      {
-        "name": "tokenId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "tuple",
-        "internalType": "struct MintMark",
-        "components": [
-          {
-            "name": "mintIndex",
-            "type": "uint40",
-            "internalType": "uint40"
-          },
-          {
-            "name": "mintBlock",
-            "type": "uint48",
-            "internalType": "uint48"
-          },
-          {
-            "name": "isFirst",
-            "type": "bool",
-            "internalType": "bool"
-          },
-          {
-            "name": "isFinal",
-            "type": "bool",
-            "internalType": "bool"
-          }
-        ]
       }
     ],
     "stateMutability": "view"

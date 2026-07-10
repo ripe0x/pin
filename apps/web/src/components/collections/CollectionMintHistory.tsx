@@ -53,9 +53,6 @@ export function CollectionMintHistory({
                 className="flex items-baseline gap-2 min-w-0 hover:opacity-70 transition-opacity"
               >
                 <span className="truncate text-fg-muted">{shortAddress(e.holder)}</span>
-                {e.mintBlock > 0n && (
-                  <span className="text-fg-subtle shrink-0">block {e.mintBlock.toString()}</span>
-                )}
               </a>
               <span className="tabular-nums text-fg shrink-0 ml-3">
                 {range}

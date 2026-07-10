@@ -188,10 +188,16 @@ CollectionKind were REMOVED from the core contract (they were write-only —
 no onchain reader — and the implementation was over the EIP-170 size limit;
 a size-gate test now enforces headroom). The Release Graph / Token Path
 *product* is planned as a companion registry singleton (Attribution-style,
-authority borrowed from each collection), not core storage. Per-token
-`statusAtMint`/`referrer` are event-only provenance on `Minted` (never
-stored); lifecycle status is derived (`Scheduled`/`Open`/`Closed`), and the
-window/price/royalty/cap are live-settable with `lockSupply()` as the
+authority borrowed from each collection), not core storage. Per-token storage
+is the SEED ONLY (2026-07-10 follow-up: the MintRecord — mintBlock+mintIndex
+— was also cut, ~22k gas/mint): sequential mint order IS the token id,
+first/final derive live, and order/referrer/status are event-only provenance
+on `Minted` (which no longer carries a mintBlock field — the log's block is
+implicit). `mintMarkOf`/`MintMark`/`IMintMarks` are gone; renderers derive
+traits via `config()`; works needing mint-time data (block, pooled order)
+record it themselves via a mint hook (see the MiniTBAM `MintClock`
+reference). Lifecycle status is derived (`Scheduled`/`Open`/`Closed`), and
+the window/price/royalty/cap are live-settable with `lockSupply()` as the
 scarcity promise beside `lockWork`/`freezeMetadata`. Design-doc sections
 describing graph/path as core fields predate this and are historical.
 

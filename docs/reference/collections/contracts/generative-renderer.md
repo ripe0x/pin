@@ -32,7 +32,7 @@ resolve.
 Before the artist's code runs, GenerativeRenderer injects a plain script
 setting `window.tokenData`, matching [the injection convention](/docs/collections/reference/injection-convention)
 (render-context v1): `hash` (the token's seed as 0x-prefixed hex),
-`tokenId`, `mintIndex`, `mintBlock`, `collection`, `chainId`, and `version`
+`tokenId`, `collection`, `chainId`, and `version`
 (echoing the work's `injectionVersion`). `hash` and `tokenId` deliberately
 match the widely-adopted long-form-generative `tokenData` shape, so
 existing sketches written against that convention run unmodified against a

@@ -167,3 +167,23 @@ before the review so the review covers the final code.
   findings above (MURI gates on `isAdmin(msg.sender)`; the operator must be a
   contract, so MURI wiring needs a separate operator adapter, issue #138). It
   does not touch the core; it is evidence for the `isAdmin(owner)` change.
+
+## 2026-07-10 (b): MintRecord cut — seed-only per-token storage
+
+Un-reviewed, same review cycle as the surface reduction. The per-token
+`MintRecord` (mintBlock uint48 + mintIndex uint40, one slot per mint) was
+removed entirely; `_seed` is the only per-token storage and (nonzero) the
+was-ever-minted sentinel. Consequences:
+
+- `mintMarkOf` / `MintMark` / `IMintMarks` deleted from the ABI. Renderers
+  derive provenance: sequential token id IS the mint order; first = id 1;
+  final = Closed && id == minted (via the new `ICollectionView.config()`).
+  Pooled tokens get no onchain order — event provenance only.
+- `Minted` event no longer carries `mintBlock` (the log's block is
+  implicit); it remains the permanent record of order/referrer/status.
+- ~22.5k gas saved per mint (measured: single mint 487,832 → 465,183).
+- Size: 23,533 → 23,048 bytes (EIP-170 margin +1,528; gate at 23,576).
+- Works needing mint-time data record it via a mint hook (MiniTBAM's
+  MintClock reference demonstrates the pattern).
+- 393 tests green including invariants (ORDER invariants rewritten against
+  ghost counters + the sequential id==order identity).

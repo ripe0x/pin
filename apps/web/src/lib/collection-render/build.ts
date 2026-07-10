@@ -42,11 +42,7 @@ export function buildContextJs(t: TokenData): string {
     t.hash.toLowerCase() +
     '","tokenId":"' +
     t.tokenId +
-    '","mintIndex":' +
-    String(t.mintIndex) +
-    ',"mintBlock":' +
-    String(t.mintBlock) +
-    ',"collection":"' +
+    '","collection":"' +
     t.collection.toLowerCase() +
     '","chainId":' +
     String(t.chainId) +

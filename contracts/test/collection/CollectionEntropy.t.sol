@@ -6,7 +6,7 @@ import {MockMinter} from "./mocks/CollectionMocks.sol";
 
 import {Collection} from "../../src/collection/Collection.sol";
 import {ICollection} from "../../src/collection/interfaces/ICollection.sol";
-import {CollectionConfig, MintMark} from "../../src/collection/CollectionTypes.sol";
+import {CollectionConfig, CollectionStatus} from "../../src/collection/CollectionTypes.sol";
 
 /// @dev tokenSeed() + mintIndex provenance: nonzero, distinct across tokens
 ///      in one tx and across txs (varying prevrandao), stable across
@@ -119,25 +119,30 @@ contract CollectionEntropyTest is CollectionBase {
         }
     }
 
-    // ── mintIndex is monotonic across BOTH mint paths ────────────────────
+    // ── mint order is monotonic across BOTH mint paths (event-stamped) ───
+    // Order is not stored per token: sequential order IS the token id, and
+    // every Minted event carries firstMintIndex. These tests pin the emitted
+    // index against the expected global counter across path interleavings.
 
     function test_mintIndex_monotonic_acrossPaidAndExtensionPaths() public {
         Collection c = _collection(_freeConfig());
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
+        vm.expectEmit(true, true, false, true, address(c));
+        emit ICollection.Minted(collector, address(0), 1, 2, 0, CollectionStatus.Open);
         vm.prank(collector);
-        c.mint(2); // tokens 1,2 -> mintIndex 0,1
-        assertEq(c.mintMarkOf(1).mintIndex, 0);
-        assertEq(c.mintMarkOf(2).mintIndex, 1);
+        c.mint(2); // tokens 1,2 -> indexes 0,1
 
+        vm.expectEmit(true, true, false, true, address(c));
+        emit ICollection.Minted(collector, address(0), 3, 1, 2, CollectionStatus.Open);
         uint256 tokenId3 = minter.callMintTo(ICollection(address(c)), collector, address(0), "");
-        assertEq(tokenId3, 3);
-        assertEq(c.mintMarkOf(3).mintIndex, 2); // continues the same counter
+        assertEq(tokenId3, 3); // continues the same counter: id == order + 1
 
+        vm.expectEmit(true, true, false, true, address(c));
+        emit ICollection.Minted(collector, address(0), 4, 1, 3, CollectionStatus.Open);
         vm.prank(collector);
         c.mint(1); // token 4
-        assertEq(c.mintMarkOf(4).mintIndex, 3);
     }
 
     function test_mintIndex_monotonic_pooledMode_acrossBurnRemint() public {
@@ -145,17 +150,22 @@ contract CollectionEntropyTest is CollectionBase {
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
-        minter.callMintToId(ICollection(address(c)), collector, 1, address(0), ""); // mintIndex 0
-        minter.callMintToId(ICollection(address(c)), collector, 2, address(0), ""); // mintIndex 1
-        assertEq(c.mintMarkOf(1).mintIndex, 0);
-        assertEq(c.mintMarkOf(2).mintIndex, 1);
+        vm.expectEmit(true, true, false, true, address(c));
+        emit ICollection.Minted(collector, address(0), 1, 1, 0, CollectionStatus.Open);
+        minter.callMintToId(ICollection(address(c)), collector, 1, address(0), "");
+        vm.expectEmit(true, true, false, true, address(c));
+        emit ICollection.Minted(collector, address(0), 2, 1, 1, CollectionStatus.Open);
+        minter.callMintToId(ICollection(address(c)), collector, 2, address(0), "");
 
         minter.callBurn(ICollection(address(c)), 1);
-        minter.callMintToId(ICollection(address(c)), collector, 1, address(0), ""); // mintIndex 2, NOT 0 again
-        assertEq(c.mintMarkOf(1).mintIndex, 2);
+        // Re-mint of id 1 is index 2, NOT 0 again: order never repeats.
+        vm.expectEmit(true, true, false, true, address(c));
+        emit ICollection.Minted(collector, address(0), 1, 1, 2, CollectionStatus.Open);
+        minter.callMintToId(ICollection(address(c)), collector, 1, address(0), "");
 
-        minter.callMintToId(ICollection(address(c)), collector, 3, address(0), ""); // mintIndex 3
-        assertEq(c.mintMarkOf(3).mintIndex, 3);
+        vm.expectEmit(true, true, false, true, address(c));
+        emit ICollection.Minted(collector, address(0), 3, 1, 3, CollectionStatus.Open);
+        minter.callMintToId(ICollection(address(c)), collector, 3, address(0), "");
     }
 
     function testFuzz_mintIndex_monotonic_interleavedBatchesAndSingles(uint8 batchesRaw) public {
@@ -169,17 +179,23 @@ contract CollectionEntropyTest is CollectionBase {
         for (uint256 b = 0; b < batches; b++) {
             if (b % 2 == 0) {
                 uint256 qty = (b % 6) + 1;
+                // The event stamps the batch's first index; ids advance in
+                // lockstep with the counter (sequential id == index + 1).
+                vm.expectEmit(true, true, false, true, address(c));
+                emit ICollection.Minted(
+                    collector, address(0), nextTokenId, qty, expectedIndex, CollectionStatus.Open
+                );
                 vm.prank(collector);
                 c.mint(qty);
-                for (uint256 i = 0; i < qty; i++) {
-                    assertEq(c.mintMarkOf(nextTokenId).mintIndex, expectedIndex);
-                    nextTokenId++;
-                    expectedIndex++;
-                }
+                nextTokenId += qty;
+                expectedIndex += qty;
             } else {
+                vm.expectEmit(true, true, false, true, address(c));
+                emit ICollection.Minted(
+                    collector, address(0), nextTokenId, 1, expectedIndex, CollectionStatus.Open
+                );
                 uint256 tokenId = minter.callMintTo(ICollection(address(c)), collector, address(0), "");
                 assertEq(tokenId, nextTokenId);
-                assertEq(c.mintMarkOf(tokenId).mintIndex, expectedIndex);
                 nextTokenId++;
                 expectedIndex++;
             }

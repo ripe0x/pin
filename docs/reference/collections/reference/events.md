@@ -24,7 +24,7 @@ Every event the Collections contracts emit, grouped by contract. Signatures and 
 
 **[`MetadataUpdate`](/docs/collections/contracts/collection#metadataupdate)** · ERC-4906 single-token refresh signal, emitted per id by `setTokenArtworkBatch`.
 
-**[`Minted`](/docs/collections/contracts/collection#minted)** · One event per mint call.
+**[`Minted`](/docs/collections/contracts/collection#minted)** · One event per mint call — THE permanent per-mint provenance record.
 
 **[`MinterSet`](/docs/collections/contracts/collection#minterset)** · Emitted when an extension minter is granted or revoked, and once per initial minter at init.
 

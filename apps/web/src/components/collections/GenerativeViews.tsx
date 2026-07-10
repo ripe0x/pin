@@ -35,8 +35,6 @@ import type { WorkConfig } from "@/lib/collection"
 export type RenderEntry = {
   tokenId: string
   seed: `0x${string}`
-  mintIndex: number
-  mintBlock: number
 }
 
 function useRenderContext() {
@@ -63,8 +61,6 @@ function entryTokenData(
   return {
     hash: entry.seed,
     tokenId: entry.tokenId,
-    mintIndex: entry.mintIndex,
-    mintBlock: entry.mintBlock,
     collection: collection.toLowerCase(),
     chainId,
     version,
@@ -89,8 +85,6 @@ export function GenerativeHero({
     return {
       hash: keccak256(collection),
       tokenId: "1",
-      mintIndex: 0,
-      mintBlock: 0,
       collection: collection.toLowerCase(),
       chainId,
       version: work.injectionVersion,

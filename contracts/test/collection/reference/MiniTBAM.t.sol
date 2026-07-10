@@ -9,12 +9,8 @@ import {Collection} from "../../../src/collection/Collection.sol";
 import {CollectionFactory} from "../../../src/collection/CollectionFactory.sol";
 import {IRenderer, ICollectionView} from "../../../src/collection/interfaces/IRenderer.sol";
 import {IPriceStrategy} from "../../../src/collection/interfaces/IPriceStrategy.sol";
-import {
-    CollectionConfig,
-    IdMode,
-    MintMark,
-    WorkConfig
-} from "../../../src/collection/CollectionTypes.sol";
+import {IMintHook} from "../../../src/collection/interfaces/IMintHook.sol";
+import {CollectionConfig, IdMode, WorkConfig} from "../../../src/collection/CollectionTypes.sol";
 import {MockRenderer} from "../mocks/CollectionMocks.sol";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -22,15 +18,45 @@ import {MockRenderer} from "../mocks/CollectionMocks.sol";
 // system. Encodes the design claims from docs/pnd-collection-system.md:
 //   1. holder-participation mechanics (lock-a-frame) live in a companion
 //      contract with ZERO core support — the companion authorizes against
-//      plain ownerOf and reads mint provenance from Mint Marks;
+//      plain ownerOf;
 //   2. the price strategy slot expresses dynamic pricing as a pure view of
 //      basefee x collective lock state (TBAM's curve shape, linear weight
 //      here — the exponent is arithmetic, not architecture);
 //   3. per-block liveness and lock-to-freeze are renderer concerns: an
 //      onchain view serves flux for unlocked tokens and the frozen frame
 //      for locked ones;
-//   4. no mint hooks are needed anywhere — participation is post-mint.
+//   4. mint-time provenance the WORK needs is the work's own concern: the
+//      core stores only the seed, so a work whose mechanics depend on the
+//      mint block records it itself with a one-line hook (MintClock below).
+//      This is the bring-your-own-provenance pattern: the cost lands only on
+//      works that opt in, not on every mint of every collection.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// @dev The recording hook: stamps each token's mint block to the work's own
+///      storage. msg.sender is the collection (hooks are called by the core
+///      on every mint path), so one MintClock instance serves any number of
+///      collections. Wired at init, so every token ever minted is recorded.
+contract MintClock is IMintHook {
+    mapping(address => mapping(uint256 => uint64)) public mintBlockOf;
+
+    function beforeMint(address, uint256, uint256, address, bytes calldata)
+        external
+        pure
+        override
+        returns (bytes4)
+    {
+        return IMintHook.beforeMint.selector;
+    }
+
+    function afterMint(address, uint256 quantity, uint256 firstTokenId, address, bytes calldata)
+        external
+        override
+    {
+        for (uint256 k = 0; k < quantity; k++) {
+            mintBlockOf[msg.sender][firstTokenId + k] = uint64(block.number);
+        }
+    }
+}
 
 /// @dev The companion: lock a recent block's frame for a token you own.
 contract FrameLock {
@@ -40,12 +66,18 @@ contract FrameLock {
         bytes32 lockHash;
     }
 
+    MintClock public immutable mintClock;
+
     mapping(address => mapping(uint256 => Lock)) public locks;
     mapping(address => uint256) public effectiveLocks; // age-weighted, per collection
 
     error NotTokenOwner();
     error AlreadyLocked();
     error FrameUnavailable();
+
+    constructor(MintClock mintClock_) {
+        mintClock = mintClock_;
+    }
 
     function lockFrame(address collection, uint256 tokenId, uint256 blockNumber) external {
         if (IERC721(collection).ownerOf(tokenId) != msg.sender) revert NotTokenOwner();
@@ -56,14 +88,15 @@ contract FrameLock {
         bytes32 bh = blockhash(blockNumber);
         if (bh == bytes32(0)) revert FrameUnavailable(); // > 256 blocks old, or future
 
-        MintMark memory m = ICollectionView(collection).mintMarkOf(tokenId);
-        if (blockNumber < m.mintBlock) revert FrameUnavailable();
+        // Mint-time provenance from the work's own hook, not the core.
+        uint64 mintBlock = mintClock.mintBlockOf(collection, tokenId);
+        if (mintBlock == 0 || blockNumber < mintBlock) revert FrameUnavailable();
 
         l.locked = true;
         l.lockBlock = uint64(blockNumber);
         l.lockHash = bh;
         // Age-weighted lock: ~1 weight + 1 per day of token age (7200 blocks).
-        effectiveLocks[collection] += 1 + (block.number - m.mintBlock) / 7200;
+        effectiveLocks[collection] += 1 + (block.number - mintBlock) / 7200;
     }
 
     function frameOf(address collection, uint256 tokenId) external view returns (bool, bytes32) {
@@ -124,6 +157,7 @@ contract FrameRenderer is IRenderer {
 
 contract MiniTBAMTest is Test {
     Collection collection;
+    MintClock mintClock;
     FrameLock frameLock;
     LockCurvePriceStrategy strategy;
     FrameRenderer renderer;
@@ -137,7 +171,8 @@ contract MiniTBAMTest is Test {
         CollectionFactory factory =
             new CollectionFactory(address(impl), address(new MockRenderer()), address(0));
 
-        frameLock = new FrameLock();
+        mintClock = new MintClock();
+        frameLock = new FrameLock(mintClock);
         strategy = new LockCurvePriceStrategy(frameLock);
         renderer = new FrameRenderer(frameLock);
 
@@ -146,6 +181,7 @@ contract MiniTBAMTest is Test {
         cfg.idMode = IdMode.Sequential;
         cfg.priceStrategy = address(strategy);
         cfg.renderer = address(renderer);
+        cfg.mintHook = address(mintClock); // bring-your-own mint-time provenance
         WorkConfig memory work; // renderer-native: the renderer IS the work
 
         collection = Collection(
@@ -271,12 +307,18 @@ contract MiniTBAMTest is Test {
         frameLock.lockFrame(address(collection), t1, block.number - 299);
     }
 
-    // ── claim 4: zero hooks, zero core knowledge ─────────────────────────────
+    // ── claim 4: the work records its own mint-time provenance ──────────────
 
-    function test_coreNeverLearnedAnyOfThisExists() public view {
-        assertEq(collection.mintHook(), address(0), "no hook needed");
-        // The companion, strategy, and renderer are all reads/slots; the
-        // core's only awareness is the two slot addresses the artist set.
+    function test_workRecordsItsOwnMintProvenance() public {
+        uint256 t1 = _mint(alice);
+        assertEq(
+            mintClock.mintBlockOf(address(collection), t1),
+            uint64(block.number),
+            "the hook stamped the mint block to the work's own storage"
+        );
+        // The core stored only the seed; every other slot the work uses is
+        // the artist's own choice, visible as the three slot addresses.
+        assertEq(collection.mintHook(), address(mintClock));
         assertEq(collection.priceStrategy(), address(strategy));
         assertEq(collection.renderer(), address(renderer));
     }

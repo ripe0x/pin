@@ -214,8 +214,10 @@ contract SVGRendererTest is Test {
         uint256 tokenId = _mint();
         string memory json = _decode(collection.tokenURI(tokenId));
 
+        // Mint Order is DERIVED: sequential token id IS the order. Mint Block
+        // is no longer a trait (nothing per-token is stored beyond the seed).
         assertTrue(_contains(json, '"trait_type":"Mint Order","value":1'), "wrong Mint Order");
-        assertTrue(_contains(json, '"trait_type":"Mint Block"'), "missing Mint Block");
+        assertFalse(_contains(json, '"trait_type":"Mint Block"'), "Mint Block trait was removed");
         // Referrer / Status at Mint are deliberately NOT traits: both are
         // event-only provenance on Minted, no longer stored per token.
         assertFalse(_contains(json, '"trait_type":"Referrer"'), "Referrer trait was removed");

@@ -67,7 +67,7 @@
               "title": "Mint Marks and entropy",
               "slug": "mint-marks-and-entropy",
               "path": "/docs/collections/concepts/mint-marks-and-entropy",
-              "description": "The per-token provenance snapshot and the mint-time seed renderers draw from."
+              "description": "The derived per-token provenance and the mint-time seed renderers draw from."
             },
             {
               "title": "Types",
