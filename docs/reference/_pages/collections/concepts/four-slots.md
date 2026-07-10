@@ -41,14 +41,16 @@ function contractURI(address collection) external view returns (string memory);
   seed and Mint Mark, the current owner, sibling tokens, companion contract
   state, foreign contracts, and block state. It is a view function, so it
   cannot alter any state
-- **Reference implementations**: `DefaultRenderer` (the init-time fallback)
-  and an `SVGRenderer` abstract base for hand-written Solidity SVG works.
-  Algorithm-driven (Art Blocks-style) work ships as a bring-your-own
-  renderer: a work-specific `IRenderer` the artist deploys and points the
-  slot at, following the injection convention
+- **Reference implementations**: `DefaultRenderer` (the init-time fallback),
+  an `SVGRenderer` abstract base for hand-written Solidity SVG works, and
+  `ScriptyRenderer` — a bring-your-own generative template for
+  algorithm-driven (Art Blocks-style) work: the artist deploys their own
+  instance (immutable by construction) and points the slot at it, following
+  the injection convention
 
 See [IRenderer](/docs/collections/contracts/i-renderer),
 [DefaultRenderer](/docs/collections/contracts/default-renderer),
+[ScriptyRenderer](/docs/collections/contracts/scripty-renderer),
 [Write a renderer](/docs/collections/guides/write-a-renderer).
 
 ## Price strategy (`IPriceStrategy`)

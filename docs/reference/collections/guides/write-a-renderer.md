@@ -81,9 +81,20 @@ contract Dithers is SVGRenderer {
 
 Solidity SVG is the highest preservation tier the system offers: no JS runtime, no browser to drift, and it renders in anything that parses SVG, including bare `<img>` tags, so SVG works also mostly skip the capture worker used for thumbnails of HTML works.
 
-### Bring-your-own generative renderer (script-based work)
+### ScriptyRenderer (bring-your-own generative)
 
-Art Blocks-style long-form generative work ships as its own renderer: you deploy a work-specific `IRenderer` and point the collection's renderer slot at it. There is no shared assembler — the renderer owns its work definition however it likes (immutable constructor args, or its own owner-gated setter plus a one-way lock). At `tokenURI` time it reads the token's seed through [ICollectionView](/docs/collections/contracts/i-collection-view), assembles a complete HTML document from onchain-stored files (dependencies + the injected token context + the artist's code, e.g. via ScriptyBuilderV2), and returns `tokenURI` JSON whose `animation_url` is a `data:text/html;base64,...` URI. Follow the [Injection convention](/docs/collections/reference/injection-convention) for the exact context object the assembled document must inject, so an offchain preview is byte-for-byte the render.
+Art Blocks-style script-based work ships as its own renderer. The system provides a concrete template — [ScriptyRenderer](/docs/collections/contracts/scripty-renderer) — that assembles a complete HTML document onchain via ScriptyBuilderV2: at `tokenURI` time it reads the token's seed through [ICollectionView](/docs/collections/contracts/i-collection-view), injects the render context, emits the work's dependencies + context + code (+ a gunzip helper when anything is gzipped), and returns `tokenURI` JSON whose `animation_url` is a `data:text/html;base64,...` URI. Follow the [Injection convention](/docs/collections/reference/injection-convention) for the exact context object it injects, so an offchain preview is byte-for-byte the render.
+
+It is **immutable by construction**: the work definition (its onchain code and dependency refs, the injection version) is fixed in the constructor — no `setWork`, no owner, no lock — so the output is a pure function of chain state any external checker can attest. With the collection's `lockRenderer()` that is provable, end-to-end permanence with zero trusted post-deploy steps. Deploy `ScriptyRenderer` directly with your work for the default provenance traits (`Mint Order` + `Seed`), or subclass it to customize through three fork points:
+
+```solidity
+// override in a subclass — see ExampleScriptyWork
+function _workTraits(bytes32 seed) internal view virtual returns (bytes memory);        // seed-derived onchain traits
+function _image(address collection, uint256 tokenId) internal view virtual returns (string memory); // a poster/thumbnail
+function _headTags() internal view virtual returns (HTMLTag[] memory);                  // the document <head>
+```
+
+Onchain traits must be a pure function of the seed, computed the same way your sketch computes them so the published trait matches the render; traits that require running the algorithm belong offchain. The worked example `ExampleScriptyWork` (in `contracts/src/collection/templates/`) shows a seed-derived `Palette` trait and a fixed-aspect head, and the fork test `ScriptyRendererFork.t.sol` proves an instance assembles a full document (real gzipped p5, the injected seed, the artist code) from chain state alone.
 
 ## Installing a renderer
 

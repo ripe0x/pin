@@ -106,6 +106,12 @@
               "description": "The renderer-land registry of static display assets: each collection's shared cover image and per-token captures (thumbnails of rendered output)."
             },
             {
+              "title": "ScriptyRenderer",
+              "slug": "scripty-renderer",
+              "path": "/docs/collections/contracts/scripty-renderer",
+              "description": "ScriptyRenderer is the **bring-your-own generative renderer template**: a concrete, forkable [IRenderer](/docs/collections/contracts/i-renderer) for Art Blocks-style script-based work, assembled fully onchain through ScriptyBuilderV2."
+            },
+            {
               "title": "AllowlistHook",
               "slug": "allowlist-hook",
               "path": "/docs/collections/contracts/allowlist-hook",

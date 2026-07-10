@@ -37,6 +37,13 @@
           "docs": "/docs/collections/contracts/render-assets",
           "role": "The renderer-land registry of static display assets: each collection's shared cover image and per-token captures (thumbnails of rendered output)."
         },
+        "ScriptyRenderer": {
+          "address": null,
+          "kind": "clone",
+          "abi": "/abis/ScriptyRenderer.json",
+          "docs": "/docs/collections/contracts/scripty-renderer",
+          "role": "ScriptyRenderer is the **bring-your-own generative renderer template**: a concrete, forkable [IRenderer](/docs/collections/contracts/i-renderer) for Art Blocks-style script-based work, assembled fully onchain through ScriptyBuilderV2."
+        },
         "AllowlistHook": {
           "address": null,
           "kind": "singleton",

@@ -70,6 +70,9 @@ A paid mint was attempted before `mintStart`.
 **`NeverMinted`** · [Collection](/docs/collections/contracts/collection#errors)\
 `tokenSeed` was read for an id that was never minted (its seed slot is zero).
 
+**`NoCode`** · [ScriptyRenderer](/docs/collections/contracts/scripty-renderer#errors)\
+Reverts construction when the `code` array is empty: a renderer with no artist code has nothing to assemble.
+
 **`NoStrayETH`** · [Collection](/docs/collections/contracts/collection#errors)\
 `rescueStrayETH` found no ETH above the owed pull-payment balances to sweep.
 

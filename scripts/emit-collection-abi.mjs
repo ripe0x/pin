@@ -48,6 +48,14 @@ emit({
   exportName: "defaultRendererAbi",
   outFiles: ["packages/abi/src/defaultRenderer.ts"],
 });
+// Bring-your-own generative renderer template (artists deploy their own, one
+// per work; not a shared singleton). Published so tools can read/verify a
+// deployed instance's work refs.
+emit({
+  artifact: "ScriptyRenderer.sol/ScriptyRenderer.json",
+  exportName: "scriptyRendererAbi",
+  outFiles: ["packages/abi/src/scriptyRenderer.ts"],
+});
 
 // Reference mint hooks (swappable mint-hook slot implementations).
 emit({
