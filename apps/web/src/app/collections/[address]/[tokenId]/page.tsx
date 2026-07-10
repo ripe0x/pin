@@ -44,6 +44,15 @@ export default async function CollectionTokenPage({ params }: { params: Params }
   const nextId = id < c.minted ? id + 1n : null
   const hasLiveDoc = !!t.animationUrl && t.animationUrl.startsWith("data:text/html")
 
+  // Generative collections publish executable code + deps to the
+  // GenerativeRenderer's work registry; empty for renderer-native works
+  // (e.g. DefaultRenderer) or custom renderers with no parity source.
+  const hasWork = c.work.code.length > 0
+  // A genuine per-token capture (RenderAssets), as opposed to the
+  // collection-level cover falling through as a generic placeholder —
+  // gates whether Image mode has anything distinct from Live to show.
+  const hasCapture = !!t.artwork && t.artwork !== c.cover
+
   return (
     <div>
       <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] min-h-[calc(100vh-64px)]">
@@ -53,6 +62,11 @@ export default async function CollectionTokenPage({ params }: { params: Params }
             animationUrl={t.animationUrl ? ipfsToHttp(t.animationUrl) : null}
             title={`${c.name} #${id.toString()}`}
             liveHref={hasLiveDoc ? `/collections/${addr}/${id.toString()}/live` : null}
+            work={hasWork ? c.work : null}
+            seed={t.seed}
+            collection={addr}
+            tokenId={id.toString()}
+            hasCapture={hasCapture}
           />
         </div>
 
@@ -156,6 +170,12 @@ export default async function CollectionTokenPage({ params }: { params: Params }
               The render is a pure function of chain state: this seed, this
               code, forever. No server keeps this artwork alive.
             </p>
+            {hasWork && (
+              <p className="pt-1 text-[10px] font-mono text-gray-400 leading-relaxed">
+                Rendered live from the onchain seed. The static image is a
+                refreshable capture, not the artwork.
+              </p>
+            )}
           </section>
         </aside>
       </div>

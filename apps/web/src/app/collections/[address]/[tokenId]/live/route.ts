@@ -7,6 +7,12 @@
  * The CSP sandbox header is load-bearing: the artist's document executes
  * with a unique opaque origin (like a sandboxed iframe), never with this
  * site's origin, so token code can't touch anything of ours.
+ *
+ * This is the canonical onchain document (decoded straight from tokenURI),
+ * so it stays the right target for a shareable URL. It is the same document
+ * the token page's Live mode reconstructs client-side via the parity
+ * renderer (byte-identical by construction) — this route just serves the
+ * source of truth directly instead of rebuilding it.
  */
 
 import { notFound, redirect } from "next/navigation"
