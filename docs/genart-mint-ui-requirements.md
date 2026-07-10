@@ -494,6 +494,44 @@ custom event system to enable it. We get it almost for free.
 
 ---
 
+## 9.5 Design direction
+
+The functional requirements above say what the pages do; this section says
+what they feel like. Principle: **the page is the gallery wall, the work is
+the only color.** The site's design system is near-monochrome (neutral ramp,
+Switzer + IBM Plex Mono, 4px rhythm, light/dark) — for generative mint pages
+that restraint is the design: every hue on screen comes from the artwork's
+own live render. Chrome recedes; the algorithm is the identity of the page.
+
+- **Art-first layout.** The live render is the dominant element at every
+  viewport — oversized/full-bleed hero, not a thumbnail beside a form. The
+  mint panel reads as a precise instrument beside it: mono numerals for
+  price/supply/countdown, the split bar, quiet borders. Nothing competes
+  with the work.
+- **Each collection colors its own page.** No per-collection theming system —
+  the renders themselves, repeated across hero/grid/reveal, are the visual
+  identity. The neutral chrome guarantees any work (SVG or HTML, any palette)
+  sits correctly on it in both themes.
+- **Motion budget spent on one moment: the reveal.** The reveal (§7) is the
+  single designed animation — deliberate, unhurried, the piece arriving.
+  Everything else transitions with the system's existing ease
+  (`--ease-out`); no ambient animation, no gradient noise, no confetti.
+- **State changes are typographic events.** Scheduled → Open → Closed read as
+  changes in hierarchy and copy (countdown becomes price becomes record), not
+  as re-skins. Status colors are the one systematic accent and stay tiny:
+  dots and chips, never washes.
+- **The closed page is designed as a permanent artifact.** Post-mint, the
+  page is the collection's public record for years — the gallery, provenance
+  facts, and typography must hold up as an exhibition page, not a dead store.
+- **Fullscreen is sacred.** Live views get true fullscreen with zero chrome,
+  keyboard-dismissable. The standalone live-view route is chrome-free by
+  definition.
+- **Process requirement:** every Track B phase ships a high-fidelity pass in
+  the real app (real tokens, seeded dev data) and gets a design review
+  (accessibility + visual, both themes, mobile-first breakpoints) before it
+  is considered done. Mockups live in the app, not in design files — what is
+  approved is the implementation.
+
 ## 10. Data & RPC discipline (constraints on all of the above)
 
 Standing rule: minimize RPC; indexer/cache first. Concretely for this surface:
