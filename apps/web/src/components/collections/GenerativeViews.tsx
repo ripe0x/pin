@@ -18,8 +18,8 @@
  */
 
 import Link from "next/link"
-import { useMemo } from "react"
-import { keccak256 } from "viem"
+import { useMemo, useState } from "react"
+import { keccak256, stringToBytes } from "viem"
 import type { Address, PublicClient } from "viem"
 import { useChainId, usePublicClient } from "wagmi"
 
@@ -37,7 +37,7 @@ export type RenderEntry = {
   seed: `0x${string}`
 }
 
-function useRenderContext() {
+export function useRenderContext() {
   const client = usePublicClient()
   const chainId = useChainId()
   const resolver = useMemo(
@@ -69,47 +69,89 @@ function entryTokenData(
   }
 }
 
+/** Deterministic explore seed i for a collection: stable across visits,
+ *  distinct per collection, clearly a throwaway (never a token's seed). */
+function exploreSeed(collection: Address, i: number): `0x${string}` {
+  return keccak256(stringToBytes(`${collection.toLowerCase()}:explore:${i}`))
+}
+
 export function GenerativeHero({
   collection,
   work,
   latest,
+  minted,
 }: {
   collection: Address
   work: WorkConfig
   /** The latest mint, or null pre-mint. */
   latest: RenderEntry | null
+  /** Total minted, for "previewing the next token" numbering. */
+  minted: string
 }) {
   const { resolver, gunzip, chainId } = useRenderContext()
+  // Pre-mint the hero can only explore; once minted, the latest real mint
+  // leads and exploring is one quiet action away.
+  const [exploring, setExploring] = useState(!latest)
+  const [seedIndex, setSeedIndex] = useState(0)
+  const explore = exploring || !latest
 
+  const nextTokenId = String(BigInt(minted) + 1n)
   const tokenData = useMemo<TokenData>(() => {
-    if (latest) return entryTokenData(latest, collection, chainId, work.injectionVersion)
-    // Deterministic pre-mint preview: stable across visits, clearly labeled.
+    if (!explore && latest)
+      return entryTokenData(latest, collection, chainId, work.injectionVersion)
+    // Exploratory render: the real algorithm, a throwaway seed, framed as
+    // the token the next mint WOULD be.
     return {
-      hash: keccak256(collection),
-      tokenId: "1",
+      hash: exploreSeed(collection, seedIndex),
+      tokenId: nextTokenId,
       collection: collection.toLowerCase(),
       chainId,
       version: work.injectionVersion,
       context: "preview",
     }
-  }, [latest, collection, chainId, work.injectionVersion])
+  }, [explore, latest, seedIndex, nextTokenId, collection, chainId, work.injectionVersion])
 
-  if (!resolver) return <div className="aspect-square w-full max-w-[640px] bg-gray-100 dark:bg-bg" />
+  if (!resolver)
+    return <div className="aspect-square w-full max-w-[min(80vh,860px)] bg-gray-100 dark:bg-bg" />
 
   return (
-    <figure className="w-full max-w-[640px]">
+    <figure className="w-full max-w-[min(80vh,860px)]">
       <TokenPreview
         work={toWorkInput(work)}
         tokenData={tokenData}
         resolver={resolver}
         gunzip={gunzip}
         className="aspect-square w-full border border-gray-200 dark:border-gray-800"
-        title={latest ? `token ${latest.tokenId} live render` : "preview render"}
+        title={explore ? "preview render" : `token ${latest?.tokenId} live render`}
       />
-      <figcaption className="mt-2 text-[10px] font-mono uppercase tracking-wider text-gray-400">
-        {latest
-          ? `Token #${latest.tokenId} · live render from its onchain seed`
-          : "Preview render · deterministic seed, no tokens minted yet"}
+      <figcaption className="mt-2 flex items-baseline justify-between gap-4 text-[10px] font-mono uppercase tracking-wider text-gray-400">
+        <span>
+          {explore
+            ? latest
+              ? "Example output · your mint will differ"
+              : "Example output · no tokens minted yet · your mint will differ"
+            : `Token #${latest?.tokenId} · live render from its onchain seed`}
+        </span>
+        <span className="flex shrink-0 items-baseline gap-3">
+          {explore && (
+            <button
+              type="button"
+              onClick={() => setSeedIndex((i) => i + 1)}
+              className="underline decoration-gray-300 underline-offset-2 hover:text-fg transition-colors"
+            >
+              New seed ↻
+            </button>
+          )}
+          {latest && (
+            <button
+              type="button"
+              onClick={() => setExploring((e) => !e)}
+              className="underline decoration-gray-300 underline-offset-2 hover:text-fg transition-colors"
+            >
+              {explore ? "Latest mint" : "Explore outputs"}
+            </button>
+          )}
+        </span>
       </figcaption>
     </figure>
   )

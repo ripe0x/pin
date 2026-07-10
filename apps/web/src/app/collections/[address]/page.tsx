@@ -92,7 +92,12 @@ export default async function CollectionPage({ params }: { params: Params }) {
               className="max-h-[78vh] max-w-full object-contain"
             />
           ) : hasWork ? (
-            <GenerativeHero collection={addr} work={c.work} latest={latest} />
+            <GenerativeHero
+              collection={addr}
+              work={c.work}
+              latest={latest}
+              minted={c.minted.toString()}
+            />
           ) : firstTokenImage ? (
             <OptimizedImage
               src={firstTokenImage}
@@ -125,6 +130,7 @@ export default async function CollectionPage({ params }: { params: Params }) {
 
           <MintCollectionCTA
             collection={addr}
+            work={hasWork ? c.work : null}
             snapshot={{
               price: c.cfg.price.toString(),
               supplyCap: c.cfg.supplyCap.toString(),

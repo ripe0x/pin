@@ -169,6 +169,7 @@ contract DeployCollectionSystemScript is Script {
         console2.log("");
         console2.log("Summary:");
         console2.log("  Attribution:               ", attribution);
+        console2.log("  RenderAssets:              ", address(renderAssets));
         console2.log("  DefaultRenderer:           ", address(defaultRenderer));
         console2.log("  GenerativeRenderer:        ", address(generativeRenderer));
         console2.log("  Collection impl:  ", address(implementation));

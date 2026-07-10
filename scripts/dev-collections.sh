@@ -113,12 +113,13 @@ DEPLOY_OUT="$(cd contracts && PRIVATE_KEY="$ANVIL_ACCOUNT_0_PK" forge script scr
 # full (unlike the step-by-step logs, which skip the "deployed at" line for
 # Attribution when it's already present at its predicted CREATE2 address).
 ATTRIBUTION="$(echo "$DEPLOY_OUT" | grep -i "Attribution:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
+RENDER_ASSETS="$(echo "$DEPLOY_OUT" | grep -i "RenderAssets:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
 DEFAULT_RENDERER="$(echo "$DEPLOY_OUT" | grep -i "DefaultRenderer:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
 GENERATIVE_RENDERER="$(echo "$DEPLOY_OUT" | grep -i "GenerativeRenderer:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
 IMPLEMENTATION="$(echo "$DEPLOY_OUT" | grep -i "Collection impl:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
 FACTORY="$(echo "$DEPLOY_OUT" | grep -i "CollectionFactory:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
 
-for pair in "ATTRIBUTION:$ATTRIBUTION" "DEFAULT_RENDERER:$DEFAULT_RENDERER" \
+for pair in "ATTRIBUTION:$ATTRIBUTION" "RENDER_ASSETS:$RENDER_ASSETS" "DEFAULT_RENDERER:$DEFAULT_RENDERER" \
             "GENERATIVE_RENDERER:$GENERATIVE_RENDERER" "IMPLEMENTATION:$IMPLEMENTATION" \
             "FACTORY:$FACTORY"; do
   name="${pair%%:*}"
@@ -131,6 +132,7 @@ for pair in "ATTRIBUTION:$ATTRIBUTION" "DEFAULT_RENDERER:$DEFAULT_RENDERER" \
 done
 
 echo "▸ Attribution:               $ATTRIBUTION"
+echo "▸ RenderAssets:               $RENDER_ASSETS"
 echo "▸ DefaultRenderer:            $DEFAULT_RENDERER"
 echo "▸ GenerativeRenderer:         $GENERATIVE_RENDERER"
 echo "▸ Collection impl:   $IMPLEMENTATION"
@@ -144,12 +146,15 @@ echo "▸ CollectionFactory: $FACTORY"
 if [ "${SEED_SAMPLE:-1}" = "1" ]; then
   echo "▸ Seeding sample collections…"
   SEED_OUT="$(cd contracts && FACTORY="$FACTORY" GENERATIVE_RENDERER="$GENERATIVE_RENDERER" \
+    RENDER_ASSETS="$RENDER_ASSETS" \
     PRIVATE_KEY="$ANVIL_ACCOUNT_0_PK" forge script script/SeedDevCollections.s.sol \
     --rpc-url "$RPC" --broadcast 2>&1)" || {
     echo "$SEED_OUT" | tail -20
     echo "warning: sample seeding failed (harness continues unseeded)"
   }
-  echo "$SEED_OUT" | grep -E "Orbit Studies|Signal Drift|Field Notes" | sed 's/^/  /'
+  # `|| true`: a no-match grep exits 1, and under set -euo pipefail that
+  # would kill the harness AFTER seeding but BEFORE the env file is written.
+  echo "$SEED_OUT" | grep -E "Orbit Studies|Signal Drift|Field Notes" | sed 's/^/  /' || true
 fi
 
 # 3c) optional Homage to the Punk seed (SEED_HOMAGE=1, default on): the sibling
@@ -165,7 +170,7 @@ if [ "${SEED_HOMAGE:-1}" = "1" ] && [ -d "$HOMAGE_REPO/contracts" ]; then
     echo "$SEED_HOMAGE_OUT" | tail -20
     echo "warning: Homage seeding failed (harness continues)"
   }
-  echo "$SEED_HOMAGE_OUT" | grep -E "PermanenceRendererSovereign:|HomageCollection:|HomageMinter:|HomageFeeSplitter:|Collection page:" | sed 's/^/  /'
+  echo "$SEED_HOMAGE_OUT" | grep -E "PermanenceRendererSovereign:|HomageCollection:|HomageMinter:|HomageFeeSplitter:|Collection page:" | sed 's/^/  /' || true
 elif [ "${SEED_HOMAGE:-1}" = "1" ]; then
   echo "▸ Homage seeding skipped: $HOMAGE_REPO/contracts not found"
 fi
@@ -181,6 +186,7 @@ NEXT_PUBLIC_ANVIL_RPC_URL=$RPC
 NEXT_PUBLIC_DEV_IMPERSONATE=$IMPERSONATE
 NEXT_PUBLIC_SOVEREIGN_COLLECTION_FACTORY=$FACTORY
 NEXT_PUBLIC_ATTRIBUTION=$ATTRIBUTION
+NEXT_PUBLIC_RENDER_ASSETS=$RENDER_ASSETS
 NEXT_PUBLIC_GENERATIVE_RENDERER=$GENERATIVE_RENDERER
 NEXT_PUBLIC_DEFAULT_RENDERER=$DEFAULT_RENDERER
 EOF

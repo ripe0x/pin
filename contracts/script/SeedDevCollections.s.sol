@@ -47,22 +47,23 @@ contract SeedDevCollections is Script {
     string constant SKETCH_NAME = "pnd-dev-orbit-studies-v1";
 
     // Deterministic orbital sketch: hash-seeded xorshift PRNG, no time, no
-    // network, noLoop — pure per the injection convention.
+    // network, noLoop, resolution-independent (canvas fits the viewport and
+    // the composition scales) — pure per the injection convention.
     string constant SKETCH = string(
         abi.encodePacked(
-            "let R;function setup(){createCanvas(700,700);noLoop();",
+            "let R;function setup(){const s=Math.min(windowWidth,windowHeight);createCanvas(s,s);noLoop();",
             "let a=parseInt(tokenData.hash.slice(2,10),16),b=parseInt(tokenData.hash.slice(10,18),16),",
             "c=parseInt(tokenData.hash.slice(18,26),16),d=parseInt(tokenData.hash.slice(26,34),16);",
             "R=function(){a|=0;b|=0;c|=0;d|=0;let t=(a+b)|0;t=((t<<11)|(t>>>21))+c|0;",
             "let na=b^(b<<9),nb=(c+(c<<3))|0,nc=((d<<7)|(d>>>25))+a|0;a=na;b=nb;c=nc;d=t;",
             "return (t>>>0)/4294967296}}",
-            "function draw(){const h=R()*360;colorMode(HSB,360,100,100,100);background(h,25,10);",
+            "function draw(){scale(width/700);const h=R()*360;colorMode(HSB,360,100,100,100);background(h,25,10);",
             "noFill();const n=14+Math.floor(R()*18);",
             "for(let i=0;i<n;i++){const r=40+i*(R()*20+8),w=1+R()*5,hh=(h+R()*130)%360,",
             "a0=R()*TWO_PI,a1=a0+PI*(0.3+R()*1.6);stroke(hh,55+R()*35,85,85);strokeWeight(w);",
-            "arc(width/2,height/2,r*2,r*2,a0,a1)}",
+            "arc(350,350,r*2,r*2,a0,a1)}",
             "noStroke();for(let i=0;i<44;i++){const a2=R()*TWO_PI,r2=60+R()*270;",
-            "fill((h+R()*60)%360,40,95,90);circle(width/2+Math.cos(a2)*r2,height/2+Math.sin(a2)*r2,2+R()*6)}}"
+            "fill((h+R()*60)%360,40,95,90);circle(350+Math.cos(a2)*r2,350+Math.sin(a2)*r2,2+R()*6)}}"
         )
     );
 

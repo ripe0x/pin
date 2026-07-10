@@ -21,9 +21,9 @@
  * this component renders a quiet notice instead of a buy flow.
  */
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { formatEther } from "viem"
+import { formatEther, parseEventLogs } from "viem"
 import {
   useAccount,
   useBalance,
@@ -43,6 +43,7 @@ import {
   formatWriteError,
   useChainNowSec,
 } from "@/components/tx/tx-ui"
+import { MintReveal } from "@/components/collections/MintReveal"
 import {
   CollectionStatus,
   COLLECTION_STATUS_LABEL,
@@ -57,6 +58,7 @@ import {
   sellsViaMinterOnly,
   shortAddress,
   type IdMode,
+  type WorkConfig,
 } from "@/lib/collection"
 
 export type MintCollectionSnapshot = {
@@ -74,12 +76,16 @@ export function MintCollectionCTA({
   collection,
   snapshot,
   referrer,
+  work,
 }: {
   collection: `0x${string}`
   snapshot: MintCollectionSnapshot
   /** Override the mint referrer (a self-hosted page passes the artist's own
    *  address). Defaults to PND's configured referrer. */
   referrer?: `0x${string}`
+  /** The collection's work config when generative — enables the live reveal
+   *  after a successful mint. Omit/null for edition presets. */
+  work?: WorkConfig | null
 }) {
   const { address } = useAccount()
   const chainId = useChainId()
@@ -150,8 +156,29 @@ export function MintCollectionCTA({
     error: writeError,
     reset,
   } = useWriteContract()
-  const { isLoading: isTxPending, isSuccess } = useWaitForTransactionReceipt({ hash: txHash })
+  const {
+    isLoading: isTxPending,
+    isSuccess,
+    data: receipt,
+  } = useWaitForTransactionReceipt({ hash: txHash })
   const isPending = isWritePending || isTxPending
+
+  // The reveal's inputs come straight from the receipt's Minted event —
+  // no extra reads, no indexer round trip.
+  const mintedEvent = useMemo(() => {
+    if (!receipt) return null
+    try {
+      const logs = parseEventLogs({ abi: collectionAbi, logs: receipt.logs, eventName: "Minted" })
+      const log = logs.find((l) => l.address.toLowerCase() === collection.toLowerCase())
+      if (!log) return null
+      return {
+        firstTokenId: log.args.firstTokenId as bigint,
+        quantity: log.args.quantity as bigint,
+      }
+    } catch {
+      return null
+    }
+  }, [receipt, collection])
 
   function handleMint() {
     if (!amountValid) return
@@ -168,12 +195,19 @@ export function MintCollectionCTA({
   const mintOrderTo = Number(minted) + amount
   const isFirstEver = minted === 0n
 
+  // Sold out and window-closed are both Closed onchain but read very
+  // differently: one is the collection completing, the other is a window
+  // that may reopen (settings are live until lockSupply/lockRenderer).
+  const soldOut = status === CollectionStatus.Closed && capReached
+  const statusLabel = soldOut ? "Sold out" : COLLECTION_STATUS_LABEL[status]
   const statusDot =
     status === CollectionStatus.Open
-      ? "bg-emerald-500 animate-pulse"
+      ? "bg-status-available animate-pulse"
       : status === CollectionStatus.Scheduled
-        ? "bg-amber-500"
-        : "bg-gray-400"
+        ? "bg-status-upcoming"
+        : soldOut
+          ? "bg-status-sold"
+          : "bg-gray-400"
 
   if (pooled) {
     return (
@@ -196,7 +230,7 @@ export function MintCollectionCTA({
             <div className="flex items-center gap-2">
               <span className={`inline-block h-1.5 w-1.5 rounded-full ${statusDot}`} />
               <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500">
-                {COLLECTION_STATUS_LABEL[status]}
+                {statusLabel}
               </span>
             </div>
             <span className="text-[10px] font-mono uppercase tracking-wider text-gray-400 tabular-nums">
@@ -230,35 +264,71 @@ export function MintCollectionCTA({
                 </p>
               )}
             </div>
-            {mintEnd > 0n && status !== CollectionStatus.Closed && (
+            {notStarted ? (
               <div className="text-right space-y-1">
                 <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-                  Closes in
+                  Opens in
                 </p>
                 <p className="text-sm font-mono tabular-nums leading-none">
-                  <Countdown endTime={mintEnd} nowSec={nowSec} />
+                  <Countdown endTime={mintStart} nowSec={nowSec} />
                 </p>
               </div>
+            ) : (
+              mintEnd > 0n &&
+              status === CollectionStatus.Open && (
+                <div className="text-right space-y-1">
+                  <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+                    Closes in
+                  </p>
+                  <p className="text-sm font-mono tabular-nums leading-none">
+                    <Countdown endTime={mintEnd} nowSec={nowSec} />
+                  </p>
+                </div>
+              )
             )}
           </div>
 
-          {isSuccess && txHash && (
-            <TxSuccessBanner
-              txHash={txHash}
-              chainId={PREFERRED_CHAIN.id}
-              message="Minted. Your Mint Mark is recorded onchain."
-              onDismiss={() => {
-                reset()
-                router.refresh()
-              }}
-            />
-          )}
+          {isSuccess &&
+            txHash &&
+            (mintedEvent ? (
+              <MintReveal
+                collection={collection}
+                work={work && work.code.length > 0 ? work : null}
+                firstTokenId={mintedEvent.firstTokenId}
+                quantity={mintedEvent.quantity}
+                txHash={txHash}
+                chainId={PREFERRED_CHAIN.id}
+                onDismiss={() => {
+                  reset()
+                  router.refresh()
+                }}
+              />
+            ) : (
+              <TxSuccessBanner
+                txHash={txHash}
+                chainId={PREFERRED_CHAIN.id}
+                message="Minted. Your Mint Mark is recorded onchain."
+                onDismiss={() => {
+                  reset()
+                  router.refresh()
+                }}
+              />
+            ))}
 
           {mintable && !(isSuccess && txHash) && (
             <>
               <label className="block">
                 <span className="sr-only">Number of tokens to mint</span>
                 <div className="flex items-stretch border border-gray-200 focus-within:border-gray-400 transition-colors">
+                  <button
+                    type="button"
+                    aria-label="One fewer"
+                    onClick={() => setAmount((a) => Math.max(1, a - 1))}
+                    disabled={isPending || amount <= 1}
+                    className="px-4 text-sm font-mono text-gray-500 hover:text-fg border-r border-gray-200 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    −
+                  </button>
                   <input
                     type="number"
                     min={1}
@@ -270,8 +340,22 @@ export function MintCollectionCTA({
                       setAmount(Number.isNaN(n) ? 0 : n)
                     }}
                     disabled={isPending}
-                    className="flex-1 px-3 py-3 text-sm font-mono tabular-nums outline-none disabled:opacity-40"
+                    className="w-0 flex-1 px-3 py-3 text-center text-sm font-mono tabular-nums outline-none disabled:opacity-40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
+                  <button
+                    type="button"
+                    aria-label="One more"
+                    onClick={() =>
+                      setAmount((a) => {
+                        const next = a + 1
+                        return remaining !== null ? Math.min(next, Number(remaining)) : next
+                      })
+                    }
+                    disabled={isPending || (remaining !== null && amount >= Number(remaining))}
+                    className="px-4 text-sm font-mono text-gray-500 hover:text-fg border-l border-gray-200 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    +
+                  </button>
                   <span className="flex items-center px-3 text-[11px] font-mono uppercase tracking-wider text-gray-400 border-l border-gray-200">
                     {amount === 1 ? "token" : "tokens"}
                   </span>
@@ -381,13 +465,44 @@ export function MintCollectionCTA({
           )}
 
           {!mintable && !(isSuccess && txHash) && ready && (
-            <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
-              {notStarted
-                ? "This collection has not opened yet."
-                : capReached
-                  ? "This collection has reached its cap."
-                  : "This collection is closed."}
-            </p>
+            <>
+              {notStarted ? (
+                <>
+                  <div className="rounded border border-gray-200 bg-surface-muted/40 px-3 py-2.5">
+                    <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400 mb-1">
+                      Your Mint Mark
+                    </p>
+                    <p className="text-[11px] font-mono text-gray-600 leading-relaxed">
+                      {`Mint #${mintOrderFrom} of this collection`}
+                      {isFirstEver && (
+                        <span className="text-fg"> · the first mint is still open</span>
+                      )}
+                    </p>
+                  </div>
+                  <div className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 border border-gray-200 text-gray-400 tabular-nums select-none">
+                    Opens in <Countdown endTime={mintStart} nowSec={nowSec} />
+                  </div>
+                  <p className="text-[10px] font-mono text-gray-400 leading-relaxed">
+                    This page goes live automatically when the window opens. No
+                    refresh needed.
+                  </p>
+                </>
+              ) : soldOut ? (
+                <p className="text-[11px] font-mono text-gray-600 leading-relaxed">
+                  All {Number(supplyCap)} pieces are minted.
+                  {work && work.code.length > 0
+                    ? " The full collection lives on this page, every token rendering live from its onchain seed."
+                    : " The full collection lives on this page."}
+                </p>
+              ) : (
+                <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
+                  The mint window has closed with {Number(minted)}
+                  {supplyCap > 0n ? ` of ${Number(supplyCap)}` : ""} minted.
+                  Sale settings stay live until locked, so the artist can
+                  reopen it.
+                </p>
+              )}
+            </>
           )}
         </div>
       </div>
