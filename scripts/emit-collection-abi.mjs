@@ -58,3 +58,44 @@ emit({
   exportName: "defaultRendererAbi",
   outFiles: ["packages/abi/src/defaultRenderer.ts"],
 });
+
+// Reference mint hooks (swappable mint-hook slot implementations).
+emit({
+  artifact: "AllowlistHook.sol/AllowlistHook.json",
+  exportName: "allowlistHookAbi",
+  outFiles: ["packages/abi/src/allowlistHook.ts"],
+});
+emit({
+  artifact: "PerWalletCapHook.sol/PerWalletCapHook.json",
+  exportName: "perWalletCapHookAbi",
+  outFiles: ["packages/abi/src/perWalletCapHook.ts"],
+});
+emit({
+  artifact: "HoldsCollectionHook.sol/HoldsCollectionHook.json",
+  exportName: "holdsCollectionHookAbi",
+  outFiles: ["packages/abi/src/holdsCollectionHook.ts"],
+});
+
+// Swappable-slot interfaces (the third-party API surface implementers satisfy).
+emit({
+  artifact: "IMintHook.sol/IMintHook.json",
+  exportName: "iMintHookAbi",
+  outFiles: ["packages/abi/src/iMintHook.ts"],
+});
+emit({
+  artifact: "IPriceStrategy.sol/IPriceStrategy.json",
+  exportName: "iPriceStrategyAbi",
+  outFiles: ["packages/abi/src/iPriceStrategy.ts"],
+});
+emit({
+  artifact: "IRenderer.sol/IRenderer.json",
+  exportName: "iRendererAbi",
+  outFiles: ["packages/abi/src/iRenderer.ts"],
+});
+// ICollectionView is declared in IRenderer.sol; it is the core read surface
+// renderers, price strategies, and minters consume.
+emit({
+  artifact: "IRenderer.sol/ICollectionView.json",
+  exportName: "iCollectionViewAbi",
+  outFiles: ["packages/abi/src/iCollectionView.ts"],
+});

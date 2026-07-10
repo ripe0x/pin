@@ -1,0 +1,119 @@
+{
+  "name": "PND onchain protocols",
+  "origin": "https://pnd.ripe.wtf",
+  "chainId": 1,
+  "docs": "/docs",
+  "llms": "/llms.txt",
+  "protocols": {
+    "collections": {
+      "title": "Collections",
+      "docs": "/docs/collections/overview",
+      "contracts": {
+        "Collection": {
+          "address": null,
+          "kind": "clone",
+          "abi": "/abis/Collection.json",
+          "docs": "/docs/collections/contracts/collection",
+          "role": "The one core of the PND Collection System: a single OpenZeppelin ERC721 that holds ownership, ETH payment paths, and per-token provenance, and nothing else."
+        },
+        "CollectionFactory": {
+          "address": null,
+          "kind": "singleton",
+          "abi": "/abis/CollectionFactory.json",
+          "docs": "/docs/collections/contracts/factory",
+          "role": "CollectionFactory deploys one [Collection](/docs/collections/contracts/collection) per work as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs."
+        },
+        "Attribution": {
+          "address": null,
+          "kind": "singleton",
+          "abi": "/abis/Attribution.json",
+          "docs": "/docs/collections/contracts/attribution",
+          "role": "Attribution is generic, immutable, public infrastructure recording the works-to-artists half of the bilateral attribution handshake."
+        },
+        "DefaultRenderer": {
+          "address": null,
+          "kind": "singleton",
+          "abi": "/abis/DefaultRenderer.json",
+          "docs": "/docs/collections/contracts/default-renderer",
+          "role": "The canonical built-in renderer for [Collection](/docs/collections/contracts/collection)."
+        },
+        "GenerativeRenderer": {
+          "address": null,
+          "kind": "singleton",
+          "abi": "/abis/GenerativeRenderer.json",
+          "docs": "/docs/collections/contracts/generative-renderer",
+          "role": "The default renderer for script-based generative collections: a stateless shared singleton that assembles a complete HTML document per token and returns it as the `animation_url` of the token's metadata."
+        },
+        "AllowlistHook": {
+          "address": null,
+          "kind": "singleton",
+          "abi": "/abis/AllowlistHook.json",
+          "docs": "/docs/collections/contracts/allowlist-hook",
+          "role": "A reference [mint hook](/docs/collections/contracts/i-mint-hook) gating minting to a Merkle allowlist, the standard shape for a presale."
+        },
+        "PerWalletCapHook": {
+          "address": null,
+          "kind": "singleton",
+          "abi": "/abis/PerWalletCapHook.json",
+          "docs": "/docs/collections/contracts/per-wallet-cap-hook",
+          "role": "A reference [mint hook](/docs/collections/contracts/i-mint-hook) capping how many tokens any single wallet can mint from a collection, so a capped drop can't be bought out by one address in a single transaction (or across several)."
+        },
+        "HoldsCollectionHook": {
+          "address": null,
+          "kind": "singleton",
+          "abi": "/abis/HoldsCollectionHook.json",
+          "docs": "/docs/collections/contracts/holds-collection-hook",
+          "role": "A reference [mint hook](/docs/collections/contracts/i-mint-hook) gating a mint on the minter holding a token from another collection, typically an earlier collection by the same artist."
+        },
+        "IMintHook": {
+          "address": null,
+          "kind": "interface",
+          "abi": "/abis/IMintHook.json",
+          "docs": "/docs/collections/contracts/i-mint-hook",
+          "role": "IMintHook is the interface a contract implements to occupy a collection's hook slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [Collection](/docs/collections/contracts/collection) core."
+        },
+        "IPriceStrategy": {
+          "address": null,
+          "kind": "interface",
+          "abi": "/abis/IPriceStrategy.json",
+          "docs": "/docs/collections/contracts/i-price-strategy",
+          "role": "IPriceStrategy is the interface a contract implements to occupy a collection's price slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [Collection](/docs/collections/contracts/collection) core."
+        },
+        "IRenderer": {
+          "address": null,
+          "kind": "interface",
+          "abi": "/abis/IRenderer.json",
+          "docs": "/docs/collections/contracts/i-renderer",
+          "role": "IRenderer is the interface a contract implements to occupy a collection's renderer slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [Collection](/docs/collections/contracts/collection) core."
+        },
+        "ICollectionView": {
+          "address": null,
+          "kind": "interface",
+          "abi": "/abis/ICollectionView.json",
+          "docs": "/docs/collections/contracts/i-collection-view",
+          "role": "ICollectionView is the read surface a collection exposes for its swappable slots, [renderer](/docs/collections/contracts/i-renderer), [price strategy](/docs/collections/contracts/i-price-strategy), and any minter, to read without depending on the full [Collection](/docs/collections/contracts/collection) ABI."
+        }
+      }
+    },
+    "auctions": {
+      "title": "Auctions",
+      "docs": "/docs/auctions/overview",
+      "contracts": {
+        "SovereignAuctionHouse": {
+          "address": null,
+          "kind": "clone",
+          "abi": "/abis/SovereignAuctionHouse.json",
+          "docs": "/docs/auctions/contracts/sovereign-auction-house",
+          "role": "An onchain English auction house for ERC721 tokens, denominated in ETH."
+        },
+        "SovereignAuctionHouseFactory": {
+          "address": null,
+          "kind": "singleton",
+          "abi": "/abis/SovereignAuctionHouseFactory.json",
+          "docs": "/docs/auctions/contracts/auction-house-factory",
+          "role": "SovereignAuctionHouseFactory deploys one [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house) per owner as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs."
+        }
+      }
+    }
+  }
+}

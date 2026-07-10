@@ -1,0 +1,353 @@
+{
+  "title": "PND protocol reference",
+  "groups": [
+    {
+      "id": "introduction",
+      "title": "Introduction",
+      "sections": [
+        {
+          "id": "",
+          "title": "",
+          "items": [
+            {
+              "title": "Overview",
+              "slug": "overview",
+              "path": "/docs/introduction/overview",
+              "description": "The onchain protocols PND ships for artists, and how this reference is organized."
+            },
+            {
+              "title": "Addresses",
+              "slug": "addresses",
+              "path": "/docs/introduction/addresses",
+              "description": "The shared singletons of each PND onchain protocol, with ABI and reference links."
+            },
+            {
+              "title": "Conventions",
+              "slug": "conventions",
+              "path": "/docs/introduction/conventions",
+              "description": "How to read examples, addresses, and terms across this reference."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "collections",
+      "title": "Collections",
+      "sections": [
+        {
+          "id": "",
+          "title": "",
+          "items": [
+            {
+              "title": "Overview",
+              "slug": "overview",
+              "path": "/docs/collections/overview",
+              "description": "What the PND Collection System is, its parts, and how this reference is organized."
+            }
+          ]
+        },
+        {
+          "id": "concepts",
+          "title": "Concepts",
+          "items": [
+            {
+              "title": "The four slots",
+              "slug": "four-slots",
+              "path": "/docs/collections/concepts/four-slots",
+              "description": "Renderer, price strategy, mint hook, and extension minter, the swappable modules every collection composes from."
+            },
+            {
+              "title": "Id modes",
+              "slug": "id-modes",
+              "path": "/docs/collections/concepts/id-modes",
+              "description": "Sequential and pooled, the two token id assignment models, fixed at init."
+            },
+            {
+              "title": "Mint Marks and entropy",
+              "slug": "mint-marks-and-entropy",
+              "path": "/docs/collections/concepts/mint-marks-and-entropy",
+              "description": "The per-token provenance snapshot and the mint-time seed renderers draw from."
+            },
+            {
+              "title": "Types",
+              "slug": "types",
+              "path": "/docs/collections/concepts/types",
+              "description": "The shared enums and structs in CollectionTypes.sol, the data-only surface with no ABI functions of its own."
+            }
+          ]
+        },
+        {
+          "id": "contracts",
+          "title": "Contracts",
+          "items": [
+            {
+              "title": "Collection",
+              "slug": "collection",
+              "path": "/docs/collections/contracts/collection",
+              "description": "The one core of the PND Collection System: a single OpenZeppelin ERC721 that holds ownership, ETH payment paths, and per-token provenance, and nothing else."
+            },
+            {
+              "title": "CollectionFactory",
+              "slug": "factory",
+              "path": "/docs/collections/contracts/factory",
+              "description": "CollectionFactory deploys one [Collection](/docs/collections/contracts/collection) per work as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs."
+            },
+            {
+              "title": "Attribution",
+              "slug": "attribution",
+              "path": "/docs/collections/contracts/attribution",
+              "description": "Attribution is generic, immutable, public infrastructure recording the works-to-artists half of the bilateral attribution handshake."
+            },
+            {
+              "title": "DefaultRenderer",
+              "slug": "default-renderer",
+              "path": "/docs/collections/contracts/default-renderer",
+              "description": "The canonical built-in renderer for [Collection](/docs/collections/contracts/collection)."
+            },
+            {
+              "title": "GenerativeRenderer",
+              "slug": "generative-renderer",
+              "path": "/docs/collections/contracts/generative-renderer",
+              "description": "The default renderer for script-based generative collections: a stateless shared singleton that assembles a complete HTML document per token and returns it as the `animation_url` of the token's metadata."
+            },
+            {
+              "title": "AllowlistHook",
+              "slug": "allowlist-hook",
+              "path": "/docs/collections/contracts/allowlist-hook",
+              "description": "A reference [mint hook](/docs/collections/contracts/i-mint-hook) gating minting to a Merkle allowlist, the standard shape for a presale."
+            },
+            {
+              "title": "PerWalletCapHook",
+              "slug": "per-wallet-cap-hook",
+              "path": "/docs/collections/contracts/per-wallet-cap-hook",
+              "description": "A reference [mint hook](/docs/collections/contracts/i-mint-hook) capping how many tokens any single wallet can mint from a collection, so a capped drop can't be bought out by one address in a single transaction (or across several)."
+            },
+            {
+              "title": "HoldsCollectionHook",
+              "slug": "holds-collection-hook",
+              "path": "/docs/collections/contracts/holds-collection-hook",
+              "description": "A reference [mint hook](/docs/collections/contracts/i-mint-hook) gating a mint on the minter holding a token from another collection, typically an earlier collection by the same artist."
+            },
+            {
+              "title": "IMintHook",
+              "slug": "i-mint-hook",
+              "path": "/docs/collections/contracts/i-mint-hook",
+              "description": "IMintHook is the interface a contract implements to occupy a collection's hook slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [Collection](/docs/collections/contracts/collection) core."
+            },
+            {
+              "title": "IPriceStrategy",
+              "slug": "i-price-strategy",
+              "path": "/docs/collections/contracts/i-price-strategy",
+              "description": "IPriceStrategy is the interface a contract implements to occupy a collection's price slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [Collection](/docs/collections/contracts/collection) core."
+            },
+            {
+              "title": "IRenderer",
+              "slug": "i-renderer",
+              "path": "/docs/collections/contracts/i-renderer",
+              "description": "IRenderer is the interface a contract implements to occupy a collection's renderer slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [Collection](/docs/collections/contracts/collection) core."
+            },
+            {
+              "title": "ICollectionView",
+              "slug": "i-collection-view",
+              "path": "/docs/collections/contracts/i-collection-view",
+              "description": "ICollectionView is the read surface a collection exposes for its swappable slots, [renderer](/docs/collections/contracts/i-renderer), [price strategy](/docs/collections/contracts/i-price-strategy), and any minter, to read without depending on the full [Collection](/docs/collections/contracts/collection) ABI."
+            }
+          ]
+        },
+        {
+          "id": "guides",
+          "title": "Guides",
+          "items": [
+            {
+              "title": "Deploy a collection",
+              "slug": "deploy-a-collection",
+              "path": "/docs/collections/guides/deploy-a-collection",
+              "description": "Call the factory to deploy an owned, immutable Collection clone, and what each config field controls."
+            },
+            {
+              "title": "Mint",
+              "slug": "mint",
+              "path": "/docs/collections/guides/mint",
+              "description": "The built-in paid mint paths, price resolution, sale windows, and the reverts to handle."
+            },
+            {
+              "title": "Write a minter",
+              "slug": "write-a-minter",
+              "path": "/docs/collections/guides/write-a-minter",
+              "description": "Implement an extension minter, get authorized via setMinter, and mint through mintTo or mintToId."
+            },
+            {
+              "title": "Write a price strategy",
+              "slug": "write-a-price-strategy",
+              "path": "/docs/collections/guides/write-a-price-strategy",
+              "description": "Implement IPriceStrategy's view-only priceOf, install it with setPriceStrategy, and two worked examples."
+            },
+            {
+              "title": "Write a mint hook",
+              "slug": "write-a-mint-hook",
+              "path": "/docs/collections/guides/write-a-mint-hook",
+              "description": "Implement IMintHook's beforeMint/afterMint, install it with setMintHook, and the three reference hooks to start from."
+            },
+            {
+              "title": "Write a renderer",
+              "slug": "write-a-renderer",
+              "path": "/docs/collections/guides/write-a-renderer",
+              "description": "Implement IRenderer against ICollectionView, the three built-in renderers, and how metadata freezing and work locking work."
+            }
+          ]
+        },
+        {
+          "id": "reference",
+          "title": "Reference",
+          "items": [
+            {
+              "title": "Access control",
+              "slug": "access-control",
+              "path": "/docs/collections/reference/access-control",
+              "description": "Every state-changing function in the Collections contracts and who may call it."
+            },
+            {
+              "title": "Errors index",
+              "slug": "errors",
+              "path": "/docs/collections/reference/errors",
+              "description": "Every custom error in the Collections contracts, its contract, and the condition that raises it."
+            },
+            {
+              "title": "Events index",
+              "slug": "events",
+              "path": "/docs/collections/reference/events",
+              "description": "Every event the Collections contracts emit, grouped by contract."
+            },
+            {
+              "title": "Injection convention",
+              "slug": "injection-convention",
+              "path": "/docs/collections/reference/injection-convention",
+              "description": "How a generative work's code receives its token context, onchain and off, and the determinism rules that make a preview the render."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "auctions",
+      "title": "Auctions",
+      "sections": [
+        {
+          "id": "",
+          "title": "",
+          "items": [
+            {
+              "title": "Overview",
+              "slug": "overview",
+              "path": "/docs/auctions/overview",
+              "description": "The PND Sovereign Auction House: a per-owner, onchain English-auction house for any ERC721."
+            }
+          ]
+        },
+        {
+          "id": "concepts",
+          "title": "Concepts",
+          "items": [
+            {
+              "title": "Auction lifecycle",
+              "slug": "auction-lifecycle",
+              "path": "/docs/auctions/concepts/auction-lifecycle",
+              "description": "The full path an auction takes: create and escrow, bid, extend, end, or cancel, plus refunds and the fee math."
+            }
+          ]
+        },
+        {
+          "id": "contracts",
+          "title": "Contracts",
+          "items": [
+            {
+              "title": "SovereignAuctionHouse",
+              "slug": "sovereign-auction-house",
+              "path": "/docs/auctions/contracts/sovereign-auction-house",
+              "description": "An onchain English auction house for ERC721 tokens, denominated in ETH."
+            },
+            {
+              "title": "SovereignAuctionHouseFactory",
+              "slug": "auction-house-factory",
+              "path": "/docs/auctions/contracts/auction-house-factory",
+              "description": "SovereignAuctionHouseFactory deploys one [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house) per owner as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs."
+            }
+          ]
+        },
+        {
+          "id": "guides",
+          "title": "Guides",
+          "items": [
+            {
+              "title": "Deploy an auction house",
+              "slug": "deploy-an-auction-house",
+              "path": "/docs/auctions/guides/deploy-an-auction-house",
+              "description": "Call the factory to deploy your own per-owner auction house, and predict its address ahead of time."
+            },
+            {
+              "title": "Run an auction",
+              "slug": "run-an-auction",
+              "path": "/docs/auctions/guides/run-an-auction",
+              "description": "The seller flow: approve the NFT, create one or many auctions, adjust the reserve, cancel, and end."
+            },
+            {
+              "title": "Bid and settle",
+              "slug": "bid-and-settle",
+              "path": "/docs/auctions/guides/bid-and-settle",
+              "description": "The bidder flow: read the minimum, place a bid, handle being outbid and refunds, and settle a finished auction."
+            }
+          ]
+        },
+        {
+          "id": "reference",
+          "title": "Reference",
+          "items": [
+            {
+              "title": "Access control",
+              "slug": "access-control",
+              "path": "/docs/auctions/reference/access-control",
+              "description": "Every state-changing function in the Auctions contracts and who may call it."
+            },
+            {
+              "title": "Errors index",
+              "slug": "errors",
+              "path": "/docs/auctions/reference/errors",
+              "description": "Every custom error in the Auctions contracts, its contract, and the condition that raises it."
+            },
+            {
+              "title": "Events index",
+              "slug": "events",
+              "path": "/docs/auctions/reference/events",
+              "description": "Every event the Auctions contracts emit, grouped by contract."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "offchain",
+      "title": "Off-chain",
+      "sections": [
+        {
+          "id": "",
+          "title": "",
+          "items": [
+            {
+              "title": "ABIs and the protocol manifest",
+              "slug": "abis-and-manifest",
+              "path": "/docs/offchain/abis-and-manifest",
+              "description": "Where integrators get machine-readable data: served ABI files, the @pin/abi package, the protocol manifest, llms.txt, and the docs search index."
+            },
+            {
+              "title": "AI agents",
+              "slug": "ai-agents",
+              "path": "/docs/offchain/ai-agents",
+              "description": "Where to start as an agent or integrator: the manifest, llms.txt, per-contract ABIs, and how to discover per-owner clones through each factory."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

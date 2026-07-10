@@ -1,0 +1,122 @@
+---
+title: Write a minter
+description: Implement an extension minter, get authorized via setMinter, and mint through mintTo or mintToId.
+---
+
+# Write a minter
+
+An extension minter is any contract the collection owner authorizes to mint tokens outside the built-in fixed-price path. It is the only way to sell a `Pooled`-mode collection, and the standard way to attach economics the core deliberately doesn't support: dynamic settlement, ERC20 backing, id draws, anything beyond "pay the resolved price, get the next sequential id."
+
+## Authorization
+
+The owner grants (or revokes) a minter explicitly, per address:
+
+```solidity
+function setMinter(address minter, bool allowed) external; // owner-only
+function isMinter(address minter) external view returns (bool);
+```
+
+`setMinter` is the artist's visible, onchain choice to trust a minter contract, and revoking it is their lever over that minter's future behavior (a revoked minter can no longer call `mintTo`/`mintToId`, but tokens it already minted are unaffected).
+
+## The two entry points
+
+```solidity
+function mintTo(address to, address referrer, bytes calldata hookData)
+    external returns (uint256 tokenId);   // Sequential mode
+function mintToId(address to, uint256 tokenId, address referrer, bytes calldata hookData)
+    external;                              // Pooled mode
+```
+
+Both are `nonpayable` and gated `NotMinter` if `msg.sender` isn't authorized. Which one you call depends on the collection's `idMode`, fixed at deploy:
+
+- **Sequential**: call `mintTo`. The core assigns `tokenId = nextId++`, same counter the built-in paid path uses. Calling `mintToId` on a sequential collection reverts `SequentialAssignsIds`
+- **Pooled**: call `mintToId`, supplying the id yourself (`tokenId == sourceId` is the intended shape: the minter owns whatever pool or source mapping decides which id mints next). Calling `mintTo` on a pooled collection reverts `PooledNeedsMintToId`
+
+Both paths run the mint hook (`beforeMint`/`afterMint`), enforce the supply cap exactly as the built-in path does, and stamp a fresh Mint Mark and `tokenSeed` per token. Neither path enforces `mintStart`/`mintEnd`: an extension minter owns its own schedule, and the artist's control over it is `setMinter(minter, false)`, not the window.
+
+## Value handling is entirely yours
+
+`mintTo` and `mintToId` are non-payable. The core takes no `msg.value` and does no payment accounting on this path: that is the whole point of the slot. If your minter is a paid mint, it is responsible for:
+
+- collecting and validating payment (ETH, an ERC20, a swap route, whatever the form needs)
+- honoring the referral share by convention, not by contract guarantee: `Collection.REFERRAL_SHARE_BPS` (10%) is not enforced on this path, so a PND-shipped minter follows it in code and a third-party minter's choice not to is visible onchain
+- paying out (or escrowing) proceeds itself, since the collection's `_pending`/`withdraw` pull-payment ledger only tracks the built-in path's settlements
+
+## Burn semantics differ by id mode
+
+`burn(tokenId)` on the collection itself is mode-gated:
+
+- **Sequential**: standard owner-or-approved burn. Burned ids are never reused
+- **Pooled**: only an authorized minter may burn (`NotAuthorized` otherwise). This is deliberate: a pooled collection's tokens carry backing, pool membership, or other minter-owned state that a holder-initiated burn would strand. A pooled minter typically wraps its own `redeem()` around `burn`, releasing whatever it owes the holder before or as part of the call
+
+A burned pooled id can be minted again via `mintToId` as a brand new instance: fresh Mint Mark, fresh entropy (`tokenSeed`), fresh escrow if the minter tracks any. The prior instance's history is not erased from the collection; it stays readable in emitted events and offchain indexing.
+
+## Minimal minter skeleton
+
+```solidity
+// SPDX-License-Identifier: GPL-3.0
+pragma solidity ^0.8.24;
+
+interface ICollectionMint {
+    function mintTo(address to, address referrer, bytes calldata hookData)
+        external returns (uint256 tokenId);
+}
+
+interface ICollectionOwner {
+    function owner() external view returns (address);
+}
+
+/// @notice Minimal fixed-price sequential minter: takes exact payment, mints
+///         through the collection's extension path, forwards the referrer
+///         share by convention, and pays the artist the rest.
+contract SimpleExtensionMinter {
+    uint16 constant REFERRAL_SHARE_BPS = 1_000; // 10%, matches the core constant
+    uint16 constant BPS = 10_000;
+
+    mapping(address => uint256) public priceOf; // collection => wei
+
+    event PriceSet(address indexed collection, uint256 price);
+
+    modifier onlyCollectionOwner(address collection) {
+        require(msg.sender == ICollectionOwner(collection).owner(), "not collection owner");
+        _;
+    }
+
+    function setPrice(address collection, uint256 price) external onlyCollectionOwner(collection) {
+        priceOf[collection] = price;
+        emit PriceSet(collection, price);
+    }
+
+    function mint(address collection, address referrer) external payable returns (uint256 tokenId) {
+        uint256 price = priceOf[collection];
+        require(msg.value == price, "wrong payment");
+
+        tokenId = ICollectionMint(collection).mintTo(msg.sender, referrer, "");
+
+        if (referrer != address(0) && price > 0) {
+            uint256 referralCut = (price * REFERRAL_SHARE_BPS) / BPS;
+            (bool okS,) = referrer.call{value: referralCut}("");
+            require(okS, "referral payout failed");
+            uint256 artistCut = price - referralCut;
+            if (artistCut > 0) {
+                (bool okA,) = ICollectionOwner(collection).owner().call{value: artistCut}("");
+                require(okA, "artist payout failed");
+            }
+        } else if (price > 0) {
+            (bool ok,) = ICollectionOwner(collection).owner().call{value: price}("");
+            require(ok, "artist payout failed");
+        }
+    }
+}
+```
+
+A pooled minter follows the same shape but calls `mintToId(to, sourceId, referrer, hookData)` with an id it owns the logic for (a Fisher-Yates draw over an id pool, a 1:1 mapping to an external source collection, or whatever the form needs), and typically pairs `redeem()`/`burn` with releasing per-token backing.
+
+## After deploying a minter
+
+```bash
+cast send <COLLECTION_ADDRESS> "setMinter(address,bool)" <MINTER_ADDRESS> true \
+  --rpc-url https://ethereum-rpc.publicnode.com --private-key $PRIVATE_KEY
+```
+
+See [Id modes](/docs/collections/concepts/id-modes) for the sequential/pooled contract in full, [Mint](/docs/collections/guides/mint) for the built-in path this slot is an alternative to, and [IMintHook](/docs/collections/contracts/i-mint-hook) since hooks run on the extension path too: a minter never needs to reimplement allowlist or per-wallet-cap logic itself.

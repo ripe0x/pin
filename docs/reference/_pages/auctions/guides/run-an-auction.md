@@ -1,0 +1,155 @@
+---
+title: Run an auction
+description: The seller flow: approve the NFT, create one or many auctions, adjust the reserve, cancel, and end.
+---
+
+# Run an auction
+
+This is the seller side of a [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house).
+It assumes you already have your own house from
+[Deploy an auction house](/docs/auctions/guides/deploy-an-auction-house). All examples
+use an `<AUCTION_HOUSE_ADDRESS>` placeholder, since each house is a per-owner clone with
+no single fixed address.
+
+## Approve the house for the NFT first
+
+Creating an auction pulls the NFT into the house with `transferFrom`, so the house
+must be approved to move the token. Approve the specific token, or set the house as an
+operator for the whole collection. The token contract can be any ERC721, including a
+PND [Collection](/docs/collections/contracts/collection).
+
+```bash
+# Approve one token
+cast send <TOKEN_CONTRACT> "approve(address,uint256)" \
+  <AUCTION_HOUSE_ADDRESS> 42 \
+  --rpc-url https://ethereum-rpc.publicnode.com --private-key $PRIVATE_KEY
+
+# Or approve the house for all your tokens in this collection
+cast send <TOKEN_CONTRACT> "setApprovalForAll(address,bool)" \
+  <AUCTION_HOUSE_ADDRESS> true \
+  --rpc-url https://ethereum-rpc.publicnode.com --private-key $PRIVATE_KEY
+```
+
+## Create an auction
+
+`createAuction` takes the token id, its ERC721 contract, a `duration` in seconds, and
+a `reservePrice` in wei. You must own or be approved for the token. `duration` must be
+greater than zero and at most 100 years. The call escrows the NFT and returns the new
+`auctionId`.
+
+```bash
+# 3-day auction, 0.5 ETH reserve, for token 42
+cast send <AUCTION_HOUSE_ADDRESS> "createAuction(uint256,address,uint256,uint256)" \
+  42 <TOKEN_CONTRACT> 259200 500000000000000000 \
+  --rpc-url https://ethereum-rpc.publicnode.com --private-key $PRIVATE_KEY
+```
+
+The timer does not start now: it starts when the first bid lands, then runs for
+`duration`. Read the id the next auction will get with `nextAuctionId`.
+
+## Create many at once
+
+`bulkCreateAuctions` lists many tokens from one contract in a single transaction,
+applying the same reserve and duration to each. It runs the same per-token checks and
+escrow, and reverts the whole batch if any single token fails (unapproved, duplicate,
+non-ERC721).
+
+```bash
+cast send <AUCTION_HOUSE_ADDRESS> \
+  "bulkCreateAuctions(address,uint256[],uint256,uint256)" \
+  <TOKEN_CONTRACT> "[42,43,44]" 500000000000000000 259200 \
+  --rpc-url https://ethereum-rpc.publicnode.com --private-key $PRIVATE_KEY
+```
+
+## Adjust the reserve (before the first bid)
+
+The seller can change an auction's reserve with `setAuctionReservePrice`, but only
+before the first bid lands. After that it reverts `AuctionAlreadyStarted`.
+
+```bash
+cast send <AUCTION_HOUSE_ADDRESS> "setAuctionReservePrice(uint256,uint256)" \
+  0 750000000000000000 \
+  --rpc-url https://ethereum-rpc.publicnode.com --private-key $PRIVATE_KEY
+```
+
+## Cancel (before the first bid)
+
+Before any bid, the seller can pull the NFT back with `cancelAuction`. Once a bid has
+landed the auction is a live commitment and can no longer be cancelled. As the house
+owner you can cancel many pre-bid auctions at once with `bulkCancelAuctions`.
+
+```bash
+cast send <AUCTION_HOUSE_ADDRESS> "cancelAuction(uint256)" 0 \
+  --rpc-url https://ethereum-rpc.publicnode.com --private-key $PRIVATE_KEY
+```
+
+## End (settle) after the timer
+
+Once the end time passes and the auction has at least one bid, anyone can settle it
+with `endAuction`. As the seller you can call it yourself to receive your proceeds
+without waiting for a bidder or a bot. Settlement transfers the NFT to the winner,
+pays the protocol fee to `feeRecipient`, and sends the rest to you.
+
+```bash
+cast send <AUCTION_HOUSE_ADDRESS> "endAuction(uint256)" 0 \
+  --rpc-url https://ethereum-rpc.publicnode.com --private-key $PRIVATE_KEY
+```
+
+If a payout push to you fails, the proceeds are credited to your `pendingRefunds`
+balance and you claim them with `withdrawRefund`.
+
+## viem: create, then end
+
+```ts
+import {createWalletClient, createPublicClient, http, parseEther} from 'viem';
+import {mainnet} from 'viem/chains';
+import {sovereignAuctionHouseAbi} from '@pin/abi';
+
+const HOUSE = '<AUCTION_HOUSE_ADDRESS>';
+const TOKEN_CONTRACT = '<TOKEN_CONTRACT>';
+
+const publicClient = createPublicClient({
+  chain: mainnet,
+  transport: http('https://ethereum-rpc.publicnode.com'),
+});
+const walletClient = createWalletClient({
+  chain: mainnet,
+  transport: http('https://ethereum-rpc.publicnode.com'),
+});
+
+// Create a 3-day auction with a 0.5 ETH reserve
+const createHash = await walletClient.writeContract({
+  address: HOUSE,
+  abi: sovereignAuctionHouseAbi,
+  functionName: 'createAuction',
+  args: [42n, TOKEN_CONTRACT, 259200n, parseEther('0.5')],
+});
+await publicClient.waitForTransactionReceipt({hash: createHash});
+
+// Later, after the end time, settle it (anyone may call this)
+const endHash = await walletClient.writeContract({
+  address: HOUSE,
+  abi: sovereignAuctionHouseAbi,
+  functionName: 'endAuction',
+  args: [0n],
+});
+await publicClient.waitForTransactionReceipt({hash: endHash});
+```
+
+## Recover a misdirected NFT
+
+If someone sends an NFT to your house with a plain `transferFrom` outside the auction
+flow, you can rescue it with `recoverStuckERC721`. It cannot touch a token that is
+currently in an active auction.
+
+```bash
+cast send <AUCTION_HOUSE_ADDRESS> "recoverStuckERC721(address,uint256,address)" \
+  <TOKEN_CONTRACT> 99 <YOUR_ADDRESS> \
+  --rpc-url https://ethereum-rpc.publicnode.com --private-key $PRIVATE_KEY
+```
+
+## Next
+
+See the full path an auction takes in
+[Auction lifecycle](/docs/auctions/concepts/auction-lifecycle), and the bidder side in
+[Bid and settle](/docs/auctions/guides/bid-and-settle).

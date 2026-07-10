@@ -1,0 +1,98 @@
+---
+title: Mint Marks and entropy
+description: The per-token provenance snapshot and the mint-time seed renderers draw from.
+---
+
+# Mint Marks and entropy
+
+Every token carries two pieces of state stamped once, at mint time, and
+never touched again by any later action on the token (transfers, approvals,
+metadata changes): its **Mint Mark** and its **entropy**. Both are defined
+in `CollectionTypes.sol` and read from the collection directly, so a
+renderer or an indexer never has to reconstruct them from event history.
+
+## Mint Mark
+
+`mintMarkOf(uint256 tokenId)` returns a `MintMark`:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `mintIndex` | `uint40` | 0-based global mint order across the whole collection, assigned from a counter that only ever increases (`_mintedEver`) |
+| `mintBlock` | `uint48` | The block number the token was minted in |
+| `isFirst` | `bool` | Derived: `mintIndex == 0` |
+| `isFinal` | `bool` | Derived: the collection is currently `Closed` **and** this token's `mintIndex` is the highest ever assigned |
+
+Onchain, this is stored compactly as a `MintRecord` (`mintBlock`,
+`mintIndex`) packed into a single storage slot; `mintMarkOf` derives the
+public `MintMark`, including the two boolean flags, from that record plus
+the collection's current lifecycle state. `mintMarkOf` reverts with
+`NeverMinted` for a `tokenId` that has no record at all.
+
+The record deliberately stores **only what the onchain renderer must read
+synchronously** — both fields are injected into the generative render
+context, and `mintBlock` doubles as the was-ever-minted sentinel. The rest
+of a mint's provenance is event-only: the `Minted` event permanently
+records the `referrer` that hosted the mint and `statusAtMint`, the
+lifecycle status derived at that moment (`Scheduled`, `Open`, or `Closed` —
+a pooled re-mint after the window truthfully says `Closed`). Events are
+chain data forever; storing copies of them per token would add cost without
+adding permanence.
+
+A token's Mint Mark is a snapshot of the mint that produced its **current
+instance**. In sequential mode there is exactly one instance per id ever,
+so the mark is permanent history. In pooled mode, a burned id minted again
+gets a brand-new `MintRecord` overwriting the old one: the new instance's
+mark reflects the new mint, and the prior instance's mark is no longer
+readable from `mintMarkOf` (though it remains in past `Minted`/`Burned`
+event logs and offchain indexing). See [Id modes](/docs/collections/concepts/id-modes).
+
+`isFinal` is meaningful for editions and generative drops with a fixed
+run: it tells a renderer or a collector, without comparing against
+`totalSupply()` or the cap separately, whether this token was the last one
+minted before the collection closed.
+
+## Entropy (`tokenSeed`)
+
+`tokenSeed(uint256 tokenId)` returns a `bytes32`, computed once at mint
+time as:
+
+```solidity
+keccak256(abi.encode(block.prevrandao, address(this), tokenId, to, mintIndex))
+```
+
+- **Nonzero**: every minted token has a nonzero seed; `tokenSeed` reverts
+  with `NeverMinted` for an id with no record, mirroring `mintMarkOf`
+- **Stored, not recomputed**: the value is written to storage at mint and
+  read back verbatim on every later call. It is not derived from anything
+  that changes after mint (it does not depend on current owner, current
+  block, or anything mutable), so it is stable
+- **Stable across transfer**: transferring a token has no effect on its
+  seed. A generative renderer's output for a given token does not change
+  when the token changes hands
+- **Re-rolls on pooled re-mint**: because entropy is stamped fresh in
+  `_mintOne` on every mint, a pooled id that is burned and minted again
+  gets a new, independent seed alongside its new Mint Mark. The new
+  instance is a different draw from the same algorithm, not a repeat of
+  the old one
+
+`prevrandao`-derived entropy is unpredictable enough for generative art
+(nobody can force a specific outcome except with proposer-level influence
+over the block, which is acceptable risk for visual output) but is
+explicitly not suitable as a source of randomness for anything
+value-bearing like a lottery or a rarity-weighted drop with financial
+stakes.
+
+## What reads these
+
+- **Renderers** read `tokenSeed` as the entropy input to whatever
+  algorithm produces the token's visual output, and may read `mintMarkOf`
+  to condition rendering on mint order (for example, marking the first or
+  final token in a run)
+- **Indexers** read the `Minted` event, which carries everything: the id
+  range, `firstMintIndex`, `mintBlock`, the `referrer`, and `statusAtMint`
+  for the whole batch — no per-token `mintMarkOf` calls or history replay
+  needed
+
+See [CollectionTypes reference](/docs/collections/concepts/types) for the exact struct
+definitions, and [Write a renderer](/docs/collections/guides/write-a-renderer) for
+using the seed in an algorithm.

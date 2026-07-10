@@ -12,10 +12,15 @@
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "db:migrate": "node --env-file=.env db/migrate.mjs",
-    "worker:refresh": "node --env-file=.env scripts/worker-refresh.mjs"
+    "worker:refresh": "node --env-file=.env scripts/worker-refresh.mjs",
+    "emit:collection-abi": "node scripts/emit-collection-abi.mjs",
+    "generate:docs": "tsx scripts/generate-docs.ts"
   },
   "devDependencies": {
+    "marked": "^18.0.5",
     "postgres": "^3.4.9",
+    "shiki": "^4.3.0",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.0"
   },
   "pnpm": {
