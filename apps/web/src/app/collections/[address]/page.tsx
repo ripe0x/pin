@@ -7,7 +7,9 @@ import { MintCollectionCTA } from "@/components/collections/MintCollectionCTA"
 import { WithdrawPanel } from "@/components/collections/WithdrawPanel"
 import { CollectionMintHistory } from "@/components/collections/CollectionMintHistory"
 import { AttributionRoster } from "@/components/collections/AttributionRoster"
-import { ExploreGrid, GenerativeHero, RecentMintsGrid } from "@/components/collections/GenerativeViews"
+import { ExploreGrid, RecentMintsGrid } from "@/components/collections/GenerativeViews"
+import { CollectionWall } from "@/components/collections/CollectionWall"
+import { PlacardStatus, StickyMintBar } from "@/components/collections/CollectionPlacard"
 import { CollectionFocusRefresh } from "@/components/collections/CollectionFocusRefresh"
 import {
   getAttribution,
@@ -30,10 +32,18 @@ import {
   shortAddress,
 } from "@/lib/collection"
 
+/**
+ * The collection page, composed as an exhibition rather than a token
+ * detail: a typographic placard (name, artists, one live status line), the
+ * wall (a full-bleed gallery field with the work large and a range strip
+ * beneath it), an editorial band with the provenance story beside the mint
+ * instrument, the collection grid, and a quiet record section. A sticky
+ * mint bar keeps the sale one tap away while the instrument is off-screen —
+ * only while a mint is live; closed pages are a record, not a store.
+ */
+
 // TODO: Collection Graph (edges) is not yet exposed by the data layer —
-// lib/collection-onchain.ts has no getCollectionEdges export (unlike
-// lib/editions-onchain.ts's getEditionEdges). Skipping the graph view for
-// v1; add it back once the data layer grows that read.
+// skipping the graph view for v1; add it once the data layer grows the read.
 
 type Params = Promise<{ address: string }>
 
@@ -60,93 +70,144 @@ export default async function CollectionPage({ params }: { params: Params }) {
     getCollectionMintHistory(addr, c.minted, c.cfg.idMode),
     getAttribution(addr),
     getRecentTokenMarks(addr, c.minted, c.cfg.idMode),
-    // Gate state only when a hook is attached (cfg already tells us).
     c.cfg.mintHook !== ZERO_ADDRESS ? getGateState(addr) : Promise.resolve(null),
   ])
 
-  // Hero cascade: the artist's explicit cover always wins; a coverless
-  // generative work shows a live render (latest mint's real seed, or a
-  // deterministic preview seed pre-mint); a coverless renderer-native work
-  // falls back to its first token's image once one exists.
   const hasCover = c.cover.length > 0
   const hasWork = c.work.code.length > 0
-  const latest = recent[0] ?? null
   const firstTokenImage =
     !hasCover && !hasWork && c.minted > 0n
       ? (await getCollectionToken(addr, 1n))?.image ?? ""
       : ""
 
-  // The contract itself is an immutable clone (no upgrade path, ever); the
-  // renderer pointer can be pinned forever with lockRenderer, and the work
-  // definition locked in the renderer's own registry.
   const permanent = c.isRendererLocked
   const pooled = sellsViaMinterOnly(c.cfg.idMode)
   const strategy = hasPriceStrategy(c.priceStrategy)
 
-  // Sold out and window-closed are both Closed onchain but read differently
-  // (see MintCollectionCTA): sold out is the collection completing, so the
-  // page's gallery section becomes the collection's permanent record rather
-  // than a "recent mints" feed. Mirrors MintCollectionCTA's soldOut math.
   const capReached = c.cfg.supplyCap > 0n && c.minted >= c.cfg.supplyCap
   const soldOut = c.status === CollectionStatus.Closed && capReached
-  // A mint could still become live on the next read whenever status is
-  // Scheduled or Open (settings are live-settable right up to Closed, and an
-  // artist can reopen a closed window too — but "could a mint start/land
-  // between page loads" is the live-freshness question this focus-refresh
-  // answers, so Closed pages stay perfectly static).
-  const mintCouldBeLive = c.status === CollectionStatus.Scheduled || c.status === CollectionStatus.Open
+  const mintCouldBeLive =
+    c.status === CollectionStatus.Scheduled || c.status === CollectionStatus.Open
+
+  const placard = {
+    price: c.cfg.price.toString(),
+    supplyCap: c.cfg.supplyCap.toString(),
+    mintStart: c.cfg.mintStart.toString(),
+    mintEnd: c.cfg.mintEnd.toString(),
+    minted: c.minted.toString(),
+    hasStrategy: strategy,
+    pooled,
+  }
+
+  const artists = attribution.length > 0 ? attribution.map((a) => a.artist) : [c.owner]
 
   return (
     <div>
       {mintCouldBeLive && <CollectionFocusRefresh />}
-      <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] min-h-[calc(100vh-64px)]">
-        {/* Artwork: full-bleed gray field, sticky on desktop. */}
-        <div className="lg:sticky lg:top-16 lg:h-[calc(100vh-64px)] flex items-center justify-center bg-gray-100 dark:bg-bg p-8 lg:p-12">
-          {hasCover ? (
-            <OptimizedImage
-              src={c.cover}
-              alt={c.name}
-              width={1200}
-              loading="eager"
-              className="max-h-[78vh] max-w-full object-contain"
-            />
-          ) : hasWork ? (
-            <GenerativeHero
-              collection={addr}
-              work={c.work}
-              latest={latest}
-              minted={c.minted.toString()}
-            />
-          ) : firstTokenImage ? (
-            <OptimizedImage
-              src={firstTokenImage}
-              alt={`${c.name} #1`}
-              width={1200}
-              loading="eager"
-              className="max-h-[78vh] max-w-full object-contain"
-            />
+
+      {/* ── The placard: exhibition-scale identity, one live status line. ── */}
+      <header className="mx-auto max-w-[1400px] px-6 pt-10 pb-8 lg:px-12 lg:pt-16 lg:pb-10">
+        <nav className="mb-6 text-[10px] font-mono uppercase tracking-wider text-gray-400">
+          <Link href="/collections" className="underline hover:text-fg">
+            Collections
+          </Link>
+        </nav>
+        <h1 className="text-4xl sm:text-5xl lg:text-6xl font-medium tracking-tight leading-[1.05]">
+          {c.name}
+        </h1>
+        <p className="mt-3 text-[11px] font-mono uppercase tracking-wider text-gray-500">
+          {c.symbol} · by{" "}
+          {artists.map((a, i) => (
+            <span key={a}>
+              {i > 0 && ", "}
+              <a
+                href={evmNowAddressUrl(a, PND_CHAIN_ID)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline decoration-gray-300 underline-offset-2 hover:text-fg"
+              >
+                {shortAddress(a)}
+              </a>
+            </span>
+          ))}
+        </p>
+        <div className="mt-4">
+          <PlacardStatus snapshot={placard} />
+        </div>
+      </header>
+
+      {/* ── The wall: the work large, its range beneath it. ── */}
+      {hasWork ? (
+        <CollectionWall
+          collection={addr}
+          work={c.work}
+          entries={recent}
+          minted={c.minted.toString()}
+        />
+      ) : (
+        <section className="bg-gray-100 dark:bg-bg border-b border-gray-200">
+          <div className="mx-auto flex max-w-[1400px] items-center justify-center px-6 py-10 lg:px-12 lg:py-14">
+            {hasCover || firstTokenImage ? (
+              <OptimizedImage
+                src={hasCover ? c.cover : firstTokenImage}
+                alt={c.name}
+                width={1200}
+                loading="eager"
+                className="max-h-[62vh] max-w-full object-contain border border-gray-200 dark:border-gray-800"
+              />
+            ) : (
+              <p className="py-24 text-[10px] font-mono uppercase tracking-wider text-gray-400">
+                No artwork yet
+              </p>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* ── Editorial band: the story beside the instrument. ── */}
+      <div
+        id="mint-instrument"
+        className="mx-auto grid max-w-[1400px] scroll-mt-20 grid-cols-1 gap-10 px-6 py-10 lg:grid-cols-[1fr_420px] lg:gap-20 lg:px-12 lg:py-14"
+      >
+        <div className="max-w-[600px] space-y-6">
+          <h2 className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+            About this work
+          </h2>
+          {hasWork ? (
+            <p className="text-sm leading-relaxed text-fg-muted">
+              Every token is generated by the collection&apos;s own algorithm from a
+              seed written onchain at mint. The render is a pure function of
+              chain state: this code, that seed, forever. No server keeps the
+              artwork alive, and every image on this page is the algorithm
+              running live in your browser.
+            </p>
           ) : (
-            <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-              No artwork yet
+            <p className="text-sm leading-relaxed text-fg-muted">
+              An edition on the artist&apos;s own contract. Every token carries a
+              distinct onchain Mint Mark: its place in the collection&apos;s
+              history, recorded at mint.
             </p>
           )}
+          <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
+            {permanent
+              ? "The renderer is locked: this collection renders through its current contract forever. The contract itself has had no upgrade path since deploy."
+              : "The contract is immutable from deploy. The renderer can change until the artist locks it."}
+          </p>
+          <div className="pt-2">
+            <h3 className="mb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400">
+              Self host this mint
+            </h3>
+            <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
+              This collection is the artist&apos;s own contract and can be minted
+              from any interface. From your own page, call{" "}
+              <code className="text-fg">mintWithReferral(qty, yourAddress, 0x)</code> on{" "}
+              <code className="break-all text-fg">{addr}</code> so the{" "}
+              {formatBps(REFERRAL_SHARE_BPS)} referral share routes to you, not PND.
+            </p>
+          </div>
         </div>
 
-        {/* Sidebar */}
-        <aside className="lg:border-l border-gray-200 px-6 py-8 lg:px-8 lg:py-10">
-          <nav className="mb-4 text-[10px] font-mono uppercase tracking-wider text-gray-400">
-            <Link href="/collections" className="underline hover:text-fg">
-              Collections
-            </Link>
-          </nav>
-
-          <header className="pb-5 border-b border-gray-100 space-y-2">
-            <h1 className="text-2xl font-medium tracking-tight">{c.name}</h1>
-            <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-              {c.symbol}
-            </p>
-          </header>
-
+        <div>
           <MintCollectionCTA
             collection={addr}
             work={hasWork ? c.work : null}
@@ -162,10 +223,9 @@ export default async function CollectionPage({ params }: { params: Params }) {
               idMode: c.cfg.idMode,
             }}
           />
-
-          {/* Compact trust strip (§9): the load-bearing facts adjacent to
-              the mint action; the full Facts block below carries the rest. */}
-          <p className="pt-2 pb-4 border-b border-gray-100 text-[10px] font-mono uppercase tracking-wider text-gray-400">
+          {/* Compact trust strip (§9): the load-bearing facts beside the
+              mint action; the record section below carries the rest. */}
+          <p className="pt-2 text-[10px] font-mono uppercase tracking-wider text-gray-400">
             <a
               href={evmNowAddressUrl(addr, PND_CHAIN_ID)}
               target="_blank"
@@ -177,14 +237,54 @@ export default async function CollectionPage({ params }: { params: Params }) {
             {" · ERC721 · immutable contract · "}
             {permanent ? "renderer locked forever" : "renderer swappable until locked"}
           </p>
+        </div>
+      </div>
 
-          <AttributionRoster entries={attribution} chainId={PND_CHAIN_ID} />
+      {/* ── The collection: the body of work, live while minting. ── */}
+      {hasWork && recent.length > 1 && (
+        <section className="border-t border-gray-200 px-6 py-10 lg:px-12">
+          <div className="mb-4 flex items-baseline justify-between gap-4">
+            <h2 className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+              The collection
+            </h2>
+            <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400 tabular-nums">
+              {soldOut
+                ? `Complete · ${c.minted.toString()} works`
+                : c.cfg.supplyCap > 0n
+                  ? `${c.minted.toString()} of ${c.cfg.supplyCap.toString()} minted`
+                  : `${c.minted.toString()} minted`}
+            </p>
+          </div>
+          <RecentMintsGrid
+            collection={addr}
+            work={c.work}
+            entries={recent}
+            live={c.status === CollectionStatus.Open}
+          />
+        </section>
+      )}
 
-          <WithdrawPanel collection={addr} />
+      {/* Pre-mint: the algorithm's deeper range, before any token exists. */}
+      {hasWork && c.minted === 0n && (
+        <section className="border-t border-gray-200 px-6 py-10 lg:px-12">
+          <h2 className="mb-4 text-[10px] font-mono uppercase tracking-wider text-gray-400">
+            Example outputs
+          </h2>
+          <ExploreGrid collection={addr} work={c.work} />
+        </section>
+      )}
 
-          <CollectionMintHistory history={history} chainId={PND_CHAIN_ID} />
-
-          <section className="py-5 border-b border-gray-100 space-y-2 text-[11px] font-mono">
+      {/* ── The record: attribution, history, facts. ── */}
+      <section className="border-t border-gray-200">
+        <div className="mx-auto grid max-w-[1400px] grid-cols-1 gap-x-16 px-6 py-10 md:grid-cols-2 lg:grid-cols-3 lg:px-12 lg:py-14">
+          <div>
+            <AttributionRoster entries={attribution} chainId={PND_CHAIN_ID} />
+            <WithdrawPanel collection={addr} />
+          </div>
+          <div>
+            <CollectionMintHistory history={history} chainId={PND_CHAIN_ID} />
+          </div>
+          <div className="py-5 space-y-2 text-[11px] font-mono">
             <Fact label="Contract" value={shortAddress(addr)} />
             <Fact label="Standard" value="ERC721" />
             <Fact label="Owner" value={shortAddress(c.owner)} />
@@ -225,62 +325,11 @@ export default async function CollectionPage({ params }: { params: Params }) {
                 View contract ↗
               </a>
             </div>
-            {permanent ? (
-              <p className="pt-2 text-[10px] font-mono text-gray-400 normal-case leading-relaxed">
-                Renderer locked: this collection is rendered by its current
-                renderer contract forever. The contract itself has no upgrade
-                path from deploy.
-              </p>
-            ) : (
-              <p className="pt-2 text-[10px] font-mono text-gray-400 normal-case leading-relaxed">
-                The contract is immutable from deploy. The renderer can change
-                until the artist locks it.
-              </p>
-            )}
-          </section>
+          </div>
+        </div>
+      </section>
 
-          <section className="pt-5">
-            <h2 className="text-[10px] font-mono uppercase tracking-wider text-gray-400 mb-2">
-              Self host this mint
-            </h2>
-            <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
-              This collection is your own contract and can be minted from any
-              interface. From your own page, call{" "}
-              <code className="text-fg">mintWithReferral(qty, yourAddress, 0x)</code> on{" "}
-              <code className="break-all text-fg">{addr}</code> so the{" "}
-              {formatBps(REFERRAL_SHARE_BPS)} referral share routes to you, not PND.
-            </p>
-          </section>
-        </aside>
-      </div>
-
-      {/* Recent mints: live renders from real seeds via the parity builder
-          (one shared deps fetch, no tokenURI calls). Skipped when the hero
-          already shows the only mint. */}
-      {hasWork && recent.length > 1 && (
-        <section className="border-t border-gray-200 px-6 py-10 lg:px-12">
-          <h2 className="mb-4 text-[10px] font-mono uppercase tracking-wider text-gray-400">
-            {soldOut ? "The collection" : "Recent mints"}
-          </h2>
-          <RecentMintsGrid
-            collection={addr}
-            work={c.work}
-            entries={recent}
-            live={c.status === CollectionStatus.Open}
-          />
-        </section>
-      )}
-
-      {/* Pre-mint explore: the algorithm's range, before any token exists.
-          Once minting starts, real mints take the section over. */}
-      {hasWork && c.minted === 0n && (
-        <section className="border-t border-gray-200 px-6 py-10 lg:px-12">
-          <h2 className="mb-4 text-[10px] font-mono uppercase tracking-wider text-gray-400">
-            Example outputs
-          </h2>
-          <ExploreGrid collection={addr} work={c.work} />
-        </section>
-      )}
+      <StickyMintBar snapshot={placard} anchorId="mint-instrument" />
     </div>
   )
 }

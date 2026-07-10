@@ -56,11 +56,11 @@ export function useRenderContext() {
   return { resolver, gunzip, chainId }
 }
 
-function toWorkInput(work: WorkConfig): WorkInput {
+export function toWorkInput(work: WorkConfig): WorkInput {
   return { code: work.code, deps: work.deps, injectionVersion: work.injectionVersion }
 }
 
-function entryTokenData(
+export function entryTokenData(
   entry: RenderEntry,
   collection: Address,
   chainId: number,
@@ -79,7 +79,7 @@ function entryTokenData(
 
 /** Deterministic explore seed i for a collection: stable across visits,
  *  distinct per collection, clearly a throwaway (never a token's seed). */
-function exploreSeed(collection: Address, i: number): `0x${string}` {
+export function exploreSeed(collection: Address, i: number): `0x${string}` {
   return keccak256(stringToBytes(`${collection.toLowerCase()}:explore:${i}`))
 }
 
