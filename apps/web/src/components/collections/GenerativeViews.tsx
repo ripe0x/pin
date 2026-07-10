@@ -14,11 +14,19 @@
  * first mint.
  *
  * RecentMintsGrid: latest mints rendered from their real seeds, linking to
- * their token pages.
+ * their token pages. Accepts an optional `live` refresh mode (§8.1): while
+ * Open and the tab is visible, it re-pulls the server prop on an interval
+ * via router.refresh() rather than opening any new client-side RPC read.
+ *
+ * ExploreGrid: a small gallery of deterministic sample outputs (§4 [S]) —
+ * distinct throwaway seeds (offset well clear of the hero's reroll
+ * sequence) so a Scheduled page shows range at a glance. Cells are not
+ * tokens and link nowhere.
  */
 
 import Link from "next/link"
-import { useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { keccak256, stringToBytes } from "viem"
 import type { Address, PublicClient } from "viem"
 import { useChainId, usePublicClient } from "wagmi"
@@ -74,6 +82,11 @@ function entryTokenData(
 function exploreSeed(collection: Address, i: number): `0x${string}` {
   return keccak256(stringToBytes(`${collection.toLowerCase()}:explore:${i}`))
 }
+
+// The hero's reroll walks exploreSeed indices 0, 1, 2, … on every click; the
+// preview grid starts well past any plausible click count so its samples
+// never coincide with a seed a visitor already rerolled to in the hero.
+const EXPLORE_GRID_INDEX_OFFSET = 1000
 
 export function GenerativeHero({
   collection,
@@ -157,16 +170,66 @@ export function GenerativeHero({
   )
 }
 
+const LIVE_REFRESH_INTERVAL_MS = 30_000
+
 export function RecentMintsGrid({
   collection,
   work,
   entries,
+  /** While true (Open + tab visible), re-pull the server prop on an
+   *  interval so watchers see the collection grow. No client RPC: this
+   *  just calls router.refresh() to re-run the server component. */
+  live = false,
 }: {
   collection: Address
   work: WorkConfig
   entries: RenderEntry[]
+  live?: boolean
 }) {
   const { resolver, gunzip, chainId } = useRenderContext()
+  const router = useRouter()
+
+  // Track which tokenIds are new since the last render so only they get the
+  // entrance treatment; the grid's own first mount never animates.
+  const seenIds = useRef<Set<string>>(new Set(entries.map((e) => e.tokenId)))
+  const [freshIds, setFreshIds] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    const seen = seenIds.current
+    const fresh = new Set(entries.filter((e) => !seen.has(e.tokenId)).map((e) => e.tokenId))
+    seenIds.current = new Set(entries.map((e) => e.tokenId))
+    if (fresh.size > 0) setFreshIds(fresh)
+  }, [entries])
+
+  // Zero timers unless live and the tab is actually visible; the listener
+  // starts/stops the interval on visibilitychange rather than polling in
+  // the background.
+  useEffect(() => {
+    if (!live) return
+    let timer: ReturnType<typeof setInterval> | null = null
+    const start = () => {
+      if (timer !== null) return
+      timer = setInterval(() => {
+        if (document.visibilityState === "visible") router.refresh()
+      }, LIVE_REFRESH_INTERVAL_MS)
+    }
+    const stop = () => {
+      if (timer !== null) {
+        clearInterval(timer)
+        timer = null
+      }
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") start()
+      else stop()
+    }
+    if (document.visibilityState === "visible") start()
+    document.addEventListener("visibilitychange", onVisibility)
+    return () => {
+      stop()
+      document.removeEventListener("visibilitychange", onVisibility)
+    }
+  }, [live, router])
+
   if (!resolver || entries.length === 0) return null
 
   return (
@@ -175,7 +238,7 @@ export function RecentMintsGrid({
         <Link
           key={e.tokenId}
           href={`/collections/${collection.toLowerCase()}/${e.tokenId}`}
-          className="group block"
+          className={`group block ${freshIds.has(e.tokenId) ? "animate-reveal" : ""}`}
         >
           <TokenPreview
             work={toWorkInput(work)}
@@ -190,6 +253,61 @@ export function RecentMintsGrid({
           </span>
         </Link>
       ))}
+    </div>
+  )
+}
+
+export function ExploreGrid({
+  collection,
+  work,
+  count = 6,
+}: {
+  collection: Address
+  work: WorkConfig
+  /** Number of sample outputs to render. Default 6. */
+  count?: number
+}) {
+  const { resolver, gunzip, chainId } = useRenderContext()
+  const samples = useMemo(
+    () =>
+      Array.from({ length: count }, (_, i) => ({
+        index: i,
+        seed: exploreSeed(collection, EXPLORE_GRID_INDEX_OFFSET + i),
+      })),
+    [collection, count],
+  )
+
+  if (!resolver) return null
+
+  return (
+    <div>
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+        {samples.map((s) => (
+          <div key={s.index} className="block">
+            <TokenPreview
+              work={toWorkInput(work)}
+              tokenData={{
+                hash: s.seed,
+                tokenId: String(s.index + 1),
+                collection: collection.toLowerCase(),
+                chainId,
+                version: work.injectionVersion,
+                context: "preview",
+              }}
+              resolver={resolver}
+              gunzip={gunzip}
+              className="aspect-square w-full border border-gray-200 dark:border-gray-800 pointer-events-none"
+              title={`example output ${s.index + 1}`}
+            />
+            <span className="mt-1 block text-[10px] font-mono text-gray-400">
+              Example {String(s.index + 1).padStart(2, "0")}
+            </span>
+          </div>
+        ))}
+      </div>
+      <p className="mt-3 text-[10px] font-mono text-gray-400 normal-case leading-relaxed">
+        Example outputs. Every mint is generated from its own transaction.
+      </p>
     </div>
   )
 }
