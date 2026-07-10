@@ -232,4 +232,57 @@ contract SVGRendererTest is Test {
         string memory json = _decode(uri);
         assertTrue(_contains(json, '"name":"SVG Collection"'), "wrong contractURI name");
     }
+
+    // ── previewURI (IPreviewRenderer) ────────────────────────────────────────
+
+    function test_previewURI_rendersWithoutAnyMint() public view {
+        // No token exists; a preview must still render from the supplied seed.
+        bytes32 seed = keccak256("throwaway");
+        string memory uri = svgRenderer.previewURI(address(collection), 1, seed);
+        assertTrue(_startsWith(uri, "data:application/json;base64,"), "wrong data URI prefix");
+
+        string memory json = _decode(uri);
+        assertTrue(_contains(json, "(preview)"), "preview name must be marked as a preview");
+
+        // The art must derive from the caller's seed, same path as tokenURI.
+        string memory image = _extractField(json, "image");
+        bytes memory prefix = bytes("data:image/svg+xml;base64,");
+        bytes memory u = bytes(image);
+        bytes memory b64 = new bytes(u.length - prefix.length);
+        for (uint256 i = 0; i < b64.length; i++) {
+            b64[i] = u[i + prefix.length];
+        }
+        string memory svgBody = string(Base64.decode(string(b64)));
+        string memory expectedFill =
+            LibString.toHexStringNoPrefix(uint256(seed) & 0xffffff, 3);
+        assertTrue(
+            _contains(svgBody, expectedFill), "preview art did not derive from the supplied seed"
+        );
+    }
+
+    function test_previewURI_realSeed_matchesTokenURIImage() public {
+        // A preview with the token's actual seed IS the token's render.
+        uint256 tokenId = _mint();
+        bytes32 seed = collection.tokenSeed(tokenId);
+
+        string memory tokenImage = _extractField(_decode(collection.tokenURI(tokenId)), "image");
+        string memory previewImage = _extractField(
+            _decode(svgRenderer.previewURI(address(collection), tokenId, seed)), "image"
+        );
+        assertEq(tokenImage, previewImage, "preview(realSeed) must equal the token render");
+    }
+
+    function test_previewURI_noProvenanceAttributes() public view {
+        string memory json =
+            _decode(svgRenderer.previewURI(address(collection), 1, keccak256("x")));
+        assertTrue(_contains(json, '"trait_type":"Seed"'), "preview must carry its seed");
+        assertFalse(
+            _contains(json, '"trait_type":"Mint Order"'),
+            "a preview is not a token: no provenance traits"
+        );
+        assertFalse(
+            _contains(json, '"trait_type":"Provenance"'),
+            "a preview is not a token: no provenance traits"
+        );
+    }
 }

@@ -52,6 +52,7 @@ contract GenerativeRendererForkTest is Test {
         "function setup(){/*sovereign-fork-proof*/createCanvas(64,64)}";
 
     Collection collection;
+    GenerativeRenderer renderer;
     bool forked;
 
     function setUp() public {
@@ -70,7 +71,7 @@ contract GenerativeRendererForkTest is Test {
         forked = true;
 
         RenderAssets assets = new RenderAssets();
-        GenerativeRenderer renderer = new GenerativeRenderer(
+        renderer = new GenerativeRenderer(
             SCRIPTY_BUILDER_V2, address(assets), ETHFS_V2_FILE_STORAGE, GUNZIP_FILE
         );
         MockScriptStore artistStore = new MockScriptStore();
@@ -126,6 +127,10 @@ contract GenerativeRendererForkTest is Test {
         assertTrue(LibString.contains(html, expectedHash), "tokenData hash injected");
         assertTrue(LibString.contains(html, '"tokenId":"1"'), "tokenId injected");
         assertTrue(LibString.contains(html, '"chainId":1'), "chainId injected");
+        assertTrue(
+            LibString.contains(html, '"context":"token"'),
+            "canonical render must inject context:token"
+        );
 
         // The gzipped p5 dependency arrived as a gzip data-URI script tag.
         assertTrue(LibString.contains(html, "gzip"), "gzip dep tag present");
@@ -137,6 +142,60 @@ contract GenerativeRendererForkTest is Test {
         // (~200KB+ base64) rather than an empty shell that happens to match
         // substrings.
         assertGt(bytes(html).length, 100_000, "document carries dependency payload");
+    }
+
+    /// @dev The load-bearing preview property: a preview rendered with a
+    ///      token's REAL seed assembles the exact same document as the
+    ///      canonical tokenURI render, differing only in the injected
+    ///      execution context. The preview IS the render.
+    function test_fork_previewURI_sameSeed_isTheTokenDocument() public {
+        if (!forked) return;
+
+        string memory tokenHtml = _extractHtml(
+            string(Base64.decode(LibString.slice(collection.tokenURI(1), 29, bytes(collection.tokenURI(1)).length)))
+        );
+        string memory previewUri =
+            renderer.previewURI(address(collection), 1, collection.tokenSeed(1));
+        string memory previewJson =
+            string(Base64.decode(LibString.slice(previewUri, 29, bytes(previewUri).length)));
+        assertTrue(
+            LibString.contains(previewJson, "(preview)"), "preview name marked as preview"
+        );
+        string memory previewHtml = _extractHtml(previewJson);
+
+        assertTrue(
+            LibString.contains(previewHtml, '"context":"preview"'),
+            "preview render must inject context:preview"
+        );
+        assertEq(
+            LibString.replace(previewHtml, '"context":"preview"', '"context":"token"'),
+            tokenHtml,
+            "preview(realSeed) must be the token document modulo context"
+        );
+    }
+
+    /// @dev Previews need no token: any (tokenId, seed) renders, including
+    ///      ids that were never minted — this is the pre-mint explore state.
+    function test_fork_previewURI_rendersWithoutAnyMint() public {
+        if (!forked) return;
+
+        bytes32 seed = keccak256("throwaway-preview-seed");
+        string memory uri = renderer.previewURI(address(collection), 7, seed);
+        string memory json = string(Base64.decode(LibString.slice(uri, 29, bytes(uri).length)));
+        string memory html = _extractHtml(json);
+
+        assertTrue(
+            LibString.contains(
+                html,
+                string(
+                    abi.encodePacked('window.tokenData={"hash":"', uint256(seed).toHexString(32))
+                )
+            ),
+            "preview injects the caller's seed"
+        );
+        assertTrue(LibString.contains(html, '"tokenId":"7"'), "preview injects the asked-for id");
+        assertTrue(LibString.contains(html, '"context":"preview"'), "context is preview");
+        assertTrue(LibString.contains(html, ARTIST_MARKER), "artist script present");
     }
 
     function _extractHtml(string memory json) private pure returns (string memory) {

@@ -5,6 +5,7 @@ import {Base64} from "solady/utils/Base64.sol";
 import {LibString} from "solady/utils/LibString.sol";
 
 import {IRenderer, ICollectionView} from "../interfaces/IRenderer.sol";
+import {IPreviewRenderer} from "../interfaces/IPreviewRenderer.sol";
 import {IdMode} from "../CollectionTypes.sol";
 import {CodeKind, CodeRef, WorkConfig} from "./WorkTypes.sol";
 import {RenderAssets} from "./RenderAssets.sol";
@@ -25,16 +26,18 @@ import {HTMLRequest, HTMLTag, HTMLTagType} from "../vendor/scripty/core/ScriptyS
 ///         of chain state: no server, no pin, nothing to keep alive.
 ///
 ///         The injected context (render-context convention v1) is
-///         window.tokenData = { hash, tokenId, collection, chainId, version }
-///         — hash/tokenId use the widely-adopted long-form-generative shape
-///         so existing sketches run unmodified.
+///         window.tokenData = { hash, tokenId, collection, chainId, version,
+///         context } — hash/tokenId use the widely-adopted long-form-
+///         generative shape so existing sketches run unmodified. `context`
+///         says why the document is being rendered: "token" for canonical
+///         tokenURI renders, "preview" for previewURI's what-if renders.
 ///
 ///         Full presentation permanence for a work = the collection's
 ///         lockRenderer() (pin the pointer at this immutable contract) plus
 ///         lockWork(collection) here (pin the algorithm). Static images
 ///         (cover, per-token captures) are read from the RenderAssets
 ///         registry and stay refreshable — they mirror rendered output.
-contract GenerativeRenderer is IRenderer {
+contract GenerativeRenderer is IRenderer, IPreviewRenderer {
     using LibString for uint256;
     using LibString for address;
 
@@ -136,7 +139,7 @@ contract GenerativeRenderer is IRenderer {
         bytes32 seed = c.tokenSeed(tokenId);
 
         // getEncodedHTMLString returns a complete data:text/html;base64 URI.
-        string memory htmlUri = _buildHTML(collection, tokenId, work, seed);
+        string memory htmlUri = _buildHTML(collection, tokenId, work, seed, "token");
         string memory image = _imageFor(collection, tokenId);
 
         bytes memory json = abi.encodePacked(
@@ -153,6 +156,40 @@ contract GenerativeRenderer is IRenderer {
             ',"attributes":',
             _attributes(c, tokenId, seed),
             "}"
+        );
+        return string(
+            abi.encodePacked("data:application/json;base64,", Base64.encode(json))
+        );
+    }
+
+    /// @inheritdoc IPreviewRenderer
+    /// @dev Identical document assembly as tokenURI, with the caller's seed
+    ///      in place of tokenSeed and `context:"preview"` injected. No
+    ///      token needs to exist; the only requirement is a set work. The
+    ///      metadata is deliberately not token-shaped provenance: name is
+    ///      marked as a preview, attributes carry the seed only, and no
+    ///      static image is attached (a preview is the live render).
+    function previewURI(address collection, uint256 tokenId, bytes32 seed)
+        external
+        view
+        override
+        returns (string memory)
+    {
+        ICollectionView c = ICollectionView(collection);
+        WorkConfig memory work = _works[collection];
+
+        string memory htmlUri = _buildHTML(collection, tokenId, work, seed, "preview");
+
+        bytes memory json = abi.encodePacked(
+            '{"name":"',
+            LibString.escapeJSON(c.name()),
+            " #",
+            tokenId.toString(),
+            ' (preview)","animation_url":"',
+            htmlUri,
+            '","attributes":[{"trait_type":"Seed","value":"',
+            uint256(seed).toHexString(32),
+            '"}]}'
         );
         return string(
             abi.encodePacked("data:application/json;base64,", Base64.encode(json))
@@ -196,7 +233,8 @@ contract GenerativeRenderer is IRenderer {
         address collection,
         uint256 tokenId,
         WorkConfig memory work,
-        bytes32 seed
+        bytes32 seed,
+        string memory context
     ) private view returns (string memory) {
         require(work.code.length > 0, "GR: no code");
 
@@ -210,7 +248,8 @@ contract GenerativeRenderer is IRenderer {
             i++;
         }
         body[i].tagType = HTMLTagType.script;
-        body[i].tagContent = _contextJs(collection, tokenId, seed, work.injectionVersion);
+        body[i].tagContent =
+            _contextJs(collection, tokenId, seed, work.injectionVersion, context);
         i++;
         for (uint256 s = 0; s < work.code.length; s++) {
             body[i] = _fileTag(work.code[s]);
@@ -257,12 +296,15 @@ contract GenerativeRenderer is IRenderer {
     ///      Sequential mode the token id IS the mint order, so art keyed to
     ///      order reads tokenId; works needing other mint-time inputs (block,
     ///      pooled order) record them via a hook/minter and read them through
-    ///      their own renderer.
+    ///      their own renderer. `context` ("token" | "preview" | offchain
+    ///      "capture") is additive within v1: code SHOULD tolerate additions
+    ///      and treats a missing/"token" context as the canonical render.
     function _contextJs(
         address collection,
         uint256 tokenId,
         bytes32 seed,
-        uint8 version
+        uint8 version,
+        string memory context
     ) private view returns (bytes memory) {
         return abi.encodePacked(
             'window.tokenData={"hash":"',
@@ -275,7 +317,9 @@ contract GenerativeRenderer is IRenderer {
             block.chainid.toString(),
             ',"version":',
             uint256(version).toString(),
-            "};"
+            ',"context":"',
+            context,
+            '"};'
         );
     }
 

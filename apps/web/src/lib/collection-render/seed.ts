@@ -26,5 +26,7 @@ export function makeTestTokenData(params: {
     collection: (params.collection ?? "0x" + "0".repeat(40)).toLowerCase(),
     chainId: params.chainId ?? 1,
     version: params.injectionVersion ?? 1,
+    // A test seed is by definition an exploratory render, never a token.
+    context: "preview",
   };
 }

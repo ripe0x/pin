@@ -5,6 +5,7 @@ import {Base64} from "solady/utils/Base64.sol";
 import {LibString} from "solady/utils/LibString.sol";
 
 import {IRenderer, ICollectionView} from "../interfaces/IRenderer.sol";
+import {IPreviewRenderer} from "../interfaces/IPreviewRenderer.sol";
 import {CollectionConfig, CollectionStatus, IdMode} from "../CollectionTypes.sol";
 
 /// @title SVGRenderer
@@ -12,22 +13,35 @@ import {CollectionConfig, CollectionStatus, IdMode} from "../CollectionTypes.sol
 ///         IRenderer end to end (base64 JSON envelope: name, description,
 ///         image = data:image/svg+xml;base64,<svg>, provenance attributes),
 ///         leaving exactly one abstract function for the concrete art:
-///         `svg(collection, tokenId)`. A concrete work inherits this,
+///         `svg(collection, tokenId, seed)`. A concrete work inherits this,
 ///         implements `svg`, and optionally overrides the naming/description/
 ///         attributes hooks.
+///
+///         The seed is an explicit parameter — the art is a pure-ish function
+///         of it — which is what makes previewURI (IPreviewRenderer) free for
+///         every concrete work: tokenURI passes the token's real tokenSeed,
+///         previewURI passes a caller-supplied throwaway.
 ///
 ///         Reads collection state through ICollectionView, given the
 ///         collection address explicitly (per IRenderer — the collection is
 ///         a param, not msg.sender), so one renderer instance can serve many
 ///         collections that share the same generative algorithm.
-abstract contract SVGRenderer is IRenderer {
+abstract contract SVGRenderer is IRenderer, IPreviewRenderer {
     using LibString for uint256;
     using LibString for address;
 
     /// @notice The art itself. Must return a complete `<svg ...>...</svg>`
     ///         document (not base64-encoded, not data-URI-wrapped — this base
-    ///         contract handles that envelope).
-    function svg(address collection, uint256 tokenId) internal view virtual returns (string memory);
+    ///         contract handles that envelope). `seed` is the only entropy:
+    ///         tokenURI passes the token's canonical tokenSeed, previewURI a
+    ///         caller-supplied value. A work MAY also read live collection
+    ///         state; anything beyond (collection, tokenId, seed) will render
+    ///         from whatever is live at call time, previews included.
+    function svg(address collection, uint256 tokenId, bytes32 seed)
+        internal
+        view
+        virtual
+        returns (string memory);
 
     /// @notice Token name hook. Default: "{collection name} #{tokenId}".
     function tokenName(address collection, uint256 tokenId)
@@ -73,8 +87,10 @@ abstract contract SVGRenderer is IRenderer {
         override
         returns (string memory)
     {
+        bytes32 seed = ICollectionView(collection).tokenSeed(tokenId);
         string memory image = string.concat(
-            "data:image/svg+xml;base64,", Base64.encode(bytes(svg(collection, tokenId)))
+            "data:image/svg+xml;base64,",
+            Base64.encode(bytes(svg(collection, tokenId, seed)))
         );
 
         string memory desc = tokenDescription(collection, tokenId);
@@ -88,6 +104,35 @@ abstract contract SVGRenderer is IRenderer {
             '","attributes":',
             attributes(collection, tokenId),
             "}"
+        );
+        return string.concat("data:application/json;base64,", Base64.encode(bytes(json)));
+    }
+
+    /// @inheritdoc IPreviewRenderer
+    /// @dev Same art path as tokenURI with the caller's seed in place of
+    ///      tokenSeed. No token needs to exist. Not token-shaped metadata:
+    ///      name marked as a preview, seed attribute only — a preview is
+    ///      not a token, so no provenance.
+    function previewURI(address collection, uint256 tokenId, bytes32 seed)
+        external
+        view
+        override
+        returns (string memory)
+    {
+        string memory image = string.concat(
+            "data:image/svg+xml;base64,",
+            Base64.encode(bytes(svg(collection, tokenId, seed)))
+        );
+        string memory json = string.concat(
+            '{"name":"',
+            _escape(ICollectionView(collection).name()),
+            " #",
+            tokenId.toString(),
+            ' (preview)","image":"',
+            image,
+            '","attributes":[{"trait_type":"Seed","value":"',
+            uint256(seed).toHexString(32),
+            '"}]}'
         );
         return string.concat("data:application/json;base64,", Base64.encode(bytes(json)));
     }

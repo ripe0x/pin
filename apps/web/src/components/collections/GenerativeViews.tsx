@@ -64,6 +64,8 @@ function entryTokenData(
     collection: collection.toLowerCase(),
     chainId,
     version,
+    // A real minted token's seed: this is the canonical render.
+    context: "token",
   }
 }
 
@@ -88,6 +90,7 @@ export function GenerativeHero({
       collection: collection.toLowerCase(),
       chainId,
       version: work.injectionVersion,
+      context: "preview",
     }
   }, [latest, collection, chainId, work.injectionVersion])
 
