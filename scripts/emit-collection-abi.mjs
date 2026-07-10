@@ -75,6 +75,11 @@ emit({
   exportName: "holdsCollectionHookAbi",
   outFiles: ["packages/abi/src/holdsCollectionHook.ts"],
 });
+emit({
+  artifact: "GateHook.sol/GateHook.json",
+  exportName: "gateHookAbi",
+  outFiles: ["packages/abi/src/gateHook.ts"],
+});
 
 // Render-land registries (work configs + static display assets).
 emit({
