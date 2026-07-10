@@ -21,6 +21,11 @@ import type { WorkConfig } from "@/lib/collection"
 import { TokenPreview, type TokenData } from "@/lib/collection-render"
 import { useRenderContext } from "./GenerativeViews"
 
+// Cap the live reveal grid: beyond this many tokens, render only the first
+// N live and hand off the rest to the collection page instead of mounting
+// N iframes (each a real render cost) for a large batch mint.
+const MAX_REVEAL_CELLS = 4
+
 export function MintReveal({
   collection,
   work,
@@ -45,8 +50,11 @@ export function MintReveal({
     [firstTokenId, quantity],
   )
 
-  const { data: seedReads } = useReadContracts({
-    contracts: ids.map((id) => ({
+  const visibleIds = ids.slice(0, MAX_REVEAL_CELLS)
+  const hiddenCount = ids.length - visibleIds.length
+
+  const { data: seedReads, refetch: refetchSeeds } = useReadContracts({
+    contracts: visibleIds.map((id) => ({
       address: collection,
       abi: collectionAbi,
       functionName: "tokenSeed" as const,
@@ -56,6 +64,7 @@ export function MintReveal({
   })
 
   const seeds = seedReads?.map((r) => (r.status === "success" ? (r.result as `0x${string}`) : null))
+  const seedErrored = seedReads?.map((r) => r.status === "failure")
 
   const headline =
     ids.length === 1
@@ -78,7 +87,7 @@ export function MintReveal({
 
       {work ? (
         <div className={ids.length === 1 ? "" : "grid grid-cols-2 gap-3"}>
-          {ids.map((id, i) => (
+          {visibleIds.map((id, i) => (
             <Link
               key={id.toString()}
               href={`/collections/${collection.toLowerCase()}/${id}`}
@@ -89,12 +98,27 @@ export function MintReveal({
                 work={work}
                 tokenId={id.toString()}
                 seed={seeds?.[i] ?? null}
+                hasError={seedErrored?.[i] ?? false}
+                onRetry={() => void refetchSeeds()}
               />
               <span className="mt-1 block text-[10px] font-mono text-gray-400 group-hover:text-fg transition-colors">
                 #{id.toString()} · view token →
               </span>
             </Link>
           ))}
+          {hiddenCount > 0 && (
+            <Link
+              href={`/collections/${collection.toLowerCase()}`}
+              className="group flex aspect-square w-full flex-col items-center justify-center gap-1 border border-dashed border-gray-200 dark:border-gray-800 text-center"
+            >
+              <span className="text-sm font-mono text-gray-500 group-hover:text-fg transition-colors">
+                +{hiddenCount} more
+              </span>
+              <span className="text-[10px] font-mono uppercase tracking-wider text-gray-400 group-hover:text-fg transition-colors">
+                view the collection →
+              </span>
+            </Link>
+          )}
         </div>
       ) : (
         <p className="text-[11px] font-mono text-gray-600 leading-relaxed">
@@ -126,11 +150,17 @@ function RevealCell({
   work,
   tokenId,
   seed,
+  hasError,
+  onRetry,
 }: {
   collection: `0x${string}`
   work: WorkConfig
   tokenId: string
   seed: `0x${string}` | null
+  /** True when the tokenSeed read for this token errored (vs. still pending). */
+  hasError?: boolean
+  /** Re-fires the seed reads (wagmi's useReadContracts refetch). */
+  onRetry?: () => void
 }) {
   const { resolver, gunzip, chainId } = useRenderContext()
 
@@ -150,10 +180,23 @@ function RevealCell({
   if (!tokenData || !resolver) {
     return (
       <div className="aspect-square w-full border border-gray-200 dark:border-gray-800">
-        <div className="flex h-full w-full items-center justify-center bg-gray-100 dark:bg-gray-900">
+        <div className="flex h-full w-full flex-col items-center justify-center gap-1.5 bg-gray-100 dark:bg-gray-900">
           <span className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
             Rendering…
           </span>
+          {hasError && onRetry && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                onRetry()
+              }}
+              className="text-[10px] font-mono uppercase tracking-wider text-gray-500 underline hover:text-fg"
+            >
+              Retry
+            </button>
+          )}
         </div>
       </div>
     )

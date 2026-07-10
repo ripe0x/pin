@@ -21,7 +21,7 @@
  * this component renders a quiet notice instead of a buy flow.
  */
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { formatEther, parseEventLogs } from "viem"
 import {
@@ -49,6 +49,7 @@ import {
   COLLECTION_STATUS_LABEL,
   REFERRAL_SHARE_BPS,
   ZERO_ADDRESS,
+  evmNowTxUrl,
   formatBps,
   hasPriceStrategy,
   isGasOnly,
@@ -109,7 +110,10 @@ export function MintCollectionCTA({
   // Live price quote for strategy collections. 12s poll — this is a paid RPC
   // read (currentPrice), never tighten below this without checking the RPC
   // budget. Fixed-price collections skip the read entirely (query.enabled).
-  const { data: liveQuote } = useReadContract({
+  const {
+    data: liveQuote,
+    refetch: refetchLiveQuote,
+  } = useReadContract({
     address: collection,
     abi: collectionAbi,
     functionName: "currentPrice",
@@ -119,6 +123,15 @@ export function MintCollectionCTA({
       refetchInterval: 12_000,
     },
   })
+
+  // Stale-price defense (exact-payment semantics, §6.3): a click on a
+  // strategy collection first re-reads the quote; if it moved since what's
+  // on screen, we show the new total and require a second click rather than
+  // ever sending a value the collector hasn't seen confirmed.
+  const [priceConfirmPending, setPriceConfirmPending] = useState(false)
+  useEffect(() => {
+    setPriceConfirmPending(false)
+  }, [amount])
 
   const remaining = supplyCap > 0n ? supplyCap - minted : null
   const capReached = remaining !== null && remaining <= 0n
@@ -163,6 +176,13 @@ export function MintCollectionCTA({
   } = useWaitForTransactionReceipt({ hash: txHash })
   const isPending = isWritePending || isTxPending
 
+  // Reveal polish (§7): the moment the receipt lands, refresh the server
+  // component tree so the minted-count header stops showing the pre-mint
+  // number — don't wait for the collector to dismiss the reveal to fix that.
+  useEffect(() => {
+    if (isSuccess) router.refresh()
+  }, [isSuccess, router])
+
   // The reveal's inputs come straight from the receipt's Minted event —
   // no extra reads, no indexer round trip.
   const mintedEvent = useMemo(() => {
@@ -180,16 +200,37 @@ export function MintCollectionCTA({
     }
   }, [receipt, collection])
 
-  function handleMint() {
+  async function handleMint() {
     if (!amountValid) return
+    let sendValue = total
+    if (strategy) {
+      // Re-quote immediately before writing. `total` here is a closed-over
+      // value from the render that produced this click handler — i.e. what
+      // the collector actually saw on screen.
+      const { data: fresh } = await refetchLiveQuote()
+      if (fresh !== undefined && fresh !== total) {
+        // The refetch above already updated the cached quote, so the next
+        // render shows the new total — require one more click at that price
+        // instead of sending the stale one.
+        setPriceConfirmPending(true)
+        return
+      }
+      sendValue = fresh ?? total
+    }
+    setPriceConfirmPending(false)
     writeContract({
       address: collection,
       abi: collectionAbi,
       functionName: "mintWithReferral",
       args: [BigInt(amount), referrerAddr, "0x"],
-      value: total,
+      value: sendValue,
     })
   }
+
+  // Balance pre-check (§6.3): the balance hook already exists and is already
+  // fetching (no new RPC read); use it to disable a doomed mint before the
+  // collector signs it.
+  const insufficientBalance = !!balance && !wrongNetwork && balance.value < total
 
   const mintOrderFrom = Number(minted) + 1
   const mintOrderTo = Number(minted) + amount
@@ -408,7 +449,11 @@ export function MintCollectionCTA({
 
               {balance && (
                 <div className="flex justify-end">
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-gray-400 tabular-nums">
+                  <span
+                    className={`text-[10px] font-mono uppercase tracking-wider tabular-nums ${
+                      insufficientBalance ? "text-red-500" : "text-gray-400"
+                    }`}
+                  >
                     Balance: {Number(formatEther(balance.value)).toFixed(3)} ETH
                   </span>
                 </div>
@@ -435,19 +480,40 @@ export function MintCollectionCTA({
                   {isSwitchPending ? "Switching…" : `Switch to ${PREFERRED_CHAIN_LABEL}`}
                 </button>
               ) : (
-                <button
-                  onClick={handleMint}
-                  disabled={isPending || !amountValid || (strategy && liveQuote === undefined)}
-                  className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {isWritePending
-                    ? "Confirm in wallet…"
-                    : isTxPending
-                      ? "Minting…"
-                      : isGasOnly(total)
-                        ? "Mint (gas only)"
-                        : `Mint for ${formatEther(total)} ETH`}
-                </button>
+                <>
+                  <button
+                    onClick={handleMint}
+                    disabled={
+                      isPending ||
+                      !amountValid ||
+                      (strategy && liveQuote === undefined) ||
+                      insufficientBalance
+                    }
+                    className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {isWritePending
+                      ? "Confirm in wallet…"
+                      : isTxPending
+                        ? "Minting…"
+                        : insufficientBalance
+                          ? "Insufficient balance"
+                          : priceConfirmPending
+                            ? "Price updated, confirm again"
+                            : isGasOnly(total)
+                              ? "Mint (gas only)"
+                              : `Mint for ${formatEther(total)} ETH`}
+                  </button>
+                  {isTxPending && txHash && (
+                    <a
+                      href={evmNowTxUrl(txHash, PREFERRED_CHAIN.id)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block text-center text-[10px] font-mono text-gray-400 underline hover:text-fg"
+                    >
+                      View transaction ↗
+                    </a>
+                  )}
+                </>
               )}
 
               {writeError && (
