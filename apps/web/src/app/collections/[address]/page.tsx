@@ -14,6 +14,7 @@ import {
   getCollection,
   getCollectionMintHistory,
   getCollectionToken,
+  getGateState,
   getRecentTokenMarks,
 } from "@/lib/collection-onchain"
 import {
@@ -55,10 +56,12 @@ export default async function CollectionPage({ params }: { params: Params }) {
   const addr = address as Address
   const c = await getCollection(addr)
   if (!c) notFound()
-  const [history, attribution, recent] = await Promise.all([
+  const [history, attribution, recent, gate] = await Promise.all([
     getCollectionMintHistory(addr, c.minted, c.cfg.idMode),
     getAttribution(addr),
     getRecentTokenMarks(addr, c.minted, c.cfg.idMode),
+    // Gate state only when a hook is attached (cfg already tells us).
+    c.cfg.mintHook !== ZERO_ADDRESS ? getGateState(addr) : Promise.resolve(null),
   ])
 
   // Hero cascade: the artist's explicit cover always wins; a coverless
@@ -147,6 +150,7 @@ export default async function CollectionPage({ params }: { params: Params }) {
           <MintCollectionCTA
             collection={addr}
             work={hasWork ? c.work : null}
+            gate={gate}
             snapshot={{
               price: c.cfg.price.toString(),
               supplyCap: c.cfg.supplyCap.toString(),

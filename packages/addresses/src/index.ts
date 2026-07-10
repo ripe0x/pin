@@ -204,6 +204,14 @@ export const DEFAULT_RENDERER: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
 }
 
+// GateHook — public-good composite mint gate (merkle allowlist + per-wallet
+// cap, each independently optional), attached per collection via
+// setMintHook and configured by that collection's owner/admins. NOT yet
+// deployed to mainnet — paste the address here after deploy.
+export const GATE_HOOK: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+}
+
 // Scripty V2 Builder — assembles HTML/JS from ScriptyStorage-held chunks at
 // render time. Deterministic deploy, same address on mainnet and most other
 // EVM chains. See https://github.com/intartnft/scripty.sol.

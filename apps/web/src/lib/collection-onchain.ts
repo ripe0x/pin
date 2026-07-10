@@ -1,7 +1,7 @@
 import "server-only"
 import { createPublicClient, decodeFunctionResult, encodeFunctionData, http, type Address } from "viem"
 import { mainnet } from "viem/chains"
-import { attributionAbi, catalogAbi, collectionAbi, collectionFactoryAbi, generativeRendererAbi, renderAssetsAbi } from "@pin/abi"
+import { attributionAbi, catalogAbi, collectionAbi, collectionFactoryAbi, gateHookAbi, generativeRendererAbi, renderAssetsAbi } from "@pin/abi"
 import { ARTIST_RECORD_REGISTRY, ATTRIBUTION, MAINNET_CHAIN_ID, getAddressOrNull } from "@pin/addresses"
 import { fetchMetadataForUri } from "@pin/token-metadata"
 import { pgCache } from "./pg-cache"
@@ -9,11 +9,13 @@ import {
   attributionAddress,
   decodeCollectionConfig,
   decodeWorkConfig,
+  gateHookAddress,
   generativeRenderer,
   renderAssetsAddress,
   type Collection,
   CollectionStatus,
   IdMode,
+  ZERO_ADDRESS,
 } from "./collection"
 
 /**
@@ -384,6 +386,64 @@ export async function getCurrentPrice(
         args: [minter, qty, "0x"],
       })
       return price as bigint
+    } catch {
+      return null
+    }
+  })
+}
+
+/** The mint-gate state a collection page needs. `isGateHook` means the
+ *  collection's hook is the canonical GateHook, so root/cap are readable
+ *  and the eligibility UI applies; any other nonzero hook renders the
+ *  generic gated-mint notice. */
+export type GateState = {
+  hook: Address
+  isGateHook: boolean
+  root: `0x${string}`
+  cap: string // bigint as string (serializable to client)
+}
+
+const ZERO_ROOT = ("0x" + "0".repeat(64)) as `0x${string}`
+
+/**
+ * The active gate for a collection: which hook is attached and, when it's
+ * the canonical GateHook, its live root + per-wallet cap. Config-class
+ * freshness (20s) — an artist flipping a gate mid-drop propagates on the
+ * same cadence as every other sale setting.
+ */
+export async function getGateState(address: Address): Promise<GateState | null> {
+  return pgCache(`sc-gate:${lc(address)}`, 20, async () => {
+    const client = getClient()
+    try {
+      const hook = (await client.readContract({
+        address,
+        abi: collectionAbi,
+        functionName: "mintHook",
+      })) as Address
+      if (hook === ZERO_ADDRESS) return null
+      const gate = gateHookAddress()
+      const isGateHook = !!gate && lc(hook) === lc(gate)
+      if (!isGateHook) return { hook, isGateHook: false, root: ZERO_ROOT, cap: "0" }
+      const [root, cap] = await Promise.all([
+        client.readContract({
+          address: hook,
+          abi: gateHookAbi,
+          functionName: "rootOf",
+          args: [address],
+        }),
+        client.readContract({
+          address: hook,
+          abi: gateHookAbi,
+          functionName: "capOf",
+          args: [address],
+        }),
+      ])
+      return {
+        hook,
+        isGateHook: true,
+        root: root as `0x${string}`,
+        cap: (cap as bigint).toString(),
+      }
     } catch {
       return null
     }

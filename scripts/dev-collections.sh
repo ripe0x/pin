@@ -116,11 +116,12 @@ ATTRIBUTION="$(echo "$DEPLOY_OUT" | grep -i "Attribution:" | grep -oE "0x[0-9a-f
 RENDER_ASSETS="$(echo "$DEPLOY_OUT" | grep -i "RenderAssets:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
 DEFAULT_RENDERER="$(echo "$DEPLOY_OUT" | grep -i "DefaultRenderer:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
 GENERATIVE_RENDERER="$(echo "$DEPLOY_OUT" | grep -i "GenerativeRenderer:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
+GATE_HOOK="$(echo "$DEPLOY_OUT" | grep -i "GateHook:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
 IMPLEMENTATION="$(echo "$DEPLOY_OUT" | grep -i "Collection impl:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
 FACTORY="$(echo "$DEPLOY_OUT" | grep -i "CollectionFactory:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
 
 for pair in "ATTRIBUTION:$ATTRIBUTION" "RENDER_ASSETS:$RENDER_ASSETS" "DEFAULT_RENDERER:$DEFAULT_RENDERER" \
-            "GENERATIVE_RENDERER:$GENERATIVE_RENDERER" "IMPLEMENTATION:$IMPLEMENTATION" \
+            "GENERATIVE_RENDERER:$GENERATIVE_RENDERER" "GATE_HOOK:$GATE_HOOK" "IMPLEMENTATION:$IMPLEMENTATION" \
             "FACTORY:$FACTORY"; do
   name="${pair%%:*}"
   value="${pair#*:}"
@@ -189,6 +190,7 @@ NEXT_PUBLIC_ATTRIBUTION=$ATTRIBUTION
 NEXT_PUBLIC_RENDER_ASSETS=$RENDER_ASSETS
 NEXT_PUBLIC_GENERATIVE_RENDERER=$GENERATIVE_RENDERER
 NEXT_PUBLIC_DEFAULT_RENDERER=$DEFAULT_RENDERER
+NEXT_PUBLIC_GATE_HOOK=$GATE_HOOK
 EOF
 echo "▸ Wrote $ENV_DEV  (delete it to restore prod env)"
 

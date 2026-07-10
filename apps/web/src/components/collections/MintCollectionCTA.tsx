@@ -23,7 +23,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { formatEther, parseEventLogs } from "viem"
+import { encodeAbiParameters, formatEther, parseEventLogs } from "viem"
 import {
   useAccount,
   useBalance,
@@ -34,7 +34,12 @@ import {
   useWriteContract,
 } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
-import { collectionAbi } from "@pin/abi"
+import { collectionAbi, gateHookAbi } from "@pin/abi"
+import {
+  AllowlistChecker,
+  EligibilityVerdict,
+  useEligibility,
+} from "@/components/collections/MintGate"
 import {
   Countdown,
   PREFERRED_CHAIN,
@@ -73,11 +78,22 @@ export type MintCollectionSnapshot = {
   idMode: IdMode
 }
 
+/** Serializable mirror of collection-onchain's GateState. */
+export type MintGateSnapshot = {
+  hook: `0x${string}`
+  isGateHook: boolean
+  root: `0x${string}`
+  cap: string
+}
+
+const ZERO_ROOT = ("0x" + "0".repeat(64)) as `0x${string}`
+
 export function MintCollectionCTA({
   collection,
   snapshot,
   referrer,
   work,
+  gate,
 }: {
   collection: `0x${string}`
   snapshot: MintCollectionSnapshot
@@ -87,6 +103,8 @@ export function MintCollectionCTA({
   /** The collection's work config when generative — enables the live reveal
    *  after a successful mint. Omit/null for edition presets. */
   work?: WorkConfig | null
+  /** The collection's mint gate, when a hook is attached (server-read). */
+  gate?: MintGateSnapshot | null
 }) {
   const { address } = useAccount()
   const chainId = useChainId()
@@ -132,6 +150,27 @@ export function MintCollectionCTA({
   useEffect(() => {
     setPriceConfirmPending(false)
   }, [amount])
+
+  // ── mint gate (GateHook: merkle allowlist + per-wallet cap) ─────────────
+  const allowlisted = !!gate && gate.isGateHook && gate.root !== ZERO_ROOT
+  const walletCap = gate && gate.isGateHook ? BigInt(gate.cap) : 0n
+  const unknownHook = !!gate && !gate.isGateHook
+  // Eligibility of the connected wallet (one API lookup per wallet; the
+  // proof rides back with it and goes into hookData at mint time).
+  const eligibility = useEligibility(collection, allowlisted ? address : undefined)
+  const proof = eligibility && eligibility.eligible === true ? eligibility.proof ?? [] : null
+  // Per-wallet remaining allowance: one eth_call per connected wallet, only
+  // when a cap is actually set — this is mint-time correctness, not polling.
+  const { data: walletRemainingRaw } = useReadContract({
+    address: gate?.hook,
+    abi: gateHookAbi,
+    functionName: "remainingFor",
+    args: [collection, address ?? ZERO_ADDRESS],
+    query: { enabled: !!address && !!gate && gate.isGateHook && walletCap > 0n, staleTime: 15_000 },
+  })
+  const walletRemaining =
+    walletCap > 0n && walletRemainingRaw !== undefined ? (walletRemainingRaw as bigint) : null
+  const walletCapReached = walletRemaining !== null && walletRemaining <= 0n
 
   const remaining = supplyCap > 0n ? supplyCap - minted : null
   const capReached = remaining !== null && remaining <= 0n
@@ -202,6 +241,10 @@ export function MintCollectionCTA({
 
   async function handleMint() {
     if (!amountValid) return
+    // Allowlist gates verify a merkle proof from hookData; without one the
+    // tx is doomed, so the button never enables in that state (belt) and we
+    // bail here too (suspenders).
+    if (allowlisted && !proof) return
     let sendValue = total
     if (strategy) {
       // Re-quote immediately before writing. `total` here is a closed-over
@@ -218,11 +261,15 @@ export function MintCollectionCTA({
       sendValue = fresh ?? total
     }
     setPriceConfirmPending(false)
+    const hookData =
+      allowlisted && proof
+        ? encodeAbiParameters([{ type: "bytes32[]" }], [proof])
+        : "0x"
     writeContract({
       address: collection,
       abi: collectionAbi,
       functionName: "mintWithReferral",
-      args: [BigInt(amount), referrerAddr, "0x"],
+      args: [BigInt(amount), referrerAddr, hookData],
       value: sendValue,
     })
   }
@@ -356,6 +403,41 @@ export function MintCollectionCTA({
               />
             ))}
 
+          {/* Mint gate: eligibility answered before anyone signs (§5). */}
+          {allowlisted && !(isSuccess && txHash) && (
+            <div className="rounded border border-gray-200 bg-surface-muted/40 px-3 py-2.5 space-y-2">
+              <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+                Allowlist mint
+                {walletCap > 0n && (
+                  <span className="normal-case"> · limit {walletCap.toString()} per wallet</span>
+                )}
+              </p>
+              {address ? (
+                <EligibilityVerdict eligibility={eligibility} />
+              ) : (
+                <AllowlistChecker collection={collection} />
+              )}
+            </div>
+          )}
+          {!allowlisted && walletCap > 0n && !(isSuccess && txHash) && (
+            <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+              Limit {walletCap.toString()} per wallet
+              {walletRemaining !== null && (
+                <span className="normal-case">
+                  {" "}
+                  · you can mint {walletRemaining.toString()} more
+                </span>
+              )}
+            </p>
+          )}
+          {unknownHook && !(isSuccess && txHash) && (
+            <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
+              This mint has additional onchain conditions set by its artist
+              (hook {shortAddress(gate!.hook)}). If they are not met, the
+              transaction reverts.
+            </p>
+          )}
+
           {mintable && !(isSuccess && txHash) && (
             <>
               <label className="block">
@@ -388,11 +470,21 @@ export function MintCollectionCTA({
                     aria-label="One more"
                     onClick={() =>
                       setAmount((a) => {
-                        const next = a + 1
-                        return remaining !== null ? Math.min(next, Number(remaining)) : next
+                        let max = Number.MAX_SAFE_INTEGER
+                        if (remaining !== null) max = Math.min(max, Number(remaining))
+                        if (walletRemaining !== null && walletRemaining < BigInt(Number.MAX_SAFE_INTEGER)) {
+                          max = Math.min(max, Number(walletRemaining))
+                        }
+                        return Math.min(a + 1, max)
                       })
                     }
-                    disabled={isPending || (remaining !== null && amount >= Number(remaining))}
+                    disabled={
+                      isPending ||
+                      (remaining !== null && amount >= Number(remaining)) ||
+                      (walletRemaining !== null &&
+                        walletRemaining < BigInt(Number.MAX_SAFE_INTEGER) &&
+                        amount >= Number(walletRemaining))
+                    }
                     className="px-4 text-sm font-mono text-gray-500 hover:text-fg border-l border-gray-200 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                   >
                     +
@@ -487,7 +579,9 @@ export function MintCollectionCTA({
                       isPending ||
                       !amountValid ||
                       (strategy && liveQuote === undefined) ||
-                      insufficientBalance
+                      insufficientBalance ||
+                      (allowlisted && !proof) ||
+                      walletCapReached
                     }
                     className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
@@ -495,13 +589,21 @@ export function MintCollectionCTA({
                       ? "Confirm in wallet…"
                       : isTxPending
                         ? "Minting…"
-                        : insufficientBalance
-                          ? "Insufficient balance"
-                          : priceConfirmPending
-                            ? "Price updated, confirm again"
-                            : isGasOnly(total)
-                              ? "Mint (gas only)"
-                              : `Mint for ${formatEther(total)} ETH`}
+                        : walletCapReached
+                          ? "You have minted your maximum"
+                          : allowlisted && eligibility === undefined
+                            ? "Checking the allowlist…"
+                            : allowlisted && eligibility?.eligible === false
+                              ? "Not on the allowlist"
+                              : allowlisted && !proof
+                                ? "Allowlist unavailable"
+                                : insufficientBalance
+                                  ? "Insufficient balance"
+                                  : priceConfirmPending
+                                    ? "Price updated, confirm again"
+                                    : isGasOnly(total)
+                                      ? "Mint (gas only)"
+                                      : `Mint for ${formatEther(total)} ETH`}
                   </button>
                   {isTxPending && txHash && (
                     <a

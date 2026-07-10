@@ -8,6 +8,7 @@ import {GenerativeRenderer} from "../src/collection/renderers/GenerativeRenderer
 import {RenderAssets} from "../src/collection/renderers/RenderAssets.sol";
 import {Collection} from "../src/collection/Collection.sol";
 import {CollectionFactory} from "../src/collection/CollectionFactory.sol";
+import {GateHook} from "../src/collection/hooks/GateHook.sol";
 
 /// @notice Deploy script for the Collection system: Attribution,
 ///         DefaultRenderer, GenerativeRenderer, the Collection
@@ -145,6 +146,15 @@ contract DeployCollectionSystemScript is Script {
         vm.stopBroadcast();
         console2.log("GenerativeRenderer deployed at:", address(generativeRenderer));
 
+        // ── 3b. GateHook — public-good gate singleton (merkle allowlist +
+        //        per-wallet cap in one hook), plain CREATE, no args. Deployed
+        //        with the system so the studio's mint-gate tool and the mint
+        //        page's eligibility UI have a canonical instance to point at.
+        vm.startBroadcast(deployerPk);
+        GateHook gateHook = new GateHook();
+        vm.stopBroadcast();
+        console2.log("GateHook deployed at:", address(gateHook));
+
         // ── 4. Collection implementation — plain CREATE, no args ──
         vm.startBroadcast(deployerPk);
         Collection implementation = new Collection();
@@ -172,6 +182,7 @@ contract DeployCollectionSystemScript is Script {
         console2.log("  RenderAssets:              ", address(renderAssets));
         console2.log("  DefaultRenderer:           ", address(defaultRenderer));
         console2.log("  GenerativeRenderer:        ", address(generativeRenderer));
+        console2.log("  GateHook:                  ", address(gateHook));
         console2.log("  Collection impl:  ", address(implementation));
         console2.log("  CollectionFactory:", address(factory));
     }
