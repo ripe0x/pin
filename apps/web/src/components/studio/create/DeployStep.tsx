@@ -88,7 +88,6 @@ export function DeployStep({
       mintEnd: state.hasWindow ? toUnix(state.endAt) : 0n,
       royaltyBps,
       royaltyReceiver: ZERO_ADDRESS as Address,
-      kind: 0, // CollectionKind.Standalone
       payoutAddress: (state.payout !== "" ? state.payout : ZERO_ADDRESS) as Address,
       renderer: rendererAddr,
       mintHook: ZERO_ADDRESS as Address,

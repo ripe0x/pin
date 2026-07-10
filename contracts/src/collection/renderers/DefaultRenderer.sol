@@ -5,7 +5,7 @@ import {Base64} from "openzeppelin-contracts/contracts/utils/Base64.sol";
 import {Strings} from "openzeppelin-contracts/contracts/utils/Strings.sol";
 
 import {IRenderer, ICollectionView} from "../interfaces/IRenderer.sol";
-import {MintMark, CollectionStatus} from "../CollectionTypes.sol";
+import {MintMark} from "../CollectionTypes.sol";
 
 /// @title DefaultRenderer
 /// @notice The canonical built-in renderer for Collection. Wired
@@ -28,7 +28,7 @@ contract DefaultRenderer is IRenderer {
     using Strings for uint256;
 
     string private constant DESCRIPTION =
-        "A Sovereign Collection token. This token's entry into the collection is recorded onchain as a Mint Mark.";
+        "A Collection token. This token's entry into the collection is recorded onchain as a Mint Mark.";
 
     function tokenURI(address collection, uint256 tokenId)
         external
@@ -71,11 +71,7 @@ contract DefaultRenderer is IRenderer {
             "[",
             _numAttr("Mint Order", uint256(m.mintIndex) + 1),
             ",",
-            _numAttr("Mint Block", uint256(m.mintBlock)),
-            ",",
-            _strAttr("Referrer", Strings.toHexString(uint256(uint160(m.referrer)), 20)),
-            ",",
-            _strAttr("Status at Mint", _statusLabel(m.statusAtMint))
+            _numAttr("Mint Block", uint256(m.mintBlock))
         );
         if (m.isFirst) {
             a = string.concat(a, ",", _strAttr("Provenance", "First mint of the collection"));
@@ -96,12 +92,6 @@ contract DefaultRenderer is IRenderer {
         returns (string memory)
     {
         return string.concat('{"trait_type":"', trait, '","value":"', value, '"}');
-    }
-
-    function _statusLabel(CollectionStatus s) internal pure returns (string memory) {
-        if (s == CollectionStatus.Open) return "Open";
-        if (s == CollectionStatus.Closing) return "Closing";
-        return "Closed";
     }
 
     /// @dev JSON string escaping per RFC 8259: backslash, double-quote, and all

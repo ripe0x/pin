@@ -1,7 +1,7 @@
 import "server-only"
 import { createPublicClient, decodeFunctionResult, encodeFunctionData, http, type Address } from "viem"
 import { mainnet } from "viem/chains"
-import { attributionAbi, catalogAbi, sovereignCollectionAbi, sovereignCollectionFactoryAbi } from "@pin/abi"
+import { attributionAbi, catalogAbi, collectionAbi, collectionFactoryAbi } from "@pin/abi"
 import { ARTIST_RECORD_REGISTRY, ATTRIBUTION, MAINNET_CHAIN_ID, getAddressOrNull } from "@pin/addresses"
 import { fetchMetadataForUri } from "@pin/token-metadata"
 import { pgCache } from "./pg-cache"
@@ -14,7 +14,7 @@ import {
   type MintMark,
   CollectionStatus,
   IdMode,
-} from "./sovereign-collection"
+} from "./collection"
 
 /**
  * Live, cached onchain reads for Sovereign Collections. These are the
@@ -59,7 +59,7 @@ type RawConfigReturn = readonly [Parameters<typeof decodeCollectionConfig>[0], n
 export async function getCollection(address: Address): Promise<Collection | null> {
   return pgCache(`sc-collection:${lc(address)}`, 20, async () => {
     const client = getClient()
-    const base = { address, abi: sovereignCollectionAbi } as const
+    const base = { address, abi: collectionAbi } as const
     try {
       const [name, symbol, owner, workLocked, metadataFrozen, permanent, renderer, priceStrategy, cfgRes, workRaw] =
         await client.multicall({
@@ -123,7 +123,7 @@ export async function getCollectionToken(
 ): Promise<CollectionTokenView | null> {
   return pgCache(`sc-token:${lc(address)}:${tokenId.toString()}`, 60, async () => {
     const client = getClient()
-    const base = { address, abi: sovereignCollectionAbi } as const
+    const base = { address, abi: collectionAbi } as const
     try {
       const [ownerRes, seedRes, markRes, artRes] = await client.multicall({
         allowFailure: true,
@@ -150,7 +150,7 @@ export async function getCollectionToken(
         .call({
           to: address,
           data: encodeFunctionData({
-            abi: sovereignCollectionAbi,
+            abi: collectionAbi,
             functionName: "tokenURI",
             args: [tokenId],
           }),
@@ -159,7 +159,7 @@ export async function getCollectionToken(
         .then(({ data }) =>
           data
             ? (decodeFunctionResult({
-                abi: sovereignCollectionAbi,
+                abi: collectionAbi,
                 functionName: "tokenURI",
                 data,
               }) as string)
@@ -242,7 +242,7 @@ export async function getCollectionMintHistory(
   if (total === 0) return { unsupported: false, entries: [] }
   return pgCache(`sc-history:${lc(address)}:${total}`, 30, async () => {
     const client = getClient()
-    const base = { address, abi: sovereignCollectionAbi } as const
+    const base = { address, abi: collectionAbi } as const
     const startTok = Math.max(1, total - limit + 1)
     const ids: bigint[] = []
     for (let t = total; t >= startTok; t--) ids.push(BigInt(t)) // newest first
@@ -289,7 +289,7 @@ export async function getRecentCollections(factory: Address, limit = 8): Promise
     try {
       const total = (await client.readContract({
         address: factory,
-        abi: sovereignCollectionFactoryAbi,
+        abi: collectionFactoryAbi,
         functionName: "totalCollections",
       })) as bigint
       const n = Number(total)
@@ -300,7 +300,7 @@ export async function getRecentCollections(factory: Address, limit = 8): Promise
         allowFailure: true,
         contracts: idxs.map((i) => ({
           address: factory,
-          abi: sovereignCollectionFactoryAbi,
+          abi: collectionFactoryAbi,
           functionName: "allCollections" as const,
           args: [BigInt(i)] as const,
         })),
@@ -340,7 +340,7 @@ export async function getCurrentPrice(
     try {
       const price = await client.readContract({
         address,
-        abi: sovereignCollectionAbi,
+        abi: collectionAbi,
         functionName: "currentPrice",
         args: [minter, qty, "0x"],
       })
@@ -387,7 +387,7 @@ export async function getRecentTokenMarks(
   if (idMode !== IdMode.Sequential || minted === 0n) return []
   return pgCache(`sc-recent-marks:${lc(address)}:${minted.toString()}:${limit}`, 60, async () => {
     const client = getClient()
-    const base = { address, abi: sovereignCollectionAbi } as const
+    const base = { address, abi: collectionAbi } as const
     const from = minted
     const to = minted > BigInt(limit) ? minted - BigInt(limit) + 1n : 1n
     const ids: bigint[] = []

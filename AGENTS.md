@@ -173,16 +173,27 @@ WIP stashes attached — leave those alone.)
 ## PND Collection System (native protocol)
 
 PND's own onchain collection protocol (artist-owned contracts, honest
-pricing with no protocol fee, per-token Mint Marks, Release Graph, Token
-Path). This is distinct from the external platforms above
-(Foundation/Manifold/Mint/etc.) that PND *indexes* for catalogs, the
-collection system is a protocol PND *ships*. A single OZ ERC721 core with
-four swappable slots (minter, price, renderer, hooks) and per-token id
-modes; Editions is now one preset of this general core, not a separate
-contract. Lives in `contracts/src/collection/` (`src/editions/` was
-removed). **Start at `docs/pnd-collection-system.md` and
-`docs/pnd-collection-contracts-plan.md`**, with `docs/injection-convention.md`
-for the onchain-render data contract.
+pricing with no protocol fee, per-token Mint Marks). This is distinct from
+the external platforms above (Foundation/Manifold/Mint/etc.) that PND
+*indexes* for catalogs, the collection system is a protocol PND *ships*. A
+single OZ ERC721 core with four swappable slots (minter, price, renderer,
+hooks) and per-token id modes; Editions is now one preset of this general
+core, not a separate contract. Lives in `contracts/src/collection/`
+(`src/editions/` was removed). **Start at `docs/pnd-collection-system.md`
+and `docs/pnd-collection-contracts-plan.md`**, with
+`docs/injection-convention.md` for the onchain-render data contract.
+
+**2026-07 surface reduction:** the Collection Graph, Token Path, and
+CollectionKind were REMOVED from the core contract (they were write-only —
+no onchain reader — and the implementation was over the EIP-170 size limit;
+a size-gate test now enforces headroom). The Release Graph / Token Path
+*product* is planned as a companion registry singleton (Attribution-style,
+authority borrowed from each collection), not core storage. Per-token
+`statusAtMint`/`referrer` are event-only provenance on `Minted` (never
+stored); lifecycle status is derived (`Scheduled`/`Open`/`Closed`), and the
+window/price/royalty/cap are live-settable with `lockSupply()` as the
+scarcity promise beside `lockWork`/`freezeMetadata`. Design-doc sections
+describing graph/path as core fields predate this and are historical.
 
 ## See also
 

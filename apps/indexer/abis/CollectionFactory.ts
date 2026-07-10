@@ -114,11 +114,6 @@ export const collectionFactoryAbi = [
             "internalType": "address"
           },
           {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum CollectionKind"
-          },
-          {
             "name": "payoutAddress",
             "type": "address",
             "internalType": "address"

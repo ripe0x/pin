@@ -117,12 +117,7 @@ export function MintCollectionCTA({
   const remaining = supplyCap > 0n ? supplyCap - minted : null
   const capReached = remaining !== null && remaining <= 0n
 
-  const status = lifecycleStatus(
-    { mintEnd, supplyCap },
-    minted,
-    snapshot.status === CollectionStatus.Closing,
-    nowSec,
-  )
+  const status = lifecycleStatus({ mintStart, mintEnd, supplyCap }, minted, nowSec)
   const ready = nowSec > 0 || (mintEnd === 0n && mintStart === 0n)
   const notStarted = mintStart > 0n && nowSec > 0 && BigInt(nowSec) < mintStart
   const mintable =
@@ -176,7 +171,7 @@ export function MintCollectionCTA({
   const statusDot =
     status === CollectionStatus.Open
       ? "bg-emerald-500 animate-pulse"
-      : status === CollectionStatus.Closing
+      : status === CollectionStatus.Scheduled
         ? "bg-amber-500"
         : "bg-gray-400"
 

@@ -11,7 +11,6 @@ import {DefaultRenderer} from "../../../src/collection/renderers/DefaultRenderer
 import {TestSVGRenderer} from "./TestSVGRenderer.sol";
 import {
     CollectionConfig,
-    CollectionKind,
     IdMode,
     WorkConfig
 } from "../../../src/collection/CollectionTypes.sol";
@@ -46,7 +45,6 @@ contract SVGRendererTest is Test {
         cfg.artworkURI = "";
         cfg.price = 0;
         cfg.supplyCap = 0;
-        cfg.kind = CollectionKind.Standalone;
         cfg.idMode = IdMode.Sequential;
 
         WorkConfig memory work;
@@ -218,10 +216,11 @@ contract SVGRendererTest is Test {
 
         assertTrue(_contains(json, '"trait_type":"Mint Order","value":1'), "wrong Mint Order");
         assertTrue(_contains(json, '"trait_type":"Mint Block"'), "missing Mint Block");
-        assertTrue(_contains(json, '"trait_type":"Referrer"'), "missing Referrer");
-        assertTrue(
-            _contains(json, '"trait_type":"Status at Mint","value":"Open"'),
-            "wrong Status at Mint"
+        // Referrer / Status at Mint are deliberately NOT traits: both are
+        // event-only provenance on Minted, no longer stored per token.
+        assertFalse(_contains(json, '"trait_type":"Referrer"'), "Referrer trait was removed");
+        assertFalse(
+            _contains(json, '"trait_type":"Status at Mint"'), "Status at Mint trait was removed"
         );
         assertTrue(
             _contains(json, '"trait_type":"Provenance","value":"First mint of the collection"'),

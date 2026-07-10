@@ -66,12 +66,17 @@ revoke any admin, and an admin may renounce ITSELF by passing its own
 address, but an admin can never revoke a peer. Self-removal only reduces
 privilege, so there is no escalation path.
 
-Widened from `onlyOwner` to `onlyOwnerOrAdmin` (16 functions):
+Widened from `onlyOwner` to `onlyOwnerOrAdmin` (15 functions, post the
+2026-07 surface reduction — graph/path/kind and the single-token artwork
+setter were removed; price/royalty/cap setters and the supply lock added):
 
-`setClosing`, `setRenderer`, `setMintHook`, `setPriceStrategy`,
-`setMinter`, `setTokenArtwork`, `setTokenArtworkBatch`, `setPayoutAddress`,
-`freezeMetadata`, `setWork`, `lockWork`, `addEdge`, `acknowledgeEdge`,
-`setDefaultPath`, `setPath`, `rescueStrayETH`.
+`setMintWindow`, `setPrice`, `setRoyalty`, `setSupplyCap`, `lockSupply`,
+`setRenderer`, `setMintHook`, `setPriceStrategy`, `setMinter`,
+`setTokenArtworkBatch`, `setPayoutAddress`, `freezeMetadata`, `setWork`,
+`lockWork`, `rescueStrayETH`.
+
+`notifyMetadataUpdate` has its own gate: current renderer OR owner/admin
+(pure ERC-4906 event emission, no state).
 
 ### Deliberate properties / accepted risk
 

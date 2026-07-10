@@ -10,7 +10,6 @@ import {
     CollectionConfig,
     WorkConfig,
     InitParams,
-    CollectionKind,
     IdMode
 } from "../../src/collection/CollectionTypes.sol";
 
@@ -40,7 +39,6 @@ contract CollectionBase is Test {
     /// @dev A free (gas-only), open-supply, open-window sequential collection.
     function _freeConfig() internal pure returns (CollectionConfig memory cfg) {
         cfg.artworkURI = "ipfs://QmArtwork";
-        cfg.kind = CollectionKind.Standalone;
         cfg.idMode = IdMode.Sequential;
     }
 
@@ -48,7 +46,6 @@ contract CollectionBase is Test {
     ///      constant, not configurable here.
     function _pricedConfig(uint256 price) internal pure returns (CollectionConfig memory cfg) {
         cfg.artworkURI = "ipfs://QmArtwork";
-        cfg.kind = CollectionKind.Standalone;
         cfg.price = price;
         cfg.idMode = IdMode.Sequential;
     }
@@ -57,7 +54,6 @@ contract CollectionBase is Test {
     ///      exclusively through an authorized minter).
     function _pooledConfig() internal pure returns (CollectionConfig memory cfg) {
         cfg.artworkURI = "ipfs://QmArtwork";
-        cfg.kind = CollectionKind.Standalone;
         cfg.idMode = IdMode.Pooled;
     }
 

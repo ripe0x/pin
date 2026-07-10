@@ -28,84 +28,12 @@ export const collectionAbi = [
   },
   {
     "type": "function",
-    "name": "acknowledgeEdge",
+    "name": "addAdmin",
     "inputs": [
       {
-        "name": "edgeType",
-        "type": "uint8",
-        "internalType": "enum EdgeType"
-      },
-      {
-        "name": "source",
-        "type": "tuple",
-        "internalType": "struct Ref",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "id",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum RefKind"
-          }
-        ]
-      },
-      {
-        "name": "ack",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "addEdge",
-    "inputs": [
-      {
-        "name": "edgeType",
-        "type": "uint8",
-        "internalType": "enum EdgeType"
-      },
-      {
-        "name": "target",
-        "type": "tuple",
-        "internalType": "struct Ref",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "id",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum RefKind"
-          }
-        ]
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -220,11 +148,6 @@ export const collectionAbi = [
             "internalType": "address"
           },
           {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum CollectionKind"
-          },
-          {
             "name": "payoutAddress",
             "type": "address",
             "internalType": "address"
@@ -315,53 +238,6 @@ export const collectionAbi = [
         "name": "",
         "type": "address",
         "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "edges",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "tuple[]",
-        "internalType": "struct Edge[]",
-        "components": [
-          {
-            "name": "edgeType",
-            "type": "uint8",
-            "internalType": "enum EdgeType"
-          },
-          {
-            "name": "target",
-            "type": "tuple",
-            "internalType": "struct Ref",
-            "components": [
-              {
-                "name": "chainId",
-                "type": "uint64",
-                "internalType": "uint64"
-              },
-              {
-                "name": "contractAddress",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "id",
-                "type": "uint256",
-                "internalType": "uint256"
-              },
-              {
-                "name": "kind",
-                "type": "uint8",
-                "internalType": "enum RefKind"
-              }
-            ]
-          }
-        ]
       }
     ],
     "stateMutability": "view"
@@ -468,11 +344,6 @@ export const collectionAbi = [
                 "name": "royaltyReceiver",
                 "type": "address",
                 "internalType": "address"
-              },
-              {
-                "name": "kind",
-                "type": "uint8",
-                "internalType": "enum CollectionKind"
               },
               {
                 "name": "payoutAddress",
@@ -605,15 +476,10 @@ export const collectionAbi = [
   },
   {
     "type": "function",
-    "name": "isApprovedForAll",
+    "name": "isAdmin",
     "inputs": [
       {
-        "name": "owner",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "operator",
+        "name": "account",
         "type": "address",
         "internalType": "address"
       }
@@ -629,39 +495,17 @@ export const collectionAbi = [
   },
   {
     "type": "function",
-    "name": "isEdgeAcknowledged",
+    "name": "isApprovedForAll",
     "inputs": [
       {
-        "name": "edgeType",
-        "type": "uint8",
-        "internalType": "enum EdgeType"
+        "name": "owner",
+        "type": "address",
+        "internalType": "address"
       },
       {
-        "name": "source",
-        "type": "tuple",
-        "internalType": "struct Ref",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "id",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum RefKind"
-          }
-        ]
+        "name": "operator",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [
@@ -720,6 +564,19 @@ export const collectionAbi = [
   },
   {
     "type": "function",
+    "name": "isSupplyLocked",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "isWorkLocked",
     "inputs": [],
     "outputs": [
@@ -730,6 +587,13 @@ export const collectionAbi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "lockSupply",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -782,23 +646,13 @@ export const collectionAbi = [
         "components": [
           {
             "name": "mintIndex",
-            "type": "uint32",
-            "internalType": "uint32"
+            "type": "uint40",
+            "internalType": "uint40"
           },
           {
             "name": "mintBlock",
             "type": "uint48",
             "internalType": "uint48"
-          },
-          {
-            "name": "statusAtMint",
-            "type": "uint8",
-            "internalType": "enum CollectionStatus"
-          },
-          {
-            "name": "referrer",
-            "type": "address",
-            "internalType": "address"
           },
           {
             "name": "isFirst",
@@ -910,6 +764,24 @@ export const collectionAbi = [
   },
   {
     "type": "function",
+    "name": "notifyMetadataUpdate",
+    "inputs": [
+      {
+        "name": "fromTokenId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "toTokenId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "owner",
     "inputs": [],
     "outputs": [
@@ -936,64 +808,6 @@ export const collectionAbi = [
         "name": "",
         "type": "address",
         "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "pathOf",
-    "inputs": [
-      {
-        "name": "tokenId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "tuple",
-        "internalType": "struct Path",
-        "components": [
-          {
-            "name": "pathType",
-            "type": "uint8",
-            "internalType": "enum PathType"
-          },
-          {
-            "name": "target",
-            "type": "tuple",
-            "internalType": "struct Ref",
-            "components": [
-              {
-                "name": "chainId",
-                "type": "uint64",
-                "internalType": "uint64"
-              },
-              {
-                "name": "contractAddress",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "id",
-                "type": "uint256",
-                "internalType": "uint256"
-              },
-              {
-                "name": "kind",
-                "type": "uint8",
-                "internalType": "enum RefKind"
-              }
-            ]
-          },
-          {
-            "name": "data",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          }
-        ]
       }
     ],
     "stateMutability": "view"
@@ -1042,6 +856,32 @@ export const collectionAbi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "referralShareBps",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "removeAdmin",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -1176,70 +1016,30 @@ export const collectionAbi = [
   },
   {
     "type": "function",
-    "name": "setClosing",
-    "inputs": [
-      {
-        "name": "closing",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setDefaultPath",
-    "inputs": [
-      {
-        "name": "pathType",
-        "type": "uint8",
-        "internalType": "enum PathType"
-      },
-      {
-        "name": "target",
-        "type": "tuple",
-        "internalType": "struct Ref",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "id",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum RefKind"
-          }
-        ]
-      },
-      {
-        "name": "data",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "setMintHook",
     "inputs": [
       {
         "name": "hook",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setMintWindow",
+    "inputs": [
+      {
+        "name": "start",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "end",
+        "type": "uint64",
+        "internalType": "uint64"
       }
     ],
     "outputs": [],
@@ -1265,49 +1065,12 @@ export const collectionAbi = [
   },
   {
     "type": "function",
-    "name": "setPath",
+    "name": "setPayoutAddress",
     "inputs": [
       {
-        "name": "tokenId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "pathType",
-        "type": "uint8",
-        "internalType": "enum PathType"
-      },
-      {
-        "name": "target",
-        "type": "tuple",
-        "internalType": "struct Ref",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "id",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum RefKind"
-          }
-        ]
-      },
-      {
-        "name": "data",
-        "type": "bytes32",
-        "internalType": "bytes32"
+        "name": "payoutAddress",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -1315,12 +1078,12 @@ export const collectionAbi = [
   },
   {
     "type": "function",
-    "name": "setPayoutAddress",
+    "name": "setPrice",
     "inputs": [
       {
-        "name": "payoutAddress",
-        "type": "address",
-        "internalType": "address"
+        "name": "price",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [],
@@ -1354,17 +1117,30 @@ export const collectionAbi = [
   },
   {
     "type": "function",
-    "name": "setTokenArtwork",
+    "name": "setRoyalty",
     "inputs": [
       {
-        "name": "tokenId",
-        "type": "uint256",
-        "internalType": "uint256"
+        "name": "royaltyBps",
+        "type": "uint16",
+        "internalType": "uint16"
       },
       {
-        "name": "cid",
-        "type": "string",
-        "internalType": "string"
+        "name": "royaltyReceiver",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setSupplyCap",
+    "inputs": [
+      {
+        "name": "supplyCap",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [],
@@ -1390,6 +1166,90 @@ export const collectionAbi = [
   },
   {
     "type": "function",
+    "name": "setWork",
+    "inputs": [
+      {
+        "name": "work",
+        "type": "tuple",
+        "internalType": "struct WorkConfig",
+        "components": [
+          {
+            "name": "code",
+            "type": "tuple[]",
+            "internalType": "struct CodeRef[]",
+            "components": [
+              {
+                "name": "store",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "name",
+                "type": "string",
+                "internalType": "string"
+              },
+              {
+                "name": "kind",
+                "type": "uint8",
+                "internalType": "enum CodeKind"
+              }
+            ]
+          },
+          {
+            "name": "deps",
+            "type": "tuple[]",
+            "internalType": "struct CodeRef[]",
+            "components": [
+              {
+                "name": "store",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "name",
+                "type": "string",
+                "internalType": "string"
+              },
+              {
+                "name": "kind",
+                "type": "uint8",
+                "internalType": "enum CodeKind"
+              }
+            ]
+          },
+          {
+            "name": "codeURI",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "codeHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "liveness",
+            "type": "uint8",
+            "internalType": "enum Liveness"
+          },
+          {
+            "name": "injectionVersion",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "renderParams",
+            "type": "string",
+            "internalType": "string"
+          }
+        ]
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "supportsInterface",
     "inputs": [
       {
@@ -1406,19 +1266,6 @@ export const collectionAbi = [
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "referralShareBps",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ],
-    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -1638,6 +1485,25 @@ export const collectionAbi = [
   },
   {
     "type": "event",
+    "name": "AdminSet",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "allowed",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "Approval",
     "inputs": [
       {
@@ -1688,6 +1554,25 @@ export const collectionAbi = [
   },
   {
     "type": "event",
+    "name": "BatchMetadataUpdate",
+    "inputs": [
+      {
+        "name": "_fromTokenId",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "_toTokenId",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "Burned",
     "inputs": [
       {
@@ -1701,27 +1586,8 @@ export const collectionAbi = [
   },
   {
     "type": "event",
-    "name": "ClosingSet",
-    "inputs": [
-      {
-        "name": "closing",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "CollectionConfigured",
     "inputs": [
-      {
-        "name": "kind",
-        "type": "uint8",
-        "indexed": false,
-        "internalType": "enum CollectionKind"
-      },
       {
         "name": "idMode",
         "type": "uint8",
@@ -1763,141 +1629,6 @@ export const collectionAbi = [
   },
   {
     "type": "event",
-    "name": "DefaultPathSet",
-    "inputs": [
-      {
-        "name": "pathType",
-        "type": "uint8",
-        "indexed": true,
-        "internalType": "enum PathType"
-      },
-      {
-        "name": "target",
-        "type": "tuple",
-        "indexed": false,
-        "internalType": "struct Ref",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "id",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum RefKind"
-          }
-        ]
-      },
-      {
-        "name": "data",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "EdgeAcknowledged",
-    "inputs": [
-      {
-        "name": "edgeType",
-        "type": "uint8",
-        "indexed": true,
-        "internalType": "enum EdgeType"
-      },
-      {
-        "name": "source",
-        "type": "tuple",
-        "indexed": false,
-        "internalType": "struct Ref",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "id",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum RefKind"
-          }
-        ]
-      },
-      {
-        "name": "ack",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "EdgeAdded",
-    "inputs": [
-      {
-        "name": "edgeType",
-        "type": "uint8",
-        "indexed": true,
-        "internalType": "enum EdgeType"
-      },
-      {
-        "name": "target",
-        "type": "tuple",
-        "indexed": false,
-        "internalType": "struct Ref",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "id",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum RefKind"
-          }
-        ]
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "Initialized",
     "inputs": [
       {
@@ -1917,6 +1648,19 @@ export const collectionAbi = [
   },
   {
     "type": "event",
+    "name": "MetadataUpdate",
+    "inputs": [
+      {
+        "name": "_tokenId",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "MintHookSet",
     "inputs": [
       {
@@ -1924,6 +1668,25 @@ export const collectionAbi = [
         "type": "address",
         "indexed": true,
         "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MintWindowSet",
+    "inputs": [
+      {
+        "name": "mintStart",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      },
+      {
+        "name": "mintEnd",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
       }
     ],
     "anonymous": false
@@ -2036,59 +1799,6 @@ export const collectionAbi = [
   },
   {
     "type": "event",
-    "name": "PathSet",
-    "inputs": [
-      {
-        "name": "tokenId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "pathType",
-        "type": "uint8",
-        "indexed": true,
-        "internalType": "enum PathType"
-      },
-      {
-        "name": "target",
-        "type": "tuple",
-        "indexed": false,
-        "internalType": "struct Ref",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "id",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum RefKind"
-          }
-        ]
-      },
-      {
-        "name": "data",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "PayoutAddressSet",
     "inputs": [
       {
@@ -2096,6 +1806,19 @@ export const collectionAbi = [
         "type": "address",
         "indexed": true,
         "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PriceSet",
+    "inputs": [
+      {
+        "name": "price",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -2115,10 +1838,48 @@ export const collectionAbi = [
   },
   {
     "type": "event",
+    "name": "ReferralPaid",
+    "inputs": [
+      {
+        "name": "referrer",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "RendererSet",
     "inputs": [
       {
         "name": "renderer",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "RoyaltySet",
+    "inputs": [
+      {
+        "name": "royaltyBps",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      },
+      {
+        "name": "royaltyReceiver",
         "type": "address",
         "indexed": true,
         "internalType": "address"
@@ -2147,21 +1908,21 @@ export const collectionAbi = [
   },
   {
     "type": "event",
-    "name": "ReferralPaid",
+    "name": "SupplyCapSet",
     "inputs": [
       {
-        "name": "referrer",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "amount",
+        "name": "supplyCap",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
       }
     ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "SupplyLocked",
+    "inputs": [],
     "anonymous": false
   },
   {
@@ -2234,6 +1995,24 @@ export const collectionAbi = [
     "anonymous": false
   },
   {
+    "type": "event",
+    "name": "WorkSet",
+    "inputs": [
+      {
+        "name": "codeHash",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "AlreadyAdmin",
+    "inputs": []
+  },
+  {
     "type": "error",
     "name": "AlreadyFrozen",
     "inputs": []
@@ -2241,6 +2020,11 @@ export const collectionAbi = [
   {
     "type": "error",
     "name": "BadMintWindow",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "BadSupplyCap",
     "inputs": []
   },
   {
@@ -2393,6 +2177,11 @@ export const collectionAbi = [
   },
   {
     "type": "error",
+    "name": "NotAnAdmin",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "NotAuthorized",
     "inputs": []
   },
@@ -2481,6 +2270,11 @@ export const collectionAbi = [
   {
     "type": "error",
     "name": "SequentialAssignsIds",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "SupplyIsLocked",
     "inputs": []
   },
   {

@@ -21,7 +21,7 @@ import {
 
 export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
 
-/** Fixed protocol referral share, in bps. Must match SovereignCollection.REFERRAL_SHARE_BPS. */
+/** Fixed protocol referral share, in bps. Must match Collection.REFERRAL_SHARE_BPS. */
 export const REFERRAL_SHARE_BPS = 1000 // 10%
 
 const FORK_MODE = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
@@ -30,8 +30,8 @@ const FORK_CHAIN_ID = 31339
 export const PND_CHAIN = FORK_MODE ? foundry : mainnet
 export const PND_CHAIN_ID = FORK_MODE ? FORK_CHAIN_ID : mainnet.id
 
-/** The SovereignCollectionFactory address (env override for local dev wins). */
-export function sovereignCollectionFactory(chainId: number = PND_CHAIN_ID): Address | null {
+/** The CollectionFactory address (env override for local dev wins). */
+export function collectionFactory(chainId: number = PND_CHAIN_ID): Address | null {
   const env = process.env.NEXT_PUBLIC_SOVEREIGN_COLLECTION_FACTORY
   if (env && isAddress(env)) return env as Address
   return getAddressOrNull(SOVEREIGN_COLLECTION_FACTORY, chainId)
@@ -65,25 +65,20 @@ export function generativeRenderer(chainId: number = PND_CHAIN_ID): Address | nu
  * collects nothing) until a treasury is configured.
  */
 export function pndReferrerAddress(): Address {
-  const env = process.env.NEXT_PUBLIC_PND_SURFACE_ADDRESS
+  // NEXT_PUBLIC_* must be literal reads (dynamic lookups are stripped from the
+  // client bundle). The legacy *_SURFACE_* name is read as a fallback so the
+  // rename can roll through env config without a coordinated deploy.
+  const env =
+    process.env.NEXT_PUBLIC_PND_REFERRAL_ADDRESS || process.env.NEXT_PUBLIC_PND_SURFACE_ADDRESS
   if (env && isAddress(env)) return env as Address
   return ZERO_ADDRESS
 }
 
 // ── enums (mirror CollectionTypes.sol) ──────────────────────────────────────
 
-export enum CollectionKind {
-  Standalone = 0,
-  Study = 1,
-  Phase = 2,
-  Access = 3,
-  Source = 4,
-  Continuation = 5,
-}
-
 export enum CollectionStatus {
-  Open = 0,
-  Closing = 1,
+  Scheduled = 0,
+  Open = 1,
   Closed = 2,
 }
 
@@ -98,48 +93,14 @@ export enum Liveness {
   ExternalLive = 2,
 }
 
-export enum EdgeType {
-  BelongsTo = 0,
-  StudyOf = 1,
-  PhaseOf = 2,
-  Continues = 3,
-  Source = 4,
-  Access = 5,
-}
-
-export enum PathType {
-  None = 0,
-  Continuation = 1,
-  Migration = 2,
-  Claim = 3,
-  Reveal = 4,
-  Burn = 5,
-  Custom = 6,
-}
-
 export enum CodeKind {
   Script = 0,
   ScriptGzip = 1,
 }
 
-export enum RefKind {
-  Collection = 0,
-  Token = 1,
-  External = 2,
-}
-
-export const COLLECTION_KIND_LABEL: Record<number, string> = {
-  [CollectionKind.Standalone]: "Standalone",
-  [CollectionKind.Study]: "Study",
-  [CollectionKind.Phase]: "Phase",
-  [CollectionKind.Access]: "Access object",
-  [CollectionKind.Source]: "Source object",
-  [CollectionKind.Continuation]: "Continuation",
-}
-
 export const COLLECTION_STATUS_LABEL: Record<number, string> = {
+  [CollectionStatus.Scheduled]: "Scheduled",
   [CollectionStatus.Open]: "Open",
-  [CollectionStatus.Closing]: "Closing",
   [CollectionStatus.Closed]: "Closed",
 }
 
@@ -154,41 +115,12 @@ export const LIVENESS_LABEL: Record<number, string> = {
   [Liveness.ExternalLive]: "External live",
 }
 
-export const EDGE_TYPE_LABEL: Record<number, string> = {
-  [EdgeType.BelongsTo]: "Belongs to",
-  [EdgeType.StudyOf]: "Study of",
-  [EdgeType.PhaseOf]: "Phase of",
-  [EdgeType.Continues]: "Continues",
-  [EdgeType.Source]: "Source for",
-  [EdgeType.Access]: "Grants access to",
-}
-
-export const PATH_TYPE_LABEL: Record<number, string> = {
-  [PathType.None]: "None",
-  [PathType.Continuation]: "Continuation",
-  [PathType.Migration]: "Migration",
-  [PathType.Claim]: "Claim",
-  [PathType.Reveal]: "Reveal",
-  [PathType.Burn]: "Burn",
-  [PathType.Custom]: "Custom",
-}
-
 export const CODE_KIND_LABEL: Record<number, string> = {
   [CodeKind.Script]: "Script",
   [CodeKind.ScriptGzip]: "Script (gzip)",
 }
 
 // ── types (mirror CollectionTypes.sol structs) ──────────────────────────────
-
-export type Ref = {
-  chainId: number
-  contractAddress: Address
-  id: bigint
-  kind: RefKind
-}
-
-export type Edge = { edgeType: EdgeType; target: Ref }
-export type Path = { pathType: PathType; target: Ref; data: `0x${string}` }
 
 export type CodeRef = {
   store: Address
@@ -214,7 +146,6 @@ export type CollectionConfig = {
   mintEnd: bigint
   royaltyBps: number
   royaltyReceiver: Address
-  kind: CollectionKind
   payoutAddress: Address
   renderer: Address
   mintHook: Address
@@ -242,8 +173,6 @@ export type Collection = {
 export type MintMark = {
   mintIndex: number
   mintBlock: bigint
-  statusAtMint: CollectionStatus
-  referrer: Address
   isFirst: boolean
   isFinal: boolean
 }
@@ -290,7 +219,6 @@ type RawCollectionConfig = {
   mintEnd: bigint
   royaltyBps: number
   royaltyReceiver: Address
-  kind: number
   payoutAddress: Address
   renderer: Address
   mintHook: Address
@@ -307,7 +235,6 @@ export function decodeCollectionConfig(raw: RawCollectionConfig): CollectionConf
     mintEnd: raw.mintEnd,
     royaltyBps: Number(raw.royaltyBps),
     royaltyReceiver: raw.royaltyReceiver,
-    kind: Number(raw.kind),
     payoutAddress: raw.payoutAddress,
     renderer: raw.renderer,
     mintHook: raw.mintHook,
@@ -320,50 +247,14 @@ export function decodeMintMark(raw: {
   // viem decodes <=48-bit uints as number, >48-bit as bigint.
   mintIndex: number | bigint
   mintBlock: number | bigint
-  statusAtMint: number
-  referrer: Address
   isFirst: boolean
   isFinal: boolean
 }): MintMark {
   return {
     mintIndex: Number(raw.mintIndex),
     mintBlock: BigInt(raw.mintBlock),
-    statusAtMint: Number(raw.statusAtMint) as CollectionStatus,
-    referrer: raw.referrer,
     isFirst: raw.isFirst,
     isFinal: raw.isFinal,
-  }
-}
-
-type RawRef = {
-  chainId: number | bigint
-  contractAddress: Address
-  id: bigint
-  kind: number
-}
-
-export function decodeRef(raw: RawRef): Ref {
-  return {
-    chainId: Number(raw.chainId),
-    contractAddress: raw.contractAddress,
-    id: raw.id,
-    kind: Number(raw.kind) as RefKind,
-  }
-}
-
-export function decodeEdge(raw: { edgeType: number; target: RawRef }): Edge {
-  return { edgeType: Number(raw.edgeType) as EdgeType, target: decodeRef(raw.target) }
-}
-
-export function decodePath(raw: {
-  pathType: number
-  target: RawRef
-  data: `0x${string}`
-}): Path {
-  return {
-    pathType: Number(raw.pathType) as PathType,
-    target: decodeRef(raw.target),
-    data: raw.data,
   }
 }
 
@@ -408,15 +299,16 @@ export function formatBps(bps: number): string {
   return `${Number.isInteger(pct) ? pct : pct.toFixed(2)}%`
 }
 
+/** Mirror of Collection._lifecycleStatus(): derived purely from the window,
+ * the cap, and the clock — never from stored state. */
 export function lifecycleStatus(
-  cfg: Pick<CollectionConfig, "mintEnd" | "supplyCap">,
+  cfg: Pick<CollectionConfig, "mintStart" | "mintEnd" | "supplyCap">,
   minted: bigint,
-  contractClosing: boolean,
   nowSec: number,
 ): CollectionStatus {
+  if (cfg.mintStart !== 0n && BigInt(nowSec) < cfg.mintStart) return CollectionStatus.Scheduled
   if (cfg.mintEnd !== 0n && BigInt(nowSec) >= cfg.mintEnd) return CollectionStatus.Closed
   if (cfg.supplyCap !== 0n && minted >= cfg.supplyCap) return CollectionStatus.Closed
-  if (contractClosing) return CollectionStatus.Closing
   return CollectionStatus.Open
 }
 
@@ -459,14 +351,6 @@ export function evmNowAddressUrl(addr: string, chainId: number = PND_CHAIN_ID): 
 /** evm.now tx URL, chain-aware (per the project's tx-link rule). */
 export function evmNowTxUrl(hash: string, chainId: number = PND_CHAIN_ID): string {
   return `https://evm.now/tx/${hash}?chainId=${chainId}`
-}
-
-/** Resolve a Ref to an internal PND route when it points at a PND node. */
-export function refToHref(ref: Ref): string | null {
-  const c = ref.contractAddress
-  if (ref.kind === RefKind.Collection) return `/collections/${c}`
-  if (ref.kind === RefKind.Token) return `/collections/${c}/${ref.id.toString()}`
-  return null
 }
 
 /** Resolve an artwork URI to an https URL for OG/SSR (ipfs:// → gateway). */

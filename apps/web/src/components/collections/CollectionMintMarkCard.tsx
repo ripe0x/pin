@@ -2,15 +2,9 @@
  * Provenance display for a token's Mint Mark. Framed as provenance, never as
  * rarity: no rank, no score, no floor. A stamp on the back of the print.
  */
-import {
-  COLLECTION_STATUS_LABEL,
-  ZERO_ADDRESS,
-  evmNowAddressUrl,
-  shortAddress,
-  type MintMark,
-} from "@/lib/collection"
+import { type MintMark } from "@/lib/collection"
 
-export function CollectionMintMarkCard({ mark, chainId }: { mark: MintMark; chainId: number }) {
+export function CollectionMintMarkCard({ mark }: { mark: MintMark }) {
   return (
     <div className="rounded-lg border border-gray-200 bg-surface overflow-hidden">
       <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-2">
@@ -22,24 +16,6 @@ export function CollectionMintMarkCard({ mark, chainId }: { mark: MintMark; chai
       <dl className="divide-y divide-gray-100">
         <Row label="Mint order" value={`#${mark.mintIndex + 1} in the collection`} />
         <Row label="Mint block" value={mark.mintBlock.toString()} />
-        <Row label="Status at mint" value={COLLECTION_STATUS_LABEL[mark.statusAtMint]} />
-        <Row
-          label="Referrer"
-          value={
-            mark.referrer === ZERO_ADDRESS ? (
-              <span className="text-gray-400">none (direct)</span>
-            ) : (
-              <a
-                href={evmNowAddressUrl(mark.referrer, chainId)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:text-fg"
-              >
-                {shortAddress(mark.referrer)} ↗
-              </a>
-            )
-          }
-        />
         {(mark.isFirst || mark.isFinal) && (
           <div className="px-4 py-3 flex flex-wrap gap-2">
             {mark.isFirst && <Badge>First mint of the collection</Badge>}

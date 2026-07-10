@@ -12,16 +12,9 @@ import {ICollection} from "../../src/collection/interfaces/ICollection.sol";
 import {
     CollectionConfig,
     CollectionStatus,
-    CollectionKind,
     IdMode,
     InitParams,
-    MintMark,
-    Edge,
-    EdgeType,
-    Path,
-    PathType,
-    Ref,
-    RefKind
+    MintMark
 } from "../../src/collection/CollectionTypes.sol";
 
 contract CollectionTest is CollectionBase {
@@ -394,28 +387,105 @@ contract CollectionTest is CollectionBase {
         c.rescueStrayETH(address(0));
     }
 
-    // ── closing flag ─────────────────────────────────────────────────────────
+    // ── mint window: rescheduling + derived status ────────────────────────────
 
-    function test_setClosing_flagsStatus() public {
-        Collection c = _collection(_freeConfig());
+    /// @dev The window is a live setting; lifecycle status is derived from it and
+    ///      the clock, never stored. Pushing the start into the future flips the
+    ///      derived status to Scheduled and closes the paid path until it opens.
+    function test_setMintWindow_reschedulesAndDerivesStatus() public {
+        Collection c = _collection(_freeConfig()); // open now, open-ended
         (, CollectionStatus statusBefore,) = c.config();
         assertEq(uint8(statusBefore), uint8(CollectionStatus.Open));
 
+        uint64 start = uint64(block.timestamp + 100);
+        uint64 end = uint64(block.timestamp + 200);
+        vm.expectEmit(false, false, false, true, address(c));
+        emit ICollection.MintWindowSet(start, end);
         vm.prank(artist);
-        c.setClosing(true);
-        (, CollectionStatus statusAfter,) = c.config();
-        assertEq(uint8(statusAfter), uint8(CollectionStatus.Closing));
+        c.setMintWindow(start, end);
+
+        (CollectionConfig memory cfg, CollectionStatus scheduled,) = c.config();
+        assertEq(cfg.mintStart, start);
+        assertEq(cfg.mintEnd, end);
+        assertEq(uint8(scheduled), uint8(CollectionStatus.Scheduled), "pre-start reads Scheduled");
+
+        vm.expectRevert(ICollection.MintNotStarted.selector);
+        vm.prank(collector);
+        c.mint(1);
+
+        // inside the window it is Open again and the Minted event stamps Open.
+        vm.warp(start);
+        (, CollectionStatus open,) = c.config();
+        assertEq(uint8(open), uint8(CollectionStatus.Open));
+        vm.expectEmit(true, true, false, true, address(c));
+        emit ICollection.Minted(
+            collector, address(0), 1, 1, 0, uint48(block.number), CollectionStatus.Open
+        );
+        vm.prank(collector);
+        c.mint(1);
+    }
+
+    /// @dev `isFinal` is derived live, so reopening a window that had ended
+    ///      un-finalizes prior tokens.
+    function test_setMintWindow_reopenUnfinalizes() public {
+        CollectionConfig memory cfg = _freeConfig();
+        cfg.mintEnd = uint64(block.timestamp + 100);
+        Collection c = _collection(cfg);
 
         vm.prank(collector);
         c.mint(1);
-        assertEq(uint8(c.mintMarkOf(1).statusAtMint), uint8(CollectionStatus.Closing));
+        assertFalse(c.mintMarkOf(1).isFinal, "within window: not final");
+
+        vm.warp(cfg.mintEnd); // window ended
+        (, CollectionStatus closed,) = c.config();
+        assertEq(uint8(closed), uint8(CollectionStatus.Closed));
+        assertTrue(c.mintMarkOf(1).isFinal, "last token of a closed window is final");
+
+        vm.prank(artist);
+        c.setMintWindow(0, uint64(block.timestamp + 100)); // reopen
+        (, CollectionStatus reopened,) = c.config();
+        assertEq(uint8(reopened), uint8(CollectionStatus.Open));
+        assertFalse(c.mintMarkOf(1).isFinal, "reopened window un-finalizes prior tokens");
     }
 
-    function test_setClosing_onlyOwner() public {
+    function test_setMintWindow_rejectsBadWindow() public {
+        Collection c = _collection(_freeConfig());
+        vm.expectRevert(ICollection.BadMintWindow.selector);
+        vm.prank(artist);
+        c.setMintWindow(200, 100); // end <= start and end != 0
+    }
+
+    function test_setMintWindow_onlyOwnerOrAdmin() public {
         Collection c = _collection(_freeConfig());
         vm.expectRevert(ICollection.NotAuthorized.selector);
         vm.prank(stranger);
-        c.setClosing(true);
+        c.setMintWindow(0, 0);
+    }
+
+    /// @dev An authorized extension minter may mint before the public window
+    ///      opens; its Minted event truthfully stamps Scheduled (status is
+    ///      derived at mint time and event-only — never stored per token).
+    function test_scheduledStatus_onEarlyExtensionMint() public {
+        CollectionConfig memory cfg = _freeConfig();
+        cfg.mintStart = uint64(block.timestamp + 100);
+        Collection c = _collection(cfg);
+
+        address minter = makeAddr("earlyMinter");
+        vm.prank(artist);
+        c.setMinter(minter, true);
+
+        // the paid path is closed before the public window opens...
+        vm.expectRevert(ICollection.MintNotStarted.selector);
+        vm.prank(collector);
+        c.mint(1);
+
+        // ...but the authorized minter mints, and the event says Scheduled.
+        vm.expectEmit(true, true, false, true, address(c));
+        emit ICollection.Minted(
+            collector, address(0), 1, 1, 0, uint48(block.number), CollectionStatus.Scheduled
+        );
+        vm.prank(minter);
+        c.mintTo(collector, address(0), "");
     }
 
     // ── supply cap (sequential) ──────────────────────────────────────────────
@@ -460,103 +530,209 @@ contract CollectionTest is CollectionBase {
         c.mint(1);
     }
 
-    // ── graph + token path ───────────────────────────────────────────────────
+    // ── live settings: price, royalty, supply cap + lock ────────────────────
 
-    function test_graph_appendEdges() public {
-        Collection c = _collection(_freeConfig());
-        Ref memory parent = Ref(1, makeAddr("otherCollection"), 0, RefKind.Collection);
+    function test_setPrice_updatesPaidPath() public {
+        Collection c = _collection(_pricedConfig(0.1 ether));
+        vm.expectEmit(false, false, false, true, address(c));
+        emit ICollection.PriceSet(0.05 ether);
         vm.prank(artist);
-        c.addEdge(EdgeType.PhaseOf, parent);
-        Ref memory src = Ref(1, makeAddr("source"), 3, RefKind.Token);
-        vm.prank(artist);
-        c.addEdge(EdgeType.Continues, src);
+        c.setPrice(0.05 ether);
 
-        Edge[] memory e = c.edges();
-        assertEq(e.length, 2);
-        assertEq(uint8(e[0].edgeType), uint8(EdgeType.PhaseOf));
-        assertEq(e[0].target.contractAddress, makeAddr("otherCollection"));
-        assertEq(uint8(e[1].edgeType), uint8(EdgeType.Continues));
-        assertEq(e[1].target.id, 3);
+        // old price now reverts (exact-match protects the collector)...
+        vm.deal(collector, 1 ether);
+        vm.expectRevert(ICollection.WrongPayment.selector);
+        vm.prank(collector);
+        c.mint{value: 0.1 ether}(1);
+
+        // ...and the new price mints.
+        vm.prank(collector);
+        c.mint{value: 0.05 ether}(1);
+        (CollectionConfig memory cfg,,) = c.config();
+        assertEq(cfg.price, 0.05 ether, "config() reports the live price");
     }
 
-    function test_graph_onlyOwner() public {
+    function test_setPrice_onlyOwnerOrAdmin() public {
         Collection c = _collection(_freeConfig());
-        Ref memory ref = Ref(1, address(c), 0, RefKind.Collection);
         vm.expectRevert(ICollection.NotAuthorized.selector);
         vm.prank(stranger);
-        c.addEdge(EdgeType.BelongsTo, ref);
+        c.setPrice(1 ether);
     }
 
-    function test_graph_acknowledgeEdge_isToggleableAndIdempotent() public {
+    function test_setRoyalty_updatesAndCaps() public {
         Collection c = _collection(_freeConfig());
-        Ref memory src = Ref(1, makeAddr("source"), 0, RefKind.Collection);
-        assertFalse(c.isEdgeAcknowledged(EdgeType.StudyOf, src));
-
+        address newReceiver = makeAddr("newRoyalty");
+        vm.expectEmit(true, false, false, true, address(c));
+        emit ICollection.RoyaltySet(750, newReceiver);
         vm.prank(artist);
-        c.acknowledgeEdge(EdgeType.StudyOf, src, true);
-        assertTrue(c.isEdgeAcknowledged(EdgeType.StudyOf, src));
+        c.setRoyalty(750, newReceiver);
+        (address receiver, uint256 amount) = c.royaltyInfo(1, 1 ether);
+        assertEq(receiver, newReceiver);
+        assertEq(amount, 0.075 ether);
 
-        // idempotent: acking again is a no-op success
+        // the init-time cap binds the setter too
+        vm.expectRevert(ICollection.RoyaltyTooHigh.selector);
         vm.prank(artist);
-        c.acknowledgeEdge(EdgeType.StudyOf, src, true);
-        assertTrue(c.isEdgeAcknowledged(EdgeType.StudyOf, src));
+        c.setRoyalty(5001, newReceiver);
 
+        // receiver 0 falls back to owner()
         vm.prank(artist);
-        c.acknowledgeEdge(EdgeType.StudyOf, src, false);
-        assertFalse(c.isEdgeAcknowledged(EdgeType.StudyOf, src));
+        c.setRoyalty(100, address(0));
+        (receiver,) = c.royaltyInfo(1, 1 ether);
+        assertEq(receiver, artist);
     }
 
-    function test_graph_acknowledgeEdge_onlyOwner() public {
+    function test_setRoyalty_onlyOwnerOrAdmin() public {
         Collection c = _collection(_freeConfig());
-        Ref memory src = Ref(1, makeAddr("source"), 0, RefKind.Collection);
         vm.expectRevert(ICollection.NotAuthorized.selector);
         vm.prank(stranger);
-        c.acknowledgeEdge(EdgeType.StudyOf, src, true);
+        c.setRoyalty(100, address(0));
     }
 
-    function test_tokenPath_defaultAndOverride() public {
+    function test_setSupplyCap_updatesAndFloors() public {
+        CollectionConfig memory cfg = _freeConfig();
+        cfg.supplyCap = 5;
+        Collection c = _collection(cfg);
+        vm.prank(collector);
+        c.mint(3);
+
+        // cannot set below mints-ever (sequential: ids are never reused)
+        vm.expectRevert(ICollection.BadSupplyCap.selector);
+        vm.prank(artist);
+        c.setSupplyCap(2);
+
+        // shrink to exactly minted: collection closes
+        vm.expectEmit(false, false, false, true, address(c));
+        emit ICollection.SupplyCapSet(3);
+        vm.prank(artist);
+        c.setSupplyCap(3);
+        (, CollectionStatus status,) = c.config();
+        assertEq(uint8(status), uint8(CollectionStatus.Closed));
+        vm.expectRevert(ICollection.ExceedsCap.selector);
+        vm.prank(collector);
+        c.mint(1);
+
+        // grow re-opens; 0 = open supply
+        vm.prank(artist);
+        c.setSupplyCap(0);
+        vm.prank(collector);
+        c.mint(10);
+        assertEq(c.totalSupply(), 13);
+    }
+
+    function test_lockSupply_freezesCapForever() public {
+        CollectionConfig memory cfg = _freeConfig();
+        cfg.supplyCap = 100;
+        Collection c = _collection(cfg);
+        assertFalse(c.isSupplyLocked());
+
+        vm.expectEmit(false, false, false, false, address(c));
+        emit ICollection.SupplyLocked();
+        vm.prank(artist);
+        c.lockSupply();
+        assertTrue(c.isSupplyLocked());
+
+        vm.expectRevert(ICollection.SupplyIsLocked.selector);
+        vm.prank(artist);
+        c.setSupplyCap(200);
+
+        // one-way: locking twice reverts rather than silently re-emitting
+        vm.expectRevert(ICollection.SupplyIsLocked.selector);
+        vm.prank(artist);
+        c.lockSupply();
+    }
+
+    function test_supplyCapAndLock_onlyOwnerOrAdmin() public {
+        Collection c = _collection(_freeConfig());
+        vm.startPrank(stranger);
+        vm.expectRevert(ICollection.NotAuthorized.selector);
+        c.setSupplyCap(1);
+        vm.expectRevert(ICollection.NotAuthorized.selector);
+        c.lockSupply();
+        vm.stopPrank();
+    }
+
+    /// @dev The cap binds the extension paths too (_checkCap on every mint
+    ///      path), so a locked cap is a hard ceiling regardless of minters.
+    function test_lockedCap_bindsExtensionMinters() public {
+        CollectionConfig memory cfg = _freeConfig();
+        cfg.supplyCap = 1;
+        Collection c = _collection(cfg);
+        address minter = makeAddr("minter");
+        vm.startPrank(artist);
+        c.setMinter(minter, true);
+        c.lockSupply();
+        vm.stopPrank();
+
+        vm.prank(minter);
+        c.mintTo(collector, address(0), "");
+        vm.expectRevert(ICollection.ExceedsCap.selector);
+        vm.prank(minter);
+        c.mintTo(collector, address(0), "");
+    }
+
+    // ── ERC-4906 refresh signals ─────────────────────────────────────────────
+
+    function test_erc4906_interfaceAndSetterSignals() public {
+        Collection c = _collection(_freeConfig());
+        assertTrue(c.supportsInterface(0x49064906));
+
+        // renderer swap refreshes everything
+        vm.expectEmit(false, false, false, true, address(c));
+        emit ICollection.BatchMetadataUpdate(0, type(uint256).max);
+        vm.prank(artist);
+        c.setRenderer(makeAddr("newRenderer"));
+
+        // work swap refreshes everything
+        vm.expectEmit(false, false, false, true, address(c));
+        emit ICollection.BatchMetadataUpdate(0, type(uint256).max);
+        vm.prank(artist);
+        c.setWork(_emptyWork());
+    }
+
+    function test_erc4906_tokenArtworkSignalsPerToken() public {
         Collection c = _collection(_freeConfig());
         vm.prank(collector);
         c.mint(2);
-
-        Ref memory col = Ref(1, address(c), 0, RefKind.Collection);
+        uint256[] memory ids = new uint256[](2);
+        ids[0] = 1;
+        ids[1] = 2;
+        string[] memory cids = new string[](2);
+        cids[0] = "ipfs://a";
+        cids[1] = "ipfs://b";
+        vm.expectEmit(false, false, false, true, address(c));
+        emit ICollection.MetadataUpdate(1);
+        vm.expectEmit(false, false, false, true, address(c));
+        emit ICollection.MetadataUpdate(2);
         vm.prank(artist);
-        c.setDefaultPath(PathType.Continuation, col, bytes32(0));
-        assertEq(uint8(c.pathOf(1).pathType), uint8(PathType.Continuation));
-        assertEq(uint8(c.pathOf(2).pathType), uint8(PathType.Continuation));
-
-        Ref memory tok = Ref(1, address(c), 7, RefKind.Token);
-        vm.prank(artist);
-        c.setPath(2, PathType.Migration, tok, bytes32(uint256(42)));
-        assertEq(uint8(c.pathOf(2).pathType), uint8(PathType.Migration));
-        assertEq(c.pathOf(2).data, bytes32(uint256(42)));
-        assertEq(uint8(c.pathOf(1).pathType), uint8(PathType.Continuation)); // unaffected
+        c.setTokenArtworkBatch(ids, cids);
+        assertEq(c.tokenArtwork(2), "ipfs://b");
     }
 
-    function test_tokenPath_setPath_requiresMintedToken() public {
+    /// @dev The renderer (or owner/admin) can signal refreshes the core cannot
+    ///      see (ChainLive works, reveals) — including after freezeMetadata,
+    ///      because freeze locks the renderer pointer, not a live work's output.
+    function test_notifyMetadataUpdate_rendererAndAdminOnly() public {
         Collection c = _collection(_freeConfig());
-        Ref memory ref = Ref(1, address(c), 0, RefKind.Collection);
-        vm.expectRevert(ICollection.NotMinted.selector);
+
+        // the default renderer may signal
+        vm.expectEmit(false, false, false, true, address(c));
+        emit ICollection.BatchMetadataUpdate(1, 10);
+        vm.prank(address(renderer));
+        c.notifyMetadataUpdate(1, 10);
+
+        // the owner may signal, even after freeze
         vm.prank(artist);
-        c.setPath(1, PathType.Burn, ref, bytes32(0));
-    }
+        c.freezeMetadata();
+        vm.expectEmit(false, false, false, true, address(c));
+        emit ICollection.BatchMetadataUpdate(0, type(uint256).max);
+        vm.prank(artist);
+        c.notifyMetadataUpdate(0, type(uint256).max);
 
-    function test_tokenPath_onlyOwner() public {
-        Collection c = _collection(_freeConfig());
-        vm.prank(collector);
-        c.mint(1);
-        Ref memory ref = Ref(1, address(c), 0, RefKind.Collection);
-        vm.expectRevert(ICollection.NotAuthorized.selector);
-        vm.prank(collector);
-        c.setPath(1, PathType.Burn, ref, bytes32(0));
-    }
-
-    function test_tokenPath_setDefaultPath_onlyOwner() public {
-        Collection c = _collection(_freeConfig());
-        Ref memory ref = Ref(1, address(c), 0, RefKind.Collection);
+        // strangers may not
         vm.expectRevert(ICollection.NotAuthorized.selector);
         vm.prank(stranger);
-        c.setDefaultPath(PathType.Burn, ref, bytes32(0));
+        c.notifyMetadataUpdate(1, 1);
     }
 
     // ── royaltyInfo ──────────────────────────────────────────────────────────
@@ -636,9 +812,21 @@ contract CollectionTest is CollectionBase {
         vm.prank(collector);
         c.mint(2);
         vm.prank(artist);
-        c.setTokenArtwork(2, "ipfs://QmUnique");
+        c.setTokenArtworkBatch(_ids1(2), _cids1("ipfs://QmUnique"));
         assertEq(c.tokenArtwork(2), "ipfs://QmUnique");
         assertEq(c.tokenArtwork(1), "");
+    }
+
+    /// @dev Single-token batch builders (the single-token setter was folded
+    ///      into the batch; a single token is a batch of one).
+    function _ids1(uint256 id) internal pure returns (uint256[] memory ids) {
+        ids = new uint256[](1);
+        ids[0] = id;
+    }
+
+    function _cids1(string memory cid) internal pure returns (string[] memory cids) {
+        cids = new string[](1);
+        cids[0] = cid;
     }
 
     function test_tokenArtwork_batch() public {
@@ -673,7 +861,7 @@ contract CollectionTest is CollectionBase {
         Collection c = _collection(_freeConfig());
         vm.expectRevert(ICollection.NotMinted.selector);
         vm.prank(artist);
-        c.setTokenArtwork(1, "ipfs://Qm");
+        c.setTokenArtworkBatch(_ids1(1), _cids1("ipfs://Qm"));
     }
 
     function test_tokenArtwork_blockedWhenFrozen() public {
@@ -684,7 +872,7 @@ contract CollectionTest is CollectionBase {
         c.freezeMetadata();
         vm.expectRevert(ICollection.MetadataIsFrozen.selector);
         vm.prank(artist);
-        c.setTokenArtwork(1, "ipfs://QmNope");
+        c.setTokenArtworkBatch(_ids1(1), _cids1("ipfs://QmNope"));
     }
 
     // ── freezeMetadata / lockWork / isPermanent ──────────────────────────────

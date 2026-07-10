@@ -5,7 +5,7 @@ import {Base64} from "solady/utils/Base64.sol";
 import {LibString} from "solady/utils/LibString.sol";
 
 import {IRenderer, ICollectionView} from "../interfaces/IRenderer.sol";
-import {MintMark, CollectionStatus} from "../CollectionTypes.sol";
+import {MintMark} from "../CollectionTypes.sol";
 
 /// @title SVGRenderer
 /// @notice Abstract base for fully onchain Solidity-SVG works. Implements
@@ -105,11 +105,7 @@ abstract contract SVGRenderer is IRenderer {
             "[",
             _numAttr("Mint Order", uint256(m.mintIndex) + 1),
             ",",
-            _numAttr("Mint Block", uint256(m.mintBlock)),
-            ",",
-            _strAttr("Referrer", m.referrer.toHexString()),
-            ",",
-            _strAttr("Status at Mint", _statusLabel(m.statusAtMint))
+            _numAttr("Mint Block", uint256(m.mintBlock))
         );
         if (m.isFirst) {
             a = string.concat(a, ",", _strAttr("Provenance", "First mint of the collection"));
@@ -130,12 +126,6 @@ abstract contract SVGRenderer is IRenderer {
         returns (string memory)
     {
         return string.concat('{"trait_type":"', trait, '","value":"', value, '"}');
-    }
-
-    function _statusLabel(CollectionStatus s) internal pure returns (string memory) {
-        if (s == CollectionStatus.Open) return "Open";
-        if (s == CollectionStatus.Closing) return "Closing";
-        return "Closed";
     }
 
     /// @dev JSON string escaping per RFC 8259, same rule as DefaultRenderer:
