@@ -100,12 +100,6 @@
               "description": "The canonical built-in renderer for [Collection](/docs/collections/contracts/collection)."
             },
             {
-              "title": "GenerativeRenderer",
-              "slug": "generative-renderer",
-              "path": "/docs/collections/contracts/generative-renderer",
-              "description": "The default renderer for script-based generative collections: a stateless shared singleton that assembles a complete HTML document per token and returns it as the `animation_url` of the token's metadata."
-            },
-            {
               "title": "RenderAssets",
               "slug": "render-assets",
               "path": "/docs/collections/contracts/render-assets",
