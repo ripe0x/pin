@@ -6,7 +6,7 @@
   },
   {
     "type": "function",
-    "name": "SURFACE_SHARE_BPS",
+    "name": "REFERRAL_SHARE_BPS",
     "inputs": [],
     "outputs": [
       {
@@ -26,84 +26,12 @@
   },
   {
     "type": "function",
-    "name": "acknowledgeEdge",
+    "name": "addAdmin",
     "inputs": [
       {
-        "name": "edgeType",
-        "type": "uint8",
-        "internalType": "enum EdgeType"
-      },
-      {
-        "name": "source",
-        "type": "tuple",
-        "internalType": "struct Ref",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "id",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum RefKind"
-          }
-        ]
-      },
-      {
-        "name": "ack",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "addEdge",
-    "inputs": [
-      {
-        "name": "edgeType",
-        "type": "uint8",
-        "internalType": "enum EdgeType"
-      },
-      {
-        "name": "target",
-        "type": "tuple",
-        "internalType": "struct Ref",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "id",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum RefKind"
-          }
-        ]
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -218,11 +146,6 @@
             "internalType": "address"
           },
           {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum CollectionKind"
-          },
-          {
             "name": "payoutAddress",
             "type": "address",
             "internalType": "address"
@@ -313,53 +236,6 @@
         "name": "",
         "type": "address",
         "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "edges",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "tuple[]",
-        "internalType": "struct Edge[]",
-        "components": [
-          {
-            "name": "edgeType",
-            "type": "uint8",
-            "internalType": "enum EdgeType"
-          },
-          {
-            "name": "target",
-            "type": "tuple",
-            "internalType": "struct Ref",
-            "components": [
-              {
-                "name": "chainId",
-                "type": "uint64",
-                "internalType": "uint64"
-              },
-              {
-                "name": "contractAddress",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "id",
-                "type": "uint256",
-                "internalType": "uint256"
-              },
-              {
-                "name": "kind",
-                "type": "uint8",
-                "internalType": "enum RefKind"
-              }
-            ]
-          }
-        ]
       }
     ],
     "stateMutability": "view"
@@ -466,11 +342,6 @@
                 "name": "royaltyReceiver",
                 "type": "address",
                 "internalType": "address"
-              },
-              {
-                "name": "kind",
-                "type": "uint8",
-                "internalType": "enum CollectionKind"
               },
               {
                 "name": "payoutAddress",
@@ -603,15 +474,10 @@
   },
   {
     "type": "function",
-    "name": "isApprovedForAll",
+    "name": "isAdmin",
     "inputs": [
       {
-        "name": "owner",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "operator",
+        "name": "account",
         "type": "address",
         "internalType": "address"
       }
@@ -627,39 +493,17 @@
   },
   {
     "type": "function",
-    "name": "isEdgeAcknowledged",
+    "name": "isApprovedForAll",
     "inputs": [
       {
-        "name": "edgeType",
-        "type": "uint8",
-        "internalType": "enum EdgeType"
+        "name": "owner",
+        "type": "address",
+        "internalType": "address"
       },
       {
-        "name": "source",
-        "type": "tuple",
-        "internalType": "struct Ref",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "id",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum RefKind"
-          }
-        ]
+        "name": "operator",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [
@@ -718,6 +562,19 @@
   },
   {
     "type": "function",
+    "name": "isSupplyLocked",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "isWorkLocked",
     "inputs": [],
     "outputs": [
@@ -728,6 +585,13 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "lockSupply",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -789,16 +653,6 @@
             "internalType": "uint48"
           },
           {
-            "name": "statusAtMint",
-            "type": "uint8",
-            "internalType": "enum CollectionStatus"
-          },
-          {
-            "name": "surface",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
             "name": "isFirst",
             "type": "bool",
             "internalType": "bool"
@@ -823,7 +677,7 @@
         "internalType": "address"
       },
       {
-        "name": "surface",
+        "name": "referrer",
         "type": "address",
         "internalType": "address"
       },
@@ -844,7 +698,7 @@
   },
   {
     "type": "function",
-    "name": "mintToAt",
+    "name": "mintToId",
     "inputs": [
       {
         "name": "to",
@@ -857,7 +711,7 @@
         "internalType": "uint256"
       },
       {
-        "name": "surface",
+        "name": "referrer",
         "type": "address",
         "internalType": "address"
       },
@@ -872,7 +726,7 @@
   },
   {
     "type": "function",
-    "name": "mintWithRewards",
+    "name": "mintWithReferral",
     "inputs": [
       {
         "name": "quantity",
@@ -880,7 +734,7 @@
         "internalType": "uint256"
       },
       {
-        "name": "surface",
+        "name": "referrer",
         "type": "address",
         "internalType": "address"
       },
@@ -905,6 +759,24 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "notifyMetadataUpdate",
+    "inputs": [
+      {
+        "name": "fromTokenId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "toTokenId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -934,64 +806,6 @@
         "name": "",
         "type": "address",
         "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "pathOf",
-    "inputs": [
-      {
-        "name": "tokenId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "tuple",
-        "internalType": "struct Path",
-        "components": [
-          {
-            "name": "pathType",
-            "type": "uint8",
-            "internalType": "enum PathType"
-          },
-          {
-            "name": "target",
-            "type": "tuple",
-            "internalType": "struct Ref",
-            "components": [
-              {
-                "name": "chainId",
-                "type": "uint64",
-                "internalType": "uint64"
-              },
-              {
-                "name": "contractAddress",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "id",
-                "type": "uint256",
-                "internalType": "uint256"
-              },
-              {
-                "name": "kind",
-                "type": "uint8",
-                "internalType": "enum RefKind"
-              }
-            ]
-          },
-          {
-            "name": "data",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          }
-        ]
       }
     ],
     "stateMutability": "view"
@@ -1040,6 +854,32 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "referralShareBps",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "removeAdmin",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -1174,70 +1014,30 @@
   },
   {
     "type": "function",
-    "name": "setClosing",
-    "inputs": [
-      {
-        "name": "closing",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setDefaultPath",
-    "inputs": [
-      {
-        "name": "pathType",
-        "type": "uint8",
-        "internalType": "enum PathType"
-      },
-      {
-        "name": "target",
-        "type": "tuple",
-        "internalType": "struct Ref",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "id",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum RefKind"
-          }
-        ]
-      },
-      {
-        "name": "data",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "setMintHook",
     "inputs": [
       {
         "name": "hook",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setMintWindow",
+    "inputs": [
+      {
+        "name": "start",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "end",
+        "type": "uint64",
+        "internalType": "uint64"
       }
     ],
     "outputs": [],
@@ -1263,49 +1063,12 @@
   },
   {
     "type": "function",
-    "name": "setPath",
+    "name": "setPayoutAddress",
     "inputs": [
       {
-        "name": "tokenId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "pathType",
-        "type": "uint8",
-        "internalType": "enum PathType"
-      },
-      {
-        "name": "target",
-        "type": "tuple",
-        "internalType": "struct Ref",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "id",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum RefKind"
-          }
-        ]
-      },
-      {
-        "name": "data",
-        "type": "bytes32",
-        "internalType": "bytes32"
+        "name": "payoutAddress",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -1313,12 +1076,12 @@
   },
   {
     "type": "function",
-    "name": "setPayoutAddress",
+    "name": "setPrice",
     "inputs": [
       {
-        "name": "payoutAddress",
-        "type": "address",
-        "internalType": "address"
+        "name": "price",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [],
@@ -1352,17 +1115,30 @@
   },
   {
     "type": "function",
-    "name": "setTokenArtwork",
+    "name": "setRoyalty",
     "inputs": [
       {
-        "name": "tokenId",
-        "type": "uint256",
-        "internalType": "uint256"
+        "name": "royaltyBps",
+        "type": "uint16",
+        "internalType": "uint16"
       },
       {
-        "name": "cid",
-        "type": "string",
-        "internalType": "string"
+        "name": "royaltyReceiver",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setSupplyCap",
+    "inputs": [
+      {
+        "name": "supplyCap",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [],
@@ -1488,19 +1264,6 @@
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "surfaceShareBps",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ],
-    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -1720,6 +1483,25 @@
   },
   {
     "type": "event",
+    "name": "AdminSet",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "allowed",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "Approval",
     "inputs": [
       {
@@ -1770,6 +1552,25 @@
   },
   {
     "type": "event",
+    "name": "BatchMetadataUpdate",
+    "inputs": [
+      {
+        "name": "_fromTokenId",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "_toTokenId",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "Burned",
     "inputs": [
       {
@@ -1783,27 +1584,8 @@
   },
   {
     "type": "event",
-    "name": "ClosingSet",
-    "inputs": [
-      {
-        "name": "closing",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "CollectionConfigured",
     "inputs": [
-      {
-        "name": "kind",
-        "type": "uint8",
-        "indexed": false,
-        "internalType": "enum CollectionKind"
-      },
       {
         "name": "idMode",
         "type": "uint8",
@@ -1845,141 +1627,6 @@
   },
   {
     "type": "event",
-    "name": "DefaultPathSet",
-    "inputs": [
-      {
-        "name": "pathType",
-        "type": "uint8",
-        "indexed": true,
-        "internalType": "enum PathType"
-      },
-      {
-        "name": "target",
-        "type": "tuple",
-        "indexed": false,
-        "internalType": "struct Ref",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "id",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum RefKind"
-          }
-        ]
-      },
-      {
-        "name": "data",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "EdgeAcknowledged",
-    "inputs": [
-      {
-        "name": "edgeType",
-        "type": "uint8",
-        "indexed": true,
-        "internalType": "enum EdgeType"
-      },
-      {
-        "name": "source",
-        "type": "tuple",
-        "indexed": false,
-        "internalType": "struct Ref",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "id",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum RefKind"
-          }
-        ]
-      },
-      {
-        "name": "ack",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "EdgeAdded",
-    "inputs": [
-      {
-        "name": "edgeType",
-        "type": "uint8",
-        "indexed": true,
-        "internalType": "enum EdgeType"
-      },
-      {
-        "name": "target",
-        "type": "tuple",
-        "indexed": false,
-        "internalType": "struct Ref",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "id",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum RefKind"
-          }
-        ]
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "Initialized",
     "inputs": [
       {
@@ -1999,6 +1646,19 @@
   },
   {
     "type": "event",
+    "name": "MetadataUpdate",
+    "inputs": [
+      {
+        "name": "_tokenId",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "MintHookSet",
     "inputs": [
       {
@@ -2006,6 +1666,25 @@
         "type": "address",
         "indexed": true,
         "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MintWindowSet",
+    "inputs": [
+      {
+        "name": "mintStart",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      },
+      {
+        "name": "mintEnd",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
       }
     ],
     "anonymous": false
@@ -2021,7 +1700,7 @@
         "internalType": "address"
       },
       {
-        "name": "surface",
+        "name": "referrer",
         "type": "address",
         "indexed": true,
         "internalType": "address"
@@ -2118,59 +1797,6 @@
   },
   {
     "type": "event",
-    "name": "PathSet",
-    "inputs": [
-      {
-        "name": "tokenId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "pathType",
-        "type": "uint8",
-        "indexed": true,
-        "internalType": "enum PathType"
-      },
-      {
-        "name": "target",
-        "type": "tuple",
-        "indexed": false,
-        "internalType": "struct Ref",
-        "components": [
-          {
-            "name": "chainId",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "id",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum RefKind"
-          }
-        ]
-      },
-      {
-        "name": "data",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "PayoutAddressSet",
     "inputs": [
       {
@@ -2178,6 +1804,19 @@
         "type": "address",
         "indexed": true,
         "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PriceSet",
+    "inputs": [
+      {
+        "name": "price",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -2197,10 +1836,48 @@
   },
   {
     "type": "event",
+    "name": "ReferralPaid",
+    "inputs": [
+      {
+        "name": "referrer",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "RendererSet",
     "inputs": [
       {
         "name": "renderer",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "RoyaltySet",
+    "inputs": [
+      {
+        "name": "royaltyBps",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      },
+      {
+        "name": "royaltyReceiver",
         "type": "address",
         "indexed": true,
         "internalType": "address"
@@ -2229,21 +1906,21 @@
   },
   {
     "type": "event",
-    "name": "SurfacePaid",
+    "name": "SupplyCapSet",
     "inputs": [
       {
-        "name": "surface",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "amount",
+        "name": "supplyCap",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
       }
     ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "SupplyLocked",
+    "inputs": [],
     "anonymous": false
   },
   {
@@ -2330,12 +2007,22 @@
   },
   {
     "type": "error",
+    "name": "AlreadyAdmin",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "AlreadyFrozen",
     "inputs": []
   },
   {
     "type": "error",
     "name": "BadMintWindow",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "BadSupplyCap",
     "inputs": []
   },
   {
@@ -2488,6 +2175,11 @@
   },
   {
     "type": "error",
+    "name": "NotAnAdmin",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "NotAuthorized",
     "inputs": []
   },
@@ -2540,7 +2232,7 @@
   },
   {
     "type": "error",
-    "name": "PooledNeedsMintToAt",
+    "name": "PooledNeedsMintToId",
     "inputs": []
   },
   {
@@ -2576,6 +2268,11 @@
   {
     "type": "error",
     "name": "SequentialAssignsIds",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "SupplyIsLocked",
     "inputs": []
   },
   {

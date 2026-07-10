@@ -9,19 +9,19 @@
       "title": "Collections",
       "docs": "/docs/collections/overview",
       "contracts": {
-        "SovereignCollection": {
+        "Collection": {
           "address": null,
           "kind": "clone",
-          "abi": "/abis/SovereignCollection.json",
-          "docs": "/docs/collections/contracts/sovereign-collection",
+          "abi": "/abis/Collection.json",
+          "docs": "/docs/collections/contracts/collection",
           "role": "The one core of the PND Collection System: a single OpenZeppelin ERC721 that holds ownership, ETH payment paths, and per-token provenance, and nothing else."
         },
-        "SovereignCollectionFactory": {
+        "CollectionFactory": {
           "address": null,
           "kind": "singleton",
-          "abi": "/abis/SovereignCollectionFactory.json",
+          "abi": "/abis/CollectionFactory.json",
           "docs": "/docs/collections/contracts/factory",
-          "role": "SovereignCollectionFactory deploys one [SovereignCollection](/docs/collections/contracts/sovereign-collection) per work as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs."
+          "role": "CollectionFactory deploys one [Collection](/docs/collections/contracts/collection) per work as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs."
         },
         "Attribution": {
           "address": null,
@@ -35,7 +35,7 @@
           "kind": "singleton",
           "abi": "/abis/DefaultRenderer.json",
           "docs": "/docs/collections/contracts/default-renderer",
-          "role": "The canonical built-in renderer for [SovereignCollection](/docs/collections/contracts/sovereign-collection)."
+          "role": "The canonical built-in renderer for [Collection](/docs/collections/contracts/collection)."
         },
         "GenerativeRenderer": {
           "address": null,
@@ -70,28 +70,28 @@
           "kind": "interface",
           "abi": "/abis/IMintHook.json",
           "docs": "/docs/collections/contracts/i-mint-hook",
-          "role": "IMintHook is the interface a contract implements to occupy a collection's hook slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [SovereignCollection](/docs/collections/contracts/sovereign-collection) core."
+          "role": "IMintHook is the interface a contract implements to occupy a collection's hook slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [Collection](/docs/collections/contracts/collection) core."
         },
         "IPriceStrategy": {
           "address": null,
           "kind": "interface",
           "abi": "/abis/IPriceStrategy.json",
           "docs": "/docs/collections/contracts/i-price-strategy",
-          "role": "IPriceStrategy is the interface a contract implements to occupy a collection's price slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [SovereignCollection](/docs/collections/contracts/sovereign-collection) core."
+          "role": "IPriceStrategy is the interface a contract implements to occupy a collection's price slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [Collection](/docs/collections/contracts/collection) core."
         },
         "IRenderer": {
           "address": null,
           "kind": "interface",
           "abi": "/abis/IRenderer.json",
           "docs": "/docs/collections/contracts/i-renderer",
-          "role": "IRenderer is the interface a contract implements to occupy a collection's renderer slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [SovereignCollection](/docs/collections/contracts/sovereign-collection) core."
+          "role": "IRenderer is the interface a contract implements to occupy a collection's renderer slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [Collection](/docs/collections/contracts/collection) core."
         },
         "ICollectionView": {
           "address": null,
           "kind": "interface",
           "abi": "/abis/ICollectionView.json",
           "docs": "/docs/collections/contracts/i-collection-view",
-          "role": "ICollectionView is the read surface a collection exposes for its swappable slots, [renderer](/docs/collections/contracts/i-renderer), [price strategy](/docs/collections/contracts/i-price-strategy), and any minter, to read without depending on the full…"
+          "role": "ICollectionView is the read surface a collection exposes for its swappable slots, [renderer](/docs/collections/contracts/i-renderer), [price strategy](/docs/collections/contracts/i-price-strategy), and any minter, to read without depending on the full [Collection](/docs/collections/contracts/collection) ABI."
         }
       }
     },

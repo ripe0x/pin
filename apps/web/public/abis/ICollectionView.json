@@ -65,16 +65,6 @@
             "internalType": "uint48"
           },
           {
-            "name": "statusAtMint",
-            "type": "uint8",
-            "internalType": "enum CollectionStatus"
-          },
-          {
-            "name": "surface",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
             "name": "isFirst",
             "type": "bool",
             "internalType": "bool"
