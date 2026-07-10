@@ -112,6 +112,12 @@
               "description": "The default renderer for script-based generative collections: a stateless shared singleton that assembles a complete HTML document per token and returns it as the `animation_url` of the token's metadata."
             },
             {
+              "title": "RenderAssets",
+              "slug": "render-assets",
+              "path": "/docs/collections/contracts/render-assets",
+              "description": "The renderer-land registry of static display assets: each collection's shared cover image and per-token captures (thumbnails of rendered output)."
+            },
+            {
               "title": "AllowlistHook",
               "slug": "allowlist-hook",
               "path": "/docs/collections/contracts/allowlist-hook",
