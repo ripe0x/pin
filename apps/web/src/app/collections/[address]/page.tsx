@@ -163,6 +163,21 @@ export default async function CollectionPage({ params }: { params: Params }) {
             }}
           />
 
+          {/* Compact trust strip (§9): the load-bearing facts adjacent to
+              the mint action; the full Facts block below carries the rest. */}
+          <p className="pt-2 pb-4 border-b border-gray-100 text-[10px] font-mono uppercase tracking-wider text-gray-400">
+            <a
+              href={evmNowAddressUrl(addr, PND_CHAIN_ID)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-fg"
+            >
+              {shortAddress(addr)} ↗
+            </a>
+            {" · ERC721 · immutable contract · "}
+            {permanent ? "renderer locked forever" : "renderer swappable until locked"}
+          </p>
+
           <AttributionRoster entries={attribution} chainId={PND_CHAIN_ID} />
 
           <WithdrawPanel collection={addr} />
