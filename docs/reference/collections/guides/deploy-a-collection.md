@@ -60,13 +60,12 @@ struct WorkConfig {
     CodeRef[] deps;         // library files (gzipped p5/three/etc.)
     string codeURI;         // offchain pointer for oversized code; hash-verified
     bytes32 codeHash;       // integrity hash of the assembled script
-    Liveness liveness;
     uint8 injectionVersion; // version of the render-context injection convention
     string renderParams;    // renderer-interpreted settings (aspect, versions)
 }
 ```
 
-`workCfg` only matters for collections that point `renderer` at `GenerativeRenderer` (or another work-config-reading renderer). `code` and `deps` are references into onchain storage (scripty v2 / EthFS): each `CodeRef` names a storage contract, a file name, and whether the file is plain or gzipped. `liveness` declares the work's preservation tier (`Pure`, `ChainLive`, `ExternalLive`); see [Injection convention](/docs/collections/reference/injection-convention) for what each tier promises and how the renderer assembles the document. Leave `workCfg` as its zero value for edition presets and Solidity-SVG works, where the renderer contract itself is the work.
+`workCfg` only matters for collections that point `renderer` at `GenerativeRenderer` (or another work-config-reading renderer). `code` and `deps` are references into onchain storage (scripty v2 / EthFS): each `CodeRef` names a storage contract, a file name, and whether the file is plain or gzipped. `codeHash` pins the assembled script's content, and `code` vs `codeURI` states plainly where the work's bytes live — how "onchain" a work is, is derivable from those facts by any external checker. See [Injection convention](/docs/collections/reference/injection-convention) for how the renderer assembles the document. Leave `workCfg` as its zero value for edition presets and Solidity-SVG works, where the renderer contract itself is the work.
 
 ## Deploying with viem
 
@@ -107,7 +106,6 @@ const emptyWork = {
   deps: [],
   codeURI: '',
   codeHash: `0x${'00'.repeat(32)}`,
-  liveness: 0, // Pure
   injectionVersion: 0,
   renderParams: '',
 };

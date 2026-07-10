@@ -23,7 +23,6 @@ import { formatWriteError } from "@/components/tx/tx-ui"
 import {
   ZERO_ADDRESS,
   IdMode,
-  Liveness,
   collectionFactory,
   generativeRenderer,
 } from "@/lib/collection"
@@ -103,7 +102,6 @@ export function DeployStep({
         deps: [],
         codeURI: "",
         codeHash: ("0x" + "0".repeat(64)) as `0x${string}`,
-        liveness: Liveness.Pure,
         injectionVersion: 1,
         renderParams: "",
       }
@@ -119,7 +117,6 @@ export function DeployStep({
       deps,
       codeURI: "",
       codeHash: uploadResult.codeHash,
-      liveness: state.liveness,
       injectionVersion: 1,
       renderParams: state.renderParams,
     }

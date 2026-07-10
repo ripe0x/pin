@@ -10,7 +10,6 @@ import {
     CodeRef,
     CollectionConfig,
     IdMode,
-    Liveness,
     WorkConfig
 } from "../src/collection/CollectionTypes.sol";
 
@@ -51,7 +50,7 @@ contract SeedDevCollections is Script {
     string constant SKETCH_NAME = "pnd-dev-orbit-studies-v1";
 
     // Deterministic orbital sketch: hash-seeded xorshift PRNG, no time, no
-    // network, noLoop — honest Liveness.Pure per the injection convention.
+    // network, noLoop — pure per the injection convention.
     string constant SKETCH = string(
         abi.encodePacked(
             "let R;function setup(){createCanvas(700,700);noLoop();",
@@ -117,7 +116,6 @@ contract SeedDevCollections is Script {
             deps: deps,
             codeURI: "",
             codeHash: keccak256(bytes(SKETCH)),
-            liveness: Liveness.Pure,
             injectionVersion: 1,
             renderParams: "aspect=1:1"
         });

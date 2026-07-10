@@ -87,12 +87,6 @@ export enum IdMode {
   Pooled = 1,
 }
 
-export enum Liveness {
-  Pure = 0,
-  ChainLive = 1,
-  ExternalLive = 2,
-}
-
 export enum CodeKind {
   Script = 0,
   ScriptGzip = 1,
@@ -107,12 +101,6 @@ export const COLLECTION_STATUS_LABEL: Record<number, string> = {
 export const ID_MODE_LABEL: Record<number, string> = {
   [IdMode.Sequential]: "Sequential",
   [IdMode.Pooled]: "Pooled",
-}
-
-export const LIVENESS_LABEL: Record<number, string> = {
-  [Liveness.Pure]: "Pure",
-  [Liveness.ChainLive]: "Onchain live",
-  [Liveness.ExternalLive]: "External live",
 }
 
 export const CODE_KIND_LABEL: Record<number, string> = {
@@ -133,7 +121,6 @@ export type WorkConfig = {
   deps: CodeRef[]
   codeURI: string
   codeHash: `0x${string}`
-  liveness: Liveness
   injectionVersion: number
   renderParams: string
 }
@@ -187,7 +174,6 @@ type RawWorkConfig = {
   deps: readonly RawCodeRef[]
   codeURI: string
   codeHash: `0x${string}`
-  liveness: number
   injectionVersion: number
   renderParams: string
 }
@@ -198,7 +184,6 @@ export function decodeWorkConfig(raw: RawWorkConfig): WorkConfig {
     deps: raw.deps.map(decodeCodeRef),
     codeURI: raw.codeURI,
     codeHash: raw.codeHash,
-    liveness: Number(raw.liveness),
     injectionVersion: Number(raw.injectionVersion),
     renderParams: raw.renderParams,
   }

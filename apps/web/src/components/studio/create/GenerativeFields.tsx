@@ -1,7 +1,7 @@
 "use client"
 
 import { useRef } from "react"
-import { KNOWN_DEPENDENCIES, LIVENESS_OPTIONS } from "@/lib/create-collection"
+import { KNOWN_DEPENDENCIES } from "@/lib/create-collection"
 import type { WizardState } from "./types"
 import { LABEL, TEXTAREA, INPUT, HELP, BTN_SECONDARY } from "./wizard-ui"
 
@@ -125,32 +125,6 @@ export function GenerativeFields({
           Onchain gzipped library files from the EthFS store, loaded before your
           script runs.
         </p>
-      </div>
-
-      <div>
-        <label className={LABEL}>Liveness</label>
-        <div className="space-y-2">
-          {LIVENESS_OPTIONS.map((opt) => (
-            <label key={opt.value} className="flex items-start gap-2">
-              <input
-                type="radio"
-                name="liveness"
-                className="mt-0.5"
-                checked={state.liveness === opt.value}
-                onChange={() => set("liveness", opt.value)}
-                disabled={disabled}
-              />
-              <span>
-                <span className="block text-[11px] font-mono text-gray-700">
-                  {opt.label}
-                </span>
-                <span className="block text-[10px] font-mono text-gray-400 leading-relaxed">
-                  {opt.help}
-                </span>
-              </span>
-            </label>
-          ))}
-        </div>
       </div>
 
       <div>

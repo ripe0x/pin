@@ -432,11 +432,6 @@ export const collectionAbi = [
                 "internalType": "bytes32"
               },
               {
-                "name": "liveness",
-                "type": "uint8",
-                "internalType": "enum Liveness"
-              },
-              {
                 "name": "injectionVersion",
                 "type": "uint8",
                 "internalType": "uint8"
@@ -1187,11 +1182,6 @@ export const collectionAbi = [
             "internalType": "bytes32"
           },
           {
-            "name": "liveness",
-            "type": "uint8",
-            "internalType": "enum Liveness"
-          },
-          {
             "name": "injectionVersion",
             "type": "uint8",
             "internalType": "uint8"
@@ -1421,11 +1411,6 @@ export const collectionAbi = [
             "name": "codeHash",
             "type": "bytes32",
             "internalType": "bytes32"
-          },
-          {
-            "name": "liveness",
-            "type": "uint8",
-            "internalType": "enum Liveness"
           },
           {
             "name": "injectionVersion",

@@ -33,18 +33,6 @@ Token id assignment model, fixed at `initialize` and never changed after.
 
 See [Id modes](/docs/collections/concepts/id-modes) for the full behavioral detail.
 
-### `Liveness`
-
-What a faithful render requires. Declared in `WorkConfig`, not enforced by
-the contract: the honest-preservation label a renderer, capture tooling,
-and archives read. It freezes with `lockWork`, so the declaration is as
-immutable as the work it describes.
-
-| Value | Meaning |
-| --- | --- |
-| `Pure` | Seed only; archival-deterministic |
-| `ChainLive` | Reads declared onchain state at render time |
-| `ExternalLive` | Reads declared offchain sources; fragile by nature |
 
 ### `CodeKind`
 
@@ -80,7 +68,6 @@ contract IS the algorithm (Solidity SVG works).
 | `deps` | `CodeRef[]` | Library files (gzipped p5, three.js, etc.) |
 | `codeURI` | `string` | Offchain pointer for oversized code; hash-verified against `codeHash` |
 | `codeHash` | `bytes32` | Integrity hash of the assembled script (`""` for refs-only works is acceptable) |
-| `liveness` | `Liveness` | Preservation tier declared for this work |
 | `injectionVersion` | `uint8` | Version of the render-context injection convention this work targets |
 | `renderParams` | `string` | Renderer-interpreted settings (aspect ratio, library versions) |
 

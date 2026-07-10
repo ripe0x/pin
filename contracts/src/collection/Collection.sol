@@ -102,9 +102,10 @@ contract Collection is
     CollectionConfig private _cfg;
     WorkConfig private _work;
 
-    // Sequential-mode id counter (first id = 1). Unused in pooled mode.
-    uint256 private _nextId;
     // Mints ever (both modes; assigns mintIndex). Burns never decrement it.
+    // In Sequential mode the next id to assign is `_mintedEver + 1` (ids run
+    // 1,2,3..., never recycle), so there is no separate id counter to keep in
+    // sync — the mint order and the id are one number.
     uint256 private _mintedEver;
     uint256 private _burnedCount;
 
@@ -137,7 +138,6 @@ contract Collection is
         _cfg = p.cfg;
         _copyWork(p.work);
         defaultRenderer = p.defaultRenderer;
-        _nextId = 1;
         for (uint256 i = 0; i < p.initialMinters.length; i++) {
             if (!(p.initialMinters[i] != address(0))) revert ZeroMinter();
             _minters[p.initialMinters[i]] = true;
@@ -170,7 +170,6 @@ contract Collection is
         }
         _work.codeURI = w.codeURI;
         _work.codeHash = w.codeHash;
-        _work.liveness = w.liveness;
         _work.injectionVersion = w.injectionVersion;
         _work.renderParams = w.renderParams;
     }
@@ -231,15 +230,15 @@ contract Collection is
             }
         }
 
-        uint256 firstTokenId = _nextId;
+        // Sequential id == mint order + 1; the next id is mints-ever + 1.
+        uint256 firstMintIndex = _mintedEver;
+        uint256 firstTokenId = firstMintIndex + 1;
         _runBeforeHook(msg.sender, quantity, firstTokenId, referrer, hookData);
 
         CollectionStatus statusAtMint = _statusForMark(); // always Open here
-        uint256 firstMintIndex = _mintedEver;
         for (uint256 i = 0; i < quantity; i++) {
             _mintOne(msg.sender, firstTokenId + i);
         }
-        _nextId = firstTokenId + quantity;
 
         _settle(required, referrer);
         _runAfterHook(msg.sender, quantity, firstTokenId, referrer, hookData);
@@ -267,12 +266,11 @@ contract Collection is
         if (!(_minters[msg.sender])) revert NotMinter();
         if (!(_cfg.idMode == IdMode.Sequential)) revert PooledNeedsMintToId();
         _checkCap(1);
-        tokenId = _nextId;
+        uint256 mintIndex = _mintedEver;
+        tokenId = mintIndex + 1; // sequential id == mint order + 1
         _runBeforeHook(to, 1, tokenId, referrer, hookData);
         CollectionStatus statusAtMint = _statusForMark();
-        uint256 mintIndex = _mintedEver;
         _mintOne(to, tokenId);
-        _nextId = tokenId + 1;
         _runAfterHook(to, 1, tokenId, referrer, hookData);
         emit Minted(to, referrer, tokenId, 1, mintIndex, statusAtMint);
     }

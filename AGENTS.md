@@ -196,7 +196,8 @@ on `Minted` (which no longer carries a mintBlock field — the log's block is
 implicit). `mintMarkOf`/`MintMark`/`IMintMarks` are gone; renderers derive
 traits via `config()`; works needing mint-time data (block, pooled order)
 record it themselves via a mint hook (see the MiniTBAM `MintClock`
-reference). Lifecycle status is derived (`Scheduled`/`Open`/`Closed`), and
+reference). Follow-up (c): `Liveness` (write-only WorkConfig enum) and
+`_nextId` (== `_mintedEver + 1`) also cut. Lifecycle status is derived (`Scheduled`/`Open`/`Closed`), and
 the window/price/royalty/cap are live-settable with `lockSupply()` as the
 scarcity promise beside `lockWork`/`freezeMetadata`. Design-doc sections
 describing graph/path as core fields predate this and are historical.

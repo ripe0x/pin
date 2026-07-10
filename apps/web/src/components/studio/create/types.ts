@@ -29,7 +29,6 @@ export type WizardState = {
   script: string
   scriptFileName: string | null
   selectedDeps: string[] // KNOWN_DEPENDENCIES ids
-  liveness: 0 | 1 | 2
   renderParams: string
 
   // Renderer-native-only
@@ -61,7 +60,6 @@ export const initialWizardState: WizardState = {
   script: "",
   scriptFileName: null,
   selectedDeps: [],
-  liveness: 0,
   renderParams: "",
   customRenderer: "",
   contentNameChosen: null,

@@ -79,26 +79,6 @@ export function dependencyCodeRef(file: string, chainId: number): CodeRef | null
   return store ? { store, name: file, kind: CodeKind.ScriptGzip } : null
 }
 
-// ── liveness copy ────────────────────────────────────────────────────────
-
-export const LIVENESS_OPTIONS: { value: 0 | 1 | 2; label: string; help: string }[] = [
-  {
-    value: 0,
-    label: "Pure",
-    help: "Same seed, same output, forever. No time, no network, no external reads.",
-  },
-  {
-    value: 1,
-    label: "Onchain live",
-    help: "May read chain state at render time (declare the reads in render params).",
-  },
-  {
-    value: 2,
-    label: "External live",
-    help: "Reads declared offchain sources. Honest about being fragile over time.",
-  },
-]
-
 // ── naming ───────────────────────────────────────────────────────────────
 
 /** Lowercase, hyphenated, alnum-only slug for a collection name. */

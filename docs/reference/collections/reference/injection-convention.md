@@ -22,7 +22,7 @@ window.tokenData = {
 
 ## Determinism rules for pure works
 
-A work declared `Liveness.Pure` promises: same `tokenData`, same output, forever, anywhere.
+
 
 1. All randomness derives from `tokenData.hash` through a seeded PRNG. Never `Math.random()` unseeded, never `crypto.getRandomValues`.
 2. No time: no `Date`, no `performance.now()` affecting output. Animation MAY use frame counters; the canonical still is frame-defined.
@@ -32,9 +32,9 @@ A work declared `Liveness.Pure` promises: same `tokenData`, same output, forever
 
 ## Chain-live and external-live works
 
-`Liveness.ChainLive` works MAY read onchain state at render time. Convention: read through any EIP-1193 provider the host page exposes as `window.ethereum`, else fall back to a public RPC of the viewer's choice; never hardcode a single provider as load-bearing. The work MUST render a coherent fallback state when no provider is reachable. Declared reads belong in `WorkConfig.renderParams` so tooling and archives know what a faithful render requires.
 
-`Liveness.ExternalLive` works read declared offchain sources and are honest about that fragility: the archival form of any live work is "code plus inputs at time T".
+
+
 
 ## Onchain assembly (GenerativeRenderer)
 

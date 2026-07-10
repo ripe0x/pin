@@ -33,15 +33,6 @@ enum IdMode {
     Pooled
 }
 
-/// @notice What a faithful render requires. Declared, not enforced: the
-///         honest-preservation label the renderer, capture tooling, and
-///         archives read.
-enum Liveness {
-    Pure, // seed only; archival-deterministic
-    ChainLive, // reads declared onchain state at render time
-    ExternalLive // reads declared offchain sources; fragile by nature
-}
-
 /// @notice How a stored file must be emitted into the assembled HTML.
 ///         Script = plain JS; ScriptGzip = gzipped JS (the renderer loads a
 ///         gunzip helper and emits it as a gzip data-URI script tag).
@@ -60,13 +51,16 @@ struct CodeRef {
 
 /// @notice What the work is, executably. Interpreted by renderers, stored and
 ///         lockable on the collection. Empty for works whose renderer contract
-///         IS the algorithm (Solidity SVG works).
+///         IS the algorithm (Solidity SVG works). The struct states WHERE the
+///         work's assets live (onchain code refs vs the offchain codeURI) and
+///         pins their content (codeHash); how "onchain" a work is, is derivable
+///         from those facts by any external checker and is not self-declared
+///         here.
 struct WorkConfig {
     CodeRef[] code; // the algorithm, chunked/named in onchain storage
     CodeRef[] deps; // library files (gzipped p5/three/etc.)
     string codeURI; // offchain pointer for oversized code; hash-verified
     bytes32 codeHash; // integrity hash of the assembled script ("" refs ok)
-    Liveness liveness;
     uint8 injectionVersion; // version of the render-context injection convention
     string renderParams; // renderer-interpreted settings (aspect, versions)
 }

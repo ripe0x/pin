@@ -72,8 +72,7 @@ view; the collection's current total supply.
 ## function workConfig
 
 view; what the work is, executably: onchain code references, dependency
-files, an off-chain code URI with an integrity hash, a declared
-[liveness](/docs/collections/concepts/types) level, the injection convention version,
-and renderer-interpreted render parameters. Empty for works whose renderer
-contract is itself the algorithm, for example a Solidity SVG work with
-nothing to inject.
+files, an off-chain code URI with an integrity hash, the injection convention
+version, and renderer-interpreted render parameters. Empty for works whose
+renderer contract is itself the algorithm, for example a Solidity SVG work
+with nothing to inject.

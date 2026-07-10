@@ -187,3 +187,38 @@ was-ever-minted sentinel. Consequences:
   MintClock reference demonstrates the pattern).
 - 393 tests green including invariants (ORDER invariants rewritten against
   ghost counters + the sequential id==order identity).
+
+## 2026-07-10 (c): Liveness + _nextId cut
+
+Un-reviewed, same cycle. Two items that failed the weight-bearing test:
+
+- **Liveness** (WorkConfig enum): write-only — set at init, never read by any
+  contract, and derivable by any external checker from where the assets
+  actually live (onchain code refs vs the offchain codeURI). Removed the enum
+  and the WorkConfig.liveness field. WorkConfig now states WHERE assets live
+  and pins content (codeHash); an on-chain-ness score is an offchain checker's
+  job, not core state.
+- **_nextId** (sequential id counter): provably `_mintedEver + 1` in
+  Sequential mode and unused in Pooled — a second source of truth for a number
+  already stored. Removed; both mint paths compute `firstTokenId =
+  _mintedEver + 1`. Also removes the sync invariant an auditor had to verify.
+
+Measured: single-mint test 465,183 → 442,101 gas (−23k, dominated by dropping
+the `_nextId = 1` cold init SSTORE per deploy, plus the per-mint write). Size
+23,048 → 22,806 bytes (EIP-170 margin +1,770). 393 tests green. Web + docs
+synced; ABI WorkConfig tuple loses the liveness field.
+
+### Open design questions raised (NOT yet actioned)
+- **Locking restructure**: the current `_metadataFrozen` (renderer pointer +
+  tokenArtwork) / `_workLocked` (WorkConfig) cut is along the wrong seam. The
+  natural seam is {renderer pointer + work = "the live art is permanent"} vs
+  {tokenArtwork captures}. And the capture-freeze may not be load-bearing —
+  captures are convenience thumbnails mirroring the already-permanent live
+  render, so `setTokenArtworkBatch` arguably needs no freeze at all. Candidate
+  end state: ONE render-permanence lock (`isPermanent` = renderer + work
+  frozen), captures permanently refreshable, supply lock separate. Pending
+  Dave's decision on whether thumbnail integrity is a promise worth a lock.
+- **Supply vs time/close**: confirmed NOT redundant — timed window + manual
+  close (setMintWindow to now) already exist and cover time-bounded/
+  artist-ended mints; the supply cap is the only *trustless, pre-committed
+  count* promise (numbered editions). Keep, justified by that use case.

@@ -280,11 +280,6 @@ export const iCollectionViewAbi = [
             "internalType": "bytes32"
           },
           {
-            "name": "liveness",
-            "type": "uint8",
-            "internalType": "enum Liveness"
-          },
-          {
             "name": "injectionVersion",
             "type": "uint8",
             "internalType": "uint8"

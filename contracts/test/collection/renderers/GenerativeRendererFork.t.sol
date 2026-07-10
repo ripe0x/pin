@@ -13,7 +13,6 @@ import {
     CodeRef,
     CollectionConfig,
     IdMode,
-    Liveness,
     WorkConfig
 } from "../../../src/collection/CollectionTypes.sol";
 
@@ -92,7 +91,6 @@ contract GenerativeRendererForkTest is Test {
         work.deps[0] = CodeRef({store: ETHFS_V2_FILE_STORAGE, name: P5_GZ_FILE, kind: CodeKind.ScriptGzip});
         work.code = new CodeRef[](1);
         work.code[0] = CodeRef({store: address(artistStore), name: ARTIST_FILE, kind: CodeKind.Script});
-        work.liveness = Liveness.Pure;
         work.injectionVersion = 1;
 
         collection = Collection(
