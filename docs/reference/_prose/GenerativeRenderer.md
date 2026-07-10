@@ -60,9 +60,10 @@ a `data:application/json;base64,` URI. `name` is the collection name plus
 `#tokenId`; `animation_url` is the assembled `data:text/html;base64,...`
 document; `image` is included only if the token has artwork set (its own
 override, else the collection's shared cover) and is omitted from the JSON
-entirely when neither is set. `attributes` carries Mint Order, Mint Block,
-and Seed (the token's seed as 0x-prefixed hex), read from the collection's
-Mint Mark and `tokenSeed`. Reverts if the collection's work config has no
+entirely when neither is set. `attributes` carries Mint Order (sequential-id
+collections only, where the token id is the mint order) and Seed (the
+token's seed as 0x-prefixed hex, read from `tokenSeed`); pooled-mode
+collections get the Seed trait only. Reverts if the collection's work config has no
 code set (`work.code.length == 0`); a collection must have a work wired
 before this renderer can serve it.
 

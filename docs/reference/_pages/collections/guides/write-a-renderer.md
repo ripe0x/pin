@@ -41,7 +41,7 @@ interface ICollectionView {
 
 ### DefaultRenderer
 
-The canonical renderer wired into every collection at deploy. Static: it reads the token's image from the [RenderAssets](/docs/collections/contracts/render-assets) registry (the per-token capture if one exists, else the collection cover) and wraps it in a JSON envelope with the token's Mint Mark as provenance attributes (`Mint Order`, `Mint Block`, plus `Provenance: First/Final mint` where applicable). No code execution, no onchain algorithm; the image is whatever URI the artist set.
+The canonical renderer wired into every collection at deploy. Static: it reads the token's image from the [RenderAssets](/docs/collections/contracts/render-assets) registry (the per-token capture if one exists, else the collection cover) and wraps it in a JSON envelope with the token's Mint Mark as derived provenance attributes (`Mint Order` plus `Provenance: First/Final mint` where applicable, sequential-id collections only). No code execution, no onchain algorithm; the image is whatever URI the artist set.
 
 ### SVGRenderer (abstract base)
 

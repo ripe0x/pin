@@ -15,9 +15,10 @@ explicitly and read everything they need back through
 
 DefaultRenderer covers the static-artwork case: one image per token (either
 a per-token override or the collection's shared cover), with the token's
-[Mint Mark](/docs/collections/concepts/mint-marks-and-entropy) surfaced as provenance
-attributes. A collection that wants unique-per-token generative art points
-its renderer slot at [GenerativeRenderer](/docs/collections/contracts/generative-renderer)
+[Mint Mark](/docs/collections/concepts/mint-marks-and-entropy) surfaced as
+derived provenance attributes for sequential-id collections. A collection
+that wants unique-per-token generative art points its renderer slot at
+[GenerativeRenderer](/docs/collections/contracts/generative-renderer)
 or a purpose-built [IRenderer](/docs/collections/contracts/i-renderer) instead.
 
 ## Read functions
@@ -49,14 +50,19 @@ function tokenURI(address collection, uint256 tokenId) external view returns (st
 ```
 
 Builds the token's metadata JSON and returns it as a
-`data:application/json;base64,` URI. The `image` field is the token's own
-artwork override (`ICollectionView.tokenArtwork`) if one is set, otherwise
-the collection's shared `artwork()`. `attributes` carries the token's Mint
-Mark: Mint Order (1-based), Mint Block, Mint Surface (the address that
-hosted the mint), Status at Mint (Open, Closing, or Closed), and, when
-applicable, a Provenance entry for "First mint of the collection" or "Final
-mint of the collection". These are provenance attributes, not rarity
-traits; DefaultRenderer draws no trait data from the work itself. The
-collection name and any owner-set strings are JSON-escaped per RFC 8259
-before being embedded, so an owner-controlled name or artwork URI can never
-break the JSON structure.
+`data:application/json;base64,` URI. The `image` field comes from
+[RenderAssets](/docs/collections/contracts/render-assets): the token's own
+capture if one is set, otherwise the collection's shared cover.
+`attributes` is fully derived, nothing per-token is stored beyond the seed.
+For sequential-id collections the token id is the mint order (ids assigned
+1, 2, 3..., never reused), so the renderer emits a numeric `Mint Order`
+trait equal to the token id, a `Provenance` trait "First mint of the
+collection" on token 1, and a `Provenance` trait "Final mint of the
+collection" on the highest id once the collection reads Closed. Pooled ids
+are not mint order, so pooled-mode collections get an empty `attributes`
+array; a pooled work wanting mint-time traits records its own data via a
+mint hook and reads it in a custom renderer. These are provenance
+attributes, not rarity traits; DefaultRenderer draws no trait data from the
+work itself. The collection name and the image URI are JSON-escaped per
+RFC 8259 before being embedded, so an owner-controlled name or artwork URI
+can never break the JSON structure.
