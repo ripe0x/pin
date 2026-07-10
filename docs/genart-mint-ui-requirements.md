@@ -145,9 +145,9 @@ The requirements below must map onto the Collection protocol as it exists on
 | Allowlist | Only via the single `mintHook` slot: `AllowlistHook` (merkle proof passed as `hookData`). **One hook at a time** — allowlist + per-wallet cap together needs a composite hook that does not exist yet. |
 | Pricing presets | Stored fixed price only. `IPriceStrategy` slot exists but **no concrete strategy contract ships** (Dutch auction explicitly cut from v1). |
 | Referrals | `REFERRAL_SHARE_BPS = 1000` (10%) protocol constant; referrer is a mint param; zero address folds the share back to the artist. |
-| Seed / reveal | `tokenSeed` = keccak(prevrandao, collection, tokenId, to, mintIndex), stored at mint. **Not predictable client-side pre-confirmation** (prevrandao) — the reveal requires one read of `tokenSeed` after the receipt. `Minted` event gives `firstTokenId`, `quantity`, `firstMintIndex`, `statusAtMint`. |
+| Seed / reveal | `tokenSeed` = keccak256(prevrandao, collection, tokenId, mintIndex) — the documented protocol standard (injection-convention § Seed derivation; recipient deliberately excluded). Not predictable before the mint block exists; the reveal needs one `tokenSeed` read after the receipt (or derivation from the receipt block's prevrandao). `Minted` event gives `firstTokenId`, `quantity`, `firstMintIndex`, `statusAtMint`. |
 | Rendering | `GenerativeRenderer` assembles onchain HTML via scripty (`tokenURI` eth_call needs a dedicated ~300M-gas call). The **client-side parity renderer** (`apps/web/src/lib/collection-render/`, injection convention) renders the same output from `(seed, tokenId, collection, chainId, work)` with zero heavy RPC. |
-| Permanence | `lockSupply()`, `lockWork()`, `freezeMetadata()` (all one-way); `isPermanent()` = workLocked && metadataFrozen. |
+| Permanence | Core owns exactly the state it controls: `lockSupply()` and `lockRenderer()` (one-way, optional — pins the renderer pointer). The work lock moved renderer-land: `GenerativeRenderer.lockWork(collection)`. Full presentation permanence = immutable renderer + locked pointer + locked work. (`freezeMetadata`/`isPermanent` were removed in 8ca23eb.) |
 | Data layer | Collection indexing (`collections` / `collection_tokens` / `collection_mints`) is fully coded but **deploy-gated** — handlers never fire today. All web reads are pgCache-wrapped live RPC (config 20s, price 5s, history 30s). The indexer, once live, does **not** track ERC-721 `Transfer`s, so post-mint ownership needs live `ownerOf`. |
 
 And what already exists in `apps/web`:
@@ -249,8 +249,8 @@ cache a state as terminal unless the corresponding lock is set.
 - [M] **Pooled / sells-via-minter collections**: baseline page shows the
   collection record with a quiet "mints through its own minter" notice (exists
   today). No mint CTA. Custom minter UIs are out of baseline scope.
-- [S] Surface `lockWork` / `freezeMetadata` / `lockSupply` transitions in the
-  facts block as they land (the existing Facts block already reads them).
+- [S] Surface `lockRenderer` / `lockSupply` (core) and the renderer-land work
+  lock (`GenerativeRenderer.workLockedOf`) in the facts block as they land.
 
 ---
 
@@ -473,8 +473,10 @@ custom event system to enable it. We get it almost for free.
 
 - [M] Trust strip near the mint action: contract address (evm.now link),
   chain, artist attribution (roster exists), and immutability status —
-  `isPermanent`, supply locked, metadata frozen — in plain language
-  ("Artwork code locked onchain"). The existing Facts block covers most of
+  renderer pointer locked, work locked (renderer-land), supply locked — in
+  plain language ("Artwork code locked onchain"; the honest three-part
+  permanence story: immutable renderer + locked pointer + locked work). The
+  existing Facts block covers most of
   this; the requirement is *placement*: a compact version near the CTA, full
   version below.
 - [M] Royalty display (bps → "5%") and the no-protocol-fee line.
@@ -542,6 +544,14 @@ Standing rule: minimize RPC; indexer/cache first. Concretely for this surface:
 5. **Feature/trait capture** into Postgres for filtering — worker follow-on to
    `collection_media`. Not v1.
 6. **Indexer deploy-unlock** — already coded; gallery scale-out waits on it.
+7. **Optional onchain preview extension on renderers** — a view like
+   `previewURI(collection, tokenId, seed)` on `GenerativeRenderer` (and an
+   optional interface renderers may implement) so previews are a pure function
+   of chain state like the live view itself. Renderer-land only, core
+   untouched. The web hot path still previews via the client parity renderer
+   (tokenURI-class eth_calls are 60-120M gas); this is the canonical,
+   verifiable capability for integrators and self-hosted pages. Recommended —
+   see the preview discussion accompanying this doc.
 
 ## 13. Open questions (for Dave)
 
