@@ -8,7 +8,7 @@ CollectionFactory deploys one [Collection](/docs/collections/contracts/collectio
 per work as an immutable EIP-1167 clone of a fixed implementation: no proxy
 admin, no upgrade path, what deploys is what runs. `createCollection` clones
 and initializes the collection in a single transaction, wiring in the shared
-default renderer and, optionally, an opening [Attribution](/docs/collections/contracts/attribution)
+default renderer and, optionally, an opening [Catalog](/docs/collections/contracts/catalog)
 roster. There is no protocol fee in the factory; the Surface Share is a fixed
 constant inside the core, paid to whoever hosts the mint.
 
@@ -33,16 +33,16 @@ configuration for anyone to front-run. See
 [deploy a collection guide](/docs/collections/guides/deploy-a-collection) for a worked
 example of the call.
 
-### The optional Attribution write
+### The optional Catalog write
 
 When `artists` is non-empty and the factory was deployed with a non-zero
-`attribution` address, the new collection writes its opening roster to the
-[Attribution](/docs/collections/contracts/attribution) singleton during its own
+`catalog` address, the new collection writes its opening roster to the
+[Catalog](/docs/collections/contracts/catalog) singleton during its own
 `initialize`, with `msg.sender == address(this) == collection`, which is one
-of Attribution's two authorized caller paths. If `artists` is empty, or the
-factory has no attribution wired, the write is skipped entirely and the
+of Catalog's two authorized caller paths. If `artists` is empty, or the
+factory has no catalog wired, the write is skipped entirely and the
 collection starts with no roster. The owner can still call
-`Attribution.setArtists` directly at any later point, subject to the same
+`Catalog.setArtists` directly at any later point, subject to the same
 authorization rules.
 
 ## Write functions
@@ -50,7 +50,7 @@ authorization rules.
 ### createCollection
 
 ```solidity
-function createCollection(string name, string symbol, address owner, CollectionConfig cfg, address[] initialMinters, address[] artists) external returns (address collection)
+function createCollection(string name, string symbol, address owner, CollectionConfig cfg, address[] initialMinters, address[] creators) external returns (address collection)
 ```
 
 **Access:** permissionless (anyone may deploy; ongoing control over the result
@@ -60,14 +60,14 @@ owner)
 
 Deploys an EIP-1167 clone of `implementation` and initializes it atomically
 with the given name, symbol, owner, `CollectionConfig`, `WorkConfig`,
-extension minters, and attribution roster. Reverts with `owner required` if
+extension minters, and catalog roster. Reverts with `owner required` if
 `owner` is the zero address.
 
 `initialMinters` grants extension-minter status at init, so pooled or backed
 forms that sell exclusively through a custom minter deploy fully wired in
 one transaction; leave it empty for collections that sell through the
 core's built-in fixed-price path. `artists` is the opening
-[Attribution](/docs/collections/contracts/attribution) roster; each listed artist still
+[Catalog](/docs/collections/contracts/catalog) roster; each listed artist still
 needs to claim the collection in their own Catalog for the credit to read as
 mutually confirmed.
 
@@ -114,19 +114,19 @@ Every collection address the factory has deployed, in deployment order.
 Indexers typically watch `CollectionCreated` rather than paging this array,
 but it's available for direct onchain enumeration.
 
-### attribution
+### catalog
 
 ```solidity
-function attribution() external view returns (address)
+function catalog() external view returns (address)
 ```
 
-The [Attribution](/docs/collections/contracts/attribution) singleton wired into every
+The [Catalog](/docs/collections/contracts/catalog) singleton wired into every
 collection created by this factory. The zero address disables the
-opening-roster integration: `createCollection` skips the Attribution write
+opening-roster integration: `createCollection` skips the Catalog write
 regardless of what `artists` is passed.
 
 ```bash
-cast call <COLLECTION_FACTORY_ADDRESS> "attribution()(address)" \
+cast call <COLLECTION_FACTORY_ADDRESS> "catalog()(address)" \
   --rpc-url https://ethereum-rpc.publicnode.com
 ```
 

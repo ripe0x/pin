@@ -205,7 +205,11 @@ singleton; core locks are now `lockRenderer()` (optional pointer pin,
 replaces freezeMetadata) + `lockSupply()`; seed formula drops the recipient
 (keccak(prevrandao, collection, tokenId, mintIndex), spec'd in
 docs/injection-convention.md); factory gains one-way deployer-only
-deprecate(successor) halting new clones only. Core: 18,113 bytes. Lifecycle status is derived (`Scheduled`/`Open`/`Closed`), and
+deprecate(successor) halting new clones only. Follow-up (e): Attribution.sol
+CUT — attribution is now a two-sided onchain handshake on the collection
+(owner setCreators/isListedCreator + creator claims in the Catalog public good;
+isConfirmedCreator = live intersection via Catalog.isContractRegistered). Core:
+18,939 bytes. Lifecycle status is derived (`Scheduled`/`Open`/`Closed`), and
 the window/price/royalty/cap are live-settable with `lockSupply()` as the
 scarcity promise beside `lockWork`/`freezeMetadata`. Design-doc sections
 describing graph/path as core fields predate this and are historical.

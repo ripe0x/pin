@@ -23,13 +23,6 @@
           "docs": "/docs/collections/contracts/factory",
           "role": "CollectionFactory deploys one [Collection](/docs/collections/contracts/collection) per work as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs."
         },
-        "Attribution": {
-          "address": null,
-          "kind": "singleton",
-          "abi": "/abis/Attribution.json",
-          "docs": "/docs/collections/contracts/attribution",
-          "role": "Attribution is generic, immutable, public infrastructure recording the works-to-artists half of the bilateral attribution handshake."
-        },
         "DefaultRenderer": {
           "address": null,
           "kind": "singleton",

@@ -18,6 +18,8 @@ Every event the Collections contracts emit, grouped by contract. Signatures and 
 
 **[`CollectionConfigured`](/docs/collections/contracts/collection#collectionconfigured)** · Emitted once at init with the collection's id mode, price, supply cap, mint window, and cover artwork URI.
 
+**[`CreatorListed`](/docs/collections/contracts/collection#creatorlisted)** · Emitted when the owner lists or unlists a creator (including each creator seeded at init).
+
 **[`Initialized`](/docs/collections/contracts/collection#initialized)** · Standard OpenZeppelin Initializable event, emitted once when the clone is initialized.
 
 **[`MetadataUpdate`](/docs/collections/contracts/collection#metadataupdate)** · ERC-4906 single-token refresh signal (declared for interface completeness; range refreshes go through `BatchMetadataUpdate` via the setters and `notifyMetadataUpdate`).
@@ -63,12 +65,6 @@ Every event the Collections contracts emit, grouped by contract. Signatures and 
 **[`CollectionCreated`](/docs/collections/contracts/factory#collectioncreated)** · Emitted once per successful `createCollection` call, with `owner` and `collection` both indexed.
 
 **[`Deprecated`](/docs/collections/contracts/factory#deprecated)** · Emitted once when the deployer permanently deprecates the factory, carrying the successor address (zero if none named).
-
-## Attribution
-
-**[`ArtistsSet`](/docs/collections/contracts/attribution#artistsset)** · Emitted on every successful `setArtists` call, with `collection` and `actor` (the authorized caller) indexed, and the complete new `artists` array in the data.
-
-**[`RosterLocked`](/docs/collections/contracts/attribution#rosterlocked)** · Emitted when `lockRoster` succeeds, including on the idempotent no-op path when the roster was already locked.
 
 ## GenerativeRenderer
 

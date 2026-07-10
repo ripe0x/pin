@@ -44,11 +44,6 @@ emit({
   ],
 });
 emit({
-  artifact: "Attribution.sol/Attribution.json",
-  exportName: "attributionAbi",
-  outFiles: ["packages/abi/src/attribution.ts"],
-});
-emit({
   artifact: "GenerativeRenderer.sol/GenerativeRenderer.json",
   exportName: "generativeRendererAbi",
   outFiles: ["packages/abi/src/generativeRenderer.ts"],

@@ -24,8 +24,8 @@ contract CollectionBase is Test {
     function setUp() public virtual {
         renderer = new MockRenderer();
         impl = new Collection();
-        // address(0) attribution: the roster-write integration is out of
-        // scope for this suite (owned by the Attribution test agent).
+        // address(0) catalog: creator-confirmation is out of scope for this
+        // suite (exercised in CreatorAttribution.t.sol with a real Catalog).
         factory = new CollectionFactory(address(impl), address(renderer), address(0));
     }
 
@@ -53,10 +53,10 @@ contract CollectionBase is Test {
 
     function _collection(CollectionConfig memory cfg) internal returns (Collection c) {
         address[] memory noMinters = new address[](0);
-        address[] memory noArtists = new address[](0);
+        address[] memory noCreators = new address[](0);
         c = Collection(
             factory.createCollection(
-                "Artist Collection", "ACOL", artist, cfg, noMinters, noArtists
+                "Artist Collection", "ACOL", artist, cfg, noMinters, noCreators
             )
         );
     }
@@ -65,9 +65,9 @@ contract CollectionBase is Test {
         internal
         returns (Collection c)
     {
-        address[] memory noArtists = new address[](0);
+        address[] memory noCreators = new address[](0);
         c = Collection(
-            factory.createCollection("Artist Collection", "ACOL", artist, cfg, minters, noArtists)
+            factory.createCollection("Artist Collection", "ACOL", artist, cfg, minters, noCreators)
         );
     }
 
@@ -83,7 +83,7 @@ contract CollectionBase is Test {
     ///      struct before calling initialize().
     function _rawInitParams(CollectionConfig memory cfg) internal view returns (InitParams memory p) {
         address[] memory noMinters = new address[](0);
-        address[] memory noArtists = new address[](0);
+        address[] memory noCreators = new address[](0);
         p = InitParams({
             name: "Artist Collection",
             symbol: "ACOL",
@@ -91,8 +91,8 @@ contract CollectionBase is Test {
             cfg: cfg,
             defaultRenderer: address(renderer),
             initialMinters: noMinters,
-            attribution: address(0),
-            artists: noArtists
+            catalog: address(0),
+            creators: noCreators
         });
     }
 }

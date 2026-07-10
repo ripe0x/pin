@@ -2,18 +2,18 @@
 pragma solidity ^0.8.24;
 
 import {Script, console2} from "forge-std/Script.sol";
-import {Attribution} from "../src/collection/Attribution.sol";
+import {Catalog} from "../src/Catalog.sol";
 import {DefaultRenderer} from "../src/collection/renderers/DefaultRenderer.sol";
 import {GenerativeRenderer} from "../src/collection/renderers/GenerativeRenderer.sol";
 import {RenderAssets} from "../src/collection/renderers/RenderAssets.sol";
 import {Collection} from "../src/collection/Collection.sol";
 import {CollectionFactory} from "../src/collection/CollectionFactory.sol";
 
-/// @notice Deploy script for the Collection system: Attribution,
+/// @notice Deploy script for the Collection system: Catalog,
 ///         DefaultRenderer, GenerativeRenderer, the Collection
 ///         implementation, and the factory that clones it.
 ///
-/// @dev    CREATE2 discipline (Attribution only): Attribution has no
+/// @dev    Deploy order (Catalog first so the factory can wire it): Catalog has no
 ///         constructor arguments, so — exactly like `Catalog` (see
 ///         `DeployCatalog.s.sol`) — it is deployed through the canonical
 ///         deterministic-deployment proxy
@@ -31,10 +31,10 @@ import {CollectionFactory} from "../src/collection/CollectionFactory.sol";
 ///         them at a predicted address ahead of time and a plain `new` keeps
 ///         the script simple. If cross-chain address parity for these ever
 ///         matters, they can be moved behind the same deterministic-deployer
-///         pattern as Attribution with no other changes.
+///         pattern with no other changes.
 ///
 ///         GenerativeRenderer DOES take constructor args (scriptyBuilder,
-///         gunzipStore, gunzipFile), so — unlike Attribution — its init code
+///         gunzipStore, gunzipFile), so its init code
 ///         hash depends on those args as well as the bytecode. Even if it
 ///         were deployed via CREATE2 with a fixed salt, it would only land at
 ///         the same address on chains where the scripty builder and gunzip
@@ -48,13 +48,13 @@ import {CollectionFactory} from "../src/collection/CollectionFactory.sol";
 ///         target chain.
 ///
 ///         Deploy order (later steps depend on earlier addresses):
-///           1. Attribution              (CREATE2, no args)
+///           1. Catalog                   (or reuse via CATALOG env)
 ///           2. DefaultRenderer          (CREATE, no args)
 ///           3. GenerativeRenderer       (CREATE, scriptyBuilder/gunzipStore/gunzipFile)
 ///           4. Collection impl (CREATE, no args; constructor calls
 ///                                        _disableInitializers so the impl
 ///                                        itself can never be initialized)
-///           5. CollectionFactory(impl, defaultRenderer, attribution)
+///           5. CollectionFactory(impl, defaultRenderer, catalog)
 ///
 ///         Run with (mainnet):
 ///           forge script script/DeployCollectionSystem.s.sol \
@@ -80,12 +80,6 @@ contract DeployCollectionSystemScript is Script {
     address internal constant DETERMINISTIC_DEPLOYER =
         0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
-    /// @dev Salt chosen for the Attribution deploy. Combined with the
-    ///      contract's creationCode and the deployer proxy's address, this
-    ///      fixes Attribution's address across chains. Salt is
-    ///      `keccak256("Attribution")` so a future reader can recompute it
-    ///      from the contract name alone.
-    bytes32 internal constant ATTRIBUTION_SALT = keccak256("Attribution");
 
     /// @dev Real, deterministically-deployed mainnet scripty v2 builder and
     ///      EthFS v2 file storage. Same addresses this repo's
@@ -98,31 +92,17 @@ contract DeployCollectionSystemScript is Script {
     function run() external {
         uint256 deployerPk = vm.envUint("PRIVATE_KEY");
 
-        // ── 1. Attribution — CREATE2 via the deterministic-deployment proxy ──
-        bytes memory attributionCode = type(Attribution).creationCode;
-        bytes32 attributionInitCodeHash = keccak256(attributionCode);
-        address predictedAttribution = vm.computeCreate2Address(
-            ATTRIBUTION_SALT, attributionInitCodeHash, DETERMINISTIC_DEPLOYER
-        );
-        console2.log("Predicted Attribution address:", predictedAttribution);
-
-        address attribution;
-        if (predictedAttribution.code.length > 0) {
-            console2.log("Attribution already deployed at predicted address; skipping.");
-            attribution = predictedAttribution;
-        } else {
+        // ── 1. Catalog — the collection reads it to confirm creators. On
+        //      mainnet this is the existing Catalog public good: set CATALOG in
+        //      the env to reuse it. Unset (harness/fork) deploys a fresh one.
+        address catalog = vm.envOr("CATALOG", address(0));
+        if (catalog == address(0)) {
             vm.startBroadcast(deployerPk);
-            (bool ok,) = DETERMINISTIC_DEPLOYER.call(
-                abi.encodePacked(ATTRIBUTION_SALT, attributionCode)
-            );
+            catalog = address(new Catalog());
             vm.stopBroadcast();
-            require(ok, "Attribution create2 deploy failed");
-            require(
-                predictedAttribution.code.length > 0,
-                "Attribution deploy succeeded but predicted address has no code"
-            );
-            attribution = predictedAttribution;
-            console2.log("Attribution deployed at:", attribution);
+            console2.log("Catalog deployed at:", catalog);
+        } else {
+            console2.log("Using existing Catalog at:", catalog);
         }
 
         // ── 2a. RenderAssets — plain CREATE, no args (covers + captures) ──
@@ -151,16 +131,16 @@ contract DeployCollectionSystemScript is Script {
         vm.stopBroadcast();
         console2.log("Collection implementation deployed at:", address(implementation));
 
-        // ── 5. CollectionFactory(implementation, defaultRenderer, attribution) ──
+        // ── 5. CollectionFactory(implementation, defaultRenderer, catalog) ──
         vm.startBroadcast(deployerPk);
         CollectionFactory factory = new CollectionFactory(
-            address(implementation), address(defaultRenderer), attribution
+            address(implementation), address(defaultRenderer), catalog
         );
         vm.stopBroadcast();
 
         require(factory.implementation() == address(implementation), "impl mismatch");
         require(factory.defaultRenderer() == address(defaultRenderer), "renderer mismatch");
-        require(factory.attribution() == attribution, "attribution mismatch");
+        require(factory.catalog() == catalog, "catalog mismatch");
         require(address(implementation).code.length > 0, "impl has no code");
         require(address(factory).code.length > 0, "factory has no code");
 
@@ -168,7 +148,7 @@ contract DeployCollectionSystemScript is Script {
         console2.log("Post-deploy assertions: OK");
         console2.log("");
         console2.log("Summary:");
-        console2.log("  Attribution:               ", attribution);
+        console2.log("  Catalog:                   ", catalog);
         console2.log("  DefaultRenderer:           ", address(defaultRenderer));
         console2.log("  GenerativeRenderer:        ", address(generativeRenderer));
         console2.log("  Collection impl:  ", address(implementation));

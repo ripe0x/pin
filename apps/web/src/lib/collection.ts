@@ -13,7 +13,6 @@
 import { type Address, formatEther, isAddress } from "viem"
 import { foundry, mainnet } from "wagmi/chains"
 import {
-  ATTRIBUTION,
   GENERATIVE_RENDERER,
   RENDER_ASSETS,
   SOVEREIGN_COLLECTION_FACTORY,
@@ -43,13 +42,6 @@ export function renderAssetsAddress(chainId: number = PND_CHAIN_ID): Address | n
   const env = process.env.NEXT_PUBLIC_RENDER_ASSETS
   if (env && isAddress(env)) return env as Address
   return getAddressOrNull(RENDER_ASSETS, chainId)
-}
-
-/** The Attribution singleton address (env override for local dev wins). */
-export function attributionAddress(chainId: number = PND_CHAIN_ID): Address | null {
-  const env = process.env.NEXT_PUBLIC_ATTRIBUTION
-  if (env && isAddress(env)) return env as Address
-  return getAddressOrNull(ATTRIBUTION, chainId)
 }
 
 /**

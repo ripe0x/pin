@@ -24,9 +24,9 @@ contract CollectionFactory {
     /// @notice The canonical built-in renderer wired into every collection.
     address public immutable defaultRenderer;
 
-    /// @notice The Attribution singleton for optional roster writes at deploy.
-    ///         address(0) disables the integration.
-    address public immutable attribution;
+    /// @notice The Catalog singleton every clone reads for creator confirmation.
+    ///         address(0) disables confirmation (listings still work).
+    address public immutable catalog;
 
     /// @notice The deployer: the only address that may deprecate this
     ///         factory. No other privilege exists — the deployer has zero
@@ -52,12 +52,12 @@ contract CollectionFactory {
     error NotDeployer();
     error AlreadyDeprecated();
 
-    constructor(address implementation_, address defaultRenderer_, address attribution_) {
+    constructor(address implementation_, address defaultRenderer_, address catalog_) {
         require(implementation_.code.length > 0, "impl has no code");
         require(defaultRenderer_.code.length > 0, "renderer has no code");
         implementation = implementation_;
         defaultRenderer = defaultRenderer_;
-        attribution = attribution_;
+        catalog = catalog_;
         deployer = msg.sender;
     }
 
@@ -77,19 +77,17 @@ contract CollectionFactory {
     /// @param initialMinters Extension minters granted at init (pooled/backed
     ///        forms deploy fully wired in one tx). Empty for collections that
     ///        sell through the built-in fixed-price path.
-    /// @param artists Optional Attribution roster (collabs). The collection
-    ///        writes it to the Attribution singleton during its own init (the
-    ///        singleton authorizes the collection itself); each artist
-    ///        completes the handshake by claiming the collection in their own
-    ///        Catalog. Ignored when empty or when the factory has no
-    ///        attribution set.
+    /// @param creators Optional initial creator listing (the owner's side of
+    ///        attribution). Each listed creator completes the handshake by
+    ///        claiming the collection in their own Catalog; isConfirmedCreator
+    ///        then reads true. Empty for solo works (owner() is the creator).
     function createCollection(
         string calldata name,
         string calldata symbol,
         address owner,
         CollectionConfig calldata cfg,
         address[] calldata initialMinters,
-        address[] calldata artists
+        address[] calldata creators
     ) external returns (address collection) {
         if (deprecated) revert FactoryDeprecated();
         require(owner != address(0), "owner required");
@@ -102,8 +100,8 @@ contract CollectionFactory {
                 cfg: cfg,
                 defaultRenderer: defaultRenderer,
                 initialMinters: initialMinters,
-                attribution: attribution,
-                artists: artists
+                catalog: catalog,
+                creators: creators
             })
         );
         isCollection[collection] = true;

@@ -67,7 +67,7 @@ ABIs are served under `/abis/` for every contract and interface across the proto
 
 Collections core and factory: `Collection`, `CollectionFactory`
 
-Collections shared singletons: `Attribution`, `DefaultRenderer`, `GenerativeRenderer`
+Collections shared singletons: `DefaultRenderer`, `GenerativeRenderer`, `RenderAssets`
 
 Collections reference mint hooks: `AllowlistHook`, `PerWalletCapHook`, `HoldsCollectionHook`
 
@@ -83,7 +83,7 @@ Every ABI is also shipped as a typed TypeScript export in the `@pin/abi` workspa
 
 ```ts
 import {sovereignCollectionAbi, sovereignCollectionFactoryAbi} from '@pin/abi';
-import {attributionAbi, generativeRendererAbi, defaultRendererAbi} from '@pin/abi';
+import {generativeRendererAbi, defaultRendererAbi, renderAssetsAbi} from '@pin/abi';
 import {allowlistHookAbi, perWalletCapHookAbi, holdsCollectionHookAbi} from '@pin/abi';
 import {iMintHookAbi, iPriceStrategyAbi, iRendererAbi, iCollectionViewAbi} from '@pin/abi';
 import {sovereignAuctionHouseAbi, sovereignAuctionHouseFactoryAbi} from '@pin/abi';

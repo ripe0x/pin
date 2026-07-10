@@ -67,6 +67,6 @@ struct InitParams {
     CollectionConfig cfg;
     address defaultRenderer;
     address[] initialMinters; // extension minters granted at init
-    address attribution; // Attribution singleton; 0 skips the roster write
-    address[] artists; // collab roster, written by the collection during init
+    address catalog; // Catalog singleton the collection reads for creator confirmation; 0 = none
+    address[] creators; // initial listed creators (owner's side of attribution); confirmed via Catalog
 }

@@ -258,3 +258,28 @@ Un-reviewed, same cycle. The largest restructure of the set:
   WorkRegistry/RenderAssets/lockRenderer/deprecate suites. Web synced
   (two-step publish flow in the create wizard; renderer-land reads); docs
   regenerated (43 pages, RenderAssets page added, zero stale terms).
+
+## 2026-07-10 (e): Attribution.sol cut → onchain creator handshake via Catalog
+
+Un-reviewed, same cycle. Replaced the shared Attribution registry with a
+two-sided, fully onchain attribution primitive on the collection itself:
+
+- **Owner's side**: `setCreators(address[], bool listed)` + `isListedCreator`
+  mapping (seeded from InitParams.creators at init, mutable). Emits
+  `CreatorListed`.
+- **Artist's side**: the creator claims the collection in the Catalog public
+  good (`addContract`) — unchanged, external.
+- **Verification**: `isConfirmedCreator(who)` = `isListedCreator[who] &&
+  Catalog.isContractRegistered(who, this)` — a LIVE read, so retracting either
+  side revokes credit. Squat-proof (rando not listed) AND false-credit-proof
+  (owner can't fake a claim). No shared Attribution registry.
+- Catalog address is stored per-collection (`catalog()`, from InitParams,
+  passed by the factory which took `catalog` in place of `attribution`).
+  `createCollection` param `artists` → `creators`. Attribution.sol +
+  IAttribution.sol deleted; new `interfaces/ICatalog.sol` (read-only slice).
+- Size 18,113 → 18,939 bytes (EIP-170 margin +5,637). 374 tests green incl.
+  the new CreatorAttribution suite (7 tests) exercising the handshake against
+  a real Catalog. Web synced (getAttribution now indexer-deferred — the roster
+  enumerates from CreatorListed events, no chain scan; confirmed status is a
+  live isConfirmedCreator read). Docs regenerated (Attribution page removed,
+  42 pages, zero stale/broken refs).

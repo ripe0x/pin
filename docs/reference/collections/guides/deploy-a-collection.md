@@ -10,9 +10,8 @@ function createCollection(
     string calldata symbol,
     address owner,
     CollectionConfig calldata cfg,
-    WorkConfig calldata workCfg,
     address[] calldata initialMinters,
-    address[] calldata artists
+    address[] calldata creators
 ) external returns (address collection);
 ```
 
@@ -21,7 +20,7 @@ function createCollection(
 - `cfg`: the `CollectionConfig` struct, below
 - `workCfg`: the `WorkConfig` struct, below; empty for renderer-native works (a custom `SVGRenderer` subclass) where the renderer contract IS the algorithm
 - `initialMinters`: extension minters granted at init, so a pooled or backed collection deploys fully wired in one transaction. Empty for collections that sell through the built-in fixed-price path
-- `artists`: an optional collab roster written to the [Attribution](/docs/collections/contracts/attribution) singleton during the collection's own init. Each artist completes the handshake by claiming the collection in their own Catalog. Ignored when empty or when the factory has no attribution set
+- `creators`: an optional initial creator listing (the owner's side of attribution), seeded on the collection at init. Each listed creator completes the handshake by claiming the collection in their own Catalog, after which `isConfirmedCreator` reads true. Empty for solo works (`owner()` is the creator)
 
 The factory emits `CollectionCreated(owner, collection)`, the single event an indexer needs for discovery, and records the address in `isCollection` / `allCollections`.
 

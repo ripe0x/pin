@@ -1,12 +1,11 @@
 import "server-only"
 import { createPublicClient, decodeFunctionResult, encodeFunctionData, http, type Address } from "viem"
 import { mainnet } from "viem/chains"
-import { attributionAbi, catalogAbi, collectionAbi, collectionFactoryAbi, generativeRendererAbi, renderAssetsAbi } from "@pin/abi"
+import { catalogAbi, collectionAbi, collectionFactoryAbi, generativeRendererAbi, renderAssetsAbi } from "@pin/abi"
 import { ARTIST_RECORD_REGISTRY, ATTRIBUTION, MAINNET_CHAIN_ID, getAddressOrNull } from "@pin/addresses"
 import { fetchMetadataForUri } from "@pin/token-metadata"
 import { pgCache } from "./pg-cache"
 import {
-  attributionAddress,
   decodeCollectionConfig,
   decodeWorkConfig,
   generativeRenderer,
@@ -390,20 +389,6 @@ export async function getCurrentPrice(
   })
 }
 
-export type AttributionEntry = { artist: Address; claimed: boolean }
-
-/**
- * A collection's artist roster, cross-checked against each artist's own
- * Catalog claim. Attribution.artistsOf is a one-sided assertion (the
- * collection's owner declaring who collaborated); Catalog.isContractRegistered
- * is the other half (the artist itself claiming the collection). Per
- * Attribution.sol's documented model, "confirmed" is the intersection of
- * both — computed here, off-chain, since the two singletons are
- * deliberately decoupled onchain.
- *
- * Returns an empty array when Attribution isn't configured for the current
- * chain, or when the collection's roster is empty/unset.
- */
 export type RecentTokenEntry = {
   tokenId: string
   seed: `0x${string}`
@@ -447,42 +432,20 @@ export async function getRecentTokenMarks(
   })
 }
 
-export async function getAttribution(collection: Address): Promise<AttributionEntry[]> {
-  return pgCache(`sc-attribution:${lc(collection)}`, 60, async () => {
-    // attributionAddress() honors the NEXT_PUBLIC_ATTRIBUTION env override
-    // (the dev fork harness sets it); the static entry is a zero sentinel
-    // until mainnet deploy, so reading it directly returns [] forever.
-    const attribution = attributionAddress()
-    if (!attribution) return []
-    const client = getClient()
-    try {
-      const artists = (await client.readContract({
-        address: attribution,
-        abi: attributionAbi,
-        functionName: "artistsOf",
-        args: [collection],
-      })) as readonly Address[]
-      if (artists.length === 0) return []
-      if (!REGISTRY) {
-        // No Catalog registry configured: report the roster as unconfirmed
-        // rather than silently dropping it.
-        return artists.map((artist) => ({ artist, claimed: false }))
-      }
-      const claimResults = await client.multicall({
-        allowFailure: true,
-        contracts: artists.map((artist) => ({
-          address: REGISTRY,
-          abi: catalogAbi,
-          functionName: "isContractRegistered" as const,
-          args: [artist, collection] as const,
-        })),
-      })
-      return artists.map((artist, i) => ({
-        artist,
-        claimed: claimResults[i].status === "success" ? Boolean(claimResults[i].result) : false,
-      }))
-    } catch {
-      return []
-    }
-  })
+export type CreatorEntry = { creator: Address; confirmed: boolean }
+export type AttributionEntry = CreatorEntry // back-compat alias
+
+/**
+ * Confirmed creators for a collection. Attribution is now fully onchain on the
+ * collection itself: the owner LISTS creators (`CreatorListed` events) and each
+ * confirms by claiming the collection in the Catalog; the collection exposes
+ * `isConfirmedCreator(who)` as the live intersection.
+ *
+ * The listed set is enumerated from indexed `CreatorListed` events (worker owns
+ * chain scanning; web never scans), so this returns [] until the indexer serves
+ * them. Given a candidate set, confirmation is a live `isConfirmedCreator` read.
+ * There is no shared Attribution registry to read anymore.
+ */
+export async function getAttribution(_collection: Address): Promise<CreatorEntry[]> {
+  return []
 }

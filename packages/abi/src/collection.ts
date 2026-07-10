@@ -91,6 +91,19 @@ export const collectionAbi = [
   },
   {
     "type": "function",
+    "name": "catalog",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "config",
     "inputs": [],
     "outputs": [
@@ -353,12 +366,12 @@ export const collectionAbi = [
             "internalType": "address[]"
           },
           {
-            "name": "attribution",
+            "name": "catalog",
             "type": "address",
             "internalType": "address"
           },
           {
-            "name": "artists",
+            "name": "creators",
             "type": "address[]",
             "internalType": "address[]"
           }
@@ -398,6 +411,44 @@ export const collectionAbi = [
       },
       {
         "name": "operator",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isConfirmedCreator",
+    "inputs": [
+      {
+        "name": "who",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isListedCreator",
+    "inputs": [
+      {
+        "name": "",
         "type": "address",
         "internalType": "address"
       }
@@ -843,6 +894,24 @@ export const collectionAbi = [
   },
   {
     "type": "function",
+    "name": "setCreators",
+    "inputs": [
+      {
+        "name": "list",
+        "type": "address[]",
+        "internalType": "address[]"
+      },
+      {
+        "name": "listed",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setMintHook",
     "inputs": [
       {
@@ -1239,6 +1308,25 @@ export const collectionAbi = [
         "type": "uint64",
         "indexed": false,
         "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "CreatorListed",
+    "inputs": [
+      {
+        "name": "creator",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "listed",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
       }
     ],
     "anonymous": false

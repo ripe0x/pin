@@ -3,7 +3,9 @@
 /**
  * Config fields common to the Edition and Generative presets: identity,
  * price, supply, mint window, royalty, payout, and the collaborator
- * roster (Attribution.artists, NOT a payout split). Renderer-native uses
+ * creators list (the owner's side of attribution, NOT a payout split);
+ * each listed creator confirms by claiming the collection in the Catalog.
+ * Renderer-native uses
  * none of this beyond name/symbol (composed separately in ConfigStep).
  */
 

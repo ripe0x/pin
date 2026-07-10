@@ -25,7 +25,6 @@ different modules plugged into the same four sockets. See
 | Contract | Role |
 | --- | --- |
 | `CollectionFactory` | Clones the `Collection` implementation and wires init params in one transaction |
-| `Attribution` | The works-to-artists half of attribution: a collection declares its roster; each artist confirms by claiming the collection in their own Catalog |
 | `DefaultRenderer` | The default `IRenderer` a freshly deployed collection points at until the artist sets something else |
 | `GenerativeRenderer` | Assembles a full HTML page from a collection's work config and seed via scripty, for algorithm-driven (Art Blocks-style) works |
 

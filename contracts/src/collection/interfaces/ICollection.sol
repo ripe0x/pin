@@ -84,6 +84,7 @@ interface ICollection {
     event SupplyCapSet(uint256 supplyCap);
     event SupplyLocked();
     event RendererLocked();
+    event CreatorListed(address indexed creator, bool listed);
     event RendererSet(address indexed renderer);
     event MintHookSet(address indexed hook);
     event PriceStrategySet(address indexed strategy);
@@ -141,6 +142,10 @@ interface ICollection {
     ///         currently an admin.
     function removeAdmin(address account) external;
     function setPayoutAddress(address payoutAddress) external;
+    /// @notice Owner's side of attribution: list or unlist creators (mutable).
+    ///         A listing is an assertion; confirmation requires the creator to
+    ///         claim this collection in the Catalog (see isConfirmedCreator).
+    function setCreators(address[] calldata list, bool listed) external;
     /// @notice Emit an ERC-4906 refresh signal for changes the core cannot see
     ///         (ChainLive works, reveals). Callable by the current renderer or
     ///         owner/admin; works after lockRenderer (a locked chain-live work
@@ -222,4 +227,11 @@ interface ICollection {
     function isRendererLocked() external view returns (bool);
     /// @notice Whether the supply cap is permanently locked.
     function isSupplyLocked() external view returns (bool);
+    /// @notice Whether the owner has listed `who` as a creator (their assertion).
+    function isListedCreator(address who) external view returns (bool);
+    /// @notice Live, mutual attribution: owner listed `who` AND `who` claimed
+    ///         this collection in the Catalog. False when no Catalog is set.
+    function isConfirmedCreator(address who) external view returns (bool);
+    /// @notice The Catalog singleton creators are confirmed against (0 = off).
+    function catalog() external view returns (address);
 }

@@ -12,7 +12,7 @@ import {ICollection} from "./interfaces/ICollection.sol";
 import {IRenderer} from "./interfaces/IRenderer.sol";
 import {IMintHook} from "./interfaces/IMintHook.sol";
 import {IPriceStrategy} from "./interfaces/IPriceStrategy.sol";
-import {IAttribution} from "./interfaces/IAttribution.sol";
+import {ICatalog} from "./interfaces/ICatalog.sol";
 import {CollectionConfig, CollectionStatus, IdMode, InitParams} from "./CollectionTypes.sol";
 
 /// @title Collection
@@ -116,6 +116,16 @@ contract Collection is
     // pooled order) record it themselves via a mint hook or minter.
     mapping(uint256 => bytes32) private _seed;
 
+    // Attribution — the work's side of a two-sided handshake. The owner LISTS
+    // creators here (their assertion); each listed creator CONFIRMS by claiming
+    // this collection in the Catalog (their assertion, from their own address).
+    // isConfirmedCreator is the live intersection: listed AND claimed. Neither
+    // side can fake the other — a rando can't be listed, and a listed
+    // non-participant never claims — so credit is squat- and false-credit-proof
+    // without any shared registry. Catalog is read, never written.
+    address private _catalog; // Catalog singleton; 0 disables confirmation
+    mapping(address => bool) public isListedCreator;
+
     constructor() {
         _disableInitializers();
     }
@@ -134,16 +144,17 @@ contract Collection is
         // can never drift from what the contract actually uses.
         _cfg = p.cfg;
         defaultRenderer = p.defaultRenderer;
+        _catalog = p.catalog;
         for (uint256 i = 0; i < p.initialMinters.length; i++) {
             if (!(p.initialMinters[i] != address(0))) revert ZeroMinter();
             _minters[p.initialMinters[i]] = true;
             emit MinterSet(p.initialMinters[i], true);
         }
-        // Collab roster: written by the collection itself, which is what the
-        // Attribution singleton authorizes. The singleton is a deploy-time,
-        // deployer-trusted parameter; init cannot be re-entered (initializer).
-        if (p.attribution != address(0) && p.artists.length > 0) {
-            IAttribution(p.attribution).setArtists(address(this), p.artists);
+        // Owner's side of attribution: seed the listed creators. Each still
+        // confirms by claiming this collection in the Catalog.
+        for (uint256 i = 0; i < p.creators.length; i++) {
+            isListedCreator[p.creators[i]] = true;
+            emit CreatorListed(p.creators[i], true);
         }
         emit CollectionConfigured(
             p.cfg.idMode, p.cfg.price, p.cfg.supplyCap, p.cfg.mintStart, p.cfg.mintEnd
@@ -569,6 +580,41 @@ contract Collection is
     function setPayoutAddress(address payoutAddress) external override onlyOwnerOrAdmin {
         _cfg.payoutAddress = payoutAddress;
         emit PayoutAddressSet(payoutAddress);
+    }
+
+    /// @notice The owner's side of attribution: list (or unlist) creators.
+    ///         Mutable — collaborators can be added or corrected any time. A
+    ///         listing is only an assertion; a creator becomes CONFIRMED only
+    ///         once they also claim this collection in the Catalog, so a listed
+    ///         non-participant simply shows as listed-but-unconfirmed. `owner()`
+    ///         is the deployer and need not be listed to be understood as a
+    ///         creator; listing is for co-creators and explicit records.
+    function setCreators(address[] calldata list, bool listed)
+        external
+        override
+        onlyOwnerOrAdmin
+    {
+        for (uint256 i = 0; i < list.length; i++) {
+            isListedCreator[list[i]] = listed;
+            emit CreatorListed(list[i], listed);
+        }
+    }
+
+    /// @notice Live, mutual attribution: true iff the owner has listed `who`
+    ///         AND `who` has claimed this collection in the Catalog. Reading
+    ///         the Catalog live means retracting either side (unlist, or
+    ///         un-claim in the Catalog) cleanly revokes credit — no stored
+    ///         confirmation to drift. Returns false when no Catalog is set.
+    function isConfirmedCreator(address who) external view override returns (bool) {
+        if (!isListedCreator[who]) return false;
+        address cat = _catalog;
+        return cat != address(0) && ICatalog(cat).isContractRegistered(who, address(this));
+    }
+
+    /// @notice The Catalog singleton this collection confirms creators against
+    ///         (0 = confirmation disabled).
+    function catalog() external view override returns (address) {
+        return _catalog;
     }
 
     /// @notice One-way, optional: permanently pin the renderer pointer, so

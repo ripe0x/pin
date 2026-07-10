@@ -10,7 +10,7 @@ Every address and transaction link in this reference points at
 - Address: `https://evm.now/address/<address>?chainId=1`
 - Transaction: `https://evm.now/tx/<hash>?chainId=1`
 
-Shared-singleton addresses (the factory, `Attribution`, `DefaultRenderer`,
+Shared-singleton addresses (the factory, `DefaultRenderer`,
 `GenerativeRenderer`) are written as `{{addr:<key>}}` placeholders in the
 source of this reference and substituted with the real mainnet address once
 each contract is deployed. A per-artist collection clone has no fixed
@@ -84,4 +84,4 @@ const abi = await fetch('/abis/Collection.json').then((r) => r.json());
 | Id mode | Whether a collection assigns ids itself (sequential) or takes minter-supplied ids (pooled), fixed at init |
 | Work / work config | The algorithm or asset definition a renderer executes: code refs, dependency refs, render spec |
 | Lock (permanence) | One-way switches: `lockRenderer` on the collection (pin the renderer pointer, optional), `lockSupply` on the collection (the scarcity promise), and `lockWork` per collection in the GenerativeRenderer (pin the algorithm). Pointer lock + work lock = full presentation permanence for a generative work |
-| Roster / attribution | The artist list a collection declares to the `Attribution` singleton; confirmed once each listed artist claims the collection in their own Catalog |
+| Creator / attribution | The owner LISTS creators on the collection (`setCreators`); each confirms by claiming the collection in the Catalog. `isConfirmedCreator` is the live intersection |

@@ -94,12 +94,6 @@
               "description": "CollectionFactory deploys one [Collection](/docs/collections/contracts/collection) per work as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs."
             },
             {
-              "title": "Attribution",
-              "slug": "attribution",
-              "path": "/docs/collections/contracts/attribution",
-              "description": "Attribution is generic, immutable, public infrastructure recording the works-to-artists half of the bilateral attribution handshake."
-            },
-            {
               "title": "DefaultRenderer",
               "slug": "default-renderer",
               "path": "/docs/collections/contracts/default-renderer",

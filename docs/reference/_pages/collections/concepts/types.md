@@ -114,8 +114,8 @@ within legacy-codegen stack limits and can grow without signature churn.
 | `work` | `WorkConfig` | The initial work definition |
 | `defaultRenderer` | `address` | The fallback renderer; required, cannot be zero |
 | `initialMinters` | `address[]` | Extension minters granted at init, so pooled and backed forms deploy fully wired in one transaction |
-| `attribution` | `address` | The `Attribution` singleton; `0` skips the roster write entirely |
-| `artists` | `address[]` | The collab roster, written to `attribution` by the collection itself during init |
+| `catalog` | `address` | The Catalog singleton used for creator confirmation; `0` disables it |
+| `creators` | `address[]` | Initial listed creators (the owner's side of attribution); each confirms via the Catalog |
 
 See [Mint Marks and entropy](/docs/collections/concepts/mint-marks-and-entropy) for
 per-token provenance: the seed is the only per-token storage (there is no

@@ -72,7 +72,6 @@ const GENERATED_BANNER = (src: string) =>
 const ABI_BY_NAME: Record<string, AbiItem[]> = {
     Collection: abis.collectionAbi as unknown as AbiItem[],
     CollectionFactory: abis.collectionFactoryAbi as unknown as AbiItem[],
-    Attribution: abis.attributionAbi as unknown as AbiItem[],
     DefaultRenderer: abis.defaultRendererAbi as unknown as AbiItem[],
     GenerativeRenderer: abis.generativeRendererAbi as unknown as AbiItem[],
     RenderAssets: abis.renderAssetsAbi as unknown as AbiItem[],
@@ -139,7 +138,6 @@ const PROTOCOLS: Protocol[] = [
                 note: 'Deployed per artist as an EIP-1167 clone through the [factory](/docs/collections/contracts/factory). There is no single canonical address; substitute your collection address for `<COLLECTION_ADDRESS>` in the examples below.',
             },
             {name: 'CollectionFactory', slug: 'factory', deploymentsKey: 'collectionFactory', kind: 'singleton'},
-            {name: 'Attribution', slug: 'attribution', deploymentsKey: 'attribution', kind: 'singleton'},
             {name: 'DefaultRenderer', slug: 'default-renderer', deploymentsKey: 'defaultRenderer', kind: 'singleton'},
             {name: 'GenerativeRenderer', slug: 'generative-renderer', deploymentsKey: 'generativeRenderer', kind: 'singleton'},
             {name: 'RenderAssets', slug: 'render-assets', deploymentsKey: 'renderAssets', kind: 'singleton'},

@@ -149,12 +149,12 @@ export function DeployStep({
 
   function submit() {
     if (!canDeploy || !factory || !address) return
-    const artists = collabCheck.ok ? collabCheck.parsed : []
+    const creators = collabCheck.ok ? collabCheck.parsed : []
     deploy.writeContract({
       address: factory,
       abi: collectionFactoryAbi,
       functionName: "createCollection",
-      args: [state.name.trim(), state.symbol.trim(), address, buildCfg(), [], artists],
+      args: [state.name.trim(), state.symbol.trim(), address, buildCfg(), [], creators],
     })
   }
 

@@ -15,7 +15,7 @@ export const collectionFactoryAbi = [
         "internalType": "address"
       },
       {
-        "name": "attribution_",
+        "name": "catalog_",
         "type": "address",
         "internalType": "address"
       }
@@ -43,7 +43,7 @@ export const collectionFactoryAbi = [
   },
   {
     "type": "function",
-    "name": "attribution",
+    "name": "catalog",
     "inputs": [],
     "outputs": [
       {
@@ -141,7 +141,7 @@ export const collectionFactoryAbi = [
         "internalType": "address[]"
       },
       {
-        "name": "artists",
+        "name": "creators",
         "type": "address[]",
         "internalType": "address[]"
       }

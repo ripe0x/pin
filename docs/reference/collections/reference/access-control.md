@@ -20,6 +20,7 @@ Every state-changing function in the Collections contracts and who may call it. 
 | [`lockSupply`](/docs/collections/contracts/collection#locksupply) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
 | [`setRenderer`](/docs/collections/contracts/collection#setrenderer) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
 | [`lockRenderer`](/docs/collections/contracts/collection#lockrenderer) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
+| [`setCreators`](/docs/collections/contracts/collection#setcreators) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
 | [`setMintHook`](/docs/collections/contracts/collection#setminthook) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
 | [`setPriceStrategy`](/docs/collections/contracts/collection#setpricestrategy) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
 | [`setMinter`](/docs/collections/contracts/collection#setminter) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
@@ -44,13 +45,6 @@ Every state-changing function in the Collections contracts and who may call it. 
 | --- | --- |
 | [`createCollection`](/docs/collections/contracts/factory#createcollection) | permissionless (anyone may deploy; ongoing control over the result |
 | [`deprecate`](/docs/collections/contracts/factory#deprecate) | deployer-only (`msg.sender` must be the factory deployer, else `NotDeployer`) |
-
-## Attribution
-
-| Function | Access |
-| --- | --- |
-| [`setArtists`](/docs/collections/contracts/attribution#setartists) | core-only or owner-only (the caller must be `collection` itself, or |
-| [`lockRoster`](/docs/collections/contracts/attribution#lockroster) | core-only or owner-only (same authorization as `setArtists`) |
 
 ## GenerativeRenderer
 
