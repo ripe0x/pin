@@ -387,10 +387,9 @@ it can't know.
 
 - [M] `mintWithReferral` with the page's referrer (PND's address on
   pnd.ripe.wtf; overridable for self-hosted pages — exists).
-- [S] Highlight/Zora-style share-to-earn: a "share this mint" control that
-  produces a URL carrying `?ref=<address>`, honored by the page as the
-  referrer param. The protocol already pays 10% — surfacing it turns every
-  collector into distribution. Needs a one-line trust decision (Q3).
+- **Decided (2026-07-10): referrer is fixed per deployment** — PND's address
+  on pnd.ripe.wtf, the artist's own on self-hosted pages. No open `?ref=`
+  URL param, no share-to-earn control on the baseline page.
 
 ---
 
@@ -557,18 +556,17 @@ Standing rule: minimize RPC; indexer/cache first. Concretely for this surface:
 
 ## 13. Open questions (for Dave)
 
-- **Q1 — Allowlist proof serving:** studio-managed (artist uploads addresses,
-  we store tree + serve proofs from Postgres) vs artist-hosted JSON the page
-  fetches? Studio-managed is the better long-term answer (one flow, works for
-  self-hosted pages via API) but makes PND infra a dependency of eligibility
-  checks.
-- **Q2 — Phase intent:** are multi-phase launches (allowlist → public) a v1
-  requirement? If yes, the schedule descriptor (item 3 above) moves into
-  scope; if v1 launches are single-phase, §5's phase timeline is deferred.
-- **Q3 — Referral links on the baseline page:** honor `?ref=` from anyone
-  (open referral, Zora-style) or only surface PND/self-host referrers? Open
-  referral is more aligned with the protocol's design but changes who the
-  split bar shows.
+- **Q1 — DECIDED (2026-07-10): studio-managed.** Artist uploads addresses in
+  the studio; tree + proofs stored in Postgres, served via an API that the
+  baseline page and self-hosted pages query. Full v1 scope.
+- **Q2 — Phase intent:** partially follows from Q1 — the studio allowlist
+  flow is the natural home for a schedule descriptor if multi-phase launches
+  are needed. Whether v1 launches are single- or multi-phase remains open.
+- **Q3 — DECIDED (2026-07-10): fixed referrer per deployment** (PND on
+  pnd.ripe.wtf, artist on self-hosted). No open `?ref=` param.
+- **DECIDED (2026-07-10): contract additions land pre-deploy** — previewURI +
+  execution-context flag on GenerativeRenderer and the composite
+  allowlist+cap hook ride the same review cycle as the multi-admin delta.
 - **Q4 — Secondary-market links post-close:** should the baseline link out
   (OpenSea et al.) after mint-out, or stay marketplace-agnostic?
 - **Q5 — License:** does license belong in work config / metadata? No source
