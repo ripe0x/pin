@@ -30,8 +30,6 @@ interface ICollectionView {
         view
         returns (CollectionConfig memory cfg, CollectionStatus status, uint256 minted);
     function artwork() external view returns (string memory);
-    function tokenArtwork(uint256 tokenId) external view returns (string memory);
-    function workConfig() external view returns (WorkConfig memory);
     function isWorkLocked() external view returns (bool);
     function idMode() external view returns (IdMode);
 }
@@ -43,7 +41,7 @@ interface ICollectionView {
 
 ### DefaultRenderer
 
-The canonical renderer wired into every collection at deploy. Static: it reads the collection's `artwork()` (or a per-token `tokenArtwork` override) and wraps it in a JSON envelope with the token's Mint Mark as provenance attributes (`Mint Order`, `Mint Block`, plus `Provenance: First/Final mint` where applicable). No code execution, no onchain algorithm; the image is whatever URI the artist set.
+The canonical renderer wired into every collection at deploy. Static: it reads the token's image from the [RenderAssets](/docs/collections/contracts/render-assets) registry (the per-token capture if one exists, else the collection cover) and wraps it in a JSON envelope with the token's Mint Mark as provenance attributes (`Mint Order`, `Mint Block`, plus `Provenance: First/Final mint` where applicable). No code execution, no onchain algorithm; the image is whatever URI the artist set.
 
 ### SVGRenderer (abstract base)
 
@@ -88,7 +86,7 @@ Solidity SVG is the highest preservation tier the system offers: no JS runtime, 
 
 ### GenerativeRenderer (default for script-based generative)
 
-A stateless, ownerless singleton for Art Blocks-style long-form generative work. It reads the collection's `workConfig()` and a token's seed, then assembles a complete HTML document via ScriptyBuilderV2 from onchain-stored files (dependencies + the injected token context + the artist's code), returning `tokenURI` JSON whose `animation_url` is a `data:text/html;base64,...` URI. There is no code to write here: a generative collection points its `renderer` slot at the deployed `GenerativeRenderer` and supplies its algorithm entirely through `WorkConfig` at deploy (or later, via `setWork`, until `lockWork` is called). See [Deploy a collection](/docs/collections/guides/deploy-a-collection) for the `WorkConfig` fields, and [Injection convention](/docs/collections/reference/injection-convention) for the exact context object the assembled document injects and the determinism rules a `Pure` work's code must follow.
+An ownerless singleton for Art Blocks-style long-form generative work, and the registry of generative work configs: per-collection `WorkConfig` is stored in the renderer itself, written by the collection's owner/admins (`setWork(collection, work)`) and lockable one-way (`lockWork(collection)`). At `tokenURI` time it reads its own registry plus the token's seed, assembles a complete HTML document via ScriptyBuilderV2 from onchain-stored files (dependencies + the injected token context + the artist's code), and returns `tokenURI` JSON whose `animation_url` is a `data:text/html;base64,...` URI. See [Deploy a collection](/docs/collections/guides/deploy-a-collection) for the `WorkConfig` fields, and [Injection convention](/docs/collections/reference/injection-convention) for the exact context object the assembled document injects.
 
 ## Installing a renderer
 
@@ -97,19 +95,19 @@ function setRenderer(address renderer_) external; // owner-only
 function renderer() external view returns (address); // resolved: override or defaultRenderer
 ```
 
-`setRenderer` reverts `MetadataIsFrozen` once the owner has called `freezeMetadata`. Freezing is one-way and is the presentation-permanence guarantee collectors get: after freezing, the renderer address (and any per-token `tokenArtwork` override) can never change again, though the renderer contract's own logic and any state it reads (companion contracts, chain state for a `ChainLive` work) can still evolve unless the work itself is separately locked.
+`setRenderer` reverts `RendererIsLocked` once the owner has called `lockRenderer` (optional, off by default). The lock is one-way and pins the pointer: after locking, this exact renderer contract answers `tokenURI` forever. The core cannot attest what a renderer does internally — an immutable renderer plus a locked pointer is full presentation permanence, while a mutable renderer with a locked pointer is the artist's explicit, inspectable choice.
 
 ## Locking the work
 
-For generative collections, `setWork`/`lockWork` is the companion permanence lever for the algorithm itself:
+For generative collections, the companion permanence lever lives in the renderer's own registry:
 
 ```solidity
-function setWork(WorkConfig calldata work) external; // owner-only, reverts WorkAlreadyLocked once locked
-function lockWork() external; // owner-only, one-way
-function isWorkLocked() external view returns (bool);
-function isPermanent() external view returns (bool); // metadataFrozen && workLocked
+// on GenerativeRenderer, authorized by the collection's owner/admins
+function setWork(address collection, WorkConfig calldata work) external; // reverts WorkIsLocked once locked
+function lockWork(address collection) external; // one-way
+function workLockedOf(address collection) external view returns (bool);
 ```
 
-`freezeMetadata` locks *how* a token is rendered (the renderer pointer and artwork URIs); `lockWork` locks *what the work is* (the code and dependency refs a generative renderer reads). Together, `isPermanent()` reflects both: the strongest guarantee the system offers short of the contract itself being immutable from deploy, which it already is.
+`lockRenderer` (on the collection) pins *who* renders; `lockWork` (in the renderer) pins *what the work is*. Together they are the strongest guarantee the system offers short of the contract itself being immutable from deploy, which it already is.
 
 See [IRenderer](/docs/collections/contracts/i-renderer) and [ICollectionView](/docs/collections/contracts/i-collection-view) for the generated interface reference, [GenerativeRenderer](/docs/collections/contracts/generative-renderer) and [DefaultRenderer](/docs/collections/contracts/default-renderer) for the deployed singletons, and [Injection convention](/docs/collections/reference/injection-convention) for the render-context contract every offchain preview (studio, mint surface, artist-site embed) must match byte-for-byte with the onchain assembly.

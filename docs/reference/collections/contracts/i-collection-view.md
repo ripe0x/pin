@@ -17,15 +17,6 @@ subset of this interface that renderer actually reads.
 
 ## Read functions
 
-### artwork
-
-```solidity
-function artwork() external view returns (string)
-```
-
-view; the collection's shared or cover artwork URI, used when no per-token
-override is set via `tokenArtwork`.
-
 ### config
 
 ```solidity
@@ -49,14 +40,17 @@ view; the collection's token id assignment model, `Sequential` or `Pooled`,
 fixed at initialization. See [id modes](/docs/collections/concepts/id-modes) for what
 each mode means for id assignment and reuse after burn.
 
-### isWorkLocked
+### isAdmin
 
 ```solidity
-function isWorkLocked() external view returns (bool)
+function isAdmin(address account) external view returns (bool)
 ```
 
-view; whether the collection's work configuration has been permanently
-frozen. A locked work's `workConfig` can never change again.
+view; whether the account holds an explicit admin grant on the collection
+(the owner is an implicit admin). Renderer-land registries (the
+GenerativeRenderer work registry, RenderAssets) borrow this as their write
+authority, so managing presentation data carries exactly the same authority
+as the collection's own setters.
 
 ### name
 
@@ -83,15 +77,6 @@ function symbol() external view returns (string)
 
 view; the collection's ERC721 symbol.
 
-### tokenArtwork
-
-```solidity
-function tokenArtwork(uint256 tokenId) external view returns (string)
-```
-
-view; the per-token artwork override for `tokenId`, or an empty string if
-none is set, in which case a renderer should fall back to `artwork()`.
-
 ### tokenSeed
 
 ```solidity
@@ -109,15 +94,3 @@ function totalSupply() external view returns (uint256)
 ```
 
 view; the collection's current total supply.
-
-### workConfig
-
-```solidity
-function workConfig() external view returns (WorkConfig)
-```
-
-view; what the work is, executably: onchain code references, dependency
-files, an off-chain code URI with an integrity hash, the injection convention
-version, and renderer-interpreted render parameters. Empty for works whose
-renderer contract is itself the algorithm, for example a Solidity SVG work
-with nothing to inject.

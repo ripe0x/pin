@@ -62,7 +62,8 @@ contract or an EthFS FileStore.
 ### `WorkConfig`
 
 What the work is, executably. Interpreted by renderers, stored on the
-collection, lockable via `lockWork`. Empty for works whose renderer
+GenerativeRenderer's per-collection registry (renderer-land, not the core),
+lockable via `lockWork(collection)`. Empty for works whose renderer
 contract IS the algorithm (Solidity SVG works).
 
 | Field | Type | Meaning |
@@ -87,7 +88,6 @@ value.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `artworkURI` | `string` | Shared/cover art; overridable per token via `setTokenArtworkBatch` |
 | `price` | `uint256` | Wei; used when `priceStrategy` is unset. `0` means gas-only mints |
 | `supplyCap` | `uint256` | `0` means open supply; lockable one-way via `lockSupply` |
 | `mintStart` | `uint64` | Unix seconds; `0` means open immediately |

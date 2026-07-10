@@ -120,7 +120,6 @@ contract CollectionAdminTest is CollectionBase {
         vm.prank(artist);
         c.addAdmin(admin);
 
-        // a minted token so setTokenArtwork has a target
         vm.deal(collector, 1 ether);
         vm.prank(collector);
         c.mint{value: 1 ether}(1);
@@ -134,20 +133,15 @@ contract CollectionAdminTest is CollectionBase {
         c.setMintHook(makeAddr("hook"));
         c.setPriceStrategy(makeAddr("strategy"));
         c.setMinter(makeAddr("minter"), true);
-        uint256[] memory ids = new uint256[](1);
-        ids[0] = 1;
-        string[] memory cids = new string[](1);
-        cids[0] = "ipfs://thumb";
-        c.setTokenArtworkBatch(ids, cids);
-        c.setWork(_emptyWork());
         c.notifyMetadataUpdate(1, 1);
         c.setPayoutAddress(makeAddr("payout")); // money routing is in scope for full-access admins
         c.lockSupply();
+        c.lockRenderer();
         vm.stopPrank();
 
         assertTrue(c.isMinter(makeAddr("minter")));
-        assertEq(c.tokenArtwork(1), "ipfs://thumb");
         assertTrue(c.isSupplyLocked());
+        assertTrue(c.isRendererLocked());
     }
 
     /// @dev Full access is not cosmetic: an admin can actually redirect the
@@ -234,27 +228,20 @@ contract CollectionAdminTest is CollectionBase {
         assertEq(uint8(status), uint8(CollectionStatus.Scheduled));
     }
 
-    // ── freeze still supreme over admins ──────────────────────────────────────
+    // ── renderer lock still supreme over admins ──────────────────────────────
 
-    function test_freeze_blocksAdminArtwork() public {
+    function test_lockRenderer_blocksAdminSwap() public {
         Collection c = _collection(_freeConfig());
-        vm.prank(collector);
-        c.mint(1);
-
         vm.prank(artist);
         c.addAdmin(admin);
 
-        // an admin may freeze (full access), and freeze then blocks everyone —
-        // including admins — from further artwork writes.
+        // an admin may lock (full access), and the lock then blocks everyone —
+        // including admins — from swapping the renderer.
         vm.prank(admin);
-        c.freezeMetadata();
+        c.lockRenderer();
 
-        uint256[] memory ids = new uint256[](1);
-        ids[0] = 1;
-        string[] memory cids = new string[](1);
-        cids[0] = "ipfs://after-freeze";
-        vm.expectRevert(ICollection.MetadataIsFrozen.selector);
+        vm.expectRevert(ICollection.RendererIsLocked.selector);
         vm.prank(admin);
-        c.setTokenArtworkBatch(ids, cids);
+        c.setRenderer(makeAddr("nope"));
     }
 }

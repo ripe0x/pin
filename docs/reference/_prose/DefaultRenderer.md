@@ -43,3 +43,9 @@ break the JSON structure.
 Collection-level metadata as a `data:application/json;base64,` URI,
 currently just the escaped collection `name`. Consumed by marketplaces that
 read ERC-7572 contract-level metadata.
+
+## function renderAssets
+
+The RenderAssets registry this renderer serves static images from: the
+per-token capture if one exists, else the collection cover. The collection
+core stores no presentation data.

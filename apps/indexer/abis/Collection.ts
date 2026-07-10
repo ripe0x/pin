@@ -59,19 +59,6 @@ export const collectionAbi = [
   },
   {
     "type": "function",
-    "name": "artwork",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "string",
-        "internalType": "string"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "balanceOf",
     "inputs": [
       {
@@ -112,11 +99,6 @@ export const collectionAbi = [
         "type": "tuple",
         "internalType": "struct CollectionConfig",
         "components": [
-          {
-            "name": "artworkURI",
-            "type": "string",
-            "internalType": "string"
-          },
           {
             "name": "price",
             "type": "uint256",
@@ -244,13 +226,6 @@ export const collectionAbi = [
   },
   {
     "type": "function",
-    "name": "freezeMetadata",
-    "inputs": [],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "getApproved",
     "inputs": [
       {
@@ -311,11 +286,6 @@ export const collectionAbi = [
             "internalType": "struct CollectionConfig",
             "components": [
               {
-                "name": "artworkURI",
-                "type": "string",
-                "internalType": "string"
-              },
-              {
                 "name": "price",
                 "type": "uint256",
                 "internalType": "uint256"
@@ -369,77 +339,6 @@ export const collectionAbi = [
                 "name": "idMode",
                 "type": "uint8",
                 "internalType": "enum IdMode"
-              }
-            ]
-          },
-          {
-            "name": "work",
-            "type": "tuple",
-            "internalType": "struct WorkConfig",
-            "components": [
-              {
-                "name": "code",
-                "type": "tuple[]",
-                "internalType": "struct CodeRef[]",
-                "components": [
-                  {
-                    "name": "store",
-                    "type": "address",
-                    "internalType": "address"
-                  },
-                  {
-                    "name": "name",
-                    "type": "string",
-                    "internalType": "string"
-                  },
-                  {
-                    "name": "kind",
-                    "type": "uint8",
-                    "internalType": "enum CodeKind"
-                  }
-                ]
-              },
-              {
-                "name": "deps",
-                "type": "tuple[]",
-                "internalType": "struct CodeRef[]",
-                "components": [
-                  {
-                    "name": "store",
-                    "type": "address",
-                    "internalType": "address"
-                  },
-                  {
-                    "name": "name",
-                    "type": "string",
-                    "internalType": "string"
-                  },
-                  {
-                    "name": "kind",
-                    "type": "uint8",
-                    "internalType": "enum CodeKind"
-                  }
-                ]
-              },
-              {
-                "name": "codeURI",
-                "type": "string",
-                "internalType": "string"
-              },
-              {
-                "name": "codeHash",
-                "type": "bytes32",
-                "internalType": "bytes32"
-              },
-              {
-                "name": "injectionVersion",
-                "type": "uint8",
-                "internalType": "uint8"
-              },
-              {
-                "name": "renderParams",
-                "type": "string",
-                "internalType": "string"
               }
             ]
           },
@@ -514,19 +413,6 @@ export const collectionAbi = [
   },
   {
     "type": "function",
-    "name": "isMetadataFrozen",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "isMinter",
     "inputs": [
       {
@@ -546,7 +432,7 @@ export const collectionAbi = [
   },
   {
     "type": "function",
-    "name": "isPermanent",
+    "name": "isRendererLocked",
     "inputs": [],
     "outputs": [
       {
@@ -572,27 +458,14 @@ export const collectionAbi = [
   },
   {
     "type": "function",
-    "name": "isWorkLocked",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "lockSupply",
+    "name": "lockRenderer",
     "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
   },
   {
     "type": "function",
-    "name": "lockWork",
+    "name": "lockSupply",
     "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
@@ -1102,103 +975,6 @@ export const collectionAbi = [
   },
   {
     "type": "function",
-    "name": "setTokenArtworkBatch",
-    "inputs": [
-      {
-        "name": "tokenIds",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      },
-      {
-        "name": "cids",
-        "type": "string[]",
-        "internalType": "string[]"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setWork",
-    "inputs": [
-      {
-        "name": "work",
-        "type": "tuple",
-        "internalType": "struct WorkConfig",
-        "components": [
-          {
-            "name": "code",
-            "type": "tuple[]",
-            "internalType": "struct CodeRef[]",
-            "components": [
-              {
-                "name": "store",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "name",
-                "type": "string",
-                "internalType": "string"
-              },
-              {
-                "name": "kind",
-                "type": "uint8",
-                "internalType": "enum CodeKind"
-              }
-            ]
-          },
-          {
-            "name": "deps",
-            "type": "tuple[]",
-            "internalType": "struct CodeRef[]",
-            "components": [
-              {
-                "name": "store",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "name",
-                "type": "string",
-                "internalType": "string"
-              },
-              {
-                "name": "kind",
-                "type": "uint8",
-                "internalType": "enum CodeKind"
-              }
-            ]
-          },
-          {
-            "name": "codeURI",
-            "type": "string",
-            "internalType": "string"
-          },
-          {
-            "name": "codeHash",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "injectionVersion",
-            "type": "uint8",
-            "internalType": "uint8"
-          },
-          {
-            "name": "renderParams",
-            "type": "string",
-            "internalType": "string"
-          }
-        ]
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "supportsInterface",
     "inputs": [
       {
@@ -1220,25 +996,6 @@ export const collectionAbi = [
     "type": "function",
     "name": "symbol",
     "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "string",
-        "internalType": "string"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "tokenArtwork",
-    "inputs": [
-      {
-        "name": "tokenId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
     "outputs": [
       {
         "name": "",
@@ -1347,85 +1104,6 @@ export const collectionAbi = [
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "workConfig",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "tuple",
-        "internalType": "struct WorkConfig",
-        "components": [
-          {
-            "name": "code",
-            "type": "tuple[]",
-            "internalType": "struct CodeRef[]",
-            "components": [
-              {
-                "name": "store",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "name",
-                "type": "string",
-                "internalType": "string"
-              },
-              {
-                "name": "kind",
-                "type": "uint8",
-                "internalType": "enum CodeKind"
-              }
-            ]
-          },
-          {
-            "name": "deps",
-            "type": "tuple[]",
-            "internalType": "struct CodeRef[]",
-            "components": [
-              {
-                "name": "store",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "name",
-                "type": "string",
-                "internalType": "string"
-              },
-              {
-                "name": "kind",
-                "type": "uint8",
-                "internalType": "enum CodeKind"
-              }
-            ]
-          },
-          {
-            "name": "codeURI",
-            "type": "string",
-            "internalType": "string"
-          },
-          {
-            "name": "codeHash",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "injectionVersion",
-            "type": "uint8",
-            "internalType": "uint8"
-          },
-          {
-            "name": "renderParams",
-            "type": "string",
-            "internalType": "string"
-          }
-        ]
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "event",
@@ -1561,12 +1239,6 @@ export const collectionAbi = [
         "type": "uint64",
         "indexed": false,
         "internalType": "uint64"
-      },
-      {
-        "name": "artworkURI",
-        "type": "string",
-        "indexed": false,
-        "internalType": "string"
       }
     ],
     "anonymous": false
@@ -1582,12 +1254,6 @@ export const collectionAbi = [
         "internalType": "uint64"
       }
     ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "MetadataFrozen",
-    "inputs": [],
     "anonymous": false
   },
   {
@@ -1795,6 +1461,12 @@ export const collectionAbi = [
   },
   {
     "type": "event",
+    "name": "RendererLocked",
+    "inputs": [],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "RendererSet",
     "inputs": [
       {
@@ -1865,25 +1537,6 @@ export const collectionAbi = [
   },
   {
     "type": "event",
-    "name": "TokenArtworkSet",
-    "inputs": [
-      {
-        "name": "tokenId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "cid",
-        "type": "string",
-        "indexed": false,
-        "internalType": "string"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "Transfer",
     "inputs": [
       {
@@ -1927,32 +1580,8 @@ export const collectionAbi = [
     "anonymous": false
   },
   {
-    "type": "event",
-    "name": "WorkLocked",
-    "inputs": [],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "WorkSet",
-    "inputs": [
-      {
-        "name": "codeHash",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      }
-    ],
-    "anonymous": false
-  },
-  {
     "type": "error",
     "name": "AlreadyAdmin",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "AlreadyFrozen",
     "inputs": []
   },
   {
@@ -2085,16 +1714,6 @@ export const collectionAbi = [
   },
   {
     "type": "error",
-    "name": "LengthMismatch",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "MetadataIsFrozen",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "MintEnded",
     "inputs": []
   },
@@ -2126,11 +1745,6 @@ export const collectionAbi = [
   {
     "type": "error",
     "name": "NotInitializing",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NotMinted",
     "inputs": []
   },
   {
@@ -2187,6 +1801,11 @@ export const collectionAbi = [
   },
   {
     "type": "error",
+    "name": "RendererIsLocked",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "RendererRequired",
     "inputs": []
   },
@@ -2223,11 +1842,6 @@ export const collectionAbi = [
   {
     "type": "error",
     "name": "WithdrawFailed",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "WorkAlreadyLocked",
     "inputs": []
   },
   {

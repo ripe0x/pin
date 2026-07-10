@@ -50,6 +50,38 @@ previewer, mint surface, and artist-site embed, and
 [write a renderer](/docs/collections/guides/write-a-renderer) for building a renderer
 against a work config of your own.
 
+## Write functions
+
+### setWork
+
+```solidity
+function setWork(address collection, WorkConfig work) external
+```
+
+**Access:** collection owner or admin (`onlyCollectionAdmin`, else `NotCollectionAdmin`)
+
+Sets or replaces `collection`'s work definition in this renderer's registry —
+the code refs, dependencies, integrity hash, injection version, and render
+params the renderer assembles at `tokenURI` time. Presentation data lives in
+renderer-land: the collection core stores none of this. Authority borrows the
+collection's own owner/admin root, so publishing the work carries exactly the
+same authority as the collection's setters. Reverts `WorkIsLocked` once
+`lockWork(collection)` has run. Emits `WorkSet`.
+
+### lockWork
+
+```solidity
+function lockWork(address collection) external
+```
+
+**Access:** collection owner or admin (`onlyCollectionAdmin`, else `NotCollectionAdmin`)
+
+One-way: permanently locks `collection`'s work definition so `setWork` can
+never change it again. Together with the collection's `lockRenderer()` (pin
+the pointer at this immutable contract) this is full presentation permanence
+for a generative work. Reverts `WorkIsLocked` if already locked. Emits
+`WorkLocked`.
+
 ## Read functions
 
 ### contractURI
@@ -82,6 +114,16 @@ The immutable EthFS-style storage contract address holding the gunzip
 helper script, emitted as the final body tag whenever any dependency or
 code file is gzip-compressed. Fixed at construction.
 
+### renderAssets
+
+```solidity
+function renderAssets() external view returns (RenderAssets)
+```
+
+The RenderAssets registry this renderer reads static images from (per-token
+capture, else collection cover) for the `image` field beside the live
+`animation_url`.
+
 ### scriptyBuilder
 
 ```solidity
@@ -109,3 +151,53 @@ and Seed (the token's seed as 0x-prefixed hex), read from the collection's
 Mint Mark and `tokenSeed`. Reverts if the collection's work config has no
 code set (`work.code.length == 0`); a collection must have a work wired
 before this renderer can serve it.
+
+### workLockedOf
+
+```solidity
+function workLockedOf(address) external view returns (bool)
+```
+
+True once `lockWork(collection)` has permanently locked that collection's
+work definition.
+
+### workOf
+
+```solidity
+function workOf(address collection) external view returns (WorkConfig)
+```
+
+The stored work definition for a collection, as this renderer will assemble
+it. Empty (no code refs) until `setWork` runs.
+
+## Events
+
+### WorkLocked
+
+```solidity
+event WorkLocked(address indexed collection)
+```
+
+Emitted once when a collection's work definition is permanently locked.
+Indexed by `collection`.
+
+### WorkSet
+
+```solidity
+event WorkSet(address indexed collection, bytes32 codeHash)
+```
+
+Emitted when a collection's work definition is set or replaced, carrying the
+new `codeHash`. Indexed by `collection`.
+
+## Errors
+
+**`NotCollectionAdmin()`**
+
+`setWork` or `lockWork` was called by an address that is neither the
+collection's owner nor one of its admins.
+
+**`WorkIsLocked()`**
+
+`setWork` or `lockWork` was called after `lockWork`. The work definition is
+permanently frozen for that collection.

@@ -19,16 +19,13 @@ Every state-changing function in the Collections contracts and who may call it. 
 | [`setSupplyCap`](/docs/collections/contracts/collection#setsupplycap) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
 | [`lockSupply`](/docs/collections/contracts/collection#locksupply) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
 | [`setRenderer`](/docs/collections/contracts/collection#setrenderer) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
+| [`lockRenderer`](/docs/collections/contracts/collection#lockrenderer) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
 | [`setMintHook`](/docs/collections/contracts/collection#setminthook) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
 | [`setPriceStrategy`](/docs/collections/contracts/collection#setpricestrategy) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
 | [`setMinter`](/docs/collections/contracts/collection#setminter) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
 | [`addAdmin`](/docs/collections/contracts/collection#addadmin) | owner-only (`onlyOwner`, else `OwnableUnauthorizedAccount`) |
 | [`removeAdmin`](/docs/collections/contracts/collection#removeadmin) | owner, or the admin itself renouncing (else `NotAuthorized`) |
 | [`setPayoutAddress`](/docs/collections/contracts/collection#setpayoutaddress) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
-| [`setTokenArtworkBatch`](/docs/collections/contracts/collection#settokenartworkbatch) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
-| [`setWork`](/docs/collections/contracts/collection#setwork) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
-| [`lockWork`](/docs/collections/contracts/collection#lockwork) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
-| [`freezeMetadata`](/docs/collections/contracts/collection#freezemetadata) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
 | [`notifyMetadataUpdate`](/docs/collections/contracts/collection#notifymetadataupdate) | the current renderer, or owner/admin (else `NotAuthorized`) |
 | [`withdraw`](/docs/collections/contracts/collection#withdraw) | permissionless (no caller gate; funds only ever go to the owed `account`) |
 | [`rescueStrayETH`](/docs/collections/contracts/collection#rescuestrayeth) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
@@ -46,6 +43,7 @@ Every state-changing function in the Collections contracts and who may call it. 
 | Function | Access |
 | --- | --- |
 | [`createCollection`](/docs/collections/contracts/factory#createcollection) | permissionless (anyone may deploy; ongoing control over the result |
+| [`deprecate`](/docs/collections/contracts/factory#deprecate) | deployer-only (`msg.sender` must be the factory deployer, else `NotDeployer`) |
 
 ## Attribution
 
@@ -53,6 +51,20 @@ Every state-changing function in the Collections contracts and who may call it. 
 | --- | --- |
 | [`setArtists`](/docs/collections/contracts/attribution#setartists) | core-only or owner-only (the caller must be `collection` itself, or |
 | [`lockRoster`](/docs/collections/contracts/attribution#lockroster) | core-only or owner-only (same authorization as `setArtists`) |
+
+## GenerativeRenderer
+
+| Function | Access |
+| --- | --- |
+| [`setWork`](/docs/collections/contracts/generative-renderer#setwork) | collection owner or admin (`onlyCollectionAdmin`, else `NotCollectionAdmin`) |
+| [`lockWork`](/docs/collections/contracts/generative-renderer#lockwork) | collection owner or admin (`onlyCollectionAdmin`, else `NotCollectionAdmin`) |
+
+## RenderAssets
+
+| Function | Access |
+| --- | --- |
+| [`setCover`](/docs/collections/contracts/render-assets#setcover) | collection owner or admin (`onlyCollectionAdmin`, else `NotCollectionAdmin`) |
+| [`setCaptures`](/docs/collections/contracts/render-assets#setcaptures) | collection owner or admin (`onlyCollectionAdmin`, else `NotCollectionAdmin`) |
 
 ## AllowlistHook
 

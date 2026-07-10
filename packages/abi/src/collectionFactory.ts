@@ -79,11 +79,6 @@ export const collectionFactoryAbi = [
         "internalType": "struct CollectionConfig",
         "components": [
           {
-            "name": "artworkURI",
-            "type": "string",
-            "internalType": "string"
-          },
-          {
             "name": "price",
             "type": "uint256",
             "internalType": "uint256"
@@ -141,77 +136,6 @@ export const collectionFactoryAbi = [
         ]
       },
       {
-        "name": "workCfg",
-        "type": "tuple",
-        "internalType": "struct WorkConfig",
-        "components": [
-          {
-            "name": "code",
-            "type": "tuple[]",
-            "internalType": "struct CodeRef[]",
-            "components": [
-              {
-                "name": "store",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "name",
-                "type": "string",
-                "internalType": "string"
-              },
-              {
-                "name": "kind",
-                "type": "uint8",
-                "internalType": "enum CodeKind"
-              }
-            ]
-          },
-          {
-            "name": "deps",
-            "type": "tuple[]",
-            "internalType": "struct CodeRef[]",
-            "components": [
-              {
-                "name": "store",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "name",
-                "type": "string",
-                "internalType": "string"
-              },
-              {
-                "name": "kind",
-                "type": "uint8",
-                "internalType": "enum CodeKind"
-              }
-            ]
-          },
-          {
-            "name": "codeURI",
-            "type": "string",
-            "internalType": "string"
-          },
-          {
-            "name": "codeHash",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "injectionVersion",
-            "type": "uint8",
-            "internalType": "uint8"
-          },
-          {
-            "name": "renderParams",
-            "type": "string",
-            "internalType": "string"
-          }
-        ]
-      },
-      {
         "name": "initialMinters",
         "type": "address[]",
         "internalType": "address[]"
@@ -240,6 +164,45 @@ export const collectionFactoryAbi = [
         "name": "",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "deployer",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "deprecate",
+    "inputs": [
+      {
+        "name": "successor_",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "deprecated",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -278,6 +241,19 @@ export const collectionFactoryAbi = [
   },
   {
     "type": "function",
+    "name": "successor",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "totalCollections",
     "inputs": [],
     "outputs": [
@@ -309,6 +285,29 @@ export const collectionFactoryAbi = [
     "anonymous": false
   },
   {
+    "type": "event",
+    "name": "Deprecated",
+    "inputs": [
+      {
+        "name": "successor",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "AlreadyDeprecated",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "FactoryDeprecated",
+    "inputs": []
+  },
+  {
     "type": "error",
     "name": "FailedDeployment",
     "inputs": []
@@ -328,5 +327,10 @@ export const collectionFactoryAbi = [
         "internalType": "uint256"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "NotDeployer",
+    "inputs": []
   }
 ] as const;

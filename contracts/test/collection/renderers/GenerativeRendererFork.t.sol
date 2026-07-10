@@ -8,13 +8,9 @@ import {LibString} from "solady/utils/LibString.sol";
 import {Collection} from "../../../src/collection/Collection.sol";
 import {CollectionFactory} from "../../../src/collection/CollectionFactory.sol";
 import {GenerativeRenderer} from "../../../src/collection/renderers/GenerativeRenderer.sol";
-import {
-    CodeKind,
-    CodeRef,
-    CollectionConfig,
-    IdMode,
-    WorkConfig
-} from "../../../src/collection/CollectionTypes.sol";
+import {CollectionConfig, IdMode} from "../../../src/collection/CollectionTypes.sol";
+import {CodeKind, CodeRef, WorkConfig} from "../../../src/collection/renderers/WorkTypes.sol";
+import {RenderAssets} from "../../../src/collection/renderers/RenderAssets.sol";
 
 /// @dev Minimal scripty-compatible storage: the builder fetches tag content
 ///      via getContent(name, data). Lets the fork test store the "artist
@@ -73,8 +69,10 @@ contract GenerativeRendererForkTest is Test {
         }
         forked = true;
 
-        GenerativeRenderer renderer =
-            new GenerativeRenderer(SCRIPTY_BUILDER_V2, ETHFS_V2_FILE_STORAGE, GUNZIP_FILE);
+        RenderAssets assets = new RenderAssets();
+        GenerativeRenderer renderer = new GenerativeRenderer(
+            SCRIPTY_BUILDER_V2, address(assets), ETHFS_V2_FILE_STORAGE, GUNZIP_FILE
+        );
         MockScriptStore artistStore = new MockScriptStore();
         artistStore.put(ARTIST_FILE, bytes(ARTIST_MARKER));
 
@@ -95,15 +93,12 @@ contract GenerativeRendererForkTest is Test {
 
         collection = Collection(
             factory.createCollection(
-                "Fork Proof",
-                "FORK",
-                address(this),
-                cfg,
-                work,
-                new address[](0),
-                new address[](0)
+                "Fork Proof", "FORK", address(this), cfg, new address[](0), new address[](0)
             )
         );
+        // Work config lives in the renderer's registry, written by the
+        // collection's owner (this test contract).
+        renderer.setWork(address(collection), work);
         collection.mint(1);
     }
 

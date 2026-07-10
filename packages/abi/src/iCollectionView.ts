@@ -3,19 +3,6 @@
 export const iCollectionViewAbi = [
   {
     "type": "function",
-    "name": "artwork",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "string",
-        "internalType": "string"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "config",
     "inputs": [],
     "outputs": [
@@ -24,11 +11,6 @@ export const iCollectionViewAbi = [
         "type": "tuple",
         "internalType": "struct CollectionConfig",
         "components": [
-          {
-            "name": "artworkURI",
-            "type": "string",
-            "internalType": "string"
-          },
           {
             "name": "price",
             "type": "uint256",
@@ -114,8 +96,14 @@ export const iCollectionViewAbi = [
   },
   {
     "type": "function",
-    "name": "isWorkLocked",
-    "inputs": [],
+    "name": "isAdmin",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
     "outputs": [
       {
         "name": "",
@@ -166,25 +154,6 @@ export const iCollectionViewAbi = [
   },
   {
     "type": "function",
-    "name": "tokenArtwork",
-    "inputs": [
-      {
-        "name": "tokenId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "string",
-        "internalType": "string"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "tokenSeed",
     "inputs": [
       {
@@ -211,85 +180,6 @@ export const iCollectionViewAbi = [
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "workConfig",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "tuple",
-        "internalType": "struct WorkConfig",
-        "components": [
-          {
-            "name": "code",
-            "type": "tuple[]",
-            "internalType": "struct CodeRef[]",
-            "components": [
-              {
-                "name": "store",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "name",
-                "type": "string",
-                "internalType": "string"
-              },
-              {
-                "name": "kind",
-                "type": "uint8",
-                "internalType": "enum CodeKind"
-              }
-            ]
-          },
-          {
-            "name": "deps",
-            "type": "tuple[]",
-            "internalType": "struct CodeRef[]",
-            "components": [
-              {
-                "name": "store",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "name",
-                "type": "string",
-                "internalType": "string"
-              },
-              {
-                "name": "kind",
-                "type": "uint8",
-                "internalType": "enum CodeKind"
-              }
-            ]
-          },
-          {
-            "name": "codeURI",
-            "type": "string",
-            "internalType": "string"
-          },
-          {
-            "name": "codeHash",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "injectionVersion",
-            "type": "uint8",
-            "internalType": "uint8"
-          },
-          {
-            "name": "renderParams",
-            "type": "string",
-            "internalType": "string"
-          }
-        ]
       }
     ],
     "stateMutability": "view"

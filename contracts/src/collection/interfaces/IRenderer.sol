@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity ^0.8.24;
 
-import {CollectionConfig, CollectionStatus, WorkConfig, IdMode} from "../CollectionTypes.sol";
+import {CollectionConfig, CollectionStatus, IdMode} from "../CollectionTypes.sol";
 
 /// @title IRenderer
 /// @notice Swappable metadata renderer. A collection's tokenURI/contractURI
@@ -33,6 +33,11 @@ interface ICollectionView {
 
     function owner() external view returns (address);
 
+    /// @notice Whether `account` holds an explicit admin grant (owner is an
+    ///         implicit admin). Renderer-side registries (work config,
+    ///         RenderAssets) borrow this as their write authority.
+    function isAdmin(address account) external view returns (bool);
+
     function totalSupply() external view returns (uint256);
 
     /// @notice Mint-time entropy for a token, stamped in the mint tx.
@@ -50,16 +55,9 @@ interface ICollectionView {
         view
         returns (CollectionConfig memory cfg, CollectionStatus status, uint256 minted);
 
-    /// @notice The collection's shared/cover artwork URI.
-    function artwork() external view returns (string memory);
 
-    /// @notice Per-token artwork override ("" if none set).
-    function tokenArtwork(uint256 tokenId) external view returns (string memory);
 
-    /// @notice What the work is, executably (empty for renderer-native works).
-    function workConfig() external view returns (WorkConfig memory);
 
-    function isWorkLocked() external view returns (bool);
 
     function idMode() external view returns (IdMode);
 }

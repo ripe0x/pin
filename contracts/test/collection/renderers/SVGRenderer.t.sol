@@ -9,11 +9,8 @@ import {Collection} from "../../../src/collection/Collection.sol";
 import {CollectionFactory} from "../../../src/collection/CollectionFactory.sol";
 import {DefaultRenderer} from "../../../src/collection/renderers/DefaultRenderer.sol";
 import {TestSVGRenderer} from "./TestSVGRenderer.sol";
-import {
-    CollectionConfig,
-    IdMode,
-    WorkConfig
-} from "../../../src/collection/CollectionTypes.sol";
+import {CollectionConfig, IdMode} from "../../../src/collection/CollectionTypes.sol";
+import {RenderAssets} from "../../../src/collection/renderers/RenderAssets.sol";
 
 /// @notice Output-shape tests for the SVGRenderer abstract base, exercised
 ///         through TestSVGRenderer (a minimal seed-derived rect). Deploys a
@@ -35,26 +32,23 @@ contract SVGRendererTest is Test {
         // The factory requires a defaultRenderer at deploy; the collection
         // then flips to the SVG renderer via setRenderer, same as an artist
         // choosing a generative/onchain work post-deploy.
-        defaultRenderer = new DefaultRenderer();
+        defaultRenderer = new DefaultRenderer(address(new RenderAssets()));
         svgRenderer = new TestSVGRenderer();
         impl = new Collection();
         factory =
             new CollectionFactory(address(impl), address(defaultRenderer), address(0));
 
         CollectionConfig memory cfg;
-        cfg.artworkURI = "";
         cfg.price = 0;
         cfg.supplyCap = 0;
         cfg.idMode = IdMode.Sequential;
-
-        WorkConfig memory work;
 
         address[] memory noMinters = new address[](0);
         address[] memory noArtists = new address[](0);
 
         collection = Collection(
             factory.createCollection(
-                "SVG Collection", "SVGC", artist, cfg, work, noMinters, noArtists
+                "SVG Collection", "SVGC", artist, cfg, noMinters, noArtists
             )
         );
 

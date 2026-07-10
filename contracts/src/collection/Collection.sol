@@ -13,13 +13,7 @@ import {IRenderer} from "./interfaces/IRenderer.sol";
 import {IMintHook} from "./interfaces/IMintHook.sol";
 import {IPriceStrategy} from "./interfaces/IPriceStrategy.sol";
 import {IAttribution} from "./interfaces/IAttribution.sol";
-import {
-    CollectionConfig,
-    CollectionStatus,
-    IdMode,
-    InitParams,
-    WorkConfig
-} from "./CollectionTypes.sol";
+import {CollectionConfig, CollectionStatus, IdMode, InitParams} from "./CollectionTypes.sol";
 
 /// @title Collection
 /// @notice One artist collection. An OZ ERC721 where every minted token keeps
@@ -31,9 +25,14 @@ import {
 ///         the mint (PND on PND; the artist on their own site; folded back to
 ///         the artist on a direct mint).
 ///
-///         The core holds ownership, money paths, and provenance only. All
-///         variability lives in four slots (renderer, price strategy, mint
-///         hook, extension minters) and optional companion contracts.
+///         The core holds ownership, money paths, and the per-token seed
+///         only — NO presentation data. tokenURI/contractURI defer wholly to
+///         the renderer slot; the work config, cover art, and captures live
+///         in renderer-land (GenerativeRenderer's work registry,
+///         RenderAssets). The artist may pin the renderer pointer forever
+///         with lockRenderer(). All other variability lives in the four
+///         slots (renderer, price strategy, mint hook, extension minters)
+///         and optional companion contracts.
 ///
 /// @dev    Deployed as an immutable EIP-1167 clone. No proxy admin, no
 ///         upgrade path, no seal: what deploys is what runs, forever. The
@@ -71,8 +70,10 @@ contract Collection is
     bytes4 private constant INTERFACE_ID_ERC2981 = 0x2a55205a;
     bytes4 private constant INTERFACE_ID_ERC4906 = 0x49064906;
 
-    bool private _metadataFrozen;
-    bool private _workLocked;
+    // One-way locks over state the core actually owns. Renderer-side
+    // permanence (the work config) is the renderer's own offer — e.g.
+    // GenerativeRenderer's per-collection work lock.
+    bool private _rendererLocked;
     bool private _supplyLocked;
 
     // Pull-payment balances: mint accrues here; recipients claim via
@@ -98,9 +99,7 @@ contract Collection is
     ///      owner(). Owner is an implicit admin. A grant is a bare mapping flag,
     ///      revocable any time.
     mapping(address => bool) private _admins;
-
     CollectionConfig private _cfg;
-    WorkConfig private _work;
 
     // Mints ever (both modes; assigns mintIndex). Burns never decrement it.
     // In Sequential mode the next id to assign is `_mintedEver + 1` (ids run
@@ -116,8 +115,6 @@ contract Collection is
     // lives in the Minted event. Works needing more mint-time data (block,
     // pooled order) record it themselves via a mint hook or minter.
     mapping(uint256 => bytes32) private _seed;
-
-    mapping(uint256 => string) private _tokenArtwork;
 
     constructor() {
         _disableInitializers();
@@ -136,7 +133,6 @@ contract Collection is
         // the module slots; setters write these fields in place, so config()
         // can never drift from what the contract actually uses.
         _cfg = p.cfg;
-        _copyWork(p.work);
         defaultRenderer = p.defaultRenderer;
         for (uint256 i = 0; i < p.initialMinters.length; i++) {
             if (!(p.initialMinters[i] != address(0))) revert ZeroMinter();
@@ -150,29 +146,10 @@ contract Collection is
             IAttribution(p.attribution).setArtists(address(this), p.artists);
         }
         emit CollectionConfigured(
-            p.cfg.idMode,
-            p.cfg.price,
-            p.cfg.supplyCap,
-            p.cfg.mintStart,
-            p.cfg.mintEnd,
-            p.cfg.artworkURI
+            p.cfg.idMode, p.cfg.price, p.cfg.supplyCap, p.cfg.mintStart, p.cfg.mintEnd
         );
     }
 
-    /// @dev Explicit field-by-field copy: structs with nested dynamic arrays
-    ///      cannot be assigned calldata -> storage wholesale.
-    function _copyWork(WorkConfig calldata w) private {
-        for (uint256 i = 0; i < w.code.length; i++) {
-            _work.code.push(w.code[i]);
-        }
-        for (uint256 i = 0; i < w.deps.length; i++) {
-            _work.deps.push(w.deps[i]);
-        }
-        _work.codeURI = w.codeURI;
-        _work.codeHash = w.codeHash;
-        _work.injectionVersion = w.injectionVersion;
-        _work.renderParams = w.renderParams;
-    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // Mint: built-in paid paths (value custody stays here)
@@ -305,8 +282,13 @@ contract Collection is
         uint256 mintIndex = _mintedEver;
         _mintedEver = mintIndex + 1;
         _mint(to, tokenId);
-        _seed[tokenId] =
-            keccak256(abi.encode(block.prevrandao, address(this), tokenId, to, mintIndex));
+        // Canonical seed: a pure function of public chain state + token
+        // identity (no recipient — mixing the minter's address into entropy
+        // is an opinion the artist never chose, and adds a wallet-grinding
+        // surface with zero unpredictability benefit). mintIndex is what
+        // re-rolls a pooled re-mint of the same id. Documented as the
+        // protocol standard in docs/injection-convention.md.
+        _seed[tokenId] = keccak256(abi.encode(block.prevrandao, address(this), tokenId, mintIndex));
     }
 
     /// @notice Burn a token. Burn authority depends on the id mode:
@@ -529,7 +511,7 @@ contract Collection is
     }
 
     /// @notice One-way: permanently lock the supply cap — the scarcity promise,
-    ///         alongside lockWork (the work) and freezeMetadata (the
+    ///         alongside the renderer-side work lock and lockRenderer (the
     ///         presentation). The cap binds extension minters too (_checkCap
     ///         runs on every mint path), so a locked cap is a hard ceiling no
     ///         matter what minters are granted later.
@@ -542,7 +524,7 @@ contract Collection is
     /// @dev Renderer/work changes alter every token's metadata; ERC-4906 is the
     ///      refresh signal marketplaces actually subscribe to.
     function setRenderer(address renderer_) external override onlyOwnerOrAdmin {
-        if (!(!_metadataFrozen)) revert MetadataIsFrozen();
+        if (_rendererLocked) revert RendererIsLocked();
         _cfg.renderer = renderer_;
         emit RendererSet(renderer_);
         emit BatchMetadataUpdate(0, type(uint256).max);
@@ -559,12 +541,11 @@ contract Collection is
     }
 
     /// @notice Emit an ERC-4906 refresh for metadata changes the core cannot
-    ///         observe: ChainLive works whose output moved with chain state,
-    ///         reveal-style renderers. Callable by the current renderer or
-    ///         owner/admin. Deliberately works after freezeMetadata — freeze
-    ///         locks the renderer pointer, but a frozen ChainLive work still
-    ///         legitimately changes output; that is its declared physics, and
-    ///         the now-immutable renderer is the trusted party to signal it.
+    ///         observe: a chain-live work whose output moved with chain state,
+    ///         a reveal, refreshed captures in RenderAssets. Callable by the
+    ///         current renderer or owner/admin. Deliberately works after
+    ///         lockRenderer — the lock pins the pointer, but a locked
+    ///         chain-live work still legitimately changes output.
     ///         Pure event emission; no state is touched.
     function notifyMetadataUpdate(uint256 fromTokenId, uint256 toTokenId) external override {
         if (msg.sender != renderer() && msg.sender != owner() && !_admins[msg.sender]) {
@@ -583,24 +564,6 @@ contract Collection is
         emit MinterSet(minter, allowed);
     }
 
-    /// @notice Set per-token artwork overrides (captures/thumbnails). A single
-    ///         token is a batch of one. Emits ERC-4906 MetadataUpdate per token
-    ///         so marketplaces refresh.
-    function setTokenArtworkBatch(uint256[] calldata tokenIds, string[] calldata cids)
-        external
-        override
-        onlyOwnerOrAdmin
-    {
-        if (!(!_metadataFrozen)) revert MetadataIsFrozen();
-        if (!(tokenIds.length == cids.length)) revert LengthMismatch();
-        for (uint256 i = 0; i < tokenIds.length; i++) {
-            if (!(_wasMinted(tokenIds[i]))) revert NotMinted();
-            _tokenArtwork[tokenIds[i]] = cids[i];
-            emit TokenArtworkSet(tokenIds[i], cids[i]);
-            emit MetadataUpdate(tokenIds[i]);
-        }
-    }
-
     /// @notice Update where the artist's share accrues for FUTURE mints. Past
     ///         accruals remain claimable at the old address.
     function setPayoutAddress(address payoutAddress) external override onlyOwnerOrAdmin {
@@ -608,34 +571,19 @@ contract Collection is
         emit PayoutAddressSet(payoutAddress);
     }
 
-    /// @notice One-way: renounce the ability to change the renderer or
-    ///         per-token artwork, so collectors get a presentation-permanence
-    ///         guarantee.
-    function freezeMetadata() external override onlyOwnerOrAdmin {
-        if (!(!_metadataFrozen)) revert AlreadyFrozen();
-        _metadataFrozen = true;
-        emit MetadataFrozen();
+    /// @notice One-way, optional: permanently pin the renderer pointer, so
+    ///         tokenURI is answered by this exact renderer contract forever.
+    ///         The core cannot attest what the renderer does internally — an
+    ///         immutable renderer plus a locked pointer is full presentation
+    ///         permanence; a mutable renderer with a locked pointer is the
+    ///         artist's explicit, inspectable choice. Not locked by default.
+    function lockRenderer() external override onlyOwnerOrAdmin {
+        if (_rendererLocked) revert RendererIsLocked();
+        _rendererLocked = true;
+        emit RendererLocked();
     }
 
-    /// @notice Replace the work definition (script refs, deps, render spec) — the algorithm
-    ///         the renderer runs. The artist may refine it until they lock it; reverts once
-    ///         `lockWork` has been called.
-    function setWork(WorkConfig calldata work) external override onlyOwnerOrAdmin {
-        if (_workLocked) revert WorkAlreadyLocked();
-        delete _work; // clear the previous code/deps arrays before re-copying
-        _copyWork(work);
-        emit WorkSet(work.codeHash);
-        emit BatchMetadataUpdate(0, type(uint256).max);
-    }
 
-    /// @notice One-way: permanently lock the work config (what the work IS), so `setWork` can
-    ///         never change it again. Together with freezeMetadata this is the art-permanence
-    ///         guarantee; the contract itself is immutable from deploy.
-    function lockWork() external override onlyOwnerOrAdmin {
-        if (!(!_workLocked)) revert WorkAlreadyLocked();
-        _workLocked = true;
-        emit WorkLocked();
-    }
 
     /// @notice Disabled. Renouncing would orphan the collection: default
     ///         proceeds would accrue to owner() == address(0) and every admin
@@ -717,25 +665,13 @@ contract Collection is
         return IPriceStrategy(strategy).priceOf(address(this), minter, quantity, data);
     }
 
-    function workConfig() external view override returns (WorkConfig memory) {
-        return _work;
-    }
 
-    function isWorkLocked() external view override returns (bool) {
-        return _workLocked;
-    }
 
     function idMode() external view override returns (IdMode) {
         return _cfg.idMode;
     }
 
-    function artwork() external view override returns (string memory) {
-        return _cfg.artworkURI;
-    }
 
-    function tokenArtwork(uint256 tokenId) external view override returns (string memory) {
-        return _tokenArtwork[tokenId];
-    }
 
     function renderer() public view override returns (address) {
         return _cfg.renderer != address(0) ? _cfg.renderer : defaultRenderer;
@@ -753,20 +689,14 @@ contract Collection is
         return _minters[minter];
     }
 
-    function isMetadataFrozen() external view override returns (bool) {
-        return _metadataFrozen;
+    function isRendererLocked() external view override returns (bool) {
+        return _rendererLocked;
     }
 
     function isSupplyLocked() external view override returns (bool) {
         return _supplyLocked;
     }
 
-    /// @notice metadataFrozen && workLocked: the art-permanence guarantee.
-    ///         There is no seal() dimension: the contract is immutable from
-    ///         deploy.
-    function isPermanent() external view override returns (bool) {
-        return _metadataFrozen && _workLocked;
-    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // Metadata + royalties

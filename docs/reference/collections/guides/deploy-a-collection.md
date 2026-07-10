@@ -29,7 +29,6 @@ The factory emits `CollectionCreated(owner, collection)`, the single event an in
 
 ```solidity
 struct CollectionConfig {
-    string artworkURI;      // shared/cover art; per-token overridable
     uint256 price;          // wei; used when priceStrategy is unset. 0 = gas only
     uint256 supplyCap;      // 0 = open supply
     uint64 mintStart;       // unix seconds; 0 = open immediately
@@ -86,7 +85,6 @@ const walletClient = createWalletClient({
 });
 
 const cfg = {
-  artworkURI: 'ipfs://bafy.../cover.png',
   price: parseEther('0.02'),
   supplyCap: 250n,
   mintStart: 0n,
@@ -124,7 +122,7 @@ The new collection's address is in the `CollectionCreated` event of the receipt'
 
 ## After deploy
 
-The owner can still call the config setters (`setRenderer`, `setMintHook`, `setPriceStrategy`, `setMinter`, `setPayoutAddress`, `setWork`) until they choose to lock things down with `freezeMetadata` and `lockWork`. Nothing about the clone's code changes; only its slot pointers and stored config do. See:
+The owner can still call the config setters (`setRenderer`, `setMintHook`, `setPriceStrategy`, `setMinter`, `setPayoutAddress`, and the sale-term setters) until they choose to lock things down with `lockRenderer` and `lockSupply`. Presentation data is published separately, in renderer-land: a generative work writes its `WorkConfig` with `GenerativeRenderer.setWork(collection, work)` (lockable one-way with `lockWork(collection)`), and cover art / captures go to [RenderAssets](/docs/collections/contracts/render-assets) — both authorized by the collection's own owner/admin root. Nothing about the clone's code changes; only its slot pointers and stored config do. See:
 
 - [The four slots](/docs/collections/concepts/four-slots) for what each slot controls and when it can change
 - [Mint](/docs/collections/guides/mint) for the built-in paid mint paths

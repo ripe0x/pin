@@ -5,13 +5,10 @@ import {Script, console2} from "forge-std/Script.sol";
 
 import {CollectionFactory} from "../src/collection/CollectionFactory.sol";
 import {Collection} from "../src/collection/Collection.sol";
-import {
-    CodeKind,
-    CodeRef,
-    CollectionConfig,
-    IdMode,
-    WorkConfig
-} from "../src/collection/CollectionTypes.sol";
+import {CollectionConfig, IdMode} from "../src/collection/CollectionTypes.sol";
+import {CodeKind, CodeRef, WorkConfig} from "../src/collection/renderers/WorkTypes.sol";
+import {GenerativeRenderer} from "../src/collection/renderers/GenerativeRenderer.sol";
+import {RenderAssets} from "../src/collection/renderers/RenderAssets.sol";
 
 interface IScriptyStorageWrite {
     function createContent(string calldata name, bytes calldata details) external;
@@ -85,6 +82,7 @@ contract SeedDevCollections is Script {
     function run() external {
         address factory = vm.envAddress("FACTORY");
         address generativeRenderer = vm.envAddress("GENERATIVE_RENDERER");
+        address renderAssets = vm.envAddress("RENDER_ASSETS");
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address artist = vm.addr(pk);
 
@@ -96,7 +94,7 @@ contract SeedDevCollections is Script {
 
         address orbits = _seedOrbits(factory, generativeRenderer, artist);
         address drift = _seedDrift(factory, generativeRenderer, artist);
-        address field = _seedField(factory, artist);
+        address field = _seedField(factory, renderAssets, artist);
 
         vm.stopBroadcast();
 
@@ -139,8 +137,11 @@ contract SeedDevCollections is Script {
         roster[1] = 0x70997970C51812dc3A010C7d01b50e0d17dc79C8;
 
         orbits = CollectionFactory(factory).createCollection(
-            "Orbit Studies", "ORBIT", artist, cfg, _orbitWork(), new address[](0), roster
+            "Orbit Studies", "ORBIT", artist, cfg, new address[](0), roster
         );
+        // Work config lives in renderer-land now: the collection's owner
+        // writes it to the GenerativeRenderer's registry post-create.
+        GenerativeRenderer(generativeRenderer).setWork(orbits, _orbitWork());
         Collection(orbits).mintWithReferral{value: 0.015 ether}(3, address(0), "");
         ICatalogClaim(CATALOG).addContract(orbits);
     }
@@ -158,22 +159,26 @@ contract SeedDevCollections is Script {
         cfg.idMode = IdMode.Sequential;
 
         drift = CollectionFactory(factory).createCollection(
-            "Signal Drift", "DRIFT", artist, cfg, _orbitWork(), new address[](0), new address[](0)
+            "Signal Drift", "DRIFT", artist, cfg, new address[](0), new address[](0)
         );
+        GenerativeRenderer(generativeRenderer).setWork(drift, _orbitWork());
     }
 
-    /// @dev Edition preset with an inline-SVG cover and 2 mints.
-    function _seedField(address factory, address artist) private returns (address field) {
-        WorkConfig memory emptyWork;
+    /// @dev Edition preset with an inline-SVG cover (RenderAssets) and 2 mints.
+    function _seedField(address factory, address renderAssets, address artist)
+        private
+        returns (address field)
+    {
         CollectionConfig memory cfg;
-        cfg.artworkURI = FIELD_COVER;
         cfg.price = 0.002 ether;
         cfg.supplyCap = 25;
         cfg.idMode = IdMode.Sequential;
 
         field = CollectionFactory(factory).createCollection(
-            "Field Notes", "FIELD", artist, cfg, emptyWork, new address[](0), new address[](0)
+            "Field Notes", "FIELD", artist, cfg, new address[](0), new address[](0)
         );
+        // Cover art lives in renderer-land (RenderAssets), not the core.
+        RenderAssets(renderAssets).setCover(field, FIELD_COVER);
         Collection(field).mintWithReferral{value: 0.004 ether}(2, address(0), "");
     }
 }

@@ -39,7 +39,7 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   if (!isAddress(address)) return { title: "Collection" }
   const c = await getCollection(address as Address)
   if (!c) return { title: "Collection" }
-  const image = ipfsToHttp(c.cfg.artworkURI)
+  const image = ipfsToHttp(c.cover)
   return {
     title: c.name,
     openGraph: image ? { title: c.name, images: [{ url: image }] } : { title: c.name },
@@ -63,7 +63,7 @@ export default async function CollectionPage({ params }: { params: Params }) {
   // generative work shows a live render (latest mint's real seed, or a
   // deterministic preview seed pre-mint); a coverless renderer-native work
   // falls back to its first token's image once one exists.
-  const hasCover = c.cfg.artworkURI.length > 0
+  const hasCover = c.cover.length > 0
   const hasWork = c.work.code.length > 0
   const latest = recent[0] ?? null
   const firstTokenImage =
@@ -71,11 +71,10 @@ export default async function CollectionPage({ params }: { params: Params }) {
       ? (await getCollectionToken(addr, 1n))?.image ?? ""
       : ""
 
-  // The contract itself is an immutable clone (no upgrade path, ever); what
-  // the artist can still change pre-lock is the work definition and renderer.
-  const mutability = c.isWorkLocked ? "Work locked" : "Work editable by the artist"
-  const metadataState = c.isMetadataFrozen ? "Frozen" : "Mutable by the artist"
-  const permanent = c.isPermanent
+  // The contract itself is an immutable clone (no upgrade path, ever); the
+  // renderer pointer can be pinned forever with lockRenderer, and the work
+  // definition locked in the renderer's own registry.
+  const permanent = c.isRendererLocked
   const pooled = sellsViaMinterOnly(c.cfg.idMode)
   const strategy = hasPriceStrategy(c.priceStrategy)
 
@@ -86,7 +85,7 @@ export default async function CollectionPage({ params }: { params: Params }) {
         <div className="lg:sticky lg:top-16 lg:h-[calc(100vh-64px)] flex items-center justify-center bg-gray-100 dark:bg-bg p-8 lg:p-12">
           {hasCover ? (
             <OptimizedImage
-              src={c.cfg.artworkURI}
+              src={c.cover}
               alt={c.name}
               width={1200}
               loading="eager"
@@ -148,8 +147,14 @@ export default async function CollectionPage({ params }: { params: Params }) {
             <Fact label="Contract" value={shortAddress(addr)} />
             <Fact label="Standard" value="ERC721" />
             <Fact label="Owner" value={shortAddress(c.owner)} />
-            <Fact label="Mutability" value={mutability} />
-            <Fact label="Metadata" value={metadataState} />
+            <Fact
+              label="Renderer"
+              value={c.isRendererLocked ? "Locked forever" : "Swappable by the artist"}
+            />
+            <Fact
+              label="Supply"
+              value={c.isSupplyLocked ? "Locked forever" : "Adjustable by the artist"}
+            />
             <Fact label="Permanence" value={permanent ? "Permanent" : "Not yet permanent"} />
             <Fact
               label="Royalty"
@@ -181,15 +186,14 @@ export default async function CollectionPage({ params }: { params: Params }) {
             </div>
             {permanent ? (
               <p className="pt-2 text-[10px] font-mono text-gray-400 normal-case leading-relaxed">
-                Permanent: the work is locked and metadata is frozen, so the
-                artwork and code cannot change. The contract itself has no
-                upgrade path from deploy.
+                Renderer locked: this collection is rendered by its current
+                renderer contract forever. The contract itself has no upgrade
+                path from deploy.
               </p>
             ) : (
               <p className="pt-2 text-[10px] font-mono text-gray-400 normal-case leading-relaxed">
-                The contract is immutable from deploy.{" "}
-                {!c.isWorkLocked ? "The artist can edit the work definition until they lock it. " : ""}
-                {!c.isMetadataFrozen ? "Artwork and renderer can change until the artist freezes metadata." : ""}
+                The contract is immutable from deploy. The renderer can change
+                until the artist locks it.
               </p>
             )}
           </section>

@@ -28,7 +28,7 @@ function contractURI(address collection) external view returns (string memory);
 
 - **Type**: `IRenderer`, stored as `_renderer`
 - **Set by**: `setRenderer(address)`, owner-only, and only while metadata is
-  not frozen (`freezeMetadata` locks it permanently)
+  not locked (`lockRenderer` pins it permanently, optional and off by default)
 - **Fallback**: when `_renderer` is the zero address, `renderer()` returns
   the collection's `defaultRenderer`, set once at init and never itself
   swappable

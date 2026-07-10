@@ -6,12 +6,7 @@ import {Clones} from "openzeppelin-contracts/contracts/proxy/Clones.sol";
 
 import {Collection} from "../../src/collection/Collection.sol";
 import {CollectionFactory} from "../../src/collection/CollectionFactory.sol";
-import {
-    CollectionConfig,
-    WorkConfig,
-    InitParams,
-    IdMode
-} from "../../src/collection/CollectionTypes.sol";
+import {CollectionConfig, InitParams, IdMode} from "../../src/collection/CollectionTypes.sol";
 
 import {MockRenderer} from "./mocks/CollectionMocks.sol";
 
@@ -38,14 +33,12 @@ contract CollectionBase is Test {
 
     /// @dev A free (gas-only), open-supply, open-window sequential collection.
     function _freeConfig() internal pure returns (CollectionConfig memory cfg) {
-        cfg.artworkURI = "ipfs://QmArtwork";
         cfg.idMode = IdMode.Sequential;
     }
 
     /// @dev A priced sequential collection. Referral share is a fixed protocol
     ///      constant, not configurable here.
     function _pricedConfig(uint256 price) internal pure returns (CollectionConfig memory cfg) {
-        cfg.artworkURI = "ipfs://QmArtwork";
         cfg.price = price;
         cfg.idMode = IdMode.Sequential;
     }
@@ -53,11 +46,8 @@ contract CollectionBase is Test {
     /// @dev A pooled-mode collection with no built-in paid path (pooled sells
     ///      exclusively through an authorized minter).
     function _pooledConfig() internal pure returns (CollectionConfig memory cfg) {
-        cfg.artworkURI = "ipfs://QmArtwork";
         cfg.idMode = IdMode.Pooled;
     }
-
-    function _emptyWork() internal pure returns (WorkConfig memory) {}
 
     // ── deploy helpers ───────────────────────────────────────────────────────
 
@@ -66,7 +56,7 @@ contract CollectionBase is Test {
         address[] memory noArtists = new address[](0);
         c = Collection(
             factory.createCollection(
-                "Artist Collection", "ACOL", artist, cfg, _emptyWork(), noMinters, noArtists
+                "Artist Collection", "ACOL", artist, cfg, noMinters, noArtists
             )
         );
     }
@@ -77,7 +67,7 @@ contract CollectionBase is Test {
     {
         address[] memory noArtists = new address[](0);
         c = Collection(
-            factory.createCollection("Artist Collection", "ACOL", artist, cfg, _emptyWork(), minters, noArtists)
+            factory.createCollection("Artist Collection", "ACOL", artist, cfg, minters, noArtists)
         );
     }
 
@@ -99,7 +89,6 @@ contract CollectionBase is Test {
             symbol: "ACOL",
             owner: artist,
             cfg: cfg,
-            work: _emptyWork(),
             defaultRenderer: address(renderer),
             initialMinters: noMinters,
             attribution: address(0),

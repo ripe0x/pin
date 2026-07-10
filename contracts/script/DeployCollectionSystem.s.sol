@@ -5,6 +5,7 @@ import {Script, console2} from "forge-std/Script.sol";
 import {Attribution} from "../src/collection/Attribution.sol";
 import {DefaultRenderer} from "../src/collection/renderers/DefaultRenderer.sol";
 import {GenerativeRenderer} from "../src/collection/renderers/GenerativeRenderer.sol";
+import {RenderAssets} from "../src/collection/renderers/RenderAssets.sol";
 import {Collection} from "../src/collection/Collection.sol";
 import {CollectionFactory} from "../src/collection/CollectionFactory.sol";
 
@@ -124,16 +125,23 @@ contract DeployCollectionSystemScript is Script {
             console2.log("Attribution deployed at:", attribution);
         }
 
-        // ── 2. DefaultRenderer — plain CREATE, no args ──
+        // ── 2a. RenderAssets — plain CREATE, no args (covers + captures) ──
         vm.startBroadcast(deployerPk);
-        DefaultRenderer defaultRenderer = new DefaultRenderer();
+        RenderAssets renderAssets = new RenderAssets();
+        vm.stopBroadcast();
+        console2.log("RenderAssets deployed at:", address(renderAssets));
+
+        // ── 2b. DefaultRenderer(renderAssets) ──
+        vm.startBroadcast(deployerPk);
+        DefaultRenderer defaultRenderer = new DefaultRenderer(address(renderAssets));
         vm.stopBroadcast();
         console2.log("DefaultRenderer deployed at:", address(defaultRenderer));
 
         // ── 3. GenerativeRenderer — plain CREATE, constructor args pinned above ──
         vm.startBroadcast(deployerPk);
-        GenerativeRenderer generativeRenderer =
-            new GenerativeRenderer(SCRIPTY_BUILDER_V2, ETHFS_V2_FILE_STORAGE, GUNZIP_FILE);
+        GenerativeRenderer generativeRenderer = new GenerativeRenderer(
+            SCRIPTY_BUILDER_V2, address(renderAssets), ETHFS_V2_FILE_STORAGE, GUNZIP_FILE
+        );
         vm.stopBroadcast();
         console2.log("GenerativeRenderer deployed at:", address(generativeRenderer));
 

@@ -15,7 +15,7 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   if (!isAddress(address)) return { title: "Token" }
   const c = await getCollection(address as Address)
   const title = c ? `${c.name} #${tokenId}` : `Token #${tokenId}`
-  const image = c ? ipfsToHttp(c.cfg.artworkURI) : undefined
+  const image = c ? ipfsToHttp(c.cover) : undefined
   return {
     title,
     openGraph: image ? { title, images: [{ url: image }] } : { title },

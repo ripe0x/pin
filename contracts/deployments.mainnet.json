@@ -5,6 +5,7 @@
   "attribution": "",
   "defaultRenderer": "",
   "generativeRenderer": "",
+  "renderAssets": "",
   "allowlistHook": "",
   "perWalletCapHook": "",
   "holdsCollectionHook": "",

@@ -90,3 +90,61 @@ code file is gzip-compressed. Fixed at construction.
 The file name of the gunzip helper within `gunzipStore`. Set once in the
 constructor; Solidity strings can't be declared `immutable`, but there is
 no setter, so the value is fixed for the life of the renderer.
+
+## function setWork
+
+access: collection owner or admin (`onlyCollectionAdmin`, else `NotCollectionAdmin`)
+
+Sets or replaces `collection`'s work definition in this renderer's registry —
+the code refs, dependencies, integrity hash, injection version, and render
+params the renderer assembles at `tokenURI` time. Presentation data lives in
+renderer-land: the collection core stores none of this. Authority borrows the
+collection's own owner/admin root, so publishing the work carries exactly the
+same authority as the collection's setters. Reverts `WorkIsLocked` once
+`lockWork(collection)` has run. Emits `WorkSet`.
+
+## function lockWork
+
+access: collection owner or admin (`onlyCollectionAdmin`, else `NotCollectionAdmin`)
+
+One-way: permanently locks `collection`'s work definition so `setWork` can
+never change it again. Together with the collection's `lockRenderer()` (pin
+the pointer at this immutable contract) this is full presentation permanence
+for a generative work. Reverts `WorkIsLocked` if already locked. Emits
+`WorkLocked`.
+
+## function workOf
+
+The stored work definition for a collection, as this renderer will assemble
+it. Empty (no code refs) until `setWork` runs.
+
+## function workLockedOf
+
+True once `lockWork(collection)` has permanently locked that collection's
+work definition.
+
+## function renderAssets
+
+The RenderAssets registry this renderer reads static images from (per-token
+capture, else collection cover) for the `image` field beside the live
+`animation_url`.
+
+## event WorkSet
+
+Emitted when a collection's work definition is set or replaced, carrying the
+new `codeHash`. Indexed by `collection`.
+
+## event WorkLocked
+
+Emitted once when a collection's work definition is permanently locked.
+Indexed by `collection`.
+
+## error NotCollectionAdmin
+
+`setWork` or `lockWork` was called by an address that is neither the
+collection's owner nor one of its admins.
+
+## error WorkIsLocked
+
+`setWork` or `lockWork` was called after `lockWork`. The work definition is
+permanently frozen for that collection.

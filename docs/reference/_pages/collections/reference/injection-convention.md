@@ -65,3 +65,33 @@ Test seeds in the studio are ordinary `tokenData` objects with synthetic `hash` 
 `WorkConfig.injectionVersion` pins which revision of this document a work was authored against; the renderer echoes it as `tokenData.version`. Additive changes bump the minor conventions here without a version bump; breaking changes (renamed fields, changed ordering) require a new version and a new renderer, never a mutation of this one.
 
 See [Write a renderer](/docs/collections/guides/write-a-renderer) for implementing or adopting a renderer against this convention, and [GenerativeRenderer](/docs/collections/contracts/generative-renderer) for the generated contract reference of the onchain assembler.
+
+## Seed derivation (the protocol standard)
+
+Every token's canonical entropy is stored once, at mint, on the collection
+core, and read via `tokenSeed(tokenId)`:
+
+```solidity
+seed = keccak256(abi.encode(block.prevrandao, collectionAddress, tokenId, mintIndex))
+```
+
+Each input earns its place: `prevrandao` gives block-level freshness;
+`collectionAddress` prevents cross-collection reuse; `tokenId` + `mintIndex`
+give per-token and per-instance uniqueness (the index is what re-rolls a
+pooled re-mint of the same id). The recipient is deliberately NOT mixed in:
+it adds no unpredictability and would bake a minter-identity opinion into
+every work.
+
+Properties renderers and archives can rely on:
+
+- **Canonical and renderer-independent**: the seed is a fixed fact of the
+  token, derived once in the core — never re-derived by renderers, so
+  swapping renderers can never change a token's entropy
+- **Pre-mint simulatable**: like all same-block entropy (Art Blocks
+  included), the seed can be computed by simulating the mint before sending
+  it. Acceptable unpredictability for art; disqualifying for lotteries
+- **The substrate, not the ceiling**: an algorithm wanting different seed
+  semantics derives its own value from the canonical seed (any pure function
+  of it), or records extra mint-time materials (block, recipient, pooled
+  order) with a one-line mint hook and reads them in a custom renderer —
+  the cost lands only on works that opt in

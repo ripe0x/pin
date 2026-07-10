@@ -86,5 +86,5 @@ const abi = await fetch('/abis/Collection.json').then((r) => r.json());
 | Entropy / seed | The per-token `bytes32` stamped at mint (`tokenSeed`), the source of randomness a generative renderer draws from |
 | Id mode | Whether a collection assigns ids itself (sequential) or takes minter-supplied ids (pooled), fixed at init |
 | Work / work config | The algorithm or asset definition a renderer executes: code refs, dependency refs, render spec |
-| Freeze / lock (permanence) | Three one-way locks: `freezeMetadata` (presentation), `lockWork` (the work), `lockSupply` (the supply cap); metadata frozen + work locked means the collection `isPermanent` |
+| Lock (permanence) | One-way switches: `lockRenderer` on the collection (pin the renderer pointer, optional), `lockSupply` on the collection (the scarcity promise), and `lockWork` per collection in the GenerativeRenderer (pin the algorithm). Pointer lock + work lock = full presentation permanence for a generative work |
 | Roster / attribution | The artist list a collection declares to the `Attribution` singleton; confirmed once each listed artist claims the collection in their own Catalog |

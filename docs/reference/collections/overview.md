@@ -30,7 +30,7 @@ different modules plugged into the same four sockets. See
 
 `Collection` itself. It holds the ERC721 token logic, the sale
 paths, the payment split, and every read an indexer or renderer needs:
-`tokenSeed`, `workConfig`, `config`. Nothing about a specific
+`tokenSeed`, `config`. Nothing about a specific
 work's rendering, pricing, or gating logic lives here; those are the slots.
 
 ## The four slots
@@ -74,11 +74,15 @@ Lifecycle status — `Scheduled`, `Open`, or `Closed` — is derived from the
 window, the cap, and the clock; nothing stores it, so it can never drift
 from the settings that produce it.
 
-Against that flexibility stand three one-way locks, each converting a
-setting into a permanent promise: `lockWork` (the algorithm can never
-change), `freezeMetadata` (the presentation can never change), and
-`lockSupply` (the supply can never grow — and the cap binds extension
-minters too, so it holds no matter what is granted later).
+Against that flexibility stand one-way locks, each converting a setting
+into a permanent promise. On the collection: `lockRenderer` (optional; the
+renderer pointer can never change) and `lockSupply` (the supply can never
+grow — and the cap binds extension minters too, so it holds no matter what
+is granted later). In renderer-land: the GenerativeRenderer's
+`lockWork(collection)` pins the algorithm, so pointer lock + work lock is
+full presentation permanence for a generative work. The core stores no
+presentation data — work configs and static images live in the renderer's
+registry and [RenderAssets](/docs/collections/contracts/render-assets).
 
 ## Id modes
 

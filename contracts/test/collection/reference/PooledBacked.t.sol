@@ -11,8 +11,7 @@ import {CollectionFactory} from "../../../src/collection/CollectionFactory.sol";
 import {
     CollectionConfig,
     CollectionStatus,
-    IdMode,
-    WorkConfig
+    IdMode
 } from "../../../src/collection/CollectionTypes.sol";
 import {MockRenderer} from "../mocks/CollectionMocks.sol";
 
@@ -110,7 +109,6 @@ contract PooledBackedTest is Test {
         cfg.idMode = IdMode.Pooled;
         cfg.supplyCap = POOL_SIZE; // pooled cap bounds LIVE supply
         cfg.mintEnd = uint64(block.timestamp + 1 days);
-        WorkConfig memory work;
 
         // Predict the minter address so the collection deploys fully wired
         // in one factory tx (initialMinters), the studio one-click property.
@@ -123,7 +121,7 @@ contract PooledBackedTest is Test {
 
         collection = Collection(
             factory.createCollection(
-                "Pooled Backed", "PB", artist, cfg, work, minters, new address[](0)
+                "Pooled Backed", "PB", artist, cfg, minters, new address[](0)
             )
         );
         minter = new BackedPoolMinter(address(collection), coin, ESCROW, POOL_SIZE);
