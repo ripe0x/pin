@@ -13,7 +13,7 @@
         "internalType": "address"
       },
       {
-        "name": "attribution_",
+        "name": "catalog_",
         "type": "address",
         "internalType": "address"
       }
@@ -41,7 +41,7 @@
   },
   {
     "type": "function",
-    "name": "attribution",
+    "name": "catalog",
     "inputs": [],
     "outputs": [
       {
@@ -139,7 +139,7 @@
         "internalType": "address[]"
       },
       {
-        "name": "artists",
+        "name": "creators",
         "type": "address[]",
         "internalType": "address[]"
       }
