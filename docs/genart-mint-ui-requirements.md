@@ -450,10 +450,12 @@ custom event system to enable it. We get it almost for free.
   `tokenURI` media as fallback/verification. This is the confirmed gap in the
   existing surface, and "the token page runs the real code" is table stakes
   on every gen-art platform (Art Blocks' Live view).
-- [M] View modes: Live / Image (captured static) / fullscreen. Details:
-  mint mark (exists), seed with copy (exists), owner (live `ownerOf` — the
-  indexer won't track transfers), features/attributes as reported by
-  `tokenURI` metadata.
+- [M] View modes: Live / Image (captured static) / fullscreen. The static
+  image is the RenderAssets registry's per-token capture (else the collection
+  cover) — deliberately refreshable, it mirrors rendered output and is not
+  the art; label it accordingly. Details: mint mark (exists), seed with copy
+  (exists), owner (live `ownerOf` — the indexer won't track transfers),
+  features/attributes as reported by `tokenURI` metadata.
 - [S] "Open in new tab" standalone live view (a shareable, chrome-less render
   URL — our equivalent of `generator.artblocks.io/...`).
 - [S] Provenance block: minted-at (from event), mint index, `statusAtMint`,
@@ -570,7 +572,8 @@ Standing rule: minimize RPC; indexer/cache first. Concretely for this surface:
 - **Q4 — Secondary-market links post-close:** should the baseline link out
   (OpenSea et al.) after mint-out, or stay marketplace-agnostic?
 - **Q5 — License:** does license belong in work config / metadata? No source
-  of truth exists today; every surveyed platform displays one.
+  of truth exists today; every surveyed platform displays one. Post-8ca23eb
+  the natural home is renderer-land (WorkConfig or contractURI), not core.
 
 ---
 
