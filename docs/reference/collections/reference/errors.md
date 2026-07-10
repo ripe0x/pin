@@ -79,9 +79,6 @@ A paid mint was attempted before `mintStart`.
 **`NotAuthorized`** · [Collection](/docs/collections/contracts/collection#errors)\
 A management function gated `onlyOwnerOrAdmin` was called by neither the owner nor an admin; `removeAdmin` was called by someone other than the owner or the admin itself; `notifyMetadataUpdate` was called by neither the renderer nor an owner/admin; or `burn` was called without burn authority for the id mode.
 
-**`NotCollectionAdmin`** · [GenerativeRenderer](/docs/collections/contracts/generative-renderer#errors)\
-`setWork` or `lockWork` was called by an address that is neither the collection's owner nor one of its admins.
-
 **`NotCollectionAdmin`** · [RenderAssets](/docs/collections/contracts/render-assets#errors)\
 A write was attempted by an address that is neither the collection's owner nor one of its admins.
 
@@ -141,9 +138,6 @@ A mint with a price strategy set sent less than the strategy's resolved price.
 
 **`WithdrawFailed`** · [Collection](/docs/collections/contracts/collection#errors)\
 The ETH transfer inside `withdraw` reverted, for example a recipient that rejects payment.
-
-**`WorkIsLocked`** · [GenerativeRenderer](/docs/collections/contracts/generative-renderer#errors)\
-`setWork` or `lockWork` was called after `lockWork`.
 
 **`WrongPayment`** · [Collection](/docs/collections/contracts/collection#errors)\
 A mint with no price strategy set did not send exactly `price * quantity`.

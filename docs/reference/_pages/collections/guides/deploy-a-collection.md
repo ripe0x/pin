@@ -21,7 +21,6 @@ function createCollection(
 - `name` / `symbol`: standard ERC721 metadata
 - `owner`: the artist. Taken explicitly so a deploy helper (studio backend, multisig) can deploy on an artist's behalf
 - `cfg`: the `CollectionConfig` struct, below
-- `workCfg`: the `WorkConfig` struct, below; empty for renderer-native works (a custom `SVGRenderer` subclass) where the renderer contract IS the algorithm
 - `initialMinters`: extension minters granted at init, so a pooled or backed collection deploys fully wired in one transaction. Empty for collections that sell through the built-in fixed-price path
 - `creators`: an optional initial creator listing (the owner's side of attribution), seeded on the collection at init. Each listed creator completes the handshake by claiming the collection in their own Catalog, after which `isConfirmedCreator` reads true. Empty for solo works (`owner()` is the creator)
 
@@ -53,27 +52,16 @@ struct CollectionConfig {
 - `renderer`, `mintHook`, `priceStrategy` are three of the four slots, set at init and changeable later by the owner or an admin (`renderer` only while metadata isn't frozen). See [The four slots](/docs/collections/concepts/four-slots)
 - `idMode` is fixed for the life of the collection. `Sequential` is the default form (the core assigns ids, built-in `mint` works). `Pooled` requires selling through an extension minter from the start; see [Id modes](/docs/collections/concepts/id-modes) and [Write a minter](/docs/collections/guides/write-a-minter)
 
-## WorkConfig fields (generative works)
+## Generative works: bring your own renderer
 
-```solidity
-struct WorkConfig {
-    CodeRef[] code;         // the algorithm, chunked/named in onchain storage
-    CodeRef[] deps;         // library files (gzipped p5/three/etc.)
-    string codeURI;         // offchain pointer for oversized code; hash-verified
-    bytes32 codeHash;       // integrity hash of the assembled script
-    uint8 injectionVersion; // version of the render-context injection convention
-    string renderParams;    // renderer-interpreted settings (aspect, versions)
-}
-```
-
-`workCfg` only matters for collections that point `renderer` at `GenerativeRenderer` (or another work-config-reading renderer). `code` and `deps` are references into onchain storage (scripty v2 / EthFS): each `CodeRef` names a storage contract, a file name, and whether the file is plain or gzipped. `codeHash` pins the assembled script's content, and `code` vs `codeURI` states plainly where the work's bytes live — how "onchain" a work is, is derivable from those facts by any external checker. See [Injection convention](/docs/collections/reference/injection-convention) for how the renderer assembles the document. Leave `workCfg` as its zero value for edition presets and Solidity-SVG works, where the renderer contract itself is the work.
+`createCollection` takes no work-config parameter. A generative work ships as its own renderer: deploy a work-specific `IRenderer` that owns its algorithm and dependency references (however it chooses to store them), then point the collection's `renderer` slot at it — either as `cfg.renderer` at deploy or later with `setRenderer`. Edition presets and Solidity-SVG works leave `cfg.renderer` at zero (the `DefaultRenderer` fallback) or point it at a self-contained SVG renderer, where the renderer contract itself is the work. See [Write a renderer](/docs/collections/guides/write-a-renderer) and the [Injection convention](/docs/collections/reference/injection-convention) for how a generative renderer assembles its document.
 
 ## Deploying with viem
 
 ```ts
 import {createWalletClient, createPublicClient, http, parseEther} from 'viem';
 import {mainnet} from 'viem/chains';
-import {sovereignCollectionFactoryAbi} from '@pin/abi';
+import {collectionFactoryAbi} from '@pin/abi';
 
 const FACTORY = '{{addr:collectionFactory}}';
 
@@ -93,7 +81,6 @@ const cfg = {
   mintEnd: 0n,
   royaltyBps: 500,
   royaltyReceiver: '0x0000000000000000000000000000000000000000',
-  kind: 0, // Standalone
   payoutAddress: '0x0000000000000000000000000000000000000000',
   renderer: '0x0000000000000000000000000000000000000000', // default renderer
   mintHook: '0x0000000000000000000000000000000000000000',
@@ -101,20 +88,12 @@ const cfg = {
   idMode: 0, // Sequential
 };
 
-const emptyWork = {
-  code: [],
-  deps: [],
-  codeURI: '',
-  codeHash: `0x${'00'.repeat(32)}`,
-  injectionVersion: 0,
-  renderParams: '',
-};
-
 const hash = await walletClient.writeContract({
   address: FACTORY,
-  abi: sovereignCollectionFactoryAbi,
+  abi: collectionFactoryAbi,
   functionName: 'createCollection',
-  args: ['Field Notes', 'FIELD', artistAddress, cfg, emptyWork, [], []],
+  // (name, symbol, owner, cfg, initialMinters, creators)
+  args: ['Field Notes', 'FIELD', artistAddress, cfg, [], []],
 });
 
 const receipt = await publicClient.waitForTransactionReceipt({hash});
@@ -124,7 +103,7 @@ The new collection's address is in the `CollectionCreated` event of the receipt'
 
 ## After deploy
 
-The owner can still call the config setters (`setRenderer`, `setMintHook`, `setPriceStrategy`, `setMinter`, `setPayoutAddress`, and the sale-term setters) until they choose to lock things down with `lockRenderer` and `lockSupply`. Presentation data is published separately, in renderer-land: a generative work writes its `WorkConfig` with `GenerativeRenderer.setWork(collection, work)` (lockable one-way with `lockWork(collection)`), and cover art / captures go to [RenderAssets](/docs/collections/contracts/render-assets) — both authorized by the collection's own owner/admin root. Nothing about the clone's code changes; only its slot pointers and stored config do. See:
+The owner can still call the config setters (`setRenderer`, `setMintHook`, `setPriceStrategy`, `setMinter`, `setPayoutAddress`, and the sale-term setters) until they choose to lock things down with `lockRenderer` and `lockSupply`. Presentation data is published separately, in renderer-land: a generative work lives in the artist's own renderer (deployed separately and pointed at via the `renderer` slot), and cover art / captures go to [RenderAssets](/docs/collections/contracts/render-assets), authorized by the collection's own owner/admin root. Nothing about the clone's code changes; only its slot pointers and stored config do. See:
 
 - [The four slots](/docs/collections/concepts/four-slots) for what each slot controls and when it can change
 - [Mint](/docs/collections/guides/mint) for the built-in paid mint paths

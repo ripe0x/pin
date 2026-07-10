@@ -109,7 +109,7 @@ the local specifics.
   For a shared singleton, reference it with `{{addr:collectionFactory}}` so the
   real address substitutes automatically once deployed.
 - TypeScript examples use viem and import ABIs from `@pin/abi`
-  (`import {sovereignCollectionAbi} from '@pin/abi'`) or fetch `/abis/<Name>.json`.
+  (`import {collectionAbi} from '@pin/abi'`) or fetch `/abis/<Name>.json`.
 
 ## Ordering
 

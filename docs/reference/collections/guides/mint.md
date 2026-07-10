@@ -63,7 +63,7 @@ cast send <COLLECTION_ADDRESS> "mintWithReferral(uint256,address,bytes)" \
 ```ts
 import {createWalletClient, createPublicClient, http, parseEther} from 'viem';
 import {mainnet} from 'viem/chains';
-import {sovereignCollectionAbi} from '@pin/abi';
+import {collectionAbi} from '@pin/abi';
 
 const COLLECTION = '<COLLECTION_ADDRESS>';
 
@@ -78,14 +78,14 @@ const walletClient = createWalletClient({
 
 const price = await publicClient.readContract({
   address: COLLECTION,
-  abi: sovereignCollectionAbi,
+  abi: collectionAbi,
   functionName: 'currentPrice',
   args: [walletClient.account.address, 1n, '0x'],
 });
 
 const hash = await walletClient.writeContract({
   address: COLLECTION,
-  abi: sovereignCollectionAbi,
+  abi: collectionAbi,
   functionName: 'mintWithReferral',
   args: [1n, referrerAddress, '0x'],
   value: price,

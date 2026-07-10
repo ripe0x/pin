@@ -29,11 +29,10 @@ core assigns ids, never reused after burn) or Pooled (an authorized minter
 supplies ids, and a burned id can be minted again as a fresh instance). Every
 sale term is a live setting (window, price, royalty, supply cap). The core
 stores NO presentation data: `tokenURI`/`contractURI` defer wholly to the
-renderer slot, with the work config and static images living in renderer-land
-([GenerativeRenderer](/docs/collections/contracts/generative-renderer)'s work
-registry, [RenderAssets](/docs/collections/contracts/render-assets)). Two
-one-way locks cover the state the core actually owns: `lockRenderer` (pin the
-renderer pointer, optional) and `lockSupply` (the scarcity promise). Payment accrues as
+renderer slot, with any generative work config living in the artist's own
+renderer and static images in [RenderAssets](/docs/collections/contracts/render-assets).
+Two one-way locks cover the state the core actually owns: `lockRenderer` (pin
+the renderer pointer, optional) and `lockSupply` (the scarcity promise). Payment accrues as
 pull-payment balances claimed through `withdraw`; no external transfer happens
 during a mint, so a reverting recipient can never brick minting.
 
@@ -121,11 +120,12 @@ window with `setMintWindow` and the status follows.
 The core locks only what it owns. `lockRenderer` (optional, off by default)
 permanently pins the renderer pointer; `lockSupply` permanently freezes the
 supply cap — the scarcity promise, binding extension minters too. Everything
-presentation-side is the renderer's own offer: for the bundled
-GenerativeRenderer, `lockWork(collection)` pins the algorithm, so pointer lock
-+ work lock = full presentation permanence. The core cannot attest an arbitrary
-renderer's internals — a custom renderer's mutability is the artist's
-inspectable choice, not the core's promise.
+presentation-side is the renderer's own offer: a bring-your-own generative
+renderer makes its own permanence promise (deployed immutable, or with its own
+one-way lock), so pointer lock + an immutable renderer = full presentation
+permanence. The core cannot attest an arbitrary renderer's internals — a
+custom renderer's mutability is the artist's inspectable choice, not the
+core's promise.
 
 ### Live reads
 
@@ -277,9 +277,10 @@ One-way, optional (off by default): permanently pin the renderer pointer, so
 `tokenURI`/`contractURI` are answered by the current renderer contract forever.
 The core cannot attest what a renderer does internally — an immutable renderer
 plus a locked pointer is full presentation permanence; a mutable renderer with
-a locked pointer is the artist's explicit, inspectable choice. Pairs with the
-renderer-side work lock (`GenerativeRenderer.lockWork`) for generative works.
-Reverts `RendererIsLocked` if already locked. Emits `RendererLocked`.
+a locked pointer is the artist's explicit, inspectable choice. Pairs with
+whatever permanence a bring-your-own renderer offers (an immutable renderer, or
+its own one-way lock) for generative works. Reverts `RendererIsLocked` if
+already locked. Emits `RendererLocked`.
 
 ## function setCreators
 
@@ -686,9 +687,9 @@ metadata.
 
 ## event BatchMetadataUpdate
 
-ERC-4906 range refresh signal, emitted by `setRenderer` and `setWork` (covering
-all tokens) and by `notifyMetadataUpdate` (renderer- or admin-chosen range).
-Marketplaces subscribe to this to re-fetch cached metadata.
+ERC-4906 range refresh signal, emitted by `setRenderer` (covering all tokens)
+and by `notifyMetadataUpdate` (renderer- or admin-chosen range). Marketplaces
+subscribe to this to re-fetch cached metadata.
 
 ## event RendererSet
 

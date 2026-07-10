@@ -3,7 +3,6 @@
   "chainId": 1,
   "collectionFactory": "",
   "defaultRenderer": "",
-  "generativeRenderer": "",
   "renderAssets": "",
   "allowlistHook": "",
   "perWalletCapHook": "",

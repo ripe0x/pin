@@ -12,7 +12,7 @@ Every event the Collections contracts emit, grouped by contract. Signatures and 
 
 **[`ApprovalForAll`](/docs/collections/contracts/collection#approvalforall)** · Standard ERC721 operator approval event.
 
-**[`BatchMetadataUpdate`](/docs/collections/contracts/collection#batchmetadataupdate)** · ERC-4906 range refresh signal, emitted by `setRenderer` and `setWork` (covering all tokens) and by `notifyMetadataUpdate` (renderer- or admin-chosen range).
+**[`BatchMetadataUpdate`](/docs/collections/contracts/collection#batchmetadataupdate)** · ERC-4906 range refresh signal, emitted by `setRenderer` (covering all tokens) and by `notifyMetadataUpdate` (renderer- or admin-chosen range).
 
 **[`Burned`](/docs/collections/contracts/collection#burned)** · Emitted when a token is burned.
 
@@ -65,12 +65,6 @@ Every event the Collections contracts emit, grouped by contract. Signatures and 
 **[`CollectionCreated`](/docs/collections/contracts/factory#collectioncreated)** · Emitted once per successful `createCollection` call, with `owner` and `collection` both indexed.
 
 **[`Deprecated`](/docs/collections/contracts/factory#deprecated)** · Emitted once when the deployer permanently deprecates the factory, carrying the successor address (zero if none named).
-
-## GenerativeRenderer
-
-**[`WorkLocked`](/docs/collections/contracts/generative-renderer#worklocked)** · Emitted once when a collection's work definition is permanently locked.
-
-**[`WorkSet`](/docs/collections/contracts/generative-renderer#workset)** · Emitted when a collection's work definition is set or replaced, carrying the new `codeHash`.
 
 ## RenderAssets
 

@@ -20,9 +20,9 @@ DefaultRenderer covers the static-artwork case: one image per token (either
 a per-token override or the collection's shared cover), with the token's
 [Mint Mark](/docs/collections/concepts/mint-marks-and-entropy) surfaced as
 derived provenance attributes for sequential-id collections. A collection
-that wants unique-per-token generative art points its renderer slot at
-[GenerativeRenderer](/docs/collections/contracts/generative-renderer)
-or a purpose-built [IRenderer](/docs/collections/contracts/i-renderer) instead.
+that wants unique-per-token generative art points its renderer slot at a
+purpose-built [IRenderer](/docs/collections/contracts/i-renderer) the artist
+deploys (a bring-your-own generative renderer) instead.
 
 ## function tokenURI
 

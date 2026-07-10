@@ -4,14 +4,18 @@ pragma solidity ^0.8.24;
 import {Script, console2} from "forge-std/Script.sol";
 import {Catalog} from "../src/Catalog.sol";
 import {DefaultRenderer} from "../src/collection/renderers/DefaultRenderer.sol";
-import {GenerativeRenderer} from "../src/collection/renderers/GenerativeRenderer.sol";
 import {RenderAssets} from "../src/collection/renderers/RenderAssets.sol";
 import {Collection} from "../src/collection/Collection.sol";
 import {CollectionFactory} from "../src/collection/CollectionFactory.sol";
 
-/// @notice Deploy script for the Collection system: Catalog,
-///         DefaultRenderer, GenerativeRenderer, the Collection
-///         implementation, and the factory that clones it.
+/// @notice Deploy script for the Collection system: Catalog, RenderAssets,
+///         DefaultRenderer, the Collection implementation, and the factory
+///         that clones it.
+///
+///         Generative works are NOT deployed here: each ships as a
+///         bring-your-own renderer (a work-specific IRenderer the artist
+///         deploys and points their collection's renderer slot at), so there
+///         is no shared onchain assembler in this singleton set.
 ///
 /// @dev    Deploy order (Catalog first so the factory can wire it): Catalog has no
 ///         constructor arguments, so — exactly like `Catalog` (see
@@ -25,32 +29,19 @@ import {CollectionFactory} from "../src/collection/CollectionFactory.sol";
 ///         `runs`), same source. Pin the toolchain (solc 0.8.24, optimizer
 ///         runs = 200, per `foundry.toml`) — salt alone is not enough.
 ///
-///         DefaultRenderer, the Collection implementation, and the
-///         factory have no constructor args either, but are deployed via
-///         plain CREATE here (not CREATE2) since nothing downstream needs
-///         them at a predicted address ahead of time and a plain `new` keeps
-///         the script simple. If cross-chain address parity for these ever
-///         matters, they can be moved behind the same deterministic-deployer
-///         pattern with no other changes.
-///
-///         GenerativeRenderer DOES take constructor args (scriptyBuilder,
-///         gunzipStore, gunzipFile), so its init code
-///         hash depends on those args as well as the bytecode. Even if it
-///         were deployed via CREATE2 with a fixed salt, it would only land at
-///         the same address on chains where the scripty builder and gunzip
-///         store happen to be deployed at the same addresses AND the same
-///         args are passed. Scripty v2 and EthFS are deployed deterministically
-///         on many chains, but that's an external project's guarantee, not
-///         this script's — verify the args are correct for the target chain
-///         before relying on any address prediction here. This script uses
-///         plain CREATE for GenerativeRenderer, so no address is predicted or
-///         asserted; it is deployed at whatever address `new` returns on the
-///         target chain.
+///         RenderAssets, DefaultRenderer, the Collection implementation, and
+///         the factory are deployed via plain CREATE here (not CREATE2) since
+///         nothing downstream needs them at a predicted address ahead of time
+///         and a plain `new` keeps the script simple. (RenderAssets and the
+///         Collection impl take no constructor args; DefaultRenderer takes the
+///         RenderAssets address deployed one step earlier.) If cross-chain
+///         address parity for these ever matters, they can be moved behind the
+///         same deterministic-deployer pattern with no other changes.
 ///
 ///         Deploy order (later steps depend on earlier addresses):
 ///           1. Catalog                   (or reuse via CATALOG env)
-///           2. DefaultRenderer          (CREATE, no args)
-///           3. GenerativeRenderer       (CREATE, scriptyBuilder/gunzipStore/gunzipFile)
+///           2. RenderAssets             (CREATE, no args)
+///           3. DefaultRenderer          (CREATE, renderAssets)
 ///           4. Collection impl (CREATE, no args; constructor calls
 ///                                        _disableInitializers so the impl
 ///                                        itself can never be initialized)
@@ -80,15 +71,6 @@ contract DeployCollectionSystemScript is Script {
     address internal constant DETERMINISTIC_DEPLOYER =
         0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
-
-    /// @dev Real, deterministically-deployed mainnet scripty v2 builder and
-    ///      EthFS v2 file storage. Same addresses this repo's
-    ///      GenerativeRendererFork test exercises against
-    ///      (test/collection/renderers/GenerativeRendererFork.t.sol).
-    address internal constant SCRIPTY_BUILDER_V2 = 0xD7587F110E08F4D120A231bA97d3B577A81Df022;
-    address internal constant ETHFS_V2_FILE_STORAGE = 0x8FAA1AAb9DA8c75917C43Fb24fDdb513edDC3245;
-    string internal constant GUNZIP_FILE = "gunzipScripts-0.0.1.js";
-
     function run() external {
         uint256 deployerPk = vm.envUint("PRIVATE_KEY");
 
@@ -117,14 +99,6 @@ contract DeployCollectionSystemScript is Script {
         vm.stopBroadcast();
         console2.log("DefaultRenderer deployed at:", address(defaultRenderer));
 
-        // ── 3. GenerativeRenderer — plain CREATE, constructor args pinned above ──
-        vm.startBroadcast(deployerPk);
-        GenerativeRenderer generativeRenderer = new GenerativeRenderer(
-            SCRIPTY_BUILDER_V2, address(renderAssets), ETHFS_V2_FILE_STORAGE, GUNZIP_FILE
-        );
-        vm.stopBroadcast();
-        console2.log("GenerativeRenderer deployed at:", address(generativeRenderer));
-
         // ── 4. Collection implementation — plain CREATE, no args ──
         vm.startBroadcast(deployerPk);
         Collection implementation = new Collection();
@@ -149,8 +123,8 @@ contract DeployCollectionSystemScript is Script {
         console2.log("");
         console2.log("Summary:");
         console2.log("  Catalog:                   ", catalog);
+        console2.log("  RenderAssets:              ", address(renderAssets));
         console2.log("  DefaultRenderer:           ", address(defaultRenderer));
-        console2.log("  GenerativeRenderer:        ", address(generativeRenderer));
         console2.log("  Collection impl:  ", address(implementation));
         console2.log("  CollectionFactory:", address(factory));
     }

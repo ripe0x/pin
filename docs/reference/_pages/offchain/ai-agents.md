@@ -85,13 +85,13 @@ Or via viem with the typed ABI:
 ```ts
 import {createPublicClient, http} from 'viem';
 import {mainnet} from 'viem/chains';
-import {sovereignCollectionAbi} from '@pin/abi';
+import {collectionAbi} from '@pin/abi';
 
 const client = createPublicClient({chain: mainnet, transport: http('https://ethereum-rpc.publicnode.com')});
 
 const [cfg, status, minted] = await client.readContract({
   address: '<COLLECTION_ADDRESS>',
-  abi: sovereignCollectionAbi,
+  abi: collectionAbi,
   functionName: 'config',
 });
 ```

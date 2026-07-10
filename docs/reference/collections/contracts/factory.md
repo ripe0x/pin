@@ -28,22 +28,22 @@ and calls `initialize` on the fresh clone in the same call. The collection
 comes into existence already owned, priced, windowed, and (optionally)
 minter-wired and attributed; there is no window between deploy and
 configuration for anyone to front-run. See
-[the four slots](/docs/collections/concepts/four-slots) for what `CollectionConfig` and
-`WorkConfig` configure, and the
+[the four slots](/docs/collections/concepts/four-slots) for what `CollectionConfig`
+configures, and the
 [deploy a collection guide](/docs/collections/guides/deploy-a-collection) for a worked
 example of the call.
 
-### The optional Catalog write
+### Creator listing at init
 
-When `artists` is non-empty and the factory was deployed with a non-zero
-`catalog` address, the new collection writes its opening roster to the
-[Catalog](/docs/collections/contracts/catalog) singleton during its own
-`initialize`, with `msg.sender == address(this) == collection`, which is one
-of Catalog's two authorized caller paths. If `artists` is empty, or the
-factory has no catalog wired, the write is skipped entirely and the
-collection starts with no roster. The owner can still call
-`Catalog.setArtists` directly at any later point, subject to the same
-authorization rules.
+The `creators` argument seeds the collection's own listed-creator set (the
+owner's side of attribution) during `initialize` — `isListedCreator[c]` is set
+for each, emitting `CreatorListed`. This is the collection's own storage, not a
+write to any shared registry: the [Catalog](/docs/collections/contracts/catalog)
+is only ever *read*. A listed creator completes the two-sided handshake by
+claiming the collection in their own Catalog (`addContract`, from their own
+address), after which `isConfirmedCreator` reads true. If `creators` is empty
+the collection starts with no listing; the owner can add or remove listings
+later with `setCreators`.
 
 ## Write functions
 
@@ -59,16 +59,15 @@ belongs to the `owner` argument, which becomes the collection's `Ownable`
 owner)
 
 Deploys an EIP-1167 clone of `implementation` and initializes it atomically
-with the given name, symbol, owner, `CollectionConfig`, `WorkConfig`,
-extension minters, and catalog roster. Reverts with `owner required` if
-`owner` is the zero address.
+with the given name, symbol, owner, `CollectionConfig`, extension minters, and
+creator listing. Reverts with `owner required` if `owner` is the zero address.
 
 `initialMinters` grants extension-minter status at init, so pooled or backed
 forms that sell exclusively through a custom minter deploy fully wired in
 one transaction; leave it empty for collections that sell through the
-core's built-in fixed-price path. `artists` is the opening
-[Catalog](/docs/collections/contracts/catalog) roster; each listed artist still
-needs to claim the collection in their own Catalog for the credit to read as
+core's built-in fixed-price path. `creators` is the owner's opening creator
+listing; each listed creator still needs to claim the collection in their own
+[Catalog](/docs/collections/contracts/catalog) for the credit to read as
 mutually confirmed.
 
 On success, marks the new address in `isCollection`, appends it to
@@ -80,9 +79,8 @@ address collection = factory.createCollection(
     "MC",
     artistAddress,
     cfg,
-    workCfg,
     initialMinters,
-    artists
+    creators
 );
 ```
 

@@ -46,13 +46,6 @@ Every state-changing function in the Collections contracts and who may call it. 
 | [`createCollection`](/docs/collections/contracts/factory#createcollection) | permissionless (anyone may deploy; ongoing control over the result |
 | [`deprecate`](/docs/collections/contracts/factory#deprecate) | deployer-only (`msg.sender` must be the factory deployer, else `NotDeployer`) |
 
-## GenerativeRenderer
-
-| Function | Access |
-| --- | --- |
-| [`setWork`](/docs/collections/contracts/generative-renderer#setwork) | collection owner or admin (`onlyCollectionAdmin`, else `NotCollectionAdmin`) |
-| [`lockWork`](/docs/collections/contracts/generative-renderer#lockwork) | collection owner or admin (`onlyCollectionAdmin`, else `NotCollectionAdmin`) |
-
 ## RenderAssets
 
 | Function | Access |

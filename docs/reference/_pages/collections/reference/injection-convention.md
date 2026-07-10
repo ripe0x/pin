@@ -5,7 +5,7 @@ description: How a generative work's code receives its token context, onchain an
 
 # Injection convention
 
-How a generative work's code receives its token context, onchain and off. This is the load-bearing parity contract of the collection system: the onchain [GenerativeRenderer](/docs/collections/contracts/generative-renderer), the studio previewer, the mint surface, and the artist-site embed must inject the identical object, so a preview is the render.
+How a generative work's code receives its token context, onchain and off. This is the load-bearing parity contract of the collection system: a work's onchain generative renderer, the studio previewer, the mint surface, and the artist-site embed must inject the identical object, so a preview is the render.
 
 ## The context object
 
@@ -17,7 +17,7 @@ window.tokenData = {
   tokenId: "123",      // decimal string
   collection: "0x…",    // checksum-agnostic lowercase hex address
   chainId: 1,
-  version: 1             // == WorkConfig.injectionVersion
+  version: 1             // == the work's injection version
 };
 ```
 
@@ -39,16 +39,16 @@ window.tokenData = {
 
 
 
-## Onchain assembly (GenerativeRenderer)
+## Onchain assembly
 
 Body tag order in the assembled HTML:
 
-1. dependencies (`WorkConfig.deps`, each per its `CodeKind`). Dependencies are libraries: they MUST NOT read `tokenData`.
+1. dependencies (the work's dependency files, each per its code kind). Dependencies are libraries: they MUST NOT read `tokenData`.
 2. the context injection tag (inline `tagContent`, exactly the object above)
-3. the artist's code (`WorkConfig.code`, each per its `CodeKind`)
+3. the artist's code (the work's code files, each per its code kind)
 4. gunzip helper (plain script, from onchain storage), LAST, present only when any tag is gzipped. The helper decompresses at its own parse time by scanning the gzip tags that PRECEDE it and replacing each with an executing script tag in document order; placed earlier it would find nothing. Gzipped tags do not execute at parse time, so execution order remains: deps, then (already-parsed) context, then code, with libraries like p5 auto-starting off the late load.
 
-The document is emitted by ScriptyBuilderV2 (`getEncodedHTMLString`) and returned as `data:text/html;base64,…` in the metadata `animation_url`. See [Write a renderer](/docs/collections/guides/write-a-renderer) for how a collection's `renderer` slot points at `GenerativeRenderer` and how `WorkConfig` is set and locked.
+A generative renderer typically emits the document with ScriptyBuilderV2 (`getEncodedHTMLString`) and returns it as `data:text/html;base64,…` in the metadata `animation_url`. See [Write a renderer](/docs/collections/guides/write-a-renderer) for how a collection's `renderer` slot points at a generative renderer and how such a renderer stores and locks its work.
 
 ## Offchain parity implementations
 
@@ -62,9 +62,9 @@ Test seeds in the studio are ordinary `tokenData` objects with synthetic `hash` 
 
 ## Versioning
 
-`WorkConfig.injectionVersion` pins which revision of this document a work was authored against; the renderer echoes it as `tokenData.version`. Additive changes bump the minor conventions here without a version bump; breaking changes (renamed fields, changed ordering) require a new version and a new renderer, never a mutation of this one.
+A work's injection version pins which revision of this document it was authored against; the renderer echoes it as `tokenData.version`. Additive changes bump the minor conventions here without a version bump; breaking changes (renamed fields, changed ordering) require a new version and a new renderer, never a mutation of this one.
 
-See [Write a renderer](/docs/collections/guides/write-a-renderer) for implementing or adopting a renderer against this convention, and [GenerativeRenderer](/docs/collections/contracts/generative-renderer) for the generated contract reference of the onchain assembler.
+See [Write a renderer](/docs/collections/guides/write-a-renderer) for implementing or adopting a renderer against this convention.
 
 ## Seed derivation (the protocol standard)
 

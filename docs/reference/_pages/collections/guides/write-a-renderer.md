@@ -84,9 +84,9 @@ contract Dithers is SVGRenderer {
 
 Solidity SVG is the highest preservation tier the system offers: no JS runtime, no browser to drift, and it renders in anything that parses SVG, including bare `<img>` tags, so SVG works also mostly skip the capture worker used for thumbnails of HTML works.
 
-### GenerativeRenderer (default for script-based generative)
+### Bring-your-own generative renderer (script-based work)
 
-An ownerless singleton for Art Blocks-style long-form generative work, and the registry of generative work configs: per-collection `WorkConfig` is stored in the renderer itself, written by the collection's owner/admins (`setWork(collection, work)`) and lockable one-way (`lockWork(collection)`). At `tokenURI` time it reads its own registry plus the token's seed, assembles a complete HTML document via ScriptyBuilderV2 from onchain-stored files (dependencies + the injected token context + the artist's code), and returns `tokenURI` JSON whose `animation_url` is a `data:text/html;base64,...` URI. See [Deploy a collection](/docs/collections/guides/deploy-a-collection) for the `WorkConfig` fields, and [Injection convention](/docs/collections/reference/injection-convention) for the exact context object the assembled document injects.
+Art Blocks-style long-form generative work ships as its own renderer: you deploy a work-specific `IRenderer` and point the collection's renderer slot at it. There is no shared assembler — the renderer owns its work definition however it likes (immutable constructor args, or its own owner-gated setter plus a one-way lock). At `tokenURI` time it reads the token's seed through [ICollectionView](/docs/collections/contracts/i-collection-view), assembles a complete HTML document from onchain-stored files (dependencies + the injected token context + the artist's code, e.g. via ScriptyBuilderV2), and returns `tokenURI` JSON whose `animation_url` is a `data:text/html;base64,...` URI. Follow the [Injection convention](/docs/collections/reference/injection-convention) for the exact context object the assembled document must inject, so an offchain preview is byte-for-byte the render.
 
 ## Installing a renderer
 
@@ -97,17 +97,8 @@ function renderer() external view returns (address); // resolved: override or de
 
 `setRenderer` reverts `RendererIsLocked` once the owner has called `lockRenderer` (optional, off by default). The lock is one-way and pins the pointer: after locking, this exact renderer contract answers `tokenURI` forever. The core cannot attest what a renderer does internally — an immutable renderer plus a locked pointer is full presentation permanence, while a mutable renderer with a locked pointer is the artist's explicit, inspectable choice.
 
-## Locking the work
+## Renderer permanence
 
-For generative collections, the companion permanence lever lives in the renderer's own registry:
+`lockRenderer` (on the collection) pins *which* renderer answers `tokenURI` forever; it does not attest what that renderer does internally. A generative renderer makes its *own* permanence promise: deploy it immutable (no setters at all), or give it a one-way lock over its work definition. A locked pointer plus an immutable renderer is the strongest guarantee the system offers short of the collection contract itself, which is already immutable from deploy.
 
-```solidity
-// on GenerativeRenderer, authorized by the collection's owner/admins
-function setWork(address collection, WorkConfig calldata work) external; // reverts WorkIsLocked once locked
-function lockWork(address collection) external; // one-way
-function workLockedOf(address collection) external view returns (bool);
-```
-
-`lockRenderer` (on the collection) pins *who* renders; `lockWork` (in the renderer) pins *what the work is*. Together they are the strongest guarantee the system offers short of the contract itself being immutable from deploy, which it already is.
-
-See [IRenderer](/docs/collections/contracts/i-renderer) and [ICollectionView](/docs/collections/contracts/i-collection-view) for the generated interface reference, [GenerativeRenderer](/docs/collections/contracts/generative-renderer) and [DefaultRenderer](/docs/collections/contracts/default-renderer) for the deployed singletons, and [Injection convention](/docs/collections/reference/injection-convention) for the render-context contract every offchain preview (studio, mint surface, artist-site embed) must match byte-for-byte with the onchain assembly.
+See [IRenderer](/docs/collections/contracts/i-renderer) and [ICollectionView](/docs/collections/contracts/i-collection-view) for the generated interface reference, [DefaultRenderer](/docs/collections/contracts/default-renderer) for the deployed fallback singleton, and [Injection convention](/docs/collections/reference/injection-convention) for the render-context contract every offchain preview (studio, mint surface, artist-site embed) must match byte-for-byte with the onchain assembly.

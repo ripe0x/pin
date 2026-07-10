@@ -1,14 +1,12 @@
 import "server-only"
 import { createPublicClient, decodeFunctionResult, encodeFunctionData, http, type Address } from "viem"
 import { mainnet } from "viem/chains"
-import { catalogAbi, collectionAbi, collectionFactoryAbi, generativeRendererAbi, renderAssetsAbi } from "@pin/abi"
-import { ARTIST_RECORD_REGISTRY, ATTRIBUTION, MAINNET_CHAIN_ID, getAddressOrNull } from "@pin/addresses"
+import { catalogAbi, collectionAbi, collectionFactoryAbi, renderAssetsAbi } from "@pin/abi"
+import { ARTIST_RECORD_REGISTRY, MAINNET_CHAIN_ID, getAddressOrNull } from "@pin/addresses"
 import { fetchMetadataForUri } from "@pin/token-metadata"
 import { pgCache } from "./pg-cache"
 import {
   decodeCollectionConfig,
-  decodeWorkConfig,
-  generativeRenderer,
   renderAssetsAddress,
   type Collection,
   CollectionStatus,
@@ -76,33 +74,21 @@ export async function getCollection(address: Address): Promise<Collection | null
         })
       const [cfgRaw, status, minted] = cfgRes as RawConfigReturn
 
-      // Presentation data lives in renderer-land: the work config in the
-      // GenerativeRenderer's registry, the cover in RenderAssets. Both reads
-      // tolerate absence (custom renderer, nothing configured yet).
-      const gen = generativeRenderer()
+      // Presentation data lives in renderer-land: the cover in RenderAssets.
+      // Generative work now ships as bring-your-own renderers (each renderer
+      // owns its config and tokenURI), so there is no shared work-config read
+      // here; the cover read tolerates absence (custom renderer, nothing set).
       const assets = renderAssetsAddress()
-      const [workRaw, cover] = await Promise.all([
-        gen
-          ? client
-              .readContract({
-                address: gen,
-                abi: generativeRendererAbi,
-                functionName: "workOf",
-                args: [address],
-              })
-              .catch(() => null)
-          : Promise.resolve(null),
-        assets
-          ? client
-              .readContract({
-                address: assets,
-                abi: renderAssetsAbi,
-                functionName: "coverOf",
-                args: [address],
-              })
-              .catch(() => "")
-          : Promise.resolve(""),
-      ])
+      const cover = assets
+        ? await client
+            .readContract({
+              address: assets,
+              abi: renderAssetsAbi,
+              functionName: "coverOf",
+              args: [address],
+            })
+            .catch(() => "")
+        : ""
 
       return {
         address,
@@ -114,9 +100,10 @@ export async function getCollection(address: Address): Promise<Collection | null
         renderer: renderer as Address,
         priceStrategy: priceStrategy as Address,
         cfg: decodeCollectionConfig(cfgRaw),
-        work: workRaw
-          ? decodeWorkConfig(workRaw as Parameters<typeof decodeWorkConfig>[0])
-          : { code: [], deps: [], codeURI: "", codeHash: ("0x" + "0".repeat(64)) as `0x${string}`, injectionVersion: 1, renderParams: "" },
+        // Shared work-config read removed with the shared GenerativeRenderer;
+        // bring-your-own renderers own their config. Kept as an empty default
+        // so consumers that gate on work.code.length fall back to the cover.
+        work: { code: [], deps: [], codeURI: "", codeHash: ("0x" + "0".repeat(64)) as `0x${string}`, injectionVersion: 1, renderParams: "" },
         cover: (cover as string) ?? "",
         status: Number(status) as CollectionStatus,
         minted: minted as bigint,

@@ -7,10 +7,12 @@ pragma solidity ^0.8.24;
 // One OZ ERC721 contract == one collection. A collection is a fixed-price
 // edition, a generative collection, or a backed/pooled work depending on which
 // modules fill its slots; the core stores ownership, money paths, and the
-// per-token seed only. ALL presentation data (work config, cover art,
-// captures) lives in renderer-land (WorkTypes.sol / RenderAssets.sol): the
-// core's tokenURI defers wholly to the renderer slot, optionally pinned
-// forever with lockRenderer(). Relationship/graph semantics live in companion contracts
+// per-token seed only. ALL presentation data (cover art, captures, and any
+// generative work config) lives in renderer-land (RenderAssets.sol and each
+// renderer's own storage): the core's tokenURI defers wholly to the renderer
+// slot, optionally pinned forever with lockRenderer(). Generative works ship
+// as bring-your-own renderers (a work-specific IRenderer the artist deploys
+// and points the slot at), not a shared core-owned assembler. Relationship/graph semantics live in companion contracts
 // (Attribution today; a relationship registry when the graph product ships),
 // never in the immutable core.
 // ─────────────────────────────────────────────────────────────────────────────

@@ -44,11 +44,6 @@ emit({
   ],
 });
 emit({
-  artifact: "GenerativeRenderer.sol/GenerativeRenderer.json",
-  exportName: "generativeRendererAbi",
-  outFiles: ["packages/abi/src/generativeRenderer.ts"],
-});
-emit({
   artifact: "DefaultRenderer.sol/DefaultRenderer.json",
   exportName: "defaultRendererAbi",
   outFiles: ["packages/abi/src/defaultRenderer.ts"],
@@ -71,7 +66,7 @@ emit({
   outFiles: ["packages/abi/src/holdsCollectionHook.ts"],
 });
 
-// Render-land registries (work configs + static display assets).
+// Render-land registry of static display assets (covers + captures).
 emit({
   artifact: "RenderAssets.sol/RenderAssets.json",
   exportName: "renderAssetsAbi",

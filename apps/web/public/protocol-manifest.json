@@ -30,13 +30,6 @@
           "docs": "/docs/collections/contracts/default-renderer",
           "role": "The canonical built-in renderer for [Collection](/docs/collections/contracts/collection)."
         },
-        "GenerativeRenderer": {
-          "address": null,
-          "kind": "singleton",
-          "abi": "/abis/GenerativeRenderer.json",
-          "docs": "/docs/collections/contracts/generative-renderer",
-          "role": "The default renderer for script-based generative collections: a stateless shared singleton that assembles a complete HTML document per token and returns it as the `animation_url` of the token's metadata."
-        },
         "RenderAssets": {
           "address": null,
           "kind": "singleton",

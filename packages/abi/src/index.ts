@@ -5,7 +5,6 @@ export { sovereignAuctionHouseAbi } from "./sovereignAuctionHouse.ts"
 export { sovereignAuctionHouseFactoryAbi } from "./sovereignAuctionHouseFactory.ts"
 export { collectionAbi } from "./collection.ts"
 export { collectionFactoryAbi } from "./collectionFactory.ts"
-export { generativeRendererAbi } from "./generativeRenderer.ts"
 export { defaultRendererAbi } from "./defaultRenderer.ts"
 // Collection slot implementations + interfaces (docs generator + integrators)
 export { allowlistHookAbi } from "./allowlistHook.ts"
