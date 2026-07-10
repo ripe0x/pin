@@ -7,7 +7,8 @@ import { MintCollectionCTA } from "@/components/collections/MintCollectionCTA"
 import { WithdrawPanel } from "@/components/collections/WithdrawPanel"
 import { CollectionMintHistory } from "@/components/collections/CollectionMintHistory"
 import { AttributionRoster } from "@/components/collections/AttributionRoster"
-import { GenerativeHero, RecentMintsGrid } from "@/components/collections/GenerativeViews"
+import { ExploreGrid, GenerativeHero, RecentMintsGrid } from "@/components/collections/GenerativeViews"
+import { CollectionFocusRefresh } from "@/components/collections/CollectionFocusRefresh"
 import {
   getAttribution,
   getCollection,
@@ -16,6 +17,7 @@ import {
   getRecentTokenMarks,
 } from "@/lib/collection-onchain"
 import {
+  CollectionStatus,
   PND_CHAIN_ID,
   REFERRAL_SHARE_BPS,
   ZERO_ADDRESS,
@@ -78,8 +80,22 @@ export default async function CollectionPage({ params }: { params: Params }) {
   const pooled = sellsViaMinterOnly(c.cfg.idMode)
   const strategy = hasPriceStrategy(c.priceStrategy)
 
+  // Sold out and window-closed are both Closed onchain but read differently
+  // (see MintCollectionCTA): sold out is the collection completing, so the
+  // page's gallery section becomes the collection's permanent record rather
+  // than a "recent mints" feed. Mirrors MintCollectionCTA's soldOut math.
+  const capReached = c.cfg.supplyCap > 0n && c.minted >= c.cfg.supplyCap
+  const soldOut = c.status === CollectionStatus.Closed && capReached
+  // A mint could still become live on the next read whenever status is
+  // Scheduled or Open (settings are live-settable right up to Closed, and an
+  // artist can reopen a closed window too — but "could a mint start/land
+  // between page loads" is the live-freshness question this focus-refresh
+  // answers, so Closed pages stay perfectly static).
+  const mintCouldBeLive = c.status === CollectionStatus.Scheduled || c.status === CollectionStatus.Open
+
   return (
     <div>
+      {mintCouldBeLive && <CollectionFocusRefresh />}
       <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] min-h-[calc(100vh-64px)]">
         {/* Artwork: full-bleed gray field, sticky on desktop. */}
         <div className="lg:sticky lg:top-16 lg:h-[calc(100vh-64px)] flex items-center justify-center bg-gray-100 dark:bg-bg p-8 lg:p-12">
@@ -225,9 +241,25 @@ export default async function CollectionPage({ params }: { params: Params }) {
       {hasWork && recent.length > 1 && (
         <section className="border-t border-gray-200 px-6 py-10 lg:px-12">
           <h2 className="mb-4 text-[10px] font-mono uppercase tracking-wider text-gray-400">
-            Recent mints
+            {soldOut ? "The collection" : "Recent mints"}
           </h2>
-          <RecentMintsGrid collection={addr} work={c.work} entries={recent} />
+          <RecentMintsGrid
+            collection={addr}
+            work={c.work}
+            entries={recent}
+            live={c.status === CollectionStatus.Open}
+          />
+        </section>
+      )}
+
+      {/* Pre-mint explore: the algorithm's range, before any token exists.
+          Once minting starts, real mints take the section over. */}
+      {hasWork && c.minted === 0n && (
+        <section className="border-t border-gray-200 px-6 py-10 lg:px-12">
+          <h2 className="mb-4 text-[10px] font-mono uppercase tracking-wider text-gray-400">
+            Example outputs
+          </h2>
+          <ExploreGrid collection={addr} work={c.work} />
         </section>
       )}
     </div>
