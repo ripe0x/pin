@@ -60,7 +60,7 @@ export function AllowlistEditor({
         <h3 className="text-sm font-medium">Allowlist</h3>
         <p className="text-xs text-gray-500 leading-relaxed">
           One address per line. Publishing stores the list and returns a
-          root — it grants nothing on its own until you set that root as
+          root. It grants nothing on its own until you set that root as
           active in the activation queue below.
         </p>
       </header>

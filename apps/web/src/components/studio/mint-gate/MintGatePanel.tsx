@@ -41,7 +41,7 @@ function GateStatusCard({ loading, derived }: { loading: boolean; derived: Deriv
         <dt className="text-gray-400">Per-wallet cap</dt>
         <dd>{derived.cap === "0" ? "No limit" : derived.cap}</dd>
         <dt className="text-gray-400">Published list</dt>
-        <dd>{derived.count === null ? "—" : `${derived.count} address${derived.count === 1 ? "" : "es"}`}</dd>
+        <dd>{derived.count === null ? "None" : `${derived.count} address${derived.count === 1 ? "" : "es"}`}</dd>
       </dl>
     </div>
   )
@@ -77,7 +77,7 @@ export function MintGatePanel({ collection }: { collection: `0x${string}` }) {
       />
 
       <p className="text-[10px] font-mono text-gray-400 leading-relaxed border-t border-gray-100 pt-4">
-        Publishing a list only stores it — nothing is granted until you set
+        Publishing a list only stores it. Nothing is granted until you set
         it as the active root onchain. The mint page only ever serves
         proofs for the root that is active right now, so an old published
         list stays inert unless you reactivate it. The state above is
