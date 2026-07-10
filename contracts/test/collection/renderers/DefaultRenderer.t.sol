@@ -9,7 +9,6 @@ import {CollectionFactory} from "../../../src/collection/CollectionFactory.sol";
 import {DefaultRenderer} from "../../../src/collection/renderers/DefaultRenderer.sol";
 import {
     CollectionConfig,
-    CollectionKind,
     IdMode,
     WorkConfig
 } from "../../../src/collection/CollectionTypes.sol";
@@ -39,7 +38,6 @@ contract DefaultRendererTest is Test {
         cfg.artworkURI = ARTWORK;
         cfg.price = 0; // gas-only mint
         cfg.supplyCap = 0;
-        cfg.kind = CollectionKind.Standalone;
         cfg.idMode = IdMode.Sequential;
 
         WorkConfig memory work; // empty: renderer-native / no onchain algorithm
@@ -103,8 +101,12 @@ contract DefaultRendererTest is Test {
         uint256 tokenId = _mint();
         string memory override_ = "ipfs://QmPerTokenOverride";
 
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = tokenId;
+        string[] memory cids = new string[](1);
+        cids[0] = override_;
         vm.prank(artist);
-        collection.setTokenArtwork(tokenId, override_);
+        collection.setTokenArtworkBatch(ids, cids);
 
         string memory json = _decode(collection.tokenURI(tokenId));
         assertTrue(_contains(json, override_), "expected per-token override in image field");
@@ -119,10 +121,11 @@ contract DefaultRendererTest is Test {
 
         assertTrue(_contains(json, '"trait_type":"Mint Order","value":1'), "wrong Mint Order");
         assertTrue(_contains(json, '"trait_type":"Mint Block"'), "missing Mint Block");
-        assertTrue(_contains(json, '"trait_type":"Referrer"'), "missing Referrer");
-        assertTrue(
-            _contains(json, '"trait_type":"Status at Mint","value":"Open"'),
-            "wrong Status at Mint"
+        // Referrer / Status at Mint are deliberately NOT traits: both are
+        // event-only provenance on Minted, no longer stored per token.
+        assertFalse(_contains(json, '"trait_type":"Referrer"'), "Referrer trait was removed");
+        assertFalse(
+            _contains(json, '"trait_type":"Status at Mint"'), "Status at Mint trait was removed"
         );
         assertTrue(
             _contains(json, '"trait_type":"Provenance","value":"First mint of the collection"'),
@@ -143,14 +146,15 @@ contract DefaultRendererTest is Test {
         );
     }
 
-    function test_tokenURI_mintReferrer_reflectsReferrerParam() public {
+    function test_tokenURI_referrerIsNotATrait() public {
         address referrer = makeAddr("referrer");
         vm.prank(collector);
         collection.mintWithReferral(1, referrer, "");
 
+        // referrer is event-only provenance (Minted); it must NOT leak into
+        // token metadata.
         string memory json = _decode(collection.tokenURI(1));
-        // lowercase hex of the referrer address must appear as the trait value
-        assertTrue(_contains(json, _toHexString(referrer)), "expected referrer address in attributes");
+        assertFalse(_contains(json, _toHexString(referrer)), "referrer must not appear in metadata");
     }
 
     // ── contractURI shape ────────────────────────────────────────────────────

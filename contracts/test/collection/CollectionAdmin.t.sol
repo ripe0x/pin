@@ -5,13 +5,7 @@ import {CollectionBase} from "./CollectionBase.sol";
 
 import {Collection} from "../../src/collection/Collection.sol";
 import {ICollection} from "../../src/collection/interfaces/ICollection.sol";
-import {
-    CollectionConfig,
-    CollectionStatus,
-    EdgeType,
-    Ref,
-    RefKind
-} from "../../src/collection/CollectionTypes.sol";
+import {CollectionConfig, CollectionStatus} from "../../src/collection/CollectionTypes.sol";
 
 /// @dev Admins: the owner may grant flat, full-access admin keys. An admin can
 ///      call every management function the owner can EXCEPT managing the admin
@@ -116,7 +110,7 @@ contract CollectionAdminTest is CollectionBase {
         // and having renounced, it can no longer manage
         vm.expectRevert(ICollection.NotAuthorized.selector);
         vm.prank(admin);
-        c.setClosing(true);
+        c.setMintWindow(0, 0);
     }
 
     // ── admin has full management access ──────────────────────────────────────
@@ -132,20 +126,28 @@ contract CollectionAdminTest is CollectionBase {
         c.mint{value: 1 ether}(1);
 
         vm.startPrank(admin);
-        c.setClosing(true);
+        c.setMintWindow(0, 0);
+        c.setPrice(0.5 ether);
+        c.setRoyalty(250, makeAddr("royalty"));
+        c.setSupplyCap(100);
         c.setRenderer(makeAddr("newRenderer"));
         c.setMintHook(makeAddr("hook"));
         c.setPriceStrategy(makeAddr("strategy"));
         c.setMinter(makeAddr("minter"), true);
-        c.setTokenArtwork(1, "ipfs://thumb");
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = 1;
+        string[] memory cids = new string[](1);
+        cids[0] = "ipfs://thumb";
+        c.setTokenArtworkBatch(ids, cids);
         c.setWork(_emptyWork());
-        Ref memory ref = Ref(1, address(c), 0, RefKind.Collection);
-        c.addEdge(EdgeType.BelongsTo, ref);
+        c.notifyMetadataUpdate(1, 1);
         c.setPayoutAddress(makeAddr("payout")); // money routing is in scope for full-access admins
+        c.lockSupply();
         vm.stopPrank();
 
         assertTrue(c.isMinter(makeAddr("minter")));
         assertEq(c.tokenArtwork(1), "ipfs://thumb");
+        assertTrue(c.isSupplyLocked());
     }
 
     /// @dev Full access is not cosmetic: an admin can actually redirect the
@@ -210,14 +212,14 @@ contract CollectionAdminTest is CollectionBase {
 
         vm.expectRevert(ICollection.NotAuthorized.selector);
         vm.prank(admin);
-        c.setClosing(true);
+        c.setMintWindow(0, 0);
     }
 
     function test_nonAdmin_cannotManage() public {
         Collection c = _collection(_freeConfig());
         vm.expectRevert(ICollection.NotAuthorized.selector);
         vm.prank(stranger);
-        c.setClosing(true);
+        c.setMintWindow(0, 0);
     }
 
     function test_owner_remainsAuthorizedAlongsideAdmins() public {
@@ -227,9 +229,9 @@ contract CollectionAdminTest is CollectionBase {
 
         // owner is an implicit admin and keeps full access
         vm.prank(artist);
-        c.setClosing(true);
+        c.setMintWindow(uint64(block.timestamp + 100), 0);
         (, CollectionStatus status,) = c.config();
-        assertEq(uint8(status), uint8(CollectionStatus.Closing));
+        assertEq(uint8(status), uint8(CollectionStatus.Scheduled));
     }
 
     // ── freeze still supreme over admins ──────────────────────────────────────
@@ -247,8 +249,12 @@ contract CollectionAdminTest is CollectionBase {
         vm.prank(admin);
         c.freezeMetadata();
 
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = 1;
+        string[] memory cids = new string[](1);
+        cids[0] = "ipfs://after-freeze";
         vm.expectRevert(ICollection.MetadataIsFrozen.selector);
         vm.prank(admin);
-        c.setTokenArtwork(1, "ipfs://after-freeze");
+        c.setTokenArtworkBatch(ids, cids);
     }
 }

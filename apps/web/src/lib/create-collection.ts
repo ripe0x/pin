@@ -11,7 +11,7 @@
 
 import { bytesToHex, keccak256, type Address } from "viem"
 import { ETHFS_V2_FILE_STORAGE, SCRIPTY_STORAGE_V2, getAddressOrNull } from "@pin/addresses"
-import { CodeKind, type CodeRef } from "./sovereign-collection"
+import { CodeKind, type CodeRef } from "./collection"
 
 export { CodeKind }
 

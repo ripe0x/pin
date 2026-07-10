@@ -84,7 +84,7 @@ export default async function CollectionTokenPage({ params }: { params: Params }
             </p>
           </header>
 
-          <CollectionMintMarkCard mark={t.mark} chainId={PND_CHAIN_ID} />
+          <CollectionMintMarkCard mark={t.mark} />
 
           {t.seed && (
             <div className="rounded-lg border border-gray-200 bg-surface overflow-hidden">

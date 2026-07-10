@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
+import {Vm} from "forge-std/Vm.sol";
 import {ERC20} from "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 
 import {Collection} from "../../../src/collection/Collection.sol";
@@ -218,27 +219,48 @@ contract PooledBackedTest is Test {
         assertEq(collection.totalSupply(), POOL_SIZE);
     }
 
-    // ── claim 4: marks stay truthful after the window ────────────────────────
+    // ── claim 4: Minted events stay truthful after the window ────────────────
 
-    function test_remintAfterWindowRecordsClosedStatus() public {
+    /// @dev Lifecycle status is derived at mint time and stamped into the
+    ///      Minted event (never stored per token): an in-window mint says Open;
+    ///      a post-window pooled re-mint (a redeem cycle) truthfully says
+    ///      Closed. Indexers read the event; nothing onchain re-reads it.
+    function test_remintAfterWindowEmitsClosedStatus() public {
+        vm.recordLogs();
         uint256 a = _mintAs(alice);
         assertEq(
-            uint8(collection.mintMarkOf(a).statusAtMint),
-            uint8(CollectionStatus.Open),
-            "in-window mint marked Open"
+            uint8(_lastMintedStatus()), uint8(CollectionStatus.Open), "in-window mint stamped Open"
         );
 
         vm.prank(alice);
         minter.redeem(a);
 
         vm.warp(block.timestamp + 2 days); // sale window over
+        vm.recordLogs();
         uint256 again = _mintAs(bob);
         assertEq(again, a);
         assertEq(
-            uint8(collection.mintMarkOf(a).statusAtMint),
+            uint8(_lastMintedStatus()),
             uint8(CollectionStatus.Closed),
-            "post-window re-mint marked Closed, truthfully"
+            "post-window re-mint stamped Closed, truthfully"
         );
+    }
+
+    /// @dev Decode statusAtMint from the most recent Minted event in the
+    ///      recorded logs (the last non-indexed field in the event data).
+    function _lastMintedStatus() internal returns (CollectionStatus status) {
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 sig = keccak256(
+            "Minted(address,address,uint256,uint256,uint256,uint48,uint8)"
+        );
+        for (uint256 i = logs.length; i > 0; i--) {
+            if (logs[i - 1].topics[0] == sig) {
+                (,,,, uint8 s) =
+                    abi.decode(logs[i - 1].data, (uint256, uint256, uint256, uint48, uint8));
+                return CollectionStatus(s);
+            }
+        }
+        revert("no Minted event recorded");
     }
 
     // ── guardrail: the paid path is structurally closed in pooled mode ──────

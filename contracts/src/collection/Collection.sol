@@ -20,18 +20,13 @@ import {
     InitParams,
     MintRecord,
     MintMark,
-    WorkConfig,
-    Edge,
-    EdgeType,
-    Path,
-    PathType,
-    Ref
+    WorkConfig
 } from "./CollectionTypes.sol";
 
 /// @title Collection
 /// @notice One artist collection. An OZ ERC721 where every minted token keeps
-///         its own identity: a per-token Mint Mark (provenance), mint-time
-///         entropy (tokenSeed), and a Token Path (forward pointer). Honest
+///         its own identity: a per-token Mint Mark (provenance) and mint-time
+///         entropy (tokenSeed). Honest
 ///         pricing: the collector pays exactly the resolved price. A fixed
 ///         protocol Referral Share is paid out of that price to whoever hosts
 ///         the mint (PND on PND; the artist on their own site; folded back to
@@ -75,9 +70,11 @@ contract Collection is
     ///         someone else.
     uint16 private constant MAX_ROYALTY_BPS = 5_000;
     bytes4 private constant INTERFACE_ID_ERC2981 = 0x2a55205a;
+    bytes4 private constant INTERFACE_ID_ERC4906 = 0x49064906;
 
     bool private _metadataFrozen;
     bool private _workLocked;
+    bool private _supplyLocked;
 
     // Pull-payment balances: mint accrues here; recipients claim via
     // withdraw(). No external transfer happens during mint, so a reverting
@@ -89,9 +86,6 @@ contract Collection is
     uint256 private _totalPending;
 
     address public defaultRenderer; // canonical fallback, set at init
-    address private _renderer; // collection renderer override; 0 = default
-    address private _mintHook; // 0 = none
-    address private _priceStrategy; // 0 = stored fixed price
 
     /// @dev Extension minters, granted explicitly by the owner. They may call
     ///      mintTo/mintToId (non-payable); all value handling is theirs.
@@ -108,7 +102,6 @@ contract Collection is
 
     CollectionConfig private _cfg;
     WorkConfig private _work;
-    bool private _closing;
 
     // Sequential-mode id counter (first id = 1). Unused in pooled mode.
     uint256 private _nextId;
@@ -120,16 +113,6 @@ contract Collection is
     mapping(uint256 => bytes32) private _seed; // current instance's entropy
 
     mapping(uint256 => string) private _tokenArtwork;
-
-    Edge[] private _edges;
-    mapping(uint256 => Path) private _tokenPath;
-    mapping(uint256 => bool) private _tokenPathSet;
-    Path private _defaultPath;
-
-    // Bilateral Collection Graph: an edge A --edgeType--> B is "claimed" by A
-    // via addEdge; B acknowledges it here so a reader can show "verified
-    // mutual" vs "claimed", with no central registry.
-    mapping(bytes32 => bool) private _inboundAck;
 
     constructor() {
         _disableInitializers();
@@ -144,11 +127,11 @@ contract Collection is
         __Ownable_init(p.owner);
         __Ownable2Step_init();
         __ReentrancyGuard_init();
+        // _cfg is the single live source of truth for every setting, including
+        // the module slots; setters write these fields in place, so config()
+        // can never drift from what the contract actually uses.
         _cfg = p.cfg;
         _copyWork(p.work);
-        _renderer = p.cfg.renderer;
-        _mintHook = p.cfg.mintHook;
-        _priceStrategy = p.cfg.priceStrategy;
         defaultRenderer = p.defaultRenderer;
         _nextId = 1;
         for (uint256 i = 0; i < p.initialMinters.length; i++) {
@@ -163,7 +146,6 @@ contract Collection is
             IAttribution(p.attribution).setArtists(address(this), p.artists);
         }
         emit CollectionConfigured(
-            p.cfg.kind,
             p.cfg.idMode,
             p.cfg.price,
             p.cfg.supplyCap,
@@ -230,7 +212,7 @@ contract Collection is
         // once and reused for the settle, so a misbehaving strategy can never
         // make the accounting split a figure the contract did not receive.
         uint256 required;
-        address strategy = _priceStrategy;
+        address strategy = _cfg.priceStrategy;
         if (strategy == address(0)) {
             required = _cfg.price * quantity;
             if (!(msg.value == required)) revert WrongPayment();
@@ -248,10 +230,10 @@ contract Collection is
         uint256 firstTokenId = _nextId;
         _runBeforeHook(msg.sender, quantity, firstTokenId, referrer, hookData);
 
-        CollectionStatus statusAtMint = _statusForMark(); // Open or Closing here
+        CollectionStatus statusAtMint = _statusForMark(); // always Open here
         uint256 firstMintIndex = _mintedEver;
         for (uint256 i = 0; i < quantity; i++) {
-            _mintOne(msg.sender, firstTokenId + i, referrer, statusAtMint);
+            _mintOne(msg.sender, firstTokenId + i);
         }
         _nextId = firstTokenId + quantity;
 
@@ -293,7 +275,7 @@ contract Collection is
         _runBeforeHook(to, 1, tokenId, referrer, hookData);
         CollectionStatus statusAtMint = _statusForMark();
         uint256 mintIndex = _mintedEver;
-        _mintOne(to, tokenId, referrer, statusAtMint);
+        _mintOne(to, tokenId);
         _nextId = tokenId + 1;
         _runAfterHook(to, 1, tokenId, referrer, hookData);
         emit Minted(to, referrer, tokenId, 1, mintIndex, uint48(block.number), statusAtMint);
@@ -315,7 +297,7 @@ contract Collection is
         _runBeforeHook(to, 1, tokenId, referrer, hookData);
         CollectionStatus statusAtMint = _statusForMark();
         uint256 mintIndex = _mintedEver;
-        _mintOne(to, tokenId, referrer, statusAtMint);
+        _mintOne(to, tokenId);
         _runAfterHook(to, 1, tokenId, referrer, hookData);
         emit Minted(to, referrer, tokenId, 1, mintIndex, uint48(block.number), statusAtMint);
     }
@@ -323,18 +305,16 @@ contract Collection is
     /// @dev Shared per-token mint effects: ownership, Mint Mark, entropy.
     ///      OZ _mint reverts on an existing id, which is the whole pooled-mode
     ///      correctness argument: a live id can never be minted over.
-    function _mintOne(address to, uint256 tokenId, address referrer, CollectionStatus statusAtMint)
-        private
-    {
+    ///      The record stores only what the onchain renderer must read
+    ///      synchronously (block + order, both injected into the render
+    ///      context); referrer and lifecycle status are event-only provenance
+    ///      on the Minted event.
+    function _mintOne(address to, uint256 tokenId) private {
         uint256 mintIndex = _mintedEver;
         _mintedEver = mintIndex + 1;
         _mint(to, tokenId);
-        _record[tokenId] = MintRecord({
-            mintBlock: uint48(block.number),
-            mintIndex: uint40(mintIndex),
-            statusAtMint: uint8(statusAtMint),
-            referrer: referrer
-        });
+        _record[tokenId] =
+            MintRecord({mintBlock: uint48(block.number), mintIndex: uint40(mintIndex)});
         _seed[tokenId] =
             keccak256(abi.encode(block.prevrandao, address(this), tokenId, to, mintIndex));
     }
@@ -374,11 +354,13 @@ contract Collection is
         }
     }
 
-    /// @dev The truthful lifecycle status stamped into a Mint Mark. On the
-    ///      paid path this is Open or Closing (Closed mints revert on the
-    ///      window/cap checks). On the extension path Closed is possible and
-    ///      correct: a pooled re-mint after the window (a redeem cycle) is a
-    ///      legitimate mint whose mark should say so.
+    /// @dev The truthful lifecycle status stamped into a Mint Mark. On the paid
+    ///      path this is always Open: the window/cap checks above already reverted
+    ///      Scheduled (MintNotStarted) and Closed (MintEnded / cap). On the
+    ///      extension path all three are possible and correct: Scheduled for an
+    ///      early mint before the public window opens, and Closed for a pooled
+    ///      re-mint after the window (a redeem cycle) — each a legitimate mint
+    ///      whose mark should say so.
     function _statusForMark() private view returns (CollectionStatus) {
         return _lifecycleStatus();
     }
@@ -390,7 +372,7 @@ contract Collection is
         address referrer,
         bytes memory hookData
     ) private {
-        address hook = _mintHook;
+        address hook = _cfg.mintHook;
         if (hook != address(0)) {
             if (!(IMintHook(hook).beforeMint(minter, quantity, firstTokenId, referrer, hookData)
                     == IMintHook.beforeMint.selector)) revert HookRejected();
@@ -404,7 +386,7 @@ contract Collection is
         address referrer,
         bytes memory hookData
     ) private {
-        address hook = _mintHook;
+        address hook = _cfg.mintHook;
         if (hook != address(0)) {
             IMintHook(hook).afterMint(minter, quantity, firstTokenId, referrer, hookData);
         }
@@ -507,25 +489,98 @@ contract Collection is
     // Config (owner root; every setter below also accepts admins)
     // ─────────────────────────────────────────────────────────────────────────
 
-    function setClosing(bool closing) external override onlyOwnerOrAdmin {
-        _closing = closing;
-        emit ClosingSet(closing);
+    /// @notice Reschedule the built-in paid mint window. Same validation as init
+    ///         (BadMintWindow unless end == 0 or end > start); either bound may be
+    ///         0 to mean "open immediately" / "open-ended". This is the artist's
+    ///         lever to delay, extend, shorten, or reopen the public sale after
+    ///         deploy. It governs ONLY the built-in paid path — extension minters
+    ///         own their own schedules. `isFinal` on Mint Marks is derived live,
+    ///         so reopening a closed window correctly un-finalizes prior tokens;
+    ///         each token's recorded statusAtMint stays truthful for its own mint.
+    function setMintWindow(uint64 start, uint64 end) external override onlyOwnerOrAdmin {
+        if (!(end == 0 || end > start)) revert BadMintWindow();
+        _cfg.mintStart = start;
+        _cfg.mintEnd = end;
+        emit MintWindowSet(start, end);
     }
 
+    /// @notice Update the stored fixed price. Ignored while a price strategy is
+    ///         set. Exact-match payment on the paid path means an in-flight
+    ///         mint priced against the old value reverts rather than overpays.
+    function setPrice(uint256 price) external override onlyOwnerOrAdmin {
+        _cfg.price = price;
+        emit PriceSet(price);
+    }
+
+    /// @notice Update the EIP-2981 royalty (advisory to marketplaces). Same cap
+    ///         as init; receiver 0 = owner().
+    function setRoyalty(uint16 royaltyBps, address royaltyReceiver)
+        external
+        override
+        onlyOwnerOrAdmin
+    {
+        if (!(royaltyBps <= MAX_ROYALTY_BPS)) revert RoyaltyTooHigh();
+        _cfg.royaltyBps = royaltyBps;
+        _cfg.royaltyReceiver = royaltyReceiver;
+        emit RoyaltySet(royaltyBps, royaltyReceiver);
+    }
+
+    /// @notice Update the supply cap (0 = open supply). A cap below what
+    ///         already exists is incoherent and reverts: mints-ever in
+    ///         sequential mode (ids are never reused), live supply in pooled.
+    function setSupplyCap(uint256 supplyCap) external override onlyOwnerOrAdmin {
+        if (_supplyLocked) revert SupplyIsLocked();
+        if (supplyCap != 0) {
+            uint256 floor_ = _cfg.idMode == IdMode.Sequential ? _mintedEver : totalSupply();
+            if (!(supplyCap >= floor_)) revert BadSupplyCap();
+        }
+        _cfg.supplyCap = supplyCap;
+        emit SupplyCapSet(supplyCap);
+    }
+
+    /// @notice One-way: permanently lock the supply cap — the scarcity promise,
+    ///         alongside lockWork (the work) and freezeMetadata (the
+    ///         presentation). The cap binds extension minters too (_checkCap
+    ///         runs on every mint path), so a locked cap is a hard ceiling no
+    ///         matter what minters are granted later.
+    function lockSupply() external override onlyOwnerOrAdmin {
+        if (_supplyLocked) revert SupplyIsLocked();
+        _supplyLocked = true;
+        emit SupplyLocked();
+    }
+
+    /// @dev Renderer/work changes alter every token's metadata; ERC-4906 is the
+    ///      refresh signal marketplaces actually subscribe to.
     function setRenderer(address renderer_) external override onlyOwnerOrAdmin {
         if (!(!_metadataFrozen)) revert MetadataIsFrozen();
-        _renderer = renderer_;
+        _cfg.renderer = renderer_;
         emit RendererSet(renderer_);
+        emit BatchMetadataUpdate(0, type(uint256).max);
     }
 
     function setMintHook(address hook) external override onlyOwnerOrAdmin {
-        _mintHook = hook;
+        _cfg.mintHook = hook;
         emit MintHookSet(hook);
     }
 
     function setPriceStrategy(address strategy) external override onlyOwnerOrAdmin {
-        _priceStrategy = strategy;
+        _cfg.priceStrategy = strategy;
         emit PriceStrategySet(strategy);
+    }
+
+    /// @notice Emit an ERC-4906 refresh for metadata changes the core cannot
+    ///         observe: ChainLive works whose output moved with chain state,
+    ///         reveal-style renderers. Callable by the current renderer or
+    ///         owner/admin. Deliberately works after freezeMetadata — freeze
+    ///         locks the renderer pointer, but a frozen ChainLive work still
+    ///         legitimately changes output; that is its declared physics, and
+    ///         the now-immutable renderer is the trusted party to signal it.
+    ///         Pure event emission; no state is touched.
+    function notifyMetadataUpdate(uint256 fromTokenId, uint256 toTokenId) external override {
+        if (msg.sender != renderer() && msg.sender != owner() && !_admins[msg.sender]) {
+            revert NotAuthorized();
+        }
+        emit BatchMetadataUpdate(fromTokenId, toTokenId);
     }
 
     /// @notice Grant or revoke an extension minter. Explicit, per-minter,
@@ -538,13 +593,9 @@ contract Collection is
         emit MinterSet(minter, allowed);
     }
 
-    function setTokenArtwork(uint256 tokenId, string calldata cid) external override onlyOwnerOrAdmin {
-        if (!(!_metadataFrozen)) revert MetadataIsFrozen();
-        if (!(_wasMinted(tokenId))) revert NotMinted();
-        _tokenArtwork[tokenId] = cid;
-        emit TokenArtworkSet(tokenId, cid);
-    }
-
+    /// @notice Set per-token artwork overrides (captures/thumbnails). A single
+    ///         token is a batch of one. Emits ERC-4906 MetadataUpdate per token
+    ///         so marketplaces refresh.
     function setTokenArtworkBatch(uint256[] calldata tokenIds, string[] calldata cids)
         external
         override
@@ -556,6 +607,7 @@ contract Collection is
             if (!(_wasMinted(tokenIds[i]))) revert NotMinted();
             _tokenArtwork[tokenIds[i]] = cids[i];
             emit TokenArtworkSet(tokenIds[i], cids[i]);
+            emit MetadataUpdate(tokenIds[i]);
         }
     }
 
@@ -583,6 +635,7 @@ contract Collection is
         delete _work; // clear the previous code/deps arrays before re-copying
         _copyWork(work);
         emit WorkSet(work.codeHash);
+        emit BatchMetadataUpdate(0, type(uint256).max);
     }
 
     /// @notice One-way: permanently lock the work config (what the work IS), so `setWork` can
@@ -603,69 +656,6 @@ contract Collection is
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Collection Graph (owner, append-only)
-    // ─────────────────────────────────────────────────────────────────────────
-
-    function addEdge(EdgeType edgeType, Ref calldata target) external override onlyOwnerOrAdmin {
-        _edges.push(Edge({edgeType: edgeType, target: target}));
-        emit EdgeAdded(edgeType, target);
-    }
-
-    function edges() external view override returns (Edge[] memory) {
-        return _edges;
-    }
-
-    /// @notice Acknowledge (ack=true) or revoke (ack=false) an inbound edge
-    ///         claimed by `source`, so a reader can verify the relationship is
-    ///         mutual with no central registry. Idempotent.
-    function acknowledgeEdge(EdgeType edgeType, Ref calldata source, bool ack)
-        external
-        override
-        onlyOwnerOrAdmin
-    {
-        _inboundAck[keccak256(abi.encode(edgeType, source))] = ack;
-        emit EdgeAcknowledged(edgeType, source, ack);
-    }
-
-    function isEdgeAcknowledged(EdgeType edgeType, Ref calldata source)
-        external
-        view
-        override
-        returns (bool)
-    {
-        return _inboundAck[keccak256(abi.encode(edgeType, source))];
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Token Path (owner in v1; pointer layer only)
-    // ─────────────────────────────────────────────────────────────────────────
-
-    function setDefaultPath(PathType pathType, Ref calldata target, bytes32 data)
-        external
-        override
-        onlyOwnerOrAdmin
-    {
-        _defaultPath = Path({pathType: pathType, target: target, data: data});
-        emit DefaultPathSet(pathType, target, data);
-    }
-
-    function setPath(uint256 tokenId, PathType pathType, Ref calldata target, bytes32 data)
-        external
-        override
-        onlyOwnerOrAdmin
-    {
-        if (!(_wasMinted(tokenId))) revert NotMinted();
-        _tokenPath[tokenId] = Path({pathType: pathType, target: target, data: data});
-        _tokenPathSet[tokenId] = true;
-        emit PathSet(tokenId, pathType, target, data);
-    }
-
-    function pathOf(uint256 tokenId) external view override returns (Path memory) {
-        if (_tokenPathSet[tokenId]) return _tokenPath[tokenId];
-        return _defaultPath;
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
     // Mint Marks + reads
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -677,8 +667,6 @@ contract Collection is
         m = MintMark({
             mintIndex: r.mintIndex,
             mintBlock: r.mintBlock,
-            statusAtMint: CollectionStatus(r.statusAtMint),
-            referrer: r.referrer,
             isFirst: r.mintIndex == 0,
             isFinal: _lifecycleStatus() == CollectionStatus.Closed
                 && r.mintIndex == _mintedEver - 1
@@ -699,13 +687,24 @@ contract Collection is
         return _record[tokenId].mintBlock != 0;
     }
 
+    /// @dev Status is a pure function of the window, the cap, and the current
+    ///      block. Nothing here reads stored mutable state: change the clock, the
+    ///      window, or the cap and the status follows. It is reported live by
+    ///      config() and stamped into each Minted event; it is never stored.
+    ///        Scheduled — before mintStart. The paid path reverts MintNotStarted;
+    ///          an extension minter may still mint, and its Minted event
+    ///          truthfully records Scheduled (minted before the public window).
+    ///        Closed    — mintEnd has passed, or a sequential cap is full.
+    ///        Open      — otherwise.
     function _lifecycleStatus() internal view returns (CollectionStatus) {
+        if (_cfg.mintStart != 0 && block.timestamp < _cfg.mintStart) {
+            return CollectionStatus.Scheduled;
+        }
         if (_cfg.mintEnd != 0 && block.timestamp >= _cfg.mintEnd) return CollectionStatus.Closed;
         if (_cfg.supplyCap != 0 && _cfg.idMode == IdMode.Sequential && _mintedEver >= _cfg.supplyCap)
         {
             return CollectionStatus.Closed;
         }
-        if (_closing) return CollectionStatus.Closing;
         return CollectionStatus.Open;
     }
 
@@ -734,7 +733,7 @@ contract Collection is
         override
         returns (uint256)
     {
-        address strategy = _priceStrategy;
+        address strategy = _cfg.priceStrategy;
         if (strategy == address(0)) return _cfg.price * quantity;
         return IPriceStrategy(strategy).priceOf(address(this), minter, quantity, data);
     }
@@ -760,15 +759,15 @@ contract Collection is
     }
 
     function renderer() public view override returns (address) {
-        return _renderer != address(0) ? _renderer : defaultRenderer;
+        return _cfg.renderer != address(0) ? _cfg.renderer : defaultRenderer;
     }
 
     function mintHook() external view override returns (address) {
-        return _mintHook;
+        return _cfg.mintHook;
     }
 
     function priceStrategy() external view override returns (address) {
-        return _priceStrategy;
+        return _cfg.priceStrategy;
     }
 
     function isMinter(address minter) external view override returns (bool) {
@@ -777,6 +776,10 @@ contract Collection is
 
     function isMetadataFrozen() external view override returns (bool) {
         return _metadataFrozen;
+    }
+
+    function isSupplyLocked() external view override returns (bool) {
+        return _supplyLocked;
     }
 
     /// @notice metadataFrozen && workLocked: the art-permanence guarantee.
@@ -819,6 +822,7 @@ contract Collection is
         override(ERC721Upgradeable)
         returns (bool)
     {
-        return interfaceId == INTERFACE_ID_ERC2981 || super.supportsInterface(interfaceId);
+        return interfaceId == INTERFACE_ID_ERC2981 || interfaceId == INTERFACE_ID_ERC4906
+            || super.supportsInterface(interfaceId);
     }
 }

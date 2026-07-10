@@ -16,7 +16,6 @@ import {
   getRecentTokenMarks,
 } from "@/lib/collection-onchain"
 import {
-  COLLECTION_KIND_LABEL,
   PND_CHAIN_ID,
   REFERRAL_SHARE_BPS,
   ZERO_ADDRESS,
@@ -121,7 +120,7 @@ export default async function CollectionPage({ params }: { params: Params }) {
           <header className="pb-5 border-b border-gray-100 space-y-2">
             <h1 className="text-2xl font-medium tracking-tight">{c.name}</h1>
             <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-              {c.symbol} · {COLLECTION_KIND_LABEL[c.cfg.kind]}
+              {c.symbol}
             </p>
           </header>
 

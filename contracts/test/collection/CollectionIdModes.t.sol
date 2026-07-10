@@ -82,7 +82,6 @@ contract CollectionIdModesTest is CollectionBase {
         MintMark memory firstMark = c.mintMarkOf(5);
         bytes32 firstSeed = c.tokenSeed(5);
         assertEq(firstMark.mintIndex, 0);
-        assertEq(firstMark.referrer, referrer);
 
         minter.callBurn(ICollection(address(c)), 5);
         assertEq(c.totalSupply(), 0);
@@ -94,13 +93,18 @@ contract CollectionIdModesTest is CollectionBase {
         // just incidentally different.
         vm.prevrandao(bytes32(uint256(999)));
         address newReferrer = makeAddr("newReferrer");
+        // The re-mint's Minted event carries the NEW instance's context
+        // (referrer is event-only provenance; the record stores block + order).
+        vm.expectEmit(true, true, false, false, address(c));
+        emit ICollection.Minted(
+            stranger, newReferrer, 5, 1, 1, uint48(block.number), CollectionStatus.Open
+        );
         minter.callMintToId(ICollection(address(c)), stranger, 5, newReferrer, "");
 
         assertEq(c.ownerOf(5), stranger);
         assertEq(c.totalSupply(), 1);
         MintMark memory secondMark = c.mintMarkOf(5);
         assertEq(secondMark.mintIndex, 1); // mintedEver keeps advancing, never reused
-        assertEq(secondMark.referrer, newReferrer);
         assertFalse(secondMark.isFirst); // index 1, not 0
 
         bytes32 secondSeed = c.tokenSeed(5);

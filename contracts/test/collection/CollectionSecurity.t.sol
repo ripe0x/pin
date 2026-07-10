@@ -38,7 +38,7 @@ contract CollectionSecurityTest is CollectionBase {
         vm.startPrank(stranger);
 
         vm.expectRevert(unauth);
-        c.setClosing(true);
+        c.setMintWindow(0, 0);
 
         vm.expectRevert(unauth);
         c.setRenderer(makeAddr("r"));
@@ -51,6 +51,21 @@ contract CollectionSecurityTest is CollectionBase {
 
         vm.expectRevert(unauth);
         c.setMinter(makeAddr("m"), true);
+
+        vm.expectRevert(unauth);
+        c.setPrice(1 ether);
+
+        vm.expectRevert(unauth);
+        c.setRoyalty(100, stranger);
+
+        vm.expectRevert(unauth);
+        c.setSupplyCap(1);
+
+        vm.expectRevert(unauth);
+        c.lockSupply();
+
+        vm.expectRevert(unauth);
+        c.notifyMetadataUpdate(1, 1);
 
         vm.expectRevert(unauth);
         c.setPayoutAddress(stranger);
@@ -68,28 +83,21 @@ contract CollectionSecurityTest is CollectionBase {
     }
 
     function test_accessControl_onlyOwnerFunctions_requireMintedToken() public {
-        // setTokenArtwork / setTokenArtworkBatch / setPath revert on
-        // "not minted" before the caller check would even matter for an
-        // unminted id, so exercise them against a MINTED token to isolate
-        // the access-control revert specifically.
+        // setTokenArtworkBatch reverts on "not minted" before the caller
+        // check would even matter for an unminted id, so exercise it against
+        // a MINTED token to isolate the access-control revert specifically.
         Collection c = _collection(_freeConfig());
         vm.prank(collector);
         c.mint(1);
         bytes memory unauth = abi.encodeWithSelector(ICollection.NotAuthorized.selector);
-
-        vm.startPrank(stranger);
-
-        vm.expectRevert(unauth);
-        c.setTokenArtwork(1, "ipfs://nope");
 
         uint256[] memory ids = new uint256[](1);
         ids[0] = 1;
         string[] memory cids = new string[](1);
         cids[0] = "ipfs://nope";
         vm.expectRevert(unauth);
+        vm.prank(stranger);
         c.setTokenArtworkBatch(ids, cids);
-
-        vm.stopPrank();
     }
 
     function test_accessControl_minterGatedFunctions() public {

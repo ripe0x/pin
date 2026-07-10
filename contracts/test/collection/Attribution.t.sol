@@ -12,7 +12,6 @@ import {CollectionFactory} from "../../src/collection/CollectionFactory.sol";
 import {
     CollectionConfig,
     WorkConfig,
-    CollectionKind,
     IdMode
 } from "../../src/collection/CollectionTypes.sol";
 
@@ -404,7 +403,6 @@ contract AttributionTest is Test {
 
     function _freeConfig() internal pure returns (CollectionConfig memory cfg) {
         cfg.artworkURI = "ipfs://QmArtwork";
-        cfg.kind = CollectionKind.Standalone;
         cfg.idMode = IdMode.Sequential;
     }
 

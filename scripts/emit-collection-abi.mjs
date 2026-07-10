@@ -14,38 +14,47 @@ import { dirname, resolve } from "node:path";
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "..");
 
-function emit({ artifact, exportName, outFile }) {
+// `outFiles` are repo-relative destinations. The indexer imports a couple of
+// these ABIs from its own abis/ directory (ponder.config.ts), so those are
+// emitted to BOTH packages/abi/src and apps/indexer/abis to keep the two copies
+// from silently drifting apart the way they did before.
+function emit({ artifact, exportName, outFiles }) {
   const artifactPath = resolve(repoRoot, "contracts/out", artifact);
   const json = JSON.parse(readFileSync(artifactPath, "utf8"));
   const abi = json.abi;
-  const out = resolve(repoRoot, "packages/abi/src", outFile);
   const body = `// Auto-extracted from contracts/out/${artifact}.\n// Re-run: node scripts/emit-collection-abi.mjs\nexport const ${exportName} = ${JSON.stringify(abi, null, 2)} as const;\n`;
-  writeFileSync(out, body);
-  console.log(`Wrote ${out} (${abi.length} items)`);
+  for (const rel of outFiles) {
+    const out = resolve(repoRoot, rel);
+    writeFileSync(out, body);
+    console.log(`Wrote ${out} (${abi.length} items)`);
+  }
 }
 
 emit({
   artifact: "Collection.sol/Collection.json",
   exportName: "collectionAbi",
-  outFile: "collection.ts",
+  outFiles: ["packages/abi/src/collection.ts", "apps/indexer/abis/Collection.ts"],
 });
 emit({
   artifact: "CollectionFactory.sol/CollectionFactory.json",
   exportName: "collectionFactoryAbi",
-  outFile: "collectionFactory.ts",
+  outFiles: [
+    "packages/abi/src/collectionFactory.ts",
+    "apps/indexer/abis/CollectionFactory.ts",
+  ],
 });
 emit({
   artifact: "Attribution.sol/Attribution.json",
   exportName: "attributionAbi",
-  outFile: "attribution.ts",
+  outFiles: ["packages/abi/src/attribution.ts"],
 });
 emit({
   artifact: "GenerativeRenderer.sol/GenerativeRenderer.json",
   exportName: "generativeRendererAbi",
-  outFile: "generativeRenderer.ts",
+  outFiles: ["packages/abi/src/generativeRenderer.ts"],
 });
 emit({
   artifact: "DefaultRenderer.sol/DefaultRenderer.json",
   exportName: "defaultRendererAbi",
-  outFile: "defaultRenderer.ts",
+  outFiles: ["packages/abi/src/defaultRenderer.ts"],
 });

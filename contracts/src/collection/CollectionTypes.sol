@@ -2,45 +2,24 @@
 pragma solidity ^0.8.24;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Sovereign Collection — shared types
+// Collection — shared types
 //
 // One OZ ERC721 contract == one collection. A collection is a fixed-price
 // edition, a generative collection, or a backed/pooled work depending on which
 // modules fill its slots; the core stores ownership, money paths, and
-// provenance only.
+// provenance only. Relationship/graph semantics live in companion contracts
+// (Attribution today; a relationship registry when the graph product ships),
+// never in the immutable core.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// @dev How a Ref's `id` is interpreted.
-enum RefKind {
-    Collection, // contractAddress is a collection; id is ignored (or 0)
-    Token, // id is a tokenId on contractAddress
-    External // id is interpreted by contractAddress's own scheme
-}
-
-/// @notice A globally addressable node in the Collection Graph / Token Path.
-struct Ref {
-    uint64 chainId; // 1 = Ethereum mainnet
-    address contractAddress; // a collection, or any contract
-    uint256 id; // tokenId per `kind` (0 for a collection node)
-    RefKind kind;
-}
-
-/// @notice Semantic role of a collection, used by the Collection Graph.
-///         Default Standalone. Not surfaced in the basic create flow.
-enum CollectionKind {
-    Standalone,
-    Study,
-    Phase,
-    Access,
-    Source,
-    Continuation
-}
-
-/// @notice Lifecycle snapshot captured into each Mint Mark.
+/// @notice Lifecycle status, derived purely from the mint window, the supply
+///         cap, and the current block — never from stored mutable state. It is
+///         a view/event value only: config() reports it live and each Minted
+///         event stamps the value at mint; nothing stores it.
 enum CollectionStatus {
-    Open, // within window and under cap
-    Closing, // artist flagged it as closing soon
-    Closed // window ended or cap reached
+    Scheduled, // before mintStart: the public window has not opened yet
+    Open, // within the window and under cap
+    Closed // window ended, or a sequential cap is full
 }
 
 /// @notice Token id assignment model, fixed at init.
@@ -61,41 +40,6 @@ enum Liveness {
     Pure, // seed only; archival-deterministic
     ChainLive, // reads declared onchain state at render time
     ExternalLive // reads declared offchain sources; fragile by nature
-}
-
-/// @notice Collection Graph edge type.
-enum EdgeType {
-    BelongsTo,
-    StudyOf,
-    PhaseOf,
-    Continues,
-    Source,
-    Access
-}
-
-/// @notice Token Path pointer type. v1 stores/emits these; it does not
-///         execute them.
-enum PathType {
-    None,
-    Continuation,
-    Migration,
-    Claim,
-    Reveal,
-    Burn,
-    Custom
-}
-
-/// @notice A typed, directed edge from this collection to another node.
-struct Edge {
-    EdgeType edgeType;
-    Ref target;
-}
-
-/// @notice A token's forward pointer.
-struct Path {
-    PathType pathType;
-    Ref target;
-    bytes32 data; // optional aux payload
 }
 
 /// @notice How a stored file must be emitted into the assembled HTML.
@@ -127,23 +71,26 @@ struct WorkConfig {
     string renderParams; // renderer-interpreted settings (aspect, versions)
 }
 
-/// @notice The artist-supplied collection configuration, set at init. There is
-///         no referrer-share field: the share is a fixed protocol constant
-///         (REFERRAL_SHARE_BPS) paid to whoever hosts the mint.
+/// @notice The live collection configuration. Set at init and — except
+///         idMode, which is structural — updatable afterward via the setters
+///         (window, price, cap, royalty, payout, and the three module slots),
+///         so this struct is always the single current truth that config()
+///         reports. There is no referrer-share field: the share is a fixed
+///         protocol constant (REFERRAL_SHARE_BPS) paid to whoever hosts the
+///         mint.
 struct CollectionConfig {
     string artworkURI; // shared/cover art; per-token overridable
     uint256 price; // wei; used when priceStrategy is unset. 0 = gas only
-    uint256 supplyCap; // 0 = open supply
+    uint256 supplyCap; // 0 = open supply; lockable via lockSupply()
     uint64 mintStart; // unix seconds; 0 = open immediately
     uint64 mintEnd; // unix seconds; 0 = open-ended
     uint16 royaltyBps; // EIP-2981
     address royaltyReceiver; // 0 = owner()
-    CollectionKind kind; // graph role; default Standalone
     address payoutAddress; // artist proceeds; 0 = owner()
     address renderer; // 0 = default renderer
     address mintHook; // 0 = none
     address priceStrategy; // 0 = stored price
-    IdMode idMode;
+    IdMode idMode; // fixed at init
 }
 
 /// @notice Everything initialize() needs, bundled so the call stays within
@@ -161,22 +108,22 @@ struct InitParams {
     address[] artists; // collab roster, written by the collection during init
 }
 
-/// @notice Per-token mint record, stored packed in a single slot
-///         (48 + 40 + 8 + 160 = 256 bits). `mintIndex` is uint40 so the record fills the
-///         slot exactly; 2^40 mints is unreachable, so the count never truncates.
+/// @notice Per-token mint record: exactly the facts the onchain renderer must
+///         read synchronously (both are injected into the render context), in
+///         one packed slot. Everything else about a mint — referrer, lifecycle
+///         status — is event-only provenance (`Minted`), reconstructed by
+///         indexers, never stored. `mintBlock != 0` doubles as the
+///         was-ever-minted sentinel. `mintIndex` is uint40; 2^40 mints is
+///         unreachable, so the count never truncates.
 struct MintRecord {
     uint48 mintBlock;
     uint40 mintIndex; // 0-based global mint order across the collection
-    uint8 statusAtMint; // CollectionStatus
-    address referrer;
 }
 
 /// @notice The derived, public Mint Mark for a single token.
 struct MintMark {
     uint40 mintIndex;
     uint48 mintBlock;
-    CollectionStatus statusAtMint;
-    address referrer;
     bool isFirst; // mintIndex == 0
     bool isFinal; // collection Closed && mintIndex == last ever assigned
 }

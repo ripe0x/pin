@@ -9,7 +9,6 @@ import {
     CodeKind,
     CodeRef,
     CollectionConfig,
-    CollectionKind,
     IdMode,
     Liveness,
     WorkConfig
@@ -134,7 +133,6 @@ contract SeedDevCollections is Script {
         CollectionConfig memory cfg;
         cfg.price = 0.005 ether;
         cfg.supplyCap = 64;
-        cfg.kind = CollectionKind.Standalone;
         cfg.renderer = generativeRenderer;
         cfg.idMode = IdMode.Sequential;
 
@@ -158,7 +156,6 @@ contract SeedDevCollections is Script {
         CollectionConfig memory cfg;
         cfg.price = 0.003 ether;
         cfg.supplyCap = 32;
-        cfg.kind = CollectionKind.Standalone;
         cfg.renderer = generativeRenderer;
         cfg.idMode = IdMode.Sequential;
 
@@ -174,7 +171,6 @@ contract SeedDevCollections is Script {
         cfg.artworkURI = FIELD_COVER;
         cfg.price = 0.002 ether;
         cfg.supplyCap = 25;
-        cfg.kind = CollectionKind.Standalone;
         cfg.idMode = IdMode.Sequential;
 
         field = CollectionFactory(factory).createCollection(

@@ -4,16 +4,10 @@ pragma solidity ^0.8.24;
 import {
     CollectionConfig,
     CollectionStatus,
-    CollectionKind,
     IdMode,
     InitParams,
     MintMark,
-    WorkConfig,
-    Edge,
-    EdgeType,
-    Path,
-    PathType,
-    Ref
+    WorkConfig
 } from "../CollectionTypes.sol";
 
 /// @title IMintMarks
@@ -22,50 +16,17 @@ interface IMintMarks {
     function mintMarkOf(uint256 tokenId) external view returns (MintMark memory);
 }
 
-/// @title ICollectionGraph
-/// @notice Directed, typed, append-only edges from this collection to any node.
-interface ICollectionGraph {
-    event EdgeAdded(EdgeType indexed edgeType, Ref target);
-    event EdgeAcknowledged(EdgeType indexed edgeType, Ref source, bool ack);
-
-    function addEdge(EdgeType edgeType, Ref calldata target) external;
-
-    function edges() external view returns (Edge[] memory);
-
-    /// @notice B acknowledges (ack=true) or revokes an inbound edge claimed by
-    ///         `source` (A), making the A->B relationship verifiable as mutual.
-    function acknowledgeEdge(EdgeType edgeType, Ref calldata source, bool ack) external;
-
-    function isEdgeAcknowledged(EdgeType edgeType, Ref calldata source)
-        external
-        view
-        returns (bool);
-}
-
-/// @title ITokenPath
-/// @notice Per-token forward pointer (the pointer layer; inert in v1).
-interface ITokenPath {
-    event PathSet(uint256 indexed tokenId, PathType indexed pathType, Ref target, bytes32 data);
-    event DefaultPathSet(PathType indexed pathType, Ref target, bytes32 data);
-
-    function pathOf(uint256 tokenId) external view returns (Path memory);
-
-    function setDefaultPath(PathType pathType, Ref calldata target, bytes32 data) external;
-
-    function setPath(uint256 tokenId, PathType pathType, Ref calldata target, bytes32 data)
-        external;
-}
-
 /// @title ICollection
 /// @notice One artist collection: an OZ ERC721 deployed as an immutable
 ///         EIP-1167 clone. The core holds ownership, money paths, and
 ///         provenance (per-token Mint Marks + mint-time entropy); all
 ///         variability lives in four slots (renderer, price strategy, mint
 ///         hook, extension minters) and optional companion contracts.
+///         Relationship/graph semantics live in companions, never here.
 ///         Honest fixed pricing with a fixed built-in Referral Share; no
 ///         other protocol fee. There is no upgrade path and no seal: what
 ///         deploys is what runs, forever.
-interface ICollection is IMintMarks, ICollectionGraph, ITokenPath {
+interface ICollection is IMintMarks {
     // ── errors ──────────────────────────────────────────────────────────────
     error OwnerRequired();
     error RendererRequired();
@@ -100,10 +61,11 @@ interface ICollection is IMintMarks, ICollectionGraph, ITokenPath {
     error RenounceDisabled();
     error AlreadyAdmin();
     error NotAnAdmin();
+    error BadSupplyCap();
+    error SupplyIsLocked();
 
     // ── events ──────────────────────────────────────────────────────────────
     event CollectionConfigured(
-        CollectionKind kind,
         IdMode idMode,
         uint256 price,
         uint256 supplyCap,
@@ -111,6 +73,10 @@ interface ICollection is IMintMarks, ICollectionGraph, ITokenPath {
         uint64 mintEnd,
         string artworkURI
     );
+
+    // ── ERC-4906 (metadata refresh signals marketplaces subscribe to) ───────
+    event MetadataUpdate(uint256 _tokenId);
+    event BatchMetadataUpdate(uint256 _fromTokenId, uint256 _toTokenId);
 
     /// @notice One event per mint call. Built-in paths cover
     ///         [firstTokenId, firstTokenId + quantity - 1]; extension mints
@@ -132,7 +98,11 @@ interface ICollection is IMintMarks, ICollectionGraph, ITokenPath {
 
     event Burned(uint256 indexed tokenId);
     event ReferralPaid(address indexed referrer, uint256 amount);
-    event ClosingSet(bool closing);
+    event MintWindowSet(uint64 mintStart, uint64 mintEnd);
+    event PriceSet(uint256 price);
+    event RoyaltySet(uint16 royaltyBps, address indexed royaltyReceiver);
+    event SupplyCapSet(uint256 supplyCap);
+    event SupplyLocked();
     event RendererSet(address indexed renderer);
     event MintHookSet(address indexed hook);
     event PriceStrategySet(address indexed strategy);
@@ -156,7 +126,26 @@ interface ICollection is IMintMarks, ICollectionGraph, ITokenPath {
     ///         collection in their own Catalog.
     function initialize(InitParams calldata p) external;
 
-    function setClosing(bool closing) external;
+    /// @notice Reschedule the built-in paid mint window (owner or admin). Reverts
+    ///         BadMintWindow unless `end` is 0 (open-ended) or `end > start`.
+    ///         Governs the built-in paid path only; extension minters keep their
+    ///         own schedules.
+    function setMintWindow(uint64 start, uint64 end) external;
+    /// @notice Update the stored fixed price (ignored while a price strategy is
+    ///         set). Exact-match payment means an in-flight mint at the old
+    ///         price reverts rather than overpaying.
+    function setPrice(uint256 price) external;
+    /// @notice Update the EIP-2981 royalty. Capped at MAX_ROYALTY_BPS;
+    ///         receiver 0 = owner().
+    function setRoyalty(uint16 royaltyBps, address royaltyReceiver) external;
+    /// @notice Update the supply cap (0 = open supply). Reverts SupplyIsLocked
+    ///         after lockSupply(); reverts BadSupplyCap below what already
+    ///         exists (mints-ever in sequential mode, live supply in pooled).
+    function setSupplyCap(uint256 supplyCap) external;
+    /// @notice One-way: permanently lock the supply cap — the scarcity promise.
+    ///         The cap binds extension minters too, so a locked cap is a hard
+    ///         ceiling regardless of what minters are granted later.
+    function lockSupply() external;
     function setRenderer(address renderer) external;
     function setMintHook(address hook) external;
     function setPriceStrategy(address strategy) external;
@@ -174,9 +163,15 @@ interface ICollection is IMintMarks, ICollectionGraph, ITokenPath {
     ///         reverts NotAuthorized; reverts NotAnAdmin if the account is not
     ///         currently an admin.
     function removeAdmin(address account) external;
-    function setTokenArtwork(uint256 tokenId, string calldata cid) external;
+    /// @notice Set per-token artwork overrides (captures/thumbnails). A single
+    ///         token is a batch of one. Emits MetadataUpdate per token.
     function setTokenArtworkBatch(uint256[] calldata tokenIds, string[] calldata cids) external;
     function setPayoutAddress(address payoutAddress) external;
+    /// @notice Emit an ERC-4906 refresh signal for changes the core cannot see
+    ///         (ChainLive works, reveals). Callable by the current renderer or
+    ///         owner/admin; works after freezeMetadata (a frozen ChainLive work
+    ///         still legitimately changes output — that is its declared physics).
+    function notifyMetadataUpdate(uint256 fromTokenId, uint256 toTokenId) external;
     function freezeMetadata() external;
     /// @notice Replace the work definition (the algorithm the renderer runs). Allowed until
     ///         `lockWork`; reverts once locked.
@@ -254,6 +249,8 @@ interface ICollection is IMintMarks, ICollectionGraph, ITokenPath {
     ///         implicit admin and need not appear here).
     function isAdmin(address account) external view returns (bool);
     function isMetadataFrozen() external view returns (bool);
+    /// @notice Whether the supply cap is permanently locked.
+    function isSupplyLocked() external view returns (bool);
     /// @notice metadataFrozen && workLocked: the art-permanence guarantee.
     ///         (The contract itself is immutable from deploy.)
     function isPermanent() external view returns (bool);
