@@ -18,12 +18,13 @@
 import { useRouter } from "next/navigation"
 import { parseEventLogs, type Address, type TransactionReceipt } from "viem"
 import { useAccount, useChainId, useWriteContract, useWaitForTransactionReceipt } from "wagmi"
-import { collectionFactoryAbi } from "@pin/abi"
+import { collectionFactoryAbi, generativeRendererAbi, renderAssetsAbi } from "@pin/abi"
 import { formatWriteError } from "@/components/tx/tx-ui"
 import {
   ZERO_ADDRESS,
   IdMode,
   collectionFactory,
+  renderAssetsAddress,
   generativeRenderer,
 } from "@/lib/collection"
 import { KNOWN_DEPENDENCIES, dependencyCodeRef, CodeKind, scriptyStorageAddress } from "@/lib/create-collection"
@@ -51,6 +52,7 @@ export function DeployStep({
   const chainId = useChainId()
   const factory = collectionFactory(chainId)
   const renderer = generativeRenderer(chainId)
+  const renderAssets = renderAssetsAddress(chainId)
   const scriptyStorage = scriptyStorageAddress(chainId)
 
   const deploy = useWriteContract()
@@ -59,6 +61,24 @@ export function DeployStep({
   })
 
   const deployedAddress = useDeployedAddress(receipt)
+
+  // Post-deploy configuration: presentation data lives in renderer-land, so
+  // a generative work publishes its WorkConfig to the GenerativeRenderer's
+  // registry, and a cover image goes to RenderAssets — each its own tx,
+  // authorized by the collection owner (the connected artist).
+  const workWrite = useWriteContract()
+  const { isLoading: workMining, isSuccess: workDone } = useWaitForTransactionReceipt({
+    hash: workWrite.data,
+  })
+  const coverWrite = useWriteContract()
+  const { isLoading: coverMining, isSuccess: coverDone } = useWaitForTransactionReceipt({
+    hash: coverWrite.data,
+  })
+
+  const needsWork = state.preset === "generative"
+  const needsCover = state.artworkURI.trim().length > 0
+  const workSettled = !needsWork || workDone
+  const coverSettled = !needsCover || coverDone
 
   function toUnix(local: string): bigint {
     if (!local) return 0n
@@ -80,7 +100,6 @@ export function DeployStep({
     // Economics are preset-independent: renderer-native works sell through
     // the same built-in paid path; only the artwork source differs.
     return {
-      artworkURI: state.artworkURI.trim(),
       price: priceWei,
       supplyCap: state.openSupply ? 0n : BigInt(Math.floor(Number(state.supplyCap))),
       mintStart: state.hasWindow ? toUnix(state.startAt) : 0n,
@@ -135,12 +154,61 @@ export function DeployStep({
       address: factory,
       abi: collectionFactoryAbi,
       functionName: "createCollection",
-      args: [state.name.trim(), state.symbol.trim(), address, buildCfg(), buildWorkCfg(), [], artists],
+      args: [state.name.trim(), state.symbol.trim(), address, buildCfg(), [], artists],
     })
   }
 
-  if (deployedAddress) {
+  if (deployedAddress && workSettled && coverSettled) {
     return <SuccessScreen collection={deployedAddress} artistAddress={artistAddress} />
+  }
+
+  if (deployedAddress) {
+    return (
+      <div className="space-y-4">
+        <p className="text-[11px] font-mono text-gray-500">
+          Collection deployed at {deployedAddress}. Finish publishing its
+          presentation data (stored in renderer-land, owned by you):
+        </p>
+        {needsWork && !workDone && (
+          <button
+            className={BTN}
+            disabled={workMining || !renderer}
+            onClick={() =>
+              workWrite.writeContract({
+                address: renderer!,
+                abi: generativeRendererAbi,
+                functionName: "setWork",
+                args: [deployedAddress, buildWorkCfg()],
+              })
+            }
+          >
+            {workMining ? "Publishing work…" : "Publish work onchain"}
+          </button>
+        )}
+        {needsWork && workDone && (
+          <p className="text-[11px] font-mono text-gray-500">Work published ✓</p>
+        )}
+        {needsCover && !coverDone && (
+          <button
+            className={BTN}
+            disabled={coverMining || !renderAssets || (needsWork && !workDone)}
+            onClick={() =>
+              coverWrite.writeContract({
+                address: renderAssets!,
+                abi: renderAssetsAbi,
+                functionName: "setCover",
+                args: [deployedAddress, state.artworkURI.trim()],
+              })
+            }
+          >
+            {coverMining ? "Setting cover…" : "Set cover image"}
+          </button>
+        )}
+        {(workWrite.error || coverWrite.error) && (
+          <p className={ERROR}>{formatWriteError(workWrite.error ?? coverWrite.error, "Publish")}</p>
+        )}
+      </div>
+    )
   }
 
   const busy = deploy.isPending || mining

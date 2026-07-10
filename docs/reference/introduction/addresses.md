@@ -12,6 +12,7 @@ The PND onchain protocols are pre-deploy. These are the shared singletons; their
 | Attribution | _pending deploy_ | [reference](/docs/collections/contracts/attribution) |
 | DefaultRenderer | _pending deploy_ | [reference](/docs/collections/contracts/default-renderer) |
 | GenerativeRenderer | _pending deploy_ | [reference](/docs/collections/contracts/generative-renderer) |
+| RenderAssets | _pending deploy_ | [reference](/docs/collections/contracts/render-assets) |
 | AllowlistHook | _pending deploy_ | [reference](/docs/collections/contracts/allowlist-hook) |
 | PerWalletCapHook | _pending deploy_ | [reference](/docs/collections/contracts/per-wallet-cap-hook) |
 | HoldsCollectionHook | _pending deploy_ | [reference](/docs/collections/contracts/holds-collection-hook) |

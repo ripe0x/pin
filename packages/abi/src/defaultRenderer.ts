@@ -2,6 +2,17 @@
 // Re-run: node scripts/emit-collection-abi.mjs
 export const defaultRendererAbi = [
   {
+    "type": "constructor",
+    "inputs": [
+      {
+        "name": "renderAssets_",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
     "type": "function",
     "name": "contractURI",
     "inputs": [
@@ -16,6 +27,19 @@ export const defaultRendererAbi = [
         "name": "",
         "type": "string",
         "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "renderAssets",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract RenderAssets"
       }
     ],
     "stateMutability": "view"

@@ -6,8 +6,11 @@ pragma solidity ^0.8.24;
 //
 // One OZ ERC721 contract == one collection. A collection is a fixed-price
 // edition, a generative collection, or a backed/pooled work depending on which
-// modules fill its slots; the core stores ownership, money paths, and
-// provenance only. Relationship/graph semantics live in companion contracts
+// modules fill its slots; the core stores ownership, money paths, and the
+// per-token seed only. ALL presentation data (work config, cover art,
+// captures) lives in renderer-land (WorkTypes.sol / RenderAssets.sol): the
+// core's tokenURI defers wholly to the renderer slot, optionally pinned
+// forever with lockRenderer(). Relationship/graph semantics live in companion contracts
 // (Attribution today; a relationship registry when the graph product ships),
 // never in the immutable core.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -33,38 +36,6 @@ enum IdMode {
     Pooled
 }
 
-/// @notice How a stored file must be emitted into the assembled HTML.
-///         Script = plain JS; ScriptGzip = gzipped JS (the renderer loads a
-///         gunzip helper and emits it as a gzip data-URI script tag).
-enum CodeKind {
-    Script,
-    ScriptGzip
-}
-
-/// @notice An onchain-addressable file: a named entry in a scripty v2
-///         storage contract or an EthFS FileStore.
-struct CodeRef {
-    address store;
-    string name;
-    CodeKind kind;
-}
-
-/// @notice What the work is, executably. Interpreted by renderers, stored and
-///         lockable on the collection. Empty for works whose renderer contract
-///         IS the algorithm (Solidity SVG works). The struct states WHERE the
-///         work's assets live (onchain code refs vs the offchain codeURI) and
-///         pins their content (codeHash); how "onchain" a work is, is derivable
-///         from those facts by any external checker and is not self-declared
-///         here.
-struct WorkConfig {
-    CodeRef[] code; // the algorithm, chunked/named in onchain storage
-    CodeRef[] deps; // library files (gzipped p5/three/etc.)
-    string codeURI; // offchain pointer for oversized code; hash-verified
-    bytes32 codeHash; // integrity hash of the assembled script ("" refs ok)
-    uint8 injectionVersion; // version of the render-context injection convention
-    string renderParams; // renderer-interpreted settings (aspect, versions)
-}
-
 /// @notice The live collection configuration. Set at init and — except
 ///         idMode, which is structural — updatable afterward via the setters
 ///         (window, price, cap, royalty, payout, and the three module slots),
@@ -73,7 +44,6 @@ struct WorkConfig {
 ///         protocol constant (REFERRAL_SHARE_BPS) paid to whoever hosts the
 ///         mint.
 struct CollectionConfig {
-    string artworkURI; // shared/cover art; per-token overridable
     uint256 price; // wei; used when priceStrategy is unset. 0 = gas only
     uint256 supplyCap; // 0 = open supply; lockable via lockSupply()
     uint64 mintStart; // unix seconds; 0 = open immediately
@@ -95,7 +65,6 @@ struct InitParams {
     string symbol;
     address owner;
     CollectionConfig cfg;
-    WorkConfig work;
     address defaultRenderer;
     address[] initialMinters; // extension minters granted at init
     address attribution; // Attribution singleton; 0 skips the roster write

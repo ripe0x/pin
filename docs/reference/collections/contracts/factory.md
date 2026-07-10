@@ -50,7 +50,7 @@ authorization rules.
 ### createCollection
 
 ```solidity
-function createCollection(string name, string symbol, address owner, CollectionConfig cfg, WorkConfig workCfg, address[] initialMinters, address[] artists) external returns (address collection)
+function createCollection(string name, string symbol, address owner, CollectionConfig cfg, address[] initialMinters, address[] artists) external returns (address collection)
 ```
 
 **Access:** permissionless (anyone may deploy; ongoing control over the result
@@ -85,6 +85,22 @@ address collection = factory.createCollection(
     artists
 );
 ```
+
+### deprecate
+
+```solidity
+function deprecate(address successor_) external
+```
+
+**Access:** deployer-only (`msg.sender` must be the factory deployer, else `NotDeployer`)
+
+One-way kill switch for NEW deploys, for a post-deploy bug discovered in the
+implementation: after deprecation `createCollection` reverts
+`FactoryDeprecated`, and `successor` points integrators at the replacement
+factory (zero if none exists yet). Deployed collections are immutable and
+completely unaffected — the deployer holds zero power over them; this switch
+only stops the buggy implementation from being cloned again. Reverts
+`AlreadyDeprecated` on a second call. Emits `Deprecated`.
 
 ## Read functions
 
@@ -124,6 +140,23 @@ The canonical built-in renderer address wired into every collection this
 factory creates. A collection's owner can still swap its own renderer slot
 after deploy; this is only the value new collections start with.
 
+### deployer
+
+```solidity
+function deployer() external view returns (address)
+```
+
+The address that deployed the factory: the only address that may call
+`deprecate`, and its only privilege.
+
+### deprecated
+
+```solidity
+function deprecated() external view returns (bool)
+```
+
+True once the factory has been permanently deprecated (new deploys revert).
+
 ### implementation
 
 ```solidity
@@ -143,6 +176,15 @@ function isCollection(address) external view returns (bool)
 
 Whether `address` is a collection this factory deployed. Cheaper than
 scanning `allCollections` when a caller only needs a membership check.
+
+### successor
+
+```solidity
+function successor() external view returns (address)
+```
+
+The replacement factory named at deprecation, or zero. Informational — a
+discovery pointer for integrators walking factory generations.
 
 ### totalCollections
 
@@ -167,7 +209,25 @@ discover every collection this factory has produced; it fires in the same
 transaction that initializes the collection, so any indexer following it can
 assume the collection is already fully configured.
 
+### Deprecated
+
+```solidity
+event Deprecated(address indexed successor)
+```
+
+Emitted once when the deployer permanently deprecates the factory, carrying
+the successor address (zero if none named).
+
 ## Errors
+
+**`AlreadyDeprecated()`**
+
+`deprecate` was called on an already-deprecated factory.
+
+**`FactoryDeprecated()`**
+
+`createCollection` was called after deprecation. Deploy through the successor
+factory instead (`successor()`).
 
 **`FailedDeployment()`**
 
@@ -181,3 +241,7 @@ Inherited from OpenZeppelin `Clones`. Raised by the value-forwarding clone
 variants when the factory's own ETH balance is less than the value being
 forwarded to the new clone. `createCollection` does not forward value, so
 this is not reachable through the factory's public surface today.
+
+**`NotDeployer()`**
+
+`deprecate` was called by an address other than the factory deployer.

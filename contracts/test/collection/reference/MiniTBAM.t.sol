@@ -10,7 +10,7 @@ import {CollectionFactory} from "../../../src/collection/CollectionFactory.sol";
 import {IRenderer, ICollectionView} from "../../../src/collection/interfaces/IRenderer.sol";
 import {IPriceStrategy} from "../../../src/collection/interfaces/IPriceStrategy.sol";
 import {IMintHook} from "../../../src/collection/interfaces/IMintHook.sol";
-import {CollectionConfig, IdMode, WorkConfig} from "../../../src/collection/CollectionTypes.sol";
+import {CollectionConfig, IdMode} from "../../../src/collection/CollectionTypes.sol";
 import {MockRenderer} from "../mocks/CollectionMocks.sol";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -182,11 +182,10 @@ contract MiniTBAMTest is Test {
         cfg.priceStrategy = address(strategy);
         cfg.renderer = address(renderer);
         cfg.mintHook = address(mintClock); // bring-your-own mint-time provenance
-        WorkConfig memory work; // renderer-native: the renderer IS the work
 
         collection = Collection(
             factory.createCollection(
-                "Mini TBAM", "MTBAM", artist, cfg, work, new address[](0), new address[](0)
+                "Mini TBAM", "MTBAM", artist, cfg, new address[](0), new address[](0)
             )
         );
 

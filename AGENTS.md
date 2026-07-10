@@ -197,7 +197,15 @@ implicit). `mintMarkOf`/`MintMark`/`IMintMarks` are gone; renderers derive
 traits via `config()`; works needing mint-time data (block, pooled order)
 record it themselves via a mint hook (see the MiniTBAM `MintClock`
 reference). Follow-up (c): `Liveness` (write-only WorkConfig enum) and
-`_nextId` (== `_mintedEver + 1`) also cut. Lifecycle status is derived (`Scheduled`/`Open`/`Closed`), and
+`_nextId` (== `_mintedEver + 1`) also cut. Follow-up (d): ALL presentation
+data moved to renderer-land — WorkConfig lives in GenerativeRenderer's
+per-collection registry (setWork/lockWork/workOf, auth borrowed from the
+collection's owner/isAdmin), covers + captures in the new RenderAssets
+singleton; core locks are now `lockRenderer()` (optional pointer pin,
+replaces freezeMetadata) + `lockSupply()`; seed formula drops the recipient
+(keccak(prevrandao, collection, tokenId, mintIndex), spec'd in
+docs/injection-convention.md); factory gains one-way deployer-only
+deprecate(successor) halting new clones only. Core: 18,113 bytes. Lifecycle status is derived (`Scheduled`/`Open`/`Closed`), and
 the window/price/royalty/cap are live-settable with `lockSupply()` as the
 scarcity promise beside `lockWork`/`freezeMetadata`. Design-doc sections
 describing graph/path as core fields predate this and are historical.

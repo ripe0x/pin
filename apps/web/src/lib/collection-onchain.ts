@@ -1,7 +1,7 @@
 import "server-only"
 import { createPublicClient, decodeFunctionResult, encodeFunctionData, http, type Address } from "viem"
 import { mainnet } from "viem/chains"
-import { attributionAbi, catalogAbi, collectionAbi, collectionFactoryAbi } from "@pin/abi"
+import { attributionAbi, catalogAbi, collectionAbi, collectionFactoryAbi, generativeRendererAbi, renderAssetsAbi } from "@pin/abi"
 import { ARTIST_RECORD_REGISTRY, ATTRIBUTION, MAINNET_CHAIN_ID, getAddressOrNull } from "@pin/addresses"
 import { fetchMetadataForUri } from "@pin/token-metadata"
 import { pgCache } from "./pg-cache"
@@ -9,6 +9,8 @@ import {
   attributionAddress,
   decodeCollectionConfig,
   decodeWorkConfig,
+  generativeRenderer,
+  renderAssetsAddress,
   type Collection,
   CollectionStatus,
   IdMode,
@@ -59,35 +61,64 @@ export async function getCollection(address: Address): Promise<Collection | null
     const client = getClient()
     const base = { address, abi: collectionAbi } as const
     try {
-      const [name, symbol, owner, workLocked, metadataFrozen, permanent, renderer, priceStrategy, cfgRes, workRaw] =
+      const [name, symbol, owner, rendererLocked, supplyLocked, renderer, priceStrategy, cfgRes] =
         await client.multicall({
           allowFailure: false,
           contracts: [
             { ...base, functionName: "name" },
             { ...base, functionName: "symbol" },
             { ...base, functionName: "owner" },
-            { ...base, functionName: "isWorkLocked" },
-            { ...base, functionName: "isMetadataFrozen" },
-            { ...base, functionName: "isPermanent" },
+            { ...base, functionName: "isRendererLocked" },
+            { ...base, functionName: "isSupplyLocked" },
             { ...base, functionName: "renderer" },
             { ...base, functionName: "priceStrategy" },
             { ...base, functionName: "config" },
-            { ...base, functionName: "workConfig" },
           ],
         })
       const [cfgRaw, status, minted] = cfgRes as RawConfigReturn
+
+      // Presentation data lives in renderer-land: the work config in the
+      // GenerativeRenderer's registry, the cover in RenderAssets. Both reads
+      // tolerate absence (custom renderer, nothing configured yet).
+      const gen = generativeRenderer()
+      const assets = renderAssetsAddress()
+      const [workRaw, cover] = await Promise.all([
+        gen
+          ? client
+              .readContract({
+                address: gen,
+                abi: generativeRendererAbi,
+                functionName: "workOf",
+                args: [address],
+              })
+              .catch(() => null)
+          : Promise.resolve(null),
+        assets
+          ? client
+              .readContract({
+                address: assets,
+                abi: renderAssetsAbi,
+                functionName: "coverOf",
+                args: [address],
+              })
+              .catch(() => "")
+          : Promise.resolve(""),
+      ])
+
       return {
         address,
         name: name as string,
         symbol: symbol as string,
         owner: owner as Address,
-        isWorkLocked: workLocked as boolean,
-        isMetadataFrozen: metadataFrozen as boolean,
-        isPermanent: permanent as boolean,
+        isRendererLocked: rendererLocked as boolean,
+        isSupplyLocked: supplyLocked as boolean,
         renderer: renderer as Address,
         priceStrategy: priceStrategy as Address,
         cfg: decodeCollectionConfig(cfgRaw),
-        work: decodeWorkConfig(workRaw as Parameters<typeof decodeWorkConfig>[0]),
+        work: workRaw
+          ? decodeWorkConfig(workRaw as Parameters<typeof decodeWorkConfig>[0])
+          : { code: [], deps: [], codeURI: "", codeHash: ("0x" + "0".repeat(64)) as `0x${string}`, injectionVersion: 1, renderParams: "" },
+        cover: (cover as string) ?? "",
         status: Number(status) as CollectionStatus,
         minted: minted as bigint,
       }
@@ -124,13 +155,12 @@ export async function getCollectionToken(
     const client = getClient()
     const base = { address, abi: collectionAbi } as const
     try {
-      const [ownerRes, seedRes, modeRes, artRes] = await client.multicall({
+      const [ownerRes, seedRes, modeRes] = await client.multicall({
         allowFailure: true,
         contracts: [
           { ...base, functionName: "ownerOf", args: [tokenId] },
           { ...base, functionName: "tokenSeed", args: [tokenId] },
           { ...base, functionName: "idMode", args: [] },
-          { ...base, functionName: "tokenArtwork", args: [tokenId] },
         ],
       })
       // The seed is the was-ever-minted sentinel (tokenSeed reverts otherwise).
@@ -140,8 +170,20 @@ export async function getCollectionToken(
           ? Number(tokenId)
           : null
       const collection = ownerRes.status === "success" ? await getCollection(address) : null
-      const tokenArt = artRes.status === "success" ? (artRes.result as string) : ""
-      const artwork = tokenArt && tokenArt.length > 0 ? tokenArt : collection?.cfg.artworkURI ?? ""
+      // Static image from renderer-land: the capture if one exists, else the
+      // cover — the same resolution the bundled renderers apply.
+      const assets = renderAssetsAddress()
+      const artwork = assets
+        ? await client
+            .readContract({
+              address: assets,
+              abi: renderAssetsAbi,
+              functionName: "imageFor",
+              args: [address, tokenId],
+            })
+            .then((v) => (v as string) ?? "")
+            .catch(() => collection?.cover ?? "")
+        : collection?.cover ?? ""
 
       // tokenURI gets its own call with an explicit gas ceiling, NEVER the
       // multicall: assembling a full onchain HTML document (GenerativeRenderer

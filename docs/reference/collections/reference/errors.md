@@ -7,8 +7,8 @@ Every custom error the Collections contracts can revert with, its contract, and 
 **`AlreadyAdmin`** · [Collection](/docs/collections/contracts/collection#errors)\
 `addAdmin` was called for an account that is already an admin.
 
-**`AlreadyFrozen`** · [Collection](/docs/collections/contracts/collection#errors)\
-`freezeMetadata` was called when metadata is already frozen.
+**`AlreadyDeprecated`** · [CollectionFactory](/docs/collections/contracts/factory#errors)\
+`deprecate` was called on an already-deprecated factory.
 
 **`BadMintWindow`** · [Collection](/docs/collections/contracts/collection#errors)\
 `initialize` or `setMintWindow` was given a non-zero `mintEnd` that is not strictly after `mintStart`.
@@ -46,6 +46,9 @@ Standard ERC721 error: the referenced token id does not exist (never minted or a
 **`ExceedsCap`** · [Collection](/docs/collections/contracts/collection#errors)\
 A mint would cross the supply cap: mints ever in Sequential mode, or live supply in Pooled mode.
 
+**`FactoryDeprecated`** · [CollectionFactory](/docs/collections/contracts/factory#errors)\
+`createCollection` was called after deprecation.
+
 **`FailedDeployment`** · [CollectionFactory](/docs/collections/contracts/factory#errors)\
 Inherited from OpenZeppelin `Clones`.
 
@@ -61,11 +64,8 @@ The `collection` argument to `setArtists`, `lockRoster`, or an authorization che
 **`InvalidInitialization`** · [Collection](/docs/collections/contracts/collection#errors)\
 Standard OpenZeppelin Initializable error: `initialize` was called more than once, or called on the implementation whose initializers are disabled.
 
-**`LengthMismatch`** · [Collection](/docs/collections/contracts/collection#errors)\
-`setTokenArtworkBatch` was given id and CID arrays of different lengths.
-
-**`MetadataIsFrozen`** · [Collection](/docs/collections/contracts/collection#errors)\
-`setRenderer` or `setTokenArtworkBatch` was called after `freezeMetadata`.
+**`LengthMismatch`** · [RenderAssets](/docs/collections/contracts/render-assets#errors)\
+`setCaptures` was given id and URI arrays of different lengths.
 
 **`MintEnded`** · [Collection](/docs/collections/contracts/collection#errors)\
 A paid mint was attempted at or after a non-zero `mintEnd`.
@@ -88,14 +88,20 @@ The caller is neither `collection` itself nor the address a successful `owner()`
 **`NotAuthorized`** · [Collection](/docs/collections/contracts/collection#errors)\
 A management function gated `onlyOwnerOrAdmin` was called by neither the owner nor an admin; `removeAdmin` was called by someone other than the owner or the admin itself; `notifyMetadataUpdate` was called by neither the renderer nor an owner/admin; or `burn` was called without burn authority for the id mode.
 
+**`NotCollectionAdmin`** · [GenerativeRenderer](/docs/collections/contracts/generative-renderer#errors)\
+`setWork` or `lockWork` was called by an address that is neither the collection's owner nor one of its admins.
+
+**`NotCollectionAdmin`** · [RenderAssets](/docs/collections/contracts/render-assets#errors)\
+A write was attempted by an address that is neither the collection's owner nor one of its admins.
+
+**`NotDeployer`** · [CollectionFactory](/docs/collections/contracts/factory#errors)\
+`deprecate` was called by an address other than the factory deployer.
+
 **`NothingToWithdraw`** · [Collection](/docs/collections/contracts/collection#errors)\
 `withdraw` was called for an account with a zero owed balance.
 
 **`NotInitializing`** · [Collection](/docs/collections/contracts/collection#errors)\
 Standard OpenZeppelin Initializable error: an `onlyInitializing` step ran outside an active initialization.
-
-**`NotMinted`** · [Collection](/docs/collections/contracts/collection#errors)\
-`setTokenArtworkBatch` referenced an id that was never minted.
 
 **`NotMinter`** · [Collection](/docs/collections/contracts/collection#errors)\
 `mintTo` or `mintToId` was called by an address that is not an authorized extension minter.
@@ -117,6 +123,9 @@ A built-in paid path (`mint` or `mintWithReferral`) was called on a Pooled colle
 
 **`ReentrancyGuardReentrantCall`** · [Collection](/docs/collections/contracts/collection#errors)\
 Standard OpenZeppelin ReentrancyGuard error: a `nonReentrant` function was re-entered.
+
+**`RendererIsLocked`** · [Collection](/docs/collections/contracts/collection#errors)\
+`setRenderer` or `lockRenderer` was called after `lockRenderer`.
 
 **`RendererRequired`** · [Collection](/docs/collections/contracts/collection#errors)\
 `initialize` was given the zero address as the default renderer.
@@ -145,8 +154,8 @@ A mint with a price strategy set sent less than the strategy's resolved price.
 **`WithdrawFailed`** · [Collection](/docs/collections/contracts/collection#errors)\
 The ETH transfer inside `withdraw` reverted, for example a recipient that rejects payment.
 
-**`WorkAlreadyLocked`** · [Collection](/docs/collections/contracts/collection#errors)\
-`setWork` was called after `lockWork`, or `lockWork` was called when the work is already locked.
+**`WorkIsLocked`** · [GenerativeRenderer](/docs/collections/contracts/generative-renderer#errors)\
+`setWork` or `lockWork` was called after `lockWork`.
 
 **`WrongPayment`** · [Collection](/docs/collections/contracts/collection#errors)\
 A mint with no price strategy set did not send exactly `price * quantity`.

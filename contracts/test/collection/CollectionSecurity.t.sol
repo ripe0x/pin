@@ -71,33 +71,12 @@ contract CollectionSecurityTest is CollectionBase {
         c.setPayoutAddress(stranger);
 
         vm.expectRevert(unauth);
-        c.freezeMetadata();
-
-        vm.expectRevert(unauth);
-        c.lockWork();
+        c.lockRenderer();
 
         vm.expectRevert(unauth);
         c.rescueStrayETH(stranger);
 
         vm.stopPrank();
-    }
-
-    function test_accessControl_onlyOwnerFunctions_requireMintedToken() public {
-        // setTokenArtworkBatch reverts on "not minted" before the caller
-        // check would even matter for an unminted id, so exercise it against
-        // a MINTED token to isolate the access-control revert specifically.
-        Collection c = _collection(_freeConfig());
-        vm.prank(collector);
-        c.mint(1);
-        bytes memory unauth = abi.encodeWithSelector(ICollection.NotAuthorized.selector);
-
-        uint256[] memory ids = new uint256[](1);
-        ids[0] = 1;
-        string[] memory cids = new string[](1);
-        cids[0] = "ipfs://nope";
-        vm.expectRevert(unauth);
-        vm.prank(stranger);
-        c.setTokenArtworkBatch(ids, cids);
     }
 
     function test_accessControl_minterGatedFunctions() public {

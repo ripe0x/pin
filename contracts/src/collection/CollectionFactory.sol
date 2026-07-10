@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {Clones} from "openzeppelin-contracts/contracts/proxy/Clones.sol";
 
 import {Collection} from "./Collection.sol";
-import {CollectionConfig, InitParams, WorkConfig} from "./CollectionTypes.sol";
+import {CollectionConfig, InitParams} from "./CollectionTypes.sol";
 
 /// @title CollectionFactory
 /// @notice Deploys one Collection per work, configured atomically at
@@ -28,10 +28,29 @@ contract CollectionFactory {
     ///         address(0) disables the integration.
     address public immutable attribution;
 
+    /// @notice The deployer: the only address that may deprecate this
+    ///         factory. No other privilege exists — the deployer has zero
+    ///         power over collections already deployed.
+    address public immutable deployer;
+
+    /// @notice One-way kill switch for NEW deploys. If a bug is found in the
+    ///         implementation post-deploy, deprecating stops further clones
+    ///         (createCollection reverts) and points integrators at the
+    ///         successor factory. Deployed collections are immutable and
+    ///         unaffected — by design they cannot be fixed or touched.
+    bool public deprecated;
+    /// @notice The replacement factory once deprecated (informational).
+    address public successor;
+
     mapping(address => bool) public isCollection;
     address[] public allCollections;
 
     event CollectionCreated(address indexed owner, address indexed collection);
+    event Deprecated(address indexed successor);
+
+    error FactoryDeprecated();
+    error NotDeployer();
+    error AlreadyDeprecated();
 
     constructor(address implementation_, address defaultRenderer_, address attribution_) {
         require(implementation_.code.length > 0, "impl has no code");
@@ -39,6 +58,17 @@ contract CollectionFactory {
         implementation = implementation_;
         defaultRenderer = defaultRenderer_;
         attribution = attribution_;
+        deployer = msg.sender;
+    }
+
+    /// @notice One-way: stop new deploys and name a successor (may be zero if
+    ///         none exists yet). Deployer-only.
+    function deprecate(address successor_) external {
+        if (msg.sender != deployer) revert NotDeployer();
+        if (deprecated) revert AlreadyDeprecated();
+        deprecated = true;
+        successor = successor_;
+        emit Deprecated(successor_);
     }
 
     /// @notice Deploy + configure a new collection owned by `owner`.
@@ -58,10 +88,10 @@ contract CollectionFactory {
         string calldata symbol,
         address owner,
         CollectionConfig calldata cfg,
-        WorkConfig calldata workCfg,
         address[] calldata initialMinters,
         address[] calldata artists
     ) external returns (address collection) {
+        if (deprecated) revert FactoryDeprecated();
         require(owner != address(0), "owner required");
         collection = Clones.clone(implementation);
         Collection(collection).initialize(
@@ -70,7 +100,6 @@ contract CollectionFactory {
                 symbol: symbol,
                 owner: owner,
                 cfg: cfg,
-                work: workCfg,
                 defaultRenderer: defaultRenderer,
                 initialMinters: initialMinters,
                 attribution: attribution,

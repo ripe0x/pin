@@ -20,9 +20,7 @@ Every event the Collections contracts emit, grouped by contract. Signatures and 
 
 **[`Initialized`](/docs/collections/contracts/collection#initialized)** · Standard OpenZeppelin Initializable event, emitted once when the clone is initialized.
 
-**[`MetadataFrozen`](/docs/collections/contracts/collection#metadatafrozen)** · Emitted once when `freezeMetadata` renounces renderer and per-token artwork changes.
-
-**[`MetadataUpdate`](/docs/collections/contracts/collection#metadataupdate)** · ERC-4906 single-token refresh signal, emitted per id by `setTokenArtworkBatch`.
+**[`MetadataUpdate`](/docs/collections/contracts/collection#metadataupdate)** · ERC-4906 single-token refresh signal (declared for interface completeness; range refreshes go through `BatchMetadataUpdate` via the setters and `notifyMetadataUpdate`).
 
 **[`Minted`](/docs/collections/contracts/collection#minted)** · One event per mint call — THE permanent per-mint provenance record.
 
@@ -44,6 +42,8 @@ Every event the Collections contracts emit, grouped by contract. Signatures and 
 
 **[`ReferralPaid`](/docs/collections/contracts/collection#referralpaid)** · Emitted when a non-zero referral cut is credited on a paid mint.
 
+**[`RendererLocked`](/docs/collections/contracts/collection#rendererlocked)** · Emitted once when `lockRenderer` permanently pins the renderer pointer.
+
 **[`RendererSet`](/docs/collections/contracts/collection#rendererset)** · Emitted when the renderer slot changes.
 
 **[`RoyaltySet`](/docs/collections/contracts/collection#royaltyset)** · Emitted when the EIP-2981 royalty changes with `setRoyalty`.
@@ -54,25 +54,33 @@ Every event the Collections contracts emit, grouped by contract. Signatures and 
 
 **[`SupplyLocked`](/docs/collections/contracts/collection#supplylocked)** · Emitted once when `lockSupply` permanently locks the supply cap.
 
-**[`TokenArtworkSet`](/docs/collections/contracts/collection#tokenartworkset)** · Emitted when a per-token artwork CID is set, one event per token id (including each id in a batch).
-
 **[`Transfer`](/docs/collections/contracts/collection#transfer)** · Standard ERC721 transfer event, emitted on mint (from the zero address), transfer, and burn (to the zero address).
 
 **[`Withdrawn`](/docs/collections/contracts/collection#withdrawn)** · Emitted when a pull-payment balance is paid out.
 
-**[`WorkLocked`](/docs/collections/contracts/collection#worklocked)** · Emitted once when `lockWork` permanently locks the work config.
-
-**[`WorkSet`](/docs/collections/contracts/collection#workset)** · Emitted when the work config is replaced, carrying the new `codeHash`.
-
 ## CollectionFactory
 
 **[`CollectionCreated`](/docs/collections/contracts/factory#collectioncreated)** · Emitted once per successful `createCollection` call, with `owner` and `collection` both indexed.
+
+**[`Deprecated`](/docs/collections/contracts/factory#deprecated)** · Emitted once when the deployer permanently deprecates the factory, carrying the successor address (zero if none named).
 
 ## Attribution
 
 **[`ArtistsSet`](/docs/collections/contracts/attribution#artistsset)** · Emitted on every successful `setArtists` call, with `collection` and `actor` (the authorized caller) indexed, and the complete new `artists` array in the data.
 
 **[`RosterLocked`](/docs/collections/contracts/attribution#rosterlocked)** · Emitted when `lockRoster` succeeds, including on the idempotent no-op path when the roster was already locked.
+
+## GenerativeRenderer
+
+**[`WorkLocked`](/docs/collections/contracts/generative-renderer#worklocked)** · Emitted once when a collection's work definition is permanently locked.
+
+**[`WorkSet`](/docs/collections/contracts/generative-renderer#workset)** · Emitted when a collection's work definition is set or replaced, carrying the new `codeHash`.
+
+## RenderAssets
+
+**[`CaptureSet`](/docs/collections/contracts/render-assets#captureset)** · Emitted per token when captures are set.
+
+**[`CoverSet`](/docs/collections/contracts/render-assets#coverset)** · Emitted when a collection's cover image changes.
 
 ## AllowlistHook
 

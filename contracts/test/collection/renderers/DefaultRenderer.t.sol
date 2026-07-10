@@ -7,11 +7,8 @@ import {Base64} from "solady/utils/Base64.sol";
 import {Collection} from "../../../src/collection/Collection.sol";
 import {CollectionFactory} from "../../../src/collection/CollectionFactory.sol";
 import {DefaultRenderer} from "../../../src/collection/renderers/DefaultRenderer.sol";
-import {
-    CollectionConfig,
-    IdMode,
-    WorkConfig
-} from "../../../src/collection/CollectionTypes.sol";
+import {RenderAssets} from "../../../src/collection/renderers/RenderAssets.sol";
+import {CollectionConfig, IdMode} from "../../../src/collection/CollectionTypes.sol";
 
 /// @notice Output-shape tests for DefaultRenderer: tokenURI/contractURI shape,
 ///         image field (default vs per-token override), and Mint Mark
@@ -20,6 +17,7 @@ import {
 ///         ICollectionView implementation, not a mock.
 contract DefaultRendererTest is Test {
     DefaultRenderer internal renderer;
+    RenderAssets internal assets;
     Collection internal impl;
     CollectionFactory internal factory;
     Collection internal collection;
@@ -30,26 +28,28 @@ contract DefaultRendererTest is Test {
     string internal constant ARTWORK = "ipfs://QmCollectionArtwork";
 
     function setUp() public {
-        renderer = new DefaultRenderer();
+        assets = new RenderAssets();
+        renderer = new DefaultRenderer(address(assets));
         impl = new Collection();
         factory = new CollectionFactory(address(impl), address(renderer), address(0));
 
         CollectionConfig memory cfg;
-        cfg.artworkURI = ARTWORK;
         cfg.price = 0; // gas-only mint
         cfg.supplyCap = 0;
         cfg.idMode = IdMode.Sequential;
-
-        WorkConfig memory work; // empty: renderer-native / no onchain algorithm
 
         address[] memory noMinters = new address[](0);
         address[] memory noArtists = new address[](0);
 
         collection = Collection(
             factory.createCollection(
-                "Test Collection", "TCOL", artist, cfg, work, noMinters, noArtists
+                "Test Collection", "TCOL", artist, cfg, noMinters, noArtists
             )
         );
+        // Cover art lives in renderer-land: the collection owner writes it to
+        // the RenderAssets registry.
+        vm.prank(artist);
+        assets.setCover(address(collection), ARTWORK);
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
@@ -97,20 +97,36 @@ contract DefaultRendererTest is Test {
         assertTrue(_contains(json, ARTWORK), "expected default collection artwork in image field");
     }
 
-    function test_tokenURI_image_perTokenOverride() public {
+    function test_tokenURI_image_perTokenCapture() public {
         uint256 tokenId = _mint();
-        string memory override_ = "ipfs://QmPerTokenOverride";
+        string memory capture = "ipfs://QmPerTokenCapture";
 
         uint256[] memory ids = new uint256[](1);
         ids[0] = tokenId;
-        string[] memory cids = new string[](1);
-        cids[0] = override_;
+        string[] memory uris = new string[](1);
+        uris[0] = capture;
         vm.prank(artist);
-        collection.setTokenArtworkBatch(ids, cids);
+        assets.setCaptures(address(collection), ids, uris);
 
         string memory json = _decode(collection.tokenURI(tokenId));
-        assertTrue(_contains(json, override_), "expected per-token override in image field");
-        assertFalse(_contains(json, ARTWORK), "collection artwork should not appear once overridden");
+        assertTrue(_contains(json, capture), "expected per-token capture in image field");
+        assertFalse(_contains(json, ARTWORK), "cover should not appear once captured");
+    }
+
+    function test_renderAssets_authIsCollectionOwnerOrAdmin() public {
+        // stranger cannot write assets for a collection they don't control
+        address stranger = makeAddr("stranger");
+        vm.expectRevert(RenderAssets.NotCollectionAdmin.selector);
+        vm.prank(stranger);
+        assets.setCover(address(collection), "ipfs://nope");
+
+        // a collection admin can
+        address admin = makeAddr("assetAdmin");
+        vm.prank(artist);
+        collection.addAdmin(admin);
+        vm.prank(admin);
+        assets.setCover(address(collection), "ipfs://QmByAdmin");
+        assertEq(assets.coverOf(address(collection)), "ipfs://QmByAdmin");
     }
 
     // ── Mint Mark provenance attributes ─────────────────────────────────────

@@ -222,3 +222,39 @@ synced; ABI WorkConfig tuple loses the liveness field.
   close (setMintWindow to now) already exist and cover time-bounded/
   artist-ended mints; the supply cap is the only *trustless, pre-committed
   count* promise (numbered editions). Keep, justified by that use case.
+
+## 2026-07-10 (d): presentation data → renderer-land; seed formula; factory deprecation
+
+Un-reviewed, same cycle. The largest restructure of the set:
+
+- **Core stores NO presentation data.** WorkConfig storage + _copyWork,
+  setWork/lockWork, freezeMetadata/_metadataFrozen, artworkURI (cfg),
+  _tokenArtwork/setTokenArtworkBatch, isPermanent/isWorkLocked/
+  isMetadataFrozen ALL removed from the core. tokenURI/contractURI defer
+  wholly to the renderer slot.
+- **lockRenderer() replaces freezeMetadata**: one-way, OPTIONAL (off by
+  default), pins the renderer pointer only. The core no longer claims to
+  attest renderer internals (it can't): immutable renderer + locked pointer
+  = full presentation permanence; mutable renderer + locked pointer = the
+  artist's inspectable choice. Two core locks remain: lockRenderer,
+  lockSupply.
+- **GenerativeRenderer is now the work registry**: per-collection WorkConfig
+  stored in the renderer (setWork(collection, work) / lockWork(collection) /
+  workOf), auth borrowed from each collection's owner/isAdmin. WorkTypes.sol
+  moved renderer-land.
+- **RenderAssets** (new singleton): covers + per-token captures, same
+  borrowed auth; captures deliberately always refreshable. DefaultRenderer/
+  GenerativeRenderer read images from it.
+- **Seed formula**: recipient removed —
+  keccak256(prevrandao, collection, tokenId, mintIndex). Documented as the
+  protocol standard (with an Art Blocks comparison) in
+  docs/injection-convention.md § Seed derivation.
+- **Factory deprecation**: one-way deployer-only deprecate(successor) halts
+  NEW clones (createCollection reverts FactoryDeprecated) and names a
+  successor; zero power over deployed collections. createCollection lost its
+  workCfg param; CollectionConfig lost artworkURI; InitParams lost work.
+- Measured: core 22,806 → 18,113 bytes (EIP-170 margin +6,463); deploys
+  ~39k gas cheaper (no work copy at init). 389 tests green incl. new
+  WorkRegistry/RenderAssets/lockRenderer/deprecate suites. Web synced
+  (two-step publish flow in the create wizard; renderer-land reads); docs
+  regenerated (43 pages, RenderAssets page added, zero stale terms).

@@ -27,9 +27,13 @@ referrer, and the lifecycle status at that moment. The
 [id mode](/docs/collections/concepts/id-modes) is fixed at init: Sequential (the
 core assigns ids, never reused after burn) or Pooled (an authorized minter
 supplies ids, and a burned id can be minted again as a fresh instance). Every
-sale term is a live setting (window, price, royalty, supply cap), and three
-one-way locks make promises permanent: `lockWork` (the work), `freezeMetadata`
-(the presentation), and `lockSupply` (the scarcity). Payment accrues as
+sale term is a live setting (window, price, royalty, supply cap). The core
+stores NO presentation data: `tokenURI`/`contractURI` defer wholly to the
+renderer slot, with the work config and static images living in renderer-land
+([GenerativeRenderer](/docs/collections/contracts/generative-renderer)'s work
+registry, [RenderAssets](/docs/collections/contracts/render-assets)). Two
+one-way locks cover the state the core actually owns: `lockRenderer` (pin the
+renderer pointer, optional) and `lockSupply` (the scarcity promise). Payment accrues as
 pull-payment balances claimed through `withdraw`; no external transfer happens
 during a mint, so a reverting recipient can never brick minting.
 
@@ -101,12 +105,14 @@ window with `setMintWindow` and the status follows.
 
 ### Permanence
 
-Three one-way locks make promises permanent while the contract itself is already
-immutable from deploy. `freezeMetadata` renounces the ability to change the
-renderer or per-token artwork. `lockWork` permanently freezes the work config
-(the algorithm the renderer runs). `lockSupply` permanently freezes the supply
-cap — the scarcity promise, binding extension minters too. `isPermanent` is true
-once metadata is frozen and the work is locked.
+The core locks only what it owns. `lockRenderer` (optional, off by default)
+permanently pins the renderer pointer; `lockSupply` permanently freezes the
+supply cap — the scarcity promise, binding extension minters too. Everything
+presentation-side is the renderer's own offer: for the bundled
+GenerativeRenderer, `lockWork(collection)` pins the algorithm, so pointer lock
++ work lock = full presentation permanence. The core cannot attest an arbitrary
+renderer's internals — a custom renderer's mutability is the artist's
+inspectable choice, not the core's promise.
 
 ### Live reads
 
@@ -237,7 +243,7 @@ growing it reopens. Emits `SupplyCapSet`.
 access: owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`)
 
 One-way: permanently locks the supply cap — the scarcity promise, beside
-`lockWork` and `freezeMetadata`. The cap binds the extension mint paths too, so a
+the renderer-side work lock and `lockRenderer`. The cap binds the extension mint paths too, so a
 locked cap is a hard ceiling regardless of what minters are granted later.
 Reverts `SupplyIsLocked` if already locked. Emits `SupplyLocked`.
 
@@ -246,9 +252,21 @@ Reverts `SupplyIsLocked` if already locked. Emits `SupplyLocked`.
 access: owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`)
 
 Points the renderer slot at a new renderer, or zero to fall back to
-`defaultRenderer`. Reverts `MetadataIsFrozen` once `freezeMetadata` has run.
+`defaultRenderer`. Reverts `RendererIsLocked` once `lockRenderer` has run.
 Emits `RendererSet` and an ERC-4906 `BatchMetadataUpdate` covering all tokens, so
 marketplaces refresh cached metadata.
+
+## function lockRenderer
+
+access: owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`)
+
+One-way, optional (off by default): permanently pin the renderer pointer, so
+`tokenURI`/`contractURI` are answered by the current renderer contract forever.
+The core cannot attest what a renderer does internally — an immutable renderer
+plus a locked pointer is full presentation permanence; a mutable renderer with
+a locked pointer is the artist's explicit, inspectable choice. Pairs with the
+renderer-side work lock (`GenerativeRenderer.lockWork`) for generative works.
+Reverts `RendererIsLocked` if already locked. Emits `RendererLocked`.
 
 ## function setMintHook
 
@@ -301,41 +319,9 @@ Sets where the artist's share accrues for FUTURE mints; zero falls back to
 `owner()`. Past accruals remain claimable at the old address. Emits
 `PayoutAddressSet`.
 
-## function setTokenArtworkBatch
 
-access: owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`)
 
-Sets per-token artwork CID overrides (captures, thumbnails); a single token is a
-batch of one. Reverts `MetadataIsFrozen` after `freezeMetadata`, `LengthMismatch`
-when the id and CID arrays differ in length, and `NotMinted` for any id that was
-never minted. Emits `TokenArtworkSet` and an ERC-4906 `MetadataUpdate` once per
-id, so marketplaces refresh each token.
 
-## function setWork
-
-access: owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`)
-
-Replaces the work config (script refs, dependencies, render spec) the renderer
-runs. The artist may refine it until `lockWork` is called; reverts
-`WorkAlreadyLocked` after that. Emits `WorkSet` carrying the new `codeHash`, and
-an ERC-4906 `BatchMetadataUpdate` covering all tokens.
-
-## function lockWork
-
-access: owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`)
-
-One-way: permanently locks the work config so `setWork` can never change it again.
-Reverts `WorkAlreadyLocked` if already locked. Together with `freezeMetadata` this
-is the art-permanence guarantee. Emits `WorkLocked`.
-
-## function freezeMetadata
-
-access: owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`)
-
-One-way: renounces the ability to change the renderer or per-token artwork, giving
-collectors a presentation-permanence guarantee. Reverts `AlreadyFrozen` if already
-frozen. `notifyMetadataUpdate` keeps working after the freeze: the freeze locks
-the renderer pointer, not a live work's output. Emits `MetadataFrozen`.
 
 ## function notifyMetadataUpdate
 
@@ -346,8 +332,8 @@ core cannot observe: a ChainLive work whose output moved with chain state, or a
 reveal-style renderer flipping state. Marketplaces subscribe to these events on
 the token contract, so the renderer cannot emit them itself — it calls this
 instead. Pure event emission; no state is touched. Deliberately works after
-`freezeMetadata`, where the now-immutable renderer is exactly the trusted party
-to signal that a frozen live work's output changed.
+`lockRenderer`, where the now-pinned renderer is exactly the trusted party
+to signal that a locked live work's output changed.
 
 ## function withdraw
 
@@ -479,37 +465,19 @@ current instance's fresh seed.
 True if the account holds an explicit admin grant. The owner is an implicit admin
 and is not required to appear here.
 
+## function isRendererLocked
+
+True once `lockRenderer` has permanently pinned the renderer pointer.
+
 ## function isSupplyLocked
 
 True once `lockSupply` has permanently locked the supply cap.
 
-## function artwork
 
-The collection's shared cover artwork URI, from the collection config. Per-token
-overrides are read with `tokenArtwork`.
 
-## function tokenArtwork
 
-The per-token artwork CID override for a token, or the empty string when none is
-set.
 
-## function workConfig
 
-The stored work config (script refs, dependencies, render spec) the renderer runs.
-Empty for works whose renderer contract is itself the algorithm.
-
-## function isWorkLocked
-
-True once `lockWork` has permanently frozen the work config.
-
-## function isMetadataFrozen
-
-True once `freezeMetadata` has renounced renderer and per-token artwork changes.
-
-## function isPermanent
-
-True when metadata is frozen and the work is locked: the art-permanence guarantee.
-The contract itself is immutable from deploy regardless.
 
 ## function renderer
 
@@ -649,6 +617,10 @@ Emitted when the EIP-2981 royalty changes with `setRoyalty`. Indexed by
 
 Emitted when the supply cap changes with `setSupplyCap`.
 
+## event RendererLocked
+
+Emitted once when `lockRenderer` permanently pins the renderer pointer.
+
 ## event SupplyLocked
 
 Emitted once when `lockSupply` permanently locks the supply cap.
@@ -660,8 +632,10 @@ Emitted when an admin key is granted (`allowed = true`) or revoked. Indexed by
 
 ## event MetadataUpdate
 
-ERC-4906 single-token refresh signal, emitted per id by `setTokenArtworkBatch`.
-Marketplaces subscribe to this to re-fetch a token's metadata.
+ERC-4906 single-token refresh signal (declared for interface completeness;
+range refreshes go through `BatchMetadataUpdate` via the setters and
+`notifyMetadataUpdate`). Marketplaces subscribe to this to re-fetch a token's
+metadata.
 
 ## event BatchMetadataUpdate
 
@@ -686,23 +660,9 @@ Emitted when the price strategy slot changes. Indexed by `strategy`.
 Emitted when an extension minter is granted or revoked, and once per initial
 minter at init. Indexed by `minter`, with the `allowed` flag.
 
-## event TokenArtworkSet
 
-Emitted when a per-token artwork CID is set, one event per token id (including
-each id in a batch). Indexed by `tokenId`.
 
-## event WorkSet
 
-Emitted when the work config is replaced, carrying the new `codeHash`.
-
-## event WorkLocked
-
-Emitted once when `lockWork` permanently locks the work config.
-
-## event MetadataFrozen
-
-Emitted once when `freezeMetadata` renounces renderer and per-token artwork
-changes.
 
 ## event PayoutAddressSet
 
@@ -789,6 +749,11 @@ start.
 `setSupplyCap` was given a non-zero cap below what already exists: mints ever in
 Sequential mode (ids are never reused), or live supply in Pooled mode.
 
+## error RendererIsLocked
+
+`setRenderer` or `lockRenderer` was called after `lockRenderer`. The renderer
+pointer is permanently pinned.
+
 ## error SupplyIsLocked
 
 `setSupplyCap` or `lockSupply` was called after `lockSupply`. The supply cap is
@@ -860,23 +825,9 @@ have a fallback renderer.
 
 `initialize` or `setRoyalty` was given a royalty above the 50% cap (`5000` bps).
 
-## error MetadataIsFrozen
 
-`setRenderer` or `setTokenArtworkBatch` was called after `freezeMetadata`.
-Metadata changes are permanently disabled.
 
-## error AlreadyFrozen
 
-`freezeMetadata` was called when metadata is already frozen.
-
-## error WorkAlreadyLocked
-
-`setWork` was called after `lockWork`, or `lockWork` was called when the work is
-already locked. The work config is permanently frozen.
-
-## error NotMinted
-
-`setTokenArtworkBatch` referenced an id that was never minted.
 
 ## error NeverMinted
 
@@ -899,9 +850,6 @@ payment. Nothing is drained; the balance stays claimable.
 
 The ETH transfer inside `rescueStrayETH` reverted.
 
-## error LengthMismatch
-
-`setTokenArtworkBatch` was given id and CID arrays of different lengths.
 
 ## error RenounceDisabled
 

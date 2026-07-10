@@ -1,13 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity ^0.8.24;
 
-import {
-    CollectionConfig,
-    CollectionStatus,
-    IdMode,
-    InitParams,
-    WorkConfig
-} from "../CollectionTypes.sol";
+import {CollectionConfig, CollectionStatus, IdMode, InitParams} from "../CollectionTypes.sol";
 
 /// @title ICollection
 /// @notice One artist collection: an OZ ERC721 deployed as an immutable
@@ -47,26 +41,17 @@ interface ICollection {
     error WithdrawFailed();
     error NoStrayETH();
     error RescueFailed();
-    error MetadataIsFrozen();
-    error NotMinted();
-    error LengthMismatch();
-    error AlreadyFrozen();
-    error WorkAlreadyLocked();
     error NeverMinted();
     error RenounceDisabled();
     error AlreadyAdmin();
     error NotAnAdmin();
     error BadSupplyCap();
     error SupplyIsLocked();
+    error RendererIsLocked();
 
     // ── events ──────────────────────────────────────────────────────────────
     event CollectionConfigured(
-        IdMode idMode,
-        uint256 price,
-        uint256 supplyCap,
-        uint64 mintStart,
-        uint64 mintEnd,
-        string artworkURI
+        IdMode idMode, uint256 price, uint256 supplyCap, uint64 mintStart, uint64 mintEnd
     );
 
     // ── ERC-4906 (metadata refresh signals marketplaces subscribe to) ───────
@@ -98,17 +83,14 @@ interface ICollection {
     event RoyaltySet(uint16 royaltyBps, address indexed royaltyReceiver);
     event SupplyCapSet(uint256 supplyCap);
     event SupplyLocked();
+    event RendererLocked();
     event RendererSet(address indexed renderer);
     event MintHookSet(address indexed hook);
     event PriceStrategySet(address indexed strategy);
     event MinterSet(address indexed minter, bool allowed);
     event AdminSet(address indexed account, bool allowed);
-    event TokenArtworkSet(uint256 indexed tokenId, string cid);
-    event WorkSet(bytes32 codeHash);
-    event WorkLocked();
     event Withdrawn(address indexed account, uint256 amount);
     event PayoutAddressSet(address indexed payoutAddress);
-    event MetadataFrozen();
     event StrayETHRescued(address indexed to, uint256 amount);
 
     // ── init + config (owner) ────────────────────────────────────────────────
@@ -158,21 +140,18 @@ interface ICollection {
     ///         reverts NotAuthorized; reverts NotAnAdmin if the account is not
     ///         currently an admin.
     function removeAdmin(address account) external;
-    /// @notice Set per-token artwork overrides (captures/thumbnails). A single
-    ///         token is a batch of one. Emits MetadataUpdate per token.
-    function setTokenArtworkBatch(uint256[] calldata tokenIds, string[] calldata cids) external;
     function setPayoutAddress(address payoutAddress) external;
     /// @notice Emit an ERC-4906 refresh signal for changes the core cannot see
     ///         (ChainLive works, reveals). Callable by the current renderer or
-    ///         owner/admin; works after freezeMetadata (a frozen ChainLive work
+    ///         owner/admin; works after lockRenderer (a locked chain-live work
     ///         still legitimately changes output — that is its declared physics).
     function notifyMetadataUpdate(uint256 fromTokenId, uint256 toTokenId) external;
-    function freezeMetadata() external;
-    /// @notice Replace the work definition (the algorithm the renderer runs). Allowed until
-    ///         `lockWork`; reverts once locked.
-    function setWork(WorkConfig calldata work) external;
-    /// @notice Permanently lock the work config, so it can never change again. Irreversible.
-    function lockWork() external;
+    /// @notice One-way, optional: permanently pin the renderer pointer. The
+    ///         core cannot attest the renderer's internals — an immutable
+    ///         renderer plus a locked pointer is full presentation
+    ///         permanence; a mutable renderer with a locked pointer is the
+    ///         artist's explicit, inspectable choice. Not locked by default.
+    function lockRenderer() external;
 
     // ── mint: built-in paid paths (value custody stays in the core) ─────────
     /// @notice Simple mint: referrer defaults to address(0) so the artist gets
@@ -231,11 +210,7 @@ interface ICollection {
     /// @notice Mint-time entropy, stamped per token in the mint transaction.
     function tokenSeed(uint256 tokenId) external view returns (bytes32);
 
-    function workConfig() external view returns (WorkConfig memory);
-    function isWorkLocked() external view returns (bool);
     function idMode() external view returns (IdMode);
-    function artwork() external view returns (string memory);
-    function tokenArtwork(uint256 tokenId) external view returns (string memory);
     function renderer() external view returns (address);
     function mintHook() external view returns (address);
     function priceStrategy() external view returns (address);
@@ -243,10 +218,8 @@ interface ICollection {
     /// @notice Whether `account` holds an explicit admin grant (owner is an
     ///         implicit admin and need not appear here).
     function isAdmin(address account) external view returns (bool);
-    function isMetadataFrozen() external view returns (bool);
+    /// @notice Whether the renderer pointer is permanently locked.
+    function isRendererLocked() external view returns (bool);
     /// @notice Whether the supply cap is permanently locked.
     function isSupplyLocked() external view returns (bool);
-    /// @notice metadataFrozen && workLocked: the art-permanence guarantee.
-    ///         (The contract itself is immutable from deploy.)
-    function isPermanent() external view returns (bool);
 }

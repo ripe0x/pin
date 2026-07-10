@@ -140,3 +140,47 @@ Inherited from OpenZeppelin `Clones`. Raised by the value-forwarding clone
 variants when the factory's own ETH balance is less than the value being
 forwarded to the new clone. `createCollection` does not forward value, so
 this is not reachable through the factory's public surface today.
+
+## function deprecate
+
+access: deployer-only (`msg.sender` must be the factory deployer, else `NotDeployer`)
+
+One-way kill switch for NEW deploys, for a post-deploy bug discovered in the
+implementation: after deprecation `createCollection` reverts
+`FactoryDeprecated`, and `successor` points integrators at the replacement
+factory (zero if none exists yet). Deployed collections are immutable and
+completely unaffected — the deployer holds zero power over them; this switch
+only stops the buggy implementation from being cloned again. Reverts
+`AlreadyDeprecated` on a second call. Emits `Deprecated`.
+
+## function deployer
+
+The address that deployed the factory: the only address that may call
+`deprecate`, and its only privilege.
+
+## function deprecated
+
+True once the factory has been permanently deprecated (new deploys revert).
+
+## function successor
+
+The replacement factory named at deprecation, or zero. Informational — a
+discovery pointer for integrators walking factory generations.
+
+## event Deprecated
+
+Emitted once when the deployer permanently deprecates the factory, carrying
+the successor address (zero if none named).
+
+## error AlreadyDeprecated
+
+`deprecate` was called on an already-deprecated factory.
+
+## error FactoryDeprecated
+
+`createCollection` was called after deprecation. Deploy through the successor
+factory instead (`successor()`).
+
+## error NotDeployer
+
+`deprecate` was called by an address other than the factory deployer.

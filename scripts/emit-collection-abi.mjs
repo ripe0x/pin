@@ -76,6 +76,13 @@ emit({
   outFiles: ["packages/abi/src/holdsCollectionHook.ts"],
 });
 
+// Render-land registries (work configs + static display assets).
+emit({
+  artifact: "RenderAssets.sol/RenderAssets.json",
+  exportName: "renderAssetsAbi",
+  outFiles: ["packages/abi/src/renderAssets.ts"],
+});
+
 // Swappable-slot interfaces (the third-party API surface implementers satisfy).
 emit({
   artifact: "IMintHook.sol/IMintHook.json",

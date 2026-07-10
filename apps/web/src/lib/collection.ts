@@ -15,6 +15,7 @@ import { foundry, mainnet } from "wagmi/chains"
 import {
   ATTRIBUTION,
   GENERATIVE_RENDERER,
+  RENDER_ASSETS,
   SOVEREIGN_COLLECTION_FACTORY,
   getAddressOrNull,
 } from "@pin/addresses"
@@ -35,6 +36,13 @@ export function collectionFactory(chainId: number = PND_CHAIN_ID): Address | nul
   const env = process.env.NEXT_PUBLIC_SOVEREIGN_COLLECTION_FACTORY
   if (env && isAddress(env)) return env as Address
   return getAddressOrNull(SOVEREIGN_COLLECTION_FACTORY, chainId)
+}
+
+/** The RenderAssets registry address (env override for local dev wins). */
+export function renderAssetsAddress(chainId: number = PND_CHAIN_ID): Address | null {
+  const env = process.env.NEXT_PUBLIC_RENDER_ASSETS
+  if (env && isAddress(env)) return env as Address
+  return getAddressOrNull(RENDER_ASSETS, chainId)
 }
 
 /** The Attribution singleton address (env override for local dev wins). */
@@ -126,7 +134,6 @@ export type WorkConfig = {
 }
 
 export type CollectionConfig = {
-  artworkURI: string
   price: bigint
   supplyCap: bigint
   mintStart: bigint
@@ -145,14 +152,18 @@ export type Collection = {
   name: string
   symbol: string
   owner: Address
-  isWorkLocked: boolean
-  isMetadataFrozen: boolean
-  isPermanent: boolean
+  /** The renderer pointer is permanently pinned (optional, off by default). */
+  isRendererLocked: boolean
+  isSupplyLocked: boolean
   renderer: Address
   priceStrategy: Address
   cfg: CollectionConfig
-  /** What the work is, executably (empty code for renderer-native works). */
+  /** What the work is, executably — read from the GenerativeRenderer's
+   *  work registry (renderer-land), empty for renderer-native works or
+   *  custom renderers. */
   work: WorkConfig
+  /** Cover image from the RenderAssets registry ("" when unset). */
+  cover: string
   status: CollectionStatus
   minted: bigint
 }
@@ -190,7 +201,6 @@ export function decodeWorkConfig(raw: RawWorkConfig): WorkConfig {
 }
 
 type RawCollectionConfig = {
-  artworkURI: string
   price: bigint
   supplyCap: bigint
   mintStart: bigint
@@ -206,7 +216,6 @@ type RawCollectionConfig = {
 
 export function decodeCollectionConfig(raw: RawCollectionConfig): CollectionConfig {
   return {
-    artworkURI: raw.artworkURI,
     price: raw.price,
     supplyCap: raw.supplyCap,
     mintStart: raw.mintStart,

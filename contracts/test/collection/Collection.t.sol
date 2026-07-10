@@ -8,6 +8,7 @@ import {
 } from "./mocks/CollectionMocks.sol";
 
 import {Collection} from "../../src/collection/Collection.sol";
+import {CollectionFactory} from "../../src/collection/CollectionFactory.sol";
 import {ICollection} from "../../src/collection/interfaces/ICollection.sol";
 import {
     CollectionConfig,
@@ -118,9 +119,8 @@ contract CollectionTest is CollectionBase {
         assertTrue(factory.isCollection(address(c)));
         assertEq(factory.totalCollections(), 1);
         assertEq(c.referralShareBps(), 1000);
-        assertFalse(c.isMetadataFrozen());
-        assertFalse(c.isWorkLocked());
-        assertFalse(c.isPermanent());
+        assertFalse(c.isRendererLocked());
+        assertFalse(c.isSupplyLocked());
     }
 
     function test_startTokenIdIsOne() public {
@@ -676,36 +676,12 @@ contract CollectionTest is CollectionBase {
         emit ICollection.BatchMetadataUpdate(0, type(uint256).max);
         vm.prank(artist);
         c.setRenderer(makeAddr("newRenderer"));
-
-        // work swap refreshes everything
-        vm.expectEmit(false, false, false, true, address(c));
-        emit ICollection.BatchMetadataUpdate(0, type(uint256).max);
-        vm.prank(artist);
-        c.setWork(_emptyWork());
-    }
-
-    function test_erc4906_tokenArtworkSignalsPerToken() public {
-        Collection c = _collection(_freeConfig());
-        vm.prank(collector);
-        c.mint(2);
-        uint256[] memory ids = new uint256[](2);
-        ids[0] = 1;
-        ids[1] = 2;
-        string[] memory cids = new string[](2);
-        cids[0] = "ipfs://a";
-        cids[1] = "ipfs://b";
-        vm.expectEmit(false, false, false, true, address(c));
-        emit ICollection.MetadataUpdate(1);
-        vm.expectEmit(false, false, false, true, address(c));
-        emit ICollection.MetadataUpdate(2);
-        vm.prank(artist);
-        c.setTokenArtworkBatch(ids, cids);
-        assertEq(c.tokenArtwork(2), "ipfs://b");
     }
 
     /// @dev The renderer (or owner/admin) can signal refreshes the core cannot
-    ///      see (ChainLive works, reveals) — including after freezeMetadata,
-    ///      because freeze locks the renderer pointer, not a live work's output.
+    ///      see (chain-live works, reveals, refreshed captures in
+    ///      RenderAssets) — including after lockRenderer, because the lock
+    ///      pins the pointer, not a live work's output.
     function test_notifyMetadataUpdate_rendererAndAdminOnly() public {
         Collection c = _collection(_freeConfig());
 
@@ -715,9 +691,9 @@ contract CollectionTest is CollectionBase {
         vm.prank(address(renderer));
         c.notifyMetadataUpdate(1, 10);
 
-        // the owner may signal, even after freeze
+        // the owner may signal, even after the renderer is locked
         vm.prank(artist);
-        c.freezeMetadata();
+        c.lockRenderer();
         vm.expectEmit(false, false, false, true, address(c));
         emit ICollection.BatchMetadataUpdate(0, type(uint256).max);
         vm.prank(artist);
@@ -783,11 +759,11 @@ contract CollectionTest is CollectionBase {
         assertEq(c.contractURI(), renderer.contractURI(address(c)));
     }
 
-    function test_setRenderer_blockedWhenFrozen() public {
+    function test_setRenderer_blockedWhenLocked() public {
         Collection c = _collection(_freeConfig());
         vm.prank(artist);
-        c.freezeMetadata();
-        vm.expectRevert(ICollection.MetadataIsFrozen.selector);
+        c.lockRenderer();
+        vm.expectRevert(ICollection.RendererIsLocked.selector);
         vm.prank(artist);
         c.setRenderer(makeAddr("newRenderer"));
     }
@@ -801,107 +777,57 @@ contract CollectionTest is CollectionBase {
 
     // ── token artwork ────────────────────────────────────────────────────────
 
-    function test_tokenArtwork_perTokenOverride() public {
+    // ── lockRenderer (one-way, optional) ─────────────────────────────────────
+
+    function test_lockRenderer_isOneWayAndOptional() public {
         Collection c = _collection(_freeConfig());
+        assertFalse(c.isRendererLocked(), "not locked by default");
+
+        // still swappable before the lock
+        vm.prank(artist);
+        c.setRenderer(makeAddr("beforeLock"));
+
+        vm.expectEmit(false, false, false, false, address(c));
+        emit ICollection.RendererLocked();
+        vm.prank(artist);
+        c.lockRenderer();
+        assertTrue(c.isRendererLocked());
+
+        // one-way: locking twice reverts
+        vm.expectRevert(ICollection.RendererIsLocked.selector);
+        vm.prank(artist);
+        c.lockRenderer();
+    }
+
+    // ── factory deprecation (one-way kill switch for NEW deploys) ────────────
+
+    function test_factory_deprecate_stopsNewDeploysOnly() public {
+        // pre-deprecation deploys work; the deployer is this test contract
+        Collection existing = _collection(_freeConfig());
+
+        address successor = makeAddr("factoryV2");
+        vm.expectEmit(true, false, false, false, address(factory));
+        emit CollectionFactory.Deprecated(successor);
+        factory.deprecate(successor);
+        assertTrue(factory.deprecated());
+        assertEq(factory.successor(), successor);
+
+        // new deploys revert...
+        address[] memory none = new address[](0);
+        vm.expectRevert(CollectionFactory.FactoryDeprecated.selector);
+        factory.createCollection("After", "AFT", artist, _freeConfig(), none, none);
+
+        // ...existing collections are untouched (immutable by design)
         vm.prank(collector);
-        c.mint(2);
-        vm.prank(artist);
-        c.setTokenArtworkBatch(_ids1(2), _cids1("ipfs://QmUnique"));
-        assertEq(c.tokenArtwork(2), "ipfs://QmUnique");
-        assertEq(c.tokenArtwork(1), "");
-    }
+        existing.mint(1);
+        assertEq(existing.ownerOf(1), collector);
 
-    /// @dev Single-token batch builders (the single-token setter was folded
-    ///      into the batch; a single token is a batch of one).
-    function _ids1(uint256 id) internal pure returns (uint256[] memory ids) {
-        ids = new uint256[](1);
-        ids[0] = id;
-    }
-
-    function _cids1(string memory cid) internal pure returns (string[] memory cids) {
-        cids = new string[](1);
-        cids[0] = cid;
-    }
-
-    function test_tokenArtwork_batch() public {
-        Collection c = _collection(_freeConfig());
-        vm.prank(collector);
-        c.mint(3);
-        uint256[] memory ids = new uint256[](2);
-        ids[0] = 1;
-        ids[1] = 3;
-        string[] memory cids = new string[](2);
-        cids[0] = "ipfs://one";
-        cids[1] = "ipfs://three";
-        vm.prank(artist);
-        c.setTokenArtworkBatch(ids, cids);
-        assertEq(c.tokenArtwork(1), "ipfs://one");
-        assertEq(c.tokenArtwork(2), "");
-        assertEq(c.tokenArtwork(3), "ipfs://three");
-    }
-
-    function test_tokenArtwork_batch_lengthMismatchReverts() public {
-        Collection c = _collection(_freeConfig());
-        vm.prank(collector);
-        c.mint(1);
-        uint256[] memory ids = new uint256[](2);
-        string[] memory cids = new string[](1);
-        vm.expectRevert(ICollection.LengthMismatch.selector);
-        vm.prank(artist);
-        c.setTokenArtworkBatch(ids, cids);
-    }
-
-    function test_tokenArtwork_requiresMintedToken() public {
-        Collection c = _collection(_freeConfig());
-        vm.expectRevert(ICollection.NotMinted.selector);
-        vm.prank(artist);
-        c.setTokenArtworkBatch(_ids1(1), _cids1("ipfs://Qm"));
-    }
-
-    function test_tokenArtwork_blockedWhenFrozen() public {
-        Collection c = _collection(_freeConfig());
-        vm.prank(collector);
-        c.mint(1);
-        vm.prank(artist);
-        c.freezeMetadata();
-        vm.expectRevert(ICollection.MetadataIsFrozen.selector);
-        vm.prank(artist);
-        c.setTokenArtworkBatch(_ids1(1), _cids1("ipfs://QmNope"));
-    }
-
-    // ── freezeMetadata / lockWork / isPermanent ──────────────────────────────
-
-    function test_freezeMetadata_isOneWay() public {
-        Collection c = _collection(_freeConfig());
-        vm.prank(artist);
-        c.freezeMetadata();
-        assertTrue(c.isMetadataFrozen());
-        vm.expectRevert(ICollection.AlreadyFrozen.selector);
-        vm.prank(artist);
-        c.freezeMetadata();
-    }
-
-    function test_lockWork_isOneWay() public {
-        Collection c = _collection(_freeConfig());
-        vm.prank(artist);
-        c.lockWork();
-        assertTrue(c.isWorkLocked());
-        vm.expectRevert(ICollection.WorkAlreadyLocked.selector);
-        vm.prank(artist);
-        c.lockWork();
-    }
-
-    function test_isPermanent_requiresBothFreezeAndLock() public {
-        Collection c = _collection(_freeConfig());
-        assertFalse(c.isPermanent());
-
-        vm.prank(artist);
-        c.freezeMetadata();
-        assertFalse(c.isPermanent()); // frozen but not locked
-
-        vm.prank(artist);
-        c.lockWork();
-        assertTrue(c.isPermanent()); // both now true
+        // one-way, deployer-only
+        vm.expectRevert(CollectionFactory.AlreadyDeprecated.selector);
+        factory.deprecate(address(0));
+        vm.expectRevert(CollectionFactory.NotDeployer.selector);
+        vm.prank(stranger);
+        factory.deprecate(address(0));
     }
 
     // ── renounceOwnership disabled ────────────────────────────────────────────

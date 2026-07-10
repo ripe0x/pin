@@ -5,13 +5,19 @@ import {Base64} from "solady/utils/Base64.sol";
 import {LibString} from "solady/utils/LibString.sol";
 
 import {IRenderer, ICollectionView} from "../interfaces/IRenderer.sol";
-import {CodeKind, CodeRef, IdMode, WorkConfig} from "../CollectionTypes.sol";
+import {IdMode} from "../CollectionTypes.sol";
+import {CodeKind, CodeRef, WorkConfig} from "./WorkTypes.sol";
+import {RenderAssets} from "./RenderAssets.sol";
 import {IScriptyBuilderV2} from "../vendor/scripty/interfaces/IScriptyBuilderV2.sol";
 import {HTMLRequest, HTMLTag, HTMLTagType} from "../vendor/scripty/core/ScriptyStructs.sol";
 
 /// @title GenerativeRenderer
-/// @notice The default renderer for script-based generative collections. A
-///         stateless singleton: reads a collection's WorkConfig and a token's
+/// @notice The default renderer for script-based generative collections, and
+///         the registry of their work configs: per-collection WorkConfig is
+///         stored HERE, in renderer-land, written by each collection's
+///         owner/admins and lockable one-way per collection. The collection
+///         core stores no presentation data at all — it defers tokenURI to
+///         this contract, which reads its own work registry plus the token's
 ///         seed, assembles a complete HTML document via ScriptyBuilderV2
 ///         (dependencies from onchain storage + the injected token context +
 ///         the artist's code), and returns tokenURI JSON whose animation_url
@@ -19,13 +25,15 @@ import {HTMLRequest, HTMLTag, HTMLTagType} from "../vendor/scripty/core/ScriptyS
 ///         of chain state: no server, no pin, nothing to keep alive.
 ///
 ///         The injected context (render-context convention v1) is
-///         window.tokenData = { hash, tokenId, mintIndex, mintBlock,
-///         collection, chainId, version } — hash/tokenId use the widely-adopted
-///         long-form-generative shape so existing sketches run unmodified.
+///         window.tokenData = { hash, tokenId, collection, chainId, version }
+///         — hash/tokenId use the widely-adopted long-form-generative shape
+///         so existing sketches run unmodified.
 ///
-/// @dev    Immutable configuration only; per-work variability lives entirely
-///         in each collection's WorkConfig. Anyone may point any contract
-///         implementing ICollectionView at this renderer.
+///         Full presentation permanence for a work = the collection's
+///         lockRenderer() (pin the pointer at this immutable contract) plus
+///         lockWork(collection) here (pin the algorithm). Static images
+///         (cover, per-token captures) are read from the RenderAssets
+///         registry and stay refreshable — they mirror rendered output.
 contract GenerativeRenderer is IRenderer {
     using LibString for uint256;
     using LibString for address;
@@ -33,17 +41,84 @@ contract GenerativeRenderer is IRenderer {
     /// @notice The scripty v2 builder that assembles the HTML.
     IScriptyBuilderV2 public immutable scriptyBuilder;
 
+    /// @notice Static-asset registry (cover + captures) for the image field.
+    RenderAssets public immutable renderAssets;
+
     /// @notice Storage contract + file name of the gunzip helper, emitted as
     ///         the first body tag whenever any dep/code file is gzipped.
     address public immutable gunzipStore;
     string public gunzipFile;
 
-    constructor(address scriptyBuilder_, address gunzipStore_, string memory gunzipFile_) {
+    /// @dev Per-collection work configs + one-way locks. Auth borrows each
+    ///      collection's own owner/admin root, so managing the work carries
+    ///      exactly the same authority as the collection's own setters.
+    mapping(address => WorkConfig) private _works;
+    mapping(address => bool) public workLockedOf;
+
+    error NotCollectionAdmin();
+    error WorkIsLocked();
+
+    event WorkSet(address indexed collection, bytes32 codeHash);
+    event WorkLocked(address indexed collection);
+
+    constructor(
+        address scriptyBuilder_,
+        address renderAssets_,
+        address gunzipStore_,
+        string memory gunzipFile_
+    ) {
         require(scriptyBuilder_ != address(0), "GR: builder required");
+        require(renderAssets_ != address(0), "GR: assets required");
         require(gunzipStore_ != address(0), "GR: gunzip store required");
         scriptyBuilder = IScriptyBuilderV2(scriptyBuilder_);
+        renderAssets = RenderAssets(renderAssets_);
         gunzipStore = gunzipStore_;
         gunzipFile = gunzipFile_;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Work registry (renderer-land storage; collection-authorized writes)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    modifier onlyCollectionAdmin(address collection) {
+        ICollectionView c = ICollectionView(collection);
+        if (msg.sender != c.owner() && !c.isAdmin(msg.sender)) revert NotCollectionAdmin();
+        _;
+    }
+
+    /// @notice Set or replace `collection`'s work definition. Reverts
+    ///         WorkIsLocked once lockWork(collection) has run.
+    function setWork(address collection, WorkConfig calldata work)
+        external
+        onlyCollectionAdmin(collection)
+    {
+        if (workLockedOf[collection]) revert WorkIsLocked();
+        delete _works[collection]; // clear nested arrays before re-copy
+        WorkConfig storage w = _works[collection];
+        for (uint256 i = 0; i < work.code.length; i++) {
+            w.code.push(work.code[i]);
+        }
+        for (uint256 i = 0; i < work.deps.length; i++) {
+            w.deps.push(work.deps[i]);
+        }
+        w.codeURI = work.codeURI;
+        w.codeHash = work.codeHash;
+        w.injectionVersion = work.injectionVersion;
+        w.renderParams = work.renderParams;
+        emit WorkSet(collection, work.codeHash);
+    }
+
+    /// @notice One-way: permanently lock `collection`'s work definition, so
+    ///         setWork can never change it again. With the collection's
+    ///         lockRenderer() this is full presentation permanence.
+    function lockWork(address collection) external onlyCollectionAdmin(collection) {
+        if (workLockedOf[collection]) revert WorkIsLocked();
+        workLockedOf[collection] = true;
+        emit WorkLocked(collection);
+    }
+
+    function workOf(address collection) external view returns (WorkConfig memory) {
+        return _works[collection];
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -57,12 +132,12 @@ contract GenerativeRenderer is IRenderer {
         returns (string memory)
     {
         ICollectionView c = ICollectionView(collection);
-        WorkConfig memory work = c.workConfig();
+        WorkConfig memory work = _works[collection];
         bytes32 seed = c.tokenSeed(tokenId);
 
         // getEncodedHTMLString returns a complete data:text/html;base64 URI.
         string memory htmlUri = _buildHTML(collection, tokenId, work, seed);
-        string memory image = _imageFor(c, tokenId);
+        string memory image = _imageFor(collection, tokenId);
 
         bytes memory json = abi.encodePacked(
             '{"name":"',
@@ -90,8 +165,14 @@ contract GenerativeRenderer is IRenderer {
             '{"name":"',
             LibString.escapeJSON(c.name()),
             '"',
-            bytes(c.artwork()).length > 0
-                ? string(abi.encodePacked(',"image":"', LibString.escapeJSON(c.artwork()), '"'))
+            bytes(renderAssets.coverOf(collection)).length > 0
+                ? string(
+                    abi.encodePacked(
+                        ',"image":"',
+                        LibString.escapeJSON(renderAssets.coverOf(collection)),
+                        '"'
+                    )
+                )
                 : "",
             "}"
         );
@@ -202,12 +283,15 @@ contract GenerativeRenderer is IRenderer {
     // Metadata pieces
     // ─────────────────────────────────────────────────────────────────────────
 
-    /// @dev Static image: the per-token override (a capture, once one exists)
-    ///      else the collection cover. Escaped; may be empty.
-    function _imageFor(ICollectionView c, uint256 tokenId) private view returns (string memory) {
-        string memory art = c.tokenArtwork(tokenId);
-        if (bytes(art).length == 0) art = c.artwork();
-        return LibString.escapeJSON(art);
+    /// @dev Static image from the RenderAssets registry: the per-token
+    ///      capture if one exists, else the collection cover. Escaped; may
+    ///      be empty.
+    function _imageFor(address collection, uint256 tokenId)
+        private
+        view
+        returns (string memory)
+    {
+        return LibString.escapeJSON(renderAssets.imageFor(collection, tokenId));
     }
 
     /// @dev Provenance traits, derived (trait names shared with

@@ -6,6 +6,7 @@ import {Strings} from "openzeppelin-contracts/contracts/utils/Strings.sol";
 
 import {IRenderer, ICollectionView} from "../interfaces/IRenderer.sol";
 import {CollectionConfig, CollectionStatus, IdMode} from "../CollectionTypes.sol";
+import {RenderAssets} from "./RenderAssets.sol";
 
 /// @title DefaultRenderer
 /// @notice The canonical built-in renderer for Collection. Wired
@@ -27,6 +28,16 @@ import {CollectionConfig, CollectionStatus, IdMode} from "../CollectionTypes.sol
 contract DefaultRenderer is IRenderer {
     using Strings for uint256;
 
+    /// @notice Static-asset registry (cover + per-token captures) this
+    ///         renderer serves images from; the collection core stores no
+    ///         presentation data.
+    RenderAssets public immutable renderAssets;
+
+    constructor(address renderAssets_) {
+        require(renderAssets_ != address(0), "DR: assets required");
+        renderAssets = RenderAssets(renderAssets_);
+    }
+
     string private constant DESCRIPTION =
         "A Collection token. This token's entry into the collection is recorded onchain as a Mint Mark.";
 
@@ -38,8 +49,7 @@ contract DefaultRenderer is IRenderer {
     {
         ICollectionView cv = ICollectionView(collection);
 
-        string memory art = cv.tokenArtwork(tokenId);
-        if (bytes(art).length == 0) art = cv.artwork();
+        string memory art = renderAssets.imageFor(collection, tokenId);
 
         string memory json = string.concat(
             '{"name":"',

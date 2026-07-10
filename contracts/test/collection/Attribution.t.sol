@@ -11,7 +11,6 @@ import {Collection} from "../../src/collection/Collection.sol";
 import {CollectionFactory} from "../../src/collection/CollectionFactory.sol";
 import {
     CollectionConfig,
-    WorkConfig,
     IdMode
 } from "../../src/collection/CollectionTypes.sol";
 
@@ -343,7 +342,6 @@ contract AttributionTest is Test {
             "COLLAB",
             artistA,
             _freeConfig(),
-            _emptyWork(),
             new address[](0),
             roster
         );
@@ -402,11 +400,9 @@ contract AttributionTest is Test {
     // ─── Shared deploy helpers ────────────────────────────────────────
 
     function _freeConfig() internal pure returns (CollectionConfig memory cfg) {
-        cfg.artworkURI = "ipfs://QmArtwork";
         cfg.idMode = IdMode.Sequential;
     }
 
-    function _emptyWork() internal pure returns (WorkConfig memory) {}
 
     function _newFactory() internal returns (CollectionFactory factory) {
         MockRenderer renderer = new MockRenderer();
@@ -425,7 +421,7 @@ contract AttributionTest is Test {
         CollectionFactory factory =
             new CollectionFactory(address(impl), address(renderer), address(attribution));
         address created = factory.createCollection(
-            "Artist Collection", "ACOL", artistA, _freeConfig(), _emptyWork(), new address[](0), artists
+            "Artist Collection", "ACOL", artistA, _freeConfig(), new address[](0), artists
         );
         collection = Collection(created);
     }
