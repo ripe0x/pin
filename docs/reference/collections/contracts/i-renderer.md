@@ -24,6 +24,15 @@ renderer to data baked in at mint time. See the
 [write a renderer guide](/docs/collections/guides/write-a-renderer) for a worked
 implementation.
 
+A renderer MAY additionally implement the OPTIONAL `IPreviewRenderer`
+extension (`previewURI(collection, tokenId, seed)`), rendering what a token
+would look like for a caller-supplied seed with no token required. Detection
+is a try/catch `eth_call`, not ERC-165. See
+[the injection convention](/docs/collections/reference/injection-convention) for
+the `context: "preview"` contract a preview document must inject, and
+[write a renderer](/docs/collections/guides/write-a-renderer) for the two
+built-in renderers that implement it.
+
 ## Read functions
 
 ### contractURI

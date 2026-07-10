@@ -16,6 +16,7 @@ The PND onchain protocols are pre-deploy. These are the shared singletons; their
 | AllowlistHook | _pending deploy_ | [reference](/docs/collections/contracts/allowlist-hook) |
 | PerWalletCapHook | _pending deploy_ | [reference](/docs/collections/contracts/per-wallet-cap-hook) |
 | HoldsCollectionHook | _pending deploy_ | [reference](/docs/collections/contracts/holds-collection-hook) |
+| GateHook | _pending deploy_ | [reference](/docs/collections/contracts/gate-hook) |
 
 ## Auctions
 

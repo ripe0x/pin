@@ -93,3 +93,9 @@ Every event the Collections contracts emit, grouped by contract. Signatures and 
 ## HoldsCollectionHook
 
 **[`RequiredSet`](/docs/collections/contracts/holds-collection-hook#requiredset)** · Emitted on every `setRequired` call, including clearing the gate back to the zero address.
+
+## GateHook
+
+**[`CapSet`](/docs/collections/contracts/gate-hook#capset)** · Emitted on every `setCap` call, including clearing the cap back to `0`.
+
+**[`RootSet`](/docs/collections/contracts/gate-hook#rootset)** · Emitted on every `setRoot` call, including clearing the gate back to `bytes32(0)`.

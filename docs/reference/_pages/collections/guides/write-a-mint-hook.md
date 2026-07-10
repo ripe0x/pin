@@ -1,6 +1,6 @@
 ---
 title: Write a mint hook
-description: Implement IMintHook's beforeMint/afterMint, install it with setMintHook, and the three reference hooks to start from.
+description: Implement IMintHook's beforeMint/afterMint, install it with setMintHook, and the four reference hooks to start from.
 ---
 
 # Write a mint hook
@@ -48,13 +48,14 @@ Setting `address(0)` disables hook checks entirely; every mint call skips both `
 
 ## Reference hooks
 
-Three deployed, ownerless singletons ship as starting points. Each is public: one instance serves every collection that points at it, keyed by `msg.sender` (the calling collection) inside the hook's own per-collection config mappings, configured by that collection's own owner via a hook-side setter.
+Four deployed, ownerless singletons ship as starting points. Each is public: one instance serves every collection that points at it, keyed by `msg.sender` (the calling collection) inside the hook's own per-collection config mappings, configured by that collection's own owner via a hook-side setter.
 
 - **[AllowlistHook](/docs/collections/contracts/allowlist-hook)**: gates on a Merkle allowlist. The owner sets a root with `setRoot(collection, root)`; a minter passes a proof in `hookData`. Uses the OpenZeppelin standard-merkle-tree leaf format (`keccak256(bytes.concat(keccak256(abi.encode(account))))`), so standard JS tooling produces compatible proofs. A root of `bytes32(0)` means open, no proof required
 - **[PerWalletCapHook](/docs/collections/contracts/per-wallet-cap-hook)**: caps how many tokens one wallet can mint from a collection. The owner sets a cap with `setCap(collection, cap)`; the hook tracks `mintedBy[collection][minter]` in `afterMint`, incrementing only after a mint succeeds
 - **[HoldsCollectionHook](/docs/collections/contracts/holds-collection-hook)**: gates a mint on holding a token from another collection (the continuity primitive: an earlier collection's holders get access to a later one). The owner sets the required collection with `setRequired(collection, required)`; any ERC721 works, including another `Collection`
+- **[GateHook](/docs/collections/contracts/gate-hook)**: the allowlist and per-wallet cap composed into one hook, for the common case where a gated drop wants both at once (an allowlist alone invites a listed wallet to sweep the supply). Same leaf format and `hookData` shape as `AllowlistHook`, same error strings as both single-purpose hooks, and each gate is independently optional (root `0` = open, cap `0` = uncapped), so one deployed instance also covers either single-gate case. `remainingFor(collection, wallet)` gives a UI the quantity clamp in one read
 
-All three inherit a shared `HookBase`, which supplies the `onlyCollectionOwner(collection)` modifier (checked against `ICollectionOwner(collection).owner()`) and a no-op default `afterMint` for hooks that don't need to record anything.
+`AllowlistHook`, `PerWalletCapHook`, and `HoldsCollectionHook` inherit a shared `HookBase`, which supplies the `onlyCollectionOwner(collection)` modifier (checked against `ICollectionOwner(collection).owner()`) and a no-op default `afterMint` for hooks that don't need to record anything. `GateHook` also inherits `HookBase` but defines its own `onlyCollectionAdmin` config-authority modifier, owner OR admin of the target collection, matching the renderer-land registries, rather than owner-only.
 
 ## Minimal hook skeleton
 

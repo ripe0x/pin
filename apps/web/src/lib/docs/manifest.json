@@ -136,6 +136,12 @@
               "description": "A reference [mint hook](/docs/collections/contracts/i-mint-hook) gating a mint on the minter holding a token from another collection, typically an earlier collection by the same artist."
             },
             {
+              "title": "GateHook",
+              "slug": "gate-hook",
+              "path": "/docs/collections/contracts/gate-hook",
+              "description": "A reference [mint hook](/docs/collections/contracts/i-mint-hook) composing a Merkle allowlist and a per-wallet cap into ONE hook."
+            },
+            {
               "title": "IMintHook",
               "slug": "i-mint-hook",
               "path": "/docs/collections/contracts/i-mint-hook",
@@ -193,7 +199,7 @@
               "title": "Write a mint hook",
               "slug": "write-a-mint-hook",
               "path": "/docs/collections/guides/write-a-mint-hook",
-              "description": "Implement IMintHook's beforeMint/afterMint, install it with setMintHook, and the three reference hooks to start from."
+              "description": "Implement IMintHook's beforeMint/afterMint, install it with setMintHook, and the four reference hooks to start from."
             },
             {
               "title": "Write a renderer",

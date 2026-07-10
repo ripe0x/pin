@@ -41,6 +41,15 @@ function contractURI(address collection) external view returns (string memory);
   seed and Mint Mark, the current owner, sibling tokens, companion contract
   state, foreign contracts, and block state. It is a view function, so it
   cannot alter any state
+- **Optional: previews (`IPreviewRenderer`)**: a renderer MAY also implement
+  `previewURI(collection, tokenId, seed)`, rendering what a token would look
+  like for a caller-supplied seed with no token required. `GenerativeRenderer`
+  and the `SVGRenderer` base both implement it; a renderer whose output
+  depends on state a preview cannot fake (sibling tokens, companion contract
+  state, hook-recorded mint-time data) simply doesn't. Detection is a
+  try/catch `eth_call`, not ERC-165. See
+  [Injection convention](/docs/collections/reference/injection-convention) for the
+  `context: "preview"` contract a preview document must inject
 - **Reference implementations**: `DefaultRenderer` (the init-time fallback),
   `GenerativeRenderer` (scripty-assembled HTML for algorithm-driven work),
   and an `SVGRenderer` abstract base for hand-written Solidity SVG works
@@ -113,6 +122,8 @@ See [IMintHook](/docs/collections/contracts/i-mint-hook),
 [AllowlistHook](/docs/collections/contracts/allowlist-hook),
 [PerWalletCapHook](/docs/collections/contracts/per-wallet-cap-hook),
 [HoldsCollectionHook](/docs/collections/contracts/holds-collection-hook),
+[GateHook](/docs/collections/contracts/gate-hook) (the allowlist and
+per-wallet cap composed into one hook, each gate independently optional),
 [Write a mint hook](/docs/collections/guides/write-a-mint-hook).
 
 ## Extension minter

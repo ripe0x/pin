@@ -79,6 +79,7 @@ const ABI_BY_NAME: Record<string, AbiItem[]> = {
     AllowlistHook: abis.allowlistHookAbi as unknown as AbiItem[],
     PerWalletCapHook: abis.perWalletCapHookAbi as unknown as AbiItem[],
     HoldsCollectionHook: abis.holdsCollectionHookAbi as unknown as AbiItem[],
+    GateHook: abis.gateHookAbi as unknown as AbiItem[],
     IMintHook: abis.iMintHookAbi as unknown as AbiItem[],
     IPriceStrategy: abis.iPriceStrategyAbi as unknown as AbiItem[],
     IRenderer: abis.iRendererAbi as unknown as AbiItem[],
@@ -146,6 +147,7 @@ const PROTOCOLS: Protocol[] = [
             {name: 'AllowlistHook', slug: 'allowlist-hook', deploymentsKey: 'allowlistHook', kind: 'singleton'},
             {name: 'PerWalletCapHook', slug: 'per-wallet-cap-hook', deploymentsKey: 'perWalletCapHook', kind: 'singleton'},
             {name: 'HoldsCollectionHook', slug: 'holds-collection-hook', deploymentsKey: 'holdsCollectionHook', kind: 'singleton'},
+            {name: 'GateHook', slug: 'gate-hook', deploymentsKey: 'gateHook', kind: 'singleton'},
             {
                 name: 'IMintHook',
                 slug: 'i-mint-hook',

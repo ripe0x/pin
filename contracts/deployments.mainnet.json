@@ -9,5 +9,6 @@
   "allowlistHook": "",
   "perWalletCapHook": "",
   "holdsCollectionHook": "",
+  "gateHook": "",
   "auctionHouseFactory": ""
 }

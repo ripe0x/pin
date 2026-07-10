@@ -14,11 +14,22 @@ window.tokenData = {
   tokenId: "123",      // decimal string
   collection: "0x…",    // checksum-agnostic lowercase hex address
   chainId: 1,
-  version: 1             // == WorkConfig.injectionVersion
+  version: 1,             // == WorkConfig.injectionVersion
+  context: "token"        // why this document is being rendered, see below
 };
 ```
 
 `hash` and `tokenId` deliberately match Art Blocks' `tokenData` shape, so existing AB-style sketches run unmodified. Everything else is additive. Code SHOULD read only documented fields and tolerate additions.
+
+## Execution context
+
+`context` tells the work's code why the document was rendered:
+
+- `"token"`, the canonical render of a real token (`tokenURI`, and any offchain parity render of a minted token). The determinism rules below apply in full; a missing or unknown context MUST be treated as `"token"`.
+- `"preview"`, an exploratory what-if render from a throwaway seed (`previewURI` onchain, test seeds in the studio, the mint page's pre-mint explore). Composition MUST be exactly what the same seed would produce as a token, a preview that lies is a bug, but presentation MAY adapt (skip a long intro, for example).
+- `"capture"`, an offchain headless render for a static image (thumbnail, OG). Code MAY jump straight to the canonical still (skip animation) and MUST settle on it deterministically.
+
+Previews are also an onchain capability: renderers that can render faithfully from `(tokenId, seed)` alone implement the OPTIONAL `IPreviewRenderer.previewURI(collection, tokenId, seed)` extension. Both [GenerativeRenderer](/docs/collections/contracts/generative-renderer) and the [SVGRenderer](/docs/collections/guides/write-a-renderer) base implement it. Renderers whose output depends on state a preview cannot fake (sibling tokens, companion contracts, hook-recorded mint-time data) simply don't implement it; detection is a try/catch `eth_call`, not ERC-165. A preview document MUST inject `context: "preview"`, and preview metadata carries no provenance attributes, a preview is not a token.
 
 ## Determinism rules for pure works
 
@@ -55,7 +66,7 @@ The studio previewer, mint surface, and artist-page embed build the same documen
 - load the same dependency bytes (from chain, or verified against the onchain hashes),
 - never inject additional globals the onchain render lacks, except a provider for chain-live works.
 
-Test seeds in the studio are ordinary `tokenData` objects with synthetic `hash` values; nothing else may differ.
+Test seeds in the studio are ordinary `tokenData` objects with synthetic `hash` values and `context: "preview"`; nothing else may differ. Offchain renders of real minted tokens inject `context: "token"`; headless capture tooling injects `context: "capture"`.
 
 ## Versioning
 

@@ -72,6 +72,13 @@
           "docs": "/docs/collections/contracts/holds-collection-hook",
           "role": "A reference [mint hook](/docs/collections/contracts/i-mint-hook) gating a mint on the minter holding a token from another collection, typically an earlier collection by the same artist."
         },
+        "GateHook": {
+          "address": null,
+          "kind": "singleton",
+          "abi": "/abis/GateHook.json",
+          "docs": "/docs/collections/contracts/gate-hook",
+          "role": "A reference [mint hook](/docs/collections/contracts/i-mint-hook) composing a Merkle allowlist and a per-wallet cap into ONE hook."
+        },
         "IMintHook": {
           "address": null,
           "kind": "interface",

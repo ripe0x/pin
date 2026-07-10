@@ -32,11 +32,12 @@ resolve.
 Before the artist's code runs, GenerativeRenderer injects a plain script
 setting `window.tokenData`, matching [the injection convention](/docs/collections/reference/injection-convention)
 (render-context v1): `hash` (the token's seed as 0x-prefixed hex),
-`tokenId`, `collection`, `chainId`, and `version`
-(echoing the work's `injectionVersion`). `hash` and `tokenId` deliberately
-match the widely-adopted long-form-generative `tokenData` shape, so
-existing sketches written against that convention run unmodified against a
-PND collection.
+`tokenId`, `collection`, `chainId`, `version`
+(echoing the work's `injectionVersion`), and `context` (`"token"` for a
+canonical `tokenURI` render, `"preview"` for a `previewURI` what-if
+render). `hash` and `tokenId` deliberately match the widely-adopted
+long-form-generative `tokenData` shape, so existing sketches written
+against that convention run unmodified against a PND collection.
 
 Body tag order is fixed and load-bearing: dependencies, then the context
 script, then the artist's code, then the gunzip helper last (only present
@@ -49,6 +50,22 @@ full parity contract between this onchain assembly and the offchain studio
 previewer, mint surface, and artist-site embed, and
 [write a renderer](/docs/collections/guides/write-a-renderer) for building a renderer
 against a work config of your own.
+
+### Previews (IPreviewRenderer)
+
+GenerativeRenderer also implements the OPTIONAL `IPreviewRenderer`
+extension: `previewURI` assembles the identical HTML document as
+`tokenURI`, with a caller-supplied `seed` standing in for the token's real
+`tokenSeed` and `context: "preview"` injected in place of `"token"`. No
+token needs to exist and no state changes; the only requirement is a work
+already set via `setWork`. This makes an exploratory render free for any
+work built against this renderer: a mint page, a marketplace, or a script
+can `eth_call` `previewURI` with a throwaway seed before anyone mints.
+Preview metadata is deliberately not token-shaped: the name is marked as a
+preview, `attributes` carries the seed only (no Mint Order, no
+provenance), and there is no `image` field, the animated document is the
+preview. Callers detect support the same way as any optional interface in
+this repo, a try/catch `eth_call`, not ERC-165.
 
 ## Write functions
 
@@ -114,6 +131,23 @@ The immutable EthFS-style storage contract address holding the gunzip
 helper script, emitted as the final body tag whenever any dependency or
 code file is gzip-compressed. Fixed at construction.
 
+### previewURI
+
+```solidity
+function previewURI(address collection, uint256 tokenId, bytes32 seed) external view returns (string)
+```
+
+view; returns preview metadata for a hypothetical token, without requiring
+one to exist. `tokenId` stands in for whatever the art keys off (in
+Sequential mode, art keyed to mint order previews "the next token" by
+passing `minted + 1`); `seed` stands in for `tokenSeed`. Assembles the same
+HTML document `tokenURI` would with `context: "preview"` injected instead
+of `"token"`, so the composition is exactly what that seed would produce
+as a real token. The returned JSON's `name` is suffixed `(preview)`, and
+`attributes` carries only a `Seed` entry, no Mint Order, no image, a
+preview is not a token. Reverts under the same condition as `tokenURI`
+(`work.code.length == 0`, no work set for the collection).
+
 ### renderAssets
 
 ```solidity
@@ -146,11 +180,11 @@ a `data:application/json;base64,` URI. `name` is the collection name plus
 `#tokenId`; `animation_url` is the assembled `data:text/html;base64,...`
 document; `image` is included only if the token has artwork set (its own
 override, else the collection's shared cover) and is omitted from the JSON
-entirely when neither is set. `attributes` carries Mint Order, Mint Block,
-and Seed (the token's seed as 0x-prefixed hex), read from the collection's
-Mint Mark and `tokenSeed`. Reverts if the collection's work config has no
-code set (`work.code.length == 0`); a collection must have a work wired
-before this renderer can serve it.
+entirely when neither is set. `attributes` carries Mint Order (Sequential
+id-mode collections only) and Seed (the token's seed as 0x-prefixed hex),
+read from the collection's `idMode` and `tokenSeed`. Reverts if the
+collection's work config has no code set (`work.code.length == 0`); a
+collection must have a work wired before this renderer can serve it.
 
 ### workLockedOf
 
