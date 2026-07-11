@@ -8,6 +8,8 @@ import {MockMinter} from "../mocks/CollectionMocks.sol";
 import {CollectionHandler} from "./CollectionHandler.sol";
 
 import {Collection} from "../../../src/collection/Collection.sol";
+import {PooledCollection} from "../../../src/collection/PooledCollection.sol";
+import {CollectionCore} from "../../../src/collection/CollectionCore.sol";
 import {CollectionConfig} from "../../../src/collection/CollectionTypes.sol";
 
 /// @title CollectionInvariants
@@ -25,7 +27,7 @@ contract CollectionInvariants is StdInvariant, CollectionBase {
     CollectionHandler internal handler;
 
     Collection internal seq;
-    Collection internal pooled;
+    PooledCollection internal pooled;
     MockMinter internal seqMinter;
     MockMinter internal pooledMinter;
 
@@ -45,12 +47,12 @@ contract CollectionInvariants is StdInvariant, CollectionBase {
         seq = _collectionWithMinters(seqCfg, seqMinters);
 
         // ── Pooled collection: no built-in paid path, one granted minter ───
-        CollectionConfig memory pooledCfg = _pooledConfig();
+        CollectionConfig memory pooledCfg = _freeConfig();
         pooledCfg.supplyCap = POOLED_CAP;
         pooledMinter = new MockMinter();
         address[] memory pooledMinters = new address[](1);
         pooledMinters[0] = address(pooledMinter);
-        pooled = _collectionWithMinters(pooledCfg, pooledMinters);
+        pooled = _pooledWithMinters(pooledCfg, pooledMinters);
 
         handler = new CollectionHandler(seq, pooled, seqMinter, pooledMinter, SEQ_PRICE, SEQ_CAP, POOLED_CAP);
 
@@ -58,7 +60,7 @@ contract CollectionInvariants is StdInvariant, CollectionBase {
         // the minters are reached exclusively through it.
         targetContract(address(handler));
 
-        bytes4[] memory selectors = new bytes4[](10);
+        bytes4[] memory selectors = new bytes4[](11);
         selectors[0] = CollectionHandler.mintSeqPaid.selector;
         selectors[1] = CollectionHandler.mintSeqExtension.selector;
         selectors[2] = CollectionHandler.mintPooledExtension.selector;
@@ -69,6 +71,7 @@ contract CollectionInvariants is StdInvariant, CollectionBase {
         selectors[7] = CollectionHandler.probeUnauthorizedMintTo.selector;
         selectors[8] = CollectionHandler.probeWrongModeMint.selector;
         selectors[9] = CollectionHandler.probeWrongPayment.selector;
+        selectors[10] = CollectionHandler.probeHolderBurnPooled.selector;
         targetSelector(StdInvariant.FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 
@@ -99,13 +102,11 @@ contract CollectionInvariants is StdInvariant, CollectionBase {
     function invariant_totalPaidInEqualsWithdrawnPlusPending() public view {
         uint256 sumPendingBoth = _sumGhostPendingOn(seq) + _sumGhostPendingOn(pooled);
         assertEq(
-            handler.ghostTotalPaidIn(),
-            handler.ghostTotalWithdrawn() + sumPendingBoth,
-            "paidIn != withdrawn + pending"
+            handler.ghostTotalPaidIn(), handler.ghostTotalWithdrawn() + sumPendingBoth, "paidIn != withdrawn + pending"
         );
     }
 
-    function _sumGhostPendingOn(Collection c) internal view returns (uint256 sum) {
+    function _sumGhostPendingOn(CollectionCore c) internal view returns (uint256 sum) {
         uint256 n = handler.ghostPayeeCount();
         for (uint256 i = 0; i < n; i++) {
             address payee = handler.ghostPayeesEver(i);
@@ -233,10 +234,7 @@ contract CollectionInvariants is StdInvariant, CollectionBase {
         // carries entropy, the was-minted sentinel.
         uint256 n = handler.pooledLiveCount();
         for (uint256 i = 0; i < n; i++) {
-            assertTrue(
-                pooled.tokenSeed(handler.pooledLiveIds(i)) != bytes32(0),
-                "pooled live id missing entropy"
-            );
+            assertTrue(pooled.tokenSeed(handler.pooledLiveIds(i)) != bytes32(0), "pooled live id missing entropy");
         }
     }
 
@@ -248,7 +246,7 @@ contract CollectionInvariants is StdInvariant, CollectionBase {
 
     function invariant_seqMintsNeverExceedCap() public view {
         assertTrue(handler.ghostSeqMints() <= SEQ_CAP, "seq mints exceeded cap");
-        (, , uint256 minted) = seq.config();
+        (,, uint256 minted) = seq.config();
         assertTrue(minted <= SEQ_CAP, "seq contract mintedEver exceeded cap");
     }
 
@@ -271,5 +269,9 @@ contract CollectionInvariants is StdInvariant, CollectionBase {
 
     function invariant_wrongPaymentMintNeverSucceeds() public view {
         assertFalse(handler.ghostWrongPaymentMintSucceeded(), "wrong-payment mint succeeded");
+    }
+
+    function invariant_holderBurnPooledNeverSucceeds() public view {
+        assertFalse(handler.ghostHolderBurnPooledSucceeded(), "holder burned a pooled token out-of-band");
     }
 }

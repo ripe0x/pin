@@ -5,7 +5,7 @@ import {Script, console2} from "forge-std/Script.sol";
 
 import {CollectionFactory} from "../src/collection/CollectionFactory.sol";
 import {Collection} from "../src/collection/Collection.sol";
-import {CollectionConfig, IdMode} from "../src/collection/CollectionTypes.sol";
+import {CollectionConfig} from "../src/collection/CollectionTypes.sol";
 import {RenderAssets} from "../src/collection/renderers/RenderAssets.sol";
 
 interface ICatalogClaim {
@@ -107,22 +107,17 @@ contract SeedDevCollections is Script {
     /// @dev Collab roster and 3 mints; the artist's half of the attribution
     ///      handshake is filed in the real Catalog, the collab (anvil account
     ///      1) deliberately stays unclaimed (listed-but-unconfirmed).
-    function _seedOrbits(address factory, address renderAssets, address artist)
-        private
-        returns (address orbits)
-    {
+    function _seedOrbits(address factory, address renderAssets, address artist) private returns (address orbits) {
         CollectionConfig memory cfg;
         cfg.price = 0.005 ether;
         cfg.supplyCap = 64;
-        cfg.idMode = IdMode.Sequential;
 
         address[] memory roster = new address[](2);
         roster[0] = artist;
         roster[1] = ANVIL_ACCOUNT_1;
 
-        orbits = CollectionFactory(factory).createCollection(
-            "Orbit Studies", "ORBIT", artist, cfg, new address[](0), roster
-        );
+        orbits = CollectionFactory(factory)
+            .createCollection("Orbit Studies", "ORBIT", artist, cfg, new address[](0), roster);
         // Cover art lives in renderer-land (RenderAssets), not the core.
         RenderAssets(renderAssets).setCover(orbits, ORBIT_COVER);
         Collection(orbits).mintWithReferral{value: 0.015 ether}(3, address(0), "");
@@ -130,34 +125,24 @@ contract SeedDevCollections is Script {
     }
 
     /// @dev ZERO mints: exercises the pre-mint collection page (no grid).
-    function _seedDrift(address factory, address renderAssets, address artist)
-        private
-        returns (address drift)
-    {
+    function _seedDrift(address factory, address renderAssets, address artist) private returns (address drift) {
         CollectionConfig memory cfg;
         cfg.price = 0.003 ether;
         cfg.supplyCap = 32;
-        cfg.idMode = IdMode.Sequential;
 
-        drift = CollectionFactory(factory).createCollection(
-            "Signal Drift", "DRIFT", artist, cfg, new address[](0), new address[](0)
-        );
+        drift = CollectionFactory(factory)
+            .createCollection("Signal Drift", "DRIFT", artist, cfg, new address[](0), new address[](0));
         RenderAssets(renderAssets).setCover(drift, DRIFT_COVER);
     }
 
     /// @dev Edition preset with an inline-SVG cover (RenderAssets) and 2 mints.
-    function _seedField(address factory, address renderAssets, address artist)
-        private
-        returns (address field)
-    {
+    function _seedField(address factory, address renderAssets, address artist) private returns (address field) {
         CollectionConfig memory cfg;
         cfg.price = 0.002 ether;
         cfg.supplyCap = 25;
-        cfg.idMode = IdMode.Sequential;
 
-        field = CollectionFactory(factory).createCollection(
-            "Field Notes", "FIELD", artist, cfg, new address[](0), new address[](0)
-        );
+        field = CollectionFactory(factory)
+            .createCollection("Field Notes", "FIELD", artist, cfg, new address[](0), new address[](0));
         RenderAssets(renderAssets).setCover(field, FIELD_COVER);
         Collection(field).mintWithReferral{value: 0.004 ether}(2, address(0), "");
     }

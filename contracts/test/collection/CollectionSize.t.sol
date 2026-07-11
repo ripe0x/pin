@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 
 import {Collection} from "../../src/collection/Collection.sol";
+import {PooledCollection} from "../../src/collection/PooledCollection.sol";
 
 /// @dev EIP-170 regression gate. Foundry's test EVM does NOT enforce the
 ///      24,576-byte deployed-code limit, so without this assertion a
@@ -27,5 +28,13 @@ contract CollectionSizeTest is Test {
         emit log_named_uint("Collection deployed bytecode size", size);
         emit log_named_uint("EIP-170 margin", EIP170_LIMIT - size);
         assertLe(size, GATE, "Collection implementation exceeds the size gate");
+    }
+
+    function test_pooledImplementationFitsUnderEip170_withHeadroom() public {
+        address impl = address(new PooledCollection());
+        uint256 size = impl.code.length;
+        emit log_named_uint("PooledCollection deployed bytecode size", size);
+        emit log_named_uint("EIP-170 margin", EIP170_LIMIT - size);
+        assertLe(size, GATE, "PooledCollection implementation exceeds the size gate");
     }
 }

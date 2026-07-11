@@ -6,6 +6,7 @@ import {Base64} from "solady/utils/Base64.sol";
 import {LibString} from "solady/utils/LibString.sol";
 
 import {Collection} from "../../../src/collection/Collection.sol";
+import {PooledCollection} from "../../../src/collection/PooledCollection.sol";
 import {CollectionFactory} from "../../../src/collection/CollectionFactory.sol";
 import {CollectionConfig, IdMode} from "../../../src/collection/CollectionTypes.sol";
 import {ExampleScriptyWork} from "../../../src/collection/templates/ExampleScriptyWork.sol";
@@ -49,8 +50,7 @@ contract ScriptyRendererForkTest is Test {
     string constant GUNZIP_FILE = "gunzipScripts-0.0.1.js";
     string constant P5_GZ_FILE = "p5-v1.5.0.min.js.gz";
     string constant ARTIST_FILE = "fork-sketch.js";
-    string constant ARTIST_MARKER =
-        "function setup(){/*byo-renderer-proof*/createCanvas(64,64)}";
+    string constant ARTIST_MARKER = "function setup(){/*byo-renderer-proof*/createCanvas(64,64)}";
 
     Collection collection;
     ExampleScriptyWork renderer;
@@ -80,24 +80,19 @@ contract ScriptyRendererForkTest is Test {
         deps[0] = CodeRef({store: ETHFS_V2_FILE_STORAGE, name: P5_GZ_FILE, kind: CodeKind.ScriptGzip});
         CodeRef[] memory code = new CodeRef[](1);
         code[0] = CodeRef({store: address(artistStore), name: ARTIST_FILE, kind: CodeKind.Script});
-        renderer = new ExampleScriptyWork(
-            SCRIPTY_BUILDER_V2, ETHFS_V2_FILE_STORAGE, GUNZIP_FILE, code, deps, 1
-        );
+        renderer = new ExampleScriptyWork(SCRIPTY_BUILDER_V2, ETHFS_V2_FILE_STORAGE, GUNZIP_FILE, code, deps, 1);
 
         Collection impl = new Collection();
         // Factory wires the template as the default renderer, so a plain
         // create points the collection's slot straight at it.
         CollectionFactory factory =
-            new CollectionFactory(address(impl), address(renderer), address(0));
+            new CollectionFactory(address(impl), address(new PooledCollection()), address(renderer), address(0));
 
         CollectionConfig memory cfg;
         cfg.supplyCap = 10;
-        cfg.idMode = IdMode.Sequential;
 
         collection = Collection(
-            factory.createCollection(
-                "BYO Proof", "BYO", address(this), cfg, new address[](0), new address[](0)
-            )
+            factory.createCollection("BYO Proof", "BYO", address(this), cfg, new address[](0), new address[](0))
         );
         collection.mint(1);
     }
@@ -106,25 +101,17 @@ contract ScriptyRendererForkTest is Test {
         if (!forked) return;
 
         string memory uri = collection.tokenURI(1);
-        assertTrue(
-            LibString.startsWith(uri, "data:application/json;base64,"), "json data uri prefix"
-        );
+        assertTrue(LibString.startsWith(uri, "data:application/json;base64,"), "json data uri prefix");
 
         string memory json = string(Base64.decode(LibString.slice(uri, 29, bytes(uri).length)));
-        assertTrue(
-            LibString.contains(json, '"animation_url":"data:text/html;base64,'),
-            "animation_url present"
-        );
+        assertTrue(LibString.contains(json, '"animation_url":"data:text/html;base64,'), "animation_url present");
 
         string memory html = _extractHtml(json);
 
         // The injected context carries the token's real seed per the injection
         // convention (docs/injection-convention.md).
-        string memory expectedHash = string(
-            abi.encodePacked(
-                'window.tokenData={"hash":"', uint256(collection.tokenSeed(1)).toHexString(32)
-            )
-        );
+        string memory expectedHash =
+            string(abi.encodePacked('window.tokenData={"hash":"', uint256(collection.tokenSeed(1)).toHexString(32)));
         assertTrue(LibString.contains(html, expectedHash), "tokenData hash injected");
         assertTrue(LibString.contains(html, '"tokenId":"1"'), "tokenId injected");
         assertTrue(LibString.contains(html, '"chainId":1'), "chainId injected");
@@ -142,11 +129,8 @@ contract ScriptyRendererForkTest is Test {
     function test_fork_attributes_carryDerivedAndSeedTraits() public {
         if (!forked) return;
 
-        string memory json = string(
-            Base64.decode(
-                LibString.slice(collection.tokenURI(1), 29, bytes(collection.tokenURI(1)).length)
-            )
-        );
+        string memory json =
+            string(Base64.decode(LibString.slice(collection.tokenURI(1), 29, bytes(collection.tokenURI(1)).length)));
 
         // Provenance + seed traits from the base.
         assertTrue(LibString.contains(json, '"trait_type":"Mint Order","value":1'), "mint order");
@@ -157,8 +141,7 @@ contract ScriptyRendererForkTest is Test {
         string[4] memory palettes = ["Ember", "Dusk", "Frost", "Verdant"];
         string memory expected = palettes[uint256(collection.tokenSeed(1)) % 4];
         assertTrue(
-            LibString.contains(json, string(abi.encodePacked('"value":"', expected, '"'))),
-            "palette matches seed"
+            LibString.contains(json, string(abi.encodePacked('"value":"', expected, '"'))), "palette matches seed"
         );
     }
 

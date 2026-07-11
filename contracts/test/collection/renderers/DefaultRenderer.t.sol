@@ -5,13 +5,14 @@ import {Test} from "forge-std/Test.sol";
 import {Base64} from "solady/utils/Base64.sol";
 
 import {Collection} from "../../../src/collection/Collection.sol";
+import {PooledCollection} from "../../../src/collection/PooledCollection.sol";
 import {CollectionFactory} from "../../../src/collection/CollectionFactory.sol";
 import {DefaultRenderer} from "../../../src/collection/renderers/DefaultRenderer.sol";
 import {RenderAssets} from "../../../src/collection/renderers/RenderAssets.sol";
 import {CollectionConfig, IdMode} from "../../../src/collection/CollectionTypes.sol";
 
 /// @notice Output-shape tests for DefaultRenderer: tokenURI/contractURI shape,
-///         image field (default vs per-token override), and Mint Mark
+///         image field (default vs per-token override), and provenance
 ///         provenance attributes. Deploys a real Collection via the
 ///         factory so the renderer is exercised against the actual
 ///         ICollectionView implementation, not a mock.
@@ -31,21 +32,16 @@ contract DefaultRendererTest is Test {
         assets = new RenderAssets();
         renderer = new DefaultRenderer(address(assets));
         impl = new Collection();
-        factory = new CollectionFactory(address(impl), address(renderer), address(0));
+        factory = new CollectionFactory(address(impl), address(new PooledCollection()), address(renderer), address(0));
 
         CollectionConfig memory cfg;
         cfg.price = 0; // gas-only mint
         cfg.supplyCap = 0;
-        cfg.idMode = IdMode.Sequential;
 
         address[] memory noMinters = new address[](0);
         address[] memory noArtists = new address[](0);
 
-        collection = Collection(
-            factory.createCollection(
-                "Test Collection", "TCOL", artist, cfg, noMinters, noArtists
-            )
-        );
+        collection = Collection(factory.createCollection("Test Collection", "TCOL", artist, cfg, noMinters, noArtists));
         // Cover art lives in renderer-land: the collection owner writes it to
         // the RenderAssets registry.
         vm.prank(artist);
@@ -129,7 +125,7 @@ contract DefaultRendererTest is Test {
         assertEq(assets.coverOf(address(collection)), "ipfs://QmByAdmin");
     }
 
-    // ── Mint Mark provenance attributes ─────────────────────────────────────
+    // ── derived provenance attributes ────────────────────────────────────────
 
     function test_tokenURI_markAttributes_firstMint() public {
         uint256 tokenId = _mint();
@@ -142,9 +138,7 @@ contract DefaultRendererTest is Test {
         // Referrer / Status at Mint are deliberately NOT traits: both are
         // event-only provenance on Minted, no longer stored per token.
         assertFalse(_contains(json, '"trait_type":"Referrer"'), "Referrer trait was removed");
-        assertFalse(
-            _contains(json, '"trait_type":"Status at Mint"'), "Status at Mint trait was removed"
-        );
+        assertFalse(_contains(json, '"trait_type":"Status at Mint"'), "Status at Mint trait was removed");
         assertTrue(
             _contains(json, '"trait_type":"Provenance","value":"First mint of the collection"'),
             "missing First mint provenance"
@@ -158,10 +152,7 @@ contract DefaultRendererTest is Test {
         string memory json = _decode(collection.tokenURI(2));
 
         assertTrue(_contains(json, '"trait_type":"Mint Order","value":2'), "wrong Mint Order");
-        assertFalse(
-            _contains(json, "First mint of the collection"),
-            "second mint should not carry First provenance"
-        );
+        assertFalse(_contains(json, "First mint of the collection"), "second mint should not carry First provenance");
     }
 
     /// @dev Final provenance is derived live from status + minted count, so
@@ -179,18 +170,12 @@ contract DefaultRendererTest is Test {
 
         vm.warp(block.timestamp + 100); // window ends -> derived Closed
         string memory closed = _decode(collection.tokenURI(tokenId));
-        assertTrue(
-            _contains(closed, "Final mint of the collection"),
-            "closed: last minted token derives Final"
-        );
+        assertTrue(_contains(closed, "Final mint of the collection"), "closed: last minted token derives Final");
 
         vm.prank(artist);
         collection.setMintWindow(0, 0); // reopen
         string memory reopened = _decode(collection.tokenURI(tokenId));
-        assertFalse(
-            _contains(reopened, "Final mint of the collection"),
-            "reopened: Final derives away"
-        );
+        assertFalse(_contains(reopened, "Final mint of the collection"), "reopened: Final derives away");
     }
 
     function test_tokenURI_referrerIsNotATrait() public {

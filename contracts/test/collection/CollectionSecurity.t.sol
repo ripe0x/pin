@@ -11,7 +11,9 @@ import {
 } from "./mocks/CollectionMocks.sol";
 
 import {Collection} from "../../src/collection/Collection.sol";
+import {PooledCollection} from "../../src/collection/PooledCollection.sol";
 import {ICollection} from "../../src/collection/interfaces/ICollection.sol";
+import {ICollectionCore} from "../../src/collection/interfaces/ICollectionCore.sol";
 import {CollectionConfig, InitParams, IdMode} from "../../src/collection/CollectionTypes.sol";
 
 /// @dev Access-control matrix, reentrancy attempts, malicious-strategy
@@ -33,7 +35,7 @@ contract CollectionSecurityTest is CollectionBase {
 
     function test_accessControl_onlyOwnerFunctions() public {
         Collection c = _collection(_freeConfig());
-        bytes memory unauth = abi.encodeWithSelector(ICollection.NotAuthorized.selector);
+        bytes memory unauth = abi.encodeWithSelector(ICollectionCore.NotAuthorized.selector);
 
         vm.startPrank(stranger);
 
@@ -81,13 +83,13 @@ contract CollectionSecurityTest is CollectionBase {
 
     function test_accessControl_minterGatedFunctions() public {
         Collection seq = _collection(_freeConfig());
-        Collection pooled = _collection(_pooledConfig());
+        PooledCollection pooled = _pooled(_freeConfig());
 
-        vm.expectRevert(ICollection.NotMinter.selector);
+        vm.expectRevert(ICollectionCore.NotMinter.selector);
         vm.prank(stranger);
         seq.mintTo(stranger, address(0), "");
 
-        vm.expectRevert(ICollection.NotMinter.selector);
+        vm.expectRevert(ICollectionCore.NotMinter.selector);
         vm.prank(stranger);
         pooled.mintToId(stranger, 1, address(0), "");
     }
@@ -97,7 +99,7 @@ contract CollectionSecurityTest is CollectionBase {
         vm.prank(collector);
         c.mint(1);
 
-        vm.expectRevert(ICollection.NotAuthorized.selector);
+        vm.expectRevert(ICollectionCore.NotAuthorized.selector);
         vm.prank(stranger);
         c.burn(1);
 
@@ -160,7 +162,7 @@ contract CollectionSecurityTest is CollectionBase {
         // outer `.call` as `ok == false`, which the outer withdraw()
         // reports as WithdrawFailed() rather than propagating the raw
         // ReentrancyGuardReentrantCall selector.
-        vm.expectRevert(ICollection.WithdrawFailed.selector);
+        vm.expectRevert(ICollectionCore.WithdrawFailed.selector);
         r.pull();
         // Balance is untouched: the reentrant attempt did not partially drain.
         assertEq(c.pendingWithdrawal(address(r)), 1 ether);
@@ -210,7 +212,7 @@ contract CollectionSecurityTest is CollectionBase {
         Collection c = _collection(cfg);
 
         vm.deal(collector, 1 ether);
-        vm.expectRevert(abi.encodeWithSelector(ICollection.Underpayment.selector, 1 ether, 0.5 ether));
+        vm.expectRevert(abi.encodeWithSelector(ICollectionCore.Underpayment.selector, 1 ether, 0.5 ether));
         vm.prank(collector);
         c.mintWithReferral{value: 0.5 ether}(1, referrer, "");
     }
@@ -231,19 +233,19 @@ contract CollectionSecurityTest is CollectionBase {
     }
 
     // ════════════════════════════════════════════════════════════════════
-    // Unauthorized mintTo / mintToId in the wrong id mode.
+    // Unauthorized mintTo / mintToId (each on its own form).
     // ════════════════════════════════════════════════════════════════════
 
     function test_unauthorizedMinter_cannotMintTo() public {
         Collection c = _collection(_freeConfig());
-        vm.expectRevert(ICollection.NotMinter.selector);
+        vm.expectRevert(ICollectionCore.NotMinter.selector);
         vm.prank(stranger);
         c.mintTo(stranger, address(0), "");
     }
 
     function test_unauthorizedMinter_cannotMintToId() public {
-        Collection c = _collection(_pooledConfig());
-        vm.expectRevert(ICollection.NotMinter.selector);
+        PooledCollection c = _pooled(_freeConfig());
+        vm.expectRevert(ICollectionCore.NotMinter.selector);
         vm.prank(stranger);
         c.mintToId(stranger, 1, address(0), "");
     }
@@ -258,13 +260,13 @@ contract CollectionSecurityTest is CollectionBase {
         c.setMinter(address(minter), false);
         assertFalse(c.isMinter(address(minter)));
 
-        vm.expectRevert(ICollection.NotMinter.selector);
+        vm.expectRevert(ICollectionCore.NotMinter.selector);
         minter.callMintTo(ICollection(address(c)), collector, address(0), "");
     }
 
     function test_setMinter_rejectsZeroAddress() public {
         Collection c = _collection(_freeConfig());
-        vm.expectRevert(ICollection.ZeroMinter.selector);
+        vm.expectRevert(ICollectionCore.ZeroMinter.selector);
         vm.prank(artist);
         c.setMinter(address(0), true);
     }

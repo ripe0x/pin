@@ -5,6 +5,7 @@ import {CollectionBase} from "./CollectionBase.sol";
 
 import {Collection} from "../../src/collection/Collection.sol";
 import {ICollection} from "../../src/collection/interfaces/ICollection.sol";
+import {ICollectionCore} from "../../src/collection/interfaces/ICollectionCore.sol";
 import {CollectionConfig, CollectionStatus} from "../../src/collection/CollectionTypes.sol";
 
 /// @dev Admins: the owner may grant flat, full-access admin keys. An admin can
@@ -14,10 +15,8 @@ import {CollectionConfig, CollectionStatus} from "../../src/collection/Collectio
 contract CollectionAdminTest is CollectionBase {
     address internal admin = makeAddr("admin");
 
-    bytes internal ownableUnauthAdmin =
-        abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", admin);
-    bytes internal ownableUnauthStranger =
-        abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", stranger);
+    bytes internal ownableUnauthAdmin = abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", admin);
+    bytes internal ownableUnauthStranger = abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", stranger);
 
     // ── grant / revoke lifecycle ──────────────────────────────────────────────
 
@@ -26,13 +25,13 @@ contract CollectionAdminTest is CollectionBase {
         assertFalse(c.isAdmin(admin));
 
         vm.expectEmit(true, false, false, true, address(c));
-        emit ICollection.AdminSet(admin, true);
+        emit ICollectionCore.AdminSet(admin, true);
         vm.prank(artist);
         c.addAdmin(admin);
         assertTrue(c.isAdmin(admin));
 
         vm.expectEmit(true, false, false, true, address(c));
-        emit ICollection.AdminSet(admin, false);
+        emit ICollectionCore.AdminSet(admin, false);
         vm.prank(artist);
         c.removeAdmin(admin);
         assertFalse(c.isAdmin(admin));
@@ -42,7 +41,7 @@ contract CollectionAdminTest is CollectionBase {
 
     function test_addAdmin_rejectsZeroAccount() public {
         Collection c = _collection(_freeConfig());
-        vm.expectRevert(ICollection.ZeroAccount.selector);
+        vm.expectRevert(ICollectionCore.ZeroAccount.selector);
         vm.prank(artist);
         c.addAdmin(address(0));
     }
@@ -51,7 +50,7 @@ contract CollectionAdminTest is CollectionBase {
         Collection c = _collection(_freeConfig());
         vm.startPrank(artist);
         c.addAdmin(admin);
-        vm.expectRevert(ICollection.AlreadyAdmin.selector);
+        vm.expectRevert(ICollectionCore.AlreadyAdmin.selector);
         c.addAdmin(admin);
         vm.stopPrank();
     }
@@ -68,7 +67,7 @@ contract CollectionAdminTest is CollectionBase {
     function test_removeAdmin_rejectsNotAnAdmin() public {
         Collection c = _collection(_freeConfig());
         // never granted
-        vm.expectRevert(ICollection.NotAnAdmin.selector);
+        vm.expectRevert(ICollectionCore.NotAnAdmin.selector);
         vm.prank(artist);
         c.removeAdmin(admin);
     }
@@ -78,7 +77,7 @@ contract CollectionAdminTest is CollectionBase {
         vm.startPrank(artist);
         c.addAdmin(admin);
         c.removeAdmin(admin);
-        vm.expectRevert(ICollection.NotAnAdmin.selector);
+        vm.expectRevert(ICollectionCore.NotAnAdmin.selector);
         c.removeAdmin(admin); // second remove has nothing to revoke
         vm.stopPrank();
     }
@@ -89,7 +88,7 @@ contract CollectionAdminTest is CollectionBase {
         c.addAdmin(admin);
 
         // a caller who is neither the owner nor the account itself is rejected
-        vm.expectRevert(ICollection.NotAuthorized.selector);
+        vm.expectRevert(ICollectionCore.NotAuthorized.selector);
         vm.prank(stranger);
         c.removeAdmin(admin);
     }
@@ -102,13 +101,13 @@ contract CollectionAdminTest is CollectionBase {
 
         // an admin may drop its own key by passing its own address
         vm.expectEmit(true, false, false, true, address(c));
-        emit ICollection.AdminSet(admin, false);
+        emit ICollectionCore.AdminSet(admin, false);
         vm.prank(admin);
         c.removeAdmin(admin);
         assertFalse(c.isAdmin(admin));
 
         // and having renounced, it can no longer manage
-        vm.expectRevert(ICollection.NotAuthorized.selector);
+        vm.expectRevert(ICollectionCore.NotAuthorized.selector);
         vm.prank(admin);
         c.setMintWindow(0, 0);
     }
@@ -180,7 +179,7 @@ contract CollectionAdminTest is CollectionBase {
 
         // ...nor revoke a PEER: removeAdmin allows only the owner or the
         // account itself, so an admin removing a different admin is rejected.
-        vm.expectRevert(ICollection.NotAuthorized.selector);
+        vm.expectRevert(ICollectionCore.NotAuthorized.selector);
         vm.prank(admin);
         c.removeAdmin(admin2);
     }
@@ -204,14 +203,14 @@ contract CollectionAdminTest is CollectionBase {
         c.removeAdmin(admin);
         vm.stopPrank();
 
-        vm.expectRevert(ICollection.NotAuthorized.selector);
+        vm.expectRevert(ICollectionCore.NotAuthorized.selector);
         vm.prank(admin);
         c.setMintWindow(0, 0);
     }
 
     function test_nonAdmin_cannotManage() public {
         Collection c = _collection(_freeConfig());
-        vm.expectRevert(ICollection.NotAuthorized.selector);
+        vm.expectRevert(ICollectionCore.NotAuthorized.selector);
         vm.prank(stranger);
         c.setMintWindow(0, 0);
     }
@@ -240,7 +239,7 @@ contract CollectionAdminTest is CollectionBase {
         vm.prank(admin);
         c.lockRenderer();
 
-        vm.expectRevert(ICollection.RendererIsLocked.selector);
+        vm.expectRevert(ICollectionCore.RendererIsLocked.selector);
         vm.prank(admin);
         c.setRenderer(makeAddr("nope"));
     }

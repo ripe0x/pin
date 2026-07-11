@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {IERC721} from "openzeppelin-contracts/contracts/token/ERC721/IERC721.sol";
 import {LibString} from "solady/utils/LibString.sol";
 
+import {PooledCollection} from "../../../src/collection/PooledCollection.sol";
 import {Collection} from "../../../src/collection/Collection.sol";
 import {CollectionFactory} from "../../../src/collection/CollectionFactory.sol";
 import {IRenderer, ICollectionView} from "../../../src/collection/interfaces/IRenderer.sol";
@@ -39,19 +40,11 @@ import {MockRenderer} from "../mocks/CollectionMocks.sol";
 contract MintClock is IMintHook {
     mapping(address => mapping(uint256 => uint64)) public mintBlockOf;
 
-    function beforeMint(address, uint256, uint256, address, bytes calldata)
-        external
-        pure
-        override
-        returns (bytes4)
-    {
+    function beforeMint(address, uint256, uint256, address, bytes calldata) external pure override returns (bytes4) {
         return IMintHook.beforeMint.selector;
     }
 
-    function afterMint(address, uint256 quantity, uint256 firstTokenId, address, bytes calldata)
-        external
-        override
-    {
+    function afterMint(address, uint256 quantity, uint256 firstTokenId, address, bytes calldata) external override {
         for (uint256 k = 0; k < quantity; k++) {
             mintBlockOf[msg.sender][firstTokenId + k] = uint64(block.number);
         }
@@ -134,20 +127,12 @@ contract FrameRenderer is IRenderer {
         frameLock = frameLock_;
     }
 
-    function tokenURI(address collection, uint256 tokenId)
-        external
-        view
-        override
-        returns (string memory)
-    {
+    function tokenURI(address collection, uint256 tokenId) external view override returns (string memory) {
         (bool locked, bytes32 lockHash) = frameLock.frameOf(collection, tokenId);
         bytes32 frame = locked ? lockHash : blockhash(block.number - 1);
         bytes32 seed = ICollectionView(collection).tokenSeed(tokenId);
-        return string(
-            abi.encodePacked(
-                "frame:", uint256(frame).toHexString(32), ":seed:", uint256(seed).toHexString(32)
-            )
-        );
+        return
+            string(abi.encodePacked("frame:", uint256(frame).toHexString(32), ":seed:", uint256(seed).toHexString(32)));
     }
 
     function contractURI(address) external pure override returns (string memory) {
@@ -168,8 +153,9 @@ contract MiniTBAMTest is Test {
 
     function setUp() public {
         Collection impl = new Collection();
-        CollectionFactory factory =
-            new CollectionFactory(address(impl), address(new MockRenderer()), address(0));
+        CollectionFactory factory = new CollectionFactory(
+            address(impl), address(new PooledCollection()), address(new MockRenderer()), address(0)
+        );
 
         mintClock = new MintClock();
         frameLock = new FrameLock(mintClock);
@@ -178,16 +164,12 @@ contract MiniTBAMTest is Test {
 
         CollectionConfig memory cfg;
         cfg.supplyCap = 100;
-        cfg.idMode = IdMode.Sequential;
         cfg.priceStrategy = address(strategy);
         cfg.renderer = address(renderer);
         cfg.mintHook = address(mintClock); // bring-your-own mint-time provenance
 
-        collection = Collection(
-            factory.createCollection(
-                "Mini TBAM", "MTBAM", artist, cfg, new address[](0), new address[](0)
-            )
-        );
+        collection =
+            Collection(factory.createCollection("Mini TBAM", "MTBAM", artist, cfg, new address[](0), new address[](0)));
 
         // Walk past genesis so blockhash(block.number - 1) exists, and give
         // every recent block a knowable hash.
@@ -264,10 +246,7 @@ contract MiniTBAMTest is Test {
         vm.setBlockhash(block.number - 1, keccak256("a new frame"));
         string memory frameB = collection.tokenURI(t1);
 
-        assertTrue(
-            keccak256(bytes(frameA)) != keccak256(bytes(frameB)),
-            "unlocked token re-renders every block"
-        );
+        assertTrue(keccak256(bytes(frameA)) != keccak256(bytes(frameB)), "unlocked token re-renders every block");
     }
 
     function test_lockFreezesChosenFrame() public {
@@ -286,8 +265,7 @@ contract MiniTBAMTest is Test {
 
         assertEq(collection.tokenURI(t1), lockedFrame, "locked frame is frozen forever");
         assertTrue(
-            keccak256(bytes(collection.tokenURI(t2))) != keccak256(bytes(liveBefore)),
-            "unlocked sibling keeps churning"
+            keccak256(bytes(collection.tokenURI(t2))) != keccak256(bytes(liveBefore)), "unlocked sibling keeps churning"
         );
     }
 

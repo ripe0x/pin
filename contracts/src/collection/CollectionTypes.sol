@@ -19,11 +19,13 @@ enum CollectionStatus {
     Closed // the window passed, or a sequential cap filled
 }
 
-/// @notice How token ids are handed out. Fixed at init.
-///         Sequential: the contract counts 1, 2, 3. The id IS the mint order,
-///         and ids are never reused after a burn.
-///         Pooled: an authorized minter chooses each id (tokenId == sourceId
-///         forms). A burned id may mint again as a new instance, new seed.
+/// @notice How token ids are handed out. Not a setting — each mode is its own
+///         contract, and idMode() says which one you are holding.
+///         Sequential (Collection): the contract counts 1, 2, 3. The id IS
+///         the mint order, and ids are never reused after a burn.
+///         Pooled (PooledCollection): an authorized minter chooses each id
+///         (tokenId == sourceId forms). A burned id may mint again as a new
+///         instance, new seed.
 enum IdMode {
     Sequential,
     Pooled
@@ -45,7 +47,6 @@ struct CollectionConfig {
     address renderer; // answers tokenURI; 0 at init = take the factory default
     address mintHook; // 0 = none
     address priceStrategy; // 0 = the stored fixed price
-    IdMode idMode; // fixed at init
     bool rendererLocked; // one-way; see lockRenderer()
     bool supplyLocked; // one-way; see lockSupply()
 }

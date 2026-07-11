@@ -6,6 +6,7 @@ import {Catalog} from "../src/Catalog.sol";
 import {DefaultRenderer} from "../src/collection/renderers/DefaultRenderer.sol";
 import {RenderAssets} from "../src/collection/renderers/RenderAssets.sol";
 import {Collection} from "../src/collection/Collection.sol";
+import {PooledCollection} from "../src/collection/PooledCollection.sol";
 import {CollectionFactory} from "../src/collection/CollectionFactory.sol";
 
 /// @notice Deploy script for the Collection system: Catalog, RenderAssets,
@@ -29,12 +30,12 @@ import {CollectionFactory} from "../src/collection/CollectionFactory.sol";
 ///         `runs`), same source. Pin the toolchain (solc 0.8.24, optimizer
 ///         runs = 200, per `foundry.toml`) — salt alone is not enough.
 ///
-///         RenderAssets, DefaultRenderer, the Collection implementation, and
-///         the factory are deployed via plain CREATE here (not CREATE2) since
-///         nothing downstream needs them at a predicted address ahead of time
-///         and a plain `new` keeps the script simple. (RenderAssets and the
-///         Collection impl take no constructor args; DefaultRenderer takes the
-///         RenderAssets address deployed one step earlier.) If cross-chain
+///         RenderAssets, DefaultRenderer, the two collection implementations,
+///         and the factory are deployed via plain CREATE here (not CREATE2)
+///         since nothing downstream needs them at a predicted address ahead of
+///         time and a plain `new` keeps the script simple. (RenderAssets and
+///         the implementations take no constructor args; DefaultRenderer takes
+///         the RenderAssets address deployed one step earlier.) If cross-chain
 ///         address parity for these ever matters, they can be moved behind the
 ///         same deterministic-deployer pattern with no other changes.
 ///
@@ -42,10 +43,10 @@ import {CollectionFactory} from "../src/collection/CollectionFactory.sol";
 ///           1. Catalog                   (or reuse via CATALOG env)
 ///           2. RenderAssets             (CREATE, no args)
 ///           3. DefaultRenderer          (CREATE, renderAssets)
-///           4. Collection impl (CREATE, no args; constructor calls
-///                                        _disableInitializers so the impl
-///                                        itself can never be initialized)
-///           5. CollectionFactory(impl, defaultRenderer, catalog)
+///           4. Collection + PooledCollection impls (CREATE, no args; each
+///                                        constructor calls _disableInitializers
+///                                        so an impl can never be initialized)
+///           5. CollectionFactory(seqImpl, pooledImpl, defaultRenderer, catalog)
 ///
 ///         Run with (mainnet):
 ///           forge script script/DeployCollectionSystem.s.sol \
@@ -68,8 +69,7 @@ contract DeployCollectionSystemScript is Script {
     /// @dev Canonical deterministic-deployment proxy. Same address on every
     ///      EVM chain. See
     ///      https://github.com/Arachnid/deterministic-deployment-proxy
-    address internal constant DETERMINISTIC_DEPLOYER =
-        0x4e59b44847b379578588920cA78FbF26c0B4956C;
+    address internal constant DETERMINISTIC_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
     function run() external {
         uint256 deployerPk = vm.envUint("PRIVATE_KEY");
@@ -99,23 +99,24 @@ contract DeployCollectionSystemScript is Script {
         vm.stopBroadcast();
         console2.log("DefaultRenderer deployed at:", address(defaultRenderer));
 
-        // ── 4. Collection implementation — plain CREATE, no args ──
+        // ── 4. The two collection implementations — plain CREATE, no args ──
         vm.startBroadcast(deployerPk);
-        Collection implementation = new Collection();
+        Collection sequentialImpl = new Collection();
+        PooledCollection pooledImpl = new PooledCollection();
         vm.stopBroadcast();
-        console2.log("Collection implementation deployed at:", address(implementation));
+        console2.log("Collection (sequential) impl deployed at:", address(sequentialImpl));
+        console2.log("PooledCollection impl deployed at:       ", address(pooledImpl));
 
-        // ── 5. CollectionFactory(implementation, defaultRenderer, catalog) ──
+        // ── 5. CollectionFactory(seqImpl, pooledImpl, defaultRenderer, catalog) ──
         vm.startBroadcast(deployerPk);
-        CollectionFactory factory = new CollectionFactory(
-            address(implementation), address(defaultRenderer), catalog
-        );
+        CollectionFactory factory =
+            new CollectionFactory(address(sequentialImpl), address(pooledImpl), address(defaultRenderer), catalog);
         vm.stopBroadcast();
 
-        require(factory.implementation() == address(implementation), "impl mismatch");
+        require(factory.sequentialImplementation() == address(sequentialImpl), "seq impl mismatch");
+        require(factory.pooledImplementation() == address(pooledImpl), "pooled impl mismatch");
         require(factory.defaultRenderer() == address(defaultRenderer), "renderer mismatch");
         require(factory.catalog() == catalog, "catalog mismatch");
-        require(address(implementation).code.length > 0, "impl has no code");
         require(address(factory).code.length > 0, "factory has no code");
 
         console2.log("CollectionFactory deployed at:", address(factory));
@@ -125,7 +126,8 @@ contract DeployCollectionSystemScript is Script {
         console2.log("  Catalog:                   ", catalog);
         console2.log("  RenderAssets:              ", address(renderAssets));
         console2.log("  DefaultRenderer:           ", address(defaultRenderer));
-        console2.log("  Collection impl:  ", address(implementation));
-        console2.log("  CollectionFactory:", address(factory));
+        console2.log("  Collection (seq) impl:     ", address(sequentialImpl));
+        console2.log("  PooledCollection impl:     ", address(pooledImpl));
+        console2.log("  CollectionFactory:         ", address(factory));
     }
 }

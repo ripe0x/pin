@@ -5,14 +5,11 @@ import {Test} from "forge-std/Test.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {ERC20} from "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 
-import {Collection} from "../../../src/collection/Collection.sol";
+import {PooledCollection} from "../../../src/collection/PooledCollection.sol";
 import {ICollection} from "../../../src/collection/interfaces/ICollection.sol";
+import {ICollectionCore} from "../../../src/collection/interfaces/ICollectionCore.sol";
 import {CollectionFactory} from "../../../src/collection/CollectionFactory.sol";
-import {
-    CollectionConfig,
-    CollectionStatus,
-    IdMode
-} from "../../../src/collection/CollectionTypes.sol";
+import {CollectionConfig, CollectionStatus, IdMode} from "../../../src/collection/CollectionTypes.sol";
 import {MockRenderer} from "../mocks/CollectionMocks.sol";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -23,7 +20,7 @@ import {MockRenderer} from "../mocks/CollectionMocks.sol";
 //      burn → id-returns → re-mint-same-id cycle, with the re-minted id a
 //      fresh instance (new seed, new mark, new escrow);
 //   2. ALL economics (coin custody, escrow, redemption) live in the minter;
-//      the core's involvement is exactly mintToId + approval-gated burn;
+//      the core's involvement is exactly mintToId + minter-gated burn;
 //   3. the pooled supply cap bounds LIVE supply, so redemption reopens room;
 //   4. Mint Marks stay truthful on the extension path: a re-mint after the
 //      sale window records statusAtMint == Closed.
@@ -40,7 +37,7 @@ contract MockCoin is ERC20 {
 /// @dev The whole Homage-shaped economy in one test-grade minter: an id pool
 ///      with a pseudo-random draw, per-token coin escrow, and burn-to-redeem.
 contract BackedPoolMinter {
-    Collection public immutable collection;
+    PooledCollection public immutable collection;
     MockCoin public immutable coin;
     uint256 public immutable escrowPerToken;
 
@@ -51,7 +48,7 @@ contract BackedPoolMinter {
     error NotHolder();
 
     constructor(address collection_, MockCoin coin_, uint256 escrowPerToken_, uint256 poolSize_) {
-        collection = Collection(collection_);
+        collection = PooledCollection(collection_);
         coin = coin_;
         escrowPerToken = escrowPerToken_;
         for (uint256 i = 0; i < poolSize_; i++) {
@@ -65,8 +62,7 @@ contract BackedPoolMinter {
 
     function mint() external returns (uint256 tokenId) {
         if (pool.length == 0) revert PoolEmpty();
-        uint256 at =
-            uint256(keccak256(abi.encode(block.prevrandao, pool.length, msg.sender))) % pool.length;
+        uint256 at = uint256(keccak256(abi.encode(block.prevrandao, pool.length, msg.sender))) % pool.length;
         tokenId = pool[at];
         pool[at] = pool[pool.length - 1];
         pool.pop();
@@ -76,7 +72,8 @@ contract BackedPoolMinter {
         collection.mintToId(msg.sender, tokenId, address(0), "");
     }
 
-    /// @dev Holder redeems: burn (via approval) + principal back + id to pool.
+    /// @dev Holder redeems: the minter burns (minter-only authority) +
+    ///      principal back + id to pool.
     function redeem(uint256 tokenId) external {
         if (collection.ownerOf(tokenId) != msg.sender) revert NotHolder();
         collection.burn(tokenId);
@@ -91,7 +88,7 @@ contract PooledBackedTest is Test {
     uint256 constant POOL_SIZE = 3;
     uint256 constant ESCROW = 50_000 ether;
 
-    Collection collection;
+    PooledCollection collection;
     BackedPoolMinter minter;
     MockCoin coin;
 
@@ -100,13 +97,13 @@ contract PooledBackedTest is Test {
     address bob = makeAddr("bob");
 
     function setUp() public {
-        Collection impl = new Collection();
-        CollectionFactory factory =
-            new CollectionFactory(address(impl), address(new MockRenderer()), address(0));
+        PooledCollection impl = new PooledCollection();
+        CollectionFactory factory = new CollectionFactory(
+            address(new PooledCollection()), address(impl), address(new MockRenderer()), address(0)
+        );
         coin = new MockCoin();
 
         CollectionConfig memory cfg;
-        cfg.idMode = IdMode.Pooled;
         cfg.supplyCap = POOL_SIZE; // pooled cap bounds LIVE supply
         cfg.mintEnd = uint64(block.timestamp + 1 days);
 
@@ -119,10 +116,8 @@ contract PooledBackedTest is Test {
         address[] memory minters = new address[](1);
         minters[0] = predictedMinter;
 
-        collection = Collection(
-            factory.createCollection(
-                "Pooled Backed", "PB", artist, cfg, minters, new address[](0)
-            )
+        collection = PooledCollection(
+            factory.createPooledCollection("Pooled Backed", "PB", artist, cfg, minters, new address[](0))
         );
         minter = new BackedPoolMinter(address(collection), coin, ESCROW, POOL_SIZE);
         assertEq(address(minter), predictedMinter, "wiring prediction held");
@@ -225,9 +220,7 @@ contract PooledBackedTest is Test {
     function test_remintAfterWindowEmitsClosedStatus() public {
         vm.recordLogs();
         uint256 a = _mintAs(alice);
-        assertEq(
-            uint8(_lastMintedStatus()), uint8(CollectionStatus.Open), "in-window mint stamped Open"
-        );
+        assertEq(uint8(_lastMintedStatus()), uint8(CollectionStatus.Open), "in-window mint stamped Open");
 
         vm.prank(alice);
         minter.redeem(a);
@@ -237,9 +230,7 @@ contract PooledBackedTest is Test {
         uint256 again = _mintAs(bob);
         assertEq(again, a);
         assertEq(
-            uint8(_lastMintedStatus()),
-            uint8(CollectionStatus.Closed),
-            "post-window re-mint stamped Closed, truthfully"
+            uint8(_lastMintedStatus()), uint8(CollectionStatus.Closed), "post-window re-mint stamped Closed, truthfully"
         );
     }
 
@@ -250,20 +241,19 @@ contract PooledBackedTest is Test {
         bytes32 sig = keccak256("Minted(address,address,uint256,uint256,uint256,uint8)");
         for (uint256 i = logs.length; i > 0; i--) {
             if (logs[i - 1].topics[0] == sig) {
-                (,,, uint8 s) =
-                    abi.decode(logs[i - 1].data, (uint256, uint256, uint256, uint8));
+                (,,, uint8 s) = abi.decode(logs[i - 1].data, (uint256, uint256, uint256, uint8));
                 return CollectionStatus(s);
             }
         }
         revert("no Minted event recorded");
     }
 
-    // ── guardrail: the paid path is structurally closed in pooled mode ──────
+    // ── guardrail: the paid path does not exist on the pooled form ──────────
 
     function test_paidPathBlockedInPooledMode() public {
         vm.deal(alice, 1 ether);
         vm.prank(alice);
-        vm.expectRevert(ICollection.PooledSellsViaMinter.selector);
-        collection.mint{value: 0}(1);
+        (bool ok,) = address(collection).call(abi.encodeWithSignature("mint(uint256)", uint256(1)));
+        assertFalse(ok, "pooled form must not expose mint");
     }
 }

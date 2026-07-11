@@ -5,7 +5,10 @@ import {CollectionBase} from "./CollectionBase.sol";
 import {MockMinter} from "./mocks/CollectionMocks.sol";
 
 import {Collection} from "../../src/collection/Collection.sol";
+import {PooledCollection} from "../../src/collection/PooledCollection.sol";
 import {ICollection} from "../../src/collection/interfaces/ICollection.sol";
+import {ICollectionCore} from "../../src/collection/interfaces/ICollectionCore.sol";
+import {IPooledCollection} from "../../src/collection/interfaces/IPooledCollection.sol";
 import {CollectionConfig, CollectionStatus} from "../../src/collection/CollectionTypes.sol";
 
 /// @dev tokenSeed() + mintIndex provenance: nonzero, distinct across tokens
@@ -86,17 +89,17 @@ contract CollectionEntropyTest is CollectionBase {
     // ── seed is re-rolled on pooled re-mint ──────────────────────────────
 
     function test_seed_reRolledOnPooledRemint() public {
-        Collection c = _collection(_pooledConfig());
+        PooledCollection c = _pooled(_freeConfig());
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
-        minter.callMintToId(ICollection(address(c)), collector, 1, address(0), "");
+        minter.callMintToId(IPooledCollection(address(c)), collector, 1, address(0), "");
         bytes32 seed1 = c.tokenSeed(1);
 
-        minter.callBurn(ICollection(address(c)), 1);
+        minter.callBurn(ICollectionCore(address(c)), 1);
 
         vm.prevrandao(bytes32(uint256(12345)));
-        minter.callMintToId(ICollection(address(c)), collector, 1, address(0), "");
+        minter.callMintToId(IPooledCollection(address(c)), collector, 1, address(0), "");
         bytes32 seed2 = c.tokenSeed(1);
 
         assertTrue(seed1 != seed2, "re-mint must produce a fresh seed");
@@ -104,18 +107,18 @@ contract CollectionEntropyTest is CollectionBase {
 
     function testFuzz_seed_reRolledAcrossManyPooledCycles(uint8 cyclesRaw) public {
         uint256 cycles = bound(cyclesRaw, 1, 8);
-        Collection c = _collection(_pooledConfig());
+        PooledCollection c = _pooled(_freeConfig());
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
         bytes32 prevSeed = bytes32(0);
         for (uint256 i = 0; i < cycles; i++) {
             vm.prevrandao(bytes32(uint256(keccak256(abi.encode("cycle", i)))));
-            minter.callMintToId(ICollection(address(c)), collector, 7, address(0), "");
+            minter.callMintToId(IPooledCollection(address(c)), collector, 7, address(0), "");
             bytes32 seed = c.tokenSeed(7);
             assertTrue(seed != prevSeed, "each re-mint cycle must re-roll the seed");
             prevSeed = seed;
-            minter.callBurn(ICollection(address(c)), 7);
+            minter.callBurn(ICollectionCore(address(c)), 7);
         }
     }
 
@@ -130,42 +133,42 @@ contract CollectionEntropyTest is CollectionBase {
         c.setMinter(address(minter), true);
 
         vm.expectEmit(true, true, false, true, address(c));
-        emit ICollection.Minted(collector, address(0), 1, 2, 0, CollectionStatus.Open);
+        emit ICollectionCore.Minted(collector, address(0), 1, 2, 0, CollectionStatus.Open);
         vm.prank(collector);
         c.mint(2); // tokens 1,2 -> indexes 0,1
 
         vm.expectEmit(true, true, false, true, address(c));
-        emit ICollection.Minted(collector, address(0), 3, 1, 2, CollectionStatus.Open);
+        emit ICollectionCore.Minted(collector, address(0), 3, 1, 2, CollectionStatus.Open);
         uint256 tokenId3 = minter.callMintTo(ICollection(address(c)), collector, address(0), "");
         assertEq(tokenId3, 3); // continues the same counter: id == order + 1
 
         vm.expectEmit(true, true, false, true, address(c));
-        emit ICollection.Minted(collector, address(0), 4, 1, 3, CollectionStatus.Open);
+        emit ICollectionCore.Minted(collector, address(0), 4, 1, 3, CollectionStatus.Open);
         vm.prank(collector);
         c.mint(1); // token 4
     }
 
     function test_mintIndex_monotonic_pooledMode_acrossBurnRemint() public {
-        Collection c = _collection(_pooledConfig());
+        PooledCollection c = _pooled(_freeConfig());
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
         vm.expectEmit(true, true, false, true, address(c));
-        emit ICollection.Minted(collector, address(0), 1, 1, 0, CollectionStatus.Open);
-        minter.callMintToId(ICollection(address(c)), collector, 1, address(0), "");
+        emit ICollectionCore.Minted(collector, address(0), 1, 1, 0, CollectionStatus.Open);
+        minter.callMintToId(IPooledCollection(address(c)), collector, 1, address(0), "");
         vm.expectEmit(true, true, false, true, address(c));
-        emit ICollection.Minted(collector, address(0), 2, 1, 1, CollectionStatus.Open);
-        minter.callMintToId(ICollection(address(c)), collector, 2, address(0), "");
+        emit ICollectionCore.Minted(collector, address(0), 2, 1, 1, CollectionStatus.Open);
+        minter.callMintToId(IPooledCollection(address(c)), collector, 2, address(0), "");
 
-        minter.callBurn(ICollection(address(c)), 1);
+        minter.callBurn(ICollectionCore(address(c)), 1);
         // Re-mint of id 1 is index 2, NOT 0 again: order never repeats.
         vm.expectEmit(true, true, false, true, address(c));
-        emit ICollection.Minted(collector, address(0), 1, 1, 2, CollectionStatus.Open);
-        minter.callMintToId(ICollection(address(c)), collector, 1, address(0), "");
+        emit ICollectionCore.Minted(collector, address(0), 1, 1, 2, CollectionStatus.Open);
+        minter.callMintToId(IPooledCollection(address(c)), collector, 1, address(0), "");
 
         vm.expectEmit(true, true, false, true, address(c));
-        emit ICollection.Minted(collector, address(0), 3, 1, 3, CollectionStatus.Open);
-        minter.callMintToId(ICollection(address(c)), collector, 3, address(0), "");
+        emit ICollectionCore.Minted(collector, address(0), 3, 1, 3, CollectionStatus.Open);
+        minter.callMintToId(IPooledCollection(address(c)), collector, 3, address(0), "");
     }
 
     function testFuzz_mintIndex_monotonic_interleavedBatchesAndSingles(uint8 batchesRaw) public {
@@ -182,7 +185,7 @@ contract CollectionEntropyTest is CollectionBase {
                 // The event stamps the batch's first index; ids advance in
                 // lockstep with the counter (sequential id == index + 1).
                 vm.expectEmit(true, true, false, true, address(c));
-                emit ICollection.Minted(
+                emit ICollectionCore.Minted(
                     collector, address(0), nextTokenId, qty, expectedIndex, CollectionStatus.Open
                 );
                 vm.prank(collector);
@@ -191,9 +194,7 @@ contract CollectionEntropyTest is CollectionBase {
                 expectedIndex += qty;
             } else {
                 vm.expectEmit(true, true, false, true, address(c));
-                emit ICollection.Minted(
-                    collector, address(0), nextTokenId, 1, expectedIndex, CollectionStatus.Open
-                );
+                emit ICollectionCore.Minted(collector, address(0), nextTokenId, 1, expectedIndex, CollectionStatus.Open);
                 uint256 tokenId = minter.callMintTo(ICollection(address(c)), collector, address(0), "");
                 assertEq(tokenId, nextTokenId);
                 nextTokenId++;

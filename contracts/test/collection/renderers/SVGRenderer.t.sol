@@ -6,6 +6,7 @@ import {Base64} from "solady/utils/Base64.sol";
 import {LibString} from "solady/utils/LibString.sol";
 
 import {Collection} from "../../../src/collection/Collection.sol";
+import {PooledCollection} from "../../../src/collection/PooledCollection.sol";
 import {CollectionFactory} from "../../../src/collection/CollectionFactory.sol";
 import {DefaultRenderer} from "../../../src/collection/renderers/DefaultRenderer.sol";
 import {TestSVGRenderer} from "./TestSVGRenderer.sol";
@@ -36,21 +37,16 @@ contract SVGRendererTest is Test {
         svgRenderer = new TestSVGRenderer();
         impl = new Collection();
         factory =
-            new CollectionFactory(address(impl), address(defaultRenderer), address(0));
+            new CollectionFactory(address(impl), address(new PooledCollection()), address(defaultRenderer), address(0));
 
         CollectionConfig memory cfg;
         cfg.price = 0;
         cfg.supplyCap = 0;
-        cfg.idMode = IdMode.Sequential;
 
         address[] memory noMinters = new address[](0);
         address[] memory noArtists = new address[](0);
 
-        collection = Collection(
-            factory.createCollection(
-                "SVG Collection", "SVGC", artist, cfg, noMinters, noArtists
-            )
-        );
+        collection = Collection(factory.createCollection("SVG Collection", "SVGC", artist, cfg, noMinters, noArtists));
 
         vm.prank(artist);
         collection.setRenderer(address(svgRenderer));
@@ -76,11 +72,7 @@ contract SVGRendererTest is Test {
         return string(Base64.decode(string(b64)));
     }
 
-    function _extractField(string memory json, string memory key)
-        internal
-        pure
-        returns (string memory)
-    {
+    function _extractField(string memory json, string memory key) internal pure returns (string memory) {
         bytes memory j = bytes(json);
         bytes memory k = bytes(string.concat('"', key, '":"'));
         int256 start = -1;
@@ -180,9 +172,7 @@ contract SVGRendererTest is Test {
 
         bytes32 seed = collection.tokenSeed(tokenId);
         string memory expectedFill = LibString.toHexStringNoPrefix(uint256(seed) & 0xffffff, 3);
-        assertTrue(
-            _contains(svgBody, expectedFill), "svg fill did not match the token's tokenSeed"
-        );
+        assertTrue(_contains(svgBody, expectedFill), "svg fill did not match the token's tokenSeed");
     }
 
     function test_tokenURI_differentTokens_differentSeeds_differentArt() public {
@@ -215,9 +205,7 @@ contract SVGRendererTest is Test {
         // Referrer / Status at Mint are deliberately NOT traits: both are
         // event-only provenance on Minted, no longer stored per token.
         assertFalse(_contains(json, '"trait_type":"Referrer"'), "Referrer trait was removed");
-        assertFalse(
-            _contains(json, '"trait_type":"Status at Mint"'), "Status at Mint trait was removed"
-        );
+        assertFalse(_contains(json, '"trait_type":"Status at Mint"'), "Status at Mint trait was removed");
         assertTrue(
             _contains(json, '"trait_type":"Provenance","value":"First mint of the collection"'),
             "missing First mint provenance"

@@ -5,15 +5,15 @@ import {IRenderer} from "../../../src/collection/interfaces/IRenderer.sol";
 import {IMintHook} from "../../../src/collection/interfaces/IMintHook.sol";
 import {IPriceStrategy} from "../../../src/collection/interfaces/IPriceStrategy.sol";
 import {ICollection} from "../../../src/collection/interfaces/ICollection.sol";
+import {ICollectionCore} from "../../../src/collection/interfaces/ICollectionCore.sol";
+import {IPooledCollection} from "../../../src/collection/interfaces/IPooledCollection.sol";
 
 /// @dev Deterministic renderer: returns strings derived from the collection
 ///      address + tokenId, so tests can assert delegation without depending
 ///      on any real onchain-SVG renderer.
 contract MockRenderer is IRenderer {
     function tokenURI(address collection, uint256 tokenId) external pure override returns (string memory) {
-        return string(
-            abi.encodePacked("mock://token/", _addrStr(collection), "/", _uintStr(tokenId))
-        );
+        return string(abi.encodePacked("mock://token/", _addrStr(collection), "/", _uintStr(tokenId)));
     }
 
     function contractURI(address collection) external pure override returns (string memory) {
@@ -104,8 +104,9 @@ contract MaliciousPriceStrategy is IPriceStrategy {
     }
 }
 
-/// @dev Extension minter that calls mintTo / mintToId. Stands in for a real
-///      minter module (BackedMinter, PooledIdMinter, etc.) in tests.
+/// @dev Extension minter that calls mintTo (sequential) / mintToId (pooled).
+///      Stands in for a real minter module (BackedMinter, PooledIdMinter,
+///      etc.) in tests.
 contract MockMinter {
     function callMintTo(ICollection collection, address to, address referrer, bytes calldata hookData)
         external
@@ -115,7 +116,7 @@ contract MockMinter {
     }
 
     function callMintToId(
-        ICollection collection,
+        IPooledCollection collection,
         address to,
         uint256 tokenId,
         address referrer,
@@ -125,7 +126,7 @@ contract MockMinter {
     }
 
     /// @dev Burn as an authorized minter — the only path that can retire a pooled token.
-    function callBurn(ICollection collection, uint256 tokenId) external {
+    function callBurn(ICollectionCore collection, uint256 tokenId) external {
         collection.burn(tokenId);
     }
 }
@@ -196,7 +197,9 @@ contract RecordingHook is IMintHook {
         bytes calldata hookData
     ) external override returns (bytes4) {
         beforeCalls.push(
-            Call({minter: minter, quantity: quantity, firstTokenId: firstTokenId, referrer: referrer, hookData: hookData})
+            Call({
+                minter: minter, quantity: quantity, firstTokenId: firstTokenId, referrer: referrer, hookData: hookData
+            })
         );
         return IMintHook.beforeMint.selector;
     }
@@ -209,7 +212,9 @@ contract RecordingHook is IMintHook {
         bytes calldata hookData
     ) external override {
         afterCalls.push(
-            Call({minter: minter, quantity: quantity, firstTokenId: firstTokenId, referrer: referrer, hookData: hookData})
+            Call({
+                minter: minter, quantity: quantity, firstTokenId: firstTokenId, referrer: referrer, hookData: hookData
+            })
         );
     }
 }

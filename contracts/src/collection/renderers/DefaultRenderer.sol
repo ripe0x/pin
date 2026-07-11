@@ -29,8 +29,7 @@ contract DefaultRenderer is IRenderer {
         renderAssets = RenderAssets(renderAssets_);
     }
 
-    string private constant DESCRIPTION =
-        "A Collection token. This token's entry into the collection is recorded onchain as a Mint Mark.";
+    string private constant DESCRIPTION = "A Collection token. Its entry into the collection is recorded onchain.";
 
     function tokenURI(address collection, uint256 tokenId) external view override returns (string memory) {
         ICollectionView cv = ICollectionView(collection);

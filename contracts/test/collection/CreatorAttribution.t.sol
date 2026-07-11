@@ -3,9 +3,11 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 
+import {PooledCollection} from "../../src/collection/PooledCollection.sol";
 import {Collection} from "../../src/collection/Collection.sol";
 import {CollectionFactory} from "../../src/collection/CollectionFactory.sol";
 import {ICollection} from "../../src/collection/interfaces/ICollection.sol";
+import {ICollectionCore} from "../../src/collection/interfaces/ICollectionCore.sol";
 import {CollectionConfig, InitParams, IdMode} from "../../src/collection/CollectionTypes.sol";
 import {Catalog} from "../../src/Catalog.sol";
 import {MockRenderer} from "./mocks/CollectionMocks.sol";
@@ -30,19 +32,18 @@ contract CreatorAttributionTest is Test {
     function setUp() public {
         catalog = new Catalog();
         impl = new Collection();
-        factory = new CollectionFactory(address(impl), address(new MockRenderer()), address(catalog));
+        factory = new CollectionFactory(
+            address(impl), address(new PooledCollection()), address(new MockRenderer()), address(catalog)
+        );
 
         CollectionConfig memory cfg;
-        cfg.idMode = IdMode.Sequential;
 
         // Deploy listing B and C as creators (the owner's side). Note the
         // deployer can list anyone — confirmation is what makes it real.
         address[] memory creators = new address[](2);
         creators[0] = collabB;
         creators[1] = collabC;
-        c = Collection(
-            factory.createCollection("Collab", "CLB", artist, cfg, new address[](0), creators)
-        );
+        c = Collection(factory.createCollection("Collab", "CLB", artist, cfg, new address[](0), creators));
     }
 
     function test_confirmed_requiresListedAndCatalogClaim() public {
@@ -84,7 +85,7 @@ contract CreatorAttributionTest is Test {
         address[] memory add = new address[](1);
         add[0] = collabD;
         vm.expectEmit(true, false, false, true, address(c));
-        emit ICollection.CreatorListed(collabD, true);
+        emit ICollectionCore.CreatorListed(collabD, true);
         vm.prank(artist);
         c.setCreators(add, true);
         assertTrue(c.isListedCreator(collabD));
@@ -101,7 +102,7 @@ contract CreatorAttributionTest is Test {
     function test_setCreators_onlyOwnerOrAdmin() public {
         address[] memory add = new address[](1);
         add[0] = impostor;
-        vm.expectRevert(ICollection.NotAuthorized.selector);
+        vm.expectRevert(ICollectionCore.NotAuthorized.selector);
         vm.prank(impostor);
         c.setCreators(add, true);
     }
@@ -112,14 +113,13 @@ contract CreatorAttributionTest is Test {
 
     function test_noCatalog_confirmationDisabled() public {
         // A factory with no Catalog: listings work, confirmation always false.
-        CollectionFactory f2 =
-            new CollectionFactory(address(impl), address(new MockRenderer()), address(0));
+        CollectionFactory f2 = new CollectionFactory(
+            address(impl), address(new PooledCollection()), address(new MockRenderer()), address(0)
+        );
         CollectionConfig memory cfg;
-        cfg.idMode = IdMode.Sequential;
         address[] memory creators = new address[](1);
         creators[0] = collabB;
-        Collection c2 =
-            Collection(f2.createCollection("NoCat", "NC", artist, cfg, new address[](0), creators));
+        Collection c2 = Collection(f2.createCollection("NoCat", "NC", artist, cfg, new address[](0), creators));
         assertEq(c2.catalog(), address(0));
         assertTrue(c2.isListedCreator(collabB));
         assertFalse(c2.isConfirmedCreator(collabB), "no catalog => never confirmed");
