@@ -9,6 +9,60 @@ import {CollectionConfig, IdMode} from "../src/collection/CollectionTypes.sol";
 import {CodeKind, CodeRef, WorkConfig} from "../src/collection/renderers/WorkTypes.sol";
 import {GenerativeRenderer} from "../src/collection/renderers/GenerativeRenderer.sol";
 import {RenderAssets} from "../src/collection/renderers/RenderAssets.sol";
+import {SVGRenderer} from "../src/collection/renderers/SVGRenderer.sol";
+import {LibString} from "solady/utils/LibString.sol";
+
+interface IGateHook {
+    function setRoot(address collection, bytes32 root) external;
+    function setCap(address collection, uint256 cap) external;
+}
+
+/// @dev DEV-ONLY concrete SVGRenderer: seed-derived horizontal bands with
+///      an accent column. Small on purpose; exists so the harness world has
+///      a fully onchain Solidity-SVG collection (the launch-case renderer
+///      type), exercising SVGRenderer.tokenURI AND previewURI end to end.
+contract DevSVGRenderer is SVGRenderer {
+    using LibString for uint256;
+
+    function svg(address, uint256, bytes32 seed)
+        internal
+        view
+        override
+        returns (string memory)
+    {
+        uint256 s = uint256(seed);
+        string memory bands = "";
+        for (uint256 i = 0; i < 7; i++) {
+            uint256 hue = (s >> (i * 9)) % 360;
+            uint256 h = 60 + ((s >> (i * 5)) % 50);
+            bands = string.concat(
+                bands,
+                '<rect x="0" y="',
+                (i * 100).toString(),
+                '" width="700" height="',
+                h.toString(),
+                '" fill="hsl(',
+                hue.toString(),
+                ',60%,',
+                (30 + ((s >> (i * 3)) % 40)).toString(),
+                '%)"/>'
+            );
+        }
+        uint256 col = 40 + (s % 560);
+        return string.concat(
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 700">',
+            '<rect width="700" height="700" fill="hsl(',
+            ((s >> 200) % 360).toString(),
+            ',25%,12%)"/>',
+            bands,
+            '<rect x="',
+            col.toString(),
+            '" y="0" width="24" height="700" fill="hsl(',
+            ((s >> 120) % 360).toString(),
+            ',80%,70%)"/></svg>'
+        );
+    }
+}
 
 interface IScriptyStorageWrite {
     function createContent(string calldata name, bytes calldata details) external;
@@ -97,12 +151,137 @@ contract SeedDevCollections is Script {
         address drift = _seedDrift(factory, generativeRenderer, artist);
         address field = _seedField(factory, renderAssets, artist);
 
-        vm.stopBroadcast();
-
+        // Everything below deploys AFTER the original three so their
+        // addresses stay stable across reseeds (nonce order preserved).
+        // One example per collection type and lifecycle state, so the whole
+        // UI matrix is reviewable on every fresh harness.
         console2.log("Seeded sample collections:");
-        console2.log("  Orbit Studies (generative):", orbits);
-        console2.log("  Signal Drift (unminted):   ", drift);
+        console2.log("  Orbit Studies (generative, gated, open):", orbits);
+        console2.log("  Signal Drift (generative, gated-ineligible):", drift);
         console2.log("  Field Notes (edition):     ", field);
+        DevSVGRenderer svgRenderer = new DevSVGRenderer();
+        console2.log("  Woven Lattice (SVG onchain):", _seedLattice(factory, address(svgRenderer), artist));
+        console2.log("  Common Signal (open edition, gas only):", _seedOpenEdition(factory, generativeRenderer, artist));
+        console2.log("  Night Orbit (scheduled):   ", _seedScheduled(factory, generativeRenderer, artist));
+        console2.log("  First Light (sold out):    ", _seedSoldOut(factory, generativeRenderer, artist));
+        console2.log("  Brief Window (closes ~90s after seed):", _seedClosingWindow(factory, generativeRenderer, artist));
+        _stageGates(orbits, drift);
+
+        vm.stopBroadcast();
+    }
+
+    /// @dev Fully onchain Solidity-SVG work: seed-derived stacked bands.
+    ///      Exercises the SVGRenderer base (and its previewURI) end to end —
+    ///      the launch-case renderer type.
+    function _seedLattice(address factory, address svgRenderer, address artist) private returns (address c) {
+        CollectionConfig memory cfg;
+        cfg.price = 0.001 ether;
+        cfg.supplyCap = 40;
+        cfg.renderer = svgRenderer;
+        cfg.idMode = IdMode.Sequential;
+        c = CollectionFactory(factory).createCollection(
+            "Woven Lattice", "WEAVE", artist, cfg, new address[](0), new address[](0)
+        );
+        Collection(c).mintWithReferral{value: 0.004 ether}(4, address(0), "");
+    }
+
+    /// @dev Open edition (supplyCap 0) at price 0: the "N minted · open
+    ///      edition" + "Gas only" presentation.
+    function _seedOpenEdition(address factory, address generativeRenderer, address artist)
+        private
+        returns (address c)
+    {
+        CollectionConfig memory cfg;
+        cfg.price = 0;
+        cfg.supplyCap = 0;
+        cfg.renderer = generativeRenderer;
+        cfg.idMode = IdMode.Sequential;
+        c = CollectionFactory(factory).createCollection(
+            "Common Signal", "COMMON", artist, cfg, new address[](0), new address[](0)
+        );
+        GenerativeRenderer(generativeRenderer).setWork(c, _orbitWork());
+        Collection(c).mintWithReferral(3, address(0), "");
+    }
+
+    /// @dev Scheduled: opens in a day, closes in three — the countdown state
+    ///      survives reseeds and any short anvil time warps.
+    function _seedScheduled(address factory, address generativeRenderer, address artist)
+        private
+        returns (address c)
+    {
+        CollectionConfig memory cfg;
+        cfg.price = 0.002 ether;
+        cfg.supplyCap = 48;
+        cfg.mintStart = uint64(block.timestamp + 1 days);
+        cfg.mintEnd = uint64(block.timestamp + 3 days);
+        cfg.renderer = generativeRenderer;
+        cfg.idMode = IdMode.Sequential;
+        c = CollectionFactory(factory).createCollection(
+            "Night Orbit", "NIGHT", artist, cfg, new address[](0), new address[](0)
+        );
+        GenerativeRenderer(generativeRenderer).setWork(c, _orbitWork());
+    }
+
+    /// @dev Sold out: cap 3, all three minted — the celebratory terminal
+    ///      state and the supply-locked scarcity story.
+    function _seedSoldOut(address factory, address generativeRenderer, address artist)
+        private
+        returns (address c)
+    {
+        CollectionConfig memory cfg;
+        cfg.price = 0.001 ether;
+        cfg.supplyCap = 3;
+        cfg.renderer = generativeRenderer;
+        cfg.idMode = IdMode.Sequential;
+        c = CollectionFactory(factory).createCollection(
+            "First Light", "FIRST", artist, cfg, new address[](0), new address[](0)
+        );
+        GenerativeRenderer(generativeRenderer).setWork(c, _orbitWork());
+        Collection(c).mintWithReferral{value: 0.003 ether}(3, address(0), "");
+        Collection(c).lockSupply();
+    }
+
+    /// @dev Window-closed: mints twice, then the window ends ~90 seconds
+    ///      after seeding — by the time anyone reviews it, it shows the
+    ///      honest "window closed with 2 of 50 minted" state.
+    function _seedClosingWindow(address factory, address generativeRenderer, address artist)
+        private
+        returns (address c)
+    {
+        CollectionConfig memory cfg;
+        cfg.price = 0.001 ether;
+        cfg.supplyCap = 50;
+        cfg.renderer = generativeRenderer;
+        cfg.idMode = IdMode.Sequential;
+        c = CollectionFactory(factory).createCollection(
+            "Brief Window", "BRIEF", artist, cfg, new address[](0), new address[](0)
+        );
+        GenerativeRenderer(generativeRenderer).setWork(c, _orbitWork());
+        Collection(c).mintWithReferral{value: 0.002 ether}(2, address(0), "");
+        Collection(c).setMintWindow(0, uint64(block.timestamp + 90));
+    }
+
+    /// @dev Re-stage the mint gates on every reseed so the eligibility UI is
+    ///      always reviewable. The roots match the allowlists ALREADY
+    ///      PUBLISHED through the web API (stored keyed by collection+root):
+    ///      Orbit's list holds anvil accounts 0+1 (connected dev wallet is
+    ///      ELIGIBLE, capped at 2); Drift's holds three dummy addresses (dev
+    ///      wallet is NOT eligible). On a fresh database, re-publish through
+    ///      the studio mint-gate tool and re-run setRoot with the new root.
+    ///      Skipped when GATE_HOOK is unset.
+    function _stageGates(address orbits, address drift) private {
+        address gate = vm.envOr("GATE_HOOK", address(0));
+        if (gate == address(0)) return;
+        Collection(orbits).setMintHook(gate);
+        IGateHook(gate).setRoot(
+            orbits, 0xd1573e3d5650743475aa0addfeef7e36cbfc4e060939615f4c3651e4b529d61c
+        );
+        IGateHook(gate).setCap(orbits, 2);
+        Collection(drift).setMintHook(gate);
+        IGateHook(gate).setRoot(
+            drift, 0xfb0c6774b3bfc168584d0d561ee6561b377d86cdf30b8906e2c14d88b64581d8
+        );
+        IGateHook(gate).setCap(drift, 2);
     }
 
     function _orbitWork() private pure returns (WorkConfig memory work) {

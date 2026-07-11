@@ -181,6 +181,13 @@ export default async function CollectionPage({ params }: { params: Params }) {
               artwork alive, and every image on this page is the algorithm
               running live in your browser.
             </p>
+          ) : pooled ? (
+            <p className="text-sm leading-relaxed text-fg-muted">
+              A work on the artist&apos;s own contract, rendered by its own custom
+              renderer and sold through its own minter. Every token carries a
+              distinct onchain Mint Mark: its place in the collection&apos;s
+              history, recorded at mint.
+            </p>
           ) : (
             <p className="text-sm leading-relaxed text-fg-muted">
               An edition on the artist&apos;s own contract. Every token carries a

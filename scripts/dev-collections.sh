@@ -147,15 +147,16 @@ echo "▸ CollectionFactory: $FACTORY"
 if [ "${SEED_SAMPLE:-1}" = "1" ]; then
   echo "▸ Seeding sample collections…"
   SEED_OUT="$(cd contracts && FACTORY="$FACTORY" GENERATIVE_RENDERER="$GENERATIVE_RENDERER" \
-    RENDER_ASSETS="$RENDER_ASSETS" \
+    RENDER_ASSETS="$RENDER_ASSETS" GATE_HOOK="$GATE_HOOK" \
     PRIVATE_KEY="$ANVIL_ACCOUNT_0_PK" forge script script/SeedDevCollections.s.sol \
+    --tc SeedDevCollections \
     --rpc-url "$RPC" --broadcast 2>&1)" || {
     echo "$SEED_OUT" | tail -20
     echo "warning: sample seeding failed (harness continues unseeded)"
   }
   # `|| true`: a no-match grep exits 1, and under set -euo pipefail that
   # would kill the harness AFTER seeding but BEFORE the env file is written.
-  echo "$SEED_OUT" | grep -E "Orbit Studies|Signal Drift|Field Notes" | sed 's/^/  /' || true
+  echo "$SEED_OUT" | grep -E "Orbit Studies|Signal Drift|Field Notes|Woven Lattice|Common Signal|Night Orbit|First Light|Brief Window" | sed 's/^/  /' || true
 fi
 
 # 3c) optional Homage to the Punk seed (SEED_HOMAGE=1, default on): the sibling
