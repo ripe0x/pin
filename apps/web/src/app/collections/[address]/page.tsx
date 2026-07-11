@@ -7,11 +7,9 @@ import { MintCollectionCTA } from "@/components/collections/MintCollectionCTA"
 import { WithdrawPanel } from "@/components/collections/WithdrawPanel"
 import { CollectionMintHistory } from "@/components/collections/CollectionMintHistory"
 import { AttributionRoster } from "@/components/collections/AttributionRoster"
-import { ExploreGrid, RecentMintsGrid } from "@/components/collections/GenerativeViews"
-import { CollectionWall } from "@/components/collections/CollectionWall"
+import { ParityMosaic, OnchainMosaic } from "@/components/collections/CollectionMosaic"
 import { PlacardStatus, StickyMintBar } from "@/components/collections/CollectionPlacard"
 import { CollectionFocusRefresh } from "@/components/collections/CollectionFocusRefresh"
-import { OnchainPreviewWall } from "@/components/collections/OnchainPreviewWall"
 import {
   getAttribution,
   getCollection,
@@ -82,7 +80,7 @@ export default async function CollectionPage({ params }: { params: Params }) {
   // extension, the wall explores it straight from the chain. One cached
   // probe when unsupported.
   const onchainPreviews = !hasWork
-    ? await getRendererPreviews(addr, c.renderer, c.minted + 1n, 5)
+    ? await getRendererPreviews(addr, c.renderer, c.minted + 1n, 12)
     : null
   const firstTokenImage =
     !hasCover && !hasWork && !onchainPreviews && c.minted > 0n
@@ -110,69 +108,75 @@ export default async function CollectionPage({ params }: { params: Params }) {
 
   const artists = attribution.length > 0 ? attribution.map((a) => a.artist) : [c.owner]
 
+  const hero = hasWork ? (
+    <ParityMosaic
+      collection={addr}
+      work={c.work}
+      entries={recent}
+      minted={c.minted.toString()}
+    />
+  ) : onchainPreviews ? (
+    <OnchainMosaic collection={addr} previews={onchainPreviews} />
+  ) : hasCover || firstTokenImage ? (
+    <div className="flex justify-center border-y border-gray-200 bg-gray-100 px-6 py-10 dark:bg-bg lg:py-16">
+      <OptimizedImage
+        src={hasCover ? c.cover : firstTokenImage}
+        alt={c.name}
+        width={1600}
+        loading="eager"
+        className="max-h-[70vh] w-auto max-w-full object-contain"
+      />
+    </div>
+  ) : null
+
   return (
     <div>
       {mintCouldBeLive && <CollectionFocusRefresh />}
 
-      {/* ── The placard: exhibition-scale identity, one live status line. ── */}
-      <header className="mx-auto max-w-[1400px] px-6 pt-10 pb-8 lg:px-12 lg:pt-16 lg:pb-10">
-        <nav className="mb-6 text-[10px] font-mono uppercase tracking-wider text-gray-400">
-          <Link href="/collections" className="underline hover:text-fg">
-            Collections
+      {/* ── Masthead: exhibition-title scale, the whole viewport width, so
+             the collection announces itself before the field of work. ── */}
+      <header className="px-6 pt-8 pb-8 lg:px-12 lg:pt-12 lg:pb-10">
+        <nav className="mb-8 text-[10px] font-mono uppercase tracking-wider text-gray-400 lg:mb-12">
+          <Link href="/collections" className="hover:text-fg">
+            ← Collections
           </Link>
         </nav>
-        <h1 className="text-4xl sm:text-5xl lg:text-6xl font-medium tracking-tight leading-[1.05]">
-          {c.name}
-        </h1>
-        <p className="mt-3 text-[11px] font-mono uppercase tracking-wider text-gray-500">
-          {c.symbol} · by{" "}
-          {artists.map((a, i) => (
-            <span key={a}>
-              {i > 0 && ", "}
-              <a
-                href={evmNowAddressUrl(a, PND_CHAIN_ID)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline decoration-gray-300 underline-offset-2 hover:text-fg"
-              >
-                {shortAddress(a)}
-              </a>
-            </span>
-          ))}
-        </p>
-        <div className="mt-4">
-          <PlacardStatus snapshot={placard} />
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+          <h1 className="max-w-[16ch] text-5xl font-medium leading-[0.92] tracking-tight sm:text-6xl lg:text-[5.5rem]">
+            {c.name}
+          </h1>
+          <div className="shrink-0 space-y-2 lg:pb-2 lg:text-right">
+            <p className="text-[11px] font-mono uppercase tracking-wider text-gray-500">
+              {c.symbol} · by{" "}
+              {artists.map((a, i) => (
+                <span key={a}>
+                  {i > 0 && ", "}
+                  <a
+                    href={evmNowAddressUrl(a, PND_CHAIN_ID)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline decoration-gray-300 underline-offset-2 hover:text-fg"
+                  >
+                    {shortAddress(a)}
+                  </a>
+                </span>
+              ))}
+            </p>
+            <div className="lg:flex lg:justify-end">
+              <PlacardStatus snapshot={placard} />
+            </div>
+          </div>
         </div>
       </header>
 
-      {/* ── The wall: the work large, its range beneath it. ── */}
-      {hasWork ? (
-        <CollectionWall
-          collection={addr}
-          work={c.work}
-          entries={recent}
-          minted={c.minted.toString()}
-        />
-      ) : onchainPreviews ? (
-        <OnchainPreviewWall collection={addr} previews={onchainPreviews} />
-      ) : (
-        <section className="bg-gray-100 dark:bg-bg border-b border-gray-200">
-          <div className="mx-auto flex max-w-[1400px] items-center justify-center px-6 py-10 lg:px-12 lg:py-14">
-            {hasCover || firstTokenImage ? (
-              <OptimizedImage
-                src={hasCover ? c.cover : firstTokenImage}
-                alt={c.name}
-                width={1200}
-                loading="eager"
-                className="max-h-[62vh] max-w-full object-contain border border-gray-200 dark:border-gray-800"
-              />
-            ) : (
-              <p className="py-24 text-[10px] font-mono uppercase tracking-wider text-gray-400">
-                No artwork yet
-              </p>
-            )}
-          </div>
-        </section>
+      {/* ── The field: the collection's multiplicity, edge to edge. Every
+             color on the page comes from the work. ── */}
+      {hero ?? (
+        <div className="flex min-h-[50vh] items-center justify-center border-y border-gray-200 bg-gray-100 dark:bg-bg">
+          <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+            No artwork yet
+          </p>
+        </div>
       )}
 
       {/* ── Editorial band: the story beside the instrument. ── */}
@@ -264,40 +268,6 @@ export default async function CollectionPage({ params }: { params: Params }) {
           </p>
         </div>
       </div>
-
-      {/* ── The collection: the body of work, live while minting. ── */}
-      {hasWork && recent.length > 1 && (
-        <section className="border-t border-gray-200 px-6 py-10 lg:px-12">
-          <div className="mb-4 flex items-baseline justify-between gap-4">
-            <h2 className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-              The collection
-            </h2>
-            <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400 tabular-nums">
-              {soldOut
-                ? `Complete · ${c.minted.toString()} works`
-                : c.cfg.supplyCap > 0n
-                  ? `${c.minted.toString()} of ${c.cfg.supplyCap.toString()} minted`
-                  : `${c.minted.toString()} minted`}
-            </p>
-          </div>
-          <RecentMintsGrid
-            collection={addr}
-            work={c.work}
-            entries={recent}
-            live={c.status === CollectionStatus.Open}
-          />
-        </section>
-      )}
-
-      {/* Pre-mint: the algorithm's deeper range, before any token exists. */}
-      {hasWork && c.minted === 0n && (
-        <section className="border-t border-gray-200 px-6 py-10 lg:px-12">
-          <h2 className="mb-4 text-[10px] font-mono uppercase tracking-wider text-gray-400">
-            Example outputs
-          </h2>
-          <ExploreGrid collection={addr} work={c.work} />
-        </section>
-      )}
 
       {/* ── The record: attribution, history, facts. ── */}
       <section className="border-t border-gray-200">
