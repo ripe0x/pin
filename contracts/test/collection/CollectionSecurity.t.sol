@@ -210,7 +210,7 @@ contract CollectionSecurityTest is CollectionBase {
         Collection c = _collection(cfg);
 
         vm.deal(collector, 1 ether);
-        vm.expectRevert(ICollection.Underpayment.selector);
+        vm.expectRevert(abi.encodeWithSelector(ICollection.Underpayment.selector, 1 ether, 0.5 ether));
         vm.prank(collector);
         c.mintWithReferral{value: 0.5 ether}(1, referrer, "");
     }

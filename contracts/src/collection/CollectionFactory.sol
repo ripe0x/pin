@@ -7,37 +7,37 @@ import {Collection} from "./Collection.sol";
 import {CollectionConfig, InitParams} from "./CollectionTypes.sol";
 
 /// @title CollectionFactory
-/// @notice Deploys one Collection per work, configured atomically at
-///         deploy, as an immutable EIP-1167 clone: no proxy admin, no upgrade
-///         path, what deploys is what runs. There is no protocol fee here;
-///         the Referral Share is a fixed constant inside the collection, paid
-///         to whoever hosts the mint.
+/// @notice Deploys one Collection per work, configured in one transaction, as
+///         an immutable EIP-1167 clone. No proxy admin, no upgrade path: what
+///         deploys is what runs. No fee lives here either — the referral
+///         share is a constant inside the collection, paid to whoever hosts
+///         the mint.
 ///
-///         This is the single fixed contract an indexer watches for discovery
-///         (one CollectionCreated event per collection). Core evolution
-///         happens by deploying a new implementation + factory, never by
-///         changing deployed collections.
+///         This is the one fixed address an indexer watches: one
+///         CollectionCreated event per collection. The core evolves by
+///         deploying a new implementation and a new factory, never by
+///         changing a collection already out in the world.
 contract CollectionFactory {
     /// @notice The Collection implementation every clone points at.
     address public immutable implementation;
 
-    /// @notice The canonical built-in renderer wired into every collection.
+    /// @notice The renderer a collection gets when the artist names none.
     address public immutable defaultRenderer;
 
-    /// @notice The Catalog singleton every clone reads for creator confirmation.
-    ///         address(0) disables confirmation (listings still work).
+    /// @notice The Catalog singleton every clone reads for creator
+    ///         confirmation. address(0) disables confirmation.
     address public immutable catalog;
 
     /// @notice The deployer: the only address that may deprecate this
-    ///         factory. No other privilege exists — the deployer has zero
-    ///         power over collections already deployed.
+    ///         factory, and that is its only power. It has none over
+    ///         collections already deployed.
     address public immutable deployer;
 
-    /// @notice One-way kill switch for NEW deploys. If a bug is found in the
-    ///         implementation post-deploy, deprecating stops further clones
-    ///         (createCollection reverts) and points integrators at the
-    ///         successor factory. Deployed collections are immutable and
-    ///         unaffected — by design they cannot be fixed or touched.
+    /// @notice One-way stop for NEW deploys. If the implementation turns out
+    ///         to have a bug, deprecating halts further clones and points
+    ///         integrators at the successor. Deployed collections are
+    ///         immutable and unaffected — by design nobody can touch them,
+    ///         including us.
     bool public deprecated;
     /// @notice The replacement factory once deprecated (informational).
     address public successor;
@@ -51,18 +51,20 @@ contract CollectionFactory {
     error FactoryDeprecated();
     error NotDeployer();
     error AlreadyDeprecated();
+    error NotAContract(address account);
+    error OwnerRequired();
 
     constructor(address implementation_, address defaultRenderer_, address catalog_) {
-        require(implementation_.code.length > 0, "impl has no code");
-        require(defaultRenderer_.code.length > 0, "renderer has no code");
+        if (implementation_.code.length == 0) revert NotAContract(implementation_);
+        if (defaultRenderer_.code.length == 0) revert NotAContract(defaultRenderer_);
         implementation = implementation_;
         defaultRenderer = defaultRenderer_;
         catalog = catalog_;
         deployer = msg.sender;
     }
 
-    /// @notice One-way: stop new deploys and name a successor (may be zero if
-    ///         none exists yet). Deployer-only.
+    /// @notice One-way: stop new deploys and name a successor (zero if none
+    ///         exists yet). Deployer-only.
     function deprecate(address successor_) external {
         if (msg.sender != deployer) revert NotDeployer();
         if (deprecated) revert AlreadyDeprecated();
@@ -72,15 +74,15 @@ contract CollectionFactory {
     }
 
     /// @notice Deploy + configure a new collection owned by `owner`.
-    /// @param owner The artist. Taken explicitly so a deploy helper can create
-    ///        on the artist's behalf.
-    /// @param initialMinters Extension minters granted at init (pooled/backed
-    ///        forms deploy fully wired in one tx). Empty for collections that
-    ///        sell through the built-in fixed-price path.
-    /// @param creators Optional initial creator listing (the owner's side of
-    ///        attribution). Each listed creator completes the handshake by
-    ///        claiming the collection in their own Catalog; isConfirmedCreator
-    ///        then reads true. Empty for solo works (owner() is the creator).
+    /// @param owner The artist. Explicit, so a deploy helper can create on
+    ///        the artist's behalf.
+    /// @param cfg The full live config, including the two one-way locks —
+    ///        pass them true and the collection is born locked.
+    /// @param initialMinters Extension minters granted at init, so pooled and
+    ///        backed forms deploy fully wired. Empty for built-in sales.
+    /// @param creators Initial listed creators (the owner's side of
+    ///        attribution); each confirms by claiming the collection in their
+    ///        own Catalog. Empty for solo works.
     function createCollection(
         string calldata name,
         string calldata symbol,
@@ -90,20 +92,21 @@ contract CollectionFactory {
         address[] calldata creators
     ) external returns (address collection) {
         if (deprecated) revert FactoryDeprecated();
-        require(owner != address(0), "owner required");
+        if (owner == address(0)) revert OwnerRequired();
         collection = Clones.clone(implementation);
-        Collection(collection).initialize(
-            InitParams({
-                name: name,
-                symbol: symbol,
-                owner: owner,
-                cfg: cfg,
-                defaultRenderer: defaultRenderer,
-                initialMinters: initialMinters,
-                catalog: catalog,
-                creators: creators
-            })
-        );
+        Collection(collection)
+            .initialize(
+                InitParams({
+                    name: name,
+                    symbol: symbol,
+                    owner: owner,
+                    cfg: cfg,
+                    defaultRenderer: defaultRenderer,
+                    initialMinters: initialMinters,
+                    catalog: catalog,
+                    creators: creators
+                })
+            );
         isCollection[collection] = true;
         allCollections.push(collection);
         emit CollectionCreated(owner, collection);

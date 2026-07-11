@@ -2,23 +2,23 @@
 pragma solidity ^0.8.24;
 
 import {IMintHook} from "../interfaces/IMintHook.sol";
-
-interface ICollectionOwner {
-    function owner() external view returns (address);
-}
+import {ICollectionAuth} from "../interfaces/ICollectionAuth.sol";
 
 /// @title HookBase
-/// @notice Shared base for the reference mint hooks. A hook is attached to a
-///         collection with setMintHook (owner-only) and configured per-collection by
-///         that collection's current owner. These hooks are public goods: one
-///         deployed instance serves many collections, keyed by msg.sender (the
-///         calling collection) in the mint callbacks, and any collection on or off PND
-///         can point at it. They only gate or record; they never touch funds
-///         (non-payable, and the core computes the split from msg.value).
+/// @notice Shared base for the reference mint hooks. These hooks are public
+///         goods: one deployed instance serves many collections, keyed by
+///         msg.sender (the calling collection) in the mint callbacks.
+///         Configuring a hook for a collection needs the same key as that
+///         collection's own setters — its owner or an admin. Hooks only gate
+///         or record; they never touch funds.
 abstract contract HookBase is IMintHook {
-    /// @dev Per-collection configuration is restricted to that collection's owner.
-    modifier onlyCollectionOwner(address collection) {
-        require(msg.sender == ICollectionOwner(collection).owner(), "SC: not collection owner");
+    error NotCollectionAdmin();
+
+    /// @dev Same authority root as the collection's own setters.
+    modifier onlyCollectionAdmin(address collection) {
+        if (msg.sender != ICollectionAuth(collection).owner() && !ICollectionAuth(collection).isAdmin(msg.sender)) {
+            revert NotCollectionAdmin();
+        }
         _;
     }
 

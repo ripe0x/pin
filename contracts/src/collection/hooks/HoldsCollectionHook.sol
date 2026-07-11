@@ -7,18 +7,18 @@ import {HookBase} from "./HookBase.sol";
 import {IMintHook} from "../interfaces/IMintHook.sol";
 
 /// @title HoldsCollectionHook
-/// @notice The continuity primitive: gate a mint on the minter holding a token
-///         from another collection (typically an earlier collection). This rewards
-///         conviction, the people who took provenance risk on collection A get
-///         access to collection B, without financializing anything. The collection
-///         owner sets the required collection; any ERC721 (incl. a PND collection)
-///         works.
+/// @notice The continuity primitive: to mint from collection B, hold a token
+///         from collection A. The people who took provenance risk early get
+///         the door held open later, and nothing is financialized to do it.
+///         Any ERC721 can be the required collection.
 contract HoldsCollectionHook is HookBase {
     mapping(address => address) public requiredOf; // collection => required collection (0 = no gate)
 
+    error MustHoldRequired(address required);
+
     event RequiredSet(address indexed collection, address required);
 
-    function setRequired(address collection, address required) external onlyCollectionOwner(collection) {
+    function setRequired(address collection, address required) external onlyCollectionAdmin(collection) {
         requiredOf[collection] = required;
         emit RequiredSet(collection, required);
     }
@@ -31,7 +31,7 @@ contract HoldsCollectionHook is HookBase {
     {
         address required = requiredOf[msg.sender];
         if (required != address(0)) {
-            require(IERC721(required).balanceOf(minter) > 0, "SC: must hold required collection");
+            if (IERC721(required).balanceOf(minter) == 0) revert MustHoldRequired(required);
         }
         return IMintHook.beforeMint.selector;
     }

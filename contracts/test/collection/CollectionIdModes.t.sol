@@ -114,7 +114,7 @@ contract CollectionIdModesTest is CollectionBase {
 
         minter.callMintToId(ICollection(address(c)), collector, 1, address(0), "");
         // At cap: a second distinct id cannot be minted while the first is alive.
-        vm.expectRevert(ICollection.ExceedsCap.selector);
+        vm.expectRevert(abi.encodeWithSelector(ICollection.ExceedsCap.selector, 1, 2));
         minter.callMintToId(ICollection(address(c)), collector, 2, address(0), "");
 
         minter.callBurn(ICollection(address(c)), 1);
@@ -189,7 +189,7 @@ contract CollectionIdModesTest is CollectionBase {
         vm.prank(collector);
         c.burn(1); // live supply now 1, but mintedEver stays 2
 
-        vm.expectRevert(ICollection.ExceedsCap.selector);
+        vm.expectRevert(abi.encodeWithSelector(ICollection.ExceedsCap.selector, 2, 3));
         vm.prank(collector);
         c.mint(1); // cap bounds EVER minted, burn does not free a slot
 
@@ -206,7 +206,7 @@ contract CollectionIdModesTest is CollectionBase {
 
         minter.callMintToId(ICollection(address(c)), collector, 1, address(0), "");
         minter.callMintToId(ICollection(address(c)), collector, 2, address(0), "");
-        vm.expectRevert(ICollection.ExceedsCap.selector);
+        vm.expectRevert(abi.encodeWithSelector(ICollection.ExceedsCap.selector, 2, 3));
         minter.callMintToId(ICollection(address(c)), collector, 3, address(0), "");
 
         minter.callBurn(ICollection(address(c)), 1);
@@ -217,7 +217,7 @@ contract CollectionIdModesTest is CollectionBase {
         minter.callMintToId(ICollection(address(c)), collector, 4, address(0), "");
         assertEq(c.totalSupply(), 2);
 
-        vm.expectRevert(ICollection.ExceedsCap.selector);
+        vm.expectRevert(abi.encodeWithSelector(ICollection.ExceedsCap.selector, 2, 3));
         minter.callMintToId(ICollection(address(c)), collector, 5, address(0), "");
     }
 

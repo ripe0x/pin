@@ -477,8 +477,8 @@ contract CollectionHandler is StdInvariant, Test {
     }
 
     /// @dev Wrong payment on the sequential paid path: off-by-one under AND
-    ///      over the exact required value must both revert ("SC: wrong
-    ///      payment" — the fixed-price path requires an exact match).
+    ///      over the exact required value must both revert with WrongPayment
+    ///      (the fixed-price path requires an exact match).
     function probeWrongPayment(uint256 actorSeed, uint256 qtySeed, bool over) external {
         callsNegativeProbes++;
         if (seqPrice == 0) return; // no wrong-payment concept on a gas-only price

@@ -65,6 +65,8 @@ contract ScriptyRenderer is IRenderer {
     CodeRef[] private _deps; // library files (gzipped p5 / three / etc.)
 
     error NoCode();
+    error BuilderRequired();
+    error GunzipStoreRequired();
 
     constructor(
         address scriptyBuilder_,
@@ -74,7 +76,7 @@ contract ScriptyRenderer is IRenderer {
         CodeRef[] memory deps_,
         uint8 injectionVersion_
     ) {
-        require(scriptyBuilder_ != address(0), "SR: builder required");
+        if (scriptyBuilder_ == address(0)) revert BuilderRequired();
         if (code_.length == 0) revert NoCode();
         scriptyBuilder = IScriptyBuilderV2(scriptyBuilder_);
         // gunzipStore is only consulted when a gzipped file is present; still
@@ -106,12 +108,7 @@ contract ScriptyRenderer is IRenderer {
 
     // ── IRenderer ────────────────────────────────────────────────────────────
 
-    function tokenURI(address collection, uint256 tokenId)
-        external
-        view
-        override
-        returns (string memory)
-    {
+    function tokenURI(address collection, uint256 tokenId) external view override returns (string memory) {
         ICollectionView c = ICollectionView(collection);
         bytes32 seed = c.tokenSeed(tokenId);
         string memory htmlUri = _buildHTML(collection, tokenId, seed);
@@ -125,9 +122,7 @@ contract ScriptyRenderer is IRenderer {
             '","animation_url":"',
             htmlUri,
             '"',
-            bytes(image).length > 0
-                ? string(abi.encodePacked(',"image":"', LibString.escapeJSON(image), '"'))
-                : "",
+            bytes(image).length > 0 ? string(abi.encodePacked(',"image":"', LibString.escapeJSON(image), '"')) : "",
             ',"attributes":',
             _attributes(c, tokenId, seed),
             "}"
@@ -136,9 +131,8 @@ contract ScriptyRenderer is IRenderer {
     }
 
     function contractURI(address collection) external view override returns (string memory) {
-        bytes memory json = abi.encodePacked(
-            '{"name":"', LibString.escapeJSON(ICollectionView(collection).name()), '"}'
-        );
+        bytes memory json =
+            abi.encodePacked('{"name":"', LibString.escapeJSON(ICollectionView(collection).name()), '"}');
         return string(abi.encodePacked("data:application/json;base64,", Base64.encode(json)));
     }
 
@@ -149,13 +143,9 @@ contract ScriptyRenderer is IRenderer {
     ///      The helper decompresses at its own parse time by scanning the gzip
     ///      tags that precede it and replacing each with an executing script
     ///      tag, in document order; placed earlier it would find nothing.
-    function _buildHTML(address collection, uint256 tokenId, bytes32 seed)
-        private
-        view
-        returns (string memory)
-    {
+    function _buildHTML(address collection, uint256 tokenId, bytes32 seed) private view returns (string memory) {
         bool needsGunzip = _anyGzip(_deps) || _anyGzip(_code);
-        if (needsGunzip) require(gunzipStore != address(0), "SR: gunzip store required");
+        if (needsGunzip && gunzipStore == address(0)) revert GunzipStoreRequired();
 
         uint256 n = (needsGunzip ? 1 : 0) + _deps.length + 1 + _code.length;
         HTMLTag[] memory body = new HTMLTag[](n);
@@ -181,16 +171,13 @@ contract ScriptyRenderer is IRenderer {
             i++;
         }
 
-        return scriptyBuilder.getEncodedHTMLString(
-            HTMLRequest({headTags: _headTags(), bodyTags: body})
-        );
+        return scriptyBuilder.getEncodedHTMLString(HTMLRequest({headTags: _headTags(), bodyTags: body}));
     }
 
     function _fileTag(CodeRef memory ref) private pure returns (HTMLTag memory tag) {
         tag.name = ref.name;
         tag.contractAddress = ref.store;
-        tag.tagType =
-            ref.kind == CodeKind.ScriptGzip ? HTMLTagType.scriptGZIPBase64DataURI : HTMLTagType.script;
+        tag.tagType = ref.kind == CodeKind.ScriptGzip ? HTMLTagType.scriptGZIPBase64DataURI : HTMLTagType.script;
     }
 
     function _anyGzip(CodeRef[] storage refs) private view returns (bool) {
@@ -203,11 +190,7 @@ contract ScriptyRenderer is IRenderer {
     /// @dev Render-context convention: `hash` + `tokenId` use the standard
     ///      long-form-generative `tokenData` shape for sketch portability. In
     ///      Sequential mode the token id IS the mint order.
-    function _contextJs(address collection, uint256 tokenId, bytes32 seed)
-        private
-        view
-        returns (bytes memory)
-    {
+    function _contextJs(address collection, uint256 tokenId, bytes32 seed) private view returns (bytes memory) {
         return abi.encodePacked(
             'window.tokenData={"hash":"',
             uint256(seed).toHexString(32),
@@ -230,8 +213,7 @@ contract ScriptyRenderer is IRenderer {
     function _headTags() internal view virtual returns (HTMLTag[] memory head) {
         head = new HTMLTag[](1);
         head[0].tagOpen = "<style>";
-        head[0].tagContent =
-            "html,body{margin:0;padding:0;height:100%;overflow:hidden}canvas{display:block}";
+        head[0].tagContent = "html,body{margin:0;padding:0;height:100%;overflow:hidden}canvas{display:block}";
         head[0].tagClose = "</style>";
         head[0].tagType = HTMLTagType.useTagOpenAndClose;
     }
@@ -239,7 +221,11 @@ contract ScriptyRenderer is IRenderer {
     /// @dev Optional poster/thumbnail for the metadata `image` field. Default:
     ///      none (the `animation_url` is the artwork). Override to return a
     ///      static URI — e.g. read a capture/cover from a RenderAssets registry.
-    function _image(address, /* collection */ uint256 /* tokenId */ )
+    function _image(
+        address,
+        /* collection */
+        uint256 /* tokenId */
+    )
         internal
         view
         virtual
@@ -254,28 +240,25 @@ contract ScriptyRenderer is IRenderer {
     ///      onchain without running the sketch. Return raw JSON object entries
     ///      WITH a leading comma, e.g. `,{"trait_type":"Palette","value":"Dusk"}`.
     ///      Traits that require executing the algorithm cannot be computed here.
-    function _workTraits(bytes32 /* seed */ ) internal view virtual returns (bytes memory) {
+    function _workTraits(
+        bytes32 /* seed */
+    )
+        internal
+        view
+        virtual
+        returns (bytes memory)
+    {
         return "";
     }
 
     /// @dev Provenance traits (Mint Order in Sequential mode + Seed), then the
     ///      work's own seed-derived traits from `_workTraits`.
-    function _attributes(ICollectionView c, uint256 tokenId, bytes32 seed)
-        private
-        view
-        returns (bytes memory)
-    {
+    function _attributes(ICollectionView c, uint256 tokenId, bytes32 seed) private view returns (bytes memory) {
         bytes memory order = c.idMode() == IdMode.Sequential
             ? abi.encodePacked('{"trait_type":"Mint Order","value":', tokenId.toString(), "},")
             : bytes("");
         return abi.encodePacked(
-            "[",
-            order,
-            '{"trait_type":"Seed","value":"',
-            uint256(seed).toHexString(32),
-            '"}',
-            _workTraits(seed),
-            "]"
+            "[", order, '{"trait_type":"Seed","value":"', uint256(seed).toHexString(32), '"}', _workTraits(seed), "]"
         );
     }
 }

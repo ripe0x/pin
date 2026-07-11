@@ -233,7 +233,7 @@ contract CollectionHooksTest is CollectionBase {
         // syntactically well-formed (but wrong) proof.
         bytes32[] memory badProof = new bytes32[](1);
         badProof[0] = leafCollector;
-        vm.expectRevert(bytes("SC: not allowlisted"));
+        vm.expectRevert(AllowlistHook.NotAllowlisted.selector);
         vm.prank(makeAddr("notInTree"));
         c.mintWithReferral(1, address(0), abi.encode(badProof));
     }
@@ -251,7 +251,7 @@ contract CollectionHooksTest is CollectionBase {
         holds.setRequired(address(c), address(gate));
 
         // Collector doesn't hold the required collection yet.
-        vm.expectRevert(bytes("SC: must hold required collection"));
+        vm.expectRevert(abi.encodeWithSelector(HoldsCollectionHook.MustHoldRequired.selector, address(gate)));
         vm.prank(collector);
         c.mint(1);
 
@@ -275,7 +275,7 @@ contract CollectionHooksTest is CollectionBase {
 
         vm.prank(collector);
         c.mint(2);
-        vm.expectRevert(bytes("SC: wallet cap"));
+        vm.expectRevert(abi.encodeWithSelector(PerWalletCapHook.WalletCapExceeded.selector, 2, 3));
         vm.prank(collector);
         c.mint(1);
 
@@ -292,7 +292,7 @@ contract CollectionHooksTest is CollectionBase {
         vm.prank(artist);
         cap.setCap(address(c), 2);
 
-        vm.expectRevert(bytes("SC: wallet cap"));
+        vm.expectRevert(abi.encodeWithSelector(PerWalletCapHook.WalletCapExceeded.selector, 2, 3));
         vm.prank(collector);
         c.mint(3); // one tx exceeding the cap outright
     }

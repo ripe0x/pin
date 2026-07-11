@@ -4,71 +4,62 @@ pragma solidity ^0.8.24;
 // ─────────────────────────────────────────────────────────────────────────────
 // Collection — shared types
 //
-// One OZ ERC721 contract == one collection. A collection is a fixed-price
-// edition, a generative collection, or a backed/pooled work depending on which
-// modules fill its slots; the core stores ownership, money paths, and the
-// per-token seed only. ALL presentation data (cover art, captures, and any
-// generative work config) lives in renderer-land (RenderAssets.sol and each
-// renderer's own storage): the core's tokenURI defers wholly to the renderer
-// slot, optionally pinned forever with lockRenderer(). Generative works ship
-// as bring-your-own renderers (a work-specific IRenderer the artist deploys
-// and points the slot at), not a shared core-owned assembler. Relationship/graph semantics live in companion contracts
-// (Attribution today; a relationship registry when the graph product ships),
-// never in the immutable core.
+// One contract is one collection. The core keeps three things: who owns each
+// token, where the money goes, and one seed per token. How the work looks is
+// the renderer's business, and the renderer sits in a slot the artist can
+// swap or pin. The core never learns what the art is. It doesn't need to.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// @notice Lifecycle status, derived purely from the mint window, the supply
-///         cap, and the current block — never from stored mutable state. It is
-///         a view/event value only: config() reports it live and each Minted
-///         event stamps the value at mint; nothing stores it.
+/// @notice Where the mint stands, worked out fresh from the window, the cap,
+///         and the clock. Never stored. config() reports it live and each
+///         Minted event stamps the value it saw.
 enum CollectionStatus {
-    Scheduled, // before mintStart: the public window has not opened yet
-    Open, // within the window and under cap
-    Closed // window ended, or a sequential cap is full
+    Scheduled, // the window has not opened yet
+    Open, // minting now
+    Closed // the window passed, or a sequential cap filled
 }
 
-/// @notice Token id assignment model, fixed at init.
-///         Sequential: the core assigns nextId++; extension minters may mint
-///         but never choose ids; ids are never reused after burn.
-///         Pooled: an authorized extension minter supplies every id
-///         (tokenId == sourceId forms); a burned id may be minted again as a
-///         new instance with fresh mark and entropy.
+/// @notice How token ids are handed out. Fixed at init.
+///         Sequential: the contract counts 1, 2, 3. The id IS the mint order,
+///         and ids are never reused after a burn.
+///         Pooled: an authorized minter chooses each id (tokenId == sourceId
+///         forms). A burned id may mint again as a new instance, new seed.
 enum IdMode {
     Sequential,
     Pooled
 }
 
-/// @notice The live collection configuration. Set at init and — except
-///         idMode, which is structural — updatable afterward via the setters
-///         (window, price, cap, royalty, payout, and the three module slots),
-///         so this struct is always the single current truth that config()
-///         reports. There is no referrer-share field: the share is a fixed
-///         protocol constant (REFERRAL_SHARE_BPS) paid to whoever hosts the
-///         mint.
+/// @notice The live settings, all in one struct. Setters edit these fields in
+///         place, so config() always reports exactly what the contract uses.
+///         The two locks are one-way: true never goes back to false. Passed
+///         true at creation, the collection is born locked — permanence with
+///         no second transaction to remember.
 struct CollectionConfig {
     uint256 price; // wei; used when priceStrategy is unset. 0 = gas only
-    uint256 supplyCap; // 0 = open supply; lockable via lockSupply()
+    uint256 supplyCap; // 0 = open supply
     uint64 mintStart; // unix seconds; 0 = open immediately
     uint64 mintEnd; // unix seconds; 0 = open-ended
-    uint16 royaltyBps; // EIP-2981
+    uint16 royaltyBps; // EIP-2981, advisory
     address royaltyReceiver; // 0 = owner()
     address payoutAddress; // artist proceeds; 0 = owner()
-    address renderer; // 0 = default renderer
+    address renderer; // answers tokenURI; 0 at init = take the factory default
     address mintHook; // 0 = none
-    address priceStrategy; // 0 = stored price
+    address priceStrategy; // 0 = the stored fixed price
     IdMode idMode; // fixed at init
+    bool rendererLocked; // one-way; see lockRenderer()
+    bool supplyLocked; // one-way; see lockSupply()
 }
 
-/// @notice Everything initialize() needs, bundled so the call stays within
-///         legacy-codegen stack limits and the signature can grow without
-///         churn.
+/// @notice Everything initialize() needs, in one bundle. A struct so the call
+///         stays within legacy-codegen stack limits and can grow without
+///         churning the signature.
 struct InitParams {
     string name;
     string symbol;
     address owner;
     CollectionConfig cfg;
-    address defaultRenderer;
+    address defaultRenderer; // used when cfg.renderer is 0
     address[] initialMinters; // extension minters granted at init
-    address catalog; // Catalog singleton the collection reads for creator confirmation; 0 = none
-    address[] creators; // initial listed creators (owner's side of attribution); confirmed via Catalog
+    address catalog; // Catalog singleton read for creator confirmation; 0 = none
+    address[] creators; // the owner's side of attribution; each confirms via Catalog
 }

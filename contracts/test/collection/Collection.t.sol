@@ -2,20 +2,12 @@
 pragma solidity ^0.8.24;
 
 import {CollectionBase} from "./CollectionBase.sol";
-import {
-    MockRenderer,
-    RevertingPayee
-} from "./mocks/CollectionMocks.sol";
+import {MockRenderer, RevertingPayee} from "./mocks/CollectionMocks.sol";
 
 import {Collection} from "../../src/collection/Collection.sol";
 import {CollectionFactory} from "../../src/collection/CollectionFactory.sol";
 import {ICollection} from "../../src/collection/interfaces/ICollection.sol";
-import {
-    CollectionConfig,
-    CollectionStatus,
-    IdMode,
-    InitParams
-} from "../../src/collection/CollectionTypes.sol";
+import {CollectionConfig, CollectionStatus, IdMode, InitParams} from "../../src/collection/CollectionTypes.sol";
 
 contract CollectionTest is CollectionBase {
     // ── init validation ──────────────────────────────────────────────────────
@@ -118,7 +110,7 @@ contract CollectionTest is CollectionBase {
         assertEq(c.symbol(), "ACOL");
         assertTrue(factory.isCollection(address(c)));
         assertEq(factory.totalCollections(), 1);
-        assertEq(c.referralShareBps(), 1000);
+        assertEq(c.REFERRAL_SHARE_BPS(), 1000);
         assertFalse(c.isRendererLocked());
         assertFalse(c.isSupplyLocked());
     }
@@ -159,7 +151,7 @@ contract CollectionTest is CollectionBase {
     function test_mint_gasOnly_rejectsValue() public {
         Collection c = _collection(_freeConfig());
         vm.deal(collector, 1 ether);
-        vm.expectRevert(ICollection.WrongPayment.selector);
+        vm.expectRevert(abi.encodeWithSelector(ICollection.WrongPayment.selector, 0, 1 wei));
         vm.prank(collector);
         c.mint{value: 1 wei}(1);
     }
@@ -176,7 +168,7 @@ contract CollectionTest is CollectionBase {
     function test_mint_priced_requiresExactValue_under() public {
         Collection c = _collection(_pricedConfig(0.1 ether));
         vm.deal(collector, 1 ether);
-        vm.expectRevert(ICollection.WrongPayment.selector);
+        vm.expectRevert(abi.encodeWithSelector(ICollection.WrongPayment.selector, 0.1 ether, 0.05 ether));
         vm.prank(collector);
         c.mint{value: 0.05 ether}(1);
     }
@@ -184,7 +176,7 @@ contract CollectionTest is CollectionBase {
     function test_mint_priced_requiresExactValue_over() public {
         Collection c = _collection(_pricedConfig(0.1 ether));
         vm.deal(collector, 1 ether);
-        vm.expectRevert(ICollection.WrongPayment.selector);
+        vm.expectRevert(abi.encodeWithSelector(ICollection.WrongPayment.selector, 0.1 ether, 0.2 ether));
         vm.prank(collector);
         c.mint{value: 0.2 ether}(1);
     }
@@ -491,7 +483,7 @@ contract CollectionTest is CollectionBase {
 
         vm.prank(collector);
         c.mint(2);
-        vm.expectRevert(ICollection.ExceedsCap.selector);
+        vm.expectRevert(abi.encodeWithSelector(ICollection.ExceedsCap.selector, 3, 4));
         vm.prank(collector);
         c.mint(2);
         vm.prank(collector);
@@ -535,7 +527,7 @@ contract CollectionTest is CollectionBase {
 
         // old price now reverts (exact-match protects the collector)...
         vm.deal(collector, 1 ether);
-        vm.expectRevert(ICollection.WrongPayment.selector);
+        vm.expectRevert(abi.encodeWithSelector(ICollection.WrongPayment.selector, 0.05 ether, 0.1 ether));
         vm.prank(collector);
         c.mint{value: 0.1 ether}(1);
 
@@ -591,7 +583,7 @@ contract CollectionTest is CollectionBase {
         c.mint(3);
 
         // cannot set below mints-ever (sequential: ids are never reused)
-        vm.expectRevert(ICollection.BadSupplyCap.selector);
+        vm.expectRevert(abi.encodeWithSelector(ICollection.BadSupplyCap.selector, 3, 2));
         vm.prank(artist);
         c.setSupplyCap(2);
 
@@ -602,7 +594,7 @@ contract CollectionTest is CollectionBase {
         c.setSupplyCap(3);
         (, CollectionStatus status,) = c.config();
         assertEq(uint8(status), uint8(CollectionStatus.Closed));
-        vm.expectRevert(ICollection.ExceedsCap.selector);
+        vm.expectRevert(abi.encodeWithSelector(ICollection.ExceedsCap.selector, 3, 4));
         vm.prank(collector);
         c.mint(1);
 
@@ -660,7 +652,7 @@ contract CollectionTest is CollectionBase {
 
         vm.prank(minter);
         c.mintTo(collector, address(0), "");
-        vm.expectRevert(ICollection.ExceedsCap.selector);
+        vm.expectRevert(abi.encodeWithSelector(ICollection.ExceedsCap.selector, 1, 2));
         vm.prank(minter);
         c.mintTo(collector, address(0), "");
     }
@@ -773,6 +765,52 @@ contract CollectionTest is CollectionBase {
         vm.expectRevert(ICollection.NotAuthorized.selector);
         vm.prank(stranger);
         c.setRenderer(makeAddr("newRenderer"));
+    }
+
+    function test_setRenderer_rejectsZeroAddress() public {
+        Collection c = _collection(_freeConfig());
+        vm.expectRevert(ICollection.RendererRequired.selector);
+        vm.prank(artist);
+        c.setRenderer(address(0));
+    }
+
+    function test_init_resolvesRendererSlot() public {
+        // No choice made: the factory default fills the slot.
+        Collection c = _collection(_freeConfig());
+        assertEq(c.renderer(), address(renderer));
+        (CollectionConfig memory cfg,,) = c.config();
+        assertEq(cfg.renderer, address(renderer));
+
+        // An explicit choice at init wins over the default.
+        MockRenderer custom = new MockRenderer();
+        CollectionConfig memory cfg2 = _freeConfig();
+        cfg2.renderer = address(custom);
+        Collection c2 = _collection(cfg2);
+        assertEq(c2.renderer(), address(custom));
+    }
+
+    /// @dev Locks passed true in the config take effect at init: the
+    ///      collection is born locked, no second transaction to remember.
+    function test_init_bornLocked() public {
+        CollectionConfig memory cfg = _freeConfig();
+        cfg.supplyCap = 5;
+        cfg.rendererLocked = true;
+        cfg.supplyLocked = true;
+        Collection c = _collection(cfg);
+
+        assertTrue(c.isRendererLocked());
+        assertTrue(c.isSupplyLocked());
+        vm.expectRevert(ICollection.RendererIsLocked.selector);
+        vm.prank(artist);
+        c.setRenderer(makeAddr("newRenderer"));
+        vm.expectRevert(ICollection.SupplyIsLocked.selector);
+        vm.prank(artist);
+        c.setSupplyCap(10);
+    }
+
+    function test_version() public {
+        Collection c = _collection(_freeConfig());
+        assertEq(c.version(), 1);
     }
 
     // ── token artwork ────────────────────────────────────────────────────────
