@@ -1,5 +1,5 @@
 import "server-only"
-import { createPublicClient, decodeFunctionResult, encodeFunctionData, http, type Address } from "viem"
+import { createPublicClient, decodeFunctionResult, encodeFunctionData, http, keccak256, stringToBytes, type Address } from "viem"
 import { mainnet } from "viem/chains"
 import { attributionAbi, catalogAbi, collectionAbi, collectionFactoryAbi, gateHookAbi, generativeRendererAbi, renderAssetsAbi } from "@pin/abi"
 import { ARTIST_RECORD_REGISTRY, ATTRIBUTION, MAINNET_CHAIN_ID, getAddressOrNull } from "@pin/addresses"
@@ -448,6 +448,103 @@ export async function getGateState(address: Address): Promise<GateState | null> 
       return null
     }
   })
+}
+
+/** Minimal ABI for the OPTIONAL IPreviewRenderer extension — declared
+ *  standalone so any renderer address can be probed, not just ours. */
+const previewRendererAbi = [
+  {
+    type: "function",
+    name: "previewURI",
+    stateMutability: "view",
+    inputs: [
+      { name: "collection", type: "address" },
+      { name: "tokenId", type: "uint256" },
+      { name: "seed", type: "bytes32" },
+    ],
+    outputs: [{ name: "", type: "string" }],
+  },
+] as const
+
+export type OnchainPreview = {
+  seedIndex: number
+  image: string | null
+  animationUrl: string | null
+}
+
+/** Deterministic explore seed, same string convention as the client wall
+ *  (GenerativeViews.exploreSeed) so a given index shows the same output on
+ *  either path. */
+function onchainExploreSeed(collection: Address, i: number): `0x${string}` {
+  return keccak256(stringToBytes(`${collection.toLowerCase()}:explore:${i}`))
+}
+
+/**
+ * One onchain preview from a renderer implementing the OPTIONAL
+ * IPreviewRenderer extension: previewURI(collection, nextTokenId, seed),
+ * decoded to its image/animation_url. Null when the renderer doesn't
+ * implement previews (detection is this try/catch, per repo convention).
+ *
+ * Same dedicated high-gas call path as tokenURI (never multicalled):
+ * scripty-class renderers can cost 60-120M gas per call. Long TTL — a
+ * preview for a fixed seed only changes if the renderer/work changes.
+ */
+export async function getRendererPreview(
+  collection: Address,
+  renderer: Address,
+  nextTokenId: bigint,
+  seedIndex: number,
+): Promise<OnchainPreview | null> {
+  return pgCache(`sc-prev:${lc(collection)}:${lc(renderer)}:${seedIndex}`, 600, async () => {
+    const client = getClient()
+    const uri = await client
+      .call({
+        to: renderer,
+        data: encodeFunctionData({
+          abi: previewRendererAbi,
+          functionName: "previewURI",
+          args: [collection, nextTokenId, onchainExploreSeed(collection, seedIndex)],
+        }),
+        gas: 300_000_000n,
+      })
+      .then(({ data }) =>
+        data
+          ? (decodeFunctionResult({
+              abi: previewRendererAbi,
+              functionName: "previewURI",
+              data,
+            }) as string)
+          : null,
+      )
+      .catch(() => null)
+    if (!uri) return null
+    const meta = await fetchMetadataForUri(uri, nextTokenId, 8_000).catch(() => null)
+    if (!meta) return null
+    return {
+      seedIndex,
+      image: meta.image ?? null,
+      animationUrl: (meta as { animation_url?: string }).animation_url ?? null,
+    }
+  })
+}
+
+/** The first `count` onchain previews, or null when the renderer doesn't
+ *  support them (probed with index 0; unsupported renderers cost exactly
+ *  one cached failed call). */
+export async function getRendererPreviews(
+  collection: Address,
+  renderer: Address,
+  nextTokenId: bigint,
+  count: number,
+): Promise<OnchainPreview[] | null> {
+  const first = await getRendererPreview(collection, renderer, nextTokenId, 0)
+  if (!first) return null
+  const rest = await Promise.all(
+    Array.from({ length: count - 1 }, (_, i) =>
+      getRendererPreview(collection, renderer, nextTokenId, i + 1),
+    ),
+  )
+  return [first, ...rest.filter((p): p is OnchainPreview => p !== null)]
 }
 
 export type AttributionEntry = { artist: Address; claimed: boolean }

@@ -11,6 +11,7 @@ import { ExploreGrid, RecentMintsGrid } from "@/components/collections/Generativ
 import { CollectionWall } from "@/components/collections/CollectionWall"
 import { PlacardStatus, StickyMintBar } from "@/components/collections/CollectionPlacard"
 import { CollectionFocusRefresh } from "@/components/collections/CollectionFocusRefresh"
+import { OnchainPreviewWall } from "@/components/collections/OnchainPreviewWall"
 import {
   getAttribution,
   getCollection,
@@ -18,6 +19,7 @@ import {
   getCollectionToken,
   getGateState,
   getRecentTokenMarks,
+  getRendererPreviews,
 } from "@/lib/collection-onchain"
 import {
   CollectionStatus,
@@ -75,8 +77,15 @@ export default async function CollectionPage({ params }: { params: Params }) {
 
   const hasCover = c.cover.length > 0
   const hasWork = c.work.code.length > 0
+  // Renderer-native works (custom or Solidity-SVG renderers with no parity
+  // work config): if the renderer implements the OPTIONAL previewURI
+  // extension, the wall explores it straight from the chain. One cached
+  // probe when unsupported.
+  const onchainPreviews = !hasWork
+    ? await getRendererPreviews(addr, c.renderer, c.minted + 1n, 5)
+    : null
   const firstTokenImage =
-    !hasCover && !hasWork && c.minted > 0n
+    !hasCover && !hasWork && !onchainPreviews && c.minted > 0n
       ? (await getCollectionToken(addr, 1n))?.image ?? ""
       : ""
 
@@ -144,6 +153,8 @@ export default async function CollectionPage({ params }: { params: Params }) {
           entries={recent}
           minted={c.minted.toString()}
         />
+      ) : onchainPreviews ? (
+        <OnchainPreviewWall collection={addr} previews={onchainPreviews} />
       ) : (
         <section className="bg-gray-100 dark:bg-bg border-b border-gray-200">
           <div className="mx-auto flex max-w-[1400px] items-center justify-center px-6 py-10 lg:px-12 lg:py-14">
@@ -180,6 +191,13 @@ export default async function CollectionPage({ params }: { params: Params }) {
               chain state: this code, that seed, forever. No server keeps the
               artwork alive, and every image on this page is the algorithm
               running live in your browser.
+            </p>
+          ) : onchainPreviews ? (
+            <p className="text-sm leading-relaxed text-fg-muted">
+              Every token is generated onchain by the collection&apos;s own
+              renderer contract from a seed written at mint. The render is a
+              pure function of chain state, and every example on this page
+              was rendered by that contract, live.
             </p>
           ) : pooled ? (
             <p className="text-sm leading-relaxed text-fg-muted">
