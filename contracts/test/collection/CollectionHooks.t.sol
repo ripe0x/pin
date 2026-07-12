@@ -11,11 +11,15 @@ import {
 } from "./mocks/CollectionMocks.sol";
 
 import {Collection} from "../../src/collection/Collection.sol";
+import {PooledCollection} from "../../src/collection/PooledCollection.sol";
 import {ICollection} from "../../src/collection/interfaces/ICollection.sol";
+import {ICollectionCore} from "../../src/collection/interfaces/ICollectionCore.sol";
+import {IPooledCollection} from "../../src/collection/interfaces/IPooledCollection.sol";
 import {CollectionConfig} from "../../src/collection/CollectionTypes.sol";
 
 import {AllowlistHook} from "../../src/collection/hooks/AllowlistHook.sol";
 import {GateHook} from "../../src/collection/hooks/GateHook.sol";
+import {HookBase} from "../../src/collection/hooks/HookBase.sol";
 import {HoldsCollectionHook} from "../../src/collection/hooks/HoldsCollectionHook.sol";
 import {PerWalletCapHook} from "../../src/collection/hooks/PerWalletCapHook.sol";
 
@@ -73,7 +77,7 @@ contract CollectionHooksTest is CollectionBase {
         Collection c = _collection(_freeConfig());
         vm.prank(artist);
         c.setMintHook(address(rejectingSelectorHook));
-        vm.expectRevert(ICollection.HookRejected.selector);
+        vm.expectRevert(ICollectionCore.HookRejected.selector);
         vm.prank(collector);
         c.mint(1);
     }
@@ -92,7 +96,7 @@ contract CollectionHooksTest is CollectionBase {
 
     function test_hook_onlyOwnerCanSet() public {
         Collection c = _collection(_freeConfig());
-        vm.expectRevert(ICollection.NotAuthorized.selector);
+        vm.expectRevert(ICollectionCore.NotAuthorized.selector);
         vm.prank(stranger);
         c.setMintHook(address(recordingHook));
     }
@@ -145,13 +149,13 @@ contract CollectionHooksTest is CollectionBase {
     // ── hooks fire identically on mintToId (Pooled extension path) ──────────
 
     function test_hook_firesOnMintToId_withCorrectArgs() public {
-        Collection c = _collection(_pooledConfig());
+        PooledCollection c = _pooled(_freeConfig());
         vm.prank(artist);
         c.setMintHook(address(recordingHook));
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
-        minter.callMintToId(ICollection(address(c)), collector, 42, referrer, bytes("pooled-data"));
+        minter.callMintToId(IPooledCollection(address(c)), collector, 42, referrer, bytes("pooled-data"));
 
         assertEq(recordingHook.beforeCallCount(), 1);
         assertEq(recordingHook.afterCallCount(), 1);
@@ -164,23 +168,23 @@ contract CollectionHooksTest is CollectionBase {
     }
 
     function test_hook_rejectsMintToId() public {
-        Collection c = _collection(_pooledConfig());
+        PooledCollection c = _pooled(_freeConfig());
         vm.prank(artist);
         c.setMintHook(address(revertingHook));
         vm.prank(artist);
         c.setMinter(address(minter), true);
         vm.expectRevert(bytes("hook: nope"));
-        minter.callMintToId(ICollection(address(c)), collector, 42, referrer, "");
+        minter.callMintToId(IPooledCollection(address(c)), collector, 42, referrer, "");
     }
 
     function test_hook_firesOnMintToId_id0() public {
-        Collection c = _collection(_pooledConfig());
+        PooledCollection c = _pooled(_freeConfig());
         vm.prank(artist);
         c.setMintHook(address(recordingHook));
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
-        minter.callMintToId(ICollection(address(c)), collector, 0, referrer, "");
+        minter.callMintToId(IPooledCollection(address(c)), collector, 0, referrer, "");
         assertEq(recordingHook.beforeCallCount(), 1);
         (,, uint256 fid,,) = _decodeBefore(recordingHook, 0);
         assertEq(fid, 0);
@@ -234,7 +238,7 @@ contract CollectionHooksTest is CollectionBase {
         // syntactically well-formed (but wrong) proof.
         bytes32[] memory badProof = new bytes32[](1);
         badProof[0] = leafCollector;
-        vm.expectRevert(bytes("SC: not allowlisted"));
+        vm.expectRevert(AllowlistHook.NotAllowlisted.selector);
         vm.prank(makeAddr("notInTree"));
         c.mintWithReferral(1, address(0), abi.encode(badProof));
     }
@@ -252,7 +256,7 @@ contract CollectionHooksTest is CollectionBase {
         holds.setRequired(address(c), address(gate));
 
         // Collector doesn't hold the required collection yet.
-        vm.expectRevert(bytes("SC: must hold required collection"));
+        vm.expectRevert(abi.encodeWithSelector(HoldsCollectionHook.MustHoldRequired.selector, address(gate)));
         vm.prank(collector);
         c.mint(1);
 
@@ -276,7 +280,7 @@ contract CollectionHooksTest is CollectionBase {
 
         vm.prank(collector);
         c.mint(2);
-        vm.expectRevert(bytes("SC: wallet cap"));
+        vm.expectRevert(abi.encodeWithSelector(PerWalletCapHook.WalletCapExceeded.selector, 2, 3));
         vm.prank(collector);
         c.mint(1);
 
@@ -293,7 +297,7 @@ contract CollectionHooksTest is CollectionBase {
         vm.prank(artist);
         cap.setCap(address(c), 2);
 
-        vm.expectRevert(bytes("SC: wallet cap"));
+        vm.expectRevert(abi.encodeWithSelector(PerWalletCapHook.WalletCapExceeded.selector, 2, 3));
         vm.prank(collector);
         c.mint(3); // one tx exceeding the cap outright
     }
@@ -446,10 +450,10 @@ contract CollectionHooksTest is CollectionBase {
         gate.setRoot(address(c), bytes32(uint256(1)));
         assertEq(gate.rootOf(address(c)), bytes32(uint256(1)));
 
-        vm.expectRevert(bytes("SC: not collection owner/admin"));
+        vm.expectRevert(HookBase.NotCollectionAdmin.selector);
         vm.prank(stranger);
         gate.setCap(address(c), 1);
-        vm.expectRevert(bytes("SC: not collection owner/admin"));
+        vm.expectRevert(HookBase.NotCollectionAdmin.selector);
         vm.prank(stranger);
         gate.setRoot(address(c), bytes32(0));
     }

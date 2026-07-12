@@ -13,9 +13,7 @@
 import { type Address, formatEther, isAddress } from "viem"
 import { foundry, mainnet } from "wagmi/chains"
 import {
-  ATTRIBUTION,
   GATE_HOOK,
-  GENERATIVE_RENDERER,
   RENDER_ASSETS,
   SOVEREIGN_COLLECTION_FACTORY,
   getAddressOrNull,
@@ -46,13 +44,6 @@ export function renderAssetsAddress(chainId: number = PND_CHAIN_ID): Address | n
   return getAddressOrNull(RENDER_ASSETS, chainId)
 }
 
-/** The Attribution singleton address (env override for local dev wins). */
-export function attributionAddress(chainId: number = PND_CHAIN_ID): Address | null {
-  const env = process.env.NEXT_PUBLIC_ATTRIBUTION
-  if (env && isAddress(env)) return env as Address
-  return getAddressOrNull(ATTRIBUTION, chainId)
-}
-
 /** The canonical GateHook address (env override for local dev wins). A
  *  collection whose mintHook equals this gets the full eligibility UI;
  *  any other nonzero hook gets the generic gated-mint notice. */
@@ -62,19 +53,6 @@ export function gateHookAddress(chainId: number = PND_CHAIN_ID): Address | null 
   return getAddressOrNull(GATE_HOOK, chainId)
 }
 
-/**
- * The GenerativeRenderer singleton address (env override for local dev
- * wins). A SovereignCollectionFactory's baked-in `defaultRenderer` is
- * DefaultRenderer (static/SVG works) — the create wizard's GENERATIVE
- * preset must pass this address explicitly as `cfg.renderer` rather than
- * relying on the zero-address default. See
- * contracts/script/DeployCollectionSystem.s.sol deploy order.
- */
-export function generativeRenderer(chainId: number = PND_CHAIN_ID): Address | null {
-  const env = process.env.NEXT_PUBLIC_GENERATIVE_RENDERER
-  if (env && isAddress(env)) return env as Address
-  return getAddressOrNull(GENERATIVE_RENDERER, chainId)
-}
 
 /**
  * The referrer address PND passes when a mint happens on this app — it
@@ -210,6 +188,9 @@ export function decodeWorkConfig(raw: RawWorkConfig): WorkConfig {
   }
 }
 
+// The onchain CollectionConfig struct (jalil "born-locked configs"): idMode
+// left the struct (it's fixed at deploy — Sequential vs Pooled factory fn —
+// and read via the idMode() getter), and the one-way lock flags joined it.
 type RawCollectionConfig = {
   price: bigint
   supplyCap: bigint
@@ -221,10 +202,13 @@ type RawCollectionConfig = {
   renderer: Address
   mintHook: Address
   priceStrategy: Address
-  idMode: number
+  rendererLocked: boolean
+  supplyLocked: boolean
 }
 
-export function decodeCollectionConfig(raw: RawCollectionConfig): CollectionConfig {
+/** Decode config(); idMode comes from the separate idMode() getter (no longer
+ *  in the struct), so callers pass it alongside the raw config. */
+export function decodeCollectionConfig(raw: RawCollectionConfig, idMode: number): CollectionConfig {
   return {
     price: raw.price,
     supplyCap: raw.supplyCap,
@@ -236,7 +220,7 @@ export function decodeCollectionConfig(raw: RawCollectionConfig): CollectionConf
     renderer: raw.renderer,
     mintHook: raw.mintHook,
     priceStrategy: raw.priceStrategy,
-    idMode: Number(raw.idMode),
+    idMode: Number(idMode),
   }
 }
 

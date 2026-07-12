@@ -70,7 +70,7 @@ ABIs are served under `/abis/` for every contract and interface across the proto
 
 Collections core and factory: `Collection`, `CollectionFactory`
 
-Collections shared singletons: `Attribution`, `DefaultRenderer`, `GenerativeRenderer`
+Collections shared singletons: `DefaultRenderer`, `RenderAssets`
 
 Collections reference mint hooks: `AllowlistHook`, `PerWalletCapHook`, `HoldsCollectionHook`
 
@@ -85,8 +85,8 @@ Fetch any of these directly, e.g. `/abis/Collection.json`, or import the typed v
 Every ABI is also shipped as a typed TypeScript export in the `@pin/abi` workspace package, `as const` for viem/wagmi type inference:
 
 ```ts
-import {sovereignCollectionAbi, sovereignCollectionFactoryAbi} from '@pin/abi';
-import {attributionAbi, generativeRendererAbi, defaultRendererAbi} from '@pin/abi';
+import {collectionAbi, collectionFactoryAbi} from '@pin/abi';
+import {defaultRendererAbi, renderAssetsAbi} from '@pin/abi';
 import {allowlistHookAbi, perWalletCapHookAbi, holdsCollectionHookAbi} from '@pin/abi';
 import {iMintHookAbi, iPriceStrategyAbi, iRendererAbi, iCollectionViewAbi} from '@pin/abi';
 import {sovereignAuctionHouseAbi, sovereignAuctionHouseFactoryAbi} from '@pin/abi';

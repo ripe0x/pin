@@ -10,11 +10,11 @@ Every address and transaction link in this reference points at
 - Address: `https://evm.now/address/<address>?chainId=1`
 - Transaction: `https://evm.now/tx/<hash>?chainId=1`
 
-Shared-singleton addresses (the factory, `Attribution`, `DefaultRenderer`,
-`GenerativeRenderer`) are written as `{{addr:<key>}}` placeholders in the
-source of this reference and substituted with the real mainnet address once
-each contract is deployed. A per-artist collection clone has no fixed
-address; examples use `<COLLECTION_ADDRESS>` instead.
+Shared-singleton addresses (the factory, `DefaultRenderer`, `RenderAssets`)
+are written as `{{addr:<key>}}` placeholders in the source of this reference
+and substituted with the real mainnet address once each contract is deployed.
+A per-artist collection clone has no fixed address; examples use
+`<COLLECTION_ADDRESS>` instead.
 
 ## Currency and units
 
@@ -49,7 +49,7 @@ Write examples use [viem](https://viem.sh). ABIs come from the `@pin/abi`
 package or from `/abis/<ContractName>.json`:
 
 ```ts
-import {sovereignCollectionAbi} from '@pin/abi';
+import {collectionAbi} from '@pin/abi';
 import {createWalletClient, http} from 'viem';
 import {mainnet} from 'viem/chains';
 
@@ -57,7 +57,7 @@ const client = createWalletClient({chain: mainnet, transport: http()});
 
 await client.writeContract({
   address: '<COLLECTION_ADDRESS>',
-  abi: sovereignCollectionAbi,
+  abi: collectionAbi,
   functionName: 'mint',
   args: [1n],
   value: priceWei,
@@ -82,6 +82,6 @@ const abi = await fetch('/abis/Collection.json').then((r) => r.json());
 | Mint mark | The per-token provenance stamped at mint time: mint order and mint block (the referrer and lifecycle status live on the `Minted` event, not in storage) |
 | Entropy / seed | The per-token `bytes32` stamped at mint (`tokenSeed`), the source of randomness a generative renderer draws from |
 | Id mode | Whether a collection assigns ids itself (sequential) or takes minter-supplied ids (pooled), fixed at init |
-| Work / work config | The algorithm or asset definition a renderer executes: code refs, dependency refs, render spec |
-| Lock (permanence) | One-way switches: `lockRenderer` on the collection (pin the renderer pointer, optional), `lockSupply` on the collection (the scarcity promise), and `lockWork` per collection in the GenerativeRenderer (pin the algorithm). Pointer lock + work lock = full presentation permanence for a generative work |
-| Roster / attribution | The artist list a collection declares to the `Attribution` singleton; confirmed once each listed artist claims the collection in their own Catalog |
+| Work / work config | The algorithm or asset definition a renderer executes: code refs, dependency refs, render spec, all defined inside the artist's own renderer |
+| Lock (permanence) | One-way switches on the collection: `lockRenderer` (pin the renderer pointer, optional) and `lockSupply` (the scarcity promise). A generative work's algorithm permanence comes from the artist's renderer itself (deployed immutable, or with its own one-way lock); pointer lock + an immutable renderer = full presentation permanence |
+| Creator / attribution | The owner LISTS creators on the collection (`setCreators`); each confirms by claiming the collection in the Catalog. `isConfirmedCreator` is the live intersection |

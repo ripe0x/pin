@@ -29,11 +29,10 @@ core assigns ids, never reused after burn) or Pooled (an authorized minter
 supplies ids, and a burned id can be minted again as a fresh instance). Every
 sale term is a live setting (window, price, royalty, supply cap). The core
 stores NO presentation data: `tokenURI`/`contractURI` defer wholly to the
-renderer slot, with the work config and static images living in renderer-land
-([GenerativeRenderer](/docs/collections/contracts/generative-renderer)'s work
-registry, [RenderAssets](/docs/collections/contracts/render-assets)). Two
-one-way locks cover the state the core actually owns: `lockRenderer` (pin the
-renderer pointer, optional) and `lockSupply` (the scarcity promise). Payment accrues as
+renderer slot, with any generative work config living in the artist's own
+renderer and static images in [RenderAssets](/docs/collections/contracts/render-assets).
+Two one-way locks cover the state the core actually owns: `lockRenderer` (pin
+the renderer pointer, optional) and `lockSupply` (the scarcity promise). Payment accrues as
 pull-payment balances claimed through `withdraw`; no external transfer happens
 during a mint, so a reverting recipient can never brick minting.
 
@@ -63,6 +62,19 @@ admin keys with `addAdmin`. An admin can call every management function the owne
 can except managing the admin set and transferring ownership, which stay
 owner-only. Admin access is real power — an admin can redirect payouts and
 freeze metadata — so grants are explicit, evented, and revocable at any time.
+
+### Creator attribution
+
+Attribution is a two-sided, fully onchain handshake — no shared registry. The
+owner LISTS creators on the collection (`setCreators`, mutable) — their
+assertion of who made the work. Each listed creator CONFIRMS by claiming the
+collection in the Catalog (the artist-record public good) from their own
+address. `isConfirmedCreator(who)` is the live intersection: listed AND
+claimed. Neither side can fake the other — a rando can't be listed, and a
+listed non-participant never claims — so credit is squat- and
+false-credit-proof, and reading the Catalog live means retracting either side
+cleanly revokes it. `owner()` is the deployer and is understood as a creator
+without listing; listing is for co-creators.
 
 ### Id modes
 
@@ -108,11 +120,12 @@ window with `setMintWindow` and the status follows.
 The core locks only what it owns. `lockRenderer` (optional, off by default)
 permanently pins the renderer pointer; `lockSupply` permanently freezes the
 supply cap — the scarcity promise, binding extension minters too. Everything
-presentation-side is the renderer's own offer: for the bundled
-GenerativeRenderer, `lockWork(collection)` pins the algorithm, so pointer lock
-+ work lock = full presentation permanence. The core cannot attest an arbitrary
-renderer's internals — a custom renderer's mutability is the artist's
-inspectable choice, not the core's promise.
+presentation-side is the renderer's own offer: a bring-your-own generative
+renderer makes its own permanence promise (deployed immutable, or with its own
+one-way lock), so pointer lock + an immutable renderer = full presentation
+permanence. The core cannot attest an arbitrary renderer's internals — a
+custom renderer's mutability is the artist's inspectable choice, not the
+core's promise.
 
 ### Live reads
 
@@ -264,9 +277,20 @@ One-way, optional (off by default): permanently pin the renderer pointer, so
 `tokenURI`/`contractURI` are answered by the current renderer contract forever.
 The core cannot attest what a renderer does internally — an immutable renderer
 plus a locked pointer is full presentation permanence; a mutable renderer with
-a locked pointer is the artist's explicit, inspectable choice. Pairs with the
-renderer-side work lock (`GenerativeRenderer.lockWork`) for generative works.
-Reverts `RendererIsLocked` if already locked. Emits `RendererLocked`.
+a locked pointer is the artist's explicit, inspectable choice. Pairs with
+whatever permanence a bring-your-own renderer offers (an immutable renderer, or
+its own one-way lock) for generative works. Reverts `RendererIsLocked` if
+already locked. Emits `RendererLocked`.
+
+## function setCreators
+
+access: owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`)
+
+The owner's side of attribution: list (`listed = true`) or unlist co-creators.
+Mutable — collaborators can be added or corrected any time. A listing is only
+an assertion; a creator becomes confirmed only once they also claim this
+collection in the Catalog, so a listed non-participant shows as
+listed-but-unconfirmed. Emits `CreatorListed` per address.
 
 ## function setMintHook
 
@@ -359,8 +383,8 @@ transfer reverts. Emits `StrayETHRescued`.
 access: deployer one-shot (`initializer`, else `InvalidInitialization`)
 
 Sets up the clone exactly once: name, symbol, owner, collection config, work
-config, default renderer, initial extension minters, and an optional Attribution
-roster write. Reverts `OwnerRequired` for a zero owner, `RendererRequired` for a
+config, default renderer, initial extension minters, an optional initial creator listing, and the
+Catalog address used for creator confirmation. Reverts `OwnerRequired` for a zero owner, `RendererRequired` for a
 zero default renderer, `RoyaltyTooHigh` if the royalty exceeds the 50% cap,
 `BadMintWindow` if a non-zero `mintEnd` is not after `mintStart`, and `ZeroMinter`
 for a zero address in the initial minters. The constructor disables initializers
@@ -468,6 +492,23 @@ and is not required to appear here.
 ## function isRendererLocked
 
 True once `lockRenderer` has permanently pinned the renderer pointer.
+
+## function isListedCreator
+
+Whether the owner has listed `who` as a creator (the owner's assertion). One
+half of confirmation; see `isConfirmedCreator`.
+
+## function isConfirmedCreator
+
+Live, mutual attribution: true iff the owner has listed `who` AND `who` has
+claimed this collection in the Catalog (`isContractRegistered`). Reads the
+Catalog live, so retracting either side (unlist, or un-claim) cleanly revokes
+credit. Returns false when the collection has no Catalog configured.
+
+## function catalog
+
+The Catalog singleton this collection confirms creators against (address zero
+when confirmation is disabled).
 
 ## function isSupplyLocked
 
@@ -621,6 +662,13 @@ Emitted when the supply cap changes with `setSupplyCap`.
 
 Emitted once when `lockRenderer` permanently pins the renderer pointer.
 
+## event CreatorListed
+
+Emitted when the owner lists or unlists a creator (including each creator seeded
+at init). Indexed by `creator`, with the `listed` flag. Indexers build a
+collection's roster from these; confirmed status is a live `isConfirmedCreator`
+read.
+
 ## event SupplyLocked
 
 Emitted once when `lockSupply` permanently locks the supply cap.
@@ -639,9 +687,9 @@ metadata.
 
 ## event BatchMetadataUpdate
 
-ERC-4906 range refresh signal, emitted by `setRenderer` and `setWork` (covering
-all tokens) and by `notifyMetadataUpdate` (renderer- or admin-chosen range).
-Marketplaces subscribe to this to re-fetch cached metadata.
+ERC-4906 range refresh signal, emitted by `setRenderer` (covering all tokens)
+and by `notifyMetadataUpdate` (renderer- or admin-chosen range). Marketplaces
+subscribe to this to re-fetch cached metadata.
 
 ## event RendererSet
 

@@ -232,5 +232,10 @@ export const gateHookAbi = [
       }
     ],
     "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "NotCollectionAdmin",
+    "inputs": []
   }
 ] as const;

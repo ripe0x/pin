@@ -5,15 +5,17 @@ import {Test} from "forge-std/Test.sol";
 import {Clones} from "openzeppelin-contracts/contracts/proxy/Clones.sol";
 
 import {Collection} from "../../src/collection/Collection.sol";
+import {PooledCollection} from "../../src/collection/PooledCollection.sol";
 import {CollectionFactory} from "../../src/collection/CollectionFactory.sol";
-import {CollectionConfig, InitParams, IdMode} from "../../src/collection/CollectionTypes.sol";
+import {CollectionConfig, InitParams} from "../../src/collection/CollectionTypes.sol";
 
 import {MockRenderer} from "./mocks/CollectionMocks.sol";
 
 /// @dev Shared deployment + helpers for the Collection test suite.
 contract CollectionBase is Test {
     MockRenderer internal renderer;
-    Collection internal impl;
+    Collection internal impl; // sequential implementation
+    PooledCollection internal pooledImpl;
     CollectionFactory internal factory;
 
     address internal artist = makeAddr("artist");
@@ -24,55 +26,59 @@ contract CollectionBase is Test {
     function setUp() public virtual {
         renderer = new MockRenderer();
         impl = new Collection();
-        // address(0) attribution: the roster-write integration is out of
-        // scope for this suite (owned by the Attribution test agent).
-        factory = new CollectionFactory(address(impl), address(renderer), address(0));
+        pooledImpl = new PooledCollection();
+        // address(0) catalog: creator-confirmation is out of scope for this
+        // suite (exercised in CreatorAttribution.t.sol with a real Catalog).
+        factory = new CollectionFactory(address(impl), address(pooledImpl), address(renderer), address(0));
     }
 
     // ── config builders ──────────────────────────────────────────────────────
 
-    /// @dev A free (gas-only), open-supply, open-window sequential collection.
-    function _freeConfig() internal pure returns (CollectionConfig memory cfg) {
-        cfg.idMode = IdMode.Sequential;
-    }
+    /// @dev A free (gas-only), open-supply, open-window config.
+    function _freeConfig() internal pure returns (CollectionConfig memory cfg) {}
 
-    /// @dev A priced sequential collection. Referral share is a fixed protocol
-    ///      constant, not configurable here.
+    /// @dev A priced config. Referral share is a fixed protocol constant, not
+    ///      configurable here.
     function _pricedConfig(uint256 price) internal pure returns (CollectionConfig memory cfg) {
         cfg.price = price;
-        cfg.idMode = IdMode.Sequential;
-    }
-
-    /// @dev A pooled-mode collection with no built-in paid path (pooled sells
-    ///      exclusively through an authorized minter).
-    function _pooledConfig() internal pure returns (CollectionConfig memory cfg) {
-        cfg.idMode = IdMode.Pooled;
     }
 
     // ── deploy helpers ───────────────────────────────────────────────────────
 
     function _collection(CollectionConfig memory cfg) internal returns (Collection c) {
         address[] memory noMinters = new address[](0);
-        address[] memory noArtists = new address[](0);
-        c = Collection(
-            factory.createCollection(
-                "Artist Collection", "ACOL", artist, cfg, noMinters, noArtists
-            )
-        );
+        address[] memory noCreators = new address[](0);
+        c = Collection(factory.createCollection("Artist Collection", "ACOL", artist, cfg, noMinters, noCreators));
     }
 
     function _collectionWithMinters(CollectionConfig memory cfg, address[] memory minters)
         internal
         returns (Collection c)
     {
-        address[] memory noArtists = new address[](0);
-        c = Collection(
-            factory.createCollection("Artist Collection", "ACOL", artist, cfg, minters, noArtists)
+        address[] memory noCreators = new address[](0);
+        c = Collection(factory.createCollection("Artist Collection", "ACOL", artist, cfg, minters, noCreators));
+    }
+
+    function _pooled(CollectionConfig memory cfg) internal returns (PooledCollection c) {
+        address[] memory noMinters = new address[](0);
+        address[] memory noCreators = new address[](0);
+        c = PooledCollection(
+            factory.createPooledCollection("Artist Collection", "ACOL", artist, cfg, noMinters, noCreators)
         );
     }
 
-    /// @dev A fresh, uninitialized EIP-1167 clone of `impl`, for tests that
-    ///      drive `initialize()` directly (init validation, double-init).
+    function _pooledWithMinters(CollectionConfig memory cfg, address[] memory minters)
+        internal
+        returns (PooledCollection c)
+    {
+        address[] memory noCreators = new address[](0);
+        c = PooledCollection(
+            factory.createPooledCollection("Artist Collection", "ACOL", artist, cfg, minters, noCreators)
+        );
+    }
+
+    /// @dev A fresh, uninitialized EIP-1167 clone of the sequential impl, for
+    ///      tests that drive `initialize()` directly (validation, double-init).
     function _freshClone() internal returns (Collection) {
         return Collection(Clones.clone(address(impl)));
     }
@@ -83,7 +89,7 @@ contract CollectionBase is Test {
     ///      struct before calling initialize().
     function _rawInitParams(CollectionConfig memory cfg) internal view returns (InitParams memory p) {
         address[] memory noMinters = new address[](0);
-        address[] memory noArtists = new address[](0);
+        address[] memory noCreators = new address[](0);
         p = InitParams({
             name: "Artist Collection",
             symbol: "ACOL",
@@ -91,8 +97,8 @@ contract CollectionBase is Test {
             cfg: cfg,
             defaultRenderer: address(renderer),
             initialMinters: noMinters,
-            attribution: address(0),
-            artists: noArtists
+            catalog: address(0),
+            creators: noCreators
         });
     }
 }

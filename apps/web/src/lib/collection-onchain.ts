@@ -1,16 +1,13 @@
 import "server-only"
 import { createPublicClient, decodeFunctionResult, encodeFunctionData, http, keccak256, stringToBytes, type Address } from "viem"
 import { mainnet } from "viem/chains"
-import { attributionAbi, catalogAbi, collectionAbi, collectionFactoryAbi, gateHookAbi, generativeRendererAbi, renderAssetsAbi } from "@pin/abi"
-import { ARTIST_RECORD_REGISTRY, ATTRIBUTION, MAINNET_CHAIN_ID, getAddressOrNull } from "@pin/addresses"
+import { catalogAbi, collectionAbi, collectionFactoryAbi, gateHookAbi, renderAssetsAbi } from "@pin/abi"
+import { ARTIST_RECORD_REGISTRY, MAINNET_CHAIN_ID, getAddressOrNull } from "@pin/addresses"
 import { fetchMetadataForUri } from "@pin/token-metadata"
 import { pgCache } from "./pg-cache"
 import {
-  attributionAddress,
   decodeCollectionConfig,
-  decodeWorkConfig,
   gateHookAddress,
-  generativeRenderer,
   renderAssetsAddress,
   type Collection,
   CollectionStatus,
@@ -63,7 +60,7 @@ export async function getCollection(address: Address): Promise<Collection | null
     const client = getClient()
     const base = { address, abi: collectionAbi } as const
     try {
-      const [name, symbol, owner, rendererLocked, supplyLocked, renderer, priceStrategy, cfgRes] =
+      const [name, symbol, owner, rendererLocked, supplyLocked, renderer, priceStrategy, idMode, cfgRes] =
         await client.multicall({
           allowFailure: false,
           contracts: [
@@ -74,38 +71,27 @@ export async function getCollection(address: Address): Promise<Collection | null
             { ...base, functionName: "isSupplyLocked" },
             { ...base, functionName: "renderer" },
             { ...base, functionName: "priceStrategy" },
+            { ...base, functionName: "idMode" },
             { ...base, functionName: "config" },
           ],
         })
       const [cfgRaw, status, minted] = cfgRes as RawConfigReturn
 
-      // Presentation data lives in renderer-land: the work config in the
-      // GenerativeRenderer's registry, the cover in RenderAssets. Both reads
-      // tolerate absence (custom renderer, nothing configured yet).
-      const gen = generativeRenderer()
+      // Presentation data lives in renderer-land: the cover in RenderAssets.
+      // Generative work now ships as bring-your-own renderers (each renderer
+      // owns its config and tokenURI), so there is no shared work-config read
+      // here; the cover read tolerates absence (custom renderer, nothing set).
       const assets = renderAssetsAddress()
-      const [workRaw, cover] = await Promise.all([
-        gen
-          ? client
-              .readContract({
-                address: gen,
-                abi: generativeRendererAbi,
-                functionName: "workOf",
-                args: [address],
-              })
-              .catch(() => null)
-          : Promise.resolve(null),
-        assets
-          ? client
-              .readContract({
-                address: assets,
-                abi: renderAssetsAbi,
-                functionName: "coverOf",
-                args: [address],
-              })
-              .catch(() => "")
-          : Promise.resolve(""),
-      ])
+      const cover = assets
+        ? await client
+            .readContract({
+              address: assets,
+              abi: renderAssetsAbi,
+              functionName: "coverOf",
+              args: [address],
+            })
+            .catch(() => "")
+        : ""
 
       return {
         address,
@@ -116,10 +102,11 @@ export async function getCollection(address: Address): Promise<Collection | null
         isSupplyLocked: supplyLocked as boolean,
         renderer: renderer as Address,
         priceStrategy: priceStrategy as Address,
-        cfg: decodeCollectionConfig(cfgRaw),
-        work: workRaw
-          ? decodeWorkConfig(workRaw as Parameters<typeof decodeWorkConfig>[0])
-          : { code: [], deps: [], codeURI: "", codeHash: ("0x" + "0".repeat(64)) as `0x${string}`, injectionVersion: 1, renderParams: "" },
+        cfg: decodeCollectionConfig(cfgRaw, Number(idMode)),
+        // Shared work-config read removed with the shared GenerativeRenderer;
+        // bring-your-own renderers own their config. Kept as an empty default
+        // so consumers that gate on work.code.length fall back to the cover.
+        work: { code: [], deps: [], codeURI: "", codeHash: ("0x" + "0".repeat(64)) as `0x${string}`, injectionVersion: 1, renderParams: "" },
         cover: (cover as string) ?? "",
         status: Number(status) as CollectionStatus,
         minted: minted as bigint,
@@ -551,20 +538,6 @@ export async function getRendererPreviews(
   return [first, ...rest.filter((p): p is OnchainPreview => p !== null)]
 }
 
-export type AttributionEntry = { artist: Address; claimed: boolean }
-
-/**
- * A collection's artist roster, cross-checked against each artist's own
- * Catalog claim. Attribution.artistsOf is a one-sided assertion (the
- * collection's owner declaring who collaborated); Catalog.isContractRegistered
- * is the other half (the artist itself claiming the collection). Per
- * Attribution.sol's documented model, "confirmed" is the intersection of
- * both — computed here, off-chain, since the two singletons are
- * deliberately decoupled onchain.
- *
- * Returns an empty array when Attribution isn't configured for the current
- * chain, or when the collection's roster is empty/unset.
- */
 export type RecentTokenEntry = {
   tokenId: string
   seed: `0x${string}`
@@ -608,42 +581,20 @@ export async function getRecentTokenMarks(
   })
 }
 
-export async function getAttribution(collection: Address): Promise<AttributionEntry[]> {
-  return pgCache(`sc-attribution:${lc(collection)}`, 60, async () => {
-    // attributionAddress() honors the NEXT_PUBLIC_ATTRIBUTION env override
-    // (the dev fork harness sets it); the static entry is a zero sentinel
-    // until mainnet deploy, so reading it directly returns [] forever.
-    const attribution = attributionAddress()
-    if (!attribution) return []
-    const client = getClient()
-    try {
-      const artists = (await client.readContract({
-        address: attribution,
-        abi: attributionAbi,
-        functionName: "artistsOf",
-        args: [collection],
-      })) as readonly Address[]
-      if (artists.length === 0) return []
-      if (!REGISTRY) {
-        // No Catalog registry configured: report the roster as unconfirmed
-        // rather than silently dropping it.
-        return artists.map((artist) => ({ artist, claimed: false }))
-      }
-      const claimResults = await client.multicall({
-        allowFailure: true,
-        contracts: artists.map((artist) => ({
-          address: REGISTRY,
-          abi: catalogAbi,
-          functionName: "isContractRegistered" as const,
-          args: [artist, collection] as const,
-        })),
-      })
-      return artists.map((artist, i) => ({
-        artist,
-        claimed: claimResults[i].status === "success" ? Boolean(claimResults[i].result) : false,
-      }))
-    } catch {
-      return []
-    }
-  })
+export type CreatorEntry = { creator: Address; confirmed: boolean }
+export type AttributionEntry = CreatorEntry // back-compat alias
+
+/**
+ * Confirmed creators for a collection. Attribution is now fully onchain on the
+ * collection itself: the owner LISTS creators (`CreatorListed` events) and each
+ * confirms by claiming the collection in the Catalog; the collection exposes
+ * `isConfirmedCreator(who)` as the live intersection.
+ *
+ * The listed set is enumerated from indexed `CreatorListed` events (worker owns
+ * chain scanning; web never scans), so this returns [] until the indexer serves
+ * them. Given a candidate set, confirmation is a live `isConfirmedCreator` read.
+ * There is no shared Attribution registry to read anymore.
+ */
+export async function getAttribution(_collection: Address): Promise<CreatorEntry[]> {
+  return []
 }

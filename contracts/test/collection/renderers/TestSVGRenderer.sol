@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {LibString} from "solady/utils/LibString.sol";
 
 import {SVGRenderer} from "../../../src/collection/renderers/SVGRenderer.sol";
+import {ICollectionView} from "../../../src/collection/interfaces/IRenderer.sol";
 
 /// @title TestSVGRenderer
 /// @notice Minimal concrete SVGRenderer used only by the renderer test suite.
@@ -14,12 +15,13 @@ import {SVGRenderer} from "../../../src/collection/renderers/SVGRenderer.sol";
 contract TestSVGRenderer is SVGRenderer {
     using LibString for uint256;
 
-    function svg(address, /* collection */ uint256, /* tokenId */ bytes32 seed)
+    function svg(address collection, uint256 tokenId)
         internal
         view
         override
         returns (string memory)
     {
+        bytes32 seed = ICollectionView(collection).tokenSeed(tokenId);
         // Derive a 6-hex-digit fill straight from the seed.
         string memory fill = LibString.toHexStringNoPrefix(uint256(seed) & 0xffffff, 3);
         return string.concat(

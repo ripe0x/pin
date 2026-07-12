@@ -62,9 +62,14 @@ export const iCollectionViewAbi = [
             "internalType": "address"
           },
           {
-            "name": "idMode",
-            "type": "uint8",
-            "internalType": "enum IdMode"
+            "name": "rendererLocked",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "supplyLocked",
+            "type": "bool",
+            "internalType": "bool"
           }
         ]
       },

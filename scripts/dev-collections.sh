@@ -102,27 +102,28 @@ cast rpc anvil_setBalance "$IMPERSONATE" 0x21e19e0c9bab2400000 --rpc-url "$RPC" 
 # keep --sender for clarity/consistency (it must match the PRIVATE_KEY's
 # address, verified above as Anvil account 0).
 echo "▸ Deploying collection system contracts…"
-DEPLOY_OUT="$(cd contracts && PRIVATE_KEY="$ANVIL_ACCOUNT_0_PK" forge script script/DeployCollectionSystem.s.sol \
+# CATALOG pins the collections to the REAL Catalog public good (present on the
+# mainnet fork), so the seed's creator claims land in the same Catalog the
+# collections read — the dev roster then actually confirms.
+DEPLOY_OUT="$(cd contracts && CATALOG="0x467a9c39e03C595EC3075D856f19C7386b6b915d" \
+  PRIVATE_KEY="$ANVIL_ACCOUNT_0_PK" forge script script/DeployCollectionSystem.s.sol \
   --rpc-url "$RPC" --broadcast --sender "$IMPERSONATE" 2>&1)" || {
   echo "$DEPLOY_OUT" | tail -30
   echo "error: deploy failed"
   exit 1
 }
 
-# Parse from the script's final "Summary:" block, which always prints in
-# full (unlike the step-by-step logs, which skip the "deployed at" line for
-# Attribution when it's already present at its predicted CREATE2 address).
-ATTRIBUTION="$(echo "$DEPLOY_OUT" | grep -i "Attribution:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
+# Parse from the script's final "Summary:" block, which always prints in full
+# (unlike the step-by-step logs, which vary).
+CATALOG="$(echo "$DEPLOY_OUT" | grep -i "Catalog:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
 RENDER_ASSETS="$(echo "$DEPLOY_OUT" | grep -i "RenderAssets:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
 DEFAULT_RENDERER="$(echo "$DEPLOY_OUT" | grep -i "DefaultRenderer:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
-GENERATIVE_RENDERER="$(echo "$DEPLOY_OUT" | grep -i "GenerativeRenderer:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
 GATE_HOOK="$(echo "$DEPLOY_OUT" | grep -i "GateHook:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
-IMPLEMENTATION="$(echo "$DEPLOY_OUT" | grep -i "Collection impl:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
+IMPLEMENTATION="$(echo "$DEPLOY_OUT" | grep -i "Collection (seq) impl:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
 FACTORY="$(echo "$DEPLOY_OUT" | grep -i "CollectionFactory:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
 
-for pair in "ATTRIBUTION:$ATTRIBUTION" "RENDER_ASSETS:$RENDER_ASSETS" "DEFAULT_RENDERER:$DEFAULT_RENDERER" \
-            "GENERATIVE_RENDERER:$GENERATIVE_RENDERER" "GATE_HOOK:$GATE_HOOK" "IMPLEMENTATION:$IMPLEMENTATION" \
-            "FACTORY:$FACTORY"; do
+for pair in "CATALOG:$CATALOG" "RENDER_ASSETS:$RENDER_ASSETS" "DEFAULT_RENDERER:$DEFAULT_RENDERER" \
+            "GATE_HOOK:$GATE_HOOK" "IMPLEMENTATION:$IMPLEMENTATION" "FACTORY:$FACTORY"; do
   name="${pair%%:*}"
   value="${pair#*:}"
   if [ -z "$value" ]; then
@@ -132,31 +133,26 @@ for pair in "ATTRIBUTION:$ATTRIBUTION" "RENDER_ASSETS:$RENDER_ASSETS" "DEFAULT_R
   fi
 done
 
-echo "▸ Attribution:               $ATTRIBUTION"
+echo "▸ Catalog:                    $CATALOG"
 echo "▸ RenderAssets:               $RENDER_ASSETS"
 echo "▸ DefaultRenderer:            $DEFAULT_RENDERER"
-echo "▸ GenerativeRenderer:         $GENERATIVE_RENDERER"
 echo "▸ Collection impl:   $IMPLEMENTATION"
 echo "▸ CollectionFactory: $FACTORY"
 
-# 3b) optional sample world (SEED_SAMPLE=1, default on): a generative
-#     collection with mints (sketch uploaded to the real forked
-#     ScriptyStorageV2), an edition with an inline-SVG cover, and a collab
-#     roster with one claimed + one unclaimed artist — so every UI surface
-#     has content immediately. SEED_SAMPLE=0 skips for a blank slate.
+# 3b) optional sample world (SEED_SAMPLE=1, default on): three collections
+#     rendered through the DefaultRenderer with inline-SVG covers — one with a
+#     collab roster (one claimed + one unclaimed creator) and mints, one
+#     unminted, one edition — so every UI surface has content immediately.
+#     SEED_SAMPLE=0 skips for a blank slate.
 if [ "${SEED_SAMPLE:-1}" = "1" ]; then
   echo "▸ Seeding sample collections…"
-  SEED_OUT="$(cd contracts && FACTORY="$FACTORY" GENERATIVE_RENDERER="$GENERATIVE_RENDERER" \
-    RENDER_ASSETS="$RENDER_ASSETS" GATE_HOOK="$GATE_HOOK" \
+  SEED_OUT="$(cd contracts && FACTORY="$FACTORY" RENDER_ASSETS="$RENDER_ASSETS" GATE_HOOK="$GATE_HOOK" \
     PRIVATE_KEY="$ANVIL_ACCOUNT_0_PK" forge script script/SeedDevCollections.s.sol \
-    --tc SeedDevCollections \
-    --rpc-url "$RPC" --broadcast 2>&1)" || {
+    --tc SeedDevCollections --rpc-url "$RPC" --broadcast 2>&1)" || {
     echo "$SEED_OUT" | tail -20
     echo "warning: sample seeding failed (harness continues unseeded)"
   }
-  # `|| true`: a no-match grep exits 1, and under set -euo pipefail that
-  # would kill the harness AFTER seeding but BEFORE the env file is written.
-  echo "$SEED_OUT" | grep -E "Orbit Studies|Signal Drift|Field Notes|Woven Lattice|Common Signal|Night Orbit|First Light|Brief Window" | sed 's/^/  /' || true
+  echo "$SEED_OUT" | grep -E "Orbit Studies|Signal Drift|Field Notes" | sed 's/^/  /'
 fi
 
 # 3c) optional Homage to the Punk seed (SEED_HOMAGE=1, default on): the sibling
@@ -172,7 +168,7 @@ if [ "${SEED_HOMAGE:-1}" = "1" ] && [ -d "$HOMAGE_REPO/contracts" ]; then
     echo "$SEED_HOMAGE_OUT" | tail -20
     echo "warning: Homage seeding failed (harness continues)"
   }
-  echo "$SEED_HOMAGE_OUT" | grep -E "PermanenceRendererSovereign:|HomageCollection:|HomageMinter:|HomageFeeSplitter:|Collection page:" | sed 's/^/  /' || true
+  echo "$SEED_HOMAGE_OUT" | grep -E "PermanenceRendererSovereign:|HomageCollection:|HomageMinter:|HomageFeeSplitter:|Collection page:" | sed 's/^/  /'
 elif [ "${SEED_HOMAGE:-1}" = "1" ]; then
   echo "▸ Homage seeding skipped: $HOMAGE_REPO/contracts not found"
 fi
@@ -187,11 +183,9 @@ NEXT_PUBLIC_USE_LOCAL_RPC=1
 NEXT_PUBLIC_ANVIL_RPC_URL=$RPC
 NEXT_PUBLIC_DEV_IMPERSONATE=$IMPERSONATE
 NEXT_PUBLIC_SOVEREIGN_COLLECTION_FACTORY=$FACTORY
-NEXT_PUBLIC_ATTRIBUTION=$ATTRIBUTION
 NEXT_PUBLIC_RENDER_ASSETS=$RENDER_ASSETS
-NEXT_PUBLIC_GENERATIVE_RENDERER=$GENERATIVE_RENDERER
-NEXT_PUBLIC_DEFAULT_RENDERER=$DEFAULT_RENDERER
 NEXT_PUBLIC_GATE_HOOK=$GATE_HOOK
+NEXT_PUBLIC_DEFAULT_RENDERER=$DEFAULT_RENDERER
 EOF
 echo "▸ Wrote $ENV_DEV  (delete it to restore prod env)"
 

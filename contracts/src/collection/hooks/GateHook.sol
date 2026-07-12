@@ -5,7 +5,6 @@ import {MerkleProof} from "openzeppelin-contracts/contracts/utils/cryptography/M
 
 import {HookBase} from "./HookBase.sol";
 import {IMintHook} from "../interfaces/IMintHook.sol";
-import {ICollectionView} from "../interfaces/IRenderer.sol";
 
 /// @title GateHook
 /// @notice Merkle allowlist + per-wallet cap in ONE hook. The core has a
@@ -42,14 +41,8 @@ contract GateHook is HookBase {
     event RootSet(address indexed collection, bytes32 root);
     event CapSet(address indexed collection, uint256 cap);
 
-    /// @dev Owner or explicit admin of the collection being configured.
-    modifier onlyCollectionAdmin(address collection) {
-        ICollectionView c = ICollectionView(collection);
-        require(
-            msg.sender == c.owner() || c.isAdmin(msg.sender), "SC: not collection owner/admin"
-        );
-        _;
-    }
+    // Configuration is gated by HookBase.onlyCollectionAdmin — the same
+    // owner-or-admin authority root as the collection's own setters.
 
     function setRoot(address collection, bytes32 root) external onlyCollectionAdmin(collection) {
         rootOf[collection] = root;

@@ -51,12 +51,15 @@ function contractURI(address collection) external view returns (string memory);
   [Injection convention](/docs/collections/reference/injection-convention) for the
   `context: "preview"` contract a preview document must inject
 - **Reference implementations**: `DefaultRenderer` (the init-time fallback),
-  `GenerativeRenderer` (scripty-assembled HTML for algorithm-driven work),
-  and an `SVGRenderer` abstract base for hand-written Solidity SVG works
+  an `SVGRenderer` abstract base for hand-written Solidity SVG works, and
+  `ScriptyRenderer` — a bring-your-own generative template for
+  algorithm-driven (Art Blocks-style) work: the artist deploys their own
+  instance (immutable by construction) and points the slot at it, following
+  the injection convention
 
 See [IRenderer](/docs/collections/contracts/i-renderer),
 [DefaultRenderer](/docs/collections/contracts/default-renderer),
-[GenerativeRenderer](/docs/collections/contracts/generative-renderer),
+[ScriptyRenderer](/docs/collections/contracts/scripty-renderer),
 [Write a renderer](/docs/collections/guides/write-a-renderer).
 
 ## Price strategy (`IPriceStrategy`)

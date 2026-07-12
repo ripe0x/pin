@@ -140,7 +140,6 @@ export function CreateCollectionWizard({ artistAddress }: { artistAddress: strin
             state={state}
             artistAddress={artistAddress}
             priceWei={price.wei ?? 0n}
-            uploadResult={uploadResult}
             onBack={() => goTo(stepBefore("deploy"))}
           />
         )}

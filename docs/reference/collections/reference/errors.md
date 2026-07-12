@@ -16,9 +16,6 @@ Every custom error the Collections contracts can revert with, its contract, and 
 **`BadSupplyCap`** · [Collection](/docs/collections/contracts/collection#errors)\
 `setSupplyCap` was given a non-zero cap below what already exists: mints ever in Sequential mode (ids are never reused), or live supply in Pooled mode.
 
-**`EmptyArtists`** · [Attribution](/docs/collections/contracts/attribution#errors)\
-`setArtists` was called with an empty `artists` array.
-
 **`ERC721IncorrectOwner`** · [Collection](/docs/collections/contracts/collection#errors)\
 Standard ERC721 error: a token operation named an owner that does not match the token's actual owner.
 
@@ -58,9 +55,6 @@ The mint hook's `beforeMint` did not return the required selector, so the hook r
 **`InsufficientBalance`** · [CollectionFactory](/docs/collections/contracts/factory#errors)\
 Inherited from OpenZeppelin `Clones`.
 
-**`InvalidCollection`** · [Attribution](/docs/collections/contracts/attribution#errors)\
-The `collection` argument to `setArtists`, `lockRoster`, or an authorization check was the zero address.
-
 **`InvalidInitialization`** · [Collection](/docs/collections/contracts/collection#errors)\
 Standard OpenZeppelin Initializable error: `initialize` was called more than once, or called on the implementation whose initializers are disabled.
 
@@ -76,20 +70,17 @@ A paid mint was attempted before `mintStart`.
 **`NeverMinted`** · [Collection](/docs/collections/contracts/collection#errors)\
 `tokenSeed` was read for an id that was never minted (its seed slot is zero).
 
+**`NoCode`** · [ScriptyRenderer](/docs/collections/contracts/scripty-renderer#errors)\
+Reverts construction when the `code` array is empty: a renderer with no artist code has nothing to assemble.
+
 **`NoStrayETH`** · [Collection](/docs/collections/contracts/collection#errors)\
 `rescueStrayETH` found no ETH above the owed pull-payment balances to sweep.
 
 **`NotAnAdmin`** · [Collection](/docs/collections/contracts/collection#errors)\
 `removeAdmin` was called for an account that is not currently an admin.
 
-**`NotAuthorized`** · [Attribution](/docs/collections/contracts/attribution#errors)\
-The caller is neither `collection` itself nor the address a successful `owner()` staticcall on `collection` resolves to.
-
 **`NotAuthorized`** · [Collection](/docs/collections/contracts/collection#errors)\
 A management function gated `onlyOwnerOrAdmin` was called by neither the owner nor an admin; `removeAdmin` was called by someone other than the owner or the admin itself; `notifyMetadataUpdate` was called by neither the renderer nor an owner/admin; or `burn` was called without burn authority for the id mode.
-
-**`NotCollectionAdmin`** · [GenerativeRenderer](/docs/collections/contracts/generative-renderer#errors)\
-`setWork` or `lockWork` was called by an address that is neither the collection's owner nor one of its admins.
 
 **`NotCollectionAdmin`** · [RenderAssets](/docs/collections/contracts/render-assets#errors)\
 A write was attempted by an address that is neither the collection's owner nor one of its admins.
@@ -136,9 +127,6 @@ Standard OpenZeppelin ReentrancyGuard error: a `nonReentrant` function was re-en
 **`RescueFailed`** · [Collection](/docs/collections/contracts/collection#errors)\
 The ETH transfer inside `rescueStrayETH` reverted.
 
-**`RosterAlreadyLocked`** · [Attribution](/docs/collections/contracts/attribution#errors)\
-`setArtists` was called for a `collection` whose roster was previously frozen with `lockRoster`.
-
 **`RoyaltyTooHigh`** · [Collection](/docs/collections/contracts/collection#errors)\
 `initialize` or `setRoyalty` was given a royalty above the 50% cap (`5000` bps).
 
@@ -153,9 +141,6 @@ A mint with a price strategy set sent less than the strategy's resolved price.
 
 **`WithdrawFailed`** · [Collection](/docs/collections/contracts/collection#errors)\
 The ETH transfer inside `withdraw` reverted, for example a recipient that rejects payment.
-
-**`WorkIsLocked`** · [GenerativeRenderer](/docs/collections/contracts/generative-renderer#errors)\
-`setWork` or `lockWork` was called after `lockWork`.
 
 **`WrongPayment`** · [Collection](/docs/collections/contracts/collection#errors)\
 A mint with no price strategy set did not send exactly `price * quantity`.

@@ -44,19 +44,17 @@ emit({
   ],
 });
 emit({
-  artifact: "Attribution.sol/Attribution.json",
-  exportName: "attributionAbi",
-  outFiles: ["packages/abi/src/attribution.ts"],
-});
-emit({
-  artifact: "GenerativeRenderer.sol/GenerativeRenderer.json",
-  exportName: "generativeRendererAbi",
-  outFiles: ["packages/abi/src/generativeRenderer.ts"],
-});
-emit({
   artifact: "DefaultRenderer.sol/DefaultRenderer.json",
   exportName: "defaultRendererAbi",
   outFiles: ["packages/abi/src/defaultRenderer.ts"],
+});
+// Bring-your-own generative renderer template (artists deploy their own, one
+// per work; not a shared singleton). Published so tools can read/verify a
+// deployed instance's work refs.
+emit({
+  artifact: "ScriptyRenderer.sol/ScriptyRenderer.json",
+  exportName: "scriptyRendererAbi",
+  outFiles: ["packages/abi/src/scriptyRenderer.ts"],
 });
 
 // Reference mint hooks (swappable mint-hook slot implementations).
@@ -81,7 +79,7 @@ emit({
   outFiles: ["packages/abi/src/gateHook.ts"],
 });
 
-// Render-land registries (work configs + static display assets).
+// Render-land registry of static display assets (covers + captures).
 emit({
   artifact: "RenderAssets.sol/RenderAssets.json",
   exportName: "renderAssetsAbi",

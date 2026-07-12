@@ -22,9 +22,8 @@ different modules plugged into the same four sockets. See
 | Contract | Role |
 | --- | --- |
 | `CollectionFactory` | Clones the `Collection` implementation and wires init params in one transaction |
-| `Attribution` | The works-to-artists half of attribution: a collection declares its roster; each artist confirms by claiming the collection in their own Catalog |
 | `DefaultRenderer` | The default `IRenderer` a freshly deployed collection points at until the artist sets something else |
-| `GenerativeRenderer` | Assembles a full HTML page from a collection's work config and seed via scripty, for algorithm-driven (Art Blocks-style) works |
+| `RenderAssets` | Shared registry of static display assets (covers + captures), written under each collection's own owner/admin authority. Algorithm-driven (Art Blocks-style) works ship as their own bring-your-own renderer, not a shared assembler |
 
 **Per-artist clone** (deployed once per collection, owned by the artist):
 
@@ -78,11 +77,12 @@ Against that flexibility stand one-way locks, each converting a setting
 into a permanent promise. On the collection: `lockRenderer` (optional; the
 renderer pointer can never change) and `lockSupply` (the supply can never
 grow — and the cap binds extension minters too, so it holds no matter what
-is granted later). In renderer-land: the GenerativeRenderer's
-`lockWork(collection)` pins the algorithm, so pointer lock + work lock is
-full presentation permanence for a generative work. The core stores no
-presentation data — work configs and static images live in the renderer's
-registry and [RenderAssets](/docs/collections/contracts/render-assets).
+is granted later). For a generative work, the artist's own renderer supplies
+the algorithm's permanence (deployed immutable, or with its own one-way
+lock); `lockRenderer` pins the pointer to it, so pointer lock + an immutable
+renderer is full presentation permanence. The core stores no presentation
+data — a work's algorithm lives in the artist's renderer, and static images
+live in [RenderAssets](/docs/collections/contracts/render-assets).
 
 ## Id modes
 

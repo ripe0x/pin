@@ -23,13 +23,6 @@
           "docs": "/docs/collections/contracts/factory",
           "role": "CollectionFactory deploys one [Collection](/docs/collections/contracts/collection) per work as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs."
         },
-        "Attribution": {
-          "address": null,
-          "kind": "singleton",
-          "abi": "/abis/Attribution.json",
-          "docs": "/docs/collections/contracts/attribution",
-          "role": "Attribution is generic, immutable, public infrastructure recording the works-to-artists half of the bilateral attribution handshake."
-        },
         "DefaultRenderer": {
           "address": null,
           "kind": "singleton",
@@ -37,19 +30,19 @@
           "docs": "/docs/collections/contracts/default-renderer",
           "role": "The canonical built-in renderer for [Collection](/docs/collections/contracts/collection)."
         },
-        "GenerativeRenderer": {
-          "address": null,
-          "kind": "singleton",
-          "abi": "/abis/GenerativeRenderer.json",
-          "docs": "/docs/collections/contracts/generative-renderer",
-          "role": "The default renderer for script-based generative collections: a stateless shared singleton that assembles a complete HTML document per token and returns it as the `animation_url` of the token's metadata."
-        },
         "RenderAssets": {
           "address": null,
           "kind": "singleton",
           "abi": "/abis/RenderAssets.json",
           "docs": "/docs/collections/contracts/render-assets",
           "role": "The renderer-land registry of static display assets: each collection's shared cover image and per-token captures (thumbnails of rendered output)."
+        },
+        "ScriptyRenderer": {
+          "address": null,
+          "kind": "clone",
+          "abi": "/abis/ScriptyRenderer.json",
+          "docs": "/docs/collections/contracts/scripty-renderer",
+          "role": "ScriptyRenderer is the **bring-your-own generative renderer template**: a concrete, forkable [IRenderer](/docs/collections/contracts/i-renderer) for Art Blocks-style script-based work, assembled fully onchain through ScriptyBuilderV2."
         },
         "AllowlistHook": {
           "address": null,

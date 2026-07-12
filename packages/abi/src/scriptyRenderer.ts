@@ -1,0 +1,244 @@
+// Auto-extracted from contracts/out/ScriptyRenderer.sol/ScriptyRenderer.json.
+// Re-run: node scripts/emit-collection-abi.mjs
+export const scriptyRendererAbi = [
+  {
+    "type": "constructor",
+    "inputs": [
+      {
+        "name": "scriptyBuilder_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "gunzipStore_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "gunzipFile_",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "code_",
+        "type": "tuple[]",
+        "internalType": "struct CodeRef[]",
+        "components": [
+          {
+            "name": "store",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "kind",
+            "type": "uint8",
+            "internalType": "enum CodeKind"
+          }
+        ]
+      },
+      {
+        "name": "deps_",
+        "type": "tuple[]",
+        "internalType": "struct CodeRef[]",
+        "components": [
+          {
+            "name": "store",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "kind",
+            "type": "uint8",
+            "internalType": "enum CodeKind"
+          }
+        ]
+      },
+      {
+        "name": "injectionVersion_",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "code",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple[]",
+        "internalType": "struct CodeRef[]",
+        "components": [
+          {
+            "name": "store",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "kind",
+            "type": "uint8",
+            "internalType": "enum CodeKind"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "contractURI",
+    "inputs": [
+      {
+        "name": "collection",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "deps",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple[]",
+        "internalType": "struct CodeRef[]",
+        "components": [
+          {
+            "name": "store",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "kind",
+            "type": "uint8",
+            "internalType": "enum CodeKind"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "gunzipFile",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "gunzipStore",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "injectionVersion",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "scriptyBuilder",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IScriptyBuilderV2"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "tokenURI",
+    "inputs": [
+      {
+        "name": "collection",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "tokenId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "error",
+    "name": "BuilderRequired",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "GunzipStoreRequired",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NoCode",
+    "inputs": []
+  }
+] as const;

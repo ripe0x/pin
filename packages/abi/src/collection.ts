@@ -2,11 +2,6 @@
 // Re-run: node scripts/emit-collection-abi.mjs
 export const collectionAbi = [
   {
-    "type": "constructor",
-    "inputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
     "type": "function",
     "name": "REFERRAL_SHARE_BPS",
     "inputs": [],
@@ -91,6 +86,19 @@ export const collectionAbi = [
   },
   {
     "type": "function",
+    "name": "catalog",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "config",
     "inputs": [],
     "outputs": [
@@ -150,9 +158,14 @@ export const collectionAbi = [
             "internalType": "address"
           },
           {
-            "name": "idMode",
-            "type": "uint8",
-            "internalType": "enum IdMode"
+            "name": "rendererLocked",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "supplyLocked",
+            "type": "bool",
+            "internalType": "bool"
           }
         ]
       },
@@ -213,19 +226,6 @@ export const collectionAbi = [
   },
   {
     "type": "function",
-    "name": "defaultRenderer",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "getApproved",
     "inputs": [
       {
@@ -254,7 +254,7 @@ export const collectionAbi = [
         "internalType": "enum IdMode"
       }
     ],
-    "stateMutability": "view"
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -336,9 +336,14 @@ export const collectionAbi = [
                 "internalType": "address"
               },
               {
-                "name": "idMode",
-                "type": "uint8",
-                "internalType": "enum IdMode"
+                "name": "rendererLocked",
+                "type": "bool",
+                "internalType": "bool"
+              },
+              {
+                "name": "supplyLocked",
+                "type": "bool",
+                "internalType": "bool"
               }
             ]
           },
@@ -353,12 +358,12 @@ export const collectionAbi = [
             "internalType": "address[]"
           },
           {
-            "name": "attribution",
+            "name": "catalog",
             "type": "address",
             "internalType": "address"
           },
           {
-            "name": "artists",
+            "name": "creators",
             "type": "address[]",
             "internalType": "address[]"
           }
@@ -398,6 +403,44 @@ export const collectionAbi = [
       },
       {
         "name": "operator",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isConfirmedCreator",
+    "inputs": [
+      {
+        "name": "who",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isListedCreator",
+    "inputs": [
+      {
+        "name": "",
         "type": "address",
         "internalType": "address"
       }
@@ -523,34 +566,6 @@ export const collectionAbi = [
         "internalType": "uint256"
       }
     ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "mintToId",
-    "inputs": [
-      {
-        "name": "to",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "tokenId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "referrer",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "hookData",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "outputs": [],
     "stateMutability": "nonpayable"
   },
   {
@@ -683,19 +698,6 @@ export const collectionAbi = [
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "referralShareBps",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ],
-    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -834,6 +836,24 @@ export const collectionAbi = [
       },
       {
         "name": "approved",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setCreators",
+    "inputs": [
+      {
+        "name": "list",
+        "type": "address[]",
+        "internalType": "address[]"
+      },
+      {
+        "name": "listed",
         "type": "bool",
         "internalType": "bool"
       }
@@ -1094,6 +1114,19 @@ export const collectionAbi = [
   },
   {
     "type": "function",
+    "name": "version",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "withdraw",
     "inputs": [
       {
@@ -1239,6 +1272,25 @@ export const collectionAbi = [
         "type": "uint64",
         "indexed": false,
         "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "CreatorListed",
+    "inputs": [
+      {
+        "name": "creator",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "listed",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
       }
     ],
     "anonymous": false
@@ -1592,7 +1644,18 @@ export const collectionAbi = [
   {
     "type": "error",
     "name": "BadSupplyCap",
-    "inputs": []
+    "inputs": [
+      {
+        "name": "floor",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "requested",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",
@@ -1700,7 +1763,18 @@ export const collectionAbi = [
   {
     "type": "error",
     "name": "ExceedsCap",
-    "inputs": []
+    "inputs": [
+      {
+        "name": "cap",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "attempted",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",
@@ -1786,16 +1860,6 @@ export const collectionAbi = [
   },
   {
     "type": "error",
-    "name": "PooledNeedsMintToId",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "PooledSellsViaMinter",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "ReentrancyGuardReentrantCall",
     "inputs": []
   },
@@ -1826,18 +1890,24 @@ export const collectionAbi = [
   },
   {
     "type": "error",
-    "name": "SequentialAssignsIds",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "SupplyIsLocked",
     "inputs": []
   },
   {
     "type": "error",
     "name": "Underpayment",
-    "inputs": []
+    "inputs": [
+      {
+        "name": "required",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "sent",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",
@@ -1847,7 +1917,18 @@ export const collectionAbi = [
   {
     "type": "error",
     "name": "WrongPayment",
-    "inputs": []
+    "inputs": [
+      {
+        "name": "required",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "sent",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",

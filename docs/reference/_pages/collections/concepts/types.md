@@ -36,44 +36,11 @@ Token id assignment model, fixed at `initialize` and never changed after.
 
 See [Id modes](/docs/collections/concepts/id-modes) for the full behavioral detail.
 
-
-### `CodeKind`
-
-How a stored file must be emitted into assembled HTML.
-
-| Value | Meaning |
-| --- | --- |
-| `Script` | Plain JS, emitted as-is |
-| `ScriptGzip` | Gzipped JS; the renderer loads a gunzip helper and emits it as a gzip data-URI script tag |
+Generative works define their own code/dependency shapes inside the artist's
+renderer, not in a shared core type; see the [Injection convention](/docs/collections/reference/injection-convention)
+for the render-context contract those renderers follow.
 
 ## Structs
-
-### `CodeRef`
-
-An onchain-addressable file: a named entry in a scripty v2 storage
-contract or an EthFS FileStore.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `store` | `address` | The storage contract holding the file |
-| `name` | `string` | The file's name within that store |
-| `kind` | `CodeKind` | How the file must be emitted (`Script` or `ScriptGzip`) |
-
-### `WorkConfig`
-
-What the work is, executably. Interpreted by renderers, stored on the
-GenerativeRenderer's per-collection registry (renderer-land, not the core),
-lockable via `lockWork(collection)`. Empty for works whose renderer
-contract IS the algorithm (Solidity SVG works).
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `code` | `CodeRef[]` | The algorithm, chunked/named in onchain storage |
-| `deps` | `CodeRef[]` | Library files (gzipped p5, three.js, etc.) |
-| `codeURI` | `string` | Offchain pointer for oversized code; hash-verified against `codeHash` |
-| `codeHash` | `bytes32` | Integrity hash of the assembled script (`""` for refs-only works is acceptable) |
-| `injectionVersion` | `uint8` | Version of the render-context injection convention this work targets |
-| `renderParams` | `string` | Renderer-interpreted settings (aspect ratio, library versions) |
 
 ### `CollectionConfig`
 
@@ -111,11 +78,10 @@ within legacy-codegen stack limits and can grow without signature churn.
 | `symbol` | `string` | ERC721 symbol |
 | `owner` | `address` | The collection's owner (the artist); required, cannot be zero |
 | `cfg` | `CollectionConfig` | The collection configuration |
-| `work` | `WorkConfig` | The initial work definition |
 | `defaultRenderer` | `address` | The fallback renderer; required, cannot be zero |
 | `initialMinters` | `address[]` | Extension minters granted at init, so pooled and backed forms deploy fully wired in one transaction |
-| `attribution` | `address` | The `Attribution` singleton; `0` skips the roster write entirely |
-| `artists` | `address[]` | The collab roster, written to `attribution` by the collection itself during init |
+| `catalog` | `address` | The Catalog singleton used for creator confirmation; `0` disables it |
+| `creators` | `address[]` | Initial listed creators (the owner's side of attribution); each confirms via the Catalog |
 
 See [Mint Marks and entropy](/docs/collections/concepts/mint-marks-and-entropy) for
 per-token provenance: the seed is the only per-token storage (there is no

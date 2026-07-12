@@ -106,7 +106,7 @@ export default async function CollectionPage({ params }: { params: Params }) {
     pooled,
   }
 
-  const artists = attribution.length > 0 ? attribution.map((a) => a.artist) : [c.owner]
+  const artists = attribution.length > 0 ? attribution.map((a) => a.creator) : [c.owner]
 
   const hero = hasWork ? (
     <ParityMosaic

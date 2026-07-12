@@ -12,11 +12,13 @@ Every event the Collections contracts emit, grouped by contract. Signatures and 
 
 **[`ApprovalForAll`](/docs/collections/contracts/collection#approvalforall)** · Standard ERC721 operator approval event.
 
-**[`BatchMetadataUpdate`](/docs/collections/contracts/collection#batchmetadataupdate)** · ERC-4906 range refresh signal, emitted by `setRenderer` and `setWork` (covering all tokens) and by `notifyMetadataUpdate` (renderer- or admin-chosen range).
+**[`BatchMetadataUpdate`](/docs/collections/contracts/collection#batchmetadataupdate)** · ERC-4906 range refresh signal, emitted by `setRenderer` (covering all tokens) and by `notifyMetadataUpdate` (renderer- or admin-chosen range).
 
 **[`Burned`](/docs/collections/contracts/collection#burned)** · Emitted when a token is burned.
 
 **[`CollectionConfigured`](/docs/collections/contracts/collection#collectionconfigured)** · Emitted once at init with the collection's id mode, price, supply cap, mint window, and cover artwork URI.
+
+**[`CreatorListed`](/docs/collections/contracts/collection#creatorlisted)** · Emitted when the owner lists or unlists a creator (including each creator seeded at init).
 
 **[`Initialized`](/docs/collections/contracts/collection#initialized)** · Standard OpenZeppelin Initializable event, emitted once when the clone is initialized.
 
@@ -63,18 +65,6 @@ Every event the Collections contracts emit, grouped by contract. Signatures and 
 **[`CollectionCreated`](/docs/collections/contracts/factory#collectioncreated)** · Emitted once per successful `createCollection` call, with `owner` and `collection` both indexed.
 
 **[`Deprecated`](/docs/collections/contracts/factory#deprecated)** · Emitted once when the deployer permanently deprecates the factory, carrying the successor address (zero if none named).
-
-## Attribution
-
-**[`ArtistsSet`](/docs/collections/contracts/attribution#artistsset)** · Emitted on every successful `setArtists` call, with `collection` and `actor` (the authorized caller) indexed, and the complete new `artists` array in the data.
-
-**[`RosterLocked`](/docs/collections/contracts/attribution#rosterlocked)** · Emitted when `lockRoster` succeeds, including on the idempotent no-op path when the roster was already locked.
-
-## GenerativeRenderer
-
-**[`WorkLocked`](/docs/collections/contracts/generative-renderer#worklocked)** · Emitted once when a collection's work definition is permanently locked.
-
-**[`WorkSet`](/docs/collections/contracts/generative-renderer#workset)** · Emitted when a collection's work definition is set or replaced, carrying the new `codeHash`.
 
 ## RenderAssets
 

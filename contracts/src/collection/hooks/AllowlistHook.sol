@@ -7,17 +7,19 @@ import {HookBase} from "./HookBase.sol";
 import {IMintHook} from "../interfaces/IMintHook.sol";
 
 /// @title AllowlistHook
-/// @notice Gates minting to a Merkle allowlist (presale). The collection owner sets
-///         a root; the minter passes a proof in `hookData`. Leaves use the
+/// @notice Gates minting to a Merkle allowlist (presale). The collection sets
+///         a root; the minter brings a proof in `hookData`. Leaves use the
 ///         OpenZeppelin standard-merkle-tree format
 ///         (keccak256(bytes.concat(keccak256(abi.encode(account))))), so the
 ///         standard JS tooling produces compatible proofs.
 contract AllowlistHook is HookBase {
     mapping(address => bytes32) public rootOf; // collection => merkle root (0 = open)
 
+    error NotAllowlisted();
+
     event RootSet(address indexed collection, bytes32 root);
 
-    function setRoot(address collection, bytes32 root) external onlyCollectionOwner(collection) {
+    function setRoot(address collection, bytes32 root) external onlyCollectionAdmin(collection) {
         rootOf[collection] = root;
         emit RootSet(collection, root);
     }
@@ -32,7 +34,7 @@ contract AllowlistHook is HookBase {
         if (root != bytes32(0)) {
             bytes32[] memory proof = abi.decode(hookData, (bytes32[]));
             bytes32 leaf = keccak256(bytes.concat(keccak256(abi.encode(minter))));
-            require(MerkleProof.verify(proof, root, leaf), "SC: not allowlisted");
+            if (!MerkleProof.verify(proof, root, leaf)) revert NotAllowlisted();
         }
         return IMintHook.beforeMint.selector;
     }

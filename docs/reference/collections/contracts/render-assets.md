@@ -11,14 +11,13 @@ each collection's own owner/admin authority, so managing display assets
 carries exactly the same authority as the collection's own setters.
 
 This registry exists so the collection core stores NO presentation data — the
-core's `tokenURI` defers wholly to its renderer, and the bundled renderers
-([DefaultRenderer](/docs/collections/contracts/default-renderer),
-[GenerativeRenderer](/docs/collections/contracts/generative-renderer)) read
-their static images here. Captures are deliberately always refreshable: they
-are convenience mirrors of rendered output for surfaces that cannot run it,
-not part of the art. The art's permanence is the collection's `lockRenderer()`
-plus whatever immutability the renderer itself offers (e.g. the
-GenerativeRenderer's per-collection work lock).
+core's `tokenURI` defers wholly to its renderer, and the bundled
+[DefaultRenderer](/docs/collections/contracts/default-renderer) (and any
+renderer that opts in) reads its static images here. Captures are deliberately
+always refreshable: they are convenience mirrors of rendered output for
+surfaces that cannot run it, not part of the art. The art's permanence is the
+collection's `lockRenderer()` plus whatever immutability the renderer itself
+offers (an immutable renderer, or its own one-way lock).
 
 ## Write functions
 

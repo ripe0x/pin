@@ -5,7 +5,10 @@ import {StdInvariant} from "forge-std/StdInvariant.sol";
 import {Test} from "forge-std/Test.sol";
 
 import {Collection} from "../../../src/collection/Collection.sol";
+import {PooledCollection} from "../../../src/collection/PooledCollection.sol";
 import {ICollection} from "../../../src/collection/interfaces/ICollection.sol";
+import {ICollectionCore} from "../../../src/collection/interfaces/ICollectionCore.sol";
+import {IPooledCollection} from "../../../src/collection/interfaces/IPooledCollection.sol";
 import {MockMinter} from "../mocks/CollectionMocks.sol";
 
 /// @title CollectionHandler
@@ -18,8 +21,8 @@ import {MockMinter} from "../mocks/CollectionMocks.sol";
 ///         - Sequential collection: fixed price, supply-capped, sells through
 ///           both the built-in paid path (mint/mintWithReferral) AND a granted
 ///           MockMinter (mintTo).
-///         - Pooled collection: no built-in paid path (the core rejects it);
-///           sells exclusively through a granted MockMinter calling mintToId
+///         - Pooled collection: no built-in paid path (the entrypoint does
+///           not exist); sells exclusively through a granted MockMinter calling mintToId
 ///           with ids bounded to [0, POOLED_ID_MAX], so burn -> re-mint of the
 ///           same id is exercised constantly. Also supply-capped, bounding
 ///           LIVE totalSupply per pooled cap semantics.
@@ -36,8 +39,8 @@ contract CollectionHandler is StdInvariant, Test {
     // Fixed setup
     // ─────────────────────────────────────────────────────────────────────
 
-    Collection public immutable seq; // Sequential mode
-    Collection public immutable pooled; // Pooled mode
+    Collection public immutable seq; // sequential form
+    PooledCollection public immutable pooled; // pooled form
     MockMinter public immutable seqMinter; // granted on seq (mintTo)
     MockMinter public immutable pooledMinter; // granted on pooled (mintToId)
 
@@ -97,6 +100,7 @@ contract CollectionHandler is StdInvariant, Test {
     bool public ghostUnauthorizedMintToSucceeded;
     bool public ghostWrongModeMintSucceeded;
     bool public ghostWrongPaymentMintSucceeded;
+    bool public ghostHolderBurnPooledSucceeded;
 
     // Call counters, useful for sanity-checking run depth in failure reports.
     uint256 public callsMintSeqPaid;
@@ -109,7 +113,7 @@ contract CollectionHandler is StdInvariant, Test {
 
     constructor(
         Collection seq_,
-        Collection pooled_,
+        PooledCollection pooled_,
         MockMinter seqMinter_,
         MockMinter pooledMinter_,
         uint256 seqPrice_,
@@ -334,7 +338,7 @@ contract CollectionHandler is StdInvariant, Test {
             if (liveSupply >= pooledCap) return;
         }
 
-        try pooledMinter.callMintToId(ICollection(address(pooled)), to, tokenId, referrer, "") {
+        try pooledMinter.callMintToId(IPooledCollection(address(pooled)), to, tokenId, referrer, "") {
             callsMintPooledExtension++;
             _pooledLiveAdd(tokenId);
             uint256 mintIndex = ghostPooledMints;
@@ -378,29 +382,34 @@ contract CollectionHandler is StdInvariant, Test {
         }
     }
 
-    function burnPooled(uint256 idSeed, uint256 actorSeed, bool viaApproval) external {
+    /// @dev Pooled burns are minter-only (the minter owns the pool), so the
+    ///      burn goes through the granted minter — the redeem path a real
+    ///      backed form uses.
+    function burnPooled(uint256 idSeed) external {
         if (pooledLiveIds.length == 0) return;
         uint256 tokenId = pooledLiveIds[idSeed % pooledLiveIds.length];
-        address currentOwner = pooled.ownerOf(tokenId);
 
-        address caller = currentOwner;
-        if (viaApproval) {
-            address approved = _actor(actorSeed);
-            if (approved != currentOwner) {
-                vm.prank(currentOwner);
-                pooled.approve(approved, tokenId);
-                caller = approved;
-            }
-        }
-
-        vm.prank(caller);
-        try pooled.burn(tokenId) {
+        try pooledMinter.callBurn(ICollectionCore(address(pooled)), tokenId) {
             callsBurnPooled++;
             _pooledLiveRemove(tokenId);
             ghostPooledBurns += 1;
         } catch {
             revert("handler: authorized pooled burn unexpectedly reverted");
         }
+    }
+
+    /// @dev A holder (or anyone but a minter) must NOT be able to burn a
+    ///      pooled token out-of-band and strand its backing.
+    function probeHolderBurnPooled(uint256 idSeed) external {
+        callsNegativeProbes++;
+        if (pooledLiveIds.length == 0) return;
+        uint256 tokenId = pooledLiveIds[idSeed % pooledLiveIds.length];
+        address currentOwner = pooled.ownerOf(tokenId);
+
+        vm.prank(currentOwner);
+        try pooled.burn(tokenId) {
+            ghostHolderBurnPooledSucceeded = true;
+        } catch {}
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -447,38 +456,35 @@ contract CollectionHandler is StdInvariant, Test {
         } catch {}
     }
 
-    /// @dev Wrong-mode mint calls: mintToId on the sequential collection
-    ///      (sequential assigns its own ids) and mint()/mintTo() on the
-    ///      pooled collection (pooled has no built-in paid path and no
-    ///      sequential extension entrypoint).
+    /// @dev Wrong-form mint calls. Each form is its own contract now, so the
+    ///      other form's entrypoint does not exist — these are raw selector
+    ///      probes asserting the dispatcher rejects them (no accidental
+    ///      selector collision, no accepting fallback).
     function probeWrongModeMint(uint256 actorSeed, uint256 idSeed) external {
         callsNegativeProbes++;
         address actor = _actor(actorSeed);
         uint256 id = bound(idSeed, 0, POOLED_ID_MAX);
 
-        // (a) mintToId on Sequential, via the granted seq minter (authorized,
-        // but wrong mode — must fail on mode, not on authorization).
-        try seqMinter.callMintToId(ICollection(address(seq)), actor, id, address(0), "") {
-            ghostWrongModeMintSucceeded = true;
-        } catch {}
+        // (a) mintToId on the sequential collection: no such function.
+        (bool okA,) = address(seq)
+            .call(abi.encodeWithSignature("mintToId(address,uint256,address,bytes)", actor, id, address(0), bytes("")));
+        if (okA) ghostWrongModeMintSucceeded = true;
 
-        // (b) paid mint() on Pooled (no built-in paid path in pooled mode).
+        // (b) paid mint() on the pooled collection: no such function.
         vm.deal(actor, 1 ether);
         vm.prank(actor);
-        try pooled.mint{value: 0}(1) {
-            ghostWrongModeMintSucceeded = true;
-        } catch {}
+        (bool okB,) = address(pooled).call(abi.encodeWithSignature("mint(uint256)", uint256(1)));
+        if (okB) ghostWrongModeMintSucceeded = true;
 
-        // (c) extension mintTo on Pooled, via the granted pooled minter
-        // (authorized, but wrong entrypoint for pooled mode).
-        try pooledMinter.callMintTo(ICollection(address(pooled)), actor, address(0), "") returns (uint256) {
-            ghostWrongModeMintSucceeded = true;
-        } catch {}
+        // (c) extension mintTo on the pooled collection: no such function.
+        (bool okC,) =
+            address(pooled).call(abi.encodeWithSignature("mintTo(address,address,bytes)", actor, address(0), bytes("")));
+        if (okC) ghostWrongModeMintSucceeded = true;
     }
 
     /// @dev Wrong payment on the sequential paid path: off-by-one under AND
-    ///      over the exact required value must both revert ("SC: wrong
-    ///      payment" — the fixed-price path requires an exact match).
+    ///      over the exact required value must both revert with WrongPayment
+    ///      (the fixed-price path requires an exact match).
     function probeWrongPayment(uint256 actorSeed, uint256 qtySeed, bool over) external {
         callsNegativeProbes++;
         if (seqPrice == 0) return; // no wrong-payment concept on a gas-only price

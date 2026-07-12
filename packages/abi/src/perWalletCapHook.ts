@@ -152,5 +152,26 @@ export const perWalletCapHookAbi = [
       }
     ],
     "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "NotCollectionAdmin",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "WalletCapExceeded",
+    "inputs": [
+      {
+        "name": "cap",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "attempted",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   }
 ] as const;

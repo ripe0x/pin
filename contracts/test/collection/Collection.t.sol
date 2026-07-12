@@ -2,20 +2,14 @@
 pragma solidity ^0.8.24;
 
 import {CollectionBase} from "./CollectionBase.sol";
-import {
-    MockRenderer,
-    RevertingPayee
-} from "./mocks/CollectionMocks.sol";
+import {MockRenderer, RevertingPayee} from "./mocks/CollectionMocks.sol";
 
 import {Collection} from "../../src/collection/Collection.sol";
+import {PooledCollection} from "../../src/collection/PooledCollection.sol";
 import {CollectionFactory} from "../../src/collection/CollectionFactory.sol";
 import {ICollection} from "../../src/collection/interfaces/ICollection.sol";
-import {
-    CollectionConfig,
-    CollectionStatus,
-    IdMode,
-    InitParams
-} from "../../src/collection/CollectionTypes.sol";
+import {ICollectionCore} from "../../src/collection/interfaces/ICollectionCore.sol";
+import {CollectionConfig, CollectionStatus, IdMode, InitParams} from "../../src/collection/CollectionTypes.sol";
 
 contract CollectionTest is CollectionBase {
     // ── init validation ──────────────────────────────────────────────────────
@@ -24,7 +18,7 @@ contract CollectionTest is CollectionBase {
         InitParams memory p = _rawInitParams(_freeConfig());
         p.owner = address(0);
         Collection clone = _freshClone();
-        vm.expectRevert(ICollection.OwnerRequired.selector);
+        vm.expectRevert(ICollectionCore.OwnerRequired.selector);
         clone.initialize(p);
     }
 
@@ -32,7 +26,7 @@ contract CollectionTest is CollectionBase {
         InitParams memory p = _rawInitParams(_freeConfig());
         p.defaultRenderer = address(0);
         Collection clone = _freshClone();
-        vm.expectRevert(ICollection.RendererRequired.selector);
+        vm.expectRevert(ICollectionCore.RendererRequired.selector);
         clone.initialize(p);
     }
 
@@ -41,7 +35,7 @@ contract CollectionTest is CollectionBase {
         cfg.royaltyBps = 5001; // > 50% cap
         InitParams memory p = _rawInitParams(cfg);
         Collection clone = _freshClone();
-        vm.expectRevert(ICollection.RoyaltyTooHigh.selector);
+        vm.expectRevert(ICollectionCore.RoyaltyTooHigh.selector);
         clone.initialize(p);
     }
 
@@ -60,7 +54,7 @@ contract CollectionTest is CollectionBase {
         cfg.mintEnd = 100;
         InitParams memory p = _rawInitParams(cfg);
         Collection clone = _freshClone();
-        vm.expectRevert(ICollection.BadMintWindow.selector);
+        vm.expectRevert(ICollectionCore.BadMintWindow.selector);
         clone.initialize(p);
     }
 
@@ -70,7 +64,7 @@ contract CollectionTest is CollectionBase {
         cfg.mintEnd = 100;
         InitParams memory p = _rawInitParams(cfg);
         Collection clone = _freshClone();
-        vm.expectRevert(ICollection.BadMintWindow.selector);
+        vm.expectRevert(ICollectionCore.BadMintWindow.selector);
         clone.initialize(p);
     }
 
@@ -85,19 +79,19 @@ contract CollectionTest is CollectionBase {
     }
 
     function test_init_rejectsZeroInitialMinter() public {
-        CollectionConfig memory cfg = _pooledConfig();
+        CollectionConfig memory cfg = _freeConfig();
         address[] memory minters = new address[](1);
         minters[0] = address(0);
-        vm.expectRevert(ICollection.ZeroMinter.selector);
-        _collectionWithMinters(cfg, minters);
+        vm.expectRevert(ICollectionCore.ZeroMinter.selector);
+        _pooledWithMinters(cfg, minters);
     }
 
     function test_init_grantsInitialMinters() public {
-        CollectionConfig memory cfg = _pooledConfig();
+        CollectionConfig memory cfg = _freeConfig();
         address m = makeAddr("initialMinter");
         address[] memory minters = new address[](1);
         minters[0] = m;
-        Collection c = _collectionWithMinters(cfg, minters);
+        PooledCollection c = _pooledWithMinters(cfg, minters);
         assertTrue(c.isMinter(m));
     }
 
@@ -118,7 +112,7 @@ contract CollectionTest is CollectionBase {
         assertEq(c.symbol(), "ACOL");
         assertTrue(factory.isCollection(address(c)));
         assertEq(factory.totalCollections(), 1);
-        assertEq(c.referralShareBps(), 1000);
+        assertEq(c.REFERRAL_SHARE_BPS(), 1000);
         assertFalse(c.isRendererLocked());
         assertFalse(c.isSupplyLocked());
     }
@@ -134,7 +128,7 @@ contract CollectionTest is CollectionBase {
     function test_idMode_reads() public {
         Collection seq = _collection(_freeConfig());
         assertEq(uint8(seq.idMode()), uint8(IdMode.Sequential));
-        Collection pooled = _collection(_pooledConfig());
+        PooledCollection pooled = _pooled(_freeConfig());
         assertEq(uint8(pooled.idMode()), uint8(IdMode.Pooled));
     }
 
@@ -151,7 +145,7 @@ contract CollectionTest is CollectionBase {
 
     function test_mint_zeroQuantityReverts() public {
         Collection c = _collection(_freeConfig());
-        vm.expectRevert(ICollection.ZeroQuantity.selector);
+        vm.expectRevert(ICollectionCore.ZeroQuantity.selector);
         vm.prank(collector);
         c.mint(0);
     }
@@ -159,16 +153,18 @@ contract CollectionTest is CollectionBase {
     function test_mint_gasOnly_rejectsValue() public {
         Collection c = _collection(_freeConfig());
         vm.deal(collector, 1 ether);
-        vm.expectRevert(ICollection.WrongPayment.selector);
+        vm.expectRevert(abi.encodeWithSelector(ICollectionCore.WrongPayment.selector, 0, 1 wei));
         vm.prank(collector);
         c.mint{value: 1 wei}(1);
     }
 
+    /// @dev The pooled form has no paid path at all — the entrypoint does
+    ///      not exist, so the call dies in the dispatcher, not in a check.
     function test_mint_pooledRejectsPaidPath() public {
-        Collection c = _collection(_pooledConfig());
-        vm.expectRevert(ICollection.PooledSellsViaMinter.selector);
+        PooledCollection c = _pooled(_freeConfig());
         vm.prank(collector);
-        c.mint(1);
+        (bool ok,) = address(c).call(abi.encodeWithSignature("mint(uint256)", uint256(1)));
+        assertFalse(ok, "pooled must not expose mint");
     }
 
     // ── exact-payment enforcement ────────────────────────────────────────────
@@ -176,7 +172,7 @@ contract CollectionTest is CollectionBase {
     function test_mint_priced_requiresExactValue_under() public {
         Collection c = _collection(_pricedConfig(0.1 ether));
         vm.deal(collector, 1 ether);
-        vm.expectRevert(ICollection.WrongPayment.selector);
+        vm.expectRevert(abi.encodeWithSelector(ICollectionCore.WrongPayment.selector, 0.1 ether, 0.05 ether));
         vm.prank(collector);
         c.mint{value: 0.05 ether}(1);
     }
@@ -184,7 +180,7 @@ contract CollectionTest is CollectionBase {
     function test_mint_priced_requiresExactValue_over() public {
         Collection c = _collection(_pricedConfig(0.1 ether));
         vm.deal(collector, 1 ether);
-        vm.expectRevert(ICollection.WrongPayment.selector);
+        vm.expectRevert(abi.encodeWithSelector(ICollectionCore.WrongPayment.selector, 0.1 ether, 0.2 ether));
         vm.prank(collector);
         c.mint{value: 0.2 ether}(1);
     }
@@ -281,7 +277,7 @@ contract CollectionTest is CollectionBase {
 
     function test_setPayoutAddress_onlyOwner() public {
         Collection c = _collection(_freeConfig());
-        vm.expectRevert(ICollection.NotAuthorized.selector);
+        vm.expectRevert(ICollectionCore.NotAuthorized.selector);
         vm.prank(stranger);
         c.setPayoutAddress(stranger);
     }
@@ -302,13 +298,13 @@ contract CollectionTest is CollectionBase {
 
     function test_withdraw_nothingReverts() public {
         Collection c = _collection(_freeConfig());
-        vm.expectRevert(ICollection.NothingToWithdraw.selector);
+        vm.expectRevert(ICollectionCore.NothingToWithdraw.selector);
         c.withdraw(stranger);
     }
 
     function test_withdraw_rejectsZeroAccount() public {
         Collection c = _collection(_freeConfig());
-        vm.expectRevert(ICollection.ZeroAccount.selector);
+        vm.expectRevert(ICollectionCore.ZeroAccount.selector);
         c.withdraw(address(0));
     }
 
@@ -325,7 +321,7 @@ contract CollectionTest is CollectionBase {
         assertEq(c.balanceOf(collector), 1);
         assertEq(c.pendingWithdrawal(address(bad)), 1 ether);
 
-        vm.expectRevert(ICollection.WithdrawFailed.selector);
+        vm.expectRevert(ICollectionCore.WithdrawFailed.selector);
         c.withdraw(address(bad));
 
         // Funds remain intact and claimable if the payee later routes payout
@@ -365,7 +361,7 @@ contract CollectionTest is CollectionBase {
         c.withdraw(artist);
         assertEq(artist.balance, 1 ether);
 
-        vm.expectRevert(ICollection.NoStrayETH.selector);
+        vm.expectRevert(ICollectionCore.NoStrayETH.selector);
         vm.prank(artist);
         c.rescueStrayETH(dest);
     }
@@ -373,7 +369,7 @@ contract CollectionTest is CollectionBase {
     function test_rescueStrayETH_onlyOwner() public {
         Collection c = _collection(_freeConfig());
         vm.deal(address(c), 1 ether);
-        vm.expectRevert(ICollection.NotAuthorized.selector);
+        vm.expectRevert(ICollectionCore.NotAuthorized.selector);
         vm.prank(stranger);
         c.rescueStrayETH(stranger);
     }
@@ -381,7 +377,7 @@ contract CollectionTest is CollectionBase {
     function test_rescueStrayETH_rejectsZeroAccount() public {
         Collection c = _collection(_freeConfig());
         vm.deal(address(c), 1 ether);
-        vm.expectRevert(ICollection.ZeroAccount.selector);
+        vm.expectRevert(ICollectionCore.ZeroAccount.selector);
         vm.prank(artist);
         c.rescueStrayETH(address(0));
     }
@@ -399,7 +395,7 @@ contract CollectionTest is CollectionBase {
         uint64 start = uint64(block.timestamp + 100);
         uint64 end = uint64(block.timestamp + 200);
         vm.expectEmit(false, false, false, true, address(c));
-        emit ICollection.MintWindowSet(start, end);
+        emit ICollectionCore.MintWindowSet(start, end);
         vm.prank(artist);
         c.setMintWindow(start, end);
 
@@ -408,7 +404,7 @@ contract CollectionTest is CollectionBase {
         assertEq(cfg.mintEnd, end);
         assertEq(uint8(scheduled), uint8(CollectionStatus.Scheduled), "pre-start reads Scheduled");
 
-        vm.expectRevert(ICollection.MintNotStarted.selector);
+        vm.expectRevert(ICollectionCore.MintNotStarted.selector);
         vm.prank(collector);
         c.mint(1);
 
@@ -417,7 +413,7 @@ contract CollectionTest is CollectionBase {
         (, CollectionStatus open,) = c.config();
         assertEq(uint8(open), uint8(CollectionStatus.Open));
         vm.expectEmit(true, true, false, true, address(c));
-        emit ICollection.Minted(collector, address(0), 1, 1, 0, CollectionStatus.Open);
+        emit ICollectionCore.Minted(collector, address(0), 1, 1, 0, CollectionStatus.Open);
         vm.prank(collector);
         c.mint(1);
     }
@@ -446,14 +442,14 @@ contract CollectionTest is CollectionBase {
 
     function test_setMintWindow_rejectsBadWindow() public {
         Collection c = _collection(_freeConfig());
-        vm.expectRevert(ICollection.BadMintWindow.selector);
+        vm.expectRevert(ICollectionCore.BadMintWindow.selector);
         vm.prank(artist);
         c.setMintWindow(200, 100); // end <= start and end != 0
     }
 
     function test_setMintWindow_onlyOwnerOrAdmin() public {
         Collection c = _collection(_freeConfig());
-        vm.expectRevert(ICollection.NotAuthorized.selector);
+        vm.expectRevert(ICollectionCore.NotAuthorized.selector);
         vm.prank(stranger);
         c.setMintWindow(0, 0);
     }
@@ -471,13 +467,13 @@ contract CollectionTest is CollectionBase {
         c.setMinter(minter, true);
 
         // the paid path is closed before the public window opens...
-        vm.expectRevert(ICollection.MintNotStarted.selector);
+        vm.expectRevert(ICollectionCore.MintNotStarted.selector);
         vm.prank(collector);
         c.mint(1);
 
         // ...but the authorized minter mints, and the event says Scheduled.
         vm.expectEmit(true, true, false, true, address(c));
-        emit ICollection.Minted(collector, address(0), 1, 1, 0, CollectionStatus.Scheduled);
+        emit ICollectionCore.Minted(collector, address(0), 1, 1, 0, CollectionStatus.Scheduled);
         vm.prank(minter);
         c.mintTo(collector, address(0), "");
     }
@@ -491,7 +487,7 @@ contract CollectionTest is CollectionBase {
 
         vm.prank(collector);
         c.mint(2);
-        vm.expectRevert(ICollection.ExceedsCap.selector);
+        vm.expectRevert(abi.encodeWithSelector(ICollectionCore.ExceedsCap.selector, 3, 4));
         vm.prank(collector);
         c.mint(2);
         vm.prank(collector);
@@ -510,7 +506,7 @@ contract CollectionTest is CollectionBase {
         cfg.mintEnd = uint64(block.timestamp + 200);
         Collection c = _collection(cfg);
 
-        vm.expectRevert(ICollection.MintNotStarted.selector);
+        vm.expectRevert(ICollectionCore.MintNotStarted.selector);
         vm.prank(collector);
         c.mint(1);
 
@@ -519,7 +515,7 @@ contract CollectionTest is CollectionBase {
         c.mint(1);
 
         vm.warp(block.timestamp + 100); // past mintEnd
-        vm.expectRevert(ICollection.MintEnded.selector);
+        vm.expectRevert(ICollectionCore.MintEnded.selector);
         vm.prank(collector);
         c.mint(1);
     }
@@ -529,13 +525,13 @@ contract CollectionTest is CollectionBase {
     function test_setPrice_updatesPaidPath() public {
         Collection c = _collection(_pricedConfig(0.1 ether));
         vm.expectEmit(false, false, false, true, address(c));
-        emit ICollection.PriceSet(0.05 ether);
+        emit ICollectionCore.PriceSet(0.05 ether);
         vm.prank(artist);
         c.setPrice(0.05 ether);
 
         // old price now reverts (exact-match protects the collector)...
         vm.deal(collector, 1 ether);
-        vm.expectRevert(ICollection.WrongPayment.selector);
+        vm.expectRevert(abi.encodeWithSelector(ICollectionCore.WrongPayment.selector, 0.05 ether, 0.1 ether));
         vm.prank(collector);
         c.mint{value: 0.1 ether}(1);
 
@@ -548,7 +544,7 @@ contract CollectionTest is CollectionBase {
 
     function test_setPrice_onlyOwnerOrAdmin() public {
         Collection c = _collection(_freeConfig());
-        vm.expectRevert(ICollection.NotAuthorized.selector);
+        vm.expectRevert(ICollectionCore.NotAuthorized.selector);
         vm.prank(stranger);
         c.setPrice(1 ether);
     }
@@ -557,7 +553,7 @@ contract CollectionTest is CollectionBase {
         Collection c = _collection(_freeConfig());
         address newReceiver = makeAddr("newRoyalty");
         vm.expectEmit(true, false, false, true, address(c));
-        emit ICollection.RoyaltySet(750, newReceiver);
+        emit ICollectionCore.RoyaltySet(750, newReceiver);
         vm.prank(artist);
         c.setRoyalty(750, newReceiver);
         (address receiver, uint256 amount) = c.royaltyInfo(1, 1 ether);
@@ -565,7 +561,7 @@ contract CollectionTest is CollectionBase {
         assertEq(amount, 0.075 ether);
 
         // the init-time cap binds the setter too
-        vm.expectRevert(ICollection.RoyaltyTooHigh.selector);
+        vm.expectRevert(ICollectionCore.RoyaltyTooHigh.selector);
         vm.prank(artist);
         c.setRoyalty(5001, newReceiver);
 
@@ -578,7 +574,7 @@ contract CollectionTest is CollectionBase {
 
     function test_setRoyalty_onlyOwnerOrAdmin() public {
         Collection c = _collection(_freeConfig());
-        vm.expectRevert(ICollection.NotAuthorized.selector);
+        vm.expectRevert(ICollectionCore.NotAuthorized.selector);
         vm.prank(stranger);
         c.setRoyalty(100, address(0));
     }
@@ -591,18 +587,18 @@ contract CollectionTest is CollectionBase {
         c.mint(3);
 
         // cannot set below mints-ever (sequential: ids are never reused)
-        vm.expectRevert(ICollection.BadSupplyCap.selector);
+        vm.expectRevert(abi.encodeWithSelector(ICollectionCore.BadSupplyCap.selector, 3, 2));
         vm.prank(artist);
         c.setSupplyCap(2);
 
         // shrink to exactly minted: collection closes
         vm.expectEmit(false, false, false, true, address(c));
-        emit ICollection.SupplyCapSet(3);
+        emit ICollectionCore.SupplyCapSet(3);
         vm.prank(artist);
         c.setSupplyCap(3);
         (, CollectionStatus status,) = c.config();
         assertEq(uint8(status), uint8(CollectionStatus.Closed));
-        vm.expectRevert(ICollection.ExceedsCap.selector);
+        vm.expectRevert(abi.encodeWithSelector(ICollectionCore.ExceedsCap.selector, 3, 4));
         vm.prank(collector);
         c.mint(1);
 
@@ -621,17 +617,17 @@ contract CollectionTest is CollectionBase {
         assertFalse(c.isSupplyLocked());
 
         vm.expectEmit(false, false, false, false, address(c));
-        emit ICollection.SupplyLocked();
+        emit ICollectionCore.SupplyLocked();
         vm.prank(artist);
         c.lockSupply();
         assertTrue(c.isSupplyLocked());
 
-        vm.expectRevert(ICollection.SupplyIsLocked.selector);
+        vm.expectRevert(ICollectionCore.SupplyIsLocked.selector);
         vm.prank(artist);
         c.setSupplyCap(200);
 
         // one-way: locking twice reverts rather than silently re-emitting
-        vm.expectRevert(ICollection.SupplyIsLocked.selector);
+        vm.expectRevert(ICollectionCore.SupplyIsLocked.selector);
         vm.prank(artist);
         c.lockSupply();
     }
@@ -639,9 +635,9 @@ contract CollectionTest is CollectionBase {
     function test_supplyCapAndLock_onlyOwnerOrAdmin() public {
         Collection c = _collection(_freeConfig());
         vm.startPrank(stranger);
-        vm.expectRevert(ICollection.NotAuthorized.selector);
+        vm.expectRevert(ICollectionCore.NotAuthorized.selector);
         c.setSupplyCap(1);
-        vm.expectRevert(ICollection.NotAuthorized.selector);
+        vm.expectRevert(ICollectionCore.NotAuthorized.selector);
         c.lockSupply();
         vm.stopPrank();
     }
@@ -660,7 +656,7 @@ contract CollectionTest is CollectionBase {
 
         vm.prank(minter);
         c.mintTo(collector, address(0), "");
-        vm.expectRevert(ICollection.ExceedsCap.selector);
+        vm.expectRevert(abi.encodeWithSelector(ICollectionCore.ExceedsCap.selector, 1, 2));
         vm.prank(minter);
         c.mintTo(collector, address(0), "");
     }
@@ -673,7 +669,7 @@ contract CollectionTest is CollectionBase {
 
         // renderer swap refreshes everything
         vm.expectEmit(false, false, false, true, address(c));
-        emit ICollection.BatchMetadataUpdate(0, type(uint256).max);
+        emit ICollectionCore.BatchMetadataUpdate(0, type(uint256).max);
         vm.prank(artist);
         c.setRenderer(makeAddr("newRenderer"));
     }
@@ -687,7 +683,7 @@ contract CollectionTest is CollectionBase {
 
         // the default renderer may signal
         vm.expectEmit(false, false, false, true, address(c));
-        emit ICollection.BatchMetadataUpdate(1, 10);
+        emit ICollectionCore.BatchMetadataUpdate(1, 10);
         vm.prank(address(renderer));
         c.notifyMetadataUpdate(1, 10);
 
@@ -695,12 +691,12 @@ contract CollectionTest is CollectionBase {
         vm.prank(artist);
         c.lockRenderer();
         vm.expectEmit(false, false, false, true, address(c));
-        emit ICollection.BatchMetadataUpdate(0, type(uint256).max);
+        emit ICollectionCore.BatchMetadataUpdate(0, type(uint256).max);
         vm.prank(artist);
         c.notifyMetadataUpdate(0, type(uint256).max);
 
         // strangers may not
-        vm.expectRevert(ICollection.NotAuthorized.selector);
+        vm.expectRevert(ICollectionCore.NotAuthorized.selector);
         vm.prank(stranger);
         c.notifyMetadataUpdate(1, 1);
     }
@@ -763,16 +759,62 @@ contract CollectionTest is CollectionBase {
         Collection c = _collection(_freeConfig());
         vm.prank(artist);
         c.lockRenderer();
-        vm.expectRevert(ICollection.RendererIsLocked.selector);
+        vm.expectRevert(ICollectionCore.RendererIsLocked.selector);
         vm.prank(artist);
         c.setRenderer(makeAddr("newRenderer"));
     }
 
     function test_setRenderer_onlyOwner() public {
         Collection c = _collection(_freeConfig());
-        vm.expectRevert(ICollection.NotAuthorized.selector);
+        vm.expectRevert(ICollectionCore.NotAuthorized.selector);
         vm.prank(stranger);
         c.setRenderer(makeAddr("newRenderer"));
+    }
+
+    function test_setRenderer_rejectsZeroAddress() public {
+        Collection c = _collection(_freeConfig());
+        vm.expectRevert(ICollectionCore.RendererRequired.selector);
+        vm.prank(artist);
+        c.setRenderer(address(0));
+    }
+
+    function test_init_resolvesRendererSlot() public {
+        // No choice made: the factory default fills the slot.
+        Collection c = _collection(_freeConfig());
+        assertEq(c.renderer(), address(renderer));
+        (CollectionConfig memory cfg,,) = c.config();
+        assertEq(cfg.renderer, address(renderer));
+
+        // An explicit choice at init wins over the default.
+        MockRenderer custom = new MockRenderer();
+        CollectionConfig memory cfg2 = _freeConfig();
+        cfg2.renderer = address(custom);
+        Collection c2 = _collection(cfg2);
+        assertEq(c2.renderer(), address(custom));
+    }
+
+    /// @dev Locks passed true in the config take effect at init: the
+    ///      collection is born locked, no second transaction to remember.
+    function test_init_bornLocked() public {
+        CollectionConfig memory cfg = _freeConfig();
+        cfg.supplyCap = 5;
+        cfg.rendererLocked = true;
+        cfg.supplyLocked = true;
+        Collection c = _collection(cfg);
+
+        assertTrue(c.isRendererLocked());
+        assertTrue(c.isSupplyLocked());
+        vm.expectRevert(ICollectionCore.RendererIsLocked.selector);
+        vm.prank(artist);
+        c.setRenderer(makeAddr("newRenderer"));
+        vm.expectRevert(ICollectionCore.SupplyIsLocked.selector);
+        vm.prank(artist);
+        c.setSupplyCap(10);
+    }
+
+    function test_version() public {
+        Collection c = _collection(_freeConfig());
+        assertEq(c.version(), 1);
     }
 
     // ── token artwork ────────────────────────────────────────────────────────
@@ -788,13 +830,13 @@ contract CollectionTest is CollectionBase {
         c.setRenderer(makeAddr("beforeLock"));
 
         vm.expectEmit(false, false, false, false, address(c));
-        emit ICollection.RendererLocked();
+        emit ICollectionCore.RendererLocked();
         vm.prank(artist);
         c.lockRenderer();
         assertTrue(c.isRendererLocked());
 
         // one-way: locking twice reverts
-        vm.expectRevert(ICollection.RendererIsLocked.selector);
+        vm.expectRevert(ICollectionCore.RendererIsLocked.selector);
         vm.prank(artist);
         c.lockRenderer();
     }
@@ -835,7 +877,7 @@ contract CollectionTest is CollectionBase {
     function test_renounceOwnership_disabled() public {
         Collection c = _collection(_pricedConfig(1 ether));
         vm.prank(artist);
-        vm.expectRevert(ICollection.RenounceDisabled.selector);
+        vm.expectRevert(ICollectionCore.RenounceDisabled.selector);
         c.renounceOwnership();
         assertEq(c.owner(), artist);
     }

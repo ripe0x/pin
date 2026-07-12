@@ -128,5 +128,21 @@ export const holdsCollectionHookAbi = [
       }
     ],
     "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "MustHoldRequired",
+    "inputs": [
+      {
+        "name": "required",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotCollectionAdmin",
+    "inputs": []
   }
 ] as const;

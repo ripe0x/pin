@@ -1,59 +1,52 @@
 "use client"
 
 /**
- * Final step for all three presets: a single createCollection write on
- * CollectionFactory, ported from CreateEditionForm's
- * useWriteContract + useWaitForTransactionReceipt + parseEventLogs pattern.
- * Builds CollectionConfig + WorkConfig from wizard state per preset:
+ * Final step: a single createCollection write on CollectionFactory, ported
+ * from CreateEditionForm's useWriteContract + useWaitForTransactionReceipt +
+ * parseEventLogs pattern. Builds CollectionConfig from wizard state per preset:
  *
- *   EDITION:   empty WorkConfig, Sequential id mode, renderer = zero
- *              (DefaultRenderer, the factory's baked-in default).
- *   GENERATIVE: WorkConfig.code = [{store: SCRIPTY_STORAGE_V2, name, kind:
- *              Script}], deps = chosen ScriptGzip refs, renderer =
- *              GENERATIVE_RENDERER (must be explicit — the factory default
- *              is DefaultRenderer, not GenerativeRenderer).
- *   RENDERER:  empty WorkConfig, renderer = the artist-supplied address.
+ *   EDITION:   Sequential id mode, renderer = zero (DefaultRenderer, the
+ *              factory's baked-in default); optional cover to RenderAssets.
+ *   RENDERER:  renderer = the artist-supplied address (bring-your-own).
+ *
+ * GENERATIVE via a shared onchain assembler was removed: generative works now
+ * ship as bring-your-own renderers (a work-specific IRenderer the artist
+ * deploys and points the slot at, i.e. the RENDERER preset). The guided
+ * generative deploy flow is being rebuilt on that model, so the wizard blocks
+ * a generative deploy here for now.
  */
 
 import { useRouter } from "next/navigation"
 import { parseEventLogs, type Address, type TransactionReceipt } from "viem"
 import { useAccount, useChainId, useWriteContract, useWaitForTransactionReceipt } from "wagmi"
-import { collectionFactoryAbi, generativeRendererAbi, renderAssetsAbi } from "@pin/abi"
+import { collectionFactoryAbi, renderAssetsAbi } from "@pin/abi"
 import { formatWriteError } from "@/components/tx/tx-ui"
 import {
   ZERO_ADDRESS,
   IdMode,
   collectionFactory,
   renderAssetsAddress,
-  generativeRenderer,
 } from "@/lib/collection"
-import { KNOWN_DEPENDENCIES, dependencyCodeRef, CodeKind, scriptyStorageAddress } from "@/lib/create-collection"
 import { studioToolHref } from "@/lib/studio-tools"
 import { validateCollaborators } from "./SharedFields"
 import type { WizardState } from "./types"
 import { BTN, BTN_SECONDARY, ERROR } from "./wizard-ui"
 
-type UploadResult = { name: string; codeHash: `0x${string}` } | null
-
 export function DeployStep({
   state,
   artistAddress,
   priceWei,
-  uploadResult,
   onBack,
 }: {
   state: WizardState
   artistAddress: string
   priceWei: bigint
-  uploadResult: UploadResult
   onBack: () => void
 }) {
   const { address } = useAccount()
   const chainId = useChainId()
   const factory = collectionFactory(chainId)
-  const renderer = generativeRenderer(chainId)
   const renderAssets = renderAssetsAddress(chainId)
-  const scriptyStorage = scriptyStorageAddress(chainId)
 
   const deploy = useWriteContract()
   const { data: receipt, isLoading: mining } = useWaitForTransactionReceipt({
@@ -62,22 +55,15 @@ export function DeployStep({
 
   const deployedAddress = useDeployedAddress(receipt)
 
-  // Post-deploy configuration: presentation data lives in renderer-land, so
-  // a generative work publishes its WorkConfig to the GenerativeRenderer's
-  // registry, and a cover image goes to RenderAssets — each its own tx,
-  // authorized by the collection owner (the connected artist).
-  const workWrite = useWriteContract()
-  const { isLoading: workMining, isSuccess: workDone } = useWaitForTransactionReceipt({
-    hash: workWrite.data,
-  })
+  // Post-deploy configuration: presentation data lives in renderer-land. A
+  // cover image goes to RenderAssets — its own tx, authorized by the
+  // collection owner (the connected artist).
   const coverWrite = useWriteContract()
   const { isLoading: coverMining, isSuccess: coverDone } = useWaitForTransactionReceipt({
     hash: coverWrite.data,
   })
 
-  const needsWork = state.preset === "generative"
   const needsCover = state.artworkURI.trim().length > 0
-  const workSettled = !needsWork || workDone
   const coverSettled = !needsCover || coverDone
 
   function toUnix(local: string): bigint {
@@ -93,9 +79,7 @@ export function DeployStep({
     const rendererAddr =
       state.preset === "renderer"
         ? (state.customRenderer as Address)
-        : state.preset === "generative"
-          ? ((renderer ?? ZERO_ADDRESS) as Address)
-          : (ZERO_ADDRESS as Address)
+        : (ZERO_ADDRESS as Address)
 
     // Economics are preset-independent: renderer-native works sell through
     // the same built-in paid path; only the artwork source differs.
@@ -110,55 +94,32 @@ export function DeployStep({
       renderer: rendererAddr,
       mintHook: ZERO_ADDRESS as Address,
       priceStrategy: ZERO_ADDRESS as Address,
-      idMode: IdMode.Sequential,
-    }
-  }
-
-  function buildWorkCfg() {
-    if (state.preset !== "generative" || !uploadResult || !scriptyStorage) {
-      return {
-        code: [],
-        deps: [],
-        codeURI: "",
-        codeHash: ("0x" + "0".repeat(64)) as `0x${string}`,
-        injectionVersion: 1,
-        renderParams: "",
-      }
-    }
-    const deps = state.selectedDeps
-      .map((id) => KNOWN_DEPENDENCIES.find((d) => d.id === id))
-      .filter((d): d is (typeof KNOWN_DEPENDENCIES)[number] => !!d)
-      .map((d) => dependencyCodeRef(d.file, chainId))
-      .filter((ref): ref is NonNullable<typeof ref> => ref !== null)
-
-    return {
-      code: [{ store: scriptyStorage, name: uploadResult.name, kind: CodeKind.Script as number }],
-      deps,
-      codeURI: "",
-      codeHash: uploadResult.codeHash,
-      injectionVersion: 1,
-      renderParams: state.renderParams,
+      // idMode left the config struct — Sequential is chosen by calling
+      // createCollection (vs createPooledCollection). The one-way locks
+      // joined it; a fresh collection is born unlocked.
+      rendererLocked: false,
+      supplyLocked: false,
     }
   }
 
   const canDeploy =
     !!factory &&
     !!address &&
-    (state.preset !== "generative" || (!!uploadResult && !!renderer)) &&
+    state.preset !== "generative" &&
     (state.preset !== "renderer" || !!state.customRenderer)
 
   function submit() {
     if (!canDeploy || !factory || !address) return
-    const artists = collabCheck.ok ? collabCheck.parsed : []
+    const creators = collabCheck.ok ? collabCheck.parsed : []
     deploy.writeContract({
       address: factory,
       abi: collectionFactoryAbi,
       functionName: "createCollection",
-      args: [state.name.trim(), state.symbol.trim(), address, buildCfg(), [], artists],
+      args: [state.name.trim(), state.symbol.trim(), address, buildCfg(), [], creators],
     })
   }
 
-  if (deployedAddress && workSettled && coverSettled) {
+  if (deployedAddress && coverSettled) {
     return <SuccessScreen collection={deployedAddress} artistAddress={artistAddress} />
   }
 
@@ -169,29 +130,10 @@ export function DeployStep({
           Collection deployed at {deployedAddress}. Finish publishing its
           presentation data (stored in renderer-land, owned by you):
         </p>
-        {needsWork && !workDone && (
-          <button
-            className={BTN}
-            disabled={workMining || !renderer}
-            onClick={() =>
-              workWrite.writeContract({
-                address: renderer!,
-                abi: generativeRendererAbi,
-                functionName: "setWork",
-                args: [deployedAddress, buildWorkCfg()],
-              })
-            }
-          >
-            {workMining ? "Publishing work…" : "Publish work onchain"}
-          </button>
-        )}
-        {needsWork && workDone && (
-          <p className="text-[11px] font-mono text-gray-500">Work published ✓</p>
-        )}
         {needsCover && !coverDone && (
           <button
             className={BTN}
-            disabled={coverMining || !renderAssets || (needsWork && !workDone)}
+            disabled={coverMining || !renderAssets}
             onClick={() =>
               coverWrite.writeContract({
                 address: renderAssets!,
@@ -204,8 +146,8 @@ export function DeployStep({
             {coverMining ? "Setting cover…" : "Set cover image"}
           </button>
         )}
-        {(workWrite.error || coverWrite.error) && (
-          <p className={ERROR}>{formatWriteError(workWrite.error ?? coverWrite.error, "Publish")}</p>
+        {coverWrite.error && (
+          <p className={ERROR}>{formatWriteError(coverWrite.error, "Publish")}</p>
         )}
       </div>
     )
@@ -226,8 +168,12 @@ export function DeployStep({
       {!factory && (
         <p className={ERROR}>No CollectionFactory is configured for this network.</p>
       )}
-      {state.preset === "generative" && !renderer && (
-        <p className={ERROR}>No GenerativeRenderer is configured for this network.</p>
+      {state.preset === "generative" && (
+        <p className={ERROR}>
+          Generative collections now use a bring-your-own renderer. Deploy from
+          the Renderer preset with your renderer contract; the guided generative
+          flow is being rebuilt.
+        </p>
       )}
 
       <button onClick={submit} disabled={!canDeploy || busy} className={BTN}>

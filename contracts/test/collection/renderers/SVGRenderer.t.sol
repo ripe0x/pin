@@ -6,6 +6,7 @@ import {Base64} from "solady/utils/Base64.sol";
 import {LibString} from "solady/utils/LibString.sol";
 
 import {Collection} from "../../../src/collection/Collection.sol";
+import {PooledCollection} from "../../../src/collection/PooledCollection.sol";
 import {CollectionFactory} from "../../../src/collection/CollectionFactory.sol";
 import {DefaultRenderer} from "../../../src/collection/renderers/DefaultRenderer.sol";
 import {TestSVGRenderer} from "./TestSVGRenderer.sol";
@@ -36,21 +37,16 @@ contract SVGRendererTest is Test {
         svgRenderer = new TestSVGRenderer();
         impl = new Collection();
         factory =
-            new CollectionFactory(address(impl), address(defaultRenderer), address(0));
+            new CollectionFactory(address(impl), address(new PooledCollection()), address(defaultRenderer), address(0));
 
         CollectionConfig memory cfg;
         cfg.price = 0;
         cfg.supplyCap = 0;
-        cfg.idMode = IdMode.Sequential;
 
         address[] memory noMinters = new address[](0);
         address[] memory noArtists = new address[](0);
 
-        collection = Collection(
-            factory.createCollection(
-                "SVG Collection", "SVGC", artist, cfg, noMinters, noArtists
-            )
-        );
+        collection = Collection(factory.createCollection("SVG Collection", "SVGC", artist, cfg, noMinters, noArtists));
 
         vm.prank(artist);
         collection.setRenderer(address(svgRenderer));
@@ -76,11 +72,7 @@ contract SVGRendererTest is Test {
         return string(Base64.decode(string(b64)));
     }
 
-    function _extractField(string memory json, string memory key)
-        internal
-        pure
-        returns (string memory)
-    {
+    function _extractField(string memory json, string memory key) internal pure returns (string memory) {
         bytes memory j = bytes(json);
         bytes memory k = bytes(string.concat('"', key, '":"'));
         int256 start = -1;
@@ -180,9 +172,7 @@ contract SVGRendererTest is Test {
 
         bytes32 seed = collection.tokenSeed(tokenId);
         string memory expectedFill = LibString.toHexStringNoPrefix(uint256(seed) & 0xffffff, 3);
-        assertTrue(
-            _contains(svgBody, expectedFill), "svg fill did not match the token's tokenSeed"
-        );
+        assertTrue(_contains(svgBody, expectedFill), "svg fill did not match the token's tokenSeed");
     }
 
     function test_tokenURI_differentTokens_differentSeeds_differentArt() public {
@@ -215,9 +205,7 @@ contract SVGRendererTest is Test {
         // Referrer / Status at Mint are deliberately NOT traits: both are
         // event-only provenance on Minted, no longer stored per token.
         assertFalse(_contains(json, '"trait_type":"Referrer"'), "Referrer trait was removed");
-        assertFalse(
-            _contains(json, '"trait_type":"Status at Mint"'), "Status at Mint trait was removed"
-        );
+        assertFalse(_contains(json, '"trait_type":"Status at Mint"'), "Status at Mint trait was removed");
         assertTrue(
             _contains(json, '"trait_type":"Provenance","value":"First mint of the collection"'),
             "missing First mint provenance"
@@ -231,58 +219,5 @@ contract SVGRendererTest is Test {
         assertTrue(_startsWith(uri, "data:application/json;base64,"), "wrong data URI prefix");
         string memory json = _decode(uri);
         assertTrue(_contains(json, '"name":"SVG Collection"'), "wrong contractURI name");
-    }
-
-    // ── previewURI (IPreviewRenderer) ────────────────────────────────────────
-
-    function test_previewURI_rendersWithoutAnyMint() public view {
-        // No token exists; a preview must still render from the supplied seed.
-        bytes32 seed = keccak256("throwaway");
-        string memory uri = svgRenderer.previewURI(address(collection), 1, seed);
-        assertTrue(_startsWith(uri, "data:application/json;base64,"), "wrong data URI prefix");
-
-        string memory json = _decode(uri);
-        assertTrue(_contains(json, "(preview)"), "preview name must be marked as a preview");
-
-        // The art must derive from the caller's seed, same path as tokenURI.
-        string memory image = _extractField(json, "image");
-        bytes memory prefix = bytes("data:image/svg+xml;base64,");
-        bytes memory u = bytes(image);
-        bytes memory b64 = new bytes(u.length - prefix.length);
-        for (uint256 i = 0; i < b64.length; i++) {
-            b64[i] = u[i + prefix.length];
-        }
-        string memory svgBody = string(Base64.decode(string(b64)));
-        string memory expectedFill =
-            LibString.toHexStringNoPrefix(uint256(seed) & 0xffffff, 3);
-        assertTrue(
-            _contains(svgBody, expectedFill), "preview art did not derive from the supplied seed"
-        );
-    }
-
-    function test_previewURI_realSeed_matchesTokenURIImage() public {
-        // A preview with the token's actual seed IS the token's render.
-        uint256 tokenId = _mint();
-        bytes32 seed = collection.tokenSeed(tokenId);
-
-        string memory tokenImage = _extractField(_decode(collection.tokenURI(tokenId)), "image");
-        string memory previewImage = _extractField(
-            _decode(svgRenderer.previewURI(address(collection), tokenId, seed)), "image"
-        );
-        assertEq(tokenImage, previewImage, "preview(realSeed) must equal the token render");
-    }
-
-    function test_previewURI_noProvenanceAttributes() public view {
-        string memory json =
-            _decode(svgRenderer.previewURI(address(collection), 1, keccak256("x")));
-        assertTrue(_contains(json, '"trait_type":"Seed"'), "preview must carry its seed");
-        assertFalse(
-            _contains(json, '"trait_type":"Mint Order"'),
-            "a preview is not a token: no provenance traits"
-        );
-        assertFalse(
-            _contains(json, '"trait_type":"Provenance"'),
-            "a preview is not a token: no provenance traits"
-        );
     }
 }
