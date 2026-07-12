@@ -495,7 +495,11 @@ export async function getRendererPreview(
   nextTokenId: bigint,
   seedIndex: number,
 ): Promise<OnchainPreview | null> {
-  return pgCache(`sc-prev:${lc(collection)}:${lc(renderer)}:${seedIndex}`, 600, async () => {
+  // Long TTL: a preview for a fixed (collection, renderer, seedIndex) is
+  // immutable — the seed and the renderer bytecode fully determine it, and
+  // the renderer address is in the key, so a renderer swap gets fresh keys.
+  // Caching a day keeps a large sample pool essentially free to serve.
+  return pgCache(`sc-prev:${lc(collection)}:${lc(renderer)}:${seedIndex}`, 86_400, async () => {
     const client = getClient()
     const uri = await client
       .call({

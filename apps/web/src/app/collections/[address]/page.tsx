@@ -80,7 +80,7 @@ export default async function CollectionPage({ params }: { params: Params }) {
   // extension, the wall explores it straight from the chain. One cached
   // probe when unsupported.
   const onchainPreviews = !hasWork
-    ? await getRendererPreviews(addr, c.renderer, c.minted + 1n, 12)
+    ? await getRendererPreviews(addr, c.renderer, c.minted + 1n, 15)
     : null
   const firstTokenImage =
     !hasCover && !hasWork && !onchainPreviews && c.minted > 0n
