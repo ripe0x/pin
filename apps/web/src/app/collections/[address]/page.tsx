@@ -8,7 +8,7 @@ import { WithdrawPanel } from "@/components/collections/WithdrawPanel"
 import { CollectionMintHistory } from "@/components/collections/CollectionMintHistory"
 import { AttributionRoster } from "@/components/collections/AttributionRoster"
 import { ParityMosaic, OnchainMosaic } from "@/components/collections/CollectionMosaic"
-import { PlacardStatus, StickyMintBar } from "@/components/collections/CollectionPlacard"
+import { PlacardStats, StickyMintBar } from "@/components/collections/CollectionPlacard"
 import { CollectionFocusRefresh } from "@/components/collections/CollectionFocusRefresh"
 import {
   getAttribution,
@@ -141,13 +141,14 @@ export default async function CollectionPage({ params }: { params: Params }) {
             ← Collections
           </Link>
         </nav>
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <h1 className="max-w-[16ch] text-5xl font-medium leading-[0.92] tracking-tight sm:text-6xl lg:text-[5.5rem]">
-            {c.name}
-          </h1>
-          <div className="shrink-0 space-y-2 lg:pb-2 lg:text-right">
-            <p className="text-[11px] font-mono uppercase tracking-wider text-gray-500">
-              {c.symbol} · by{" "}
+        <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between lg:gap-12">
+          <div>
+            <h1 className="max-w-[16ch] text-5xl font-medium leading-[0.92] tracking-tight sm:text-6xl lg:text-[5.5rem]">
+              {c.name}
+            </h1>
+            {/* The medium line: a gallery label, not metadata. */}
+            <p className="mt-4 text-[11px] font-mono uppercase tracking-wider text-gray-500">
+              by{" "}
               {artists.map((a, i) => (
                 <span key={a}>
                   {i > 0 && ", "}
@@ -161,10 +162,19 @@ export default async function CollectionPage({ params }: { params: Params }) {
                   </a>
                 </span>
               ))}
+              {" · "}
+              {hasWork
+                ? "long-form generative work, rendered live in your browser"
+                : onchainPreviews
+                  ? "long-form generative work, rendered by its own onchain contract"
+                  : pooled
+                    ? "a work sold through its own minter"
+                    : "an edition on the artist's own contract"}
+              {c.cfg.supplyCap > 0n && ` · ${c.cfg.supplyCap.toString()} editions`}
             </p>
-            <div className="lg:flex lg:justify-end">
-              <PlacardStatus snapshot={placard} />
-            </div>
+          </div>
+          <div className="shrink-0 lg:pb-1">
+            <PlacardStats snapshot={placard} />
           </div>
         </div>
       </header>
@@ -179,12 +189,14 @@ export default async function CollectionPage({ params }: { params: Params }) {
         </div>
       )}
 
-      {/* ── Editorial band: the story beside the instrument. ── */}
+      {/* ── Editorial band: the story beside the instrument, set in
+             hairline-framed cells (the Feral File grammar) so the band
+             reads as composed, not floated. ── */}
       <div
         id="mint-instrument"
-        className="mx-auto grid max-w-[1400px] scroll-mt-20 grid-cols-1 gap-10 px-6 py-10 lg:grid-cols-[1fr_420px] lg:gap-20 lg:px-12 lg:py-14"
+        className="grid scroll-mt-20 grid-cols-1 border-b border-gray-200 lg:grid-cols-[1fr_460px] lg:divide-x lg:divide-gray-200"
       >
-        <div className="max-w-[600px] space-y-6">
+        <div className="max-w-[720px] space-y-6 px-6 py-10 lg:px-12 lg:py-12">
           <h2 className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
             About this work
           </h2>
@@ -236,7 +248,7 @@ export default async function CollectionPage({ params }: { params: Params }) {
           </div>
         </div>
 
-        <div>
+        <div className="px-6 py-10 lg:px-10 lg:py-12">
           <MintCollectionCTA
             collection={addr}
             work={hasWork ? c.work : null}

@@ -53,47 +53,57 @@ function dotClass(status: number, soldOut: boolean): string {
   return soldOut ? "bg-status-sold" : "bg-gray-400"
 }
 
-export function PlacardStatus({ snapshot }: { snapshot: PlacardSnapshot }) {
+/**
+ * Display-scale masthead stats (the gm.studio move): the numbers ARE the
+ * status. Each stat is a big tabular numeral with a micro-label beneath it;
+ * the status dot rides the first micro-label. Reads at a glance from
+ * across the room, the way a gallery wall label doesn't make you squint.
+ */
+export function PlacardStats({ snapshot }: { snapshot: PlacardSnapshot }) {
   const { nowSec, cfg, minted, status, soldOut } = useDerived(snapshot)
   const label = soldOut ? "Sold out" : COLLECTION_STATUS_LABEL[status]
 
   return (
-    <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono uppercase tracking-wider text-gray-500 tabular-nums">
-      <span className="flex items-center gap-2">
-        <span className={`inline-block h-1.5 w-1.5 rounded-full ${dotClass(status, soldOut)}`} />
-        {label}
-      </span>
-      <span className="text-gray-300 dark:text-gray-700">·</span>
-      <span>
-        {cfg.supplyCap > 0n
-          ? `${minted.toString()} / ${cfg.supplyCap.toString()} minted`
-          : `${minted.toString()} minted · open edition`}
-      </span>
-      {!snapshot.pooled && (
-        <>
-          <span className="text-gray-300 dark:text-gray-700">·</span>
-          <span>
-            {snapshot.hasStrategy ? "Live price" : formatPriceLabel(BigInt(snapshot.price))}
+    <div className="flex flex-wrap items-end gap-x-10 gap-y-4">
+      <Stat
+        value={
+          cfg.supplyCap > 0n
+            ? `${minted.toString()} / ${cfg.supplyCap.toString()}`
+            : minted.toString()
+        }
+        label={
+          <span className="flex items-center gap-2">
+            <span
+              className={`inline-block h-1.5 w-1.5 rounded-full ${dotClass(status, soldOut)}`}
+            />
+            {label} · {cfg.supplyCap > 0n ? "minted / total" : "minted · open edition"}
           </span>
-        </>
+        }
+      />
+      {!snapshot.pooled && (
+        <Stat
+          value={snapshot.hasStrategy ? "Live" : formatPriceLabel(BigInt(snapshot.price))}
+          label={snapshot.hasStrategy ? "price · updates onchain" : "price"}
+        />
       )}
       {status === CollectionStatus.Scheduled && cfg.mintStart > 0n && (
-        <>
-          <span className="text-gray-300 dark:text-gray-700">·</span>
-          <span>
-            Opens in <Countdown endTime={cfg.mintStart} nowSec={nowSec} />
-          </span>
-        </>
+        <Stat value={<Countdown endTime={cfg.mintStart} nowSec={nowSec} />} label="opens in" />
       )}
       {status === CollectionStatus.Open && cfg.mintEnd > 0n && (
-        <>
-          <span className="text-gray-300 dark:text-gray-700">·</span>
-          <span>
-            Closes in <Countdown endTime={cfg.mintEnd} nowSec={nowSec} />
-          </span>
-        </>
+        <Stat value={<Countdown endTime={cfg.mintEnd} nowSec={nowSec} />} label="closes in" />
       )}
-    </p>
+    </div>
+  )
+}
+
+function Stat({ value, label }: { value: React.ReactNode; label: React.ReactNode }) {
+  return (
+    <div>
+      <p className="text-3xl font-medium tracking-tight tabular-nums leading-none sm:text-4xl">
+        {value}
+      </p>
+      <p className="mt-2 text-[10px] font-mono uppercase tracking-wider text-gray-400">{label}</p>
+    </div>
   )
 }
 
