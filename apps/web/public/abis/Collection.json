@@ -1,10 +1,5 @@
 [
   {
-    "type": "constructor",
-    "inputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
     "type": "function",
     "name": "REFERRAL_SHARE_BPS",
     "inputs": [],
@@ -161,9 +156,14 @@
             "internalType": "address"
           },
           {
-            "name": "idMode",
-            "type": "uint8",
-            "internalType": "enum IdMode"
+            "name": "rendererLocked",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "supplyLocked",
+            "type": "bool",
+            "internalType": "bool"
           }
         ]
       },
@@ -224,19 +224,6 @@
   },
   {
     "type": "function",
-    "name": "defaultRenderer",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "getApproved",
     "inputs": [
       {
@@ -265,7 +252,7 @@
         "internalType": "enum IdMode"
       }
     ],
-    "stateMutability": "view"
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -347,9 +334,14 @@
                 "internalType": "address"
               },
               {
-                "name": "idMode",
-                "type": "uint8",
-                "internalType": "enum IdMode"
+                "name": "rendererLocked",
+                "type": "bool",
+                "internalType": "bool"
+              },
+              {
+                "name": "supplyLocked",
+                "type": "bool",
+                "internalType": "bool"
               }
             ]
           },
@@ -576,34 +568,6 @@
   },
   {
     "type": "function",
-    "name": "mintToId",
-    "inputs": [
-      {
-        "name": "to",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "tokenId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "referrer",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "hookData",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "mintWithReferral",
     "inputs": [
       {
@@ -732,19 +696,6 @@
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "referralShareBps",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ],
-    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -1158,6 +1109,19 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "version",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -1678,7 +1642,18 @@
   {
     "type": "error",
     "name": "BadSupplyCap",
-    "inputs": []
+    "inputs": [
+      {
+        "name": "floor",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "requested",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",
@@ -1786,7 +1761,18 @@
   {
     "type": "error",
     "name": "ExceedsCap",
-    "inputs": []
+    "inputs": [
+      {
+        "name": "cap",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "attempted",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",
@@ -1872,16 +1858,6 @@
   },
   {
     "type": "error",
-    "name": "PooledNeedsMintToId",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "PooledSellsViaMinter",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "ReentrancyGuardReentrantCall",
     "inputs": []
   },
@@ -1912,18 +1888,24 @@
   },
   {
     "type": "error",
-    "name": "SequentialAssignsIds",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "SupplyIsLocked",
     "inputs": []
   },
   {
     "type": "error",
     "name": "Underpayment",
-    "inputs": []
+    "inputs": [
+      {
+        "name": "required",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "sent",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",
@@ -1933,7 +1915,18 @@
   {
     "type": "error",
     "name": "WrongPayment",
-    "inputs": []
+    "inputs": [
+      {
+        "name": "required",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "sent",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",

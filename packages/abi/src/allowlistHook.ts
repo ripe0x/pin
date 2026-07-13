@@ -128,5 +128,15 @@ export const allowlistHookAbi = [
       }
     ],
     "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "NotAllowlisted",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotCollectionAdmin",
+    "inputs": []
   }
 ] as const;

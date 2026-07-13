@@ -189,19 +189,6 @@ window is not: an extension minter owns its own schedule, and the artist's lever
 is revoking the grant with `setMinter`. Hooks still run (`HookRejected` on
 rejection); `ExceedsCap` on a cap crossing. Emits `Minted` with quantity 1.
 
-## function mintToId
-
-access: minter-only (`msg.sender` must be an authorized extension minter, else `NotMinter`)
-
-The extension mint path for Pooled mode: the minter supplies the `tokenId`
-(`tokenId == sourceId` forms, id 0 is legal). Non-payable; the minter carries all
-value handling. Reverts `SequentialAssignsIds` in sequential mode, where the core
-assigns ids. A previously burned id mints again as a NEW instance with a fresh
-Mint Mark and fresh entropy; the prior instance's history persists in events. The
-underlying OZ mint reverts on a live id, so a live token can never be minted over.
-Hooks run (`HookRejected`); `ExceedsCap` bounds live supply. Emits `Minted` with
-quantity 1.
-
 ## function burn
 
 access: owner-or-approved in Sequential, minter-only in Pooled (else `NotAuthorized`)
@@ -444,12 +431,14 @@ Standard ERC721 safe transfer with a data payload forwarded to the recipient's
 ## function REFERRAL_SHARE_BPS
 
 The fixed protocol referral share as a compile-time constant: 1000 bps, i.e. 10%.
-Not artist-set. `referralShareBps` returns the same value.
+Not artist-set.
 
-## function referralShareBps
+## function version
 
-Returns the fixed protocol referral share in bps (1000 = 10%), the same value as
-the `REFERRAL_SHARE_BPS` constant.
+The implementation version, a compile-time constant (`1` for this generation).
+The system evolves by deploying a new implementation and factory, never by
+changing a live collection, so a collection reports the version it was cloned
+from for its whole life.
 
 ## function config
 
@@ -522,13 +511,9 @@ True once `lockSupply` has permanently locked the supply cap.
 
 ## function renderer
 
-The active renderer address: the renderer override if set, else `defaultRenderer`.
-This is the address `tokenURI` and `contractURI` delegate to.
-
-## function defaultRenderer
-
-The canonical fallback renderer, set at init and never zero. Used whenever the
-renderer override slot is unset.
+The active renderer address that `tokenURI` and `contractURI` delegate to. Set at
+init (the artist's choice, or the factory default when they named none) and
+changeable via `setRenderer` until `lockRenderer`.
 
 ## function mintHook
 
@@ -848,21 +833,6 @@ double-remove fails loudly rather than emitting a misleading event.
 
 `initialize` was given the zero address as the owner. A collection must have an
 owner.
-
-## error PooledSellsViaMinter
-
-A built-in paid path (`mint` or `mintWithReferral`) was called on a Pooled
-collection. Pooled collections sell exclusively through their authorized minter.
-
-## error PooledNeedsMintToId
-
-`mintTo` was called on a Pooled collection, where the minter must supply the id.
-Use `mintToId`.
-
-## error SequentialAssignsIds
-
-`mintToId` was called on a Sequential collection, where the core assigns ids. Use
-`mintTo`.
 
 ## error RendererRequired
 

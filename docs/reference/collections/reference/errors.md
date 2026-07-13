@@ -10,11 +10,17 @@ Every custom error the Collections contracts can revert with, its contract, and 
 **`AlreadyDeprecated`** · [CollectionFactory](/docs/collections/contracts/factory#errors)\
 `deprecate` was called on an already-deprecated factory.
 
+**`AssetsRequired`** · [DefaultRenderer](/docs/collections/contracts/default-renderer#errors)\
+Reverts construction when the RenderAssets address is zero: the renderer has no registry to read images from.
+
 **`BadMintWindow`** · [Collection](/docs/collections/contracts/collection#errors)\
 `initialize` or `setMintWindow` was given a non-zero `mintEnd` that is not strictly after `mintStart`.
 
 **`BadSupplyCap`** · [Collection](/docs/collections/contracts/collection#errors)\
 `setSupplyCap` was given a non-zero cap below what already exists: mints ever in Sequential mode (ids are never reused), or live supply in Pooled mode.
+
+**`BuilderRequired`** · [ScriptyRenderer](/docs/collections/contracts/scripty-renderer#errors)\
+Reverts construction when the ScriptyBuilderV2 address is zero: the renderer would have nothing to assemble the HTML document with.
 
 **`ERC721IncorrectOwner`** · [Collection](/docs/collections/contracts/collection#errors)\
 Standard ERC721 error: a token operation named an owner that does not match the token's actual owner.
@@ -49,6 +55,9 @@ A mint would cross the supply cap: mints ever in Sequential mode, or live supply
 **`FailedDeployment`** · [CollectionFactory](/docs/collections/contracts/factory#errors)\
 Inherited from OpenZeppelin `Clones`.
 
+**`GunzipStoreRequired`** · [ScriptyRenderer](/docs/collections/contracts/scripty-renderer#errors)\
+Reverts at `tokenURI` time when a dependency or code file is gzipped but no gunzip store was configured, so the gzip tags could never be decompressed in the browser.
+
 **`HookRejected`** · [Collection](/docs/collections/contracts/collection#errors)\
 The mint hook's `beforeMint` did not return the required selector, so the hook rejected the mint.
 
@@ -67,6 +76,9 @@ A paid mint was attempted at or after a non-zero `mintEnd`.
 **`MintNotStarted`** · [Collection](/docs/collections/contracts/collection#errors)\
 A paid mint was attempted before `mintStart`.
 
+**`MustHoldRequired`** · [HoldsCollectionHook](/docs/collections/contracts/holds-collection-hook#errors)\
+The minter holds none of the required collection's tokens.
+
 **`NeverMinted`** · [Collection](/docs/collections/contracts/collection#errors)\
 `tokenSeed` was read for an id that was never minted (its seed slot is zero).
 
@@ -76,11 +88,26 @@ Reverts construction when the `code` array is empty: a renderer with no artist c
 **`NoStrayETH`** · [Collection](/docs/collections/contracts/collection#errors)\
 `rescueStrayETH` found no ETH above the owed pull-payment balances to sweep.
 
+**`NotAContract`** · [CollectionFactory](/docs/collections/contracts/factory#errors)\
+The factory constructor was given an implementation, pooled implementation, or default renderer address with no code.
+
+**`NotAllowlisted`** · [AllowlistHook](/docs/collections/contracts/allowlist-hook#errors)\
+The minter's Merkle proof did not verify against the collection's allowlist root.
+
 **`NotAnAdmin`** · [Collection](/docs/collections/contracts/collection#errors)\
 `removeAdmin` was called for an account that is not currently an admin.
 
 **`NotAuthorized`** · [Collection](/docs/collections/contracts/collection#errors)\
 A management function gated `onlyOwnerOrAdmin` was called by neither the owner nor an admin; `removeAdmin` was called by someone other than the owner or the admin itself; `notifyMetadataUpdate` was called by neither the renderer nor an owner/admin; or `burn` was called without burn authority for the id mode.
+
+**`NotCollectionAdmin`** · [AllowlistHook](/docs/collections/contracts/allowlist-hook#errors)\
+A hook setter was called by an address that is neither the collection's owner nor one of its admins.
+
+**`NotCollectionAdmin`** · [HoldsCollectionHook](/docs/collections/contracts/holds-collection-hook#errors)\
+A hook setter was called by an address that is neither the collection's owner nor one of its admins.
+
+**`NotCollectionAdmin`** · [PerWalletCapHook](/docs/collections/contracts/per-wallet-cap-hook#errors)\
+A hook setter was called by an address that is neither the collection's owner nor one of its admins.
 
 **`NotCollectionAdmin`** · [RenderAssets](/docs/collections/contracts/render-assets#errors)\
 A write was attempted by an address that is neither the collection's owner nor one of its admins.
@@ -106,11 +133,8 @@ Standard OpenZeppelin Ownable error: an owner-gated function (`addAdmin`, `trans
 **`OwnerRequired`** · [Collection](/docs/collections/contracts/collection#errors)\
 `initialize` was given the zero address as the owner.
 
-**`PooledNeedsMintToId`** · [Collection](/docs/collections/contracts/collection#errors)\
-`mintTo` was called on a Pooled collection, where the minter must supply the id.
-
-**`PooledSellsViaMinter`** · [Collection](/docs/collections/contracts/collection#errors)\
-A built-in paid path (`mint` or `mintWithReferral`) was called on a Pooled collection.
+**`OwnerRequired`** · [CollectionFactory](/docs/collections/contracts/factory#errors)\
+`createCollection` or `createPooledCollection` was given the zero address as the collection `owner`.
 
 **`ReentrancyGuardReentrantCall`** · [Collection](/docs/collections/contracts/collection#errors)\
 Standard OpenZeppelin ReentrancyGuard error: a `nonReentrant` function was re-entered.
@@ -130,14 +154,14 @@ The ETH transfer inside `rescueStrayETH` reverted.
 **`RoyaltyTooHigh`** · [Collection](/docs/collections/contracts/collection#errors)\
 `initialize` or `setRoyalty` was given a royalty above the 50% cap (`5000` bps).
 
-**`SequentialAssignsIds`** · [Collection](/docs/collections/contracts/collection#errors)\
-`mintToId` was called on a Sequential collection, where the core assigns ids.
-
 **`SupplyIsLocked`** · [Collection](/docs/collections/contracts/collection#errors)\
 `setSupplyCap` or `lockSupply` was called after `lockSupply`.
 
 **`Underpayment`** · [Collection](/docs/collections/contracts/collection#errors)\
 A mint with a price strategy set sent less than the strategy's resolved price.
+
+**`WalletCapExceeded`** · [PerWalletCapHook](/docs/collections/contracts/per-wallet-cap-hook#errors)\
+The mint would push the wallet's running count for this collection past the per-wallet cap.
 
 **`WithdrawFailed`** · [Collection](/docs/collections/contracts/collection#errors)\
 The ETH transfer inside `withdraw` reverted, for example a recipient that rejects payment.

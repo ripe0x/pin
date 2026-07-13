@@ -67,5 +67,10 @@ export const defaultRendererAbi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "error",
+    "name": "AssetsRequired",
+    "inputs": []
   }
 ] as const;

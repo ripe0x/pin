@@ -70,3 +70,14 @@ transfers or burns.
 Emitted on every `setCap` call, including clearing the cap back to `0`.
 `collection` is indexed. An indexer watching this event reconstructs the
 full cap history for any collection that has ever used this hook.
+
+## error WalletCapExceeded
+
+The mint would push the wallet's running count for this collection past the
+per-wallet cap. Carries the cap and the attempted total.
+
+## error NotCollectionAdmin
+
+A hook setter was called by an address that is neither the collection's owner
+nor one of its admins. Inherited from HookBase — configuring a hook for a
+collection needs the same authority as the collection's own setters.

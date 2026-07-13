@@ -58,7 +58,7 @@ export async function getCollection(address: Address): Promise<Collection | null
     const client = getClient()
     const base = { address, abi: collectionAbi } as const
     try {
-      const [name, symbol, owner, rendererLocked, supplyLocked, renderer, priceStrategy, cfgRes] =
+      const [name, symbol, owner, rendererLocked, supplyLocked, renderer, priceStrategy, idModeRaw, cfgRes] =
         await client.multicall({
           allowFailure: false,
           contracts: [
@@ -69,6 +69,9 @@ export async function getCollection(address: Address): Promise<Collection | null
             { ...base, functionName: "isSupplyLocked" },
             { ...base, functionName: "renderer" },
             { ...base, functionName: "priceStrategy" },
+            // idMode is a structural fact read separately since the Sequential/
+            // Pooled split moved it out of the config struct.
+            { ...base, functionName: "idMode" },
             { ...base, functionName: "config" },
           ],
         })
@@ -99,7 +102,7 @@ export async function getCollection(address: Address): Promise<Collection | null
         isSupplyLocked: supplyLocked as boolean,
         renderer: renderer as Address,
         priceStrategy: priceStrategy as Address,
-        cfg: decodeCollectionConfig(cfgRaw),
+        cfg: decodeCollectionConfig(cfgRaw, Number(idModeRaw) as IdMode),
         // Shared work-config read removed with the shared GenerativeRenderer;
         // bring-your-own renderers own their config. Kept as an empty default
         // so consumers that gate on work.code.length fall back to the cover.

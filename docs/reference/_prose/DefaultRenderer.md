@@ -55,3 +55,8 @@ read ERC-7572 contract-level metadata.
 The RenderAssets registry this renderer serves static images from: the
 per-token capture if one exists, else the collection cover. The collection
 core stores no presentation data.
+
+## error AssetsRequired
+
+Reverts construction when the RenderAssets address is zero: the renderer has no
+registry to read images from.

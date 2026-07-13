@@ -228,6 +228,16 @@ export const scriptyRendererAbi = [
   },
   {
     "type": "error",
+    "name": "BuilderRequired",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "GunzipStoreRequired",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "NoCode",
     "inputs": []
   }

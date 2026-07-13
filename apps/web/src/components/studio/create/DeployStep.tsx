@@ -23,7 +23,6 @@ import { collectionFactoryAbi, renderAssetsAbi } from "@pin/abi"
 import { formatWriteError } from "@/components/tx/tx-ui"
 import {
   ZERO_ADDRESS,
-  IdMode,
   collectionFactory,
   renderAssetsAddress,
 } from "@/lib/collection"
@@ -94,7 +93,11 @@ export function DeployStep({
       renderer: rendererAddr,
       mintHook: ZERO_ADDRESS as Address,
       priceStrategy: ZERO_ADDRESS as Address,
-      idMode: IdMode.Sequential,
+      // idMode left the config struct in the Sequential/Pooled split (it's
+      // structural — this wizard deploys via createCollection = Sequential).
+      // The two one-way locks default off; the wizard doesn't offer born-locked.
+      rendererLocked: false,
+      supplyLocked: false,
     }
   }
 

@@ -5,7 +5,12 @@ export const collectionFactoryAbi = [
     "type": "constructor",
     "inputs": [
       {
-        "name": "implementation_",
+        "name": "sequentialImplementation_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "pooledImplementation_",
         "type": "address",
         "internalType": "address"
       },
@@ -129,9 +134,120 @@ export const collectionFactoryAbi = [
             "internalType": "address"
           },
           {
-            "name": "idMode",
-            "type": "uint8",
-            "internalType": "enum IdMode"
+            "name": "rendererLocked",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "supplyLocked",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ]
+      },
+      {
+        "name": "initialMinters",
+        "type": "address[]",
+        "internalType": "address[]"
+      },
+      {
+        "name": "creators",
+        "type": "address[]",
+        "internalType": "address[]"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "collection",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "createPooledCollection",
+    "inputs": [
+      {
+        "name": "name",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "symbol",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "owner",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "cfg",
+        "type": "tuple",
+        "internalType": "struct CollectionConfig",
+        "components": [
+          {
+            "name": "price",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "supplyCap",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "mintStart",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "mintEnd",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "royaltyBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "royaltyReceiver",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "payoutAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "renderer",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "mintHook",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "priceStrategy",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "rendererLocked",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "supplyLocked",
+            "type": "bool",
+            "internalType": "bool"
           }
         ]
       },
@@ -209,19 +325,6 @@ export const collectionFactoryAbi = [
   },
   {
     "type": "function",
-    "name": "implementation",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "isCollection",
     "inputs": [
       {
@@ -235,6 +338,32 @@ export const collectionFactoryAbi = [
         "name": "",
         "type": "bool",
         "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "pooledImplementation",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "sequentialImplementation",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "view"
@@ -280,6 +409,12 @@ export const collectionFactoryAbi = [
         "type": "address",
         "indexed": true,
         "internalType": "address"
+      },
+      {
+        "name": "idMode",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "enum IdMode"
       }
     ],
     "anonymous": false
@@ -330,7 +465,23 @@ export const collectionFactoryAbi = [
   },
   {
     "type": "error",
+    "name": "NotAContract",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "NotDeployer",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "OwnerRequired",
     "inputs": []
   }
 ] as const;

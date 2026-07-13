@@ -11,7 +11,6 @@ Every state-changing function in the Collections contracts and who may call it. 
 | [`mint`](/docs/collections/contracts/collection#mint) | permissionless (payable; no caller gate, guarded by window/cap/payment checks) |
 | [`mintWithReferral`](/docs/collections/contracts/collection#mintwithreferral) | permissionless (payable; no caller gate, guarded by window/cap/payment checks) |
 | [`mintTo`](/docs/collections/contracts/collection#mintto) | minter-only (`msg.sender` must be an authorized extension minter, else `NotMinter`) |
-| [`mintToId`](/docs/collections/contracts/collection#minttoid) | minter-only (`msg.sender` must be an authorized extension minter, else `NotMinter`) |
 | [`burn`](/docs/collections/contracts/collection#burn) | owner-or-approved in Sequential, minter-only in Pooled (else `NotAuthorized`) |
 | [`setMintWindow`](/docs/collections/contracts/collection#setmintwindow) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
 | [`setPrice`](/docs/collections/contracts/collection#setprice) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
@@ -44,6 +43,7 @@ Every state-changing function in the Collections contracts and who may call it. 
 | Function | Access |
 | --- | --- |
 | [`createCollection`](/docs/collections/contracts/factory#createcollection) | permissionless (anyone may deploy; ongoing control over the result |
+| [`createPooledCollection`](/docs/collections/contracts/factory#createpooledcollection) | permissionless (ongoing control belongs to the `owner` argument) |
 | [`deprecate`](/docs/collections/contracts/factory#deprecate) | deployer-only (`msg.sender` must be the factory deployer, else `NotDeployer`) |
 
 ## RenderAssets

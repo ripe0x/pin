@@ -2,11 +2,6 @@
 // Re-run: node scripts/emit-collection-abi.mjs
 export const collectionAbi = [
   {
-    "type": "constructor",
-    "inputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
     "type": "function",
     "name": "REFERRAL_SHARE_BPS",
     "inputs": [],
@@ -163,9 +158,14 @@ export const collectionAbi = [
             "internalType": "address"
           },
           {
-            "name": "idMode",
-            "type": "uint8",
-            "internalType": "enum IdMode"
+            "name": "rendererLocked",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "supplyLocked",
+            "type": "bool",
+            "internalType": "bool"
           }
         ]
       },
@@ -226,19 +226,6 @@ export const collectionAbi = [
   },
   {
     "type": "function",
-    "name": "defaultRenderer",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "getApproved",
     "inputs": [
       {
@@ -267,7 +254,7 @@ export const collectionAbi = [
         "internalType": "enum IdMode"
       }
     ],
-    "stateMutability": "view"
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -349,9 +336,14 @@ export const collectionAbi = [
                 "internalType": "address"
               },
               {
-                "name": "idMode",
-                "type": "uint8",
-                "internalType": "enum IdMode"
+                "name": "rendererLocked",
+                "type": "bool",
+                "internalType": "bool"
+              },
+              {
+                "name": "supplyLocked",
+                "type": "bool",
+                "internalType": "bool"
               }
             ]
           },
@@ -578,34 +570,6 @@ export const collectionAbi = [
   },
   {
     "type": "function",
-    "name": "mintToId",
-    "inputs": [
-      {
-        "name": "to",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "tokenId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "referrer",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "hookData",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "mintWithReferral",
     "inputs": [
       {
@@ -734,19 +698,6 @@ export const collectionAbi = [
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "referralShareBps",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ],
-    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -1160,6 +1111,19 @@ export const collectionAbi = [
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "version",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -1680,7 +1644,18 @@ export const collectionAbi = [
   {
     "type": "error",
     "name": "BadSupplyCap",
-    "inputs": []
+    "inputs": [
+      {
+        "name": "floor",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "requested",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",
@@ -1788,7 +1763,18 @@ export const collectionAbi = [
   {
     "type": "error",
     "name": "ExceedsCap",
-    "inputs": []
+    "inputs": [
+      {
+        "name": "cap",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "attempted",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",
@@ -1874,16 +1860,6 @@ export const collectionAbi = [
   },
   {
     "type": "error",
-    "name": "PooledNeedsMintToId",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "PooledSellsViaMinter",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "ReentrancyGuardReentrantCall",
     "inputs": []
   },
@@ -1914,18 +1890,24 @@ export const collectionAbi = [
   },
   {
     "type": "error",
-    "name": "SequentialAssignsIds",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "SupplyIsLocked",
     "inputs": []
   },
   {
     "type": "error",
     "name": "Underpayment",
-    "inputs": []
+    "inputs": [
+      {
+        "name": "required",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "sent",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",
@@ -1935,7 +1917,18 @@ export const collectionAbi = [
   {
     "type": "error",
     "name": "WrongPayment",
-    "inputs": []
+    "inputs": [
+      {
+        "name": "required",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "sent",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",

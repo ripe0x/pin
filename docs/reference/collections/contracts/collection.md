@@ -203,23 +203,6 @@ window is not: an extension minter owns its own schedule, and the artist's lever
 is revoking the grant with `setMinter`. Hooks still run (`HookRejected` on
 rejection); `ExceedsCap` on a cap crossing. Emits `Minted` with quantity 1.
 
-### mintToId
-
-```solidity
-function mintToId(address to, uint256 tokenId, address referrer, bytes hookData) external
-```
-
-**Access:** minter-only (`msg.sender` must be an authorized extension minter, else `NotMinter`)
-
-The extension mint path for Pooled mode: the minter supplies the `tokenId`
-(`tokenId == sourceId` forms, id 0 is legal). Non-payable; the minter carries all
-value handling. Reverts `SequentialAssignsIds` in sequential mode, where the core
-assigns ids. A previously burned id mints again as a NEW instance with a fresh
-Mint Mark and fresh entropy; the prior instance's history persists in events. The
-underlying OZ mint reverts on a live id, so a live token can never be minted over.
-Hooks run (`HookRejected`); `ExceedsCap` bounds live supply. Emits `Minted` with
-quantity 1.
-
 ### burn
 
 ```solidity
@@ -608,15 +591,6 @@ strategy is set, else the stored fixed `price` times `quantity`. Frontends read
 this to quote a mint; with a dynamic strategy it can move between quote and
 inclusion.
 
-### defaultRenderer
-
-```solidity
-function defaultRenderer() external view returns (address)
-```
-
-The canonical fallback renderer, set at init and never zero. Used whenever the
-renderer override slot is unset.
-
 ### getApproved
 
 ```solidity
@@ -628,7 +602,7 @@ Standard ERC721: the single-token approved spender for a token, or zero.
 ### idMode
 
 ```solidity
-function idMode() external view returns (IdMode)
+function idMode() external pure returns (IdMode)
 ```
 
 The collection's id mode, fixed at init: Sequential (0) or Pooled (1). See
@@ -764,16 +738,7 @@ function REFERRAL_SHARE_BPS() external view returns (uint16)
 ```
 
 The fixed protocol referral share as a compile-time constant: 1000 bps, i.e. 10%.
-Not artist-set. `referralShareBps` returns the same value.
-
-### referralShareBps
-
-```solidity
-function referralShareBps() external pure returns (uint16)
-```
-
-Returns the fixed protocol referral share in bps (1000 = 10%), the same value as
-the `REFERRAL_SHARE_BPS` constant.
+Not artist-set.
 
 ### renderer
 
@@ -781,8 +746,9 @@ the `REFERRAL_SHARE_BPS` constant.
 function renderer() external view returns (address)
 ```
 
-The active renderer address: the renderer override if set, else `defaultRenderer`.
-This is the address `tokenURI` and `contractURI` delegate to.
+The active renderer address that `tokenURI` and `contractURI` delegate to. Set at
+init (the artist's choice, or the factory default when they named none) and
+changeable via `setRenderer` until `lockRenderer`.
 
 ### renounceOwnership
 
@@ -852,6 +818,17 @@ function totalSupply() external view returns (uint256)
 
 Live supply: mints ever minus burns. In Sequential mode a burn permanently lowers
 this; in Pooled mode a re-mint of a burned id raises it again.
+
+### version
+
+```solidity
+function version() external view returns (uint256)
+```
+
+The implementation version, a compile-time constant (`1` for this generation).
+The system evolves by deploying a new implementation and factory, never by
+changing a live collection, so a collection reports the version it was cloned
+from for its whole life.
 
 ## Events
 
@@ -1117,7 +1094,7 @@ single explicit state change.
 strictly after `mintStart`. Use `mintEnd == 0` for open-ended or an end after the
 start.
 
-**`BadSupplyCap()`**
+**`BadSupplyCap(uint256 floor, uint256 requested)`**
 
 `setSupplyCap` was given a non-zero cap below what already exists: mints ever in
 Sequential mode (ids are never reused), or live supply in Pooled mode.
@@ -1159,7 +1136,7 @@ Standard ERC721 error: a transfer named a sender that does not own the token.
 Standard ERC721 error: the referenced token id does not exist (never minted or
 already burned).
 
-**`ExceedsCap()`**
+**`ExceedsCap(uint256 cap, uint256 attempted)`**
 
 A mint would cross the supply cap: mints ever in Sequential mode, or live supply
 in Pooled mode.
@@ -1234,16 +1211,6 @@ non-pending-owner.
 `initialize` was given the zero address as the owner. A collection must have an
 owner.
 
-**`PooledNeedsMintToId()`**
-
-`mintTo` was called on a Pooled collection, where the minter must supply the id.
-Use `mintToId`.
-
-**`PooledSellsViaMinter()`**
-
-A built-in paid path (`mint` or `mintWithReferral`) was called on a Pooled
-collection. Pooled collections sell exclusively through their authorized minter.
-
 **`ReentrancyGuardReentrantCall()`**
 
 Standard OpenZeppelin ReentrancyGuard error: a `nonReentrant` function was
@@ -1272,17 +1239,12 @@ The ETH transfer inside `rescueStrayETH` reverted.
 
 `initialize` or `setRoyalty` was given a royalty above the 50% cap (`5000` bps).
 
-**`SequentialAssignsIds()`**
-
-`mintToId` was called on a Sequential collection, where the core assigns ids. Use
-`mintTo`.
-
 **`SupplyIsLocked()`**
 
 `setSupplyCap` or `lockSupply` was called after `lockSupply`. The supply cap is
 permanently frozen.
 
-**`Underpayment()`**
+**`Underpayment(uint256 required, uint256 sent)`**
 
 A mint with a price strategy set sent less than the strategy's resolved price.
 Send at least `currentPrice`; any excess accrues back to the payer.
@@ -1292,7 +1254,7 @@ Send at least `currentPrice`; any excess accrues back to the payer.
 The ETH transfer inside `withdraw` reverted, for example a recipient that rejects
 payment. Nothing is drained; the balance stays claimable.
 
-**`WrongPayment()`**
+**`WrongPayment(uint256 required, uint256 sent)`**
 
 A mint with no price strategy set did not send exactly `price * quantity`. Fixed
 pricing requires an exact match.

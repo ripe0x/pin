@@ -65,5 +65,10 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "error",
+    "name": "AssetsRequired",
+    "inputs": []
   }
 ]

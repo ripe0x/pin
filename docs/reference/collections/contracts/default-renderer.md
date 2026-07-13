@@ -66,3 +66,10 @@ attributes, not rarity traits; DefaultRenderer draws no trait data from the
 work itself. The collection name and the image URI are JSON-escaped per
 RFC 8259 before being embedded, so an owner-controlled name or artwork URI
 can never break the JSON structure.
+
+## Errors
+
+**`AssetsRequired()`**
+
+Reverts construction when the RenderAssets address is zero: the renderer has no
+registry to read images from.

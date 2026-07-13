@@ -177,6 +177,10 @@ export function decodeWorkConfig(raw: RawWorkConfig): WorkConfig {
   }
 }
 
+// Mirrors the onchain CollectionConfig struct returned by config(). idMode is
+// NOT a field here — it's a structural fact read separately via idMode(). The
+// two one-way locks live on the struct but are surfaced separately on the
+// collection (isRendererLocked/isSupplyLocked), so this decoder ignores them.
 type RawCollectionConfig = {
   price: bigint
   supplyCap: bigint
@@ -188,10 +192,13 @@ type RawCollectionConfig = {
   renderer: Address
   mintHook: Address
   priceStrategy: Address
-  idMode: number
+  rendererLocked: boolean
+  supplyLocked: boolean
 }
 
-export function decodeCollectionConfig(raw: RawCollectionConfig): CollectionConfig {
+/** idMode is read separately (idMode()); it left the config struct in the
+ *  Sequential/Pooled split, so it's passed in rather than decoded from raw. */
+export function decodeCollectionConfig(raw: RawCollectionConfig, idMode: IdMode): CollectionConfig {
   return {
     price: raw.price,
     supplyCap: raw.supplyCap,
@@ -203,7 +210,7 @@ export function decodeCollectionConfig(raw: RawCollectionConfig): CollectionConf
     renderer: raw.renderer,
     mintHook: raw.mintHook,
     priceStrategy: raw.priceStrategy,
-    idMode: Number(raw.idMode),
+    idMode,
   }
 }
 

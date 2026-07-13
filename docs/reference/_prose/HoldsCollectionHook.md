@@ -63,3 +63,14 @@ Emitted on every `setRequired` call, including clearing the gate back to
 the zero address. `collection` is indexed. An indexer watching this event
 reconstructs the full requirement history for any collection that has ever
 used this hook.
+
+## error MustHoldRequired
+
+The minter holds none of the required collection's tokens. Carries the required
+collection address.
+
+## error NotCollectionAdmin
+
+A hook setter was called by an address that is neither the collection's owner
+nor one of its admins. Inherited from HookBase — configuring a hook for a
+collection needs the same authority as the collection's own setters.

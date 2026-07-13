@@ -123,6 +123,16 @@ JSON-escaped before embedding.
 
 ## Errors
 
+**`BuilderRequired()`**
+
+Reverts construction when the ScriptyBuilderV2 address is zero: the renderer would
+have nothing to assemble the HTML document with.
+
+**`GunzipStoreRequired()`**
+
+Reverts at `tokenURI` time when a dependency or code file is gzipped but no gunzip
+store was configured, so the gzip tags could never be decompressed in the browser.
+
 **`NoCode()`**
 
 Reverts construction when the `code` array is empty: a renderer with no artist

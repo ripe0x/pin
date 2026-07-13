@@ -58,9 +58,11 @@ function createCollection(string name, string symbol, address owner, CollectionC
 belongs to the `owner` argument, which becomes the collection's `Ownable`
 owner)
 
-Deploys an EIP-1167 clone of `implementation` and initializes it atomically
-with the given name, symbol, owner, `CollectionConfig`, extension minters, and
-creator listing. Reverts with `owner required` if `owner` is the zero address.
+Deploys an EIP-1167 clone of `sequentialImplementation` — the **sequential**
+form, where the contract assigns ids (1, 2, 3…) and collectors buy through the
+built-in paid paths — and initializes it atomically with the given name,
+symbol, owner, `CollectionConfig`, extension minters, and creator listing.
+Reverts `OwnerRequired` if `owner` is the zero address.
 
 `initialMinters` grants extension-minter status at init, so pooled or backed
 forms that sell exclusively through a custom minter deploy fully wired in
@@ -83,6 +85,21 @@ address collection = factory.createCollection(
     creators
 );
 ```
+
+### createPooledCollection
+
+```solidity
+function createPooledCollection(string name, string symbol, address owner, CollectionConfig cfg, address[] initialMinters, address[] creators) external returns (address collection)
+```
+
+**Access:** permissionless (ongoing control belongs to the `owner` argument)
+
+The same call for the **pooled** form: deploys an EIP-1167 clone of
+`pooledImplementation`, where an authorized minter chooses every id
+(`tokenId == sourceId`) and owns the pool's economics. Grant that minter in
+`initialMinters` so the work deploys fully wired in one transaction. Same
+signature, same init, same `CollectionCreated` event (stamped with the pooled
+`idMode`) as `createCollection`; only the implementation cloned differs.
 
 ### deprecate
 
@@ -119,9 +136,10 @@ function catalog() external view returns (address)
 ```
 
 The [Catalog](/docs/collections/contracts/catalog) singleton wired into every
-collection created by this factory. The zero address disables the
-opening-roster integration: `createCollection` skips the Catalog write
-regardless of what `artists` is passed.
+collection created by this factory, which each collection reads to confirm
+creators (`isConfirmedCreator`). The Catalog is only ever read, never written.
+The zero address disables confirmation: a collection wired with no Catalog can
+still list creators, but never marks any of them confirmed.
 
 ```bash
 cast call <COLLECTION_FACTORY_ADDRESS> "catalog()(address)" \
@@ -155,17 +173,6 @@ function deprecated() external view returns (bool)
 
 True once the factory has been permanently deprecated (new deploys revert).
 
-### implementation
-
-```solidity
-function implementation() external view returns (address)
-```
-
-The `Collection` implementation address every clone points at via
-`DELEGATECALL`. Fixed at factory construction; there is no setter, so every
-collection this factory has ever created or will create shares the exact
-same core logic.
-
 ### isCollection
 
 ```solidity
@@ -174,6 +181,26 @@ function isCollection(address) external view returns (bool)
 
 Whether `address` is a collection this factory deployed. Cheaper than
 scanning `allCollections` when a caller only needs a membership check.
+
+### pooledImplementation
+
+```solidity
+function pooledImplementation() external view returns (address)
+```
+
+The `PooledCollection` implementation every `createPooledCollection` clone points
+at. Fixed at construction, no setter — the pooled form's counterpart to
+`sequentialImplementation`.
+
+### sequentialImplementation
+
+```solidity
+function sequentialImplementation() external view returns (address)
+```
+
+The sequential `Collection` implementation every `createCollection` clone points
+at via `DELEGATECALL`. Fixed at factory construction; there is no setter, so
+every sequential collection shares the exact same core logic.
 
 ### successor
 
@@ -198,7 +225,7 @@ has deployed.
 ### CollectionCreated
 
 ```solidity
-event CollectionCreated(address indexed owner, address indexed collection)
+event CollectionCreated(address indexed owner, address indexed collection, IdMode idMode)
 ```
 
 Emitted once per successful `createCollection` call, with `owner` and
@@ -240,6 +267,17 @@ variants when the factory's own ETH balance is less than the value being
 forwarded to the new clone. `createCollection` does not forward value, so
 this is not reachable through the factory's public surface today.
 
+**`NotAContract(address account)`**
+
+The factory constructor was given an implementation, pooled implementation, or
+default renderer address with no code. Guards against wiring a factory to an
+address that cannot be a valid clone target or renderer.
+
 **`NotDeployer()`**
 
 `deprecate` was called by an address other than the factory deployer.
+
+**`OwnerRequired()`**
+
+`createCollection` or `createPooledCollection` was given the zero address as the
+collection `owner`. A collection must have an owner.
