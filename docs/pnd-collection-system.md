@@ -14,8 +14,10 @@
 > deploy gate.** It must cover the core + the admin delta + the 2026-07-13
 > batch (mintFor, renderer guard, RenderAssets template/capturer,
 > isAdmin(owner) — now in code) + the launch project's renderer. The running
-> review log is `docs/pnd-collection-reaudit-notes.md`; everything
-> deliberately deferred past deploy is `docs/pnd-collection-post-deploy.md`.
+> review log is `docs/pnd-collection-reaudit-notes.md`. The post-deploy →
+> launch window has a runbook with kickoff prompts
+> (`docs/pnd-collection-prelaunch.md`); everything deferred past launch is
+> `docs/pnd-collection-post-deploy.md`.
 >
 > **The first launch project is all-SVG**, so the HTML-generative thumbnail
 > problem does not gate it. That work (a MURI preservation overlay + client-side

@@ -216,10 +216,13 @@ describing graph/path as core fields predate this and are historical.
 
 ## See also
 
+- `docs/pnd-collection-prelaunch.md` — the post-deploy → launch runbook:
+  ordered checklist (addresses, source verification, discovery indexing,
+  launch collection, mint surfaces, pre-announce audit) with a
+  ready-to-paste kickoff prompt per item.
 - `docs/pnd-collection-post-deploy.md` — everything deliberately deferred
-  past the collection system's immutable mainnet deploy (discovery
-  indexing, capture tooling, MURI adapter, additive minter/hook modules),
-  so it doesn't get forgotten.
+  past the collection system's launch (capture tooling, MURI adapter,
+  additive minter/hook modules), so it doesn't get forgotten.
 - `docs/pnd-editions-README.md` — PND Editions: overview, file map, dev/test/
   deploy, verification status (entry point; links the design plan, interface
   spec, integration runbook, and e2e harness).
