@@ -476,13 +476,6 @@ abstract contract CollectionCore is
         return seed;
     }
 
-    /// @dev Was this id ever minted, any instance. The seed is stamped on
-    ///      every mint and keccak never returns zero, so the seed IS the
-    ///      record.
-    function _wasMinted(uint256 tokenId) internal view returns (bool) {
-        return _seed[tokenId] != bytes32(0);
-    }
-
     /// @dev Status is a pure function of the window, the cap, and the clock.
     ///      Nothing stored, nothing to drift: change the window and the
     ///      status follows. Scheduled — before mintStart (the paid path

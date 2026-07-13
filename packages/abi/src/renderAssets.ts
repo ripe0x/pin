@@ -3,30 +3,6 @@
 export const renderAssetsAbi = [
   {
     "type": "function",
-    "name": "captureOf",
-    "inputs": [
-      {
-        "name": "collection",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "tokenId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "string",
-        "internalType": "string"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "coverOf",
     "inputs": [
       {

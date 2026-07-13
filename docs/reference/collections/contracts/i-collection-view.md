@@ -40,18 +40,6 @@ view; the collection's token id assignment model, `Sequential` or `Pooled`,
 fixed at initialization. See [id modes](/docs/collections/concepts/id-modes) for what
 each mode means for id assignment and reuse after burn.
 
-### isAdmin
-
-```solidity
-function isAdmin(address account) external view returns (bool)
-```
-
-view; whether the account holds an explicit admin grant on the collection
-(the owner is an implicit admin). Renderer-land registries (RenderAssets, and
-any bring-your-own renderer that stores per-collection config) borrow this as
-their write authority, so managing presentation data carries exactly the same
-authority as the collection's own setters.
-
 ### name
 
 ```solidity

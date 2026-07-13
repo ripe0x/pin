@@ -33,14 +33,6 @@ order, first = id 1, and final = the status is `Closed` and the id equals
 [Mint Marks and entropy](/docs/collections/concepts/mint-marks-and-entropy).
 
 
-## function isAdmin
-
-view; whether the account holds an explicit admin grant on the collection
-(the owner is an implicit admin). Renderer-land registries (RenderAssets, and
-any bring-your-own renderer that stores per-collection config) borrow this as
-their write authority, so managing presentation data carries exactly the same
-authority as the collection's own setters.
-
 ## function name
 
 view; the collection's ERC721 name.

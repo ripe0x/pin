@@ -42,10 +42,6 @@ Reverts `LengthMismatch` when the id and URI arrays differ in length. Emits
 The image the bundled renderers serve for a token: its capture if one exists,
 else the collection cover, else "".
 
-## function captureOf
-
-The raw per-token capture URI ("" if none set), without the cover fallback.
-
 ## function coverOf
 
 The collection's shared/cover image URI ("" if none set).

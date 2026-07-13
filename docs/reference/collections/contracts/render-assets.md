@@ -49,14 +49,6 @@ Reverts `LengthMismatch` when the id and URI arrays differ in length. Emits
 
 ## Read functions
 
-### captureOf
-
-```solidity
-function captureOf(address collection, uint256 tokenId) external view returns (string)
-```
-
-The raw per-token capture URI ("" if none set), without the cover fallback.
-
 ### coverOf
 
 ```solidity

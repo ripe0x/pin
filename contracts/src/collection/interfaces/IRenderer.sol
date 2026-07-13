@@ -30,11 +30,6 @@ interface ICollectionView {
 
     function owner() external view returns (address);
 
-    /// @notice Whether `account` holds an explicit admin grant (the owner is
-    ///         an implicit admin). Renderer-side registries borrow this as
-    ///         their write authority.
-    function isAdmin(address account) external view returns (bool);
-
     function totalSupply() external view returns (uint256);
 
     /// @notice Mint-time entropy, stamped in the mint tx. Reverts NeverMinted

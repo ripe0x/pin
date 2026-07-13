@@ -62,8 +62,4 @@ contract RenderAssets {
         if (bytes(capture).length > 0) return capture;
         return coverOf[collection];
     }
-
-    function captureOf(address collection, uint256 tokenId) external view returns (string memory) {
-        return _captures[collection][tokenId];
-    }
 }
