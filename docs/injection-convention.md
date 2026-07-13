@@ -122,7 +122,14 @@ Properties renderers and archives can rely on:
   swapping renderers can never change a token's entropy
 - **Pre-mint simulatable**: like all same-block entropy (Art Blocks
   included), the seed can be computed by simulating the mint before sending
-  it. Acceptable unpredictability for art; disqualifying for lotteries
+  it. Acceptable unpredictability for art; disqualifying for lotteries.
+  The sharp version of this: a contract can mint, read its own seed in the
+  same transaction, and revert unless it likes the outcome — rarity sniping
+  for the cost of gas. For most work this changes nothing (whoever grinds
+  still pays list price for a real token). A drop where rarity variance
+  carries serious money can close it with a mint hook — an EOA-only gate,
+  or a commit-reveal minter module — and that choice belongs to the work,
+  not the core
 - **The substrate, not the ceiling**: an algorithm wanting different seed
   semantics derives its own value from the canonical seed (any pure function
   of it), or records extra mint-time materials (block, recipient, pooled

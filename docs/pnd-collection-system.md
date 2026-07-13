@@ -20,7 +20,8 @@
 > problem does not gate it. That work (a MURI preservation overlay + client-side
 > capture; needs a small shared MURI operator adapter) is deferred post-deploy
 > and tracked in `ripe0x/pin#138`; `docs/pnd-collection-thumbnails.md` is the
-> design but is partly stale vs that issue. Indexer/worker enablement and Phase
+> current design (rewritten 2026-07-13 against RenderAssets v2: capture
+> template + capturer role; one-time permanent storage as the default). Indexer/worker enablement and Phase
 > 5 minters (BackedMinter/PooledIdMinter) remain gated. Deploy is scripted:
 > `DeployCollectionSystem.s.sol` for the singletons, then the project renderer +
 > collection via script (the studio create wizard exists but is unverified, so
@@ -148,8 +149,10 @@ the payment split, hooks interface, sale states, and graph carry over;
 the token layer is new.
 
 - **OZ ERC721** with two mint paths: the built-in path (assigns
-  `nextId++`, takes payment, enforces referral share) and a role-gated
-  `mintTo(recipient, tokenId)` for authorized extension minters. An
+  `nextId++`, takes payment, enforces referral share; `mintFor` is the
+  same door with a recipient — a gift, a hot wallet buying for a vault)
+  and a role-gated `mintTo(recipient, tokenId)` for authorized extension
+  minters. An
   init-time flag sets the id mode: sequential collections never accept
   minter-supplied ids; pooled collections require them. Approval-gated
   `burn(tokenId)`; OZ semantics make a burned id re-mintable, which the
@@ -170,7 +173,13 @@ the token layer is new.
   direct or self-hosted mint. No other protocol fee. On the
   extension-minter path this becomes convention rather than contract
   guarantee: PND-shipped minters honor it; a custom minter is the
-  artist's visible, onchain choice.
+  artist's visible, onchain choice. Said openly: the referrer is
+  caller-supplied, so a collector minting straight from the contract can
+  name themselves and keep the share — list price is effectively 90% for
+  ABI-savvy buyers. Every open referral system shares this property
+  (Zora's mint referrals included); closing it would mean a gatekept
+  referrer registry, which is exactly the platform-ness this system
+  exists to remove.
 - **Work config**: init-time fields on the collection, lockable by the
   artist: script refs (scripty v2 storage pointers, or URI + content
   hash for oversized code), dependency refs, render spec (aspect ratio,
@@ -393,6 +402,25 @@ surface, worker, indexer, artist-page template, Catalog).
   reviewed minter set surfaced by the studio. PND-shipped minters
   honor the share in code; a custom minter is the artist's visible,
   onchain choice.
+- **No SeaDrop-style singleton mint engine (decided 2026-07-13).**
+  OpenSea's SeaDrop was studied as the obvious alternative shape: one
+  shared drop-mechanics contract holding every collection's mint state,
+  with thin token contracts that allowlist it. Rejected for this system.
+  The singleton is, structurally, a fee-enforcement position (per-stage
+  feeBps, allowlisted fee recipients, signed mints that must restrict
+  them) — and this protocol has no fee to enforce; primary-sale money
+  should never pass through a contract the steward deployed. The
+  singleton's genuine benefits are already captured differently: one
+  audit amortized across cloned implementations, proxy-cheap deploys,
+  one ABI plus one factory event for indexers. And the shape survives
+  where it belongs: the minter slot is SeaDrop's `allowedSeaDrop` with
+  the trust arrow flipped — the artist authorizes mint engines, not the
+  platform. If stage-rich drops (concurrent phases, signed mints, payer
+  delegation) are ever wanted, they arrive as a stock **DropMinter**
+  extension-minter singleton serving many collections, opt-in per
+  artist, never as core changes. The shared-singleton pattern is used
+  exactly where custody never lives: hooks, RenderAssets, the default
+  renderer.
 
 Still open (gates Phase 5 only, not v1): BackedMinter launch
 guardrails (vetted coins vs permissionless with liquidity checks).

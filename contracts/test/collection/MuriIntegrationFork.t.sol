@@ -15,20 +15,29 @@ interface IMURIProtocol {
         returns (bool);
 }
 
+/// @dev Stand-in for a MURI operator adapter: enough of a contract that MURI's
+///      registration-time calls land somewhere real. The genuine adapter
+///      (supportsInterface + isTokenOwner via ERC721 ownerOf + a permissioned
+///      forwarder) is the next work item.
+contract PermissiveOperatorStub {
+    function supportsInterface(bytes4) external pure returns (bool) {
+        return true;
+    }
+}
+
 /// @title MuriIntegrationForkTest
 /// @notice Fork probe that resolved the one unknown behind the MURI-based
 ///         thumbnail design (docs/pnd-collection-thumbnails.md): how does a
 ///         non-Manifold `Collection` wire into the live mainnet MURI
-///         singleton? Two findings, both asserted below against real MURI:
+///         singleton? Findings, asserted below against real MURI:
 ///
 ///         1. MURI gates `registerContract` on `isAdmin(msg.sender)` of the
 ///            target contract (its Manifold admin interface). Collection
-///            exposes `isAdmin` from the multi-admin work, so a collection ADMIN
-///            can register it — MURI needs no Manifold-specific contract TYPE.
-///            But `isAdmin(owner())` is false today (the owner is an implicit,
-///            unlisted admin), so the OWNER cannot register directly until
-///            `isAdmin` counts the owner (one-line change; tracked in
-///            docs/pnd-collection-reaudit-notes.md).
+///            exposes `isAdmin` from the multi-admin work — and, since the
+///            isAdmin(owner) honesty fix, the view counts the OWNER too, so
+///            both the owner and any admin pass MURI's gate directly. MURI
+///            needs no Manifold-specific contract TYPE. A stranger is
+///            rejected at the gate.
 ///
 ///         2. The MURI `operator` must be a CONTRACT: MURI calls it during
 ///            registration, so an EOA reverts ("call to non-contract address").
@@ -68,17 +77,21 @@ contract MuriIntegrationForkTest is CollectionBase {
     }
 
     /// Finding 1: MURI authorizes registration via `isAdmin(msg.sender)` on the
-    /// collection. The owner is not an explicit admin (`isAdmin(owner)==false`),
-    /// so even the owner is rejected today.
+    /// collection. A stranger fails that gate; the OWNER passes it (the
+    /// isAdmin(owner) fix) and, with a contract operator, registers end-to-end.
     function test_fork_muri_registrationGatesOnCollectionIsAdmin() public {
         if (!forked) return;
         Collection c = _collection(_freeConfig()); // owner = artist
+        address operator = address(new PermissiveOperatorStub());
+
+        vm.prank(stranger);
+        vm.expectRevert(); // MURI rejects: c.isAdmin(stranger) == false
+        MURI.registerContract(address(c), operator);
+        assertFalse(MURI.isContractOperator(address(c), operator), "nothing registered");
 
         vm.prank(artist);
-        vm.expectRevert(); // MURI rejects: c.isAdmin(artist) == false
-        MURI.registerContract(address(c), operatorEOA);
-
-        assertFalse(MURI.isContractOperator(address(c), operatorEOA), "nothing registered");
+        MURI.registerContract(address(c), operator); // owner passes the gate
+        assertTrue(MURI.isContractOperator(address(c), operator), "owner registered directly");
     }
 
     /// Finding 2: an explicit admin passes the `isAdmin` gate, but the operator

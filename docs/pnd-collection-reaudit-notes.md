@@ -283,3 +283,96 @@ two-sided, fully onchain attribution primitive on the collection itself:
   enumerates from CreatorListed events, no chain scan; confirmed status is a
   live isConfirmedCreator read). Docs regenerated (Attribution page removed,
   42 pages, zero stale/broken refs).
+
+## 2026-07-13 (f): SeaDrop-review batch — pre-deploy ABI freezes
+
+Un-reviewed. Outcome of a full contract review plus a comparative study of
+OpenSea's SeaDrop (decision record: pnd-collection-system.md § 8.5 — the
+singleton mint-engine model was evaluated and rejected; stage-rich drops
+arrive later as a stock DropMinter extension minter, not core changes). Every
+item here is deploy-gated: impossible to add after the immutable deploy.
+Decisions taken by Dave 2026-07-13: `setPayoutAddress` STAYS admin-accessible
+(flat-admin model preserved); mintFor added; contractURI enrichment is
+cover-image-only (no onchain description storage); additive modules
+(HookChain, signed-mint hook, DropMinter) deferred post-deploy.
+
+### f1: isAdmin counts the owner (planned in Change 1, now landed)
+
+`CollectionCore.isAdmin` returns `account == owner() || _admins[account]`.
+Authorization is UNCHANGED — the `onlyOwnerOrAdmin` modifier always had an
+`|| owner()` arm; only the view's report changes. Unblocks MURI: its
+`registerContract` gates on `isAdmin(msg.sender)`, so the owner now passes
+directly. `MuriIntegrationFork.t.sol` upgraded to prove it end-to-end against
+live mainnet MURI (owner registers with a contract operator stub; stranger
+rejected at the gate). Reviewer check: no auth path changed; only
+`isAdmin`-consuming externals see a difference.
+
+### f2: mintFor — paid gift-mint on the sequential final
+
+New `Collection.mintFor(address to, uint256 quantity, address referrer,
+bytes hookData) payable nonReentrant` (also on ICollection). `_mintPaid`
+refactored to take the recipient; `mint`/`mintWithReferral` pass `msg.sender`
+(behavior-identical). Semantics: hooks AND the price strategy judge `to` (the
+recipient), matching the extension `mintTo` path — an allowlist gates the
+collector, not their payer; the per-wallet cap counts the recipient.
+Overpayment refunds on the strategy path accrue to `_pending[msg.sender]`
+(the payer). `Minted.to` = recipient. Reviewer focus: the recipient/payer
+split (gate by `to`, refund to payer) is the whole delta; window, cap,
+payment, settle, and reentrancy behavior are byte-identical to
+mintWithReferral. New suite: CollectionMintFor.t.sol (10 tests incl.
+allowlist-gates-recipient and refund-to-payer).
+
+### f3: renderer must be a contract + ERC-7572 signal
+
+- `initialize` and `setRenderer` now revert `RendererNotContract(address)`
+  when the resolved renderer has no code. Closes a permanent footgun: a
+  collection born `rendererLocked` with a typo'd EOA renderer could never
+  render and never be fixed.
+- `setRenderer` additionally emits ERC-7572 `ContractURIUpdated()` beside the
+  ERC-4906 batch refresh (a renderer change can change contract-level
+  metadata).
+
+### f4: RenderAssets v2 — capture template rung + narrow capturer role
+
+Two additions to the (not-yet-deployed) singleton, both motivated by the
+thumbnail economics (docs/pnd-collection-thumbnails.md, rewritten):
+
+- **Template rung**: `templateOf[collection]` + `setCaptureTemplate`; every
+  `{id}` resolves to the token id at read time (solady LibString.replace).
+  `imageFor` ladder is now capture → template → cover → "". One small tx
+  refreshes a whole drop's thumbnails (vs one storage write per token).
+- **Capturer role**: `isCapturer[collection][account]` + `setCapturer`
+  (admin-gated). `setCaptures`/`setCaptureTemplate` accept admin-or-capturer;
+  `setCover` and `setCapturer` stay admin-only. Risk ceiling of a rogue
+  capturer = a wrong, refreshable thumbnail; it can never touch money,
+  minters, or the art. Resolves the "flat admins vs narrow thumbnails-only
+  key" open decision from the thumbnails doc — in renderer-land, where it is
+  cheap, instead of the core, where it was rightly rejected.
+
+Reviewer focus: the capturer gate must never reach beyond the two capture
+writes; the auth modifiers borrow the collection's owner/isAdmin exactly as
+the hooks do. New suite: renderers/RenderAssets.t.sol (9 tests).
+
+### f5: renderer enrichment — contractURI cover + ScriptyRenderer wiring
+
+- `DefaultRenderer.contractURI` now includes `"image": coverOf(collection)`
+  when set (escaped) — contract-level metadata drives the marketplace
+  collection page.
+- `ScriptyRenderer` gains an optional `renderAssets_` constructor param
+  (address(0) = previous behavior). Wired: default `_image` resolves the
+  RenderAssets ladder and `contractURI` carries the cover — the flagship
+  HTML-generative tier no longer ships imageless by default. New unit suite
+  templates/ScriptyRendererImage.t.sol (mock builder; document assembly still
+  proven by the fork test).
+
+### Sizes / tests after (f)
+
+- Collection (sequential final) 18,663 bytes runtime (EIP-170 margin 5,913);
+  PooledCollection 16,488 (margin 8,088). Size-gate tests green.
+- 226 unit tests green (was 198 pre-batch; new: mintFor 10, RenderAssets 9,
+  ScriptyRendererImage 3, renderer-guard 2, isAdmin(owner) 1, contractURI 2,
+  template rung 1) including the 18 invariant runs; 4 fork tests green
+  against live mainnet (MURI probe + scripty assembly).
+- ABIs re-emitted (packages/abi/src + apps/indexer/abis), web typecheck
+  clean, reference docs regenerated (42 pages, strict prose/ABI check
+  passing).

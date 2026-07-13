@@ -35,7 +35,7 @@
           "kind": "singleton",
           "abi": "/abis/RenderAssets.json",
           "docs": "/docs/collections/contracts/render-assets",
-          "role": "The renderer-land registry of static display assets: each collection's shared cover image and per-token captures (thumbnails of rendered output)."
+          "role": "The renderer-land registry of static display assets: each collection's shared cover image, per-token captures (thumbnails of rendered output), and a capture template that resolves per token id."
         },
         "ScriptyRenderer": {
           "address": null,

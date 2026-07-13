@@ -6,6 +6,7 @@ import {LibString} from "solady/utils/LibString.sol";
 
 import {IRenderer, ICollectionView} from "../interfaces/IRenderer.sol";
 import {IdMode} from "../CollectionTypes.sol";
+import {RenderAssets} from "../renderers/RenderAssets.sol";
 import {CodeKind, CodeRef} from "./CodeTypes.sol";
 import {IScriptyBuilderV2} from "./vendor/scripty/interfaces/IScriptyBuilderV2.sol";
 import {HTMLRequest, HTMLTag, HTMLTagType} from "./vendor/scripty/core/ScriptyStructs.sol";
@@ -40,7 +41,8 @@ import {HTMLRequest, HTMLTag, HTMLTagType} from "./vendor/scripty/core/ScriptySt
 ///
 ///         **Fork points** (override in a subclass — see ExampleScriptyWork):
 ///         - `_workTraits(seed)` to publish seed-derived onchain traits
-///         - `_image(collection, tokenId)` to add a poster/thumbnail
+///         - `_image(collection, tokenId)` to change where the poster/
+///           thumbnail comes from (default: RenderAssets, when wired)
 ///         - `_headTags()` to customize the document `<head>`
 contract ScriptyRenderer is IRenderer {
     using LibString for uint256;
@@ -56,6 +58,13 @@ contract ScriptyRenderer is IRenderer {
     /// @notice Render-context injection convention version, echoed to the work
     ///         as `tokenData.version`.
     uint8 public immutable injectionVersion;
+
+    /// @notice Where the cover and per-token captures live, when wired
+    ///         (address(0) = no static images; `animation_url` stands alone).
+    ///         Marketplace grids show `image`, not the live render, so a work
+    ///         that wants tiles on those surfaces points this at the
+    ///         RenderAssets singleton and sets captures there.
+    RenderAssets public immutable renderAssets;
 
     /// @dev Set once in the constructor, never mutated (no setter exists), so
     ///      they are immutable in behavior even though Solidity `immutable`
@@ -74,7 +83,8 @@ contract ScriptyRenderer is IRenderer {
         string memory gunzipFile_,
         CodeRef[] memory code_,
         CodeRef[] memory deps_,
-        uint8 injectionVersion_
+        uint8 injectionVersion_,
+        address renderAssets_
     ) {
         if (scriptyBuilder_ == address(0)) revert BuilderRequired();
         if (code_.length == 0) revert NoCode();
@@ -84,6 +94,7 @@ contract ScriptyRenderer is IRenderer {
         gunzipStore = gunzipStore_;
         _gunzipFile = gunzipFile_;
         injectionVersion = injectionVersion_;
+        renderAssets = RenderAssets(renderAssets_);
         for (uint256 i = 0; i < code_.length; i++) {
             _code.push(code_[i]);
         }
@@ -130,9 +141,21 @@ contract ScriptyRenderer is IRenderer {
         return string(abi.encodePacked("data:application/json;base64,", Base64.encode(json)));
     }
 
+    /// @dev Contract-level metadata drives the marketplace collection page;
+    ///      the cover, when the registry is wired and one is set, is what
+    ///      that page shows.
     function contractURI(address collection) external view override returns (string memory) {
-        bytes memory json =
-            abi.encodePacked('{"name":"', LibString.escapeJSON(ICollectionView(collection).name()), '"}');
+        string memory cover =
+            address(renderAssets) == address(0) ? "" : renderAssets.coverOf(collection);
+        bytes memory json = abi.encodePacked(
+            '{"name":"',
+            LibString.escapeJSON(ICollectionView(collection).name()),
+            '"',
+            bytes(cover).length > 0
+                ? string(abi.encodePacked(',"image":"', LibString.escapeJSON(cover), '"'))
+                : "",
+            "}"
+        );
         return string(abi.encodePacked("data:application/json;base64,", Base64.encode(json)));
     }
 
@@ -218,20 +241,14 @@ contract ScriptyRenderer is IRenderer {
         head[0].tagType = HTMLTagType.useTagOpenAndClose;
     }
 
-    /// @dev Optional poster/thumbnail for the metadata `image` field. Default:
-    ///      none (the `animation_url` is the artwork). Override to return a
-    ///      static URI — e.g. read a capture/cover from a RenderAssets registry.
-    function _image(
-        address,
-        /* collection */
-        uint256 /* tokenId */
-    )
-        internal
-        view
-        virtual
-        returns (string memory)
-    {
-        return "";
+    /// @dev Poster/thumbnail for the metadata `image` field. Default: the
+    ///      RenderAssets lookup (capture, else template, else cover) when the
+    ///      registry is wired, nothing otherwise — either way,
+    ///      `animation_url` remains the artwork. Override for a custom
+    ///      source.
+    function _image(address collection, uint256 tokenId) internal view virtual returns (string memory) {
+        if (address(renderAssets) == address(0)) return "";
+        return renderAssets.imageFor(collection, tokenId);
     }
 
     /// @dev Seed-derived onchain traits, appended to the derived provenance

@@ -17,49 +17,52 @@ forever.
 flowchart LR
     A["1. Deploy<br/>clone via factory"] --> B["2. Configure<br/>price · cap · window · slots"]
     B --> C["3. Mint<br/>collectors call mint()"]
-    C --> D["4. Read<br/>marks · seeds · paths"]
-    B -. optional, one-way .-> E["Freeze<br/>lockWork · freezeMetadata"]
+    C --> D["4. Read<br/>seeds · config · status"]
+    B -. optional, one-way .-> E["Lock<br/>lockRenderer · lockSupply"]
 ```
 
 ## 1. Deploy
 
 You do not write a contract. The **CollectionFactory** stamps out a new
-**Collection** as a cheap clone and calls `initialize` on it once.
+collection as a cheap clone and calls `initialize` on it once. There are two
+doors, one per **id mode**: `createCollection` for the sequential form (the
+contract counts ids) and `createPooledCollection` for the pooled form (your
+authorized minter chooses ids).
 
-You hand `initialize` an `InitParams` bundle:
+You hand the factory:
 
 - **name, symbol, owner** for the ERC-721.
-- **config**: price, supply cap, mint window, royalty, and the **id mode**
-  (sequential or pooled). Most of these are fixed for good once set (see below).
-- **work**: the generative work definition, if any. Empty for a plain edition.
-- **slots**: the renderer, and optionally a price strategy, mint hook, and one or
-  more initial extension minters. Leaving a slot empty uses the built-in default.
-
-Because a backed or pooled work needs its minter wired in from the first block,
-`initialMinters` lets you authorize those at deploy, in the same transaction.
+- **config**: price, supply cap, mint window, royalty, payout address, the
+  slot addresses (renderer, price strategy, mint hook), and the two one-way
+  locks — pass a lock `true` and the collection is born locked, no second
+  transaction to remember. Leave the renderer empty to get the default.
+- **initialMinters**: extension minters authorized from the first block, so a
+  backed or pooled work deploys fully wired in one transaction.
+- **creators**: your side of the attribution handshake, for co-created works
+  (each listed creator confirms by claiming the collection in their own
+  Catalog).
 
 ## 2. Configure
 
-Some settings are locked at deploy. Others you can change until you choose to
-freeze. Knowing which is which matters, because the locked ones are permanent.
+Almost everything stays adjustable — the artist keeps the levers — until you
+choose to make a promise permanent. Two locks exist, both one-way:
 
-| Setting | When it is set | Can change later? |
-| --- | --- | --- |
-| price, supply cap, mint window | at deploy | no, fixed for good |
-| id mode (sequential / pooled) | at deploy | no, fixed for good |
-| royalty | at deploy | no, fixed for good |
-| renderer, price strategy, mint hook | deploy or after | yes, until you `freezeMetadata` |
-| extension minters | deploy or after | yes, grant or revoke anytime (`setMinter`) |
-| work definition | deploy or after | yes, until you `lockWork` |
-| payout address, per-token artwork | after | yes, until you `freezeMetadata` |
+| Setting | Can change later? |
+| --- | --- |
+| price, mint window, royalty, payout address | yes, anytime |
+| supply cap | yes, until you `lockSupply` |
+| renderer | yes, until you `lockRenderer` |
+| price strategy, mint hook | yes, anytime |
+| extension minters | yes, grant or revoke anytime (`setMinter`) |
+| admins | yes, owner grants and revokes anytime |
+| id mode (sequential / pooled) | no — it is which contract you deployed |
+| cover image, per-token captures | yes, forever (they live in RenderAssets and mirror the art; they are not the art) |
 
-The two freeze actions are one-way:
-
-- `lockWork` freezes the generative work definition.
-- `freezeMetadata` freezes artwork and renderer changes.
-
-Once both are done, `isPermanent()` returns true: the art can never change. The
-contract itself was already immutable from deploy.
+- **`lockSupply`** makes the cap the scarcity promise: an edition of 100 is
+  100, and no later minter grant can climb over it.
+- **`lockRenderer`** pins the renderer pointer forever. Point it at an
+  immutable renderer (a `ScriptyRenderer`, a Solidity SVG work) first and the
+  presentation is provably permanent end to end.
 
 ## 3. Mint
 
@@ -68,20 +71,24 @@ There are two mint paths. Pick by what your drop needs.
 ```mermaid
 flowchart TD
     Q{"What does the mint need?"}
-    Q -->|"a standard drop:<br/>fixed price, mint to buyer"| BI["<b>Built-in path</b><br/>mint() or mintWithReferral()<br/>the core holds the money"]
+    Q -->|"a standard drop:<br/>fixed price, mint to buyer"| BI["<b>Built-in path</b><br/>mint(), mintWithReferral(), mintFor()<br/>the core holds the money"]
     Q -->|"custom economics:<br/>backed, pooled, auction"| EX["<b>Extension path</b><br/>your authorized minter calls<br/>mintTo() or mintToId()"]
 ```
 
-### Built-in path (most drops)
+### Built-in path (most drops, sequential form only)
 
 - **`mint(quantity)`**: mints to the caller at the fixed price. The whole price
   goes to the artist. This is the honest default.
 - **`mintWithReferral(quantity, referrer, data)`**: the same, but 10% (the
   **referral share**) goes to whoever hosted the mint. Pass the zero address and
   it folds back to the artist. `data` is passed through to the mint hook, if any.
+- **`mintFor(to, quantity, referrer, data)`**: the paid gift-mint — you pay,
+  `to` receives. Allowlists and per-wallet caps judge the recipient, and any
+  overpayment refund comes back to you, the payer.
 
-The core takes the money, splits it, and pays out. A mint hook (allowlist,
-per-wallet cap) runs on this path too, so gating is independent of pricing.
+The core takes the money, splits it, and holds it for withdrawal. A mint hook
+(allowlist, per-wallet cap) runs on this path too, so gating is independent of
+pricing.
 
 ### Extension path (custom economics)
 
@@ -89,9 +96,9 @@ For anything the fixed-price path cannot express (a token backed by escrowed
 value, a random draw from a pool, an auction), the artist authorizes a **minter**
 contract with `setMinter`, and that contract mints through:
 
-- **`mintTo(to, referrer, data)`** in sequential mode (the core assigns the id).
-- **`mintToId(to, tokenId, referrer, data)`** in pooled mode (the minter supplies
-  the id).
+- **`mintTo(to, referrer, data)`** on the sequential form (the core assigns the id).
+- **`mintToId(to, tokenId, referrer, data)`** on the pooled form (the minter
+  supplies the id).
 
 These are non-payable: the minter handles all the money itself. Crucially, the
 core still enforces the supply cap and refuses to mint a duplicate id, no matter
@@ -100,12 +107,12 @@ bookkeeper.
 
 ## Sequential or pooled?
 
-You choose this once, at deploy. It changes how ids and supply behave.
+You choose this once, at deploy, by choosing which contract to deploy.
 
 ```mermaid
 flowchart TD
     S{"Does a burned token<br/>ever come back?"}
-    S -->|"no: a permanent edition"| SEQ["<b>Sequential</b><br/>ids 0,1,2… in mint order<br/>cap counts mints ever<br/>owner can burn"]
+    S -->|"no: a permanent edition"| SEQ["<b>Sequential</b><br/>ids 1,2,3… in mint order<br/>cap counts mints ever<br/>holder can burn"]
     S -->|"yes: redeemable / backed<br/>(burn returns value, id reused)"| POOL["<b>Pooled</b><br/>minter supplies each id<br/>cap counts live tokens<br/>only the minter burns"]
 ```
 
@@ -117,17 +124,19 @@ pool to be minted again.
 
 Everything a token carries is queryable onchain.
 
-- **`config()`**: price, cap, mint window, current status, and how many have
-  minted.
-- **`mintMarkOf(tokenId)`**: that token's provenance (mint order, block, phase,
-  referrer).
-- **`tokenSeed(tokenId)`**: the token's generative seed.
-- **`pathOf(tokenId)`**: the token's forward pointer, if set (see
-  [Token Path](collection-glossary.md#provenance)).
+- **`config()`**: every live setting, the derived lifecycle status
+  (Scheduled / Open / Closed), and how many tokens have ever minted.
+- **`tokenSeed(tokenId)`**: the token's generative seed — the one thing the
+  core stores per token. Everything else derives: in sequential mode the token
+  id IS the mint order, and the rest of a mint's story (referrer, status,
+  block) lives permanently in the `Minted` event.
 - **`currentPrice(minter, quantity, data)`**: a live price quote (the strategy if
   one is set, otherwise the fixed price times quantity).
-- **`referralShareBps()`**: the fixed referral share, in basis points (1000).
-- **`isPermanent()`**: whether the art is frozen for good.
+- **`REFERRAL_SHARE_BPS()`**: the fixed referral share, in basis points (1000).
+- **`isRendererLocked()` / `isSupplyLocked()`**: which promises have been made
+  permanent.
+- **`isConfirmedCreator(who)`**: live, two-sided attribution — the owner listed
+  `who` AND `who` claimed this collection in their Catalog.
 
 ## Money out (pull payments)
 
@@ -141,3 +150,4 @@ ever go to the address they are owed to. Check a balance with
 - Terms you hit here: [glossary](collection-glossary.md).
 - Why it is built this way: [pnd-collection-system.md](pnd-collection-system.md).
 - Generative work render contract: [injection-convention.md](injection-convention.md).
+- Thumbnails, covers, and captures: [pnd-collection-thumbnails.md](pnd-collection-thumbnails.md).

@@ -25,13 +25,20 @@ flowchart TD
 
 **Collection** — one artist's ERC-721 contract, deployed as a cheap clone. It is
 immutable from the moment it ships: no upgrades, no admin backdoor. What deploys
-is what runs, forever.
+is what runs, forever. It comes in two forms, one per id mode: `Collection`
+(sequential) and `PooledCollection` (pooled).
 
 **CollectionFactory** — the contract that stamps out new Collections as clones,
-so deploying one costs very little gas.
+so deploying one costs very little gas. One door per form:
+`createCollection` and `createPooledCollection`.
 
 **Slot** — a plug-in point on a Collection. There are four (renderer, price, mint
 hook, minter). Swapping a slot changes behavior without touching the core.
+
+**Admin** — a key the owner grants (`addAdmin`) that can use every management
+function except managing admins and transferring ownership. Flat and
+full-access by design; the owner stays the root. `isAdmin` reports the owner
+too, since the owner has always held every admin power.
 
 **Companion contract** — an optional, small, per-work contract that holders write
 to (locks, votes, attestations) and that renderers or price strategies read from.
@@ -54,6 +61,11 @@ the fixed price, with no referral cut.
 a **referrer** (whoever hosted the mint) their share. Pass the zero address and
 the whole price goes to the artist.
 
+**mintFor(to, quantity, referrer, data)** — the paid gift-mint: the caller pays,
+`to` receives. A gift, a hot wallet buying for a vault, a sponsor covering a
+collector. Allowlists and per-wallet caps judge the recipient; an overpayment
+refund goes back to the payer.
+
 **mintTo(to, referrer, data)** — an extension mint in sequential mode. An
 authorized minter mints one token to `to`, and the core assigns the next id.
 
@@ -63,7 +75,9 @@ token #1234 for CryptoPunk #1234).
 
 **Referral share** — a fixed 10% of a mint's price that goes to whoever hosted
 the mint. On a direct or self-hosted mint it folds back to the artist. There is
-no other protocol fee.
+no other protocol fee. The referrer is caller-supplied, so an ABI-savvy
+collector can name themselves and keep the share — a property every open
+referral system shares, accepted here rather than gatekept away.
 
 **Extension minter** — a contract the artist authorizes (`setMinter`) to mint on
 custom terms. All the exotic economics live here, never in the core. The artist's
@@ -80,62 +94,74 @@ fast-follow.)
 
 ## Ids and supply
 
-**Id mode** — set once at deploy. It decides how token ids are assigned and how
-supply works. There are two choices: sequential or pooled.
+**Id mode** — a fact of which contract you deployed, not a setting. It decides
+how token ids are assigned and how supply works. There are two choices:
+sequential or pooled.
 
-**Sequential** — the contract numbers tokens 0, 1, 2, and so on, in mint order.
-The supply cap counts every mint ever, and burning a token does not free a slot.
-This is a normal edition.
+**Sequential** — the contract numbers tokens 1, 2, 3, and so on, in mint order:
+the token id IS the mint order. The supply cap counts every mint ever, and
+burning a token does not free a slot. This is a normal edition.
 
 **Pooled** — an authorized minter picks each token's id, and a burned id can be
 minted again as a fresh token. The cap counts tokens currently alive. This is for
 redeemable or backed works, where burning returns value and the id goes back into
-the pool.
+the pool. One consequence worth saying plainly: in a pooled collection the
+minter contract can burn any token, at any time, without the holder's approval —
+that power is what lets a redeem return value without stranding backing, and it
+means the minter contract is part of what a collector is trusting. Read the
+minter before you buy a pooled work; the collection lists it onchain.
 
 **Supply cap** — the maximum supply. In sequential mode it caps total mints ever;
 in pooled mode it caps how many tokens are alive at once. Zero means unlimited.
-The core enforces the cap on every mint path.
+The core enforces the cap on every mint path, and `lockSupply` makes it a
+promise (see Permanence).
 
 ## Provenance
 
-**Mint Mark** — a small onchain record stamped on every token at mint: its mint
-order, the block, the phase it minted in, and the referrer. Read it with
-`mintMarkOf(tokenId)`.
-
 **Entropy / tokenSeed** — a random 32-byte value locked into each token at mint,
 read with `tokenSeed(tokenId)`. Generative art derives its look from this seed.
-It can only ever be produced at mint time, which is why it lives in the core.
+It can only ever be produced at mint time, which is why it lives in the core —
+and it is the ONLY thing the core stores per token.
 
-**Token Path** — a typed onchain "forward pointer" on a token that records where
-it goes next (burned, continued, migrated, merged). It is real onchain state that
-other contracts can read, not just display metadata. Set with `setPath`, read
-with `pathOf`.
-
-**Collection Graph** — typed onchain links from one collection to another (this
-collection is a study of, phase of, or continuation of that one). A link can be
-acknowledged by the other side, which makes the relationship verifiable as mutual.
+**Derived provenance** — everything else about a mint is either the token id
+itself or lives in the event log. In sequential mode the id IS the mint order
+(first mint = id 1; final mint = the highest id once the collection closes),
+and renderers derive those traits live. The `Minted` event permanently records
+the recipient, referrer, mint index, and lifecycle status; the mint block is
+the log's own block. Nothing to store, nothing to drift.
 
 ## Art and rendering
 
 **Renderer** — the contract that turns a token into its art. It is an onchain view
 with full read access, so a token's art can depend on live chain state. If PND
-disappears, the render still works.
+disappears, the render still works. The artist can swap it until they
+`lockRenderer`.
 
-**GenerativeRenderer** — the default renderer. It assembles a complete HTML page
-from code stored onchain plus the token's seed (Art Blocks style, but rendered
-entirely from chain data).
+**DefaultRenderer** — the renderer every collection starts with: a shared,
+ownerless singleton that serves the collection's static image from RenderAssets
+plus derived provenance traits, as metadata JSON.
+
+**ScriptyRenderer** — the bring-your-own generative template (Art Blocks style,
+rendered entirely from chain data). Deploy one per work: the code refs are
+fixed in the constructor and never mutated, so the renderer is immutable by
+construction. Wire it to RenderAssets and marketplace grids get real
+thumbnails; the `animation_url` is always the living work.
 
 **SVGRenderer** — a base for pure-Solidity SVG art. This is the highest
-permanence tier: no JavaScript, renders anywhere that can read an SVG.
+permanence tier: no JavaScript, renders anywhere that can read an SVG, and the
+image itself is generated onchain (no captures needed).
 
-**Work config** — the definition of the algorithm a generative work runs (its
-code, its dependencies, its render settings), stored on the collection. The artist
-can edit it until they `lockWork`, after which it is frozen forever.
+**RenderAssets** — the shared registry of static display assets: each
+collection's cover image, per-token captures, and a capture template that
+resolves `{id}` per token. Writes use the collection's own owner/admin keys,
+and captures can be delegated to a narrow **capturer** key that can touch
+nothing else. Captures are refreshable forever, deliberately: they mirror the
+art, they are not the art. Design: [pnd-collection-thumbnails.md](pnd-collection-thumbnails.md).
 
 **Liveness tier** — an honest label for what a faithful render needs. **pure**:
 seed only, deterministic forever. **chain-live**: reads onchain state at render
 time. **external-live**: reads offchain sources, and is honest that this is
-fragile.
+fragile. Derivable from where a work's assets live; not stored onchain.
 
 **Injection convention** — the rule that the onchain renderer, the studio preview,
 the mint page, and the artist-site embed all feed a generative work the identical
@@ -144,14 +170,18 @@ token context, so a preview is byte-for-byte the real render. Spec:
 
 ## Permanence
 
-**lockWork** — permanently freeze the work definition. One-way, irreversible.
+**lockRenderer** — one-way, optional: pin the renderer pointer forever, so this
+exact contract answers `tokenURI` for good. An immutable renderer behind a
+locked pointer is full presentation permanence; a mutable one behind a locked
+pointer is the artist's explicit, inspectable choice.
 
-**freezeMetadata** — permanently freeze artwork and renderer changes. One-way,
-irreversible.
+**lockSupply** — one-way: lock the supply cap forever. The scarcity promise —
+an edition of 100 is 100, and no later minter grant can climb over it.
 
-**isPermanent** — true once both the work is locked and metadata is frozen, which
-means the art can never change. (The contract itself is immutable from deploy
-regardless.)
+Both locks can also be passed `true` at creation, so a collection can be born
+locked with no second transaction to remember. (The contract itself is
+immutable from deploy regardless; the locks are promises about settings, not
+code.)
 
 ## Shared infrastructure ("rails")
 
@@ -159,8 +189,10 @@ These are already deployed and shared by every Collection.
 
 **Catalog** — the registry where an artist claims their works.
 
-**Attribution** — the registry mapping works to their artist roster. A confirmed
-attribution is a roster entry that the artist also claims in their own Catalog.
+**Creator handshake** — attribution without a registry: the collection owner
+lists creators (`setCreators`), each creator claims the collection in their own
+Catalog, and `isConfirmedCreator` is the live intersection. Neither side can
+fake the other, and either side can retract.
 
 **MURI** — the media-permanence protocol PND uses to anchor a work's media.
 

@@ -103,7 +103,7 @@
               "title": "RenderAssets",
               "slug": "render-assets",
               "path": "/docs/collections/contracts/render-assets",
-              "description": "The renderer-land registry of static display assets: each collection's shared cover image and per-token captures (thumbnails of rendered output)."
+              "description": "The renderer-land registry of static display assets: each collection's shared cover image, per-token captures (thumbnails of rendered output), and a capture template that resolves per token id."
             },
             {
               "title": "ScriptyRenderer",

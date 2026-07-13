@@ -176,6 +176,18 @@ forwarded to both the mint hook and the price strategy. Same window, cap,
 payment, and hook behavior and reverts as `mint`. Emits `ReferralPaid` for a
 non-zero referral cut alongside `Minted`.
 
+## function mintFor
+
+access: permissionless (payable; no caller gate, guarded by window/cap/payment checks)
+
+The paid gift-mint: the caller pays, `to` receives — a gift, a hot wallet
+buying for a vault, a sponsor covering a collector. Identical to
+`mintWithReferral` except for who ends up holding the tokens: `to` is who the
+mint hook and the price strategy judge (an allowlist gates the collector, not
+their payer), the `Minted` event records `to` as the true first owner, and any
+overpayment refund on a price-strategy mint accrues back to the payer, who
+sent it. `to == address(0)` reverts in the token layer.
+
 ## function mintTo
 
 access: minter-only (`msg.sender` must be an authorized extension minter, else `NotMinter`)
@@ -474,8 +486,10 @@ current instance's fresh seed.
 
 ## function isAdmin
 
-True if the account holds an explicit admin grant. The owner is an implicit admin
-and is not required to appear here.
+True if the account may use the admin-gated setters: the owner, or anyone
+holding an explicit grant. The owner has always held every admin power; this
+view reports it, so external integrations that gate on `isAdmin` (MURI's
+`registerContract`) accept the owner directly.
 
 ## function isRendererLocked
 
@@ -675,6 +689,12 @@ ERC-4906 range refresh signal, emitted by `setRenderer` (covering all tokens)
 and by `notifyMetadataUpdate` (renderer- or admin-chosen range). Marketplaces
 subscribe to this to re-fetch cached metadata.
 
+## event ContractURIUpdated
+
+ERC-7572 contract-level refresh signal, emitted by `setRenderer` alongside the
+token-range refresh: a new renderer can answer `contractURI` differently, and
+this is the event marketplaces watch to re-fetch the collection page.
+
 ## event RendererSet
 
 Emitted when the renderer slot changes. Indexed by `renderer`.
@@ -837,6 +857,13 @@ owner.
 
 `initialize` was given the zero address as the default renderer. A collection must
 have a fallback renderer.
+
+## error RendererNotContract
+
+The renderer address has no code (carries the offending address as evidence).
+Raised by `initialize` and `setRenderer`: a codeless renderer would brick
+`tokenURI` — fatally so for a collection born `rendererLocked` — so the typo is
+refused at the door instead.
 
 ## error RoyaltyTooHigh
 

@@ -82,6 +82,15 @@ be non-zero.
 The render-context injection-convention version this renderer targets, echoed to
 the work as `tokenData.version`. Immutable.
 
+## function renderAssets
+
+The [RenderAssets](/docs/collections/contracts/render-assets) registry this
+renderer reads static images from, or the zero address when unwired. Wired,
+the metadata `image` resolves down the registry's ladder (capture, template,
+cover) and `contractURI` carries the cover; unwired, metadata has no `image`
+and `animation_url` stands alone. Immutable; a subclass can override `_image`
+for a custom source either way.
+
 ## function scriptyBuilder
 
 The ScriptyBuilderV2 contract that assembles the HTML document from the tag

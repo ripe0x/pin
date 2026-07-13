@@ -1241,6 +1241,12 @@ export const pooledCollectionAbi = [
   },
   {
     "type": "event",
+    "name": "ContractURIUpdated",
+    "inputs": [],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "CreatorListed",
     "inputs": [
       {
@@ -1830,6 +1836,17 @@ export const pooledCollectionAbi = [
     "type": "error",
     "name": "RendererIsLocked",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RendererNotContract",
+    "inputs": [
+      {
+        "name": "renderer",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
   },
   {
     "type": "error",
