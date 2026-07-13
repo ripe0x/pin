@@ -14,8 +14,7 @@ import {HTMLRequest, HTMLTag, HTMLTagType} from "./vendor/scripty/core/ScriptySt
 /// @title ScriptyRenderer
 /// @notice A **bring-your-own generative renderer template**: a concrete,
 ///         forkable `IRenderer` for Art Blocks-style script-based work,
-///         assembled fully onchain via ScriptyBuilderV2. This is the generative
-///         counterpart to the abstract `SVGRenderer` base — deploy one instance
+///         assembled fully onchain via ScriptyBuilderV2. Deploy one instance
 ///         per work (or subclass it for custom traits), then point a
 ///         collection's renderer slot at it.
 ///

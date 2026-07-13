@@ -10,11 +10,12 @@
 > stays the keyring root), and terminology renames (`mintToId`, `referral`).
 > The collection suite is 202 unit tests + opt-in mainnet-fork probes, green.
 >
-> **The multi-admin delta is UN-REVIEWED and is the deploy gate.** Before the
-> immutable mainnet deploy it needs an external review covering the core + the
-> admin delta + the launch project's SVG renderer, plus a one-line
-> `isAdmin(owner)` fix (planned, not yet in code). The running review log is
-> `docs/pnd-collection-reaudit-notes.md`.
+> **Everything post-baseline is UN-REVIEWED and the external re-audit is the
+> deploy gate.** It must cover the core + the admin delta + the 2026-07-13
+> batch (mintFor, renderer guard, RenderAssets template/capturer,
+> isAdmin(owner) — now in code) + the launch project's renderer. The running
+> review log is `docs/pnd-collection-reaudit-notes.md`; everything
+> deliberately deferred past deploy is `docs/pnd-collection-post-deploy.md`.
 >
 > **The first launch project is all-SVG**, so the HTML-generative thumbnail
 > problem does not gate it. That work (a MURI preservation overlay + client-side
@@ -110,18 +111,21 @@ the rules.
 
 ```
 SINGLETONS (deployed once, ownerless)
-  scripty v2 / EthFS (exists)     GenerativeRenderer      SVGRenderer
-  code + dependency bytes         scripty HTML assembly   abstract base
-                                  + injection convention  for Solidity SVG
+  scripty v2 / EthFS (exists)   DefaultRenderer          RenderAssets
+  code + dependency bytes       static image + derived   covers, captures,
+                                provenance metadata      template, capturer role
 
 COLLECTION LAYER (per artist, via factory)
-  CollectionFactory ── clones ──► Collection (the core)
-    fixed: OZ ERC721, sale states, 10% referral share,
-           per-token Mint Mark + entropy → tokenSeed(),
-           work config (set at init, lockable), graph refs,
-           id mode: sequential | pooled (set at init)
-    slot: renderer       (GenerativeRenderer | SVGRenderer | custom)
-    slot: priceStrategy  (FixedPrice | custom, view-only)
+  CollectionFactory ── clones ──► Collection | PooledCollection
+    fixed: OZ ERC721, 10% referral share, pull payments,
+           one seed per token → tokenSeed() (the only per-token storage),
+           derived lifecycle status, two one-way locks
+           (lockRenderer, lockSupply; born-locked via init flags)
+    form:  Collection counts ids (mint/mintWithReferral/mintFor/mintTo);
+           PooledCollection's minter chooses them (mintToId)
+    slot: renderer       (DefaultRenderer | per-work ScriptyRenderer |
+                          custom IRenderer, e.g. a Solidity SVG work)
+    slot: priceStrategy  (stored fixed price | custom, view-only)
     slot: minter         (built-in path | authorized extension minters)
     slot: mintHook       (beforeMint/afterMint, non-payable)
 
@@ -134,12 +138,12 @@ MINTER EXTENSIONS (all economics live here)
 
 COMPANIONS (per work, optional, artist-deployed)
   lock registries, attestation boards, satellite contracts; written to
-  by holders, read by renderers and price strategies, linked by graph
+  by holders, read by renderers and price strategies
 
 RAILS (serve every contract, including bespoke)
   Catalog.sol (deployed): artist → works claims
-  Attribution (new singleton, Catalog idiom): works → artists roster
-    confirmed attribution = roster entry ∩ the artist's own Catalog claim
+  Creator handshake (on the collection): owner lists via setCreators,
+    creator claims in Catalog; isConfirmedCreator = live intersection
 ```
 
 ### 3.1 Collection core
@@ -204,16 +208,29 @@ contracts, and block state. That single fact is what makes
 network-based works possible; Art Blocks' renderer is an offchain
 sandbox with two inputs.
 
-- **GenerativeRenderer** (default, singleton): reads the collection's
-  work config and seed, assembles a complete HTML page as a data: URI
-  via ScriptyBuilderV2 (gzipped deps + injected context + artist
-  script), wraps it in tokenURI JSON with `animation_url`.
-- **SVGRenderer** (abstract base): JSON envelope, base64, attributes
-  handled; an artist's custom renderer reduces to one function,
-  `svg(tokenId, seed, state)`. Solidity SVG is the gold preservation
+- **DefaultRenderer** (default, singleton): the renderer every
+  collection starts with. Static: it serves the token's image from the
+  RenderAssets registry (capture → template → cover) plus derived
+  provenance traits, and its contractURI carries the cover for the
+  marketplace collection page.
+- **ScriptyRenderer** (per-work template): generative work deploys its
+  OWN renderer — there is no shared generative assembler. The template
+  bakes the work's code refs into the constructor (immutable by
+  construction), assembles a complete HTML page as a data: URI via
+  ScriptyBuilderV2 (gzipped deps + injected context + artist script),
+  wraps it in tokenURI JSON with `animation_url`, and reads its static
+  `image` from RenderAssets when wired.
+- **Solidity SVG works** implement `IRenderer` directly (the interface
+  is two views; the shared MetadataJson library handles the JSON
+  envelope and derived traits). Solidity SVG is the gold preservation
   tier: no JS runtime, no browser drift, renders in anything that
-  parses SVG. SVG works also mostly skip the capture worker since
+  parses SVG. SVG works also mostly skip the capture pipeline since
   `image` renders natively everywhere.
+- **RenderAssets** (singleton): the presentation-data registry — each
+  collection's cover, per-token captures, an `{id}`-substituted capture
+  template, and a narrow capturer role for delegated thumbnail
+  automation. Captures are refreshable forever; they mirror the art,
+  they are not the art. See docs/pnd-collection-thumbnails.md.
 - **The injection convention** (a written spec, load-bearing): the
   context object (`tokenId`, `seed`, declared live values) injected
   identically by the onchain assembler, the studio previewer, the mint
@@ -265,7 +282,7 @@ ERC1155 spawned per locked frame, price as f(basefee, locks).
 |---|---|---|
 | Edition | preset: sequential + FixedPrice + static renderer | PND Editions |
 | Long-form generative | preset: sequential + FixedPrice + GenerativeRenderer | any p5 artist |
-| Onchain SVG work | sequential + custom SVGRenderer | zorbs, dithers |
+| Onchain SVG work | sequential + custom IRenderer (Solidity SVG) | zorbs, dithers |
 | Participatory / evolving | + companions + custom price strategy | TBAM |
 | Live-derivative, backed, pooled | + BackedMinter + PooledIdMinter + chain-live renderer | Homage |
 | Fully bespoke | own contract + rails a la carte (renderer interface, catalog, mint surface, graph) | Homage v1 as shipped |

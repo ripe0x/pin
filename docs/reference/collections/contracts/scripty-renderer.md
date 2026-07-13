@@ -7,9 +7,8 @@
 ScriptyRenderer is the **bring-your-own generative renderer template**: a
 concrete, forkable [IRenderer](/docs/collections/contracts/i-renderer) for Art
 Blocks-style script-based work, assembled fully onchain through ScriptyBuilderV2.
-It is the generative counterpart to the abstract `SVGRenderer` base — the system
-ships no shared generative assembler, so a generative work deploys its own
-renderer and points a collection's renderer slot at it.
+The system ships no shared generative assembler, so a generative work deploys
+its own renderer and points a collection's renderer slot at it.
 
 It is **immutable by construction**. The work definition — its onchain code and
 dependency files, and the injection-convention version — is fixed in the
