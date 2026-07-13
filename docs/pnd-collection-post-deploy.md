@@ -1,44 +1,15 @@
 # PND Collection System: post-deploy work
 
 > **What this is.** The list of everything deliberately deferred past the
-> immutable mainnet deploy, so none of it gets forgotten. Nothing here
-> gates the contract deploy — that gate is the external re-audit
-> (`pnd-collection-reaudit-notes.md`). Items are ordered by when they
-> bite. Written 2026-07-13; check items off or move them to issues as
-> they start.
-
-## At deploy (launch mechanics, same day)
-
-- [ ] **Fill `contracts/deployments.mainnet.json`** with the factory and
-  singleton addresses, then `pnpm generate:docs` — the generator
-  currently flags `collectionFactory` as an unresolved placeholder and
-  will stamp the reference docs with real addresses once filled.
-- [ ] **Run the launch runbook end-to-end on a fork first**:
-  `DeployCollectionSystem.s.sol` → project renderer → collection →
-  `mint` → `tokenURI` renders. The studio create wizard exists but is
-  unverified; scripts are the launch path.
-
-## Immediately after deploy: discovery indexing
-
-The one product gap that makes minted collections invisible on
-pnd.ripe.wtf. It is post-deploy **by necessity, not neglect**: Ponder
-subscribes by address, and the factory address only exists once
-deployed. Nothing is lost by waiting — `CollectionCreated` events are
-permanent, and Ponder backfills the full history from the factory's
-deploy block whenever the subscription lands.
-
-- [ ] **Prep before deploy (cheap, do it now-ish):** write the Ponder
-  handler with the address parameterized, so enablement on deploy day is
-  a two-line config change. This is the blessed fixed-contract Ponder
-  case per `AGENTS.md` — one factory, one event, never a long tail.
-- [ ] Add the factory to `apps/indexer/ponder.config.ts` (start block =
-  deploy block) with a `CollectionCreated` handler writing the
-  collections table web reads.
-- [ ] Wire the web discovery surfaces to that table (they currently have
-  no live source), and the studio's "your collections" list.
-- [ ] Worker: nothing new needed at first — collection tokens render
-  onchain (`tokenURI` is a view), and the mint surface uses cached live
-  reads. Extend per-token enrichment only if a real page needs it.
+> **launch**, so none of it gets forgotten. Nothing here gates the
+> contract deploy — that gate is the external re-audit
+> (`pnd-collection-reaudit-notes.md`) — and nothing here gates the
+> launch either: the post-deploy → launch window has its own runbook
+> with kickoff prompts, `pnd-collection-prelaunch.md` (addresses,
+> source verification, discovery indexing, the launch collection,
+> mint surfaces, the pre-announce audit). Items below are ordered by
+> when they bite. Written 2026-07-13; check items off or move them to
+> issues as they start.
 
 ## Studio follow-ups
 
@@ -47,8 +18,6 @@ deploy block whenever the subscription lands.
   `transferOwnership` — the new owner inherits the old operator's keys.
   The agreed mitigation is product-side: any transfer flow shows the
   current admin roster loudly so both parties see who still holds keys.
-- [ ] Verify the create wizard end-to-end before opening studio deploys
-  to artists (it shipped unverified; launch used scripts).
 
 ## First HTML-generative drop (gates that drop, not the SVG launch)
 

@@ -175,13 +175,6 @@ export const SOVEREIGN_COLLECTION_FACTORY: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
 }
 
-// Attribution — singleton roster contract for optional collaborator writes at
-// collection deploy. NOT yet deployed to mainnet — paste the address here
-// after deploy.
-export const ATTRIBUTION: Record<number, Address> = {
-  [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
-}
-
 // RenderAssets — renderer-land registry of static display assets (cover +
 // per-token captures), written under each collection's own owner/admin
 // authority. NOT yet deployed to mainnet — paste the address here after
