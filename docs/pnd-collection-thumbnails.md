@@ -249,12 +249,13 @@ What this means concretely:
   `apps/worker/src/tasks/capture-collection-media.ts`, already built.
 
 **New (small):**
-- A client-side capture util in the parity lib: grab the canvas from the
-  render iframe, encode PNG per §3.1, hand the bytes to the upload flow.
+- ~~A client-side capture util in the parity lib~~ — built 2026-07-13
+  (`capture.ts`, agent-in-sandbox design).
 - ~~The capture-spec section mirrored into `injection-convention.md`~~ — done 2026-07-13 (§ The canonical capture).
-- A studio "capture cover" step at deploy.
-- The studio backfill page (§5, step 3) with manifest publish + one-tx
-  template update.
+- ~~A studio "capture cover" step at deploy~~ — built 2026-07-13 (create wizard preview step).
+- ~~The studio backfill page~~ — built 2026-07-13
+  (/studio/[address]/collections; manifest-publish upload rail still
+  pending the permanent-storage path).
 
 **Explicitly not built:**
 - A PND-hosted headless capture service. The worker's HTML path stays

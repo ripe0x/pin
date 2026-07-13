@@ -1,4 +1,6 @@
 export { buildTokenHTML, buildContextJs, HEAD_STYLE_CONTENT } from "./build";
+export { captureTokenPNG } from "./capture";
+export type { CaptureOptions } from "./capture";
 export {
   bytesResolver,
   cachedChainResolver,

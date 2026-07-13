@@ -22,6 +22,7 @@ import {
   type CodeRefLike,
 } from "@/lib/collection-render"
 import { KNOWN_DEPENDENCIES, dependencyCodeRef } from "@/lib/create-collection"
+import { CaptureCover } from "./CaptureCover"
 import type { WizardState } from "./types"
 import { BTN, BTN_SECONDARY } from "./wizard-ui"
 
@@ -30,10 +31,12 @@ const PREVIEW_SEED_COUNT = 4
 
 export function PreviewStep({
   state,
+  set,
   onBack,
   onNext,
 }: {
   state: WizardState
+  set: <K extends keyof WizardState>(key: K, value: WizardState[K]) => void
   onBack: () => void
   onNext: () => void
 }) {
@@ -125,6 +128,15 @@ export function PreviewStep({
           />
         ))}
       </div>
+
+      <CaptureCover
+        work={work}
+        tokenData={seeds[0]}
+        resolver={resolver}
+        gunzip={gunzip}
+        value={state.artworkURI}
+        onCaptured={(uri) => set("artworkURI", uri)}
+      />
 
       <div className="flex gap-3">
         <button onClick={onBack} className={BTN_SECONDARY}>

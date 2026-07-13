@@ -118,6 +118,7 @@ export function CreateCollectionWizard({ artistAddress }: { artistAddress: strin
         {step === "preview" && (
           <PreviewStep
             state={state}
+            set={set}
             onBack={() => goTo(stepBefore("preview"))}
             onNext={() => goTo(stepAfter("preview"))}
           />
