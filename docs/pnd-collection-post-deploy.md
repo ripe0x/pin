@@ -35,7 +35,7 @@ cover/captures/template/capturer) is shipped; this is the offchain half.
   render client-side → upload frames → publish manifest → one
   `setCaptureTemplate` tx. Consider a capturer-key flow so automation
   never holds an admin key.
-- [ ] Mirror the capture spec into `injection-convention.md` v2.
+- [x] Mirror the capture spec into `injection-convention.md` — done 2026-07-13.
 
 ## Preservation
 

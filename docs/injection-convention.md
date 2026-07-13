@@ -2,8 +2,8 @@
 
 How a generative work's code receives its token context, onchain and off.
 This is the load-bearing parity contract of the collection system: the
-onchain `GenerativeRenderer`, the studio previewer, the mint surface, and
-the artist-site embed MUST inject the identical object, so a preview is
+onchain assembler (a work's ScriptyRenderer), the studio previewer, the
+mint surface, and the artist-site embed MUST inject the identical object, so a preview is
 the render.
 
 ## The context object
@@ -17,7 +17,7 @@ window.tokenData = {
   tokenId: "123",     // decimal string
   collection: "0x…",  // checksum-agnostic lowercase hex address
   chainId: 1,
-  version: 1          // == WorkConfig.injectionVersion
+  version: 1          // == the renderer's injectionVersion
 };
 ```
 
@@ -48,22 +48,23 @@ Convention: read through any EIP-1193 provider the host page exposes as
 `window.ethereum`, else fall back to a public RPC of the viewer's choice;
 never hardcode a single provider as load-bearing. The work MUST render a
 coherent fallback state when no provider is reachable. Declared reads
-belong in `WorkConfig.renderParams` so tooling and archives know what a
-faithful render requires.
+should be published with the work — in its renderer's verification views
+or its docs — so tooling and archives know what a faithful render
+requires.
 
 
 honest about that fragility: the archival form of any live work is
 "code plus inputs at time T".
 
-## Onchain assembly (GenerativeRenderer)
+## Onchain assembly (ScriptyRenderer)
 
 Body tag order in the assembled HTML:
 
-1. dependencies (`WorkConfig.deps`, each per its `CodeKind`).
+1. dependencies (the renderer's `deps()`, each per its `CodeKind`).
    Dependencies are libraries: they MUST NOT read `tokenData`.
 2. the context injection tag (inline `tagContent`, exactly the object
    above)
-3. the artist's code (`WorkConfig.code`, each per its `CodeKind`)
+3. the artist's code (the renderer's `code()`, each per its `CodeKind`)
 4. gunzip helper (plain script, from onchain storage), LAST, present
    only when any tag is gzipped. The helper decompresses at its own
    parse time by scanning the gzip tags that PRECEDE it and replacing
@@ -90,10 +91,41 @@ document (or an equivalent iframe srcdoc) and MUST:
 Test seeds in the studio are ordinary `tokenData` objects with
 synthetic `hash` values; nothing else may differ.
 
+## The canonical capture (additive)
+
+The mirror of `pnd-collection-thumbnails.md` §3.1: every surface that
+captures a still of a token (studio at deploy, mint surface at mint, the
+backfill tool later, anyone ever) MUST produce the same frame, or the
+"anyone can reproduce it" guarantee breaks.
+
+- **Frame.** A single frame taken after a deterministic warm-up: N draw
+  frames or M ms of virtual time, declared per work (default: the first
+  stable frame the harness detects). Time is virtual and seeded, never
+  wall-clock.
+- **Size.** Fixed from the work's aspect ratio at `devicePixelRatio = 1`;
+  default 1200px on the long edge.
+- **Format.** PNG, no alpha; flatten onto the work's declared background.
+- **WebGL.** The renderer must be constructed with
+  `preserveDrawingBuffer: true` so the canvas is readable at capture
+  time; the harness enforces this for `three` and raw WebGL works.
+- **Determinism (`pure` works).** The rules above apply in full: seeded
+  PRNG only, no time, no network — the same seed yields the same frame,
+  which is what makes a capture a reproducible artifact rather than a
+  service output.
+- **Output identity.** The uploaded PNG bytes are the canonical
+  thumbnail; their content address is the pointer. Pure 2D/canvas work is
+  close to byte-reproducible across machines; GPU work is not — store the
+  address of the frame actually captured, and treat later re-renders as
+  visually-equivalent preservation, not a strict byte match.
+
+Capture is presentation, not the work: the frame lands in RenderAssets
+(capture, template, or cover), stays refreshable forever, and never
+feeds back into the render.
+
 ## Versioning
 
-`WorkConfig.injectionVersion` pins which revision of this document a
-work was authored against; the renderer echoes it as
+The renderer's `injectionVersion` (fixed in its constructor) pins which
+revision of this document a work was authored against; it echoes it as
 `tokenData.version`. Additive changes bump the minor conventions here
 without a version bump; breaking changes (renamed fields, changed
 ordering) require a new version and a new renderer, never a mutation of

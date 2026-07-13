@@ -251,7 +251,7 @@ What this means concretely:
 **New (small):**
 - A client-side capture util in the parity lib: grab the canvas from the
   render iframe, encode PNG per §3.1, hand the bytes to the upload flow.
-- The capture-spec section mirrored into `injection-convention.md` v2.
+- ~~The capture-spec section mirrored into `injection-convention.md`~~ — done 2026-07-13 (§ The canonical capture).
 - A studio "capture cover" step at deploy.
 - The studio backfill page (§5, step 3) with manifest publish + one-tx
   template update.
