@@ -137,17 +137,20 @@ modifier's `|| owner()` arm), so this only makes the view honest; it changes
 no authorization, just what `isAdmin` reports for the owner. To be landed
 before the review so the review covers the final code.
 
-### Open decision to resolve before the re-audit
+### Open decisions — BOTH RESOLVED 2026-07-13 (Dave)
 
-- **Should `setPayoutAddress` be carved back to `onlyOwner`?** It is the
-  single highest-consequence widened function (an admin can reroute the
-  artist's money). It is currently admin-accessible per the "full access,
-  no roles" directive. A one-word change if the answer is to reserve it.
-- **Admin persistence across ownership transfer.** Transferring ownership
-  does NOT clear `_admins`; the new owner inherits the prior owner's admin
-  set. For a collection that changes hands this could leave a prior
-  operator with full access. Confirm this is acceptable, or add an
-  admin-clear on `acceptOwnership`.
+- **Should `setPayoutAddress` be carved back to `onlyOwner`?** RESOLVED:
+  it stays admin-accessible. The flat, full-access admin model is the
+  product decision; an admin holding the money lever is accepted and
+  documented, not accidental.
+- **Admin persistence across ownership transfer.** RESOLVED: accepted
+  as-is. Transferring ownership does NOT clear `_admins` (a mapping
+  cannot be enumerated onchain to clear it without extra state; the
+  complexity is not worth a rare event). Mitigation is product-side: the
+  studio surfaces the current admin list prominently during any
+  ownership transfer so both parties see who still holds keys — tracked
+  in docs/pnd-collection-post-deploy.md. A reviewer should treat the
+  inherited-admin behavior as intended.
 
 ### Test coverage
 
@@ -376,3 +379,23 @@ the hooks do. New suite: renderers/RenderAssets.t.sol (9 tests).
 - ABIs re-emitted (packages/abi/src + apps/indexer/abis), web typecheck
   clean, reference docs regenerated (42 pages, strict prose/ABI check
   passing).
+
+## 2026-07-13 (g): SVGRenderer base cut — Solidity SVG = direct IRenderer
+
+Un-reviewed. `renderers/SVGRenderer.sol` (the abstract base for Solidity
+SVG works) removed, with its tests (`SVGRenderer.t.sol`,
+`TestSVGRenderer.sol`). Rationale: it is not going to be used — the
+launch project renders through its own `IRenderer`, and the base bought
+little: `IRenderer` is two view functions, and everything worth sharing
+(RFC 8259 JSON escaping, the base64 data-URI envelope, derived
+provenance traits) already lives in the `MetadataJson` library, which
+stays. One less contract in the audit scope; no deployed singleton was
+ever planned for it (abstract, inherit-only). Docs resynced: the
+write-a-renderer guide now shows a direct-IRenderer Solidity SVG example
+over MetadataJson; glossary/system-doc/four-slots references updated.
+The §3 system-doc diagram was also brought current in the same pass (it
+still showed GenerativeRenderer/Mint Marks/work config/graph refs/
+Attribution, all cut in earlier batches).
+
+No ABI or deployed-bytecode impact (nothing referenced SVGRenderer
+except its own tests). Full suite re-run green after removal.

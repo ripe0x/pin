@@ -147,9 +147,11 @@ fixed in the constructor and never mutated, so the renderer is immutable by
 construction. Wire it to RenderAssets and marketplace grids get real
 thumbnails; the `animation_url` is always the living work.
 
-**SVGRenderer** — a base for pure-Solidity SVG art. This is the highest
-permanence tier: no JavaScript, renders anywhere that can read an SVG, and the
-image itself is generated onchain (no captures needed).
+**Solidity SVG work** — the highest permanence tier: the image itself is
+generated onchain as SVG, no JavaScript, renders anywhere that can read an SVG,
+no captures needed. Such a work implements `IRenderer` directly (it is two view
+functions), with the shared `MetadataJson` library handling the JSON envelope
+and derived provenance traits.
 
 **RenderAssets** — the shared registry of static display assets: each
 collection's cover image, per-token captures, and a capture template that

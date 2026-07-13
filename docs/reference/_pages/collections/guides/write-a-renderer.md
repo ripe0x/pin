@@ -1,6 +1,6 @@
 ---
 title: Write a renderer
-description: Implement IRenderer against ICollectionView, the three built-in renderers, and how metadata freezing and work locking work.
+description: Implement IRenderer against ICollectionView, the bundled renderers, and how renderer locking works.
 ---
 
 # Write a renderer
@@ -29,62 +29,18 @@ interface ICollectionView {
         external
         view
         returns (CollectionConfig memory cfg, CollectionStatus status, uint256 minted);
-    function artwork() external view returns (string memory);
-    function isWorkLocked() external view returns (bool);
     function idMode() external view returns (IdMode);
 }
 ```
 
 `Collection` implements this surface in full (though it does not formally inherit the interface, to avoid forcing passthrough re-overrides against its OZ bases for zero behavior). A renderer is a plain onchain view with full EVM read access: the seed, the current owner, sibling tokens, companion state, foreign contracts, block state, anything callable. That is what makes network-based (chain-live) works possible at all; a renderer isn't a sandbox with two inputs, it's an ordinary contract call.
 
-## The three built-in renderers
 
-### DefaultRenderer
+## DefaultRenderer
 
-The canonical renderer wired into every collection at deploy. Static: it reads the token's image from the [RenderAssets](/docs/collections/contracts/render-assets) registry (the per-token capture if one exists, else the collection cover) and wraps it in a JSON envelope with the token's Mint Mark as derived provenance attributes (`Mint Order` plus `Provenance: First/Final mint` where applicable, sequential-id collections only). No code execution, no onchain algorithm; the image is whatever URI the artist set.
+The canonical renderer wired into every collection at deploy. Static: it reads the token's image from the [RenderAssets](/docs/collections/contracts/render-assets) registry (per-token capture, else the collection's capture template resolved for this id, else the cover) and wraps it in a JSON envelope with derived provenance attributes (`Mint Order` plus `Provenance: First/Final mint` where applicable, sequential-id collections only). Its `contractURI` carries the cover, which is what marketplace collection pages show. No code execution, no onchain algorithm; the image is whatever URI the artist set.
 
-### SVGRenderer (abstract base)
-
-For fully onchain Solidity SVG works. `SVGRenderer` implements `IRenderer` end to end (base64 JSON envelope, `image` as a `data:image/svg+xml;base64,...` URI, the same Mint Mark attributes as `DefaultRenderer`), leaving exactly one abstract function for a concrete work to implement:
-
-```solidity
-function svg(address collection, uint256 tokenId) internal view virtual returns (string memory);
-```
-
-Return a complete `<svg ...>...</svg>` document; the base handles base64 encoding and the data URI wrapper. Optional hooks to override:
-
-```solidity
-function tokenName(address collection, uint256 tokenId) internal view virtual returns (string memory);
-function tokenDescription(address collection, uint256 tokenId) internal view virtual returns (string memory);
-function attributes(address collection, uint256 tokenId) internal view virtual returns (string memory);
-```
-
-Minimal concrete work:
-
-```solidity
-// SPDX-License-Identifier: GPL-3.0
-pragma solidity ^0.8.24;
-
-import {SVGRenderer} from "./renderers/SVGRenderer.sol";
-import {ICollectionView} from "./interfaces/IRenderer.sol";
-import {LibString} from "solady/utils/LibString.sol";
-
-contract Dithers is SVGRenderer {
-    function svg(address collection, uint256 tokenId) internal view override returns (string memory) {
-        bytes32 seed = ICollectionView(collection).tokenSeed(tokenId);
-        uint256 hue = uint256(seed) % 360;
-        return string.concat(
-            "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 500 500'>",
-            "<rect width='500' height='500' fill='hsl(", LibString.toString(hue), ",60%,20%)'/>",
-            "</svg>"
-        );
-    }
-}
-```
-
-Solidity SVG is the highest preservation tier the system offers: no JS runtime, no browser to drift, and it renders in anything that parses SVG, including bare `<img>` tags, so SVG works also mostly skip the capture worker used for thumbnails of HTML works.
-
-### ScriptyRenderer (bring-your-own generative)
+## ScriptyRenderer (bring-your-own generative)
 
 Art Blocks-style script-based work ships as its own renderer. The system provides a concrete template — [ScriptyRenderer](/docs/collections/contracts/scripty-renderer) — that assembles a complete HTML document onchain via ScriptyBuilderV2: at `tokenURI` time it reads the token's seed through [ICollectionView](/docs/collections/contracts/i-collection-view), injects the render context, emits the work's dependencies + context + code (+ a gunzip helper when anything is gzipped), and returns `tokenURI` JSON whose `animation_url` is a `data:text/html;base64,...` URI. Follow the [Injection convention](/docs/collections/reference/injection-convention) for the exact context object it injects, so an offchain preview is byte-for-byte the render.
 
@@ -99,10 +55,52 @@ function _headTags() internal view virtual returns (HTMLTag[] memory);          
 
 Onchain traits must be a pure function of the seed, computed the same way your sketch computes them so the published trait matches the render; traits that require running the algorithm belong offchain. The worked example `ExampleScriptyWork` (in `contracts/src/collection/templates/`) shows a seed-derived `Palette` trait and a fixed-aspect head, and the fork test `ScriptyRendererFork.t.sol` proves an instance assembles a full document (real gzipped p5, the injected seed, the artist code) from chain state alone.
 
+## Fully onchain Solidity SVG
+
+For a Solidity SVG work, implement `IRenderer` directly — there is no abstract base to inherit, on purpose: the whole interface is two views, and the shared `MetadataJson` library (`contracts/src/collection/renderers/MetadataJson.sol`) provides the pieces that should not be rewritten per work (RFC 8259 JSON escaping, the base64 data-URI envelope, and the derived provenance traits every bundled renderer emits the same way).
+
+```solidity
+// SPDX-License-Identifier: GPL-3.0
+pragma solidity ^0.8.24;
+
+import {IRenderer, ICollectionView} from "./interfaces/IRenderer.sol";
+import {MetadataJson} from "./renderers/MetadataJson.sol";
+import {Base64} from "solady/utils/Base64.sol";
+import {LibString} from "solady/utils/LibString.sol";
+
+contract Dithers is IRenderer {
+    using LibString for uint256;
+
+    function tokenURI(address collection, uint256 tokenId) external view override returns (string memory) {
+        ICollectionView cv = ICollectionView(collection);
+        uint256 hue = uint256(cv.tokenSeed(tokenId)) % 360;
+        string memory svg = string.concat(
+            "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 500 500'>",
+            "<rect width='500' height='500' fill='hsl(", hue.toString(), ",60%,20%)'/>",
+            "</svg>"
+        );
+        string memory json = string.concat(
+            '{"name":"', MetadataJson.escape(cv.name()), " #", tokenId.toString(),
+            '","image":"data:image/svg+xml;base64,', Base64.encode(bytes(svg)),
+            '","attributes":', MetadataJson.provenanceAttributes(cv, tokenId), "}"
+        );
+        return MetadataJson.jsonDataURI(json);
+    }
+
+    function contractURI(address collection) external view override returns (string memory) {
+        return MetadataJson.jsonDataURI(
+            string.concat('{"name":"', MetadataJson.escape(ICollectionView(collection).name()), '"}')
+        );
+    }
+}
+```
+
+Solidity SVG is the highest preservation tier the system offers: no JS runtime, no browser to drift, and it renders in anything that parses SVG, including bare `<img>` tags, so SVG works also mostly skip the capture pipeline used for thumbnails of HTML works.
+
 ## Installing a renderer
 
 ```solidity
-function setRenderer(address renderer_) external; // owner-only
+function setRenderer(address renderer_) external; // owner or admin
 function renderer() external view returns (address); // resolved: override or defaultRenderer
 ```
 

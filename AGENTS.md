@@ -216,6 +216,10 @@ describing graph/path as core fields predate this and are historical.
 
 ## See also
 
+- `docs/pnd-collection-post-deploy.md` — everything deliberately deferred
+  past the collection system's immutable mainnet deploy (discovery
+  indexing, capture tooling, MURI adapter, additive minter/hook modules),
+  so it doesn't get forgotten.
 - `docs/pnd-editions-README.md` — PND Editions: overview, file map, dev/test/
   deploy, verification status (entry point; links the design plan, interface
   spec, integration runbook, and e2e harness).

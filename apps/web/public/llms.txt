@@ -34,7 +34,7 @@ Machine-readable addresses + ABIs: https://pnd.ripe.wtf/protocol-manifest.json (
 - [Write a minter](https://pnd.ripe.wtf/docs/collections/guides/write-a-minter): Implement an extension minter, get authorized via setMinter, and mint through mintTo or mintToId.
 - [Write a price strategy](https://pnd.ripe.wtf/docs/collections/guides/write-a-price-strategy): Implement IPriceStrategy's view-only priceOf, install it with setPriceStrategy, and two worked examples.
 - [Write a mint hook](https://pnd.ripe.wtf/docs/collections/guides/write-a-mint-hook): Implement IMintHook's beforeMint/afterMint, install it with setMintHook, and the three reference hooks to start from.
-- [Write a renderer](https://pnd.ripe.wtf/docs/collections/guides/write-a-renderer): Implement IRenderer against ICollectionView, the three built-in renderers, and how metadata freezing and work locking work.
+- [Write a renderer](https://pnd.ripe.wtf/docs/collections/guides/write-a-renderer): Implement IRenderer against ICollectionView, the bundled renderers, and how renderer locking works.
 - [Access control](https://pnd.ripe.wtf/docs/collections/reference/access-control): Every state-changing function in the Collections contracts and who may call it.
 - [Errors index](https://pnd.ripe.wtf/docs/collections/reference/errors): Every custom error in the Collections contracts, its contract, and the condition that raises it.
 - [Events index](https://pnd.ripe.wtf/docs/collections/reference/events): Every event the Collections contracts emit, grouped by contract.

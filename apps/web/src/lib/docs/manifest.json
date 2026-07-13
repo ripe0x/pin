@@ -193,7 +193,7 @@
               "title": "Write a renderer",
               "slug": "write-a-renderer",
               "path": "/docs/collections/guides/write-a-renderer",
-              "description": "Implement IRenderer against ICollectionView, the three built-in renderers, and how metadata freezing and work locking work."
+              "description": "Implement IRenderer against ICollectionView, the bundled renderers, and how renderer locking works."
             }
           ]
         },

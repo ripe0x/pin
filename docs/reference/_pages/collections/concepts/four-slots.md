@@ -38,15 +38,16 @@ function contractURI(address collection) external view returns (string memory);
   renderer instance can serve every collection that points at it, and it
   can be called offchain for any collection directly
 - **What it can do**: full EVM read access. A renderer can read the token's
-  seed and Mint Mark, the current owner, sibling tokens, companion contract
+  seed, the current owner, sibling tokens, companion contract
   state, foreign contracts, and block state. It is a view function, so it
   cannot alter any state
-- **Reference implementations**: `DefaultRenderer` (the init-time fallback),
-  an `SVGRenderer` abstract base for hand-written Solidity SVG works, and
-  `ScriptyRenderer` — a bring-your-own generative template for
+- **Reference implementations**: `DefaultRenderer` (the init-time fallback)
+  and `ScriptyRenderer` — a bring-your-own generative template for
   algorithm-driven (Art Blocks-style) work: the artist deploys their own
   instance (immutable by construction) and points the slot at it, following
-  the injection convention
+  the injection convention. A hand-written Solidity SVG work implements
+  `IRenderer` directly, with the shared `MetadataJson` library handling the
+  JSON envelope
 
 See [IRenderer](/docs/collections/contracts/i-renderer),
 [DefaultRenderer](/docs/collections/contracts/default-renderer),
