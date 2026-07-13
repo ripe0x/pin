@@ -85,6 +85,9 @@ A paid mint was attempted at or after a non-zero `mintEnd`.
 **`MintNotStarted`** · [Collection](/docs/collections/contracts/collection#errors)\
 A paid mint was attempted before `mintStart`.
 
+**`MuriRequired`** · [MuriOperator](/docs/collections/contracts/muri-operator#errors)\
+The constructor was given the zero address, or an address with no code, as the MURI protocol.
+
 **`MustHoldRequired`** · [HoldsCollectionHook](/docs/collections/contracts/holds-collection-hook#errors)\
 The minter holds none of the required collection's tokens.
 
@@ -126,6 +129,9 @@ A hook setter was called by an address that is neither the collection's owner no
 
 **`NotCollectionAdmin`** · [RenderAssets](/docs/collections/contracts/render-assets#errors)\
 A write was attempted by an address that is neither the collection's owner nor one of its admins.
+
+**`NotContractAdmin`** · [MuriOperator](/docs/collections/contracts/muri-operator#errors)\
+`initializeTokenData` was called by an address that is neither an admin nor the owner of the target contract.
 
 **`NotDeployer`** · [CollectionFactory](/docs/collections/contracts/factory#errors)\
 `deprecate` was called by an address other than the factory deployer.

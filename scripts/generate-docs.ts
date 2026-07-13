@@ -79,6 +79,7 @@ const ABI_BY_NAME: Record<string, AbiItem[]> = {
     PerWalletCapHook: abis.perWalletCapHookAbi as unknown as AbiItem[],
     HoldsCollectionHook: abis.holdsCollectionHookAbi as unknown as AbiItem[],
     HookChain: abis.hookChainAbi as unknown as AbiItem[],
+    MuriOperator: abis.muriOperatorAbi as unknown as AbiItem[],
     IMintHook: abis.iMintHookAbi as unknown as AbiItem[],
     IPriceStrategy: abis.iPriceStrategyAbi as unknown as AbiItem[],
     IRenderer: abis.iRendererAbi as unknown as AbiItem[],
@@ -158,6 +159,7 @@ const PROTOCOLS: Protocol[] = [
                 kind: 'clone',
                 note: 'Deployed per collection, not a shared singleton: an artist deploys a chain with their collection and hook list fixed in the constructor (immutable by construction) and points the mint-hook slot at it, so there is no canonical address.',
             },
+            {name: 'MuriOperator', slug: 'muri-operator', deploymentsKey: 'muriOperator', kind: 'singleton'},
             {
                 name: 'IMintHook',
                 slug: 'i-mint-hook',

@@ -72,6 +72,13 @@
           "docs": "/docs/collections/contracts/hook-chain",
           "role": "Composes mint hooks: a collection has one hook slot, and a HookChain is how one slot holds several gates."
         },
+        "MuriOperator": {
+          "address": null,
+          "kind": "singleton",
+          "abi": "/abis/MuriOperator.json",
+          "docs": "/docs/collections/contracts/muri-operator",
+          "role": "The small adapter that lets a Collection (or any ERC721 with an owner) plug into the [MURI](https://muri.yigitduman.com) media-permanence protocol."
+        },
         "IMintHook": {
           "address": null,
           "kind": "interface",

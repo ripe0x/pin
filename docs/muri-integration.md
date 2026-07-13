@@ -80,8 +80,23 @@ Flow (`/muri`, `components/muri/MuriMintFlow.tsx`):
   node --experimental-strip-types apps/web/scripts/muri-fork-mint-test.mjs
   ```
 
+## PND Collections (non-Manifold path)
+
+PND's own Collection contracts wire into MURI through **`MuriOperator`**
+(`contracts/src/collection/muri/MuriOperator.sol`): one immutable,
+ownerless adapter singleton any collection registers via
+`MURIProtocol.registerContract(collection, operator)` (the collection's
+owner/admin passes MURI's gate directly). The adapter answers MURI's
+collector-ownership checks via ERC721 `ownerOf` and forwards the one
+operator-gated call (`initializeTokenData`), gated by the collection's
+own keys. Everything else (addArtworkUris, metadata updates) is called
+on MURI directly. Proven end-to-end against live mainnet MURI by
+`contracts/test/collection/MuriIntegrationFork.t.sol`; not yet deployed.
+
 ## Not done yet
 
 - Indexer redeploy to create + backfill `muri_tokens` (lights up the badges).
 - Base support (PND web/worker/indexer are mainnet-only).
 - On-chain thumbnails / custom HTML templates (v1 is fully off-chain).
+- Deploy `MuriOperator` + a PND surface driving the Collections path
+  (mirror of the Manifold `/muri` flow).

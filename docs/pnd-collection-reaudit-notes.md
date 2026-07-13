@@ -428,3 +428,39 @@ Reviewer focus: the fan-out adds external calls INSIDE the collection's
 nonReentrant mint (as any single hook already does); sub-hooks cannot
 reenter mint paths for the same reason single hooks cannot. The auth
 forward introduces no new writable state — the chain has none.
+
+## 2026-07-13 (i): MuriOperator — the MURI adapter, built and fork-proven
+
+Un-reviewed; pulled forward from the post-launch backlog (issue #138's
+contract half). New `muri/MuriOperator.sol` + vendored interface subset
+`muri/vendor/IMURIProtocol.sol` (MIT, verbatim struct shapes from
+github.com/ygtdmn/muri-protocol; pragma relaxed to ^0.8.24):
+
+- One immutable, ownerless singleton serving any number of collections.
+  MURI's model: `registerContract(contract, operator)` is gated on the
+  CONTRACT's isAdmin/owner (our isAdmin(owner) fix makes the owner pass)
+  and requires the operator to answer
+  `supportsInterface(type(IMURIProtocolCreator).interfaceId)`;
+  `initializeTokenData` is the ONLY operator-gated MURI call; all other
+  writes (addArtworkUris etc.) are called on MURI directly, with MURI
+  consulting the contract's isAdmin for the artist path and the
+  OPERATOR's `isTokenOwner` for the collector path.
+- The adapter therefore holds exactly two roles: `isTokenOwner` =
+  ERC721 ownerOf equality (try/catch → false for unminted ids, so
+  MURI's admin-or-owner fallthrough stays intact), and an
+  `initializeTokenData` forwarder gated by the target contract's own
+  keys (isAdmin staticcall, owner() fallback — the same ladder MURI
+  itself uses for registration; whoever could register can initialize).
+- `supportsInterface` answers true for exactly IERC165 +
+  IMURIProtocolCreator.
+
+Fork-proven against LIVE mainnet MURI (MuriIntegrationFork.t.sol, now 4
+tests): register through the real adapter → initializeTokenData (owner
+yes, stranger NotContractAdmin) → getThumbnailUris returns the stored
+thumb → addArtworkUris as artist (contract-isAdmin path) AND as
+collector (adapter isTokenOwner path) → stranger rejected → combined
+URI view carries all three. Reviewer focus: the adapter holds no funds
+and no state beyond the immutable MURI pointer; the forwarder cannot
+touch any collection whose keys the caller does not hold (per-call
+target-contract auth), and a malicious "collection" can only affect its
+own MURI namespace (MURI keys all state by contract address).

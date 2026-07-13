@@ -84,6 +84,12 @@ Every state-changing function in the Collections contracts and who may call it. 
 | [`beforeMint`](/docs/collections/contracts/hook-chain#beforemint) | the chain's collection only (else `NotCollection`) |
 | [`afterMint`](/docs/collections/contracts/hook-chain#aftermint) | the chain's collection only (else `NotCollection`) |
 
+## MuriOperator
+
+| Function | Access |
+| --- | --- |
+| [`initializeTokenData`](/docs/collections/contracts/muri-operator#initializetokendata) | the target contract's owner or admin (else `NotContractAdmin`) |
+
 ## IMintHook
 
 | Function | Access |

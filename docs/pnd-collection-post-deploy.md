@@ -39,13 +39,13 @@ cover/captures/template/capturer) is shipped; this is the offchain half.
 
 ## Preservation
 
-- [ ] **MURI operator adapter** (`ripe0x/pin#138`). Registration is
-  proven against live MURI (`MuriIntegrationFork.t.sol`: the owner
-  passes the `isAdmin` gate directly); what remains is the small adapter
-  contract MURI calls as operator (supportsInterface + isTokenOwner via
-  ERC721 ownerOf + a permissioned forwarder for initializeTokenData /
-  addArtworkUris), then grow the fork test into the full green path
-  register → initializeTokenData → getThumbnailUris.
+- [x] **MURI operator adapter** (`ripe0x/pin#138`, contract half) —
+  DONE pre-deploy (2026-07-13): `contracts/src/collection/muri/
+  MuriOperator.sol`, fork-proven against live MURI end to end
+  (register → initializeTokenData → getThumbnailUris → addArtworkUris
+  as artist and collector). Remaining for #138: deploy the singleton,
+  then the PND surface that drives it (mint-into-MURI flow for
+  collections, mirroring the Manifold `/muri` flow).
 
 ## Additive modules (deployable any time, each opt-in per collection)
 

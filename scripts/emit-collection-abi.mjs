@@ -77,6 +77,11 @@ emit({
   outFiles: ["packages/abi/src/perWalletCapHook.ts"],
 });
 emit({
+  artifact: "MuriOperator.sol/MuriOperator.json",
+  exportName: "muriOperatorAbi",
+  outFiles: ["packages/abi/src/muriOperator.ts"],
+});
+emit({
   artifact: "HookChain.sol/HookChain.json",
   exportName: "hookChainAbi",
   outFiles: ["packages/abi/src/hookChain.ts"],
