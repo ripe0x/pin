@@ -5,10 +5,11 @@ description: Sequential and pooled, the two token id assignment models, fixed at
 
 # Id modes
 
-Every collection is created in one of two id modes, set once in
-`CollectionConfig.idMode` at `initialize` and never changeable afterward.
-The mode governs who assigns token ids, whether the built-in mint path is
-available at all, and what a burn means.
+Every collection is one of two id modes — a structural fact, fixed by which
+final the factory deploys (`createCollection` for sequential,
+`createPooledCollection` for pooled) and never changeable afterward. It is not
+a config field; it is read back with `idMode()`. The mode governs who assigns
+token ids, whether a built-in mint path exists at all, and what a burn means.
 
 ## Sequential
 
@@ -16,7 +17,7 @@ The core assigns every id itself, counting up from `1`.
 
 - `mint`/`mintWithReferral` (the built-in paid path) are available; each call
   mints `quantity` consecutive ids starting at the current counter
-- An extension minter mints through `mintTo(to, surface, hookData)`, which
+- An extension minter mints through `mintTo(to, referrer, hookData)`, which
   also draws the next id from the same counter; it can never choose one
 - `burn(tokenId)` follows standard ERC721 authorization (owner or
   approved). A burned id is retired: it is never reassigned
@@ -28,10 +29,10 @@ The core assigns every id itself, counting up from `1`.
 
 An authorized extension minter supplies every id explicitly.
 
-- The built-in paid path is unavailable: `mint`/`mintWithReferral` revert
-  with `PooledSellsViaMinter`. A pooled collection sells exclusively
-  through whichever minter owns its id pool
-- The minter mints through `mintToId(to, tokenId, surface, hookData)`,
+- The built-in paid path does not exist on the pooled final at all: there is
+  no `mint` or `mintWithReferral` in its ABI. A pooled collection sells
+  exclusively through whichever minter owns its id pool
+- The minter mints through `mintToId(to, tokenId, referrer, hookData)`,
   where `tokenId` is caller-supplied (the pool's own id scheme; `tokenId
   == sourceId` is the typical form, and `0` is a legal id)
 - `burn(tokenId)` is restricted to an authorized minter (`NotAuthorized`
@@ -54,7 +55,7 @@ An authorized extension minter supplies every id explicitly.
 | | Sequential | Pooled |
 | --- | --- | --- |
 | Who assigns ids | The core (`nextId++`) | The extension minter (`mintToId`) |
-| Built-in `mint`/`mintWithReferral` | Available | Reverts (`PooledSellsViaMinter`) |
+| Built-in `mint`/`mintWithReferral` | Available | Not in the ABI |
 | Extension mint call | `mintTo` | `mintToId` |
 | Burn authority | Owner or approved | Authorized minter only |
 | Burned id | Never reused | May be re-minted as a new instance |

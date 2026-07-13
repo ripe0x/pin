@@ -35,6 +35,14 @@ emit({
   exportName: "collectionAbi",
   outFiles: ["packages/abi/src/collection.ts", "apps/indexer/abis/Collection.ts"],
 });
+// The pooled final. Shares the CollectionCore surface with Collection but its
+// mint entrypoint is mintToId (the minter chooses ids), not mint/mintTo.
+// Published for integrators building against pooled collections.
+emit({
+  artifact: "PooledCollection.sol/PooledCollection.json",
+  exportName: "pooledCollectionAbi",
+  outFiles: ["packages/abi/src/pooledCollection.ts"],
+});
 emit({
   artifact: "CollectionFactory.sol/CollectionFactory.json",
   exportName: "collectionFactoryAbi",

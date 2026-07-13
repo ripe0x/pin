@@ -125,18 +125,18 @@ See [IMintHook](/docs/collections/contracts/i-mint-hook),
   authorized at once, granted and revoked individually. Revoking a
   minter's grant is the artist's lever over that minter's schedule and
   behavior once it's live
-- **What it does**: an authorized minter calls `mintTo(to, surface,
-  hookData)` (sequential mode) or `mintToId(to, tokenId, surface,
-  hookData)` (pooled mode) on the collection. Both are **non-payable** on
+- **What it does**: an authorized minter calls `mintTo(to, referrer,
+  hookData)` (the sequential final) or `mintToId(to, tokenId, referrer,
+  hookData)` (the pooled final) on the collection. Both are **non-payable** on
   the collection's side: the minter carries all value handling itself, the
   collection just assigns the id, stamps the Mint Mark and entropy, and
   runs the mint hook
 - **What it can and cannot do**: an extension minter fully owns its own
   economics (its own price, its own payment token, its own escrow) and its
-  own sale schedule; it cannot bypass the id-mode rule (`mintTo` reverts
-  with `PooledNeedsMintToId` on a pooled collection, `mintToId` reverts
-  with `SequentialAssignsIds` on a sequential one) or the supply cap
-  (`ExceedsCap`), and mint hooks still run against it. Honoring the surface
+  own sale schedule; it cannot bypass the id-mode rule (each final exposes
+  only its own mint entrypoint — `mintTo` on sequential, `mintToId` on pooled;
+  the other is simply not in the ABI) or the supply cap
+  (`ExceedsCap`), and mint hooks still run against it. Honoring the referral
   share on a minter's own payment path is convention, not a contract
   guarantee: PND-shipped minters honor it, but a custom minter's behavior
   is the artist's own visible, onchain choice

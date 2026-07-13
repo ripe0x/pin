@@ -26,8 +26,8 @@ function mintToId(address to, uint256 tokenId, address referrer, bytes calldata 
 
 Both are `nonpayable` and gated `NotMinter` if `msg.sender` isn't authorized. Which one you call depends on the collection's `idMode`, fixed at deploy:
 
-- **Sequential**: call `mintTo`. The core assigns `tokenId = nextId++`, same counter the built-in paid path uses. Calling `mintToId` on a sequential collection reverts `SequentialAssignsIds`
-- **Pooled**: call `mintToId`, supplying the id yourself (`tokenId == sourceId` is the intended shape: the minter owns whatever pool or source mapping decides which id mints next). Calling `mintTo` on a pooled collection reverts `PooledNeedsMintToId`
+- **Sequential**: call `mintTo`. The core assigns `tokenId = nextId++`, same counter the built-in paid path uses. The sequential final has no `mintToId` at all — its absence from the ABI is the guarantee, not a runtime check
+- **Pooled**: call `mintToId`, supplying the id yourself (`tokenId == sourceId` is the intended shape: the minter owns whatever pool or source mapping decides which id mints next). The pooled final has no `mintTo`; each final ships only its own entrypoint
 
 Both paths run the mint hook (`beforeMint`/`afterMint`), enforce the supply cap exactly as the built-in path does, and stamp a fresh Mint Mark and `tokenSeed` per token. Neither path enforces `mintStart`/`mintEnd`: an extension minter owns its own schedule, and the artist's control over it is `setMinter(minter, false)`, not the window.
 

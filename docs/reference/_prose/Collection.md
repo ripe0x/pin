@@ -152,9 +152,9 @@ above use a `<COLLECTION_ADDRESS>` placeholder.
 access: permissionless (payable; no caller gate, guarded by window/cap/payment checks)
 
 The honest default mint path. Passes `referrer = address(0)` so no referral share
-is taken and the full price goes to the artist. Sequential mode only: in a pooled
-collection it reverts `PooledSellsViaMinter`, since pooled collections sell
-exclusively through their authorized minter.
+is taken and the full price goes to the artist. This is a sequential-final
+entrypoint; the pooled final ships no built-in paid path at all, selling only
+through its authorized minter (see [Id modes](/docs/collections/concepts/id-modes)).
 
 Reverts `ZeroQuantity` for `quantity == 0`, `MintNotStarted` before `mintStart`,
 `MintEnded` at or after a non-zero `mintEnd`, and `ExceedsCap` when the sequential
@@ -172,18 +172,17 @@ access: permissionless (payable; no caller gate, guarded by window/cap/payment c
 Same paid path as `mint`, but credits a `referrer` its 10% share of the price;
 `referrer == address(0)` folds the share back to the artist. PND's frontend passes
 PND's address, a self-hosted page passes the artist's address. `hookData` is
-forwarded to both the mint hook and the price strategy. Sequential mode only:
-reverts `PooledSellsViaMinter` in pooled mode. Same window, cap, payment, and
-hook behavior and reverts as `mint`. Emits `ReferralPaid` for a non-zero referral
-cut alongside `Minted`.
+forwarded to both the mint hook and the price strategy. Same window, cap,
+payment, and hook behavior and reverts as `mint`. Emits `ReferralPaid` for a
+non-zero referral cut alongside `Minted`.
 
 ## function mintTo
 
 access: minter-only (`msg.sender` must be an authorized extension minter, else `NotMinter`)
 
-The extension mint path for Sequential mode. Non-payable: the calling minter
-carries all value handling and honors the referral share by convention. The core
-assigns the next id and returns it. Reverts `PooledNeedsMintToId` in pooled mode.
+The extension mint path for authorized minters on the sequential final.
+Non-payable: the calling minter carries all value handling and honors the
+referral share by convention. The core assigns the next id and returns it.
 The cap and id assignment are enforced exactly as on the paid path, but the sale
 window is not: an extension minter owns its own schedule, and the artist's lever
 is revoking the grant with `setMinter`. Hooks still run (`HookRejected` on

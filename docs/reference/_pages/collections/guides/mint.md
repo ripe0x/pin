@@ -15,7 +15,7 @@ function mintWithReferral(uint256 quantity, address referrer, bytes calldata hoo
 - `mint(quantity)` mints directly to `msg.sender` with `referrer = address(0)`. Since a referral share only pays out when a referrer is credited, this path sends 100% of the price to the artist
 - `mintWithReferral(quantity, referrer, hookData)` credits `referrer` its share of the price (`REFERRAL_SHARE_BPS`, a fixed 10%) via [Collection](/docs/collections/contracts/collection)'s `_settle`. Passing `referrer = address(0)` folds the share back to the artist, same as `mint`. `hookData` is forwarded unchanged to the mint hook and, when set, the price strategy
 
-Pooled collections do not expose either path: `PooledSellsViaMinter` reverts any call to `mint` or `mintWithReferral` when `idMode` is `Pooled`. A pooled collection sells exclusively through an authorized extension minter, which owns the id pool. See [Write a minter](/docs/collections/guides/write-a-minter).
+Pooled collections do not expose either path at all: `mint` and `mintWithReferral` are simply absent from the pooled final's ABI (there is no revert to hit — the function does not exist). A pooled collection sells exclusively through an authorized extension minter, which owns the id pool. See [Write a minter](/docs/collections/guides/write-a-minter).
 
 ## Price resolution
 
@@ -104,7 +104,6 @@ await publicClient.waitForTransactionReceipt({hash});
 | `ZeroQuantity` | `quantity == 0` |
 | `MintNotStarted` | before `mintStart` |
 | `MintEnded` | at or after `mintEnd` |
-| `PooledSellsViaMinter` | called on a `Pooled`-mode collection |
 | `WrongPayment` | fixed-price mint, `msg.value != required` |
 | `Underpayment` | strategy-priced mint, `msg.value < required` |
 | `ExceedsCap` | mint would exceed `supplyCap` |
