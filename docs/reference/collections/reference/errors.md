@@ -22,6 +22,12 @@ Reverts construction when the RenderAssets address is zero: the renderer has no 
 **`BuilderRequired`** · [ScriptyRenderer](/docs/collections/contracts/scripty-renderer#errors)\
 Reverts construction when the ScriptyBuilderV2 address is zero: the renderer would have nothing to assemble the HTML document with.
 
+**`ChainedHookRejected`** · [HookChain](/docs/collections/contracts/hook-chain#errors)\
+A chained hook answered `beforeMint` with the wrong selector (carries the hook's address).
+
+**`CollectionRequired`** · [HookChain](/docs/collections/contracts/hook-chain#errors)\
+The constructor was given the zero address, or an address with no code, as the collection.
+
 **`ERC721IncorrectOwner`** · [Collection](/docs/collections/contracts/collection#errors)\
 Standard ERC721 error: a token operation named an owner that does not match the token's actual owner.
 
@@ -57,6 +63,9 @@ Inherited from OpenZeppelin `Clones`.
 
 **`GunzipStoreRequired`** · [ScriptyRenderer](/docs/collections/contracts/scripty-renderer#errors)\
 Reverts at `tokenURI` time when a dependency or code file is gzipped but no gunzip store was configured, so the gzip tags could never be decompressed in the browser.
+
+**`HookNotContract`** · [HookChain](/docs/collections/contracts/hook-chain#errors)\
+A constructor hook address has no code (carries the offending address).
 
 **`HookRejected`** · [Collection](/docs/collections/contracts/collection#errors)\
 The mint hook's `beforeMint` did not return the required selector, so the hook rejected the mint.
@@ -102,6 +111,9 @@ A management function gated `onlyOwnerOrAdmin` was called by neither the owner n
 
 **`NotCaptureAuthorized`** · [RenderAssets](/docs/collections/contracts/render-assets#errors)\
 A capture write was attempted by an address that is not the collection's owner, one of its admins, or a granted capturer.
+
+**`NotCollection`** · [HookChain](/docs/collections/contracts/hook-chain#errors)\
+A mint callback was called by someone other than the chain's collection.
 
 **`NotCollectionAdmin`** · [AllowlistHook](/docs/collections/contracts/allowlist-hook#errors)\
 A hook setter was called by an address that is neither the collection's owner nor one of its admins.
@@ -177,6 +189,9 @@ A mint with no price strategy set did not send exactly `price * quantity`.
 
 **`ZeroAccount`** · [Collection](/docs/collections/contracts/collection#errors)\
 `withdraw`, `rescueStrayETH`, or `addAdmin` was passed the zero address.
+
+**`ZeroHook`** · [HookChain](/docs/collections/contracts/hook-chain#errors)\
+The constructor's hook list contains the zero address.
 
 **`ZeroMinter`** · [Collection](/docs/collections/contracts/collection#errors)\
 An initial minter in `initialize`, or the `setMinter` target, was the zero address.

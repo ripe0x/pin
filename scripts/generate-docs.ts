@@ -78,6 +78,7 @@ const ABI_BY_NAME: Record<string, AbiItem[]> = {
     AllowlistHook: abis.allowlistHookAbi as unknown as AbiItem[],
     PerWalletCapHook: abis.perWalletCapHookAbi as unknown as AbiItem[],
     HoldsCollectionHook: abis.holdsCollectionHookAbi as unknown as AbiItem[],
+    HookChain: abis.hookChainAbi as unknown as AbiItem[],
     IMintHook: abis.iMintHookAbi as unknown as AbiItem[],
     IPriceStrategy: abis.iPriceStrategyAbi as unknown as AbiItem[],
     IRenderer: abis.iRendererAbi as unknown as AbiItem[],
@@ -150,6 +151,13 @@ const PROTOCOLS: Protocol[] = [
             {name: 'AllowlistHook', slug: 'allowlist-hook', deploymentsKey: 'allowlistHook', kind: 'singleton'},
             {name: 'PerWalletCapHook', slug: 'per-wallet-cap-hook', deploymentsKey: 'perWalletCapHook', kind: 'singleton'},
             {name: 'HoldsCollectionHook', slug: 'holds-collection-hook', deploymentsKey: 'holdsCollectionHook', kind: 'singleton'},
+            {
+                name: 'HookChain',
+                slug: 'hook-chain',
+                deploymentsKey: null,
+                kind: 'clone',
+                note: 'Deployed per collection, not a shared singleton: an artist deploys a chain with their collection and hook list fixed in the constructor (immutable by construction) and points the mint-hook slot at it, so there is no canonical address.',
+            },
             {
                 name: 'IMintHook',
                 slug: 'i-mint-hook',

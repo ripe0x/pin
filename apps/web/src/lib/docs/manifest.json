@@ -130,6 +130,12 @@
               "description": "A reference [mint hook](/docs/collections/contracts/i-mint-hook) gating a mint on the minter holding a token from another collection, typically an earlier collection by the same artist."
             },
             {
+              "title": "HookChain",
+              "slug": "hook-chain",
+              "path": "/docs/collections/contracts/hook-chain",
+              "description": "Composes mint hooks: a collection has one hook slot, and a HookChain is how one slot holds several gates."
+            },
+            {
               "title": "IMintHook",
               "slug": "i-mint-hook",
               "path": "/docs/collections/contracts/i-mint-hook",

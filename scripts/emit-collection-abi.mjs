@@ -77,6 +77,11 @@ emit({
   outFiles: ["packages/abi/src/perWalletCapHook.ts"],
 });
 emit({
+  artifact: "HookChain.sol/HookChain.json",
+  exportName: "hookChainAbi",
+  outFiles: ["packages/abi/src/hookChain.ts"],
+});
+emit({
   artifact: "HoldsCollectionHook.sol/HoldsCollectionHook.json",
   exportName: "holdsCollectionHookAbi",
   outFiles: ["packages/abi/src/holdsCollectionHook.ts"],

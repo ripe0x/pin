@@ -77,6 +77,13 @@ Every state-changing function in the Collections contracts and who may call it. 
 | [`setRequired`](/docs/collections/contracts/holds-collection-hook#setrequired) | owner-only (`onlyCollectionOwner`, checked against the target |
 | [`afterMint`](/docs/collections/contracts/holds-collection-hook#aftermint) | core-only, called by the collection itself as part of its mint |
 
+## HookChain
+
+| Function | Access |
+| --- | --- |
+| [`beforeMint`](/docs/collections/contracts/hook-chain#beforemint) | the chain's collection only (else `NotCollection`) |
+| [`afterMint`](/docs/collections/contracts/hook-chain#aftermint) | the chain's collection only (else `NotCollection`) |
+
 ## IMintHook
 
 | Function | Access |

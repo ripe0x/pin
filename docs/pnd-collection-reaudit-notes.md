@@ -399,3 +399,32 @@ Attribution, all cut in earlier batches).
 
 No ABI or deployed-bytecode impact (nothing referenced SVGRenderer
 except its own tests). Full suite re-run green after removal.
+
+## 2026-07-13 (h): HookChain — composing gates in the one hook slot
+
+Un-reviewed; pulled forward from the post-launch backlog so the pending
+external review can cover it in the same pass (it is small, and it
+unblocks allowlist + per-wallet-cap composition on day one). New
+`hooks/HookChain.sol` (+ `CollectionHookChain.t.sol`, 9 tests):
+
+- **Born final**: collection + hook list fixed in the constructor, no
+  setters, no owner. Changing gates = deploy a new chain, `setMintHook`.
+- **Fan-out**: `beforeMint` requires every chained hook to return the
+  magic selector (wrong selector reverts `ChainedHookRejected(hook)`;
+  a sub-hook's own revert bubbles); `afterMint` fans out in order. Both
+  callable only by the chain's collection (`NotCollection`).
+- **Auth forwarding**: the chain implements `ICollectionAuth` by
+  forwarding `owner()`/`isAdmin()` to its collection, because sub-hooks
+  key config by `msg.sender` (the chain at mint time) — so the artist
+  configures stock hooks against the chain's address and HookBase's
+  admin gate still lands on the collection's keys.
+- **Known shape limits (documented, accepted)**: one `hookData` payload
+  reaches every hook (two hooks that both decode it must agree on its
+  shape); a chain may contain another chain — recursion is gas-bounded,
+  no cycle check (a chain's address cannot appear in its own
+  constructor list).
+
+Reviewer focus: the fan-out adds external calls INSIDE the collection's
+nonReentrant mint (as any single hook already does); sub-hooks cannot
+reenter mint paths for the same reason single hooks cannot. The auth
+forward introduces no new writable state — the chain has none.
