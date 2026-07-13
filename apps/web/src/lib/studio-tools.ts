@@ -52,6 +52,13 @@ export const STUDIO_TOOLS: StudioTool[] = [
     available: () => collectionFactory(MAINNET_CHAIN_ID) !== null,
   },
   {
+    id: "collections",
+    label: "Manage collections",
+    description:
+      "Everything after deploy: admin keys and the ownership-transfer warning, plus per-token capture backfill for marketplace grids.",
+    available: () => collectionFactory(MAINNET_CHAIN_ID) !== null,
+  },
+  {
     id: "listings",
     label: "Listings",
     description:

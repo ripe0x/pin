@@ -13,28 +13,33 @@
 
 ## Studio follow-ups
 
-- [ ] **Surface the admin list during ownership transfer.** The accepted
-  contract behavior (reaudit notes, Change 1) is that `_admins` survives
-  `transferOwnership` — the new owner inherits the old operator's keys.
-  The agreed mitigation is product-side: any transfer flow shows the
-  current admin roster loudly so both parties see who still holds keys.
+- [x] **Surface the admin list during ownership transfer** — first cut
+  done pre-deploy (2026-07-13): `/studio/[address]/collections` carries
+  the admins panel (the grants-survive-transfer warning + an isAdmin
+  checker). Full roster enumeration lights up once discovery indexing
+  lands (AdminSet events).
 
 ## First HTML-generative drop (gates that drop, not the SVG launch)
 
 Design: `pnd-collection-thumbnails.md`. The contract side (RenderAssets
 cover/captures/template/capturer) is shipped; this is the offchain half.
 
-- [ ] Client-side capture util in the parity render lib: grab the canvas
-  from the render iframe, encode PNG per the canonical capture spec,
-  hand bytes to the upload flow (Irys→Arweave one-time by default).
-- [ ] Studio "capture cover" step at deploy (it is already rendering the
-  preview; capture one frame, upload, `setCover`).
+- [x] Client-side capture util — done pre-deploy (2026-07-13):
+  `apps/web/src/lib/collection-render/capture.ts` (agent-in-sandbox
+  postMessage design; the frame stays opaque-origin). Upload rail today
+  is BYOK IPFS (the artist's own pinning key, same slot as the MURI
+  flow); swaps to Irys→Arweave one-time storage when those rails land.
+- [x] Studio "capture cover" step — done pre-deploy (2026-07-13): the
+  create wizard's preview step captures the first test seed and uploads
+  under the artist's key (`CaptureCover.tsx`).
 - [ ] Mint-surface per-token capture at mint (PND pays the one-time
   upload where it earned the share).
-- [ ] Studio backfill page: list capture-less tokens from the indexer →
-  render client-side → upload frames → publish manifest → one
-  `setCaptureTemplate` tx. Consider a capturer-key flow so automation
-  never holds an admin key.
+- [x] Studio backfill tool — done pre-deploy (2026-07-13):
+  `/studio/[address]/collections` (ManageCollectionTool) captures token
+  ranges client-side from the renderer's onchain work refs and lands one
+  `setCaptures` batch tx, or sets the `{id}` template directly.
+  Remaining niceties: indexer-driven capture-less listing (post-
+  indexing) and a capturer-key signing flow.
 - [x] Mirror the capture spec into `injection-convention.md` — done 2026-07-13.
 
 ## Preservation
