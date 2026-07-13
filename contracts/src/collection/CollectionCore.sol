@@ -121,9 +121,12 @@ abstract contract CollectionCore is
         __ReentrancyGuard_init();
         _cfg = p.cfg;
         // The renderer slot always holds a real address: the artist's choice,
-        // or the factory default when they made none.
+        // or the factory default when they made none. It must be a deployed
+        // contract — a typo here plus a born-true rendererLocked would brick
+        // tokenURI forever, so the mistake is refused at the door.
         if (p.cfg.renderer == address(0)) _cfg.renderer = p.defaultRenderer;
         if (_cfg.renderer == address(0)) revert RendererRequired();
+        if (_cfg.renderer.code.length == 0) revert RendererNotContract(_cfg.renderer);
         _catalog = p.catalog;
         for (uint256 i = 0; i < p.initialMinters.length; i++) {
             if (p.initialMinters[i] == address(0)) revert ZeroMinter();
@@ -305,10 +308,13 @@ abstract contract CollectionCore is
         emit AdminSet(account, false);
     }
 
-    /// @notice Whether `account` holds an explicit admin grant. The owner is
-    ///         an implicit admin and does not appear here.
+    /// @notice Whether `account` may use the admin-gated setters: the owner,
+    ///         or anyone holding an explicit grant. The owner has held every
+    ///         admin power all along (the modifier's other arm); reporting it
+    ///         here keeps external checks — MURI gates registration on this
+    ///         view — honest about who can act.
     function isAdmin(address account) external view override returns (bool) {
-        return _admins[account];
+        return account == owner() || _admins[account];
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -367,13 +373,17 @@ abstract contract CollectionCore is
     }
 
     /// @dev A renderer change alters every token's metadata; ERC-4906 is the
-    ///      refresh signal marketplaces actually subscribe to.
+    ///      refresh signal marketplaces subscribe to for tokens, ERC-7572 the
+    ///      one for the contract-level page. The new renderer must be a
+    ///      deployed contract, same rule as at init.
     function setRenderer(address renderer_) external override onlyOwnerOrAdmin {
         if (_cfg.rendererLocked) revert RendererIsLocked();
         if (renderer_ == address(0)) revert RendererRequired();
+        if (renderer_.code.length == 0) revert RendererNotContract(renderer_);
         _cfg.renderer = renderer_;
         emit RendererSet(renderer_);
         emit BatchMetadataUpdate(0, type(uint256).max);
+        emit ContractURIUpdated();
     }
 
     function setMintHook(address hook) external override onlyOwnerOrAdmin {

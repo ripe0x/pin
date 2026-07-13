@@ -42,7 +42,7 @@ contract Collection is CollectionCore, ICollection {
 
     /// @notice Simple mint. No referrer, so the artist keeps the full price.
     function mint(uint256 quantity) external payable override nonReentrant {
-        _mintPaid(quantity, address(0), "");
+        _mintPaid(msg.sender, quantity, address(0), "");
     }
 
     /// @notice Mint crediting `referrer` its share — PND on PND, the artist
@@ -54,10 +54,25 @@ contract Collection is CollectionCore, ICollection {
         override
         nonReentrant
     {
-        _mintPaid(quantity, referrer, hookData);
+        _mintPaid(msg.sender, quantity, referrer, hookData);
     }
 
-    function _mintPaid(uint256 quantity, address referrer, bytes memory hookData) private {
+    /// @notice Paid mint to someone else: a gift, a hot wallet buying for a
+    ///         vault, a sponsor covering a collector. Same paid path, same
+    ///         price — only the recipient differs, and the event records the
+    ///         true first owner. `to` is who the hook and the price strategy
+    ///         judge (an allowlist gates the collector, not their payer); any
+    ///         overpayment refund accrues to the payer, who sent it.
+    function mintFor(address to, uint256 quantity, address referrer, bytes calldata hookData)
+        external
+        payable
+        override
+        nonReentrant
+    {
+        _mintPaid(to, quantity, referrer, hookData);
+    }
+
+    function _mintPaid(address to, uint256 quantity, address referrer, bytes memory hookData) private {
         if (quantity == 0) revert ZeroQuantity();
         if (block.timestamp < _cfg.mintStart) revert MintNotStarted();
         if (_cfg.mintEnd != 0 && block.timestamp >= _cfg.mintEnd) revert MintEnded();
@@ -74,7 +89,7 @@ contract Collection is CollectionCore, ICollection {
             required = _cfg.price * quantity;
             if (msg.value != required) revert WrongPayment(required, msg.value);
         } else {
-            required = IPriceStrategy(strategy).priceOf(address(this), msg.sender, quantity, hookData);
+            required = IPriceStrategy(strategy).priceOf(address(this), to, quantity, hookData);
             if (msg.value < required) revert Underpayment(required, msg.value);
             uint256 excess = msg.value - required;
             if (excess > 0) {
@@ -85,17 +100,17 @@ contract Collection is CollectionCore, ICollection {
 
         uint256 firstMintIndex = _mintedEver;
         uint256 firstTokenId = firstMintIndex + 1;
-        _runBeforeHook(msg.sender, quantity, firstTokenId, referrer, hookData);
+        _runBeforeHook(to, quantity, firstTokenId, referrer, hookData);
 
         CollectionStatus statusAtMint = _lifecycleStatus(); // always Open here
         for (uint256 i = 0; i < quantity; i++) {
-            _mintOne(msg.sender, firstTokenId + i);
+            _mintOne(to, firstTokenId + i);
         }
 
         _settle(required, referrer);
-        _runAfterHook(msg.sender, quantity, firstTokenId, referrer, hookData);
+        _runAfterHook(to, quantity, firstTokenId, referrer, hookData);
 
-        emit Minted(msg.sender, referrer, firstTokenId, quantity, firstMintIndex, statusAtMint);
+        emit Minted(to, referrer, firstTokenId, quantity, firstMintIndex, statusAtMint);
     }
 
     // ─────────────────────────────────────────────────────────────────────────

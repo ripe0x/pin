@@ -189,6 +189,18 @@ contract DefaultRendererTest is Test {
         assertFalse(_contains(json, _toHexString(referrer)), "referrer must not appear in metadata");
     }
 
+    /// @dev The template rung sits between explicit captures and the cover:
+    ///      one write covers a whole drop's thumbnails.
+    function test_tokenURI_image_templateRung() public {
+        uint256 tokenId = _mint();
+        vm.prank(artist);
+        assets.setCaptureTemplate(address(collection), "ar://manifest/{id}.png");
+
+        string memory json = _decode(collection.tokenURI(tokenId));
+        assertTrue(_contains(json, "ar://manifest/1.png"), "template resolves with the token id");
+        assertFalse(_contains(json, ARTWORK), "cover yields to the template");
+    }
+
     // ── contractURI shape ────────────────────────────────────────────────────
 
     function test_contractURI_shape() public view {
@@ -196,6 +208,20 @@ contract DefaultRendererTest is Test {
         assertTrue(_startsWith(uri, "data:application/json;base64,"), "wrong data URI prefix");
         string memory json = _decode(uri);
         assertTrue(_contains(json, '"name":"Test Collection"'), "wrong contractURI name");
+    }
+
+    /// @dev Contract-level metadata is the marketplace collection page; the
+    ///      cover is its image.
+    function test_contractURI_includesCover() public view {
+        string memory json = _decode(collection.contractURI());
+        assertTrue(_contains(json, string.concat('"image":"', ARTWORK, '"')), "cover appears in contractURI");
+    }
+
+    function test_contractURI_omitsImageWithoutCover() public {
+        vm.prank(artist);
+        assets.setCover(address(collection), "");
+        string memory json = _decode(collection.contractURI());
+        assertFalse(_contains(json, '"image"'), "no cover, no image key");
     }
 
     // ── string test helpers ──────────────────────────────────────────────────

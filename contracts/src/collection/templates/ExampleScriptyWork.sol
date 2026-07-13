@@ -33,9 +33,10 @@ contract ExampleScriptyWork is ScriptyRenderer {
         string memory gunzipFile_,
         CodeRef[] memory code_,
         CodeRef[] memory deps_,
-        uint8 injectionVersion_
+        uint8 injectionVersion_,
+        address renderAssets_
     )
-        ScriptyRenderer(scriptyBuilder_, gunzipStore_, gunzipFile_, code_, deps_, injectionVersion_)
+        ScriptyRenderer(scriptyBuilder_, gunzipStore_, gunzipFile_, code_, deps_, injectionVersion_, renderAssets_)
     {}
 
     /// @dev A seed-derived trait: pick a named palette from the seed. Emitted

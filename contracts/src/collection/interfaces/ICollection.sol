@@ -18,6 +18,12 @@ interface ICollection is ICollectionCore {
     ///         `hookData` reaches the mint hook and the price strategy.
     function mintWithReferral(uint256 quantity, address referrer, bytes calldata hookData) external payable;
 
+    /// @notice Paid mint to someone else: a gift, a hot wallet buying for a
+    ///         vault, a sponsor covering a collector. `to` is who hooks and
+    ///         the price strategy judge; overpayment refunds accrue to the
+    ///         payer. The event records `to` as the true first owner.
+    function mintFor(address to, uint256 quantity, address referrer, bytes calldata hookData) external payable;
+
     // ── mint: extension path (economics live in the authorized minter) ──────
     /// @notice Authorized minters only. Non-payable; the calling minter
     ///         carries all value handling. Hooks and the cap apply as on the

@@ -100,6 +100,9 @@ The minter's Merkle proof did not verify against the collection's allowlist root
 **`NotAuthorized`** · [Collection](/docs/collections/contracts/collection#errors)\
 A management function gated `onlyOwnerOrAdmin` was called by neither the owner nor an admin; `removeAdmin` was called by someone other than the owner or the admin itself; `notifyMetadataUpdate` was called by neither the renderer nor an owner/admin; or `burn` was called without burn authority for the id mode.
 
+**`NotCaptureAuthorized`** · [RenderAssets](/docs/collections/contracts/render-assets#errors)\
+A capture write was attempted by an address that is not the collection's owner, one of its admins, or a granted capturer.
+
 **`NotCollectionAdmin`** · [AllowlistHook](/docs/collections/contracts/allowlist-hook#errors)\
 A hook setter was called by an address that is neither the collection's owner nor one of its admins.
 
@@ -141,6 +144,9 @@ Standard OpenZeppelin ReentrancyGuard error: a `nonReentrant` function was re-en
 
 **`RendererIsLocked`** · [Collection](/docs/collections/contracts/collection#errors)\
 `setRenderer` or `lockRenderer` was called after `lockRenderer`.
+
+**`RendererNotContract`** · [Collection](/docs/collections/contracts/collection#errors)\
+The renderer address has no code (carries the offending address as evidence).
 
 **`RendererRequired`** · [Collection](/docs/collections/contracts/collection#errors)\
 `initialize` was given the zero address as the default renderer.

@@ -528,6 +528,34 @@ export const collectionAbi = [
   },
   {
     "type": "function",
+    "name": "mintFor",
+    "inputs": [
+      {
+        "name": "to",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "quantity",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "referrer",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "hookData",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
     "name": "mintHook",
     "inputs": [],
     "outputs": [
@@ -1278,6 +1306,12 @@ export const collectionAbi = [
   },
   {
     "type": "event",
+    "name": "ContractURIUpdated",
+    "inputs": [],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "CreatorListed",
     "inputs": [
       {
@@ -1867,6 +1901,17 @@ export const collectionAbi = [
     "type": "error",
     "name": "RendererIsLocked",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RendererNotContract",
+    "inputs": [
+      {
+        "name": "renderer",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
   },
   {
     "type": "error",

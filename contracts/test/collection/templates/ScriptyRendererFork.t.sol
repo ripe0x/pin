@@ -80,7 +80,9 @@ contract ScriptyRendererForkTest is Test {
         deps[0] = CodeRef({store: ETHFS_V2_FILE_STORAGE, name: P5_GZ_FILE, kind: CodeKind.ScriptGzip});
         CodeRef[] memory code = new CodeRef[](1);
         code[0] = CodeRef({store: address(artistStore), name: ARTIST_FILE, kind: CodeKind.Script});
-        renderer = new ExampleScriptyWork(SCRIPTY_BUILDER_V2, ETHFS_V2_FILE_STORAGE, GUNZIP_FILE, code, deps, 1);
+        renderer = new ExampleScriptyWork(
+            SCRIPTY_BUILDER_V2, ETHFS_V2_FILE_STORAGE, GUNZIP_FILE, code, deps, 1, address(0)
+        );
 
         Collection impl = new Collection();
         // Factory wires the template as the default renderer, so a plain

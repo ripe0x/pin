@@ -95,6 +95,19 @@ function injectionVersion() external view returns (uint8)
 The render-context injection-convention version this renderer targets, echoed to
 the work as `tokenData.version`. Immutable.
 
+### renderAssets
+
+```solidity
+function renderAssets() external view returns (RenderAssets)
+```
+
+The [RenderAssets](/docs/collections/contracts/render-assets) registry this
+renderer reads static images from, or the zero address when unwired. Wired,
+the metadata `image` resolves down the registry's ladder (capture, template,
+cover) and `contractURI` carries the cover; unwired, metadata has no `image`
+and `animation_url` stands alone. Immutable; a subclass can override `_image`
+for a custom source either way.
+
 ### scriptyBuilder
 
 ```solidity

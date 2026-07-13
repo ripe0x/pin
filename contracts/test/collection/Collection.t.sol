@@ -30,6 +30,34 @@ contract CollectionTest is CollectionBase {
         clone.initialize(p);
     }
 
+    /// @dev A renderer with no code would brick tokenURI — fatally so when
+    ///      the collection is born rendererLocked. Refused at the door.
+    function test_init_rejectsNonContractRenderer() public {
+        address eoa = makeAddr("eoaRenderer");
+        CollectionConfig memory cfg = _freeConfig();
+        cfg.renderer = eoa;
+        InitParams memory p = _rawInitParams(cfg);
+        Collection clone = _freshClone();
+        vm.expectRevert(abi.encodeWithSelector(ICollectionCore.RendererNotContract.selector, eoa));
+        clone.initialize(p);
+
+        // The born-locked variant is the one the guard exists for: without it
+        // this collection could never render and never be fixed.
+        cfg.rendererLocked = true;
+        p = _rawInitParams(cfg);
+        clone = _freshClone();
+        vm.expectRevert(abi.encodeWithSelector(ICollectionCore.RendererNotContract.selector, eoa));
+        clone.initialize(p);
+    }
+
+    function test_setRenderer_rejectsNonContract() public {
+        Collection c = _collection(_freeConfig());
+        address eoa = makeAddr("eoaRenderer");
+        vm.expectRevert(abi.encodeWithSelector(ICollectionCore.RendererNotContract.selector, eoa));
+        vm.prank(artist);
+        c.setRenderer(eoa);
+    }
+
     function test_init_rejectsRoyaltyTooHigh() public {
         CollectionConfig memory cfg = _freeConfig();
         cfg.royaltyBps = 5001; // > 50% cap
@@ -667,11 +695,14 @@ contract CollectionTest is CollectionBase {
         Collection c = _collection(_freeConfig());
         assertTrue(c.supportsInterface(0x49064906));
 
-        // renderer swap refreshes everything
+        // renderer swap refreshes every token AND the contract-level page
+        address newRenderer = address(new MockRenderer());
         vm.expectEmit(false, false, false, true, address(c));
         emit ICollectionCore.BatchMetadataUpdate(0, type(uint256).max);
+        vm.expectEmit(false, false, false, true, address(c));
+        emit ICollectionCore.ContractURIUpdated();
         vm.prank(artist);
-        c.setRenderer(makeAddr("newRenderer"));
+        c.setRenderer(newRenderer);
     }
 
     /// @dev The renderer (or owner/admin) can signal refreshes the core cannot
@@ -826,8 +857,9 @@ contract CollectionTest is CollectionBase {
         assertFalse(c.isRendererLocked(), "not locked by default");
 
         // still swappable before the lock
+        address beforeLock = address(new MockRenderer());
         vm.prank(artist);
-        c.setRenderer(makeAddr("beforeLock"));
+        c.setRenderer(beforeLock);
 
         vm.expectEmit(false, false, false, false, address(c));
         emit ICollectionCore.RendererLocked();

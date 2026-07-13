@@ -21,6 +21,7 @@ interface ICollectionCore {
     // ── errors ──────────────────────────────────────────────────────────────
     error OwnerRequired();
     error RendererRequired();
+    error RendererNotContract(address renderer);
     error RoyaltyTooHigh();
     error BadMintWindow();
     error ZeroMinter();
@@ -52,6 +53,9 @@ interface ICollectionCore {
     // ── ERC-4906 (the refresh signals marketplaces subscribe to) ────────────
     event MetadataUpdate(uint256 _tokenId);
     event BatchMetadataUpdate(uint256 _fromTokenId, uint256 _toTokenId);
+
+    // ── ERC-7572 (the contract-level metadata refresh signal) ───────────────
+    event ContractURIUpdated();
 
     /// @notice One event per mint call — the permanent per-mint record.
     ///         Built-in paths cover [firstTokenId, firstTokenId + quantity - 1];
@@ -183,8 +187,8 @@ interface ICollectionCore {
     function mintHook() external view returns (address);
     function priceStrategy() external view returns (address);
     function isMinter(address minter) external view returns (bool);
-    /// @notice Whether `account` holds an explicit admin grant (the owner is
-    ///         an implicit admin and need not appear here).
+    /// @notice Whether `account` may use the admin-gated setters: the owner,
+    ///         or anyone holding an explicit grant.
     function isAdmin(address account) external view returns (bool);
     function isRendererLocked() external view returns (bool);
     function isSupplyLocked() external view returns (bool);

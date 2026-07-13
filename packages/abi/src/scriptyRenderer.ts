@@ -67,6 +67,11 @@ export const scriptyRendererAbi = [
         "name": "injectionVersion_",
         "type": "uint8",
         "internalType": "uint8"
+      },
+      {
+        "name": "renderAssets_",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "nonpayable"
@@ -185,6 +190,19 @@ export const scriptyRendererAbi = [
         "name": "",
         "type": "uint8",
         "internalType": "uint8"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "renderAssets",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract RenderAssets"
       }
     ],
     "stateMutability": "view"

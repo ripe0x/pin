@@ -52,8 +52,17 @@ contract DefaultRenderer is IRenderer {
         return MetadataJson.jsonDataURI(json);
     }
 
+    /// @dev Contract-level metadata drives the marketplace collection page;
+    ///      the cover, when set, is what that page shows.
     function contractURI(address collection) external view override returns (string memory) {
-        string memory json = string.concat('{"name":"', MetadataJson.escape(ICollectionView(collection).name()), '"}');
+        string memory cover = renderAssets.coverOf(collection);
+        string memory json = string.concat(
+            '{"name":"',
+            MetadataJson.escape(ICollectionView(collection).name()),
+            '"',
+            bytes(cover).length > 0 ? string.concat(',"image":"', MetadataJson.escape(cover), '"') : "",
+            "}"
+        );
         return MetadataJson.jsonDataURI(json);
     }
 }

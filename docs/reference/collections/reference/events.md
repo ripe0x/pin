@@ -18,6 +18,8 @@ Every event the Collections contracts emit, grouped by contract. Signatures and 
 
 **[`CollectionConfigured`](/docs/collections/contracts/collection#collectionconfigured)** · Emitted once at init with the collection's id mode, price, supply cap, mint window, and cover artwork URI.
 
+**[`ContractURIUpdated`](/docs/collections/contracts/collection#contracturiupdated)** · ERC-7572 contract-level refresh signal, emitted by `setRenderer` alongside the token-range refresh: a new renderer can answer `contractURI` differently, and this is the event marketplaces watch to re-fetch the collection page.
+
 **[`CreatorListed`](/docs/collections/contracts/collection#creatorlisted)** · Emitted when the owner lists or unlists a creator (including each creator seeded at init).
 
 **[`Initialized`](/docs/collections/contracts/collection#initialized)** · Standard OpenZeppelin Initializable event, emitted once when the clone is initialized.
@@ -68,7 +70,11 @@ Every event the Collections contracts emit, grouped by contract. Signatures and 
 
 ## RenderAssets
 
+**[`CapturerSet`](/docs/collections/contracts/render-assets#capturerset)** · Emitted when a capturer is granted or revoked.
+
 **[`CaptureSet`](/docs/collections/contracts/render-assets#captureset)** · Emitted per token when captures are set.
+
+**[`CaptureTemplateSet`](/docs/collections/contracts/render-assets#capturetemplateset)** · Emitted when a collection's capture template changes.
 
 **[`CoverSet`](/docs/collections/contracts/render-assets#coverset)** · Emitted when a collection's cover image changes.
 

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {CollectionBase} from "./CollectionBase.sol";
+import {MockRenderer} from "./mocks/CollectionMocks.sol";
 
 import {Collection} from "../../src/collection/Collection.sol";
 import {ICollection} from "../../src/collection/interfaces/ICollection.sol";
@@ -19,6 +20,24 @@ contract CollectionAdminTest is CollectionBase {
     bytes internal ownableUnauthStranger = abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", stranger);
 
     // ── grant / revoke lifecycle ──────────────────────────────────────────────
+
+    /// @dev The owner has always held every admin power; isAdmin says so.
+    ///      External integrations gate on this view (MURI's registerContract),
+    ///      so the owner must pass it without an explicit self-grant.
+    function test_isAdmin_countsOwner() public {
+        Collection c = _collection(_freeConfig());
+        assertTrue(c.isAdmin(artist), "the owner is an admin");
+        assertFalse(c.isAdmin(stranger), "a stranger is not");
+
+        // Ownership transfer moves the implicit grant with it.
+        address heir = makeAddr("heir");
+        vm.prank(artist);
+        c.transferOwnership(heir);
+        vm.prank(heir);
+        c.acceptOwnership();
+        assertTrue(c.isAdmin(heir), "the new owner is an admin");
+        assertFalse(c.isAdmin(artist), "the old owner is not");
+    }
 
     function test_owner_grantsAndRevokesAdmin() public {
         Collection c = _collection(_freeConfig());
@@ -123,12 +142,13 @@ contract CollectionAdminTest is CollectionBase {
         vm.prank(collector);
         c.mint{value: 1 ether}(1);
 
+        address newRenderer = address(new MockRenderer());
         vm.startPrank(admin);
         c.setMintWindow(0, 0);
         c.setPrice(0.5 ether);
         c.setRoyalty(250, makeAddr("royalty"));
         c.setSupplyCap(100);
-        c.setRenderer(makeAddr("newRenderer"));
+        c.setRenderer(newRenderer);
         c.setMintHook(makeAddr("hook"));
         c.setPriceStrategy(makeAddr("strategy"));
         c.setMinter(makeAddr("minter"), true);

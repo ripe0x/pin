@@ -65,6 +65,11 @@
         "name": "injectionVersion_",
         "type": "uint8",
         "internalType": "uint8"
+      },
+      {
+        "name": "renderAssets_",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "nonpayable"
@@ -183,6 +188,19 @@
         "name": "",
         "type": "uint8",
         "internalType": "uint8"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "renderAssets",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract RenderAssets"
       }
     ],
     "stateMutability": "view"
