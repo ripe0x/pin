@@ -117,6 +117,7 @@ contract ScriptyRendererForkTest is Test {
         assertTrue(LibString.contains(html, expectedHash), "tokenData hash injected");
         assertTrue(LibString.contains(html, '"tokenId":"1"'), "tokenId injected");
         assertTrue(LibString.contains(html, '"chainId":1'), "chainId injected");
+        assertTrue(LibString.contains(html, '"context":"token"'), "canonical render marked context:token");
 
         // The gzipped p5 dependency arrived as a gzip data-URI script tag.
         assertTrue(LibString.contains(html, "gzip"), "gzip dep tag present");
@@ -145,6 +146,62 @@ contract ScriptyRendererForkTest is Test {
         assertTrue(
             LibString.contains(json, string(abi.encodePacked('"value":"', expected, '"'))), "palette matches seed"
         );
+    }
+
+    /// @dev The preview contract: previewURI with the token's REAL seed
+    ///      assembles the exact same document as tokenURI, differing only in
+    ///      the injected `context` word — previews are verifiably the live
+    ///      render, not an approximation.
+    function test_fork_previewURI_sameSeed_isTheTokenDocument() public {
+        if (!forked) return;
+
+        string memory tokenJson =
+            string(Base64.decode(LibString.slice(collection.tokenURI(1), 29, bytes(collection.tokenURI(1)).length)));
+        string memory tokenHtml = _extractHtml(tokenJson);
+
+        string memory previewUri = renderer.previewURI(address(collection), 1, collection.tokenSeed(1));
+        string memory previewJson = string(Base64.decode(LibString.slice(previewUri, 29, bytes(previewUri).length)));
+        string memory previewHtml = _extractHtml(previewJson);
+
+        assertTrue(LibString.contains(previewHtml, '"context":"preview"'), "preview marked context:preview");
+        assertEq(
+            LibString.replace(previewHtml, '"context":"preview"', '"context":"token"'),
+            tokenHtml,
+            "same seed, same document (modulo context)"
+        );
+
+        // Preview metadata is deliberately not token-shaped provenance.
+        assertTrue(LibString.contains(previewJson, "(preview)"), "name marked as preview");
+        assertFalse(LibString.contains(previewJson, "Mint Order"), "no provenance attributes");
+        assertFalse(LibString.contains(previewJson, '"image":'), "no static image on a preview");
+    }
+
+    /// @dev Previews need no token: a fresh collection with zero mints renders
+    ///      a full document for any caller-supplied seed.
+    function test_fork_previewURI_rendersWithoutAnyMint() public {
+        if (!forked) return;
+
+        Collection impl2 = new Collection();
+        CollectionFactory factory2 =
+            new CollectionFactory(address(impl2), address(new PooledCollection()), address(renderer), address(0));
+        CollectionConfig memory cfg;
+        cfg.supplyCap = 10;
+        Collection unminted = Collection(
+            factory2.createCollection("No Mints Yet", "NMY", address(this), cfg, new address[](0), new address[](0))
+        );
+
+        bytes32 throwaway = keccak256("what-if");
+        string memory uri = renderer.previewURI(address(unminted), 1, throwaway);
+        string memory json = string(Base64.decode(LibString.slice(uri, 29, bytes(uri).length)));
+        string memory html = _extractHtml(json);
+
+        assertTrue(LibString.contains(html, '"context":"preview"'), "context injected");
+        assertTrue(
+            LibString.contains(html, string(abi.encodePacked('"hash":"', uint256(throwaway).toHexString(32)))),
+            "caller seed injected"
+        );
+        assertTrue(LibString.contains(html, ARTIST_MARKER), "artist script present");
+        assertGt(bytes(html).length, 100_000, "full document with dependency payload");
     }
 
     function _extractHtml(string memory json) private pure returns (string memory) {

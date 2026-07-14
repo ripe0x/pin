@@ -399,3 +399,72 @@ Attribution, all cut in earlier batches).
 
 No ABI or deployed-bytecode impact (nothing referenced SVGRenderer
 except its own tests). Full suite re-run green after removal.
+
+## 2026-07-14 (h): GateHook + IPreviewRenderer/context — the genart-branch port
+
+Un-reviewed. Two additions ported from the `claude/genart-mint-ui-research`
+branch (the B-series mint-UI build), rebuilt against current conventions
+rather than diff-applied. Both were RECORDED pre-deploy decisions on that
+branch ("contracts land pre-deploy: previewURI + the composite
+allowlist+cap hook ride the same review cycle as the multi-admin delta")
+that had not yet been executed here.
+
+### GateHook (hooks/GateHook.sol, new)
+
+Merkle allowlist + per-wallet cap in ONE hook. The core has a single
+mintHook slot, and a real gated drop wants both at once — an allowlist
+without a per-wallet cap invites a listed wallet to sweep the supply.
+Root 0 / cap 0 disable each gate independently, so the single-purpose
+AllowlistHook/PerWalletCapHook remain as minimal references.
+
+- Same OZ standard-merkle-tree leaf format and hookData shape as
+  AllowlistHook; same counting discipline as PerWalletCapHook (afterMint,
+  and only while a cap is active — enabling a cap mid-sale counts from
+  that moment, a documented tradeoff so uncapped mints never pay the
+  counting SSTORE).
+- Custom errors are SELECTOR-IDENTICAL to the stock hooks
+  (`NotAllowlisted()`, `WalletCapExceeded(uint256,uint256)`), so a UI
+  maps one error set for all three hooks.
+- New view `remainingFor(collection, wallet)`: the mint-page quantity
+  clamp (max-uint when uncapped, saturates at 0 when a cap is lowered
+  below a wallet's count).
+- Config authority = HookBase.onlyCollectionAdmin (owner OR admin), the
+  same borrow as the renderer-land registries.
+- 6 new tests in CollectionHooks.t.sol (both-gates-together, allowlist-
+  only skips the counting write, cap-only over plain mint(), remainingFor
+  tracking/saturation, mid-sale cap, admin-vs-stranger config).
+
+### IPreviewRenderer + execution context (interfaces/IPreviewRenderer.sol, new; ScriptyRenderer touched)
+
+Onchain previews as a first-class, verifiable capability — a pure
+function of chain state, like the live view:
+
+- `IPreviewRenderer.previewURI(collection, tokenId, seed)` — OPTIONAL
+  renderer extension; detection is try/catch eth_call (repo convention:
+  feature probing, not ERC-165). The launch project's renderer
+  (HomageRendererSovereign, in the permanence repo) already implements
+  this exact interface.
+- `ScriptyRenderer` implements it: identical document assembly as
+  tokenURI with the caller's seed, `context:"preview"` injected, and
+  metadata deliberately not token-shaped (name marked "(preview)", seed
+  attribute only, no static image, no provenance).
+- The injected `window.tokenData` gains a `context` field
+  (`"token" | "preview" | "capture"`), additive within injection v1 —
+  work code treats missing/unknown as `"token"`.
+  `docs/injection-convention.md` updated (new "Execution context"
+  section; stale GenerativeRenderer heading fixed).
+- Tests: fork suite proves `previewURI(realSeed)` == the tokenURI
+  document modulo the context word against the REAL mainnet
+  ScriptyBuilderV2, and that previews render with zero mints; a no-fork
+  unit test pins the not-token-shaped metadata (no image even when
+  RenderAssets is wired).
+
+### Sizes / tests after (h)
+
+- Core finals untouched — size-gate tests green (Collection 18,663 /
+  Pooled 16,488 runtime bytes, unchanged). GateHook is a standalone
+  ~100-line singleton; ScriptyRenderer is a per-work template, not a
+  deployed singleton.
+- 223 unit tests green (was 216: +6 GateHook, +1 preview unit); 6 fork
+  tests green against live mainnet (scripty assembly + the two new
+  preview proofs + MURI probe).

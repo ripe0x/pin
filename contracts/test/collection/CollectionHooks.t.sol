@@ -18,7 +18,9 @@ import {IPooledCollection} from "../../src/collection/interfaces/IPooledCollecti
 import {CollectionConfig} from "../../src/collection/CollectionTypes.sol";
 
 import {AllowlistHook} from "../../src/collection/hooks/AllowlistHook.sol";
+import {GateHook} from "../../src/collection/hooks/GateHook.sol";
 import {HoldsCollectionHook} from "../../src/collection/hooks/HoldsCollectionHook.sol";
+import {HookBase} from "../../src/collection/hooks/HookBase.sol";
 import {PerWalletCapHook} from "../../src/collection/hooks/PerWalletCapHook.sol";
 
 /// @dev Exercises the four stock hooks (src/collection/hooks/) on the paid
@@ -298,6 +300,158 @@ contract CollectionHooksTest is CollectionBase {
         vm.expectRevert(abi.encodeWithSelector(PerWalletCapHook.WalletCapExceeded.selector, 2, 3));
         vm.prank(collector);
         c.mint(3); // one tx exceeding the cap outright
+    }
+
+    // ── stock hook: GateHook (composite allowlist + per-wallet cap) ─────────
+
+    /// @dev 2-leaf OZ standard-merkle-tree over (collector, stranger),
+    ///      identical leaf convention to AllowlistHook's test above.
+    function _gateTree() internal view returns (bytes32 root, bytes32[] memory proofForCollector) {
+        bytes32 leafCollector = keccak256(bytes.concat(keccak256(abi.encode(collector))));
+        bytes32 leafStranger = keccak256(bytes.concat(keccak256(abi.encode(stranger))));
+        root = leafCollector < leafStranger
+            ? keccak256(abi.encodePacked(leafCollector, leafStranger))
+            : keccak256(abi.encodePacked(leafStranger, leafCollector));
+        proofForCollector = new bytes32[](1);
+        proofForCollector[0] = leafStranger;
+    }
+
+    function test_stockHook_gate_bothGatesEnforcedTogether() public {
+        Collection c = _collection(_freeConfig());
+        GateHook gate = new GateHook();
+        vm.prank(artist);
+        c.setMintHook(address(gate));
+
+        (bytes32 root, bytes32[] memory proof) = _gateTree();
+        vm.prank(artist);
+        gate.setRoot(address(c), root);
+        vm.prank(artist);
+        gate.setCap(address(c), 2);
+
+        // Listed wallet mints within its cap.
+        vm.prank(collector);
+        c.mintWithReferral(2, address(0), abi.encode(proof));
+        assertEq(c.balanceOf(collector), 2);
+
+        // Same listed wallet over the cap: the allowlist does not exempt it.
+        vm.expectRevert(abi.encodeWithSelector(GateHook.WalletCapExceeded.selector, 2, 3));
+        vm.prank(collector);
+        c.mintWithReferral(1, address(0), abi.encode(proof));
+
+        // Unlisted wallet fails the allowlist even with cap budget left.
+        bytes32[] memory badProof = new bytes32[](1);
+        badProof[0] = keccak256("nope");
+        vm.expectRevert(GateHook.NotAllowlisted.selector);
+        vm.prank(makeAddr("notInTree"));
+        c.mintWithReferral(1, address(0), abi.encode(badProof));
+    }
+
+    function test_stockHook_gate_allowlistOnly_noCountingWrites() public {
+        Collection c = _collection(_freeConfig());
+        GateHook gate = new GateHook();
+        vm.prank(artist);
+        c.setMintHook(address(gate));
+
+        (bytes32 root, bytes32[] memory proof) = _gateTree();
+        vm.prank(artist);
+        gate.setRoot(address(c), root);
+        // cap stays 0 = unlimited
+
+        vm.prank(collector);
+        c.mintWithReferral(3, address(0), abi.encode(proof));
+        assertEq(c.balanceOf(collector), 3);
+
+        // Uncapped collections must not pay the counting SSTORE per mint.
+        assertEq(gate.mintedBy(address(c), collector), 0);
+        assertEq(gate.remainingFor(address(c), collector), type(uint256).max);
+    }
+
+    function test_stockHook_gate_capOnly_plainMintPathWorks() public {
+        Collection c = _collection(_freeConfig());
+        GateHook gate = new GateHook();
+        vm.prank(artist);
+        c.setMintHook(address(gate));
+        vm.prank(artist);
+        gate.setCap(address(c), 2);
+
+        // No allowlist: plain mint() (empty hookData) must pass the gate.
+        vm.prank(collector);
+        c.mint(2);
+        vm.expectRevert(abi.encodeWithSelector(GateHook.WalletCapExceeded.selector, 2, 3));
+        vm.prank(collector);
+        c.mint(1);
+
+        // Another wallet has its own budget.
+        vm.prank(stranger);
+        c.mint(2);
+        assertEq(gate.remainingFor(address(c), stranger), 0);
+    }
+
+    function test_stockHook_gate_remainingFor_tracksAndSaturates() public {
+        Collection c = _collection(_freeConfig());
+        GateHook gate = new GateHook();
+        vm.prank(artist);
+        c.setMintHook(address(gate));
+        vm.prank(artist);
+        gate.setCap(address(c), 3);
+
+        assertEq(gate.remainingFor(address(c), collector), 3);
+        vm.prank(collector);
+        c.mint(2);
+        assertEq(gate.remainingFor(address(c), collector), 1);
+
+        // Cap lowered below what the wallet already minted: saturate at 0,
+        // never underflow.
+        vm.prank(artist);
+        gate.setCap(address(c), 1);
+        assertEq(gate.remainingFor(address(c), collector), 0);
+        vm.expectRevert(abi.encodeWithSelector(GateHook.WalletCapExceeded.selector, 1, 3));
+        vm.prank(collector);
+        c.mint(1);
+    }
+
+    function test_stockHook_gate_midSaleCap_countsFromEnable() public {
+        Collection c = _collection(_freeConfig());
+        GateHook gate = new GateHook();
+        vm.prank(artist);
+        c.setMintHook(address(gate));
+
+        // Uncapped mint happens first — not counted (documented tradeoff).
+        vm.prank(collector);
+        c.mint(2);
+
+        vm.prank(artist);
+        gate.setCap(address(c), 1);
+        // The wallet's budget starts fresh from the moment the cap is set.
+        vm.prank(collector);
+        c.mint(1);
+        vm.expectRevert(abi.encodeWithSelector(GateHook.WalletCapExceeded.selector, 1, 2));
+        vm.prank(collector);
+        c.mint(1);
+    }
+
+    function test_stockHook_gate_adminCanConfigure_strangerCannot() public {
+        Collection c = _collection(_freeConfig());
+        GateHook gate = new GateHook();
+
+        address opsAdmin = makeAddr("opsAdmin");
+        vm.prank(artist);
+        c.addAdmin(opsAdmin);
+
+        // Admin authority mirrors the renderer-land registries (owner OR admin).
+        vm.prank(opsAdmin);
+        gate.setCap(address(c), 5);
+        assertEq(gate.capOf(address(c)), 5);
+        vm.prank(opsAdmin);
+        gate.setRoot(address(c), bytes32(uint256(1)));
+        assertEq(gate.rootOf(address(c)), bytes32(uint256(1)));
+
+        vm.expectRevert(HookBase.NotCollectionAdmin.selector);
+        vm.prank(stranger);
+        gate.setCap(address(c), 1);
+        vm.expectRevert(HookBase.NotCollectionAdmin.selector);
+        vm.prank(stranger);
+        gate.setRoot(address(c), bytes32(0));
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────

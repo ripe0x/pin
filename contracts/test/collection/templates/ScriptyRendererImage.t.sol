@@ -91,4 +91,18 @@ contract ScriptyRendererImageTest is Test {
         string memory bare = _json(unwired.contractURI(address(collection)));
         assertFalse(LibString.contains(bare, '"image"'), "unwired contractURI has no image");
     }
+
+    /// @dev previewURI needs no token: id 999 was never minted (tokenSeed is
+    ///      never read), and preview metadata is deliberately not token-shaped
+    ///      — name marked, seed attribute only, and NO static image even when
+    ///      RenderAssets is wired (a preview is the live render).
+    function test_previewURI_rendersUnminted_noImage_notTokenShaped() public view {
+        string memory json = _json(wired.previewURI(address(collection), 999, keccak256("what-if")));
+
+        assertTrue(LibString.contains(json, "(preview)"), "name marked as preview");
+        assertTrue(LibString.contains(json, '"animation_url"'), "live render attached");
+        assertTrue(LibString.contains(json, '"trait_type":"Seed"'), "seed attribute present");
+        assertFalse(LibString.contains(json, '"image"'), "no static image on a preview, even wired");
+        assertFalse(LibString.contains(json, "Mint Order"), "no provenance attributes");
+    }
 }

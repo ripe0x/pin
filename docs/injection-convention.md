@@ -17,13 +17,42 @@ window.tokenData = {
   tokenId: "123",     // decimal string
   collection: "0x…",  // checksum-agnostic lowercase hex address
   chainId: 1,
-  version: 1          // == WorkConfig.injectionVersion
+  version: 1,         // == the renderer's injectionVersion
+  context: "token"    // why this document is being rendered; see below
 };
 ```
 
 `hash` and `tokenId` deliberately match Art Blocks' `tokenData` shape, so
 existing AB-style sketches run unmodified. Everything else is additive.
 Code SHOULD read only documented fields and tolerate additions.
+
+## Execution context
+
+`context` tells the work's code why the document was rendered:
+
+- `"token"` — the canonical render of a real token (`tokenURI`, and any
+  offchain parity render of a minted token). The determinism rules below
+  apply in full; a missing/unknown context MUST be treated as `"token"`.
+- `"preview"` — an exploratory what-if render from a throwaway seed
+  (`previewURI` onchain, test seeds in the studio, a mint page's
+  pre-mint explore). Composition MUST be exactly what the same seed would
+  produce as a token — a preview that lies is a bug — but presentation MAY
+  adapt (e.g. skip a long intro).
+- `"capture"` — an offchain headless render for a static image (thumbnail,
+  OG). Code MAY jump straight to the canonical still (skip animation), and
+  MUST settle on it deterministically.
+
+Previews are also an onchain capability: renderers that can render
+faithfully from `(tokenId, seed)` alone implement the OPTIONAL
+`IPreviewRenderer.previewURI(collection, tokenId, seed)` extension (the
+ScriptyRenderer template does; a bespoke `IRenderer` — a Solidity SVG
+work, Homage's renderer — implements it directly when its art is a pure
+function of the seed). Renderers whose output depends on state a preview
+cannot fake (sibling tokens, companion contracts, hook-recorded
+mint-time data) simply don't implement it; detection is a try/catch
+eth_call. A preview document MUST inject `context: "preview"`, and
+preview metadata carries no provenance attributes — a preview is not a
+token.
 
 ## Determinism rules for `pure` works
 
@@ -55,7 +84,7 @@ faithful render requires.
 honest about that fragility: the archival form of any live work is
 "code plus inputs at time T".
 
-## Onchain assembly (GenerativeRenderer)
+## Onchain assembly (the ScriptyRenderer template)
 
 Body tag order in the assembled HTML:
 
@@ -88,7 +117,10 @@ document (or an equivalent iframe srcdoc) and MUST:
   provider for chain-live works.
 
 Test seeds in the studio are ordinary `tokenData` objects with
-synthetic `hash` values; nothing else may differ.
+synthetic `hash` values and `context: "preview"`; nothing else may
+differ. Offchain renders of real minted tokens inject
+`context: "token"`; headless capture tooling injects
+`context: "capture"`.
 
 ## Versioning
 

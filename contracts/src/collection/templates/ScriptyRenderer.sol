@@ -5,6 +5,7 @@ import {Base64} from "solady/utils/Base64.sol";
 import {LibString} from "solady/utils/LibString.sol";
 
 import {IRenderer, ICollectionView} from "../interfaces/IRenderer.sol";
+import {IPreviewRenderer} from "../interfaces/IPreviewRenderer.sol";
 import {IdMode} from "../CollectionTypes.sol";
 import {RenderAssets} from "../renderers/RenderAssets.sol";
 import {CodeKind, CodeRef} from "./CodeTypes.sol";
@@ -30,20 +31,28 @@ import {HTMLRequest, HTMLTag, HTMLTagType} from "./vendor/scripty/core/ScriptySt
 ///
 ///         At `tokenURI` time it reads the token's seed through
 ///         `ICollectionView`, injects the render context
-///         (`window.tokenData = { hash, tokenId, collection, chainId, version }`
-///         — the widely-adopted long-form-generative shape, so existing
-///         sketches run unmodified), assembles the dependencies + context +
-///         artist code into a complete HTML document, and returns metadata
-///         whose `animation_url` is a `data:text/html;base64,...` URI. See
+///         (`window.tokenData = { hash, tokenId, collection, chainId, version,
+///         context }` — hash/tokenId use the widely-adopted long-form-
+///         generative shape, so existing sketches run unmodified; `context`
+///         says why the document is being rendered: "token" for canonical
+///         renders, "preview" for previewURI's what-if renders), assembles
+///         the dependencies + context + artist code into a complete HTML
+///         document, and returns metadata whose `animation_url` is a
+///         `data:text/html;base64,...` URI. See
 ///         `docs/injection-convention.md` for the exact parity contract every
 ///         offchain preview must match.
+///
+///         Implements the OPTIONAL `IPreviewRenderer`: the work is a pure
+///         function of (tokenId, seed), so previews are free — the same
+///         document assembly with a caller-supplied seed. Mint pages explore
+///         the range before a single token exists.
 ///
 ///         **Fork points** (override in a subclass — see ExampleScriptyWork):
 ///         - `_workTraits(seed)` to publish seed-derived onchain traits
 ///         - `_image(collection, tokenId)` to change where the poster/
 ///           thumbnail comes from (default: RenderAssets, when wired)
 ///         - `_headTags()` to customize the document `<head>`
-contract ScriptyRenderer is IRenderer {
+contract ScriptyRenderer is IRenderer, IPreviewRenderer {
     using LibString for uint256;
     using LibString for address;
 
@@ -121,7 +130,7 @@ contract ScriptyRenderer is IRenderer {
     function tokenURI(address collection, uint256 tokenId) external view override returns (string memory) {
         ICollectionView c = ICollectionView(collection);
         bytes32 seed = c.tokenSeed(tokenId);
-        string memory htmlUri = _buildHTML(collection, tokenId, seed);
+        string memory htmlUri = _buildHTML(collection, tokenId, seed, "token");
         string memory image = _image(collection, tokenId);
 
         bytes memory json = abi.encodePacked(
@@ -136,6 +145,35 @@ contract ScriptyRenderer is IRenderer {
             ',"attributes":',
             _attributes(c, tokenId, seed),
             "}"
+        );
+        return string(abi.encodePacked("data:application/json;base64,", Base64.encode(json)));
+    }
+
+    /// @inheritdoc IPreviewRenderer
+    /// @dev Identical document assembly as tokenURI, with the caller's seed
+    ///      in place of tokenSeed and `context:"preview"` injected. No token
+    ///      needs to exist. The metadata is deliberately not token-shaped
+    ///      provenance: the name is marked as a preview, attributes carry the
+    ///      seed only, and no static image is attached (a preview is the live
+    ///      render).
+    function previewURI(address collection, uint256 tokenId, bytes32 seed)
+        external
+        view
+        override
+        returns (string memory)
+    {
+        string memory htmlUri = _buildHTML(collection, tokenId, seed, "preview");
+
+        bytes memory json = abi.encodePacked(
+            '{"name":"',
+            LibString.escapeJSON(ICollectionView(collection).name()),
+            " #",
+            tokenId.toString(),
+            ' (preview)","animation_url":"',
+            htmlUri,
+            '","attributes":[{"trait_type":"Seed","value":"',
+            uint256(seed).toHexString(32),
+            '"}]}'
         );
         return string(abi.encodePacked("data:application/json;base64,", Base64.encode(json)));
     }
@@ -165,7 +203,11 @@ contract ScriptyRenderer is IRenderer {
     ///      The helper decompresses at its own parse time by scanning the gzip
     ///      tags that precede it and replacing each with an executing script
     ///      tag, in document order; placed earlier it would find nothing.
-    function _buildHTML(address collection, uint256 tokenId, bytes32 seed) private view returns (string memory) {
+    function _buildHTML(address collection, uint256 tokenId, bytes32 seed, string memory context)
+        private
+        view
+        returns (string memory)
+    {
         bool needsGunzip = _anyGzip(_deps) || _anyGzip(_code);
         if (needsGunzip && gunzipStore == address(0)) revert GunzipStoreRequired();
 
@@ -178,7 +220,7 @@ contract ScriptyRenderer is IRenderer {
             i++;
         }
         body[i].tagType = HTMLTagType.script;
-        body[i].tagContent = _contextJs(collection, tokenId, seed);
+        body[i].tagContent = _contextJs(collection, tokenId, seed, context);
         i++;
         for (uint256 s = 0; s < _code.length; s++) {
             body[i] = _fileTag(_code[s]);
@@ -211,8 +253,15 @@ contract ScriptyRenderer is IRenderer {
 
     /// @dev Render-context convention: `hash` + `tokenId` use the standard
     ///      long-form-generative `tokenData` shape for sketch portability. In
-    ///      Sequential mode the token id IS the mint order.
-    function _contextJs(address collection, uint256 tokenId, bytes32 seed) private view returns (bytes memory) {
+    ///      Sequential mode the token id IS the mint order. `context`
+    ///      ("token" | "preview" | offchain "capture") is additive within v1:
+    ///      work code SHOULD tolerate additions and treat a missing/"token"
+    ///      context as the canonical render.
+    function _contextJs(address collection, uint256 tokenId, bytes32 seed, string memory context)
+        private
+        view
+        returns (bytes memory)
+    {
         return abi.encodePacked(
             'window.tokenData={"hash":"',
             uint256(seed).toHexString(32),
@@ -224,7 +273,9 @@ contract ScriptyRenderer is IRenderer {
             block.chainid.toString(),
             ',"version":',
             uint256(injectionVersion).toString(),
-            "};"
+            ',"context":"',
+            context,
+            '"};'
         );
     }
 
