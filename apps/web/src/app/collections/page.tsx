@@ -56,7 +56,7 @@ export default async function CollectionsHome() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-10 md:py-16 space-y-12">
       <header className="space-y-5">
-        <h1 className="text-2xl md:text-3xl font-medium tracking-tight">PND Collections</h1>
+        <h1 className="text-2xl md:text-3xl font-medium tracking-tight">Collections</h1>
         <p className="text-sm text-fg-muted leading-relaxed max-w-xl">
           Release onchain art as sovereign collections you own outright. Shared
           artwork and shared mint conditions, but every token keeps its own

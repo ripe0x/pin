@@ -192,7 +192,7 @@ echo "▸ Wrote $ENV_DEV  (delete it to restore prod env)"
 
 echo
 echo "──────────────────────────────────────────────────────────────"
-echo "  PND Collections local test is ready."
+echo "  Collections local test is ready."
 echo "    Fork RPC : $RPC  (chain id $CHAIN_ID)"
 echo "    Factory  : $FACTORY"
 echo "    Acting as: $IMPERSONATE  (auto-connected, no wallet needed)"

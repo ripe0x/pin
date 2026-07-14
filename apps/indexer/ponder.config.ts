@@ -270,7 +270,7 @@ export default createConfig({
             address: factory({
               address: SURFACE_FACTORY_ADDRESS,
               event: parseAbiItem(
-                "event SurfaceCreated(address indexed owner, address indexed collection)",
+                "event SurfaceCreated(address indexed owner, address indexed collection, uint8 idMode)",
               ),
               parameter: "collection",
             }),
