@@ -13,8 +13,8 @@
 #      auto-impersonate on. Forking mainnet means Multicall3 (0xcA11…) and ENS
 #      are present, so every PND surface works, not just collections.
 #   3. Deploys the collection system (Attribution, DefaultRenderer,
-#      GenerativeRenderer, Collection implementation, and the
-#      factory that clones it) via DeployCollectionSystem.s.sol.
+#      GenerativeRenderer, Surface implementation, and the
+#      factory that clones it) via DeploySurfaceSystem.s.sol.
 #   4. Funds an impersonated wallet so you can click through create + mint with
 #      NO real wallet or signing — the app auto-connects as that address.
 #   5. Writes apps/web/.env.development.local (layers over your real .env.local
@@ -46,7 +46,7 @@ command -v anvil >/dev/null 2>&1 || { echo "error: anvil not found (install Foun
 FORK_RPC="${FORK_RPC:-https://ethereum-rpc.publicnode.com}"
 CHAIN_ID=31339                      # must match wagmi.ts forkChain id
 
-# DeployCollectionSystem.s.sol reads PRIVATE_KEY via vm.envUint and signs with
+# DeploySurfaceSystem.s.sol reads PRIVATE_KEY via vm.envUint and signs with
 # vm.startBroadcast(deployerPk) directly — it does NOT rely on --unlocked
 # eth_sendTransaction impersonation like DeployEditions.s.sol did. So we pass
 # the well-known Anvil account-0 private key as PRIVATE_KEY for the forge
@@ -93,7 +93,7 @@ cast rpc anvil_setBalance "$IMPERSONATE" 0x21e19e0c9bab2400000 --rpc-url "$RPC" 
 
 # 3) deploy the collection system.
 # NOTE: unlike DeployEditions.s.sol (which relied on --unlocked so Anvil's
-# auto-impersonate signs via eth_sendTransaction), DeployCollectionSystem.s.sol
+# auto-impersonate signs via eth_sendTransaction), DeploySurfaceSystem.s.sol
 # reads PRIVATE_KEY via vm.envUint and signs locally with
 # vm.startBroadcast(deployerPk). --unlocked would tell forge to instead send
 # via eth_sendTransaction using --sender as an unlocked account — mixing that
@@ -106,7 +106,7 @@ echo "▸ Deploying collection system contracts…"
 # mainnet fork), so the seed's creator claims land in the same Catalog the
 # collections read — the dev roster then actually confirms.
 DEPLOY_OUT="$(cd contracts && CATALOG="0x467a9c39e03C595EC3075D856f19C7386b6b915d" \
-  PRIVATE_KEY="$ANVIL_ACCOUNT_0_PK" forge script script/DeployCollectionSystem.s.sol \
+  PRIVATE_KEY="$ANVIL_ACCOUNT_0_PK" forge script script/DeploySurfaceSystem.s.sol \
   --rpc-url "$RPC" --broadcast --sender "$IMPERSONATE" 2>&1)" || {
   echo "$DEPLOY_OUT" | tail -30
   echo "error: deploy failed"
@@ -119,8 +119,8 @@ CATALOG="$(echo "$DEPLOY_OUT" | grep -i "Catalog:" | grep -oE "0x[0-9a-fA-F]{40}
 RENDER_ASSETS="$(echo "$DEPLOY_OUT" | grep -i "RenderAssets:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
 DEFAULT_RENDERER="$(echo "$DEPLOY_OUT" | grep -i "DefaultRenderer:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
 GATE_HOOK="$(echo "$DEPLOY_OUT" | grep -i "GateHook:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
-IMPLEMENTATION="$(echo "$DEPLOY_OUT" | grep -i "Collection (seq) impl:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
-FACTORY="$(echo "$DEPLOY_OUT" | grep -i "CollectionFactory:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
+IMPLEMENTATION="$(echo "$DEPLOY_OUT" | grep -i "Surface (seq) impl:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
+FACTORY="$(echo "$DEPLOY_OUT" | grep -i "SurfaceFactory:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
 
 for pair in "CATALOG:$CATALOG" "RENDER_ASSETS:$RENDER_ASSETS" "DEFAULT_RENDERER:$DEFAULT_RENDERER" \
             "GATE_HOOK:$GATE_HOOK" "IMPLEMENTATION:$IMPLEMENTATION" "FACTORY:$FACTORY"; do
@@ -136,8 +136,8 @@ done
 echo "▸ Catalog:                    $CATALOG"
 echo "▸ RenderAssets:               $RENDER_ASSETS"
 echo "▸ DefaultRenderer:            $DEFAULT_RENDERER"
-echo "▸ Collection impl:   $IMPLEMENTATION"
-echo "▸ CollectionFactory: $FACTORY"
+echo "▸ Surface impl:   $IMPLEMENTATION"
+echo "▸ SurfaceFactory: $FACTORY"
 echo "▸ GateHook:                   $GATE_HOOK"
 
 # 3b) optional sample world (SEED_SAMPLE=1, default on): three collections
@@ -148,8 +148,8 @@ echo "▸ GateHook:                   $GATE_HOOK"
 if [ "${SEED_SAMPLE:-1}" = "1" ]; then
   echo "▸ Seeding sample collections…"
   SEED_OUT="$(cd contracts && FACTORY="$FACTORY" RENDER_ASSETS="$RENDER_ASSETS" GATE_HOOK="$GATE_HOOK" \
-    PRIVATE_KEY="$ANVIL_ACCOUNT_0_PK" forge script script/SeedDevCollections.s.sol \
-    --tc SeedDevCollections --rpc-url "$RPC" --broadcast 2>&1)" || {
+    PRIVATE_KEY="$ANVIL_ACCOUNT_0_PK" forge script script/SeedDevSurfaces.s.sol \
+    --tc SeedDevSurfaces --rpc-url "$RPC" --broadcast 2>&1)" || {
     echo "$SEED_OUT" | tail -20
     echo "warning: sample seeding failed (harness continues unseeded)"
   }
