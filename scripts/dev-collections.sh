@@ -118,11 +118,12 @@ DEPLOY_OUT="$(cd contracts && CATALOG="0x467a9c39e03C595EC3075D856f19C7386b6b915
 CATALOG="$(echo "$DEPLOY_OUT" | grep -i "Catalog:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
 RENDER_ASSETS="$(echo "$DEPLOY_OUT" | grep -i "RenderAssets:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
 DEFAULT_RENDERER="$(echo "$DEPLOY_OUT" | grep -i "DefaultRenderer:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
-IMPLEMENTATION="$(echo "$DEPLOY_OUT" | grep -i "Collection impl:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
+GATE_HOOK="$(echo "$DEPLOY_OUT" | grep -i "GateHook:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
+IMPLEMENTATION="$(echo "$DEPLOY_OUT" | grep -i "Collection (seq) impl:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
 FACTORY="$(echo "$DEPLOY_OUT" | grep -i "CollectionFactory:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
 
 for pair in "CATALOG:$CATALOG" "RENDER_ASSETS:$RENDER_ASSETS" "DEFAULT_RENDERER:$DEFAULT_RENDERER" \
-            "IMPLEMENTATION:$IMPLEMENTATION" "FACTORY:$FACTORY"; do
+            "GATE_HOOK:$GATE_HOOK" "IMPLEMENTATION:$IMPLEMENTATION" "FACTORY:$FACTORY"; do
   name="${pair%%:*}"
   value="${pair#*:}"
   if [ -z "$value" ]; then
@@ -137,6 +138,7 @@ echo "▸ RenderAssets:               $RENDER_ASSETS"
 echo "▸ DefaultRenderer:            $DEFAULT_RENDERER"
 echo "▸ Collection impl:   $IMPLEMENTATION"
 echo "▸ CollectionFactory: $FACTORY"
+echo "▸ GateHook:                   $GATE_HOOK"
 
 # 3b) optional sample world (SEED_SAMPLE=1, default on): three collections
 #     rendered through the DefaultRenderer with inline-SVG covers — one with a
@@ -145,9 +147,9 @@ echo "▸ CollectionFactory: $FACTORY"
 #     SEED_SAMPLE=0 skips for a blank slate.
 if [ "${SEED_SAMPLE:-1}" = "1" ]; then
   echo "▸ Seeding sample collections…"
-  SEED_OUT="$(cd contracts && FACTORY="$FACTORY" RENDER_ASSETS="$RENDER_ASSETS" \
+  SEED_OUT="$(cd contracts && FACTORY="$FACTORY" RENDER_ASSETS="$RENDER_ASSETS" GATE_HOOK="$GATE_HOOK" \
     PRIVATE_KEY="$ANVIL_ACCOUNT_0_PK" forge script script/SeedDevCollections.s.sol \
-    --rpc-url "$RPC" --broadcast 2>&1)" || {
+    --tc SeedDevCollections --rpc-url "$RPC" --broadcast 2>&1)" || {
     echo "$SEED_OUT" | tail -20
     echo "warning: sample seeding failed (harness continues unseeded)"
   }
@@ -167,7 +169,7 @@ if [ "${SEED_HOMAGE:-1}" = "1" ] && [ -d "$HOMAGE_REPO/contracts" ]; then
     echo "$SEED_HOMAGE_OUT" | tail -20
     echo "warning: Homage seeding failed (harness continues)"
   }
-  echo "$SEED_HOMAGE_OUT" | grep -E "PermanenceRendererSovereign:|HomageCollection:|HomageMinter:|HomageFeeSplitter:|Collection page:" | sed 's/^/  /'
+  echo "$SEED_HOMAGE_OUT" | grep -E "HomageRendererSovereign:|HomageCollection:|HomageMinter:|HomageFeeSplitter:|Collection page:" | sed 's/^/  /'
 elif [ "${SEED_HOMAGE:-1}" = "1" ]; then
   echo "▸ Homage seeding skipped: $HOMAGE_REPO/contracts not found"
 fi
@@ -184,6 +186,7 @@ NEXT_PUBLIC_DEV_IMPERSONATE=$IMPERSONATE
 NEXT_PUBLIC_SOVEREIGN_COLLECTION_FACTORY=$FACTORY
 NEXT_PUBLIC_RENDER_ASSETS=$RENDER_ASSETS
 NEXT_PUBLIC_DEFAULT_RENDERER=$DEFAULT_RENDERER
+NEXT_PUBLIC_GATE_HOOK=$GATE_HOOK
 EOF
 echo "▸ Wrote $ENV_DEV  (delete it to restore prod env)"
 

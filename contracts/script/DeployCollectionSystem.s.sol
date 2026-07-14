@@ -8,6 +8,7 @@ import {RenderAssets} from "../src/collection/renderers/RenderAssets.sol";
 import {Collection} from "../src/collection/Collection.sol";
 import {PooledCollection} from "../src/collection/PooledCollection.sol";
 import {CollectionFactory} from "../src/collection/CollectionFactory.sol";
+import {GateHook} from "../src/collection/hooks/GateHook.sol";
 
 /// @notice Deploy script for the Collection system: Catalog, RenderAssets,
 ///         DefaultRenderer, the Collection implementation, and the factory
@@ -120,6 +121,16 @@ contract DeployCollectionSystemScript is Script {
         require(address(factory).code.length > 0, "factory has no code");
 
         console2.log("CollectionFactory deployed at:", address(factory));
+
+        // ── 6. GateHook — public-good gate singleton (merkle allowlist +
+        //        per-wallet cap in one hook), plain CREATE, no args. Deployed
+        //        with the system so the studio's mint-gate tool and the mint
+        //        page's eligibility UI have a canonical instance to point at.
+        vm.startBroadcast(deployerPk);
+        GateHook gateHook = new GateHook();
+        vm.stopBroadcast();
+        console2.log("GateHook deployed at:", address(gateHook));
+
         console2.log("Post-deploy assertions: OK");
         console2.log("");
         console2.log("Summary:");
@@ -129,5 +140,6 @@ contract DeployCollectionSystemScript is Script {
         console2.log("  Collection (seq) impl:     ", address(sequentialImpl));
         console2.log("  PooledCollection impl:     ", address(pooledImpl));
         console2.log("  CollectionFactory:         ", address(factory));
+        console2.log("  GateHook:                  ", address(gateHook));
     }
 }
