@@ -47,7 +47,7 @@ with `E2E_FORK_RPC`).
    **GenerativeRenderer** addresses out of the script's console output.
    Both are exported as `NEXT_PUBLIC_*` env vars to the dev server — as of
    this writing neither has a real mainnet address in `@pin/addresses`
-   (`SOVEREIGN_COLLECTION_FACTORY`/`GENERATIVE_RENDERER` are still the zero
+   (`SURFACE_FACTORY`/`GENERATIVE_RENDERER` are still the zero
    address there), so the env override is the *only* way either resolves.
    Skipping the `NEXT_PUBLIC_GENERATIVE_RENDERER` wiring silently breaks the
    GENERATIVE preset's deploy step (`DeployStep.tsx` blocks with "No

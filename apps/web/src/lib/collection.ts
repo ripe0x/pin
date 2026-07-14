@@ -15,7 +15,7 @@ import { foundry, mainnet } from "wagmi/chains"
 import {
   GATE_HOOK,
   RENDER_ASSETS,
-  SOVEREIGN_COLLECTION_FACTORY,
+  SURFACE_FACTORY,
   getAddressOrNull,
 } from "@pin/addresses"
 
@@ -31,10 +31,10 @@ export const PND_CHAIN = FORK_MODE ? foundry : mainnet
 export const PND_CHAIN_ID = FORK_MODE ? FORK_CHAIN_ID : mainnet.id
 
 /** The CollectionFactory address (env override for local dev wins). */
-export function collectionFactory(chainId: number = PND_CHAIN_ID): Address | null {
-  const env = process.env.NEXT_PUBLIC_SOVEREIGN_COLLECTION_FACTORY
+export function surfaceFactory(chainId: number = PND_CHAIN_ID): Address | null {
+  const env = process.env.NEXT_PUBLIC_SURFACE_FACTORY
   if (env && isAddress(env)) return env as Address
-  return getAddressOrNull(SOVEREIGN_COLLECTION_FACTORY, chainId)
+  return getAddressOrNull(SURFACE_FACTORY, chainId)
 }
 
 /** The RenderAssets registry address (env override for local dev wins). */

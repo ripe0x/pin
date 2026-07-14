@@ -23,7 +23,7 @@ import { surfaceFactoryAbi, renderAssetsAbi } from "@pin/abi"
 import { formatWriteError } from "@/components/tx/tx-ui"
 import {
   ZERO_ADDRESS,
-  collectionFactory,
+  surfaceFactory,
   renderAssetsAddress,
 } from "@/lib/collection"
 import { studioToolHref } from "@/lib/studio-tools"
@@ -44,7 +44,7 @@ export function DeployStep({
 }) {
   const { address } = useAccount()
   const chainId = useChainId()
-  const factory = collectionFactory(chainId)
+  const factory = surfaceFactory(chainId)
   const renderAssets = renderAssetsAddress(chainId)
 
   const deploy = useWriteContract()

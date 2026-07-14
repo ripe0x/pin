@@ -148,7 +148,7 @@ export default async function globalSetup() {
         NODE_ENV: "development",
         NEXT_PUBLIC_USE_LOCAL_RPC: "1",
         NEXT_PUBLIC_ANVIL_RPC_URL: rpcUrl,
-        NEXT_PUBLIC_SOVEREIGN_COLLECTION_FACTORY: factory,
+        NEXT_PUBLIC_SURFACE_FACTORY: factory,
         ...(renderAssets ? { NEXT_PUBLIC_RENDER_ASSETS: renderAssets } : {}),
         NEXT_PUBLIC_DEV_IMPERSONATE: IMPERSONATE,
       },

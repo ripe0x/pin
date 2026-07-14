@@ -7,7 +7,7 @@ import {
   hasPriceStrategy,
   lifecycleStatus,
   shortAddress,
-  collectionFactory,
+  surfaceFactory,
   type Collection,
 } from "@/lib/collection"
 import { CollectionStatusChip } from "@/components/collections/CollectionStatusChip"
@@ -47,7 +47,7 @@ function groupByLifecycle(collections: Collection[], nowSec: number): Collection
 }
 
 export default async function CollectionsHome() {
-  const factory = collectionFactory()
+  const factory = surfaceFactory()
   const recent = factory ? await getRecentCollections(factory, 8) : []
   const nowSec = Math.floor(Date.now() / 1000)
   const groups = groupByLifecycle(recent, nowSec)

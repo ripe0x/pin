@@ -95,7 +95,7 @@ export const SOVEREIGN_AUCTION_HOUSE_FACTORY: Record<number, Address> = {
 
 // SUPERSEDED — PND Editions (PNDEditionsFactory + reference mint hooks) is
 // retired in favor of the Collection system (see
-// SOVEREIGN_COLLECTION_FACTORY + ATTRIBUTION below). The editions contracts
+// SURFACE_FACTORY + ATTRIBUTION below). The editions contracts
 // (contracts/src/editions/*) and DeployEditions.s.sol are deleted; these
 // addresses were never deployed to mainnet (still zero) and are kept only as
 // harmless history / in case any external reference still points at these
@@ -171,7 +171,7 @@ export const MURI_MANIFOLD_EXTENSION: Record<number, Address> = {
 // collection). NOT yet deployed to mainnet — paste the address here after
 // running the collection deploy script. For local Anvil dev, set the
 // corresponding NEXT_PUBLIC_* env var instead of editing this file.
-export const SOVEREIGN_COLLECTION_FACTORY: Record<number, Address> = {
+export const SURFACE_FACTORY: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
 }
 
