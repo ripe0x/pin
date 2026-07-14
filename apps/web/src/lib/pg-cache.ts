@@ -41,12 +41,26 @@ function isEnvelope<T>(v: unknown): v is Envelope<T> {
   )
 }
 
+/**
+ * Local-fork bypass. When the app runs against a dev anvil fork
+ * (NEXT_PUBLIC_USE_LOCAL_RPC=1) the L2 cache is both useless and harmful:
+ * anvil reads are instant and free, so there is nothing to amortize, and
+ * writing fork results into the shared (production) `cache_entries` table
+ * pollutes it with rows keyed to ephemeral fork addresses. Worse, dev
+ * redeploys land contracts at the SAME deterministic addresses with
+ * different bytecode, so a cached result (including a cached `null`) from a
+ * previous reseed silently masks the new contract's behavior for its whole
+ * TTL. Bypassing entirely keeps dev always-live and never lets a fork touch
+ * the prod cache.
+ */
+const FORK_MODE = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
+
 export async function pgCache<T>(
   key: string,
   ttlSec: number,
   fetcher: () => Promise<T>,
 ): Promise<T> {
-  if (!sql) return fetcher()
+  if (FORK_MODE || !sql) return fetcher()
 
   // Read path: serve unexpired entries directly. We don't lock or
   // single-flight here — if two sandboxes miss simultaneously, both fetch
@@ -130,7 +144,7 @@ export async function pgCacheInvalidate(keyPrefix: string): Promise<void> {
  * assume the cache is cold and show the more informative message.
  */
 export async function pgCacheHas(key: string): Promise<boolean> {
-  if (!sql) return false
+  if (FORK_MODE || !sql) return false
   try {
     const r = await sql<Array<{ ok: number }>>`
       SELECT 1 AS ok FROM cache_entries
