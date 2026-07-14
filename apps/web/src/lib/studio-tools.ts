@@ -25,7 +25,7 @@
  */
 
 import { MAINNET_CHAIN_ID } from "@pin/addresses"
-import { collectionFactory } from "./collection"
+import { collectionFactory, gateHookAddress } from "./collection"
 
 export type StudioTool = {
   /** Route segment under /studio/[address]/ */
@@ -74,6 +74,16 @@ export const STUDIO_TOOLS: StudioTool[] = [
     label: "Artist site",
     description:
       "Deploy a self-hosted site that reads your auction house straight from the chain.",
+  },
+  {
+    id: "mint-gate",
+    label: "Mint gate",
+    description:
+      "Gate a collection's mint with an allowlist and a per-wallet limit, on your own hook contract.",
+    // Ships dark on mainnet until GateHook deploys there; live in dev via
+    // the harness's NEXT_PUBLIC_GATE_HOOK override (see scripts/dev-collections.sh).
+    available: () =>
+      gateHookAddress(MAINNET_CHAIN_ID) !== null || process.env.NEXT_PUBLIC_GATE_HOOK !== undefined,
   },
 ]
 
