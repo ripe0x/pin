@@ -7,7 +7,7 @@
  *      txs are signed server-side by Anvil — no private key in the browser.
  *      Forking mainnet means Multicall3 is present, which the collections
  *      server reads (getCollection et al) rely on.
- *   2. Deploys the Collection system (Attribution + renderers +
+ *   2. Deploys the Surface system (Attribution + renderers +
  *      impl + factory) to the fork.
  *   3. Next dev server on a fixed port (E2E_APP_PORT, default 3100) with the
  *      fork env + NEXT_PUBLIC_DEV_IMPERSONATE set, so the wagmi mock
@@ -42,7 +42,7 @@ const CHAIN_ID = 31339
 const FORK_RPC = process.env.E2E_FORK_RPC ?? "https://ethereum-rpc.publicnode.com"
 const IMPERSONATE = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266" as const // Anvil acct 0
 // Well-known Anvil account-0 private key (derives to IMPERSONATE above).
-// DeployCollectionSystem.s.sol reads PRIVATE_KEY via vm.envUint and signs
+// DeploySurfaceSystem.s.sol reads PRIVATE_KEY via vm.envUint and signs
 // locally with vm.startBroadcast(deployerPk) — unlike the retired
 // DeployEditions.s.sol, it does NOT rely on --unlocked eth_sendTransaction
 // impersonation. See scripts/dev-collections.sh for the same pattern.
@@ -112,14 +112,14 @@ export default async function globalSetup() {
     return true
   }, 60_000)
 
-  // 2) Fund the impersonated wallet + deploy the Collection system.
+  // 2) Fund the impersonated wallet + deploy the Surface system.
   await rpc(rpcUrl, "anvil_setBalance", [IMPERSONATE, "0x21e19e0c9bab2400000"])
   console.log("[e2e] deploying collection contracts…")
   const out = execSync(
-    `forge script script/DeployCollectionSystem.s.sol --rpc-url ${rpcUrl} --broadcast --sender ${IMPERSONATE}`,
+    `forge script script/DeploySurfaceSystem.s.sol --rpc-url ${rpcUrl} --broadcast --sender ${IMPERSONATE}`,
     { cwd: CONTRACTS_DIR, env: { ...ENV_WITH_FOUNDRY, PRIVATE_KEY: DEPLOYER_PK }, encoding: "utf8" },
   )
-  const m = out.match(/CollectionFactory:\s*(0x[0-9a-fA-F]{40})/)
+  const m = out.match(/SurfaceFactory:\s*(0x[0-9a-fA-F]{40})/)
   if (!m) {
     console.error(out)
     throw new Error("e2e: could not parse factory address from deploy output")

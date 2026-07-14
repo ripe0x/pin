@@ -4,7 +4,7 @@ title: Surface
 
 # summary
 
-The one core of the PND Collection System: a single OpenZeppelin ERC721 that
+The one core of the PND Surface System: a single OpenZeppelin ERC721 that
 holds ownership, ETH payment paths, and per-token provenance, and nothing else.
 Every artist gets their own copy, deployed as an immutable EIP-1167 clone by
 [the factory](/docs/collections/contracts/factory). There is no proxy admin, no upgrade path,
@@ -144,7 +144,7 @@ cast call <COLLECTION_ADDRESS> "currentPrice(address,uint256,bytes)(uint256)" \
   --rpc-url https://ethereum-rpc.publicnode.com
 ```
 
-The address lands at launch; the Collection System is pre-deploy, so the examples
+The address lands at launch; the Surface System is pre-deploy, so the examples
 above use a `<COLLECTION_ADDRESS>` placeholder.
 
 ## function mint

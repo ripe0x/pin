@@ -7,7 +7,7 @@ title: IPriceStrategy
 IPriceStrategy is the interface a contract implements to occupy a
 collection's price slot, one of the
 [four swappable slots](/docs/collections/concepts/four-slots) on the
-[Collection](/docs/collections/contracts/collection) core. A price
+[Surface](/docs/collections/contracts/surface) core. A price
 strategy is a view only: the core reads the price and keeps custody of
 funds itself, so a strategy can never introduce a theft or reentrancy path.
 When a collection's price strategy slot is unset, its stored fixed price

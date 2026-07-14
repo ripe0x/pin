@@ -21,7 +21,7 @@ import { surfaceFactoryAbi } from "./abis/SurfaceFactory"
  *   - FoundationNFT shared 1/1 contract
  *   - SuperRareNFT shared 1/1 contract
  *   - Catalog
- *   - CollectionFactory + every clone (PND Collection System —
+ *   - CollectionFactory + every clone (PND Surface System —
  *     DEPLOY-GATED, see the sentinel + conditional spread below; absent
  *     from `contracts` entirely until the factory is deployed)
  *
@@ -82,7 +82,7 @@ const MURI_PROTOCOL_ADDRESS =
   "0x0000000000C2A0B63ab4aA971B08B905E5875b01" as const
 const MURI_PROTOCOL_DEPLOY_BLOCK = 23_754_750
 
-// PND Collection System (contracts/src/surface/) — the general
+// PND Surface System (contracts/src/surface/) — the general
 // Collection core (Editions preset + generative + backed/pooled
 // forms), deployed via a single CollectionFactory. Mirrors the
 // SovereignAuctionHouse(Factory) pattern above: one fixed factory indexed
@@ -241,7 +241,7 @@ export default createConfig({
       startBlock: MURI_PROTOCOL_DEPLOY_BLOCK,
     },
 
-    // ── PND Collection System (DEPLOY-GATED — see sentinel above) ─────
+    // ── PND Surface System (DEPLOY-GATED — see sentinel above) ────────
     // Both entries are conditionally spread in: while
     // SOVEREIGN_COLLECTION_FACTORY_ADDRESS is the zero-address sentinel,
     // neither key exists on `contracts` at all (not "disabled", just

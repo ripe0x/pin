@@ -6,7 +6,7 @@ description: The shared enums and structs in SurfaceTypes.sol, the data-only sur
 # Types
 
 `SurfaceTypes.sol` defines the enums and structs shared across the
-Collection System: the collection core and the renderer and price-strategy
+Surface System: the collection core and the renderer and price-strategy
 interfaces. These types have no functions or events of their own, only
 fields, so they don't appear as generated contract pages; this page is
 their reference.

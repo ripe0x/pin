@@ -1,7 +1,7 @@
-# Collection System: web/offchain implementation plan
+# Surface System: web/offchain implementation plan
 
-> Companion to `docs/pnd-collection-system.md` (sections 5 and 8.4) and
-> `docs/pnd-collection-contracts-plan.md` (the contracts side, built on
+> Companion to `docs/pnd-surface-system.md` (sections 5 and 8.4) and
+> `docs/pnd-surface-contracts-plan.md` (the contracts side, built on
 > branch `collection-contracts-v1`, PR #133). This plan covers the
 > web app, worker, indexer, packages, and artist template. Branch:
 > `collection-web-v1`, stacked on the contracts branch; rebase onto
@@ -37,7 +37,7 @@
 
 ### D1. Packages: ABI + addresses sync
 
-`scripts/emit-collection-abi.mjs` following the existing emit-script
+`scripts/emit-surface-abi.mjs` following the existing emit-script
 convention; new `@pin/abi` exports: `collectionAbi`,
 `collectionFactoryAbi`, `attributionAbi`,
 `generativeRendererAbi`, plus a minimal hand-written
@@ -52,7 +52,7 @@ consumers, then are deleted.
 ### D2. Local dev harness: `pnpm dev:collections`
 
 Rework of `scripts/dev-editions.sh` (currently broken: it deploys the
-deleted `DeployEditions.s.sol`): deploy `DeployCollectionSystem.s.sol`
+deleted `DeployEditions.s.sol`): deploy `DeploySurfaceSystem.s.sol`
 on the anvil mainnet fork (chain id 31339; the fork means the REAL
 scripty/EthFS contracts are present, so generative preview works
 against true onchain deps), parse factory + attribution + renderer
@@ -121,7 +121,7 @@ address; route to the new collection page.
 - **Indexer**: `CollectionFactory` entry in
   `ponder.config.ts` using the `factory()` pattern (the
   SovereignAuctionHouse precedent), handlers for
-  CollectionCreated/Minted/Burned into new `ponder` tables; excluded
+  SurfaceCreated/Minted/Burned into new `ponder` tables; excluded
   from config while the address is the zero sentinel.
 - **Capture worker**: new task scaffold; v1 implements the SVG
   rasterize path only (sharp) for `image`-less tokens; the headless

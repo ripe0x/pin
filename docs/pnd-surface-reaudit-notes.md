@@ -1,4 +1,4 @@
-# Collection: re-audit notes (post-`43f4ae7`)
+# Surface: re-audit notes (post-`43f4ae7`)
 
 > **Purpose.** A running log of changes made to the collection contracts
 > AFTER the audited baseline, so a re-review can be done against this
@@ -149,7 +149,7 @@ before the review so the review covers the final code.
   complexity is not worth a rare event). Mitigation is product-side: the
   studio surfaces the current admin list prominently during any
   ownership transfer so both parties see who still holds keys — tracked
-  in docs/pnd-collection-post-deploy.md. A reviewer should treat the
+  in docs/pnd-surface-post-deploy.md. A reviewer should treat the
   inherited-admin behavior as intended.
 
 ### Test coverage
@@ -290,7 +290,7 @@ two-sided, fully onchain attribution primitive on the collection itself:
 ## 2026-07-13 (f): SeaDrop-review batch — pre-deploy ABI freezes
 
 Un-reviewed. Outcome of a full contract review plus a comparative study of
-OpenSea's SeaDrop (decision record: pnd-collection-system.md § 8.5 — the
+OpenSea's SeaDrop (decision record: pnd-surface-system.md § 8.5 — the
 singleton mint-engine model was evaluated and rejected; stage-rich drops
 arrive later as a stock DropMinter extension minter, not core changes). Every
 item here is deploy-gated: impossible to add after the immutable deploy.
@@ -338,7 +338,7 @@ allowlist-gates-recipient and refund-to-payer).
 ### f4: RenderAssets v2 — capture template rung + narrow capturer role
 
 Two additions to the (not-yet-deployed) singleton, both motivated by the
-thumbnail economics (docs/pnd-collection-thumbnails.md, rewritten):
+thumbnail economics (docs/pnd-surface-thumbnails.md, rewritten):
 
 - **Template rung**: `templateOf[collection]` + `setCaptureTemplate`; every
   `{id}` resolves to the token id at read time (solady LibString.replace).

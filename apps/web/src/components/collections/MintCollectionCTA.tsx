@@ -1,7 +1,7 @@
 "use client"
 
 /**
- * Live mint CTA for a Sovereign Collection. Honest pricing: for a fixed-price
+ * Live mint CTA for a Surface. Honest pricing: for a fixed-price
  * collection the collector pays exactly price * quantity, shown up front. For
  * a collection with a price strategy (hasPriceStrategy), the price can change
  * block to block (e.g. a basefee-driven strategy), so this reads a live quote

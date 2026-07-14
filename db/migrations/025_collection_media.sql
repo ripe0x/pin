@@ -1,5 +1,5 @@
--- collection_media: captured static media for PND Collection System
--- tokens (contracts/src/collection/), written by the worker's
+-- collection_media: captured static media for PND Surface System
+-- tokens (contracts/src/surface/), written by the worker's
 -- capture-collection-media task.
 --
 -- Scope (v1): SVG-only. When a token's renderer JSON `image` field is a
@@ -24,7 +24,7 @@
 --   'needs_html_capture' — the token's canonical view is animation_url
 --                          HTML with no SVG image fallback; no headless
 --                          browser in the worker image yet (open infra
---                          decision — see docs/pnd-collection-web-plan.md
+--                          decision — see docs/pnd-surface-web-plan.md
 --                          D7). Row is a placeholder so the scan loop
 --                          doesn't re-attempt every tick.
 --   'failed'             — attempted and gave up (bad data URI, sharp

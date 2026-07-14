@@ -16,7 +16,7 @@ import {MockRenderer} from "../mocks/SurfaceMocks.sol";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Reference fixture: a minimal To Be A Machine rebuilt on the collection
-// system. Encodes the design claims from docs/pnd-collection-system.md:
+// system. Encodes the design claims from docs/pnd-surface-system.md:
 //   1. holder-participation mechanics (lock-a-frame) live in a companion
 //      contract with ZERO core support — the companion authorizes against
 //      plain ownerOf;

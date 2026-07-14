@@ -6,11 +6,11 @@ import "./docs.css"
 
 export const metadata: Metadata = {
   title: {
-    default: "Collection System reference",
-    template: "%s | Collection System",
+    default: "Surface System reference",
+    template: "%s | Surface System",
   },
   description:
-    "API reference for the PND Collection System: the artist-owned ERC721 core, its four swappable slots, and the contracts around it.",
+    "API reference for the PND Surface System: the artist-owned ERC721 core, its four swappable slots, and the contracts around it.",
 }
 
 export default function DocsLayout({ children }: { children: ReactNode }) {

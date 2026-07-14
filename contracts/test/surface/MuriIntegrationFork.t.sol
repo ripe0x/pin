@@ -27,7 +27,7 @@ contract PermissiveOperatorStub {
 
 /// @title MuriIntegrationForkTest
 /// @notice Fork probe that resolved the one unknown behind the MURI-based
-///         thumbnail design (docs/pnd-collection-thumbnails.md): how does a
+///         thumbnail design (docs/pnd-surface-thumbnails.md): how does a
 ///         non-Manifold `Surface` wire into the live mainnet MURI
 ///         singleton? Findings, asserted below against real MURI:
 ///

@@ -8,12 +8,12 @@
  * so plain `node --test` fails on this import. `tsx` (already a repo
  * dependency) handles both.
  *
- * Covers formatWriteError's Collection protocol error mapping. Errors are
+ * Covers formatWriteError's Surface protocol error mapping. Errors are
  * constructed in the shapes viem actually produces:
  *  - a decoded custom error exposes `data.errorName` on the
  *    ContractFunctionRevertedError node in the cause chain (see
  *    viem/errors/contract.ts ContractFunctionRevertedError). This applies to
- *    both the Collection core errors (WrongPayment, ExceedsCap, ...) and
+ *    both the Surface core errors (WrongPayment, ExceedsCap, ...) and
  *    GateHook.sol's NotAllowlisted/WalletCapExceeded — GateHook reverts with
  *    custom errors, not require(string), so both map through the same
  *    errorName path.

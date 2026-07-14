@@ -1,8 +1,8 @@
 # PND Editions — interface spec
 
 > **SUPERSEDED (2026-07-06).** The Editions contract was reworked into the
-> Collection system (OZ ERC721 core, four slots, id modes); see
-> docs/pnd-collection-system.md and docs/pnd-collection-contracts-plan.md.
+> Surface system (OZ ERC721 core, four slots, id modes); see
+> docs/pnd-surface-system.md and docs/pnd-surface-contracts-plan.md.
 > This document describes the pre-rework ERC721A design; payment-split,
 > hook, and graph concepts carry over, token-layer specifics do not.
 > Contracts now live in contracts/src/collection/ (src/editions/ was

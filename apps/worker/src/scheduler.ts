@@ -87,7 +87,7 @@ const tasks: Task[] = [
   // CID is probed it stays probed for RETRY_AFTER_DAYS).
   { name: "probe-cid-availability",    intervalMs: 10 * MIN, fn: probeCidAvailability },
   { name: "ponder-drift-check",        intervalMs: 60 * MIN, fn: ponderDriftCheck },
-  // PND Collection System media capture (SVG rasterize only, v1). Inert
+  // PND Surface System media capture (SVG rasterize only, v1). Inert
   // today: SOVEREIGN_COLLECTION_FACTORY is still the zero-address
   // sentinel (no mainnet deploy) AND the concurrent Ponder discovery
   // tables (collections/collection_tokens) don't exist yet — both gates

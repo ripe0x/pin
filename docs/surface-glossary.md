@@ -1,20 +1,20 @@
-# Collection System glossary
+# Surface System glossary
 
-Plain-language definitions for the PND Collection System. One or two sentences
+Plain-language definitions for the PND Surface System. One or two sentences
 each. The full design rationale lives in
-[pnd-collection-system.md](pnd-collection-system.md); a hands-on walkthrough is
-in [collection-getting-started.md](collection-getting-started.md).
+[pnd-surface-system.md](pnd-surface-system.md); a hands-on walkthrough is
+in [surface-getting-started.md](surface-getting-started.md).
 
 ## The shape of it, in one picture
 
-A **Collection** is one artist's NFT contract. It does three jobs and nothing
+A **Surface** is one artist's NFT contract. It does three jobs and nothing
 else: it owns the tokens, it handles the money, and it records provenance.
 Everything that varies from one artist's work to another lives in four swappable
 **slots**.
 
 ```mermaid
 flowchart TD
-    Core["<b>Collection</b> (the core)<br/>owns tokens · handles money · records provenance"]
+    Core["<b>Surface</b> (the core)<br/>owns tokens · handles money · records provenance"]
     Core --- R["<b>Renderer</b> slot<br/>turns a token into its art"]
     Core --- P["<b>Price</b> slot<br/>says what a mint costs"]
     Core --- H["<b>Mint hook</b> slot<br/>gates who can mint (allowlists, caps)"]
@@ -23,16 +23,16 @@ flowchart TD
 
 ## The core
 
-**Collection** — one artist's ERC-721 contract, deployed as a cheap clone. It is
+**Surface** — one artist's ERC-721 contract, deployed as a cheap clone. It is
 immutable from the moment it ships: no upgrades, no admin backdoor. What deploys
-is what runs, forever. It comes in two forms, one per id mode: `Collection`
-(sequential) and `PooledCollection` (pooled).
+is what runs, forever. It comes in two forms, one per id mode: `Surface`
+(sequential) and `PooledSurface` (pooled).
 
-**CollectionFactory** — the contract that stamps out new Collections as clones,
+**SurfaceFactory** — the contract that stamps out new Surfaces as clones,
 so deploying one costs very little gas. One door per form:
-`createCollection` and `createPooledCollection`.
+`createSurface` and `createPooledSurface`.
 
-**Slot** — a plug-in point on a Collection. There are four (renderer, price, mint
+**Slot** — a plug-in point on a Surface. There are four (renderer, price, mint
 hook, minter). Swapping a slot changes behavior without touching the core.
 
 **Admin** — a key the owner grants (`addAdmin`) that can use every management
@@ -158,7 +158,7 @@ collection's cover image, per-token captures, and a capture template that
 resolves `{id}` per token. Writes use the collection's own owner/admin keys,
 and captures can be delegated to a narrow **capturer** key that can touch
 nothing else. Captures are refreshable forever, deliberately: they mirror the
-art, they are not the art. Design: [pnd-collection-thumbnails.md](pnd-collection-thumbnails.md).
+art, they are not the art. Design: [pnd-surface-thumbnails.md](pnd-surface-thumbnails.md).
 
 **Liveness tier** — an honest label for what a faithful render needs. **pure**:
 seed only, deterministic forever. **chain-live**: reads onchain state at render
@@ -187,7 +187,7 @@ code.)
 
 ## Shared infrastructure ("rails")
 
-These are already deployed and shared by every Collection.
+These are already deployed and shared by every Surface.
 
 **Catalog** — the registry where an artist claims their works.
 
@@ -206,7 +206,7 @@ it into HTML.
 **bps** — basis points. 1 bps is 0.01%, so the 10% referral share is 1000 bps.
 
 **EIP-1167 clone** — a tiny standard contract that forwards every call to one
-shared implementation. It is why deploying a Collection is cheap: you deploy a
+shared implementation. It is why deploying a Surface is cheap: you deploy a
 roughly 45-byte pointer, not a full copy of the contract.
 
 **Homage (Homage to the Punk)** — PND's flagship live-derivative work. Each token

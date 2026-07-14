@@ -48,7 +48,7 @@ export function MintGateTool() {
           </label>
           {trimmed.length > 0 && !valid && <p className={ERROR}>Not a valid address.</p>}
           <p className={HELP}>
-            Paste the address of a Sovereign Collection you own or
+            Paste the address of a Surface you own or
             administer (from Create a collection, or any other you
             deployed).
           </p>

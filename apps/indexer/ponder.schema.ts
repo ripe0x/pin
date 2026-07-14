@@ -362,7 +362,7 @@ export const muriTokens = onchainTable(
   }),
 )
 
-// ─── PND Collection System (contracts/src/collection/) ──────────────────
+// ─── PND Surface System (contracts/src/surface/) ─────────────────────────
 // DEPLOY-GATED (see ponder.config.ts): these tables exist regardless, but
 // stay empty until CollectionFactory + Collection are
 // wired into `contracts`. One row per artist collection deployed via the
@@ -387,7 +387,7 @@ export const collections = onchainTable(
 )
 
 // Current state per token. Pooled collections can burn-then-remint the
-// same tokenId as a new instance (see ICollection.mintToId) — a
+// same tokenId as a new instance (see IPooledSurface.mintToId) — a
 // re-mint UPDATEs this row in place (fresh mark fields, burned reset to
 // false) rather than inserting a new one, so `id` stays the durable
 // per-(collection,tokenId) identity across the token's burn/remint cycles.

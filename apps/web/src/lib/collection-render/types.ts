@@ -10,14 +10,14 @@
 
 import type { Address } from "viem";
 
-/** Mirrors CollectionTypes.sol CodeKind. */
+/** Mirrors SurfaceTypes.sol CodeKind. */
 export const CODE_KIND = {
   Script: 0,
   ScriptGzip: 1,
 } as const;
 export type CodeKind = (typeof CODE_KIND)[keyof typeof CODE_KIND];
 
-/** Mirrors CollectionTypes.sol CodeRef. */
+/** Mirrors SurfaceTypes.sol CodeRef. */
 export type CodeRefLike = {
   store: Address;
   name: string;

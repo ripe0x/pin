@@ -2,7 +2,7 @@ import { ponder } from "ponder:registry"
 import { collections, collectionMints, collectionTokens } from "ponder:schema"
 
 /**
- * PND Collection System (contracts/src/surface/) handlers.
+ * PND Surface System (contracts/src/surface/) handlers.
  *
  * DEPLOY-GATED: CollectionFactory + Collection are only
  * present in ponder.config.ts's `contracts` once the real factory address

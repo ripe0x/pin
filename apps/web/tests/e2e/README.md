@@ -40,9 +40,9 @@ with `E2E_FORK_RPC`).
    all present at their real mainnet addresses, which the collections server
    reads (`getCollection` et al) and the GENERATIVE preset's dependency
    picker depend on.
-2. Deploys the Sovereign Collection system
-   (`forge script DeployCollectionSystem.s.sol`: Attribution, DefaultRenderer,
-   GenerativeRenderer, the Collection implementation, and the
+2. Deploys the Surface system
+   (`forge script DeploySurfaceSystem.s.sol`: Attribution, DefaultRenderer,
+   GenerativeRenderer, the Surface implementation, and the
    factory that clones it) and parses the **factory** and
    **GenerativeRenderer** addresses out of the script's console output.
    Both are exported as `NEXT_PUBLIC_*` env vars to the dev server — as of

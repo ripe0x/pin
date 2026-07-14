@@ -21,7 +21,7 @@ title: Collection
 # summary
 
 One to three paragraphs. What the contract is, what it holds, how it fits the
-Collection System (core, factory, a swappable slot, a shared singleton).
+Surface System (core, factory, a swappable slot, a shared singleton).
 
 # concepts
 
@@ -102,7 +102,7 @@ the local specifics.
   never the glyph.
 - Address and transaction links use evm.now:
   `https://evm.now/address/<addr>?chainId=1`, `https://evm.now/tx/<hash>?chainId=1`.
-- The Collection System is pre-deploy. Live-read examples use `cast` against a
+- The Surface System is pre-deploy. Live-read examples use `cast` against a
   free public RPC with a placeholder address, and note that the address lands at
   launch:
   `cast call <COLLECTION_ADDRESS> "totalSupply()(uint256)" --rpc-url https://ethereum-rpc.publicnode.com`.

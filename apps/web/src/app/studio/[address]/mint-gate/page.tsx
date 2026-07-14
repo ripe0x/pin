@@ -3,7 +3,7 @@ import { notFound } from "next/navigation"
 import { MintGateTool } from "@/components/studio/mint-gate/MintGateTool"
 
 /**
- * Gate a Sovereign Collection's mint with a GateHook allowlist + per-wallet
+ * Gate a Surface's mint with a GateHook allowlist + per-wallet
  * cap. OwnerGate (studio layout) already keeps non-owners out; this page
  * only guards against an unresolved/invalid studio address, same as the
  * other studio tool pages. The registry entry in lib/studio-tools.ts gates

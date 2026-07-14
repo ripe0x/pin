@@ -33,7 +33,7 @@ Four entry points, all served as static JSON:
           "kind": "clone",
           "abi": "/abis/Surface.json",
           "docs": "/docs/collections/contracts/surface",
-          "role": "The one core of the PND Collection System..."
+          "role": "The one core of the PND Surface System..."
         },
         "SurfaceFactory": {
           "address": "<SURFACE_FACTORY_ADDRESS>",

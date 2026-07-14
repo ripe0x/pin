@@ -1,8 +1,8 @@
-# PND Collection System: contracts implementation plan
+# PND Surface System: contracts implementation plan
 
 > **Scope: contracts only.** Studio flow, mint surface, capture worker,
 > and all other UI/offchain work is explicitly deferred. Companion to
-> `docs/pnd-collection-system.md` (the design overview); this document
+> `docs/pnd-surface-system.md` (the design overview); this document
 > is the build plan for section 3 of that doc, with comprehensive
 > testing as a first-class deliverable, not a trailing phase.
 >

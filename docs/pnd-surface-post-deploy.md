@@ -1,11 +1,11 @@
-# PND Collection System: post-deploy work
+# PND Surface System: post-deploy work
 
 > **What this is.** The list of everything deliberately deferred past the
 > **launch**, so none of it gets forgotten. Nothing here gates the
 > contract deploy — that gate is the external re-audit
-> (`pnd-collection-reaudit-notes.md`) — and nothing here gates the
+> (`pnd-surface-reaudit-notes.md`) — and nothing here gates the
 > launch either: the post-deploy → launch window has its own runbook
-> with kickoff prompts, `pnd-collection-prelaunch.md` (addresses,
+> with kickoff prompts, `pnd-surface-prelaunch.md` (addresses,
 > source verification, discovery indexing, the launch collection,
 > mint surfaces, the pre-announce audit). Items below are ordered by
 > when they bite. Written 2026-07-13; check items off or move them to
@@ -21,7 +21,7 @@
 
 ## First HTML-generative drop (gates that drop, not the SVG launch)
 
-Design: `pnd-collection-thumbnails.md`. The contract side (RenderAssets
+Design: `pnd-surface-thumbnails.md`. The contract side (RenderAssets
 cover/captures/template/capturer) is shipped; this is the offchain half.
 
 - [ ] Client-side capture util in the parity render lib: grab the canvas
@@ -62,7 +62,7 @@ slot architecture. Each is a small singleton + tests + a studio surface.
   price/caps, payer delegation) as ONE stock extension-minter singleton
   serving many collections — the SeaDrop feature set with the trust
   arrow pointing at the artist (decision record:
-  `pnd-collection-system.md` §8.5). Must honor the referral share in
+  `pnd-surface-system.md` §8.5). Must honor the referral share in
   code.
 - [ ] **BackedMinter + escrow vault** and **PooledIdMinter +
   ISourceReader** (Phase 5): the genuinely new audit surface — this is

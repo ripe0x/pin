@@ -1,8 +1,8 @@
-# PND Collection System: thumbnails and cover images
+# PND Surface System: thumbnails and cover images
 
 > **Status: design current as of 2026-07-13; contract mechanics shipped,
 > offchain capture tooling not yet built.** Companion to
-> `docs/pnd-collection-system.md` (§5.4, the capture worker) and
+> `docs/pnd-surface-system.md` (§5.4, the capture worker) and
 > `docs/injection-convention.md` (the capture spec in §3.1 below should
 > be mirrored into injection-convention v2 so the onchain assembler,
 > studio, mint surface, and artist embed all agree on the canonical
@@ -120,7 +120,7 @@ Every surface that captures a token must produce the same frame, or the
 ### 3.2 The pointer (shipped, in RenderAssets)
 
 All presentation pointers live in the **RenderAssets** singleton
-(`contracts/src/collection/renderers/RenderAssets.sol`), renderer-land,
+(`contracts/src/surface/renderers/RenderAssets.sol`), renderer-land,
 outside the core. `imageFor(collection, tokenId)` resolves down a ladder:
 
 1. **Per-token capture** — `setCaptures(collection, tokenIds, uris)`,

@@ -1,6 +1,6 @@
 /**
- * Capture static media for PND Collection System tokens
- * (contracts/src/collection/), v1 scope = SVG only.
+ * Capture static media for PND Surface System tokens
+ * (contracts/src/surface/), v1 scope = SVG only.
  *
  * Deploy-gated: no-op (zero counts) until SOVEREIGN_COLLECTION_FACTORY
  * resolves to a real address. `@pin/addresses` carries a zero-address
@@ -12,7 +12,7 @@
  * Indexer-readiness gated, separately: the source of "which tokens need
  * a capture" is `${INDEXER_SCHEMA}.collection_tokens` (+ `.collections`),
  * written by a concurrent Ponder task for the CollectionFactory
- * discovery indexing (see docs/pnd-collection-web-plan.md D7). Those
+ * discovery indexing (see docs/pnd-surface-web-plan.md D7). Those
  * tables don't exist yet on this branch — probed via information_schema,
  * same pattern as warm-metadata's ponderReady probe — so until they
  * land this task is *also* a no-op even once the factory address is set.
@@ -30,7 +30,7 @@
  *      (status='needs_html_capture') so we don't re-attempt every tick.
  *      The actual headless-capture path is a stub behind CAPTURE_HTML=1
  *      that only logs — no browser dependency added (open infra
- *      decision; see docs/pnd-collection-web-plan.md D7).
+ *      decision; see docs/pnd-surface-web-plan.md D7).
  *   6. Anything else (no image, no animation_url, bad data URI, sharp
  *      failure): status='failed', retried after RETRY_AFTER.
  */
@@ -226,7 +226,7 @@ async function captureOne(c: Candidate): Promise<{ rpc: number; wrote: boolean }
   if (meta.animation_url) {
     // Canonical view is HTML with no SVG fallback. Headless capture is an
     // open infra decision (no puppeteer/playwright in the worker image) —
-    // see docs/pnd-collection-web-plan.md D7. Park the row so we don't
+    // see docs/pnd-surface-web-plan.md D7. Park the row so we don't
     // re-attempt every tick; CAPTURE_HTML=1 only logs the intent, it does
     // not actually render anything.
     if (CAPTURE_HTML) {

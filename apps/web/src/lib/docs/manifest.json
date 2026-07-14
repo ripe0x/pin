@@ -43,7 +43,7 @@
               "title": "Overview",
               "slug": "overview",
               "path": "/docs/collections/overview",
-              "description": "What the PND Collection System is, its parts, and how this reference is organized."
+              "description": "What the PND Surface System is, its parts, and how this reference is organized."
             }
           ]
         },
@@ -85,7 +85,7 @@
               "title": "Surface",
               "slug": "surface",
               "path": "/docs/collections/contracts/surface",
-              "description": "The one core of the PND Collection System: a single OpenZeppelin ERC721 that holds ownership, ETH payment paths, and per-token provenance, and nothing else."
+              "description": "The one core of the PND Surface System: a single OpenZeppelin ERC721 that holds ownership, ETH payment paths, and per-token provenance, and nothing else."
             },
             {
               "title": "SurfaceFactory",
@@ -139,13 +139,13 @@
               "title": "IMintHook",
               "slug": "i-mint-hook",
               "path": "/docs/collections/contracts/i-mint-hook",
-              "description": "IMintHook is the interface a contract implements to occupy a collection's hook slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [Collection](/docs/collections/contracts/collection) core."
+              "description": "IMintHook is the interface a contract implements to occupy a collection's hook slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [Surface](/docs/collections/contracts/surface) core."
             },
             {
               "title": "IPriceStrategy",
               "slug": "i-price-strategy",
               "path": "/docs/collections/contracts/i-price-strategy",
-              "description": "IPriceStrategy is the interface a contract implements to occupy a collection's price slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [Collection](/docs/collections/contracts/collection) core."
+              "description": "IPriceStrategy is the interface a contract implements to occupy a collection's price slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [Surface](/docs/collections/contracts/surface) core."
             },
             {
               "title": "IRenderer",

@@ -16,7 +16,7 @@ import {
 } from "./collection"
 
 /**
- * Live, cached onchain reads for Sovereign Collections. These are the
+ * Live, cached onchain reads for Surfaces. These are the
  * collection's own contracts (no indexer backfill required for the live
  * mint/provenance surfaces). pgCache short-circuits to a fresh read when no
  * DATABASE_URL.

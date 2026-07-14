@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# One command to test the Collection system fully locally before
+# One command to test the Surface system fully locally before
 # deploying.
 #
 #   pnpm dev:collections
@@ -12,7 +12,7 @@
 #      the web app's wagmi config registers for the fork chain) with
 #      auto-impersonate on. Forking mainnet means Multicall3 (0xcA11…) and ENS
 #      are present, so every PND surface works, not just collections.
-#   3. Deploys the collection system (Attribution, DefaultRenderer,
+#   3. Deploys the Surface system (Attribution, DefaultRenderer,
 #      GenerativeRenderer, Surface implementation, and the
 #      factory that clones it) via DeploySurfaceSystem.s.sol.
 #   4. Funds an impersonated wallet so you can click through create + mint with
@@ -101,7 +101,7 @@ cast rpc anvil_setBalance "$IMPERSONATE" 0x21e19e0c9bab2400000 --rpc-url "$RPC" 
 # signing modes shouldn't be combined. So: pass PRIVATE_KEY, drop --unlocked,
 # keep --sender for clarity/consistency (it must match the PRIVATE_KEY's
 # address, verified above as Anvil account 0).
-echo "▸ Deploying collection system contracts…"
+echo "▸ Deploying Surface system contracts…"
 # CATALOG pins the collections to the REAL Catalog public good (present on the
 # mainnet fork), so the seed's creator claims land in the same Catalog the
 # collections read — the dev roster then actually confirms.

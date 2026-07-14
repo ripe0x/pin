@@ -1,11 +1,11 @@
-# PND Collection System: post-deploy → launch runbook
+# PND Surface System: post-deploy → launch runbook
 
 > **What this is.** The ordered checklist for the window between the
 > immutable mainnet deploy (gated on the external re-audit) and the
 > public launch. Each item carries a ready-to-paste **kickoff prompt**
 > for a fresh Claude Code session in this repo, so starting any item is
 > copy, paste, go. Work deferred PAST launch lives in
-> `pnd-collection-post-deploy.md`. Written 2026-07-13.
+> `pnd-surface-post-deploy.md`. Written 2026-07-13.
 >
 > **Standing rules that apply to every prompt below:** never broadcast a
 > mainnet transaction without Dave explicitly saying so in the task; all
@@ -34,7 +34,7 @@ and the reference docs regenerate from the first.
 
 ```
 Prompt: You are a hands-on implementer; do this yourself. In the pnd
-repo (~/foundation): the collection system just deployed to mainnet.
+repo (~/foundation): the Surface system just deployed to mainnet.
 Addresses: <paste factory, sequential impl, pooled impl,
 DefaultRenderer, RenderAssets from the deploy broadcast>. Fill
 contracts/deployments.mainnet.json and the placeholder entries in
@@ -71,7 +71,7 @@ transactions.
 ### B1. Enable discovery indexing (prep is doable before deploy)
 
 Ponder subscribes by address, so this could not ship pre-deploy — but
-nothing is lost: `CollectionCreated` events backfill from the factory's
+nothing is lost: `SurfaceCreated` events backfill from the factory's
 deploy block whenever the subscription lands. This is the blessed
 fixed-contract Ponder case per `AGENTS.md` (one factory, one event, no
 long tail). Do NOT put per-token scanning in Ponder.
@@ -80,22 +80,22 @@ long tail). Do NOT put per-token scanning in Ponder.
       parameterized
 - [ ] factory subscription live in `apps/indexer/ponder.config.ts`,
       start block = deploy block
-- [ ] backfill verified: indexed rows match `totalCollections()` on the
+- [ ] backfill verified: indexed rows match `totalSurfaces()` on the
       factory
 
 ```
 Prompt: You are a hands-on implementer; do this yourself. In the pnd
 repo (~/foundation): add discovery indexing for the collection factory.
 Read AGENTS.md first — Ponder is discovery-only, and this is the
-fixed-contract case it blesses. Add a CollectionCreated subscription
+fixed-contract case it blesses. Add a SurfaceCreated subscription
 for the factory (address <paste>, start block <deploy block>) to
 apps/indexer/ponder.config.ts with a handler in apps/indexer/src/
 writing one row per collection (owner, collection address, idMode,
 block/tx) to the ponder_v1 schema, following the existing pnd_*/fnd_*
 handler patterns. The ABI is already exported from @pin/abi
-(collectionFactoryAbi) and mirrored in apps/indexer/abis/. Verify
+(surfaceFactoryAbi) and mirrored in apps/indexer/abis/. Verify
 against local dev: run the indexer, confirm the backfilled row count
-equals the factory's totalCollections() (one eth_call), and confirm
+equals the factory's totalSurfaces() (one eth_call), and confirm
 zero ongoing RPC beyond the subscription. Do not add per-token
 indexing.
 ```
@@ -112,14 +112,14 @@ indexing.
 Prompt: You are a hands-on implementer; do this yourself. In the pnd
 repo (~/foundation): wire the collection discovery surfaces in apps/web
 to the newly indexed collections table (ponder_v1, written by the
-CollectionCreated handler). Read AGENTS.md + apps/web/src/lib/reads.ts
+SurfaceCreated handler). Read AGENTS.md + apps/web/src/lib/reads.ts
 first: web reads Postgres ONLY for storable data. List pages must be
 pure SELECTs — no chain reads in any list/render path; per-collection
 live state (price, status) stays behind the existing cached-read
 helpers in apps/web/src/lib/collection-onchain.ts. Update the studio
 "your collections" view to filter the same table by owner. Exercise
 both pages against local dev with a seeded collection
-(contracts/script/SeedDevCollections.s.sol + scripts/dev-collections.sh)
+(contracts/script/SeedDevSurfaces.s.sol + scripts/dev-collections.sh)
 before calling it done, and link the local URLs you tested.
 ```
 
@@ -139,7 +139,7 @@ is Dave's call, one confirm per transaction.
 ```
 Prompt: You are a hands-on implementer; do this yourself. In the pnd
 repo (~/foundation/contracts): prepare (do NOT broadcast) the launch
-deploy: the project renderer, then createCollection on the factory
+deploy: the project renderer, then createSurface on the factory
 (<address>) with the launch config <paste: name/symbol/owner/price/
 cap/window/royalty/payout/rendererLocked/supplyLocked/creators>.
 Dry-run the full sequence on a mainnet fork first (anvil --fork-url
@@ -168,7 +168,7 @@ isListedCreator/isConfirmedCreator via cast call; if the creator list
 was not set at create, stage setCreators; stage the artist's Catalog
 addContract claim (the artist signs); stage RenderAssets.setCover
 (registry <address>) with the cover URI <paste — one-time permanent
-storage per docs/pnd-collection-thumbnails.md §2>. Dry-run each on a
+storage per docs/pnd-surface-thumbnails.md §2>. Dry-run each on a
 fork, then stop — Dave broadcasts, one confirm per tx. Afterward verify
 isConfirmedCreator == true and decode contractURI to confirm the cover
 is in it.
@@ -280,12 +280,12 @@ anything ambiguous rather than guessing.
 
 ```
 Prompt: You are a hands-on implementer; do this yourself. In the pnd
-repo (~/foundation): the collection system is live on mainnet. Sweep
+repo (~/foundation): the Surface system is live on mainnet. Sweep
 the collection docs for stale pre-deploy status language:
-docs/pnd-collection-system.md banner, docs/pnd-collection-reaudit-notes.md
+docs/pnd-surface-system.md banner, docs/pnd-surface-reaudit-notes.md
 (add a closing entry with the audited commit, reviewer, deploy tx as an
-evm.now link, and deployed addresses), docs/pnd-collection-prelaunch.md
-(check off what is done), AGENTS.md's collection section. Regenerate
+evm.now link, and deployed addresses), docs/pnd-surface-prelaunch.md
+(check off what is done), AGENTS.md's Surface section. Regenerate
 the reference docs and confirm zero stale terms. Do not touch
 historical sections that are explicitly marked historical.
 ```
@@ -314,6 +314,6 @@ do not redesign the wizard.
 
 - [ ] collection docs pages linkable (pnd.ripe.wtf/docs)
 - [ ] launch mint URL, artist-site URL, and the "why sovereign" story
-      (pnd-collection-system.md §6) in whatever the announcement is —
+      (pnd-surface-system.md §6) in whatever the announcement is —
       no "Foundation" in marketing copy, "onchain" one word, "ETH" not Ξ,
       no em dashes in site copy

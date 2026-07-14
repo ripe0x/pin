@@ -54,7 +54,7 @@ A burned pooled id can be minted again via `mintToId` as a brand new instance: f
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity ^0.8.24;
 
-interface ICollectionMint {
+interface ISurfaceMint {
     function mintTo(address to, address referrer, bytes calldata hookData)
         external returns (uint256 tokenId);
 }
@@ -88,7 +88,7 @@ contract SimpleExtensionMinter {
         uint256 price = priceOf[collection];
         require(msg.value == price, "wrong payment");
 
-        tokenId = ICollectionMint(collection).mintTo(msg.sender, referrer, "");
+        tokenId = ISurfaceMint(collection).mintTo(msg.sender, referrer, "");
 
         if (referrer != address(0) && price > 0) {
             uint256 referralCut = (price * REFERRAL_SHARE_BPS) / BPS;

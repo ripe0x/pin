@@ -14,7 +14,7 @@
           "kind": "clone",
           "abi": "/abis/Surface.json",
           "docs": "/docs/collections/contracts/surface",
-          "role": "The one core of the PND Collection System: a single OpenZeppelin ERC721 that holds ownership, ETH payment paths, and per-token provenance, and nothing else."
+          "role": "The one core of the PND Surface System: a single OpenZeppelin ERC721 that holds ownership, ETH payment paths, and per-token provenance, and nothing else."
         },
         "SurfaceFactory": {
           "address": null,
@@ -77,14 +77,14 @@
           "kind": "interface",
           "abi": "/abis/IMintHook.json",
           "docs": "/docs/collections/contracts/i-mint-hook",
-          "role": "IMintHook is the interface a contract implements to occupy a collection's hook slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [Collection](/docs/collections/contracts/collection) core."
+          "role": "IMintHook is the interface a contract implements to occupy a collection's hook slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [Surface](/docs/collections/contracts/surface) core."
         },
         "IPriceStrategy": {
           "address": null,
           "kind": "interface",
           "abi": "/abis/IPriceStrategy.json",
           "docs": "/docs/collections/contracts/i-price-strategy",
-          "role": "IPriceStrategy is the interface a contract implements to occupy a collection's price slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [Collection](/docs/collections/contracts/collection) core."
+          "role": "IPriceStrategy is the interface a contract implements to occupy a collection's price slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [Surface](/docs/collections/contracts/surface) core."
         },
         "IRenderer": {
           "address": null,

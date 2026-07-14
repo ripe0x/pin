@@ -1,13 +1,13 @@
-# Collection System: getting started
+# Surface System: getting started
 
 A practical walkthrough: deploy a collection, configure it, let people mint, and
 read what comes out. Plain terms throughout. Every bolded concept is defined in
-the [glossary](collection-glossary.md); the deeper rationale is in
-[pnd-collection-system.md](pnd-collection-system.md).
+the [glossary](surface-glossary.md); the deeper rationale is in
+[pnd-surface-system.md](pnd-surface-system.md).
 
 ## The one-sentence model
 
-One **Collection** is one artist's NFT contract. You deploy it, set a few things
+One **Surface** is one artist's NFT contract. You deploy it, set a few things
 (price, supply, who can mint), and from then on it runs exactly as deployed,
 forever.
 
@@ -23,10 +23,10 @@ flowchart LR
 
 ## 1. Deploy
 
-You do not write a contract. The **CollectionFactory** stamps out a new
+You do not write a contract. The **SurfaceFactory** stamps out a new
 collection as a cheap clone and calls `initialize` on it once. There are two
-doors, one per **id mode**: `createCollection` for the sequential form (the
-contract counts ids) and `createPooledCollection` for the pooled form (your
+doors, one per **id mode**: `createSurface` for the sequential form (the
+contract counts ids) and `createPooledSurface` for the pooled form (your
 authorized minter chooses ids).
 
 You hand the factory:
@@ -147,7 +147,7 @@ ever go to the address they are owed to. Check a balance with
 
 ## Where to go next
 
-- Terms you hit here: [glossary](collection-glossary.md).
-- Why it is built this way: [pnd-collection-system.md](pnd-collection-system.md).
+- Terms you hit here: [glossary](surface-glossary.md).
+- Why it is built this way: [pnd-surface-system.md](pnd-surface-system.md).
 - Generative work render contract: [injection-convention.md](injection-convention.md).
-- Thumbnails, covers, and captures: [pnd-collection-thumbnails.md](pnd-collection-thumbnails.md).
+- Thumbnails, covers, and captures: [pnd-surface-thumbnails.md](pnd-surface-thumbnails.md).

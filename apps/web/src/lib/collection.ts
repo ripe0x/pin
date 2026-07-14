@@ -1,5 +1,5 @@
 /**
- * Sovereign Collection — shared, client-safe helpers.
+ * Surface — shared, client-safe helpers.
  *
  * One OZ ERC721 contract == one collection (edition, generative collection,
  * or backed/pooled work depending on which modules fill its slots).
@@ -7,8 +7,8 @@
  * used by both server reads (lib/collection-onchain.ts) and client
  * components. No server-only imports.
  *
- * Mirrors the structure of lib/pnd-editions.ts; see CollectionTypes.sol +
- * interfaces/ISovereignCollection.sol for the source-of-truth shapes.
+ * Mirrors the structure of lib/pnd-editions.ts; see SurfaceTypes.sol +
+ * interfaces/ISurface.sol for the source-of-truth shapes.
  */
 import { type Address, formatEther, isAddress } from "viem"
 import { foundry, mainnet } from "wagmi/chains"
@@ -21,7 +21,7 @@ import {
 
 export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
 
-/** Fixed protocol referral share, in bps. Must match Collection.REFERRAL_SHARE_BPS. */
+/** Fixed protocol referral share, in bps. Must match Surface.REFERRAL_SHARE_BPS. */
 export const REFERRAL_SHARE_BPS = 1000 // 10%
 
 const FORK_MODE = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
@@ -69,7 +69,7 @@ export function pndReferrerAddress(): Address {
   return ZERO_ADDRESS
 }
 
-// ── enums (mirror CollectionTypes.sol) ──────────────────────────────────────
+// ── enums (mirror SurfaceTypes.sol) ──────────────────────────────────────────
 
 export enum SurfaceStatus {
   Scheduled = 0,
@@ -103,7 +103,7 @@ export const CODE_KIND_LABEL: Record<number, string> = {
   [CodeKind.ScriptGzip]: "Script (gzip)",
 }
 
-// ── types (mirror CollectionTypes.sol structs) ──────────────────────────────
+// ── types (mirror SurfaceTypes.sol structs) ──────────────────────────────────
 
 export type CodeRef = {
   store: Address
@@ -265,7 +265,7 @@ export function formatBps(bps: number): string {
   return `${Number.isInteger(pct) ? pct : pct.toFixed(2)}%`
 }
 
-/** Mirror of Collection._lifecycleStatus(): derived purely from the window,
+/** Mirror of Surface._lifecycleStatus(): derived purely from the window,
  * the cap, and the clock — never from stored state. */
 export function lifecycleStatus(
   cfg: Pick<SurfaceConfig, "mintStart" | "mintEnd" | "supplyCap">,

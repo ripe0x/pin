@@ -1,4 +1,4 @@
-# PND Collection System
+# PND Surface System
 
 > **Status: built, pre-deploy; SVG-first launch prep (updated 2026-07-09).**
 > The core is one OZ ERC721, `Collection` + `CollectionFactory` (renamed from
@@ -14,19 +14,19 @@
 > deploy gate.** It must cover the core + the admin delta + the 2026-07-13
 > batch (mintFor, renderer guard, RenderAssets template/capturer,
 > isAdmin(owner) — now in code) + the launch project's renderer. The running
-> review log is `docs/pnd-collection-reaudit-notes.md`. The post-deploy →
+> review log is `docs/pnd-surface-reaudit-notes.md`. The post-deploy →
 > launch window has a runbook with kickoff prompts
-> (`docs/pnd-collection-prelaunch.md`); everything deferred past launch is
-> `docs/pnd-collection-post-deploy.md`.
+> (`docs/pnd-surface-prelaunch.md`); everything deferred past launch is
+> `docs/pnd-surface-post-deploy.md`.
 >
 > **The first launch project is all-SVG**, so the HTML-generative thumbnail
 > problem does not gate it. That work (a MURI preservation overlay + client-side
 > capture; needs a small shared MURI operator adapter) is deferred post-deploy
-> and tracked in `ripe0x/pin#138`; `docs/pnd-collection-thumbnails.md` is the
+> and tracked in `ripe0x/pin#138`; `docs/pnd-surface-thumbnails.md` is the
 > current design (rewritten 2026-07-13 against RenderAssets v2: capture
 > template + capturer role; one-time permanent storage as the default). Indexer/worker enablement and Phase
 > 5 minters (BackedMinter/PooledIdMinter) remain gated. Deploy is scripted:
-> `DeployCollectionSystem.s.sol` for the singletons, then the project renderer +
+> `DeploySurfaceSystem.s.sol` for the singletons, then the project renderer +
 > collection via script (the studio create wizard exists but is unverified, so
 > it is NOT the launch path).
 >
@@ -34,8 +34,8 @@
 > Editions is one preset of the general collection core, which moved
 > from ERC721A to OZ ERC721; `contracts/src/editions/` was removed.
 
-> **New here?** Start with the [glossary](collection-glossary.md) for plain
-> definitions, and [getting started](collection-getting-started.md) for a
+> **New here?** Start with the [glossary](surface-glossary.md) for plain
+> definitions, and [getting started](surface-getting-started.md) for a
 > hands-on walkthrough (deploy, mint, read). This document is the design
 > rationale: *why* the system is built the way it is.
 
@@ -232,7 +232,7 @@ sandbox with two inputs.
   collection's cover, per-token captures, an `{id}`-substituted capture
   template, and a narrow capturer role for delegated thumbnail
   automation. Captures are refreshable forever; they mirror the art,
-  they are not the art. See docs/pnd-collection-thumbnails.md.
+  they are not the art. See docs/pnd-surface-thumbnails.md.
 - **The injection convention** (a written spec, load-bearing): the
   context object (`tokenId`, `seed`, declared live values) injected
   identically by the onchain assembler, the studio previewer, the mint
@@ -344,7 +344,7 @@ surface, worker, indexer, artist-page template, Catalog).
   template pipeline. (The generic mint surface lives on the unmerged
   `generic-mint-surface` branch with the Homage launch work; it is not
   on main, and collection descriptor integration is deferred until it
-  merges. See docs/pnd-collection-web-plan.md.)
+  merges. See docs/pnd-surface-web-plan.md.)
 - **Exists, gets reworked**: the editions contracts (846 lines:
   PNDEditions.sol, factory, types, default renderer, hooks) and their
   fork-test suite; the spec docs.

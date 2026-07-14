@@ -170,17 +170,17 @@ never cleanly merge into `main`; don't revive or build on them:
 `rpc-public-fallback`. (`tl-into-ponder` and `rpc-public-fallback` have
 WIP stashes attached — leave those alone.)
 
-## PND Collection System (native protocol)
+## PND Surface System (native protocol)
 
 PND's own onchain collection protocol (artist-owned contracts, honest
 pricing with no protocol fee, per-token Mint Marks). This is distinct from
 the external platforms above (Foundation/Manifold/Mint/etc.) that PND
-*indexes* for catalogs, the collection system is a protocol PND *ships*. A
+*indexes* for catalogs, the Surface system is a protocol PND *ships*. A
 single OZ ERC721 core with four swappable slots (minter, price, renderer,
 hooks) and per-token id modes; Editions is now one preset of this general
-core, not a separate contract. Lives in `contracts/src/collection/`
-(`src/editions/` was removed). **Start at `docs/pnd-collection-system.md`
-and `docs/pnd-collection-contracts-plan.md`**, with
+core, not a separate contract. Lives in `contracts/src/surface/`
+(`src/editions/` was removed). **Start at `docs/pnd-surface-system.md`
+and `docs/pnd-surface-contracts-plan.md`**, with
 `docs/injection-convention.md` for the onchain-render data contract.
 
 **2026-07 surface reduction:** the Collection Graph, Token Path, and
@@ -216,12 +216,12 @@ describing graph/path as core fields predate this and are historical.
 
 ## See also
 
-- `docs/pnd-collection-prelaunch.md` — the post-deploy → launch runbook:
+- `docs/pnd-surface-prelaunch.md` — the post-deploy → launch runbook:
   ordered checklist (addresses, source verification, discovery indexing,
   launch collection, mint surfaces, pre-announce audit) with a
   ready-to-paste kickoff prompt per item.
-- `docs/pnd-collection-post-deploy.md` — everything deliberately deferred
-  past the collection system's launch (capture tooling, MURI adapter,
+- `docs/pnd-surface-post-deploy.md` — everything deliberately deferred
+  past the Surface system's launch (capture tooling, MURI adapter,
   additive minter/hook modules), so it doesn't get forgotten.
 - `docs/pnd-editions-README.md` — PND Editions: overview, file map, dev/test/
   deploy, verification status (entry point; links the design plan, interface

@@ -35,8 +35,8 @@ export function evmNowTxUrl(txHash: string, chainId: number): string {
 }
 
 /**
- * Collection protocol custom errors (contracts/src/collection/interfaces/
- * ICollection.sol) mapped to human copy. viem decodes a reverted custom error
+ * Surface protocol custom errors (contracts/src/surface/interfaces/
+ * ISurfaceCore.sol) mapped to human copy. viem decodes a reverted custom error
  * onto `ContractFunctionRevertedError.data.errorName` when it can ABI-decode
  * the revert data; when the RPC doesn't preflight with `eth_call` before
  * broadcast, the same name still shows up literally inside `shortMessage` /
@@ -53,7 +53,7 @@ const COLLECTION_ERROR_COPY: Record<string, string> = {
 }
 
 /**
- * GateHook custom errors (contracts/src/collection/hooks/GateHook.sol) —
+ * GateHook custom errors (contracts/src/surface/hooks/GateHook.sol) —
  * selector-identical to AllowlistHook.NotAllowlisted /
  * PerWalletCapHook.WalletCapExceeded, so this same copy applies regardless
  * of which reference hook a collection uses. Decoded the same way as
@@ -87,7 +87,7 @@ export function formatWriteError(err: unknown, action: string): string {
   if (e.message?.includes("insufficient funds")) return "Insufficient ETH balance"
 
   // Walk the whole cause chain once, collecting every decoded error name and
-  // message-shaped string we see, so a known Collection protocol or hook
+  // message-shaped string we see, so a known Surface protocol or hook
   // revert maps to plain copy before falling back to the generic
   // deepest-message walk below.
   const seen: string[] = []

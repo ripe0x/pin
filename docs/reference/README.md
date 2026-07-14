@@ -1,6 +1,6 @@
-# Collection System reference
+# Surface System reference
 
-The API-style reference for every PND Collection System contract, rendered on the
+The API-style reference for every PND Surface System contract, rendered on the
 site at `/docs`. The markdown tree here is the canonical source; the site serves a
 pre-rendered copy of the same content.
 
@@ -41,13 +41,13 @@ regenerate:
 
 ```bash
 cd contracts && forge build
-node scripts/emit-collection-abi.mjs   # or: pnpm emit:collection-abi
+node scripts/emit-surface-abi.mjs      # or: pnpm emit:surface-abi
 pnpm generate:docs                     # the validator points at any new prose gaps
 ```
 
 ## Pre-deploy
 
-The Collection System is pre-deploy. `contracts/deployments.mainnet.json` holds
+The Surface System is pre-deploy. `contracts/deployments.mainnet.json` holds
 the shared-singleton addresses; while they're empty, pages show a "pending deploy"
 note and `{{addr:*}}` tokens render as `<KEY_ADDRESS>` placeholders. Fill the file
 at launch and re-run `pnpm generate:docs` to light up real addresses and cast

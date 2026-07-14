@@ -6,7 +6,7 @@
 
 IMintHook is the interface a contract implements to occupy a collection's
 hook slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on
-the [Collection](/docs/collections/contracts/collection) core. An
+the [Surface](/docs/collections/contracts/surface) core. An
 artist-owned mint hook lets an artist gate mints, `beforeMint` reverts or
 returns the wrong selector, or record custom data to their own storage,
 `afterMint`, without either feature living in the core itself.

@@ -4,8 +4,8 @@
  * chunking/naming/dep-list logic is independently testable and so the
  * wizard components stay focused on state + markup.
  *
- * See docs/pnd-collection-system.md, docs/injection-convention.md, and
- * contracts/src/collection/CollectionTypes.sol for the source-of-truth
+ * See docs/pnd-surface-system.md, docs/injection-convention.md, and
+ * contracts/src/surface/SurfaceTypes.sol for the source-of-truth
  * shapes this mirrors.
  */
 

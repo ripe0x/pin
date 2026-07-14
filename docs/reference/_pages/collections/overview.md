@@ -1,11 +1,11 @@
 ---
 title: Overview
-description: What the PND Collection System is, its parts, and how this reference is organized.
+description: What the PND Surface System is, its parts, and how this reference is organized.
 ---
 
 # Overview
 
-The PND Collection System is a modular collection protocol for artists. One
+The PND Surface System is a modular collection protocol for artists. One
 artist collection is one contract, `Surface`: a single OZ ERC721
 core that holds ownership, money paths, and provenance, and nothing else.
 Every collection is deployed by a shared factory as an immutable EIP-1167
@@ -106,7 +106,7 @@ the core.
 
 ## Status
 
-The Collection System is pre-deploy. Contract and interface behavior in
+The Surface System is pre-deploy. Contract and interface behavior in
 this reference reflects the code as written; the shared-singleton addresses
 below are placeholders until launch.
 
