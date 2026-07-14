@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { getRecentCollections } from "@/lib/collection-onchain"
 import {
-  CollectionStatus,
+  SurfaceStatus,
   formatPriceLabel,
   hasPriceStrategy,
   lifecycleStatus,
@@ -39,8 +39,8 @@ function groupByLifecycle(collections: Collection[], nowSec: number): Collection
   ]
   for (const c of collections) {
     const status = lifecycleStatus(c.cfg, c.minted, nowSec)
-    if (status === CollectionStatus.Open) groups[0].items.push(c)
-    else if (status === CollectionStatus.Scheduled) groups[1].items.push(c)
+    if (status === SurfaceStatus.Open) groups[0].items.push(c)
+    else if (status === SurfaceStatus.Scheduled) groups[1].items.push(c)
     else groups[2].items.push(c)
   }
   return groups.filter((g) => g.items.length > 0)
@@ -90,7 +90,7 @@ export default async function CollectionsHome() {
                 {g.items.map((c) => {
                   const status = lifecycleStatus(c.cfg, c.minted, nowSec)
                   const soldOut =
-                    status === CollectionStatus.Closed &&
+                    status === SurfaceStatus.Closed &&
                     c.cfg.supplyCap > 0n &&
                     c.minted >= c.cfg.supplyCap
                   const priceLabel = hasPriceStrategy(c.priceStrategy)
@@ -115,7 +115,7 @@ export default async function CollectionsHome() {
                             status={status}
                             soldOut={soldOut}
                             opensInSec={
-                              status === CollectionStatus.Scheduled
+                              status === SurfaceStatus.Scheduled
                                 ? Number(c.cfg.mintStart) - nowSec
                                 : null
                             }

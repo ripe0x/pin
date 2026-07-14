@@ -20,7 +20,7 @@ import {
   getRendererPreviews,
 } from "@/lib/collection-onchain"
 import {
-  CollectionStatus,
+  SurfaceStatus,
   PND_CHAIN_ID,
   REFERRAL_SHARE_BPS,
   ZERO_ADDRESS,
@@ -92,9 +92,9 @@ export default async function CollectionPage({ params }: { params: Params }) {
   const strategy = hasPriceStrategy(c.priceStrategy)
 
   const capReached = c.cfg.supplyCap > 0n && c.minted >= c.cfg.supplyCap
-  const soldOut = c.status === CollectionStatus.Closed && capReached
+  const soldOut = c.status === SurfaceStatus.Closed && capReached
   const mintCouldBeLive =
-    c.status === CollectionStatus.Scheduled || c.status === CollectionStatus.Open
+    c.status === SurfaceStatus.Scheduled || c.status === SurfaceStatus.Open
 
   const placard = {
     price: c.cfg.price.toString(),

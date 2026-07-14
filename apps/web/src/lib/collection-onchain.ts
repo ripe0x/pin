@@ -1,7 +1,7 @@
 import "server-only"
 import { createPublicClient, decodeFunctionResult, encodeFunctionData, http, keccak256, stringToBytes, type Address } from "viem"
 import { mainnet } from "viem/chains"
-import { catalogAbi, collectionAbi, collectionFactoryAbi, gateHookAbi, renderAssetsAbi } from "@pin/abi"
+import { catalogAbi, surfaceAbi, surfaceFactoryAbi, gateHookAbi, renderAssetsAbi } from "@pin/abi"
 import { ARTIST_RECORD_REGISTRY, MAINNET_CHAIN_ID, getAddressOrNull } from "@pin/addresses"
 import { fetchMetadataForUri } from "@pin/token-metadata"
 import { pgCache } from "./pg-cache"
@@ -10,7 +10,7 @@ import {
   gateHookAddress,
   renderAssetsAddress,
   type Collection,
-  CollectionStatus,
+  SurfaceStatus,
   IdMode,
   ZERO_ADDRESS,
 } from "./collection"
@@ -58,7 +58,7 @@ type RawConfigReturn = readonly [Parameters<typeof decodeCollectionConfig>[0], n
 export async function getCollection(address: Address): Promise<Collection | null> {
   return pgCache(`sc-collection:${lc(address)}`, 20, async () => {
     const client = getClient()
-    const base = { address, abi: collectionAbi } as const
+    const base = { address, abi: surfaceAbi } as const
     try {
       const [name, symbol, owner, rendererLocked, supplyLocked, renderer, priceStrategy, idModeRaw, cfgRes] =
         await client.multicall({
@@ -110,7 +110,7 @@ export async function getCollection(address: Address): Promise<Collection | null
         // so consumers that gate on work.code.length fall back to the cover.
         work: { code: [], deps: [], codeURI: "", codeHash: ("0x" + "0".repeat(64)) as `0x${string}`, injectionVersion: 1, renderParams: "" },
         cover: (cover as string) ?? "",
-        status: Number(status) as CollectionStatus,
+        status: Number(status) as SurfaceStatus,
         minted: minted as bigint,
       }
     } catch {
@@ -144,7 +144,7 @@ export async function getCollectionToken(
 ): Promise<CollectionTokenView | null> {
   return pgCache(`sc-token:${lc(address)}:${tokenId.toString()}`, 60, async () => {
     const client = getClient()
-    const base = { address, abi: collectionAbi } as const
+    const base = { address, abi: surfaceAbi } as const
     try {
       const [ownerRes, seedRes, modeRes] = await client.multicall({
         allowFailure: true,
@@ -186,7 +186,7 @@ export async function getCollectionToken(
         .call({
           to: address,
           data: encodeFunctionData({
-            abi: collectionAbi,
+            abi: surfaceAbi,
             functionName: "tokenURI",
             args: [tokenId],
           }),
@@ -195,7 +195,7 @@ export async function getCollectionToken(
         .then(({ data }) =>
           data
             ? (decodeFunctionResult({
-                abi: collectionAbi,
+                abi: surfaceAbi,
                 functionName: "tokenURI",
                 data,
               }) as string)
@@ -278,7 +278,7 @@ export async function getCollectionMintHistory(
   if (total === 0) return { unsupported: false, entries: [] }
   return pgCache(`sc-history:${lc(address)}:${total}`, 30, async () => {
     const client = getClient()
-    const base = { address, abi: collectionAbi } as const
+    const base = { address, abi: surfaceAbi } as const
     const startTok = Math.max(1, total - limit + 1)
     const ids: bigint[] = []
     for (let t = total; t >= startTok; t--) ids.push(BigInt(t)) // newest first
@@ -319,8 +319,8 @@ export async function getRecentCollections(factory: Address, limit = 8): Promise
     try {
       const total = (await client.readContract({
         address: factory,
-        abi: collectionFactoryAbi,
-        functionName: "totalCollections",
+        abi: surfaceFactoryAbi,
+        functionName: "totalSurfaces",
       })) as bigint
       const n = Number(total)
       if (n === 0) return []
@@ -330,8 +330,8 @@ export async function getRecentCollections(factory: Address, limit = 8): Promise
         allowFailure: true,
         contracts: idxs.map((i) => ({
           address: factory,
-          abi: collectionFactoryAbi,
-          functionName: "allCollections" as const,
+          abi: surfaceFactoryAbi,
+          functionName: "allSurfaces" as const,
           args: [BigInt(i)] as const,
         })),
       })
@@ -370,7 +370,7 @@ export async function getCurrentPrice(
     try {
       const price = await client.readContract({
         address,
-        abi: collectionAbi,
+        abi: surfaceAbi,
         functionName: "currentPrice",
         args: [minter, qty, "0x"],
       })
@@ -406,7 +406,7 @@ export async function getGateState(address: Address): Promise<GateState | null> 
     try {
       const hook = (await client.readContract({
         address,
-        abi: collectionAbi,
+        abi: surfaceAbi,
         functionName: "mintHook",
       })) as Address
       if (hook === ZERO_ADDRESS) return null
@@ -560,7 +560,7 @@ export async function getRecentTokenMarks(
   if (idMode !== IdMode.Sequential || minted === 0n) return []
   return pgCache(`sc-recent-marks:${lc(address)}:${minted.toString()}:${limit}`, 60, async () => {
     const client = getClient()
-    const base = { address, abi: collectionAbi } as const
+    const base = { address, abi: surfaceAbi } as const
     const from = minted
     const to = minted > BigInt(limit) ? minted - BigInt(limit) + 1n : 1n
     const ids: bigint[] = []

@@ -16,14 +16,14 @@ import {
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi"
-import { collectionAbi } from "@pin/abi"
+import { surfaceAbi } from "@pin/abi"
 import { PREFERRED_CHAIN, TxSuccessBanner, formatWriteError } from "@/components/tx/tx-ui"
 
 export function WithdrawPanel({ collection }: { collection: `0x${string}` }) {
   const { address } = useAccount()
   const { data: pending, refetch } = useReadContract({
     address: collection,
-    abi: collectionAbi,
+    abi: surfaceAbi,
     functionName: "pendingWithdrawal",
     args: address ? [address] : undefined,
     query: { enabled: !!address },
@@ -67,7 +67,7 @@ export function WithdrawPanel({ collection }: { collection: `0x${string}` }) {
             onClick={() =>
               writeContract({
                 address: collection,
-                abi: collectionAbi,
+                abi: surfaceAbi,
                 functionName: "withdraw",
                 args: [address],
               })

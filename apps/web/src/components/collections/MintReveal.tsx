@@ -15,7 +15,7 @@
 import Link from "next/link"
 import { useMemo } from "react"
 import { useReadContracts } from "wagmi"
-import { collectionAbi } from "@pin/abi"
+import { surfaceAbi } from "@pin/abi"
 import { evmNowTxUrl } from "@/lib/collection"
 import type { WorkConfig } from "@/lib/collection"
 import { TokenPreview, type TokenData } from "@/lib/collection-render"
@@ -56,7 +56,7 @@ export function MintReveal({
   const { data: seedReads, refetch: refetchSeeds } = useReadContracts({
     contracts: visibleIds.map((id) => ({
       address: collection,
-      abi: collectionAbi,
+      abi: surfaceAbi,
       functionName: "tokenSeed" as const,
       args: [id] as const,
     })),

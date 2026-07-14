@@ -1,9 +1,9 @@
 "use client"
 
 /**
- * Final step: a single createCollection write on CollectionFactory, ported
+ * Final step: a single createSurface write on SurfaceFactory, ported
  * from CreateEditionForm's useWriteContract + useWaitForTransactionReceipt +
- * parseEventLogs pattern. Builds CollectionConfig from wizard state per preset:
+ * parseEventLogs pattern. Builds SurfaceConfig from wizard state per preset:
  *
  *   EDITION:   Sequential id mode, renderer = zero (DefaultRenderer, the
  *              factory's baked-in default); optional cover to RenderAssets.
@@ -19,7 +19,7 @@
 import { useRouter } from "next/navigation"
 import { parseEventLogs, type Address, type TransactionReceipt } from "viem"
 import { useAccount, useChainId, useWriteContract, useWaitForTransactionReceipt } from "wagmi"
-import { collectionFactoryAbi, renderAssetsAbi } from "@pin/abi"
+import { surfaceFactoryAbi, renderAssetsAbi } from "@pin/abi"
 import { formatWriteError } from "@/components/tx/tx-ui"
 import {
   ZERO_ADDRESS,
@@ -94,7 +94,7 @@ export function DeployStep({
       mintHook: ZERO_ADDRESS as Address,
       priceStrategy: ZERO_ADDRESS as Address,
       // idMode left the config struct in the Sequential/Pooled split (it's
-      // structural — this wizard deploys via createCollection = Sequential).
+      // structural — this wizard deploys via createSurface = Sequential).
       // The two one-way locks default off; the wizard doesn't offer born-locked.
       rendererLocked: false,
       supplyLocked: false,
@@ -112,8 +112,8 @@ export function DeployStep({
     const creators = collabCheck.ok ? collabCheck.parsed : []
     deploy.writeContract({
       address: factory,
-      abi: collectionFactoryAbi,
-      functionName: "createCollection",
+      abi: surfaceFactoryAbi,
+      functionName: "createSurface",
       args: [state.name.trim(), state.symbol.trim(), address, buildCfg(), [], creators],
     })
   }
@@ -192,9 +192,9 @@ function useDeployedAddress(receipt: TransactionReceipt | undefined): Address | 
   if (!receipt) return null
   try {
     const logs = parseEventLogs({
-      abi: collectionFactoryAbi,
+      abi: surfaceFactoryAbi,
       logs: receipt.logs,
-      eventName: "CollectionCreated",
+      eventName: "SurfaceCreated",
     })
     return (logs[0]?.args as { collection?: Address } | undefined)?.collection ?? null
   } catch {

@@ -71,7 +71,7 @@ export function pndReferrerAddress(): Address {
 
 // ── enums (mirror CollectionTypes.sol) ──────────────────────────────────────
 
-export enum CollectionStatus {
+export enum SurfaceStatus {
   Scheduled = 0,
   Open = 1,
   Closed = 2,
@@ -88,9 +88,9 @@ export enum CodeKind {
 }
 
 export const COLLECTION_STATUS_LABEL: Record<number, string> = {
-  [CollectionStatus.Scheduled]: "Scheduled",
-  [CollectionStatus.Open]: "Open",
-  [CollectionStatus.Closed]: "Closed",
+  [SurfaceStatus.Scheduled]: "Scheduled",
+  [SurfaceStatus.Open]: "Open",
+  [SurfaceStatus.Closed]: "Closed",
 }
 
 export const ID_MODE_LABEL: Record<number, string> = {
@@ -120,7 +120,7 @@ export type WorkConfig = {
   renderParams: string
 }
 
-export type CollectionConfig = {
+export type SurfaceConfig = {
   price: bigint
   supplyCap: bigint
   mintStart: bigint
@@ -144,14 +144,14 @@ export type Collection = {
   isSupplyLocked: boolean
   renderer: Address
   priceStrategy: Address
-  cfg: CollectionConfig
+  cfg: SurfaceConfig
   /** What the work is, executably — read from the GenerativeRenderer's
    *  work registry (renderer-land), empty for renderer-native works or
    *  custom renderers. */
   work: WorkConfig
   /** Cover image from the RenderAssets registry ("" when unset). */
   cover: string
-  status: CollectionStatus
+  status: SurfaceStatus
   minted: bigint
 }
 
@@ -187,11 +187,11 @@ export function decodeWorkConfig(raw: RawWorkConfig): WorkConfig {
   }
 }
 
-// Mirrors the onchain CollectionConfig struct returned by config(). idMode is
+// Mirrors the onchain SurfaceConfig struct returned by config(). idMode is
 // NOT a field here — it's a structural fact read separately via idMode(). The
 // two one-way locks live on the struct but are surfaced separately on the
 // collection (isRendererLocked/isSupplyLocked), so this decoder ignores them.
-type RawCollectionConfig = {
+type RawSurfaceConfig = {
   price: bigint
   supplyCap: bigint
   mintStart: bigint
@@ -208,7 +208,7 @@ type RawCollectionConfig = {
 
 /** idMode is read separately (idMode()); it left the config struct in the
  *  Sequential/Pooled split, so it's passed in rather than decoded from raw. */
-export function decodeCollectionConfig(raw: RawCollectionConfig, idMode: IdMode): CollectionConfig {
+export function decodeCollectionConfig(raw: RawSurfaceConfig, idMode: IdMode): SurfaceConfig {
   return {
     price: raw.price,
     supplyCap: raw.supplyCap,
@@ -268,18 +268,18 @@ export function formatBps(bps: number): string {
 /** Mirror of Collection._lifecycleStatus(): derived purely from the window,
  * the cap, and the clock — never from stored state. */
 export function lifecycleStatus(
-  cfg: Pick<CollectionConfig, "mintStart" | "mintEnd" | "supplyCap">,
+  cfg: Pick<SurfaceConfig, "mintStart" | "mintEnd" | "supplyCap">,
   minted: bigint,
   nowSec: number,
-): CollectionStatus {
-  if (cfg.mintStart !== 0n && BigInt(nowSec) < cfg.mintStart) return CollectionStatus.Scheduled
-  if (cfg.mintEnd !== 0n && BigInt(nowSec) >= cfg.mintEnd) return CollectionStatus.Closed
-  if (cfg.supplyCap !== 0n && minted >= cfg.supplyCap) return CollectionStatus.Closed
-  return CollectionStatus.Open
+): SurfaceStatus {
+  if (cfg.mintStart !== 0n && BigInt(nowSec) < cfg.mintStart) return SurfaceStatus.Scheduled
+  if (cfg.mintEnd !== 0n && BigInt(nowSec) >= cfg.mintEnd) return SurfaceStatus.Closed
+  if (cfg.supplyCap !== 0n && minted >= cfg.supplyCap) return SurfaceStatus.Closed
+  return SurfaceStatus.Open
 }
 
 export function isMintable(
-  cfg: Pick<CollectionConfig, "mintStart" | "mintEnd" | "supplyCap">,
+  cfg: Pick<SurfaceConfig, "mintStart" | "mintEnd" | "supplyCap">,
   minted: bigint,
   nowSec: number,
 ): boolean {

@@ -18,7 +18,7 @@ import { useEffect, useState } from "react"
 import { Countdown, useChainNowSec } from "@/components/tx/tx-ui"
 import {
   COLLECTION_STATUS_LABEL,
-  CollectionStatus,
+  SurfaceStatus,
   formatPriceLabel,
   lifecycleStatus,
 } from "@/lib/collection"
@@ -43,13 +43,13 @@ function useDerived(s: PlacardSnapshot) {
   const minted = BigInt(s.minted)
   const status = lifecycleStatus(cfg, minted, nowSec)
   const capReached = cfg.supplyCap > 0n && minted >= cfg.supplyCap
-  const soldOut = status === CollectionStatus.Closed && capReached
+  const soldOut = status === SurfaceStatus.Closed && capReached
   return { nowSec, cfg, minted, status, soldOut }
 }
 
 function dotClass(status: number, soldOut: boolean): string {
-  if (status === CollectionStatus.Open) return "bg-status-available animate-pulse"
-  if (status === CollectionStatus.Scheduled) return "bg-status-upcoming"
+  if (status === SurfaceStatus.Open) return "bg-status-available animate-pulse"
+  if (status === SurfaceStatus.Scheduled) return "bg-status-upcoming"
   return soldOut ? "bg-status-sold" : "bg-gray-400"
 }
 
@@ -86,10 +86,10 @@ export function PlacardStats({ snapshot }: { snapshot: PlacardSnapshot }) {
           label={snapshot.hasStrategy ? "price · updates onchain" : "price"}
         />
       )}
-      {status === CollectionStatus.Scheduled && cfg.mintStart > 0n && (
+      {status === SurfaceStatus.Scheduled && cfg.mintStart > 0n && (
         <Stat value={<Countdown endTime={cfg.mintStart} nowSec={nowSec} />} label="opens in" />
       )}
-      {status === CollectionStatus.Open && cfg.mintEnd > 0n && (
+      {status === SurfaceStatus.Open && cfg.mintEnd > 0n && (
         <Stat value={<Countdown endTime={cfg.mintEnd} nowSec={nowSec} />} label="closes in" />
       )}
     </div>
@@ -129,7 +129,7 @@ export function StickyMintBar({
     return () => obs.disconnect()
   }, [anchorId])
 
-  const live = status === CollectionStatus.Open || status === CollectionStatus.Scheduled
+  const live = status === SurfaceStatus.Open || status === SurfaceStatus.Scheduled
   if (!live || snapshot.pooled || instrumentVisible) return null
 
   return (
@@ -148,7 +148,7 @@ export function StickyMintBar({
             {snapshot.hasStrategy ? "Live price" : formatPriceLabel(BigInt(snapshot.price))}
           </span>
         </p>
-        {status === CollectionStatus.Open ? (
+        {status === SurfaceStatus.Open ? (
           <a
             href={`#${anchorId}`}
             className="px-6 py-2 text-[11px] font-mono font-medium uppercase tracking-wider bg-fg text-bg hover:opacity-80 transition-opacity"

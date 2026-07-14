@@ -34,7 +34,7 @@ import {
   useWriteContract,
 } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
-import { collectionAbi, gateHookAbi } from "@pin/abi"
+import { surfaceAbi, gateHookAbi } from "@pin/abi"
 import {
   AllowlistChecker,
   EligibilityVerdict,
@@ -50,7 +50,7 @@ import {
 } from "@/components/tx/tx-ui"
 import { MintReveal } from "@/components/collections/MintReveal"
 import {
-  CollectionStatus,
+  SurfaceStatus,
   COLLECTION_STATUS_LABEL,
   REFERRAL_SHARE_BPS,
   ZERO_ADDRESS,
@@ -133,7 +133,7 @@ export function MintCollectionCTA({
     refetch: refetchLiveQuote,
   } = useReadContract({
     address: collection,
-    abi: collectionAbi,
+    abi: surfaceAbi,
     functionName: "currentPrice",
     args: [address ?? ZERO_ADDRESS, BigInt(amountValid ? amount : 1), "0x"],
     query: {
@@ -227,7 +227,7 @@ export function MintCollectionCTA({
   const mintedEvent = useMemo(() => {
     if (!receipt) return null
     try {
-      const logs = parseEventLogs({ abi: collectionAbi, logs: receipt.logs, eventName: "Minted" })
+      const logs = parseEventLogs({ abi: surfaceAbi, logs: receipt.logs, eventName: "Minted" })
       const log = logs.find((l) => l.address.toLowerCase() === collection.toLowerCase())
       if (!log) return null
       return {
@@ -267,7 +267,7 @@ export function MintCollectionCTA({
         : "0x"
     writeContract({
       address: collection,
-      abi: collectionAbi,
+      abi: surfaceAbi,
       functionName: "mintWithReferral",
       args: [BigInt(amount), referrerAddr, hookData],
       value: sendValue,
@@ -286,12 +286,12 @@ export function MintCollectionCTA({
   // Sold out and window-closed are both Closed onchain but read very
   // differently: one is the collection completing, the other is a window
   // that may reopen (settings are live until lockSupply/lockRenderer).
-  const soldOut = status === CollectionStatus.Closed && capReached
+  const soldOut = status === SurfaceStatus.Closed && capReached
   const statusLabel = soldOut ? "Sold out" : COLLECTION_STATUS_LABEL[status]
   const statusDot =
-    status === CollectionStatus.Open
+    status === SurfaceStatus.Open
       ? "bg-status-available animate-pulse"
-      : status === CollectionStatus.Scheduled
+      : status === SurfaceStatus.Scheduled
         ? "bg-status-upcoming"
         : soldOut
           ? "bg-status-sold"
@@ -363,7 +363,7 @@ export function MintCollectionCTA({
               </div>
             ) : (
               mintEnd > 0n &&
-              status === CollectionStatus.Open && (
+              status === SurfaceStatus.Open && (
                 <div className="text-right space-y-1">
                   <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
                     Closes in

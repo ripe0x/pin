@@ -9,7 +9,7 @@
  * tokens, same soldOut-vs-window-closed distinction) so the listing and the
  * collection page never disagree about what a state looks like.
  */
-import { CollectionStatus } from "@/lib/collection"
+import { SurfaceStatus } from "@/lib/collection"
 
 /** Small relative-time formatter for the listing's "opens in" caption.
  *  Deliberately duplicated (not imported) from tx-ui.tsx's formatRemaining:
@@ -31,7 +31,7 @@ export function CollectionStatusChip({
   soldOut,
   opensInSec,
 }: {
-  status: CollectionStatus
+  status: SurfaceStatus
   /** Only meaningful when status === Closed: distinguishes the celebratory
    *  sold-out terminal state from an honest window-closed state. */
   soldOut: boolean
@@ -39,18 +39,18 @@ export function CollectionStatusChip({
   opensInSec?: number | null
 }) {
   const label =
-    status === CollectionStatus.Open
+    status === SurfaceStatus.Open
       ? "Open"
-      : status === CollectionStatus.Scheduled
+      : status === SurfaceStatus.Scheduled
         ? "Scheduled"
         : soldOut
           ? "Sold out"
           : "Closed"
 
   const dotClass =
-    status === CollectionStatus.Open
+    status === SurfaceStatus.Open
       ? "bg-status-available animate-pulse"
-      : status === CollectionStatus.Scheduled
+      : status === SurfaceStatus.Scheduled
         ? "bg-status-upcoming"
         : soldOut
           ? "bg-status-sold"
@@ -62,7 +62,7 @@ export function CollectionStatusChip({
         <span className={`inline-block h-1.5 w-1.5 rounded-full ${dotClass}`} />
         {label}
       </span>
-      {status === CollectionStatus.Scheduled && opensInSec != null && (
+      {status === SurfaceStatus.Scheduled && opensInSec != null && (
         <span className="text-gray-400">· opens {formatOpensIn(opensInSec)}</span>
       )}
     </span>

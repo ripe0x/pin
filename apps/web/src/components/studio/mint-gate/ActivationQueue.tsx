@@ -12,7 +12,7 @@
 
 import { useEffect, useState } from "react"
 import { useChainId, useWaitForTransactionReceipt, useWriteContract } from "wagmi"
-import { collectionAbi, gateHookAbi } from "@pin/abi"
+import { surfaceAbi, gateHookAbi } from "@pin/abi"
 import { formatWriteError } from "@/components/tx/tx-ui"
 import { BTN, BTN_SECONDARY, ERROR, INPUT } from "@/components/studio/create/wizard-ui"
 import { ZERO_ADDRESS, gateHookAddress, shortAddress } from "@/lib/collection"
@@ -162,7 +162,7 @@ export function ActivationQueue({
         onRun={() =>
           attach.writeContract({
             address: collection,
-            abi: collectionAbi,
+            abi: surfaceAbi,
             functionName: "setMintHook",
             args: [gateHook],
           })
@@ -261,7 +261,7 @@ export function ActivationQueue({
               }
               remove.writeContract({
                 address: collection,
-                abi: collectionAbi,
+                abi: surfaceAbi,
                 functionName: "setMintHook",
                 args: [ZERO_ADDRESS],
               })
