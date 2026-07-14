@@ -106,15 +106,15 @@ the local specifics.
   free public RPC with a placeholder address, and note that the address lands at
   launch:
   `cast call <COLLECTION_ADDRESS> "totalSupply()(uint256)" --rpc-url https://ethereum-rpc.publicnode.com`.
-  For a shared singleton, reference it with `{{addr:collectionFactory}}` so the
+  For a shared singleton, reference it with `{{addr:surfaceFactory}}` so the
   real address substitutes automatically once deployed.
 - TypeScript examples use viem and import ABIs from `@pin/abi`
-  (`import {collectionAbi} from '@pin/abi'`) or fetch `/abis/<Name>.json`.
+  (`import {surfaceAbi} from '@pin/abi'`) or fetch `/abis/<Name>.json`.
 
 ## Ordering
 
 Write-function blocks render in the order they appear in this file, so put the
-main entry points first (for `Collection`: the mint paths, then config
+main entry points first (for `Surface`: the mint paths, then config
 setters, then the graph/path and withdrawal surface, then the inherited ERC721
 transfer/approval functions last). Read functions, events, and errors render
 alphabetically regardless of file order.

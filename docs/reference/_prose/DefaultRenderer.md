@@ -7,14 +7,14 @@ title: DefaultRenderer
 
 # summary
 
-The canonical built-in renderer for [Collection](/docs/collections/contracts/collection).
+The canonical built-in renderer for [Surface](/docs/collections/contracts/surface).
 Every collection is wired to it at deploy (`defaultRenderer` in the
 factory's `InitParams`) and uses it unless the owner points the renderer
 slot somewhere else. It's a shared singleton: one immutable, ownerless
 instance serves every collection that wants it. There is no per-collection
 state here; `tokenURI` and `contractURI` both take the collection address
 explicitly and read everything they need back through
-[ICollectionView](/docs/collections/contracts/i-renderer).
+[ISurfaceView](/docs/collections/contracts/i-surface-view).
 
 DefaultRenderer covers the static-artwork case: one image per token (either
 a per-token override or the collection's shared cover), with the token's

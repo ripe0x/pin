@@ -13,7 +13,7 @@
     "typecheck": "pnpm -r typecheck",
     "db:migrate": "node --env-file=.env db/migrate.mjs",
     "worker:refresh": "node --env-file=.env scripts/worker-refresh.mjs",
-    "emit:collection-abi": "node scripts/emit-collection-abi.mjs",
+    "emit:surface-abi": "node scripts/emit-surface-abi.mjs",
     "generate:docs": "tsx scripts/generate-docs.ts"
   },
   "devDependencies": {

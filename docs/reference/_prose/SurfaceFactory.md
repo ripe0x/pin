@@ -1,20 +1,20 @@
 ---
-title: CollectionFactory
+title: SurfaceFactory
 ---
 
 # summary
 
-CollectionFactory deploys one [Collection](/docs/collections/contracts/collection)
+SurfaceFactory deploys one [Surface](/docs/collections/contracts/surface)
 per work as an immutable EIP-1167 clone of a fixed implementation: no proxy
-admin, no upgrade path, what deploys is what runs. `createCollection` clones
+admin, no upgrade path, what deploys is what runs. `createSurface` clones
 and initializes the collection in a single transaction, wiring in the shared
 default renderer and, optionally, an opening [Catalog](/docs/collections/contracts/catalog)
 roster. There is no protocol fee in the factory; the Surface Share is a fixed
 constant inside the core, paid to whoever hosts the mint.
 
 The factory is also the single fixed contract an indexer watches for
-discovery: one `CollectionCreated` event per collection, plus an
-`allCollections` array and an `isCollection` membership map for cheap
+discovery: one `SurfaceCreated` event per collection, plus an
+`allSurfaces` array and an `isSurface` membership map for cheap
 onchain enumeration. Core evolution happens by deploying a new
 implementation and a new factory alongside it, never by changing collections
 that already exist.
@@ -23,12 +23,12 @@ that already exist.
 
 ### Clone-and-initialize is one transaction
 
-`createCollection` clones `implementation` with OpenZeppelin `Clones.clone`
+`createSurface` clones `implementation` with OpenZeppelin `Clones.clone`
 and calls `initialize` on the fresh clone in the same call. The collection
 comes into existence already owned, priced, windowed, and (optionally)
 minter-wired and attributed; there is no window between deploy and
 configuration for anyone to front-run. See
-[the four slots](/docs/collections/concepts/four-slots) for what `CollectionConfig`
+[the four slots](/docs/collections/concepts/four-slots) for what `SurfaceConfig`
 configures, and the
 [deploy a collection guide](/docs/collections/guides/deploy-a-collection) for a worked
 example of the call.
@@ -45,7 +45,7 @@ address), after which `isConfirmedCreator` reads true. If `creators` is empty
 the collection starts with no listing; the owner can add or remove listings
 later with `setCreators`.
 
-## function createCollection
+## function createSurface
 
 access: permissionless (anyone may deploy; ongoing control over the result
 belongs to the `owner` argument, which becomes the collection's `Ownable`
@@ -54,7 +54,7 @@ owner)
 Deploys an EIP-1167 clone of `sequentialImplementation` — the **sequential**
 form, where the contract assigns ids (1, 2, 3…) and collectors buy through the
 built-in paid paths — and initializes it atomically with the given name,
-symbol, owner, `CollectionConfig`, extension minters, and creator listing.
+symbol, owner, `SurfaceConfig`, extension minters, and creator listing.
 Reverts `OwnerRequired` if `owner` is the zero address.
 
 `initialMinters` grants extension-minter status at init, so pooled or backed
@@ -65,11 +65,11 @@ listing; each listed creator still needs to claim the collection in their own
 [Catalog](/docs/collections/contracts/catalog) for the credit to read as
 mutually confirmed.
 
-On success, marks the new address in `isCollection`, appends it to
-`allCollections`, and emits `CollectionCreated`.
+On success, marks the new address in `isSurface`, appends it to
+`allSurfaces`, and emits `SurfaceCreated`.
 
 ```solidity
-address collection = factory.createCollection(
+address collection = factory.createSurface(
     "My Collection",
     "MC",
     artistAddress,
@@ -79,7 +79,7 @@ address collection = factory.createCollection(
 );
 ```
 
-## function createPooledCollection
+## function createPooledSurface
 
 access: permissionless (ongoing control belongs to the `owner` argument)
 
@@ -87,13 +87,13 @@ The same call for the **pooled** form: deploys an EIP-1167 clone of
 `pooledImplementation`, where an authorized minter chooses every id
 (`tokenId == sourceId`) and owns the pool's economics. Grant that minter in
 `initialMinters` so the work deploys fully wired in one transaction. Same
-signature, same init, same `CollectionCreated` event (stamped with the pooled
-`idMode`) as `createCollection`; only the implementation cloned differs.
+signature, same init, same `SurfaceCreated` event (stamped with the pooled
+`idMode`) as `createSurface`; only the implementation cloned differs.
 
-## function allCollections
+## function allSurfaces
 
 Every collection address the factory has deployed, in deployment order.
-Indexers typically watch `CollectionCreated` rather than paging this array,
+Indexers typically watch `SurfaceCreated` rather than paging this array,
 but it's available for direct onchain enumeration.
 
 ## function catalog
@@ -105,7 +105,7 @@ The zero address disables confirmation: a collection wired with no Catalog can
 still list creators, but never marks any of them confirmed.
 
 ```bash
-cast call {{addr:collectionFactory}} "catalog()(address)" \
+cast call {{addr:surfaceFactory}} "catalog()(address)" \
   --rpc-url https://ethereum-rpc.publicnode.com
 ```
 
@@ -117,29 +117,29 @@ after deploy; this is only the value new collections start with.
 
 ## function sequentialImplementation
 
-The sequential `Collection` implementation every `createCollection` clone points
+The sequential `Surface` implementation every `createSurface` clone points
 at via `DELEGATECALL`. Fixed at factory construction; there is no setter, so
 every sequential collection shares the exact same core logic.
 
 ## function pooledImplementation
 
-The `PooledCollection` implementation every `createPooledCollection` clone points
+The `PooledSurface` implementation every `createPooledSurface` clone points
 at. Fixed at construction, no setter — the pooled form's counterpart to
 `sequentialImplementation`.
 
-## function isCollection
+## function isSurface
 
 Whether `address` is a collection this factory deployed. Cheaper than
-scanning `allCollections` when a caller only needs a membership check.
+scanning `allSurfaces` when a caller only needs a membership check.
 
-## function totalCollections
+## function totalSurfaces
 
-The length of `allCollections`: the total number of collections this factory
+The length of `allSurfaces`: the total number of collections this factory
 has deployed.
 
-## event CollectionCreated
+## event SurfaceCreated
 
-Emitted once per successful `createCollection` call, with `owner` and
+Emitted once per successful `createSurface` call, with `owner` and
 `collection` both indexed. This is the single event an indexer needs to
 discover every collection this factory has produced; it fires in the same
 transaction that initializes the collection, so any indexer following it can
@@ -155,7 +155,7 @@ valid `implementation`.
 
 Inherited from OpenZeppelin `Clones`. Raised by the value-forwarding clone
 variants when the factory's own ETH balance is less than the value being
-forwarded to the new clone. `createCollection` does not forward value, so
+forwarded to the new clone. `createSurface` does not forward value, so
 this is not reachable through the factory's public surface today.
 
 ## error NotAContract
@@ -166,7 +166,7 @@ address that cannot be a valid clone target or renderer.
 
 ## error OwnerRequired
 
-`createCollection` or `createPooledCollection` was given the zero address as the
+`createSurface` or `createPooledSurface` was given the zero address as the
 collection `owner`. A collection must have an owner.
 
 ## function deprecate
@@ -174,7 +174,7 @@ collection `owner`. A collection must have an owner.
 access: deployer-only (`msg.sender` must be the factory deployer, else `NotDeployer`)
 
 One-way kill switch for NEW deploys, for a post-deploy bug discovered in the
-implementation: after deprecation `createCollection` reverts
+implementation: after deprecation `createSurface` reverts
 `FactoryDeprecated`, and `successor` points integrators at the replacement
 factory (zero if none exists yet). Deployed collections are immutable and
 completely unaffected — the deployer holds zero power over them; this switch
@@ -206,7 +206,7 @@ the successor address (zero if none named).
 
 ## error FactoryDeprecated
 
-`createCollection` was called after deprecation. Deploy through the successor
+`createSurface` was called after deprecation. Deploy through the successor
 factory instead (`successor()`).
 
 ## error NotDeployer

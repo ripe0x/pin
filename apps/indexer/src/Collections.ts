@@ -2,13 +2,13 @@ import { ponder } from "ponder:registry"
 import { collections, collectionMints, collectionTokens } from "ponder:schema"
 
 /**
- * PND Collection System (contracts/src/collection/) handlers.
+ * PND Collection System (contracts/src/surface/) handlers.
  *
  * DEPLOY-GATED: CollectionFactory + Collection are only
  * present in ponder.config.ts's `contracts` once the real factory address
  * replaces the zero-address sentinel there. Until then, Ponder's generated
  * `EventNames` type structurally does not include
- * "CollectionFactory:CollectionCreated" /
+ * "CollectionFactory:SurfaceCreated" /
  * "Collection:Minted" / "Collection:Burned" — there is
  * nothing in `contracts` for those strings to refer to.
  *
@@ -50,7 +50,7 @@ const tokenRowId = (collection: string, tokenId: bigint) =>
 
 // ─── Factory discovery ────────────────────────────────────────────────────
 
-on("CollectionFactory:CollectionCreated", async ({ event, context }) => {
+on("CollectionFactory:SurfaceCreated", async ({ event, context }) => {
   const { owner, collection } = event.args
   await context.db
     .insert(collections)

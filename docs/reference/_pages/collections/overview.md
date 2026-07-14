@@ -6,7 +6,7 @@ description: What the PND Collection System is, its parts, and how this referenc
 # Overview
 
 The PND Collection System is a modular collection protocol for artists. One
-artist collection is one contract, `Collection`: a single OZ ERC721
+artist collection is one contract, `Surface`: a single OZ ERC721
 core that holds ownership, money paths, and provenance, and nothing else.
 Every collection is deployed by a shared factory as an immutable EIP-1167
 clone, so what deploys is what runs, forever. There is no proxy admin, no
@@ -24,13 +24,13 @@ different modules plugged into the same four sockets. See
 
 | Contract | Role |
 | --- | --- |
-| `CollectionFactory` | Clones the `Collection` implementation and wires init params in one transaction |
+| `SurfaceFactory` | Clones the `Surface` implementation and wires init params in one transaction |
 | `DefaultRenderer` | The default `IRenderer` a freshly deployed collection points at until the artist sets something else |
 | `RenderAssets` | Shared registry of static display assets (covers + captures), written under each collection's own owner/admin authority. Algorithm-driven (Art Blocks-style) works ship as their own bring-your-own renderer, not a shared assembler |
 
 **Per-artist clone** (deployed once per collection, owned by the artist):
 
-`Collection` itself. It holds the ERC721 token logic, the sale
+`Surface` itself. It holds the ERC721 token logic, the sale
 paths, the payment split, and every read an indexer or renderer needs:
 `tokenSeed`, `config`. Nothing about a specific
 work's rendering, pricing, or gating logic lives here; those are the slots.
@@ -117,8 +117,8 @@ below are placeholders until launch.
 - [The four slots](/docs/collections/concepts/four-slots), [Id modes](/docs/collections/concepts/id-modes),
   [Mint Marks and entropy](/docs/collections/concepts/mint-marks-and-entropy),
   [Types](/docs/collections/concepts/types): the concept pages
-- [Collection](/docs/collections/contracts/collection),
-  [CollectionFactory](/docs/collections/contracts/factory): the core contract
+- [Surface](/docs/collections/contracts/surface),
+  [SurfaceFactory](/docs/collections/contracts/factory): the core contract
   reference, generated from the ABI
 - [Deploy a collection](/docs/collections/guides/deploy-a-collection),
   [Mint](/docs/collections/guides/mint): task-oriented guides

@@ -1,5 +1,5 @@
 ---
-title: Collection
+title: Surface
 ---
 
 # summary
@@ -387,7 +387,7 @@ zero default renderer, `RoyaltyTooHigh` if the royalty exceeds the 50% cap,
 `BadMintWindow` if a non-zero `mintEnd` is not after `mintStart`, and `ZeroMinter`
 for a zero address in the initial minters. The constructor disables initializers
 on the implementation, so only clones can be initialized, and only once. Emits
-`MinterSet` per initial minter and `CollectionConfigured`.
+`MinterSet` per initial minter and `SurfaceConfigured`.
 
 ## function transferOwnership
 
@@ -453,7 +453,7 @@ from for its whole life.
 
 ## function config
 
-Returns the live `CollectionConfig` (every field reflects the current setters,
+Returns the live `SurfaceConfig` (every field reflects the current setters,
 including the three module slots), the derived lifecycle `status` (Scheduled,
 Open, or Closed — computed from the window, the cap, and the clock; never
 stored), and `minted` (mints ever, not live supply).
@@ -633,7 +633,7 @@ re-minted, at which point a new `Minted` covers the fresh instance.
 Emitted when a non-zero referral cut is credited on a paid mint. Indexed by
 `referrer`, with the credited `amount` in wei.
 
-## event CollectionConfigured
+## event SurfaceConfigured
 
 Emitted once at init with the collection's id mode, price, supply cap, mint
 window, and cover artwork URI. Indexers read this to record a new collection's

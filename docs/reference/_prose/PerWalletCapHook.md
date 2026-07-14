@@ -24,7 +24,7 @@ token is later transferred or burned.
 
 ## function setCap
 
-access: owner-only (`onlyCollectionOwner`, checked against the target
+access: owner-only (`onlySurfaceOwner`, checked against the target
 collection's current `owner()`; reverts `SC: not collection owner`
 otherwise)
 
@@ -76,7 +76,7 @@ full cap history for any collection that has ever used this hook.
 The mint would push the wallet's running count for this collection past the
 per-wallet cap. Carries the cap and the attempted total.
 
-## error NotCollectionAdmin
+## error NotSurfaceAdmin
 
 A hook setter was called by an address that is neither the collection's owner
 nor one of its admins. Inherited from HookBase — configuring a hook for a

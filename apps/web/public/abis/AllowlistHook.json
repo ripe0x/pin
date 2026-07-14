@@ -134,7 +134,7 @@
   },
   {
     "type": "error",
-    "name": "NotCollectionAdmin",
+    "name": "NotSurfaceAdmin",
     "inputs": []
   }
 ]

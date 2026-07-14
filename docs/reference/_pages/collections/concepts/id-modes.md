@@ -6,8 +6,8 @@ description: Sequential and pooled, the two token id assignment models, fixed at
 # Id modes
 
 Every collection is one of two id modes — a structural fact, fixed by which
-final the factory deploys (`createCollection` for sequential,
-`createPooledCollection` for pooled) and never changeable afterward. It is not
+final the factory deploys (`createSurface` for sequential,
+`createPooledSurface` for pooled) and never changeable afterward. It is not
 a config field; it is read back with `idMode()`. The mode governs who assigns
 token ids, whether a built-in mint path exists at all, and what a burn means.
 
@@ -21,7 +21,7 @@ The core assigns every id itself, counting up from `1`.
   also draws the next id from the same counter; it can never choose one
 - `burn(tokenId)` follows standard ERC721 authorization (owner or
   approved). A burned id is retired: it is never reassigned
-- The supply cap (`CollectionConfig.supplyCap`, `0` = uncapped) bounds
+- The supply cap (`SurfaceConfig.supplyCap`, `0` = uncapped) bounds
   **mints ever**. An edition of 100 stays an edition of 100; burning tokens
   does not free new mint slots
 

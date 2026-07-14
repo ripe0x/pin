@@ -20,7 +20,7 @@ permanence the system offers. Combined with the collection's `lockRenderer()`
 provable end-to-end permanence with zero trusted post-deploy steps.
 
 At `tokenURI` time it reads the token's seed through
-[ICollectionView](/docs/collections/contracts/i-collection-view), injects the
+[ISurfaceView](/docs/collections/contracts/i-surface-view), injects the
 render context (`window.tokenData = { hash, tokenId, collection, chainId,
 version, context }`, the `hash`/`tokenId` pair matching the widely-adopted
 long-form-generative shape so existing sketches run unmodified), assembles

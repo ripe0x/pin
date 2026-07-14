@@ -1,4 +1,6 @@
-[
+// Auto-extracted from contracts/out/IRenderer.sol/ISurfaceView.json.
+// Re-run: node scripts/emit-surface-abi.mjs
+export const iSurfaceViewAbi = [
   {
     "type": "function",
     "name": "config",
@@ -7,7 +9,7 @@
       {
         "name": "cfg",
         "type": "tuple",
-        "internalType": "struct CollectionConfig",
+        "internalType": "struct SurfaceConfig",
         "components": [
           {
             "name": "price",
@@ -74,7 +76,7 @@
       {
         "name": "status",
         "type": "uint8",
-        "internalType": "enum CollectionStatus"
+        "internalType": "enum SurfaceStatus"
       },
       {
         "name": "minted",
@@ -168,4 +170,4 @@
     ],
     "stateMutability": "view"
   }
-]
+] as const;

@@ -1,4 +1,6 @@
-[
+// Auto-extracted from contracts/out/SurfaceFactory.sol/SurfaceFactory.json.
+// Re-run: node scripts/emit-surface-abi.mjs
+export const surfaceFactoryAbi = [
   {
     "type": "constructor",
     "inputs": [
@@ -27,7 +29,7 @@
   },
   {
     "type": "function",
-    "name": "allCollections",
+    "name": "allSurfaces",
     "inputs": [
       {
         "name": "",
@@ -59,7 +61,7 @@
   },
   {
     "type": "function",
-    "name": "createCollection",
+    "name": "createPooledSurface",
     "inputs": [
       {
         "name": "name",
@@ -79,7 +81,7 @@
       {
         "name": "cfg",
         "type": "tuple",
-        "internalType": "struct CollectionConfig",
+        "internalType": "struct SurfaceConfig",
         "components": [
           {
             "name": "price",
@@ -165,7 +167,7 @@
   },
   {
     "type": "function",
-    "name": "createPooledCollection",
+    "name": "createSurface",
     "inputs": [
       {
         "name": "name",
@@ -185,7 +187,7 @@
       {
         "name": "cfg",
         "type": "tuple",
-        "internalType": "struct CollectionConfig",
+        "internalType": "struct SurfaceConfig",
         "components": [
           {
             "name": "price",
@@ -323,7 +325,7 @@
   },
   {
     "type": "function",
-    "name": "isCollection",
+    "name": "isSurface",
     "inputs": [
       {
         "name": "",
@@ -381,7 +383,7 @@
   },
   {
     "type": "function",
-    "name": "totalCollections",
+    "name": "totalSurfaces",
     "inputs": [],
     "outputs": [
       {
@@ -394,7 +396,20 @@
   },
   {
     "type": "event",
-    "name": "CollectionCreated",
+    "name": "Deprecated",
+    "inputs": [
+      {
+        "name": "successor",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "SurfaceCreated",
     "inputs": [
       {
         "name": "owner",
@@ -413,19 +428,6 @@
         "type": "uint8",
         "indexed": false,
         "internalType": "enum IdMode"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "Deprecated",
-    "inputs": [
-      {
-        "name": "successor",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
       }
     ],
     "anonymous": false
@@ -482,4 +484,4 @@
     "name": "OwnerRequired",
     "inputs": []
   }
-]
+] as const;

@@ -27,7 +27,7 @@ token is later transferred or burned.
 function setCap(address collection, uint256 cap) external
 ```
 
-**Access:** owner-only (`onlyCollectionOwner`, checked against the target
+**Access:** owner-only (`onlySurfaceOwner`, checked against the target
 
 collection's current `owner()`; reverts `SC: not collection owner`
 otherwise)
@@ -102,7 +102,7 @@ full cap history for any collection that has ever used this hook.
 
 ## Errors
 
-**`NotCollectionAdmin()`**
+**`NotSurfaceAdmin()`**
 
 A hook setter was called by an address that is neither the collection's owner
 nor one of its admins. Inherited from HookBase — configuring a hook for a

@@ -45,14 +45,14 @@ Where an example reads a shared singleton, it uses the `{{addr:...}}` form
 so the address resolves automatically once deployed:
 
 ```bash
-cast call {{addr:collectionFactory}} "implementation()(address)" --rpc-url https://ethereum-rpc.publicnode.com
+cast call {{addr:surfaceFactory}} "implementation()(address)" --rpc-url https://ethereum-rpc.publicnode.com
 ```
 
 Write examples use [viem](https://viem.sh). ABIs come from the `@pin/abi`
 package or from `/abis/<ContractName>.json`:
 
 ```ts
-import {collectionAbi} from '@pin/abi';
+import {surfaceAbi} from '@pin/abi';
 import {createWalletClient, http} from 'viem';
 import {mainnet} from 'viem/chains';
 
@@ -60,7 +60,7 @@ const client = createWalletClient({chain: mainnet, transport: http()});
 
 await client.writeContract({
   address: '<COLLECTION_ADDRESS>',
-  abi: collectionAbi,
+  abi: surfaceAbi,
   functionName: 'mint',
   args: [1n],
   value: priceWei,
@@ -70,14 +70,14 @@ await client.writeContract({
 or, fetching the ABI directly:
 
 ```ts
-const abi = await fetch('/abis/Collection.json').then((r) => r.json());
+const abi = await fetch('/abis/Surface.json').then((r) => r.json());
 ```
 
 ## Glossary
 
 | Term | Meaning |
 | --- | --- |
-| Collection | One artist's work, deployed as one `Collection` contract |
+| Collection | One artist's work, deployed as one `Surface` contract |
 | Clone | A collection's contract: an immutable EIP-1167 proxy pointing at the shared implementation |
 | Slot | One of the four swappable modules on a collection: renderer, price strategy, mint hook, extension minter |
 | Referrer | The address credited with hosting a mint (a frontend, a self-hosted page, or none) |

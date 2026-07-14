@@ -1,5 +1,5 @@
 // Auto-extracted from contracts/out/IPreviewRenderer.sol/IPreviewRenderer.json.
-// Re-run: node scripts/emit-collection-abi.mjs
+// Re-run: node scripts/emit-surface-abi.mjs
 export const iPreviewRendererAbi = [
   {
     "type": "function",

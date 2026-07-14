@@ -1,6 +1,4 @@
-// Auto-extracted from contracts/out/Collection.sol/Collection.json.
-// Re-run: node scripts/emit-collection-abi.mjs
-export const collectionAbi = [
+[
   {
     "type": "function",
     "name": "REFERRAL_SHARE_BPS",
@@ -105,7 +103,7 @@ export const collectionAbi = [
       {
         "name": "cfg",
         "type": "tuple",
-        "internalType": "struct CollectionConfig",
+        "internalType": "struct SurfaceConfig",
         "components": [
           {
             "name": "price",
@@ -172,7 +170,7 @@ export const collectionAbi = [
       {
         "name": "status",
         "type": "uint8",
-        "internalType": "enum CollectionStatus"
+        "internalType": "enum SurfaceStatus"
       },
       {
         "name": "minted",
@@ -283,7 +281,7 @@ export const collectionAbi = [
           {
             "name": "cfg",
             "type": "tuple",
-            "internalType": "struct CollectionConfig",
+            "internalType": "struct SurfaceConfig",
             "components": [
               {
                 "name": "price",
@@ -1269,43 +1267,6 @@ export const collectionAbi = [
   },
   {
     "type": "event",
-    "name": "CollectionConfigured",
-    "inputs": [
-      {
-        "name": "idMode",
-        "type": "uint8",
-        "indexed": false,
-        "internalType": "enum IdMode"
-      },
-      {
-        "name": "price",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "supplyCap",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "mintStart",
-        "type": "uint64",
-        "indexed": false,
-        "internalType": "uint64"
-      },
-      {
-        "name": "mintEnd",
-        "type": "uint64",
-        "indexed": false,
-        "internalType": "uint64"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "ContractURIUpdated",
     "inputs": [],
     "anonymous": false
@@ -1425,7 +1386,7 @@ export const collectionAbi = [
         "name": "statusAtMint",
         "type": "uint8",
         "indexed": false,
-        "internalType": "enum CollectionStatus"
+        "internalType": "enum SurfaceStatus"
       }
     ],
     "anonymous": false
@@ -1619,6 +1580,43 @@ export const collectionAbi = [
     "type": "event",
     "name": "SupplyLocked",
     "inputs": [],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "SurfaceConfigured",
+    "inputs": [
+      {
+        "name": "idMode",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "enum IdMode"
+      },
+      {
+        "name": "price",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "supplyCap",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "mintStart",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      },
+      {
+        "name": "mintEnd",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      }
+    ],
     "anonymous": false
   },
   {
@@ -1990,4 +1988,4 @@ export const collectionAbi = [
     "name": "ZeroQuantity",
     "inputs": []
   }
-] as const;
+]

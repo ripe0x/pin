@@ -1,5 +1,5 @@
 // Auto-extracted from contracts/out/ScriptyRenderer.sol/ScriptyRenderer.json.
-// Re-run: node scripts/emit-collection-abi.mjs
+// Re-run: node scripts/emit-surface-abi.mjs
 export const scriptyRendererAbi = [
   {
     "type": "constructor",

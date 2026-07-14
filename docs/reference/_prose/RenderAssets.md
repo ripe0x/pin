@@ -24,7 +24,7 @@ a wrong thumbnail, and the next write fixes it.
 
 ## function setCover
 
-access: collection owner or admin (`onlyCollectionAdmin`, else `NotCollectionAdmin`)
+access: collection owner or admin (`onlySurfaceAdmin`, else `NotSurfaceAdmin`)
 
 Sets the collection's shared/cover image URI ("" clears it). The bundled
 renderers fall back to this for any token without a capture or template. Emits
@@ -32,7 +32,7 @@ renderers fall back to this for any token without a capture or template. Emits
 
 ## function setCapturer
 
-access: collection owner or admin (`onlyCollectionAdmin`, else `NotCollectionAdmin`)
+access: collection owner or admin (`onlySurfaceAdmin`, else `NotSurfaceAdmin`)
 
 Grants or revokes a capturer for the collection: a narrow key that may write
 captures and the capture template, and nothing else. Lets an artist run
@@ -103,7 +103,7 @@ Emitted when a collection's capture template changes. Indexed by
 Emitted when a capturer is granted or revoked. Indexed by `collection` and
 `account`.
 
-## error NotCollectionAdmin
+## error NotSurfaceAdmin
 
 A write was attempted by an address that is neither the collection's owner
 nor one of its admins.

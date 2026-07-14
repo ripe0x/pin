@@ -1,5 +1,5 @@
 // Auto-extracted from contracts/out/PerWalletCapHook.sol/PerWalletCapHook.json.
-// Re-run: node scripts/emit-collection-abi.mjs
+// Re-run: node scripts/emit-surface-abi.mjs
 export const perWalletCapHookAbi = [
   {
     "type": "function",
@@ -155,7 +155,7 @@ export const perWalletCapHookAbi = [
   },
   {
     "type": "error",
-    "name": "NotCollectionAdmin",
+    "name": "NotSurfaceAdmin",
     "inputs": []
   },
   {

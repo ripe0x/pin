@@ -36,7 +36,7 @@ Both paths run the mint hook (`beforeMint`/`afterMint`), enforce the supply cap 
 `mintTo` and `mintToId` are non-payable. The core takes no `msg.value` and does no payment accounting on this path: that is the whole point of the slot. If your minter is a paid mint, it is responsible for:
 
 - collecting and validating payment (ETH, an ERC20, a swap route, whatever the form needs)
-- honoring the referral share by convention, not by contract guarantee: `Collection.REFERRAL_SHARE_BPS` (10%) is not enforced on this path, so a PND-shipped minter follows it in code and a third-party minter's choice not to is visible onchain
+- honoring the referral share by convention, not by contract guarantee: `Surface.REFERRAL_SHARE_BPS` (10%) is not enforced on this path, so a PND-shipped minter follows it in code and a third-party minter's choice not to is visible onchain
 - paying out (or escrowing) proceeds itself, since the collection's `_pending`/`withdraw` pull-payment ledger only tracks the built-in path's settlements
 
 ## Burn semantics differ by id mode
@@ -59,7 +59,7 @@ interface ICollectionMint {
         external returns (uint256 tokenId);
 }
 
-interface ICollectionOwner {
+interface ISurfaceOwner {
     function owner() external view returns (address);
 }
 
@@ -74,12 +74,12 @@ contract SimpleExtensionMinter {
 
     event PriceSet(address indexed collection, uint256 price);
 
-    modifier onlyCollectionOwner(address collection) {
-        require(msg.sender == ICollectionOwner(collection).owner(), "not collection owner");
+    modifier onlySurfaceOwner(address collection) {
+        require(msg.sender == ISurfaceOwner(collection).owner(), "not collection owner");
         _;
     }
 
-    function setPrice(address collection, uint256 price) external onlyCollectionOwner(collection) {
+    function setPrice(address collection, uint256 price) external onlySurfaceOwner(collection) {
         priceOf[collection] = price;
         emit PriceSet(collection, price);
     }
@@ -96,11 +96,11 @@ contract SimpleExtensionMinter {
             require(okS, "referral payout failed");
             uint256 artistCut = price - referralCut;
             if (artistCut > 0) {
-                (bool okA,) = ICollectionOwner(collection).owner().call{value: artistCut}("");
+                (bool okA,) = ISurfaceOwner(collection).owner().call{value: artistCut}("");
                 require(okA, "artist payout failed");
             }
         } else if (price > 0) {
-            (bool ok,) = ICollectionOwner(collection).owner().call{value: price}("");
+            (bool ok,) = ISurfaceOwner(collection).owner().call{value: price}("");
             require(ok, "artist payout failed");
         }
     }

@@ -9,8 +9,8 @@ import { mintFactoryAbi } from "./abis/MintFactory"
 import { tlUniversalDeployerAbi } from "./abis/TLUniversalDeployer"
 import { superrareNftAbi } from "./abis/SuperRareNFT"
 import { muriProtocolAbi } from "./abis/MURIProtocol"
-import { collectionAbi } from "./abis/Collection"
-import { collectionFactoryAbi } from "./abis/CollectionFactory"
+import { surfaceAbi } from "./abis/Surface"
+import { surfaceFactoryAbi } from "./abis/SurfaceFactory"
 
 /**
  * PND v2 Ponder scope — REDUCED from v1.
@@ -82,11 +82,11 @@ const MURI_PROTOCOL_ADDRESS =
   "0x0000000000C2A0B63ab4aA971B08B905E5875b01" as const
 const MURI_PROTOCOL_DEPLOY_BLOCK = 23_754_750
 
-// PND Collection System (contracts/src/collection/) — the general
+// PND Collection System (contracts/src/surface/) — the general
 // Collection core (Editions preset + generative + backed/pooled
 // forms), deployed via a single CollectionFactory. Mirrors the
 // SovereignAuctionHouse(Factory) pattern above: one fixed factory indexed
-// for discovery (CollectionCreated), and `factory()` for full per-clone
+// for discovery (SurfaceCreated), and `factory()` for full per-clone
 // event indexing of every deployed collection.
 //
 // NOT yet deployed — sentinel zero address. When the sentinel is unset
@@ -250,11 +250,11 @@ export default createConfig({
     // entries activate together.
     ...(SOVEREIGN_COLLECTION_FACTORY_IS_DEPLOYED
       ? {
-          // Fixed factory — discovery (one CollectionCreated per artist
+          // Fixed factory — discovery (one SurfaceCreated per artist
           // deploy) exactly like SovereignAuctionHouseFactory above.
           CollectionFactory: {
             chain: "mainnet",
-            abi: collectionFactoryAbi,
+            abi: surfaceFactoryAbi,
             address: SOVEREIGN_COLLECTION_FACTORY_ADDRESS,
             startBlock: SOVEREIGN_COLLECTION_FACTORY_DEPLOY_BLOCK,
           },
@@ -266,11 +266,11 @@ export default createConfig({
           // belongs in the worker.
           Collection: {
             chain: "mainnet",
-            abi: collectionAbi,
+            abi: surfaceAbi,
             address: factory({
               address: SOVEREIGN_COLLECTION_FACTORY_ADDRESS,
               event: parseAbiItem(
-                "event CollectionCreated(address indexed owner, address indexed collection)",
+                "event SurfaceCreated(address indexed owner, address indexed collection)",
               ),
               parameter: "collection",
             }),

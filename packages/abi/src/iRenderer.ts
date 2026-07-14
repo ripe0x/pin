@@ -1,5 +1,5 @@
 // Auto-extracted from contracts/out/IRenderer.sol/IRenderer.json.
-// Re-run: node scripts/emit-collection-abi.mjs
+// Re-run: node scripts/emit-surface-abi.mjs
 export const iRendererAbi = [
   {
     "type": "function",

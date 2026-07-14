@@ -28,7 +28,7 @@ selector-identical custom errors to both single-purpose hooks
 regardless of which hook a collection uses.
 
 Config authority is the collection's owner OR its admins
-(`onlyCollectionAdmin`), rather than the owner-only gate the single-purpose
+(`onlySurfaceAdmin`), rather than the owner-only gate the single-purpose
 reference hooks use: a drop is typically operated by the artist's team, not
 only the owner key.
 
@@ -45,10 +45,10 @@ the cap was set are not retroactively charged against it.
 function setRoot(address collection, bytes32 root) external
 ```
 
-**Access:** collection owner or admin (`onlyCollectionAdmin`, checked against
+**Access:** collection owner or admin (`onlySurfaceAdmin`, checked against
 
 the target collection's current `owner()` or `isAdmin(msg.sender)`; reverts
-`NotCollectionAdmin()` otherwise)
+`NotSurfaceAdmin()` otherwise)
 
 Sets the Merkle root gating mints for `collection`. A root of `bytes32(0)`
 means open, no allowlist gate: `beforeMint` skips the proof check entirely.
@@ -61,7 +61,7 @@ history kept onchain beyond the `RootSet` event stream. Emits `RootSet`.
 function setCap(address collection, uint256 cap) external
 ```
 
-**Access:** collection owner or admin (same `onlyCollectionAdmin` gate as
+**Access:** collection owner or admin (same `onlySurfaceAdmin` gate as
 
 `setRoot`)
 
@@ -182,7 +182,7 @@ root. Raised in `beforeMint` when a non-zero root is set.
 Selector-identical to `AllowlistHook.NotAllowlisted`, so a UI maps one error
 regardless of which hook a collection uses.
 
-**`NotCollectionAdmin()`**
+**`NotSurfaceAdmin()`**
 
 A hook setter was called by an address that is neither the collection's owner
 nor one of its admins. Inherited from HookBase — configuring a hook for a

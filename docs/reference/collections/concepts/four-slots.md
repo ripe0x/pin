@@ -2,7 +2,7 @@
 
 # The four slots
 
-`Collection` is one contract for every form of work: an edition, a
+`Surface` is one contract for every form of work: an edition, a
 long-form generative drop, an onchain SVG piece, a participatory work, a
 backed and pooled work. What changes between them is which modules fill
 four slots. The core never grows a line for a specific work; it only ever
@@ -29,7 +29,7 @@ function contractURI(address collection) external view returns (string memory);
 - **Fallback**: when `_renderer` is the zero address, `renderer()` returns
   the collection's `defaultRenderer`, set once at init and never itself
   swappable
-- **What it does**: `Collection.tokenURI` delegates entirely to
+- **What it does**: `Surface.tokenURI` delegates entirely to
   `IRenderer(renderer()).tokenURI(address(this), tokenId)`. The collection
   address is passed explicitly rather than read from `msg.sender`, so one
   renderer instance can serve every collection that points at it, and it
@@ -61,7 +61,7 @@ function priceOf(address collection, address minter, uint256 quantity, bytes cal
 - **Type**: `IPriceStrategy`, stored as `_priceStrategy`
 - **Set by**: `setPriceStrategy(address)`, owner-only, no freeze gate
 - **Fallback**: when unset, the built-in paid path charges the collection's
-  stored `price` (in `CollectionConfig`) times `quantity`, and requires an
+  stored `price` (in `SurfaceConfig`) times `quantity`, and requires an
   exact match (`WrongPayment` on mismatch)
 - **What it does**: when set, both `mint`/`mintWithReferral` and the read-only
   `currentPrice` call `priceOf(address(this), minter, quantity, hookData)`
@@ -113,7 +113,7 @@ function afterMint(address minter, uint256 quantity, uint256 firstTokenId, addre
 See [IMintHook](/docs/collections/contracts/i-mint-hook),
 [AllowlistHook](/docs/collections/contracts/allowlist-hook),
 [PerWalletCapHook](/docs/collections/contracts/per-wallet-cap-hook),
-[HoldsCollectionHook](/docs/collections/contracts/holds-collection-hook),
+[HoldsSurfaceHook](/docs/collections/contracts/holds-surface-hook),
 [Write a mint hook](/docs/collections/guides/write-a-mint-hook).
 
 ## Extension minter
@@ -142,5 +142,5 @@ See [IMintHook](/docs/collections/contracts/i-mint-hook),
   guarantee: PND-shipped minters honor it, but a custom minter's behavior
   is the artist's own visible, onchain choice
 
-See [ICollection](/docs/collections/contracts/collection),
+See [Surface](/docs/collections/contracts/surface),
 [Write a minter](/docs/collections/guides/write-a-minter).

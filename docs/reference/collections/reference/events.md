@@ -4,69 +4,69 @@
 
 Every event the Collections contracts emit, grouped by contract. Signatures and field meanings live on the per-contract pages.
 
-## Collection
+## Surface
 
-**[`AdminSet`](/docs/collections/contracts/collection#adminset)** · Emitted when an admin key is granted (`allowed = true`) or revoked.
+**[`AdminSet`](/docs/collections/contracts/surface#adminset)** · Emitted when an admin key is granted (`allowed = true`) or revoked.
 
-**[`Approval`](/docs/collections/contracts/collection#approval)** · Standard ERC721 single-token approval event.
+**[`Approval`](/docs/collections/contracts/surface#approval)** · Standard ERC721 single-token approval event.
 
-**[`ApprovalForAll`](/docs/collections/contracts/collection#approvalforall)** · Standard ERC721 operator approval event.
+**[`ApprovalForAll`](/docs/collections/contracts/surface#approvalforall)** · Standard ERC721 operator approval event.
 
-**[`BatchMetadataUpdate`](/docs/collections/contracts/collection#batchmetadataupdate)** · ERC-4906 range refresh signal, emitted by `setRenderer` (covering all tokens) and by `notifyMetadataUpdate` (renderer- or admin-chosen range).
+**[`BatchMetadataUpdate`](/docs/collections/contracts/surface#batchmetadataupdate)** · ERC-4906 range refresh signal, emitted by `setRenderer` (covering all tokens) and by `notifyMetadataUpdate` (renderer- or admin-chosen range).
 
-**[`Burned`](/docs/collections/contracts/collection#burned)** · Emitted when a token is burned.
+**[`Burned`](/docs/collections/contracts/surface#burned)** · Emitted when a token is burned.
 
-**[`CollectionConfigured`](/docs/collections/contracts/collection#collectionconfigured)** · Emitted once at init with the collection's id mode, price, supply cap, mint window, and cover artwork URI.
+**[`ContractURIUpdated`](/docs/collections/contracts/surface#contracturiupdated)** · ERC-7572 contract-level refresh signal, emitted by `setRenderer` alongside the token-range refresh: a new renderer can answer `contractURI` differently, and this is the event marketplaces watch to re-fetch the collection page.
 
-**[`ContractURIUpdated`](/docs/collections/contracts/collection#contracturiupdated)** · ERC-7572 contract-level refresh signal, emitted by `setRenderer` alongside the token-range refresh: a new renderer can answer `contractURI` differently, and this is the event marketplaces watch to re-fetch the collection page.
+**[`CreatorListed`](/docs/collections/contracts/surface#creatorlisted)** · Emitted when the owner lists or unlists a creator (including each creator seeded at init).
 
-**[`CreatorListed`](/docs/collections/contracts/collection#creatorlisted)** · Emitted when the owner lists or unlists a creator (including each creator seeded at init).
+**[`Initialized`](/docs/collections/contracts/surface#initialized)** · Standard OpenZeppelin Initializable event, emitted once when the clone is initialized.
 
-**[`Initialized`](/docs/collections/contracts/collection#initialized)** · Standard OpenZeppelin Initializable event, emitted once when the clone is initialized.
+**[`MetadataUpdate`](/docs/collections/contracts/surface#metadataupdate)** · ERC-4906 single-token refresh signal (declared for interface completeness; range refreshes go through `BatchMetadataUpdate` via the setters and `notifyMetadataUpdate`).
 
-**[`MetadataUpdate`](/docs/collections/contracts/collection#metadataupdate)** · ERC-4906 single-token refresh signal (declared for interface completeness; range refreshes go through `BatchMetadataUpdate` via the setters and `notifyMetadataUpdate`).
+**[`Minted`](/docs/collections/contracts/surface#minted)** · One event per mint call — THE permanent per-mint provenance record.
 
-**[`Minted`](/docs/collections/contracts/collection#minted)** · One event per mint call — THE permanent per-mint provenance record.
+**[`MinterSet`](/docs/collections/contracts/surface#minterset)** · Emitted when an extension minter is granted or revoked, and once per initial minter at init.
 
-**[`MinterSet`](/docs/collections/contracts/collection#minterset)** · Emitted when an extension minter is granted or revoked, and once per initial minter at init.
+**[`MintHookSet`](/docs/collections/contracts/surface#minthookset)** · Emitted when the mint hook slot changes.
 
-**[`MintHookSet`](/docs/collections/contracts/collection#minthookset)** · Emitted when the mint hook slot changes.
+**[`MintWindowSet`](/docs/collections/contracts/surface#mintwindowset)** · Emitted when the paid mint window is rescheduled with `setMintWindow`.
 
-**[`MintWindowSet`](/docs/collections/contracts/collection#mintwindowset)** · Emitted when the paid mint window is rescheduled with `setMintWindow`.
+**[`OwnershipTransferred`](/docs/collections/contracts/surface#ownershiptransferred)** · Standard Ownable event, emitted at init when the first owner is set and when `acceptOwnership` completes a transfer.
 
-**[`OwnershipTransferred`](/docs/collections/contracts/collection#ownershiptransferred)** · Standard Ownable event, emitted at init when the first owner is set and when `acceptOwnership` completes a transfer.
+**[`OwnershipTransferStarted`](/docs/collections/contracts/surface#ownershiptransferstarted)** · Standard Ownable2Step event, emitted by `transferOwnership` when a pending owner is recorded.
 
-**[`OwnershipTransferStarted`](/docs/collections/contracts/collection#ownershiptransferstarted)** · Standard Ownable2Step event, emitted by `transferOwnership` when a pending owner is recorded.
+**[`PayoutAddressSet`](/docs/collections/contracts/surface#payoutaddressset)** · Emitted when the artist payout address changes.
 
-**[`PayoutAddressSet`](/docs/collections/contracts/collection#payoutaddressset)** · Emitted when the artist payout address changes.
+**[`PriceSet`](/docs/collections/contracts/surface#priceset)** · Emitted when the stored fixed price changes with `setPrice`.
 
-**[`PriceSet`](/docs/collections/contracts/collection#priceset)** · Emitted when the stored fixed price changes with `setPrice`.
+**[`PriceStrategySet`](/docs/collections/contracts/surface#pricestrategyset)** · Emitted when the price strategy slot changes.
 
-**[`PriceStrategySet`](/docs/collections/contracts/collection#pricestrategyset)** · Emitted when the price strategy slot changes.
+**[`ReferralPaid`](/docs/collections/contracts/surface#referralpaid)** · Emitted when a non-zero referral cut is credited on a paid mint.
 
-**[`ReferralPaid`](/docs/collections/contracts/collection#referralpaid)** · Emitted when a non-zero referral cut is credited on a paid mint.
+**[`RendererLocked`](/docs/collections/contracts/surface#rendererlocked)** · Emitted once when `lockRenderer` permanently pins the renderer pointer.
 
-**[`RendererLocked`](/docs/collections/contracts/collection#rendererlocked)** · Emitted once when `lockRenderer` permanently pins the renderer pointer.
+**[`RendererSet`](/docs/collections/contracts/surface#rendererset)** · Emitted when the renderer slot changes.
 
-**[`RendererSet`](/docs/collections/contracts/collection#rendererset)** · Emitted when the renderer slot changes.
+**[`RoyaltySet`](/docs/collections/contracts/surface#royaltyset)** · Emitted when the EIP-2981 royalty changes with `setRoyalty`.
 
-**[`RoyaltySet`](/docs/collections/contracts/collection#royaltyset)** · Emitted when the EIP-2981 royalty changes with `setRoyalty`.
+**[`StrayETHRescued`](/docs/collections/contracts/surface#strayethrescued)** · Emitted when stray ETH not owed to any payee is swept.
 
-**[`StrayETHRescued`](/docs/collections/contracts/collection#strayethrescued)** · Emitted when stray ETH not owed to any payee is swept.
+**[`SupplyCapSet`](/docs/collections/contracts/surface#supplycapset)** · Emitted when the supply cap changes with `setSupplyCap`.
 
-**[`SupplyCapSet`](/docs/collections/contracts/collection#supplycapset)** · Emitted when the supply cap changes with `setSupplyCap`.
+**[`SupplyLocked`](/docs/collections/contracts/surface#supplylocked)** · Emitted once when `lockSupply` permanently locks the supply cap.
 
-**[`SupplyLocked`](/docs/collections/contracts/collection#supplylocked)** · Emitted once when `lockSupply` permanently locks the supply cap.
+**[`SurfaceConfigured`](/docs/collections/contracts/surface#surfaceconfigured)** · Emitted once at init with the collection's id mode, price, supply cap, mint window, and cover artwork URI.
 
-**[`Transfer`](/docs/collections/contracts/collection#transfer)** · Standard ERC721 transfer event, emitted on mint (from the zero address), transfer, and burn (to the zero address).
+**[`Transfer`](/docs/collections/contracts/surface#transfer)** · Standard ERC721 transfer event, emitted on mint (from the zero address), transfer, and burn (to the zero address).
 
-**[`Withdrawn`](/docs/collections/contracts/collection#withdrawn)** · Emitted when a pull-payment balance is paid out.
+**[`Withdrawn`](/docs/collections/contracts/surface#withdrawn)** · Emitted when a pull-payment balance is paid out.
 
-## CollectionFactory
-
-**[`CollectionCreated`](/docs/collections/contracts/factory#collectioncreated)** · Emitted once per successful `createCollection` call, with `owner` and `collection` both indexed.
+## SurfaceFactory
 
 **[`Deprecated`](/docs/collections/contracts/factory#deprecated)** · Emitted once when the deployer permanently deprecates the factory, carrying the successor address (zero if none named).
+
+**[`SurfaceCreated`](/docs/collections/contracts/factory#surfacecreated)** · Emitted once per successful `createSurface` call, with `owner` and `collection` both indexed.
 
 ## RenderAssets
 
@@ -86,9 +86,9 @@ Every event the Collections contracts emit, grouped by contract. Signatures and 
 
 **[`CapSet`](/docs/collections/contracts/per-wallet-cap-hook#capset)** · Emitted on every `setCap` call, including clearing the cap back to `0`.
 
-## HoldsCollectionHook
+## HoldsSurfaceHook
 
-**[`RequiredSet`](/docs/collections/contracts/holds-collection-hook#requiredset)** · Emitted on every `setRequired` call, including clearing the gate back to the zero address.
+**[`RequiredSet`](/docs/collections/contracts/holds-surface-hook#requiredset)** · Emitted on every `setRequired` call, including clearing the gate back to the zero address.
 
 ## GateHook
 

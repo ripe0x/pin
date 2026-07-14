@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * Extract Sovereign Collection ABIs from forge build artifacts and write them
+ * Extract Sovereign Surface ABIs from forge build artifacts and write them
  * as TypeScript modules under packages/abi/src.
  *
  * Run after any change to the Solidity contracts:
  *   cd contracts && forge build
- *   node scripts/emit-collection-abi.mjs
+ *   node scripts/emit-surface-abi.mjs
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -22,7 +22,7 @@ function emit({ artifact, exportName, outFiles }) {
   const artifactPath = resolve(repoRoot, "contracts/out", artifact);
   const json = JSON.parse(readFileSync(artifactPath, "utf8"));
   const abi = json.abi;
-  const body = `// Auto-extracted from contracts/out/${artifact}.\n// Re-run: node scripts/emit-collection-abi.mjs\nexport const ${exportName} = ${JSON.stringify(abi, null, 2)} as const;\n`;
+  const body = `// Auto-extracted from contracts/out/${artifact}.\n// Re-run: node scripts/emit-surface-abi.mjs\nexport const ${exportName} = ${JSON.stringify(abi, null, 2)} as const;\n`;
   for (const rel of outFiles) {
     const out = resolve(repoRoot, rel);
     writeFileSync(out, body);
@@ -31,24 +31,24 @@ function emit({ artifact, exportName, outFiles }) {
 }
 
 emit({
-  artifact: "Collection.sol/Collection.json",
-  exportName: "collectionAbi",
-  outFiles: ["packages/abi/src/collection.ts", "apps/indexer/abis/Collection.ts"],
+  artifact: "Surface.sol/Surface.json",
+  exportName: "surfaceAbi",
+  outFiles: ["packages/abi/src/surface.ts", "apps/indexer/abis/Surface.ts"],
 });
-// The pooled final. Shares the CollectionCore surface with Collection but its
+// The pooled final. Shares the SurfaceCore surface with Surface but its
 // mint entrypoint is mintToId (the minter chooses ids), not mint/mintTo.
-// Published for integrators building against pooled collections.
+// Published for integrators building against pooled surfaces.
 emit({
-  artifact: "PooledCollection.sol/PooledCollection.json",
-  exportName: "pooledCollectionAbi",
-  outFiles: ["packages/abi/src/pooledCollection.ts"],
+  artifact: "PooledSurface.sol/PooledSurface.json",
+  exportName: "pooledSurfaceAbi",
+  outFiles: ["packages/abi/src/pooledSurface.ts"],
 });
 emit({
-  artifact: "CollectionFactory.sol/CollectionFactory.json",
-  exportName: "collectionFactoryAbi",
+  artifact: "SurfaceFactory.sol/SurfaceFactory.json",
+  exportName: "surfaceFactoryAbi",
   outFiles: [
-    "packages/abi/src/collectionFactory.ts",
-    "apps/indexer/abis/CollectionFactory.ts",
+    "packages/abi/src/surfaceFactory.ts",
+    "apps/indexer/abis/SurfaceFactory.ts",
   ],
 });
 emit({
@@ -77,9 +77,9 @@ emit({
   outFiles: ["packages/abi/src/perWalletCapHook.ts"],
 });
 emit({
-  artifact: "HoldsCollectionHook.sol/HoldsCollectionHook.json",
-  exportName: "holdsCollectionHookAbi",
-  outFiles: ["packages/abi/src/holdsCollectionHook.ts"],
+  artifact: "HoldsSurfaceHook.sol/HoldsSurfaceHook.json",
+  exportName: "holdsSurfaceHookAbi",
+  outFiles: ["packages/abi/src/holdsSurfaceHook.ts"],
 });
 // Merkle allowlist + per-wallet cap composed into one hook (the two gates a
 // real gated drop typically wants at once).
@@ -112,12 +112,12 @@ emit({
   exportName: "iRendererAbi",
   outFiles: ["packages/abi/src/iRenderer.ts"],
 });
-// ICollectionView is declared in IRenderer.sol; it is the core read surface
+// ISurfaceView is declared in IRenderer.sol; it is the core read surface
 // renderers, price strategies, and minters consume.
 emit({
-  artifact: "IRenderer.sol/ICollectionView.json",
-  exportName: "iCollectionViewAbi",
-  outFiles: ["packages/abi/src/iCollectionView.ts"],
+  artifact: "IRenderer.sol/ISurfaceView.json",
+  exportName: "iSurfaceViewAbi",
+  outFiles: ["packages/abi/src/iSurfaceView.ts"],
 });
 // OPTIONAL renderer extension: render what a token WOULD look like for a
 // caller-supplied seed, without any token existing (previewURI).

@@ -1,6 +1,6 @@
-// Auto-extracted from contracts/out/HoldsCollectionHook.sol/HoldsCollectionHook.json.
-// Re-run: node scripts/emit-collection-abi.mjs
-export const holdsCollectionHookAbi = [
+// Auto-extracted from contracts/out/HoldsSurfaceHook.sol/HoldsSurfaceHook.json.
+// Re-run: node scripts/emit-surface-abi.mjs
+export const holdsSurfaceHookAbi = [
   {
     "type": "function",
     "name": "afterMint",
@@ -142,7 +142,7 @@ export const holdsCollectionHookAbi = [
   },
   {
     "type": "error",
-    "name": "NotCollectionAdmin",
+    "name": "NotSurfaceAdmin",
     "inputs": []
   }
 ] as const;

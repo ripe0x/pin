@@ -30,7 +30,7 @@ a wrong thumbnail, and the next write fixes it.
 function setCover(address collection, string uri) external
 ```
 
-**Access:** collection owner or admin (`onlyCollectionAdmin`, else `NotCollectionAdmin`)
+**Access:** collection owner or admin (`onlySurfaceAdmin`, else `NotSurfaceAdmin`)
 
 Sets the collection's shared/cover image URI ("" clears it). The bundled
 renderers fall back to this for any token without a capture or template. Emits
@@ -42,7 +42,7 @@ renderers fall back to this for any token without a capture or template. Emits
 function setCapturer(address collection, address account, bool allowed) external
 ```
 
-**Access:** collection owner or admin (`onlyCollectionAdmin`, else `NotCollectionAdmin`)
+**Access:** collection owner or admin (`onlySurfaceAdmin`, else `NotSurfaceAdmin`)
 
 Grants or revokes a capturer for the collection: a narrow key that may write
 captures and the capture template, and nothing else. Lets an artist run
@@ -168,7 +168,7 @@ Emitted when a collection's cover image changes. Indexed by `collection`.
 A capture write was attempted by an address that is not the collection's
 owner, one of its admins, or a granted capturer.
 
-**`NotCollectionAdmin()`**
+**`NotSurfaceAdmin()`**
 
 A write was attempted by an address that is neither the collection's owner
 nor one of its admins.

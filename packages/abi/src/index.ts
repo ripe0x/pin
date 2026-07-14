@@ -3,20 +3,20 @@ export { erc721Abi } from "./erc721.ts"
 export { foundationNftAbi, nftCollectionFactoryAbi } from "./foundationNft.ts"
 export { sovereignAuctionHouseAbi } from "./sovereignAuctionHouse.ts"
 export { sovereignAuctionHouseFactoryAbi } from "./sovereignAuctionHouseFactory.ts"
-export { collectionAbi } from "./collection.ts"
-export { pooledCollectionAbi } from "./pooledCollection.ts"
-export { collectionFactoryAbi } from "./collectionFactory.ts"
+export { surfaceAbi } from "./surface.ts"
+export { pooledSurfaceAbi } from "./pooledSurface.ts"
+export { surfaceFactoryAbi } from "./surfaceFactory.ts"
 export { defaultRendererAbi } from "./defaultRenderer.ts"
 export { scriptyRendererAbi } from "./scriptyRenderer.ts"
-// Collection slot implementations + interfaces (docs generator + integrators)
+// Surface slot implementations + interfaces (docs generator + integrators)
 export { allowlistHookAbi } from "./allowlistHook.ts"
 export { perWalletCapHookAbi } from "./perWalletCapHook.ts"
-export { holdsCollectionHookAbi } from "./holdsCollectionHook.ts"
+export { holdsSurfaceHookAbi } from "./holdsSurfaceHook.ts"
 export { gateHookAbi } from "./gateHook.ts"
 export { iMintHookAbi } from "./iMintHook.ts"
 export { iPriceStrategyAbi } from "./iPriceStrategy.ts"
 export { iRendererAbi } from "./iRenderer.ts"
-export { iCollectionViewAbi } from "./iCollectionView.ts"
+export { iSurfaceViewAbi } from "./iSurfaceView.ts"
 export { iPreviewRendererAbi } from "./iPreviewRenderer.ts"
 export { renderAssetsAbi } from "./renderAssets.ts"
 export { superrareBazaarAbi } from "./superrareBazaar.ts"
@@ -27,7 +27,7 @@ export { muriProtocolManifoldExtensionAbi } from "./muriProtocolManifoldExtensio
 export { ierc721CreatorCoreAbi, ierc1155CreatorCoreAbi } from "./manifoldCreatorCore.ts"
 export { mintEditionAbi } from "./mintEdition.ts"
 // PND Editions is fully retired in favor of Collections
-// (collectionAbi above); its ABIs and the editions e2e spec were
+// (surfaceAbi above); its ABIs and the editions e2e spec were
 // deleted with the /editions routes. A collections e2e spec replaces the
 // old create-then-mint flow.
 export { splitMainAbi } from "./splitMain.ts"

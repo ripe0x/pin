@@ -70,19 +70,19 @@ const GENERATED_BANNER = (src: string) =>
 // ── ABI registry (checked-in @pin/abi exports, keyed by contract name) ──
 
 const ABI_BY_NAME: Record<string, AbiItem[]> = {
-    Collection: abis.collectionAbi as unknown as AbiItem[],
-    CollectionFactory: abis.collectionFactoryAbi as unknown as AbiItem[],
+    Surface: abis.surfaceAbi as unknown as AbiItem[],
+    SurfaceFactory: abis.surfaceFactoryAbi as unknown as AbiItem[],
     DefaultRenderer: abis.defaultRendererAbi as unknown as AbiItem[],
     ScriptyRenderer: abis.scriptyRendererAbi as unknown as AbiItem[],
     RenderAssets: abis.renderAssetsAbi as unknown as AbiItem[],
     AllowlistHook: abis.allowlistHookAbi as unknown as AbiItem[],
     PerWalletCapHook: abis.perWalletCapHookAbi as unknown as AbiItem[],
-    HoldsCollectionHook: abis.holdsCollectionHookAbi as unknown as AbiItem[],
+    HoldsSurfaceHook: abis.holdsSurfaceHookAbi as unknown as AbiItem[],
     GateHook: abis.gateHookAbi as unknown as AbiItem[],
     IMintHook: abis.iMintHookAbi as unknown as AbiItem[],
     IPriceStrategy: abis.iPriceStrategyAbi as unknown as AbiItem[],
     IRenderer: abis.iRendererAbi as unknown as AbiItem[],
-    ICollectionView: abis.iCollectionViewAbi as unknown as AbiItem[],
+    ISurfaceView: abis.iSurfaceViewAbi as unknown as AbiItem[],
     IPreviewRenderer: abis.iPreviewRendererAbi as unknown as AbiItem[],
     SovereignAuctionHouse: abis.sovereignAuctionHouseAbi as unknown as AbiItem[],
     SovereignAuctionHouseFactory: abis.sovereignAuctionHouseFactoryAbi as unknown as AbiItem[],
@@ -133,13 +133,13 @@ const PROTOCOLS: Protocol[] = [
         ],
         contracts: [
             {
-                name: 'Collection',
-                slug: 'collection',
+                name: 'Surface',
+                slug: 'surface',
                 deploymentsKey: null,
                 kind: 'clone',
                 note: 'Deployed per artist as an EIP-1167 clone through the [factory](/docs/collections/contracts/factory). There is no single canonical address; substitute your collection address for `<COLLECTION_ADDRESS>` in the examples below.',
             },
-            {name: 'CollectionFactory', slug: 'factory', deploymentsKey: 'collectionFactory', kind: 'singleton'},
+            {name: 'SurfaceFactory', slug: 'factory', deploymentsKey: 'surfaceFactory', kind: 'singleton'},
             {name: 'DefaultRenderer', slug: 'default-renderer', deploymentsKey: 'defaultRenderer', kind: 'singleton'},
             {name: 'RenderAssets', slug: 'render-assets', deploymentsKey: 'renderAssets', kind: 'singleton'},
             {
@@ -151,7 +151,7 @@ const PROTOCOLS: Protocol[] = [
             },
             {name: 'AllowlistHook', slug: 'allowlist-hook', deploymentsKey: 'allowlistHook', kind: 'singleton'},
             {name: 'PerWalletCapHook', slug: 'per-wallet-cap-hook', deploymentsKey: 'perWalletCapHook', kind: 'singleton'},
-            {name: 'HoldsCollectionHook', slug: 'holds-collection-hook', deploymentsKey: 'holdsCollectionHook', kind: 'singleton'},
+            {name: 'HoldsSurfaceHook', slug: 'holds-surface-hook', deploymentsKey: 'holdsSurfaceHook', kind: 'singleton'},
             {name: 'GateHook', slug: 'gate-hook', deploymentsKey: 'gateHook', kind: 'singleton'},
             {
                 name: 'IMintHook',
@@ -175,8 +175,8 @@ const PROTOCOLS: Protocol[] = [
                 note: 'Interface (ABI only), not a deployed contract. Implement it to install a custom renderer in the renderer slot.',
             },
             {
-                name: 'ICollectionView',
-                slug: 'i-collection-view',
+                name: 'ISurfaceView',
+                slug: 'i-surface-view',
                 deploymentsKey: null,
                 kind: 'interface',
                 note: 'Interface (ABI only): the read surface a collection exposes to its renderer, price strategy, and minters.',

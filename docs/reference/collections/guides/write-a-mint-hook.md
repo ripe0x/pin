@@ -49,9 +49,9 @@ Three deployed, ownerless singletons ship as starting points. Each is public: on
 
 - **[AllowlistHook](/docs/collections/contracts/allowlist-hook)**: gates on a Merkle allowlist. The owner sets a root with `setRoot(collection, root)`; a minter passes a proof in `hookData`. Uses the OpenZeppelin standard-merkle-tree leaf format (`keccak256(bytes.concat(keccak256(abi.encode(account))))`), so standard JS tooling produces compatible proofs. A root of `bytes32(0)` means open, no proof required
 - **[PerWalletCapHook](/docs/collections/contracts/per-wallet-cap-hook)**: caps how many tokens one wallet can mint from a collection. The owner sets a cap with `setCap(collection, cap)`; the hook tracks `mintedBy[collection][minter]` in `afterMint`, incrementing only after a mint succeeds
-- **[HoldsCollectionHook](/docs/collections/contracts/holds-collection-hook)**: gates a mint on holding a token from another collection (the continuity primitive: an earlier collection's holders get access to a later one). The owner sets the required collection with `setRequired(collection, required)`; any ERC721 works, including another `Collection`
+- **[HoldsSurfaceHook](/docs/collections/contracts/holds-surface-hook)**: gates a mint on holding a token from another collection (the continuity primitive: an earlier collection's holders get access to a later one). The owner sets the required collection with `setRequired(collection, required)`; any ERC721 works, including another `Surface`
 
-All three inherit a shared `HookBase`, which supplies the `onlyCollectionOwner(collection)` modifier (checked against `ICollectionOwner(collection).owner()`) and a no-op default `afterMint` for hooks that don't need to record anything.
+All three inherit a shared `HookBase`, which supplies the `onlySurfaceOwner(collection)` modifier (checked against `ISurfaceOwner(collection).owner()`) and a no-op default `afterMint` for hooks that don't need to record anything.
 
 ## Minimal hook skeleton
 
@@ -61,7 +61,7 @@ pragma solidity ^0.8.24;
 
 import {IMintHook} from "./interfaces/IMintHook.sol";
 
-interface ICollectionOwner {
+interface ISurfaceOwner {
     function owner() external view returns (address);
 }
 
@@ -71,12 +71,12 @@ contract SwitchHook is IMintHook {
 
     event SwitchSet(address indexed collection, bool open);
 
-    modifier onlyCollectionOwner(address collection) {
-        require(msg.sender == ICollectionOwner(collection).owner(), "not collection owner");
+    modifier onlySurfaceOwner(address collection) {
+        require(msg.sender == ISurfaceOwner(collection).owner(), "not collection owner");
         _;
     }
 
-    function setOpen(address collection, bool open) external onlyCollectionOwner(collection) {
+    function setOpen(address collection, bool open) external onlySurfaceOwner(collection) {
         openFor[collection] = open;
         emit SwitchSet(collection, open);
     }

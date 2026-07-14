@@ -1,17 +1,17 @@
 ---
-title: ICollectionView
+title: ISurfaceView
 ---
 
 # summary
 
-ICollectionView is the read surface a collection exposes for its swappable
+ISurfaceView is the read surface a collection exposes for its swappable
 slots, [renderer](/docs/collections/contracts/i-renderer),
 [price strategy](/docs/collections/contracts/i-price-strategy), and any minter, to read
 without depending on the full
-[Collection](/docs/collections/contracts/collection) ABI. It is not
+[Surface](/docs/collections/contracts/surface) ABI. It is not
 itself one of the [four swappable slots](/docs/collections/concepts/four-slots); it's
 the contract-shaped interface those slots read through.
-`Collection` implements it in full. Any other contract that wants
+`Surface` implements it in full. Any other contract that wants
 to be adopted by an existing renderer only needs to implement whatever
 subset of this interface that renderer actually reads.
 

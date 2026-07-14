@@ -9,26 +9,26 @@
       "title": "Collections",
       "docs": "/docs/collections/overview",
       "contracts": {
-        "Collection": {
+        "Surface": {
           "address": null,
           "kind": "clone",
-          "abi": "/abis/Collection.json",
-          "docs": "/docs/collections/contracts/collection",
+          "abi": "/abis/Surface.json",
+          "docs": "/docs/collections/contracts/surface",
           "role": "The one core of the PND Collection System: a single OpenZeppelin ERC721 that holds ownership, ETH payment paths, and per-token provenance, and nothing else."
         },
-        "CollectionFactory": {
+        "SurfaceFactory": {
           "address": null,
           "kind": "singleton",
-          "abi": "/abis/CollectionFactory.json",
+          "abi": "/abis/SurfaceFactory.json",
           "docs": "/docs/collections/contracts/factory",
-          "role": "CollectionFactory deploys one [Collection](/docs/collections/contracts/collection) per work as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs."
+          "role": "SurfaceFactory deploys one [Surface](/docs/collections/contracts/surface) per work as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs."
         },
         "DefaultRenderer": {
           "address": null,
           "kind": "singleton",
           "abi": "/abis/DefaultRenderer.json",
           "docs": "/docs/collections/contracts/default-renderer",
-          "role": "The canonical built-in renderer for [Collection](/docs/collections/contracts/collection)."
+          "role": "The canonical built-in renderer for [Surface](/docs/collections/contracts/surface)."
         },
         "RenderAssets": {
           "address": null,
@@ -58,11 +58,11 @@
           "docs": "/docs/collections/contracts/per-wallet-cap-hook",
           "role": "A reference [mint hook](/docs/collections/contracts/i-mint-hook) capping how many tokens any single wallet can mint from a collection, so a capped drop can't be bought out by one address in a single transaction (or across several)."
         },
-        "HoldsCollectionHook": {
+        "HoldsSurfaceHook": {
           "address": null,
           "kind": "singleton",
-          "abi": "/abis/HoldsCollectionHook.json",
-          "docs": "/docs/collections/contracts/holds-collection-hook",
+          "abi": "/abis/HoldsSurfaceHook.json",
+          "docs": "/docs/collections/contracts/holds-surface-hook",
           "role": "A reference [mint hook](/docs/collections/contracts/i-mint-hook) gating a mint on the minter holding a token from another collection, typically an earlier collection by the same artist."
         },
         "GateHook": {
@@ -91,14 +91,14 @@
           "kind": "interface",
           "abi": "/abis/IRenderer.json",
           "docs": "/docs/collections/contracts/i-renderer",
-          "role": "IRenderer is the interface a contract implements to occupy a collection's renderer slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [Collection](/docs/collections/contracts/collection) core."
+          "role": "IRenderer is the interface a contract implements to occupy a collection's renderer slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [Surface](/docs/collections/contracts/surface) core."
         },
-        "ICollectionView": {
+        "ISurfaceView": {
           "address": null,
           "kind": "interface",
-          "abi": "/abis/ICollectionView.json",
-          "docs": "/docs/collections/contracts/i-collection-view",
-          "role": "ICollectionView is the read surface a collection exposes for its swappable slots, [renderer](/docs/collections/contracts/i-renderer), [price strategy](/docs/collections/contracts/i-price-strategy), and any minter, to read without depending on the full [Collection](/docs/collections/contracts/collection) ABI."
+          "abi": "/abis/ISurfaceView.json",
+          "docs": "/docs/collections/contracts/i-surface-view",
+          "role": "ISurfaceView is the read surface a collection exposes for its swappable slots, [renderer](/docs/collections/contracts/i-renderer), [price strategy](/docs/collections/contracts/i-price-strategy), and any minter, to read without depending on the full [Surface](/docs/collections/contracts/surface) ABI."
         },
         "IPreviewRenderer": {
           "address": null,

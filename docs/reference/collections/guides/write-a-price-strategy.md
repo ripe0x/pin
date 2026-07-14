@@ -24,9 +24,9 @@ The return value is the total price in wei for `quantity` tokens.
 
 ## Why it's view-only
 
-`priceOf` is a `view` function: it cannot write state, hold funds, or make an external call that changes anything. The core reads the quote once per mint and keeps custody of the funds itself (`Collection`'s `_mintPaid` calls `priceOf` a single time and reuses that value for both the payment check and the settlement split), so a price strategy can never introduce a theft or reentrancy path, no matter how it's written. This is a deliberate constraint from the collection system's design: value custody never leaves the core on the built-in path. A work whose economics need to hold or move funds (per-token backing, an ERC20 swap) uses an extension minter instead; see [Write a minter](/docs/collections/guides/write-a-minter).
+`priceOf` is a `view` function: it cannot write state, hold funds, or make an external call that changes anything. The core reads the quote once per mint and keeps custody of the funds itself (`Surface`'s `_mintPaid` calls `priceOf` a single time and reuses that value for both the payment check and the settlement split), so a price strategy can never introduce a theft or reentrancy path, no matter how it's written. This is a deliberate constraint from the collection system's design: value custody never leaves the core on the built-in path. A work whose economics need to hold or move funds (per-token backing, an ERC20 swap) uses an extension minter instead; see [Write a minter](/docs/collections/guides/write-a-minter).
 
-Because it's a view, a strategy is free to read anything readable: `block.basefee`, the collection's own state via `ICollectionView`, companion contracts (lock counters, attestation boards), or any other onchain data. It just can't act on what it reads.
+Because it's a view, a strategy is free to read anything readable: `block.basefee`, the collection's own state via `ISurfaceView`, companion contracts (lock counters, attestation boards), or any other onchain data. It just can't act on what it reads.
 
 ## Installing a strategy
 
@@ -46,7 +46,7 @@ pragma solidity ^0.8.24;
 
 import {IPriceStrategy} from "./interfaces/IPriceStrategy.sol";
 
-interface ICollectionOwner {
+interface ISurfaceOwner {
     function owner() external view returns (address);
 }
 
@@ -56,7 +56,7 @@ contract FixedPriceStrategy is IPriceStrategy {
     event PriceSet(address indexed collection, uint256 price);
 
     function setPrice(address collection, uint256 price) external {
-        require(msg.sender == ICollectionOwner(collection).owner(), "not collection owner");
+        require(msg.sender == ISurfaceOwner(collection).owner(), "not collection owner");
         priceOf_[collection] = price;
         emit PriceSet(collection, price);
     }
@@ -82,7 +82,7 @@ pragma solidity ^0.8.24;
 
 import {IPriceStrategy} from "./interfaces/IPriceStrategy.sol";
 
-interface ICollectionOwner {
+interface ISurfaceOwner {
     function owner() external view returns (address);
 }
 
@@ -97,7 +97,7 @@ contract BasefeeScaledStrategy is IPriceStrategy {
     event ConfigSet(address indexed collection, uint256 floor, uint256 multiplier);
 
     function setConfig(address collection, uint256 floor, uint256 multiplier) external {
-        require(msg.sender == ICollectionOwner(collection).owner(), "not collection owner");
+        require(msg.sender == ISurfaceOwner(collection).owner(), "not collection owner");
         configOf[collection] = Config({floor: floor, multiplier: multiplier});
         emit ConfigSet(collection, floor, multiplier);
     }

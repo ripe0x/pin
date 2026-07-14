@@ -1,5 +1,5 @@
 // Auto-extracted from contracts/out/IMintHook.sol/IMintHook.json.
-// Re-run: node scripts/emit-collection-abi.mjs
+// Re-run: node scripts/emit-surface-abi.mjs
 export const iMintHookAbi = [
   {
     "type": "function",

@@ -1,6 +1,4 @@
-// Auto-extracted from contracts/out/CollectionFactory.sol/CollectionFactory.json.
-// Re-run: node scripts/emit-collection-abi.mjs
-export const collectionFactoryAbi = [
+[
   {
     "type": "constructor",
     "inputs": [
@@ -29,7 +27,7 @@ export const collectionFactoryAbi = [
   },
   {
     "type": "function",
-    "name": "allCollections",
+    "name": "allSurfaces",
     "inputs": [
       {
         "name": "",
@@ -61,7 +59,7 @@ export const collectionFactoryAbi = [
   },
   {
     "type": "function",
-    "name": "createCollection",
+    "name": "createPooledSurface",
     "inputs": [
       {
         "name": "name",
@@ -81,7 +79,7 @@ export const collectionFactoryAbi = [
       {
         "name": "cfg",
         "type": "tuple",
-        "internalType": "struct CollectionConfig",
+        "internalType": "struct SurfaceConfig",
         "components": [
           {
             "name": "price",
@@ -167,7 +165,7 @@ export const collectionFactoryAbi = [
   },
   {
     "type": "function",
-    "name": "createPooledCollection",
+    "name": "createSurface",
     "inputs": [
       {
         "name": "name",
@@ -187,7 +185,7 @@ export const collectionFactoryAbi = [
       {
         "name": "cfg",
         "type": "tuple",
-        "internalType": "struct CollectionConfig",
+        "internalType": "struct SurfaceConfig",
         "components": [
           {
             "name": "price",
@@ -325,7 +323,7 @@ export const collectionFactoryAbi = [
   },
   {
     "type": "function",
-    "name": "isCollection",
+    "name": "isSurface",
     "inputs": [
       {
         "name": "",
@@ -383,7 +381,7 @@ export const collectionFactoryAbi = [
   },
   {
     "type": "function",
-    "name": "totalCollections",
+    "name": "totalSurfaces",
     "inputs": [],
     "outputs": [
       {
@@ -396,7 +394,20 @@ export const collectionFactoryAbi = [
   },
   {
     "type": "event",
-    "name": "CollectionCreated",
+    "name": "Deprecated",
+    "inputs": [
+      {
+        "name": "successor",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "SurfaceCreated",
     "inputs": [
       {
         "name": "owner",
@@ -415,19 +426,6 @@ export const collectionFactoryAbi = [
         "type": "uint8",
         "indexed": false,
         "internalType": "enum IdMode"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "Deprecated",
-    "inputs": [
-      {
-        "name": "successor",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
       }
     ],
     "anonymous": false
@@ -484,4 +482,4 @@ export const collectionFactoryAbi = [
     "name": "OwnerRequired",
     "inputs": []
   }
-] as const;
+]

@@ -1,5 +1,5 @@
 // Auto-extracted from contracts/out/GateHook.sol/GateHook.json.
-// Re-run: node scripts/emit-collection-abi.mjs
+// Re-run: node scripts/emit-surface-abi.mjs
 export const gateHookAbi = [
   {
     "type": "function",
@@ -240,7 +240,7 @@ export const gateHookAbi = [
   },
   {
     "type": "error",
-    "name": "NotCollectionAdmin",
+    "name": "NotSurfaceAdmin",
     "inputs": []
   },
   {

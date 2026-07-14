@@ -1,4 +1,6 @@
-[
+// Auto-extracted from contracts/out/Surface.sol/Surface.json.
+// Re-run: node scripts/emit-surface-abi.mjs
+export const surfaceAbi = [
   {
     "type": "function",
     "name": "REFERRAL_SHARE_BPS",
@@ -103,7 +105,7 @@
       {
         "name": "cfg",
         "type": "tuple",
-        "internalType": "struct CollectionConfig",
+        "internalType": "struct SurfaceConfig",
         "components": [
           {
             "name": "price",
@@ -170,7 +172,7 @@
       {
         "name": "status",
         "type": "uint8",
-        "internalType": "enum CollectionStatus"
+        "internalType": "enum SurfaceStatus"
       },
       {
         "name": "minted",
@@ -281,7 +283,7 @@
           {
             "name": "cfg",
             "type": "tuple",
-            "internalType": "struct CollectionConfig",
+            "internalType": "struct SurfaceConfig",
             "components": [
               {
                 "name": "price",
@@ -1267,43 +1269,6 @@
   },
   {
     "type": "event",
-    "name": "CollectionConfigured",
-    "inputs": [
-      {
-        "name": "idMode",
-        "type": "uint8",
-        "indexed": false,
-        "internalType": "enum IdMode"
-      },
-      {
-        "name": "price",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "supplyCap",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "mintStart",
-        "type": "uint64",
-        "indexed": false,
-        "internalType": "uint64"
-      },
-      {
-        "name": "mintEnd",
-        "type": "uint64",
-        "indexed": false,
-        "internalType": "uint64"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "ContractURIUpdated",
     "inputs": [],
     "anonymous": false
@@ -1423,7 +1388,7 @@
         "name": "statusAtMint",
         "type": "uint8",
         "indexed": false,
-        "internalType": "enum CollectionStatus"
+        "internalType": "enum SurfaceStatus"
       }
     ],
     "anonymous": false
@@ -1617,6 +1582,43 @@
     "type": "event",
     "name": "SupplyLocked",
     "inputs": [],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "SurfaceConfigured",
+    "inputs": [
+      {
+        "name": "idMode",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "enum IdMode"
+      },
+      {
+        "name": "price",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "supplyCap",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "mintStart",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      },
+      {
+        "name": "mintEnd",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      }
+    ],
     "anonymous": false
   },
   {
@@ -1988,4 +1990,4 @@
     "name": "ZeroQuantity",
     "inputs": []
   }
-]
+] as const;

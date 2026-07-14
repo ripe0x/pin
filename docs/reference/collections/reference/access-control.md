@@ -4,55 +4,55 @@
 
 Every state-changing function in the Collections contracts and who may call it. Generated from the per-contract references; the per-function pages carry the full behavior.
 
-## Collection
+## Surface
 
 | Function | Access |
 | --- | --- |
-| [`mint`](/docs/collections/contracts/collection#mint) | permissionless (payable; no caller gate, guarded by window/cap/payment checks) |
-| [`mintWithReferral`](/docs/collections/contracts/collection#mintwithreferral) | permissionless (payable; no caller gate, guarded by window/cap/payment checks) |
-| [`mintFor`](/docs/collections/contracts/collection#mintfor) | permissionless (payable; no caller gate, guarded by window/cap/payment checks) |
-| [`mintTo`](/docs/collections/contracts/collection#mintto) | minter-only (`msg.sender` must be an authorized extension minter, else `NotMinter`) |
-| [`burn`](/docs/collections/contracts/collection#burn) | owner-or-approved in Sequential, minter-only in Pooled (else `NotAuthorized`) |
-| [`setMintWindow`](/docs/collections/contracts/collection#setmintwindow) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
-| [`setPrice`](/docs/collections/contracts/collection#setprice) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
-| [`setRoyalty`](/docs/collections/contracts/collection#setroyalty) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
-| [`setSupplyCap`](/docs/collections/contracts/collection#setsupplycap) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
-| [`lockSupply`](/docs/collections/contracts/collection#locksupply) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
-| [`setRenderer`](/docs/collections/contracts/collection#setrenderer) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
-| [`lockRenderer`](/docs/collections/contracts/collection#lockrenderer) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
-| [`setCreators`](/docs/collections/contracts/collection#setcreators) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
-| [`setMintHook`](/docs/collections/contracts/collection#setminthook) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
-| [`setPriceStrategy`](/docs/collections/contracts/collection#setpricestrategy) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
-| [`setMinter`](/docs/collections/contracts/collection#setminter) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
-| [`addAdmin`](/docs/collections/contracts/collection#addadmin) | owner-only (`onlyOwner`, else `OwnableUnauthorizedAccount`) |
-| [`removeAdmin`](/docs/collections/contracts/collection#removeadmin) | owner, or the admin itself renouncing (else `NotAuthorized`) |
-| [`setPayoutAddress`](/docs/collections/contracts/collection#setpayoutaddress) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
-| [`notifyMetadataUpdate`](/docs/collections/contracts/collection#notifymetadataupdate) | the current renderer, or owner/admin (else `NotAuthorized`) |
-| [`withdraw`](/docs/collections/contracts/collection#withdraw) | permissionless (no caller gate; funds only ever go to the owed `account`) |
-| [`rescueStrayETH`](/docs/collections/contracts/collection#rescuestrayeth) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
-| [`initialize`](/docs/collections/contracts/collection#initialize) | deployer one-shot (`initializer`, else `InvalidInitialization`) |
-| [`transferOwnership`](/docs/collections/contracts/collection#transferownership) | owner-only (`onlyOwner`, else `OwnableUnauthorizedAccount`) |
-| [`acceptOwnership`](/docs/collections/contracts/collection#acceptownership) | pending-owner-only (`msg.sender` must be the pending owner, else `OwnableUnauthorizedAccount`) |
-| [`approve`](/docs/collections/contracts/collection#approve) | owner-or-operator-only (standard ERC721 approval authority, else an `ERC721` revert) |
-| [`setApprovalForAll`](/docs/collections/contracts/collection#setapprovalforall) | permissionless (any caller sets their own operator approval) |
-| [`transferFrom`](/docs/collections/contracts/collection#transferfrom) | owner-or-approved-only (standard ERC721 transfer authority, else `ERC721InsufficientApproval`) |
-| [`safeTransferFrom(address, address, uint256)`](/docs/collections/contracts/collection#safetransferfromaddress-address-uint256) | owner-or-approved-only (standard ERC721 transfer authority, else `ERC721InsufficientApproval`) |
-| [`safeTransferFrom(address, address, uint256, bytes)`](/docs/collections/contracts/collection#safetransferfromaddress-address-uint256-bytes) | owner-or-approved-only (standard ERC721 transfer authority, else `ERC721InsufficientApproval`) |
+| [`mint`](/docs/collections/contracts/surface#mint) | permissionless (payable; no caller gate, guarded by window/cap/payment checks) |
+| [`mintWithReferral`](/docs/collections/contracts/surface#mintwithreferral) | permissionless (payable; no caller gate, guarded by window/cap/payment checks) |
+| [`mintFor`](/docs/collections/contracts/surface#mintfor) | permissionless (payable; no caller gate, guarded by window/cap/payment checks) |
+| [`mintTo`](/docs/collections/contracts/surface#mintto) | minter-only (`msg.sender` must be an authorized extension minter, else `NotMinter`) |
+| [`burn`](/docs/collections/contracts/surface#burn) | owner-or-approved in Sequential, minter-only in Pooled (else `NotAuthorized`) |
+| [`setMintWindow`](/docs/collections/contracts/surface#setmintwindow) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
+| [`setPrice`](/docs/collections/contracts/surface#setprice) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
+| [`setRoyalty`](/docs/collections/contracts/surface#setroyalty) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
+| [`setSupplyCap`](/docs/collections/contracts/surface#setsupplycap) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
+| [`lockSupply`](/docs/collections/contracts/surface#locksupply) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
+| [`setRenderer`](/docs/collections/contracts/surface#setrenderer) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
+| [`lockRenderer`](/docs/collections/contracts/surface#lockrenderer) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
+| [`setCreators`](/docs/collections/contracts/surface#setcreators) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
+| [`setMintHook`](/docs/collections/contracts/surface#setminthook) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
+| [`setPriceStrategy`](/docs/collections/contracts/surface#setpricestrategy) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
+| [`setMinter`](/docs/collections/contracts/surface#setminter) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
+| [`addAdmin`](/docs/collections/contracts/surface#addadmin) | owner-only (`onlyOwner`, else `OwnableUnauthorizedAccount`) |
+| [`removeAdmin`](/docs/collections/contracts/surface#removeadmin) | owner, or the admin itself renouncing (else `NotAuthorized`) |
+| [`setPayoutAddress`](/docs/collections/contracts/surface#setpayoutaddress) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
+| [`notifyMetadataUpdate`](/docs/collections/contracts/surface#notifymetadataupdate) | the current renderer, or owner/admin (else `NotAuthorized`) |
+| [`withdraw`](/docs/collections/contracts/surface#withdraw) | permissionless (no caller gate; funds only ever go to the owed `account`) |
+| [`rescueStrayETH`](/docs/collections/contracts/surface#rescuestrayeth) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
+| [`initialize`](/docs/collections/contracts/surface#initialize) | deployer one-shot (`initializer`, else `InvalidInitialization`) |
+| [`transferOwnership`](/docs/collections/contracts/surface#transferownership) | owner-only (`onlyOwner`, else `OwnableUnauthorizedAccount`) |
+| [`acceptOwnership`](/docs/collections/contracts/surface#acceptownership) | pending-owner-only (`msg.sender` must be the pending owner, else `OwnableUnauthorizedAccount`) |
+| [`approve`](/docs/collections/contracts/surface#approve) | owner-or-operator-only (standard ERC721 approval authority, else an `ERC721` revert) |
+| [`setApprovalForAll`](/docs/collections/contracts/surface#setapprovalforall) | permissionless (any caller sets their own operator approval) |
+| [`transferFrom`](/docs/collections/contracts/surface#transferfrom) | owner-or-approved-only (standard ERC721 transfer authority, else `ERC721InsufficientApproval`) |
+| [`safeTransferFrom(address, address, uint256)`](/docs/collections/contracts/surface#safetransferfromaddress-address-uint256) | owner-or-approved-only (standard ERC721 transfer authority, else `ERC721InsufficientApproval`) |
+| [`safeTransferFrom(address, address, uint256, bytes)`](/docs/collections/contracts/surface#safetransferfromaddress-address-uint256-bytes) | owner-or-approved-only (standard ERC721 transfer authority, else `ERC721InsufficientApproval`) |
 
-## CollectionFactory
+## SurfaceFactory
 
 | Function | Access |
 | --- | --- |
-| [`createCollection`](/docs/collections/contracts/factory#createcollection) | permissionless (anyone may deploy; ongoing control over the result |
-| [`createPooledCollection`](/docs/collections/contracts/factory#createpooledcollection) | permissionless (ongoing control belongs to the `owner` argument) |
+| [`createSurface`](/docs/collections/contracts/factory#createsurface) | permissionless (anyone may deploy; ongoing control over the result |
+| [`createPooledSurface`](/docs/collections/contracts/factory#createpooledsurface) | permissionless (ongoing control belongs to the `owner` argument) |
 | [`deprecate`](/docs/collections/contracts/factory#deprecate) | deployer-only (`msg.sender` must be the factory deployer, else `NotDeployer`) |
 
 ## RenderAssets
 
 | Function | Access |
 | --- | --- |
-| [`setCover`](/docs/collections/contracts/render-assets#setcover) | collection owner or admin (`onlyCollectionAdmin`, else `NotCollectionAdmin`) |
-| [`setCapturer`](/docs/collections/contracts/render-assets#setcapturer) | collection owner or admin (`onlyCollectionAdmin`, else `NotCollectionAdmin`) |
+| [`setCover`](/docs/collections/contracts/render-assets#setcover) | collection owner or admin (`onlySurfaceAdmin`, else `NotSurfaceAdmin`) |
+| [`setCapturer`](/docs/collections/contracts/render-assets#setcapturer) | collection owner or admin (`onlySurfaceAdmin`, else `NotSurfaceAdmin`) |
 | [`setCaptureTemplate`](/docs/collections/contracts/render-assets#setcapturetemplate) | collection owner, admin, or granted capturer (else `NotCaptureAuthorized`) |
 | [`setCaptures`](/docs/collections/contracts/render-assets#setcaptures) | collection owner, admin, or granted capturer (else `NotCaptureAuthorized`) |
 
@@ -60,29 +60,29 @@ Every state-changing function in the Collections contracts and who may call it. 
 
 | Function | Access |
 | --- | --- |
-| [`setRoot`](/docs/collections/contracts/allowlist-hook#setroot) | owner-only (`onlyCollectionOwner`, checked against the target |
+| [`setRoot`](/docs/collections/contracts/allowlist-hook#setroot) | owner-only (`onlySurfaceOwner`, checked against the target |
 | [`afterMint`](/docs/collections/contracts/allowlist-hook#aftermint) | core-only, called by the collection itself as part of its mint |
 
 ## PerWalletCapHook
 
 | Function | Access |
 | --- | --- |
-| [`setCap`](/docs/collections/contracts/per-wallet-cap-hook#setcap) | owner-only (`onlyCollectionOwner`, checked against the target |
+| [`setCap`](/docs/collections/contracts/per-wallet-cap-hook#setcap) | owner-only (`onlySurfaceOwner`, checked against the target |
 | [`afterMint`](/docs/collections/contracts/per-wallet-cap-hook#aftermint) | core-only, called by the collection itself as part of its mint |
 
-## HoldsCollectionHook
+## HoldsSurfaceHook
 
 | Function | Access |
 | --- | --- |
-| [`setRequired`](/docs/collections/contracts/holds-collection-hook#setrequired) | owner-only (`onlyCollectionOwner`, checked against the target |
-| [`afterMint`](/docs/collections/contracts/holds-collection-hook#aftermint) | core-only, called by the collection itself as part of its mint |
+| [`setRequired`](/docs/collections/contracts/holds-surface-hook#setrequired) | owner-only (`onlySurfaceOwner`, checked against the target |
+| [`afterMint`](/docs/collections/contracts/holds-surface-hook#aftermint) | core-only, called by the collection itself as part of its mint |
 
 ## GateHook
 
 | Function | Access |
 | --- | --- |
-| [`setRoot`](/docs/collections/contracts/gate-hook#setroot) | collection owner or admin (`onlyCollectionAdmin`, checked against |
-| [`setCap`](/docs/collections/contracts/gate-hook#setcap) | collection owner or admin (same `onlyCollectionAdmin` gate as |
+| [`setRoot`](/docs/collections/contracts/gate-hook#setroot) | collection owner or admin (`onlySurfaceAdmin`, checked against |
+| [`setCap`](/docs/collections/contracts/gate-hook#setcap) | collection owner or admin (same `onlySurfaceAdmin` gate as |
 | [`afterMint`](/docs/collections/contracts/gate-hook#aftermint) | core-only, called by the collection itself as part of its mint flow |
 
 ## IMintHook

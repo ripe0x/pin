@@ -1,6 +1,4 @@
-// Auto-extracted from contracts/out/IRenderer.sol/ICollectionView.json.
-// Re-run: node scripts/emit-collection-abi.mjs
-export const iCollectionViewAbi = [
+[
   {
     "type": "function",
     "name": "config",
@@ -9,7 +7,7 @@ export const iCollectionViewAbi = [
       {
         "name": "cfg",
         "type": "tuple",
-        "internalType": "struct CollectionConfig",
+        "internalType": "struct SurfaceConfig",
         "components": [
           {
             "name": "price",
@@ -76,7 +74,7 @@ export const iCollectionViewAbi = [
       {
         "name": "status",
         "type": "uint8",
-        "internalType": "enum CollectionStatus"
+        "internalType": "enum SurfaceStatus"
       },
       {
         "name": "minted",
@@ -170,4 +168,4 @@ export const iCollectionViewAbi = [
     ],
     "stateMutability": "view"
   }
-] as const;
+]

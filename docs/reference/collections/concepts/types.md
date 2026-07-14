@@ -2,7 +2,7 @@
 
 # Types
 
-`CollectionTypes.sol` defines the enums and structs shared across the
+`SurfaceTypes.sol` defines the enums and structs shared across the
 Collection System: the collection core and the renderer and price-strategy
 interfaces. These types have no functions or events of their own, only
 fields, so they don't appear as generated contract pages; this page is
@@ -10,7 +10,7 @@ their reference.
 
 ## Enums
 
-### `CollectionStatus`
+### `SurfaceStatus`
 
 Lifecycle status, derived purely from the mint window, the supply cap, and
 the current block — never from stored state. `config()` reports it live and
@@ -39,7 +39,7 @@ for the render-context contract those renderers follow.
 
 ## Structs
 
-### `CollectionConfig`
+### `SurfaceConfig`
 
 The live collection configuration. Set at `initialize` and — except
 `idMode`, which is structural — updatable afterward through the setters
@@ -74,7 +74,7 @@ within legacy-codegen stack limits and can grow without signature churn.
 | `name` | `string` | ERC721 name |
 | `symbol` | `string` | ERC721 symbol |
 | `owner` | `address` | The collection's owner (the artist); required, cannot be zero |
-| `cfg` | `CollectionConfig` | The collection configuration |
+| `cfg` | `SurfaceConfig` | The collection configuration |
 | `defaultRenderer` | `address` | The fallback renderer; required, cannot be zero |
 | `initialMinters` | `address[]` | Extension minters granted at init, so pooled and backed forms deploy fully wired in one transaction |
 | `catalog` | `address` | The Catalog singleton used for creator confirmation; `0` disables it |

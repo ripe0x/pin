@@ -1,6 +1,6 @@
-// Auto-extracted from contracts/out/PooledCollection.sol/PooledCollection.json.
-// Re-run: node scripts/emit-collection-abi.mjs
-export const pooledCollectionAbi = [
+// Auto-extracted from contracts/out/Surface.sol/Surface.json.
+// Re-run: node scripts/emit-surface-abi.mjs
+export const surfaceAbi = [
   {
     "type": "function",
     "name": "REFERRAL_SHARE_BPS",
@@ -105,7 +105,7 @@ export const pooledCollectionAbi = [
       {
         "name": "cfg",
         "type": "tuple",
-        "internalType": "struct CollectionConfig",
+        "internalType": "struct SurfaceConfig",
         "components": [
           {
             "name": "price",
@@ -172,7 +172,7 @@ export const pooledCollectionAbi = [
       {
         "name": "status",
         "type": "uint8",
-        "internalType": "enum CollectionStatus"
+        "internalType": "enum SurfaceStatus"
       },
       {
         "name": "minted",
@@ -283,7 +283,7 @@ export const pooledCollectionAbi = [
           {
             "name": "cfg",
             "type": "tuple",
-            "internalType": "struct CollectionConfig",
+            "internalType": "struct SurfaceConfig",
             "components": [
               {
                 "name": "price",
@@ -515,20 +515,20 @@ export const pooledCollectionAbi = [
   },
   {
     "type": "function",
-    "name": "mintHook",
-    "inputs": [],
-    "outputs": [
+    "name": "mint",
+    "inputs": [
       {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
+        "name": "quantity",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
-    "stateMutability": "view"
+    "outputs": [],
+    "stateMutability": "payable"
   },
   {
     "type": "function",
-    "name": "mintToId",
+    "name": "mintFor",
     "inputs": [
       {
         "name": "to",
@@ -536,7 +536,7 @@ export const pooledCollectionAbi = [
         "internalType": "address"
       },
       {
-        "name": "tokenId",
+        "name": "quantity",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -552,7 +552,72 @@ export const pooledCollectionAbi = [
       }
     ],
     "outputs": [],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "mintHook",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "mintTo",
+    "inputs": [
+      {
+        "name": "to",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "referrer",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "hookData",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "tokenId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "mintWithReferral",
+    "inputs": [
+      {
+        "name": "quantity",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "referrer",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "hookData",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "payable"
   },
   {
     "type": "function",
@@ -1204,43 +1269,6 @@ export const pooledCollectionAbi = [
   },
   {
     "type": "event",
-    "name": "CollectionConfigured",
-    "inputs": [
-      {
-        "name": "idMode",
-        "type": "uint8",
-        "indexed": false,
-        "internalType": "enum IdMode"
-      },
-      {
-        "name": "price",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "supplyCap",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "mintStart",
-        "type": "uint64",
-        "indexed": false,
-        "internalType": "uint64"
-      },
-      {
-        "name": "mintEnd",
-        "type": "uint64",
-        "indexed": false,
-        "internalType": "uint64"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "ContractURIUpdated",
     "inputs": [],
     "anonymous": false
@@ -1360,7 +1388,7 @@ export const pooledCollectionAbi = [
         "name": "statusAtMint",
         "type": "uint8",
         "indexed": false,
-        "internalType": "enum CollectionStatus"
+        "internalType": "enum SurfaceStatus"
       }
     ],
     "anonymous": false
@@ -1554,6 +1582,43 @@ export const pooledCollectionAbi = [
     "type": "event",
     "name": "SupplyLocked",
     "inputs": [],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "SurfaceConfigured",
+    "inputs": [
+      {
+        "name": "idMode",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "enum IdMode"
+      },
+      {
+        "name": "price",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "supplyCap",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "mintStart",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      },
+      {
+        "name": "mintEnd",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      }
+    ],
     "anonymous": false
   },
   {

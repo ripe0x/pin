@@ -18,14 +18,14 @@ Read [ABIs and the protocol manifest](/docs/offchain/abis-and-manifest) for the 
 
 ## The clone model: why there's no fixed instance list
 
-Both protocols deploy per owner. Every artist collection is its own `Collection` clone from `CollectionFactory`; every auction house is its own `SovereignAuctionHouse` clone from `SovereignAuctionHouseFactory`. There is no registry of "all instances" beyond each factory itself. Treat every clone address as a first-class contract and read its own state directly.
+Both protocols deploy per owner. Every artist collection is its own `Surface` clone from `SurfaceFactory`; every auction house is its own `SovereignAuctionHouse` clone from `SovereignAuctionHouseFactory`. There is no registry of "all instances" beyond each factory itself. Treat every clone address as a first-class contract and read its own state directly.
 
 ## Discovering collections
 
 The collection factory emits one event per deploy:
 
 ```solidity
-event CollectionCreated(address indexed owner, address indexed collection);
+event SurfaceCreated(address indexed owner, address indexed collection, IdMode idMode);
 ```
 
 ```ts
@@ -35,8 +35,8 @@ import {mainnet} from 'viem/chains';
 const client = createPublicClient({chain: mainnet, transport: webSocket()});
 
 client.watchEvent({
-  address: '<COLLECTION_FACTORY_ADDRESS>',
-  event: parseAbiItem('event CollectionCreated(address indexed owner, address indexed collection)'),
+  address: '<SURFACE_FACTORY_ADDRESS>',
+  event: parseAbiItem('event SurfaceCreated(address indexed owner, address indexed collection, uint8 idMode)'),
   onLogs: (logs) => {
     for (const log of logs) console.log('new collection', log.args.collection, 'by', log.args.owner);
   },
@@ -46,12 +46,12 @@ client.watchEvent({
 For a point-in-time list, read the factory arrays:
 
 ```bash
-cast call <COLLECTION_FACTORY_ADDRESS> "totalCollections()(uint256)" --rpc-url https://ethereum-rpc.publicnode.com
-cast call <COLLECTION_FACTORY_ADDRESS> "allCollections(uint256)(address)" 0 --rpc-url https://ethereum-rpc.publicnode.com
-cast call <COLLECTION_FACTORY_ADDRESS> "isCollection(address)(bool)" 0xSomeAddress --rpc-url https://ethereum-rpc.publicnode.com
+cast call <SURFACE_FACTORY_ADDRESS> "totalSurfaces()(uint256)" --rpc-url https://ethereum-rpc.publicnode.com
+cast call <SURFACE_FACTORY_ADDRESS> "allSurfaces(uint256)(address)" 0 --rpc-url https://ethereum-rpc.publicnode.com
+cast call <SURFACE_FACTORY_ADDRESS> "isSurface(address)(bool)" 0xSomeAddress --rpc-url https://ethereum-rpc.publicnode.com
 ```
 
-`isCollection(address)` is the cheap way to confirm an address is a real collection from this factory before trusting anything it returns.
+`isSurface(address)` is the cheap way to confirm an address is a real collection from this factory before trusting anything it returns.
 
 ## Discovering auction houses
 
@@ -82,13 +82,13 @@ Or via viem with the typed ABI:
 ```ts
 import {createPublicClient, http} from 'viem';
 import {mainnet} from 'viem/chains';
-import {collectionAbi} from '@pin/abi';
+import {surfaceAbi} from '@pin/abi';
 
 const client = createPublicClient({chain: mainnet, transport: http('https://ethereum-rpc.publicnode.com')});
 
 const [cfg, status, minted] = await client.readContract({
   address: '<COLLECTION_ADDRESS>',
-  abi: collectionAbi,
+  abi: surfaceAbi,
   functionName: 'config',
 });
 ```
@@ -97,7 +97,7 @@ const [cfg, status, minted] = await client.readContract({
 
 - Deploying a collection programmatically: [Deploy a collection](/docs/collections/guides/deploy-a-collection)
 - Minting against a known collection: [Mint](/docs/collections/guides/mint)
-- Watching mint activity: subscribe to `Minted` on the collection itself, documented on [Collection](/docs/collections/contracts/collection)
+- Watching mint activity: subscribe to `Minted` on the collection itself, documented on [Surface](/docs/collections/contracts/surface)
 - Rendering a generative token identically to the onchain output: [Injection convention](/docs/collections/reference/injection-convention)
 - Deploying and running an auction house: [Deploy an auction house](/docs/auctions/guides/deploy-an-auction-house) and [Run an auction](/docs/auctions/guides/run-an-auction)
 - Watching auction activity: subscribe to `AuctionCreated`, `AuctionBid`, and `AuctionEnded` on the house, documented on [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house)

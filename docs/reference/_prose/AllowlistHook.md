@@ -25,7 +25,7 @@ against this contract without translation.
 
 ## function setRoot
 
-access: owner-only (`onlyCollectionOwner`, checked against the target
+access: owner-only (`onlySurfaceOwner`, checked against the target
 collection's current `owner()`; reverts `SC: not collection owner`
 otherwise)
 
@@ -73,7 +73,7 @@ this hook.
 The minter's Merkle proof did not verify against the collection's allowlist
 root. Raised in `beforeMint` when a non-zero root is set.
 
-## error NotCollectionAdmin
+## error NotSurfaceAdmin
 
 A hook setter was called by an address that is neither the collection's owner
 nor one of its admins. Inherited from HookBase — configuring a hook for a

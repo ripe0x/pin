@@ -1,18 +1,18 @@
 ---
 title: Deploy a collection
-description: Call the factory to deploy an owned, immutable Collection clone, and what each config field controls.
+description: Call the factory to deploy an owned, immutable Surface clone, and what each config field controls.
 ---
 
 # Deploy a collection
 
-Every collection is deployed by `CollectionFactory.createCollection`, which clones the `Collection` implementation via EIP-1167 and configures it in the same transaction. The clone is immutable: there is no proxy admin and no upgrade path. What deploys is what runs, forever. After deploy, the artist (the collection's owner) controls the four slots and the config setters; nothing about the clone itself can change.
+Every collection is deployed by `SurfaceFactory.createSurface`, which clones the `Surface` implementation via EIP-1167 and configures it in the same transaction. The clone is immutable: there is no proxy admin and no upgrade path. What deploys is what runs, forever. After deploy, the artist (the collection's owner) controls the four slots and the config setters; nothing about the clone itself can change.
 
 ```solidity
-function createCollection(
+function createSurface(
     string calldata name,
     string calldata symbol,
     address owner,
-    CollectionConfig calldata cfg,
+    SurfaceConfig calldata cfg,
     address[] calldata initialMinters,
     address[] calldata creators
 ) external returns (address collection);
@@ -20,16 +20,16 @@ function createCollection(
 
 - `name` / `symbol`: standard ERC721 metadata
 - `owner`: the artist. Taken explicitly so a deploy helper (studio backend, multisig) can deploy on an artist's behalf
-- `cfg`: the `CollectionConfig` struct, below
+- `cfg`: the `SurfaceConfig` struct, below
 - `initialMinters`: extension minters granted at init, so a pooled or backed collection deploys fully wired in one transaction. Empty for collections that sell through the built-in fixed-price path
 - `creators`: an optional initial creator listing (the owner's side of attribution), seeded on the collection at init. Each listed creator completes the handshake by claiming the collection in their own Catalog, after which `isConfirmedCreator` reads true. Empty for solo works (`owner()` is the creator)
 
-The factory emits `CollectionCreated(owner, collection)`, the single event an indexer needs for discovery, and records the address in `isCollection` / `allCollections`.
+The factory emits `SurfaceCreated(owner, collection, idMode)`, the single event an indexer needs for discovery, and records the address in `isSurface` / `allSurfaces`.
 
-## CollectionConfig fields
+## SurfaceConfig fields
 
 ```solidity
-struct CollectionConfig {
+struct SurfaceConfig {
     uint256 price;          // wei; used when priceStrategy is unset. 0 = gas only
     uint256 supplyCap;      // 0 = open supply
     uint64 mintStart;       // unix seconds; 0 = open immediately
@@ -54,16 +54,16 @@ struct CollectionConfig {
 
 ## Generative works: bring your own renderer
 
-`createCollection` takes no work-config parameter. A generative work ships as its own renderer: deploy a work-specific `IRenderer` that owns its algorithm and dependency references (however it chooses to store them), then point the collection's `renderer` slot at it — either as `cfg.renderer` at deploy or later with `setRenderer`. Edition presets and Solidity-SVG works leave `cfg.renderer` at zero (the `DefaultRenderer` fallback) or point it at a self-contained SVG renderer, where the renderer contract itself is the work. See [Write a renderer](/docs/collections/guides/write-a-renderer) and the [Injection convention](/docs/collections/reference/injection-convention) for how a generative renderer assembles its document.
+`createSurface` takes no work-config parameter. A generative work ships as its own renderer: deploy a work-specific `IRenderer` that owns its algorithm and dependency references (however it chooses to store them), then point the collection's `renderer` slot at it — either as `cfg.renderer` at deploy or later with `setRenderer`. Edition presets and Solidity-SVG works leave `cfg.renderer` at zero (the `DefaultRenderer` fallback) or point it at a self-contained SVG renderer, where the renderer contract itself is the work. See [Write a renderer](/docs/collections/guides/write-a-renderer) and the [Injection convention](/docs/collections/reference/injection-convention) for how a generative renderer assembles its document.
 
 ## Deploying with viem
 
 ```ts
 import {createWalletClient, createPublicClient, http, parseEther} from 'viem';
 import {mainnet} from 'viem/chains';
-import {collectionFactoryAbi} from '@pin/abi';
+import {surfaceFactoryAbi} from '@pin/abi';
 
-const FACTORY = '{{addr:collectionFactory}}';
+const FACTORY = '{{addr:surfaceFactory}}';
 
 const publicClient = createPublicClient({
   chain: mainnet,
@@ -90,8 +90,8 @@ const cfg = {
 
 const hash = await walletClient.writeContract({
   address: FACTORY,
-  abi: collectionFactoryAbi,
-  functionName: 'createCollection',
+  abi: surfaceFactoryAbi,
+  functionName: 'createSurface',
   // (name, symbol, owner, cfg, initialMinters, creators)
   args: ['Field Notes', 'FIELD', artistAddress, cfg, [], []],
 });
@@ -99,7 +99,7 @@ const hash = await walletClient.writeContract({
 const receipt = await publicClient.waitForTransactionReceipt({hash});
 ```
 
-The new collection's address is in the `CollectionCreated` event of the receipt's logs, and is also the return value of `createCollection` if you call it through a contract rather than an EOA transaction.
+The new collection's address is in the `SurfaceCreated` event of the receipt's logs, and is also the return value of `createSurface` if you call it through a contract rather than an EOA transaction.
 
 ## After deploy
 
@@ -108,4 +108,4 @@ The owner can still call the config setters (`setRenderer`, `setMintHook`, `setP
 - [The four slots](/docs/collections/concepts/four-slots) for what each slot controls and when it can change
 - [Mint](/docs/collections/guides/mint) for the built-in paid mint paths
 - [Write a minter](/docs/collections/guides/write-a-minter) for pooled or economics-carrying collections
-- [Collection](/docs/collections/contracts/collection) and [CollectionFactory](/docs/collections/contracts/factory) for the full generated function reference
+- [Surface](/docs/collections/contracts/surface) and [SurfaceFactory](/docs/collections/contracts/factory) for the full generated function reference

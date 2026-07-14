@@ -10,7 +10,7 @@ function mintWithReferral(uint256 quantity, address referrer, bytes calldata hoo
 ```
 
 - `mint(quantity)` mints directly to `msg.sender` with `referrer = address(0)`. Since a referral share only pays out when a referrer is credited, this path sends 100% of the price to the artist
-- `mintWithReferral(quantity, referrer, hookData)` credits `referrer` its share of the price (`REFERRAL_SHARE_BPS`, a fixed 10%) via [Collection](/docs/collections/contracts/collection)'s `_settle`. Passing `referrer = address(0)` folds the share back to the artist, same as `mint`. `hookData` is forwarded unchanged to the mint hook and, when set, the price strategy
+- `mintWithReferral(quantity, referrer, hookData)` credits `referrer` its share of the price (`REFERRAL_SHARE_BPS`, a fixed 10%) via [Surface](/docs/collections/contracts/surface)'s `_settle`. Passing `referrer = address(0)` folds the share back to the artist, same as `mint`. `hookData` is forwarded unchanged to the mint hook and, when set, the price strategy
 
 Pooled collections do not expose either path at all: `mint` and `mintWithReferral` are simply absent from the pooled final's ABI (there is no revert to hit — the function does not exist). A pooled collection sells exclusively through an authorized extension minter, which owns the id pool. See [Write a minter](/docs/collections/guides/write-a-minter).
 
@@ -63,7 +63,7 @@ cast send <COLLECTION_ADDRESS> "mintWithReferral(uint256,address,bytes)" \
 ```ts
 import {createWalletClient, createPublicClient, http, parseEther} from 'viem';
 import {mainnet} from 'viem/chains';
-import {collectionAbi} from '@pin/abi';
+import {surfaceAbi} from '@pin/abi';
 
 const COLLECTION = '<COLLECTION_ADDRESS>';
 
@@ -78,14 +78,14 @@ const walletClient = createWalletClient({
 
 const price = await publicClient.readContract({
   address: COLLECTION,
-  abi: collectionAbi,
+  abi: surfaceAbi,
   functionName: 'currentPrice',
   args: [walletClient.account.address, 1n, '0x'],
 });
 
 const hash = await walletClient.writeContract({
   address: COLLECTION,
-  abi: collectionAbi,
+  abi: surfaceAbi,
   functionName: 'mintWithReferral',
   args: [1n, referrerAddress, '0x'],
   value: price,

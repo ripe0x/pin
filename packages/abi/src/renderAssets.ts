@@ -1,5 +1,5 @@
 // Auto-extracted from contracts/out/RenderAssets.sol/RenderAssets.json.
-// Re-run: node scripts/emit-collection-abi.mjs
+// Re-run: node scripts/emit-surface-abi.mjs
 export const renderAssetsAbi = [
   {
     "type": "function",
@@ -269,7 +269,7 @@ export const renderAssetsAbi = [
   },
   {
     "type": "error",
-    "name": "NotCollectionAdmin",
+    "name": "NotSurfaceAdmin",
     "inputs": []
   }
 ] as const;
