@@ -1,16 +1,18 @@
 import "server-only"
-import { createPublicClient, decodeFunctionResult, encodeFunctionData, http, type Address } from "viem"
+import { createPublicClient, decodeFunctionResult, encodeFunctionData, http, keccak256, stringToBytes, type Address } from "viem"
 import { mainnet } from "viem/chains"
-import { catalogAbi, collectionAbi, collectionFactoryAbi, renderAssetsAbi } from "@pin/abi"
+import { catalogAbi, collectionAbi, collectionFactoryAbi, gateHookAbi, renderAssetsAbi } from "@pin/abi"
 import { ARTIST_RECORD_REGISTRY, MAINNET_CHAIN_ID, getAddressOrNull } from "@pin/addresses"
 import { fetchMetadataForUri } from "@pin/token-metadata"
 import { pgCache } from "./pg-cache"
 import {
   decodeCollectionConfig,
+  gateHookAddress,
   renderAssetsAddress,
   type Collection,
   CollectionStatus,
   IdMode,
+  ZERO_ADDRESS,
 } from "./collection"
 
 /**
@@ -377,6 +379,165 @@ export async function getCurrentPrice(
       return null
     }
   })
+}
+
+/** The mint-gate state a collection page needs. `isGateHook` means the
+ *  collection's hook is the canonical GateHook, so root/cap are readable
+ *  and the eligibility UI applies; any other nonzero hook renders the
+ *  generic gated-mint notice. */
+export type GateState = {
+  hook: Address
+  isGateHook: boolean
+  root: `0x${string}`
+  cap: string // bigint as string (serializable to client)
+}
+
+const ZERO_ROOT = ("0x" + "0".repeat(64)) as `0x${string}`
+
+/**
+ * The active gate for a collection: which hook is attached and, when it's
+ * the canonical GateHook, its live root + per-wallet cap. Config-class
+ * freshness (20s) — an artist flipping a gate mid-drop propagates on the
+ * same cadence as every other sale setting.
+ */
+export async function getGateState(address: Address): Promise<GateState | null> {
+  return pgCache(`sc-gate:${lc(address)}`, 20, async () => {
+    const client = getClient()
+    try {
+      const hook = (await client.readContract({
+        address,
+        abi: collectionAbi,
+        functionName: "mintHook",
+      })) as Address
+      if (hook === ZERO_ADDRESS) return null
+      const gate = gateHookAddress()
+      const isGateHook = !!gate && lc(hook) === lc(gate)
+      if (!isGateHook) return { hook, isGateHook: false, root: ZERO_ROOT, cap: "0" }
+      const [root, cap] = await Promise.all([
+        client.readContract({
+          address: hook,
+          abi: gateHookAbi,
+          functionName: "rootOf",
+          args: [address],
+        }),
+        client.readContract({
+          address: hook,
+          abi: gateHookAbi,
+          functionName: "capOf",
+          args: [address],
+        }),
+      ])
+      return {
+        hook,
+        isGateHook: true,
+        root: root as `0x${string}`,
+        cap: (cap as bigint).toString(),
+      }
+    } catch {
+      return null
+    }
+  })
+}
+
+/** Minimal ABI for the OPTIONAL IPreviewRenderer extension — declared
+ *  standalone so any renderer address can be probed, not just ours. */
+const previewRendererAbi = [
+  {
+    type: "function",
+    name: "previewURI",
+    stateMutability: "view",
+    inputs: [
+      { name: "collection", type: "address" },
+      { name: "tokenId", type: "uint256" },
+      { name: "seed", type: "bytes32" },
+    ],
+    outputs: [{ name: "", type: "string" }],
+  },
+] as const
+
+export type OnchainPreview = {
+  seedIndex: number
+  image: string | null
+  animationUrl: string | null
+}
+
+/** Deterministic explore seed, same string convention as the client wall
+ *  (GenerativeViews.exploreSeed) so a given index shows the same output on
+ *  either path. */
+function onchainExploreSeed(collection: Address, i: number): `0x${string}` {
+  return keccak256(stringToBytes(`${collection.toLowerCase()}:explore:${i}`))
+}
+
+/**
+ * One onchain preview from a renderer implementing the OPTIONAL
+ * IPreviewRenderer extension: previewURI(collection, nextTokenId, seed),
+ * decoded to its image/animation_url. Null when the renderer doesn't
+ * implement previews (detection is this try/catch, per repo convention).
+ *
+ * Same dedicated high-gas call path as tokenURI (never multicalled):
+ * scripty-class renderers can cost 60-120M gas per call. Long TTL — a
+ * preview for a fixed seed only changes if the renderer/work changes.
+ */
+export async function getRendererPreview(
+  collection: Address,
+  renderer: Address,
+  nextTokenId: bigint,
+  seedIndex: number,
+): Promise<OnchainPreview | null> {
+  // Long TTL: a preview for a fixed (collection, renderer, seedIndex) is
+  // immutable — the seed and the renderer bytecode fully determine it, and
+  // the renderer address is in the key, so a renderer swap gets fresh keys.
+  // Caching a day keeps a large sample pool essentially free to serve.
+  return pgCache(`sc-prev:${lc(collection)}:${lc(renderer)}:${seedIndex}`, 86_400, async () => {
+    const client = getClient()
+    const uri = await client
+      .call({
+        to: renderer,
+        data: encodeFunctionData({
+          abi: previewRendererAbi,
+          functionName: "previewURI",
+          args: [collection, nextTokenId, onchainExploreSeed(collection, seedIndex)],
+        }),
+        gas: 300_000_000n,
+      })
+      .then(({ data }) =>
+        data
+          ? (decodeFunctionResult({
+              abi: previewRendererAbi,
+              functionName: "previewURI",
+              data,
+            }) as string)
+          : null,
+      )
+      .catch(() => null)
+    if (!uri) return null
+    const meta = await fetchMetadataForUri(uri, nextTokenId, 8_000).catch(() => null)
+    if (!meta) return null
+    return {
+      seedIndex,
+      image: meta.image ?? null,
+      animationUrl: meta.animation_url ?? null,
+    }
+  })
+}
+
+/** The first `count` onchain previews, or null when the renderer doesn't
+ *  support them (probed with index 0; unsupported renderers cost exactly
+ *  one cached failed call). */
+export async function getRendererPreviews(
+  collection: Address,
+  renderer: Address,
+  nextTokenId: bigint,
+  count: number,
+): Promise<OnchainPreview[] | null> {
+  const first = await getRendererPreview(collection, renderer, nextTokenId, 0)
+  if (!first) return null
+  const rest = await Promise.all(
+    Array.from({ length: count - 1 }, (_, i) =>
+      getRendererPreview(collection, renderer, nextTokenId, i + 1),
+    ),
+  )
+  return [first, ...rest.filter((p): p is OnchainPreview => p !== null)]
 }
 
 export type RecentTokenEntry = {

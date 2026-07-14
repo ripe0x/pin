@@ -13,6 +13,7 @@
 import { type Address, formatEther, isAddress } from "viem"
 import { foundry, mainnet } from "wagmi/chains"
 import {
+  GATE_HOOK,
   RENDER_ASSETS,
   SOVEREIGN_COLLECTION_FACTORY,
   getAddressOrNull,
@@ -41,6 +42,15 @@ export function renderAssetsAddress(chainId: number = PND_CHAIN_ID): Address | n
   const env = process.env.NEXT_PUBLIC_RENDER_ASSETS
   if (env && isAddress(env)) return env as Address
   return getAddressOrNull(RENDER_ASSETS, chainId)
+}
+
+/** The canonical GateHook address (env override for local dev wins). A
+ *  collection whose mintHook equals this gets the full eligibility UI;
+ *  any other nonzero hook gets the generic gated-mint notice. */
+export function gateHookAddress(chainId: number = PND_CHAIN_ID): Address | null {
+  const env = process.env.NEXT_PUBLIC_GATE_HOOK
+  if (env && isAddress(env)) return env as Address
+  return getAddressOrNull(GATE_HOOK, chainId)
 }
 
 /**

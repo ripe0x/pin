@@ -130,6 +130,12 @@
               "description": "A reference [mint hook](/docs/collections/contracts/i-mint-hook) gating a mint on the minter holding a token from another collection, typically an earlier collection by the same artist."
             },
             {
+              "title": "GateHook",
+              "slug": "gate-hook",
+              "path": "/docs/collections/contracts/gate-hook",
+              "description": "A reference [mint hook](/docs/collections/contracts/i-mint-hook) composing a Merkle allowlist and a per-wallet cap into ONE hook."
+            },
+            {
               "title": "IMintHook",
               "slug": "i-mint-hook",
               "path": "/docs/collections/contracts/i-mint-hook",
@@ -152,6 +158,12 @@
               "slug": "i-collection-view",
               "path": "/docs/collections/contracts/i-collection-view",
               "description": "ICollectionView is the read surface a collection exposes for its swappable slots, [renderer](/docs/collections/contracts/i-renderer), [price strategy](/docs/collections/contracts/i-price-strategy), and any minter, to read without depending on the full [Collection](/docs/collections/contracts/collection) ABI."
+            },
+            {
+              "title": "IPreviewRenderer",
+              "slug": "i-preview-renderer",
+              "path": "/docs/collections/contracts/i-preview-renderer",
+              "description": "IPreviewRenderer is an OPTIONAL extension a renderer implements to render what a token WOULD look like for a caller-supplied seed, without any token existing."
             }
           ]
         },

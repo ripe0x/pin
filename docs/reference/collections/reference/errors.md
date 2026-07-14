@@ -94,6 +94,9 @@ The factory constructor was given an implementation, pooled implementation, or d
 **`NotAllowlisted`** · [AllowlistHook](/docs/collections/contracts/allowlist-hook#errors)\
 The minter's Merkle proof did not verify against the collection's allowlist root.
 
+**`NotAllowlisted`** · [GateHook](/docs/collections/contracts/gate-hook#errors)\
+The minter's Merkle proof did not verify against the collection's allowlist root.
+
 **`NotAnAdmin`** · [Collection](/docs/collections/contracts/collection#errors)\
 `removeAdmin` was called for an account that is not currently an admin.
 
@@ -104,6 +107,9 @@ A management function gated `onlyOwnerOrAdmin` was called by neither the owner n
 A capture write was attempted by an address that is not the collection's owner, one of its admins, or a granted capturer.
 
 **`NotCollectionAdmin`** · [AllowlistHook](/docs/collections/contracts/allowlist-hook#errors)\
+A hook setter was called by an address that is neither the collection's owner nor one of its admins.
+
+**`NotCollectionAdmin`** · [GateHook](/docs/collections/contracts/gate-hook#errors)\
 A hook setter was called by an address that is neither the collection's owner nor one of its admins.
 
 **`NotCollectionAdmin`** · [HoldsCollectionHook](/docs/collections/contracts/holds-collection-hook#errors)\
@@ -165,6 +171,9 @@ The ETH transfer inside `rescueStrayETH` reverted.
 
 **`Underpayment`** · [Collection](/docs/collections/contracts/collection#errors)\
 A mint with a price strategy set sent less than the strategy's resolved price.
+
+**`WalletCapExceeded`** · [GateHook](/docs/collections/contracts/gate-hook#errors)\
+The mint would push the wallet's running count for this collection past the per-wallet cap.
 
 **`WalletCapExceeded`** · [PerWalletCapHook](/docs/collections/contracts/per-wallet-cap-hook#errors)\
 The mint would push the wallet's running count for this collection past the per-wallet cap.

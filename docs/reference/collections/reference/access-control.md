@@ -77,6 +77,14 @@ Every state-changing function in the Collections contracts and who may call it. 
 | [`setRequired`](/docs/collections/contracts/holds-collection-hook#setrequired) | owner-only (`onlyCollectionOwner`, checked against the target |
 | [`afterMint`](/docs/collections/contracts/holds-collection-hook#aftermint) | core-only, called by the collection itself as part of its mint |
 
+## GateHook
+
+| Function | Access |
+| --- | --- |
+| [`setRoot`](/docs/collections/contracts/gate-hook#setroot) | collection owner or admin (`onlyCollectionAdmin`, checked against |
+| [`setCap`](/docs/collections/contracts/gate-hook#setcap) | collection owner or admin (same `onlyCollectionAdmin` gate as |
+| [`afterMint`](/docs/collections/contracts/gate-hook#aftermint) | core-only, called by the collection itself as part of its mint flow |
+
 ## IMintHook
 
 | Function | Access |

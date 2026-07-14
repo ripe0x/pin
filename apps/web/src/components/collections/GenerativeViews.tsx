@@ -15,11 +15,19 @@
  *
  * RecentMintsGrid: latest mints rendered from their real seeds, linking to
  * their token pages.
+ *
+ * useRenderContext / toWorkInput / entryTokenData / exploreSeed are also
+ * exported as shared render plumbing for other generative surfaces (mint
+ * reveal, mosaic-style heroes) that need the same resolver/gunzip wiring and
+ * seed conventions without duplicating them. `entryTokenData` marks a real
+ * mint's render `context: "token"`; `exploreSeed` produces the throwaway
+ * example seeds an explore surface walks (each surface uses a distinct index
+ * offset so their samples never collide).
  */
 
 import Link from "next/link"
 import { useMemo } from "react"
-import { keccak256 } from "viem"
+import { keccak256, stringToBytes } from "viem"
 import type { Address, PublicClient } from "viem"
 import { useChainId, usePublicClient } from "wagmi"
 
@@ -37,7 +45,7 @@ export type RenderEntry = {
   seed: `0x${string}`
 }
 
-function useRenderContext() {
+export function useRenderContext() {
   const client = usePublicClient()
   const chainId = useChainId()
   const resolver = useMemo(
@@ -48,11 +56,11 @@ function useRenderContext() {
   return { resolver, gunzip, chainId }
 }
 
-function toWorkInput(work: WorkConfig): WorkInput {
+export function toWorkInput(work: WorkConfig): WorkInput {
   return { code: work.code, deps: work.deps, injectionVersion: work.injectionVersion }
 }
 
-function entryTokenData(
+export function entryTokenData(
   entry: RenderEntry,
   collection: Address,
   chainId: number,
@@ -64,7 +72,16 @@ function entryTokenData(
     collection: collection.toLowerCase(),
     chainId,
     version,
+    // A real minted token's seed: this is the canonical render.
+    context: "token",
   }
+}
+
+/** Deterministic explore seed i for a collection: stable across visits,
+ *  distinct per collection, clearly a throwaway (never a token's seed).
+ *  Each explore surface offsets its index range so samples never collide. */
+export function exploreSeed(collection: Address, i: number): `0x${string}` {
+  return keccak256(stringToBytes(`${collection.toLowerCase()}:explore:${i}`))
 }
 
 export function GenerativeHero({
@@ -88,6 +105,7 @@ export function GenerativeHero({
       collection: collection.toLowerCase(),
       chainId,
       version: work.injectionVersion,
+      context: "preview",
     }
   }, [latest, collection, chainId, work.injectionVersion])
 

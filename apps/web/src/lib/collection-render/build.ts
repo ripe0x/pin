@@ -19,14 +19,16 @@
  * definition; the fork e2e (web plan D8) asserts equality.
  */
 
-import { CODE_KIND } from "./types";
+// .ts extensions so Node's strip-types test runner can resolve these
+// directly (allowImportingTsExtensions is on; the bundler is fine either way).
+import { CODE_KIND } from "./types.ts";
 import type {
   BuildOptions,
   CodeRefLike,
   ContentResolver,
   TokenData,
   WorkInput,
-} from "./types";
+} from "./types.ts";
 
 /** GenerativeRenderer's single head tag, exact content. */
 export const HEAD_STYLE_CONTENT =
@@ -48,7 +50,9 @@ export function buildContextJs(t: TokenData): string {
     String(t.chainId) +
     ',"version":' +
     String(t.version) +
-    "};"
+    ',"context":"' +
+    t.context +
+    '"};'
   );
 }
 

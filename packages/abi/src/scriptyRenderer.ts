@@ -196,6 +196,35 @@ export const scriptyRendererAbi = [
   },
   {
     "type": "function",
+    "name": "previewURI",
+    "inputs": [
+      {
+        "name": "collection",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "tokenId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "seed",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "renderAssets",
     "inputs": [],
     "outputs": [

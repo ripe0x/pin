@@ -32,6 +32,13 @@ export type WorkInput = {
 };
 
 /**
+ * Why a document is being rendered (injection convention, additive in v1):
+ * "token" = canonical render of a real token; "preview" = exploratory
+ * render from a throwaway seed; "capture" = headless static-image capture.
+ */
+export type TokenContext = "token" | "preview" | "capture";
+
+/**
  * The injected context object, exactly as GenerativeRenderer emits it.
  * hash and tokenId are Art Blocks compatible; see the convention doc.
  */
@@ -45,6 +52,8 @@ export type TokenData = {
   chainId: number;
   /** Echoes WorkConfig.injectionVersion. */
   version: number;
+  /** Why this document is rendered; real tokens inject "token". */
+  context: TokenContext;
 };
 
 /**

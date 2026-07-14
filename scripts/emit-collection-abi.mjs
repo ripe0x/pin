@@ -81,6 +81,13 @@ emit({
   exportName: "holdsCollectionHookAbi",
   outFiles: ["packages/abi/src/holdsCollectionHook.ts"],
 });
+// Merkle allowlist + per-wallet cap composed into one hook (the two gates a
+// real gated drop typically wants at once).
+emit({
+  artifact: "GateHook.sol/GateHook.json",
+  exportName: "gateHookAbi",
+  outFiles: ["packages/abi/src/gateHook.ts"],
+});
 
 // Render-land registry of static display assets (covers + captures).
 emit({
@@ -111,4 +118,11 @@ emit({
   artifact: "IRenderer.sol/ICollectionView.json",
   exportName: "iCollectionViewAbi",
   outFiles: ["packages/abi/src/iCollectionView.ts"],
+});
+// OPTIONAL renderer extension: render what a token WOULD look like for a
+// caller-supplied seed, without any token existing (previewURI).
+emit({
+  artifact: "IPreviewRenderer.sol/IPreviewRenderer.json",
+  exportName: "iPreviewRendererAbi",
+  outFiles: ["packages/abi/src/iPreviewRenderer.ts"],
 });
