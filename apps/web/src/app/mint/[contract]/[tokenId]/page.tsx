@@ -105,11 +105,13 @@ export default async function MintPiecePage({ params }: { params: Params }) {
           <section className="py-5 border-b border-gray-100 space-y-2 text-[11px] font-mono">
             <Fact label={`${desc.tokenNoun} #`} value={String(piece.tokenId)} />
             <Fact label="Owner" value={piece.owner ? shortAddress(piece.owner) : "—"} />
-            <Fact label="Contract" value={shortAddress(desc.address)} />
+            {/* The NFT contract this token lives on — Homage's separate pooled
+                collection, not the mint engine `desc.address` resolves to. */}
+            <Fact label="Contract" value={shortAddress(desc.tokenContract?.address ?? desc.address)} />
             <Fact label="Art" value="Fully onchain" />
             <div className="pt-1">
               <a
-                href={evmNowAddressUrl(desc.address, desc.chainId)}
+                href={evmNowAddressUrl(desc.tokenContract?.address ?? desc.address, desc.chainId)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-[10px] uppercase tracking-wider text-gray-400 underline hover:text-fg"

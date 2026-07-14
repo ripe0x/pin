@@ -183,16 +183,23 @@ export function useMintEngine(
   const isPending = isWritePending || isTxPending
 
   // ── post-mint reveal (2.4) — pure parse of the already-fetched receipt ────
+  // The Transfer/announce log the reveal watches is emitted by the TOKEN
+  // contract — Homage's separate pooled collection, not the mint engine
+  // `desc.address` resolves to (which has no ERC-721 surface at all).
+  // `tokenContract` falls back to `{ address, abi }` for single-contract
+  // collections (Vouch), so this is a no-op there.
+  const tokenAddress = desc?.tokenContract?.address ?? desc?.address
+  const tokenAbi = desc?.tokenContract?.abi ?? desc?.abi
   const revealedTokenId = useMemo(() => {
-    if (!desc?.reveal || !isSuccess || !receipt) return null
+    if (!desc?.reveal || !isSuccess || !receipt || !tokenAddress || !tokenAbi) return null
     return extractRevealTokenId({
       reveal: desc.reveal,
       logs: receipt.logs,
-      collection: desc.address,
-      abi: desc.abi,
+      collection: tokenAddress,
+      abi: tokenAbi,
       minter: address,
     })
-  }, [desc?.reveal, desc?.address, desc?.abi, isSuccess, receipt, address])
+  }, [desc?.reveal, tokenAddress, tokenAbi, isSuccess, receipt, address])
 
   const quoted = quoteKey !== null
   const price = quoted && quoteState.quote ? quoteState.quote.value : BigInt(snapshot.priceWei)

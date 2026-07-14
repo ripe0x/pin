@@ -13,12 +13,24 @@
  * the same economics: claim (punk holders mint their own id), allowlist
  * (merkle-gated random draw), public (anyone, per-wallet escalating fee).
  *
+ * SOVEREIGN TWO-CONTRACT SHAPE: Homage was rebuilt from a single monolith
+ * into `HomageMinter` (the mint engine — writes, economics, schedule,
+ * allowlist, supply, redeem) minting INTO a separate pooled PND Collection
+ * (the ERC-721 — ownerOf/balanceOf/tokenURI/Transfer only). Every read/write
+ * below targets whichever address actually holds that state: mint/claim/
+ * redeem/economics/schedule/allowlist/reveal all hit `HOMAGE_MINTER_ADDRESS`;
+ * ownership/tokenURI/Transfer hit `HOMAGE_COLLECTION_ADDRESS` via the
+ * descriptor's `tokenContract` field (mint-collections.ts / mint-onchain.ts).
+ * The renderer (`HOMAGE_RENDERER`) was already a third, separate address in
+ * this descriptor pre-rebuild (a sample/preview render, not the collection's
+ * own tokenURI) and is unaffected by the split.
+ *
  * Ported (not reinvented) from the Homage repo working tree
- * (/Users/dd/CascadeProjects/homage to the punk): quote math from
- * `web/lib/homage.ts` (the pure scaling lives in ../homage-quote-math.ts),
- * ownership checks from `web/lib/useHomageMint.ts`, proofs from
- * `web/lib/allowlist.ts`. The merkle artifact is vendored BYTE-IDENTICAL —
- * see the comment on the import below.
+ * (/Users/dd/CascadeProjects/homage to the punk, sovereign-rebuild branch):
+ * quote math from `web/lib/homage.ts` (the pure scaling lives in
+ * ../homage-quote-math.ts), ownership checks from `web/lib/useHomageMint.ts`,
+ * proofs from `web/lib/allowlist.ts`. The merkle artifact is vendored
+ * BYTE-IDENTICAL — see the comment on the import below.
  *
  * RPC discipline (per call site):
  *   - quote provider: 1 multicall (slot0 + fee) + 1 quoter eth_call, refreshed
@@ -33,7 +45,7 @@
  */
 
 import { isAddress, parseAbi, zeroAddress, zeroHash, type Address, type PublicClient } from "viem"
-import { homageAbi, permanenceRendererAbi } from "@pin/abi"
+import { homageMinterAbi, homageCollectionAbi, homageRendererAbi } from "@pin/abi"
 import type { Abi } from "viem"
 import type { MintCollection } from "../mint-collections"
 import {
@@ -114,10 +126,21 @@ const v4QuoterAbi = parseAbi([
 
 // ── env-driven addresses ──────────────────────────────────────────────────────
 // LITERAL `process.env.NEXT_PUBLIC_*` reads (build-time inlining — a dynamic
-// lookup stays undefined client-side and silently drops the descriptor). Both
-// must be present + valid for the venue to register; unsetting them is the
-// launch rollback lever (the whole /mint/homage surface disappears cleanly).
-const HOMAGE_ADDRESS = process.env.NEXT_PUBLIC_HOMAGE_ADDRESS
+// lookup stays undefined client-side and silently drops the descriptor). ALL
+// THREE must be present + valid for the venue to register; unsetting any one
+// is the launch rollback lever (the whole /mint/homage surface disappears
+// cleanly). Two addresses are the sovereign-rebuild split (was one monolith):
+//   HOMAGE_MINTER     — HomageMinter: mint/claim/redeem, economics, schedule,
+//                       allowlist, supply, isMinted, reveal. The descriptor's
+//                       primary `contract` — what MintPanel actually mints on.
+//   HOMAGE_COLLECTION — the pooled PND Collection (the ERC-721): ownerOf,
+//                       balanceOf, tokenURI, Transfer. Threaded through the
+//                       descriptor's `tokenContract` field.
+// HOMAGE_RENDERER was already a third, separate address pre-rebuild (a
+// sample/preview render of any punk id, not the collection's own tokenURI)
+// and is unaffected by the split.
+const HOMAGE_MINTER_ADDRESS = process.env.NEXT_PUBLIC_HOMAGE_MINTER_ADDRESS
+const HOMAGE_COLLECTION_ADDRESS = process.env.NEXT_PUBLIC_HOMAGE_COLLECTION_ADDRESS
 const HOMAGE_RENDERER = process.env.NEXT_PUBLIC_HOMAGE_RENDERER
 
 /** Sample punk rendered as the collection hero (any id renders — the art is
@@ -144,18 +167,20 @@ export function allowlistProofFor(address: string): `0x${string}`[] | null {
 // with the reason, per the registry contract.
 
 registerQuoteProvider("homage-quote", async ({ client, wallet, phaseKey }) => {
-  if (!HOMAGE_ADDRESS || !isAddress(HOMAGE_ADDRESS)) throw new Error("Homage is not configured")
-  const homage = HOMAGE_ADDRESS as Address
+  if (!HOMAGE_MINTER_ADDRESS || !isAddress(HOMAGE_MINTER_ADDRESS))
+    throw new Error("Homage is not configured")
+  const minter = HOMAGE_MINTER_ADDRESS as Address
   const isPublic = phaseKey === "public" || phaseKey === null
 
-  // Pool spot + the phase's ETH fee in one multicall.
+  // Pool spot + the phase's ETH fee in one multicall. Fee reads hit the
+  // MINTER — economics live there, not the collection.
   const [slot0Res, feeRes] = await client.multicall({
     allowFailure: true,
     contracts: [
       { address: V4_STATE_VIEW, abi: stateViewAbi, functionName: "getSlot0", args: [HOMAGE_POOL_ID] },
       isPublic
-        ? { address: homage, abi: homageAbi as Abi, functionName: "mintFeeOf", args: [wallet ?? zeroAddress] }
-        : { address: homage, abi: homageAbi as Abi, functionName: "baseFee" },
+        ? { address: minter, abi: homageMinterAbi as Abi, functionName: "mintFeeOf", args: [wallet ?? zeroAddress] }
+        : { address: minter, abi: homageMinterAbi as Abi, functionName: "baseFee" },
     ],
   })
   if (slot0Res.status !== "success") throw new Error("pool price unavailable")
@@ -275,11 +300,12 @@ async function claimDelegations(
 }
 
 registerEligibilityProvider("homage-claim", async ({ client, wallet }) => {
-  if (!HOMAGE_ADDRESS || !isAddress(HOMAGE_ADDRESS)) throw new Error("Homage is not configured")
+  if (!HOMAGE_MINTER_ADDRESS || !isAddress(HOMAGE_MINTER_ADDRESS))
+    throw new Error("Homage is not configured")
   if (!wallet) {
     return { eligible: false, reason: "Connect the wallet that holds your punk." }
   }
-  const homage = HOMAGE_ADDRESS as Address
+  const minter = HOMAGE_MINTER_ADDRESS as Address
 
   // Wrapped punks held directly: ERC721Enumerable, so balanceOf +
   // tokenOfOwnerByIndex lists them exactly — no log scan. (The market reports
@@ -365,13 +391,14 @@ registerEligibilityProvider("homage-claim", async ({ client, wallet }) => {
     })
 
   // Filter to punks whose homage is still unminted (tokenId == punkId).
+  // isMinted is the minter's escrow-backed record, not a collection read.
   let punks: HomagePunkPick[] = []
   if (candidates.length > 0) {
     const mintedReads = await client.multicall({
       allowFailure: true,
       contracts: candidates.map((c) => ({
-        address: homage,
-        abi: homageAbi as Abi,
+        address: minter,
+        abi: homageMinterAbi as Abi,
         functionName: "isMinted",
         args: [c.id] as const,
       })),
@@ -434,13 +461,14 @@ export async function verifyPunkClaimable(
   id: number,
   wallet: Address,
 ): Promise<{ ok: boolean; reason?: string; wrapped?: boolean; route?: HomageClaimRoute }> {
-  if (!HOMAGE_ADDRESS || !isAddress(HOMAGE_ADDRESS)) return { ok: false, reason: "not configured" }
-  const homage = HOMAGE_ADDRESS as Address
+  if (!HOMAGE_MINTER_ADDRESS || !isAddress(HOMAGE_MINTER_ADDRESS))
+    return { ok: false, reason: "not configured" }
+  const minter = HOMAGE_MINTER_ADDRESS as Address
   const [ownerRes, mintedRes] = await client.multicall({
     allowFailure: true,
     contracts: [
       { address: CRYPTOPUNKS_MARKET, abi: punksMarketAbi, functionName: "punkIndexToAddress", args: [BigInt(id)] },
-      { address: homage, abi: homageAbi as Abi, functionName: "isMinted", args: [BigInt(id)] },
+      { address: minter, abi: homageMinterAbi as Abi, functionName: "isMinted", args: [BigInt(id)] },
     ],
   })
   if (ownerRes.status !== "success" || mintedRes.status !== "success")
@@ -510,19 +538,20 @@ export function isSlippageError(e: unknown): boolean {
 type HomageAllowlistData = { proof: `0x${string}`[]; remaining: number; max: number }
 
 registerEligibilityProvider("homage-allowlist", async ({ client, wallet }) => {
-  if (!HOMAGE_ADDRESS || !isAddress(HOMAGE_ADDRESS)) throw new Error("Homage is not configured")
+  if (!HOMAGE_MINTER_ADDRESS || !isAddress(HOMAGE_MINTER_ADDRESS))
+    throw new Error("Homage is not configured")
   if (!wallet) return { eligible: false, reason: "Connect a wallet to check the allowlist." }
   const proof = allowlistProofFor(wallet)
   if (!proof) return { eligible: false, reason: "This wallet is not on the allowlist." }
-  const homage = HOMAGE_ADDRESS as Address
+  const minter = HOMAGE_MINTER_ADDRESS as Address
 
   // Remaining cap + a root sanity check, one multicall once per wallet+phase.
   const [rootRes, maxRes, usedRes] = await client.multicall({
     allowFailure: true,
     contracts: [
-      { address: homage, abi: homageAbi as Abi, functionName: "allowlistRoot" },
-      { address: homage, abi: homageAbi as Abi, functionName: "maxPerAllowlisted" },
-      { address: homage, abi: homageAbi as Abi, functionName: "allowlistMinted", args: [wallet] },
+      { address: minter, abi: homageMinterAbi as Abi, functionName: "allowlistRoot" },
+      { address: minter, abi: homageMinterAbi as Abi, functionName: "maxPerAllowlisted" },
+      { address: minter, abi: homageMinterAbi as Abi, functionName: "allowlistMinted", args: [wallet] },
     ],
   })
   // Guard against a rotated onchain root: baked proofs would revert with
@@ -556,7 +585,8 @@ registerArgsBuilder("homage-allowlist", ({ eligibilityData }) => {
 // ── descriptor factory (consumed by mint-collections.ts) ─────────────────────
 
 export function homageCollection(chainId: number): MintCollection | null {
-  if (!HOMAGE_ADDRESS || !isAddress(HOMAGE_ADDRESS)) return null
+  if (!HOMAGE_MINTER_ADDRESS || !isAddress(HOMAGE_MINTER_ADDRESS)) return null
+  if (!HOMAGE_COLLECTION_ADDRESS || !isAddress(HOMAGE_COLLECTION_ADDRESS)) return null
   if (!HOMAGE_RENDERER || !isAddress(HOMAGE_RENDERER)) return null
   return {
     slug: "homage",
@@ -564,8 +594,18 @@ export function homageCollection(chainId: number): MintCollection | null {
     description:
       "Redeemable, $111-backed homages to the CryptoPunks: one per punk, art derived from its pixels. Your ETH is swapped onchain into 50,000 $111 and escrowed inside the piece; redeem any time to burn it and take the coins back out.",
     chainId,
-    address: HOMAGE_ADDRESS as Address,
-    abi: homageAbi as unknown as Abi,
+    // The descriptor's primary `contract`: mint/claim/redeem/economics/
+    // schedule/allowlist/reveal all live on the MINTER. `/mint/homage`
+    // resolves by slug OR this address (resolveMintCollection), so the
+    // route's [contract] segment is the minter's address, not the
+    // collection's — curated-chrome.ts's literal env read mirrors this.
+    address: HOMAGE_MINTER_ADDRESS as Address,
+    abi: homageMinterAbi as unknown as Abi,
+    // Token-level reads (ownerOf/tokenURI/balanceOf/Transfer) live on the
+    // separate pooled PND Collection, not the minter — mint-onchain.ts's
+    // getPieceToken/getCollectionArt/getCollectionTokens and the mint
+    // engine's reveal extraction all fall back to this field.
+    tokenContract: { address: HOMAGE_COLLECTION_ADDRESS as Address, abi: homageCollectionAbi as unknown as Abi },
     mintedFn: "totalMinted", // SUPPLY - remaining: the OUTSTANDING count (redeem decrements)
     cap: { kind: "getter", fn: "SUPPLY" },
     price: { kind: "quote", provider: "homage-quote" },
@@ -614,13 +654,13 @@ export function homageCollection(chainId: number): MintCollection | null {
     hero: {
       kind: "renderer-contract",
       address: HOMAGE_RENDERER as Address,
-      abi: permanenceRendererAbi as unknown as Abi,
+      abi: homageRendererAbi as unknown as Abi,
       fn: "tokenURI",
       tokenId: HERO_SAMPLE_PUNK_ID,
     },
-    // The hero is a sample punk's render, so its tokenURI name ("Permanence
-    // #3542") must NOT retitle the collection page — keep the descriptor's
-    // identity (page.tsx honors this flag).
+    // The hero is a sample punk's render, so its tokenURI name ("Homage to
+    // Punk 3542") must NOT retitle the collection page — keep the
+    // descriptor's identity (page.tsx honors this flag).
     identityFromHero: false,
     lifecyclePanel: "homage-redeem",
     tokenNoun: "homage",

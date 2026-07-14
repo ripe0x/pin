@@ -1,4 +1,5 @@
-// Client-side port of PermanenceRenderer.sol — byte-identical to the on-chain output.
+// Client-side port of HomageRenderer.sol (rendered on-chain via the
+// HomageRendererSovereign adapter) — byte-identical to the on-chain output.
 //
 // Input is the punk's raw pixels (DATA.punkImage(id): 2304 bytes RGBA, 576 pixels) + market
 // status. Everything else (distillation, rec ordering, sized-to-count geometry, SVG string) is

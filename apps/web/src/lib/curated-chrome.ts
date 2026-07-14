@@ -17,6 +17,11 @@
  * MUST have its slug + address mapped to immersive chrome here — the test
  * runner can't import the registry (extensionless imports), so this is a
  * documented invariant, exercised by curated-chrome.test.ts per collection.
+ *
+ * Homage's descriptor `address` resolves to `NEXT_PUBLIC_HOMAGE_MINTER_ADDRESS`
+ * (the sovereign-rebuild's mint engine, not the separate pooled collection —
+ * see mint-modules/homage.ts) since `/mint/[contract]` resolves by slug OR
+ * the descriptor's primary `address`.
  */
 
 export type SiteChrome = {
@@ -32,7 +37,7 @@ const DEFAULT_CHROME: SiteChrome = { navbar: "solid", footer: true, padTop: true
 const IMMERSIVE_CHROME: SiteChrome = { navbar: "overlay-dark", footer: false, padTop: false }
 
 // Literal env read (see module note). Lowercased once for path comparison.
-const HOMAGE_ADDRESS = (process.env.NEXT_PUBLIC_HOMAGE_ADDRESS ?? "").toLowerCase()
+const HOMAGE_ADDRESS = (process.env.NEXT_PUBLIC_HOMAGE_MINTER_ADDRESS ?? "").toLowerCase()
 
 /**
  * Chrome for a pathname. Only the curated COLLECTION page is immersive —

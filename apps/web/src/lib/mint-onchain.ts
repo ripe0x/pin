@@ -51,6 +51,18 @@ function getClient(): PublicClient {
 const lc = (a: string) => a.toLowerCase()
 
 /**
+ * The contract that owns TOKEN-level state (ownerOf/tokenURI/balanceOf/
+ * Transfer). Defaults to the descriptor's primary `{ address, abi }` — the
+ * single-contract shape every collection but Homage uses. Homage's
+ * `tokenContract` points at the separate pooled PND Collection: its
+ * `address`/`abi` are the mint engine (HomageMinter), which has no ERC-721
+ * surface at all.
+ */
+function tokenSide(desc: MintCollection): { address: Address; abi: MintCollection["abi"] } {
+  return desc.tokenContract ?? { address: desc.address, abi: desc.abi }
+}
+
+/**
  * Live-metadata TTLs (2.7). When a collection declares `liveMetadata`, its
  * tokenURI output changes with onchain state, so reads are cached at the
  * declared short TTL and NEVER persisted as canonical — everything below is
@@ -359,7 +371,7 @@ export async function getCollectionArt(desc: MintCollection): Promise<TokenArt |
     const uri =
       desc.hero.kind === "renderer-contract"
         ? await readUriString(client, desc.hero.address, desc.hero.abi, desc.hero.fn, desc.hero.tokenId)
-        : await readUriString(client, desc.address, desc.abi, "tokenURI", desc.hero.tokenId)
+        : await readUriString(client, tokenSide(desc).address, tokenSide(desc).abi, "tokenURI", desc.hero.tokenId)
     if (!uri) return null
     return artFromJson(decodeDataUriJson(uri))
   })
@@ -548,9 +560,10 @@ export async function getCollectionTokens(
     minted = minted.slice(0, limit)
     if (minted.length === 0) return []
 
+    const tc = tokenSide(desc)
     const calls: ContractFunctionParameters[] = minted.map((m) => ({
-      address: desc.address,
-      abi: desc.abi,
+      address: tc.address,
+      abi: tc.abi,
       functionName: "tokenURI",
       args: [BigInt(m.tokenId)],
     }))
@@ -578,11 +591,14 @@ export async function getPieceToken(
   return pgCache(`mint-piece:${lc(desc.address)}:${tokenId.toString()}`, pieceTtlSec(desc, 45), async () => {
     const client = getClient()
     const base = { address: desc.address, abi: desc.abi } as const
+    // tokenURI/ownerOf are TOKEN-level reads — Homage's separate pooled
+    // collection, everyone else's own `address`/`abi` (tokenSide falls back).
+    const tc = tokenSide(desc)
     const life = desc.lifecycle
 
     const calls: ContractFunctionParameters[] = [
-      { ...base, functionName: "tokenURI", args: [tokenId] },
-      { ...base, functionName: "ownerOf", args: [tokenId] },
+      { address: tc.address, abi: tc.abi, functionName: "tokenURI", args: [tokenId] },
+      { address: tc.address, abi: tc.abi, functionName: "ownerOf", args: [tokenId] },
     ]
     let activeIdx = -1
     let expiresIdx = -1

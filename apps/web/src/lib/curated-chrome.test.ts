@@ -9,14 +9,16 @@
  * that sets `customLayout` MUST have its slug + address mapped here.
  *
  * Env is set BEFORE the dynamic import: curated-chrome.ts reads
- * NEXT_PUBLIC_HOMAGE_ADDRESS at module scope.
+ * NEXT_PUBLIC_HOMAGE_MINTER_ADDRESS at module scope (the sovereign-rebuild's
+ * mint engine — the descriptor's primary `address` — not the separate pooled
+ * collection).
  */
 
 import { strict as assert } from "node:assert"
 import { test } from "node:test"
 
 const HOMAGE = "0x1111111111111111111111111111111111111111"
-process.env.NEXT_PUBLIC_HOMAGE_ADDRESS = HOMAGE
+process.env.NEXT_PUBLIC_HOMAGE_MINTER_ADDRESS = HOMAGE
 
 const { chromeForPath } = await import("./curated-chrome.ts")
 

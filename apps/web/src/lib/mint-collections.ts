@@ -97,6 +97,19 @@ export type MintCollection = {
   chainId: number
   address: Address
   abi: Abi
+  /**
+   * Optional separate contract for TOKEN-level reads — `ownerOf`, `tokenURI`,
+   * `balanceOf`, and the `Transfer` event a reveal watches. Most collections
+   * are one contract, so `address`/`abi` cover both the mint write AND the
+   * token reads and this stays unset. Set it when the collection is a
+   * SOVEREIGN two-contract protocol where `address` is the mint engine
+   * (writes, economics, schedule) and the ERC-721 itself is a separate
+   * contract (Homage: `address` = HomageMinter, `tokenContract` = the pooled
+   * PND Collection). Every token-level read in mint-onchain.ts / the mint
+   * engine's reveal extraction falls back to `{ address, abi }` when this is
+   * absent, so single-contract collections (Vouch) are unaffected.
+   */
+  tokenContract?: { address: Address; abi: Abi }
   // reads
   mintedFn: string // total-minted counter, e.g. totalMinted()
   cap: CapSource
