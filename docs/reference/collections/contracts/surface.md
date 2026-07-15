@@ -1237,6 +1237,14 @@ owner reschedules it with `setMintWindow`.
 
 `rescueStrayETH` found no ETH above the owed pull-payment balances to sweep.
 
+**`NotAContract(address account)`**
+
+A hook or price-strategy address is nonzero but has no code (carries the
+offending address). Raised by `initialize`, `setMintHook`, and
+`setPriceStrategy`: an EOA or typo in either slot would revert every mint on the
+ABI-decode of empty returndata, so a nonzero value must be a deployed contract.
+Zero stays legal — it means "no hook" / "fixed price".
+
 **`NotAnAdmin()`**
 
 `removeAdmin` was called for an account that is not currently an admin. A typo or

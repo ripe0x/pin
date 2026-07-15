@@ -22,6 +22,7 @@ interface ISurfaceCore {
     error OwnerRequired();
     error RendererRequired();
     error RendererNotContract(address renderer);
+    error NotAContract(address account);
     error RoyaltyTooHigh();
     error BadMintWindow();
     error ZeroMinter();

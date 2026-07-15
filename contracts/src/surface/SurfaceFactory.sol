@@ -80,6 +80,11 @@ contract SurfaceFactory {
         }
         if (pooledImplementation_.code.length == 0) revert NotAContract(pooledImplementation_);
         if (defaultRenderer_.code.length == 0) revert NotAContract(defaultRenderer_);
+        // Catalog is optional (0 disables creator confirmation), but a nonzero value must be a
+        // real contract: a mistyped/EOA/wrong-chain address passes silently here and then makes
+        // isConfirmedCreator revert forever on every collection this factory ever clones —
+        // unrecoverable, since collections are immutable and there is no setCatalog.
+        if (catalog_ != address(0) && catalog_.code.length == 0) revert NotAContract(catalog_);
         sequentialImplementation = sequentialImplementation_;
         pooledImplementation = pooledImplementation_;
         defaultRenderer = defaultRenderer_;
