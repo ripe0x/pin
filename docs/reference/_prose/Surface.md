@@ -307,7 +307,7 @@ Points the price strategy slot at a new strategy, or zero to use the stored fixe
 
 ## function setMinter
 
-access: owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`)
+access: Pooled — owner-only; Sequential — owner or admin (else `NotAuthorized`)
 
 Grants (`allowed = true`) or revokes an extension minter that may call `mintTo`
 or `mintToId`. Reverts `ZeroMinter` for the zero address, and `MinterIsLocked`
@@ -315,13 +315,17 @@ once `lockMinter` has run. A redundant call (setting a minter to the state it is
 already in) is a no-op. The Pooled form holds one minter at a time — because its
 burn authority is minter-wide, a second minter could retire a token the first
 one backs — so granting a second there reverts `TooManyMinters`; the Sequential
-form has no such cap. Authorizing a minter is the artist's visible onchain
-choice, and revoking it is the artist's lever over that minter's schedule and
-behavior. Emits `MinterSet`.
+form has no such cap. Because a Pooled collection backs real value through that
+single minter, changing the minter set on the Pooled form is **owner-only**: a
+delegated admin must not be able to rotate the minter and strand another minter's
+backed escrow. On the Sequential form (no backing) owner-or-admin applies, like
+every other setter. Authorizing a minter is the artist's visible onchain choice,
+and revoking it is the artist's lever over that minter's schedule and behavior.
+Emits `MinterSet`.
 
 ## function lockMinter
 
-access: owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`)
+access: Pooled — owner-only; Sequential — owner or admin (else `NotAuthorized`)
 
 One-way, optional (off by default): permanently freeze the minter set, so no
 minter can be granted or revoked afterward. For a backed Pooled collection this
@@ -335,9 +339,13 @@ locked. Emits `MinterLocked`.
 access: owner-only (`onlyOwner`, else `OwnableUnauthorizedAccount`)
 
 Grants a flat, full-access admin key. An admin can call every management function
-the owner can except managing the admin set and transferring ownership. Reverts
-`ZeroAccount` for the zero address and `AlreadyAdmin` for an existing admin, so
-every grant is one explicit state change with a matching event. Emits `AdminSet`.
+the owner can except managing the admin set, transferring ownership, and changing
+the minter set on a Pooled collection (owner-only there). Reverts `ZeroAccount`
+for the zero address and `AlreadyAdmin` for an existing admin, so every grant is
+one explicit state change with a matching event. A grant is **scoped to the owner
+that made it**: it stops counting the moment ownership transfers, so a new owner
+never silently inherits the old owner's keys and re-grants deliberately. Emits
+`AdminSet`.
 
 ## function removeAdmin
 
