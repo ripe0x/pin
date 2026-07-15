@@ -1,32 +1,47 @@
 /**
- * Homage ("Homage to the Punk") ABI — the subset PND's indexer needs.
+ * HomageMinter ABI — the subset PND's indexer needs.
  *
- * Fixed shared singleton (like MURI): one self-contained ERC-721 mint,
- * `tokenId == punkId`, supply 10,000, redeemable (redeem returns the id to
- * the mintable pool so tokens churn). Registered in ponder.config.ts ONLY
- * when HOMAGE_ADDRESS + HOMAGE_START_BLOCK are set (deploy-gated).
+ * Homage ("Homage to the Punk") was rebuilt from a single-contract monolith
+ * into the sovereign two-contract shape: minting/economics live on
+ * HomageMinter (this ABI); the token itself lives on a pooled PND Collection
+ * (a clone of the shared `PooledCollection`/`CollectionCore` — see
+ * abis/HomageCollection.ts), NOT a bespoke Homage-specific ERC721. HomageMinter
+ * calls `IPooledCollection(collection).mintToId(to, punkId, referrer, hookData)`
+ * to mint and `burn(punkId)` (from `ICollectionCore`) to redeem — it holds no
+ * ERC721 storage of its own.
  *
- * Events drive the homage_tokens / homage_activity / homage_config tables.
- * View functions are included for parity/debug reads; the handlers derive
- * everything they need from event args + the indexed config row, so no
- * per-event contract reads are made (unlike MURI's getArtwork).
+ * Registered in ponder.config.ts as the `HomageMinter` contract, ONLY when
+ * HOMAGE_MINTER_ADDRESS + HOMAGE_MINTER_START_BLOCK (+ the paired
+ * HomageCollection env vars) are set (deploy-gated, same pattern as before).
+ *
+ * Events drive homage_tokens / homage_activity / homage_config (Transfer
+ * comes from the separate HomageCollection contract — see that ABI/handler).
+ * View functions are included for parity/debug reads; handlers derive
+ * everything from event args + the indexed config row, so no per-event
+ * contract reads are made.
  *
  * HAND-SYNCED SNAPSHOT — pending final audit freeze (Phase 0 gate G1).
- * Generated from the Homage repo forge build output
- * (contracts/out/Homage.sol/Homage.json) at
- * /Users/dd/CascadeProjects/homage to the punk. The contract ABI is NOT
- * frozen yet: re-derive this file from the audited build before mainnet
- * deploy + Ponder redeploy. Event shapes assumed stable:
- *   Minted / Claimed  (address indexed to,  uint256 indexed punkId, uint256 ethSwapped, uint256 received111)
- *   Redeemed          (address indexed from, uint256 indexed punkId, uint256 amount111)
- *   ScheduleSet       (uint64 claimStart, uint64 allowlistStart, uint64 publicStart)
- *   AllowlistRootSet  (bytes32 root)
- *   MaxPerAllowlistedSet (uint256 max)
- *   FeeScheduleSet    (uint256 baseFee, uint256 feeGrowthBps)
- *   ExitFeeSet        (uint256 exitFee)
- *   plus standard ERC-721 Transfer.
+ * Derived from /Users/dd/CascadeProjects/homage to the punk
+ * (branch sovereign-rebuild), contracts/src/HomageMinter.sol (verbatim event
+ * declarations) and web/lib/homage.ts's homageMinterAbi (view/write
+ * functions). Re-derive from the audited build before mainnet deploy + Ponder
+ * redeploy.
+ *
+ * Renamed/removed vs the old monolith `abis/Homage.ts`:
+ *   - `IPermanenceRenderer` is gone; the renderer lives on the collection
+ *     (HomageRendererSovereign, set via CollectionFactory at deploy). No
+ *     `renderer()` view remains on HomageMinter — it reads the collection's
+ *     renderer live via `IPooledCollection(collection).renderer()` inside
+ *     svg()/svgPfp(), so there's nothing for the indexer to mirror.
+ *   - `RendererSet` event dropped (never had an indexer handler; renderer
+ *     config now belongs to the collection, not the minter).
+ *   - `tokenURI` view dropped — lives on the collection, not the minter.
+ *   - `RevealStamped` event ADDED — new in the sovereign rebuild, not present
+ *     in the old monolith. Carries the progressive-reveal stamp
+ *     (punkId, mintSeq, revealBps). NOT YET wired into a handler/schema
+ *     column in this pass — see src/Homage.ts's top comment for why.
  */
-export const homageAbi = [
+export const homageMinterAbi = [
   // ── Events ──────────────────────────────────────────────────────────
   {
     type: "event",
@@ -60,13 +75,16 @@ export const homageAbi = [
     ],
     anonymous: false,
   },
+  // Not yet consumed by a handler (see file header) — included for parity /
+  // future wiring. mintSeq is the 0-indexed mint order (SUPPLY - remaining
+  // at mint time), NOT the punk id; revealBps is the stamped reveal fraction.
   {
     type: "event",
-    name: "Transfer",
+    name: "RevealStamped",
     inputs: [
-      { name: "from", type: "address", indexed: true, internalType: "address" },
-      { name: "to", type: "address", indexed: true, internalType: "address" },
-      { name: "tokenId", type: "uint256", indexed: true, internalType: "uint256" },
+      { name: "punkId", type: "uint256", indexed: true, internalType: "uint256" },
+      { name: "mintSeq", type: "uint256", indexed: false, internalType: "uint256" },
+      { name: "revealBps", type: "uint256", indexed: false, internalType: "uint256" },
     ],
     anonymous: false,
   },
@@ -107,12 +125,8 @@ export const homageAbi = [
     inputs: [{ name: "exitFee", type: "uint256", indexed: false, internalType: "uint256" }],
     anonymous: false,
   },
-  {
-    type: "event",
-    name: "RendererSet",
-    inputs: [{ name: "renderer", type: "address", indexed: false, internalType: "address" }],
-    anonymous: false,
-  },
+  // No handler (vestigial in the old ABI too) — kept for parity since the
+  // event still exists on-chain (HomageMinter.setFeeRecipient).
   {
     type: "event",
     name: "FeeRecipientSet",
@@ -221,23 +235,9 @@ export const homageAbi = [
   },
   {
     type: "function",
-    name: "renderer",
-    inputs: [],
-    outputs: [{ name: "", type: "address", internalType: "contract IPermanenceRenderer" }],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
     name: "feeRecipient",
     inputs: [],
     outputs: [{ name: "", type: "address", internalType: "address" }],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "tokenURI",
-    inputs: [{ name: "id", type: "uint256", internalType: "uint256" }],
-    outputs: [{ name: "", type: "string", internalType: "string" }],
     stateMutability: "view",
   },
 ] as const

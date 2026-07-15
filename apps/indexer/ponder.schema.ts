@@ -362,13 +362,16 @@ export const muriTokens = onchainTable(
   }),
 )
 
-// ─── Homage ("Homage to the Punk") — fixed shared singleton ──────────────
-// Deploy-gated: only populated once HOMAGE_ADDRESS + HOMAGE_START_BLOCK are
-// set in the indexer env (see ponder.config.ts). `tokenId == punkId` (1:1
-// with CryptoPunks, supply 10,000). redeem() burns a homage and returns its
-// id to the mintable pool, so ids CHURN — a punkId can be minted, redeemed,
-// and re-minted. Web reads the phase schedule + supply from these tables
-// (Postgres), not RPC (indexer-first).
+// ─── Homage ("Homage to the Punk") — fixed shared singleton pair ─────────
+// Sovereign two-contract shape: HomageMinter (mint/economics) + HomageCollection
+// (the pooled ERC721 token). Deploy-gated: only populated once
+// HOMAGE_MINTER_ADDRESS + HOMAGE_MINTER_START_BLOCK + HOMAGE_COLLECTION_ADDRESS
+// + HOMAGE_COLLECTION_START_BLOCK are all set in the indexer env (see
+// ponder.config.ts). `tokenId == punkId` (1:1 with CryptoPunks, supply
+// 10,000). redeem() burns a homage and returns its id to the mintable pool,
+// so ids CHURN — a punkId can be minted, redeemed, and re-minted. Web reads
+// the phase schedule + supply from these tables (Postgres), not RPC
+// (indexer-first).
 
 // Per-punkId current state. One row per punkId ever minted; `outstanding`
 // flips false on redeem and true again on the next mint. Because ids churn,

@@ -9,7 +9,8 @@ import { mintFactoryAbi } from "./abis/MintFactory"
 import { tlUniversalDeployerAbi } from "./abis/TLUniversalDeployer"
 import { superrareNftAbi } from "./abis/SuperRareNFT"
 import { muriProtocolAbi } from "./abis/MURIProtocol"
-import { homageAbi } from "./abis/Homage"
+import { homageMinterAbi } from "./abis/HomageMinter"
+import { homageCollectionAbi } from "./abis/HomageCollection"
 
 /**
  * PND v2 Ponder scope — REDUCED from v1.
@@ -79,38 +80,71 @@ const MURI_PROTOCOL_ADDRESS =
 const MURI_PROTOCOL_DEPLOY_BLOCK = 23_754_750
 
 // Homage ("Homage to the Punk") — fixed shared singleton, DEPLOY-GATED.
-// Not deployed yet, so it is registered ONLY when both HOMAGE_ADDRESS and
-// HOMAGE_START_BLOCK are set in the env. Until then the indexer runs
-// exactly as before (the contract entry is omitted, no extra RPC work).
-// At launch: set HOMAGE_ADDRESS=<deployed contract> and
-// HOMAGE_START_BLOCK=<deploy block> and redeploy Ponder — backfill from the
-// deploy block is trivial (single fixed contract, low event volume).
+// Not deployed yet, so it is registered ONLY when all four env vars below
+// are set. Until then the indexer runs exactly as before (both contract
+// entries are omitted, no extra RPC work).
+//
+// Rebuilt from a single-contract monolith into the sovereign two-contract
+// shape (see AGENTS.md "PND Surface System"): the token lives on a pooled
+// PND Collection (HomageCollection, a CollectionFactory clone — Transfer
+// only) and minting/economics live on a separate HomageMinter engine
+// (Minted/Claimed/Redeemed/RevealStamped + the schedule/fee setters). Both
+// are "fixed shared singleton" contracts in AGENTS.md's sense (like MURI),
+// not worker-scanned long-tail clones, so both get a direct Ponder
+// subscription here rather than going through the (not yet built) generic
+// Surface `factory()` indexing path — see abis/HomageCollection.ts's header
+// for why that's a deliberate, flagged call rather than an oversight.
+//
+// The whole pair is gated atomically (all 4 vars or none) so we never run
+// with one side indexed and the other missing.
+// At launch: set all four and redeploy Ponder — backfill from the deploy
+// blocks is trivial (two fixed contracts, low event volume).
 //
 // Env is the single wiring lever (mirrors PNDEditionsFactory's post-deploy
 // story); no address/block is hardcoded because neither exists pre-audit.
-const HOMAGE_ADDRESS_RAW = process.env.HOMAGE_ADDRESS
-const HOMAGE_START_BLOCK_RAW = process.env.HOMAGE_START_BLOCK
-const HOMAGE_ENABLED = Boolean(HOMAGE_ADDRESS_RAW && HOMAGE_START_BLOCK_RAW)
+const HOMAGE_MINTER_ADDRESS_RAW = process.env.HOMAGE_MINTER_ADDRESS
+const HOMAGE_MINTER_START_BLOCK_RAW = process.env.HOMAGE_MINTER_START_BLOCK
+const HOMAGE_COLLECTION_ADDRESS_RAW = process.env.HOMAGE_COLLECTION_ADDRESS
+const HOMAGE_COLLECTION_START_BLOCK_RAW = process.env.HOMAGE_COLLECTION_START_BLOCK
 
-if (HOMAGE_ADDRESS_RAW && !/^0x[0-9a-fA-F]{40}$/.test(HOMAGE_ADDRESS_RAW)) {
+const HOMAGE_ENV_VARS_SET = [
+  HOMAGE_MINTER_ADDRESS_RAW,
+  HOMAGE_MINTER_START_BLOCK_RAW,
+  HOMAGE_COLLECTION_ADDRESS_RAW,
+  HOMAGE_COLLECTION_START_BLOCK_RAW,
+].filter(Boolean).length
+const HOMAGE_ENABLED = HOMAGE_ENV_VARS_SET === 4
+
+if (HOMAGE_ENV_VARS_SET > 0 && HOMAGE_ENV_VARS_SET < 4) {
   throw new Error(
-    `HOMAGE_ADDRESS is set but not a valid 20-byte address: ${HOMAGE_ADDRESS_RAW}`,
+    "Homage is gated atomically: set HOMAGE_MINTER_ADDRESS, " +
+      "HOMAGE_MINTER_START_BLOCK, HOMAGE_COLLECTION_ADDRESS, and " +
+      "HOMAGE_COLLECTION_START_BLOCK all together, or unset all four to disable.",
   )
 }
-if (HOMAGE_ADDRESS_RAW && !HOMAGE_START_BLOCK_RAW) {
-  throw new Error(
-    "HOMAGE_ADDRESS is set but HOMAGE_START_BLOCK is not. Set both (the " +
-      "deploy block) so backfill starts at deploy, or unset both to disable.",
-  )
+
+for (const [name, value] of [
+  ["HOMAGE_MINTER_ADDRESS", HOMAGE_MINTER_ADDRESS_RAW],
+  ["HOMAGE_COLLECTION_ADDRESS", HOMAGE_COLLECTION_ADDRESS_RAW],
+] as const) {
+  if (value && !/^0x[0-9a-fA-F]{40}$/.test(value)) {
+    throw new Error(`${name} is set but not a valid 20-byte address: ${value}`)
+  }
 }
 
-const homageContract = HOMAGE_ENABLED
+const homageContracts = HOMAGE_ENABLED
   ? {
-      Homage: {
+      HomageMinter: {
         chain: "mainnet" as const,
-        abi: homageAbi,
-        address: HOMAGE_ADDRESS_RAW as `0x${string}`,
-        startBlock: Number(HOMAGE_START_BLOCK_RAW),
+        abi: homageMinterAbi,
+        address: HOMAGE_MINTER_ADDRESS_RAW as `0x${string}`,
+        startBlock: Number(HOMAGE_MINTER_START_BLOCK_RAW),
+      },
+      HomageCollection: {
+        chain: "mainnet" as const,
+        abi: homageCollectionAbi,
+        address: HOMAGE_COLLECTION_ADDRESS_RAW as `0x${string}`,
+        startBlock: Number(HOMAGE_COLLECTION_START_BLOCK_RAW),
       },
     }
   : {}
@@ -242,11 +276,11 @@ export default createConfig({
       startBlock: MURI_PROTOCOL_DEPLOY_BLOCK,
     },
 
-    // ── Homage singleton (DEPLOY-GATED via HOMAGE_ADDRESS env) ────────
-    // Spread in only when the env vars are set (see homageContract above).
-    // Fixed shared contract → belongs in Ponder (per AGENTS.md), NOT the
-    // worker long tail. Drives homage_tokens + homage_activity +
+    // ── Homage singleton pair (DEPLOY-GATED via HOMAGE_* env) ─────────
+    // Spread in only when all env vars are set (see homageContracts above).
+    // Fixed shared contracts → belong in Ponder (per AGENTS.md), NOT the
+    // worker long tail. Drive homage_tokens + homage_activity +
     // homage_config; web reads the phase schedule/supply from Postgres.
-    ...homageContract,
+    ...homageContracts,
   },
 })
