@@ -24,10 +24,10 @@ singleton keyed by the calling collection; see
 function setRequired(address collection, address required) external
 ```
 
-**Access:** owner-only (`onlySurfaceOwner`, checked against the target
+**Access:** collection owner or admin (`onlySurfaceAdmin`, checked against
 
-collection's current `owner()`; reverts `SC: not collection owner`
-otherwise)
+the target collection's current `owner()` or `isAdmin(msg.sender)`; reverts
+`NotSurfaceAdmin()` otherwise)
 
 Sets the ERC721 contract address a minter must hold a token from to mint
 `collection`. The zero address means no gate: `beforeMint` skips the

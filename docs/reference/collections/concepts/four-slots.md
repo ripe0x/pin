@@ -9,12 +9,12 @@ four slots. The core never grows a line for a specific work; it only ever
 calls out to a slot.
 
 Three of the four slots are addresses stored on the collection and settable
-by the owner after deploy (`setRenderer`, `setMintHook`,
+by the owner or an admin after deploy (`setRenderer`, `setMintHook`,
 `setPriceStrategy`); the fourth, extension minters, is a set of addresses
 granted and revoked individually (`setMinter`). All four default to "off":
 an empty renderer slot uses the collection's `defaultRenderer`, an empty
 price strategy uses the stored fixed price, an empty mint hook runs no
-gating, and no minter is authorized until the owner grants one.
+gating, and no minter is authorized until the owner or an admin grants one.
 
 ## Renderer (`IRenderer`)
 
@@ -24,7 +24,7 @@ function contractURI(address collection) external view returns (string memory);
 ```
 
 - **Type**: `IRenderer`, stored as `_renderer`
-- **Set by**: `setRenderer(address)`, owner-only, and only while metadata is
+- **Set by**: `setRenderer(address)`, owner or admin, and only while metadata is
   not locked (`lockRenderer` pins it permanently, optional and off by default)
 - **Fallback**: when `_renderer` is the zero address, `renderer()` returns
   the collection's `defaultRenderer`, set once at init and never itself
@@ -59,7 +59,7 @@ function priceOf(address collection, address minter, uint256 quantity, bytes cal
 ```
 
 - **Type**: `IPriceStrategy`, stored as `_priceStrategy`
-- **Set by**: `setPriceStrategy(address)`, owner-only, no freeze gate
+- **Set by**: `setPriceStrategy(address)`, owner or admin, no freeze gate
 - **Fallback**: when unset, the built-in paid path charges the collection's
   stored `price` (in `SurfaceConfig`) times `quantity`, and requires an
   exact match (`WrongPayment` on mismatch)
@@ -90,7 +90,7 @@ function afterMint(address minter, uint256 quantity, uint256 firstTokenId, addre
 ```
 
 - **Type**: `IMintHook`, stored as `_mintHook`
-- **Set by**: `setMintHook(address)`, owner-only
+- **Set by**: `setMintHook(address)`, owner or admin
 - **Fallback**: when unset (`address(0)`), no hook runs and every mint
   proceeds unconditionally
 - **What it does**: runs on every mint path, not just the built-in one.
@@ -121,7 +121,7 @@ See [IMintHook](/docs/collections/contracts/i-mint-hook),
 - **Type**: a plain address, tracked in a `mapping(address => bool)`; no
   interface is enforced on it beyond the two functions it's expected to
   call
-- **Set by**: `setMinter(address minter, bool allowed)`, owner-only. Not a
+- **Set by**: `setMinter(address minter, bool allowed)`, owner or admin. Not a
   single-slot swap like the other three: any number of minters can be
   authorized at once, granted and revoked individually. Revoking a
   minter's grant is the artist's lever over that minter's schedule and

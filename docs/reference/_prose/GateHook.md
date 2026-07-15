@@ -30,10 +30,10 @@ selector-identical custom errors to both single-purpose hooks
 (`NotAllowlisted`, `WalletCapExceeded`), so a UI maps one set of errors
 regardless of which hook a collection uses.
 
-Config authority is the collection's owner OR its admins
-(`onlySurfaceAdmin`), rather than the owner-only gate the single-purpose
-reference hooks use: a drop is typically operated by the artist's team, not
-only the owner key.
+Config authority matches the single-purpose reference hooks exactly: the
+collection's owner OR its admins (`onlySurfaceAdmin`, inherited from
+`HookBase`), not just the owner key — a drop is typically operated by the
+artist's team.
 
 The wallet counter is written only while a cap is active, so an uncapped
 collection pays no counting SSTORE per mint. Enabling a cap mid-sale

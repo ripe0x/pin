@@ -60,21 +60,21 @@ Every state-changing function in the Collections contracts and who may call it. 
 
 | Function | Access |
 | --- | --- |
-| [`setRoot`](/docs/collections/contracts/allowlist-hook#setroot) | owner-only (`onlySurfaceOwner`, checked against the target |
+| [`setRoot`](/docs/collections/contracts/allowlist-hook#setroot) | collection owner or admin (`onlySurfaceAdmin`, checked against |
 | [`afterMint`](/docs/collections/contracts/allowlist-hook#aftermint) | core-only, called by the collection itself as part of its mint |
 
 ## PerWalletCapHook
 
 | Function | Access |
 | --- | --- |
-| [`setCap`](/docs/collections/contracts/per-wallet-cap-hook#setcap) | owner-only (`onlySurfaceOwner`, checked against the target |
+| [`setCap`](/docs/collections/contracts/per-wallet-cap-hook#setcap) | collection owner or admin (`onlySurfaceAdmin`, checked against |
 | [`afterMint`](/docs/collections/contracts/per-wallet-cap-hook#aftermint) | core-only, called by the collection itself as part of its mint |
 
 ## HoldsSurfaceHook
 
 | Function | Access |
 | --- | --- |
-| [`setRequired`](/docs/collections/contracts/holds-surface-hook#setrequired) | owner-only (`onlySurfaceOwner`, checked against the target |
+| [`setRequired`](/docs/collections/contracts/holds-surface-hook#setrequired) | collection owner or admin (`onlySurfaceAdmin`, checked against |
 | [`afterMint`](/docs/collections/contracts/holds-surface-hook#aftermint) | core-only, called by the collection itself as part of its mint |
 
 ## GateHook

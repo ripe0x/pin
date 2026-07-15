@@ -12,7 +12,7 @@ An extension minter is any contract the collection owner authorizes to mint toke
 The owner grants (or revokes) a minter explicitly, per address:
 
 ```solidity
-function setMinter(address minter, bool allowed) external; // owner-only
+function setMinter(address minter, bool allowed) external; // owner or admin
 function isMinter(address minter) external view returns (bool);
 ```
 
@@ -62,8 +62,9 @@ interface ISurfaceMint {
         external returns (uint256 tokenId);
 }
 
-interface ISurfaceOwner {
+interface ISurfaceAuth {
     function owner() external view returns (address);
+    function isAdmin(address account) external view returns (bool);
 }
 
 /// @notice Minimal fixed-price sequential minter: takes exact payment, mints
@@ -77,12 +78,15 @@ contract SimpleExtensionMinter {
 
     event PriceSet(address indexed collection, uint256 price);
 
-    modifier onlySurfaceOwner(address collection) {
-        require(msg.sender == ISurfaceOwner(collection).owner(), "not collection owner");
+    modifier onlySurfaceAdmin(address collection) {
+        require(
+            msg.sender == ISurfaceAuth(collection).owner() || ISurfaceAuth(collection).isAdmin(msg.sender),
+            "not collection owner or admin"
+        );
         _;
     }
 
-    function setPrice(address collection, uint256 price) external onlySurfaceOwner(collection) {
+    function setPrice(address collection, uint256 price) external onlySurfaceAdmin(collection) {
         priceOf[collection] = price;
         emit PriceSet(collection, price);
     }
@@ -99,11 +103,11 @@ contract SimpleExtensionMinter {
             require(okS, "referral payout failed");
             uint256 artistCut = price - referralCut;
             if (artistCut > 0) {
-                (bool okA,) = ISurfaceOwner(collection).owner().call{value: artistCut}("");
+                (bool okA,) = ISurfaceAuth(collection).owner().call{value: artistCut}("");
                 require(okA, "artist payout failed");
             }
         } else if (price > 0) {
-            (bool ok,) = ISurfaceOwner(collection).owner().call{value: price}("");
+            (bool ok,) = ISurfaceAuth(collection).owner().call{value: price}("");
             require(ok, "artist payout failed");
         }
     }

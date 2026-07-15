@@ -24,9 +24,9 @@ token is later transferred or burned.
 
 ## function setCap
 
-access: owner-only (`onlySurfaceOwner`, checked against the target
-collection's current `owner()`; reverts `SC: not collection owner`
-otherwise)
+access: collection owner or admin (`onlySurfaceAdmin`, checked against
+the target collection's current `owner()` or `isAdmin(msg.sender)`; reverts
+`NotSurfaceAdmin()` otherwise)
 
 Sets the per-wallet mint cap for `collection`. A cap of `0` means
 unlimited: `beforeMint` skips the count check entirely. Setting a new cap

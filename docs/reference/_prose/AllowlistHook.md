@@ -25,9 +25,9 @@ against this contract without translation.
 
 ## function setRoot
 
-access: owner-only (`onlySurfaceOwner`, checked against the target
-collection's current `owner()`; reverts `SC: not collection owner`
-otherwise)
+access: collection owner or admin (`onlySurfaceAdmin`, checked against
+the target collection's current `owner()` or `isAdmin(msg.sender)`; reverts
+`NotSurfaceAdmin()` otherwise)
 
 Sets the Merkle root gating mints for `collection`. A root of `bytes32(0)`
 means no gate: `beforeMint` skips the proof check entirely and any minter

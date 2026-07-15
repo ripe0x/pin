@@ -27,10 +27,10 @@ token is later transferred or burned.
 function setCap(address collection, uint256 cap) external
 ```
 
-**Access:** owner-only (`onlySurfaceOwner`, checked against the target
+**Access:** collection owner or admin (`onlySurfaceAdmin`, checked against
 
-collection's current `owner()`; reverts `SC: not collection owner`
-otherwise)
+the target collection's current `owner()` or `isAdmin(msg.sender)`; reverts
+`NotSurfaceAdmin()` otherwise)
 
 Sets the per-wallet mint cap for `collection`. A cap of `0` means
 unlimited: `beforeMint` skips the count check entirely. Setting a new cap
