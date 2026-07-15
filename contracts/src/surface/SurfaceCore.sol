@@ -90,7 +90,10 @@ abstract contract SurfaceCore is
     ///      function the owner can, except two the owner keeps: managing the
     ///      admin set and transferring ownership. The owner stays the single
     ///      root that hands out keys and that marketplaces read as owner().
-    mapping(address => bool) internal _admins;
+    // account => the owner that granted it (0 = not an admin). A grant is valid only while
+    // _admins[account] == owner(), so an ownership transfer silently invalidates every
+    // inherited grant — the new owner starts with a clean slate and re-grants deliberately.
+    mapping(address => address) internal _admins;
 
     // The single live source of truth for every setting, including the module
     // slots and the two one-way locks. Setters edit fields in place, so
@@ -309,20 +312,29 @@ abstract contract SurfaceCore is
     ///      management function except admin management and ownership
     ///      transfer, which stay with the owner.
     modifier onlyOwnerOrAdmin() {
-        if (msg.sender != owner() && !_admins[msg.sender]) revert NotAuthorized();
+        if (msg.sender != owner() && !_isAdmin(msg.sender)) revert NotAuthorized();
         _;
     }
 
-    /// @notice Grant an admin (owner-only). Reverts on the zero address and on
-    ///         a duplicate grant, so every grant is one explicit state change
-    ///         with one matching event. The owner is already an admin (isAdmin
-    ///         reads it live), so adding the current owner is rejected too —
-    ///         it would only make an explicit grant that outlives ownership
-    ///         transfer, which is never what the caller means.
+    /// @dev An explicit admin grant is valid only while the owner that made it is still the
+    ///      owner: `_admins[account]` holds that granting owner, so an ownership transfer
+    ///      invalidates every inherited grant. The nonzero check also makes a renounced
+    ///      collection (owner()==0) grant nobody.
+    function _isAdmin(address account) internal view returns (bool) {
+        address grantedBy = _admins[account];
+        return grantedBy != address(0) && grantedBy == owner();
+    }
+
+    /// @notice Grant an admin (owner-only). Reverts on the zero address and on a duplicate
+    ///         grant, so every grant is one explicit state change with one matching event.
+    ///         The owner is already an admin (isAdmin reads it live), so adding the current
+    ///         owner is rejected. The grant is scoped to THIS owner — it stores who granted
+    ///         it and stops counting the moment ownership moves on, so a new owner never
+    ///         silently inherits the old owner's keys.
     function addAdmin(address account) external override onlyOwner {
         if (account == address(0)) revert ZeroAccount();
-        if (account == owner() || _admins[account]) revert AlreadyAdmin();
-        _admins[account] = true;
+        if (account == owner() || _isAdmin(account)) revert AlreadyAdmin();
+        _admins[account] = owner();
         emit AdminSet(account, true);
     }
 
@@ -332,8 +344,8 @@ abstract contract SurfaceCore is
     ///         fails loudly instead of emitting a misleading event.
     function removeAdmin(address account) external override {
         if (msg.sender != owner() && msg.sender != account) revert NotAuthorized();
-        if (!_admins[account]) revert NotAnAdmin();
-        _admins[account] = false;
+        if (_admins[account] == address(0)) revert NotAnAdmin();
+        _admins[account] = address(0);
         emit AdminSet(account, false);
     }
 
@@ -343,7 +355,7 @@ abstract contract SurfaceCore is
     ///         here keeps external checks — MURI gates registration on this
     ///         view — honest about who can act.
     function isAdmin(address account) external view override returns (bool) {
-        return account == owner() || _admins[account];
+        return account == owner() || _isAdmin(account);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -440,7 +452,7 @@ abstract contract SurfaceCore is
     ///         lockRenderer — the lock pins the pointer, not the weather.
     ///         Pure event emission; no state is touched.
     function notifyMetadataUpdate(uint256 fromTokenId, uint256 toTokenId) external override {
-        if (msg.sender != renderer() && msg.sender != owner() && !_admins[msg.sender]) {
+        if (msg.sender != renderer() && msg.sender != owner() && !_isAdmin(msg.sender)) {
             revert NotAuthorized();
         }
         emit BatchMetadataUpdate(fromTokenId, toTokenId);
@@ -451,7 +463,8 @@ abstract contract SurfaceCore is
     ///         once the minter set is locked. The pooled form holds one minter
     ///         at a time, so a redundant call is a no-op rather than a way to
     ///         drift the count.
-    function setMinter(address minter, bool allowed) external override onlyOwnerOrAdmin {
+    function setMinter(address minter, bool allowed) external override {
+        _requireMinterAuthority();
         if (minter == address(0)) revert ZeroMinter();
         if (_minterLocked) revert MinterIsLocked();
         if (_minters[minter] == allowed) return; // already in the asked-for state
@@ -518,10 +531,24 @@ abstract contract SurfaceCore is
     ///         swapped in later to retire another minter's backed tokens — set
     ///         it once the intended minter is wired. Redundant on a collection
     ///         with no extension minters, but harmless.
-    function lockMinter() external override onlyOwnerOrAdmin {
+    function lockMinter() external override {
+        _requireMinterAuthority();
         if (_minterLocked) revert MinterIsLocked();
         _minterLocked = true;
         emit MinterLocked();
+    }
+
+    /// @dev Authorize a minter-set change. A pooled collection backs real value through its
+    ///      single minter, so swapping or locking it is OWNER-ONLY — a delegated admin must
+    ///      never be able to rotate the minter and burn another minter's backed tokens (the
+    ///      pooled stranded-escrow rug). A sequential collection carries no backing, so
+    ///      owner-or-admin is fine there, matching every other management setter.
+    function _requireMinterAuthority() internal view {
+        if (idMode() == IdMode.Pooled) {
+            if (msg.sender != owner()) revert NotAuthorized();
+        } else if (msg.sender != owner() && !_isAdmin(msg.sender)) {
+            revert NotAuthorized();
+        }
     }
 
     /// @notice Disabled. Renouncing would orphan the collection: proceeds

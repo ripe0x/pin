@@ -5,6 +5,7 @@ import {SurfaceBase} from "./SurfaceBase.sol";
 import {MockRenderer} from "./mocks/SurfaceMocks.sol";
 
 import {Surface} from "../../src/surface/Surface.sol";
+import {PooledSurface} from "../../src/surface/PooledSurface.sol";
 import {ISurface} from "../../src/surface/interfaces/ISurface.sol";
 import {ISurfaceCore} from "../../src/surface/interfaces/ISurfaceCore.sol";
 import {SurfaceConfig, SurfaceStatus} from "../../src/surface/SurfaceTypes.sol";
@@ -143,6 +144,80 @@ contract SurfaceAdminTest is SurfaceBase {
     }
 
     // ── admin has full management access ──────────────────────────────────────
+
+    // ── admin grants are scoped to the granting owner ─────────────────────────
+
+    /// @dev A grant made by one owner must not survive an ownership transfer: the new owner
+    ///      starts with a clean slate and re-grants deliberately. Guards the collection-sale /
+    ///      wallet-rotation case where a stale admin could otherwise redirect proceeds.
+    function test_adminGrant_expiresOnOwnershipTransfer() public {
+        Surface c = _collection(_freeConfig());
+        address newOwner = makeAddr("newOwner");
+        vm.prank(artist);
+        c.addAdmin(admin);
+        assertTrue(c.isAdmin(admin), "granted under the original owner");
+
+        // hand the collection to a new owner (Ownable2Step)
+        vm.prank(artist);
+        c.transferOwnership(newOwner);
+        vm.prank(newOwner);
+        c.acceptOwnership();
+
+        // the old owner's admin grant no longer counts
+        assertFalse(c.isAdmin(admin), "stale admin invalidated by the transfer");
+        vm.prank(admin);
+        vm.expectRevert(ISurfaceCore.NotAuthorized.selector);
+        c.setPayoutAddress(admin);
+
+        // the new owner is an admin and can re-grant deliberately
+        assertTrue(c.isAdmin(newOwner), "new owner is an admin");
+        vm.prank(newOwner);
+        c.addAdmin(admin);
+        assertTrue(c.isAdmin(admin), "re-granted under the new owner");
+        vm.prank(admin);
+        c.setPayoutAddress(admin); // now allowed
+    }
+
+    // ── pooled minter authority is owner-only ─────────────────────────────────
+
+    /// @dev On a pooled (backed) collection the minter is load-bearing for solvency, so
+    ///      swapping or locking it is owner-only — a delegated admin must not be able to
+    ///      rotate the minter and strand another minter's backed escrow.
+    function test_pooled_minterAuthority_isOwnerOnly() public {
+        PooledSurface c = _pooled(_freeConfig());
+        vm.prank(artist);
+        c.addAdmin(admin);
+        assertTrue(c.isAdmin(admin), "admin granted");
+
+        // an admin CANNOT touch the pooled minter set
+        vm.prank(admin);
+        vm.expectRevert(ISurfaceCore.NotAuthorized.selector);
+        c.setMinter(makeAddr("rogueMinter"), true);
+        vm.prank(admin);
+        vm.expectRevert(ISurfaceCore.NotAuthorized.selector);
+        c.lockMinter();
+
+        // the owner can
+        address m = makeAddr("goodMinter");
+        vm.prank(artist);
+        c.setMinter(m, true);
+        assertTrue(c.isMinter(m), "owner set the pooled minter");
+        vm.prank(artist);
+        c.lockMinter();
+        assertTrue(c.isMinterLocked(), "owner locked the pooled minter");
+    }
+
+    /// @dev Sequential collections carry no backing, so an admin keeps minter authority —
+    ///      the owner-only restriction is pooled-specific.
+    function test_sequential_setMinter_allowsAdmin() public {
+        Surface c = _collection(_freeConfig());
+        vm.prank(artist);
+        c.addAdmin(admin);
+        address m = makeAddr("seqMinter");
+        vm.prank(admin);
+        c.setMinter(m, true); // sequential: admin retains minter authority
+        assertTrue(c.isMinter(m), "admin set a sequential minter");
+    }
 
     /// @dev The hook and price-strategy slots must hold a deployed contract (or 0 for none):
     ///      an EOA/typo would revert every mint on the ABI-decode of empty returndata. Same
