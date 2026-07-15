@@ -10,7 +10,7 @@ import {
 } from "@/lib/auctions"
 import { getConfig } from "@/lib/config"
 import { getCollection, getCurrentPrice } from "@/lib/collection"
-import { IdMode } from "@/lib/sovereign-collection"
+import { IdMode } from "@/lib/surface"
 
 // Rendered on demand, not prerendered at build, so a deploy never crawls the
 // chain (archive eth_getLogs at build time is exactly what used to fail the
@@ -137,7 +137,7 @@ function NoHouseState() {
 }
 
 /**
- * Mint card + recent-mints grid for the artist's optional SovereignCollection.
+ * Mint card + recent-mints grid for the artist's optional Surface.
  * Entirely absent from the page unless `NEXT_PUBLIC_COLLECTION_ADDRESS` is
  * configured (see lib/config.ts) — the section itself, and every read behind
  * it, only runs when an artist has opted in.

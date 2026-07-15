@@ -1,12 +1,12 @@
 /**
- * Server-side reads for the artist's optional SovereignCollection.
+ * Server-side reads for the artist's optional Surface.
  *
  * Mirrors `lib/auctions.ts`'s pattern: cheap, cached, server-rendered
  * `initial` state that the client components then keep live via
  * `useReadContract` polling (see components/CollectionMintCard.tsx). Only
  * used when `NEXT_PUBLIC_COLLECTION_ADDRESS` is set — see lib/config.ts.
  *
- * Enums/types/decoders live in `./sovereign-collection` (no server-only
+ * Enums/types/decoders live in `./surface` (no server-only
  * import there) so client components can use them directly without pulling
  * this module's `server-only` marker along for the ride.
  *
@@ -19,7 +19,7 @@
 import "server-only"
 import { unstable_cache } from "next/cache"
 import { type Address } from "viem"
-import { sovereignCollectionAbi } from "./abi"
+import { surfaceAbi } from "./abi"
 import { getClient } from "./rpc"
 import { getConfig } from "./config"
 import {
@@ -27,7 +27,7 @@ import {
   type CollectionConfig,
   type CollectionSummary,
   type RawCollectionConfig,
-} from "./sovereign-collection"
+} from "./surface"
 
 type SerializedCollectionSummary = {
   address: Address
@@ -46,7 +46,7 @@ type SerializedCollectionSummary = {
 const _getCollectionCached = unstable_cache(
   async (address: Address): Promise<SerializedCollectionSummary | null> => {
     const client = getClient()
-    const base = { address, abi: sovereignCollectionAbi } as const
+    const base = { address, abi: surfaceAbi } as const
     try {
       const [name, symbol, cfgRes] = await client.multicall({
         allowFailure: false,
@@ -112,7 +112,7 @@ const _getCurrentPriceCached = unstable_cache(
     try {
       const price = await client.readContract({
         address,
-        abi: sovereignCollectionAbi,
+        abi: surfaceAbi,
         functionName: "currentPrice",
         args: [minter, BigInt(qty), "0x"],
       })

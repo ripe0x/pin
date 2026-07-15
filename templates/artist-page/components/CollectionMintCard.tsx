@@ -10,9 +10,9 @@ import {
   useWriteContract,
 } from "wagmi"
 import { ConnectButton as RKConnectButton } from "@rainbow-me/rainbowkit"
-import { sovereignCollectionAbi } from "@/lib/abi"
-import { CollectionStatus, isMintable } from "@/lib/sovereign-collection"
-import type { CollectionConfig } from "@/lib/sovereign-collection"
+import { surfaceAbi } from "@/lib/abi"
+import { CollectionStatus, isMintable } from "@/lib/surface"
+import type { CollectionConfig } from "@/lib/surface"
 
 /**
  * `CollectionConfig` with every bigint field as a decimal string. Next.js
@@ -60,7 +60,7 @@ type Props = {
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
 
 /**
- * Mint card for the artist's optional SovereignCollection. Mirrors BidForm's
+ * Mint card for the artist's optional Surface. Mirrors BidForm's
  * chrome (status dot + big tabular-nums price + a single primary action) so
  * the collection surface reads as part of the same visual family as the
  * auction panel, even though the underlying protocol is entirely different.
@@ -77,7 +77,7 @@ export function CollectionMintCard({ collectionAddress, artistAddress, initial }
   // source of truth; `initial.*` only covers the gap until it resolves.
   const configRead = useReadContract({
     address: collectionAddress,
-    abi: sovereignCollectionAbi,
+    abi: surfaceAbi,
     functionName: "config",
     query: {
       refetchInterval: 12_000,
@@ -94,7 +94,7 @@ export function CollectionMintCard({ collectionAddress, artistAddress, initial }
 
   const priceRead = useReadContract({
     address: collectionAddress,
-    abi: sovereignCollectionAbi,
+    abi: surfaceAbi,
     functionName: "currentPrice",
     args: [connected ?? ZERO_ADDRESS, 1n, "0x"],
     query: { refetchInterval: 12_000, refetchIntervalInBackground: true },
@@ -258,7 +258,7 @@ function MintButton({
     // self-hosted mint card.
     writeContract({
       address: collectionAddress,
-      abi: sovereignCollectionAbi,
+      abi: surfaceAbi,
       functionName: "mintWithRewards",
       args: [1n, artistAddress, "0x"],
     })

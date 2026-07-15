@@ -65,7 +65,7 @@ function readLinks(): string[] {
 }
 
 /**
- * Optional SovereignCollection this artist wants the page to sell mints for.
+ * Optional Surface this artist wants the page to sell mints for.
  * Unset by default — the template stays auction-only (zero behavior change)
  * until an artist deploys a collection and pastes its address here. Reading
  * `NEXT_PUBLIC_COLLECTION_ADDRESS` literally (never a dynamic
@@ -121,7 +121,7 @@ export type AppConfig = {
   factoryAddress: Address
   factoryDeployBlock: bigint
   /**
-   * The artist's SovereignCollection, if they've deployed one. Null means
+   * The artist's Surface, if they've deployed one. Null means
    * "no collection configured" — all collection-mint UI (CollectionMintCard,
    * CollectionTokenGrid) is absent from the page in that case, and the
    * template behaves exactly as it did before collection support existed.

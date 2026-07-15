@@ -1,5 +1,5 @@
 /**
- * Recent-mints grid for the artist's optional SovereignCollection. Shows the
+ * Recent-mints grid for the artist's optional Surface. Shows the
  * newest tokens (ids `1..min(minted, 12)`, newest first) rendered through the
  * same sandboxed `TokenMedia` used elsewhere on the page, so onchain/HTML art
  * gets the same untrusted-iframe treatment as any auctioned token's
@@ -13,7 +13,7 @@
 import type { Address } from "viem"
 import { TokenMedia } from "./TokenMedia"
 import { getTokenMetadata } from "@/lib/metadata"
-import { recentTokenIds } from "@/lib/sovereign-collection"
+import { recentTokenIds } from "@/lib/surface"
 
 export async function CollectionTokenGrid({
   collectionAddress,

@@ -4,7 +4,7 @@
  * Enums, types, ABI-return decoders, and lifecycle helpers used by both the
  * server-only cached reads (lib/collection.ts) and client components
  * (components/CollectionMintCard.tsx). No server-only imports — this mirrors
- * the split in the foundation monorepo's apps/web/src/lib/sovereign-collection.ts
+ * the split in the foundation monorepo's apps/web/src/lib/surface.ts
  * (client-safe) vs. lib/collection-onchain.ts (server-only reads).
  */
 import { type Address } from "viem"
@@ -91,7 +91,7 @@ export function hasPriceStrategy(priceStrategy: Address): boolean {
 
 /**
  * Lifecycle status derived client-side, same branches as
- * SovereignCollection._lifecycleStatus(): mintEnd passed or supply cap
+ * Surface._lifecycleStatus(): mintEnd passed or supply cap
  * reached both read as Closed; an artist-flagged "closing soon" state would
  * come from the live `status` read (there's no local signal for it), so this
  * helper only ever returns Open or Closed — Closing is read from chain.

@@ -1,8 +1,8 @@
-// Vendored from the foundation monorepo (packages/abi/src/sovereignCollection.ts).
-// Auto-extracted upstream from contracts/out/SovereignCollection.sol/SovereignCollection.json.
+// Vendored from the foundation monorepo (packages/abi/src/surface.ts).
+// Auto-extracted upstream from contracts/out/Surface.sol/Surface.json.
 // Update by re-running the upstream `node scripts/emit-collection-abi.mjs` and copying the file here.
 // Re-run: node scripts/emit-collection-abi.mjs
-export const sovereignCollectionAbi = [
+export const surfaceAbi = [
   {
     "type": "constructor",
     "inputs": [],
