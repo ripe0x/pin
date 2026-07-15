@@ -1,19 +1,23 @@
 # PND Surface System
 
-> **Status: built, pre-deploy; SVG-first launch prep (updated 2026-07-09).**
-> The core is one OZ ERC721, `Collection` + `CollectionFactory` (renamed from
-> `SovereignCollection`), audited at the `43f4ae7` baseline by two independent
-> reviews. All work now lives on **`collection-web-v1` (PR #134, OPEN, not yet
-> merged to `main`)**, which on top of that baseline adds: the full web/studio
-> surface (create wizard, mint pages, discovery), a **multi-admin** access
-> delta (owner + flat, full-access admins via `addAdmin` / `removeAdmin`, owner
-> stays the keyring root), and terminology renames (`mintToId`, `referral`).
-> The collection suite is 202 unit tests + opt-in mainnet-fork probes, green.
+> **Status: built, pre-deploy; SVG-first launch prep (updated 2026-07-14).**
+> The core is one OZ ERC721, `Surface` + `SurfaceFactory` (renamed
+> `SovereignCollection` → `Collection` → **Surface**), audited at the `43f4ae7`
+> baseline by two independent reviews. All work now lives on
+> **`collection-web-v1` (PR #134, OPEN, not yet merged to `main`)**, which on top
+> of that baseline adds: the full web/studio surface (create wizard, mint pages,
+> discovery), a **multi-admin** access delta (owner + flat, full-access admins
+> via `addAdmin` / `removeAdmin`, owner stays the keyring root), terminology
+> renames (`mintToId`, `referral`), the **GateHook + IPreviewRenderer** additions
+> (the genart-branch port), and the **Collection → Surface rename** (identifiers
+> only, zero behavior change). The suite is 223 unit tests + opt-in mainnet-fork
+> probes, green.
 >
 > **Everything post-baseline is UN-REVIEWED and the external re-audit is the
 > deploy gate.** It must cover the core + the admin delta + the 2026-07-13
 > batch (mintFor, renderer guard, RenderAssets template/capturer,
-> isAdmin(owner) — now in code) + the launch project's renderer. The running
+> isAdmin(owner)) + the 2026-07-14 GateHook + IPreviewRenderer additions + the
+> Surface rename + the launch project's renderer. The running
 > review log is `docs/pnd-surface-reaudit-notes.md`. The post-deploy →
 > launch window has a runbook with kickoff prompts
 > (`docs/pnd-surface-prelaunch.md`); everything deferred past launch is

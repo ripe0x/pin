@@ -468,3 +468,38 @@ function of chain state, like the live view:
 - 223 unit tests green (was 216: +6 GateHook, +1 preview unit); 6 fork
   tests green against live mainnet (scripty assembly + the two new
   preview proofs + MURI probe).
+
+## 2026-07-14 (i): Collection → Surface rename (identifiers only)
+
+Un-reviewed, but IMPORTANT for the reviewer's framing: this is a pure
+rename, NOT a behavior change. The protocol/contract type "Collection"
+became "Surface" across the whole surface — `contracts/src/collection/`
+→ `contracts/src/surface/`, `Collection`→`Surface`,
+`CollectionCore`→`SurfaceCore`, `PooledCollection`→`PooledSurface`,
+`CollectionFactory`→`SurfaceFactory`, `CollectionConfig`→`SurfaceConfig`,
+`CollectionStatus`→`SurfaceStatus`, `ICollection*`→`ISurface*`, events
+`CollectionCreated`/`CollectionConfigured`→`Surface*`, error
+`NotCollectionAdmin`→`NotSurfaceAdmin`, modifier
+`onlyCollectionAdmin`→`onlySurfaceAdmin`, fns `createCollection`/
+`createPooledCollection`/`totalCollections`→`createSurface`/
+`createPooledSurface`/`totalSurfaces`, `HoldsCollectionHook`→
+`HoldsSurfaceHook`.
+
+The rename was applied case-sensitively: capital-C `Collection` (always a
+type identifier) → `Surface`; lowercase `collection` (always the generic
+English word — param names like `address collection`, prose) LEFT intact.
+So no storage layout, control flow, selector semantics, or authority
+model changed — only names. Some renamed functions/events necessarily got
+new selectors/topics (`createSurface`, `SurfaceCreated`); the ABIs, web,
+and indexer were repointed to match.
+
+### Sizes / tests after (i)
+
+- Full protocol suite: 223 unit tests green (identical to the pre-rename
+  count — the rename touched no test logic, only identifiers); size gates
+  unchanged (Surface 18,663 / PooledSurface 16,488 runtime bytes — byte-
+  identical, since a rename does not change bytecode beyond metadata).
+  6 fork tests green.
+- The reviewer should read the diff as a mechanical rename: diffing
+  `f85a23d` (the contracts rename commit) against its parent shows every
+  change is `Collection`→`Surface` in an identifier position.
