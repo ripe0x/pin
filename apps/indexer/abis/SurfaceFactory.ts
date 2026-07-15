@@ -344,6 +344,19 @@ export const surfaceFactoryAbi = [
   },
   {
     "type": "function",
+    "name": "paused",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "pooledImplementation",
     "inputs": [],
     "outputs": [
@@ -367,6 +380,19 @@ export const surfaceFactoryAbi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "setPaused",
+    "inputs": [
+      {
+        "name": "paused_",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -409,6 +435,19 @@ export const surfaceFactoryAbi = [
   },
   {
     "type": "event",
+    "name": "PausedSet",
+    "inputs": [
+      {
+        "name": "paused",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "SurfaceCreated",
     "inputs": [
       {
@@ -440,6 +479,11 @@ export const surfaceFactoryAbi = [
   {
     "type": "error",
     "name": "FactoryDeprecated",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "FactoryPaused",
     "inputs": []
   },
   {

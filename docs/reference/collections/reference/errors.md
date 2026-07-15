@@ -52,6 +52,9 @@ A mint would cross the supply cap: mints ever in Sequential mode, or live supply
 **`FactoryDeprecated`** · [SurfaceFactory](/docs/collections/contracts/factory#errors)\
 `createSurface` was called after deprecation.
 
+**`FactoryPaused`** · [SurfaceFactory](/docs/collections/contracts/factory#errors)\
+`createSurface`/`createPooledSurface` was called while the factory is paused (see `setPaused`).
+
 **`FailedDeployment`** · [SurfaceFactory](/docs/collections/contracts/factory#errors)\
 Inherited from OpenZeppelin `Clones`.
 

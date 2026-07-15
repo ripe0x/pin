@@ -47,6 +47,7 @@ Every state-changing function in the Collections contracts and who may call it. 
 | [`createSurface`](/docs/collections/contracts/factory#createsurface) | permissionless (anyone may deploy; ongoing control over the result |
 | [`createPooledSurface`](/docs/collections/contracts/factory#createpooledsurface) | permissionless (ongoing control belongs to the `owner` argument) |
 | [`deprecate`](/docs/collections/contracts/factory#deprecate) | deployer-only (`msg.sender` must be the factory deployer, else `NotDeployer`) |
+| [`setPaused`](/docs/collections/contracts/factory#setpaused) | deployer-only (`msg.sender` must be the factory deployer, else `NotDeployer`) |
 
 ## RenderAssets
 

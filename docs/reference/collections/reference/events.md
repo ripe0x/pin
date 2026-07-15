@@ -68,6 +68,8 @@ Every event the Collections contracts emit, grouped by contract. Signatures and 
 
 **[`Deprecated`](/docs/collections/contracts/factory#deprecated)** · Emitted once when the deployer permanently deprecates the factory, carrying the successor address (zero if none named).
 
+**[`PausedSet`](/docs/collections/contracts/factory#pausedset)** · Emitted when the deployer pauses or resumes new deploys, carrying the new `paused` state.
+
 **[`SurfaceCreated`](/docs/collections/contracts/factory#surfacecreated)** · Emitted once per successful `createSurface` call, with `owner` and `collection` both indexed.
 
 ## RenderAssets
