@@ -117,6 +117,20 @@ completely unaffected — the deployer holds zero power over them; this switch
 only stops the buggy implementation from being cloned again. Reverts
 `AlreadyDeprecated` on a second call. Emits `Deprecated`.
 
+### setPaused
+
+```solidity
+function setPaused(bool paused_) external
+```
+
+**Access:** deployer-only (`msg.sender` must be the factory deployer, else `NotDeployer`)
+
+Reversible off/on switch for NEW deploys — the everyday circuit breaker
+(incident, maintenance), distinct from the permanent one-way `deprecate`. While
+paused, `createSurface`/`createPooledSurface` revert `FactoryPaused`; flip it
+back and deploys resume. Deployed collections are never affected. A deprecated
+factory stays permanently off regardless of this flag. Emits `PausedSet`.
+
 ## Read functions
 
 ### allSurfaces
@@ -162,8 +176,8 @@ after deploy; this is only the value new collections start with.
 function deployer() external view returns (address)
 ```
 
-The address that deployed the factory: the only address that may call
-`deprecate`, and its only privilege.
+The address that deployed the factory: the only address that may `deprecate` or
+`setPaused`, and its only privilege.
 
 ### deprecated
 
@@ -181,6 +195,15 @@ function isSurface(address) external view returns (bool)
 
 Whether `address` is a collection this factory deployed. Cheaper than
 scanning `allSurfaces` when a caller only needs a membership check.
+
+### paused
+
+```solidity
+function paused() external view returns (bool)
+```
+
+True while new deploys are paused (see `setPaused`). Reversible, unlike
+`deprecated`.
 
 ### pooledImplementation
 
@@ -231,6 +254,15 @@ event Deprecated(address indexed successor)
 Emitted once when the deployer permanently deprecates the factory, carrying
 the successor address (zero if none named).
 
+### PausedSet
+
+```solidity
+event PausedSet(bool paused)
+```
+
+Emitted when the deployer pauses or resumes new deploys, carrying the new
+`paused` state.
+
 ### SurfaceCreated
 
 ```solidity
@@ -253,6 +285,11 @@ assume the collection is already fully configured.
 
 `createSurface` was called after deprecation. Deploy through the successor
 factory instead (`successor()`).
+
+**`FactoryPaused()`**
+
+`createSurface`/`createPooledSurface` was called while the factory is paused
+(see `setPaused`). Retry once the deployer resumes it.
 
 **`FailedDeployment()`**
 

@@ -26,12 +26,15 @@ library MetadataJson {
         return string.concat("data:application/json;base64,", Base64.encode(bytes(json)));
     }
 
+    /// @dev Both `trait` and `value` are escaped so the attribute is JSON-safe by default —
+    ///      today's callers pass literals (a no-op), but a bundled renderer passing dynamic
+    ///      text through here can't inject into the metadata.
     function numAttr(string memory trait, uint256 value) internal pure returns (string memory) {
-        return string.concat('{"trait_type":"', trait, '","value":', value.toString(), "}");
+        return string.concat('{"trait_type":"', escape(trait), '","value":', value.toString(), "}");
     }
 
     function strAttr(string memory trait, string memory value) internal pure returns (string memory) {
-        return string.concat('{"trait_type":"', trait, '","value":"', value, '"}');
+        return string.concat('{"trait_type":"', escape(trait), '","value":"', escape(value), '"}');
     }
 
     /// @notice Provenance traits, derived on the spot — nothing per-token is

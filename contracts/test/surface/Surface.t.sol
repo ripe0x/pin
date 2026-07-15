@@ -904,6 +904,42 @@ contract SurfaceTest is SurfaceBase {
         factory.deprecate(address(0));
     }
 
+    // ── factory pause (reversible off/on for NEW deploys) ────────────────────
+
+    function test_factory_pause_isReversibleAndDeployerOnly() public {
+        // baseline: a deploy works
+        _collection(_freeConfig());
+        assertFalse(factory.paused());
+
+        // pause → new deploys revert; existing collections untouched
+        vm.expectEmit(false, false, false, true, address(factory));
+        emit SurfaceFactory.PausedSet(true);
+        factory.setPaused(true);
+        assertTrue(factory.paused());
+        address[] memory none = new address[](0);
+        vm.expectRevert(SurfaceFactory.FactoryPaused.selector);
+        factory.createSurface("Paused", "PAU", artist, _freeConfig(), none, none);
+
+        // resume → deploys work again (the reversible part `deprecate` can't do)
+        factory.setPaused(false);
+        assertFalse(factory.paused());
+        _collection(_freeConfig()); // no revert
+
+        // deployer-only
+        vm.expectRevert(SurfaceFactory.NotDeployer.selector);
+        vm.prank(stranger);
+        factory.setPaused(true);
+    }
+
+    function test_factory_deprecate_overrides_unpause() public {
+        factory.deprecate(address(0));
+        // even explicitly un-pausing can't revive a deprecated factory
+        factory.setPaused(false);
+        address[] memory none = new address[](0);
+        vm.expectRevert(SurfaceFactory.FactoryDeprecated.selector);
+        factory.createSurface("Nope", "NOP", artist, _freeConfig(), none, none);
+    }
+
     // ── renounceOwnership disabled ────────────────────────────────────────────
 
     function test_renounceOwnership_disabled() public {

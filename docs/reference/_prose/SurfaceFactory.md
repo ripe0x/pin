@@ -181,10 +181,25 @@ completely unaffected — the deployer holds zero power over them; this switch
 only stops the buggy implementation from being cloned again. Reverts
 `AlreadyDeprecated` on a second call. Emits `Deprecated`.
 
+## function setPaused
+
+access: deployer-only (`msg.sender` must be the factory deployer, else `NotDeployer`)
+
+Reversible off/on switch for NEW deploys — the everyday circuit breaker
+(incident, maintenance), distinct from the permanent one-way `deprecate`. While
+paused, `createSurface`/`createPooledSurface` revert `FactoryPaused`; flip it
+back and deploys resume. Deployed collections are never affected. A deprecated
+factory stays permanently off regardless of this flag. Emits `PausedSet`.
+
+## function paused
+
+True while new deploys are paused (see `setPaused`). Reversible, unlike
+`deprecated`.
+
 ## function deployer
 
-The address that deployed the factory: the only address that may call
-`deprecate`, and its only privilege.
+The address that deployed the factory: the only address that may `deprecate` or
+`setPaused`, and its only privilege.
 
 ## function deprecated
 
@@ -200,6 +215,11 @@ discovery pointer for integrators walking factory generations.
 Emitted once when the deployer permanently deprecates the factory, carrying
 the successor address (zero if none named).
 
+## event PausedSet
+
+Emitted when the deployer pauses or resumes new deploys, carrying the new
+`paused` state.
+
 ## error AlreadyDeprecated
 
 `deprecate` was called on an already-deprecated factory.
@@ -208,6 +228,11 @@ the successor address (zero if none named).
 
 `createSurface` was called after deprecation. Deploy through the successor
 factory instead (`successor()`).
+
+## error FactoryPaused
+
+`createSurface`/`createPooledSurface` was called while the factory is paused
+(see `setPaused`). Retry once the deployer resumes it.
 
 ## error NotDeployer
 

@@ -49,13 +49,21 @@ contract SurfaceFactory {
     /// @notice The replacement factory once deprecated (informational).
     address public successor;
 
+    /// @notice Reversible pause on NEW deploys, distinct from `deprecated`: a temporary
+    ///         off switch (incident, maintenance) the deployer can flip back on. Deprecation
+    ///         is the permanent, one-way end-of-life; this is the everyday circuit breaker.
+    ///         Neither touches collections already deployed.
+    bool public paused;
+
     mapping(address => bool) public isSurface;
     address[] public allSurfaces;
 
     event SurfaceCreated(address indexed owner, address indexed collection, IdMode idMode);
     event Deprecated(address indexed successor);
+    event PausedSet(bool paused);
 
     error FactoryDeprecated();
+    error FactoryPaused();
     error NotDeployer();
     error AlreadyDeprecated();
     error NotAContract(address account);
@@ -87,6 +95,14 @@ contract SurfaceFactory {
         deprecated = true;
         successor = successor_;
         emit Deprecated(successor_);
+    }
+
+    /// @notice Reversible: pause or resume new deploys. Deployer-only. Independent of
+    ///         `deprecate` — a deprecated factory stays permanently off regardless.
+    function setPaused(bool paused_) external {
+        if (msg.sender != deployer) revert NotDeployer();
+        paused = paused_;
+        emit PausedSet(paused_);
     }
 
     /// @notice Deploy + configure a sequential collection owned by `owner` —
@@ -138,6 +154,7 @@ contract SurfaceFactory {
         address[] calldata creators
     ) private returns (address collection) {
         if (deprecated) revert FactoryDeprecated();
+        if (paused) revert FactoryPaused();
         if (owner == address(0)) revert OwnerRequired();
         collection = Clones.clone(implementation);
         SurfaceCore(collection)
