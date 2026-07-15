@@ -124,4 +124,16 @@ contract CreatorAttributionTest is Test {
         assertTrue(c2.isListedCreator(collabB));
         assertFalse(c2.isConfirmedCreator(collabB), "no catalog => never confirmed");
     }
+
+    /// @dev A nonzero catalog must be a real contract: a mistyped/EOA address would make
+    ///      isConfirmedCreator revert forever on every collection, unrecoverably. Zero
+    ///      (confirmation disabled) stays legal — see test_noCatalog_confirmationDisabled.
+    function test_constructor_rejectsNonContractCatalog() public {
+        address eoaCatalog = makeAddr("notACatalog");
+        // deploy the other args BEFORE expectRevert so the only CREATE it guards is the factory
+        address pooled = address(new PooledSurface());
+        address rend = address(new MockRenderer());
+        vm.expectRevert(abi.encodeWithSelector(SurfaceFactory.NotAContract.selector, eoaCatalog));
+        new SurfaceFactory(address(impl), pooled, rend, eoaCatalog);
+    }
 }

@@ -97,6 +97,9 @@ Reverts construction when the `code` array is empty: a renderer with no artist c
 **`NotAContract`** · [SurfaceFactory](/docs/collections/contracts/factory#errors)\
 The factory constructor was given an implementation, pooled implementation, or default renderer address with no code.
 
+**`NotAContract`** · [Surface](/docs/collections/contracts/surface#errors)\
+A hook or price-strategy address is nonzero but has no code (carries the offending address).
+
 **`NotAllowlisted`** · [AllowlistHook](/docs/collections/contracts/allowlist-hook#errors)\
 The minter's Merkle proof did not verify against the collection's allowlist root.
 

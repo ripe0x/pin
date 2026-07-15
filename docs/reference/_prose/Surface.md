@@ -900,6 +900,14 @@ Raised by `initialize` and `setRenderer`: a codeless renderer would brick
 `tokenURI` — fatally so for a collection born `rendererLocked` — so the typo is
 refused at the door instead.
 
+## error NotAContract
+
+A hook or price-strategy address is nonzero but has no code (carries the
+offending address). Raised by `initialize`, `setMintHook`, and
+`setPriceStrategy`: an EOA or typo in either slot would revert every mint on the
+ABI-decode of empty returndata, so a nonzero value must be a deployed contract.
+Zero stays legal — it means "no hook" / "fixed price".
+
 ## error RoyaltyTooHigh
 
 `initialize` or `setRoyalty` was given a royalty above the 50% cap (`5000` bps).

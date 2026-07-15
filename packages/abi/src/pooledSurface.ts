@@ -1808,6 +1808,17 @@ export const pooledSurfaceAbi = [
   },
   {
     "type": "error",
+    "name": "NotAContract",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "NotAnAdmin",
     "inputs": []
   },

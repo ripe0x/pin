@@ -144,6 +144,31 @@ contract SurfaceAdminTest is SurfaceBase {
 
     // ── admin has full management access ──────────────────────────────────────
 
+    /// @dev The hook and price-strategy slots must hold a deployed contract (or 0 for none):
+    ///      an EOA/typo would revert every mint on the ABI-decode of empty returndata. Same
+    ///      rule setRenderer already enforces.
+    function test_setMintHook_rejectsNonContract_allowsZeroAndContract() public {
+        Surface c = _collection(_freeConfig());
+        address eoa = makeAddr("notAHook");
+        vm.startPrank(artist);
+        vm.expectRevert(abi.encodeWithSelector(ISurfaceCore.NotAContract.selector, eoa));
+        c.setMintHook(eoa);
+        c.setMintHook(address(0)); // 0 = no hook, allowed
+        c.setMintHook(address(new MockRenderer())); // any deployed contract, allowed
+        vm.stopPrank();
+    }
+
+    function test_setPriceStrategy_rejectsNonContract_allowsZeroAndContract() public {
+        Surface c = _collection(_freeConfig());
+        address eoa = makeAddr("notAStrategy");
+        vm.startPrank(artist);
+        vm.expectRevert(abi.encodeWithSelector(ISurfaceCore.NotAContract.selector, eoa));
+        c.setPriceStrategy(eoa);
+        c.setPriceStrategy(address(0)); // 0 = fixed price, allowed
+        c.setPriceStrategy(address(new MockRenderer())); // any deployed contract, allowed
+        vm.stopPrank();
+    }
+
     function test_admin_canRunEveryManagementFunction() public {
         Surface c = _collection(_pricedConfig(1 ether));
         vm.prank(artist);
@@ -160,8 +185,8 @@ contract SurfaceAdminTest is SurfaceBase {
         c.setRoyalty(250, makeAddr("royalty"));
         c.setSupplyCap(100);
         c.setRenderer(newRenderer);
-        c.setMintHook(makeAddr("hook"));
-        c.setPriceStrategy(makeAddr("strategy"));
+        c.setMintHook(newRenderer); // hook/strategy now require a deployed contract (any works here)
+        c.setPriceStrategy(newRenderer);
         c.setMinter(makeAddr("minter"), true);
         c.notifyMetadataUpdate(1, 1);
         c.setPayoutAddress(makeAddr("payout")); // money routing is in scope for full-access admins

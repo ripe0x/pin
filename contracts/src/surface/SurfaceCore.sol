@@ -137,6 +137,13 @@ abstract contract SurfaceCore is
         if (p.cfg.renderer == address(0)) _cfg.renderer = p.defaultRenderer;
         if (_cfg.renderer == address(0)) revert RendererRequired();
         if (_cfg.renderer.code.length == 0) revert RendererNotContract(_cfg.renderer);
+        // The hook and price-strategy slots are optional (0 = none), but a nonzero value
+        // must be a real contract — an EOA/typo would revert every mint on the ABI-decode
+        // of empty returndata. Same rule the setters enforce.
+        if (_cfg.mintHook != address(0) && _cfg.mintHook.code.length == 0) revert NotAContract(_cfg.mintHook);
+        if (_cfg.priceStrategy != address(0) && _cfg.priceStrategy.code.length == 0) {
+            revert NotAContract(_cfg.priceStrategy);
+        }
         _catalog = p.catalog;
         for (uint256 i = 0; i < p.initialMinters.length; i++) {
             address m = p.initialMinters[i];
@@ -354,6 +361,9 @@ abstract contract SurfaceCore is
         _cfg.mintStart = start;
         _cfg.mintEnd = end;
         emit MintWindowSet(start, end);
+        // The window drives the live lifecycle status (Scheduled/Open/Closed), which the
+        // renderer stamps into token metadata — signal marketplaces to refresh.
+        emit BatchMetadataUpdate(0, type(uint256).max);
     }
 
     /// @notice Update the stored fixed price. Ignored while a price strategy
@@ -383,6 +393,8 @@ abstract contract SurfaceCore is
         }
         _cfg.supplyCap = supplyCap;
         emit SupplyCapSet(supplyCap);
+        // The cap decides which token is the collection's "final mint" trait — refresh.
+        emit BatchMetadataUpdate(0, type(uint256).max);
     }
 
     /// @notice One-way: lock the supply cap forever — the scarcity promise.
@@ -409,11 +421,15 @@ abstract contract SurfaceCore is
     }
 
     function setMintHook(address hook) external override onlyOwnerOrAdmin {
+        // 0 = no hook; a nonzero value must be a real contract, same rule as setRenderer.
+        if (hook != address(0) && hook.code.length == 0) revert NotAContract(hook);
         _cfg.mintHook = hook;
         emit MintHookSet(hook);
     }
 
     function setPriceStrategy(address strategy) external override onlyOwnerOrAdmin {
+        // 0 = fixed price; a nonzero strategy must be a real contract.
+        if (strategy != address(0) && strategy.code.length == 0) revert NotAContract(strategy);
         _cfg.priceStrategy = strategy;
         emit PriceStrategySet(strategy);
     }
