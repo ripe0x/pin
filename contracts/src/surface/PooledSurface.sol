@@ -10,10 +10,12 @@ import {SurfaceStatus, IdMode} from "./SurfaceTypes.sol";
 /// @notice The pooled collection — for backed and sourced forms where the
 ///         token id means something outside this contract (tokenId ==
 ///         sourceId). The authorized minter owns the id pool: it chooses
-///         every id, and it alone can burn, so a token's backing can never be
-///         stranded from outside the pool's own economics. A burned id may
-///         mint again as a new instance with a fresh seed; the old instance's
-///         history stays in the log.
+///         every id, and it alone can burn. The form holds one minter at a
+///         time and can freeze it (lockMinter), so a backed collection's
+///         tokens can never be stranded by some other minter reaching in from
+///         outside the pool's own economics. A burned id may mint again as a
+///         new instance with a fresh seed; the old instance's history stays in
+///         the log.
 ///
 ///         There is no public sale entrypoint anywhere in this contract — a
 ///         pooled work sells through its minter. The absence is the rule.
@@ -34,8 +36,9 @@ contract PooledSurface is SurfaceCore, IPooledSurface {
         return false;
     }
 
-    /// @dev Minters only. The minter issues and retires; holders redeem
-    ///      through it, never around it.
+    /// @dev Minters only, and (enforced by the core for the pooled id mode) a
+    ///      single minter at a time, freezable via lockMinter. The minter
+    ///      issues and retires; holders redeem through it, never around it.
     function _burnAuthorized(address, uint256) internal view override returns (bool) {
         return _minters[msg.sender];
     }

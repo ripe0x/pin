@@ -503,3 +503,80 @@ and indexer were repointed to match.
 - The reviewer should read the diff as a mechanical rename: diffing
   `f85a23d` (the contracts rename commit) against its parent shows every
   change is `Collection`→`Surface` in an identifier position.
+
+## 2026-07-14 (j): external audit remediations (Surface-core findings)
+
+The pre-deploy external audit came back with 0 critical / 0 high, 3
+medium, 3 low, 2 info. Three findings land in the Surface core (this
+repo); the rest live in the launch project's own contracts (Homage, the
+`ripe0x/permanence` repo) and are tracked there, not in this diff. The
+core fixes applied here:
+
+### M-01 — pooled burn was not bound to the issuing minter
+
+`PooledSurface._burnAuthorized` gated burn on `_minters[msg.sender]` with
+no tie to the token's issuer. With more than one authorized minter, minter
+B could burn a token minter A issued and backed — stranding A's escrow and
+removing the id from A's pool for good. The comment claiming "nobody can
+strand it from outside" only held for a single minter.
+
+Fix (the chosen direction: pooled is single-minter by construction):
+- The pooled form now allows **one minter at a time**. `SurfaceCore` keeps
+  a `_minterCount` and, for the `Pooled` id mode, rejects a second grant
+  (`TooManyMinters`) in both `setMinter` and `initialize`; Sequential is
+  uncapped. A redundant grant is a no-op so the count can't drift. The rule
+  keys off `idMode() == Pooled` rather than a numeric limit knob: any cap
+  above 1 would reopen this very finding (pooled burn is minter-wide), so
+  single-minter-ness is expressed as exactly what it is — a property of the
+  pooled mode, not a tunable.
+- New one-way `lockMinter()` (+ `isMinterLocked()`, event `MinterLocked`,
+  error `MinterIsLocked`) freezes the minter set — the same lock vocabulary
+  as `lockRenderer`/`lockSupply`. A backed collection locks its single
+  minter at deploy, so exactly one address can ever retire an id. This
+  closes the residual "revoke A, add B, B burns A's backing" swap window,
+  which the one-at-a-time cap alone does not.
+- Sequential is unchanged (burn there is owner-or-approved, not minter-
+  gated; multiple minters stay legal). The lock is available on it too.
+- Coverage: `test/surface/SurfaceMinterLimit.t.sol` (11 tests) — second-
+  minter rejection at init and via setMinter, the swap-before-lock path,
+  no count drift on redundant grants, the exact "second minter can't burn
+  the first's token" scenario, lock freezes grants+revokes, the locked
+  single minter still mints and burns, double-lock and authority guards.
+
+### I-01 — the owner could add itself as an explicit admin
+
+`addAdmin` checked only `_admins[account]`, so `addAdmin(owner())`
+succeeded even though `isAdmin` already returns true for the owner. That
+self-grant would outlive an ownership transfer (the old owner staying an
+explicit admin), which is never what the caller means. `addAdmin` now
+rejects the current owner with `AlreadyAdmin`. Coverage:
+`SurfaceAdmin.t.sol::test_addAdmin_rejectsOwner`.
+
+### I-02 — ScriptyRenderer accepted non-contract builder / stores
+
+The core refuses a non-contract renderer at the door, but a
+ScriptyRenderer could be deployed with an EOA builder or EOA file stores;
+locked into a collection, that bricks `tokenURI` permanently. The
+constructor now requires deployed code at the builder, every code/dep
+`store`, and the gunzip store when any file is gzipped (`StoreNotContract`
+/ `BuilderRequired` / `GunzipStoreRequired`, all at construction). Coverage:
+`test/surface/templates/ScriptyRendererStores.t.sol` (6 tests).
+
+### Sizes / tests after (j)
+
+- Full protocol suite: **241 unit tests green** (223 + 18 new); 6 fork
+  tests unaffected.
+- Size gates hold with room to spare: **Surface 19,040 / PooledSurface
+  16,908** runtime bytes (gate 23,576, EIP-170 limit 24,576). M-01 added
+  ~380/420 bytes; the margins are 5,536 / 7,668.
+- ABIs (`surface`, `pooledSurface`, `scriptyRenderer`), the docs
+  generator (44 pages), and the web typecheck all regenerated / pass.
+
+### Not in this diff — the launch project (Homage, `ripe0x/permanence`)
+
+Deferred to the Homage repo's own workstream: M-01's deploy-time
+single-minter lock on the launch collection, M-02 (the escalating reveal
+is stamped but never read by the renderer; `mintSeq` regresses after a
+redeem), M-03 (Uniswap pool/token config unvalidated in the constructor),
+L-01 (O(n) fee loop), L-02 (JSON escaping misses control chars), L-03
+(preview breaks the preview convention). None touch the Surface core.

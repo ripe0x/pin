@@ -74,6 +74,17 @@ contract SurfaceAdminTest is SurfaceBase {
         vm.stopPrank();
     }
 
+    /// @dev The owner is already an admin (isAdmin reads it live), so a
+    ///      self-grant is refused: it would only mint an explicit key that
+    ///      outlives ownership transfer, which is never what the caller means.
+    function test_addAdmin_rejectsOwner() public {
+        Surface c = _collection(_freeConfig());
+        vm.expectRevert(ISurfaceCore.AlreadyAdmin.selector);
+        vm.prank(artist);
+        c.addAdmin(artist);
+        assertFalse(c.isAdmin(stranger)); // sanity: nothing was granted
+    }
+
     function test_addAdmin_onlyOwner_notStranger() public {
         Surface c = _collection(_freeConfig());
         vm.expectRevert(ownableUnauthStranger);

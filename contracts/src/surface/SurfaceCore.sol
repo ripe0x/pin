@@ -76,6 +76,16 @@ abstract contract SurfaceCore is
     ///      theirs.
     mapping(address => bool) internal _minters;
 
+    /// @dev How many minters are granted right now. Kept in step with
+    ///      _minters so the pooled form can enforce its one-minter limit
+    ///      without walking a set.
+    uint256 internal _minterCount;
+
+    /// @dev One-way freeze of the minter set. Once true no grant or revoke
+    ///      lands. A backed pooled collection sets this so no minter can be
+    ///      swapped in later to retire another minter's backed tokens.
+    bool internal _minterLocked;
+
     /// @dev Admins, granted by the owner. An admin can call every management
     ///      function the owner can, except two the owner keeps: managing the
     ///      admin set and transferring ownership. The owner stays the single
@@ -129,10 +139,17 @@ abstract contract SurfaceCore is
         if (_cfg.renderer.code.length == 0) revert RendererNotContract(_cfg.renderer);
         _catalog = p.catalog;
         for (uint256 i = 0; i < p.initialMinters.length; i++) {
-            if (p.initialMinters[i] == address(0)) revert ZeroMinter();
-            _minters[p.initialMinters[i]] = true;
-            emit MinterSet(p.initialMinters[i], true);
+            address m = p.initialMinters[i];
+            if (m == address(0)) revert ZeroMinter();
+            if (_minters[m]) continue; // a repeated address is not a second grant
+            _minters[m] = true;
+            _minterCount += 1;
+            emit MinterSet(m, true);
         }
+        // The pooled form runs on a single minter — its burn is minter-wide,
+        // so a second could retire a token the first one backs. A clone can't
+        // be born over that either.
+        if (idMode() == IdMode.Pooled && _minterCount > 1) revert TooManyMinters();
         for (uint256 i = 0; i < p.creators.length; i++) {
             isListedCreator[p.creators[i]] = true;
             emit CreatorListed(p.creators[i], true);
@@ -182,10 +199,12 @@ abstract contract SurfaceCore is
     }
 
     /// @notice Burn a token. Authority is the final's answer: owner-or-
-    ///         approved in the sequential form; authorized minters only in
-    ///         the pooled form (the minter owns the id pool and any backing,
-    ///         so nobody can strand it from outside). The burned instance's
-    ///         seed stays readable until a pooled re-mint overwrites it.
+    ///         approved in the sequential form; authorized minters only in the
+    ///         pooled form. The pooled form holds one minter and can freeze it
+    ///         (lockMinter), so a locked backed collection has exactly one
+    ///         address that can ever retire an id — its backing can't be
+    ///         stranded from outside. The burned instance's seed stays readable
+    ///         until a pooled re-mint overwrites it.
     function burn(uint256 tokenId) external override nonReentrant {
         address tokenOwner = _requireOwned(tokenId);
         if (!_burnAuthorized(tokenOwner, tokenId)) revert NotAuthorized();
@@ -287,12 +306,15 @@ abstract contract SurfaceCore is
         _;
     }
 
-    /// @notice Grant an admin (owner-only). Reverts on the zero address and
-    ///         on a duplicate grant, so every grant is one explicit state
-    ///         change with one matching event.
+    /// @notice Grant an admin (owner-only). Reverts on the zero address and on
+    ///         a duplicate grant, so every grant is one explicit state change
+    ///         with one matching event. The owner is already an admin (isAdmin
+    ///         reads it live), so adding the current owner is rejected too —
+    ///         it would only make an explicit grant that outlives ownership
+    ///         transfer, which is never what the caller means.
     function addAdmin(address account) external override onlyOwner {
         if (account == address(0)) revert ZeroAccount();
-        if (_admins[account]) revert AlreadyAdmin();
+        if (account == owner() || _admins[account]) revert AlreadyAdmin();
         _admins[account] = true;
         emit AdminSet(account, true);
     }
@@ -409,10 +431,21 @@ abstract contract SurfaceCore is
     }
 
     /// @notice Grant or revoke an extension minter — the artist's visible,
-    ///         onchain choice, and the lever over a minter's schedule.
+    ///         onchain choice, and the lever over a minter's schedule. Reverts
+    ///         once the minter set is locked. The pooled form holds one minter
+    ///         at a time, so a redundant call is a no-op rather than a way to
+    ///         drift the count.
     function setMinter(address minter, bool allowed) external override onlyOwnerOrAdmin {
         if (minter == address(0)) revert ZeroMinter();
+        if (_minterLocked) revert MinterIsLocked();
+        if (_minters[minter] == allowed) return; // already in the asked-for state
         _minters[minter] = allowed;
+        if (allowed) {
+            _minterCount += 1;
+            if (idMode() == IdMode.Pooled && _minterCount > 1) revert TooManyMinters();
+        } else {
+            _minterCount -= 1;
+        }
         emit MinterSet(minter, allowed);
     }
 
@@ -462,6 +495,17 @@ abstract contract SurfaceCore is
         if (_cfg.rendererLocked) revert RendererIsLocked();
         _cfg.rendererLocked = true;
         emit RendererLocked();
+    }
+
+    /// @notice One-way, optional: freeze the minter set forever. For a backed
+    ///         pooled collection this is the promise that no minter can be
+    ///         swapped in later to retire another minter's backed tokens — set
+    ///         it once the intended minter is wired. Redundant on a collection
+    ///         with no extension minters, but harmless.
+    function lockMinter() external override onlyOwnerOrAdmin {
+        if (_minterLocked) revert MinterIsLocked();
+        _minterLocked = true;
+        emit MinterLocked();
     }
 
     /// @notice Disabled. Renouncing would orphan the collection: proceeds
@@ -549,6 +593,10 @@ abstract contract SurfaceCore is
 
     function isSupplyLocked() external view override returns (bool) {
         return _cfg.supplyLocked;
+    }
+
+    function isMinterLocked() external view override returns (bool) {
+        return _minterLocked;
     }
 
     // ─────────────────────────────────────────────────────────────────────────

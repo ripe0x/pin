@@ -287,5 +287,16 @@ export const scriptyRendererAbi = [
     "type": "error",
     "name": "NoCode",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "StoreNotContract",
+    "inputs": [
+      {
+        "name": "store",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
   }
 ] as const;

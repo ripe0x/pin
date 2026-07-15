@@ -310,9 +310,25 @@ Points the price strategy slot at a new strategy, or zero to use the stored fixe
 access: owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`)
 
 Grants (`allowed = true`) or revokes an extension minter that may call `mintTo`
-or `mintToId`. Reverts `ZeroMinter` for the zero address. Authorizing a minter is
-the artist's visible onchain choice, and revoking it is the artist's lever over
-that minter's schedule and behavior. Emits `MinterSet`.
+or `mintToId`. Reverts `ZeroMinter` for the zero address, and `MinterIsLocked`
+once `lockMinter` has run. A redundant call (setting a minter to the state it is
+already in) is a no-op. The Pooled form holds one minter at a time — because its
+burn authority is minter-wide, a second minter could retire a token the first
+one backs — so granting a second there reverts `TooManyMinters`; the Sequential
+form has no such cap. Authorizing a minter is the artist's visible onchain
+choice, and revoking it is the artist's lever over that minter's schedule and
+behavior. Emits `MinterSet`.
+
+## function lockMinter
+
+access: owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`)
+
+One-way, optional (off by default): permanently freeze the minter set, so no
+minter can be granted or revoked afterward. For a backed Pooled collection this
+is the promise that no minter can be swapped in later to retire another minter's
+backed tokens — set it once the intended minter is wired. Harmless but redundant
+on a collection with no extension minters. Reverts `MinterIsLocked` if already
+locked. Emits `MinterLocked`.
 
 ## function addAdmin
 
@@ -516,6 +532,10 @@ when confirmation is disabled).
 
 True once `lockSupply` has permanently locked the supply cap.
 
+## function isMinterLocked
+
+True once `lockMinter` has permanently frozen the minter set.
+
 
 
 
@@ -671,6 +691,10 @@ read.
 
 Emitted once when `lockSupply` permanently locks the supply cap.
 
+## event MinterLocked
+
+Emitted once when `lockMinter` permanently freezes the minter set.
+
 ## event AdminSet
 
 Emitted when an admin key is granted (`allowed = true`) or revoked. Indexed by
@@ -810,6 +834,17 @@ pointer is permanently pinned.
 
 `setSupplyCap` or `lockSupply` was called after `lockSupply`. The supply cap is
 permanently frozen.
+
+## error MinterIsLocked
+
+`setMinter` or `lockMinter` was called after `lockMinter`. The minter set is
+permanently frozen.
+
+## error TooManyMinters
+
+A minter grant would exceed the form's limit. The Pooled form allows exactly one
+minter at a time (its burn authority is minter-wide), so granting a second — via
+`setMinter` or seeded at init through `initialMinters` — reverts.
 
 ## error MintNotStarted
 

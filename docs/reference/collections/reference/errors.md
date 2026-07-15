@@ -56,7 +56,7 @@ A mint would cross the supply cap: mints ever in Sequential mode, or live supply
 Inherited from OpenZeppelin `Clones`.
 
 **`GunzipStoreRequired`** · [ScriptyRenderer](/docs/collections/contracts/scripty-renderer#errors)\
-Reverts at `tokenURI` time when a dependency or code file is gzipped but no gunzip store was configured, so the gzip tags could never be decompressed in the browser.
+Reverts at construction when any dependency or code file is gzipped but the gunzip store is not a deployed contract, so the gzip tags could never be decompressed in the browser.
 
 **`HookRejected`** · [Surface](/docs/collections/contracts/surface#errors)\
 The mint hook's `beforeMint` did not return the required selector, so the hook rejected the mint.
@@ -72,6 +72,9 @@ Standard OpenZeppelin Initializable error: `initialize` was called more than onc
 
 **`MintEnded`** · [Surface](/docs/collections/contracts/surface#errors)\
 A paid mint was attempted at or after a non-zero `mintEnd`.
+
+**`MinterIsLocked`** · [Surface](/docs/collections/contracts/surface#errors)\
+`setMinter` or `lockMinter` was called after `lockMinter`.
 
 **`MintNotStarted`** · [Surface](/docs/collections/contracts/surface#errors)\
 A paid mint was attempted before `mintStart`.
@@ -166,8 +169,14 @@ The ETH transfer inside `rescueStrayETH` reverted.
 **`RoyaltyTooHigh`** · [Surface](/docs/collections/contracts/surface#errors)\
 `initialize` or `setRoyalty` was given a royalty above the 50% cap (`5000` bps).
 
+**`StoreNotContract`** · [ScriptyRenderer](/docs/collections/contracts/scripty-renderer#errors)\
+Reverts at construction when a code or dependency file's `store` is not a deployed contract (carries the offending address).
+
 **`SupplyIsLocked`** · [Surface](/docs/collections/contracts/surface#errors)\
 `setSupplyCap` or `lockSupply` was called after `lockSupply`.
+
+**`TooManyMinters`** · [Surface](/docs/collections/contracts/surface#errors)\
+A minter grant would exceed the form's limit.
 
 **`Underpayment`** · [Surface](/docs/collections/contracts/surface#errors)\
 A mint with a price strategy set sent less than the strategy's resolved price.

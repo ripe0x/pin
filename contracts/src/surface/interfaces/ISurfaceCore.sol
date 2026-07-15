@@ -46,6 +46,8 @@ interface ISurfaceCore {
     error BadSupplyCap(uint256 floor, uint256 requested);
     error SupplyIsLocked();
     error RendererIsLocked();
+    error MinterIsLocked();
+    error TooManyMinters();
 
     // ── events ──────────────────────────────────────────────────────────────
     event SurfaceConfigured(IdMode idMode, uint256 price, uint256 supplyCap, uint64 mintStart, uint64 mintEnd);
@@ -81,6 +83,7 @@ interface ISurfaceCore {
     event SupplyCapSet(uint256 supplyCap);
     event SupplyLocked();
     event RendererLocked();
+    event MinterLocked();
     event CreatorListed(address indexed creator, bool listed);
     event RendererSet(address indexed renderer);
     event MintHookSet(address indexed hook);
@@ -124,7 +127,13 @@ interface ISurfaceCore {
     function setPriceStrategy(address strategy) external;
     /// @notice Grant or revoke an extension minter — the artist's visible,
     ///         onchain choice, and the lever for revoking a minter's schedule.
+    ///         Reverts once the minter set is locked; the pooled form holds one
+    ///         minter at a time.
     function setMinter(address minter, bool allowed) external;
+    /// @notice One-way, optional: freeze the minter set forever. A backed
+    ///         pooled collection sets this so no minter can be swapped in later
+    ///         to retire another minter's backed tokens.
+    function lockMinter() external;
     /// @notice Grant an admin. An admin can call every management function the
     ///         owner can, except managing admins and transferring ownership.
     ///         Owner-only; reverts AlreadyAdmin / ZeroAccount.
@@ -192,6 +201,8 @@ interface ISurfaceCore {
     function isAdmin(address account) external view returns (bool);
     function isRendererLocked() external view returns (bool);
     function isSupplyLocked() external view returns (bool);
+    /// @notice Whether the minter set is frozen (see lockMinter).
+    function isMinterLocked() external view returns (bool);
     /// @notice Whether the owner has listed `who` as a creator (one side).
     function isListedCreator(address who) external view returns (bool);
     /// @notice Live, mutual attribution: the owner listed `who` AND `who`

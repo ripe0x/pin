@@ -26,6 +26,8 @@ Every event the Collections contracts emit, grouped by contract. Signatures and 
 
 **[`Minted`](/docs/collections/contracts/surface#minted)** · One event per mint call — THE permanent per-mint provenance record.
 
+**[`MinterLocked`](/docs/collections/contracts/surface#minterlocked)** · Emitted once when `lockMinter` permanently freezes the minter set.
+
 **[`MinterSet`](/docs/collections/contracts/surface#minterset)** · Emitted when an extension minter is granted or revoked, and once per initial minter at init.
 
 **[`MintHookSet`](/docs/collections/contracts/surface#minthookset)** · Emitted when the mint hook slot changes.

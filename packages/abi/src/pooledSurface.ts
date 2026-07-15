@@ -475,6 +475,19 @@ export const pooledSurfaceAbi = [
   },
   {
     "type": "function",
+    "name": "isMinterLocked",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "isRendererLocked",
     "inputs": [],
     "outputs": [
@@ -498,6 +511,13 @@ export const pooledSurfaceAbi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "lockMinter",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -1330,6 +1350,12 @@ export const pooledSurfaceAbi = [
   },
   {
     "type": "event",
+    "name": "MinterLocked",
+    "inputs": [],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "MinterSet",
     "inputs": [
       {
@@ -1767,6 +1793,11 @@ export const pooledSurfaceAbi = [
   },
   {
     "type": "error",
+    "name": "MinterIsLocked",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "NeverMinted",
     "inputs": []
   },
@@ -1871,6 +1902,11 @@ export const pooledSurfaceAbi = [
   {
     "type": "error",
     "name": "SupplyIsLocked",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TooManyMinters",
     "inputs": []
   },
   {

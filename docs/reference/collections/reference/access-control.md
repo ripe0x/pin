@@ -24,6 +24,7 @@ Every state-changing function in the Collections contracts and who may call it. 
 | [`setMintHook`](/docs/collections/contracts/surface#setminthook) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
 | [`setPriceStrategy`](/docs/collections/contracts/surface#setpricestrategy) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
 | [`setMinter`](/docs/collections/contracts/surface#setminter) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
+| [`lockMinter`](/docs/collections/contracts/surface#lockminter) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
 | [`addAdmin`](/docs/collections/contracts/surface#addadmin) | owner-only (`onlyOwner`, else `OwnableUnauthorizedAccount`) |
 | [`removeAdmin`](/docs/collections/contracts/surface#removeadmin) | owner, or the admin itself renouncing (else `NotAuthorized`) |
 | [`setPayoutAddress`](/docs/collections/contracts/surface#setpayoutaddress) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |

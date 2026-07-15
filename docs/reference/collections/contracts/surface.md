@@ -376,9 +376,29 @@ function setMinter(address minter, bool allowed) external
 **Access:** owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`)
 
 Grants (`allowed = true`) or revokes an extension minter that may call `mintTo`
-or `mintToId`. Reverts `ZeroMinter` for the zero address. Authorizing a minter is
-the artist's visible onchain choice, and revoking it is the artist's lever over
-that minter's schedule and behavior. Emits `MinterSet`.
+or `mintToId`. Reverts `ZeroMinter` for the zero address, and `MinterIsLocked`
+once `lockMinter` has run. A redundant call (setting a minter to the state it is
+already in) is a no-op. The Pooled form holds one minter at a time — because its
+burn authority is minter-wide, a second minter could retire a token the first
+one backs — so granting a second there reverts `TooManyMinters`; the Sequential
+form has no such cap. Authorizing a minter is the artist's visible onchain
+choice, and revoking it is the artist's lever over that minter's schedule and
+behavior. Emits `MinterSet`.
+
+### lockMinter
+
+```solidity
+function lockMinter() external
+```
+
+**Access:** owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`)
+
+One-way, optional (off by default): permanently freeze the minter set, so no
+minter can be granted or revoked afterward. For a backed Pooled collection this
+is the promise that no minter can be swapped in later to retire another minter's
+backed tokens — set it once the intended minter is wired. Harmless but redundant
+on a collection with no extension minters. Reverts `MinterIsLocked` if already
+locked. Emits `MinterLocked`.
 
 ### addAdmin
 
@@ -672,6 +692,14 @@ function isMinter(address minter) external view returns (bool)
 True if the address is an authorized extension minter allowed to call `mintTo` or
 `mintToId`.
 
+### isMinterLocked
+
+```solidity
+function isMinterLocked() external view returns (bool)
+```
+
+True once `lockMinter` has permanently frozen the minter set.
+
 ### isRendererLocked
 
 ```solidity
@@ -953,6 +981,14 @@ extension mint before the public window says Scheduled). The mint block is the
 log's own block number. Nothing here is stored per token; indexers read this
 event and never need per-token calls.
 
+### MinterLocked
+
+```solidity
+event MinterLocked()
+```
+
+Emitted once when `lockMinter` permanently freezes the minter set.
+
 ### MinterSet
 
 ```solidity
@@ -1183,6 +1219,11 @@ or called on the implementation whose initializers are disabled.
 A paid mint was attempted at or after a non-zero `mintEnd`. The window has closed
 (the owner can reopen it with `setMintWindow`).
 
+**`MinterIsLocked()`**
+
+`setMinter` or `lockMinter` was called after `lockMinter`. The minter set is
+permanently frozen.
+
 **`MintNotStarted()`**
 
 A paid mint was attempted before `mintStart`. Wait for the window to open, or the
@@ -1277,6 +1318,12 @@ The ETH transfer inside `rescueStrayETH` reverted.
 
 `setSupplyCap` or `lockSupply` was called after `lockSupply`. The supply cap is
 permanently frozen.
+
+**`TooManyMinters()`**
+
+A minter grant would exceed the form's limit. The Pooled form allows exactly one
+minter at a time (its burn authority is minter-wide), so granting a second — via
+`setMinter` or seeded at init through `initialMinters` — reverts.
 
 **`Underpayment(uint256 required, uint256 sent)`**
 

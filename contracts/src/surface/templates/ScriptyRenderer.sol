@@ -84,6 +84,7 @@ contract ScriptyRenderer is IRenderer, IPreviewRenderer {
     error NoCode();
     error BuilderRequired();
     error GunzipStoreRequired();
+    error StoreNotContract(address store);
 
     constructor(
         address scriptyBuilder_,
@@ -94,21 +95,32 @@ contract ScriptyRenderer is IRenderer, IPreviewRenderer {
         uint8 injectionVersion_,
         address renderAssets_
     ) {
-        if (scriptyBuilder_ == address(0)) revert BuilderRequired();
+        if (scriptyBuilder_.code.length == 0) revert BuilderRequired();
         if (code_.length == 0) revert NoCode();
         scriptyBuilder = IScriptyBuilderV2(scriptyBuilder_);
-        // gunzipStore is only consulted when a gzipped file is present; still
-        // required non-zero if any dep/code is gzipped (checked at build time).
         gunzipStore = gunzipStore_;
         _gunzipFile = gunzipFile_;
         injectionVersion = injectionVersion_;
         renderAssets = RenderAssets(renderAssets_);
+        // Every referenced file store must be a deployed contract. An EOA store
+        // makes tokenURI revert, and if the renderer is then locked in, that
+        // break is permanent — the same door-check the core applies to the
+        // renderer slot, pushed down to the files this renderer reads.
+        bool needsGunzip;
         for (uint256 i = 0; i < code_.length; i++) {
+            if (code_[i].store.code.length == 0) revert StoreNotContract(code_[i].store);
+            if (code_[i].kind == CodeKind.ScriptGzip) needsGunzip = true;
             _code.push(code_[i]);
         }
         for (uint256 i = 0; i < deps_.length; i++) {
+            if (deps_[i].store.code.length == 0) revert StoreNotContract(deps_[i].store);
+            if (deps_[i].kind == CodeKind.ScriptGzip) needsGunzip = true;
             _deps.push(deps_[i]);
         }
+        // The gunzip helper is consulted only when a gzipped file is present;
+        // when one is, its store must hold code (the build would revert
+        // otherwise), so refuse it at the door instead of after a lock.
+        if (needsGunzip && gunzipStore_.code.length == 0) revert GunzipStoreRequired();
     }
 
     // ── verification views (anyone can attest what this renderer assembles) ──

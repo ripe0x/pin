@@ -9,15 +9,21 @@
 > discovery), a **multi-admin** access delta (owner + flat, full-access admins
 > via `addAdmin` / `removeAdmin`, owner stays the keyring root), terminology
 > renames (`mintToId`, `referral`), the **GateHook + IPreviewRenderer** additions
-> (the genart-branch port), and the **Collection → Surface rename** (identifiers
-> only, zero behavior change). The suite is 223 unit tests + opt-in mainnet-fork
-> probes, green.
+> (the genart-branch port), the **Collection → Surface rename** (identifiers
+> only, zero behavior change), and the **external-audit remediations** (M-01
+> single-minter pooled + `lockMinter`, I-01 `addAdmin(owner)` rejection, I-02
+> ScriptyRenderer store-code checks). The suite is 241 unit tests + opt-in
+> mainnet-fork probes, green; runtime sizes Surface 19,040 / PooledSurface
+> 16,908 (gate 23,576).
 >
-> **Everything post-baseline is UN-REVIEWED and the external re-audit is the
-> deploy gate.** It must cover the core + the admin delta + the 2026-07-13
-> batch (mintFor, renderer guard, RenderAssets template/capturer,
-> isAdmin(owner)) + the 2026-07-14 GateHook + IPreviewRenderer additions + the
-> Surface rename + the launch project's renderer. The running
+> **A first external audit came back with 0 critical / 0 high** (3 medium, 3
+> low, 2 info); the three Surface-core findings are fixed (see change log entry
+> (j)), the rest are launch-project (Homage) findings tracked in
+> `ripe0x/permanence`. A re-audit confirming the fixes remains the deploy gate.
+> It must cover the core + the admin delta + the 2026-07-13 batch (mintFor,
+> renderer guard, RenderAssets template/capturer, isAdmin(owner)) + the
+> 2026-07-14 GateHook + IPreviewRenderer additions + the Surface rename + the
+> M-01/I-01/I-02 remediations + the launch project's renderer. The running
 > review log is `docs/pnd-surface-reaudit-notes.md`. The post-deploy →
 > launch window has a runbook with kickoff prompts
 > (`docs/pnd-surface-prelaunch.md`); everything deferred past launch is

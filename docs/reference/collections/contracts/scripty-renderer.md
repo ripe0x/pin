@@ -164,10 +164,20 @@ have nothing to assemble the HTML document with.
 
 **`GunzipStoreRequired()`**
 
-Reverts at `tokenURI` time when a dependency or code file is gzipped but no gunzip
-store was configured, so the gzip tags could never be decompressed in the browser.
+Reverts at construction when any dependency or code file is gzipped but the
+gunzip store is not a deployed contract, so the gzip tags could never be
+decompressed in the browser. Refused up front rather than discovered at
+`tokenURI` time.
 
 **`NoCode()`**
 
 Reverts construction when the `code` array is empty: a renderer with no artist
 code has nothing to assemble.
+
+**`StoreNotContract(address store)`**
+
+Reverts at construction when a code or dependency file's `store` is not a
+deployed contract (carries the offending address). An EOA store would make
+`tokenURI` revert — permanently, if the renderer were then locked into a
+collection — so it is refused at the door, the same check the core applies to
+its renderer slot.
