@@ -74,6 +74,8 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
       {address: minter, abi: homageMinterAbi, functionName: "maxPerAllowlisted", chainId: PREFERRED_CHAIN.id},
       {address: minter, abi: homageMinterAbi, functionName: "allowlistMinted", args: [address ?? ZERO], chainId: PREFERRED_CHAIN.id},
       {address: minter, abi: homageMinterAbi, functionName: "exitFee", chainId: PREFERRED_CHAIN.id},
+      {address: minter, abi: homageMinterAbi, functionName: "feeGrowthBps", chainId: PREFERRED_CHAIN.id},
+      {address: minter, abi: homageMinterAbi, functionName: "publicMints", args: [address ?? ZERO], chainId: PREFERRED_CHAIN.id},
     ],
   })
   const schedule: Schedule | null =
@@ -88,6 +90,8 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
   const maxPerAllowlisted = cfg.data?.[4]?.status === "success" ? Number(cfg.data[4].result as bigint) : undefined
   const allowlistUsed = cfg.data?.[5]?.status === "success" ? Number(cfg.data[5].result as bigint) : 0
   const exitFee = cfg.data?.[6]?.status === "success" ? (cfg.data[6].result as bigint) : EXIT_FEE
+  const feeGrowthBps = cfg.data?.[7]?.status === "success" ? (cfg.data[7].result as bigint) : 0n
+  const publicMintCount = cfg.data?.[8]?.status === "success" ? (cfg.data[8].result as bigint) : 0n
 
   const minted = totalMinted.data !== undefined ? Number(totalMinted.data as bigint) : null
   const left = remaining.data !== undefined ? Number(remaining.data as bigint) : null
@@ -124,18 +128,6 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
   })
   const maxBatch = maxBatchRead.data !== undefined ? Number(maxBatchRead.data as bigint) : 20
   const batchQty = phase === "public" ? qty : 1
-  // The exact summed fee for the next `batchQty` public mints — escalates per token
-  // (baseFee * 1.1^n), so the on-screen total rises faster than linear, matching what
-  // the contract actually charges. quoteBatchFee(you, 1) == mintFeeOf(you).
-  const batchFeeRead = useReadContract({
-    address: minter,
-    abi: homageMinterAbi,
-    functionName: "quoteBatchFee",
-    args: [address ?? ZERO, BigInt(batchQty)],
-    chainId: PREFERRED_CHAIN.id,
-    query: {enabled: !!address && phase === "public"},
-  })
-  const batchFee = batchFeeRead.data as bigint | undefined
   const refreshQuote = useCallback(async () => {
     if (!publicClient) return
     try {
@@ -187,20 +179,20 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
   const total = quote?.totalValue
   const claimTotal = quote ? quote.ethForSwap + baseFee : undefined // claim/allowlist flat fee
   const {data: balance} = useBalance({address, chainId: PREFERRED_CHAIN.id, query: {enabled: !!address && !wrongNetwork}})
-  // The true all-in cost for the selected quantity: the swap leg (≈ linear per token) +
-  // the EXACT escalating fee leg from the contract. Rises faster than linear, so the
-  // number on screen matches the throttle. Fall back to the flat estimate before the
-  // quoteBatchFee read lands.
-  const batchTotal =
-    quote && batchFee !== undefined
-      ? BigInt(batchQty) * quote.ethForSwap + batchFee
-      : total !== undefined
-        ? total * BigInt(batchQty)
-        : undefined
+  // Per-mint cost for the selected quantity: each token = the swap leg (≈ constant) + its
+  // OWN escalating fee at counts publicMintCount, +1, +2, … (feeForCount mirrors the
+  // contract to the wei). One source for the itemized rows, the total, and the headline —
+  // so the list always sums to its total. The tx itself uses the on-chain quoteBatchFee.
+  const batchItems = useMemo(() => {
+    if (phase !== "public" || !quote) return null
+    return Array.from({length: batchQty}, (_, i) => ({
+      cost: quote.ethForSwap + feeForCount(baseFee, feeGrowthBps, publicMintCount + BigInt(i)),
+    }))
+  }, [phase, batchQty, quote, baseFee, feeGrowthBps, publicMintCount])
+  const batchTotal = batchItems ? batchItems.reduce((s, it) => s + it.cost, 0n) : undefined
   const insufficient = !!balance && batchTotal !== undefined && !wrongNetwork && balance.value < batchTotal
-  // The headline price: the escalating batch total for the chosen quantity in public,
-  // the flat claim fee otherwise.
-  const priceValue = phase === "public" ? (batchQty > 1 ? batchTotal : total) : claimTotal
+  // Headline price: the escalating batch total in public, the flat claim fee otherwise.
+  const priceValue = phase === "public" ? batchTotal : claimTotal
 
   const doMint = useCallback(async () => {
     if (!publicClient) return
@@ -321,11 +313,6 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                 <span className="text-sm font-mono text-gray-500">quoting…</span>
               )}
             </p>
-            {phase === "public" && batchQty > 1 && (
-              <p className="text-[10px] font-mono text-gray-400">
-                The mint fee rises 10% per token — later mints in the batch cost more.
-              </p>
-            )}
           </div>
 
           {/* reveal / success */}
@@ -411,6 +398,25 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                             ? `Mint ${qty} homages`
                             : "Mint a homage"}
                   </button>
+                  {/* Itemized per-mint cost — each token's own escalating fee, so the
+                      +10%/mint climb is explicit. */}
+                  {batchItems && batchQty > 1 && (
+                    <ul className="space-y-1 pt-1">
+                      {batchItems.map((it, i) => (
+                        <li
+                          key={i}
+                          className="flex items-baseline justify-between gap-3 text-[10px] font-mono uppercase tracking-wider text-gray-400 tabular-nums"
+                        >
+                          <span>Mint {i + 1}</span>
+                          <span className="text-fg">{fmtEth(it.cost)} ETH</span>
+                        </li>
+                      ))}
+                      <li className="flex items-baseline justify-between gap-3 border-t border-gray-200 pt-1 text-[10px] font-mono uppercase tracking-wider text-gray-500 tabular-nums">
+                        <span>Total</span>
+                        <span className="text-fg">{batchTotal !== undefined ? fmtEth(batchTotal) : "…"} ETH</span>
+                      </li>
+                    </ul>
+                  )}
                 </div>
               ) : phase === "allowlist" ? (
                 isAllowlisted && (allowlistRemaining ?? 0) > 0 ? (
@@ -483,4 +489,27 @@ function fmtEth(wei: bigint): string {
   const [int, frac = ""] = formatEther(wei).split(".")
   const trimmed = frac.slice(0, 4).replace(/0+$/, "")
   return trimmed ? `${int}.${trimmed}` : int
+}
+
+// The public-mint fee for a wallet that has already done `n` public mints — a faithful
+// bigint replica of HomageMinter._feeForCount (baseFee * (1+g/1e4)^n, clamped at
+// MAX_MINT_FEE, exponentiation-by-squaring), so the itemized breakdown matches the chain
+// to the wei without a per-item RPC read.
+const MAX_MINT_FEE = 10n ** 18n // 1 ether
+function feeForCount(baseFee: bigint, g: bigint, n: bigint): bigint {
+  let fee = baseFee
+  if (g === 0n || fee === 0n) return fee
+  let m = 10_000n + g
+  while (n !== 0n) {
+    if (n & 1n) {
+      fee = (fee * m) / 10_000n
+      if (fee >= MAX_MINT_FEE) return MAX_MINT_FEE
+    }
+    n >>= 1n
+    if (n !== 0n) {
+      m = (m * m) / 10_000n
+      if (m > MAX_MINT_FEE) m = MAX_MINT_FEE
+    }
+  }
+  return fee
 }
