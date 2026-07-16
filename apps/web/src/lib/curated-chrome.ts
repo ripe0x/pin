@@ -52,9 +52,10 @@ export function chromeForPath(pathname: string): SiteChrome {
   if (seg && (seg === "homage" || (HOMAGE_ADDRESS !== "" && seg === HOMAGE_ADDRESS))) {
     return IMMERSIVE_CHROME
   }
-  // The homage collection's own page (/collections/<pooled address>) is skinned
-  // and immersive, matching /mint/homage.
-  const c = pathname.match(/^\/collections\/([^/]+)\/?$/)?.[1]?.toLowerCase()
+  // The homage collection's own page and its redeem sub-page (/collections/<pooled
+  // address> and /collections/<pooled address>/redeem) are skinned and immersive,
+  // matching /mint/homage. The token detail sub-page keeps standard chrome.
+  const c = pathname.match(/^\/collections\/([^/]+)(?:\/redeem)?\/?$/)?.[1]?.toLowerCase()
   if (c && HOMAGE_COLLECTION !== "" && c === HOMAGE_COLLECTION) {
     return IMMERSIVE_CHROME
   }

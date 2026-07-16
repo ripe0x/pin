@@ -410,7 +410,7 @@ export default async function CollectionPage({
                 label="Royalty"
                 value={c.cfg.royaltyBps > 0 ? formatBps(c.cfg.royaltyBps) : "none"}
               />
-              <div className="pt-1">
+              <div className="flex items-center gap-4 pt-1">
                 <a
                   href={evmNowAddressUrl(addr, PND_CHAIN_ID)}
                   target="_blank"
@@ -419,6 +419,12 @@ export default async function CollectionPage({
                 >
                   View contract ↗
                 </a>
+                <Link
+                  href={`/collections/${addr}/redeem`}
+                  className="text-[10px] uppercase tracking-wider text-gray-400 underline hover:text-fg"
+                >
+                  Redeem a homage →
+                </Link>
               </div>
             </div>
           </div>

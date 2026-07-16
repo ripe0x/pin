@@ -36,7 +36,6 @@ import {
 } from "@/components/tx/tx-ui"
 import {
   BASE_FEE,
-  EXIT_FEE,
   homageFlows,
   homageMinterAbi,
   quoteMint,
@@ -45,8 +44,8 @@ import {
 import {type Phase, type Schedule, currentPhase, nextTransition} from "@/lib/homage/phase"
 import {allowlistProofFor} from "@/lib/homage/allowlist"
 import {HomageReveal} from "./HomageReveal"
+import {HomageBatchReveal} from "./HomageBatchReveal"
 import {HomageClaim} from "./HomageClaim"
-import {HomageRedeem} from "./HomageRedeem"
 
 const SUPPLY = 10_000
 const QUOTE_POLL_MS = 30_000 // paid RPC path in prod — never tighten below this
@@ -89,7 +88,6 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
   const baseFee = cfg.data?.[3]?.status === "success" ? (cfg.data[3].result as bigint) : BASE_FEE
   const maxPerAllowlisted = cfg.data?.[4]?.status === "success" ? Number(cfg.data[4].result as bigint) : undefined
   const allowlistUsed = cfg.data?.[5]?.status === "success" ? Number(cfg.data[5].result as bigint) : 0
-  const exitFee = cfg.data?.[6]?.status === "success" ? (cfg.data[6].result as bigint) : EXIT_FEE
   const feeGrowthBps = cfg.data?.[7]?.status === "success" ? (cfg.data[7].result as bigint) : 0n
   const publicMintCount = cfg.data?.[8]?.status === "success" ? (cfg.data[8].result as bigint) : 0n
 
@@ -161,18 +159,18 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
     }
   }, [isSuccess, router])
 
-  // The drawn/claimed punk id for the reveal — from Minted (public/allowlist) or Claimed.
-  const revealPunkId = useMemo(() => {
-    if (!receipt) return null
+  // Every drawn/claimed punk id from the receipt — from Minted (public/allowlist/batch) or
+  // Claimed. A batch emits one per token, so this is the full set the reveal shows.
+  const revealPunkIds = useMemo<bigint[]>(() => {
+    if (!receipt) return []
     try {
-      const minted = parseEventLogs({abi: homageMinterAbi, logs: receipt.logs, eventName: "Minted"})
-      const m = minted.find((l) => l.address.toLowerCase() === minter.toLowerCase())
-      if (m) return m.args.punkId as bigint
-      const claimed = parseEventLogs({abi: homageMinterAbi, logs: receipt.logs, eventName: "Claimed"})
-      const c = claimed.find((l) => l.address.toLowerCase() === minter.toLowerCase())
-      return c ? (c.args.punkId as bigint) : null
+      const mine = (name: "Minted" | "Claimed") =>
+        parseEventLogs({abi: homageMinterAbi, logs: receipt.logs, eventName: name})
+          .filter((l) => l.address.toLowerCase() === minter.toLowerCase())
+          .map((l) => l.args.punkId as bigint)
+      return [...mine("Minted"), ...mine("Claimed")]
     } catch {
-      return null
+      return []
     }
   }, [receipt, minter])
 
@@ -260,7 +258,6 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
           ? "Allowlist mint open"
           : "Not yet open"
 
-  const showRedeem = !!address && !wrongNetwork
 
   return (
     <section className="py-5 border-b border-gray-100 space-y-3">
@@ -315,12 +312,22 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
             </p>
           </div>
 
-          {/* reveal / success */}
+          {/* reveal / success — a grid for a batch, the full reveal for one */}
           {isSuccess && txHash && (
-            revealPunkId !== null ? (
+            revealPunkIds.length > 1 ? (
+              <HomageBatchReveal
+                collection={collection}
+                punkIds={revealPunkIds}
+                txHash={txHash}
+                onDismiss={() => {
+                  reset()
+                  router.refresh()
+                }}
+              />
+            ) : revealPunkIds.length === 1 ? (
               <HomageReveal
                 collection={collection}
-                punkId={revealPunkId}
+                punkId={revealPunkIds[0]}
                 txHash={txHash}
                 onDismiss={() => {
                   reset()
@@ -477,11 +484,6 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
           )}
         </div>
       </div>
-
-      {/* redeem — available to homage holders regardless of phase */}
-      {showRedeem && (
-        <HomageRedeem minter={minter} collection={collection} address={address!} exitFee={exitFee} refreshKey={refreshKey} onRedeemed={() => setRefreshKey((k) => k + 1)} />
-      )}
     </section>
   )
 }
