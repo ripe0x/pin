@@ -48,6 +48,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@networked-art/punks-sdk':
+        specifier: ^0.1.0
+        version: 0.1.0(viem@2.49.3(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.4.3))
       '@openzeppelin/merkle-tree':
         specifier: ^1.0.8
         version: 1.0.8
@@ -1042,6 +1045,11 @@ packages:
   '@metamask/utils@9.3.0':
     resolution: {integrity: sha512-w8CVbdkDrVXFJbfBSlDfafDR6BAkpDmv1bC1UJVCoVny5tW2RKAdn9i68Xf7asYT4TnUhl/hN4zfUiKQq9II4g==}
     engines: {node: '>=16.0.0'}
+
+  '@networked-art/punks-sdk@0.1.0':
+    resolution: {integrity: sha512-olXVMHatcWIe4X6rEORbQNQ5oYu/kFS/sARsXzcekThc4oviEVwBXES+ZJwU9edo9tpSU4KnBOsVnj3CkTn3ww==}
+    peerDependencies:
+      viem: ^2.48.0
 
   '@next/env@15.5.18':
     resolution: {integrity: sha512-hAV85Ckd9QR6RvH04MEKwsfLTksvFpO47j9xwtoIuvuPnlwecpSi+uZTtm8HirVbtlI2Fnz//xpcSTjFdyJk+g==}
@@ -5089,6 +5097,10 @@ snapshots:
       uuid: 9.0.1
     transitivePeerDependencies:
       - supports-color
+
+  '@networked-art/punks-sdk@0.1.0(viem@2.49.3(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.4.3))':
+    dependencies:
+      viem: 2.49.3(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.4.3)
 
   '@next/env@15.5.18': {}
 

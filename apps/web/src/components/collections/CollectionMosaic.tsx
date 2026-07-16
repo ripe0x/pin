@@ -340,9 +340,12 @@ const ONCHAIN_MAX_INDEX = 48 // hard ceiling on distinct sample eth_calls ever
 export function OnchainMosaic({
   collection,
   previews,
+  sampleLabel = "Sample outputs · every mint is generated from its own transaction",
 }: {
   collection: `0x${string}`
   previews: OnchainPreview[]
+  /** Caption above the field. Homage passes a minimal label (no meta copy). */
+  sampleLabel?: string
 }) {
   const [display, setDisplay] = useState<OnchainPreview[]>(previews)
   const [busy, setBusy] = useState(false)
@@ -440,7 +443,7 @@ export function OnchainMosaic({
   return (
     <MosaicShell
       items={items}
-      framing="Sample outputs · every mint is generated from its own transaction"
+      framing={sampleLabel}
       onRegenerate={regenerate}
       regenerating={busy}
       onRerollItem={rerollItem}

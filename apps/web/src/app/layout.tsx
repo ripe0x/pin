@@ -1,10 +1,21 @@
 import type { Metadata } from "next"
+import { Anton } from "next/font/google"
 import Script from "next/script"
 import { SITE_TITLE, SITE_DESCRIPTION, SITE_URL } from "@pin/shared"
 import { Providers } from "@/components/Providers"
 import { Navbar } from "@/components/Navbar"
 import { Footer } from "@/components/Footer"
+import { MainShell, FooterGate } from "@/components/SiteChromeShell"
 import "./globals.css"
+
+// Display face for curated immersive pages (only .homage-terminal .display*
+// references the variable — the rest of the site stays on Switzer).
+const anton = Anton({
+  subsets: ["latin"],
+  weight: "400",
+  variable: "--font-anton",
+  display: "swap",
+})
 
 const PLAUSIBLE_DOMAIN = process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN
 
@@ -61,14 +72,17 @@ export default function RootLayout({
           mismatch bails out hydration on the entire client tree, which
           breaks any client component below — most visibly the RainbowKit
           Connect button (renders during SSR, then disappears). */}
-      <body className="min-h-screen antialiased" suppressHydrationWarning>
+      <body className={`min-h-screen antialiased ${anton.variable}`} suppressHydrationWarning>
         <Providers>
           <Navbar />
-          {/* pt clears the fixed navbar: a 64px nav row on every viewport.
-              (Search now lives in the navbar/hamburger, so there's no longer
-              a mobile search row stacking extra height below the bar.) */}
-          <main className="pt-16">{children}</main>
-          <Footer />
+          {/* MainShell clears the fixed 64px navbar with pt-16 on standard
+              pages; curated immersive pages (curated-chrome.ts) drop the
+              offset and the site footer, keeping only the (transparent)
+              navbar over their own layout. */}
+          <MainShell>{children}</MainShell>
+          <FooterGate>
+            <Footer />
+          </FooterGate>
         </Providers>
       </body>
     </html>

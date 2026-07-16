@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
+import { usePathname } from "next/navigation"
 import { SITE_TITLE } from "@pin/shared"
 import { useAccount } from "wagmi"
 import { ArtistActionLinks } from "@/components/ArtistActionLinks"
@@ -10,10 +11,12 @@ import { HeaderSearch } from "@/components/HeaderSearch"
 import { Logo } from "@/components/Logo"
 import { MobileMenu } from "@/components/MobileMenu"
 import { WalletButton } from "@/components/WalletButton"
+import { chromeForPath } from "@/lib/curated-chrome"
 import { studioToolHref } from "@/lib/studio-tools"
 
 export function Navbar() {
   const { address } = useAccount()
+  const overlay = chromeForPath(usePathname()).navbar === "overlay-dark"
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
 
@@ -37,7 +40,19 @@ export function Navbar() {
   }, [menuOpen])
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 bg-surface border-b border-gray-200">
+    // Overlay mode (curated immersive pages): transparent over the page's own
+    // dark background, no border, and the scoped `dark` class re-tunes every
+    // semantic/gray token for the header subtree (dropdown, search, mobile
+    // menu included) without touching next-themes — the site stays light.
+    // Known cosmetic gap: RainbowKit modals portal to <body> and keep the
+    // global light theme.
+    <header
+      className={
+        overlay
+          ? "dark fixed top-0 left-0 right-0 z-50 bg-transparent"
+          : "fixed top-0 left-0 right-0 z-50 bg-surface border-b border-gray-200"
+      }
+    >
       <nav className="mx-auto flex h-16 max-w-[2000px] items-center justify-between px-6">
         {/* Left: logo / wordmark */}
         <Link

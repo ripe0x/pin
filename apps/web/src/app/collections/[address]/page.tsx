@@ -4,6 +4,10 @@ import { notFound } from "next/navigation"
 import { isAddress, type Address } from "viem"
 import { OptimizedImage } from "@/components/OptimizedImage"
 import { MintCollectionCTA } from "@/components/collections/MintCollectionCTA"
+import { HomageMint } from "@/components/collections/homage/HomageMint"
+import { FitHeadline } from "@/components/collections/homage/FitHeadline"
+import { HomageField } from "@/components/collections/homage/HomageField"
+import { getHomageMintedIds } from "@/lib/homage/collection.server"
 import { WithdrawPanel } from "@/components/collections/WithdrawPanel"
 import { CollectionMintHistory } from "@/components/collections/CollectionMintHistory"
 import { AttributionRoster } from "@/components/collections/AttributionRoster"
@@ -15,10 +19,18 @@ import {
   getCollection,
   getCollectionMintHistory,
   getCollectionToken,
+  getContractDescription,
   getGateState,
   getRecentTokenMarks,
   getRendererPreviews,
 } from "@/lib/collection-onchain"
+import { detectHomageMinter } from "@/lib/homage/detect.server"
+// Third layout: the generic collection page reskinned with the /mint/homage
+// terminal look (dark palette + Anton condensed display + mono body), applied via
+// ?skin=homage. homage-gallery.css defines the .homage-terminal tokens/fonts/accent
+// (scoped, so it never leaks); homage-skin.css maps them onto this page's masthead.
+import "@/components/mint/homage-gallery/homage-gallery.css"
+import "./homage-skin.css"
 import {
   SurfaceStatus,
   PND_CHAIN_ID,
@@ -60,12 +72,34 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   }
 }
 
-export default async function CollectionPage({ params }: { params: Params }) {
+export default async function CollectionPage({
+  params,
+  searchParams,
+}: {
+  params: Params
+  searchParams: Promise<{ skin?: string }>
+}) {
   const { address } = await params
+  const { skin } = await searchParams
   if (!isAddress(address)) notFound()
   const addr = address as Address
   const c = await getCollection(addr)
   if (!c) notFound()
+  // Homage is a pooled collection driven by a bespoke HomageMinter — PND's generic
+  // direct-sale path can't drive it, so when this is the registered homage collection
+  // (verified on-chain) we render the homage mint instrument instead of the CTA.
+  const homageMinter = await detectHomageMinter(addr, PND_CHAIN_ID)
+  // Homage owns its whole page: when this is the homage collection it renders in
+  // the terminal skin (dark + condensed) with immersive site chrome. `?skin=homage`
+  // still forces it on for previewing the treatment on any collection.
+  const homageSkin = !!homageMinter || skin === "homage"
+  // "About this work" is fed from the collection's own contractURI description
+  // on the homage skin (no hardcoded meta copy).
+  const contractDescription = homageSkin ? await getContractDescription(addr) : null
+  // Homage field: the minted set (chain-enumerated) + a deterministic sample spread the
+  // pre-mint / fill state draws from.
+  const homageMintedIds = homageSkin ? await getHomageMintedIds(addr) : []
+  const homageSampleIds = Array.from({ length: 12 }, (_, i) => Math.floor((i + 0.5) * (10_000 / 12)))
   const [history, attribution, recent, gate] = await Promise.all([
     getCollectionMintHistory(addr, c.minted, c.cfg.idMode),
     getAttribution(addr),
@@ -108,7 +142,16 @@ export default async function CollectionPage({ params }: { params: Params }) {
 
   const artists = attribution.length > 0 ? attribution.map((a) => a.creator) : [c.owner]
 
-  const hero = hasWork ? (
+  const hero = homageSkin ? (
+    <HomageField
+      collection={addr}
+      renderer={c.renderer}
+      mintedIds={homageMintedIds}
+      sampleIds={homageSampleIds}
+      supply={c.cfg.supplyCap > 0n ? Number(c.cfg.supplyCap) : 10_000}
+      minted={Number(c.minted)}
+    />
+  ) : hasWork ? (
     <ParityMosaic
       collection={addr}
       work={c.work}
@@ -130,7 +173,7 @@ export default async function CollectionPage({ params }: { params: Params }) {
   ) : null
 
   return (
-    <div>
+    <div className={homageSkin ? "dark homage-terminal collection-homage-skin" : undefined}>
       {mintCouldBeLive && <CollectionFocusRefresh />}
 
       {/* ── Masthead: exhibition-title scale, the whole viewport width, so
@@ -141,13 +184,9 @@ export default async function CollectionPage({ params }: { params: Params }) {
             ← Collections
           </Link>
         </nav>
-        <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between lg:gap-12">
-          <div>
-            <h1 className="max-w-[16ch] text-5xl font-medium leading-[0.92] tracking-tight sm:text-6xl lg:text-[5.5rem]">
-              {c.name}
-            </h1>
-            {/* The medium line: a gallery label, not metadata. */}
-            <p className="mt-4 text-[11px] font-mono uppercase tracking-wider text-gray-500">
+        {(() => {
+          const byline = (
+            <p className="text-[11px] font-mono uppercase tracking-wider text-gray-500">
               by{" "}
               {artists.map((a, i) => (
                 <span key={a}>
@@ -162,21 +201,47 @@ export default async function CollectionPage({ params }: { params: Params }) {
                   </a>
                 </span>
               ))}
-              {" · "}
-              {hasWork
-                ? "long-form generative work, rendered live in your browser"
-                : onchainPreviews
-                  ? "long-form generative work, rendered by its own onchain contract"
-                  : pooled
-                    ? "a work sold through its own minter"
-                    : "an edition on the artist's own contract"}
+              {!homageSkin && (
+                <>
+                  {" · "}
+                  {hasWork
+                    ? "long-form generative work, rendered live in your browser"
+                    : onchainPreviews
+                      ? "long-form generative work, rendered by its own onchain contract"
+                      : pooled
+                        ? "a work sold through its own minter"
+                        : "an edition on the artist's own contract"}
+                </>
+              )}
               {c.cfg.supplyCap > 0n && ` · ${c.cfg.supplyCap.toString()} editions`}
             </p>
-          </div>
-          <div className="shrink-0 lg:pb-1">
-            <PlacardStats snapshot={placard} />
-          </div>
-        </div>
+          )
+          return homageSkin ? (
+            // Headline fills the width on one line, scaling to the title length;
+            // the byline + stats sit on one row beneath it.
+            <div className="space-y-5">
+              <FitHeadline text={c.name} className="w-full" />
+              <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+                {byline}
+                <div className="shrink-0">
+                  <PlacardStats snapshot={placard} />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between lg:gap-12">
+              <div>
+                <h1 className="max-w-[16ch] text-5xl font-medium leading-[0.92] tracking-tight sm:text-6xl lg:text-[5.5rem]">
+                  {c.name}
+                </h1>
+                <div className="mt-4">{byline}</div>
+              </div>
+              <div className="shrink-0 lg:pb-1">
+                <PlacardStats snapshot={placard} />
+              </div>
+            </div>
+          )
+        })()}
       </header>
 
       {/* ── The field: the collection's multiplicity, edge to edge. Every
@@ -194,76 +259,94 @@ export default async function CollectionPage({ params }: { params: Params }) {
              reads as composed, not floated. ── */}
       <div
         id="mint-instrument"
-        className="grid scroll-mt-20 grid-cols-1 border-b border-gray-200 lg:grid-cols-[1fr_460px] lg:divide-x lg:divide-gray-200"
+        className={`grid scroll-mt-20 grid-cols-1 border-b border-gray-200 lg:divide-x lg:divide-gray-200 ${
+          homageSkin ? "lg:grid-cols-2" : "lg:grid-cols-[1fr_460px]"
+        }`}
       >
         <div className="max-w-[720px] space-y-6 px-6 py-10 lg:px-12 lg:py-12">
           <h2 className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
             About this work
           </h2>
-          {hasWork ? (
-            <p className="text-sm leading-relaxed text-fg-muted">
-              Every token is generated by the collection&apos;s own algorithm from a
-              seed written onchain at mint. The render is a pure function of
-              chain state: this code, that seed, forever. No server keeps the
-              artwork alive, and every image on this page is the algorithm
-              running live in your browser.
-            </p>
-          ) : onchainPreviews ? (
-            <p className="text-sm leading-relaxed text-fg-muted">
-              Every token is generated onchain by the collection&apos;s own
-              renderer contract from a seed written at mint. The render is a
-              pure function of chain state, and every example on this page
-              was rendered by that contract, live.
-            </p>
-          ) : pooled ? (
-            <p className="text-sm leading-relaxed text-fg-muted">
-              A work on the artist&apos;s own contract, rendered by its own custom
-              renderer and sold through its own minter. Every token carries a
-              distinct onchain Mint Mark: its place in the collection&apos;s
-              history, recorded at mint.
-            </p>
+          {homageSkin ? (
+            contractDescription && (
+              <p className="text-sm leading-relaxed text-fg-muted">{contractDescription}</p>
+            )
           ) : (
-            <p className="text-sm leading-relaxed text-fg-muted">
-              An edition on the artist&apos;s own contract. Every token carries a
-              distinct onchain Mint Mark: its place in the collection&apos;s
-              history, recorded at mint.
-            </p>
+            <>
+              {hasWork ? (
+                <p className="text-sm leading-relaxed text-fg-muted">
+                  Every token is generated by the collection&apos;s own algorithm from a
+                  seed written onchain at mint. The render is a pure function of
+                  chain state: this code, that seed, forever. No server keeps the
+                  artwork alive, and every image on this page is the algorithm
+                  running live in your browser.
+                </p>
+              ) : onchainPreviews ? (
+                <p className="text-sm leading-relaxed text-fg-muted">
+                  Every token is generated onchain by the collection&apos;s own
+                  renderer contract from a seed written at mint. The render is a
+                  pure function of chain state, and every example on this page
+                  was rendered by that contract, live.
+                </p>
+              ) : pooled ? (
+                <p className="text-sm leading-relaxed text-fg-muted">
+                  A work on the artist&apos;s own contract, rendered by its own custom
+                  renderer and sold through its own minter. Every token carries a
+                  distinct onchain Mint Mark: its place in the collection&apos;s
+                  history, recorded at mint.
+                </p>
+              ) : (
+                <p className="text-sm leading-relaxed text-fg-muted">
+                  An edition on the artist&apos;s own contract. Every token carries a
+                  distinct onchain Mint Mark: its place in the collection&apos;s
+                  history, recorded at mint.
+                </p>
+              )}
+              <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
+                {permanent
+                  ? "The renderer is locked: this collection renders through its current contract forever. The contract itself has had no upgrade path since deploy."
+                  : "The contract is immutable from deploy. The renderer can change until the artist locks it."}
+              </p>
+              <div className="pt-2">
+                <h3 className="mb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400">
+                  Self host this mint
+                </h3>
+                <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
+                  This collection is the artist&apos;s own contract and can be minted
+                  from any interface. From your own page, call{" "}
+                  <code className="text-fg">mintWithReferral(qty, yourAddress, 0x)</code> on{" "}
+                  <code className="break-all text-fg">{addr}</code> so the{" "}
+                  {formatBps(REFERRAL_SHARE_BPS)} referral share routes to you, not PND.
+                </p>
+              </div>
+            </>
           )}
-          <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
-            {permanent
-              ? "The renderer is locked: this collection renders through its current contract forever. The contract itself has had no upgrade path since deploy."
-              : "The contract is immutable from deploy. The renderer can change until the artist locks it."}
-          </p>
-          <div className="pt-2">
-            <h3 className="mb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400">
-              Self host this mint
-            </h3>
-            <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
-              This collection is the artist&apos;s own contract and can be minted
-              from any interface. From your own page, call{" "}
-              <code className="text-fg">mintWithReferral(qty, yourAddress, 0x)</code> on{" "}
-              <code className="break-all text-fg">{addr}</code> so the{" "}
-              {formatBps(REFERRAL_SHARE_BPS)} referral share routes to you, not PND.
-            </p>
-          </div>
         </div>
 
         <div className="px-6 py-10 lg:px-10 lg:py-12">
-          <MintCollectionCTA
-            collection={addr}
-            work={hasWork ? c.work : null}
-            gate={gate}
-            snapshot={{
-              price: c.cfg.price.toString(),
-              supplyCap: c.cfg.supplyCap.toString(),
-              mintStart: c.cfg.mintStart.toString(),
-              mintEnd: c.cfg.mintEnd.toString(),
-              minted: c.minted.toString(),
-              status: c.status,
-              priceStrategy: c.priceStrategy,
-              idMode: c.cfg.idMode,
-            }}
-          />
+          {homageMinter ? (
+            // Constrained + left-aligned so the instrument sits against the
+            // centered divider instead of stretching the full half-column.
+            <div className="w-full max-w-[460px]">
+              <HomageMint collection={addr} minter={homageMinter} />
+            </div>
+          ) : (
+            <MintCollectionCTA
+              collection={addr}
+              work={hasWork ? c.work : null}
+              gate={gate}
+              snapshot={{
+                price: c.cfg.price.toString(),
+                supplyCap: c.cfg.supplyCap.toString(),
+                mintStart: c.cfg.mintStart.toString(),
+                mintEnd: c.cfg.mintEnd.toString(),
+                minted: c.minted.toString(),
+                status: c.status,
+                priceStrategy: c.priceStrategy,
+                idMode: c.cfg.idMode,
+              }}
+            />
+          )}
           {/* Compact trust strip (§9): the load-bearing facts beside the
               mint action; the record section below carries the rest. */}
           <p className="pt-2 text-[10px] font-mono uppercase tracking-wider text-gray-400">

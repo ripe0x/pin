@@ -1,0 +1,176 @@
+/* Homage gallery — the terminal theme, ported from the Homage site
+   (permanence origin/master:web/app/globals.css, `.terminal` scope) and
+   scoped under `.homage-terminal` so nothing leaks into PND's own tokens.
+   Loaded only by HomageGalleryLayout.tsx (Next scopes the CSS to routes that
+   render it).
+
+   The layout's root carries BOTH `homage-terminal` (this file) and PND's
+   `dark` class: `dark` re-tunes every semantic and gray token for the
+   subtree, so reused PND mint components (the claim punk picker, tx bits)
+   restyle themselves with zero forks; `homage-terminal` layers the Homage
+   look — fixed styles, no light/dark participation (next-themes stays
+   light). */
+
+.homage-terminal {
+  background: #0a0a0c;
+  color: #e6e6e8;
+  --ink: #e6e6e8;
+  --dim: #92939c;
+  --faint: #56565f;
+  --line: #23232a;
+  --card: #111116;
+  --paper: #0a0a0c;
+  --accent: #d0563b;
+  --mono: var(--font-mono), "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+  --sans: var(--font-anton), ui-sans-serif, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  /* mono-forward: everything defaults to IBM Plex Mono; .display opts into Anton */
+  font-family: var(--mono);
+}
+.homage-terminal .tabular {
+  font-variant-numeric: tabular-nums;
+}
+/* the font-mono utility is used all over the shared components — inside the
+   terminal it must be the real mono, not the utility's system fallback */
+.homage-terminal .font-mono {
+  font-family: var(--mono);
+}
+
+.homage-terminal .eyebrow-a {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+/* the one non-mono element: the heavy condensed display headline, light on dark */
+.homage-terminal .display {
+  font-family: var(--sans);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  line-height: 0.94;
+  font-size: clamp(48px, 7vw, 88px);
+  color: var(--ink);
+}
+/* reveal title ("Homage to punk N") — same condensed display face */
+.homage-terminal .display-lockup {
+  font-family: var(--sans);
+  font-weight: 400;
+  text-transform: uppercase;
+  font-size: clamp(40px, 5.2vw, 76px);
+  line-height: 0.95;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+}
+
+.homage-terminal .chip {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dim);
+  border: 1px solid var(--line);
+  background: var(--card);
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+
+/* primary action — inverts to light-on-dark, uppercase mono */
+.homage-terminal .btn-primary {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-weight: 500;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #0a0a0c;
+  background: var(--ink);
+  border: 1px solid var(--ink);
+  padding: 15px 20px;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.05s;
+}
+.homage-terminal .btn-primary:hover {
+  opacity: 0.85;
+}
+.homage-terminal .btn-primary:active {
+  transform: translateY(1px);
+}
+.homage-terminal .btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.homage-terminal .spinner {
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(10, 10, 12, 0.35);
+  border-top-color: #0a0a0c;
+  border-radius: 50%;
+  animation: hg-spin 0.7s linear infinite;
+}
+@keyframes hg-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* colophon label — label-over-value cadence from the terminal register */
+.homage-terminal .colo-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+/* ── wall crossfade + skeleton (theme-agnostic on the Homage site; scoped
+      here since only the gallery uses them on PND) ── */
+@keyframes hg-gfade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.homage-terminal .g-fade-in {
+  animation-name: hg-gfade;
+  animation-timing-function: ease;
+  animation-fill-mode: both;
+}
+@keyframes hg-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+.homage-terminal .g-skeleton {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, #141418 30%, #1d1d24 50%, #141418 70%);
+  background-size: 200% 100%;
+  animation: hg-shimmer 1.4s infinite;
+}
+
+/* registration tick-marks down the page margins (desktop only) */
+@media (min-width: 1024px) {
+  .homage-terminal::before,
+  .homage-terminal::after {
+    content: "";
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: repeating-linear-gradient(to bottom, var(--faint) 0 2px, transparent 2px 48px);
+    opacity: 0.45;
+    pointer-events: none;
+  }
+  .homage-terminal::before {
+    left: 20px;
+  }
+  .homage-terminal::after {
+    right: 20px;
+  }
+}

@@ -1,0 +1,263 @@
+// Homage to the Punk — the mint engine's contract surface, ported into PND.
+//
+// Homage is a POOLED Surface collection whose mints run through a bespoke
+// `HomageMinter` extension (the ETH→$111 swap + escrow, an escalating per-wallet
+// fee, a three-phase schedule, punk-holder claim, allowlist, and redeem). PND's
+// generic direct-sale path can't drive that, so this module is the canonical home
+// for the homage-specific mint logic on the PND side.
+//
+// Ported from the homage repo's `web/lib/homage.ts`. The one structural change:
+// the collection + minter addresses are NOT read from env here — PND discovers
+// them per-collection (see `detect.ts`), so `homageFlows` is parameterized by the
+// minter address instead of closing over a module-level constant.
+
+import {parseAbi, type Address, type PublicClient} from "viem"
+
+// ─── Live $111 coin + the v4 pool the mint swaps through (mainnet; present on the fork) ──
+export const TOKEN_111 = "0x61C9d89fe1212F6b55fF888816A151463287B8ae" as const
+export const POOL_MANAGER = "0x000000000004444c5dc75cB358380D2e3dE08A90" as const
+export const SKIM_HOOK = "0x636c050296B5Cc528D8785169Bf8923716FCa9cc" as const
+export const POOL_ID = "0xf860d8f4896aed6cc1c68d234ba728680902f0ae43a459fbee6f6baa8036f795" as const
+export const STATE_VIEW = "0x7fFE42C4a5DEeA5b0feC41C94C136Cf115597227" as const
+export const V4_QUOTER = "0x52F0E24D1c21C8A0cB1e5a5dD6198556BD9E1203" as const
+const DYN_FEE = 0x800000 // dynamic-fee flag (matches DeployDevSovereign)
+const TICK_SPACING = 200
+
+// ETH (currency0) → $111 (currency1), dynamic fee, skim hook — hashes to POOL_ID.
+export const POOL_KEY = {
+  currency0: "0x0000000000000000000000000000000000000000",
+  currency1: TOKEN_111,
+  fee: DYN_FEE,
+  tickSpacing: TICK_SPACING,
+  hooks: SKIM_HOOK,
+} as const
+
+// Canonical CryptoPunks contracts (mainnet) — the ownership source for the
+// holder-priority claim window. Raw ownership is `punkIndexToAddress`; a wrapped
+// punk reports the wrapper as owner, so the true holder is the wrapper's `ownerOf`
+// (mirrors HomageMinter._isPunkHolder).
+export const CRYPTOPUNKS_MARKET = "0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB" as const
+export const WRAPPED_PUNKS = "0xb7F7F6C52F2e2fdb1963Eab30438024864c313F6" as const
+
+// Delegate.xyz Registry v2 (canonical singleton) — a cold vault delegates a hot
+// wallet, which transacts the holder-priority claim via `claimFor` (mints to the vault).
+export const DELEGATE_REGISTRY = "0x00000000000000447e69651d841bD8D104Bed493" as const
+
+// Economic constants — mirror HomageMinter. THRESHOLD is structural; the fees are
+// deploy defaults and MUST be read live (mintFeeOf / exitFee are owner-tunable).
+export const THRESHOLD = 50_000n * 10n ** 18n // 50k $111 escrowed per homage
+export const BASE_FEE = 5_000_000_000_000_000n // 0.005 ETH — deploy default; real fee is mintFeeOf()
+export const EXIT_FEE = 3_000_000_000_000_000n // 0.003 ETH — deploy default; read exitFee() live before redeem
+
+// ─── ABIs ───────────────────────────────────────────────────────────────────────
+
+// HomageMinter — the mint engine. Economics, schedule, allowlist, supply, and the
+// mint/redeem writes. NOT the ERC721: ownership / tokenURI live on the collection.
+export const homageMinterAbi = parseAbi([
+  "function THRESHOLD() view returns (uint256)",
+  "function exitFee() view returns (uint256)",
+  "function SUPPLY() view returns (uint256)",
+  "function remaining() view returns (uint256)",
+  "function totalMinted() view returns (uint256)",
+  "function isMinted(uint256 punkId) view returns (bool)",
+  // per-wallet fee escalator (public mint)
+  "function baseFee() view returns (uint256)",
+  "function feeGrowthBps() view returns (uint256)",
+  "function publicMints(address who) view returns (uint256)",
+  "function mintFeeOf(address who) view returns (uint256)",
+  // mint schedule (three windows)
+  "function claimStart() view returns (uint64)",
+  "function allowlistStart() view returns (uint64)",
+  "function publicStart() view returns (uint64)",
+  // allowlist
+  "function allowlistRoot() view returns (bytes32)",
+  "function maxPerAllowlisted() view returns (uint256)",
+  "function allowlistMinted(address who) view returns (uint256)",
+  // the collection this minter mints into — used by PND to confirm a collection's
+  // authorized minter really is a HomageMinter (see detect.ts).
+  "function collection() view returns (address)",
+  // batch
+  "function MAX_BATCH() view returns (uint256)",
+  "function quoteBatchFee(address who, uint256 qty) view returns (uint256)",
+  // mint paths
+  "function mint() payable returns (uint256 punkId)",
+  "function mintBatch(uint256 qty) payable returns (uint256[] ids)",
+  "function claim(uint256 punkId) payable returns (uint256)",
+  "function claimFor(uint256 punkId, address vault) payable returns (uint256)",
+  "function claimTo(uint256 punkId) payable returns (uint256)",
+  "function allowlistMint(bytes32[] proof) payable returns (uint256)",
+  "function redeem(uint256 punkId) payable",
+  "event Minted(address indexed to, uint256 indexed punkId, uint256 ethSwapped, uint256 received111)",
+  "event Claimed(address indexed to, uint256 indexed punkId, uint256 ethSwapped, uint256 received111)",
+  "event Redeemed(address indexed from, uint256 indexed punkId, uint256 amount111)",
+  // Custom errors — so viem decodes a revert selector to a named reason.
+  "error NotManager()",
+  "error BadValue()",
+  "error SoldOut()",
+  "error Slippage(uint256 received, uint256 needed)",
+  "error ClaimClosed()",
+  "error AllowlistClosed()",
+  "error PublicClosed()",
+  "error NotPunkOwner()",
+  "error NotDelegated()",
+  "error AlreadyMinted()",
+  "error NotAllowlisted()",
+  "error AllowlistCapReached()",
+  "error BadSchedule()",
+])
+
+// Live-market status flag for the renderer: 255 = read the punk's real market state
+// (wrapped / for-sale / has-bid) to pick the ground, rather than a fixed status.
+export const STATUS_LIVE = 255
+
+// HomageRendererSovereign — renders any punk id's homage (minted or not), so one path
+// draws both the collection's minted tokens and the pre-mint sample field.
+export const homageRendererViewAbi = parseAbi([
+  "function renderSVG(uint256 id, uint8 status, bool circle) view returns (string)",
+])
+
+// The pooled Surface the minter mints into — token reads (ownership / tokenURI).
+export const homageCollectionAbi = parseAbi([
+  "function ownerOf(uint256 id) view returns (address)",
+  "function balanceOf(address owner) view returns (uint256)",
+  "function tokenURI(uint256 id) view returns (string)",
+  "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
+])
+
+// CryptoPunks ownership reads for the claim window. The raw market isn't ERC-721:
+// current ownership is `punkIndexToAddress`; acquisitions announce via
+// Assign / PunkTransfer / PunkBought (recipient indexed, punk index in data).
+export const punksMarketAbi = parseAbi([
+  "function punkIndexToAddress(uint256 index) view returns (address)",
+  "event Assign(address indexed to, uint256 punkIndex)",
+  "event PunkTransfer(address indexed from, address indexed to, uint256 punkIndex)",
+  "event PunkBought(uint256 indexed punkIndex, uint256 value, address indexed fromAddress, address indexed toAddress)",
+])
+
+// WrappedPunks — canonical ERC-721Enumerable, so a holder's wrapped punks enumerate
+// directly (balanceOf + tokenOfOwnerByIndex) with no log scan.
+export const wrappedPunksAbi = parseAbi([
+  "function ownerOf(uint256 tokenId) view returns (address)",
+  "function balanceOf(address owner) view returns (uint256)",
+  "function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)",
+])
+
+export const delegateRegistryAbi = parseAbi([
+  "function checkDelegateForERC721(address to, address from, address contract_, uint256 tokenId, bytes32 rights) view returns (bool)",
+  "struct Delegation { uint8 type_; address to; address from; bytes32 rights; address contract_; uint256 tokenId; uint256 amount; }",
+  "function getIncomingDelegations(address to) view returns (Delegation[])",
+])
+
+// v4 StateView — pool spot (sqrtPriceX96) for sizing the quote probe.
+export const stateViewAbi = parseAbi([
+  "function getSlot0(bytes32 poolId) view returns (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee)",
+])
+
+// v4 Quoter — simulate the real ETH→$111 swap (LP fee + 6% skim + price impact).
+// Not a `view` in the ABI, but designed to be eth_call'd; readContract simulates fine.
+export const v4QuoterAbi = parseAbi([
+  "struct PoolKey { address currency0; address currency1; uint24 fee; int24 tickSpacing; address hooks; }",
+  "struct QuoteExactSingleParams { PoolKey poolKey; bool zeroForOne; uint128 exactAmount; bytes hookData; }",
+  "function quoteExactInputSingle(QuoteExactSingleParams params) returns (uint256 amountOut, uint256 gasEstimate)",
+])
+
+// ─── Mint flows (parameterized by the detected minter) ────────────────────────────
+//
+// One-click ETH mint: send `ethForSwap + fee` as `value`; the contract swaps
+// `ethForSwap` into >= THRESHOLD $111, escrows exactly THRESHOLD inside a new random
+// homage minted to you, refunds any excess, and reverts on slippage. Redeem burns it
+// and returns the full THRESHOLD $111, paying the live `exitFee()`.
+
+export function mintValue(ethForSwap: bigint, fee: bigint): bigint {
+  return ethForSwap + fee
+}
+
+export function homageFlows(minter: Address) {
+  return {
+    mint: (value: bigint) =>
+      ({address: minter, abi: homageMinterAbi, functionName: "mint", value}) as const,
+    mintBatch: (qty: bigint, value: bigint) =>
+      ({address: minter, abi: homageMinterAbi, functionName: "mintBatch", args: [qty], value}) as const,
+    claim: (punkId: bigint, value: bigint) =>
+      ({address: minter, abi: homageMinterAbi, functionName: "claim", args: [punkId], value}) as const,
+    claimFor: (punkId: bigint, vault: Address, value: bigint) =>
+      ({address: minter, abi: homageMinterAbi, functionName: "claimFor", args: [punkId, vault], value}) as const,
+    // permissionless: any wallet pays, the punk's holder receives (CyberBrokers model)
+    claimTo: (punkId: bigint, value: bigint) =>
+      ({address: minter, abi: homageMinterAbi, functionName: "claimTo", args: [punkId], value}) as const,
+    allowlistMint: (proof: readonly `0x${string}`[], value: bigint) =>
+      ({address: minter, abi: homageMinterAbi, functionName: "allowlistMint", args: [proof], value}) as const,
+    redeem: (punkId: bigint, value: bigint) =>
+      ({address: minter, abi: homageMinterAbi, functionName: "redeem", args: [punkId], value}) as const,
+  }
+}
+
+// ─── Quote the mint cost ──────────────────────────────────────────────────────────
+//
+// What ETH should `mint()` swap so it nets >= THRESHOLD $111? Read spot (StateView)
+// to size a probe, run ONE real quote through the live pool (V4Quoter — reflects LP
+// fee, 6% skim, price impact), then scale linearly to clear THRESHOLD with a small
+// safety margin. Exact-input, so any $111 over THRESHOLD is refunded; erring high is safe.
+
+const Q192 = 1n << 192n
+const WAD = 10n ** 18n
+
+export type MintQuote = {
+  ethForSwap: bigint // ETH the mint will route into the pool
+  totalValue: bigint // tx value = ethForSwap + the caller's current mint fee
+  fee: bigint // the ETH fee folded in (mintFeeOf for public; baseFee for claim/allowlist)
+  estReceived: bigint // ~$111 the swap nets (>= THRESHOLD)
+  estRefund: bigint // ~$111 over THRESHOLD, refunded to the minter
+  spotEthForThreshold: bigint // naive spot ETH for exactly THRESHOLD (no fee/skim/impact)
+  price111PerEth: bigint // $111 (1e18) per 1 ETH, for display
+  safetyBps: number
+}
+
+async function quoteExactInput(client: PublicClient, ethIn: bigint): Promise<bigint> {
+  const res = (await client.readContract({
+    address: V4_QUOTER,
+    abi: v4QuoterAbi,
+    functionName: "quoteExactInputSingle",
+    args: [{poolKey: POOL_KEY, zeroForOne: true, exactAmount: ethIn, hookData: "0x"}],
+  })) as readonly [bigint, bigint]
+  return res[0]
+}
+
+/**
+ * Quote the mint. `fee` is the ETH fee to fold into the tx value (the caller's
+ * `mintFeeOf()` for a public mint, or `baseFee()` for a claim / allowlist mint).
+ * `safetyBps` is headroom over THRESHOLD (default 5%) to absorb price drift.
+ */
+export async function quoteMint(client: PublicClient, fee: bigint, safetyBps = 500): Promise<MintQuote> {
+  const slot0 = (await client.readContract({
+    address: STATE_VIEW,
+    abi: stateViewAbi,
+    functionName: "getSlot0",
+    args: [POOL_ID],
+  })) as readonly [bigint, number, number, number]
+  const sqrtP = slot0[0]
+  if (sqrtP === 0n) throw new Error("pool not initialized")
+
+  const price111PerEth = (sqrtP * sqrtP * WAD) / Q192
+  const spotEthForThreshold = (THRESHOLD * Q192) / (sqrtP * sqrtP)
+  const probe = spotEthForThreshold > 0n ? spotEthForThreshold : WAD / 1000n
+
+  const out = await quoteExactInput(client, probe)
+  if (out === 0n) throw new Error("quote returned zero")
+
+  const target = (THRESHOLD * BigInt(10000 + safetyBps)) / 10000n
+  const ethForSwap = (probe * target) / out + 1n
+  const estReceived = (out * ethForSwap) / probe
+  const estRefund = estReceived > THRESHOLD ? estReceived - THRESHOLD : 0n
+
+  return {
+    ethForSwap,
+    totalValue: ethForSwap + fee,
+    fee,
+    estReceived,
+    estRefund,
+    spotEthForThreshold,
+    price111PerEth,
+    safetyBps,
+  }
+}

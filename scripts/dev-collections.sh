@@ -162,6 +162,12 @@ fi
 #     shows up in the same local Collections UI. Silently skipped (not a hard
 #     failure) when the sibling repo isn't checked out next to this one.
 HOMAGE_REPO="${HOMAGE_REPO:-$HOME/CascadeProjects/homage to the punk}"
+# Captured from the homage seed and written into the dev env below, so PND's homage
+# registry (lib/homage/registry.ts) can recognize this collection and render the
+# bespoke homage mint instrument instead of the generic "sold via minter" notice.
+HOMAGE_COLLECTION_ADDR=""
+HOMAGE_MINTER_ADDR=""
+HOMAGE_RENDERER_ADDR=""
 if [ "${SEED_HOMAGE:-1}" = "1" ] && [ -d "$HOMAGE_REPO/contracts" ]; then
   echo "▸ Seeding Homage to the Punk…"
   SEED_HOMAGE_OUT="$(cd "$HOMAGE_REPO/contracts" && FACTORY="$FACTORY" PRIVATE_KEY="$ANVIL_ACCOUNT_0_PK" \
@@ -170,6 +176,9 @@ if [ "${SEED_HOMAGE:-1}" = "1" ] && [ -d "$HOMAGE_REPO/contracts" ]; then
     echo "warning: Homage seeding failed (harness continues)"
   }
   echo "$SEED_HOMAGE_OUT" | grep -E "HomageRendererSovereign:|HomageCollection:|HomageMinter:|HomageFeeSplitter:|Collection page:" | sed 's/^/  /'
+  HOMAGE_COLLECTION_ADDR="$(echo "$SEED_HOMAGE_OUT" | grep -i "HomageCollection:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1 || true)"
+  HOMAGE_MINTER_ADDR="$(echo "$SEED_HOMAGE_OUT" | grep -i "HomageMinter:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1 || true)"
+  HOMAGE_RENDERER_ADDR="$(echo "$SEED_HOMAGE_OUT" | grep -i "HomageRendererSovereign:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1 || true)"
 elif [ "${SEED_HOMAGE:-1}" = "1" ]; then
   echo "▸ Homage seeding skipped: $HOMAGE_REPO/contracts not found"
 fi
@@ -188,6 +197,18 @@ NEXT_PUBLIC_RENDER_ASSETS=$RENDER_ASSETS
 NEXT_PUBLIC_DEFAULT_RENDERER=$DEFAULT_RENDERER
 NEXT_PUBLIC_GATE_HOOK=$GATE_HOOK
 EOF
+if [ -n "$HOMAGE_COLLECTION_ADDR" ] && [ -n "$HOMAGE_MINTER_ADDR" ]; then
+  cat >> "$ENV_DEV" <<EOF
+# Homage to the Punk (seeded above) — the /mint/homage gallery venue reads the
+# *_ADDRESS vars (mint-modules/homage.ts); the non-suffixed pair feeds the
+# /collections detection port. Both point at the same fork deploy.
+NEXT_PUBLIC_HOMAGE_COLLECTION_ADDRESS=$HOMAGE_COLLECTION_ADDR
+NEXT_PUBLIC_HOMAGE_MINTER_ADDRESS=$HOMAGE_MINTER_ADDR
+NEXT_PUBLIC_HOMAGE_RENDERER=$HOMAGE_RENDERER_ADDR
+NEXT_PUBLIC_HOMAGE_COLLECTION=$HOMAGE_COLLECTION_ADDR
+NEXT_PUBLIC_HOMAGE_MINTER=$HOMAGE_MINTER_ADDR
+EOF
+fi
 echo "▸ Wrote $ENV_DEV  (delete it to restore prod env)"
 
 echo
