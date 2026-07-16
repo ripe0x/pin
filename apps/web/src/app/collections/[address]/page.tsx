@@ -7,6 +7,8 @@ import { MintCollectionCTA } from "@/components/collections/MintCollectionCTA"
 import { HomageMint } from "@/components/collections/homage/HomageMint"
 import { FitHeadline } from "@/components/collections/homage/FitHeadline"
 import { HomageMintChip, HomageStickyMintBar } from "@/components/collections/homage/HomageMintChip"
+import { ArtistName } from "@/components/collections/homage/ArtistName"
+import { HomageMintLog } from "@/components/collections/homage/HomageMintLog"
 import { HomageField } from "@/components/collections/homage/HomageField"
 import { getHomageMintedIds } from "@/lib/homage/collection.server"
 import { WithdrawPanel } from "@/components/collections/WithdrawPanel"
@@ -182,7 +184,13 @@ export default async function CollectionPage({
 
       {/* ── Masthead: exhibition-title scale, the whole viewport width, so
              the collection announces itself before the field of work. ── */}
-      <header className="px-6 pt-8 pb-8 lg:px-12 lg:pt-12 lg:pb-10">
+      <header
+        className={`px-6 pb-8 lg:px-12 lg:pb-10 ${
+          // Immersive homage chrome overlays the fixed 64px navbar, so this page
+          // pads itself clear of it and gives the logo real breathing room.
+          homageSkin ? "pt-24 lg:pt-32" : "pt-8 lg:pt-12"
+        }`}
+      >
         <nav className="mb-8 text-[10px] font-mono uppercase tracking-wider text-gray-400 lg:mb-12">
           <Link href="/collections" className="hover:text-fg">
             ← Collections
@@ -201,7 +209,7 @@ export default async function CollectionPage({
                     rel="noopener noreferrer"
                     className="underline decoration-gray-300 underline-offset-2 hover:text-fg"
                   >
-                    {shortAddress(a)}
+                    <ArtistName address={a} />
                   </a>
                 </span>
               ))}
@@ -215,25 +223,27 @@ export default async function CollectionPage({
                       : pooled
                         ? "a work sold through its own minter"
                         : "an edition on the artist's own contract"}
+                  {c.cfg.supplyCap > 0n && ` · ${c.cfg.supplyCap.toString()} editions`}
                 </>
               )}
-              {c.cfg.supplyCap > 0n && ` · ${c.cfg.supplyCap.toString()} editions`}
             </p>
           )
           return homageSkin ? (
             // Headline fills the width on one line, scaling to the title length;
-            // the byline + stats sit on one row beneath it.
+            // byline on the left, and on the right the count + the mint chip (the
+            // only place status lives, so nothing is said twice).
             <div className="space-y-5">
               <FitHeadline text={c.name} className="w-full" />
               <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
                 {byline}
-                {/* The sale, findable above the fold: live status + price + a jump
-                    to the instrument, beside the collection stats. */}
-                <div className="flex shrink-0 flex-col items-start gap-4 sm:flex-row sm:items-end">
+                <div className="flex shrink-0 flex-col items-start gap-4 sm:items-end">
+                  <p className="font-mono text-3xl tabular-nums tracking-tight text-fg sm:text-4xl">
+                    {c.minted.toLocaleString()}{" "}
+                    <span className="text-gray-500">/ {c.cfg.supplyCap.toLocaleString()}</span>
+                  </p>
                   {homageMinter && (
                     <HomageMintChip id="mint-chip" minter={homageMinter} anchorId="mint-instrument" />
                   )}
-                  <PlacardStats snapshot={placard} />
                 </div>
               </div>
             </div>
@@ -379,60 +389,95 @@ export default async function CollectionPage({
 
       </div>{/* /field+band order wrapper */}
 
-      {/* ── The record: attribution, history, facts. ── */}
-      <section className="border-t border-gray-200">
-        <div className="mx-auto grid max-w-[1400px] grid-cols-1 gap-x-16 px-6 py-10 md:grid-cols-2 lg:grid-cols-3 lg:px-12 lg:py-14">
-          <div>
-            <AttributionRoster entries={attribution} chainId={PND_CHAIN_ID} />
-            <WithdrawPanel collection={addr} />
-          </div>
-          <div>
-            <CollectionMintHistory history={history} chainId={PND_CHAIN_ID} />
-          </div>
-          <div className="py-5 space-y-2 text-[11px] font-mono">
-            <Fact label="Contract" value={shortAddress(addr)} />
-            <Fact label="Standard" value="ERC721" />
-            <Fact label="Owner" value={shortAddress(c.owner)} />
-            <Fact
-              label="Renderer"
-              value={c.isRendererLocked ? "Locked forever" : "Swappable by the artist"}
-            />
-            <Fact
-              label="Supply"
-              value={c.isSupplyLocked ? "Locked forever" : "Adjustable by the artist"}
-            />
-            <Fact label="Permanence" value={permanent ? "Permanent" : "Not yet permanent"} />
-            <Fact
-              label="Royalty"
-              value={c.cfg.royaltyBps > 0 ? formatBps(c.cfg.royaltyBps) : "none"}
-            />
-            <Fact
-              label="Referral share"
-              value={`${formatBps(REFERRAL_SHARE_BPS)} (to the referrer)`}
-            />
-            <Fact label="Pricing" value={strategy ? "Live strategy" : "Fixed"} />
-            <Fact label="Sale mode" value={pooled ? "Pooled (via minter)" : "Sequential"} />
-            <Fact
-              label="Payout"
-              value={
-                c.cfg.payoutAddress === ZERO_ADDRESS
-                  ? shortAddress(c.owner)
-                  : shortAddress(c.cfg.payoutAddress)
-              }
-            />
-            <div className="pt-1">
-              <a
-                href={evmNowAddressUrl(addr, PND_CHAIN_ID)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[10px] uppercase tracking-wider text-gray-400 underline hover:text-fg"
-              >
-                View contract ↗
-              </a>
+      {/* ── The record: mints (read live from chain), and the load-bearing facts. ── */}
+      {homageSkin ? (
+        <section className="border-t border-gray-200">
+          <div className="mx-auto grid max-w-[1400px] grid-cols-1 gap-x-16 gap-y-10 px-6 py-10 md:grid-cols-2 lg:px-12 lg:py-14">
+            {/* Mints ARE readable onchain (Transfer scan) — show them, don't defer to an indexer. */}
+            <HomageMintLog collection={addr} chainId={PND_CHAIN_ID} />
+            <div className="space-y-2 text-[11px] font-mono md:w-full md:max-w-[360px] md:justify-self-end">
+              <Fact label="Contract" value={<AddrLink addr={addr} />} />
+              <Fact label="Owner" value={<AddrLink addr={c.owner} />} />
+              <Fact
+                label="Payout"
+                value={<AddrLink addr={c.cfg.payoutAddress === ZERO_ADDRESS ? c.owner : c.cfg.payoutAddress} />}
+              />
+              <Fact
+                label="Renderer"
+                value={c.isRendererLocked ? "Locked forever" : "Swappable by the artist"}
+              />
+              <Fact
+                label="Royalty"
+                value={c.cfg.royaltyBps > 0 ? formatBps(c.cfg.royaltyBps) : "none"}
+              />
+              <div className="pt-1">
+                <a
+                  href={evmNowAddressUrl(addr, PND_CHAIN_ID)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[10px] uppercase tracking-wider text-gray-400 underline hover:text-fg"
+                >
+                  View contract ↗
+                </a>
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      ) : (
+        <section className="border-t border-gray-200">
+          <div className="mx-auto grid max-w-[1400px] grid-cols-1 gap-x-16 px-6 py-10 md:grid-cols-2 lg:grid-cols-3 lg:px-12 lg:py-14">
+            <div>
+              <AttributionRoster entries={attribution} chainId={PND_CHAIN_ID} />
+              <WithdrawPanel collection={addr} />
+            </div>
+            <div>
+              <CollectionMintHistory history={history} chainId={PND_CHAIN_ID} />
+            </div>
+            <div className="py-5 space-y-2 text-[11px] font-mono">
+              <Fact label="Contract" value={shortAddress(addr)} />
+              <Fact label="Standard" value="ERC721" />
+              <Fact label="Owner" value={shortAddress(c.owner)} />
+              <Fact
+                label="Renderer"
+                value={c.isRendererLocked ? "Locked forever" : "Swappable by the artist"}
+              />
+              <Fact
+                label="Supply"
+                value={c.isSupplyLocked ? "Locked forever" : "Adjustable by the artist"}
+              />
+              <Fact label="Permanence" value={permanent ? "Permanent" : "Not yet permanent"} />
+              <Fact
+                label="Royalty"
+                value={c.cfg.royaltyBps > 0 ? formatBps(c.cfg.royaltyBps) : "none"}
+              />
+              <Fact
+                label="Referral share"
+                value={`${formatBps(REFERRAL_SHARE_BPS)} (to the referrer)`}
+              />
+              <Fact label="Pricing" value={strategy ? "Live strategy" : "Fixed"} />
+              <Fact label="Sale mode" value={pooled ? "Pooled (via minter)" : "Sequential"} />
+              <Fact
+                label="Payout"
+                value={
+                  c.cfg.payoutAddress === ZERO_ADDRESS
+                    ? shortAddress(c.owner)
+                    : shortAddress(c.cfg.payoutAddress)
+                }
+              />
+              <div className="pt-1">
+                <a
+                  href={evmNowAddressUrl(addr, PND_CHAIN_ID)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[10px] uppercase tracking-wider text-gray-400 underline hover:text-fg"
+                >
+                  View contract ↗
+                </a>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Generic sticky bar bails on pooled collections, so homage ships its own
           quote-aware variant (appears only while the instrument is off-screen). */}
@@ -445,11 +490,25 @@ export default async function CollectionPage({
   )
 }
 
-function Fact({ label, value }: { label: string; value: string }) {
+function Fact({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-baseline justify-between gap-4">
       <span className="text-gray-400 uppercase tracking-wider text-[10px]">{label}</span>
       <span className="tabular-nums text-right">{value}</span>
     </div>
+  )
+}
+
+/** A short address that links out to the explorer (evm.now) — used in the record facts. */
+function AddrLink({ addr }: { addr: string }) {
+  return (
+    <a
+      href={evmNowAddressUrl(addr, PND_CHAIN_ID)}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="underline decoration-gray-300 underline-offset-2 hover:text-fg"
+    >
+      {shortAddress(addr)}
+    </a>
   )
 }

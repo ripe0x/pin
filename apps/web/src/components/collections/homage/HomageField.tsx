@@ -23,7 +23,19 @@ function svgToSrc(svg: string): string | undefined {
   return `data:image/svg+xml,${encodeURIComponent(svg)}`
 }
 
-function Cell({renderer, id, minted, collection}: {renderer: Address; id: number; minted: boolean; collection: Address}) {
+function Cell({
+  renderer,
+  id,
+  minted,
+  collection,
+  featured,
+}: {
+  renderer: Address
+  id: number
+  minted: boolean
+  collection: Address
+  featured?: boolean
+}) {
   const {data} = useReadContract({
     address: renderer,
     abi: homageRendererViewAbi,
@@ -33,8 +45,9 @@ function Cell({renderer, id, minted, collection}: {renderer: Address; id: number
     query: {staleTime: 5 * 60_000, retry: 6, retryDelay: (i: number) => Math.min(800 * 2 ** i, 6000)},
   })
   const src = typeof data === "string" ? svgToSrc(data) : undefined
+  const span = featured ? "col-span-2 row-span-2" : ""
   const art = (
-    <div className="group relative aspect-square overflow-hidden bg-gray-100 dark:bg-bg">
+    <div className={`group relative aspect-square overflow-hidden bg-gray-100 dark:bg-bg ${span}`}>
       {src ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={src} alt={`Homage to Punk #${id}`} className="h-full w-full object-cover" />
@@ -49,7 +62,10 @@ function Cell({renderer, id, minted, collection}: {renderer: Address; id: number
     </div>
   )
   return minted ? (
-    <Link href={`/collections/${collection}/${id}`} className="block outline-none focus-visible:ring-2 focus-visible:ring-white/40">
+    <Link
+      href={`/collections/${collection}/${id}`}
+      className={`block outline-none focus-visible:ring-2 focus-visible:ring-white/40 ${span}`}
+    >
       {art}
     </Link>
   ) : (
@@ -78,20 +94,14 @@ export function HomageField({
   const state = dev ?? auto
 
   const cells = useMemo(() => {
+    // premint: the sample field. minting/soldout: ONLY real mints — never mix
+    // samples in with live outputs (that reads as fake inventory).
     if (state === "premint") return sampleIds.slice(0, GRID_N).map((id) => ({id, minted: false}))
-    if (state === "soldout") return mintedIds.map((id) => ({id, minted: true}))
-    // minting: real ids lead, samples fill the field until enough real mints exist
-    const real = mintedIds.map((id) => ({id, minted: true}))
-    const fill = sampleIds.filter((id) => !mintedIds.includes(id)).map((id) => ({id, minted: false}))
-    return [...real, ...fill].slice(0, Math.max(GRID_N, real.length))
+    return mintedIds.map((id) => ({id, minted: true}))
   }, [state, mintedIds, sampleIds])
 
-  const label =
-    state === "premint"
-      ? "Sample outputs"
-      : state === "soldout"
-        ? "Sold out · the collection"
-        : `Minted so far · ${minted} / ${supply}`
+  // The masthead already carries the count/status, so the field bar stays a bare label.
+  const label = state === "premint" ? "Sample outputs" : state === "soldout" ? "The collection" : "The collection"
 
   return (
     <div className="border-y border-gray-200">
@@ -114,9 +124,27 @@ export function HomageField({
           </div>
         )}
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+      {/* Auto-fill masonry with a featured 2x2 lead cell — the varying tile size
+          the generic field had. Only feature when there's enough to fill around it. */}
+      {/* Container bg = the page ground so trailing empty cells in a sparse (few-mint)
+          field vanish rather than showing as blocks; gap-px separates filled tiles.
+          (PND's gray scale inverts under .dark, so a gray bg would render light here.) */}
+      <div
+        className="grid gap-px"
+        style={{
+          gridTemplateColumns: "repeat(auto-fill, minmax(clamp(150px, 22vw, 300px), 1fr))",
+          background: "var(--paper, #0a0a0c)",
+        }}
+      >
         {cells.map((c, i) => (
-          <Cell key={`${c.id}-${i}`} renderer={renderer} id={c.id} minted={c.minted} collection={collection} />
+          <Cell
+            key={`${c.id}-${i}`}
+            renderer={renderer}
+            id={c.id}
+            minted={c.minted}
+            collection={collection}
+            featured={i === 0 && cells.length >= 5}
+          />
         ))}
       </div>
       {state !== "premint" && mintedIds.length === 0 && (
