@@ -417,6 +417,11 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                       </li>
                     </ul>
                   )}
+                  {batchQty > 1 && (
+                    <p className="text-[10px] font-mono leading-relaxed text-gray-400">
+                      The mint fee rises 10% with each mint from your wallet, so each is a little more than the last.
+                    </p>
+                  )}
                 </div>
               ) : phase === "allowlist" ? (
                 isAllowlisted && (allowlistRemaining ?? 0) > 0 ? (
