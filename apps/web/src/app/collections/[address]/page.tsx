@@ -229,15 +229,15 @@ export default async function CollectionPage({
             </p>
           )
           return homageSkin ? (
-            // Headline fills the width on one line, scaling to the title length;
-            // byline on the left, and on the right the count + the mint chip (the
-            // only place status lives, so nothing is said twice).
-            <div className="space-y-5">
-              <FitHeadline text={c.name} className="w-full" />
-              <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+            // Headline fills the width on one line (scales to the title length); one
+            // tight metadata row beneath it — byline left, then the count + mint chip
+            // inline on the right (the chip is the only place status lives).
+            <div className="space-y-6">
+              <FitHeadline text={c.name} className="w-full" max={260} />
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 {byline}
-                <div className="flex shrink-0 flex-col items-start gap-4 sm:items-end">
-                  <p className="font-mono text-3xl tabular-nums tracking-tight text-fg sm:text-4xl">
+                <div className="flex items-center gap-5">
+                  <p className="font-mono text-xl tabular-nums tracking-tight text-fg sm:text-2xl">
                     {c.minted.toLocaleString()}{" "}
                     <span className="text-gray-500">/ {c.cfg.supplyCap.toLocaleString()}</span>
                   </p>
