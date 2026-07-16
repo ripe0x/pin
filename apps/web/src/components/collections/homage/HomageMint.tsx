@@ -124,6 +124,18 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
   })
   const maxBatch = maxBatchRead.data !== undefined ? Number(maxBatchRead.data as bigint) : 20
   const batchQty = phase === "public" ? qty : 1
+  // The exact summed fee for the next `batchQty` public mints — escalates per token
+  // (baseFee * 1.1^n), so the on-screen total rises faster than linear, matching what
+  // the contract actually charges. quoteBatchFee(you, 1) == mintFeeOf(you).
+  const batchFeeRead = useReadContract({
+    address: minter,
+    abi: homageMinterAbi,
+    functionName: "quoteBatchFee",
+    args: [address ?? ZERO, BigInt(batchQty)],
+    chainId: PREFERRED_CHAIN.id,
+    query: {enabled: !!address && phase === "public"},
+  })
+  const batchFee = batchFeeRead.data as bigint | undefined
   const refreshQuote = useCallback(async () => {
     if (!publicClient) return
     try {
@@ -175,9 +187,20 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
   const total = quote?.totalValue
   const claimTotal = quote ? quote.ethForSwap + baseFee : undefined // claim/allowlist flat fee
   const {data: balance} = useBalance({address, chainId: PREFERRED_CHAIN.id, query: {enabled: !!address && !wrongNetwork}})
-  // Rough all-in estimate for the selected quantity (exact fee + refund happen on-chain).
-  const estTotal = total !== undefined ? total * BigInt(batchQty) : undefined
-  const insufficient = !!balance && estTotal !== undefined && !wrongNetwork && balance.value < estTotal
+  // The true all-in cost for the selected quantity: the swap leg (≈ linear per token) +
+  // the EXACT escalating fee leg from the contract. Rises faster than linear, so the
+  // number on screen matches the throttle. Fall back to the flat estimate before the
+  // quoteBatchFee read lands.
+  const batchTotal =
+    quote && batchFee !== undefined
+      ? BigInt(batchQty) * quote.ethForSwap + batchFee
+      : total !== undefined
+        ? total * BigInt(batchQty)
+        : undefined
+  const insufficient = !!balance && batchTotal !== undefined && !wrongNetwork && balance.value < batchTotal
+  // The headline price: the escalating batch total for the chosen quantity in public,
+  // the flat claim fee otherwise.
+  const priceValue = phase === "public" ? (batchQty > 1 ? batchTotal : total) : claimTotal
 
   const doMint = useCallback(async () => {
     if (!publicClient) return
@@ -275,17 +298,22 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
           {/* price */}
           <div className="space-y-1">
             <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-              {phase === "public" ? "Price" : phase === "closed" ? "Opens" : "Price · flat claim fee"}
+              {phase === "public"
+                ? batchQty > 1
+                  ? `Total · ${batchQty} mints`
+                  : "Price"
+                : phase === "closed"
+                  ? "Opens"
+                  : "Price · flat claim fee"}
             </p>
             <p className="text-2xl font-mono font-medium tabular-nums tracking-tight leading-none">
               {phase === "closed" ? (
                 <span className="text-sm font-mono text-gray-500">
                   {next ? <>Opens in <Countdown endTime={BigInt(next.at)} nowSec={nowSec} /></> : "Not scheduled"}
                 </span>
-              ) : (phase === "public" ? total : claimTotal) !== undefined ? (
+              ) : priceValue !== undefined ? (
                 <>
-                  {fmtEth((phase === "public" ? total : claimTotal) as bigint)}{" "}
-                  <span className="text-sm font-mono text-gray-500">ETH</span>
+                  {fmtEth(priceValue)} <span className="text-sm font-mono text-gray-500">ETH</span>
                 </>
               ) : quoteErr ? (
                 <span className="text-sm font-mono text-gray-500">quote unavailable</span>
@@ -293,6 +321,11 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                 <span className="text-sm font-mono text-gray-500">quoting…</span>
               )}
             </p>
+            {phase === "public" && batchQty > 1 && (
+              <p className="text-[10px] font-mono text-gray-400">
+                The mint fee rises 10% per token — later mints in the batch cost more.
+              </p>
+            )}
           </div>
 
           {/* reveal / success */}
@@ -340,7 +373,7 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                   {maxBatch > 1 && (
                     <div className="flex items-center justify-between gap-3">
                       <span className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-                        Quantity{qty > 1 && total !== undefined ? ` · ~${fmtEth(estTotal!)} ETH` : ""}
+                        Quantity
                       </span>
                       <div className="flex items-center rounded border border-gray-200">
                         <button
