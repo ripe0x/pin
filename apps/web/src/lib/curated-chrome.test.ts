@@ -11,14 +11,17 @@
  * Env is set BEFORE the dynamic import: curated-chrome.ts reads
  * NEXT_PUBLIC_HOMAGE_MINTER_ADDRESS at module scope (the sovereign-rebuild's
  * mint engine — the descriptor's primary `address` — not the separate pooled
- * collection).
+ * collection). NEXT_PUBLIC_HOMAGE_COLLECTION_ADDRESS is the pooled
+ * collection's own address, read separately for the /collections/<addr> branch.
  */
 
 import { strict as assert } from "node:assert"
 import { test } from "node:test"
 
 const HOMAGE = "0x1111111111111111111111111111111111111111"
+const HOMAGE_COLLECTION = "0x2222222222222222222222222222222222222222"
 process.env.NEXT_PUBLIC_HOMAGE_MINTER_ADDRESS = HOMAGE
+process.env.NEXT_PUBLIC_HOMAGE_COLLECTION_ADDRESS = HOMAGE_COLLECTION
 
 const { chromeForPath } = await import("./curated-chrome.ts")
 
@@ -50,4 +53,26 @@ test("other routes keep standard chrome", () => {
   for (const p of ["/", "/mint", "/mint/vouch", "/mint/vouch/12", "/artist/0xabc", "/homage"]) {
     assert.deepEqual(chromeForPath(p), DEFAULT, p)
   }
+})
+
+test("homage's own /collections/<address> page is immersive, any case, with trailing slash", () => {
+  for (const seg of [
+    HOMAGE_COLLECTION,
+    HOMAGE_COLLECTION.toUpperCase().replace("0X", "0x"),
+  ]) {
+    const chrome = chromeForPath(`/collections/${seg}`)
+    assert.equal(chrome.navbar, "overlay-dark", `/collections/${seg}`)
+    assert.equal(chrome.footer, false)
+    assert.equal(chrome.padTop, false)
+  }
+  assert.equal(chromeForPath(`/collections/${HOMAGE_COLLECTION}/`).navbar, "overlay-dark")
+})
+
+test("other /collections/<address> pages keep standard chrome", () => {
+  assert.deepEqual(
+    chromeForPath("/collections/0x3333333333333333333333333333333333333333"),
+    DEFAULT,
+  )
+  // Token sub-pages under the homage collection aren't the collection page itself.
+  assert.deepEqual(chromeForPath(`/collections/${HOMAGE_COLLECTION}/3104`), DEFAULT)
 })

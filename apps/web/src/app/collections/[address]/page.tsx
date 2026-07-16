@@ -6,6 +6,7 @@ import { OptimizedImage } from "@/components/OptimizedImage"
 import { MintCollectionCTA } from "@/components/collections/MintCollectionCTA"
 import { HomageMint } from "@/components/collections/homage/HomageMint"
 import { FitHeadline } from "@/components/collections/homage/FitHeadline"
+import { HomageMintChip, HomageStickyMintBar } from "@/components/collections/homage/HomageMintChip"
 import { HomageField } from "@/components/collections/homage/HomageField"
 import { getHomageMintedIds } from "@/lib/homage/collection.server"
 import { WithdrawPanel } from "@/components/collections/WithdrawPanel"
@@ -77,10 +78,10 @@ export default async function CollectionPage({
   searchParams,
 }: {
   params: Params
-  searchParams: Promise<{ skin?: string }>
+  searchParams: Promise<{ skin?: string; layout?: string }>
 }) {
   const { address } = await params
-  const { skin } = await searchParams
+  const { skin, layout } = await searchParams
   if (!isAddress(address)) notFound()
   const addr = address as Address
   const c = await getCollection(addr)
@@ -93,6 +94,9 @@ export default async function CollectionPage({
   // the terminal skin (dark + condensed) with immersive site chrome. `?skin=homage`
   // still forces it on for previewing the treatment on any collection.
   const homageSkin = !!homageMinter || skin === "homage"
+  // Alt arrangement (?layout=mint-first): the About|Mint band sits ABOVE the field so
+  // the instrument is the second thing on the page instead of below the full-bleed grid.
+  const mintFirst = homageSkin && layout === "mint-first"
   // "About this work" is fed from the collection's own contractURI description
   // on the homage skin (no hardcoded meta copy).
   const contractDescription = homageSkin ? await getContractDescription(addr) : null
@@ -223,7 +227,12 @@ export default async function CollectionPage({
               <FitHeadline text={c.name} className="w-full" />
               <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
                 {byline}
-                <div className="shrink-0">
+                {/* The sale, findable above the fold: live status + price + a jump
+                    to the instrument, beside the collection stats. */}
+                <div className="flex shrink-0 flex-col items-start gap-4 sm:flex-row sm:items-end">
+                  {homageMinter && (
+                    <HomageMintChip id="mint-chip" minter={homageMinter} anchorId="mint-instrument" />
+                  )}
                   <PlacardStats snapshot={placard} />
                 </div>
               </div>
@@ -244,6 +253,10 @@ export default async function CollectionPage({
         })()}
       </header>
 
+      {/* Field + editorial band in one flex column so ?layout=mint-first can lift the
+          band above the field via CSS order (no duplicated JSX). */}
+      <div className="flex flex-col">
+
       {/* ── The field: the collection's multiplicity, edge to edge. Every
              color on the page comes from the work. ── */}
       {hero ?? (
@@ -261,7 +274,7 @@ export default async function CollectionPage({
         id="mint-instrument"
         className={`grid scroll-mt-20 grid-cols-1 border-b border-gray-200 lg:divide-x lg:divide-gray-200 ${
           homageSkin ? "lg:grid-cols-2" : "lg:grid-cols-[1fr_460px]"
-        }`}
+        } ${mintFirst ? "order-first" : ""}`}
       >
         <div className="max-w-[720px] space-y-6 px-6 py-10 lg:px-12 lg:py-12">
           <h2 className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
@@ -364,6 +377,8 @@ export default async function CollectionPage({
         </div>
       </div>
 
+      </div>{/* /field+band order wrapper */}
+
       {/* ── The record: attribution, history, facts. ── */}
       <section className="border-t border-gray-200">
         <div className="mx-auto grid max-w-[1400px] grid-cols-1 gap-x-16 px-6 py-10 md:grid-cols-2 lg:grid-cols-3 lg:px-12 lg:py-14">
@@ -419,7 +434,13 @@ export default async function CollectionPage({
         </div>
       </section>
 
-      <StickyMintBar snapshot={placard} anchorId="mint-instrument" />
+      {/* Generic sticky bar bails on pooled collections, so homage ships its own
+          quote-aware variant (appears only while the instrument is off-screen). */}
+      {homageMinter ? (
+        <HomageStickyMintBar minter={homageMinter} anchorId="mint-instrument" chipId="mint-chip" />
+      ) : (
+        <StickyMintBar snapshot={placard} anchorId="mint-instrument" />
+      )}
     </div>
   )
 }
