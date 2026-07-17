@@ -5,8 +5,16 @@ import { isAddress, type Address } from "viem"
 import { TokenStage } from "@/components/token/TokenStage"
 import { CopyAddressButton } from "@/components/CopyAddressButton"
 import { CollectionMintMarkCard } from "@/components/collections/CollectionMintMarkCard"
+import { HomageTokenDetail } from "@/components/collections/homage/HomageTokenDetail"
 import { getCollection, getCollectionToken } from "@/lib/collection-onchain"
+import { detectHomageMinter } from "@/lib/homage/detect.server"
+import { parseHomageFacts, extractHomageGround } from "@/lib/homage/token-facts"
+import { getPunkImageSvg } from "@/lib/homage/punk-image.server"
+import { getOnchainPfpSrc } from "@/lib/homage/pfp.server"
 import { PND_CHAIN_ID, evmNowAddressUrl, ipfsToHttp, shortAddress } from "@/lib/collection"
+// A homage token detail wears the same terminal skin as the collection + redeem pages.
+import "@/components/mint/homage-gallery/homage-gallery.css"
+import "../homage-skin.css"
 
 type Params = Promise<{ address: string; tokenId: string }>
 
@@ -52,6 +60,38 @@ export default async function CollectionTokenPage({ params }: { params: Params }
   // collection-level cover falling through as a generic placeholder —
   // gates whether Image mode has anything distinct from Live to show.
   const hasCapture = !!t.artwork && t.artwork !== c.cover
+
+  // A homage token gets the bespoke, terminal-skinned detail: the derived work
+  // beside the punk it came from. The token id IS the punk id (the minter mints
+  // into the punk's own slot), so it drives both the source-punk image and the
+  // cryptopunks.app link. Everything else (generic collections) keeps the
+  // standard record chrome below.
+  const homageMinter = await detectHomageMinter(addr, PND_CHAIN_ID)
+  if (homageMinter) {
+    const punkId = id <= 9999n ? Number(id) : -1
+    const [punkImageSrc, onchainPfpSrc] = await Promise.all([
+      getPunkImageSvg(punkId),
+      getOnchainPfpSrc(c.renderer, punkId),
+    ])
+    return (
+      <div className="dark homage-terminal collection-homage-skin min-h-screen">
+        <HomageTokenDetail
+          collection={addr}
+          tokenId={id}
+          owner={t.owner}
+          art={t.image}
+          animationUrl={t.animationUrl}
+          punkImageSrc={punkImageSrc}
+          punkBg={extractHomageGround(t.image)}
+          facts={parseHomageFacts(t.tokenURI)}
+          seed={t.seed}
+          renderer={c.renderer}
+          isRendererLocked={c.isRendererLocked}
+          onchainPfpSrc={onchainPfpSrc}
+        />
+      </div>
+    )
+  }
 
   return (
     <div>

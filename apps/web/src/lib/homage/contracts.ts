@@ -69,6 +69,10 @@ export const homageMinterAbi = parseAbi([
   "function claimStart() view returns (uint64)",
   "function allowlistStart() view returns (uint64)",
   "function publicStart() view returns (uint64)",
+  // Owner-only; used by the FORK-ONLY dev phase toggle (the connected dev wallet is
+  // the owner on the local fork), so a phase switch moves the REAL schedule and the
+  // whole page — masthead, chip, schedule, instrument, contract gating — follows.
+  "function setSchedule(uint64 claimStart_, uint64 allowlistStart_, uint64 publicStart_)",
   // allowlist
   "function allowlistRoot() view returns (bytes32)",
   "function maxPerAllowlisted() view returns (uint256)",
@@ -114,6 +118,9 @@ export const STATUS_LIVE = 255
 // draws both the collection's minted tokens and the pre-mint sample field.
 export const homageRendererViewAbi = parseAbi([
   "function renderSVG(uint256 id, uint8 status, bool circle) view returns (string)",
+  // The PFP form (nest re-framed on a plinth) — canonical on-chain treatment; the
+  // client-side transform in lib/homage/art.ts is its zero-RPC mirror/fallback.
+  "function pfpSVG(uint256 id, uint8 status) view returns (string)",
 ])
 
 // The pooled Surface the minter mints into — token reads (ownership / tokenURI).
