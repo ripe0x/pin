@@ -41,11 +41,12 @@ import {
   quoteMint,
   type MintQuote,
 } from "@/lib/homage/contracts"
-import {type Phase, type Schedule, currentPhase, nextTransition} from "@/lib/homage/phase"
+import {type Phase, type Schedule, claimOpen, currentPhase, nextTransition, reservationOpenAt} from "@/lib/homage/phase"
 import {allowlistProofFor} from "@/lib/homage/allowlist"
 import {HomageReveal} from "./HomageReveal"
 import {HomageBatchReveal} from "./HomageBatchReveal"
 import {HomageClaim} from "./HomageClaim"
+import {HomageReserve} from "./HomageReserve"
 import {HomageAllowlistLookup} from "./HomageAllowlistLookup"
 
 const SUPPLY = 10_000
@@ -76,6 +77,7 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
       {address: minter, abi: homageMinterAbi, functionName: "exitFee", chainId: PREFERRED_CHAIN.id},
       {address: minter, abi: homageMinterAbi, functionName: "feeGrowthBps", chainId: PREFERRED_CHAIN.id},
       {address: minter, abi: homageMinterAbi, functionName: "publicMints", args: [address ?? ZERO], chainId: PREFERRED_CHAIN.id},
+      {address: minter, abi: homageMinterAbi, functionName: "reservedRemaining", chainId: PREFERRED_CHAIN.id},
     ],
   })
   const schedule: Schedule | null =
@@ -91,17 +93,36 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
   const allowlistUsed = cfg.data?.[5]?.status === "success" ? Number(cfg.data[5].result as bigint) : 0
   const feeGrowthBps = cfg.data?.[7]?.status === "success" ? (cfg.data[7].result as bigint) : 0n
   const publicMintCount = cfg.data?.[8]?.status === "success" ? (cfg.data[8].result as bigint) : 0n
+  const reservedRemaining = cfg.data?.[9]?.status === "success" ? Number(cfg.data[9].result as bigint) : undefined
 
   const minted = totalMinted.data !== undefined ? Number(totalMinted.data as bigint) : null
   const left = remaining.data !== undefined ? Number(remaining.data as bigint) : null
-  const soldOut = left === 0
+  // Sold out = every punk has an homage (the collection itself is exhausted). The draw
+  // POOL can separately run dry (drawExhausted) while claims — which mint a specific,
+  // already-reserved punkId rather than drawing from the pool — remain possible.
+  const soldOut = minted !== null && minted >= SUPPLY
+  const drawExhausted = left === 0
 
   // Phase from the real schedule — the ONLY source of truth. The fork-only dev toggle
   // below moves the actual on-chain schedule (the dev wallet owns the minter on the
   // fork), so every surface on the page — masthead, chip, schedule, this instrument,
   // and the contract's own gating — follows the same state instead of a local override.
+  // `currentPhase` still names the single exclusive random-draw window (closed /
+  // allowlist / public — "claim" only for an unmerged schedule, or the fork dev toggle's
+  // "claim" preset). `claimIsOpen` / `reservationIsOpen` are independent, LAYERED reads
+  // off the same schedule — a punk owner's claim overlay stays live open-ended once
+  // claimStart passes, through allowlist AND public, rather than closing at
+  // allowlistStart. No separate dev-mode override is needed: the dev toggle rewrites the
+  // REAL on-chain schedule, so these functions already agree with it (e.g. the "claim"
+  // preset sets claimStart <= now, which claimOpen reads as open the same as production).
   const phase: Phase = schedule ? currentPhase(schedule, nowSec) : "closed"
   const next = schedule ? nextTransition(schedule, nowSec) : null
+  const claimIsOpen = schedule ? claimOpen(schedule, nowSec) : false
+  const reservationIsOpen = schedule ? reservationOpenAt(schedule, nowSec) : false
+  // The boundary specifically into "public" — used for the claim/allowlist-window
+  // countdown, which always counts toward public open (not the raw `next` boundary,
+  // which could target an unmerged claim window instead).
+  const nextPublic = schedule && schedule.publicStart !== 0 && nowSec < schedule.publicStart ? schedule.publicStart : null
 
   // ── the caller's public-mint fee (escalates per wallet); claim/allowlist pay baseFee ──
   const feeRead = useReadContract({
@@ -284,13 +305,23 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
             </span>
           </div>
 
-          {/* window countdown — time left in the current claim / allowlist window */}
-          {(phase === "claim" || phase === "allowlist") && next && (
+          {/* reservation pool status — quiet, only while there's something to report */}
+          {reservedRemaining !== undefined && reservedRemaining > 0 && (
             <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400 tabular-nums">
-              {phase === "claim" ? "Claim" : "Allowlist"} closes in{" "}
+              {reservedRemaining} reserved for punk owners · {left !== null ? left : "…"} in the draw pool
+            </p>
+          )}
+
+          {/* claim/allowlist window countdown — always counts toward public open, since
+              claim is open-ended (no "closes" of its own) and unclaimed reservations
+              release into the draw pool at public start. */}
+          {(phase === "allowlist" || (claimIsOpen && phase !== "public")) && nextPublic !== null && (
+            <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400 tabular-nums">
+              Public opens in{" "}
               <span className="text-fg">
-                <Countdown endTime={BigInt(next.at)} nowSec={nowSec} />
-              </span>
+                <Countdown endTime={BigInt(nextPublic)} nowSec={nowSec} />
+              </span>{" "}
+              · unclaimed reservations release then
             </p>
           )}
 
@@ -426,18 +457,20 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                   )}
                   <button
                     onClick={doMint}
-                    disabled={isPending || soldOut || total === undefined || insufficient}
+                    disabled={isPending || soldOut || drawExhausted || total === undefined || insufficient}
                     className={btnPrimary}
                   >
                     {soldOut
                       ? "Sold out"
-                      : isPending
-                        ? "Minting…"
-                        : insufficient
-                          ? "Insufficient balance"
-                          : qty > 1
-                            ? `Mint ${qty} homages`
-                            : "Mint a homage"}
+                      : drawExhausted
+                        ? "Draw pool empty"
+                        : isPending
+                          ? "Minting…"
+                          : insufficient
+                            ? "Insufficient balance"
+                            : qty > 1
+                              ? `Mint ${qty} homages`
+                              : "Mint a homage"}
                   </button>
                   {/* Itemized per-mint cost — each token's own escalating fee, so the
                       +10%/mint climb is explicit. */}
@@ -466,30 +499,60 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                 </div>
               ) : phase === "allowlist" ? (
                 isAllowlisted && (allowlistRemaining ?? 0) > 0 ? (
-                  <button onClick={doAllowlistMint} disabled={isPending || soldOut || claimTotal === undefined} className={btnPrimary}>
-                    {isPending ? "Minting…" : `Allowlist mint${allowlistRemaining !== undefined ? ` · ${allowlistRemaining} left` : ""}`}
+                  <button
+                    onClick={doAllowlistMint}
+                    disabled={isPending || soldOut || drawExhausted || claimTotal === undefined}
+                    className={btnPrimary}
+                  >
+                    {isPending
+                      ? "Minting…"
+                      : drawExhausted
+                        ? "Draw pool empty"
+                        : `Allowlist mint${allowlistRemaining !== undefined ? ` · ${allowlistRemaining} left` : ""}`}
                   </button>
                 ) : (
                   <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
                     {isAllowlisted ? "Your allowlist allocation is used up." : "This wallet isn’t on the allowlist. The public mint opens next."}
                   </p>
                 )
-              ) : phase === "claim" ? (
-                <HomageClaim
-                  minter={minter}
-                  collection={collection}
-                  address={address}
-                  refreshKey={refreshKey}
-                  disabled={isPending || soldOut}
-                  getClaimValue={claimValue}
-                  onClaim={(args) =>
-                    // The claim routes are a union of payable write configs; wagmi's writeContract
-                    // param can't unify the union, so cast through unknown (valid at runtime).
-                    writeContract({...args, chainId: PREFERRED_CHAIN.id} as unknown as Parameters<typeof writeContract>[0])
-                  }
-                />
+              ) : phase === "closed" && reservationIsOpen ? (
+                <div className="space-y-3">
+                  {next && (
+                    <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400 tabular-nums">
+                      Claiming and allowlist open in{" "}
+                      <span className="text-fg">
+                        <Countdown endTime={BigInt(next.at)} nowSec={nowSec} />
+                      </span>
+                    </p>
+                  )}
+                  <HomageReserve minter={minter} />
+                </div>
               ) : (
                 <p className="text-[11px] font-mono text-gray-500">Minting isn’t open yet.</p>
+              )}
+
+              {/* claim overlay — an independent, open-ended capability once claimStart
+                  passes, so it renders alongside the allowlist/public draw UI above
+                  rather than as its own exclusive phase branch. Gated on address +
+                  network directly (not nested in the ternary above) since it's a
+                  sibling to that phase-driven block, not one of its branches. */}
+              {address && !wrongNetwork && claimIsOpen && (
+                <div className="border-t border-gray-100 pt-3 space-y-3">
+                  <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">Your punks · claim</p>
+                  <HomageClaim
+                    minter={minter}
+                    collection={collection}
+                    address={address}
+                    refreshKey={refreshKey}
+                    disabled={isPending || soldOut}
+                    getClaimValue={claimValue}
+                    onClaim={(args) =>
+                      // The claim routes are a union of payable write configs; wagmi's writeContract
+                      // param can't unify the union, so cast through unknown (valid at runtime).
+                      writeContract({...args, chainId: PREFERRED_CHAIN.id} as unknown as Parameters<typeof writeContract>[0])
+                    }
+                  />
+                </div>
               )}
 
               {writeError && (

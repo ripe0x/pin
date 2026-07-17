@@ -9,7 +9,7 @@
 import {useState} from "react"
 import Link from "next/link"
 import {type Address} from "viem"
-import {useReadContract} from "wagmi"
+import {useReadContract, useReadContracts} from "wagmi"
 import {PREFERRED_CHAIN} from "@/components/tx/tx-ui"
 import {homageFlows, homageMinterAbi} from "@/lib/homage/contracts"
 import {useOwnedPunks} from "@/lib/homage/punks"
@@ -38,6 +38,18 @@ export function HomageClaim({
   const flows = homageFlows(minter)
   const [manualId, setManualId] = useState("")
   const [pendingId, setPendingId] = useState<number | null>(null)
+
+  // Reservation tag on each row — one batched read over the listed ids, not per-row.
+  const unmintedIds = punks.filter((p) => !p.minted).map((p) => p.id)
+  const reservedReads = useReadContracts({
+    contracts: unmintedIds.map((id) => ({address: minter, abi: homageMinterAbi, functionName: "isReserved", args: [BigInt(id)]}) as const),
+    query: {enabled: unmintedIds.length > 0, staleTime: 30_000},
+  })
+  const reservedById = new Map<number, boolean>()
+  unmintedIds.forEach((id, i) => {
+    const r = reservedReads.data?.[i]
+    reservedById.set(id, r?.status === "success" && r.result === true)
+  })
 
   async function claimDirect(id: number, vault?: Address) {
     setPendingId(id)
@@ -82,6 +94,7 @@ export function HomageClaim({
                 Punk {p.id}
                 {p.wrapped && <span className="text-gray-400"> · wrapped</span>}
                 {p.vault && <span className="text-gray-400"> · via vault {p.vault.slice(0, 6)}…</span>}
+                {!p.minted && reservedById.get(p.id) && <span className="text-gray-400"> · reserved</span>}
               </span>
               {p.minted ? (
                 <Link

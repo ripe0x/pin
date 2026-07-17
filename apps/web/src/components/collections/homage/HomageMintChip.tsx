@@ -18,7 +18,7 @@ import {usePublicClient} from "wagmi"
 import {useReadContracts} from "wagmi"
 import {Countdown, PREFERRED_CHAIN, useChainNowSec} from "@/components/tx/tx-ui"
 import {BASE_FEE, homageMinterAbi, quoteMint} from "@/lib/homage/contracts"
-import {type Phase, type Schedule, currentPhase, nextTransition} from "@/lib/homage/phase"
+import {type Phase, type Schedule, currentPhase, nextTransition, reservationOpenAt} from "@/lib/homage/phase"
 
 const QUOTE_POLL_MS = 60_000 // indicative price only — keep this cold (paid RPC in prod)
 
@@ -64,6 +64,7 @@ function useChipState(minter: Address) {
       : null
   const soldOut = reads.data?.[3]?.status === "success" && (reads.data[3].result as bigint) === 0n
   const phase: Phase = schedule ? currentPhase(schedule, nowSec) : "closed"
+  const reservationIsOpen = schedule ? reservationOpenAt(schedule, nowSec) : false
 
   const [price, setPrice] = useState<bigint | null>(null)
   const refresh = useCallback(async () => {
@@ -89,7 +90,7 @@ function useChipState(minter: Address) {
   // it's when the CURRENT window closes; while closed it's when minting opens.
   const next = schedule ? nextTransition(schedule, nowSec) : null
 
-  return {phase, soldOut, price, next, nowSec}
+  return {phase, soldOut, price, next, nowSec, reservationIsOpen}
 }
 
 /** The chip's countdown fragment: "closes in X" inside a timed window, "opens in X"
@@ -98,15 +99,17 @@ function ChipCountdown({
   phase,
   next,
   nowSec,
+  reservationIsOpen,
 }: {
   phase: Phase
   next: {at: number} | null
   nowSec: number
+  reservationIsOpen?: boolean
 }) {
   if (!next || phase === "public") return null
   return (
     <span className="font-mono text-[10px] uppercase tracking-wider text-gray-400 tabular-nums">
-      {phase === "closed" ? "opens in " : "closes in "}
+      {phase === "closed" ? (reservationIsOpen ? "mint opens in " : "opens in ") : "closes in "}
       <span className="text-fg">
         <Countdown endTime={BigInt(next.at)} nowSec={nowSec} />
       </span>
@@ -140,8 +143,9 @@ export function HomageMastheadStat({
   /** id for the chip element (the sticky bar watches it to avoid doubling up). */
   chipId?: string
 }) {
-  const {phase, soldOut, price, next, nowSec} = useChipState(minter)
+  const {phase, soldOut, price, next, nowSec, reservationIsOpen} = useChipState(minter)
   const timed = !soldOut && next !== null && phase !== "public"
+  const showReservation = !soldOut && phase === "closed" && reservationIsOpen
 
   return (
     <div className="flex items-center gap-5">
@@ -164,8 +168,9 @@ export function HomageMastheadStat({
       <div id={chipId} className="flex items-center gap-4 rounded border border-gray-200 bg-surface px-4 py-3">
         <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-gray-500">
           <Dot phase={phase} soldOut={soldOut} />
-          {soldOut ? "Sold out" : PHASE_CHIP_LABEL[phase]}
+          {soldOut ? "Sold out" : showReservation ? "Reserve your punk" : PHASE_CHIP_LABEL[phase]}
         </span>
+        {showReservation && <ChipCountdown phase={phase} next={next} nowSec={nowSec} reservationIsOpen />}
         {/* the small slot mirrors the big one: count while the countdown is big */}
         {timed && (
           <span className="font-mono text-[10px] uppercase tracking-wider text-gray-400 tabular-nums">

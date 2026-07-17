@@ -77,6 +77,15 @@ export const homageMinterAbi = parseAbi([
   "function allowlistRoot() view returns (bytes32)",
   "function maxPerAllowlisted() view returns (uint256)",
   "function allowlistMinted(address who) view returns (uint256)",
+  // punk-id reservation — a holder withholds their punk id from the random draw
+  // pool until claim opens; unclaimed reservations release into the pool then.
+  "function reserve(uint256[] ids) external",
+  "function reserveMine(uint256[] ids) external",
+  "function reserveVia(uint256[] ids, address vault) external",
+  "function releaseReserved(uint256 max) external returns (uint256)",
+  "function isReserved(uint256 id) view returns (bool)",
+  "function reservedRemaining() view returns (uint256)",
+  "function reservationOpen() view returns (bool)",
   // the collection this minter mints into — used by PND to confirm a collection's
   // authorized minter really is a HomageMinter (see detect.ts).
   "function collection() view returns (address)",
@@ -94,6 +103,8 @@ export const homageMinterAbi = parseAbi([
   "event Minted(address indexed to, uint256 indexed punkId, uint256 ethSwapped, uint256 received111)",
   "event Claimed(address indexed to, uint256 indexed punkId, uint256 ethSwapped, uint256 received111)",
   "event Redeemed(address indexed from, uint256 indexed punkId, uint256 amount111)",
+  "event Reserved(uint256 indexed punkId, address indexed by)",
+  "event ReservationReleased(uint256 indexed punkId)",
   // Custom errors — so viem decodes a revert selector to a named reason.
   "error NotManager()",
   "error BadValue()",
@@ -196,6 +207,10 @@ export function homageFlows(minter: Address) {
       ({address: minter, abi: homageMinterAbi, functionName: "allowlistMint", args: [proof], value}) as const,
     redeem: (punkId: bigint, value: bigint) =>
       ({address: minter, abi: homageMinterAbi, functionName: "redeem", args: [punkId], value}) as const,
+    reserveMine: (ids: readonly bigint[]) =>
+      ({address: minter, abi: homageMinterAbi, functionName: "reserveMine", args: [ids]}) as const,
+    reserveVia: (ids: readonly bigint[], vault: Address) =>
+      ({address: minter, abi: homageMinterAbi, functionName: "reserveVia", args: [ids, vault]}) as const,
   }
 }
 
