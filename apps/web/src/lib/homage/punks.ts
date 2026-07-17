@@ -28,7 +28,7 @@ const SCAN_WINDOW = 9_000n
 const MAX_DELEGATION_VAULTS = 4
 
 export type OwnedStatus = "idle" | "loading" | "ok" | "partial" | "error"
-export type PunkPick = {id: number; wrapped: boolean; vault?: Address}
+export type PunkPick = {id: number; wrapped: boolean; vault?: Address; minted: boolean}
 
 type Client = NonNullable<ReturnType<typeof usePublicClient>>
 
@@ -149,7 +149,7 @@ export function useOwnedPunks(minter: Address, address?: Address, refreshKey?: n
         partial = partial || own.rawFailed
         if (cancelled) return
 
-        const merged = new Map<number, PunkPick>()
+        const merged = new Map<number, Omit<PunkPick, "minted">>()
         for (const [id, wrapped] of own.held) merged.set(id, {id, wrapped})
         try {
           const {vaults, tokens} = await claimDelegations(client, address)
@@ -199,13 +199,15 @@ export function useOwnedPunks(minter: Address, address?: Address, refreshKey?: n
             })
           : []
         if (cancelled) return
+        // Keep already-minted punks in the list, ANNOTATED — the claim UI shows them
+        // as "already minted" instead of silently hiding them (a holder wondering why
+        // their punk isn't listed is worse than a disabled row).
         const punks: PunkPick[] = ids
-          .filter((_, i) => {
+          .map((id, i) => {
             const r = mintedReads[i]
-            return r?.status === "success" && r.result === false
+            return {...merged.get(id)!, minted: r?.status === "success" && r.result === true}
           })
-          .map((id) => merged.get(id)!)
-          .sort((a, b) => a.id - b.id)
+          .sort((a, b) => Number(a.minted) - Number(b.minted) || a.id - b.id)
 
         setState({punks, status: partial ? "partial" : "ok"})
       } catch {

@@ -2,18 +2,19 @@
 
 // The homage field: the collection's multiplicity, edge to edge. It moves through three
 // states — pre-mint sample outputs, the minted collection as tokens land (real ids lead,
-// samples fill the rest), and the sold-out collection. A fork-only dev toggle previews each.
+// samples fill the rest), and the sold-out collection — derived purely from the REAL
+// minted count (no display override: the instrument's fork-only dev control moves the
+// actual chain, and this field follows it like every other surface).
 // Every cell renders through the same renderer (renderSVG on any punk id) and, when it's a
 // minted token, links to its detail page.
 
-import {useMemo, useState} from "react"
+import {useMemo} from "react"
 import Link from "next/link"
 import {type Address} from "viem"
 import {useReadContract} from "wagmi"
 import {PREFERRED_CHAIN} from "@/components/tx/tx-ui"
 import {STATUS_LIVE, homageRendererViewAbi} from "@/lib/homage/contracts"
 
-const FORK_MODE = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
 const GRID_N = 12
 type FieldState = "premint" | "minting" | "soldout"
 
@@ -50,13 +51,13 @@ function Cell({
     <div className={`group relative aspect-square overflow-hidden bg-gray-100 dark:bg-bg ${span}`}>
       {src ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt={`Homage to Punk #${id}`} className="h-full w-full object-cover" />
+        <img src={src} alt={`Homage to Punk ${id}`} className="h-full w-full object-cover" />
       ) : (
         <div className="h-full w-full animate-pulse bg-gray-100 dark:bg-bg" />
       )}
       {minted && (
         <span className="absolute bottom-1.5 left-1.5 font-mono text-[9px] uppercase tracking-wider text-white/70 mix-blend-difference">
-          #{id}
+          {id}
         </span>
       )}
     </div>
@@ -88,10 +89,7 @@ export function HomageField({
   supply: number
   minted: number
 }) {
-  const [dev, setDev] = useState<FieldState | null>(null)
-
-  const auto: FieldState = minted === 0 ? "premint" : minted >= supply ? "soldout" : "minting"
-  const state = dev ?? auto
+  const state: FieldState = minted === 0 ? "premint" : minted >= supply ? "soldout" : "minting"
 
   const cells = useMemo(() => {
     // premint: the sample field. minting/soldout: ONLY real mints — never mix
@@ -107,22 +105,6 @@ export function HomageField({
     <div className="border-y border-gray-200">
       <div className="flex items-center justify-between px-6 py-3 lg:px-12">
         <span className="font-mono text-[10px] uppercase tracking-wider text-gray-400">{label}</span>
-        {FORK_MODE && (
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-[9px] uppercase tracking-wider text-gray-500">dev field</span>
-            {(["premint", "minting", "soldout", null] as const).map((s) => (
-              <button
-                key={s ?? "live"}
-                onClick={() => setDev(s)}
-                className={`font-mono text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded ${
-                  dev === s ? "bg-fg text-bg" : "text-gray-400 hover:text-fg"
-                }`}
-              >
-                {s ?? "live"}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
       {/* Auto-fill masonry with a featured 2x2 lead cell — the varying tile size
           the generic field had. Only feature when there's enough to fill around it. */}

@@ -68,11 +68,22 @@ test("homage's own /collections/<address> page is immersive, any case, with trai
   assert.equal(chromeForPath(`/collections/${HOMAGE_COLLECTION}/`).navbar, "overlay-dark")
 })
 
+test("homage token detail + redeem sub-pages are immersive (one segment deep)", () => {
+  for (const sub of ["redeem", "3104"]) {
+    const chrome = chromeForPath(`/collections/${HOMAGE_COLLECTION}/${sub}`)
+    assert.equal(chrome.navbar, "overlay-dark", `/collections/.../${sub}`)
+    assert.equal(chrome.footer, false)
+    assert.equal(chrome.padTop, false)
+  }
+  // A token's /live doc is two segments deep — standard chrome.
+  assert.deepEqual(chromeForPath(`/collections/${HOMAGE_COLLECTION}/3104/live`), DEFAULT)
+})
+
 test("other /collections/<address> pages keep standard chrome", () => {
   assert.deepEqual(
     chromeForPath("/collections/0x3333333333333333333333333333333333333333"),
     DEFAULT,
   )
-  // Token sub-pages under the homage collection aren't the collection page itself.
-  assert.deepEqual(chromeForPath(`/collections/${HOMAGE_COLLECTION}/3104`), DEFAULT)
+  // Token sub-pages under a NON-homage collection stay standard.
+  assert.deepEqual(chromeForPath("/collections/0x3333333333333333333333333333333333333333/7"), DEFAULT)
 })

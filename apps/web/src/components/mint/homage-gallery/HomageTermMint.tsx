@@ -55,7 +55,7 @@ export function HomageTermMint({ m, selectorData }: { m: MintEngine; selectorDat
 
   const busyLabel =
     busy === "confirm" ? "Confirm in wallet…" : busy === "pending" ? "Drawing your punk…" : null
-  const idleLabel = phaseKey === "claim" ? `Mint #${selectedId ?? "…"}` : "Mint a random homage"
+  const idleLabel = phaseKey === "claim" ? `Mint ${selectedId ?? "…"}` : "Mint a random homage"
   const blocked =
     m.isPending ||
     m.quoteBlocked ||

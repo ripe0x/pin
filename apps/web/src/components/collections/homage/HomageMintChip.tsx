@@ -16,9 +16,9 @@ import {useCallback, useEffect, useState} from "react"
 import {formatEther, type Address} from "viem"
 import {usePublicClient} from "wagmi"
 import {useReadContracts} from "wagmi"
-import {PREFERRED_CHAIN, useChainNowSec} from "@/components/tx/tx-ui"
+import {Countdown, PREFERRED_CHAIN, useChainNowSec} from "@/components/tx/tx-ui"
 import {BASE_FEE, homageMinterAbi, quoteMint} from "@/lib/homage/contracts"
-import {type Phase, type Schedule, currentPhase} from "@/lib/homage/phase"
+import {type Phase, type Schedule, currentPhase, nextTransition} from "@/lib/homage/phase"
 
 const QUOTE_POLL_MS = 60_000 // indicative price only — keep this cold (paid RPC in prod)
 
@@ -27,6 +27,14 @@ const PHASE_CHIP_LABEL: Record<Phase, string> = {
   claim: "Claim open",
   allowlist: "Allowlist open",
   public: "Mint open",
+}
+
+// How a window is NAMED in the masthead countdown label ("punk owner claim closes in …").
+const WINDOW_NAME: Record<Phase, string> = {
+  closed: "mint",
+  claim: "punk owner claim",
+  allowlist: "allowlist",
+  public: "public mint",
 }
 
 function fmtEth(wei: bigint): string {
@@ -77,7 +85,33 @@ function useChipState(minter: Address) {
     return () => clearInterval(t)
   }, [phase, soldOut, refresh])
 
-  return {phase, soldOut, price}
+  // The next window boundary: what the countdown ticks toward. During claim/allowlist
+  // it's when the CURRENT window closes; while closed it's when minting opens.
+  const next = schedule ? nextTransition(schedule, nowSec) : null
+
+  return {phase, soldOut, price, next, nowSec}
+}
+
+/** The chip's countdown fragment: "closes in X" inside a timed window, "opens in X"
+ *  before one. Null when there's no boundary ahead (public / unscheduled). */
+function ChipCountdown({
+  phase,
+  next,
+  nowSec,
+}: {
+  phase: Phase
+  next: {at: number} | null
+  nowSec: number
+}) {
+  if (!next || phase === "public") return null
+  return (
+    <span className="font-mono text-[10px] uppercase tracking-wider text-gray-400 tabular-nums">
+      {phase === "closed" ? "opens in " : "closes in "}
+      <span className="text-fg">
+        <Countdown endTime={BigInt(next.at)} nowSec={nowSec} />
+      </span>
+    </span>
+  )
 }
 
 function Dot({phase, soldOut}: {phase: Phase; soldOut: boolean}) {
@@ -85,25 +119,71 @@ function Dot({phase, soldOut}: {phase: Phase; soldOut: boolean}) {
   return <span className={`inline-block h-1.5 w-1.5 rounded-full ${cls}`} />
 }
 
-export function HomageMintChip({minter, anchorId, id}: {minter: Address; anchorId: string; id?: string}) {
-  const {phase, soldOut, price} = useChipState(minter)
+/**
+ * The masthead's status cluster: one BIG stat slot + the mint chip, off one shared
+ * data path. Hierarchy follows what matters right now: during a timed window the
+ * big slot is the ticking countdown (the scarce thing is time) and the minted
+ * count folds into the chip, small; in public / sold out there is no boundary
+ * ahead, so the count takes the big slot back (the scarce thing is supply).
+ */
+export function HomageMastheadStat({
+  minter,
+  minted,
+  supplyCap,
+  anchorId,
+  chipId,
+}: {
+  minter: Address
+  minted: string
+  supplyCap: string
+  anchorId: string
+  /** id for the chip element (the sticky bar watches it to avoid doubling up). */
+  chipId?: string
+}) {
+  const {phase, soldOut, price, next, nowSec} = useChipState(minter)
+  const timed = !soldOut && next !== null && phase !== "public"
+
   return (
-    <div id={id} className="flex items-center gap-4 rounded border border-gray-200 bg-surface px-4 py-3">
-      <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-gray-500">
-        <Dot phase={phase} soldOut={soldOut} />
-        {soldOut ? "Sold out" : PHASE_CHIP_LABEL[phase]}
-      </span>
-      {!soldOut && phase !== "closed" && price !== null && (
-        <span className="font-mono text-[11px] tabular-nums text-fg">{fmtEth(price)} ETH</span>
-      )}
-      {!soldOut && phase !== "closed" && (
-        <a
-          href={`#${anchorId}`}
-          className="px-4 py-1.5 font-mono text-[10px] font-medium uppercase tracking-wider bg-fg text-bg transition-opacity hover:opacity-80"
-        >
-          Mint
-        </a>
-      )}
+    <div className="flex items-center gap-5">
+      <p className="font-mono text-xl tabular-nums tracking-tight text-fg sm:text-2xl">
+        {timed ? (
+          <>
+            <span className="mr-3 align-[0.2em] font-mono text-[10px] uppercase tracking-wider text-gray-500">
+              {phase === "closed"
+                ? `${WINDOW_NAME[next!.to]} opens in`
+                : `${WINDOW_NAME[phase]} closes in`}
+            </span>
+            <Countdown endTime={BigInt(next!.at)} nowSec={nowSec} />
+          </>
+        ) : (
+          <>
+            {minted} <span className="text-gray-500">/ {supplyCap}</span>
+          </>
+        )}
+      </p>
+      <div id={chipId} className="flex items-center gap-4 rounded border border-gray-200 bg-surface px-4 py-3">
+        <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-gray-500">
+          <Dot phase={phase} soldOut={soldOut} />
+          {soldOut ? "Sold out" : PHASE_CHIP_LABEL[phase]}
+        </span>
+        {/* the small slot mirrors the big one: count while the countdown is big */}
+        {timed && (
+          <span className="font-mono text-[10px] uppercase tracking-wider text-gray-400 tabular-nums">
+            {minted} / {supplyCap}
+          </span>
+        )}
+        {!soldOut && phase !== "closed" && price !== null && (
+          <span className="font-mono text-[11px] tabular-nums text-fg">{fmtEth(price)} ETH</span>
+        )}
+        {!soldOut && phase !== "closed" && (
+          <a
+            href={`#${anchorId}`}
+            className="px-4 py-1.5 font-mono text-[10px] font-medium uppercase tracking-wider bg-fg text-bg transition-opacity hover:opacity-80"
+          >
+            Mint
+          </a>
+        )}
+      </div>
     </div>
   )
 }
@@ -119,7 +199,7 @@ export function HomageStickyMintBar({
    *  instrument or the chip is on screen, so the two never show together. */
   chipId?: string
 }) {
-  const {phase, soldOut, price} = useChipState(minter)
+  const {phase, soldOut, price, next, nowSec} = useChipState(minter)
   const [anyVisible, setAnyVisible] = useState(true)
 
   // Scroll-driven visibility (not IntersectionObserver — IO doesn't fire reliably in
@@ -164,6 +244,7 @@ export function HomageStickyMintBar({
         <p className="flex items-center gap-3 font-mono text-[11px] uppercase tracking-wider text-gray-500 tabular-nums">
           <Dot phase={phase} soldOut={soldOut} />
           <span>{PHASE_CHIP_LABEL[phase]}</span>
+          <ChipCountdown phase={phase} next={next} nowSec={nowSec} />
           {price !== null && <span className="text-fg">{fmtEth(price)} ETH</span>}
         </p>
         <a

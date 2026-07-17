@@ -53,7 +53,16 @@ export function Navbar() {
           : "fixed top-0 left-0 right-0 z-50 bg-surface border-b border-gray-200"
       }
     >
-      <nav className="mx-auto flex h-16 max-w-[2000px] items-center justify-between px-6">
+      {/* Overlay mode shares the immersive pages' horizontal rhythm (px-6 lg:px-12,
+          full-bleed like their mastheads) so the logo columns with the content below;
+          the standard chrome keeps its own container. */}
+      <nav
+        className={
+          overlay
+            ? "flex h-16 items-center justify-between px-6 lg:px-12"
+            : "mx-auto flex h-16 max-w-[2000px] items-center justify-between px-6"
+        }
+      >
         {/* Left: logo / wordmark */}
         <Link
           href="/"

@@ -87,7 +87,7 @@ export function HomageRedeem({minter, collection}: {minter: Address; collection:
               key={id}
               className="flex items-center justify-between gap-3 rounded border border-gray-200 bg-surface-muted/40 px-3 py-2"
             >
-              <span className="text-[11px] font-mono text-fg">Punk #{id}</span>
+              <span className="text-[11px] font-mono text-fg">Punk {id}</span>
               <button
                 onClick={() => {
                   setPendingId(id)

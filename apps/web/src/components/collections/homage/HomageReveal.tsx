@@ -54,7 +54,7 @@ export function HomageReveal({
   return (
     <div className="rounded-lg border border-gray-200 bg-surface-muted/40 p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-[10px] font-mono uppercase tracking-wider text-gray-500">Minted · Punk #{punkId.toString()}</p>
+        <p className="text-[10px] font-mono uppercase tracking-wider text-gray-500">Minted · Punk {punkId.toString()}</p>
         <button
           onClick={onDismiss}
           className="text-[10px] font-mono uppercase tracking-wider text-gray-400 hover:text-fg transition-colors"
@@ -66,7 +66,7 @@ export function HomageReveal({
       <div className="aspect-square w-full overflow-hidden rounded border border-gray-200 bg-surface">
         {meta?.image ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={meta.image} alt={meta.name ?? `Homage to Punk #${punkId.toString()}`} className="h-full w-full object-cover" />
+          <img src={meta.image} alt={meta.name ?? `Homage to Punk ${punkId.toString()}`} className="h-full w-full object-cover" />
         ) : (
           <div className="flex h-full w-full items-center justify-center">
             <span className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
@@ -77,7 +77,7 @@ export function HomageReveal({
       </div>
 
       <div className="flex items-center justify-between">
-        <p className="text-[11px] font-mono text-fg">{meta?.name ?? `Homage to Punk #${punkId.toString()}`}</p>
+        <p className="text-[11px] font-mono text-fg">{meta?.name ?? `Homage to Punk ${punkId.toString()}`}</p>
         <a
           href={evmNowTxUrl(txHash, PREFERRED_CHAIN.id)}
           target="_blank"

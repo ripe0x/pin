@@ -46,12 +46,12 @@ function Thumb({collection, id}: {collection: Address; id: bigint}) {
       <div className="relative aspect-square overflow-hidden rounded border border-gray-200 bg-surface">
         {meta?.image ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={meta.image} alt={`Homage to Punk #${id.toString()}`} className="h-full w-full object-cover" />
+          <img src={meta.image} alt={`Homage to Punk ${id.toString()}`} className="h-full w-full object-cover" />
         ) : (
           <div className="h-full w-full animate-pulse bg-gray-100 dark:bg-bg" />
         )}
         <span className="absolute bottom-1 left-1 font-mono text-[9px] uppercase tracking-wider text-white/70 mix-blend-difference">
-          #{id.toString()}
+          {id.toString()}
         </span>
       </div>
     </Link>

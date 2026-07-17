@@ -5,8 +5,9 @@ import { isAddress, type Address } from "viem"
 import { OptimizedImage } from "@/components/OptimizedImage"
 import { MintCollectionCTA } from "@/components/collections/MintCollectionCTA"
 import { HomageMint } from "@/components/collections/homage/HomageMint"
+import { HomageSchedule } from "@/components/collections/homage/HomageSchedule"
 import { FitHeadline } from "@/components/collections/homage/FitHeadline"
-import { HomageMintChip, HomageStickyMintBar } from "@/components/collections/homage/HomageMintChip"
+import { HomageMastheadStat, HomageStickyMintBar } from "@/components/collections/homage/HomageMintChip"
 import { ArtistName } from "@/components/collections/homage/ArtistName"
 import { HomageMintLog } from "@/components/collections/homage/HomageMintLog"
 import { HomageField } from "@/components/collections/homage/HomageField"
@@ -236,15 +237,20 @@ export default async function CollectionPage({
               <FitHeadline text={c.name} className="w-full" max={260} />
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 {byline}
-                <div className="flex items-center gap-5">
+                {homageMinter ? (
+                  <HomageMastheadStat
+                    minter={homageMinter}
+                    minted={c.minted.toLocaleString()}
+                    supplyCap={c.cfg.supplyCap.toLocaleString()}
+                    anchorId="mint-instrument"
+                    chipId="mint-chip"
+                  />
+                ) : (
                   <p className="font-mono text-xl tabular-nums tracking-tight text-fg sm:text-2xl">
                     {c.minted.toLocaleString()}{" "}
                     <span className="text-gray-500">/ {c.cfg.supplyCap.toLocaleString()}</span>
                   </p>
-                  {homageMinter && (
-                    <HomageMintChip id="mint-chip" minter={homageMinter} anchorId="mint-instrument" />
-                  )}
-                </div>
+                )}
               </div>
             </div>
           ) : (
@@ -282,17 +288,35 @@ export default async function CollectionPage({
              reads as composed, not floated. ── */}
       <div
         id="mint-instrument"
-        className={`grid scroll-mt-20 grid-cols-1 border-b border-gray-200 lg:divide-x lg:divide-gray-200 ${
-          homageSkin ? "lg:grid-cols-2" : "lg:grid-cols-[1fr_460px]"
-        } ${mintFirst ? "order-first" : ""}`}
+        className={`scroll-mt-20 border-b border-gray-200 ${mintFirst ? "order-first" : ""}`}
       >
+      <div
+        className={`mx-auto grid w-full max-w-[1400px] grid-cols-1 ${
+          // The band is a centered ≤1400px plate (the page's standard content width):
+          // full-bleed columns let the About cell's 720px measure drift away from the
+          // divider on wide screens, stranding the card in dead space. Right column is
+          // sized TO the instrument (460px + px-12 gutters). With NO About copy
+          // (homage skin, empty contractURI description) it collapses to one centered
+          // column instead of an empty cell beside a stranded card.
+          homageSkin
+            ? contractDescription
+              ? "lg:grid-cols-[1fr_556px] lg:divide-x lg:divide-gray-200"
+              : "justify-items-center"
+            : "lg:grid-cols-[1fr_460px] lg:divide-x lg:divide-gray-200"
+        }`}
+      >
+        {(!homageSkin || contractDescription) && (
         <div className="max-w-[720px] space-y-6 px-6 py-10 lg:px-12 lg:py-12">
           <h2 className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
             About this work
           </h2>
           {homageSkin ? (
             contractDescription && (
-              <p className="text-sm leading-relaxed text-fg-muted">{contractDescription}</p>
+              <>
+                <p className="text-sm leading-relaxed text-fg-muted">{contractDescription}</p>
+                {/* The mint schedule lives with the story — every window, every state. */}
+                {homageMinter && <HomageSchedule minter={homageMinter} />}
+              </>
             )
           ) : (
             <>
@@ -345,13 +369,20 @@ export default async function CollectionPage({
             </>
           )}
         </div>
+        )}
 
-        <div className="px-6 py-10 lg:px-10 lg:py-12">
+        <div className="mx-auto w-full max-w-[556px] px-6 py-10 lg:px-12 lg:py-12">
           {homageMinter ? (
-            // Constrained + left-aligned so the instrument sits against the
-            // centered divider instead of stretching the full half-column.
-            <div className="w-full max-w-[460px]">
+            // The cell is capped at the instrument's width (556 = 460 + 2×48 gutters)
+            // and centered by the grid when it stands alone, so the card never floats.
+            <div className="mx-auto w-full max-w-[460px]">
               <HomageMint collection={addr} minter={homageMinter} />
+              {/* No About cell to host the schedule → it rides under the instrument. */}
+              {!contractDescription && (
+                <div className="pt-6">
+                  <HomageSchedule minter={homageMinter} />
+                </div>
+              )}
             </div>
           ) : (
             <MintCollectionCTA
@@ -381,10 +412,9 @@ export default async function CollectionPage({
             >
               {shortAddress(addr)} ↗
             </a>
-            {" · ERC721 · immutable contract · "}
-            {permanent ? "renderer locked forever" : "renderer swappable until locked"}
           </p>
         </div>
+      </div>{/* /band inner plate */}
       </div>
 
       </div>{/* /field+band order wrapper */}
@@ -395,22 +425,59 @@ export default async function CollectionPage({
           <div className="mx-auto grid max-w-[1400px] grid-cols-1 gap-x-16 gap-y-10 px-6 py-10 md:grid-cols-2 lg:px-12 lg:py-14">
             {/* Mints ARE readable onchain (Transfer scan) — show them, don't defer to an indexer. */}
             <HomageMintLog collection={addr} chainId={PND_CHAIN_ID} />
-            <div className="space-y-2 text-[11px] font-mono md:w-full md:max-w-[360px] md:justify-self-end">
-              <Fact label="Contract" value={<AddrLink addr={addr} />} />
-              <Fact label="Owner" value={<AddrLink addr={c.owner} />} />
-              <Fact
-                label="Payout"
-                value={<AddrLink addr={c.cfg.payoutAddress === ZERO_ADDRESS ? c.owner : c.cfg.payoutAddress} />}
-              />
-              <Fact
-                label="Renderer"
-                value={c.isRendererLocked ? "Locked forever" : "Swappable by the artist"}
-              />
-              <Fact
-                label="Royalty"
-                value={c.cfg.royaltyBps > 0 ? formatBps(c.cfg.royaltyBps) : "none"}
-              />
-              <div className="flex items-center gap-4 pt-1">
+            {/* Contract details, matching the 1/1 auction token page's
+                treatment (see src/app/[handle]/[tokenId]/page.tsx): a small
+                caps header, then a definition list of load-bearing facts,
+                then a plain stack of outbound links. */}
+            <div className="text-[11px] font-mono md:w-full md:max-w-[360px] md:justify-self-end">
+              <h3 className="mb-3 text-[10px] font-mono font-medium uppercase tracking-wider text-gray-400">
+                Contract
+              </h3>
+              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
+                <dt className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+                  Address
+                </dt>
+                <dd className="truncate text-[10px] font-mono">
+                  <a
+                    href={evmNowAddressUrl(addr, PND_CHAIN_ID)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:underline"
+                  >
+                    {addr}
+                  </a>
+                </dd>
+                <dt className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+                  Standard
+                </dt>
+                <dd className="text-[10px] font-mono">ERC721</dd>
+                <dt className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+                  Owner
+                </dt>
+                <dd className="text-[10px] font-mono">
+                  <AddrLink addr={c.owner} />
+                </dd>
+                <dt className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+                  Payout
+                </dt>
+                <dd className="text-[10px] font-mono">
+                  <AddrLink addr={c.cfg.payoutAddress === ZERO_ADDRESS ? c.owner : c.cfg.payoutAddress} />
+                </dd>
+                <dt className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+                  Renderer
+                </dt>
+                <dd className="text-[10px] font-mono">
+                  <AddrLink addr={c.renderer} />
+                  {c.isRendererLocked ? " · locked" : ""}
+                </dd>
+                <dt className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+                  Royalty
+                </dt>
+                <dd className="text-[10px] font-mono">
+                  {c.cfg.royaltyBps > 0 ? formatBps(c.cfg.royaltyBps) : "none"}
+                </dd>
+              </dl>
+              <div className="flex flex-col gap-2 pt-4">
                 <a
                   href={evmNowAddressUrl(addr, PND_CHAIN_ID)}
                   target="_blank"

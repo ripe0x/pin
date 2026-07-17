@@ -46,6 +46,7 @@ import {allowlistProofFor} from "@/lib/homage/allowlist"
 import {HomageReveal} from "./HomageReveal"
 import {HomageBatchReveal} from "./HomageBatchReveal"
 import {HomageClaim} from "./HomageClaim"
+import {HomageAllowlistLookup} from "./HomageAllowlistLookup"
 
 const SUPPLY = 10_000
 const QUOTE_POLL_MS = 30_000 // paid RPC path in prod — never tighten below this
@@ -95,11 +96,11 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
   const left = remaining.data !== undefined ? Number(remaining.data as bigint) : null
   const soldOut = left === 0
 
-  // Phase from the real schedule; a fork-only dev toggle overrides the DISPLAYED phase so
-  // every window is previewable locally (the contract still enforces the true window).
-  const realPhase: Phase = schedule ? currentPhase(schedule, nowSec) : "closed"
-  const [devPhase, setDevPhase] = useState<Phase | null>(null)
-  const phase: Phase = devPhase ?? realPhase
+  // Phase from the real schedule — the ONLY source of truth. The fork-only dev toggle
+  // below moves the actual on-chain schedule (the dev wallet owns the minter on the
+  // fork), so every surface on the page — masthead, chip, schedule, this instrument,
+  // and the contract's own gating — follows the same state instead of a local override.
+  const phase: Phase = schedule ? currentPhase(schedule, nowSec) : "closed"
   const next = schedule ? nextTransition(schedule, nowSec) : null
 
   // ── the caller's public-mint fee (escalates per wallet); claim/allowlist pay baseFee ──
@@ -120,7 +121,16 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
   const [quote, setQuote] = useState<MintQuote | null>(null)
   const [quoteErr, setQuoteErr] = useState<string | null>(null)
   // Batch: 1..MAX_BATCH tokens per public mint. Claim/allowlist stay single.
+  // qty is the committed value the math runs on; qtyText is what the input shows, so
+  // typing can pass through transient states ("", leading digit of a larger number)
+  // without the quote math ever seeing 0 or NaN.
   const [qty, setQty] = useState(1)
+  const [qtyText, setQtyText] = useState("1")
+  const commitQty = useCallback((n: number, max: number) => {
+    const clamped = Math.min(Math.max(n, 1), max)
+    setQty(clamped)
+    setQtyText(String(clamped))
+  }, [])
   const maxBatchRead = useReadContract({
     address: minter, abi: homageMinterAbi, functionName: "MAX_BATCH", chainId: PREFERRED_CHAIN.id,
   })
@@ -371,16 +381,40 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                       </span>
                       <div className="flex items-center rounded border border-gray-200">
                         <button
-                          onClick={() => setQty((q) => Math.max(1, q - 1))}
+                          onClick={() => commitQty(qty - 1, maxBatch)}
                           disabled={qty <= 1 || isPending}
                           className="px-3 py-1.5 text-sm font-mono text-gray-500 transition-colors hover:text-fg disabled:opacity-30"
                           aria-label="decrease quantity"
                         >
                           −
                         </button>
-                        <span className="w-10 text-center text-sm font-mono tabular-nums">{qty}</span>
+                        <input
+                          value={qtyText}
+                          onChange={(e) => {
+                            // digits only (strips paste junk, e/+/-/. included), capped at
+                            // 2 chars (MAX_BATCH is 20); empty is a valid TYPING state, and
+                            // an over-max entry snaps to max immediately (not on blur).
+                            const raw = e.target.value.replace(/[^\d]/g, "").slice(0, 2)
+                            const n = parseInt(raw, 10)
+                            if (!Number.isFinite(n)) {
+                              setQtyText("")
+                              return
+                            }
+                            if (n < 1) {
+                              setQtyText(raw) // "0" while typing e.g. "05" — commit on blur
+                              return
+                            }
+                            commitQty(n, maxBatch)
+                          }}
+                          onBlur={() => commitQty(qty, maxBatch)}
+                          disabled={isPending}
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          aria-label="quantity"
+                          className="w-10 bg-transparent text-center text-sm font-mono tabular-nums outline-none disabled:opacity-30"
+                        />
                         <button
-                          onClick={() => setQty((q) => Math.min(maxBatch, q + 1))}
+                          onClick={() => commitQty(qty + 1, maxBatch)}
                           disabled={qty >= maxBatch || isPending}
                           className="px-3 py-1.5 text-sm font-mono text-gray-500 transition-colors hover:text-fg disabled:opacity-30"
                           aria-label="increase quantity"
@@ -464,32 +498,101 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
             </div>
           )}
 
-          {/* fork-only phase preview toggle */}
+          {/* fork-only phase toggle — sends a REAL setSchedule (the dev wallet owns the
+              minter on the fork), so the whole page follows, not just this card. */}
           {FORK_MODE && (
-            <div className="pt-2 mt-1 border-t border-gray-100 flex items-center gap-2 flex-wrap">
-              <span className="text-[9px] font-mono uppercase tracking-wider text-gray-400">Dev phase</span>
-              {(["claim", "allowlist", "public", null] as const).map((p) => (
-                <button
-                  key={p ?? "live"}
-                  onClick={() => setDevPhase(p)}
-                  className={`text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded ${
-                    devPhase === p ? "bg-fg text-bg" : "text-gray-400 hover:text-fg"
-                  }`}
-                >
-                  {p ?? "live"}
-                </button>
-              ))}
-              <span className="text-[9px] font-mono text-gray-400">(real: {realPhase})</span>
-            </div>
+            <DevPhaseControls minter={minter} nowSec={nowSec} phase={phase} disabled={isPending} />
           )}
         </div>
       </div>
+
+      {/* Pre-public: anyone can check any address against the allowlist, below the
+          instrument (the mint itself proves against the same vendored tree). */}
+      {phase !== "public" && !soldOut && (
+        <div className="rounded-lg border border-gray-200 bg-surface p-5">
+          <HomageAllowlistLookup />
+        </div>
+      )}
     </section>
   )
 }
 
 const btnPrimary =
   "block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+
+// Fork-only: rewrite the minter's REAL schedule so a chosen window is live right now
+// (pre-mint = everything ahead). One tx, then every read on the page refetches — the
+// masthead countdown, chip, schedule section, field, and the contract's own gating all
+// move together. Owner-only on-chain; the fork's dev wallet is the owner.
+const DEV_WINDOW = 3600
+function DevPhaseControls({
+  minter,
+  nowSec,
+  phase,
+  disabled,
+}: {
+  minter: Address
+  nowSec: number
+  phase: Phase
+  disabled: boolean
+}) {
+  const {writeContract, data: txHash, isPending: writing, error} = useWriteContract()
+  const {isSuccess} = useWaitForTransactionReceipt({hash: txHash})
+
+  useEffect(() => {
+    if (!isSuccess) return
+    // Full reload, not a soft refresh: this tx's block jumped the chain clock forward
+    // (see the anchor note below), and useChainNowSec samples the chain/wall offset ONCE
+    // per mount — invalidating queries alone would leave every countdown and phase check
+    // reading from a stale clock, showing a window the contract disagrees with.
+    window.location.reload()
+  }, [isSuccess])
+
+  const setPhase = (target: Phase) => {
+    // Anvil stamps each mined block with REAL wall time, but `nowSec` projects the chain
+    // clock from the LAST block — on a fork that has sat idle, that clock lags wall time
+    // by the whole idle stretch. Anchoring windows to the lagging clock puts them in the
+    // past the instant the tx mines (idle > DEV_WINDOW → "pre-mint" lands inside claim).
+    // Anchor on whichever clock is ahead: that's the timestamp the new block will carry.
+    const n = BigInt(Math.max(nowSec, Math.floor(Date.now() / 1000)))
+    const w = BigInt(DEV_WINDOW)
+    const s: Record<Phase, [bigint, bigint, bigint]> = {
+      closed: [n + w, n + 2n * w, n + 3n * w],
+      claim: [n, n + w, n + 2n * w],
+      allowlist: [n - w, n, n + w],
+      public: [n - 2n * w, n - w, n],
+    }
+    writeContract({
+      address: minter,
+      abi: homageMinterAbi,
+      functionName: "setSchedule",
+      args: s[target],
+      chainId: PREFERRED_CHAIN.id,
+    })
+  }
+
+  return (
+    <div className="pt-2 mt-1 border-t border-gray-100 flex items-center gap-2 flex-wrap">
+      <span className="text-[9px] font-mono uppercase tracking-wider text-gray-400">Dev phase</span>
+      {(["closed", "claim", "allowlist", "public"] as const).map((p) => (
+        <button
+          key={p}
+          onClick={() => setPhase(p)}
+          disabled={disabled || writing}
+          className={`text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded disabled:opacity-40 ${
+            phase === p ? "bg-fg text-bg" : "text-gray-400 hover:text-fg"
+          }`}
+        >
+          {p === "closed" ? "pre-mint" : p}
+        </button>
+      ))}
+      {writing && <span className="text-[9px] font-mono text-gray-400">setting…</span>}
+      {error && (
+        <span className="text-[9px] font-mono text-status-sold">{formatWriteError(error, "set phase")}</span>
+      )}
+    </div>
+  )
+}
 
 // ETH display: at most 4 decimal places, trailing zeros trimmed (0.0090 → 0.009).
 function fmtEth(wei: bigint): string {

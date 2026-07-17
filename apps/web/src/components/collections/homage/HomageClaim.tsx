@@ -7,8 +7,11 @@
 // punks acquired before the scan window.
 
 import {useState} from "react"
+import Link from "next/link"
 import {type Address} from "viem"
-import {homageFlows} from "@/lib/homage/contracts"
+import {useReadContract} from "wagmi"
+import {PREFERRED_CHAIN} from "@/components/tx/tx-ui"
+import {homageFlows, homageMinterAbi} from "@/lib/homage/contracts"
 import {useOwnedPunks} from "@/lib/homage/punks"
 
 type Flows = ReturnType<typeof homageFlows>
@@ -16,6 +19,7 @@ type Flow = ReturnType<Flows["claim"]> | ReturnType<Flows["claimFor"]> | ReturnT
 
 export function HomageClaim({
   minter,
+  collection,
   address,
   refreshKey,
   disabled,
@@ -54,6 +58,18 @@ export function HomageClaim({
 
   const manualValid = /^\d+$/.test(manualId) && Number(manualId) >= 0 && Number(manualId) <= 9999
 
+  // Already claim-minted? Checked live for the typed id so the buttons disable with a
+  // reason instead of letting the tx revert. (Owned-list rows carry their own flag.)
+  const manualMinted = useReadContract({
+    address: minter,
+    abi: homageMinterAbi,
+    functionName: "isMinted",
+    args: [manualValid ? BigInt(manualId) : 0n],
+    chainId: PREFERRED_CHAIN.id,
+    query: {enabled: manualValid, staleTime: 30_000},
+  })
+  const manualIsMinted = manualValid && manualMinted.data === true
+
   return (
     <div className="space-y-3">
       {status === "loading" && <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">Finding your punks…</p>}
@@ -63,17 +79,26 @@ export function HomageClaim({
           {punks.map((p) => (
             <li key={p.id} className="flex items-center justify-between gap-3 rounded border border-gray-200 bg-surface-muted/40 px-3 py-2">
               <span className="text-[11px] font-mono text-fg">
-                Punk #{p.id}
+                Punk {p.id}
                 {p.wrapped && <span className="text-gray-400"> · wrapped</span>}
                 {p.vault && <span className="text-gray-400"> · via vault {p.vault.slice(0, 6)}…</span>}
               </span>
-              <button
-                onClick={() => claimDirect(p.id, p.vault)}
-                disabled={disabled || pendingId !== null}
-                className="text-[10px] font-mono font-medium uppercase tracking-wider px-3 py-1.5 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {pendingId === p.id ? "…" : p.vault ? "Claim to vault" : "Claim"}
-              </button>
+              {p.minted ? (
+                <Link
+                  href={`/collections/${collection}/${p.id}`}
+                  className="text-[10px] font-mono uppercase tracking-wider text-gray-400 hover:text-fg transition-colors"
+                >
+                  Already minted · view →
+                </Link>
+              ) : (
+                <button
+                  onClick={() => claimDirect(p.id, p.vault)}
+                  disabled={disabled || pendingId !== null}
+                  className="text-[10px] font-mono font-medium uppercase tracking-wider px-3 py-1.5 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {pendingId === p.id ? "…" : p.vault ? "Claim to vault" : "Claim"}
+                </button>
+              )}
             </li>
           ))}
         </ul>
@@ -92,25 +117,34 @@ export function HomageClaim({
           <input
             value={manualId}
             onChange={(e) => setManualId(e.target.value.replace(/[^\d]/g, "").slice(0, 4))}
-            placeholder="Punk # (0–9999)"
+            placeholder="Punk id (0–9999)"
             inputMode="numeric"
             className="w-0 flex-1 rounded border border-gray-200 bg-surface px-3 py-2 text-[11px] font-mono tabular-nums outline-none focus:border-gray-400"
           />
           <button
             onClick={() => manualValid && claimDirect(Number(manualId))}
-            disabled={disabled || !manualValid || pendingId !== null}
+            disabled={disabled || !manualValid || manualIsMinted || pendingId !== null}
             className="text-[10px] font-mono font-medium uppercase tracking-wider px-3 py-2 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Claim mine
           </button>
         </div>
-        <button
-          onClick={() => manualValid && claimAnyoneFor(Number(manualId))}
-          disabled={disabled || !manualValid || pendingId !== null}
-          className="text-[10px] font-mono uppercase tracking-wider text-gray-400 hover:text-fg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          Or pay for this punk’s holder →
-        </button>
+        {manualIsMinted ? (
+          <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+            Punk {manualId} is already minted ·{" "}
+            <Link href={`/collections/${collection}/${manualId}`} className="underline hover:text-fg">
+              view →
+            </Link>
+          </p>
+        ) : (
+          <button
+            onClick={() => manualValid && claimAnyoneFor(Number(manualId))}
+            disabled={disabled || !manualValid || pendingId !== null}
+            className="text-[10px] font-mono uppercase tracking-wider text-gray-400 hover:text-fg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Or pay for this punk’s holder →
+          </button>
+        )}
       </div>
     </div>
   )
