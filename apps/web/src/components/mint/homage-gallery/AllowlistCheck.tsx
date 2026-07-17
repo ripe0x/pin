@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { allowlistProofFor } from "@/lib/mint-modules/homage"
+import { allowlistProofIn, useAllowlist } from "@/lib/homage/allowlist"
 
 /**
  * Collapsible allowlist checker — a pure client-side lookup against the
@@ -14,7 +14,9 @@ export function AllowlistCheck() {
   const [text, setText] = useState("")
   const trimmed = text.trim()
   const valid = /^0x[0-9a-fA-F]{40}$/.test(trimmed)
-  const listed = valid ? allowlistProofFor(trimmed) !== null : null
+  // the 3.6MB proof file loads on the first valid input, not at page load
+  const allowlist = useAllowlist(valid)
+  const listed = valid && allowlist ? allowlistProofIn(allowlist, trimmed) !== null : null
   return (
     <details className="group">
       <summary className="font-mono text-[11px] text-(--dim) hover:text-(--ink) cursor-pointer list-none marker:content-none">
@@ -35,9 +37,11 @@ export function AllowlistCheck() {
             ? ""
             : !valid
               ? "not an address"
-              : listed
-                ? "on the allowlist ✓"
-                : "not on the allowlist"}
+              : !allowlist
+                ? "checking…"
+                : listed
+                  ? "on the allowlist ✓"
+                  : "not on the allowlist"}
         </p>
       </div>
     </details>

@@ -58,13 +58,10 @@ import {
   scaleSwapForThreshold,
   spotEthForThreshold,
 } from "../homage-quote-math"
-// ⚠️ SINGLE-SOURCED ARTIFACT — this JSON is a byte-identical copy of the
-// Homage repo's `web/data/allowlist-proofs.json` (generated there by
-// scripts/build-allowlist.mjs; root 0x32218882…). The Homage site is the
-// canonical mint venue and both frontends must verify against the same
-// onchain root: if the tree is ever regenerated, re-copy the new artifact
-// here VERBATIM in the same change. Never hand-edit this file.
-import allowlistProofs from "@/data/homage-allowlist-proofs.json"
+// Allowlist proofs load LAZILY through the canonical module (lib/homage/allowlist):
+// with every punk holder on the list the proof file is ~3.6MB, far too big to bake
+// into the bundle. Both surfaces share one fetch + cache.
+import {allowlistProofIn, loadAllowlist} from "@/lib/homage/allowlist"
 
 // ── canonical mainnet addresses (mirrors the Homage repo's web/lib/homage.ts) ─
 
@@ -147,16 +144,11 @@ const HOMAGE_RENDERER = process.env.NEXT_PUBLIC_HOMAGE_RENDERER
  *  abstract either way; one of the Homage site's cycling hero samples). */
 const HERO_SAMPLE_PUNK_ID = 3542n
 
-// ── allowlist proofs (baked at build time) ────────────────────────────────────
-
-type ProofFile = { root: `0x${string}`; count: number; proofs: Record<string, `0x${string}`[]> }
-const proofFile = allowlistProofs as ProofFile
-
-export const HOMAGE_ALLOWLIST_ROOT = proofFile.root
+// ── allowlist proofs (lazy — see lib/homage/allowlist) ────────────────────────
 
 /** The Merkle proof for `address`, or null if it isn't on the allowlist. */
-export function allowlistProofFor(address: string): `0x${string}`[] | null {
-  return proofFile.proofs[address.toLowerCase()] ?? null
+export async function allowlistProofFor(address: string): Promise<`0x${string}`[] | null> {
+  return allowlistProofIn(await loadAllowlist(), address)
 }
 
 // ── quote provider: "homage-quote" ────────────────────────────────────────────
@@ -541,7 +533,8 @@ registerEligibilityProvider("homage-allowlist", async ({ client, wallet }) => {
   if (!HOMAGE_MINTER_ADDRESS || !isAddress(HOMAGE_MINTER_ADDRESS))
     throw new Error("Homage is not configured")
   if (!wallet) return { eligible: false, reason: "Connect a wallet to check the allowlist." }
-  const proof = allowlistProofFor(wallet)
+  const proofData = await loadAllowlist()
+  const proof = allowlistProofIn(proofData, wallet)
   if (!proof) return { eligible: false, reason: "This wallet is not on the allowlist." }
   const minter = HOMAGE_MINTER_ADDRESS as Address
 
@@ -556,7 +549,7 @@ registerEligibilityProvider("homage-allowlist", async ({ client, wallet }) => {
   })
   // Guard against a rotated onchain root: baked proofs would revert with
   // NotAllowlisted, so fail the check with an honest reason instead.
-  if (rootRes.status === "success" && (rootRes.result as string) !== HOMAGE_ALLOWLIST_ROOT) {
+  if (rootRes.status === "success" && (rootRes.result as string) !== proofData.root) {
     return {
       eligible: false,
       reason: "The onchain allowlist root doesn't match this build's proofs. Mint on the Homage site.",

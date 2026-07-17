@@ -10,7 +10,7 @@ import {isAddress} from "viem"
 import {normalize} from "viem/ens"
 import {usePublicClient} from "wagmi"
 import {PREFERRED_CHAIN} from "@/components/tx/tx-ui"
-import {ALLOWLIST_COUNT, allowlistProofFor} from "@/lib/homage/allowlist"
+import {allowlistProofIn, loadAllowlist} from "@/lib/homage/allowlist"
 
 type Result = {who: string; listed: boolean} | null
 
@@ -35,7 +35,7 @@ export function HomageAllowlistLookup() {
         if (!resolved) throw new Error("That name doesn't resolve.")
         addr = resolved
       }
-      setResult({who: raw, listed: allowlistProofFor(addr) !== null})
+      setResult({who: raw, listed: allowlistProofIn(await loadAllowlist(), addr) !== null})
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Lookup failed.")
     } finally {
@@ -46,7 +46,7 @@ export function HomageAllowlistLookup() {
   return (
     <div className="space-y-2">
       <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-        Allowlist lookup · {ALLOWLIST_COUNT.toLocaleString()} addresses
+        Allowlist lookup · all punk holders + curated list
       </p>
       <div className="flex items-center gap-2">
         <input

@@ -42,7 +42,7 @@ import {
   type MintQuote,
 } from "@/lib/homage/contracts"
 import {type Phase, type Schedule, claimOpen, currentPhase, nextTransition, reservationOpenAt} from "@/lib/homage/phase"
-import {allowlistProofFor} from "@/lib/homage/allowlist"
+import {allowlistProofIn, useAllowlist} from "@/lib/homage/allowlist"
 import {HomageReveal} from "./HomageReveal"
 import {HomageBatchReveal} from "./HomageBatchReveal"
 import {HomageClaim} from "./HomageClaim"
@@ -133,8 +133,10 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
   // The fee folded into the quote depends on the phase (claim/allowlist are flat baseFee).
   const activeFee = phase === "public" ? publicFee : baseFee
 
-  // allowlist eligibility (build-time Merkle proof, vendored from the homage repo)
-  const allowlistProof = address ? allowlistProofFor(address) : null
+  // allowlist eligibility — the proof file (~3.6MB with every punk holder on it) loads
+  // lazily once a wallet is connected outside public; null = still loading (UNKNOWN).
+  const allowlist = useAllowlist(!!address && phase !== "public")
+  const allowlistProof = address && allowlist ? allowlistProofIn(allowlist, address) : null
   const isAllowlisted = !!allowlistProof
   const allowlistRemaining = maxPerAllowlisted !== undefined ? Math.max(maxPerAllowlisted - allowlistUsed, 0) : undefined
 
@@ -512,7 +514,11 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                   </button>
                 ) : (
                   <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
-                    {isAllowlisted ? "Your allowlist allocation is used up." : "This wallet isn’t on the allowlist. The public mint opens next."}
+                    {isAllowlisted
+                      ? "Your allowlist allocation is used up."
+                      : !allowlist
+                        ? "Checking the allowlist…"
+                        : "This wallet isn’t on the allowlist. The public mint opens next."}
                   </p>
                 )
               ) : phase === "closed" && reservationIsOpen ? (
