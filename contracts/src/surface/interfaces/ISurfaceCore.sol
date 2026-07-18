@@ -4,19 +4,16 @@ pragma solidity ^0.8.24;
 import {SurfaceConfig, SurfaceStatus, IdMode, InitParams} from "../SurfaceTypes.sol";
 
 /// @title ISurfaceCore
-/// @notice The shared surface of every collection, whichever way it hands out
-///         ids. An OZ ERC721 deployed as an immutable EIP-1167 clone: the
-///         collector pays the price, the artist keeps all of it minus a fixed
-///         share for whoever hosted the mint, and the core stores one seed
-///         per token, nothing it could work out later. Everything that can
-///         change sits in four slots (renderer, price strategy, mint hook,
-///         minters); there is no upgrade path. What deploys is what runs,
-///         forever.
+/// @notice Shared interface of every collection, regardless of id mode. An
+///         OpenZeppelin ERC721 deployed as an immutable EIP-1167 clone: the
+///         collector pays the price, the artist receives it minus a fixed
+///         referral share, and the core stores one seed per token. The four
+///         mutable slots are renderer, price strategy, mint hook, and minters;
+///         there is no upgrade path.
 ///
-///         The mint entrypoints are NOT here. Each id mode is its own
-///         contract with its own doors: ISurface (sequential) sells and
-///         counts; IPooledSurface lets its minter choose ids. A door that
-///         should not exist simply does not.
+///         The mint entrypoints are not declared here. Each id mode is its own
+///         contract with its own entrypoints: ISurface (sequential) sells and
+///         counts; IPooledSurface lets its minter choose ids.
 interface ISurfaceCore {
     // ── errors ──────────────────────────────────────────────────────────────
     error OwnerRequired();
@@ -53,20 +50,20 @@ interface ISurfaceCore {
     // ── events ──────────────────────────────────────────────────────────────
     event SurfaceConfigured(IdMode idMode, uint256 price, uint256 supplyCap, uint64 mintStart, uint64 mintEnd);
 
-    // ── ERC-4906 (the refresh signals marketplaces subscribe to) ────────────
+    // ── ERC-4906 (metadata refresh signals for marketplaces) ────────────────
     event MetadataUpdate(uint256 _tokenId);
     event BatchMetadataUpdate(uint256 _fromTokenId, uint256 _toTokenId);
 
-    // ── ERC-7572 (the contract-level metadata refresh signal) ───────────────
+    // ── ERC-7572 (contract-level metadata refresh signal) ───────────────────
     event ContractURIUpdated();
 
-    /// @notice One event per mint call, the permanent per-mint record.
-    ///         Built-in paths cover [firstTokenId, firstTokenId + quantity - 1];
-    ///         extension mints emit quantity 1. firstMintIndex is the global
-    ///         mint order of the call's first token (token k's index =
-    ///         firstMintIndex + k), stamped because pooled ids don't reveal
-    ///         it. The mint block is the log's own block. Nothing here is
-    ///         stored per token; indexers read it from the log.
+    /// @notice Emitted once per mint call; the per-mint record. Built-in paths
+    ///         cover [firstTokenId, firstTokenId + quantity - 1]; extension
+    ///         mints emit quantity 1. firstMintIndex is the global mint order
+    ///         of the call's first token (token k's index = firstMintIndex +
+    ///         k), included because pooled ids do not encode it. The mint block
+    ///         is the log's own block. No per-token data is stored; indexers
+    ///         read it from the log.
     event Minted(
         address indexed to,
         address indexed referrer,
@@ -96,85 +93,83 @@ interface ISurfaceCore {
     event StrayETHRescued(address indexed to, uint256 amount);
 
     // ── init + config ────────────────────────────────────────────────────────
-    /// @notice One-shot init. `p.initialMinters` grants extension minters, and
-    ///         `p.creators` seeds the owner's side of attribution, so pooled,
-    ///         backed, and collaborative forms deploy fully wired in one
-    ///         transaction. Locks passed true in `p.cfg` take effect here: the
-    ///         collection is born locked.
+    /// @notice One-shot initializer. `p.initialMinters` grants extension
+    ///         minters and `p.creators` seeds the owner's side of attribution,
+    ///         so pooled, backed, and collaborative forms deploy fully
+    ///         configured in one transaction. Locks set true in `p.cfg` take
+    ///         effect here.
     function initialize(InitParams calldata p) external;
 
-    /// @notice Reschedule the built-in paid mint window (owner or admin).
-    ///         `end` 0 means open-ended; otherwise end > start. Governs the
-    ///         paid path only, extension minters keep their own schedules.
+    /// @notice Reschedules the built-in paid mint window (owner or admin).
+    ///         `end` 0 means open-ended; otherwise end > start. Applies to the
+    ///         paid path only; extension minters keep their own schedules.
     function setMintWindow(uint64 start, uint64 end) external;
-    /// @notice Update the stored fixed price (ignored while a price strategy
+    /// @notice Updates the stored fixed price (ignored while a price strategy
     ///         is set). Payment is exact-match, so a mint in flight at the old
     ///         price reverts rather than overpaying.
     function setPrice(uint256 price) external;
-    /// @notice Update the EIP-2981 royalty. Capped at 50%; receiver 0 = owner().
+    /// @notice Updates the EIP-2981 royalty. Capped at 50%; receiver 0 =
+    ///         owner().
     function setRoyalty(uint16 royaltyBps, address royaltyReceiver) external;
-    /// @notice Update the supply cap (0 = open supply). Reverts once locked,
-    ///         and below what already exists (mints-ever in sequential mode,
-    ///         live supply in pooled).
+    /// @notice Updates the supply cap (0 = open supply). Reverts once locked,
+    ///         or when set below current supply (mints-ever in sequential
+    ///         mode, live supply in pooled).
     function setSupplyCap(uint256 supplyCap) external;
-    /// @notice One-way: lock the supply cap forever, the scarcity promise.
-    ///         The cap binds every mint path, so no later minter grant can
-    ///         climb over it.
+    /// @notice One-way: locks the supply cap permanently. The cap binds every
+    ///         mint path, so no later minter grant can exceed it.
     function lockSupply() external;
-    /// @notice Point tokenURI at a new renderer. Reverts once locked; the
-    ///         renderer can never be the zero address.
+    /// @notice Points tokenURI at a new renderer. Reverts once locked; the
+    ///         renderer cannot be the zero address.
     function setRenderer(address renderer) external;
     function setMintHook(address hook) external;
     function setPriceStrategy(address strategy) external;
-    /// @notice Grant or revoke an extension minter, the artist's visible,
-    ///         onchain choice, and the lever for revoking a minter's schedule.
-    ///         Reverts once the minter set is locked; the pooled form holds one
-    ///         minter at a time.
+    /// @notice Grants or revokes an extension minter. Reverts once the minter
+    ///         set is locked; the pooled form allows one minter at a time.
     function setMinter(address minter, bool allowed) external;
-    /// @notice One-way, optional: freeze the minter set forever. A backed
+    /// @notice One-way, optional: freezes the minter set permanently. A backed
     ///         pooled collection sets this so no minter can be swapped in later
-    ///         to retire another minter's backed tokens.
+    ///         to burn another minter's backed tokens.
     function lockMinter() external;
-    /// @notice Grant an admin. An admin can call every management function the
+    /// @notice Grants an admin. An admin can call every management function the
     ///         owner can, except managing admins and transferring ownership.
     ///         Owner-only; reverts AlreadyAdmin / ZeroAccount.
     function addAdmin(address account) external;
-    /// @notice Revoke an admin. The owner may remove anyone; an admin may
-    ///         renounce itself. Reverts NotAnAdmin if there is no grant to
-    ///         remove, so a typo fails loudly.
+    /// @notice Revokes an admin. The owner may remove anyone; an admin may
+    ///         renounce itself. Reverts NotAnAdmin when there is no grant to
+    ///         remove.
     function removeAdmin(address account) external;
     function setPayoutAddress(address payoutAddress) external;
-    /// @notice The owner's side of attribution: list or unlist creators. A
-    ///         listing is an assertion; confirmation needs the creator to
-    ///         claim this collection in the Catalog too (isConfirmedCreator).
+    /// @notice Owner's side of attribution: lists or unlists creators. A
+    ///         listing is an assertion; confirmation also requires the creator
+    ///         to register this collection in the Catalog (isConfirmedCreator).
     function setCreators(address[] calldata list, bool listed) external;
-    /// @notice Emit an ERC-4906 refresh for changes the core cannot see (a
-    ///         chain-live work moving, a reveal, new captures). Callable by
+    /// @notice Emits an ERC-4906 refresh for changes the core cannot observe
+    ///         (a chain-live work moving, a reveal, new captures). Callable by
     ///         the current renderer or owner/admin. Works after lockRenderer,
-    ///         the lock pins the pointer, not the weather.
+    ///         which pins the renderer pointer, not its output.
     function notifyMetadataUpdate(uint256 fromTokenId, uint256 toTokenId) external;
-    /// @notice One-way, optional: pin the renderer pointer forever. An
+    /// @notice One-way, optional: pins the renderer pointer permanently. An
     ///         immutable renderer behind a locked pointer is full presentation
-    ///         permanence; a mutable one behind a locked pointer is the
-    ///         artist's explicit, inspectable choice.
+    ///         permanence; a mutable renderer behind a locked pointer is an
+    ///         explicit, inspectable choice.
     function lockRenderer() external;
 
     // ── burn ─────────────────────────────────────────────────────────────────
-    /// @notice Burn a token. Who may burn depends on the form: sequential
+    /// @notice Burns a token. Authorization depends on the form: sequential
     ///         collections use the standard owner-or-approved rule; pooled
-    ///         collections restrict burning to authorized minters, which own
-    ///         the id pool and any per-token backing.
+    ///         collections restrict burning to authorized minters, which
+    ///         control the id pool and any per-token backing.
     function burn(uint256 tokenId) external;
 
     // ── withdrawals (pull payments) ──────────────────────────────────────────
-    /// @notice Send `account` what it is owed. Anyone may pull the trigger;
-    ///         the money only ever goes to the owed address.
+    /// @notice Sends `account` its owed balance. Callable by anyone; funds go
+    ///         only to the owed address.
     function withdraw(address account) external;
 
     function pendingWithdrawal(address account) external view returns (uint256);
 
-    /// @notice Owner-or-admin sweep of ETH nobody is owed (force-fed strays).
-    ///         Pull-payment balances are untouchable.
+    /// @notice Owner-or-admin sweep of ETH that is not owed to anyone
+    ///         (force-fed strays). Pull-payment balances are not affected.
     function rescueStrayETH(address to) external;
 
     // ── reads ───────────────────────────────────────────────────────────────
@@ -183,22 +178,22 @@ interface ISurfaceCore {
     /// @notice The fixed protocol referral share, in bps.
     function REFERRAL_SHARE_BPS() external view returns (uint16);
 
-    /// @notice Resolved price for a prospective mint: the strategy if set,
-    ///         else the stored fixed price times quantity.
+    /// @notice Resolved price for a prospective mint: the strategy price if a
+    ///         strategy is set, else the stored fixed price times quantity.
     function currentPrice(address minter, uint256 quantity, bytes calldata data) external view returns (uint256);
 
     /// @notice Mint-time entropy, stamped per token in the mint transaction.
     function tokenSeed(uint256 tokenId) external view returns (bytes32);
 
-    /// @notice Which kind of collection this is. Not a setting, a fact of
-    ///         the contract you are holding.
+    /// @notice The collection's id mode. Fixed at deploy, not a mutable
+    ///         setting.
     function idMode() external view returns (IdMode);
     function renderer() external view returns (address);
     function mintHook() external view returns (address);
     function priceStrategy() external view returns (address);
     function isMinter(address minter) external view returns (bool);
-    /// @notice Whether `account` may use the admin-gated setters: the owner,
-    ///         or anyone holding an explicit grant.
+    /// @notice Whether `account` may call the admin-gated setters: the owner,
+    ///         or any address holding an explicit grant.
     function isAdmin(address account) external view returns (bool);
     function isRendererLocked() external view returns (bool);
     function isSupplyLocked() external view returns (bool);
@@ -206,10 +201,11 @@ interface ISurfaceCore {
     function isMinterLocked() external view returns (bool);
     /// @notice Whether the owner has listed `who` as a creator (one side).
     function isListedCreator(address who) external view returns (bool);
-    /// @notice Live, mutual attribution: the owner listed `who` AND `who`
-    ///         claimed this collection in the Catalog. Either side can retract
-    ///         and the credit goes with it. False when no Catalog is set.
+    /// @notice Mutual attribution: the owner listed `who` AND `who` registered
+    ///         this collection in the Catalog. Either side can retract, which
+    ///         removes the confirmation. False when no Catalog is set.
     function isConfirmedCreator(address who) external view returns (bool);
-    /// @notice The Catalog singleton creators are confirmed against (0 = off).
+    /// @notice The Catalog singleton creators are confirmed against (0 =
+    ///         disabled).
     function catalog() external view returns (address);
 }

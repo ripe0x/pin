@@ -7,10 +7,9 @@ import {HookBase} from "./HookBase.sol";
 import {IMintHook} from "../interfaces/IMintHook.sol";
 
 /// @title HoldsSurfaceHook
-/// @notice The continuity primitive: to mint from collection B, hold a token
-///         from collection A. The people who took provenance risk early get
-///         the door held open later, and nothing is financialized to do it.
-///         Any ERC721 can be the required collection.
+/// @notice Gates minting from collection B on holding a token from a required
+///         collection A: the minter must have a nonzero balance in the
+///         required collection. Any ERC721 can be the required collection.
 contract HoldsSurfaceHook is HookBase {
     mapping(address => address) public requiredOf; // collection => required collection (0 = no gate)
 

@@ -7,36 +7,34 @@ import {HookBase} from "./HookBase.sol";
 import {IMintHook} from "../interfaces/IMintHook.sol";
 
 /// @title GateHook
-/// @notice Merkle allowlist + per-wallet cap in ONE hook. The core has a
-///         single mintHook slot, and a real gated drop wants both at once,
-///         an allowlist without a per-wallet cap invites a listed wallet to
-///         sweep the supply. Each gate is independently optional per
-///         collection: root 0 = no allowlist, cap 0 = no cap, so this hook
-///         also serves the single-gate cases (the single-purpose
-///         AllowlistHook/PerWalletCapHook remain as minimal references).
+/// @notice Merkle allowlist and per-wallet cap combined in one hook. The core
+///         has a single mintHook slot, so combining both gates lets a gated
+///         drop enforce an allowlist and a per-wallet cap at once (an allowlist
+///         without a cap lets a listed wallet buy the entire supply). Each gate
+///         is independently optional per collection: root 0 = no allowlist,
+///         cap 0 = no cap, so this hook also covers the single-gate cases (the
+///         single-purpose AllowlistHook/PerWalletCapHook remain as minimal
+///         references).
 ///
-///         Semantics match the single-purpose hooks exactly: same OZ
+///         Semantics match the single-purpose hooks: same OZ
 ///         standard-merkle-tree leaf format, same hookData shape
-///         (abi.encode(bytes32[] proof)), and the SAME custom errors,
+///         (abi.encode(bytes32[] proof)), and the same custom errors.
 ///         `NotAllowlisted()` / `WalletCapExceeded(cap, attempted)` share
 ///         signatures (and therefore selectors) with AllowlistHook and
-///         PerWalletCapHook, so a UI maps one set of errors for all three.
+///         PerWalletCapHook, so a UI can map one set of errors for all three.
 ///         hookData travels through `mintWithReferral` / `mintFor` and the
-///         extension `mintTo`/`mintToId` paths; plain `mint()` sends none,
-///         so an allowlist-gated public mint MUST go through
-///         `mintWithReferral`.
+///         extension `mintTo`/`mintToId` paths; plain `mint()` sends none, so
+///         an allowlist-gated public mint must go through `mintWithReferral`.
 ///
-///         Config authority is the collection's owner OR admins (via
+///         Config authority is the collection's owner or admins (via
 ///         HookBase.onlySurfaceAdmin, the same authority root as the
-///         collection's own setters). A drop is operated by the artist's
-///         team, not only the owner key.
+///         collection's own setters).
 ///
 ///         Gas: the wallet counter is written only while a cap is active.
-///         Enabling a cap mid-sale therefore counts from that moment,
-///         earlier uncapped mints are not retroactively charged against it.
-///         (Deliberate: uncapped collections shouldn't pay a counting
-///         SSTORE per mint. Set the cap before opening if it must bind the
-///         whole sale.)
+///         Enabling a cap mid-sale counts from that point; earlier uncapped
+///         mints are not retroactively counted. This avoids a counting SSTORE
+///         per mint on uncapped collections. Set the cap before opening if it
+///         must bind the whole sale.
 contract GateHook is HookBase {
     mapping(address => bytes32) public rootOf; // collection => merkle root (0 = open)
     mapping(address => uint256) public capOf; // collection => per-wallet cap (0 = unlimited)
@@ -60,10 +58,9 @@ contract GateHook is HookBase {
         emit CapSet(collection, cap);
     }
 
-    /// @notice How many more tokens `wallet` may mint from `collection`
-    ///         under the current cap. type(uint256).max when uncapped.
-    ///         Saturates at 0 if a cap was lowered below what a wallet
-    ///         already minted.
+    /// @notice Tokens `wallet` may still mint from `collection` under the
+    ///         current cap. type(uint256).max when uncapped. Returns 0 if the
+    ///         cap was lowered below the wallet's existing count.
     function remainingFor(address collection, address wallet) external view returns (uint256) {
         uint256 cap = capOf[collection];
         if (cap == 0) return type(uint256).max;
@@ -91,7 +88,7 @@ contract GateHook is HookBase {
         return IMintHook.beforeMint.selector;
     }
 
-    /// @dev Count only after the mint succeeds (afterMint runs post-payment),
+    /// @dev Counts only after the mint succeeds (afterMint runs post-payment),
     ///      and only while a cap is active (see the gas note above).
     function afterMint(address minter, uint256 quantity, uint256, address, bytes calldata) external override {
         if (capOf[msg.sender] != 0) {

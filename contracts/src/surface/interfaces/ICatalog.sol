@@ -2,11 +2,11 @@
 pragma solidity ^0.8.24;
 
 /// @title ICatalog
-/// @notice The slice of the Catalog singleton a collection reads to confirm
-///         creators. Catalog is the artist's own public record ("my works"),
-///         keyed by artist; a creator claims a collection there with
-///         addContract, and the collection checks that claim here, the
-///         artist's side of the two-sided attribution handshake.
+/// @notice Subset of the Catalog singleton a collection reads to confirm
+///         creators. Catalog is a per-artist registry of contracts; a creator
+///         registers a collection there via addContract, and the collection
+///         reads that registration here. This is the creator side of two-sided
+///         attribution.
 interface ICatalog {
     /// @notice Whether `artist` has registered `contractAddress` in their catalog.
     function isContractRegistered(address artist, address contractAddress)

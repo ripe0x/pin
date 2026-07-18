@@ -4,38 +4,37 @@ pragma solidity ^0.8.24;
 // ─────────────────────────────────────────────────────────────────────────────
 // Surface, shared types
 //
-// One contract is one collection. The core keeps three things: who owns each
-// token, where the money goes, and one seed per token. How the work looks is
-// the renderer's business, and the renderer sits in a slot the artist can
-// swap or pin. The core never learns what the art is. It doesn't need to.
+// The core stores per-token ownership, the payout destination, and one seed
+// per token. tokenURI is delegated to the renderer, held in a config slot the
+// owner can change or lock. The core does not store or reference the artwork.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// @notice Where the mint stands, worked out fresh from the window, the cap,
-///         and the clock. Never stored. config() reports it live and each
-///         Minted event stamps the value it saw.
+/// @notice Mint status, derived from the window, the cap, and the current time.
+///         Never stored. config() reports it live and each Minted event stamps
+///         the value observed at mint.
 enum SurfaceStatus {
-    Scheduled, // the window has not opened yet
+    Scheduled, // window has not opened yet
     Open, // minting now
-    Closed // the window passed, or a sequential cap filled
+    Closed // window passed, or a sequential cap filled
 }
 
-/// @notice How token ids are handed out. Not a setting; each mode is its own
-///         contract, and idMode() says which one you are holding.
-///         Sequential (Surface): the contract counts 1, 2, 3. The id IS
-///         the mint order, and ids are never reused after a burn.
+/// @notice How token ids are assigned. Not a setting; each mode is a separate
+///         contract, and idMode() reports which.
+///         Sequential (Surface): the contract assigns ids 1, 2, 3, ... in mint
+///         order; ids are never reused after a burn.
 ///         Pooled (PooledSurface): an authorized minter chooses each id
-///         (tokenId == sourceId forms). A burned id may mint again as a new
-///         instance, new seed.
+///         (tokenId == sourceId forms). A burned id may be minted again as a
+///         new instance with a new seed.
 enum IdMode {
     Sequential,
     Pooled
 }
 
-/// @notice The live settings, all in one struct. Setters edit these fields in
-///         place, so config() always reports exactly what the contract uses.
-///         The two locks are one-way: true never goes back to false. Passed
-///         true at creation, the collection is born locked, permanence with
-///         no second transaction to remember.
+/// @notice Live settings in one struct. Setters edit these fields in place, so
+///         config() always reports what the contract uses. The two locks are
+///         one-way: true never returns to false. Passed true at creation, the
+///         collection is initialized locked, with no second transaction
+///         required.
 struct SurfaceConfig {
     uint256 price; // wei; used when priceStrategy is unset. 0 = gas only
     uint256 supplyCap; // 0 = open supply
@@ -44,16 +43,16 @@ struct SurfaceConfig {
     uint16 royaltyBps; // EIP-2981, advisory
     address royaltyReceiver; // 0 = owner()
     address payoutAddress; // artist proceeds; 0 = owner()
-    address renderer; // answers tokenURI; 0 at init = take the factory default
+    address renderer; // provides tokenURI; 0 at init = use the factory default
     address mintHook; // 0 = none
     address priceStrategy; // 0 = the stored fixed price
     bool rendererLocked; // one-way; see lockRenderer()
     bool supplyLocked; // one-way; see lockSupply()
 }
 
-/// @notice Everything initialize() needs, in one bundle. A struct so the call
-///         stays within legacy-codegen stack limits and can grow without
-///         churning the signature.
+/// @notice All parameters initialize() needs, in one struct, so the call stays
+///         within legacy-codegen stack limits and can grow without changing the
+///         signature.
 struct InitParams {
     string name;
     string symbol;

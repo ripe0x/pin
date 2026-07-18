@@ -4,31 +4,30 @@ pragma solidity ^0.8.24;
 import {ISurfaceCore} from "./ISurfaceCore.sol";
 
 /// @title ISurface
-/// @notice The sequential collection, the common form. The contract counts
-///         1, 2, 3: the token id IS the mint order, ids never recycle, and
-///         the built-in paid paths sell directly to collectors. There is no
-///         id-choosing entrypoint here at all, which is the whole guarantee.
+/// @notice Sequential collection form. Token ids are assigned in mint order
+///         and never reused; the built-in paid paths sell directly to
+///         collectors. Has no id-choosing entrypoint.
 interface ISurface is ISurfaceCore {
     // ── mint: built-in paid paths (value custody stays in the core) ─────────
-    /// @notice Simple mint. No referrer, so the artist keeps the full price.
+    /// @notice Mints with no referrer, so the artist receives the full price.
     function mint(uint256 quantity) external payable;
 
-    /// @notice Mint crediting `referrer` its share: whoever hosts the mint
-    ///         names themselves to earn it, and a zero referrer folds the
-    ///         share back to the artist. `hookData` reaches the mint hook and
-    ///         the price strategy.
+    /// @notice Mints, crediting `referrer` its share. A caller naming a
+    ///         referrer earns that address the share; a zero referrer folds
+    ///         the share back to the artist. `hookData` is forwarded to the
+    ///         mint hook and the price strategy.
     function mintWithReferral(uint256 quantity, address referrer, bytes calldata hookData) external payable;
 
-    /// @notice Paid mint to someone else: a gift, a hot wallet buying for a
-    ///         vault, a sponsor covering a collector. `to` is who hooks and
-    ///         the price strategy judge; overpayment refunds accrue to the
-    ///         payer. The event records `to` as the true first owner.
+    /// @notice Paid mint to a different recipient. `to` is the address the
+    ///         mint hook and price strategy evaluate; overpayment refunds
+    ///         accrue to the payer. The Minted event records `to` as the first
+    ///         owner.
     function mintFor(address to, uint256 quantity, address referrer, bytes calldata hookData) external payable;
 
     // ── mint: extension path (economics live in the authorized minter) ──────
     /// @notice Authorized minters only. Non-payable; the calling minter
-    ///         carries all value handling. Hooks and the cap apply as on the
-    ///         paid path; the window does not, since a minter owns its own
-    ///         schedule. Returns the assigned id.
+    ///         handles all value. Hooks and the supply cap apply as on the
+    ///         paid path; the mint window does not, since a minter runs its
+    ///         own schedule. Returns the assigned id.
     function mintTo(address to, address referrer, bytes calldata hookData) external returns (uint256 tokenId);
 }

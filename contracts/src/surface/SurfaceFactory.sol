@@ -7,18 +7,18 @@ import {SurfaceCore} from "./SurfaceCore.sol";
 import {SurfaceConfig, IdMode, InitParams} from "./SurfaceTypes.sol";
 
 /// @title SurfaceFactory
-/// @notice Deploys one collection per work, configured in one transaction, as
-///         an immutable EIP-1167 clone. Two forms, two implementations, two
-///         doors: createSurface for the sequential form (the contract
-///         counts ids), createPooledSurface for the pooled form (the
-///         minter chooses ids). No proxy admin, no upgrade path: what deploys
-///         is what runs. No fee lives here either: the referral share is a
-///         constant inside the collection, paid to whoever hosts the mint.
+/// @notice Deploys one collection per call, configured in a single transaction,
+///         as an immutable EIP-1167 clone. Two forms, two implementations, two
+///         entrypoints: createSurface for the sequential form (the contract
+///         assigns ids), createPooledSurface for the pooled form (the minter
+///         chooses ids). No proxy admin and no upgrade path. No fee is stored
+///         here; the referral share is a constant inside the collection, paid
+///         to the mint host.
 ///
-///         This is the one fixed address an indexer watches: one
-///         SurfaceCreated event per collection, stamped with its form. The
-///         system evolves by deploying new implementations and a new
-///         factory, never by changing a collection already out in the world.
+///         Emits one SurfaceCreated event per collection, stamped with its
+///         form, from a single fixed address for indexers to watch. New
+///         behavior ships by deploying new implementations and a new factory,
+///         not by modifying a deployed collection.
 contract SurfaceFactory {
     /// @notice The sequential implementation every createSurface clone
     ///         points at.
@@ -28,34 +28,33 @@ contract SurfaceFactory {
     ///         points at.
     address public immutable pooledImplementation;
 
-    /// @notice The renderer a collection gets when it names none of its own.
+    /// @notice Renderer assigned to a collection that names none of its own.
     ///         May be zero: with no factory default, a collection that sets no
-    ///         renderer reverts RendererRequired at creation, so every
-    ///         collection brings its own.
+    ///         renderer reverts RendererRequired at creation, requiring every
+    ///         collection to supply its own.
     address public immutable defaultRenderer;
 
-    /// @notice The Catalog singleton every clone reads for creator
-    ///         confirmation. address(0) disables confirmation.
+    /// @notice Catalog singleton every clone reads for creator confirmation.
+    ///         address(0) disables confirmation.
     address public immutable catalog;
 
-    /// @notice The deployer: the only address that may deprecate this
-    ///         factory, and that is its only power. It has none over
-    ///         collections already deployed.
+    /// @notice Deployer: the only address that may deprecate this factory, and
+    ///         its only power. Has no power over deployed collections.
     address public immutable deployer;
 
-    /// @notice One-way stop for NEW deploys. If an implementation turns out
-    ///         to have a bug, deprecating halts further clones and points
-    ///         integrators at the successor. Deployed collections are
-    ///         immutable and unaffected: by design nobody can touch them,
-    ///         including us.
+    /// @notice One-way stop for new deploys. Deprecating halts further clones
+    ///         and names a successor for integrators, e.g. when an
+    ///         implementation is found to have a bug. Deployed collections are
+    ///         immutable and unaffected.
     bool public deprecated;
-    /// @notice The replacement factory once deprecated (informational).
+    /// @notice Replacement factory set on deprecation (informational).
     address public successor;
 
-    /// @notice Reversible pause on NEW deploys, distinct from `deprecated`: a temporary
-    ///         off switch (incident, maintenance) the deployer can flip back on. Deprecation
-    ///         is the permanent, one-way end-of-life; this is the everyday circuit breaker.
-    ///         Neither touches collections already deployed.
+    /// @notice Reversible pause on new deploys, distinct from `deprecated`: a
+    ///         temporary off switch (incident, maintenance) the deployer can
+    ///         toggle back on. Deprecation is the permanent, one-way
+    ///         end-of-life; this is the reversible circuit breaker. Neither
+    ///         affects deployed collections.
     bool public paused;
 
     mapping(address => bool) public isSurface;
@@ -83,15 +82,15 @@ contract SurfaceFactory {
         }
         if (pooledImplementation_.code.length == 0) revert NotAContract(pooledImplementation_);
         // The default renderer is optional (0 = no factory default): a collection that names
-        // no renderer of its own then reverts RendererRequired at creation, so every collection
-        // must bring its own. A nonzero value must be a real contract, same as catalog below,
-        // so an EOA/typo cannot silently become the fallback tokenURI for every clone.
+        // no renderer of its own then reverts RendererRequired at creation, requiring every
+        // collection to supply its own. A nonzero value must be a contract, same as catalog
+        // below, so an EOA/typo cannot silently become the fallback tokenURI for every clone.
         if (defaultRenderer_ != address(0) && defaultRenderer_.code.length == 0) {
             revert NotAContract(defaultRenderer_);
         }
         // Catalog is optional (0 disables creator confirmation), but a nonzero value must be a
-        // real contract: a mistyped/EOA/wrong-chain address passes silently here and then makes
-        // isConfirmedCreator revert forever on every collection this factory ever clones;
+        // contract: a mistyped/EOA/wrong-chain address passes silently here and then makes
+        // isConfirmedCreator revert forever on every collection this factory clones;
         // unrecoverable, since collections are immutable and there is no setCatalog.
         if (catalog_ != address(0) && catalog_.code.length == 0) revert NotAContract(catalog_);
         sequentialImplementation = sequentialImplementation_;
@@ -101,7 +100,7 @@ contract SurfaceFactory {
         deployer = msg.sender;
     }
 
-    /// @notice One-way: stop new deploys and name a successor (zero if none
+    /// @notice One-way: stop new deploys and set a successor (zero if none
     ///         exists yet). Deployer-only.
     function deprecate(address successor_) external {
         if (msg.sender != deployer) revert NotDeployer();
@@ -112,20 +111,20 @@ contract SurfaceFactory {
     }
 
     /// @notice Reversible: pause or resume new deploys. Deployer-only. Independent of
-    ///         `deprecate`: a deprecated factory stays permanently off regardless.
+    ///         `deprecate`: a deprecated factory stays permanently off regardless of this flag.
     function setPaused(bool paused_) external {
         if (msg.sender != deployer) revert NotDeployer();
         paused = paused_;
         emit PausedSet(paused_);
     }
 
-    /// @notice Deploy + configure a sequential collection owned by `owner`;
-    ///         the common form: the contract counts ids, collectors buy
-    ///         through the built-in paid paths.
+    /// @notice Deploy and configure a sequential collection owned by `owner`:
+    ///         the contract assigns ids, collectors buy through the built-in
+    ///         paid paths.
     /// @param owner The artist. Explicit, so a deploy helper can create on
     ///        the artist's behalf.
-    /// @param cfg The full live config, including the two one-way locks:
-    ///        pass them true and the collection is born locked.
+    /// @param cfg The full live config, including the two one-way locks: pass
+    ///        them true to initialize the collection locked.
     /// @param initialMinters Extension minters granted at init. Empty for
     ///        collections that sell only through the built-in paths.
     /// @param creators Initial listed creators (the owner's side of
@@ -142,10 +141,10 @@ contract SurfaceFactory {
         return _create(sequentialImplementation, IdMode.Sequential, name, symbol, owner, cfg, initialMinters, creators);
     }
 
-    /// @notice Deploy + configure a pooled collection owned by `owner`; the
-    ///         backed/sourced form: an authorized minter chooses every id and
-    ///         owns the pool's economics. Grant it in `initialMinters` so the
-    ///         work deploys fully wired in one transaction.
+    /// @notice Deploy and configure a pooled collection owned by `owner`: the
+    ///         backed/sourced form where an authorized minter chooses every id
+    ///         and owns the pool's economics. Grant it in `initialMinters` so
+    ///         the collection deploys fully wired in one transaction.
     function createPooledSurface(
         string calldata name,
         string calldata symbol,
