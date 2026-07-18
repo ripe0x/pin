@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 #
+# SUPERSEDED: this script invokes contracts/script/DeployEditions.s.sol,
+# which has been deleted. Use `pnpm dev:collections`
+# (scripts/dev-collections.sh) instead, which deploys the replacement
+# Surface system via DeploySurfaceSystem.s.sol. Kept in place
+# for reference / history only — do not run this as-is, it will fail.
+#
 # One command to test PND Editions fully locally before deploying.
 #
 #   pnpm dev:editions

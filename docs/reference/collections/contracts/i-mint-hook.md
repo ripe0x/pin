@@ -6,7 +6,7 @@
 
 IMintHook is the interface a contract implements to occupy a collection's
 hook slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on
-the [SovereignCollection](/docs/collections/contracts/sovereign-collection) core. An
+the [Surface](/docs/collections/contracts/surface) core. An
 artist-owned mint hook lets an artist gate mints, `beforeMint` reverts or
 returns the wrong selector, or record custom data to their own storage,
 `afterMint`, without either feature living in the core itself.
@@ -16,7 +16,7 @@ whatever address sits in its `mintHook` slot, and an owner who installs a
 malicious or buggy hook is only gating their own collection. Hooks are
 non-payable, so a hook can never touch the honest-pricing invariant by
 intercepting or redirecting funds. Hooks run on every mint path, the
-built-in paid paths and any extension minter's `mintTo`/`mintToAt`, so
+built-in paid paths and any extension minter's `mintTo`/`mintToId`, so
 gating composes with custom minters instead of being reimplemented inside
 each one. See the [write a mint hook guide](/docs/collections/guides/write-a-mint-hook)
 for a worked implementation.
@@ -26,7 +26,7 @@ for a worked implementation.
 ### beforeMint
 
 ```solidity
-function beforeMint(address minter, uint256 quantity, uint256 firstTokenId, address surface, bytes hookData) external returns (bytes4)
+function beforeMint(address minter, uint256 quantity, uint256 firstTokenId, address referrer, bytes hookData) external returns (bytes4)
 ```
 
 **Access:** core-only (called by the collection holding this hook in its
@@ -46,7 +46,7 @@ reverts or returns a different value from within this function.
 ### afterMint
 
 ```solidity
-function afterMint(address minter, uint256 quantity, uint256 firstTokenId, address surface, bytes hookData) external
+function afterMint(address minter, uint256 quantity, uint256 firstTokenId, address referrer, bytes hookData) external
 ```
 
 **Access:** core-only (called by the collection holding this hook in its

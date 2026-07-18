@@ -1,5 +1,13 @@
 # PND Editions — interface spec
 
+> **SUPERSEDED (2026-07-06).** The Editions contract was reworked into the
+> Surface system (OZ ERC721 core, four slots, id modes); see
+> docs/pnd-surface-system.md and docs/pnd-surface-contracts-plan.md.
+> This document describes the pre-rework ERC721A design; payment-split,
+> hook, and graph concepts carry over, token-layer specifics do not.
+> Contracts now live in contracts/src/collection/ (src/editions/ was
+> removed).
+
 > **Status: v2, updated for the hardened contracts** in
 > `contracts/src/editions/` (the contract is the source of truth). Since the
 > original v2 the mint API split into `mint` / `mintWithRewards`, proceeds became

@@ -13,17 +13,17 @@ Every address and transaction link in this reference points at
 - Address: `https://evm.now/address/<address>?chainId=1`
 - Transaction: `https://evm.now/tx/<hash>?chainId=1`
 
-Shared-singleton addresses (the factory, `Attribution`, `DefaultRenderer`,
-`GenerativeRenderer`) are written as `{{addr:<key>}}` placeholders in the
-source of this reference and substituted with the real mainnet address once
-each contract is deployed. A per-artist collection clone has no fixed
-address; examples use `<COLLECTION_ADDRESS>` instead.
+Shared-singleton addresses (the factory, `DefaultRenderer`, `RenderAssets`)
+are written as `{{addr:<key>}}` placeholders in the source of this reference
+and substituted with the real mainnet address once each contract is deployed.
+A per-artist collection clone has no fixed address; examples use
+`<COLLECTION_ADDRESS>` instead.
 
 ## Currency and units
 
 The currency label is always **ETH**, never the glyph. Amounts read from the
 contracts are wei unless stated otherwise. `bps` means basis points out of
-10,000; the surface share, `SURFACE_SHARE_BPS`, is `1000` (10%).
+10,000; the referral share, `REFERRAL_SHARE_BPS`, is `1000` (10%).
 
 ## Onchain is one word
 
@@ -45,14 +45,14 @@ Where an example reads a shared singleton, it uses the `{{addr:...}}` form
 so the address resolves automatically once deployed:
 
 ```bash
-cast call {{addr:collectionFactory}} "implementation()(address)" --rpc-url https://ethereum-rpc.publicnode.com
+cast call {{addr:surfaceFactory}} "implementation()(address)" --rpc-url https://ethereum-rpc.publicnode.com
 ```
 
 Write examples use [viem](https://viem.sh). ABIs come from the `@pin/abi`
 package or from `/abis/<ContractName>.json`:
 
 ```ts
-import {sovereignCollectionAbi} from '@pin/abi';
+import {surfaceAbi} from '@pin/abi';
 import {createWalletClient, http} from 'viem';
 import {mainnet} from 'viem/chains';
 
@@ -60,7 +60,7 @@ const client = createWalletClient({chain: mainnet, transport: http()});
 
 await client.writeContract({
   address: '<COLLECTION_ADDRESS>',
-  abi: sovereignCollectionAbi,
+  abi: surfaceAbi,
   functionName: 'mint',
   args: [1n],
   value: priceWei,
@@ -70,23 +70,21 @@ await client.writeContract({
 or, fetching the ABI directly:
 
 ```ts
-const abi = await fetch('/abis/SovereignCollection.json').then((r) => r.json());
+const abi = await fetch('/abis/Surface.json').then((r) => r.json());
 ```
 
 ## Glossary
 
 | Term | Meaning |
 | --- | --- |
-| Collection | One artist's work, deployed as one `SovereignCollection` contract |
+| Collection | One artist's work, deployed as one `Surface` contract |
 | Clone | A collection's contract: an immutable EIP-1167 proxy pointing at the shared implementation |
 | Slot | One of the four swappable modules on a collection: renderer, price strategy, mint hook, extension minter |
-| Surface | The address credited with hosting a mint (a frontend, a self-hosted page, or none) |
-| Surface share | The fixed 10% of the built-in-path price paid to the surface (`SURFACE_SHARE_BPS`) |
-| Mint mark | The per-token provenance snapshot captured at mint time: index, block, status, surface |
+| Referrer | The address credited with hosting a mint (a frontend, a self-hosted page, or none) |
+| Referral share | The fixed 10% of the built-in-path price paid to the referrer (`REFERRAL_SHARE_BPS`) |
+| Mint mark | The per-token provenance stamped at mint time: mint order and mint block (the referrer and lifecycle status live on the `Minted` event, not in storage) |
 | Entropy / seed | The per-token `bytes32` stamped at mint (`tokenSeed`), the source of randomness a generative renderer draws from |
 | Id mode | Whether a collection assigns ids itself (sequential) or takes minter-supplied ids (pooled), fixed at init |
-| Edge / Release Graph | A typed, directed link from one collection to another node, forming the Release Graph |
-| Path / Token Path | A per-token forward pointer describing what comes next for that specific token |
-| Work / work config | The algorithm or asset definition a renderer executes: code refs, dependency refs, render spec |
-| Freeze / lock (permanence) | `freezeMetadata` (renderer and per-token artwork become immutable) and `lockWork` (the work config becomes immutable); both true means the collection `isPermanent` |
-| Roster / attribution | The artist list a collection declares to the `Attribution` singleton; confirmed once each listed artist claims the collection in their own Catalog |
+| Work / work config | The algorithm or asset definition a renderer executes: code refs, dependency refs, render spec, all defined inside the artist's own renderer |
+| Lock (permanence) | One-way switches on the collection: `lockRenderer` (pin the renderer pointer, optional) and `lockSupply` (the scarcity promise). A generative work's algorithm permanence comes from the artist's renderer itself (deployed immutable, or with its own one-way lock); pointer lock + an immutable renderer = full presentation permanence |
+| Creator / attribution | The owner LISTS creators on the collection (`setCreators`); each confirms by claiming the collection in the Catalog. `isConfirmedCreator` is the live intersection |

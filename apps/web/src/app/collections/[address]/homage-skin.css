@@ -1,0 +1,28 @@
+/* Third layout: the generic collection page wearing the /mint/homage terminal
+   look. The wrapper carries `.dark` (re-tunes every PND gray + semantic token,
+   so the whole composition goes dark with no component forks) and
+   `.homage-terminal` (from homage-gallery.css: #0a0a0c ground, mono-forward body,
+   the $111 accent, and the Anton `--sans` display face). This file only maps
+   those onto the masthead — the collection NAME becomes the heavy condensed
+   display headline, matching /mint/homage. Everything else inherits. */
+
+.collection-homage-skin {
+  min-height: 100vh;
+  background: #0a0a0c;
+}
+
+/* The collection name (page.tsx masthead <h1>). homage-terminal makes body text
+   mono; the headline opts into the Anton condensed display face instead. */
+.collection-homage-skin header h1 {
+  font-family: var(--font-anton), ui-sans-serif, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  line-height: 0.94;
+}
+
+/* $111 / live-status accent, borrowed from the gallery, for the status dot's
+   "available" state so the masthead reads as the same family. */
+.collection-homage-skin .bg-status-available {
+  background-color: var(--accent);
+}

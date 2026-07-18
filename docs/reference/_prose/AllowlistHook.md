@@ -25,9 +25,9 @@ against this contract without translation.
 
 ## function setRoot
 
-access: owner-only (`onlyCollectionOwner`, checked against the target
-collection's current `owner()`; reverts `SC: not collection owner`
-otherwise)
+access: collection owner or admin (`onlySurfaceAdmin`, checked against
+the target collection's current `owner()` or `isAdmin(msg.sender)`; reverts
+`NotSurfaceAdmin()` otherwise)
 
 Sets the Merkle root gating mints for `collection`. A root of `bytes32(0)`
 means no gate: `beforeMint` skips the proof check entirely and any minter
@@ -67,3 +67,14 @@ Emitted on every `setRoot` call, including clearing the gate back to
 `bytes32(0)`. `collection` is indexed. An indexer watching this event
 reconstructs the full root history for any collection that has ever used
 this hook.
+
+## error NotAllowlisted
+
+The minter's Merkle proof did not verify against the collection's allowlist
+root. Raised in `beforeMint` when a non-zero root is set.
+
+## error NotSurfaceAdmin
+
+A hook setter was called by an address that is neither the collection's owner
+nor one of its admins. Inherited from HookBase — configuring a hook for a
+collection needs the same authority as the collection's own setters.

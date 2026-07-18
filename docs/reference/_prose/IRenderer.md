@@ -7,14 +7,14 @@ title: IRenderer
 IRenderer is the interface a contract implements to occupy a collection's
 renderer slot, one of the
 [four swappable slots](/docs/collections/concepts/four-slots) on the
-[SovereignCollection](/docs/collections/contracts/sovereign-collection) core. A
+[Surface](/docs/collections/contracts/surface) core. A
 collection's `tokenURI` and `contractURI` delegate to whatever renderer sits
 in its renderer slot. The collection address is an explicit parameter on
 both functions rather than `msg.sender`, so a single renderer instance
 serves every collection that adopts it, an off-chain caller can `eth_call`
 it directly for any collection without a transaction, and any contract can
 adopt a given renderer as long as it implements
-[ICollectionView](/docs/collections/contracts/i-collection-view).
+[ISurfaceView](/docs/collections/contracts/i-surface-view).
 
 Renderers are onchain views with full EVM read access: a token's seed, its
 owner, sibling tokens on the same collection, companion contract state, and
@@ -30,7 +30,7 @@ view; returns the metadata URI for `tokenId` on `collection`. Called by the
 collection's own `tokenURI` when this renderer occupies its renderer slot,
 and callable directly off-chain against any collection this renderer
 supports. Implementations typically read the token's data through
-[ICollectionView](/docs/collections/contracts/i-collection-view) on `collection`, its
+[ISurfaceView](/docs/collections/contracts/i-surface-view) on `collection`, its
 seed, Mint Mark, work config, and so on, to build the returned metadata.
 
 ## function contractURI

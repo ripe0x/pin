@@ -9,7 +9,7 @@ The Sovereign Auction House is an onchain English auction house for ERC721 token
 denominated in ETH. Every seller (an artist or a collector) runs their own house: it
 is deployed per owner as an immutable EIP-1167 clone, with isolated storage and no
 shared custody. It auctions any ERC721, including a PND
-[SovereignCollection](/docs/collections/contracts/sovereign-collection) token.
+[Surface](/docs/collections/contracts/surface) token.
 
 The mechanics are a standard English auction with a small fixed rule set:
 

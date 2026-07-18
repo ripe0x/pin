@@ -24,21 +24,21 @@ The return value is the total price in wei for `quantity` tokens.
 
 ## Why it's view-only
 
-`priceOf` is a `view` function: it cannot write state, hold funds, or make an external call that changes anything. The core reads the quote once per mint and keeps custody of the funds itself (`SovereignCollection`'s `_mintPaid` calls `priceOf` a single time and reuses that value for both the payment check and the settlement split), so a price strategy can never introduce a theft or reentrancy path, no matter how it's written. This is a deliberate constraint from the collection system's design: value custody never leaves the core on the built-in path. A work whose economics need to hold or move funds (per-token backing, an ERC20 swap) uses an extension minter instead; see [Write a minter](/docs/collections/guides/write-a-minter).
+`priceOf` is a `view` function: it cannot write state, hold funds, or make an external call that changes anything. The core reads the quote once per mint and keeps custody of the funds itself (`Surface`'s `_mintPaid` calls `priceOf` a single time and reuses that value for both the payment check and the settlement split), so a price strategy can never introduce a theft or reentrancy path, no matter how it's written. This is a deliberate constraint from the collection system's design: value custody never leaves the core on the built-in path. A work whose economics need to hold or move funds (per-token backing, an ERC20 swap) uses an extension minter instead; see [Write a minter](/docs/collections/guides/write-a-minter).
 
-Because it's a view, a strategy is free to read anything readable: `block.basefee`, the collection's own state via `ICollectionView`, companion contracts (lock counters, attestation boards), or any other onchain data. It just can't act on what it reads.
+Because it's a view, a strategy is free to read anything readable: `block.basefee`, the collection's own state via `ISurfaceView`, companion contracts (lock counters, attestation boards), or any other onchain data. It just can't act on what it reads.
 
 ## Installing a strategy
 
 ```solidity
-function setPriceStrategy(address strategy) external; // owner-only
+function setPriceStrategy(address strategy) external; // owner or admin
 ```
 
 Setting `address(0)` reverts to the collection's stored fixed `price`. A collection with no strategy set uses that stored price directly; setting a strategy overrides it entirely, including for `currentPrice` reads used by mint surfaces to display a live quote.
 
 ## Example: fixed price per collection
 
-The simplest useful strategy: a shared singleton that serves a fixed per-collection price, set by each collection's own owner, in place of the stored `cfg.price` (useful when a strategy needs to be swapped in and out without touching the stored config, or when a factory-level default should apply across many collections).
+The simplest useful strategy: a shared singleton that serves a fixed per-collection price, set by each collection's own owner or an admin, in place of the stored `cfg.price` (useful when a strategy needs to be swapped in and out without touching the stored config, or when a factory-level default should apply across many collections).
 
 ```solidity
 // SPDX-License-Identifier: GPL-3.0
@@ -46,8 +46,9 @@ pragma solidity ^0.8.24;
 
 import {IPriceStrategy} from "./interfaces/IPriceStrategy.sol";
 
-interface ICollectionOwner {
+interface ISurfaceAuth {
     function owner() external view returns (address);
+    function isAdmin(address account) external view returns (bool);
 }
 
 contract FixedPriceStrategy is IPriceStrategy {
@@ -56,7 +57,10 @@ contract FixedPriceStrategy is IPriceStrategy {
     event PriceSet(address indexed collection, uint256 price);
 
     function setPrice(address collection, uint256 price) external {
-        require(msg.sender == ICollectionOwner(collection).owner(), "not collection owner");
+        require(
+            msg.sender == ISurfaceAuth(collection).owner() || ISurfaceAuth(collection).isAdmin(msg.sender),
+            "not collection owner or admin"
+        );
         priceOf_[collection] = price;
         emit PriceSet(collection, price);
     }
@@ -74,7 +78,7 @@ contract FixedPriceStrategy is IPriceStrategy {
 
 ## Example: dynamic, reads chain state
 
-A basefee-scaled price, the reference shape for participatory or evolving works (TBAM-style pricing: `basefee x f(companion state)`). This example scales with `block.basefee` and a per-collection multiplier the owner sets, clamped to a floor:
+A basefee-scaled price, the reference shape for participatory or evolving works (TBAM-style pricing: `basefee x f(companion state)`). This example scales with `block.basefee` and a per-collection multiplier the owner or an admin sets, clamped to a floor:
 
 ```solidity
 // SPDX-License-Identifier: GPL-3.0
@@ -82,8 +86,9 @@ pragma solidity ^0.8.24;
 
 import {IPriceStrategy} from "./interfaces/IPriceStrategy.sol";
 
-interface ICollectionOwner {
+interface ISurfaceAuth {
     function owner() external view returns (address);
+    function isAdmin(address account) external view returns (bool);
 }
 
 contract BasefeeScaledStrategy is IPriceStrategy {
@@ -97,7 +102,10 @@ contract BasefeeScaledStrategy is IPriceStrategy {
     event ConfigSet(address indexed collection, uint256 floor, uint256 multiplier);
 
     function setConfig(address collection, uint256 floor, uint256 multiplier) external {
-        require(msg.sender == ICollectionOwner(collection).owner(), "not collection owner");
+        require(
+            msg.sender == ISurfaceAuth(collection).owner() || ISurfaceAuth(collection).isAdmin(msg.sender),
+            "not collection owner or admin"
+        );
         configOf[collection] = Config({floor: floor, multiplier: multiplier});
         emit ConfigSet(collection, floor, multiplier);
     }

@@ -170,18 +170,59 @@ never cleanly merge into `main`; don't revive or build on them:
 `rpc-public-fallback`. (`tl-into-ponder` and `rpc-public-fallback` have
 WIP stashes attached — leave those alone.)
 
-## PND Editions (native protocol)
+## PND Surface System (native protocol)
 
-PND's own ERC721A edition protocol (artist-owned contracts, honest pricing
-with no protocol fee, per-token Mint Marks, Release Graph, Token Path). This
-is distinct from the external platforms above (Foundation/Manifold/Mint/etc.)
-that PND *indexes* for catalogs — Editions is a protocol PND *ships*. Lives in
-`contracts/src/editions/`, `apps/web/src/app/editions/` +
-`components/editions/`, with `pnpm dev:editions` for local fork testing.
-Discovery indexing is deploy-gated. **Start at `docs/pnd-editions-README.md`.**
+PND's own onchain collection protocol (artist-owned contracts, honest
+pricing with no protocol fee, per-token Mint Marks). This is distinct from
+the external platforms above (Foundation/Manifold/Mint/etc.) that PND
+*indexes* for catalogs, the Surface system is a protocol PND *ships*. A
+single OZ ERC721 core with four swappable slots (minter, price, renderer,
+hooks) and per-token id modes; Editions is now one preset of this general
+core, not a separate contract. Lives in `contracts/src/surface/`
+(`src/editions/` was removed). **Start at `docs/pnd-surface-system.md`
+and `docs/pnd-surface-contracts-plan.md`**, with
+`docs/injection-convention.md` for the onchain-render data contract.
+
+**2026-07 surface reduction:** the Collection Graph, Token Path, and
+CollectionKind were REMOVED from the core contract (they were write-only —
+no onchain reader — and the implementation was over the EIP-170 size limit;
+a size-gate test now enforces headroom). The Release Graph / Token Path
+*product* is planned as a companion registry singleton (Attribution-style,
+authority borrowed from each collection), not core storage. Per-token storage
+is the SEED ONLY (2026-07-10 follow-up: the MintRecord — mintBlock+mintIndex
+— was also cut, ~22k gas/mint): sequential mint order IS the token id,
+first/final derive live, and order/referrer/status are event-only provenance
+on `Minted` (which no longer carries a mintBlock field — the log's block is
+implicit). `mintMarkOf`/`MintMark`/`IMintMarks` are gone; renderers derive
+traits via `config()`; works needing mint-time data (block, pooled order)
+record it themselves via a mint hook (see the MiniTBAM `MintClock`
+reference). Follow-up (c): `Liveness` (write-only WorkConfig enum) and
+`_nextId` (== `_mintedEver + 1`) also cut. Follow-up (d): ALL presentation
+data moved to renderer-land — WorkConfig lives in GenerativeRenderer's
+per-collection registry (setWork/lockWork/workOf, auth borrowed from the
+collection's owner/isAdmin), covers + captures in the new RenderAssets
+singleton; core locks are now `lockRenderer()` (optional pointer pin,
+replaces freezeMetadata) + `lockSupply()`; seed formula drops the recipient
+(keccak(prevrandao, collection, tokenId, mintIndex), spec'd in
+docs/injection-convention.md); factory gains one-way deployer-only
+deprecate(successor) halting new clones only. Follow-up (e): Attribution.sol
+CUT — attribution is now a two-sided onchain handshake on the collection
+(owner setCreators/isListedCreator + creator claims in the Catalog public good;
+isConfirmedCreator = live intersection via Catalog.isContractRegistered). Core:
+18,939 bytes. Lifecycle status is derived (`Scheduled`/`Open`/`Closed`), and
+the window/price/royalty/cap are live-settable with `lockSupply()` as the
+scarcity promise beside `lockWork`/`freezeMetadata`. Design-doc sections
+describing graph/path as core fields predate this and are historical.
 
 ## See also
 
+- `docs/pnd-surface-prelaunch.md` — the post-deploy → launch runbook:
+  ordered checklist (addresses, source verification, discovery indexing,
+  launch collection, mint surfaces, pre-announce audit) with a
+  ready-to-paste kickoff prompt per item.
+- `docs/pnd-surface-post-deploy.md` — everything deliberately deferred
+  past the Surface system's launch (capture tooling, MURI adapter,
+  additive minter/hook modules), so it doesn't get forgotten.
 - `docs/pnd-editions-README.md` — PND Editions: overview, file map, dev/test/
   deploy, verification status (entry point; links the design plan, interface
   spec, integration runbook, and e2e harness).

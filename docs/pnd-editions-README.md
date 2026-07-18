@@ -1,5 +1,13 @@
 # PND Editions
 
+> **SUPERSEDED (2026-07-06).** The Editions contract was reworked into the
+> Surface system (OZ ERC721 core, four slots, id modes); see
+> docs/pnd-surface-system.md and docs/pnd-surface-contracts-plan.md.
+> This document describes the pre-rework ERC721A design; payment-split,
+> hook, and graph concepts carry over, token-layer specifics do not.
+> Contracts now live in contracts/src/collection/ (src/editions/ was
+> removed).
+
 > Entry point for the PND Editions feature. Start here, then follow the
 > links. This doc is the map: what it is, where every piece lives, how to
 > develop / test / deploy, and what is verified vs deploy-gated.

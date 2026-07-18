@@ -12,7 +12,7 @@ Four entry points, all served as static JSON:
 | Path | What it is |
 | --- | --- |
 | [`/protocol-manifest.json`](/protocol-manifest.json) | addresses, contract kinds, ABI paths, and docs links for every contract, grouped by protocol |
-| `/abis/<ContractName>.json` | the raw ABI array for each contract, e.g. `/abis/SovereignCollection.json` |
+| `/abis/<ContractName>.json` | the raw ABI array for each contract, e.g. `/abis/Surface.json` |
 | [`/llms.txt`](/llms.txt) | LLM orientation file: a compact summary of the protocols plus a linked index of every docs page |
 | [`/docs-search-index.json`](/docs-search-index.json) | the docs search corpus, an array of `{path, page, heading, anchor, text}` entries |
 
@@ -31,19 +31,19 @@ Four entry points, all served as static JSON:
       "title": "Collections",
       "docs": "/docs/collections/overview",
       "contracts": {
-        "SovereignCollection": {
+        "Surface": {
           "address": null,
           "kind": "clone",
-          "abi": "/abis/SovereignCollection.json",
-          "docs": "/docs/collections/contracts/sovereign-collection",
-          "role": "The one core of the PND Collection System..."
+          "abi": "/abis/Surface.json",
+          "docs": "/docs/collections/contracts/surface",
+          "role": "The one core of the PND Surface System..."
         },
-        "SovereignCollectionFactory": {
-          "address": "{{addr:collectionFactory}}",
+        "SurfaceFactory": {
+          "address": "{{addr:surfaceFactory}}",
           "kind": "singleton",
-          "abi": "/abis/SovereignCollectionFactory.json",
+          "abi": "/abis/SurfaceFactory.json",
           "docs": "/docs/collections/contracts/factory",
-          "role": "Deploys and configures SovereignCollection clones"
+          "role": "Deploys and configures Surface clones"
         }
       }
     },
@@ -68,27 +68,27 @@ Four entry points, all served as static JSON:
 
 ABIs are served under `/abis/` for every contract and interface across the protocols:
 
-Collections core and factory: `SovereignCollection`, `SovereignCollectionFactory`
+Collections core and factory: `Surface`, `SurfaceFactory`
 
-Collections shared singletons: `Attribution`, `DefaultRenderer`, `GenerativeRenderer`
+Collections shared singletons: `DefaultRenderer`, `RenderAssets`
 
-Collections reference mint hooks: `AllowlistHook`, `PerWalletCapHook`, `HoldsCollectionHook`
+Collections reference mint hooks: `AllowlistHook`, `PerWalletCapHook`, `HoldsSurfaceHook`
 
-Collections slot interfaces: `IMintHook`, `IPriceStrategy`, `IRenderer`, `ICollectionView`
+Collections slot interfaces: `IMintHook`, `IPriceStrategy`, `IRenderer`, `ISurfaceView`
 
 Auctions: `SovereignAuctionHouse`, `SovereignAuctionHouseFactory`
 
-Fetch any of these directly, e.g. `/abis/SovereignCollection.json`, or import the typed version from the npm workspace package.
+Fetch any of these directly, e.g. `/abis/Surface.json`, or import the typed version from the npm workspace package.
 
 ## The @pin/abi package
 
 Every ABI is also shipped as a typed TypeScript export in the `@pin/abi` workspace package, `as const` for viem/wagmi type inference:
 
 ```ts
-import {sovereignCollectionAbi, sovereignCollectionFactoryAbi} from '@pin/abi';
-import {attributionAbi, generativeRendererAbi, defaultRendererAbi} from '@pin/abi';
-import {allowlistHookAbi, perWalletCapHookAbi, holdsCollectionHookAbi} from '@pin/abi';
-import {iMintHookAbi, iPriceStrategyAbi, iRendererAbi, iCollectionViewAbi} from '@pin/abi';
+import {surfaceAbi, surfaceFactoryAbi} from '@pin/abi';
+import {defaultRendererAbi, renderAssetsAbi} from '@pin/abi';
+import {allowlistHookAbi, perWalletCapHookAbi, holdsSurfaceHookAbi} from '@pin/abi';
+import {iMintHookAbi, iPriceStrategyAbi, iRendererAbi, iSurfaceViewAbi} from '@pin/abi';
 import {sovereignAuctionHouseAbi, sovereignAuctionHouseFactoryAbi} from '@pin/abi';
 ```
 
@@ -103,7 +103,7 @@ import {mainnet} from 'viem/chains';
 const ORIGIN = 'https://pnd.ripe.wtf';
 
 const manifest = await fetch(`${ORIGIN}/protocol-manifest.json`).then((r) => r.json());
-const entry = manifest.protocols.collections.contracts.SovereignCollectionFactory;
+const entry = manifest.protocols.collections.contracts.SurfaceFactory;
 const abi = await fetch(`${ORIGIN}${entry.abi}`).then((r) => r.json());
 
 const client = createPublicClient({
@@ -112,7 +112,7 @@ const client = createPublicClient({
 });
 
 const factory = getContract({address: entry.address, abi, client});
-const total = await factory.read.totalCollections();
+const total = await factory.read.totalSurfaces();
 ```
 
 ## Pre-deploy status

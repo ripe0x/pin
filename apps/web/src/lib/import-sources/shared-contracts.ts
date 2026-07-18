@@ -24,10 +24,10 @@ export const KNOWN_SHARED_CONTRACTS: Record<Address, { platform: string; note: s
     platform: "OpenSea Shared Storefront",
     note: "Lazy-mint contract used by anyone via OpenSea's old shared collection.",
   },
-  // Foundation shared 1/1 contract — pre-Collections artists minted here.
+  // Foundation shared 1/1 contract — pre-Surface artists minted here.
   "0x3b3ee1931dc30c1957379fac9aba94d1c48a5405": {
     platform: "Foundation",
-    note: "Foundation's pre-Collections shared 1/1 contract.",
+    note: "Foundation's pre-Surface shared 1/1 contract.",
   },
   // Rarible v2 multi-token (ERC-1155). Multi-artist by design.
   "0xd07dc4262bcdbf85190c01c996b4c06a461d2430": {
