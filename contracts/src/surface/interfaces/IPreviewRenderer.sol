@@ -4,14 +4,14 @@ pragma solidity ^0.8.24;
 /// @title IPreviewRenderer
 /// @notice OPTIONAL renderer extension: render what a token WOULD look like
 ///         for a caller-supplied seed, without any token existing. Previews
-///         are a pure function of chain state, exactly like the live view —
+///         are a pure function of chain state, exactly like the live view,
 ///         any integrator, marketplace, or self-hosted mint page can
 ///         eth_call sample outputs with nothing but an RPC.
 ///
 ///         Renderers that can render faithfully from (tokenId, seed) alone
 ///         implement this; renderers whose output depends on state a preview
 ///         cannot fake (sibling tokens, companion contracts, hook-recorded
-///         mint-time data) simply don't. Detection is a try/catch eth_call —
+///         mint-time data) simply don't. Detection is a try/catch eth_call,
 ///         the repo convention is magic values and feature probing, not
 ///         ERC-165.
 ///
@@ -24,7 +24,7 @@ interface IPreviewRenderer {
     /// @notice Render preview metadata for a hypothetical token.
     /// @param collection The collection the preview is for (its name and
     ///        render settings are read live).
-    /// @param tokenId The hypothetical token id — art keyed to mint order
+    /// @param tokenId The hypothetical token id, art keyed to mint order
     ///        reads this, so callers preview "the next token" by passing
     ///        minted + 1.
     /// @param seed Caller-supplied entropy standing in for tokenSeed. Any

@@ -12,7 +12,7 @@ import {RenderAssets} from "./RenderAssets.sol";
 ///         ownerless instance serves them all: it reads the collection's own
 ///         views (the collection is a parameter, never msg.sender), fetches
 ///         the image from RenderAssets, and answers with a base64 JSON data
-///         URI — the artwork plus derived provenance traits. A collection
+///         URI, the artwork plus derived provenance traits. A collection
 ///         that wants per-token or generative art points its renderer slot
 ///         somewhere else.
 contract DefaultRenderer is IRenderer {
