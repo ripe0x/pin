@@ -22,7 +22,7 @@ import {SurfaceConfig, SurfaceStatus, IdMode, InitParams} from "./SurfaceTypes.s
 ///         fixed share for whoever hosted the mint. There is no other fee.
 ///
 ///         The contract writes down one thing per token: a seed, stamped the
-///         moment the token is minted. Order, block, lifecycle — all of that
+///         moment the token is minted. Order, block, lifecycle: all of that
 ///         is either the token id itself or sits in the event log, and
 ///         Ethereum is very good at keeping logs.
 ///
@@ -33,13 +33,13 @@ import {SurfaceConfig, SurfaceStatus, IdMode, InitParams} from "./SurfaceTypes.s
 ///         (lockSupply). A lock set at init means the work is born that way.
 ///
 ///         What this base does NOT have is a mint entrypoint. Each id mode is
-///         its own final contract — Surface counts ids, PooledSurface
-///         lets its minter choose them — and each ships only its own doors.
+///         its own final contract: Surface counts ids, PooledSurface
+///         lets its minter choose them; each ships only its own doors.
 ///
 /// @dev    Finals deploy as immutable EIP-1167 clones: no proxy admin, no
 ///         upgrade path. What deploys is what runs. The OZ "Upgradeable"
-///         bases are here only for their initializer pattern — a clone runs
-///         no constructor — and nothing on top of them can be upgraded. The
+///         bases are here only for their initializer pattern (a clone runs
+///         no constructor), and nothing on top of them can be upgraded. The
 ///         core evolves by deploying new implementations and a new factory,
 ///         never by touching a live collection.
 abstract contract SurfaceCore is
@@ -53,7 +53,7 @@ abstract contract SurfaceCore is
 
     uint16 internal constant BPS = 10_000;
     /// @notice The fixed protocol referral share: 10%, paid to whoever hosts
-    ///         the mint. Not artist-set. Not a protocol fee — on a direct
+    ///         the mint. Not artist-set. Not a protocol fee: on a direct
     ///         mint it folds back to the artist.
     uint16 public constant override REFERRAL_SHARE_BPS = 1_000;
     /// @dev EIP-2981 is advisory, but a 50% ceiling keeps a permissionless
@@ -92,7 +92,7 @@ abstract contract SurfaceCore is
     ///      root that hands out keys and that marketplaces read as owner().
     // account => the owner that granted it (0 = not an admin). A grant is valid only while
     // _admins[account] == owner(), so an ownership transfer silently invalidates every
-    // inherited grant — the new owner starts with a clean slate and re-grants deliberately.
+    // inherited grant; the new owner starts with a clean slate and re-grants deliberately.
     mapping(address => address) internal _admins;
 
     // The single live source of truth for every setting, including the module
@@ -101,7 +101,7 @@ abstract contract SurfaceCore is
     SurfaceConfig internal _cfg;
 
     // Mints ever, both forms. Burns never decrement it. In the sequential
-    // final the next id is _mintedEver + 1 — the mint order and the id are
+    // final the next id is _mintedEver + 1: the mint order and the id are
     // the same number, so there is no second counter to keep honest.
     uint256 internal _mintedEver;
     uint256 internal _burnedCount;
@@ -135,13 +135,13 @@ abstract contract SurfaceCore is
         _cfg = p.cfg;
         // The renderer slot always holds a real address: the artist's choice,
         // or the factory default when they made none. It must be a deployed
-        // contract — a typo here plus a born-true rendererLocked would brick
+        // contract; a typo here plus a born-true rendererLocked would brick
         // tokenURI forever, so the mistake is refused at the door.
         if (p.cfg.renderer == address(0)) _cfg.renderer = p.defaultRenderer;
         if (_cfg.renderer == address(0)) revert RendererRequired();
         if (_cfg.renderer.code.length == 0) revert RendererNotContract(_cfg.renderer);
         // The hook and price-strategy slots are optional (0 = none), but a nonzero value
-        // must be a real contract — an EOA/typo would revert every mint on the ABI-decode
+        // must be a real contract; an EOA/typo would revert every mint on the ABI-decode
         // of empty returndata. Same rule the setters enforce.
         if (_cfg.mintHook != address(0) && _cfg.mintHook.code.length == 0) revert NotAContract(_cfg.mintHook);
         if (_cfg.priceStrategy != address(0) && _cfg.priceStrategy.code.length == 0) {
@@ -156,7 +156,7 @@ abstract contract SurfaceCore is
             _minterCount += 1;
             emit MinterSet(m, true);
         }
-        // The pooled form runs on a single minter — its burn is minter-wide,
+        // The pooled form runs on a single minter: its burn is minter-wide,
         // so a second could retire a token the first one backs. A clone can't
         // be born over that either.
         if (idMode() == IdMode.Pooled && _minterCount > 1) revert TooManyMinters();
@@ -174,7 +174,7 @@ abstract contract SurfaceCore is
     // Form-specific facts, answered by each final
     // ─────────────────────────────────────────────────────────────────────────
 
-    /// @notice Which kind of collection this is — a fact of the contract, not
+    /// @notice Which kind of collection this is: a fact of the contract, not
     ///         a setting.
     function idMode() public pure virtual override returns (IdMode);
 
@@ -183,7 +183,7 @@ abstract contract SurfaceCore is
     function _capUsage() internal view virtual returns (uint256);
 
     /// @dev Whether a full cap closes the collection for good. True only in
-    ///      the sequential final — a pooled cap frees room again on burn.
+    ///      the sequential final; a pooled cap frees room again on burn.
     function _capFilled() internal view virtual returns (bool);
 
     /// @dev Who may burn `tokenId`, given its current owner.
@@ -194,14 +194,14 @@ abstract contract SurfaceCore is
     // ─────────────────────────────────────────────────────────────────────────
 
     /// @dev Ownership + entropy, the shared per-token effects. OZ _mint
-    ///      reverts on an existing id — that single check is the pooled-form
+    ///      reverts on an existing id; that single check is the pooled-form
     ///      correctness argument: a live id can never be minted over.
     function _mintOne(address to, uint256 tokenId) internal {
         uint256 mintIndex = _mintedEver;
         _mintedEver = mintIndex + 1;
         _mint(to, tokenId);
         // The canonical seed: a pure function of public chain state and token
-        // identity. No recipient — mixing the minter's address into entropy
+        // identity. No recipient: mixing the minter's address into entropy
         // is an opinion the artist never chose, and a wallet-grinding surface
         // besides. mintIndex is what re-rolls a pooled re-mint of the same
         // id. Spec: docs/injection-convention.md.
@@ -212,7 +212,7 @@ abstract contract SurfaceCore is
     ///         approved in the sequential form; authorized minters only in the
     ///         pooled form. The pooled form holds one minter and can freeze it
     ///         (lockMinter), so a locked backed collection has exactly one
-    ///         address that can ever retire an id — its backing can't be
+    ///         address that can ever retire an id; its backing can't be
     ///         stranded from outside. The burned instance's seed stays readable
     ///         until a pooled re-mint overwrites it.
     function burn(uint256 tokenId) external override nonReentrant {
@@ -328,7 +328,7 @@ abstract contract SurfaceCore is
     /// @notice Grant an admin (owner-only). Reverts on the zero address and on a duplicate
     ///         grant, so every grant is one explicit state change with one matching event.
     ///         The owner is already an admin (isAdmin reads it live), so adding the current
-    ///         owner is rejected. The grant is scoped to THIS owner — it stores who granted
+    ///         owner is rejected. The grant is scoped to THIS owner: it stores who granted
     ///         it and stops counting the moment ownership moves on, so a new owner never
     ///         silently inherits the old owner's keys.
     function addAdmin(address account) external override onlyOwner {
@@ -352,8 +352,8 @@ abstract contract SurfaceCore is
     /// @notice Whether `account` may use the admin-gated setters: the owner,
     ///         or anyone holding an explicit grant. The owner has held every
     ///         admin power all along (the modifier's other arm); reporting it
-    ///         here keeps external checks — MURI gates registration on this
-    ///         view — honest about who can act.
+    ///         here keeps external checks that gate on this view honest about
+    ///         who can act.
     function isAdmin(address account) external view override returns (bool) {
         return account == owner() || _isAdmin(account);
     }
@@ -364,7 +364,7 @@ abstract contract SurfaceCore is
 
     /// @notice Reschedule the built-in paid mint window: delay, extend,
     ///         shorten, or reopen. Either bound may be 0 (open immediately /
-    ///         open-ended). Governs the paid path only — extension minters
+    ///         open-ended). Governs the paid path only; extension minters
     ///         keep their own schedules. Lifecycle status is derived live, so
     ///         reopening a closed window un-finalizes cleanly; each token's
     ///         recorded statusAtMint stays truthful for its own mint.
@@ -374,7 +374,7 @@ abstract contract SurfaceCore is
         _cfg.mintEnd = end;
         emit MintWindowSet(start, end);
         // The window drives the live lifecycle status (Scheduled/Open/Closed), which the
-        // renderer stamps into token metadata — signal marketplaces to refresh.
+        // renderer stamps into token metadata; signal marketplaces to refresh.
         emit BatchMetadataUpdate(0, type(uint256).max);
     }
 
@@ -405,11 +405,11 @@ abstract contract SurfaceCore is
         }
         _cfg.supplyCap = supplyCap;
         emit SupplyCapSet(supplyCap);
-        // The cap decides which token is the collection's "final mint" trait — refresh.
+        // The cap decides which token is the collection's "final mint" trait; refresh.
         emit BatchMetadataUpdate(0, type(uint256).max);
     }
 
-    /// @notice One-way: lock the supply cap forever — the scarcity promise.
+    /// @notice One-way: lock the supply cap forever: the scarcity promise.
     ///         The cap binds every mint path, so no later minter grant can
     ///         climb over it.
     function lockSupply() external override onlyOwnerOrAdmin {
@@ -449,7 +449,7 @@ abstract contract SurfaceCore is
     /// @notice Emit an ERC-4906 refresh for changes the core cannot see: a
     ///         chain-live work whose output moved, a reveal, new captures.
     ///         Callable by the current renderer or owner/admin. Works after
-    ///         lockRenderer — the lock pins the pointer, not the weather.
+    ///         lockRenderer, since the lock pins the pointer, not the weather.
     ///         Pure event emission; no state is touched.
     function notifyMetadataUpdate(uint256 fromTokenId, uint256 toTokenId) external override {
         if (msg.sender != renderer() && msg.sender != owner() && !_isAdmin(msg.sender)) {
@@ -458,7 +458,7 @@ abstract contract SurfaceCore is
         emit BatchMetadataUpdate(fromTokenId, toTokenId);
     }
 
-    /// @notice Grant or revoke an extension minter — the artist's visible,
+    /// @notice Grant or revoke an extension minter: the artist's visible,
     ///         onchain choice, and the lever over a minter's schedule. Reverts
     ///         once the minter set is locked. The pooled form holds one minter
     ///         at a time, so a redundant call is a no-op rather than a way to
@@ -500,7 +500,7 @@ abstract contract SurfaceCore is
 
     /// @notice Live, mutual attribution: the owner listed `who` AND `who`
     ///         claimed this collection in the Catalog. Read live, so either
-    ///         side can retract and the credit goes with it — no stored
+    ///         side can retract and the credit goes with it; no stored
     ///         confirmation to drift. False when no Catalog is set.
     function isConfirmedCreator(address who) external view override returns (bool) {
         if (!isListedCreator[who]) return false;
@@ -516,7 +516,7 @@ abstract contract SurfaceCore is
 
     /// @notice One-way, optional: pin the renderer pointer forever, so this
     ///         exact contract answers tokenURI for good. The core cannot
-    ///         attest what a renderer does inside — an immutable renderer
+    ///         attest what a renderer does inside: an immutable renderer
     ///         behind a locked pointer is full presentation permanence; a
     ///         mutable one behind a locked pointer is the artist's explicit,
     ///         inspectable choice. Not locked by default.
@@ -528,7 +528,7 @@ abstract contract SurfaceCore is
 
     /// @notice One-way, optional: freeze the minter set forever. For a backed
     ///         pooled collection this is the promise that no minter can be
-    ///         swapped in later to retire another minter's backed tokens — set
+    ///         swapped in later to retire another minter's backed tokens; set
     ///         it once the intended minter is wired. Redundant on a collection
     ///         with no extension minters, but harmless.
     function lockMinter() external override {
@@ -539,7 +539,7 @@ abstract contract SurfaceCore is
     }
 
     /// @dev Authorize a minter-set change. A pooled collection backs real value through its
-    ///      single minter, so swapping or locking it is OWNER-ONLY — a delegated admin must
+    ///      single minter, so swapping or locking it is OWNER-ONLY: a delegated admin must
     ///      never be able to rotate the minter and burn another minter's backed tokens (the
     ///      pooled stranded-escrow rug). A sequential collection carries no backing, so
     ///      owner-or-admin is fine there, matching every other management setter.
@@ -575,10 +575,10 @@ abstract contract SurfaceCore is
 
     /// @dev Status is a pure function of the window, the cap, and the clock.
     ///      Nothing stored, nothing to drift: change the window and the
-    ///      status follows. Scheduled — before mintStart (the paid path
+    ///      status follows. Scheduled: before mintStart (the paid path
     ///      reverts, but an extension minter may mint, and its event
-    ///      truthfully says Scheduled). Closed — the window passed, or the
-    ///      final says its cap closed it. Open — otherwise.
+    ///      truthfully says Scheduled). Closed: the window passed, or the
+    ///      final says its cap closed it. Open: otherwise.
     function _lifecycleStatus() internal view returns (SurfaceStatus) {
         if (_cfg.mintStart != 0 && block.timestamp < _cfg.mintStart) {
             return SurfaceStatus.Scheduled;
