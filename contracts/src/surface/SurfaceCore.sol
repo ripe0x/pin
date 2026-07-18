@@ -38,6 +38,12 @@ import {SurfaceConfig, SurfaceStatus, IdMode, InitParams} from "./SurfaceTypes.s
 ///         implementations behind a new factory, never by changing a
 ///         deployed collection.
 abstract contract SurfaceCore is
+    // The OZ "Upgradeable" bases mean initializer-based (constructor-free), which
+    // is required because the finals deploy as EIP-1167 clones and a clone never
+    // runs a constructor; state is set in initialize(). It does NOT mean these
+    // are upgradeable: the clones are immutable, with no proxy admin and no
+    // upgrade path (the implementation calls _disableInitializers). To change
+    // behavior, deploy a new implementation and a new factory.
     ERC721Upgradeable,
     Ownable2StepUpgradeable,
     ReentrancyGuardUpgradeable,
