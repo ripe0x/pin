@@ -152,11 +152,11 @@ export async function allowlistProofFor(address: string): Promise<`0x${string}`[
 }
 
 // ── quote provider: "homage-quote" ────────────────────────────────────────────
-// One provider serves all three phases; the fee folded into msg.value differs:
-// public pays the caller's escalating `mintFeeOf(wallet)`, claim + allowlist
-// pay the flat `baseFee` (priority, not a discount — the swap/escrow economics
-// are identical). Throwing (quoter revert, thin pool) disables the mint button
-// with the reason, per the registry contract.
+// One provider serves all three phases. Every window now folds in the caller's
+// escalating `mintFeeOf(wallet)` (claims and allowlist mints escalate on the same
+// per-wallet counter as public — the claim privilege is choosing your own id, not a
+// fee discount). Throwing (quoter revert, thin pool) disables the mint button with
+// the reason, per the registry contract.
 
 registerQuoteProvider("homage-quote", async ({ client, wallet, phaseKey }) => {
   if (!HOMAGE_MINTER_ADDRESS || !isAddress(HOMAGE_MINTER_ADDRESS))
@@ -170,9 +170,7 @@ registerQuoteProvider("homage-quote", async ({ client, wallet, phaseKey }) => {
     allowFailure: true,
     contracts: [
       { address: V4_STATE_VIEW, abi: stateViewAbi, functionName: "getSlot0", args: [HOMAGE_POOL_ID] },
-      isPublic
-        ? { address: minter, abi: homageMinterAbi as Abi, functionName: "mintFeeOf", args: [wallet ?? zeroAddress] }
-        : { address: minter, abi: homageMinterAbi as Abi, functionName: "baseFee" },
+      { address: minter, abi: homageMinterAbi as Abi, functionName: "mintFeeOf", args: [wallet ?? zeroAddress] },
     ],
   })
   if (slot0Res.status !== "success") throw new Error("pool price unavailable")
@@ -200,7 +198,7 @@ registerQuoteProvider("homage-quote", async ({ client, wallet, phaseKey }) => {
     value,
     breakdown: [
       { label: "Buys 50,000 $111", wei: ethForSwap },
-      { label: isPublic ? "Mint fee (this wallet)" : "Mint fee", wei: fee },
+      { label: "Mint fee (this wallet)", wei: fee },
       { label: "Total", wei: value },
     ],
     note: "Includes 5% headroom; excess $111 and leftover ETH are refunded",

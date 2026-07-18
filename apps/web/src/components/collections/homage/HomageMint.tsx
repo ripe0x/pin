@@ -4,9 +4,9 @@
 // page in place of the generic direct-sale CTA (homage is pooled + minter-driven).
 //
 // Full phased flow, rebuilt in PND's design system:
-//   claim     — punk holders mint the homage for their own punk (flat baseFee); routes
+//   claim     — punk holders mint the homage for their own punk (SAME escalating fee); routes
 //               direct / delegate.xyz / permissionless (see HomageClaim)
-//   allowlist — Merkle-gated random draw (flat baseFee)
+//   allowlist — Merkle-gated random draw (SAME escalating per-wallet fee)
 //   public    — anyone, random draw, escalating per-wallet fee
 // Every path swaps ETH→$111 and escrows THRESHOLD inside the piece. A redeem panel
 // (burn → unescrow) shows whenever the connected wallet holds homages.
@@ -36,9 +36,13 @@ import {
 } from "@/components/tx/tx-ui"
 import {
   BASE_FEE,
+  CRYPTOPUNKS_MARKET,
+  WRAPPED_PUNKS,
   homageFlows,
   homageMinterAbi,
+  punksMarketAbi,
   quoteMint,
+  wrappedPunksAbi,
   type MintQuote,
 } from "@/lib/homage/contracts"
 import {type Phase, type Schedule, claimOpen, currentPhase, nextTransition, reservationOpenAt} from "@/lib/homage/phase"
@@ -76,7 +80,7 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
       {address: minter, abi: homageMinterAbi, functionName: "allowlistMinted", args: [address ?? ZERO], chainId: PREFERRED_CHAIN.id},
       {address: minter, abi: homageMinterAbi, functionName: "exitFee", chainId: PREFERRED_CHAIN.id},
       {address: minter, abi: homageMinterAbi, functionName: "feeGrowthBps", chainId: PREFERRED_CHAIN.id},
-      {address: minter, abi: homageMinterAbi, functionName: "publicMints", args: [address ?? ZERO], chainId: PREFERRED_CHAIN.id},
+      {address: minter, abi: homageMinterAbi, functionName: "mintCount", args: [address ?? ZERO], chainId: PREFERRED_CHAIN.id},
       {address: minter, abi: homageMinterAbi, functionName: "reservedRemaining", chainId: PREFERRED_CHAIN.id},
     ],
   })
@@ -92,7 +96,7 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
   const maxPerAllowlisted = cfg.data?.[4]?.status === "success" ? Number(cfg.data[4].result as bigint) : undefined
   const allowlistUsed = cfg.data?.[5]?.status === "success" ? Number(cfg.data[5].result as bigint) : 0
   const feeGrowthBps = cfg.data?.[7]?.status === "success" ? (cfg.data[7].result as bigint) : 0n
-  const publicMintCount = cfg.data?.[8]?.status === "success" ? (cfg.data[8].result as bigint) : 0n
+  const walletMintCount = cfg.data?.[8]?.status === "success" ? (cfg.data[8].result as bigint) : 0n
   const reservedRemaining = cfg.data?.[9]?.status === "success" ? Number(cfg.data[9].result as bigint) : undefined
 
   const minted = totalMinted.data !== undefined ? Number(totalMinted.data as bigint) : null
@@ -124,14 +128,15 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
   // which could target an unmerged claim window instead).
   const nextPublic = schedule && schedule.publicStart !== 0 && nowSec < schedule.publicStart ? schedule.publicStart : null
 
-  // ── the caller's public-mint fee (escalates per wallet); claim/allowlist pay baseFee ──
+  // ── the connected wallet's escalating mint fee (ALL windows now escalate on this counter) ──
   const feeRead = useReadContract({
     address: minter, abi: homageMinterAbi, functionName: "mintFeeOf", args: [address ?? ZERO],
     chainId: PREFERRED_CHAIN.id, query: {enabled: !!address},
   })
   const publicFee = (feeRead.data as bigint | undefined) ?? baseFee
-  // The fee folded into the quote depends on the phase (claim/allowlist are flat baseFee).
-  const activeFee = phase === "public" ? publicFee : baseFee
+  // Every window escalates on the connected wallet's counter, so the display quote always
+  // folds in that wallet's live escalating fee (claimFor/claimTo re-resolve the recipient at send).
+  const activeFee = publicFee
 
   // allowlist eligibility — the proof file (~3.6MB with every punk holder on it) loads
   // lazily once a wallet is connected outside public; null = still loading (UNKNOWN).
@@ -210,7 +215,7 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
   }, [receipt, minter])
 
   const total = quote?.totalValue
-  const claimTotal = quote ? quote.ethForSwap + baseFee : undefined // claim/allowlist flat fee
+  const claimTotal = quote ? quote.ethForSwap + publicFee : undefined // claim/allowlist now escalate too
   const {data: balance} = useBalance({address, chainId: PREFERRED_CHAIN.id, query: {enabled: !!address && !wrongNetwork}})
   // Per-mint cost for the selected quantity: each token = the swap leg (≈ constant) + its
   // OWN escalating fee at counts publicMintCount, +1, +2, … (feeForCount mirrors the
@@ -219,9 +224,9 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
   const batchItems = useMemo(() => {
     if (phase !== "public" || !quote) return null
     return Array.from({length: batchQty}, (_, i) => ({
-      cost: quote.ethForSwap + feeForCount(baseFee, feeGrowthBps, publicMintCount + BigInt(i)),
+      cost: quote.ethForSwap + feeForCount(baseFee, feeGrowthBps, walletMintCount + BigInt(i)),
     }))
-  }, [phase, batchQty, quote, baseFee, feeGrowthBps, publicMintCount])
+  }, [phase, batchQty, quote, baseFee, feeGrowthBps, walletMintCount])
   const batchTotal = batchItems ? batchItems.reduce((s, it) => s + it.cost, 0n) : undefined
   const insufficient = !!balance && batchTotal !== undefined && !wrongNetwork && balance.value < batchTotal
   // Headline price: the escalating batch total in public, the flat claim fee otherwise.
@@ -260,26 +265,61 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
     if (!publicClient || !allowlistProof) return
     let q = quote
     try {
-      q = await quoteMint(publicClient, baseFee)
+      q = await quoteMint(publicClient, publicFee)
       setQuote(q)
     } catch {
       /* fall back */
     }
     if (!q) return
-    writeContract({...homageFlows(minter).allowlistMint(allowlistProof, q.ethForSwap + baseFee), chainId: PREFERRED_CHAIN.id})
-  }, [publicClient, quote, baseFee, allowlistProof, minter, writeContract])
+    writeContract({...homageFlows(minter).allowlistMint(allowlistProof, q.ethForSwap + publicFee), chainId: PREFERRED_CHAIN.id})
+  }, [publicClient, quote, publicFee, allowlistProof, minter, writeContract])
 
-  // claim routes are driven from HomageClaim, which needs a fresh quote value.
-  const claimValue = useCallback(async (): Promise<bigint | null> => {
-    if (!publicClient) return quote ? quote.ethForSwap + baseFee : null
-    try {
-      const q = await quoteMint(publicClient, baseFee)
-      setQuote(q)
-      return q.ethForSwap + baseFee
-    } catch {
-      return quote ? quote.ethForSwap + baseFee : null
-    }
-  }, [publicClient, quote, baseFee])
+  // claim routes are driven from HomageClaim. The escalating fee is keyed on the RECIPIENT
+  // (the wallet the homage mints to): the connected wallet for a direct claim, the vault for
+  // claimFor, the punk's holder for claimTo. Resolve that wallet's live mintFeeOf so we never
+  // under-send. Over-sending is safe (the swap refunds unspent ETH); under-sending reverts.
+  const claimValue = useCallback(
+    async (recipient?: Address, punkIdForHolder?: bigint): Promise<bigint | null> => {
+      if (!publicClient) return null
+      let target = recipient
+      if (!target && punkIdForHolder !== undefined) {
+        try {
+          let h = (await publicClient.readContract({
+            address: CRYPTOPUNKS_MARKET, abi: punksMarketAbi,
+            functionName: "punkIndexToAddress", args: [punkIdForHolder],
+          })) as Address
+          if (h.toLowerCase() === WRAPPED_PUNKS.toLowerCase()) {
+            h = (await publicClient.readContract({
+              address: WRAPPED_PUNKS, abi: wrappedPunksAbi, functionName: "ownerOf", args: [punkIdForHolder],
+            })) as Address
+          }
+          target = h
+        } catch {
+          /* fall through to the connected wallet */
+        }
+      }
+      target ??= address
+      // Reuse the connected wallet's already-read fee when it IS the recipient; else read live.
+      let fee = publicFee
+      if (target && address && target.toLowerCase() !== address.toLowerCase()) {
+        try {
+          fee = (await publicClient.readContract({
+            address: minter, abi: homageMinterAbi, functionName: "mintFeeOf", args: [target],
+          })) as bigint
+        } catch {
+          /* keep publicFee */
+        }
+      }
+      try {
+        const q = await quoteMint(publicClient, fee)
+        setQuote(q)
+        return q.ethForSwap + fee
+      } catch {
+        return quote ? quote.ethForSwap + fee : null
+      }
+    },
+    [publicClient, quote, publicFee, address, minter],
+  )
 
   // ── render helpers ─────────────────────────────────────────────────────────────
   const statusDot = soldOut ? "bg-status-sold" : phase !== "closed" ? "bg-status-available animate-pulse" : "bg-status-upcoming"

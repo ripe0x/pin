@@ -31,7 +31,7 @@ export function HomageClaim({
   address: Address
   refreshKey: number
   disabled: boolean
-  getClaimValue: () => Promise<bigint | null>
+  getClaimValue: (recipient?: Address, punkId?: bigint) => Promise<bigint | null>
   onClaim: (args: Flow) => void
 }) {
   const {punks, status} = useOwnedPunks(minter, address, refreshKey)
@@ -53,7 +53,8 @@ export function HomageClaim({
 
   async function claimDirect(id: number, vault?: Address) {
     setPendingId(id)
-    const value = await getClaimValue()
+    // recipient is the vault (claimFor) or the connected wallet (direct claim) — the fee escalates on it
+    const value = await getClaimValue(vault ?? address)
     setPendingId(null)
     if (value === null) return
     const bid = BigInt(id)
@@ -62,7 +63,8 @@ export function HomageClaim({
 
   async function claimAnyoneFor(id: number) {
     setPendingId(id)
-    const value = await getClaimValue()
+    // claimTo mints to the punk's HOLDER — resolve their escalating fee from the id
+    const value = await getClaimValue(undefined, BigInt(id))
     setPendingId(null)
     if (value === null) return
     onClaim(flows.claimTo(BigInt(id), value))
