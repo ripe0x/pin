@@ -122,6 +122,16 @@ contract DeploySurfaceSystemScript is Script {
 
         console2.log("SurfaceFactory deployed at:", address(factory));
 
+        // ── 5b. Land the factory PAUSED so no clone can be created until the
+        //        deployer opens it. setPaused is deployer-only and reversible:
+        //        flip it back with `factory.setPaused(false)` when ready to go
+        //        live. Distinct from the one-way `deprecate`.
+        vm.startBroadcast(deployerPk);
+        factory.setPaused(true);
+        vm.stopBroadcast();
+        require(factory.paused(), "factory not paused at deploy");
+        console2.log("SurfaceFactory paused at deploy (call setPaused(false) to open)");
+
         // ── 6. GateHook — public-good gate singleton (merkle allowlist +
         //        per-wallet cap in one hook), plain CREATE, no args. Deployed
         //        with the system so the studio's mint-gate tool and the mint
