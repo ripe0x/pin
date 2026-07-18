@@ -8,14 +8,11 @@ import {SurfaceStatus, IdMode} from "./SurfaceTypes.sol";
 import {IPriceStrategy} from "./interfaces/IPriceStrategy.sol";
 
 /// @title Surface
-/// @notice The sequential collection — the common form. The contract counts
-///         1, 2, 3: the token id IS the mint order, and ids never come back
-///         after a burn. An edition of 100 is 100, forever.
-///
-///         Collectors buy through the built-in paid paths below; authorized
-///         minters may also mint through mintTo on their own schedules. There
-///         is no id-choosing entrypoint anywhere in this contract — that is
-///         the whole guarantee, made by the ABI rather than by a check.
+/// @notice A collection whose token id is its mint order: ids are assigned
+///         1, 2, 3, ... and are never reused after a burn, so an edition of
+///         100 stays 100 for the life of the contract. Collectors buy through
+///         the paid paths below; an authorized minter can also mint through
+///         mintTo on its own schedule.
 contract Surface is SurfaceCore, ISurface {
     function idMode() public pure override(SurfaceCore, ISurfaceCore) returns (IdMode) {
         return IdMode.Sequential;
@@ -45,9 +42,9 @@ contract Surface is SurfaceCore, ISurface {
         _mintPaid(msg.sender, quantity, address(0), "");
     }
 
-    /// @notice Mint crediting `referrer` its share — PND on PND, the artist
-    ///         on their own site. referrer 0 folds the share back to the
-    ///         artist. `hookData` reaches the hook and the price strategy.
+    /// @notice Mint crediting `referrer` its share. referrer 0 folds the
+    ///         share back to the artist. `hookData` reaches the hook and the
+    ///         price strategy.
     function mintWithReferral(uint256 quantity, address referrer, bytes calldata hookData)
         external
         payable
@@ -57,12 +54,11 @@ contract Surface is SurfaceCore, ISurface {
         _mintPaid(msg.sender, quantity, referrer, hookData);
     }
 
-    /// @notice Paid mint to someone else: a gift, a hot wallet buying for a
-    ///         vault, a sponsor covering a collector. Same paid path, same
-    ///         price — only the recipient differs, and the event records the
-    ///         true first owner. `to` is who the hook and the price strategy
-    ///         judge (an allowlist gates the collector, not their payer); any
-    ///         overpayment refund accrues to the payer, who sent it.
+    /// @notice Paid mint to someone else: same paid path and price, only the
+    ///         recipient differs. The event records the true first owner.
+    ///         `to` is who the hook and the price strategy judge (an
+    ///         allowlist gates the collector, not their payer); any
+    ///         overpayment refund accrues to the payer.
     function mintFor(address to, uint256 quantity, address referrer, bytes calldata hookData)
         external
         payable
@@ -119,7 +115,7 @@ contract Surface is SurfaceCore, ISurface {
 
     /// @notice Authorized minters only. Non-payable: the calling minter
     ///         carries all value handling. Hooks and the cap apply exactly as
-    ///         on the paid path; the sale window does not — an extension
+    ///         on the paid path; the sale window does not, since an extension
     ///         minter owns its own schedule, and the artist's lever is
     ///         revoking the grant.
     function mintTo(address to, address referrer, bytes calldata hookData)

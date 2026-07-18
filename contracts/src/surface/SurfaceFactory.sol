@@ -12,7 +12,7 @@ import {SurfaceConfig, IdMode, InitParams} from "./SurfaceTypes.sol";
 ///         doors: createSurface for the sequential form (the contract
 ///         counts ids), createPooledSurface for the pooled form (the
 ///         minter chooses ids). No proxy admin, no upgrade path: what deploys
-///         is what runs. No fee lives here either — the referral share is a
+///         is what runs. No fee lives here either: the referral share is a
 ///         constant inside the collection, paid to whoever hosts the mint.
 ///
 ///         This is the one fixed address an indexer watches: one
@@ -43,7 +43,7 @@ contract SurfaceFactory {
     /// @notice One-way stop for NEW deploys. If an implementation turns out
     ///         to have a bug, deprecating halts further clones and points
     ///         integrators at the successor. Deployed collections are
-    ///         immutable and unaffected — by design nobody can touch them,
+    ///         immutable and unaffected: by design nobody can touch them,
     ///         including us.
     bool public deprecated;
     /// @notice The replacement factory once deprecated (informational).
@@ -82,7 +82,7 @@ contract SurfaceFactory {
         if (defaultRenderer_.code.length == 0) revert NotAContract(defaultRenderer_);
         // Catalog is optional (0 disables creator confirmation), but a nonzero value must be a
         // real contract: a mistyped/EOA/wrong-chain address passes silently here and then makes
-        // isConfirmedCreator revert forever on every collection this factory ever clones —
+        // isConfirmedCreator revert forever on every collection this factory ever clones;
         // unrecoverable, since collections are immutable and there is no setCatalog.
         if (catalog_ != address(0) && catalog_.code.length == 0) revert NotAContract(catalog_);
         sequentialImplementation = sequentialImplementation_;
@@ -103,19 +103,19 @@ contract SurfaceFactory {
     }
 
     /// @notice Reversible: pause or resume new deploys. Deployer-only. Independent of
-    ///         `deprecate` — a deprecated factory stays permanently off regardless.
+    ///         `deprecate`: a deprecated factory stays permanently off regardless.
     function setPaused(bool paused_) external {
         if (msg.sender != deployer) revert NotDeployer();
         paused = paused_;
         emit PausedSet(paused_);
     }
 
-    /// @notice Deploy + configure a sequential collection owned by `owner` —
+    /// @notice Deploy + configure a sequential collection owned by `owner`;
     ///         the common form: the contract counts ids, collectors buy
     ///         through the built-in paid paths.
     /// @param owner The artist. Explicit, so a deploy helper can create on
     ///        the artist's behalf.
-    /// @param cfg The full live config, including the two one-way locks —
+    /// @param cfg The full live config, including the two one-way locks:
     ///        pass them true and the collection is born locked.
     /// @param initialMinters Extension minters granted at init. Empty for
     ///        collections that sell only through the built-in paths.
@@ -133,7 +133,7 @@ contract SurfaceFactory {
         return _create(sequentialImplementation, IdMode.Sequential, name, symbol, owner, cfg, initialMinters, creators);
     }
 
-    /// @notice Deploy + configure a pooled collection owned by `owner` — the
+    /// @notice Deploy + configure a pooled collection owned by `owner`; the
     ///         backed/sourced form: an authorized minter chooses every id and
     ///         owns the pool's economics. Grant it in `initialMinters` so the
     ///         work deploys fully wired in one transaction.
