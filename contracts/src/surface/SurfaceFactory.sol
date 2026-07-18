@@ -13,7 +13,8 @@ import {SurfaceConfig, IdMode, InitParams} from "./SurfaceTypes.sol";
 ///         counts ids), createPooledSurface for the pooled form (the
 ///         minter chooses ids). No proxy admin, no upgrade path: what deploys
 ///         is what runs. No fee lives here either: the referral share is a
-///         constant inside the collection, paid to whoever hosts the mint.
+///         constant inside the collection, paid only to a referrer the owner
+///         approves there.
 ///
 ///         This is the one fixed address an indexer watches: one
 ///         SurfaceCreated event per collection, stamped with its form. The

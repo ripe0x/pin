@@ -185,6 +185,8 @@ contract SurfaceSecurityTest is SurfaceBase {
         SurfaceConfig memory cfg = _freeConfig();
         cfg.priceStrategy = address(evil);
         Surface c = _collection(cfg);
+        vm.prank(artist);
+        c.setReferrer(referrer, true);
 
         // quantity=2 (even) -> required = 2 * 1 ETH = 2 ETH
         vm.deal(collector, 10 ether);

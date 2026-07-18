@@ -18,8 +18,10 @@ import {SurfaceConfig, SurfaceStatus, IdMode, InitParams} from "./SurfaceTypes.s
 /// @notice The machine both collection forms share. One artist, one work,
 ///         one contract.
 ///
-///         The collector pays the price. The artist keeps all of it, minus a
-///         fixed share for whoever hosted the mint. There is no other fee.
+///         The collector pays the price. The artist keeps all of it, unless
+///         they approve a referrer to earn a fixed share of the mints that
+///         name it. No referrer is approved by default, so the artist keeps
+///         the full price until they opt one in. There is no other fee.
 ///
 ///         The contract writes down one thing per token: a seed, stamped the
 ///         moment the token is minted. Order, block, lifecycle: all of that
@@ -52,9 +54,9 @@ abstract contract SurfaceCore is
     uint256 public constant version = 1;
 
     uint16 internal constant BPS = 10_000;
-    /// @notice The fixed protocol referral share: 10%, paid to whoever hosts
-    ///         the mint. Not artist-set. Not a protocol fee: on a direct
-    ///         mint it folds back to the artist.
+    /// @notice The fixed referral share: 10%. The rate is not artist-set, but
+    ///         it is paid only to a referrer the owner has approved; with none
+    ///         approved the whole price folds to the artist.
     uint16 public constant override REFERRAL_SHARE_BPS = 1_000;
     /// @dev EIP-2981 is advisory, but a 50% ceiling keeps a permissionless
     ///      deployer from setting an absurd royalty on someone else's behalf.
@@ -70,6 +72,13 @@ abstract contract SurfaceCore is
     // Running sum of every _pending balance. rescueStrayETH may only sweep
     // the surplus above it, so owed money is untouchable.
     uint256 internal _totalPending;
+
+    /// @dev Owner-approved referrers. The referral share is paid out only to an
+    ///      address in this set, so it starts empty: with no approvals the
+    ///      artist keeps the full price on every mint, and a buyer cannot pass
+    ///      their own address to skim the share. The owner approves the
+    ///      frontends and partners that earn it.
+    mapping(address => bool) internal _approvedReferrer;
 
     /// @dev Extension minters, granted explicitly by the owner. They call the
     ///      final's extension entrypoint (non-payable); value handling is
@@ -260,12 +269,13 @@ abstract contract SurfaceCore is
     }
 
     /// @dev Accrue `total` split between the referral share and the artist.
-    ///      referrer 0 folds the whole amount to the artist. No external call
-    ///      here; recipients claim via withdraw().
+    ///      The share is paid only when `referrer` is an owner-approved
+    ///      address; otherwise the whole amount folds to the artist. No
+    ///      external call here; recipients claim via withdraw().
     function _settle(uint256 total, address referrer) internal {
         if (total == 0) return;
         _totalPending += total;
-        uint256 referralCut = referrer == address(0) ? 0 : (total * REFERRAL_SHARE_BPS) / BPS;
+        uint256 referralCut = _approvedReferrer[referrer] ? (total * REFERRAL_SHARE_BPS) / BPS : 0;
         if (referralCut > 0) {
             _pending[referrer] += referralCut;
             emit ReferralPaid(referrer, referralCut);
@@ -483,6 +493,21 @@ abstract contract SurfaceCore is
     function setPayoutAddress(address payoutAddress) external override onlyOwnerOrAdmin {
         _cfg.payoutAddress = payoutAddress;
         emit PayoutAddressSet(payoutAddress);
+    }
+
+    /// @notice Approve or unapprove a referrer. Only an approved address earns
+    ///         the referral share on a paid mint; the set starts empty, so the
+    ///         artist keeps the full price until they opt a referrer in. The
+    ///         zero address can never be approved.
+    function setReferrer(address referrer, bool approved) external override onlyOwnerOrAdmin {
+        if (referrer == address(0)) revert ZeroAccount();
+        _approvedReferrer[referrer] = approved;
+        emit ReferrerApproved(referrer, approved);
+    }
+
+    /// @notice Whether `referrer` currently earns the referral share.
+    function isApprovedReferrer(address referrer) external view override returns (bool) {
+        return _approvedReferrer[referrer];
     }
 
     /// @notice The owner's side of attribution: list or unlist creators, any

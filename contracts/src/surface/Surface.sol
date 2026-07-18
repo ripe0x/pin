@@ -42,9 +42,10 @@ contract Surface is SurfaceCore, ISurface {
         _mintPaid(msg.sender, quantity, address(0), "");
     }
 
-    /// @notice Mint crediting `referrer` its share. referrer 0 folds the
-    ///         share back to the artist. `hookData` reaches the hook and the
-    ///         price strategy.
+    /// @notice Mint naming `referrer`. The share is credited only when the
+    ///         owner has approved it; an unapproved or zero referrer earns
+    ///         nothing and the whole price folds to the artist. `hookData`
+    ///         reaches the hook and the price strategy.
     function mintWithReferral(uint256 quantity, address referrer, bytes calldata hookData)
         external
         payable

@@ -21,6 +21,8 @@ contract SurfaceMintForTest is SurfaceBase {
 
     function test_mintFor_recipientOwns_payerPays() public {
         Surface c = _collection(_pricedConfig(1 ether));
+        vm.prank(artist);
+        c.setReferrer(referrer, true);
         vm.deal(payer, 1 ether);
 
         vm.expectEmit(true, true, false, true, address(c));

@@ -93,6 +93,7 @@ interface ISurfaceCore {
     event AdminSet(address indexed account, bool allowed);
     event Withdrawn(address indexed account, uint256 amount);
     event PayoutAddressSet(address indexed payoutAddress);
+    event ReferrerApproved(address indexed referrer, bool approved);
     event StrayETHRescued(address indexed to, uint256 amount);
 
     // ── init + config ────────────────────────────────────────────────────────
@@ -144,6 +145,11 @@ interface ISurfaceCore {
     ///         remove, so a typo fails loudly.
     function removeAdmin(address account) external;
     function setPayoutAddress(address payoutAddress) external;
+    /// @notice Approve or unapprove a referrer. Only an approved address earns
+    ///         the referral share; the set starts empty, so the artist keeps
+    ///         the full price until a referrer is opted in. Zero can't be
+    ///         approved.
+    function setReferrer(address referrer, bool approved) external;
     /// @notice The owner's side of attribution: list or unlist creators. A
     ///         listing is an assertion; confirmation needs the creator to
     ///         claim this collection in the Catalog too (isConfirmedCreator).
@@ -180,8 +186,12 @@ interface ISurfaceCore {
     // ── reads ───────────────────────────────────────────────────────────────
     function config() external view returns (SurfaceConfig memory cfg, SurfaceStatus status, uint256 minted);
 
-    /// @notice The fixed protocol referral share, in bps.
+    /// @notice The fixed referral share, in bps. Paid only to an approved
+    ///         referrer; see isApprovedReferrer.
     function REFERRAL_SHARE_BPS() external view returns (uint16);
+
+    /// @notice Whether `referrer` currently earns the referral share.
+    function isApprovedReferrer(address referrer) external view returns (bool);
 
     /// @notice Resolved price for a prospective mint: the strategy if set,
     ///         else the stored fixed price times quantity.

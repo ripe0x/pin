@@ -13,8 +13,9 @@ interface ISurface is ISurfaceCore {
     /// @notice Simple mint. No referrer, so the artist keeps the full price.
     function mint(uint256 quantity) external payable;
 
-    /// @notice Mint crediting a referrer its share — PND on PND, the artist on
-    ///         their own site. referrer 0 folds the share back to the artist.
+    /// @notice Mint naming a referrer. The share is credited only when the
+    ///         owner has approved `referrer`; otherwise the whole price folds
+    ///         to the artist, so an unapproved or zero referrer earns nothing.
     ///         `hookData` reaches the mint hook and the price strategy.
     function mintWithReferral(uint256 quantity, address referrer, bytes calldata hookData) external payable;
 

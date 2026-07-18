@@ -235,6 +235,8 @@ contract SurfaceTest is SurfaceBase {
 
     function test_mintWithReferral_fixedTenPercentSplit() public {
         Surface c = _collection(_pricedConfig(1 ether));
+        vm.prank(artist);
+        c.setReferrer(referrer, true); // artist opts the referrer in
         vm.deal(collector, 2 ether);
         vm.prank(collector);
         c.mintWithReferral{value: 2 ether}(2, referrer, ""); // 2 tokens * 1 ETH
@@ -252,10 +254,36 @@ contract SurfaceTest is SurfaceBase {
         assertEq(c.pendingWithdrawal(artist), 1 ether);
     }
 
-    function test_selfHostReferrerKeepsEverything() public {
-        // Artist passes their OWN address as referrer: the 10% comes back to
-        // them too (100% total).
+    function test_unapprovedReferrer_foldsFullPriceToArtist() public {
+        // A referrer the artist never approved earns nothing: the whole price
+        // folds to the artist. This is the default, so an artist who never
+        // touches setReferrer keeps 100% on every mint.
         Surface c = _collection(_pricedConfig(1 ether));
+        vm.deal(collector, 1 ether);
+        vm.prank(collector);
+        c.mintWithReferral{value: 1 ether}(1, referrer, "");
+        assertEq(c.pendingWithdrawal(referrer), 0, "unapproved referrer earns nothing");
+        assertEq(c.pendingWithdrawal(artist), 1 ether, "artist keeps the full price");
+    }
+
+    function test_buyerCannotSelfReferToSkimShare() public {
+        // The buyer names their OWN address as referrer to try to claw back the
+        // share. Since the buyer is not approved, they earn nothing and the
+        // artist keeps 100%.
+        Surface c = _collection(_pricedConfig(1 ether));
+        vm.deal(collector, 1 ether);
+        vm.prank(collector);
+        c.mintWithReferral{value: 1 ether}(1, collector, "");
+        assertEq(c.pendingWithdrawal(collector), 0, "self-referral earns nothing");
+        assertEq(c.pendingWithdrawal(artist), 1 ether, "artist keeps the full price");
+    }
+
+    function test_selfHost_artistApprovesOwnAddress() public {
+        // A self-hosting artist opts their own address in, so the share routes
+        // back to them: 100% total, by explicit choice rather than by leak.
+        Surface c = _collection(_pricedConfig(1 ether));
+        vm.prank(artist);
+        c.setReferrer(artist, true);
         vm.deal(collector, 1 ether);
         vm.prank(collector);
         c.mintWithReferral{value: 1 ether}(1, artist, "");
@@ -264,11 +292,32 @@ contract SurfaceTest is SurfaceBase {
 
     function test_referralShare_exactBpsMath() public {
         Surface c = _collection(_pricedConfig(1 ether));
+        vm.prank(artist);
+        c.setReferrer(referrer, true);
         vm.deal(collector, 10 ether);
         vm.prank(collector);
         c.mintWithReferral{value: 10 ether}(10, referrer, "");
         assertEq(c.pendingWithdrawal(referrer), 1 ether); // 10% of 10 ETH
         assertEq(c.pendingWithdrawal(artist), 9 ether);
+    }
+
+    function test_setReferrer_ownerOnlyAndZeroRejected() public {
+        Surface c = _collection(_pricedConfig(1 ether));
+        // A non-owner cannot approve referrers.
+        vm.prank(collector);
+        vm.expectRevert();
+        c.setReferrer(collector, true);
+        // Zero can never be approved.
+        vm.prank(artist);
+        vm.expectRevert(ISurfaceCore.ZeroAccount.selector);
+        c.setReferrer(address(0), true);
+        // Approve then revoke round-trips the read.
+        vm.prank(artist);
+        c.setReferrer(referrer, true);
+        assertTrue(c.isApprovedReferrer(referrer));
+        vm.prank(artist);
+        c.setReferrer(referrer, false);
+        assertFalse(c.isApprovedReferrer(referrer));
     }
 
     // ── payout address routing ───────────────────────────────────────────────
@@ -981,6 +1030,8 @@ contract SurfaceTest is SurfaceBase {
         SurfaceConfig memory cfg = _pricedConfig(price);
         cfg.payoutAddress = payout;
         Surface c = _collection(cfg); // fresh collection each run
+        vm.prank(artist);
+        c.setReferrer(surf, true); // approved referrer earns the share
 
         uint256 total = price * qty;
         address buyer = makeAddr("fuzzBuyer");
