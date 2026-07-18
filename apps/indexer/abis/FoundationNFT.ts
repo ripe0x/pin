@@ -38,7 +38,7 @@ export const foundationNftAbi = [
 ] as const
 
 /** ABI for the NFTCollectionFactory (V1 and V2) */
-export const collectionFactoryAbi = [
+export const nftCollectionFactoryAbi = [
   // Emitted when an artist deploys a new 1/1 collection contract
   {
     type: "event",

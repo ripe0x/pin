@@ -2,47 +2,25 @@
 
 # Types
 
-`CollectionTypes.sol` defines the enums and structs shared across the
-Collection System: the collection core, the renderer and price-strategy
-interfaces, the Release Graph, and the Token Path. These types have no
-functions or events of their own, only fields, so they don't appear as
-generated contract pages; this page is their reference.
+`SurfaceTypes.sol` defines the enums and structs shared across the
+Surface System: the collection core and the renderer and price-strategy
+interfaces. These types have no functions or events of their own, only
+fields, so they don't appear as generated contract pages; this page is
+their reference.
 
 ## Enums
 
-### `RefKind`
+### `SurfaceStatus`
 
-How a `Ref`'s `id` field is interpreted.
-
-| Value | Meaning |
-| --- | --- |
-| `Collection` | `contractAddress` is a collection; `id` is ignored (conventionally `0`) |
-| `Token` | `id` is a `tokenId` on `contractAddress` |
-| `External` | `id` is interpreted by `contractAddress`'s own scheme |
-
-### `CollectionKind`
-
-Semantic role of a collection, used by the Release Graph. Defaults to
-`Standalone` and is not surfaced in the basic create flow.
+Lifecycle status, derived purely from the mint window, the supply cap, and
+the current block — never from stored state. `config()` reports it live and
+each `Minted` event stamps the value at mint time.
 
 | Value | Meaning |
 | --- | --- |
-| `Standalone` | No special role (default) |
-| `Study` | A smaller, earlier exploration for another collection |
-| `Phase` | One phase of a multi-phase work |
-| `Access` | Gates, or grants access via, another collection |
-| `Source` | Source material or input another collection derives from |
-| `Continuation` | Continues an earlier collection |
-
-### `CollectionStatus`
-
-Lifecycle snapshot, captured into each Mint Mark and returned by `config()`.
-
-| Value | Meaning |
-| --- | --- |
+| `Scheduled` | Before `mintStart`: the public window has not opened yet |
 | `Open` | Within the mint window and under cap |
-| `Closing` | The artist flagged the collection as closing soon (`setClosing`) |
-| `Closed` | The mint window ended, or the cap was reached |
+| `Closed` | The mint window ended, or a sequential cap is full |
 
 ### `IdMode`
 
@@ -55,131 +33,31 @@ Token id assignment model, fixed at `initialize` and never changed after.
 
 See [Id modes](/docs/collections/concepts/id-modes) for the full behavioral detail.
 
-### `Liveness`
-
-What a faithful render requires. Declared in `WorkConfig`, not enforced by
-the contract: the honest-preservation label a renderer, capture tooling,
-and archives read.
-
-| Value | Meaning |
-| --- | --- |
-| `Pure` | Seed only; archival-deterministic |
-| `ChainLive` | Reads declared onchain state at render time |
-| `ExternalLive` | Reads declared offchain sources; fragile by nature |
-
-### `EdgeType`
-
-Release Graph edge type.
-
-| Value | Meaning |
-| --- | --- |
-| `BelongsTo` | Belongs to a broader grouping |
-| `StudyOf` | A study for the target |
-| `PhaseOf` | One phase of a multi-phase work rooted at the target |
-| `Continues` | Continues the target |
-| `Source` | The target is the source material this derives from |
-| `Access` | The target is gated by, or grants access via, this collection |
-
-### `PathType`
-
-Token Path pointer type. Stored and emitted; not executed by the core.
-
-| Value | Meaning |
-| --- | --- |
-| `None` | No forward pointer |
-| `Continuation` | Points at what the token continues into |
-| `Migration` | Points at where the token migrates to |
-| `Claim` | Points at something the token can be used to claim |
-| `Reveal` | Points at a reveal target |
-| `Burn` | Points at what burning the token produces or unlocks |
-| `Custom` | Artist-defined meaning, interpreted via `data` |
-
-### `CodeKind`
-
-How a stored file must be emitted into assembled HTML.
-
-| Value | Meaning |
-| --- | --- |
-| `Script` | Plain JS, emitted as-is |
-| `ScriptGzip` | Gzipped JS; the renderer loads a gunzip helper and emits it as a gzip data-URI script tag |
+Generative works define their own code/dependency shapes inside the artist's
+renderer, not in a shared core type; see the [Injection convention](/docs/collections/reference/injection-convention)
+for the render-context contract those renderers follow.
 
 ## Structs
 
-### `Ref`
+### `SurfaceConfig`
 
-A globally addressable node used by both the Release Graph and the Token
-Path.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `chainId` | `uint64` | `1` for Ethereum mainnet |
-| `contractAddress` | `address` | A collection, or any other contract |
-| `id` | `uint256` | Interpreted per `kind`; `0` for a collection-level node |
-| `kind` | `RefKind` | How `id` should be read |
-
-### `Edge`
-
-A typed, directed edge from a collection to another node.
+The live collection configuration. Set at `initialize` and — except
+`idMode`, which is structural — updatable afterward through the setters
+(`setMintWindow`, `setPrice`, `setRoyalty`, `setSupplyCap`,
+`setPayoutAddress`, and the three slot setters), so the struct `config()`
+returns is always the single current truth. There is no referral-share
+field on this struct: the share is the fixed protocol constant
+`REFERRAL_SHARE_BPS`, paid to whoever hosts the mint, not an artist-set
+value.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `edgeType` | `EdgeType` | The relationship type |
-| `target` | `Ref` | The node this edge points at |
-
-### `Path`
-
-A token's forward pointer.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `pathType` | `PathType` | The pointer type |
-| `target` | `Ref` | The node this path points at |
-| `data` | `bytes32` | Optional auxiliary payload, meaning defined by `pathType` |
-
-### `CodeRef`
-
-An onchain-addressable file: a named entry in a scripty v2 storage
-contract or an EthFS FileStore.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `store` | `address` | The storage contract holding the file |
-| `name` | `string` | The file's name within that store |
-| `kind` | `CodeKind` | How the file must be emitted (`Script` or `ScriptGzip`) |
-
-### `WorkConfig`
-
-What the work is, executably. Interpreted by renderers, stored on the
-collection, lockable via `lockWork`. Empty for works whose renderer
-contract IS the algorithm (Solidity SVG works).
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `code` | `CodeRef[]` | The algorithm, chunked/named in onchain storage |
-| `deps` | `CodeRef[]` | Library files (gzipped p5, three.js, etc.) |
-| `codeURI` | `string` | Offchain pointer for oversized code; hash-verified against `codeHash` |
-| `codeHash` | `bytes32` | Integrity hash of the assembled script (`""` for refs-only works is acceptable) |
-| `liveness` | `Liveness` | Preservation tier declared for this work |
-| `injectionVersion` | `uint8` | Version of the render-context injection convention this work targets |
-| `renderParams` | `string` | Renderer-interpreted settings (aspect ratio, library versions) |
-
-### `CollectionConfig`
-
-The artist-supplied collection configuration, set at `initialize`. There is
-no surface-share field on this struct: the share is the fixed protocol
-constant `SURFACE_SHARE_BPS`, paid to whoever hosts the mint, not an
-artist-set value.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `artworkURI` | `string` | Shared/cover art; overridable per token via `setTokenArtwork` |
 | `price` | `uint256` | Wei; used when `priceStrategy` is unset. `0` means gas-only mints |
-| `supplyCap` | `uint256` | `0` means open supply |
+| `supplyCap` | `uint256` | `0` means open supply; lockable one-way via `lockSupply` |
 | `mintStart` | `uint64` | Unix seconds; `0` means open immediately |
 | `mintEnd` | `uint64` | Unix seconds; `0` means open-ended |
 | `royaltyBps` | `uint16` | EIP-2981 royalty, capped at 5000 (50%) by the contract |
 | `royaltyReceiver` | `address` | `0` defers to `owner()` |
-| `kind` | `CollectionKind` | Release Graph role; defaults to `Standalone` |
 | `payoutAddress` | `address` | Where the artist's share of proceeds accrues; `0` defers to `owner()` |
 | `renderer` | `address` | `0` means the collection's `defaultRenderer` applies |
 | `mintHook` | `address` | `0` means no hook runs |
@@ -196,41 +74,13 @@ within legacy-codegen stack limits and can grow without signature churn.
 | `name` | `string` | ERC721 name |
 | `symbol` | `string` | ERC721 symbol |
 | `owner` | `address` | The collection's owner (the artist); required, cannot be zero |
-| `cfg` | `CollectionConfig` | The collection configuration |
-| `work` | `WorkConfig` | The initial work definition |
+| `cfg` | `SurfaceConfig` | The collection configuration |
 | `defaultRenderer` | `address` | The fallback renderer; required, cannot be zero |
 | `initialMinters` | `address[]` | Extension minters granted at init, so pooled and backed forms deploy fully wired in one transaction |
-| `attribution` | `address` | The `Attribution` singleton; `0` skips the roster write entirely |
-| `artists` | `address[]` | The collab roster, written to `attribution` by the collection itself during init |
+| `catalog` | `address` | The Catalog singleton used for creator confirmation; `0` disables it |
+| `creators` | `address[]` | Initial listed creators (the owner's side of attribution); each confirms via the Catalog |
 
-### `MintRecord`
-
-The compact, storage-packed form of a token's mint provenance (one 256-bit
-slot: `48 + 40 + 8 + 160` bits). Internal; derived into the public
-`MintMark` by `mintMarkOf`.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `mintBlock` | `uint48` | Block number the token was minted in |
-| `mintIndex` | `uint40` | 0-based global mint order across the collection |
-| `statusAtMint` | `uint8` | Packed `CollectionStatus` at mint time |
-| `surface` | `address` | The surface credited for this mint |
-
-### `MintMark`
-
-The derived, public Mint Mark for a single token, returned by
-`mintMarkOf(tokenId)`.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `mintIndex` | `uint40` | 0-based global mint order across the collection |
-| `mintBlock` | `uint48` | Block number the token was minted in |
-| `statusAtMint` | `CollectionStatus` | The collection's lifecycle status at mint time |
-| `surface` | `address` | The surface credited for this mint |
-| `isFirst` | `bool` | Derived: `mintIndex == 0` |
-| `isFinal` | `bool` | Derived: the collection is `Closed` and this is the highest `mintIndex` ever assigned |
-
-See [Mint Marks and entropy](/docs/collections/concepts/mint-marks-and-entropy) for how
-this is produced and read, and
-[The Release Graph and Token Path](/docs/collections/concepts/collection-graph-and-token-path)
-for `Ref`, `Edge`, and `Path` in context.
+See [Mint Marks and entropy](/docs/collections/concepts/mint-marks-and-entropy) for
+per-token provenance: the seed is the only per-token storage (there is no
+mint-record struct), and the Mint Mark is derived from the id, the live
+config, and the `Minted` event.

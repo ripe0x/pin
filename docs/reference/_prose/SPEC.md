@@ -15,13 +15,13 @@ generator, not here.
 
 ```markdown
 ---
-title: SovereignCollection
+title: Collection
 ---
 
 # summary
 
 One to three paragraphs. What the contract is, what it holds, how it fits the
-Collection System (core, factory, a swappable slot, a shared singleton).
+Surface System (core, factory, a swappable slot, a shared singleton).
 
 # concepts
 
@@ -73,7 +73,7 @@ Keep error prose to one or two sentences.
 
 ## Inherited standard surface
 
-`SovereignCollection` inherits OpenZeppelin ERC721, ERC2981, Ownable2Step,
+`Collection` inherits OpenZeppelin ERC721, ERC2981, Ownable2Step,
 Initializable, and ReentrancyGuard, so its ABI carries their functions, events,
 and errors (`approve`, `transferFrom`, `Approval`, `OwnableUnauthorizedAccount`,
 `ERC721NonexistentToken`, and so on). Document these briefly and honestly: one
@@ -86,35 +86,35 @@ the local specifics.
 
 - Mechanically precise. Describe what the code does, not how it feels. Approved
   terms: collection, core, clone, factory, slot, minter, extension minter,
-  price strategy, renderer, mint hook, surface, surface share, mint mark,
+  price strategy, renderer, mint hook, surface, referral share, mint mark,
   entropy, seed, id mode, sequential, pooled, edge, Release Graph, path,
   Token Path, work, work config, freeze metadata, lock work, permanent,
   attribution, roster. Keep contract identifiers verbatim in code and
-  signatures (`SURFACE_SHARE_BPS`, `mintToAt`).
+  signatures (`REFERRAL_SHARE_BPS`, `mintToId`).
 - Describe current state only. No history ("was Editions", "replaced X"), no
   PR/audit/issue references.
 - Numbers, splits, and addresses come from code, the ABI, or
-  `deployments.mainnet.json`, never from memory of other docs. The surface share
-  is 10% (`SURFACE_SHARE_BPS = 1000`); state it as read from the constant.
+  `deployments.mainnet.json`, never from memory of other docs. The referral share
+  is 10% (`REFERRAL_SHARE_BPS = 1000`); state it as read from the constant.
 - No em-dashes and no en-dashes. Hyphens in compound words are fine. Bullets
   don't end with periods. Contractions are fine.
 - Write "onchain" as one word, never hyphenated. The currency label is "ETH",
   never the glyph.
 - Address and transaction links use evm.now:
   `https://evm.now/address/<addr>?chainId=1`, `https://evm.now/tx/<hash>?chainId=1`.
-- The Collection System is pre-deploy. Live-read examples use `cast` against a
+- The Surface System is pre-deploy. Live-read examples use `cast` against a
   free public RPC with a placeholder address, and note that the address lands at
   launch:
   `cast call <COLLECTION_ADDRESS> "totalSupply()(uint256)" --rpc-url https://ethereum-rpc.publicnode.com`.
-  For a shared singleton, reference it with `{{addr:collectionFactory}}` so the
+  For a shared singleton, reference it with `{{addr:surfaceFactory}}` so the
   real address substitutes automatically once deployed.
 - TypeScript examples use viem and import ABIs from `@pin/abi`
-  (`import {sovereignCollectionAbi} from '@pin/abi'`) or fetch `/abis/<Name>.json`.
+  (`import {surfaceAbi} from '@pin/abi'`) or fetch `/abis/<Name>.json`.
 
 ## Ordering
 
 Write-function blocks render in the order they appear in this file, so put the
-main entry points first (for `SovereignCollection`: the mint paths, then config
+main entry points first (for `Surface`: the mint paths, then config
 setters, then the graph/path and withdrawal surface, then the inherited ERC721
 transfer/approval functions last). Read functions, events, and errors render
 alphabetically regardless of file order.

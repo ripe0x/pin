@@ -1,5 +1,13 @@
 # PND Editions — deployment + indexing runbook
 
+> **SUPERSEDED (2026-07-06).** The Editions contract was reworked into the
+> Surface system (OZ ERC721 core, four slots, id modes); see
+> docs/pnd-surface-system.md and docs/pnd-surface-contracts-plan.md.
+> This document describes the pre-rework ERC721A design; payment-split,
+> hook, and graph concepts carry over, token-layer specifics do not.
+> Contracts now live in contracts/src/collection/ (src/editions/ was
+> removed).
+
 > What is live now, and the exact steps to finish the deploy-gated
 > pieces. The contracts (`contracts/src/editions`), the web release/mint
 > experience (`apps/web/src/app/editions`, `components/editions`), and

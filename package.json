@@ -6,15 +6,21 @@
     "dev:web": "pnpm --filter @pin/web dev",
     "dev:indexer": "pnpm --filter @pin/indexer dev",
     "dev:worker": "pnpm --filter @pin/worker dev",
-    "dev:editions": "bash scripts/dev-editions.sh",
+    "dev:editions": "echo 'dev:editions is superseded by dev:collections (DeployEditions.s.sol was removed; scripts/dev-editions.sh is kept for reference only). Run: pnpm dev:collections' && exit 1",
+    "dev:collections": "bash scripts/dev-collections.sh",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "db:migrate": "node --env-file=.env db/migrate.mjs",
-    "worker:refresh": "node --env-file=.env scripts/worker-refresh.mjs"
+    "worker:refresh": "node --env-file=.env scripts/worker-refresh.mjs",
+    "emit:surface-abi": "node scripts/emit-surface-abi.mjs",
+    "generate:docs": "tsx scripts/generate-docs.ts"
   },
   "devDependencies": {
+    "marked": "^18.0.5",
     "postgres": "^3.4.9",
+    "shiki": "^4.3.0",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.0"
   },
   "pnpm": {

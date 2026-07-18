@@ -93,22 +93,27 @@ export const SOVEREIGN_AUCTION_HOUSE_FACTORY: Record<number, Address> = {
   [BASE_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
 }
 
-// PNDEditionsFactory — deploys one ERC721A contract per project (artist
+// SUPERSEDED — PND Editions (PNDEditionsFactory + reference mint hooks) is
+// retired in favor of the Collection system (see
+// SURFACE_FACTORY + ATTRIBUTION below). The editions contracts
+// (contracts/src/editions/*) and DeployEditions.s.sol are deleted; these
+// addresses were never deployed to mainnet (still zero) and are kept only as
+// harmless history / in case any external reference still points at these
+// exported names. Do not wire up new code against these.
+//
+// PNDEditionsFactory — deployed one ERC721A contract per project (artist
 // release). ImmutableClone (EIP-1167) or Upgradeable (ERC1967/UUPS) per the
-// ProjectMode chosen at createProject. Emits
+// ProjectMode chosen at createProject. Emitted
 // `ProjectCreated(address indexed owner, address indexed project, uint8 mode)`
-// for discovery, mirroring Mint's MintFactory.Created. There is no protocol
-// fee. NOT yet deployed to mainnet — paste the address here after running
-// `forge script script/DeployEditions.s.sol`. For local Anvil dev, set
-// NEXT_PUBLIC_PND_EDITIONS_FACTORY instead of editing this file.
+// for discovery, mirroring Mint's MintFactory.Created. There was no protocol
+// fee.
 export const PND_EDITIONS_FACTORY: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
 }
 
-// PND reference mint hooks (public goods). One shared instance per hook,
-// configured per-edition by each edition's owner; an artist opts in by pointing
-// setMintHook at one. Deployed alongside the factory by
-// script/DeployEditions.s.sol — paste the addresses here post-deploy.
+// SUPERSEDED (see note above) — PND reference mint hooks (public goods). One
+// shared instance per hook, configured per-edition by each edition's owner;
+// an artist opted in by pointing setMintHook at one.
 export const PND_PER_WALLET_CAP_HOOK: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
 }
@@ -159,6 +164,60 @@ export const MURI_PROTOCOL_START_BLOCK: Record<number, number> = {
 // Same address cross-chain.
 export const MURI_MANIFOLD_EXTENSION: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0FFc4A1906157248ae64F28fD259bB7a2790606C",
+}
+
+// CollectionFactory — deploys one Collection per work as an
+// immutable EIP-1167 clone (no protocol fee; Referral Share is fixed inside the
+// collection). NOT yet deployed to mainnet — paste the address here after
+// running the collection deploy script. For local Anvil dev, set the
+// corresponding NEXT_PUBLIC_* env var instead of editing this file.
+export const SURFACE_FACTORY: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+}
+
+// RenderAssets — renderer-land registry of static display assets (cover +
+// per-token captures), written under each collection's own owner/admin
+// authority. NOT yet deployed to mainnet — paste the address here after
+// deploy.
+export const RENDER_ASSETS: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+}
+
+// DefaultRenderer — the canonical built-in renderer every
+// CollectionFactory wires into its clones unless the owner swaps it.
+// NOT yet deployed to mainnet — paste the address here after deploy.
+export const DEFAULT_RENDERER: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+}
+
+// GateHook — public-good composite mint gate (merkle allowlist + per-wallet
+// cap, each independently optional), attached per collection via
+// setMintHook and configured by that collection's owner/admins. NOT yet
+// deployed to mainnet — paste the address here after deploy.
+export const GATE_HOOK: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+}
+
+// Scripty V2 Builder — assembles HTML/JS from ScriptyStorage-held chunks at
+// render time. Deterministic deploy, same address on mainnet and most other
+// EVM chains. See https://github.com/intartnft/scripty.sol.
+export const SCRIPTY_BUILDER_V2: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0xD7587F110E08F4D120A231bA97d3B577A81Df022",
+}
+
+// Scripty V2 Storage — content-addressed chunk storage for on-chain
+// scripts (see packages/abi/src/scriptyStorage.ts for the hand-written ABI
+// and its source-verification notes). Deterministic deploy, same address on
+// mainnet and most other EVM chains.
+export const SCRIPTY_STORAGE_V2: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0xbD11994aABB55Da86DC246EBB17C1Be0af5b7699",
+}
+
+// EthFS V2 File Storage — the underlying file store Scripty V2 Storage
+// deploys chunk pointers against. Deterministic deploy, same address on
+// mainnet and most other EVM chains.
+export const ETHFS_V2_FILE_STORAGE: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x8FAA1AAb9DA8c75917C43Fb24fDdb513edDC3245",
 }
 
 // Helper for the address-or-null pattern: returns null when no factory is

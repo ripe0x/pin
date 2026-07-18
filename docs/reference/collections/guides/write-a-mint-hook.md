@@ -2,7 +2,7 @@
 
 # Write a mint hook
 
-A mint hook is a swappable module the collection calls on every mint, whether the mint went through the built-in paid path or an extension minter's `mintTo`/`mintToAt`. It lets an artist gate who can mint, or record custom per-mint data to their own storage, without either feature living in the core.
+A mint hook is a swappable module the collection calls on every mint, whether the mint went through the built-in paid path or an extension minter's `mintTo`/`mintToId`. It lets an artist gate who can mint, or record custom per-mint data to their own storage, without either feature living in the core.
 
 ```solidity
 interface IMintHook {
@@ -10,7 +10,7 @@ interface IMintHook {
         address minter,
         uint256 quantity,
         uint256 firstTokenId,
-        address surface,
+        address referrer,
         bytes calldata hookData
     ) external returns (bytes4);
 
@@ -18,7 +18,7 @@ interface IMintHook {
         address minter,
         uint256 quantity,
         uint256 firstTokenId,
-        address surface,
+        address referrer,
         bytes calldata hookData
     ) external;
 }
@@ -37,7 +37,7 @@ interface IMintHook {
 ## Installing a hook
 
 ```solidity
-function setMintHook(address hook) external; // owner-only
+function setMintHook(address hook) external; // owner or admin
 function mintHook() external view returns (address);
 ```
 
@@ -45,13 +45,13 @@ Setting `address(0)` disables hook checks entirely; every mint call skips both `
 
 ## Reference hooks
 
-Three deployed, ownerless singletons ship as starting points. Each is public: one instance serves every collection that points at it, keyed by `msg.sender` (the calling collection) inside the hook's own per-collection config mappings, configured by that collection's own owner via a hook-side setter.
+Three deployed, ownerless singletons ship as starting points. Each is public: one instance serves every collection that points at it, keyed by `msg.sender` (the calling collection) inside the hook's own per-collection config mappings, configured by that collection's owner or an admin via a hook-side setter.
 
-- **[AllowlistHook](/docs/collections/contracts/allowlist-hook)**: gates on a Merkle allowlist. The owner sets a root with `setRoot(collection, root)`; a minter passes a proof in `hookData`. Uses the OpenZeppelin standard-merkle-tree leaf format (`keccak256(bytes.concat(keccak256(abi.encode(account))))`), so standard JS tooling produces compatible proofs. A root of `bytes32(0)` means open, no proof required
-- **[PerWalletCapHook](/docs/collections/contracts/per-wallet-cap-hook)**: caps how many tokens one wallet can mint from a collection. The owner sets a cap with `setCap(collection, cap)`; the hook tracks `mintedBy[collection][minter]` in `afterMint`, incrementing only after a mint succeeds
-- **[HoldsCollectionHook](/docs/collections/contracts/holds-collection-hook)**: gates a mint on holding a token from another collection (the continuity primitive: an earlier collection's holders get access to a later one). The owner sets the required collection with `setRequired(collection, required)`; any ERC721 works, including another `SovereignCollection`
+- **[AllowlistHook](/docs/collections/contracts/allowlist-hook)**: gates on a Merkle allowlist. The owner or an admin sets a root with `setRoot(collection, root)`; a minter passes a proof in `hookData`. Uses the OpenZeppelin standard-merkle-tree leaf format (`keccak256(bytes.concat(keccak256(abi.encode(account))))`), so standard JS tooling produces compatible proofs. A root of `bytes32(0)` means open, no proof required
+- **[PerWalletCapHook](/docs/collections/contracts/per-wallet-cap-hook)**: caps how many tokens one wallet can mint from a collection. The owner or an admin sets a cap with `setCap(collection, cap)`; the hook tracks `mintedBy[collection][minter]` in `afterMint`, incrementing only after a mint succeeds
+- **[HoldsSurfaceHook](/docs/collections/contracts/holds-surface-hook)**: gates a mint on holding a token from another collection (the continuity primitive: an earlier collection's holders get access to a later one). The owner or an admin sets the required collection with `setRequired(collection, required)`; any ERC721 works, including another `Surface`
 
-All three inherit a shared `HookBase`, which supplies the `onlyCollectionOwner(collection)` modifier (checked against `ICollectionOwner(collection).owner()`) and a no-op default `afterMint` for hooks that don't need to record anything.
+All three inherit a shared `HookBase`, which supplies the `onlySurfaceAdmin(collection)` modifier (checked against `ISurfaceAuth(collection).owner()` or `ISurfaceAuth(collection).isAdmin(msg.sender)`) and a no-op default `afterMint` for hooks that don't need to record anything.
 
 ## Minimal hook skeleton
 
@@ -61,8 +61,9 @@ pragma solidity ^0.8.24;
 
 import {IMintHook} from "./interfaces/IMintHook.sol";
 
-interface ICollectionOwner {
+interface ISurfaceAuth {
     function owner() external view returns (address);
+    function isAdmin(address account) external view returns (bool);
 }
 
 /// @notice Example: gate mints to a fixed open/closed switch per collection.
@@ -71,12 +72,15 @@ contract SwitchHook is IMintHook {
 
     event SwitchSet(address indexed collection, bool open);
 
-    modifier onlyCollectionOwner(address collection) {
-        require(msg.sender == ICollectionOwner(collection).owner(), "not collection owner");
+    modifier onlySurfaceAdmin(address collection) {
+        require(
+            msg.sender == ISurfaceAuth(collection).owner() || ISurfaceAuth(collection).isAdmin(msg.sender),
+            "not collection owner or admin"
+        );
         _;
     }
 
-    function setOpen(address collection, bool open) external onlyCollectionOwner(collection) {
+    function setOpen(address collection, bool open) external onlySurfaceAdmin(collection) {
         openFor[collection] = open;
         emit SwitchSet(collection, open);
     }
@@ -104,7 +108,7 @@ cast send <COLLECTION_ADDRESS> "setMintHook(address)" <HOOK_ADDRESS> \
   --rpc-url https://ethereum-rpc.publicnode.com --private-key $PRIVATE_KEY
 ```
 
-Then, on the hook itself (per-collection config, called by the collection owner):
+Then, on the hook itself (per-collection config, called by the collection owner or an admin):
 
 ```bash
 cast send <HOOK_ADDRESS> "setCap(address,uint256)" <COLLECTION_ADDRESS> 5 \

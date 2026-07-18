@@ -10,7 +10,30 @@ remappings = [
     "openzeppelin-contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/",
     "erc721a-upgradeable/=lib/ERC721A-Upgradeable/",
     "forge-std/=lib/forge-std/src/",
+    "solady/=lib/solady/src/",
 ]
+
+# Default-profile invariant settings: kept small so `forge test` (which picks
+# up any invariant/*.t.sol in the default run) stays fast. forge-std's own
+# defaults (runs=256, depth=500) take ~60s on the collection invariant suite
+# alone; this keeps the same suite well under it while still exercising every
+# handler action at least once per run.
+[profile.default.invariant]
+runs = 32
+depth = 50
+
+# Deep-run profile for the collection invariant suite (and any future
+# invariant suites). Not used by day-to-day `forge test`; run explicitly:
+#
+#   FOUNDRY_PROFILE=invariant forge test --match-path "test/collection/invariants/*"
+#
+# No fork involved — this is pure state-machine fuzzing over local clones, so
+# there's no RPC/archive-node concern here, just wall-clock (observed ~25-35s
+# on the collection invariant suite at these settings; scales with however
+# many invariant suites exist under the matched path).
+[profile.invariant.invariant]
+runs = 512
+depth = 100
 
 [rpc_endpoints]
 mainnet = "${MAINNET_RPC_URL}"

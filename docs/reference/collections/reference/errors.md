@@ -4,149 +4,206 @@
 
 Every custom error the Collections contracts can revert with, its contract, and the condition that raises it.
 
-**`AlreadyFrozen`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
-`freezeMetadata` was called when metadata is already frozen.
+**`AlreadyAdmin`** · [Surface](/docs/collections/contracts/surface#errors)\
+`addAdmin` was called for an account that is already an admin.
 
-**`BadMintWindow`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
-`initialize` was given a non-zero `mintEnd` that is not strictly after `mintStart`.
+**`AlreadyDeprecated`** · [SurfaceFactory](/docs/collections/contracts/factory#errors)\
+`deprecate` was called on an already-deprecated factory.
 
-**`EmptyArtists`** · [Attribution](/docs/collections/contracts/attribution#errors)\
-`setArtists` was called with an empty `artists` array.
+**`AssetsRequired`** · [DefaultRenderer](/docs/collections/contracts/default-renderer#errors)\
+Reverts construction when the RenderAssets address is zero: the renderer has no registry to read images from.
 
-**`ERC721IncorrectOwner`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
+**`BadMintWindow`** · [Surface](/docs/collections/contracts/surface#errors)\
+`initialize` or `setMintWindow` was given a non-zero `mintEnd` that is not strictly after `mintStart`.
+
+**`BadSupplyCap`** · [Surface](/docs/collections/contracts/surface#errors)\
+`setSupplyCap` was given a non-zero cap below what already exists: mints ever in Sequential mode (ids are never reused), or live supply in Pooled mode.
+
+**`BuilderRequired`** · [ScriptyRenderer](/docs/collections/contracts/scripty-renderer#errors)\
+Reverts construction when the ScriptyBuilderV2 address is zero: the renderer would have nothing to assemble the HTML document with.
+
+**`ERC721IncorrectOwner`** · [Surface](/docs/collections/contracts/surface#errors)\
 Standard ERC721 error: a token operation named an owner that does not match the token's actual owner.
 
-**`ERC721InsufficientApproval`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
+**`ERC721InsufficientApproval`** · [Surface](/docs/collections/contracts/surface#errors)\
 Standard ERC721 error: the caller lacks approval to transfer or burn the token.
 
-**`ERC721InvalidApprover`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
+**`ERC721InvalidApprover`** · [Surface](/docs/collections/contracts/surface#errors)\
 Standard ERC721 error: the approver is not authorized to grant the approval.
 
-**`ERC721InvalidOperator`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
+**`ERC721InvalidOperator`** · [Surface](/docs/collections/contracts/surface#errors)\
 Standard ERC721 error: an invalid operator address (for example the zero address) was used in an approval.
 
-**`ERC721InvalidOwner`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
+**`ERC721InvalidOwner`** · [Surface](/docs/collections/contracts/surface#errors)\
 Standard ERC721 error: an invalid owner address (for example the zero address) was used in an ownership query.
 
-**`ERC721InvalidReceiver`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
+**`ERC721InvalidReceiver`** · [Surface](/docs/collections/contracts/surface#errors)\
 Standard ERC721 error: a safe transfer or mint targeted a contract that does not accept ERC721 tokens (bad `onERC721Received`).
 
-**`ERC721InvalidSender`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
+**`ERC721InvalidSender`** · [Surface](/docs/collections/contracts/surface#errors)\
 Standard ERC721 error: a transfer named a sender that does not own the token.
 
-**`ERC721NonexistentToken`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
+**`ERC721NonexistentToken`** · [Surface](/docs/collections/contracts/surface#errors)\
 Standard ERC721 error: the referenced token id does not exist (never minted or already burned).
 
-**`ExceedsCap`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
+**`ExceedsCap`** · [Surface](/docs/collections/contracts/surface#errors)\
 A mint would cross the supply cap: mints ever in Sequential mode, or live supply in Pooled mode.
 
-**`FailedDeployment`** · [SovereignCollectionFactory](/docs/collections/contracts/factory#errors)\
+**`FactoryDeprecated`** · [SurfaceFactory](/docs/collections/contracts/factory#errors)\
+`createSurface` was called after deprecation.
+
+**`FactoryPaused`** · [SurfaceFactory](/docs/collections/contracts/factory#errors)\
+`createSurface`/`createPooledSurface` was called while the factory is paused (see `setPaused`).
+
+**`FailedDeployment`** · [SurfaceFactory](/docs/collections/contracts/factory#errors)\
 Inherited from OpenZeppelin `Clones`.
 
-**`HookRejected`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
+**`GunzipStoreRequired`** · [ScriptyRenderer](/docs/collections/contracts/scripty-renderer#errors)\
+Reverts at construction when any dependency or code file is gzipped but the gunzip store is not a deployed contract, so the gzip tags could never be decompressed in the browser.
+
+**`HookRejected`** · [Surface](/docs/collections/contracts/surface#errors)\
 The mint hook's `beforeMint` did not return the required selector, so the hook rejected the mint.
 
-**`InsufficientBalance`** · [SovereignCollectionFactory](/docs/collections/contracts/factory#errors)\
+**`InsufficientBalance`** · [SurfaceFactory](/docs/collections/contracts/factory#errors)\
 Inherited from OpenZeppelin `Clones`.
 
-**`InvalidCollection`** · [Attribution](/docs/collections/contracts/attribution#errors)\
-The `collection` argument to `setArtists`, `lockRoster`, or an authorization check was the zero address.
-
-**`InvalidInitialization`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
+**`InvalidInitialization`** · [Surface](/docs/collections/contracts/surface#errors)\
 Standard OpenZeppelin Initializable error: `initialize` was called more than once, or called on the implementation whose initializers are disabled.
 
-**`LengthMismatch`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
-`setTokenArtworkBatch` was given id and CID arrays of different lengths.
+**`LengthMismatch`** · [RenderAssets](/docs/collections/contracts/render-assets#errors)\
+`setCaptures` was given id and URI arrays of different lengths.
 
-**`MetadataIsFrozen`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
-`setRenderer`, `setTokenArtwork`, or `setTokenArtworkBatch` was called after `freezeMetadata`.
+**`MintEnded`** · [Surface](/docs/collections/contracts/surface#errors)\
+A paid mint was attempted at or after a non-zero `mintEnd`.
 
-**`MintEnded`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
-A mint was attempted at or after a non-zero `mintEnd`.
+**`MinterIsLocked`** · [Surface](/docs/collections/contracts/surface#errors)\
+`setMinter` or `lockMinter` was called after `lockMinter`.
 
-**`MintNotStarted`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
-A mint was attempted before `mintStart`.
+**`MintNotStarted`** · [Surface](/docs/collections/contracts/surface#errors)\
+A paid mint was attempted before `mintStart`.
 
-**`NeverMinted`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
-`tokenSeed` or `mintMarkOf` was read for an id that has no mint record.
+**`MustHoldRequired`** · [HoldsSurfaceHook](/docs/collections/contracts/holds-surface-hook#errors)\
+The minter holds none of the required collection's tokens.
 
-**`NoStrayETH`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
+**`NeverMinted`** · [Surface](/docs/collections/contracts/surface#errors)\
+`tokenSeed` was read for an id that was never minted (its seed slot is zero).
+
+**`NoCode`** · [ScriptyRenderer](/docs/collections/contracts/scripty-renderer#errors)\
+Reverts construction when the `code` array is empty: a renderer with no artist code has nothing to assemble.
+
+**`NoStrayETH`** · [Surface](/docs/collections/contracts/surface#errors)\
 `rescueStrayETH` found no ETH above the owed pull-payment balances to sweep.
 
-**`NotAuthorized`** · [Attribution](/docs/collections/contracts/attribution#errors)\
-The caller is neither `collection` itself nor the address a successful `owner()` staticcall on `collection` resolves to.
+**`NotAContract`** · [SurfaceFactory](/docs/collections/contracts/factory#errors)\
+The factory constructor was given an implementation, pooled implementation, or default renderer address with no code.
 
-**`NotAuthorized`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
-`burn` was called without authority: in Sequential mode by a non-owner, non-approved caller, or in Pooled mode by a non-minter.
+**`NotAContract`** · [Surface](/docs/collections/contracts/surface#errors)\
+A hook or price-strategy address is nonzero but has no code (carries the offending address).
 
-**`NothingToWithdraw`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
+**`NotAllowlisted`** · [AllowlistHook](/docs/collections/contracts/allowlist-hook#errors)\
+The minter's Merkle proof did not verify against the collection's allowlist root.
+
+**`NotAllowlisted`** · [GateHook](/docs/collections/contracts/gate-hook#errors)\
+The minter's Merkle proof did not verify against the collection's allowlist root.
+
+**`NotAnAdmin`** · [Surface](/docs/collections/contracts/surface#errors)\
+`removeAdmin` was called for an account that is not currently an admin.
+
+**`NotAuthorized`** · [Surface](/docs/collections/contracts/surface#errors)\
+A management function gated `onlyOwnerOrAdmin` was called by neither the owner nor an admin; `removeAdmin` was called by someone other than the owner or the admin itself; `notifyMetadataUpdate` was called by neither the renderer nor an owner/admin; or `burn` was called without burn authority for the id mode.
+
+**`NotCaptureAuthorized`** · [RenderAssets](/docs/collections/contracts/render-assets#errors)\
+A capture write was attempted by an address that is not the collection's owner, one of its admins, or a granted capturer.
+
+**`NotDeployer`** · [SurfaceFactory](/docs/collections/contracts/factory#errors)\
+`deprecate` was called by an address other than the factory deployer.
+
+**`NothingToWithdraw`** · [Surface](/docs/collections/contracts/surface#errors)\
 `withdraw` was called for an account with a zero owed balance.
 
-**`NotInitializing`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
+**`NotInitializing`** · [Surface](/docs/collections/contracts/surface#errors)\
 Standard OpenZeppelin Initializable error: an `onlyInitializing` step ran outside an active initialization.
 
-**`NotMinted`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
-A per-token setter (`setTokenArtwork`, `setTokenArtworkBatch`, or `setPath`) referenced an id that was never minted.
+**`NotMinter`** · [Surface](/docs/collections/contracts/surface#errors)\
+`mintTo` or `mintToId` was called by an address that is not an authorized extension minter.
 
-**`NotMinter`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
-`mintTo` or `mintToAt` was called by an address that is not an authorized extension minter.
+**`NotSurfaceAdmin`** · [AllowlistHook](/docs/collections/contracts/allowlist-hook#errors)\
+A hook setter was called by an address that is neither the collection's owner nor one of its admins.
 
-**`OwnableInvalidOwner`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
+**`NotSurfaceAdmin`** · [GateHook](/docs/collections/contracts/gate-hook#errors)\
+A hook setter was called by an address that is neither the collection's owner nor one of its admins.
+
+**`NotSurfaceAdmin`** · [HoldsSurfaceHook](/docs/collections/contracts/holds-surface-hook#errors)\
+A hook setter was called by an address that is neither the collection's owner nor one of its admins.
+
+**`NotSurfaceAdmin`** · [PerWalletCapHook](/docs/collections/contracts/per-wallet-cap-hook#errors)\
+A hook setter was called by an address that is neither the collection's owner nor one of its admins.
+
+**`NotSurfaceAdmin`** · [RenderAssets](/docs/collections/contracts/render-assets#errors)\
+A write was attempted by an address that is neither the collection's owner nor one of its admins.
+
+**`OwnableInvalidOwner`** · [Surface](/docs/collections/contracts/surface#errors)\
 Standard OpenZeppelin Ownable error: an invalid owner address (for example the zero address) was supplied.
 
-**`OwnableUnauthorizedAccount`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
-Standard OpenZeppelin Ownable error: an owner-gated function was called by a non-owner.
+**`OwnableUnauthorizedAccount`** · [Surface](/docs/collections/contracts/surface#errors)\
+Standard OpenZeppelin Ownable error: an owner-gated function (`addAdmin`, `transferOwnership`) was called by a non-owner, or `acceptOwnership` by a non-pending-owner.
 
-**`OwnerRequired`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
+**`OwnerRequired`** · [SurfaceFactory](/docs/collections/contracts/factory#errors)\
+`createSurface` or `createPooledSurface` was given the zero address as the collection `owner`.
+
+**`OwnerRequired`** · [Surface](/docs/collections/contracts/surface#errors)\
 `initialize` was given the zero address as the owner.
 
-**`PooledNeedsMintToAt`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
-`mintTo` was called on a Pooled collection, where the minter must supply the id.
-
-**`PooledSellsViaMinter`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
-A built-in paid path (`mint` or `mintWithRewards`) was called on a Pooled collection.
-
-**`ReentrancyGuardReentrantCall`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
+**`ReentrancyGuardReentrantCall`** · [Surface](/docs/collections/contracts/surface#errors)\
 Standard OpenZeppelin ReentrancyGuard error: a `nonReentrant` function was re-entered.
 
-**`RendererRequired`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
+**`RendererIsLocked`** · [Surface](/docs/collections/contracts/surface#errors)\
+`setRenderer` or `lockRenderer` was called after `lockRenderer`.
+
+**`RendererNotContract`** · [Surface](/docs/collections/contracts/surface#errors)\
+The renderer address has no code (carries the offending address as evidence).
+
+**`RendererRequired`** · [Surface](/docs/collections/contracts/surface#errors)\
 `initialize` was given the zero address as the default renderer.
 
-**`RenounceDisabled`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
+**`RenounceDisabled`** · [Surface](/docs/collections/contracts/surface#errors)\
 `renounceOwnership` was called.
 
-**`RescueFailed`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
+**`RescueFailed`** · [Surface](/docs/collections/contracts/surface#errors)\
 The ETH transfer inside `rescueStrayETH` reverted.
 
-**`RosterAlreadyLocked`** · [Attribution](/docs/collections/contracts/attribution#errors)\
-`setArtists` was called for a `collection` whose roster was previously frozen with `lockRoster`.
+**`RoyaltyTooHigh`** · [Surface](/docs/collections/contracts/surface#errors)\
+`initialize` or `setRoyalty` was given a royalty above the 50% cap (`5000` bps).
 
-**`RoyaltyTooHigh`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
-`initialize` was given a royalty above the 50% cap (`5000` bps).
+**`StoreNotContract`** · [ScriptyRenderer](/docs/collections/contracts/scripty-renderer#errors)\
+Reverts at construction when a code or dependency file's `store` is not a deployed contract (carries the offending address).
 
-**`SequentialAssignsIds`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
-`mintToAt` was called on a Sequential collection, where the core assigns ids.
+**`SupplyIsLocked`** · [Surface](/docs/collections/contracts/surface#errors)\
+`setSupplyCap` or `lockSupply` was called after `lockSupply`.
 
-**`StringsInsufficientHexLength`** · [DefaultRenderer](/docs/collections/contracts/default-renderer#errors)\
-Standard OpenZeppelin `Strings` error: a hex-string conversion was asked to encode a value in fewer bytes than the value needs.
+**`TooManyMinters`** · [Surface](/docs/collections/contracts/surface#errors)\
+A minter grant would exceed the form's limit.
 
-**`Underpayment`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
+**`Underpayment`** · [Surface](/docs/collections/contracts/surface#errors)\
 A mint with a price strategy set sent less than the strategy's resolved price.
 
-**`WithdrawFailed`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
+**`WalletCapExceeded`** · [GateHook](/docs/collections/contracts/gate-hook#errors)\
+The mint would push the wallet's running count for this collection past the per-wallet cap.
+
+**`WalletCapExceeded`** · [PerWalletCapHook](/docs/collections/contracts/per-wallet-cap-hook#errors)\
+The mint would push the wallet's running count for this collection past the per-wallet cap.
+
+**`WithdrawFailed`** · [Surface](/docs/collections/contracts/surface#errors)\
 The ETH transfer inside `withdraw` reverted, for example a recipient that rejects payment.
 
-**`WorkAlreadyLocked`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
-`setWork` was called after `lockWork`, or `lockWork` was called when the work is already locked.
-
-**`WrongPayment`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
+**`WrongPayment`** · [Surface](/docs/collections/contracts/surface#errors)\
 A mint with no price strategy set did not send exactly `price * quantity`.
 
-**`ZeroAccount`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
-`withdraw` or `rescueStrayETH` was passed the zero address as the destination.
+**`ZeroAccount`** · [Surface](/docs/collections/contracts/surface#errors)\
+`withdraw`, `rescueStrayETH`, or `addAdmin` was passed the zero address.
 
-**`ZeroMinter`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
+**`ZeroMinter`** · [Surface](/docs/collections/contracts/surface#errors)\
 An initial minter in `initialize`, or the `setMinter` target, was the zero address.
 
-**`ZeroQuantity`** · [SovereignCollection](/docs/collections/contracts/sovereign-collection#errors)\
+**`ZeroQuantity`** · [Surface](/docs/collections/contracts/surface#errors)\
 A mint was called with `quantity == 0`.

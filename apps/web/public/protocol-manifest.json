@@ -9,40 +9,40 @@
       "title": "Collections",
       "docs": "/docs/collections/overview",
       "contracts": {
-        "SovereignCollection": {
+        "Surface": {
           "address": null,
           "kind": "clone",
-          "abi": "/abis/SovereignCollection.json",
-          "docs": "/docs/collections/contracts/sovereign-collection",
-          "role": "The one core of the PND Collection System: a single OpenZeppelin ERC721 that holds ownership, ETH payment paths, and per-token provenance, and nothing else."
+          "abi": "/abis/Surface.json",
+          "docs": "/docs/collections/contracts/surface",
+          "role": "The one core of the PND Surface System: a single OpenZeppelin ERC721 that holds ownership, ETH payment paths, and per-token provenance, and nothing else."
         },
-        "SovereignCollectionFactory": {
+        "SurfaceFactory": {
           "address": null,
           "kind": "singleton",
-          "abi": "/abis/SovereignCollectionFactory.json",
+          "abi": "/abis/SurfaceFactory.json",
           "docs": "/docs/collections/contracts/factory",
-          "role": "SovereignCollectionFactory deploys one [SovereignCollection](/docs/collections/contracts/sovereign-collection) per work as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs."
-        },
-        "Attribution": {
-          "address": null,
-          "kind": "singleton",
-          "abi": "/abis/Attribution.json",
-          "docs": "/docs/collections/contracts/attribution",
-          "role": "Attribution is generic, immutable, public infrastructure recording the works-to-artists half of the bilateral attribution handshake."
+          "role": "SurfaceFactory deploys one [Surface](/docs/collections/contracts/surface) per work as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs."
         },
         "DefaultRenderer": {
           "address": null,
           "kind": "singleton",
           "abi": "/abis/DefaultRenderer.json",
           "docs": "/docs/collections/contracts/default-renderer",
-          "role": "The canonical built-in renderer for [SovereignCollection](/docs/collections/contracts/sovereign-collection)."
+          "role": "The canonical built-in renderer for [Surface](/docs/collections/contracts/surface)."
         },
-        "GenerativeRenderer": {
+        "RenderAssets": {
           "address": null,
           "kind": "singleton",
-          "abi": "/abis/GenerativeRenderer.json",
-          "docs": "/docs/collections/contracts/generative-renderer",
-          "role": "The default renderer for script-based generative collections: a stateless shared singleton that assembles a complete HTML document per token and returns it as the `animation_url` of the token's metadata."
+          "abi": "/abis/RenderAssets.json",
+          "docs": "/docs/collections/contracts/render-assets",
+          "role": "The renderer-land registry of static display assets: each collection's shared cover image, per-token captures (thumbnails of rendered output), and a capture template that resolves per token id."
+        },
+        "ScriptyRenderer": {
+          "address": null,
+          "kind": "clone",
+          "abi": "/abis/ScriptyRenderer.json",
+          "docs": "/docs/collections/contracts/scripty-renderer",
+          "role": "ScriptyRenderer is the **bring-your-own generative renderer template**: a concrete, forkable [IRenderer](/docs/collections/contracts/i-renderer) for Art Blocks-style script-based work, assembled fully onchain through ScriptyBuilderV2."
         },
         "AllowlistHook": {
           "address": null,
@@ -58,40 +58,54 @@
           "docs": "/docs/collections/contracts/per-wallet-cap-hook",
           "role": "A reference [mint hook](/docs/collections/contracts/i-mint-hook) capping how many tokens any single wallet can mint from a collection, so a capped drop can't be bought out by one address in a single transaction (or across several)."
         },
-        "HoldsCollectionHook": {
+        "HoldsSurfaceHook": {
           "address": null,
           "kind": "singleton",
-          "abi": "/abis/HoldsCollectionHook.json",
-          "docs": "/docs/collections/contracts/holds-collection-hook",
+          "abi": "/abis/HoldsSurfaceHook.json",
+          "docs": "/docs/collections/contracts/holds-surface-hook",
           "role": "A reference [mint hook](/docs/collections/contracts/i-mint-hook) gating a mint on the minter holding a token from another collection, typically an earlier collection by the same artist."
+        },
+        "GateHook": {
+          "address": null,
+          "kind": "singleton",
+          "abi": "/abis/GateHook.json",
+          "docs": "/docs/collections/contracts/gate-hook",
+          "role": "A reference [mint hook](/docs/collections/contracts/i-mint-hook) composing a Merkle allowlist and a per-wallet cap into ONE hook."
         },
         "IMintHook": {
           "address": null,
           "kind": "interface",
           "abi": "/abis/IMintHook.json",
           "docs": "/docs/collections/contracts/i-mint-hook",
-          "role": "IMintHook is the interface a contract implements to occupy a collection's hook slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [SovereignCollection](/docs/collections/contracts/sovereign-collection) core."
+          "role": "IMintHook is the interface a contract implements to occupy a collection's hook slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [Surface](/docs/collections/contracts/surface) core."
         },
         "IPriceStrategy": {
           "address": null,
           "kind": "interface",
           "abi": "/abis/IPriceStrategy.json",
           "docs": "/docs/collections/contracts/i-price-strategy",
-          "role": "IPriceStrategy is the interface a contract implements to occupy a collection's price slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [SovereignCollection](/docs/collections/contracts/sovereign-collection) core."
+          "role": "IPriceStrategy is the interface a contract implements to occupy a collection's price slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [Surface](/docs/collections/contracts/surface) core."
         },
         "IRenderer": {
           "address": null,
           "kind": "interface",
           "abi": "/abis/IRenderer.json",
           "docs": "/docs/collections/contracts/i-renderer",
-          "role": "IRenderer is the interface a contract implements to occupy a collection's renderer slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [SovereignCollection](/docs/collections/contracts/sovereign-collection) core."
+          "role": "IRenderer is the interface a contract implements to occupy a collection's renderer slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [Surface](/docs/collections/contracts/surface) core."
         },
-        "ICollectionView": {
+        "ISurfaceView": {
           "address": null,
           "kind": "interface",
-          "abi": "/abis/ICollectionView.json",
-          "docs": "/docs/collections/contracts/i-collection-view",
-          "role": "ICollectionView is the read surface a collection exposes for its swappable slots, [renderer](/docs/collections/contracts/i-renderer), [price strategy](/docs/collections/contracts/i-price-strategy), and any minter, to read without depending on the full…"
+          "abi": "/abis/ISurfaceView.json",
+          "docs": "/docs/collections/contracts/i-surface-view",
+          "role": "ISurfaceView is the read surface a collection exposes for its swappable slots, [renderer](/docs/collections/contracts/i-renderer), [price strategy](/docs/collections/contracts/i-price-strategy), and any minter, to read without depending on the full [Surface](/docs/collections/contracts/surface) ABI."
+        },
+        "IPreviewRenderer": {
+          "address": null,
+          "kind": "interface",
+          "abi": "/abis/IPreviewRenderer.json",
+          "docs": "/docs/collections/contracts/i-preview-renderer",
+          "role": "IPreviewRenderer is an OPTIONAL extension a renderer implements to render what a token WOULD look like for a caller-supplied seed, without any token existing."
         }
       }
     },

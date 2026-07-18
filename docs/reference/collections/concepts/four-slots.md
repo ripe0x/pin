@@ -2,19 +2,19 @@
 
 # The four slots
 
-`SovereignCollection` is one contract for every form of work: an edition, a
+`Surface` is one contract for every form of work: an edition, a
 long-form generative drop, an onchain SVG piece, a participatory work, a
 backed and pooled work. What changes between them is which modules fill
 four slots. The core never grows a line for a specific work; it only ever
 calls out to a slot.
 
 Three of the four slots are addresses stored on the collection and settable
-by the owner after deploy (`setRenderer`, `setMintHook`,
+by the owner or an admin after deploy (`setRenderer`, `setMintHook`,
 `setPriceStrategy`); the fourth, extension minters, is a set of addresses
 granted and revoked individually (`setMinter`). All four default to "off":
 an empty renderer slot uses the collection's `defaultRenderer`, an empty
 price strategy uses the stored fixed price, an empty mint hook runs no
-gating, and no minter is authorized until the owner grants one.
+gating, and no minter is authorized until the owner or an admin grants one.
 
 ## Renderer (`IRenderer`)
 
@@ -24,27 +24,31 @@ function contractURI(address collection) external view returns (string memory);
 ```
 
 - **Type**: `IRenderer`, stored as `_renderer`
-- **Set by**: `setRenderer(address)`, owner-only, and only while metadata is
-  not frozen (`freezeMetadata` locks it permanently)
+- **Set by**: `setRenderer(address)`, owner or admin, and only while metadata is
+  not locked (`lockRenderer` pins it permanently, optional and off by default)
 - **Fallback**: when `_renderer` is the zero address, `renderer()` returns
   the collection's `defaultRenderer`, set once at init and never itself
   swappable
-- **What it does**: `SovereignCollection.tokenURI` delegates entirely to
+- **What it does**: `Surface.tokenURI` delegates entirely to
   `IRenderer(renderer()).tokenURI(address(this), tokenId)`. The collection
   address is passed explicitly rather than read from `msg.sender`, so one
   renderer instance can serve every collection that points at it, and it
   can be called offchain for any collection directly
 - **What it can do**: full EVM read access. A renderer can read the token's
-  seed and Mint Mark, the current owner, sibling tokens, companion contract
+  seed, the current owner, sibling tokens, companion contract
   state, foreign contracts, and block state. It is a view function, so it
   cannot alter any state
-- **Reference implementations**: `DefaultRenderer` (the init-time fallback),
-  `GenerativeRenderer` (scripty-assembled HTML for algorithm-driven work),
-  and an `SVGRenderer` abstract base for hand-written Solidity SVG works
+- **Reference implementations**: `DefaultRenderer` (the init-time fallback)
+  and `ScriptyRenderer` — a bring-your-own generative template for
+  algorithm-driven (Art Blocks-style) work: the artist deploys their own
+  instance (immutable by construction) and points the slot at it, following
+  the injection convention. A hand-written Solidity SVG work implements
+  `IRenderer` directly, with the shared `MetadataJson` library handling the
+  JSON envelope
 
 See [IRenderer](/docs/collections/contracts/i-renderer),
 [DefaultRenderer](/docs/collections/contracts/default-renderer),
-[GenerativeRenderer](/docs/collections/contracts/generative-renderer),
+[ScriptyRenderer](/docs/collections/contracts/scripty-renderer),
 [Write a renderer](/docs/collections/guides/write-a-renderer).
 
 ## Price strategy (`IPriceStrategy`)
@@ -55,11 +59,11 @@ function priceOf(address collection, address minter, uint256 quantity, bytes cal
 ```
 
 - **Type**: `IPriceStrategy`, stored as `_priceStrategy`
-- **Set by**: `setPriceStrategy(address)`, owner-only, no freeze gate
+- **Set by**: `setPriceStrategy(address)`, owner or admin, no freeze gate
 - **Fallback**: when unset, the built-in paid path charges the collection's
-  stored `price` (in `CollectionConfig`) times `quantity`, and requires an
+  stored `price` (in `SurfaceConfig`) times `quantity`, and requires an
   exact match (`WrongPayment` on mismatch)
-- **What it does**: when set, both `mint`/`mintWithRewards` and the read-only
+- **What it does**: when set, both `mint`/`mintWithReferral` and the read-only
   `currentPrice` call `priceOf(address(this), minter, quantity, hookData)`
   to get the required payment. Because a strategy's quote can move between
   when a collector reads it and when their transaction lands (for example a
@@ -79,14 +83,14 @@ See [IPriceStrategy](/docs/collections/contracts/i-price-strategy),
 ## Mint hook (`IMintHook`)
 
 ```solidity
-function beforeMint(address minter, uint256 quantity, uint256 firstTokenId, address surface, bytes calldata hookData)
+function beforeMint(address minter, uint256 quantity, uint256 firstTokenId, address referrer, bytes calldata hookData)
     external returns (bytes4);
-function afterMint(address minter, uint256 quantity, uint256 firstTokenId, address surface, bytes calldata hookData)
+function afterMint(address minter, uint256 quantity, uint256 firstTokenId, address referrer, bytes calldata hookData)
     external;
 ```
 
 - **Type**: `IMintHook`, stored as `_mintHook`
-- **Set by**: `setMintHook(address)`, owner-only
+- **Set by**: `setMintHook(address)`, owner or admin
 - **Fallback**: when unset (`address(0)`), no hook runs and every mint
   proceeds unconditionally
 - **What it does**: runs on every mint path, not just the built-in one.
@@ -101,7 +105,7 @@ function afterMint(address minter, uint256 quantity, uint256 firstTokenId, addre
   or move the collector's ETH, so a custom hook cannot introduce a theft or
   reentrancy path into the payment flow
 - **Why it runs everywhere**: because hooks run on `mint`,
-  `mintWithRewards`, `mintTo`, and `mintToAt` alike, policy composes with
+  `mintWithReferral`, `mintTo`, and `mintToId` alike, policy composes with
   economics instead of being reimplemented per minter. A backed drop with
   an allowlist phase is a `BackedMinter` plus the stock allowlist hook, not
   a bespoke minter that reimplements gating
@@ -109,7 +113,7 @@ function afterMint(address minter, uint256 quantity, uint256 firstTokenId, addre
 See [IMintHook](/docs/collections/contracts/i-mint-hook),
 [AllowlistHook](/docs/collections/contracts/allowlist-hook),
 [PerWalletCapHook](/docs/collections/contracts/per-wallet-cap-hook),
-[HoldsCollectionHook](/docs/collections/contracts/holds-collection-hook),
+[HoldsSurfaceHook](/docs/collections/contracts/holds-surface-hook),
 [Write a mint hook](/docs/collections/guides/write-a-mint-hook).
 
 ## Extension minter
@@ -117,26 +121,26 @@ See [IMintHook](/docs/collections/contracts/i-mint-hook),
 - **Type**: a plain address, tracked in a `mapping(address => bool)`; no
   interface is enforced on it beyond the two functions it's expected to
   call
-- **Set by**: `setMinter(address minter, bool allowed)`, owner-only. Not a
+- **Set by**: `setMinter(address minter, bool allowed)`, owner or admin. Not a
   single-slot swap like the other three: any number of minters can be
   authorized at once, granted and revoked individually. Revoking a
   minter's grant is the artist's lever over that minter's schedule and
   behavior once it's live
-- **What it does**: an authorized minter calls `mintTo(to, surface,
-  hookData)` (sequential mode) or `mintToAt(to, tokenId, surface,
-  hookData)` (pooled mode) on the collection. Both are **non-payable** on
+- **What it does**: an authorized minter calls `mintTo(to, referrer,
+  hookData)` (the sequential final) or `mintToId(to, tokenId, referrer,
+  hookData)` (the pooled final) on the collection. Both are **non-payable** on
   the collection's side: the minter carries all value handling itself, the
   collection just assigns the id, stamps the Mint Mark and entropy, and
   runs the mint hook
 - **What it can and cannot do**: an extension minter fully owns its own
   economics (its own price, its own payment token, its own escrow) and its
-  own sale schedule; it cannot bypass the id-mode rule (`mintTo` reverts
-  with `PooledNeedsMintToAt` on a pooled collection, `mintToAt` reverts
-  with `SequentialAssignsIds` on a sequential one) or the supply cap
-  (`ExceedsCap`), and mint hooks still run against it. Honoring the surface
+  own sale schedule; it cannot bypass the id-mode rule (each final exposes
+  only its own mint entrypoint — `mintTo` on sequential, `mintToId` on pooled;
+  the other is simply not in the ABI) or the supply cap
+  (`ExceedsCap`), and mint hooks still run against it. Honoring the referral
   share on a minter's own payment path is convention, not a contract
   guarantee: PND-shipped minters honor it, but a custom minter's behavior
   is the artist's own visible, onchain choice
 
-See [ISovereignCollection](/docs/collections/contracts/sovereign-collection),
+See [Surface](/docs/collections/contracts/surface),
 [Write a minter](/docs/collections/guides/write-a-minter).

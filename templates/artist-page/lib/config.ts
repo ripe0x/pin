@@ -64,6 +64,25 @@ function readLinks(): string[] {
     .filter(Boolean)
 }
 
+/**
+ * Optional Surface this artist wants the page to sell mints for.
+ * Unset by default — the template stays auction-only (zero behavior change)
+ * until an artist deploys a collection and pastes its address here. Reading
+ * `NEXT_PUBLIC_COLLECTION_ADDRESS` literally (never a dynamic
+ * `process.env[name]` lookup) is required for Next.js to inline it into the
+ * client bundle — see the other NEXT_PUBLIC_* reads in this file.
+ */
+function readCollectionAddress(): Address | null {
+  const raw = process.env.NEXT_PUBLIC_COLLECTION_ADDRESS?.trim()
+  if (!raw) return null
+  if (!isAddress(raw)) {
+    throw new Error(
+      `NEXT_PUBLIC_COLLECTION_ADDRESS is not a valid Ethereum address: ${raw}`,
+    )
+  }
+  return raw as Address
+}
+
 function readRpcUrls(): string[] | null {
   // Plural takes priority — power users specifying a chain.
   const plural = process.env.NEXT_PUBLIC_RPC_URLS?.trim()
@@ -101,6 +120,13 @@ export type AppConfig = {
   walletConnectProjectId: string
   factoryAddress: Address
   factoryDeployBlock: bigint
+  /**
+   * The artist's Surface, if they've deployed one. Null means
+   * "no collection configured" — all collection-mint UI (CollectionMintCard,
+   * CollectionTokenGrid) is absent from the page in that case, and the
+   * template behaves exactly as it did before collection support existed.
+   */
+  collectionAddress: Address | null
 }
 
 /**
@@ -143,6 +169,7 @@ export function getConfig(): AppConfig {
       DEFAULT_WALLETCONNECT_PROJECT_ID,
     factoryAddress: SOVEREIGN_FACTORY_ADDRESS,
     factoryDeployBlock: SOVEREIGN_FACTORY_DEPLOY_BLOCK,
+    collectionAddress: readCollectionAddress(),
   }
   return _config
 }

@@ -9,34 +9,34 @@ An extension minter is any contract the collection owner authorizes to mint toke
 The owner grants (or revokes) a minter explicitly, per address:
 
 ```solidity
-function setMinter(address minter, bool allowed) external; // owner-only
+function setMinter(address minter, bool allowed) external; // owner or admin
 function isMinter(address minter) external view returns (bool);
 ```
 
-`setMinter` is the artist's visible, onchain choice to trust a minter contract, and revoking it is their lever over that minter's future behavior (a revoked minter can no longer call `mintTo`/`mintToAt`, but tokens it already minted are unaffected).
+`setMinter` is the artist's visible, onchain choice to trust a minter contract, and revoking it is their lever over that minter's future behavior (a revoked minter can no longer call `mintTo`/`mintToId`, but tokens it already minted are unaffected).
 
 ## The two entry points
 
 ```solidity
-function mintTo(address to, address surface, bytes calldata hookData)
+function mintTo(address to, address referrer, bytes calldata hookData)
     external returns (uint256 tokenId);   // Sequential mode
-function mintToAt(address to, uint256 tokenId, address surface, bytes calldata hookData)
+function mintToId(address to, uint256 tokenId, address referrer, bytes calldata hookData)
     external;                              // Pooled mode
 ```
 
 Both are `nonpayable` and gated `NotMinter` if `msg.sender` isn't authorized. Which one you call depends on the collection's `idMode`, fixed at deploy:
 
-- **Sequential**: call `mintTo`. The core assigns `tokenId = nextId++`, same counter the built-in paid path uses. Calling `mintToAt` on a sequential collection reverts `SequentialAssignsIds`
-- **Pooled**: call `mintToAt`, supplying the id yourself (`tokenId == sourceId` is the intended shape: the minter owns whatever pool or source mapping decides which id mints next). Calling `mintTo` on a pooled collection reverts `PooledNeedsMintToAt`
+- **Sequential**: call `mintTo`. The core assigns `tokenId = nextId++`, same counter the built-in paid path uses. The sequential final has no `mintToId` at all — its absence from the ABI is the guarantee, not a runtime check
+- **Pooled**: call `mintToId`, supplying the id yourself (`tokenId == sourceId` is the intended shape: the minter owns whatever pool or source mapping decides which id mints next). The pooled final has no `mintTo`; each final ships only its own entrypoint
 
 Both paths run the mint hook (`beforeMint`/`afterMint`), enforce the supply cap exactly as the built-in path does, and stamp a fresh Mint Mark and `tokenSeed` per token. Neither path enforces `mintStart`/`mintEnd`: an extension minter owns its own schedule, and the artist's control over it is `setMinter(minter, false)`, not the window.
 
 ## Value handling is entirely yours
 
-`mintTo` and `mintToAt` are non-payable. The core takes no `msg.value` and does no payment accounting on this path: that is the whole point of the slot. If your minter is a paid mint, it is responsible for:
+`mintTo` and `mintToId` are non-payable. The core takes no `msg.value` and does no payment accounting on this path: that is the whole point of the slot. If your minter is a paid mint, it is responsible for:
 
 - collecting and validating payment (ETH, an ERC20, a swap route, whatever the form needs)
-- honoring the surface share by convention, not by contract guarantee: `SovereignCollection.SURFACE_SHARE_BPS` (10%) is not enforced on this path, so a PND-shipped minter follows it in code and a third-party minter's choice not to is visible onchain
+- honoring the referral share by convention, not by contract guarantee: `Surface.REFERRAL_SHARE_BPS` (10%) is not enforced on this path, so a PND-shipped minter follows it in code and a third-party minter's choice not to is visible onchain
 - paying out (or escrowing) proceeds itself, since the collection's `_pending`/`withdraw` pull-payment ledger only tracks the built-in path's settlements
 
 ## Burn semantics differ by id mode
@@ -46,7 +46,7 @@ Both paths run the mint hook (`beforeMint`/`afterMint`), enforce the supply cap 
 - **Sequential**: standard owner-or-approved burn. Burned ids are never reused
 - **Pooled**: only an authorized minter may burn (`NotAuthorized` otherwise). This is deliberate: a pooled collection's tokens carry backing, pool membership, or other minter-owned state that a holder-initiated burn would strand. A pooled minter typically wraps its own `redeem()` around `burn`, releasing whatever it owes the holder before or as part of the call
 
-A burned pooled id can be minted again via `mintToAt` as a brand new instance: fresh Mint Mark, fresh entropy (`tokenSeed`), fresh escrow if the minter tracks any. The prior instance's history is not erased from the collection; it stays readable in emitted events and offchain indexing.
+A burned pooled id can be minted again via `mintToId` as a brand new instance: fresh Mint Mark, fresh entropy (`tokenSeed`), fresh escrow if the minter tracks any. The prior instance's history is not erased from the collection; it stays readable in emitted events and offchain indexing.
 
 ## Minimal minter skeleton
 
@@ -54,60 +54,64 @@ A burned pooled id can be minted again via `mintToAt` as a brand new instance: f
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity ^0.8.24;
 
-interface ISovereignCollectionMint {
-    function mintTo(address to, address surface, bytes calldata hookData)
+interface ISurfaceMint {
+    function mintTo(address to, address referrer, bytes calldata hookData)
         external returns (uint256 tokenId);
 }
 
-interface ICollectionOwner {
+interface ISurfaceAuth {
     function owner() external view returns (address);
+    function isAdmin(address account) external view returns (bool);
 }
 
 /// @notice Minimal fixed-price sequential minter: takes exact payment, mints
-///         through the collection's extension path, forwards the surface
+///         through the collection's extension path, forwards the referrer
 ///         share by convention, and pays the artist the rest.
 contract SimpleExtensionMinter {
-    uint16 constant SURFACE_SHARE_BPS = 1_000; // 10%, matches the core constant
+    uint16 constant REFERRAL_SHARE_BPS = 1_000; // 10%, matches the core constant
     uint16 constant BPS = 10_000;
 
     mapping(address => uint256) public priceOf; // collection => wei
 
     event PriceSet(address indexed collection, uint256 price);
 
-    modifier onlyCollectionOwner(address collection) {
-        require(msg.sender == ICollectionOwner(collection).owner(), "not collection owner");
+    modifier onlySurfaceAdmin(address collection) {
+        require(
+            msg.sender == ISurfaceAuth(collection).owner() || ISurfaceAuth(collection).isAdmin(msg.sender),
+            "not collection owner or admin"
+        );
         _;
     }
 
-    function setPrice(address collection, uint256 price) external onlyCollectionOwner(collection) {
+    function setPrice(address collection, uint256 price) external onlySurfaceAdmin(collection) {
         priceOf[collection] = price;
         emit PriceSet(collection, price);
     }
 
-    function mint(address collection, address surface) external payable returns (uint256 tokenId) {
+    function mint(address collection, address referrer) external payable returns (uint256 tokenId) {
         uint256 price = priceOf[collection];
         require(msg.value == price, "wrong payment");
 
-        tokenId = ISovereignCollectionMint(collection).mintTo(msg.sender, surface, "");
+        tokenId = ISurfaceMint(collection).mintTo(msg.sender, referrer, "");
 
-        if (surface != address(0) && price > 0) {
-            uint256 surfaceCut = (price * SURFACE_SHARE_BPS) / BPS;
-            (bool okS,) = surface.call{value: surfaceCut}("");
-            require(okS, "surface payout failed");
-            uint256 artistCut = price - surfaceCut;
+        if (referrer != address(0) && price > 0) {
+            uint256 referralCut = (price * REFERRAL_SHARE_BPS) / BPS;
+            (bool okS,) = referrer.call{value: referralCut}("");
+            require(okS, "referral payout failed");
+            uint256 artistCut = price - referralCut;
             if (artistCut > 0) {
-                (bool okA,) = ICollectionOwner(collection).owner().call{value: artistCut}("");
+                (bool okA,) = ISurfaceAuth(collection).owner().call{value: artistCut}("");
                 require(okA, "artist payout failed");
             }
         } else if (price > 0) {
-            (bool ok,) = ICollectionOwner(collection).owner().call{value: price}("");
+            (bool ok,) = ISurfaceAuth(collection).owner().call{value: price}("");
             require(ok, "artist payout failed");
         }
     }
 }
 ```
 
-A pooled minter follows the same shape but calls `mintToAt(to, sourceId, surface, hookData)` with an id it owns the logic for (a Fisher-Yates draw over an id pool, a 1:1 mapping to an external source collection, or whatever the form needs), and typically pairs `redeem()`/`burn` with releasing per-token backing.
+A pooled minter follows the same shape but calls `mintToId(to, sourceId, referrer, hookData)` with an id it owns the logic for (a Fisher-Yates draw over an id pool, a 1:1 mapping to an external source collection, or whatever the form needs), and typically pairs `redeem()`/`burn` with releasing per-token backing.
 
 ## After deploying a minter
 

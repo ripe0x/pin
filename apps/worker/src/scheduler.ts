@@ -31,6 +31,7 @@ import { scanSrv2ActiveAuctions } from "./tasks/scan-srv2-active-auctions.ts"
 import { scanTlActiveAuctions } from "./tasks/scan-tl-active-auctions.ts"
 import { scanPndAuctionTokens } from "./tasks/scan-pnd-auction-tokens.ts"
 import { probeCidAvailability } from "./tasks/probe-cid-availability.ts"
+import { captureCollectionMedia } from "./tasks/capture-collection-media.ts"
 
 type TaskName =
   | "seed-known-artists"
@@ -49,6 +50,7 @@ type TaskName =
   | "scan-pnd-auction-tokens"
   | "probe-cid-availability"
   | "ponder-drift-check"
+  | "capture-collection-media"
 
 export type TaskResult = {
   rpcCalls?: number
@@ -85,6 +87,14 @@ const tasks: Task[] = [
   // CID is probed it stays probed for RETRY_AFTER_DAYS).
   { name: "probe-cid-availability",    intervalMs: 10 * MIN, fn: probeCidAvailability },
   { name: "ponder-drift-check",        intervalMs: 60 * MIN, fn: ponderDriftCheck },
+  // PND Surface System media capture (SVG rasterize only, v1). Inert
+  // today: SOVEREIGN_COLLECTION_FACTORY is still the zero-address
+  // sentinel (no mainnet deploy) AND the concurrent Ponder discovery
+  // tables (collections/collection_tokens) don't exist yet — both gates
+  // checked inside the task, same shape as the other dependsOnPonder
+  // tasks. Generous interval: capture is not time-sensitive, and each
+  // run is bounded by CAPTURE_BATCH_SIZE.
+  { name: "capture-collection-media", intervalMs: 10 * MIN, fn: captureCollectionMedia },
 ]
 
 const runState = new Map<TaskName, { running: boolean; lastRun: Date | null }>()

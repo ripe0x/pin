@@ -1,11 +1,16 @@
 import { ArtistHero } from "@/components/ArtistHero"
 import { AuctionCard, bucketFor } from "@/components/AuctionCard"
+import { CollectionMintCard } from "@/components/CollectionMintCard"
+import { CollectionTokenGrid } from "@/components/CollectionTokenGrid"
 import { Footer } from "@/components/Footer"
 import {
   getAllAuctions,
   getArtistHouse,
   type AuctionSummary,
 } from "@/lib/auctions"
+import { getConfig } from "@/lib/config"
+import { getCollection, getCurrentPrice } from "@/lib/collection"
+import { IdMode } from "@/lib/surface"
 
 // Rendered on demand, not prerendered at build, so a deploy never crawls the
 // chain (archive eth_getLogs at build time is exactly what used to fail the
@@ -65,6 +70,7 @@ function compareAuctions(a: AuctionSummary, b: AuctionSummary): number {
 }
 
 export default async function HomePage() {
+  const { collectionAddress, artistAddress } = getConfig()
   const [auctions, house] = await Promise.all([
     getAllAuctions(),
     getArtistHouse(),
@@ -83,6 +89,13 @@ export default async function HomePage() {
         totalAuctions={unique.length}
         activeAuctions={activeCount}
       />
+
+      {collectionAddress ? (
+        <CollectionSection
+          collectionAddress={collectionAddress}
+          artistAddress={artistAddress}
+        />
+      ) : null}
 
       {!house ? (
         <NoHouseState />
@@ -119,6 +132,67 @@ function NoHouseState() {
         This wallet hasn&rsquo;t deployed a Sovereign auction house yet. Deploy
         one in the main app, then auctions you create will show up here.
       </p>
+    </div>
+  )
+}
+
+/**
+ * Mint card + recent-mints grid for the artist's optional Surface.
+ * Entirely absent from the page unless `NEXT_PUBLIC_COLLECTION_ADDRESS` is
+ * configured (see lib/config.ts) — the section itself, and every read behind
+ * it, only runs when an artist has opted in.
+ */
+async function CollectionSection({
+  collectionAddress,
+  artistAddress,
+}: {
+  collectionAddress: NonNullable<
+    Awaited<ReturnType<typeof getConfig>>["collectionAddress"]
+  >
+  artistAddress: Awaited<ReturnType<typeof getConfig>>["artistAddress"]
+}) {
+  const [collection, price] = await Promise.all([
+    getCollection(),
+    getCurrentPrice(),
+  ])
+  if (!collection) return null
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-8 items-start">
+        <div className="space-y-1">
+          <h2 className="text-base font-mono font-medium tracking-tight truncate">
+            {collection.name}
+          </h2>
+          <CollectionMintCard
+            collectionAddress={collectionAddress}
+            artistAddress={artistAddress}
+            initial={{
+              name: collection.name,
+              // Bigint fields must cross the server/client boundary as
+              // strings — Next.js can't serialize a raw bigint in the RSC
+              // payload (see SerializedCollectionConfig's doc comment in
+              // CollectionMintCard.tsx).
+              cfg: {
+                ...collection.cfg,
+                price: collection.cfg.price.toString(),
+                supplyCap: collection.cfg.supplyCap.toString(),
+                mintStart: collection.cfg.mintStart.toString(),
+                mintEnd: collection.cfg.mintEnd.toString(),
+              },
+              status: collection.status,
+              minted: collection.minted.toString(),
+              price: price !== null ? price.toString() : null,
+            }}
+          />
+        </div>
+        {collection.cfg.idMode === IdMode.Sequential ? (
+          <CollectionTokenGrid
+            collectionAddress={collectionAddress}
+            minted={collection.minted}
+          />
+        ) : null}
+      </div>
     </div>
   )
 }

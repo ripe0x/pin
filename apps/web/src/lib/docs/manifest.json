@@ -43,7 +43,7 @@
               "title": "Overview",
               "slug": "overview",
               "path": "/docs/collections/overview",
-              "description": "What the PND Collection System is, its parts, and how this reference is organized."
+              "description": "What the PND Surface System is, its parts, and how this reference is organized."
             }
           ]
         },
@@ -67,19 +67,13 @@
               "title": "Mint Marks and entropy",
               "slug": "mint-marks-and-entropy",
               "path": "/docs/collections/concepts/mint-marks-and-entropy",
-              "description": "The per-token provenance snapshot and the mint-time seed renderers draw from."
-            },
-            {
-              "title": "The Release Graph and Token Path",
-              "slug": "collection-graph-and-token-path",
-              "path": "/docs/collections/concepts/collection-graph-and-token-path",
-              "description": "Directed edges between collections, and per-token forward pointers."
+              "description": "The derived per-token provenance and the mint-time seed renderers draw from."
             },
             {
               "title": "Types",
               "slug": "types",
               "path": "/docs/collections/concepts/types",
-              "description": "The shared enums and structs in CollectionTypes.sol, the data-only surface with no ABI functions of its own."
+              "description": "The shared enums and structs in SurfaceTypes.sol, the data-only surface with no ABI functions of its own."
             }
           ]
         },
@@ -88,34 +82,34 @@
           "title": "Contracts",
           "items": [
             {
-              "title": "SovereignCollection",
-              "slug": "sovereign-collection",
-              "path": "/docs/collections/contracts/sovereign-collection",
-              "description": "The one core of the PND Collection System: a single OpenZeppelin ERC721 that holds ownership, ETH payment paths, and per-token provenance, and nothing else."
+              "title": "Surface",
+              "slug": "surface",
+              "path": "/docs/collections/contracts/surface",
+              "description": "The one core of the PND Surface System: a single OpenZeppelin ERC721 that holds ownership, ETH payment paths, and per-token provenance, and nothing else."
             },
             {
-              "title": "SovereignCollectionFactory",
+              "title": "SurfaceFactory",
               "slug": "factory",
               "path": "/docs/collections/contracts/factory",
-              "description": "SovereignCollectionFactory deploys one [SovereignCollection](/docs/collections/contracts/sovereign-collection) per work as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs."
-            },
-            {
-              "title": "Attribution",
-              "slug": "attribution",
-              "path": "/docs/collections/contracts/attribution",
-              "description": "Attribution is generic, immutable, public infrastructure recording the works-to-artists half of the bilateral attribution handshake."
+              "description": "SurfaceFactory deploys one [Surface](/docs/collections/contracts/surface) per work as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs."
             },
             {
               "title": "DefaultRenderer",
               "slug": "default-renderer",
               "path": "/docs/collections/contracts/default-renderer",
-              "description": "The canonical built-in renderer for [SovereignCollection](/docs/collections/contracts/sovereign-collection)."
+              "description": "The canonical built-in renderer for [Surface](/docs/collections/contracts/surface)."
             },
             {
-              "title": "GenerativeRenderer",
-              "slug": "generative-renderer",
-              "path": "/docs/collections/contracts/generative-renderer",
-              "description": "The default renderer for script-based generative collections: a stateless shared singleton that assembles a complete HTML document per token and returns it as the `animation_url` of the token's metadata."
+              "title": "RenderAssets",
+              "slug": "render-assets",
+              "path": "/docs/collections/contracts/render-assets",
+              "description": "The renderer-land registry of static display assets: each collection's shared cover image, per-token captures (thumbnails of rendered output), and a capture template that resolves per token id."
+            },
+            {
+              "title": "ScriptyRenderer",
+              "slug": "scripty-renderer",
+              "path": "/docs/collections/contracts/scripty-renderer",
+              "description": "ScriptyRenderer is the **bring-your-own generative renderer template**: a concrete, forkable [IRenderer](/docs/collections/contracts/i-renderer) for Art Blocks-style script-based work, assembled fully onchain through ScriptyBuilderV2."
             },
             {
               "title": "AllowlistHook",
@@ -130,34 +124,46 @@
               "description": "A reference [mint hook](/docs/collections/contracts/i-mint-hook) capping how many tokens any single wallet can mint from a collection, so a capped drop can't be bought out by one address in a single transaction (or across several)."
             },
             {
-              "title": "HoldsCollectionHook",
-              "slug": "holds-collection-hook",
-              "path": "/docs/collections/contracts/holds-collection-hook",
+              "title": "HoldsSurfaceHook",
+              "slug": "holds-surface-hook",
+              "path": "/docs/collections/contracts/holds-surface-hook",
               "description": "A reference [mint hook](/docs/collections/contracts/i-mint-hook) gating a mint on the minter holding a token from another collection, typically an earlier collection by the same artist."
+            },
+            {
+              "title": "GateHook",
+              "slug": "gate-hook",
+              "path": "/docs/collections/contracts/gate-hook",
+              "description": "A reference [mint hook](/docs/collections/contracts/i-mint-hook) composing a Merkle allowlist and a per-wallet cap into ONE hook."
             },
             {
               "title": "IMintHook",
               "slug": "i-mint-hook",
               "path": "/docs/collections/contracts/i-mint-hook",
-              "description": "IMintHook is the interface a contract implements to occupy a collection's hook slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [SovereignCollection](/docs/collections/contracts/sovereign-collection) core."
+              "description": "IMintHook is the interface a contract implements to occupy a collection's hook slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [Surface](/docs/collections/contracts/surface) core."
             },
             {
               "title": "IPriceStrategy",
               "slug": "i-price-strategy",
               "path": "/docs/collections/contracts/i-price-strategy",
-              "description": "IPriceStrategy is the interface a contract implements to occupy a collection's price slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [SovereignCollection](/docs/collections/contracts/sovereign-collection) core."
+              "description": "IPriceStrategy is the interface a contract implements to occupy a collection's price slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [Surface](/docs/collections/contracts/surface) core."
             },
             {
               "title": "IRenderer",
               "slug": "i-renderer",
               "path": "/docs/collections/contracts/i-renderer",
-              "description": "IRenderer is the interface a contract implements to occupy a collection's renderer slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [SovereignCollection](/docs/collections/contracts/sovereign-collection) core."
+              "description": "IRenderer is the interface a contract implements to occupy a collection's renderer slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [Surface](/docs/collections/contracts/surface) core."
             },
             {
-              "title": "ICollectionView",
-              "slug": "i-collection-view",
-              "path": "/docs/collections/contracts/i-collection-view",
-              "description": "ICollectionView is the read surface a collection exposes for its swappable slots, [renderer](/docs/collections/contracts/i-renderer), [price strategy](/docs/collections/contracts/i-price-strategy), and any minter, to read without depending on the full…"
+              "title": "ISurfaceView",
+              "slug": "i-surface-view",
+              "path": "/docs/collections/contracts/i-surface-view",
+              "description": "ISurfaceView is the read surface a collection exposes for its swappable slots, [renderer](/docs/collections/contracts/i-renderer), [price strategy](/docs/collections/contracts/i-price-strategy), and any minter, to read without depending on the full [Surface](/docs/collections/contracts/surface) ABI."
+            },
+            {
+              "title": "IPreviewRenderer",
+              "slug": "i-preview-renderer",
+              "path": "/docs/collections/contracts/i-preview-renderer",
+              "description": "IPreviewRenderer is an OPTIONAL extension a renderer implements to render what a token WOULD look like for a caller-supplied seed, without any token existing."
             }
           ]
         },
@@ -169,7 +175,7 @@
               "title": "Deploy a collection",
               "slug": "deploy-a-collection",
               "path": "/docs/collections/guides/deploy-a-collection",
-              "description": "Call the factory to deploy an owned, immutable SovereignCollection clone, and what each config field controls."
+              "description": "Call the factory to deploy an owned, immutable Surface clone, and what each config field controls."
             },
             {
               "title": "Mint",
@@ -181,7 +187,7 @@
               "title": "Write a minter",
               "slug": "write-a-minter",
               "path": "/docs/collections/guides/write-a-minter",
-              "description": "Implement an extension minter, get authorized via setMinter, and mint through mintTo or mintToAt."
+              "description": "Implement an extension minter, get authorized via setMinter, and mint through mintTo or mintToId."
             },
             {
               "title": "Write a price strategy",
@@ -199,7 +205,7 @@
               "title": "Write a renderer",
               "slug": "write-a-renderer",
               "path": "/docs/collections/guides/write-a-renderer",
-              "description": "Implement IRenderer against ICollectionView, the three built-in renderers, and how metadata freezing and work locking work."
+              "description": "Implement IRenderer against ISurfaceView, the bundled renderers, and how renderer locking works."
             }
           ]
         },
