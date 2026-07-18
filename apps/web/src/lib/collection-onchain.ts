@@ -600,3 +600,29 @@ export type AttributionEntry = CreatorEntry // back-compat alias
 export async function getAttribution(_collection: Address): Promise<CreatorEntry[]> {
   return []
 }
+
+/** The collection's own description from its contractURI() metadata (a data-URI
+ *  JSON), or null. Used to feed the "About this work" copy from the contract
+ *  instead of hardcoded text. Cached — collection metadata is near-static. */
+export async function getContractDescription(address: Address): Promise<string | null> {
+  return pgCache(`contract-desc:${lc(address)}`, 3600, async () => {
+    try {
+      const uri = (await getClient().readContract({
+        address,
+        abi: surfaceAbi,
+        functionName: "contractURI",
+      })) as string
+      const comma = uri.indexOf(",")
+      if (comma === -1) return null
+      const payload = uri.slice(comma + 1)
+      const json = uri.slice(0, comma).includes("base64")
+        ? Buffer.from(payload, "base64").toString("utf8")
+        : decodeURIComponent(payload)
+      const meta = JSON.parse(json) as { description?: string }
+      const d = typeof meta.description === "string" ? meta.description.trim() : ""
+      return d || null
+    } catch {
+      return null
+    }
+  })
+}

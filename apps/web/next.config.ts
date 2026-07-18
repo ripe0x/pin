@@ -2,6 +2,32 @@ import type { NextConfig } from "next"
 
 const nextConfig: NextConfig = {
   transpilePackages: ["@pin/abi", "@pin/addresses", "@pin/shared", "@pin/token-metadata"],
+  // @networked-art/punks-sdk (the Homage gallery's local punk renderer) has a
+  // node:fs directory-loader in its main entry that the browser path never
+  // calls (we pass the bundled dataset). Webpack can't bundle `node:` URIs in
+  // client code, so strip the scheme and resolve the bare fs modules to empty
+  // for the browser build — same recipe the Homage site's next.config uses.
+  webpack: (config, { isServer, webpack }) => {
+    if (!isServer) {
+      config.plugins.push(
+        new webpack.NormalModuleReplacementPlugin(
+          /^node:(fs\/promises|fs|path|os|url)$/,
+          (r: { request: string }) => {
+            r.request = r.request.replace(/^node:/, "")
+          },
+        ),
+      )
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        "fs/promises": false,
+        path: false,
+        os: false,
+        url: false,
+      }
+    }
+    return config
+  },
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "**.ipfs.w3s.link" },
