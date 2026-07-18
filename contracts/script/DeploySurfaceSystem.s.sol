@@ -36,30 +36,31 @@ import {SurfaceFactory} from "../src/surface/SurfaceFactory.sol";
 ///           2. Surface + PooledSurface impls (CREATE, no args)
 ///           3. SurfaceFactory(seqImpl, pooledImpl, 0, catalog), then paused
 ///
-///         Run with (mainnet):
+///         The signer comes from the CLI, not from the script: vm.startBroadcast()
+///         takes no key, so forge uses whatever --account / --ledger / --private-key
+///         you pass. Prefer an encrypted keystore account (no raw key on disk).
+///
+///         Run with (mainnet, keystore account):
 ///           forge script script/DeploySurfaceSystem.s.sol \
 ///             --rpc-url $MAINNET_RPC_URL \
-///             --private-key $DEPLOYER_PK \
+///             --account <name> --sender <deployer address> \
 ///             --broadcast \
 ///             --verify \
 ///             --etherscan-api-key $ETHERSCAN_API_KEY
 ///
-///         To preview without broadcasting (dry run; PRIVATE_KEY still must be
-///         set in env because run() reads it, but no tx is sent without
-///         --broadcast):
-///           forge script script/DeploySurfaceSystem.s.sol --rpc-url $MAINNET_RPC_URL
+///         To preview without broadcasting (dry run; pass --sender so the
+///         simulation has an origin, but no tx is sent without --broadcast):
+///           forge script script/DeploySurfaceSystem.s.sol \
+///             --rpc-url $MAINNET_RPC_URL --sender <deployer address>
 ///
-///         PRIVATE_KEY is read from env for vm.startBroadcast(pk) so the script
-///         works identically for a dry run and a real broadcast; the key is
-///         never printed, logged, or echoed anywhere in this script.
+///         No private key is read, printed, logged, or echoed anywhere in this
+///         script; signing and the password prompt are handled by forge.
 contract DeploySurfaceSystemScript is Script {
     /// @dev The Catalog public good, live on mainnet. Same CREATE2 address on
     ///      every chain it has been deployed to. Reused by default on mainnet.
     address internal constant MAINNET_CATALOG = 0x467a9c39e03C595EC3075D856f19C7386b6b915d;
 
     function run() external {
-        uint256 deployerPk = vm.envUint("PRIVATE_KEY");
-
         // ── 1. Catalog. On mainnet, reuse the existing public good (the default
         //      below); set CATALOG to override. On a fresh chain (unset, off
         //      mainnet) deploy one so harness/fork runs have a Catalog to point
@@ -67,7 +68,7 @@ contract DeploySurfaceSystemScript is Script {
         //      env var reuses it instead of deploying a duplicate.
         address catalog = vm.envOr("CATALOG", block.chainid == 1 ? MAINNET_CATALOG : address(0));
         if (catalog == address(0)) {
-            vm.startBroadcast(deployerPk);
+            vm.startBroadcast();
             catalog = address(new Catalog());
             vm.stopBroadcast();
             console2.log("Catalog deployed at:", catalog);
@@ -76,7 +77,7 @@ contract DeploySurfaceSystemScript is Script {
         }
 
         // ── 2. The two collection implementations — plain CREATE, no args.
-        vm.startBroadcast(deployerPk);
+        vm.startBroadcast();
         Surface sequentialImpl = new Surface();
         PooledSurface pooledImpl = new PooledSurface();
         vm.stopBroadcast();
@@ -86,7 +87,7 @@ contract DeploySurfaceSystemScript is Script {
         // ── 3. SurfaceFactory(seqImpl, pooledImpl, defaultRenderer=0, catalog).
         //      No default renderer: every collection brings its own via
         //      cfg.renderer, and one that names none reverts RendererRequired.
-        vm.startBroadcast(deployerPk);
+        vm.startBroadcast();
         SurfaceFactory factory =
             new SurfaceFactory(address(sequentialImpl), address(pooledImpl), address(0), catalog);
         vm.stopBroadcast();
@@ -102,7 +103,7 @@ contract DeploySurfaceSystemScript is Script {
         //        deployer opens it. setPaused is deployer-only and reversible:
         //        flip it back with factory.setPaused(false) when ready to go
         //        live. Distinct from the one-way deprecate.
-        vm.startBroadcast(deployerPk);
+        vm.startBroadcast();
         factory.setPaused(true);
         vm.stopBroadcast();
         require(factory.paused(), "factory not paused at deploy");
