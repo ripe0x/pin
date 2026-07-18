@@ -557,14 +557,18 @@ registerEligibilityProvider("homage-allowlist", async ({ client, wallet }) => {
   }
   const max = maxRes.status === "success" ? Number(maxRes.result as bigint) : 0
   const used = usedRes.status === "success" ? Number(usedRes.result as bigint) : 0
+  // max >= 10_000 (the full supply) is the "no per-address cap" configuration.
+  const uncapped = max >= 10_000
   const remaining = Math.max(max - used, 0)
-  if (remaining <= 0) {
+  if (!uncapped && remaining <= 0) {
     return { eligible: false, reason: `Allowlist cap reached (${used} of ${max} used).` }
   }
   const data: HomageAllowlistData = { proof, remaining, max }
   return {
     eligible: true,
-    reason: `On the allowlist. ${remaining} of ${max} mints left; a random punk is drawn at mint.`,
+    reason: uncapped
+      ? "On the allowlist. A random punk is drawn at mint."
+      : `On the allowlist. ${remaining} of ${max} mints left; a random punk is drawn at mint.`,
     data,
   }
 })

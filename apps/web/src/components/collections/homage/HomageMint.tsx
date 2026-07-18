@@ -138,6 +138,8 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
   const allowlist = useAllowlist(!!address && phase !== "public")
   const allowlistProof = address && allowlist ? allowlistProofIn(allowlist, address) : null
   const isAllowlisted = !!allowlistProof
+  // max >= SUPPLY is the "no per-address cap" configuration — hide cap language entirely.
+  const allowlistUncapped = maxPerAllowlisted !== undefined && maxPerAllowlisted >= SUPPLY
   const allowlistRemaining = maxPerAllowlisted !== undefined ? Math.max(maxPerAllowlisted - allowlistUsed, 0) : undefined
 
   // ── live quote ───────────────────────────────────────────────────────────────
@@ -500,7 +502,7 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                   )}
                 </div>
               ) : phase === "allowlist" ? (
-                isAllowlisted && (allowlistRemaining ?? 0) > 0 ? (
+                isAllowlisted && (allowlistUncapped || (allowlistRemaining ?? 0) > 0) ? (
                   <button
                     onClick={doAllowlistMint}
                     disabled={isPending || soldOut || drawExhausted || claimTotal === undefined}
@@ -510,7 +512,7 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                       ? "Minting…"
                       : drawExhausted
                         ? "Draw pool empty"
-                        : `Allowlist mint${allowlistRemaining !== undefined ? ` · ${allowlistRemaining} left` : ""}`}
+                        : `Allowlist mint${!allowlistUncapped && allowlistRemaining !== undefined ? ` · ${allowlistRemaining} left` : ""}`}
                   </button>
                 ) : (
                   <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
