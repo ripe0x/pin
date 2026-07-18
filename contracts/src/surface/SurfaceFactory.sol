@@ -28,7 +28,10 @@ contract SurfaceFactory {
     ///         points at.
     address public immutable pooledImplementation;
 
-    /// @notice The renderer a collection gets when the artist names none.
+    /// @notice The renderer a collection gets when it names none of its own.
+    ///         May be zero: with no factory default, a collection that sets no
+    ///         renderer reverts RendererRequired at creation, so every
+    ///         collection brings its own.
     address public immutable defaultRenderer;
 
     /// @notice The Catalog singleton every clone reads for creator
@@ -79,7 +82,13 @@ contract SurfaceFactory {
             revert NotAContract(sequentialImplementation_);
         }
         if (pooledImplementation_.code.length == 0) revert NotAContract(pooledImplementation_);
-        if (defaultRenderer_.code.length == 0) revert NotAContract(defaultRenderer_);
+        // The default renderer is optional (0 = no factory default): a collection that names
+        // no renderer of its own then reverts RendererRequired at creation, so every collection
+        // must bring its own. A nonzero value must be a real contract, same as catalog below,
+        // so an EOA/typo cannot silently become the fallback tokenURI for every clone.
+        if (defaultRenderer_ != address(0) && defaultRenderer_.code.length == 0) {
+            revert NotAContract(defaultRenderer_);
+        }
         // Catalog is optional (0 disables creator confirmation), but a nonzero value must be a
         // real contract: a mistyped/EOA/wrong-chain address passes silently here and then makes
         // isConfirmedCreator revert forever on every collection this factory ever clones;
