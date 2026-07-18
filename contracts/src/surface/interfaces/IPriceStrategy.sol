@@ -7,10 +7,9 @@ pragma solidity ^0.8.24;
 ///         never introduce a theft or reentrancy path. When a collection's
 ///         strategy slot is unset, its stored fixed price applies.
 ///
-///         Strategies may read anything: block.basefee, companion state
-///         (lock counters, attestations), the collection itself. The
-///         reference case is TBAM-shaped dynamic pricing
-///         (basefee x f(effectiveLocks)).
+///         Strategies may read anything: block.basefee, companion contract
+///         state, or the collection itself, to compute a dynamic price in
+///         place of a fixed one.
 interface IPriceStrategy {
     /// @notice Total price in wei for `quantity` tokens minted by `minter`.
     /// @param collection The collection asking (explicit, so one strategy

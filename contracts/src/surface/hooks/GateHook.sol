@@ -8,7 +8,7 @@ import {IMintHook} from "../interfaces/IMintHook.sol";
 
 /// @title GateHook
 /// @notice Merkle allowlist + per-wallet cap in ONE hook. The core has a
-///         single mintHook slot, and a real gated drop wants both at once —
+///         single mintHook slot, and a real gated drop wants both at once,
 ///         an allowlist without a per-wallet cap invites a listed wallet to
 ///         sweep the supply. Each gate is independently optional per
 ///         collection: root 0 = no allowlist, cap 0 = no cap, so this hook
@@ -17,7 +17,7 @@ import {IMintHook} from "../interfaces/IMintHook.sol";
 ///
 ///         Semantics match the single-purpose hooks exactly: same OZ
 ///         standard-merkle-tree leaf format, same hookData shape
-///         (abi.encode(bytes32[] proof)), and the SAME custom errors —
+///         (abi.encode(bytes32[] proof)), and the SAME custom errors,
 ///         `NotAllowlisted()` / `WalletCapExceeded(cap, attempted)` share
 ///         signatures (and therefore selectors) with AllowlistHook and
 ///         PerWalletCapHook, so a UI maps one set of errors for all three.
@@ -27,12 +27,12 @@ import {IMintHook} from "../interfaces/IMintHook.sol";
 ///         `mintWithReferral`.
 ///
 ///         Config authority is the collection's owner OR admins (via
-///         HookBase.onlySurfaceAdmin — the same authority root as the
+///         HookBase.onlySurfaceAdmin, the same authority root as the
 ///         collection's own setters). A drop is operated by the artist's
 ///         team, not only the owner key.
 ///
 ///         Gas: the wallet counter is written only while a cap is active.
-///         Enabling a cap mid-sale therefore counts from that moment —
+///         Enabling a cap mid-sale therefore counts from that moment,
 ///         earlier uncapped mints are not retroactively charged against it.
 ///         (Deliberate: uncapped collections shouldn't pay a counting
 ///         SSTORE per mint. Set the cap before opening if it must bind the

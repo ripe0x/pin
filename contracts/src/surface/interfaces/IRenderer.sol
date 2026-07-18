@@ -5,8 +5,8 @@ import {SurfaceConfig, SurfaceStatus, IdMode} from "../SurfaceTypes.sol";
 
 /// @title IRenderer
 /// @notice Swappable metadata renderer. A collection's tokenURI/contractURI
-///         delegate here. The collection is an explicit parameter — never
-///         msg.sender — so one renderer instance serves every collection,
+///         delegate here. The collection is an explicit parameter, never
+///         msg.sender, so one renderer instance serves every collection,
 ///         offchain callers can eth_call it directly, and any contract can
 ///         adopt it by implementing ISurfaceView.
 ///

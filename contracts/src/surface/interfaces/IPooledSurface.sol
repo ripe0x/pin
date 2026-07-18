@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {ISurfaceCore} from "./ISurfaceCore.sol";
 
 /// @title IPooledSurface
-/// @notice The pooled collection — for backed and sourced forms (tokenId ==
+/// @notice The pooled collection, for backed and sourced forms (tokenId ==
 ///         sourceId). Its authorized minter owns the id pool: it chooses
 ///         every id, and it alone can burn, so nothing outside the pool's
 ///         economics can strand a token's backing. There is no public sale

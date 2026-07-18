@@ -26,7 +26,7 @@ library MetadataJson {
         return string.concat("data:application/json;base64,", Base64.encode(bytes(json)));
     }
 
-    /// @dev Both `trait` and `value` are escaped so the attribute is JSON-safe by default —
+    /// @dev Both `trait` and `value` are escaped so the attribute is JSON-safe by default,
     ///      today's callers pass literals (a no-op), but a bundled renderer passing dynamic
     ///      text through here can't inject into the metadata.
     function numAttr(string memory trait, uint256 value) internal pure returns (string memory) {
@@ -37,7 +37,7 @@ library MetadataJson {
         return string.concat('{"trait_type":"', escape(trait), '","value":"', escape(value), '"}');
     }
 
-    /// @notice Provenance traits, derived on the spot — nothing per-token is
+    /// @notice Provenance traits, derived on the spot, nothing per-token is
     ///         stored beyond the seed. In Sequential mode the token id IS the
     ///         mint order: Mint Order = tokenId, First = id 1, Final = the
     ///         collection is Closed and this is the highest id it ever

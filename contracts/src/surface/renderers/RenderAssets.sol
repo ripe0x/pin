@@ -11,7 +11,7 @@ import {ISurfaceAuth} from "../interfaces/ISurfaceAuth.sol";
 ///         surfaces that cannot run it), and a per-collection capture
 ///         template. One immutable, ownerless singleton serves every
 ///         collection; writes need the same key as the collection's own
-///         setters — except captures, which an admin may delegate to a
+///         setters, except captures, which an admin may delegate to a
 ///         narrow capturer key.
 ///
 ///         Captures are deliberately always refreshable. They mirror the art;
@@ -40,7 +40,7 @@ contract RenderAssets {
     mapping(address => mapping(uint256 => string)) private _captures;
 
     /// @notice Narrow, admin-granted keys that may write captures and the
-    ///         template for a collection — and nothing else. Lets an artist
+    ///         template for a collection, and nothing else. Lets an artist
     ///         run thumbnail automation on a low-privilege hot key, or
     ///         delegate capture-writing to a mint surface, without handing
     ///         over an admin key that could reroute money.
@@ -92,7 +92,7 @@ contract RenderAssets {
     }
 
     /// @notice Set the capture template ("" clears it). One write refreshes
-    ///         every token that has no explicit capture — publish a new
+    ///         every token that has no explicit capture, publish a new
     ///         manifest of frames, point the template at it, done. To nudge
     ///         marketplaces to re-fetch, follow up with the collection's
     ///         ERC-4906 `notifyMetadataUpdate`.

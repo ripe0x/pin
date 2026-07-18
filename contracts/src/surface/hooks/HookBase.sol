@@ -9,7 +9,7 @@ import {ISurfaceAuth} from "../interfaces/ISurfaceAuth.sol";
 ///         goods: one deployed instance serves many collections, keyed by
 ///         msg.sender (the calling collection) in the mint callbacks.
 ///         Configuring a hook for a collection needs the same key as that
-///         collection's own setters — its owner or an admin. Hooks only gate
+///         collection's own setters, its owner or an admin. Hooks only gate
 ///         or record; they never touch funds.
 abstract contract HookBase is IMintHook {
     error NotSurfaceAdmin();

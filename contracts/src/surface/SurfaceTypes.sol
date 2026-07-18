@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Surface — shared types
+// Surface, shared types
 //
 // One contract is one collection. The core keeps three things: who owns each
 // token, where the money goes, and one seed per token. How the work looks is
@@ -19,7 +19,7 @@ enum SurfaceStatus {
     Closed // the window passed, or a sequential cap filled
 }
 
-/// @notice How token ids are handed out. Not a setting — each mode is its own
+/// @notice How token ids are handed out. Not a setting; each mode is its own
 ///         contract, and idMode() says which one you are holding.
 ///         Sequential (Surface): the contract counts 1, 2, 3. The id IS
 ///         the mint order, and ids are never reused after a burn.
@@ -34,7 +34,7 @@ enum IdMode {
 /// @notice The live settings, all in one struct. Setters edit these fields in
 ///         place, so config() always reports exactly what the contract uses.
 ///         The two locks are one-way: true never goes back to false. Passed
-///         true at creation, the collection is born locked — permanence with
+///         true at creation, the collection is born locked, permanence with
 ///         no second transaction to remember.
 struct SurfaceConfig {
     uint256 price; // wei; used when priceStrategy is unset. 0 = gas only

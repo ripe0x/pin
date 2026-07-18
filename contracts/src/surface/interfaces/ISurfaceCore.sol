@@ -8,7 +8,7 @@ import {SurfaceConfig, SurfaceStatus, IdMode, InitParams} from "../SurfaceTypes.
 ///         ids. An OZ ERC721 deployed as an immutable EIP-1167 clone: the
 ///         collector pays the price, the artist keeps all of it minus a fixed
 ///         share for whoever hosted the mint, and the core stores one seed
-///         per token — nothing it could work out later. Everything that can
+///         per token, nothing it could work out later. Everything that can
 ///         change sits in four slots (renderer, price strategy, mint hook,
 ///         minters); there is no upgrade path. What deploys is what runs,
 ///         forever.
@@ -60,7 +60,7 @@ interface ISurfaceCore {
     // ── ERC-7572 (the contract-level metadata refresh signal) ───────────────
     event ContractURIUpdated();
 
-    /// @notice One event per mint call — the permanent per-mint record.
+    /// @notice One event per mint call, the permanent per-mint record.
     ///         Built-in paths cover [firstTokenId, firstTokenId + quantity - 1];
     ///         extension mints emit quantity 1. firstMintIndex is the global
     ///         mint order of the call's first token (token k's index =
@@ -105,7 +105,7 @@ interface ISurfaceCore {
 
     /// @notice Reschedule the built-in paid mint window (owner or admin).
     ///         `end` 0 means open-ended; otherwise end > start. Governs the
-    ///         paid path only — extension minters keep their own schedules.
+    ///         paid path only, extension minters keep their own schedules.
     function setMintWindow(uint64 start, uint64 end) external;
     /// @notice Update the stored fixed price (ignored while a price strategy
     ///         is set). Payment is exact-match, so a mint in flight at the old
@@ -117,7 +117,7 @@ interface ISurfaceCore {
     ///         and below what already exists (mints-ever in sequential mode,
     ///         live supply in pooled).
     function setSupplyCap(uint256 supplyCap) external;
-    /// @notice One-way: lock the supply cap forever — the scarcity promise.
+    /// @notice One-way: lock the supply cap forever, the scarcity promise.
     ///         The cap binds every mint path, so no later minter grant can
     ///         climb over it.
     function lockSupply() external;
@@ -126,7 +126,7 @@ interface ISurfaceCore {
     function setRenderer(address renderer) external;
     function setMintHook(address hook) external;
     function setPriceStrategy(address strategy) external;
-    /// @notice Grant or revoke an extension minter — the artist's visible,
+    /// @notice Grant or revoke an extension minter, the artist's visible,
     ///         onchain choice, and the lever for revoking a minter's schedule.
     ///         Reverts once the minter set is locked; the pooled form holds one
     ///         minter at a time.
@@ -150,7 +150,7 @@ interface ISurfaceCore {
     function setCreators(address[] calldata list, bool listed) external;
     /// @notice Emit an ERC-4906 refresh for changes the core cannot see (a
     ///         chain-live work moving, a reveal, new captures). Callable by
-    ///         the current renderer or owner/admin. Works after lockRenderer —
+    ///         the current renderer or owner/admin. Works after lockRenderer,
     ///         the lock pins the pointer, not the weather.
     function notifyMetadataUpdate(uint256 fromTokenId, uint256 toTokenId) external;
     /// @notice One-way, optional: pin the renderer pointer forever. An
@@ -190,7 +190,7 @@ interface ISurfaceCore {
     /// @notice Mint-time entropy, stamped per token in the mint transaction.
     function tokenSeed(uint256 tokenId) external view returns (bytes32);
 
-    /// @notice Which kind of collection this is. Not a setting — a fact of
+    /// @notice Which kind of collection this is. Not a setting, a fact of
     ///         the contract you are holding.
     function idMode() external view returns (IdMode);
     function renderer() external view returns (address);
