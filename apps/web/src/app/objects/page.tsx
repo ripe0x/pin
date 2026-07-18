@@ -1,5 +1,5 @@
 import type { Metadata } from "next"
-import Image from "next/image"
+import { ObjectsGallery, type GalleryImage } from "./ObjectsGallery"
 
 export const metadata: Metadata = {
   title: "World. Computer. Cap — Ethereum Objects",
@@ -21,7 +21,7 @@ export const metadata: Metadata = {
   },
 }
 
-const gallery = [
+const gallery: GalleryImage[] = [
   {
     src: "/objects/cap-front.jpg",
     alt: "World. Computer. cap — front view, hand-lettered white embroidery on black",
@@ -48,23 +48,7 @@ export default function ObjectsPage() {
   return (
     <div className="mx-auto max-w-6xl px-6 py-12">
       <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] gap-8 md:gap-12">
-        <div className="grid grid-cols-2 gap-2 self-start">
-          {gallery.map((img) => (
-            <div
-              key={img.src}
-              className="relative aspect-square w-full bg-gray-100 overflow-hidden"
-            >
-              <Image
-                src={img.src}
-                alt={img.alt}
-                fill
-                sizes="(max-width: 768px) 50vw, 33vw"
-                priority={img.priority}
-                className="object-cover"
-              />
-            </div>
-          ))}
-        </div>
+        <ObjectsGallery images={gallery} />
 
         <div className="md:sticky md:top-12 self-start max-w-[480px] space-y-8">
           <div>
