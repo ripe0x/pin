@@ -112,6 +112,12 @@
               "description": "Registry of static display assets for renderers: each collection's cover image, per-token captures (thumbnails of rendered output), and a capture template resolved per token id."
             },
             {
+              "title": "Catalog",
+              "slug": "catalog",
+              "path": "/docs/collections/contracts/catalog",
+              "description": "An immutable public registry where an artist address publishes onchain pointers to its work."
+            },
+            {
               "title": "ScriptyRenderer",
               "slug": "scripty-renderer",
               "path": "/docs/collections/contracts/scripty-renderer",

@@ -44,6 +44,13 @@
           "docs": "/docs/collections/contracts/render-assets",
           "role": "Registry of static display assets for renderers: each collection's cover image, per-token captures (thumbnails of rendered output), and a capture template resolved per token id."
         },
+        "Catalog": {
+          "address": "0x467a9c39e03C595EC3075D856f19C7386b6b915d",
+          "kind": "singleton",
+          "abi": "/abis/Catalog.json",
+          "docs": "/docs/collections/contracts/catalog",
+          "role": "An immutable public registry where an artist address publishes onchain pointers to its work."
+        },
         "ScriptyRenderer": {
           "address": null,
           "kind": "clone",

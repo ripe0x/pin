@@ -4,6 +4,9 @@
 
 Every custom error the Collections contracts can revert with, its contract, and the condition that raises it.
 
+**`AddressEmptyCode`** · [Catalog](/docs/collections/contracts/catalog#errors)\
+Inherited from OpenZeppelin `Address`.
+
 **`AlreadyAdmin`** · [Surface](/docs/collections/contracts/surface#errors)\
 `addAdmin` was called for the owner or an existing admin.
 
@@ -24,6 +27,12 @@ Reverts construction when the ScriptyBuilderV2 address is zero: the renderer wou
 
 **`CollectionRequired`** · [FixedPriceMinter](/docs/collections/contracts/fixed-price-minter#errors)\
 `initialize` was given the zero address as the collection.
+
+**`ContractAlreadyRegistered`** · [Catalog](/docs/collections/contracts/catalog#errors)\
+`addContract`/`addContractFor` targeted a contract pointer already in the artist's catalog.
+
+**`ContractNotRegistered`** · [Catalog](/docs/collections/contracts/catalog#errors)\
+`removeContract`/`removeContractFor` targeted a contract pointer not in the artist's catalog.
 
 **`ERC721IncorrectOwner`** · [Surface](/docs/collections/contracts/surface#errors)\
 Standard ERC721 error: a token operation named an owner that does not match the token's actual owner.
@@ -58,6 +67,9 @@ A create function was called after deprecation.
 **`FactoryPaused`** · [SurfaceFactory](/docs/collections/contracts/factory#errors)\
 A create function was called while the factory is paused (see `setPaused`).
 
+**`FailedCall`** · [Catalog](/docs/collections/contracts/catalog#errors)\
+Inherited from OpenZeppelin `Multicall`/`Address`.
+
 **`FailedDeployment`** · [SurfaceFactory](/docs/collections/contracts/factory#errors)\
 Inherited from OpenZeppelin `Clones`.
 
@@ -67,11 +79,23 @@ Reverts at construction when any dependency or code file is gzipped but the gunz
 **`InsufficientBalance`** · [SurfaceFactory](/docs/collections/contracts/factory#errors)\
 Inherited from OpenZeppelin `Clones`.
 
+**`InvalidArtist`** · [Catalog](/docs/collections/contracts/catalog#errors)\
+A `*For` function was given the zero address as `artist`.
+
+**`InvalidContractAddress`** · [Catalog](/docs/collections/contracts/catalog#errors)\
+A pointer's contract address was the zero address.
+
 **`InvalidInitialization`** · [FixedPriceMinter](/docs/collections/contracts/fixed-price-minter#errors)\
 OpenZeppelin Initializable error: `initialize` was called more than once, or on the implementation whose initializers are disabled.
 
 **`InvalidInitialization`** · [Surface](/docs/collections/contracts/surface#errors)\
 OpenZeppelin Initializable error: `initialize` was called more than once, or on the implementation whose initializers are disabled.
+
+**`InvalidOperator`** · [Catalog](/docs/collections/contracts/catalog#errors)\
+`setOperator` was given the zero address as `operator`.
+
+**`InvalidTokenRange`** · [Catalog](/docs/collections/contracts/catalog#errors)\
+A token-range add or remove had `startTokenId > endTokenId`.
 
 **`LengthMismatch`** · [RenderAssets](/docs/collections/contracts/render-assets#errors)\
 `setCaptures` was given id and URI arrays of different lengths.
@@ -114,6 +138,9 @@ An allowlist root is set and the proof in `data` does not prove `to` is on the l
 
 **`NotAnAdmin`** · [Surface](/docs/collections/contracts/surface#errors)\
 `removeAdmin` was called for an account that holds no grant.
+
+**`NotAuthorized`** · [Catalog](/docs/collections/contracts/catalog#errors)\
+A `*For` function was called by an address that is neither the named `artist` nor an operator the artist approved.
 
 **`NotAuthorized`** · [FixedPriceMinter](/docs/collections/contracts/fixed-price-minter#errors)\
 A config setter or `rescueStrayETH` was called by an address that is neither the collection's owner nor one of its admins.
@@ -183,6 +210,18 @@ Reverts at construction when a code or dependency file's `store` is not a deploy
 
 **`SupplyIsLocked`** · [Surface](/docs/collections/contracts/surface#errors)\
 `setSupplyCap` or `lockSupply` was called after `lockSupply`.
+
+**`TokenAlreadyRegistered`** · [Catalog](/docs/collections/contracts/catalog#errors)\
+`addToken`/`addTokenFor` targeted a single-token pointer already in the artist's catalog.
+
+**`TokenNotRegistered`** · [Catalog](/docs/collections/contracts/catalog#errors)\
+`removeToken`/`removeTokenFor` targeted a single-token pointer not in the artist's catalog.
+
+**`TokenRangeAlreadyRegistered`** · [Catalog](/docs/collections/contracts/catalog#errors)\
+`addTokenRange`/`addTokenRangeFor` targeted a range tuple already in the artist's catalog.
+
+**`TokenRangeNotRegistered`** · [Catalog](/docs/collections/contracts/catalog#errors)\
+`removeTokenRange`/`removeTokenRangeFor` targeted a range tuple not in the artist's catalog.
 
 **`TooManyMinters`** · [Surface](/docs/collections/contracts/surface#errors)\
 A minter grant would exceed the pooled form's one-minter limit, via `setMinter` or seeded at init through `initialMinters`.

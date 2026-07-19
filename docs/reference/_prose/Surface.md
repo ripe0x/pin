@@ -49,7 +49,8 @@ canonical minter's config setters check the collection's `owner()`/`isAdmin`.
 
 Attribution is a two-sided onchain check with no shared registry write. The owner
 lists creators with `setCreators`, an assertion. A listed creator confirms by
-claiming the collection in the Catalog from their own address.
+claiming the collection in the [Catalog](/docs/collections/contracts/catalog)
+from their own address.
 `isConfirmedCreator(who)` is the intersection: listed and claimed. Either side can
 retract, and the confirmation follows on the next read; nothing is stored.
 `owner()` counts as a creator without being listed; listing is for co-creators.

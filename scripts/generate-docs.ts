@@ -76,6 +76,7 @@ const ABI_BY_NAME: Record<string, AbiItem[]> = {
     DefaultRenderer: abis.defaultRendererAbi as unknown as AbiItem[],
     ScriptyRenderer: abis.scriptyRendererAbi as unknown as AbiItem[],
     RenderAssets: abis.renderAssetsAbi as unknown as AbiItem[],
+    Catalog: abis.catalogAbi as unknown as AbiItem[],
     IPriceStrategy: abis.iPriceStrategyAbi as unknown as AbiItem[],
     IRenderer: abis.iRendererAbi as unknown as AbiItem[],
     ISurfaceView: abis.iSurfaceViewAbi as unknown as AbiItem[],
@@ -145,6 +146,7 @@ const PROTOCOLS: Protocol[] = [
             },
             {name: 'DefaultRenderer', slug: 'default-renderer', deploymentsKey: 'defaultRenderer', kind: 'singleton'},
             {name: 'RenderAssets', slug: 'render-assets', deploymentsKey: 'renderAssets', kind: 'singleton'},
+            {name: 'Catalog', slug: 'catalog', deploymentsKey: 'catalog', kind: 'singleton'},
             {
                 name: 'ScriptyRenderer',
                 slug: 'scripty-renderer',

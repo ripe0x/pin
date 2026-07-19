@@ -66,3 +66,22 @@ Every state-changing function in the Collections contracts and who may call it. 
 | [`setCapturer`](/docs/collections/contracts/render-assets#setcapturer) | collection owner or admin (`onlySurfaceAdmin`, else `NotSurfaceAdmin`) |
 | [`setCaptureTemplate`](/docs/collections/contracts/render-assets#setcapturetemplate) | collection owner, admin, or granted capturer (else `NotCaptureAuthorized`) |
 | [`setCaptures`](/docs/collections/contracts/render-assets#setcaptures) | collection owner, admin, or granted capturer (else `NotCaptureAuthorized`) |
+
+## Catalog
+
+| Function | Access |
+| --- | --- |
+| [`addContract`](/docs/collections/contracts/catalog#addcontract) | permissionless (writes only the caller's own list) |
+| [`addContractFor`](/docs/collections/contracts/catalog#addcontractfor) | artist or operator (the `artist` argument, or an address it approved via `setOperator`, else `NotAuthorized`) |
+| [`removeContract`](/docs/collections/contracts/catalog#removecontract) | permissionless (writes only the caller's own list) |
+| [`removeContractFor`](/docs/collections/contracts/catalog#removecontractfor) | artist or operator (the `artist` argument, or an approved operator, else `NotAuthorized`) |
+| [`addToken`](/docs/collections/contracts/catalog#addtoken) | permissionless (writes only the caller's own list) |
+| [`addTokenFor`](/docs/collections/contracts/catalog#addtokenfor) | artist or operator (the `artist` argument, or an approved operator, else `NotAuthorized`) |
+| [`removeToken`](/docs/collections/contracts/catalog#removetoken) | permissionless (writes only the caller's own list) |
+| [`removeTokenFor`](/docs/collections/contracts/catalog#removetokenfor) | artist or operator (the `artist` argument, or an approved operator, else `NotAuthorized`) |
+| [`addTokenRange`](/docs/collections/contracts/catalog#addtokenrange) | permissionless (writes only the caller's own list) |
+| [`addTokenRangeFor`](/docs/collections/contracts/catalog#addtokenrangefor) | artist or operator (the `artist` argument, or an approved operator, else `NotAuthorized`) |
+| [`removeTokenRange`](/docs/collections/contracts/catalog#removetokenrange) | permissionless (writes only the caller's own list) |
+| [`removeTokenRangeFor`](/docs/collections/contracts/catalog#removetokenrangefor) | artist or operator (the `artist` argument, or an approved operator, else `NotAuthorized`) |
+| [`setOperator`](/docs/collections/contracts/catalog#setoperator) | permissionless (sets only the caller's own operator slot) |
+| [`multicall`](/docs/collections/contracts/catalog#multicall) | permissionless (each inner call enforces its own authorization) |

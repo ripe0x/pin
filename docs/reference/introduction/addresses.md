@@ -2,7 +2,7 @@
 
 # Addresses
 
-The PND onchain protocols are pre-deploy. These are the shared singletons; their addresses land here at launch. Per-owner clones (an artist collection, an auction house) are deployed through a factory, so they have no entry in these tables.
+The shared singletons of each PND onchain protocol on Ethereum mainnet (chain id 1). Per-owner clones (an artist collection, an auction house) are deployed through a factory and have no entry here; look their address up on-chain.
 
 ## Collections
 
@@ -11,6 +11,7 @@ The PND onchain protocols are pre-deploy. These are the shared singletons; their
 | SurfaceFactory | _pending deploy_ | [reference](/docs/collections/contracts/factory) |
 | DefaultRenderer | _pending deploy_ | [reference](/docs/collections/contracts/default-renderer) |
 | RenderAssets | _pending deploy_ | [reference](/docs/collections/contracts/render-assets) |
+| Catalog | [`0x467a9c39e03C595EC3075D856f19C7386b6b915d`](https://evm.now/address/0x467a9c39e03C595EC3075D856f19C7386b6b915d?chainId=1) | [reference](/docs/collections/contracts/catalog) |
 
 ## Auctions
 

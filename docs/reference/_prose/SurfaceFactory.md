@@ -43,7 +43,8 @@ collection's owner or admin.
 
 The `creators` argument sets the collection's listed-creator set during
 `initialize`, emitting `CreatorListed` per address. This is the collection's own
-storage, not a shared-registry write: the Catalog is only read. A listed creator
+storage, not a shared-registry write: the
+[Catalog](/docs/collections/contracts/catalog) is only read. A listed creator
 confirms by claiming the collection in the Catalog from their own address, after
 which `isConfirmedCreator` reads true. Pass an empty array for solo works; the
 owner can change the listing later with `setCreators`.

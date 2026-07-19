@@ -95,3 +95,19 @@ Every event the Collections contracts emit, grouped by contract. Signatures and 
 **[`CaptureTemplateSet`](/docs/collections/contracts/render-assets#capturetemplateset)** · Emitted when a collection's capture template changes.
 
 **[`CoverSet`](/docs/collections/contracts/render-assets#coverset)** · Emitted when a collection's cover image changes.
+
+## Catalog
+
+**[`ContractAdded`](/docs/collections/contracts/catalog#contractadded)** · Emitted when a contract pointer is added.
+
+**[`ContractRemoved`](/docs/collections/contracts/catalog#contractremoved)** · Emitted when a contract pointer is removed.
+
+**[`OperatorSet`](/docs/collections/contracts/catalog#operatorset)** · Emitted on every `setOperator` call, including a no-op that sets the current value.
+
+**[`TokenAdded`](/docs/collections/contracts/catalog#tokenadded)** · Emitted when a single-token pointer is added.
+
+**[`TokenRangeAdded`](/docs/collections/contracts/catalog#tokenrangeadded)** · Emitted when a token-range pointer is added.
+
+**[`TokenRangeRemoved`](/docs/collections/contracts/catalog#tokenrangeremoved)** · Emitted when a token-range pointer is removed.
+
+**[`TokenRemoved`](/docs/collections/contracts/catalog#tokenremoved)** · Emitted when a single-token pointer is removed.
