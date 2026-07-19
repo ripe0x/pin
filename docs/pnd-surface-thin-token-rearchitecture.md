@@ -34,10 +34,15 @@ proposal:
    dedicated minter earns its keep and the fat-token machinery is unused weight.
    Model A optimizes for the high-volume simple-drop case PND does not run.
 
-2. **Two token architectures exist in parallel.** Surface is model A. Homage's
-   `SovereignCollection` + `HomageMinter` is model **B** (thin token, all
-   economics in the minter) and it works. Maintaining two token models for the
-   same concept is the duplication the repo conventions warn against.
+2. **The flagship project already ignores the fat-token machinery.** Homage
+   drives a **stock `PooledSurface`** purely through the extension path:
+   `HomageMinter` is the collection's authorized minter and calls
+   `mintToId`/`burn`, while all economics (the $111 escrow, refunds, referral)
+   live in `HomageMinter`. It never touches the token's built-in paid mint,
+   price fields, or `mintHook`. So the thin-token model is already how PND's real
+   project works; model A is carrying a paid-mint apparatus the flagship proves
+   unnecessary. (`HomageMinter` uses the model-B shape today; there is no
+   Homage-specific token subclass, it uses `PooledSurface` as-is.)
 
 3. **A permanent art token should not custody money.** Value custody, refunds,
    and price curves are sale-time concerns with a finite life. The token is the
@@ -61,10 +66,12 @@ naive thin-token ("every artist brings their own minter") produces N unaudited
 value-handling contracts. A single audited default covers the common case while
 custom minters stay the exception.
 
-This unifies the two stacks. After the change there is one token model across
-PND. A project's identity is "the platform token plus whichever minter is
-plugged in." Homage stops being a separate architecture and becomes the token
-plus `HomageMinter`.
+This makes the platform token match how Homage already uses it. A project's
+identity is "the platform token plus whichever minter is plugged in", which is
+exactly Homage today (stock `PooledSurface` + `HomageMinter`). The change is that
+the token stops shipping the paid-mint, price, and hook code the extension path
+never calls, so the permanent object is smaller and the one mint surface is the
+minter for every project.
 
 ## 3. Target architecture
 
@@ -202,10 +209,14 @@ PR with tests as a first-class deliverable, not a trailing phase.
 - **Phase 3 (factory).** Rework `SurfaceFactory` to clone token + canonical
   minter and wire them in one transaction; carry pause/deprecate and `#148`
   validation to both impls. Add the bring-your-own-minter path.
-- **Phase 4 (unify Homage).** Confirm `SovereignCollection`/`HomageMinter`
-  collapse onto the unified model (the thin token plus `HomageMinter` as the
-  authorized minter). Retire the parallel stack in `ripe0x/permanence` or
-  document the shared base. This is the duplication-elimination payoff.
+- **Phase 4 (revalidate Homage).** Homage already drives a stock `PooledSurface`
+  through the extension path (`mintToId`/`burn`), so there is no token to
+  collapse. The work is: confirm `HomageMinter` is unaffected when the built-in
+  paid mint, price fields, and hooks are stripped from `PooledSurface` (it only
+  uses `mintToId` + `burn`, so it should be), and re-vendor the thinned Surface
+  into `ripe0x/permanence`'s `contracts/src/vendor/surface/` to keep the pin
+  copy authoritative. This phase spans both repos but is a verification and
+  re-vendor pass, not a rewrite.
 - **Phase 5 (web).** Rewire mint call sites to target the minter. The uniform
   `IMinter` ABI means the frontend reads one mint interface regardless of
   collection. Grep for `mintWithReferral` and the token-mint calls; repoint.
@@ -315,26 +326,26 @@ as the token.
 by factory-offered new implementations, never by mutating a deployed minter,
 mirroring the token.
 
-### 7.5 Homage retirement scope
+### 7.5 Homage impact
 
-**Decision (target):** fully collapse `SovereignCollection` onto the platform
-thin token so Homage becomes "the platform token + `HomageMinter`", with the
-subclass deleted. **Contingent** on a Phase 4 diff of `SovereignCollection`
-against the thinned `PooledSurface`: if the only differences are behaviors that
-now live in `HomageMinter`, delete the subclass; if there is genuine
-token-level bespoke behavior (a burn rule, a render hook the base lacks), keep a
-minimal thin subclass instead.
+**Decision:** no token-collapse work. Homage already uses a **stock
+`PooledSurface`** (no Homage-specific subclass exists) and drives it purely
+through the extension path, `HomageMinter` calling `mintToId`/`burn`. Phase 4 is
+a verification-and-re-vendor pass: confirm `HomageMinter` is unaffected by
+thinning `PooledSurface` (it never calls the built-in paid mint, price, or hook
+code being removed), then re-vendor the thinned Surface into
+`ripe0x/permanence`.
 
-**Rationale:** the entire duplication this proposal removes is the two parallel
-token stacks. Once the platform token thins out, `SovereignCollection` and
-`PooledSurface` should be the same object. Keeping a subclass that adds nothing
-is the exact duplication to delete. But the call cannot be finalized without the
-concrete diff, which only exists after Phase 1 thins the token.
+**Rationale:** Homage is already the model-B shape this proposal generalizes.
+Its minter holds all economics; the token is already just a mint/burn/render
+target it authorizes. So the flagship both validates the thin-token target and
+has nothing to migrate. The only coupling is the vendored Surface copy in
+`permanence/contracts/src/vendor/surface/`, which must track the thinned pin
+source.
 
-**Consequence:** Phase 4 owns the diff and the final subclass-or-collapse call;
-this decision fixes the *target* (collapse) and the test (is there token-level
-bespoke behavior). `SovereignCollection` lives in `ripe0x/permanence`, so
-Phase 4 spans both repos.
+**Consequence:** Phase 4 is verification plus a re-vendor, spanning both repos,
+not a rewrite. The risk is limited to a vendored-copy drift, caught by running
+Homage's suite against the thinned token.
 
 ## 8. Non-goals
 
