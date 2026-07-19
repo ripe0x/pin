@@ -39,12 +39,11 @@ The mechanics are a standard English auction with a small fixed rule set:
 
 ## Status
 
-The auction house is pre-deploy. The factory is a shared singleton referenced as
-`<AUCTION_HOUSE_FACTORY_ADDRESS>` in examples, which resolves to its mainnet address
-once deployed. Each house is a per-owner clone with no fixed address, so its examples
-use `<AUCTION_HOUSE_ADDRESS>`. Read examples use `cast` against a free public RPC;
-write examples use viem. See [Conventions](/docs/introduction/conventions) for how to
-read the examples, addresses, and units.
+The factory is deployed on Ethereum mainnet at `0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f`.
+Each house is a per-owner clone with no fixed address, so its examples use
+`<AUCTION_HOUSE_ADDRESS>`. Read examples use `cast` against a free public RPC;
+write examples use viem. See [Conventions](/docs/introduction/conventions) for how
+to read the examples, addresses, and units.
 
 ## Where to go next
 

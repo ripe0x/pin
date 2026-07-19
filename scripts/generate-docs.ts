@@ -95,6 +95,9 @@ interface ContractPage {
     /** Key into deployments.mainnet.json; null = no single canonical address. */
     deploymentsKey: string | null;
     kind: PageKind;
+    /** For a clone page: the deployments key of the shared implementation the
+     *  clones delegatecall to. Its address is shown at the top of the page. */
+    implementationKey?: string;
     /** Header note for clone/interface pages, or a pre-deploy singleton note. */
     note?: string;
 }
@@ -134,7 +137,8 @@ const PROTOCOLS: Protocol[] = [
                 slug: 'surface',
                 deploymentsKey: null,
                 kind: 'clone',
-                note: 'Deployed per artist as an EIP-1167 clone through the [factory](/docs/surface/contracts/factory). There is no single canonical address; substitute your collection address for `<COLLECTION_ADDRESS>` in the examples below.',
+                implementationKey: 'sequentialImplementation',
+                note: 'Deployed per artist as an EIP-1167 clone of the implementation above through the [factory](/docs/surface/contracts/factory). A collection has no canonical address of its own; substitute your collection address for `<COLLECTION_ADDRESS>` in the examples below.',
             },
             {name: 'SurfaceFactory', slug: 'factory', deploymentsKey: 'surfaceFactory', kind: 'singleton'},
             {
@@ -142,7 +146,8 @@ const PROTOCOLS: Protocol[] = [
                 slug: 'fixed-price-minter',
                 deploymentsKey: null,
                 kind: 'clone',
-                note: 'Deployed per collection as an EIP-1167 clone: [`createSurface`](/docs/surface/contracts/factory#createsurface) wires one automatically and `SurfaceCreated.minter` records it. There is no single canonical address; substitute your collection\'s minter address for `<MINTER_ADDRESS>` in the examples below.',
+                implementationKey: 'minterImplementation',
+                note: 'Deployed per collection as an EIP-1167 clone of the implementation above: [`createSurface`](/docs/surface/contracts/factory#createsurface) wires one automatically and `SurfaceCreated.minter` records it. A minter clone has no canonical address of its own; substitute your collection\'s minter address for `<MINTER_ADDRESS>` in the examples below.',
             },
             {name: 'DefaultRenderer', slug: 'default-renderer', deploymentsKey: 'defaultRenderer', kind: 'singleton'},
             {name: 'RenderAssets', slug: 'render-assets', deploymentsKey: 'renderAssets', kind: 'singleton'},
@@ -207,7 +212,8 @@ const PROTOCOLS: Protocol[] = [
                 slug: 'sovereign-auction-house',
                 deploymentsKey: null,
                 kind: 'clone',
-                note: 'Deployed per owner as an EIP-1167 clone through the [factory](/docs/auctions/contracts/auction-house-factory). There is no single canonical address; substitute your house address for `<AUCTION_HOUSE_ADDRESS>` in the examples below.',
+                implementationKey: 'auctionHouseImplementation',
+                note: 'Deployed per owner as an EIP-1167 clone of the implementation above through the [factory](/docs/auctions/contracts/auction-house-factory). A house has no canonical address of its own; substitute your house address for `<AUCTION_HOUSE_ADDRESS>` in the examples below.',
             },
             {name: 'SovereignAuctionHouseFactory', slug: 'auction-house-factory', deploymentsKey: 'auctionHouseFactory', kind: 'singleton'},
         ],
@@ -470,13 +476,30 @@ function firstSentence(text: string): string {
     return sentence.slice(0, CAP).replace(/\s+\S*$/, '') + '…';
 }
 
+function evmNowLine(label: string, addr: string): string {
+    return `${label}\`${addr}\` · [view on evm.now](https://evm.now/address/${addr}?chainId=1) · Ethereum mainnet`;
+}
+
 function headerLine(page: ContractPage): string | null {
     if (page.kind === 'singleton') {
         const addr = resolveAddr(page.deploymentsKey);
-        if (addr) return `\`${addr}\` · [view on evm.now](https://evm.now/address/${addr}?chainId=1) · Ethereum mainnet`;
+        if (addr) return evmNowLine('', addr);
         return `> Not yet deployed to Ethereum mainnet. The address lands here at launch; until then, examples use an \`<${screamingSnake(page.deploymentsKey ?? 'address')}_ADDRESS>\` placeholder.`;
     }
-    return page.note ? `> ${page.note}` : null;
+    // Clone or interface. A clone shows the shared implementation address (the
+    // deployed logic its per-owner clones delegatecall to) above the note, or a
+    // pending line while that implementation is pre-deploy.
+    const lines: string[] = [];
+    if (page.implementationKey) {
+        const impl = resolveAddr(page.implementationKey);
+        lines.push(
+            impl
+                ? evmNowLine('Implementation ', impl)
+                : 'Implementation not yet deployed to Ethereum mainnet; the address lands here at launch.',
+        );
+    }
+    if (page.note) lines.push(`> ${page.note}`);
+    return lines.length ? lines.join('\n\n') : null;
 }
 
 function buildContractPage(protocol: Protocol, page: ContractPage): BuiltPage {

@@ -115,7 +115,7 @@
               "title": "ScriptyRenderer",
               "slug": "scripty-renderer",
               "path": "/docs/surface/contracts/scripty-renderer",
-              "description": "A forkable [IRenderer](/docs/surface/contracts/i-renderer) template for script-based generative work, assembled onchain through ScriptyBuilderV2."
+              "description": "A forkable [IRenderer](/docs/surface/contracts/i-renderer) template for script-based generative work."
             },
             {
               "title": "IPriceStrategy",

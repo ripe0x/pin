@@ -2,7 +2,7 @@
 
 # SovereignAuctionHouseFactory
 
-> Not yet deployed to Ethereum mainnet. The address lands here at launch; until then, examples use an `<AUCTION_HOUSE_FACTORY_ADDRESS>` placeholder.
+`0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f` · [view on evm.now](https://evm.now/address/0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f?chainId=1) · Ethereum mainnet
 
 SovereignAuctionHouseFactory deploys one
 [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house) per
@@ -134,7 +134,7 @@ or NFTs sent to the predicted address before the house is deployed are not gener
 recoverable, so deploy first.
 
 ```bash
-cast call <AUCTION_HOUSE_FACTORY_ADDRESS> "predictHouseAddress(address)(address)" \
+cast call 0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f "predictHouseAddress(address)(address)" \
   <OWNER_ADDRESS> \
   --rpc-url https://ethereum-rpc.publicnode.com
 ```

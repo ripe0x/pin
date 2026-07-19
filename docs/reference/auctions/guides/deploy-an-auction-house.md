@@ -15,7 +15,7 @@ Each address can have exactly one house from this factory. A second
 whether you already have one with `houseOf`:
 
 ```bash
-cast call <AUCTION_HOUSE_FACTORY_ADDRESS> "houseOf(address)(address)" \
+cast call 0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f "houseOf(address)(address)" \
   <YOUR_ADDRESS> \
   --rpc-url https://ethereum-rpc.publicnode.com
 ```
@@ -28,7 +28,7 @@ The house address is deterministic from the owner address, so you can show or us
 before the deploy transaction lands:
 
 ```bash
-cast call <AUCTION_HOUSE_FACTORY_ADDRESS> "predictHouseAddress(address)(address)" \
+cast call 0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f "predictHouseAddress(address)(address)" \
   <YOUR_ADDRESS> \
   --rpc-url https://ethereum-rpc.publicnode.com
 ```
@@ -47,10 +47,10 @@ which are fixed at the factory's construction and shared across all its houses:
 Read them off the factory:
 
 ```bash
-cast call <AUCTION_HOUSE_FACTORY_ADDRESS> "defaultProtocolFeeBps()(uint16)" \
+cast call 0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f "defaultProtocolFeeBps()(uint16)" \
   --rpc-url https://ethereum-rpc.publicnode.com
 
-cast call <AUCTION_HOUSE_FACTORY_ADDRESS> "defaultFeeRecipient()(address)" \
+cast call 0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f "defaultFeeRecipient()(address)" \
   --rpc-url https://ethereum-rpc.publicnode.com
 ```
 
@@ -61,7 +61,7 @@ against a different factory.
 ## Deploy with cast
 
 ```bash
-cast send <AUCTION_HOUSE_FACTORY_ADDRESS> "createAuctionHouse()(address)" \
+cast send 0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f "createAuctionHouse()(address)" \
   --rpc-url https://ethereum-rpc.publicnode.com \
   --private-key $PRIVATE_KEY
 ```
@@ -76,7 +76,7 @@ import {createWalletClient, createPublicClient, http} from 'viem';
 import {mainnet} from 'viem/chains';
 import {sovereignAuctionHouseFactoryAbi} from '@pin/abi';
 
-const FACTORY = '<AUCTION_HOUSE_FACTORY_ADDRESS>';
+const FACTORY = '0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f';
 
 const publicClient = createPublicClient({
   chain: mainnet,

@@ -327,11 +327,10 @@ the version it was cloned from.
 
 ## function config
 
-Returns the live `SurfaceConfig` and `minted`, the mints-ever count (not live
-supply). The config fields are `supplyCap` (0 = open supply), `royaltyBps`,
-`royaltyReceiver` (0 = `owner()`), `renderer`, `rendererLocked`, and
-`supplyLocked`. Sale state (price, window, phase) is not here; read the
-collection's minter.
+Returns the live [`SurfaceConfig`](/docs/surface/concepts/types) and `minted`,
+the mints-ever count (not live supply). Setters edit the config fields in place,
+so this view always reports what the contract uses. Sale state (price, window,
+phase) is not here; read the collection's minter.
 
 ## function idMode
 

@@ -49,7 +49,7 @@
           "kind": "clone",
           "abi": "/abis/ScriptyRenderer.json",
           "docs": "/docs/surface/contracts/scripty-renderer",
-          "role": "A forkable [IRenderer](/docs/surface/contracts/i-renderer) template for script-based generative work, assembled onchain through ScriptyBuilderV2."
+          "role": "A forkable [IRenderer](/docs/surface/contracts/i-renderer) template for script-based generative work."
         },
         "IPriceStrategy": {
           "address": null,
@@ -93,7 +93,7 @@
           "role": "An onchain English auction house for ERC721 tokens, denominated in ETH."
         },
         "SovereignAuctionHouseFactory": {
-          "address": null,
+          "address": "0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f",
           "kind": "singleton",
           "abi": "/abis/SovereignAuctionHouseFactory.json",
           "docs": "/docs/auctions/contracts/auction-house-factory",

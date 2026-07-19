@@ -2,7 +2,9 @@
 
 # Surface
 
-> Deployed per artist as an EIP-1167 clone through the [factory](/docs/surface/contracts/factory). There is no single canonical address; substitute your collection address for `<COLLECTION_ADDRESS>` in the examples below.
+Implementation not yet deployed to Ethereum mainnet; the address lands here at launch.
+
+> Deployed per artist as an EIP-1167 clone of the implementation above through the [factory](/docs/surface/contracts/factory). A collection has no canonical address of its own; substitute your collection address for `<COLLECTION_ADDRESS>` in the examples below.
 
 Sequential-id ERC721 collection: the token core of the PND Surface System. It
 stores ownership, one seed per token, the renderer pointer, the EIP-2981 royalty,
@@ -438,11 +440,10 @@ confirmation is disabled).
 function config() external view returns (SurfaceConfig cfg, uint256 minted)
 ```
 
-Returns the live `SurfaceConfig` and `minted`, the mints-ever count (not live
-supply). The config fields are `supplyCap` (0 = open supply), `royaltyBps`,
-`royaltyReceiver` (0 = `owner()`), `renderer`, `rendererLocked`, and
-`supplyLocked`. Sale state (price, window, phase) is not here; read the
-collection's minter.
+Returns the live [`SurfaceConfig`](/docs/surface/concepts/types) and `minted`,
+the mints-ever count (not live supply). Setters edit the config fields in place,
+so this view always reports what the contract uses. Sale state (price, window,
+phase) is not here; read the collection's minter.
 
 ### contractURI
 

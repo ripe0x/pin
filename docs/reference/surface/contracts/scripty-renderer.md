@@ -5,9 +5,12 @@
 > A bring-your-own generative renderer template, not a shared deployment. An artist deploys their own instance (one per work) with the work fixed in the constructor, so the renderer is immutable and there is no canonical address, and sets a collection's renderer pointer to it. The ABI below is the base template; see [Write a renderer](/docs/surface/guides/write-a-renderer).
 
 A forkable [IRenderer](/docs/surface/contracts/i-renderer) template for
-script-based generative work, assembled onchain through ScriptyBuilderV2. The
-system ships no shared generative assembler; a generative work deploys its own
-renderer and sets a collection's renderer pointer to it.
+script-based generative work. It is named for Scripty (ScriptyBuilderV2), the
+onchain HTML builder it calls to assemble a token's HTML document from stored
+code and dependency files. The Surface System ships no shared generative
+assembler; a generative work deploys its own copy of this template (or a
+subclass) and sets a collection's renderer pointer to it, so this is a base
+contract to inherit, not a deployed singleton.
 
 The work definition (the onchain code and dependency files, and the
 injection-convention version) is fixed in the constructor and has no setter,

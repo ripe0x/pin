@@ -31,13 +31,20 @@ clone and initialize the token with the caller's `initialMinters`.
 
 ### SaleConfig
 
-The `sale` argument to `createSurface` is the canonical minter's config, minus the
-collection address the factory fills in: `price` (wei, used when `priceStrategy` is
-unset), `priceStrategy` (0 = fixed price), `mintStart`/`mintEnd` (unix seconds; 0 =
-open immediately / open-ended), `payout` (0 = the collection's `owner()` at settle
-time), `maxMints` (0 = unlimited), `allowlistRoot` (0 = no allowlist), and
-`walletCap` (0 = unlimited). Each is settable on the minter afterward by the
-collection's owner or admin.
+The `sale` argument to `createSurface` is the canonical minter's config, minus
+the collection address the factory fills in. Each field is settable on the minter
+afterward by the collection's owner or admin.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `price` | `uint256` | Price per token in wei, used when `priceStrategy` is unset |
+| `priceStrategy` | `address` | `0` uses the fixed `price`; a set strategy quotes the price |
+| `mintStart` | `uint64` | Sale start, unix seconds; `0` opens immediately |
+| `mintEnd` | `uint64` | Sale end, unix seconds; `0` is open-ended |
+| `payout` | `address` | Where the artist share accrues; `0` uses the collection's `owner()` at settle time |
+| `maxMints` | `uint256` | This minter's sale ceiling; `0` is unlimited |
+| `allowlistRoot` | `bytes32` | Merkle allowlist root; `0` is no allowlist |
+| `walletCap` | `uint256` | Per-recipient mint cap; `0` is unlimited |
 
 ### Creator listing at init
 
