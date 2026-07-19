@@ -1,8 +1,9 @@
 {
-  "_note": "Shared singletons of the PND onchain protocols on Ethereum mainnet. Pre-deploy: address values are empty until launch. Fill them in and re-run `pnpm generate:docs` to light up addresses and cast examples. Per-owner clones (an artist collection, an auction house) are separate EIP-1167 clones with no entry here.",
+  "_note": "Shared singletons of the PND onchain protocols on Ethereum mainnet. Most are pre-deploy: address values are empty until launch. Fill them in and re-run `pnpm generate:docs` to light up addresses and cast examples. `catalog` is already deployed. Per-owner clones (an artist collection, an auction house) are separate EIP-1167 clones with no entry here.",
   "chainId": 1,
   "surfaceFactory": "",
   "defaultRenderer": "",
   "renderAssets": "",
+  "catalog": "0x467a9c39e03C595EC3075D856f19C7386b6b915d",
   "auctionHouseFactory": ""
 }

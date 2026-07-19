@@ -16,7 +16,7 @@ no single fixed address.
 Creating an auction pulls the NFT into the house with `transferFrom`, so the house
 must be approved to move the token. Approve the specific token, or set the house as an
 operator for the whole collection. The token contract can be any ERC721, including a
-PND [Surface](/docs/collections/contracts/surface).
+PND [Surface](/docs/surface/contracts/surface).
 
 ```bash
 # Approve one token

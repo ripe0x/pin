@@ -5,11 +5,11 @@ title: ISurfaceView
 # summary
 
 ISurfaceView is the read surface a collection exposes for its
-[renderer](/docs/collections/contracts/i-renderer), a
-[price strategy](/docs/collections/contracts/i-price-strategy), and any minter to read
+[renderer](/docs/surface/contracts/i-renderer), a
+[price strategy](/docs/surface/contracts/i-price-strategy), and any minter to read
 without depending on the full
-[Surface](/docs/collections/contracts/surface) ABI. It is not itself a
-[swappable slot](/docs/collections/concepts/four-slots); it's the
+[Surface](/docs/surface/contracts/surface) ABI. It is not itself a
+[swappable slot](/docs/surface/concepts/four-slots); it's the
 contract-shaped interface those modules read through.
 `Surface` implements it in full. Any other contract that wants
 to be adopted by an existing renderer only needs to implement whatever
@@ -19,7 +19,7 @@ subset of this interface that renderer actually reads.
 ## function idMode
 
 view; the collection's token id assignment model, `Sequential` or `Pooled`,
-fixed at initialization. See [id modes](/docs/collections/concepts/id-modes) for what
+fixed at initialization. See [id modes](/docs/surface/concepts/id-modes) for what
 each mode means for id assignment and reuse after burn.
 
 
@@ -30,7 +30,7 @@ renderer derives provenance from these: in Sequential mode the token id IS
 the mint order, first = id 1, and final = the cap is set and full and the id
 equals the cap (`cap != 0 && minted == cap && tokenId == cap`). There is no
 lifecycle status on the token. See
-[seed and provenance](/docs/collections/concepts/mint-marks-and-entropy).
+[seed and provenance](/docs/surface/concepts/mint-marks-and-entropy).
 
 
 ## function name

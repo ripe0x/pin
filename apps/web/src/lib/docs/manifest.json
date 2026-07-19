@@ -32,8 +32,8 @@
       ]
     },
     {
-      "id": "collections",
-      "title": "Collections",
+      "id": "surface",
+      "title": "Surface",
       "sections": [
         {
           "id": "",
@@ -42,7 +42,7 @@
             {
               "title": "Overview",
               "slug": "overview",
-              "path": "/docs/collections/overview",
+              "path": "/docs/surface/overview",
               "description": "What the PND Surface System is, its parts, and how this reference is organized."
             }
           ]
@@ -54,25 +54,25 @@
             {
               "title": "Slots and modules",
               "slug": "four-slots",
-              "path": "/docs/collections/concepts/four-slots",
+              "path": "/docs/surface/concepts/four-slots",
               "description": "The renderer slot and the minter set on the token, plus the price-strategy slot inside the canonical minter."
             },
             {
               "title": "Id modes",
               "slug": "id-modes",
-              "path": "/docs/collections/concepts/id-modes",
+              "path": "/docs/surface/concepts/id-modes",
               "description": "Sequential and pooled, the two token id assignment models, fixed at init."
             },
             {
               "title": "Seed and provenance",
               "slug": "mint-marks-and-entropy",
-              "path": "/docs/collections/concepts/mint-marks-and-entropy",
+              "path": "/docs/surface/concepts/mint-marks-and-entropy",
               "description": "The one stored per-token fact, the mint-time seed, and the provenance that derives from the id and the Minted event."
             },
             {
               "title": "Types",
               "slug": "types",
-              "path": "/docs/collections/concepts/types",
+              "path": "/docs/surface/concepts/types",
               "description": "The shared enums and structs in SurfaceTypes.sol, the data-only surface with no ABI functions of its own."
             }
           ]
@@ -84,62 +84,62 @@
             {
               "title": "Surface",
               "slug": "surface",
-              "path": "/docs/collections/contracts/surface",
-              "description": "The token core of the PND Surface System: an OpenZeppelin ERC721 that holds ownership, one mint-time seed per token, renderer wiring, EIP-2981 royalty, creator attribution, and the supply cap, and nothing else."
+              "path": "/docs/surface/contracts/surface",
+              "description": "Sequential-id ERC721 collection: the token core of the PND Surface System."
             },
             {
               "title": "SurfaceFactory",
               "slug": "factory",
-              "path": "/docs/collections/contracts/factory",
-              "description": "SurfaceFactory deploys one [Surface](/docs/collections/contracts/surface) collection per call as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs."
+              "path": "/docs/surface/contracts/factory",
+              "description": "Deploys one [Surface](/docs/surface/contracts/surface) collection per call as an EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path."
             },
             {
               "title": "FixedPriceMinter",
               "slug": "fixed-price-minter",
-              "path": "/docs/collections/contracts/fixed-price-minter",
-              "description": "The canonical paid mint path of the Surface System: a fixed-price/referral minter for a sequential [Surface](/docs/collections/contracts/surface) collection, deployed as one immutable EIP-1167 clone per collection."
+              "path": "/docs/surface/contracts/fixed-price-minter",
+              "description": "Fixed-price minter for a sequential [Surface](/docs/surface/contracts/surface) collection, deployed as one EIP-1167 clone per collection."
             },
             {
               "title": "DefaultRenderer",
               "slug": "default-renderer",
-              "path": "/docs/collections/contracts/default-renderer",
-              "description": "The canonical built-in renderer for [Surface](/docs/collections/contracts/surface)."
+              "path": "/docs/surface/contracts/default-renderer",
+              "description": "The built-in renderer for [Surface](/docs/surface/contracts/surface)."
             },
             {
               "title": "RenderAssets",
               "slug": "render-assets",
-              "path": "/docs/collections/contracts/render-assets",
-              "description": "The renderer-land registry of static display assets: each collection's shared cover image, per-token captures (thumbnails of rendered output), and a capture template that resolves per token id."
+              "path": "/docs/surface/contracts/render-assets",
+              "description": "Registry of static display assets for renderers: each collection's cover image, per-token captures (thumbnails of rendered output), and a capture template resolved per token id."
             },
             {
               "title": "ScriptyRenderer",
               "slug": "scripty-renderer",
-              "path": "/docs/collections/contracts/scripty-renderer",
-              "description": "ScriptyRenderer is the **bring-your-own generative renderer template**: a concrete, forkable [IRenderer](/docs/collections/contracts/i-renderer) for Art Blocks-style script-based work, assembled fully onchain through ScriptyBuilderV2."
+              "path": "/docs/surface/contracts/scripty-renderer",
+              "description": "A forkable [IRenderer](/docs/surface/contracts/i-renderer) template for script-based generative work, assembled onchain through ScriptyBuilderV2."
             },
             {
               "title": "IPriceStrategy",
               "slug": "i-price-strategy",
-              "path": "/docs/collections/contracts/i-price-strategy",
-              "description": "IPriceStrategy is the interface a contract implements to occupy the price slot inside a collection's minter, the optional pricing module on the canonical [FixedPriceMinter](/docs/collections/contracts/fixed-price-minter) (see the [slots and modules](/docs/collections/concepts/four-slots) overview)."
+              "path": "/docs/surface/contracts/i-price-strategy",
+              "description": "IPriceStrategy is the interface a contract implements to occupy the price slot inside a collection's minter, the optional pricing module on the canonical [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter) (see the [slots and modules](/docs/surface/concepts/four-slots) overview)."
             },
             {
               "title": "IRenderer",
               "slug": "i-renderer",
-              "path": "/docs/collections/contracts/i-renderer",
-              "description": "IRenderer is the interface a contract implements to occupy a collection's renderer slot, the token's one swappable presentation slot (see [slots and modules](/docs/collections/concepts/four-slots)) on the [Surface](/docs/collections/contracts/surface) core."
+              "path": "/docs/surface/contracts/i-renderer",
+              "description": "IRenderer is the interface a contract implements to occupy a collection's renderer slot, the token's one swappable presentation slot (see [slots and modules](/docs/surface/concepts/four-slots)) on the [Surface](/docs/surface/contracts/surface) core."
             },
             {
               "title": "ISurfaceView",
               "slug": "i-surface-view",
-              "path": "/docs/collections/contracts/i-surface-view",
-              "description": "ISurfaceView is the read surface a collection exposes for its [renderer](/docs/collections/contracts/i-renderer), a [price strategy](/docs/collections/contracts/i-price-strategy), and any minter to read without depending on the full [Surface](/docs/collections/contracts/surface) ABI."
+              "path": "/docs/surface/contracts/i-surface-view",
+              "description": "ISurfaceView is the read surface a collection exposes for its [renderer](/docs/surface/contracts/i-renderer), a [price strategy](/docs/surface/contracts/i-price-strategy), and any minter to read without depending on the full [Surface](/docs/surface/contracts/surface) ABI."
             },
             {
               "title": "IPreviewRenderer",
               "slug": "i-preview-renderer",
-              "path": "/docs/collections/contracts/i-preview-renderer",
-              "description": "IPreviewRenderer is an OPTIONAL extension a renderer implements to render what a token WOULD look like for a caller-supplied seed, without any token existing."
+              "path": "/docs/surface/contracts/i-preview-renderer",
+              "description": "An optional extension a renderer implements to render the output for a caller-supplied seed with no token existing."
             }
           ]
         },
@@ -150,31 +150,31 @@
             {
               "title": "Deploy a collection",
               "slug": "deploy-a-collection",
-              "path": "/docs/collections/guides/deploy-a-collection",
+              "path": "/docs/surface/guides/deploy-a-collection",
               "description": "Call the factory to deploy an owned, immutable Surface clone wired to a canonical minter in one transaction."
             },
             {
               "title": "Mint",
               "slug": "mint",
-              "path": "/docs/collections/guides/mint",
+              "path": "/docs/surface/guides/mint",
               "description": "Minting through the canonical FixedPriceMinter, price resolution, sale windows, gates, and the reverts to handle."
             },
             {
               "title": "Write a minter",
               "slug": "write-a-minter",
-              "path": "/docs/collections/guides/write-a-minter",
+              "path": "/docs/surface/guides/write-a-minter",
               "description": "Implement a minter, get authorized via setMinter, and mint through the token's minter-gated mintTo or mintToId."
             },
             {
               "title": "Write a price strategy",
               "slug": "write-a-price-strategy",
-              "path": "/docs/collections/guides/write-a-price-strategy",
+              "path": "/docs/surface/guides/write-a-price-strategy",
               "description": "Implement IPriceStrategy's view-only priceOf, install it on the minter with setPriceStrategy, and two worked examples."
             },
             {
               "title": "Write a renderer",
               "slug": "write-a-renderer",
-              "path": "/docs/collections/guides/write-a-renderer",
+              "path": "/docs/surface/guides/write-a-renderer",
               "description": "Implement IRenderer against ISurfaceView, the bundled renderers, and how renderer locking works."
             }
           ]
@@ -186,25 +186,25 @@
             {
               "title": "Access control",
               "slug": "access-control",
-              "path": "/docs/collections/reference/access-control",
-              "description": "Every state-changing function in the Collections contracts and who may call it."
+              "path": "/docs/surface/reference/access-control",
+              "description": "Every state-changing function in the Surface contracts and who may call it."
             },
             {
               "title": "Errors index",
               "slug": "errors",
-              "path": "/docs/collections/reference/errors",
-              "description": "Every custom error in the Collections contracts, its contract, and the condition that raises it."
+              "path": "/docs/surface/reference/errors",
+              "description": "Every custom error in the Surface contracts, its contract, and the condition that raises it."
             },
             {
               "title": "Events index",
               "slug": "events",
-              "path": "/docs/collections/reference/events",
-              "description": "Every event the Collections contracts emit, grouped by contract."
+              "path": "/docs/surface/reference/events",
+              "description": "Every event the Surface contracts emit, grouped by contract."
             },
             {
               "title": "Injection convention",
               "slug": "injection-convention",
-              "path": "/docs/collections/reference/injection-convention",
+              "path": "/docs/surface/reference/injection-convention",
               "description": "How a generative work's code receives its token context, onchain and off, and the determinism rules that make a preview the render."
             }
           ]
@@ -302,6 +302,60 @@
               "slug": "events",
               "path": "/docs/auctions/reference/events",
               "description": "Every event the Auctions contracts emit, grouped by contract."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "catalog",
+      "title": "Catalog",
+      "sections": [
+        {
+          "id": "",
+          "title": "",
+          "items": [
+            {
+              "title": "Overview",
+              "slug": "overview",
+              "path": "/docs/catalog/overview",
+              "description": "Catalog, a general onchain artist registry where an address publishes pointers to its work."
+            }
+          ]
+        },
+        {
+          "id": "contracts",
+          "title": "Contracts",
+          "items": [
+            {
+              "title": "Catalog",
+              "slug": "catalog",
+              "path": "/docs/catalog/contracts/catalog",
+              "description": "An immutable public registry where an artist address publishes onchain pointers to its work."
+            }
+          ]
+        },
+        {
+          "id": "reference",
+          "title": "Reference",
+          "items": [
+            {
+              "title": "Access control",
+              "slug": "access-control",
+              "path": "/docs/catalog/reference/access-control",
+              "description": "Every state-changing function in the Catalog contracts and who may call it."
+            },
+            {
+              "title": "Errors index",
+              "slug": "errors",
+              "path": "/docs/catalog/reference/errors",
+              "description": "Every custom error in the Catalog contracts, its contract, and the condition that raises it."
+            },
+            {
+              "title": "Events index",
+              "slug": "events",
+              "path": "/docs/catalog/reference/events",
+              "description": "Every event the Catalog contracts emit, grouped by contract."
             }
           ]
         }

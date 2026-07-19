@@ -6,8 +6,8 @@ title: IPriceStrategy
 
 IPriceStrategy is the interface a contract implements to occupy the price
 slot inside a collection's minter, the optional pricing module on the
-canonical [FixedPriceMinter](/docs/collections/contracts/fixed-price-minter)
-(see the [slots and modules](/docs/collections/concepts/four-slots)
+canonical [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter)
+(see the [slots and modules](/docs/surface/concepts/four-slots)
 overview). A price strategy is a view only: the minter reads the price and
 keeps custody of funds itself, so a strategy can never introduce a theft or
 reentrancy path. When the minter's price-strategy slot is unset, its stored
@@ -18,7 +18,7 @@ companion contract state such as lock counters or attestations, or the
 collection itself, since the collection address is passed explicitly. The
 reference case is TBAM-shaped dynamic pricing, basefee multiplied by a
 function of effective locks. See the
-[write a price strategy guide](/docs/collections/guides/write-a-price-strategy) for a
+[write a price strategy guide](/docs/surface/guides/write-a-price-strategy) for a
 worked implementation.
 
 ## function priceOf

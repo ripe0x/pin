@@ -1,0 +1,44 @@
+---
+title: Overview
+description: Catalog, a general onchain artist registry where an address publishes pointers to its work.
+---
+
+# Overview
+
+Catalog is a general onchain registry where an artist address publishes
+pointers to its work. It is deployed on Ethereum mainnet and is not specific to
+the Surface System: any address may register any contract or token.
+
+A pointer is one of three types:
+
+- a **contract** address
+- a **token**, a `(contract, tokenId)` pair
+- a **token range**, a `(contract, startTokenId, endTokenId)` inclusive range
+
+Each address writes its own three lists. There is no owner, admin, upgrade
+path, fee, or pause; the only privileged relation is per-artist operator
+approval, where an address approves another to write its lists on its behalf.
+
+## What a catalog entry means
+
+An entry records only that a given address added a given pointer. It does not
+prove authorship, provenance, ownership, or creator status, and does not check
+that the referenced contract or token exists or behaves as an NFT. Interpreting
+pointers, resolving metadata, and reconciling conflicts are the reader's job;
+the contract holds no semantics.
+
+## Use in the Surface System
+
+A [Surface](/docs/surface/contracts/surface) collection reads
+`isContractRegistered(creator, collection)` for the creator half of its
+two-sided attribution. A collection owner lists a creator with `setCreators`;
+that creator claims the collection by calling `addContract(collection)` on the
+Catalog from their own address. `isConfirmedCreator` on the collection is true
+only when both sides hold, and reads the Catalog live, so either side can
+retract.
+
+## Reference
+
+- [Catalog](/docs/catalog/contracts/catalog): the full contract reference,
+  including the direct and operator write paths, the read and pagination
+  getters, `multicall` batching, and the events and errors

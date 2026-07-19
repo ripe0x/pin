@@ -29,7 +29,7 @@ event SurfaceCreated(address indexed owner, address indexed collection, address 
 ```
 
 The `minter` field is the collection-to-minter binding: for a `createSurface`
-deploy it is the canonical [FixedPriceMinter](/docs/collections/contracts/fixed-price-minter)
+deploy it is the canonical [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter)
 clone the factory wired, and it is `address(0)` when the caller supplied its own
 minter (`createSurfaceCustom`, `createPooledSurface`). Read it to know where a
 collection's mint calls go.
@@ -102,10 +102,10 @@ const [cfg, minted] = await client.readContract({
 
 ## What to read next depends on what you're building
 
-- Deploying a collection programmatically: [Deploy a collection](/docs/collections/guides/deploy-a-collection)
-- Minting against a known collection: [Mint](/docs/collections/guides/mint)
-- Watching mint activity: subscribe to `Minted` on the collection itself, documented on [Surface](/docs/collections/contracts/surface)
-- Rendering a generative token identically to the onchain output: [Injection convention](/docs/collections/reference/injection-convention)
+- Deploying a collection programmatically: [Deploy a collection](/docs/surface/guides/deploy-a-collection)
+- Minting against a known collection: [Mint](/docs/surface/guides/mint)
+- Watching mint activity: subscribe to `Minted` on the collection itself, documented on [Surface](/docs/surface/contracts/surface)
+- Rendering a generative token identically to the onchain output: [Injection convention](/docs/surface/reference/injection-convention)
 - Deploying and running an auction house: [Deploy an auction house](/docs/auctions/guides/deploy-an-auction-house) and [Run an auction](/docs/auctions/guides/run-an-auction)
 - Watching auction activity: subscribe to `AuctionCreated`, `AuctionBid`, and `AuctionEnded` on the house, documented on [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house)
 
