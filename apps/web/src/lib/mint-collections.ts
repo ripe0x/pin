@@ -98,6 +98,14 @@ export type MintCollection = {
   address: Address
   abi: Abi
   /**
+   * True before the collection's onchain addresses are configured (pre-launch):
+   * the descriptor still resolves (so `/mint/<slug>` renders instead of 404ing),
+   * but `address`/`tokenContract`/`hero` are zero placeholders. Server readers
+   * and the client mint engine short-circuit to the pre-mint ("coming soon")
+   * state and issue no RPC. Flips to false once the launch env vars are set.
+   */
+  preview?: boolean
+  /**
    * Optional separate contract for TOKEN-level reads — `ownerOf`, `tokenURI`,
    * `balanceOf`, and the `Transfer` event a reveal watches. Most collections
    * are one contract, so `address`/`abi` cover both the mint write AND the

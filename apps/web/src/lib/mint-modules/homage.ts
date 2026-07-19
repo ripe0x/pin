@@ -579,28 +579,41 @@ registerArgsBuilder("homage-allowlist", ({ eligibilityData }) => {
 
 // ── descriptor factory (consumed by mint-collections.ts) ─────────────────────
 
-export function homageCollection(chainId: number): MintCollection | null {
-  if (!HOMAGE_MINTER_ADDRESS || !isAddress(HOMAGE_MINTER_ADDRESS)) return null
-  if (!HOMAGE_COLLECTION_ADDRESS || !isAddress(HOMAGE_COLLECTION_ADDRESS)) return null
-  if (!HOMAGE_RENDERER || !isAddress(HOMAGE_RENDERER)) return null
+export function homageCollection(chainId: number): MintCollection {
+  // Pre-launch (addresses unset): still return a descriptor so `/mint/homage`
+  // renders the coming-soon state instead of 404ing. Zero placeholders stand in
+  // for the unset addresses; `preview` makes the readers + mint engine
+  // short-circuit to the pre-mint state and issue no RPC. Flips live once all
+  // three NEXT_PUBLIC_HOMAGE_* env vars are set.
+  const live =
+    !!HOMAGE_MINTER_ADDRESS &&
+    isAddress(HOMAGE_MINTER_ADDRESS) &&
+    !!HOMAGE_COLLECTION_ADDRESS &&
+    isAddress(HOMAGE_COLLECTION_ADDRESS) &&
+    !!HOMAGE_RENDERER &&
+    isAddress(HOMAGE_RENDERER)
+  const minterAddress = (live ? HOMAGE_MINTER_ADDRESS : zeroAddress) as Address
+  const collectionAddress = (live ? HOMAGE_COLLECTION_ADDRESS : zeroAddress) as Address
+  const rendererAddress = (live ? HOMAGE_RENDERER : zeroAddress) as Address
   return {
     slug: "homage",
     name: "Homage to the Punk",
     description:
       "Redeemable, $111-backed homages to the CryptoPunks: one per punk, art derived from its pixels. Your ETH is swapped onchain into 50,000 $111 and escrowed inside the piece; redeem any time to burn it and take the coins back out.",
     chainId,
+    preview: !live,
     // The descriptor's primary `contract`: mint/claim/redeem/economics/
     // schedule/allowlist/reveal all live on the MINTER. `/mint/homage`
     // resolves by slug OR this address (resolveMintCollection), so the
     // route's [contract] segment is the minter's address, not the
     // collection's — curated-chrome.ts's literal env read mirrors this.
-    address: HOMAGE_MINTER_ADDRESS as Address,
+    address: minterAddress,
     abi: homageMinterAbi as unknown as Abi,
     // Token-level reads (ownerOf/tokenURI/balanceOf/Transfer) live on the
     // separate pooled PND Collection, not the minter — mint-onchain.ts's
     // getPieceToken/getCollectionArt/getCollectionTokens and the mint
     // engine's reveal extraction all fall back to this field.
-    tokenContract: { address: HOMAGE_COLLECTION_ADDRESS as Address, abi: homageCollectionAbi as unknown as Abi },
+    tokenContract: { address: collectionAddress, abi: homageCollectionAbi as unknown as Abi },
     mintedFn: "totalMinted", // SUPPLY - remaining: the OUTSTANDING count (redeem decrements)
     cap: { kind: "getter", fn: "SUPPLY" },
     price: { kind: "quote", provider: "homage-quote" },
@@ -648,7 +661,7 @@ export function homageCollection(chainId: number): MintCollection | null {
     customLayout: "homage-gallery",
     hero: {
       kind: "renderer-contract",
-      address: HOMAGE_RENDERER as Address,
+      address: rendererAddress,
       abi: homageRendererAbi as unknown as Abi,
       fn: "tokenURI",
       tokenId: HERO_SAMPLE_PUNK_ID,

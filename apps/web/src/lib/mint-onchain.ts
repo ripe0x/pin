@@ -223,6 +223,11 @@ async function applyIndexerSnapshotOverlay(
 }
 
 export async function getMintSnapshot(desc: MintCollection): Promise<MintSnapshot> {
+  // Pre-launch: no onchain addresses, so no reads. An empty snapshot (no phases)
+  // resolves to no active phase, which the mint surface renders as "coming soon".
+  if (desc.preview) {
+    return { priceWei: "0", minted: "0", cap: "0", mintStart: "0", mintEnd: "0" }
+  }
   const base = await getMintSnapshotRpc(desc)
   return applyIndexerSnapshotOverlay(desc, base)
 }
@@ -358,6 +363,7 @@ async function readUriString(
 }
 
 export async function getCollectionArt(desc: MintCollection): Promise<TokenArt | null> {
+  if (desc.preview) return null // pre-launch: no renderer address to read the hero from
   return pgCache(`mint-art:${lc(desc.address)}`, pieceTtlSec(desc, 90), async () => {
     const client = getClient()
     if (desc.hero.kind === "static") {
@@ -388,7 +394,7 @@ export type AggregateStats = {
 }
 
 export async function getAggregateStats(desc: MintCollection): Promise<AggregateStats | null> {
-  if (!desc.aggregate) return null
+  if (desc.preview || !desc.aggregate) return null
   const agg = desc.aggregate
   return pgCache(`mint-agg:${lc(agg.address)}`, 30, async () => {
     const client = getClient()
@@ -456,7 +462,7 @@ async function readCap(client: PublicClient, desc: MintCollection): Promise<bigi
  * layouts or if the read fails (e.g. struct shape drifted from the ABI).
  */
 export async function getSeatStates(desc: MintCollection): Promise<SeatState[]> {
-  if (desc.layout !== "shared-aggregate") return []
+  if (desc.preview || desc.layout !== "shared-aggregate") return []
   return pgCache(`mint-seats:${lc(desc.address)}`, 30, async () => {
     const client = getClient()
     const cap = await readCap(client, desc)
