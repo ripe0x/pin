@@ -90,8 +90,8 @@ contract SurfaceFactory {
         }
         // Catalog is optional (0 disables creator confirmation), but a nonzero value must be a
         // contract: a mistyped/EOA/wrong-chain address passes silently here and then makes
-        // isConfirmedCreator revert forever on every collection this factory clones;
-        // unrecoverable, since collections are immutable and there is no setCatalog.
+        // isConfirmedCreator revert on every collection this factory clones, unrecoverable
+        // since collections are immutable and there is no setCatalog.
         if (catalog_ != address(0) && catalog_.code.length == 0) revert NotAContract(catalog_);
         sequentialImplementation = sequentialImplementation_;
         pooledImplementation = pooledImplementation_;
@@ -119,8 +119,8 @@ contract SurfaceFactory {
     }
 
     /// @notice Deploy and configure a sequential collection owned by `owner`:
-    ///         the contract assigns ids, collectors buy through the built-in
-    ///         paid paths.
+    ///         the contract assigns ids and exposes the built-in paid mint
+    ///         entrypoints.
     /// @param owner The artist. Explicit, so a deploy helper can create on
     ///        the artist's behalf.
     /// @param cfg The full live config, including the two one-way locks: pass

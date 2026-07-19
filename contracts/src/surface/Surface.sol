@@ -8,10 +8,10 @@ import {SurfaceStatus, IdMode} from "./SurfaceTypes.sol";
 import {IPriceStrategy} from "./interfaces/IPriceStrategy.sol";
 
 /// @title Surface
-/// @notice Sequential collection form. Token ids are assigned in mint order
-///         (1, 2, 3, ...) and never reused after a burn, so a supply cap of
-///         100 remains 100 for the life of the contract. Paid mint paths below
-///         are for collectors; an authorized minter can also mint via mintTo.
+/// @notice Sequential ERC721 collection: token id equals mint order (1, 2, 3,
+///         ...). Burned ids are not reused, so the supply cap bounds total
+///         mints, not live supply. Paid mint entrypoints are below; an
+///         authorized minter can also mint via mintTo.
 contract Surface is SurfaceCore, ISurface {
     function idMode() public pure override(SurfaceCore, ISurfaceCore) returns (IdMode) {
         return IdMode.Sequential;

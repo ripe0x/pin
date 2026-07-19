@@ -90,8 +90,7 @@ abstract contract SurfaceCore is
     /// @dev Admins, granted by the owner. An admin can call every management
     ///      function the owner can, except managing the admin set and
     ///      transferring ownership, which remain owner-only. The owner is the
-    ///      single root that grants admins and that marketplaces read as
-    ///      owner().
+    ///      single admin-granting root and the account owner() returns.
     // account => the owner that granted it (0 = not an admin). A grant is valid only while
     // _admins[account] == owner(), so an ownership transfer invalidates every inherited
     // grant; the new owner starts with no admins and re-grants explicitly.
@@ -516,8 +515,8 @@ abstract contract SurfaceCore is
     }
 
     /// @notice One-way, optional: pin the renderer address permanently, so this
-    ///         renderer answers tokenURI for good. The core cannot attest to a
-    ///         renderer's internal behavior: an immutable renderer behind a
+    ///         renderer is the fixed tokenURI source. The core cannot attest to
+    ///         a renderer's internal behavior: an immutable renderer behind a
     ///         locked address gives full presentation permanence; a mutable one
     ///         behind a locked address remains changeable within that renderer.
     ///         Not locked by default.
