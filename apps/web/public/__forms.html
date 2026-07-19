@@ -1,0 +1,21 @@
+<!doctype html>
+<!--
+  Netlify Forms detection stub. Netlify scans static HTML at build time for
+  forms; App Router pages are rendered by functions and never scanned, so the
+  reservation form (components/collections/homage/HomageReservation.tsx) submits
+  to this file's form definition. Keep the field names in sync with that POST:
+  form-name=homage-reservation, address, punk-ids, contact.
+-->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Netlify Forms</title>
+  </head>
+  <body>
+    <form name="homage-reservation" data-netlify="true" hidden>
+      <input type="text" name="address" />
+      <input type="text" name="punk-ids" />
+      <input type="text" name="contact" />
+    </form>
+  </body>
+</html>
