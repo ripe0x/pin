@@ -83,12 +83,21 @@ rediscover them:
   `_pending[address(0)]`, unclaimable and unrecoverable (confirmed by PoC).
   This was a regression: the fat token blocked `renounceOwnership`; the thin
   token re-enabled it deliberately (design decision, §7) without re-deriving
-  the guard the new payout fallback relied on. **Fix:** `FixedPriceMinter.
-  _settle` reverts `PayoutUnresolved` before any state mutation when the
-  resolved artist payout is `address(0)`. An explicit payout still sells
-  through a renounced collection; a default payout on a renounced collection
-  halts the sale rather than burning proceeds. Renounce availability is
-  preserved.
+  the guard the removed live-`owner()` payout resolution relied on.
+  **Resolution: the payout target is decoupled from `owner()` entirely.**
+  `FixedPriceMinter` stores a dedicated `payoutRecipient` address, enforced
+  nonzero at both write points (`initialize`, `setPayoutRecipient`), and
+  `_settle` pays it directly with no `owner()` call anywhere in the
+  settlement path. `SurfaceFactory.createSurface` defaults an unset
+  `SaleConfig.payoutRecipient` to the deploy-time `owner` argument, a stored
+  snapshot, not a live read. A renounced collection keeps selling and keeps
+  paying its stored recipient; renounce only removes the ability to change
+  the recipient going forward (borrowed auth has no live owner/admin), not
+  the ability to receive proceeds. This replaces the earlier revert-on-zero
+  remediation (`PayoutUnresolved`), which caught the strand downstream but
+  left the sale halted on a renounced collection with no explicit payout;
+  the required-at-config-time invariant makes that state unreachable instead.
+  Renounce availability is preserved.
 - **LOW (same root): royalty to the zero address.** `SurfaceCore.royaltyInfo`
   resolved to `address(0)` under the same renounce-with-no-explicit-receiver
   condition. **Fix:** returns `(address(0), 0)` so no marketplace routes
@@ -124,12 +133,13 @@ confirm rather than re-flag):
 
 ## Verification state at handoff
 
-- Full suite: **445 passed, 0 failed, 2 skipped** (the two skips are opt-in
-  mainnet-fork probes). Deep invariant profile (`FOUNDRY_PROFILE=invariant`,
-  512 runs x 100 depth): `FixedPriceMinterInvariants` and `SurfaceInvariants`
-  green, 0 reverts across the mint/withdraw/config-mutation action set.
+- Full suite: **452 passed, 0 failed, 2 skipped** (the two skips are opt-in
+  mainnet-fork probes; count includes the payoutRecipient remediation's added
+  coverage). Deep invariant profile (`FOUNDRY_PROFILE=invariant`, 512 runs x
+  100 depth): `FixedPriceMinterInvariants` and `SurfaceInvariants` green, 0
+  reverts across the mint/withdraw/config-mutation action set.
 - Sizes under the 23,576-byte internal gate: Surface 13,091, PooledSurface
-  13,065, FixedPriceMinter 9,228, SurfaceFactory 5,013 bytes.
+  13,065, FixedPriceMinter 9,122, SurfaceFactory 5,051 bytes.
 - `slither` clean on the new minter/factory/token code (triaged; all real
   items are accepted pull-payment/factory patterns).
 - `contracts/.gas-snapshot` regenerated at this baseline.

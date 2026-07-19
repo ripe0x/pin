@@ -54,6 +54,27 @@ contract SurfaceFactoryTest is FixedPriceMinterBase {
         assertEq(artist.balance, before + PRICE, "artist claimed the pull balance");
     }
 
+    /// @dev An unset SaleConfig.payoutRecipient defaults to the deploy-time
+    ///      `owner` argument, stored as a concrete value on the minter (not a
+    ///      live owner() read): transferring ownership after deploy does not
+    ///      move it.
+    function test_factoryDefaultsPayoutRecipientToDeployOwner() public {
+        (address collection, address minter) =
+            factory.createSurface("Priced Drop", "DROP", artist, _freeConfig(), _sale(PRICE), _empty());
+        assertEq(FixedPriceMinter(minter).payoutRecipient(), artist, "defaults to the deploy-time owner argument");
+
+        address newOwner = makeAddr("newOwner");
+        vm.prank(artist);
+        Surface(collection).transferOwnership(newOwner);
+        vm.prank(newOwner);
+        Surface(collection).acceptOwnership();
+        assertEq(
+            FixedPriceMinter(minter).payoutRecipient(),
+            artist,
+            "the stored snapshot is unaffected by a later ownership transfer"
+        );
+    }
+
     /// @dev Clone order (token, then minter, then token init) is only provable
     ///      indirectly: FixedPriceMinter.initialize requires
     ///      collection.code.length != 0, so if the factory cloned the minter

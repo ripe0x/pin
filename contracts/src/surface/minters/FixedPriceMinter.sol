@@ -21,7 +21,7 @@ struct FixedPriceMinterInitParams {
     address priceStrategy; // 0 = fixed price
     uint64 mintStart; // unix seconds; 0 = open immediately
     uint64 mintEnd; // unix seconds; 0 = open-ended
-    address payout; // 0 = live ISurfaceAuth(collection).owner() at settle time
+    address payoutRecipient; // stored artist payout address; must be nonzero
     uint256 maxMints; // 0 = unlimited; this minter's own sale ceiling
     bytes32 allowlistRoot; // 0 = open
     uint256 walletCap; // 0 = unlimited; per-recipient
@@ -61,7 +61,13 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
     address public priceStrategy;
     uint64 public mintStart;
     uint64 public mintEnd;
-    address public payout;
+    /// @notice The artist payout address. A concrete stored value set at
+    ///         initialize() and updatable via setPayoutRecipient(); never
+    ///         derived from the collection's owner(). Enforced nonzero at
+    ///         both write points, so renouncing collection ownership does
+    ///         not affect where proceeds go, only whether this can still be
+    ///         changed.
+    address public payoutRecipient;
     uint256 public maxMints;
     bytes32 public allowlistRoot;
     uint256 public walletCap;
@@ -92,9 +98,9 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
     error WithdrawFailed();
     error NoStrayETH();
     error RescueFailed();
-    /// @dev Reverts a mint whose artist proceeds would resolve to address(0):
-    ///      no explicit payout set and the collection's owner() is renounced.
-    error PayoutUnresolved();
+    /// @dev initialize() and setPayoutRecipient() both reject a zero
+    ///      payoutRecipient, so _settle never has to resolve one.
+    error PayoutRecipientRequired();
 
     event MinterConfigured(
         address indexed collection,
@@ -102,7 +108,7 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
         address priceStrategy,
         uint64 mintStart,
         uint64 mintEnd,
-        address payout,
+        address payoutRecipient,
         uint256 maxMints,
         bytes32 allowlistRoot,
         uint256 walletCap
@@ -110,7 +116,7 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
     event PriceSet(uint256 price);
     event PriceStrategySet(address indexed strategy);
     event MintWindowSet(uint64 mintStart, uint64 mintEnd);
-    event PayoutSet(address indexed payout);
+    event PayoutRecipientSet(address indexed payoutRecipient);
     event MaxMintsSet(uint256 maxMints);
     event AllowlistRootSet(bytes32 root);
     event WalletCapSet(uint256 cap);
@@ -140,18 +146,27 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
             revert NotAContract(p.priceStrategy);
         }
         if (p.mintEnd != 0 && p.mintEnd <= p.mintStart) revert BadMintWindow();
+        if (p.payoutRecipient == address(0)) revert PayoutRecipientRequired();
         __ReentrancyGuard_init();
         collection = p.collection;
         price = p.price;
         priceStrategy = p.priceStrategy;
         mintStart = p.mintStart;
         mintEnd = p.mintEnd;
-        payout = p.payout;
+        payoutRecipient = p.payoutRecipient;
         maxMints = p.maxMints;
         allowlistRoot = p.allowlistRoot;
         walletCap = p.walletCap;
         emit MinterConfigured(
-            p.collection, p.price, p.priceStrategy, p.mintStart, p.mintEnd, p.payout, p.maxMints, p.allowlistRoot, p.walletCap
+            p.collection,
+            p.price,
+            p.priceStrategy,
+            p.mintStart,
+            p.mintEnd,
+            p.payoutRecipient,
+            p.maxMints,
+            p.allowlistRoot,
+            p.walletCap
         );
     }
 
@@ -228,28 +243,22 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
     }
 
     /// @dev Accrue `total`, split between the referral share and the artist
-    ///      payout. referrer 0 accrues the full amount to the payout. No
-    ///      external call here; recipients claim via withdraw(). Reverts
-    ///      PayoutUnresolved if the artist cut would resolve to address(0):
-    ///      an explicit payout keeps a renounced collection selling; a
-    ///      default payout on a renounced collection halts the sale instead
-    ///      of burning proceeds to the zero address.
+    ///      payout. referrer 0 accrues the full amount to payoutRecipient. No
+    ///      external call here; recipients claim via withdraw(). payoutRecipient
+    ///      is a stored value enforced nonzero at both write points (initialize,
+    ///      setPayoutRecipient), so it is never resolved here and a renounced
+    ///      collection keeps paying it.
     function _settle(uint256 total, address referrer) internal {
         if (total == 0) return;
         uint256 referralCut = referrer == address(0) ? 0 : (total * REFERRAL_SHARE_BPS) / BPS;
         uint256 artistCut = total - referralCut;
-        address payoutTo;
-        if (artistCut > 0) {
-            payoutTo = payout == address(0) ? ISurfaceAuth(collection).owner() : payout;
-            if (payoutTo == address(0)) revert PayoutUnresolved();
-        }
         _totalPending += total;
         if (referralCut > 0) {
             _pending[referrer] += referralCut;
             emit ReferralPaid(referrer, referralCut);
         }
         if (artistCut > 0) {
-            _pending[payoutTo] += artistCut;
+            _pending[payoutRecipient] += artistCut;
         }
     }
 
@@ -319,9 +328,15 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
         emit MintWindowSet(start, end);
     }
 
-    function setPayout(address payout_) external onlyCollectionAdmin {
-        payout = payout_;
-        emit PayoutSet(payout_);
+    /// @notice Update the stored artist payout address. Same borrowed
+    ///         authority as the other config setters (collection owner or
+    ///         admin); if the collection's owner has renounced and no admin
+    ///         is granted, this can no longer be called, but the existing
+    ///         stored value keeps paying out.
+    function setPayoutRecipient(address payoutRecipient_) external onlyCollectionAdmin {
+        if (payoutRecipient_ == address(0)) revert PayoutRecipientRequired();
+        payoutRecipient = payoutRecipient_;
+        emit PayoutRecipientSet(payoutRecipient_);
     }
 
     function setMaxMints(uint256 maxMints_) external onlyCollectionAdmin {

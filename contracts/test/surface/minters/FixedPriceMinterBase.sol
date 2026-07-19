@@ -17,15 +17,17 @@ contract FixedPriceMinterBase is SurfaceBase {
     }
 
     /// @dev Full init params with every optional field at its open/unlimited
-    ///      default. Override individual fields on the returned struct
-    ///      before calling initialize().
+    ///      default and payoutRecipient defaulted to `artist` (initialize()
+    ///      requires it nonzero). Override individual fields on the returned
+    ///      struct before calling initialize().
     function _minterParams(address collection_, uint256 price_)
         internal
-        pure
+        view
         returns (FixedPriceMinterInitParams memory p)
     {
         p.collection = collection_;
         p.price = price_;
+        p.payoutRecipient = artist;
     }
 
     /// @dev Deploy a collection, deploy and initialize a minter clone for it

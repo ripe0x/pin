@@ -210,8 +210,10 @@ priceOf(address to, uint256 quantity, bytes data) view returns (uint256)
 
 `FixedPriceMinter` (working name), cloned per collection by the factory:
 
-- stores sale config: `price`, `mintStart`, `mintEnd`, `payout` (0 = live
-  `owner()` of the collection, matching the current `_settle` fallback), and
+- stores sale config: `price`, `mintStart`, `mintEnd`, `payoutRecipient` (a
+  concrete stored address, enforced nonzero at `initialize` and
+  `setPayoutRecipient`; the factory defaults an unset value to the
+  deploy-time `owner` argument, a snapshot, never a live `owner()` read), and
   optional `maxMints` (the minter's own sale ceiling; also the allocation
   tool if a second minter is ever granted manually, see 7.3)
 - `mint(...)` payable: checks window, computes required (fixed, or an
