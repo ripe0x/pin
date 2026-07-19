@@ -162,6 +162,52 @@ contract SurfaceEntropyTest is SurfaceBase {
         minter.callMintToId(IPooledSurface(address(c)), collector, 3);
     }
 
+    // ── batch mint produces the same per-token seeds a run of sequential ──
+    // ── single mints would (fix: _mintedEver hoisted out of the loop) ────
+    //
+    // _mintOne no longer writes _mintedEver itself; the caller (mintTo's
+    // loop) now passes each token's mintIndex explicitly and writes
+    // _mintedEver once after the loop. This proves that refactor did not
+    // change which mintIndex any token in a batch is stamped with: each
+    // token's seed is checked against the formula computed with the
+    // mintIndex a sequential run of single mints would have produced for
+    // that same token (0, 1, 2, ... in mint order), on two independently
+    // cloned collections minting in the same block (same prevrandao).
+
+    function test_batchMint_seedsMatchSequentialMintIndexFormula_sameAsSingleMints() public {
+        Surface batchColl = _collection(_freeConfig());
+        vm.prank(artist);
+        batchColl.setMinter(address(minter), true);
+
+        Surface singleColl = _collection(_freeConfig());
+        vm.prank(artist);
+        singleColl.setMinter(address(minter), true);
+
+        vm.prevrandao(bytes32(uint256(0xC0FFEE)));
+        uint256 n = 6;
+
+        // One batch call of quantity n on batchColl.
+        minter.callMintTo(ISurface(address(batchColl)), collector, n);
+
+        // n sequential quantity-1 calls on singleColl, same block/prevrandao,
+        // so each call consumes mintIndex 0, 1, ..., n-1 in turn exactly as
+        // the batch call's loop does.
+        for (uint256 i = 0; i < n; i++) {
+            minter.callMintTo(ISurface(address(singleColl)), collector, 1);
+        }
+
+        for (uint256 i = 0; i < n; i++) {
+            uint256 tokenId = i + 1;
+            uint256 mintIndex = i;
+            bytes32 expectedBatch = keccak256(abi.encode(block.prevrandao, address(batchColl), tokenId, mintIndex));
+            bytes32 expectedSingle = keccak256(abi.encode(block.prevrandao, address(singleColl), tokenId, mintIndex));
+            assertEq(batchColl.tokenSeed(tokenId), expectedBatch, "batch seed must use the sequential mintIndex i");
+            assertEq(
+                singleColl.tokenSeed(tokenId), expectedSingle, "single-mint seed must use the sequential mintIndex i"
+            );
+        }
+    }
+
     function testFuzz_mintIndex_monotonic_interleavedBatchesAndSingles(uint8 batchesRaw) public {
         uint256 batches = bound(batchesRaw, 1, 10);
         Surface c = _collection(_freeConfig());

@@ -455,6 +455,7 @@ contract FixedPriceMinterTest is FixedPriceMinterBase {
         FixedPriceMinterInitParams memory p = _minterParams(address(c), PRICE);
         p.priceStrategy = stranger;
         vm.expectRevert(abi.encodeWithSelector(FixedPriceMinter.NotAContract.selector, stranger));
+        vm.prank(artist);
         m.initialize(p);
     }
 
@@ -465,6 +466,7 @@ contract FixedPriceMinterTest is FixedPriceMinterBase {
         p.mintStart = 100;
         p.mintEnd = 100;
         vm.expectRevert(FixedPriceMinter.BadMintWindow.selector);
+        vm.prank(artist);
         m.initialize(p);
     }
 
@@ -560,11 +562,224 @@ contract FixedPriceMinterTest is FixedPriceMinterBase {
     function test_mintWithoutGrantOnCollection_reverts_NotMinter() public {
         Surface c = _collection(_freeConfig());
         FixedPriceMinter m = _freshMinterClone();
+        vm.prank(artist);
         m.initialize(_minterParams(address(c), PRICE)); // never granted on c
 
         vm.deal(collector, PRICE);
         vm.prank(collector);
         vm.expectRevert(ISurfaceCore.NotMinter.selector);
         m.mint{value: PRICE}(collector, 1, address(0), "");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Fix 1: a mint whose artist proceeds would resolve to address(0) reverts
+    // instead of crediting _pending[address(0)].
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function test_renouncedCollection_defaultPayout_mintReverts_PayoutUnresolved() public {
+        (Surface c, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        vm.prank(artist);
+        c.renounceOwnership();
+        assertEq(c.owner(), address(0));
+
+        vm.deal(collector, PRICE);
+        vm.prank(collector);
+        vm.expectRevert(FixedPriceMinter.PayoutUnresolved.selector);
+        m.mint{value: PRICE}(collector, 1, address(0), "");
+        assertEq(c.totalSupply(), 0, "no token minted");
+        assertEq(address(m).balance, 0, "no ETH taken");
+    }
+
+    function test_renouncedCollection_explicitPayout_stillMintsAndPays() public {
+        address payoutAddr = makeAddr("payoutAddr");
+        FixedPriceMinterInitParams memory p = _minterParams(address(0), PRICE);
+        p.payout = payoutAddr;
+        (Surface c, FixedPriceMinter m) = _collectionWithConfiguredMinter(p);
+        vm.prank(artist);
+        c.renounceOwnership();
+
+        vm.deal(collector, PRICE);
+        vm.prank(collector);
+        m.mint{value: PRICE}(collector, 1, address(0), "");
+        assertEq(c.ownerOf(1), collector);
+        assertEq(m.pendingWithdrawal(payoutAddr), PRICE, "explicit payout is unaffected by a renounced owner");
+    }
+
+    /// @dev price 0 (7.8) means _settle(0, ...) returns before resolving a
+    ///      payout at all, so a renounced collection with the default payout
+    ///      and a zero price still mints: there is no artist cut to strand.
+    function test_renouncedCollection_zeroPrice_defaultPayout_stillMints() public {
+        (Surface c, FixedPriceMinter m) = _collectionWithMinter(0);
+        vm.prank(artist);
+        c.renounceOwnership();
+
+        vm.prank(collector);
+        m.mint(collector, 1, address(0), "");
+        assertEq(c.ownerOf(1), collector);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Fix 3: initialize() caller-authority gate
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function test_standaloneInit_strangerCannotInitializeAgainstLiveCollection() public {
+        Surface c = _collection(_freeConfig()); // live, owned by artist
+        FixedPriceMinter m = _freshMinterClone();
+        vm.prank(stranger);
+        vm.expectRevert(FixedPriceMinter.NotAuthorized.selector);
+        m.initialize(_minterParams(address(c), PRICE));
+    }
+
+    function test_standaloneInit_collectionOwnerCanInitialize() public {
+        Surface c = _collection(_freeConfig());
+        FixedPriceMinter m = _freshMinterClone();
+        vm.prank(artist);
+        m.initialize(_minterParams(address(c), PRICE));
+        assertEq(m.collection(), address(c));
+    }
+
+    function test_standaloneInit_collectionAdminCanInitialize() public {
+        Surface c = _collection(_freeConfig());
+        address admin = makeAddr("minterAdmin");
+        vm.prank(artist);
+        c.addAdmin(admin);
+
+        FixedPriceMinter m = _freshMinterClone();
+        vm.prank(admin);
+        m.initialize(_minterParams(address(c), PRICE));
+        assertEq(m.collection(), address(c));
+    }
+
+    /// @dev Mirrors the token side's own implementation-cannot-be-initialized
+    ///      guarantee (SurfaceSecurity.t.sol's test_confirm_implCannotBeInitialized).
+    function test_confirm_minterImplCannotBeInitialized() public {
+        Surface c = _collection(_freeConfig());
+        vm.expectRevert(abi.encodeWithSignature("InvalidInitialization()"));
+        minterImpl.initialize(_minterParams(address(c), PRICE));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Config setter success paths
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function test_setPriceStrategy_success() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        MockFixedStrategy strategy = new MockFixedStrategy(PRICE * 2);
+        vm.prank(artist);
+        vm.expectEmit(true, false, false, true, address(m));
+        emit FixedPriceMinter.PriceStrategySet(address(strategy));
+        m.setPriceStrategy(address(strategy));
+        assertEq(m.priceStrategy(), address(strategy));
+    }
+
+    function test_setPriceStrategy_notAContract_reverts() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        vm.prank(artist);
+        vm.expectRevert(abi.encodeWithSelector(FixedPriceMinter.NotAContract.selector, stranger));
+        m.setPriceStrategy(stranger);
+    }
+
+    function test_setMintWindow_success() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        uint64 start = uint64(block.timestamp + 1 days);
+        uint64 end = uint64(block.timestamp + 2 days);
+        vm.prank(artist);
+        vm.expectEmit(false, false, false, true, address(m));
+        emit FixedPriceMinter.MintWindowSet(start, end);
+        m.setMintWindow(start, end);
+        assertEq(m.mintStart(), start);
+        assertEq(m.mintEnd(), end);
+    }
+
+    function test_setMintWindow_badWindow_reverts() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        vm.prank(artist);
+        vm.expectRevert(FixedPriceMinter.BadMintWindow.selector);
+        m.setMintWindow(100, 100);
+    }
+
+    function test_setPayout_success() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        address newPayout = makeAddr("newPayout");
+        vm.prank(artist);
+        vm.expectEmit(true, false, false, true, address(m));
+        emit FixedPriceMinter.PayoutSet(newPayout);
+        m.setPayout(newPayout);
+        assertEq(m.payout(), newPayout);
+    }
+
+    function test_setMaxMints_success() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        vm.prank(artist);
+        vm.expectEmit(false, false, false, true, address(m));
+        emit FixedPriceMinter.MaxMintsSet(5);
+        m.setMaxMints(5);
+        assertEq(m.maxMints(), 5);
+    }
+
+    function test_setAllowlistRoot_success() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        bytes32 root = bytes32(uint256(123));
+        vm.prank(artist);
+        vm.expectEmit(false, false, false, true, address(m));
+        emit FixedPriceMinter.AllowlistRootSet(root);
+        m.setAllowlistRoot(root);
+        assertEq(m.allowlistRoot(), root);
+    }
+
+    /// @dev The 0-default is exercised elsewhere (allowlist/window tests all
+    ///      leave it unset); this covers the 0-to-nonzero transition itself,
+    ///      distinct from test_walletCap_loweredBelowCount_blocksFurtherMints
+    ///      (nonzero-to-nonzero, mid-sale).
+    function test_setWalletCap_zeroToNonzero_success() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        assertEq(m.walletCap(), 0);
+        vm.prank(artist);
+        vm.expectEmit(false, false, false, true, address(m));
+        emit FixedPriceMinter.WalletCapSet(3);
+        m.setWalletCap(3);
+        assertEq(m.walletCap(), 3);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // rescueStrayETH success path
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function test_rescueStrayETH_success_sweepsOnlyStrayBalance() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        vm.deal(collector, PRICE);
+        vm.prank(collector);
+        m.mint{value: PRICE}(collector, 1, address(0), ""); // artist owed PRICE, held in _pending
+
+        uint256 strayAmount = 0.3 ether;
+        // Forced ETH (e.g. selfdestruct), not routed through mint/_settle.
+        vm.deal(address(m), address(m).balance + strayAmount);
+
+        address rescueTo = makeAddr("rescueTo");
+        vm.prank(artist);
+        vm.expectEmit(true, false, false, true, address(m));
+        emit FixedPriceMinter.StrayETHRescued(rescueTo, strayAmount);
+        m.rescueStrayETH(rescueTo);
+
+        assertEq(rescueTo.balance, strayAmount, "only the stray balance is swept");
+        assertEq(m.pendingWithdrawal(artist), PRICE, "owed _pending balance is untouched");
+        assertEq(address(m).balance, PRICE, "minter retains exactly the owed balance");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ZeroQuantity at the minter layer + priceOf, fixed-price branch
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function test_mint_zeroQuantity_reverts() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        vm.prank(collector);
+        vm.expectRevert(IMinter.ZeroQuantity.selector);
+        m.mint(collector, 0, address(0), "");
+    }
+
+    function test_priceOf_fixedPriceBranch() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        assertEq(m.priceOf(collector, 1, ""), PRICE, "single unit");
+        assertEq(m.priceOf(collector, 3, ""), PRICE * 3, "scales with quantity");
     }
 }

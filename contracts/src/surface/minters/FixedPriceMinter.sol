@@ -92,6 +92,9 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
     error WithdrawFailed();
     error NoStrayETH();
     error RescueFailed();
+    /// @dev Reverts a mint whose artist proceeds would resolve to address(0):
+    ///      no explicit payout set and the collection's owner() is renounced.
+    error PayoutUnresolved();
 
     event MinterConfigured(
         address indexed collection,
@@ -118,9 +121,21 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
         _disableInitializers();
     }
 
+    /// @dev Caller authority: permitted when the collection clone is not yet
+    ///      initialized (owner() == address(0), the window the factory's
+    ///      atomic createSurface uses: token clones first, then the minter
+    ///      clones and initializes against it, then the token initializes),
+    ///      or when the caller is that collection's live owner or admin
+    ///      (standalone deployment against an already-live collection).
     function initialize(FixedPriceMinterInitParams calldata p) external initializer {
         if (p.collection == address(0)) revert CollectionRequired();
         if (p.collection.code.length == 0) revert NotAContract(p.collection);
+        address collectionOwner = ISurfaceAuth(p.collection).owner();
+        if (collectionOwner != address(0)) {
+            if (msg.sender != collectionOwner && !ISurfaceAuth(p.collection).isAdmin(msg.sender)) {
+                revert NotAuthorized();
+            }
+        }
         if (p.priceStrategy != address(0) && p.priceStrategy.code.length == 0) {
             revert NotAContract(p.priceStrategy);
         }
@@ -214,18 +229,26 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
 
     /// @dev Accrue `total`, split between the referral share and the artist
     ///      payout. referrer 0 accrues the full amount to the payout. No
-    ///      external call here; recipients claim via withdraw().
+    ///      external call here; recipients claim via withdraw(). Reverts
+    ///      PayoutUnresolved if the artist cut would resolve to address(0):
+    ///      an explicit payout keeps a renounced collection selling; a
+    ///      default payout on a renounced collection halts the sale instead
+    ///      of burning proceeds to the zero address.
     function _settle(uint256 total, address referrer) internal {
         if (total == 0) return;
-        _totalPending += total;
         uint256 referralCut = referrer == address(0) ? 0 : (total * REFERRAL_SHARE_BPS) / BPS;
+        uint256 artistCut = total - referralCut;
+        address payoutTo;
+        if (artistCut > 0) {
+            payoutTo = payout == address(0) ? ISurfaceAuth(collection).owner() : payout;
+            if (payoutTo == address(0)) revert PayoutUnresolved();
+        }
+        _totalPending += total;
         if (referralCut > 0) {
             _pending[referrer] += referralCut;
             emit ReferralPaid(referrer, referralCut);
         }
-        uint256 artistCut = total - referralCut;
         if (artistCut > 0) {
-            address payoutTo = payout == address(0) ? ISurfaceAuth(collection).owner() : payout;
             _pending[payoutTo] += artistCut;
         }
     }

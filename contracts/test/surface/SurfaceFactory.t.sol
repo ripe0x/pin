@@ -204,6 +204,33 @@ contract SurfaceFactoryTest is FixedPriceMinterBase {
         new SurfaceFactory(address(impl), address(pooledImpl), eoa, address(renderer), address(0));
     }
 
+    function test_constructor_rejectsNonContractSequentialImplementation() public {
+        address eoa = makeAddr("notASequentialImpl");
+        vm.expectRevert(abi.encodeWithSelector(SurfaceFactory.NotAContract.selector, eoa));
+        new SurfaceFactory(eoa, address(pooledImpl), address(minterImpl), address(renderer), address(0));
+    }
+
+    function test_constructor_rejectsNonContractPooledImplementation() public {
+        address eoa = makeAddr("notAPooledImpl");
+        vm.expectRevert(abi.encodeWithSelector(SurfaceFactory.NotAContract.selector, eoa));
+        new SurfaceFactory(address(impl), eoa, address(minterImpl), address(renderer), address(0));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // OwnerRequired on all three create paths
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function test_ownerRequired_onAllThreeCreatePaths() public {
+        vm.expectRevert(SurfaceFactory.OwnerRequired.selector);
+        factory.createSurface("A", "A", address(0), _freeConfig(), _sale(PRICE), _empty());
+
+        vm.expectRevert(SurfaceFactory.OwnerRequired.selector);
+        factory.createSurfaceCustom("B", "B", address(0), _freeConfig(), _empty(), _empty());
+
+        vm.expectRevert(SurfaceFactory.OwnerRequired.selector);
+        factory.createPooledSurface("C", "C", address(0), _freeConfig(), _empty(), _empty());
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Pause / deprecate gate all three create paths
     // ─────────────────────────────────────────────────────────────────────────

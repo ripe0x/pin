@@ -158,10 +158,12 @@ abstract contract SurfaceCore is
 
     /// @dev Shared per-token effects: ownership and entropy. OZ _mint reverts
     ///      on an existing id; that check is the pooled-form correctness
-    ///      guarantee, since a live id cannot be minted over.
-    function _mintOne(address to, uint256 tokenId) internal {
-        uint256 mintIndex = _mintedEver;
-        _mintedEver = mintIndex + 1;
+    ///      guarantee, since a live id cannot be minted over. Does not touch
+    ///      _mintedEver: the caller passes the mint order this token consumes
+    ///      and is responsible for writing _mintedEver once per external
+    ///      call (a batch call amortizes the write across every token it
+    ///      mints instead of writing it per iteration).
+    function _mintOne(address to, uint256 tokenId, uint256 mintIndex) internal {
         _mint(to, tokenId);
         // Seed: a pure function of public chain state and token identity. The
         // recipient address is deliberately excluded, to avoid making entropy
@@ -465,8 +467,13 @@ abstract contract SurfaceCore is
         return IRenderer(renderer()).contractURI(address(this));
     }
 
+    /// @dev A renounced collection with no explicit royaltyReceiver resolves
+    ///      to owner() == address(0); returning a nonzero amount there would
+    ///      direct a marketplace's royalty payment to the zero address, so
+    ///      the amount is zeroed instead.
     function royaltyInfo(uint256, uint256 salePrice) external view returns (address receiver, uint256 royaltyAmount) {
         receiver = _cfg.royaltyReceiver == address(0) ? owner() : _cfg.royaltyReceiver;
+        if (receiver == address(0)) return (address(0), 0);
         royaltyAmount = (salePrice * _cfg.royaltyBps) / BPS;
     }
 

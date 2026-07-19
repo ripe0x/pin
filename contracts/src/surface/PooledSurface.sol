@@ -36,7 +36,8 @@ contract PooledSurface is SurfaceCore, IPooledSurface {
         if (!_minters[msg.sender]) revert NotMinter();
         _checkCap(1);
         uint256 mintIndex = _mintedEver;
-        _mintOne(to, tokenId);
+        _mintOne(to, tokenId, mintIndex);
+        _mintedEver = mintIndex + 1;
         emit Minted(msg.sender, to, tokenId, 1, mintIndex);
     }
 }

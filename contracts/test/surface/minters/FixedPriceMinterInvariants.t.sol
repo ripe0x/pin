@@ -39,9 +39,17 @@ contract FixedPriceMinterInvariants is StdInvariant, FixedPriceMinterBase {
         // Only fuzz calls into the handler; the minter is reached exclusively through it.
         targetContract(address(handler));
 
-        bytes4[] memory selectors = new bytes4[](2);
+        // Config-mutation selectors are included so value conservation is
+        // asserted across a sale config that changes mid-run (price,
+        // strategy, window, wallet cap, maxMints), not just a frozen one.
+        bytes4[] memory selectors = new bytes4[](7);
         selectors[0] = FixedPriceMinterHandler.mint.selector;
         selectors[1] = FixedPriceMinterHandler.withdraw.selector;
+        selectors[2] = FixedPriceMinterHandler.setPrice.selector;
+        selectors[3] = FixedPriceMinterHandler.setMintWindow.selector;
+        selectors[4] = FixedPriceMinterHandler.setWalletCap.selector;
+        selectors[5] = FixedPriceMinterHandler.setMaxMints.selector;
+        selectors[6] = FixedPriceMinterHandler.setPriceStrategy.selector;
         targetSelector(StdInvariant.FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 
@@ -84,12 +92,18 @@ contract FixedPriceMinterInvariants is StdInvariant, FixedPriceMinterBase {
     }
 
     // ════════════════════════════════════════════════════════════════════
-    // SUPPLY: the minter's own sale ceiling always binds.
+    // SUPPLY: the minter's own sale ceiling always binds. maxMints is now a
+    // fuzzed config-mutation target (setMaxMints), so the ceiling checked
+    // here is the LIVE value, not the MAX_MINTS constant setUp() seeded it
+    // with; a maxMints of 0 (unlimited) is a legal state a run can reach.
     // ════════════════════════════════════════════════════════════════════
 
     function invariant_totalMintedNeverExceedsMaxMints() public view {
-        assertTrue(minter.totalMinted() <= MAX_MINTS, "totalMinted exceeded maxMints");
+        uint256 liveMax = minter.maxMints();
+        if (liveMax != 0 && !handler.ghostMaxMintsEverLoweredBelowMinted()) {
+            assertTrue(minter.totalMinted() <= liveMax, "totalMinted exceeded the live maxMints");
+            assertTrue(collection.totalSupply() <= liveMax, "collection supply exceeded the live maxMints");
+        }
         assertEq(minter.totalMinted(), handler.ghostMints(), "totalMinted diverged from ghost");
-        assertTrue(collection.totalSupply() <= MAX_MINTS, "collection supply exceeded the minter's maxMints");
     }
 }
