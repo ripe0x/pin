@@ -6,6 +6,7 @@ import {Test} from "forge-std/Test.sol";
 import {Surface} from "../../src/surface/Surface.sol";
 import {PooledSurface} from "../../src/surface/PooledSurface.sol";
 import {SurfaceFactory} from "../../src/surface/SurfaceFactory.sol";
+import {FixedPriceMinter} from "../../src/surface/minters/FixedPriceMinter.sol";
 import {SurfaceConfig} from "../../src/surface/SurfaceTypes.sol";
 import {ISurfaceCore} from "../../src/surface/interfaces/ISurfaceCore.sol";
 
@@ -19,6 +20,7 @@ import {MockRenderer} from "./mocks/SurfaceMocks.sol";
 contract SurfaceFactoryNoDefaultTest is Test {
     Surface internal impl;
     PooledSurface internal pooledImpl;
+    FixedPriceMinter internal minterImpl;
     MockRenderer internal renderer;
     SurfaceFactory internal factory;
 
@@ -27,9 +29,10 @@ contract SurfaceFactoryNoDefaultTest is Test {
     function setUp() public {
         impl = new Surface();
         pooledImpl = new PooledSurface();
+        minterImpl = new FixedPriceMinter();
         renderer = new MockRenderer();
         // The lean deploy: no default renderer, no catalog.
-        factory = new SurfaceFactory(address(impl), address(pooledImpl), address(0), address(0));
+        factory = new SurfaceFactory(address(impl), address(pooledImpl), address(minterImpl), address(0), address(0));
     }
 
     function _empty() internal pure returns (address[] memory a) {
@@ -43,14 +46,14 @@ contract SurfaceFactoryNoDefaultTest is Test {
     function test_createSurface_withOwnRenderer_succeeds() public {
         SurfaceConfig memory cfg;
         cfg.renderer = address(renderer);
-        Surface c = Surface(factory.createSurface("N", "S", artist, cfg, _empty(), _empty()));
+        Surface c = Surface(factory.createSurfaceCustom("N", "S", artist, cfg, _empty(), _empty()));
         assertEq(c.renderer(), address(renderer), "collection uses its own renderer");
     }
 
     function test_createSurface_withoutRenderer_revertsRendererRequired() public {
         SurfaceConfig memory cfg; // cfg.renderer == 0, and no factory default
         vm.expectRevert(ISurfaceCore.RendererRequired.selector);
-        factory.createSurface("N", "S", artist, cfg, _empty(), _empty());
+        factory.createSurfaceCustom("N", "S", artist, cfg, _empty(), _empty());
     }
 
     function test_createPooled_withoutRenderer_revertsRendererRequired() public {
@@ -64,6 +67,6 @@ contract SurfaceFactoryNoDefaultTest is Test {
         // contract; an EOA/typo is refused.
         address eoa = makeAddr("eoa");
         vm.expectRevert(abi.encodeWithSelector(SurfaceFactory.NotAContract.selector, eoa));
-        new SurfaceFactory(address(impl), address(pooledImpl), eoa, address(0));
+        new SurfaceFactory(address(impl), address(pooledImpl), address(minterImpl), eoa, address(0));
     }
 }

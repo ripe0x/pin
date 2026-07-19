@@ -6,6 +6,7 @@ import {Catalog} from "../src/Catalog.sol";
 import {Surface} from "../src/surface/Surface.sol";
 import {PooledSurface} from "../src/surface/PooledSurface.sol";
 import {SurfaceFactory} from "../src/surface/SurfaceFactory.sol";
+import {FixedPriceMinter} from "../src/surface/minters/FixedPriceMinter.sol";
 
 /// @notice Deploy script for the Surface platform core: the two collection
 ///         implementations and the factory that clones them. Nothing else.
@@ -33,8 +34,8 @@ import {SurfaceFactory} from "../src/surface/SurfaceFactory.sol";
 ///         Deploy order:
 ///           1. Catalog        (reuse the mainnet public good, or deploy fresh
 ///                              off mainnet)
-///           2. Surface + PooledSurface impls (CREATE, no args)
-///           3. SurfaceFactory(seqImpl, pooledImpl, 0, catalog), then paused
+///           2. Surface + PooledSurface + FixedPriceMinter impls (CREATE, no args)
+///           3. SurfaceFactory(seqImpl, pooledImpl, minterImpl, 0, catalog), then paused
 ///
 ///         The signer comes from the CLI, not from the script: vm.startBroadcast()
 ///         takes no key, so forge uses whatever --account / --ledger / --private-key
@@ -76,23 +77,28 @@ contract DeploySurfaceSystemScript is Script {
             console2.log("Using existing Catalog at:", catalog);
         }
 
-        // ── 2. The two collection implementations — plain CREATE, no args.
+        // ── 2. The two collection implementations + the canonical minter
+        //      implementation — plain CREATE, no args.
         vm.startBroadcast();
         Surface sequentialImpl = new Surface();
         PooledSurface pooledImpl = new PooledSurface();
+        FixedPriceMinter minterImpl = new FixedPriceMinter();
         vm.stopBroadcast();
         console2.log("Surface (sequential) impl deployed at:", address(sequentialImpl));
         console2.log("PooledSurface impl deployed at:       ", address(pooledImpl));
+        console2.log("FixedPriceMinter impl deployed at:    ", address(minterImpl));
 
-        // ── 3. SurfaceFactory(seqImpl, pooledImpl, defaultRenderer=0, catalog).
+        // ── 3. SurfaceFactory(seqImpl, pooledImpl, minterImpl, defaultRenderer=0, catalog).
         //      No default renderer: every collection brings its own via
         //      cfg.renderer, and one that names none reverts RendererRequired.
         vm.startBroadcast();
-        SurfaceFactory factory = new SurfaceFactory(address(sequentialImpl), address(pooledImpl), address(0), catalog);
+        SurfaceFactory factory =
+            new SurfaceFactory(address(sequentialImpl), address(pooledImpl), address(minterImpl), address(0), catalog);
         vm.stopBroadcast();
 
         require(factory.sequentialImplementation() == address(sequentialImpl), "seq impl mismatch");
         require(factory.pooledImplementation() == address(pooledImpl), "pooled impl mismatch");
+        require(factory.minterImplementation() == address(minterImpl), "minter impl mismatch");
         require(factory.defaultRenderer() == address(0), "expected no default renderer");
         require(factory.catalog() == catalog, "catalog mismatch");
         require(address(factory).code.length > 0, "factory has no code");
@@ -114,6 +120,7 @@ contract DeploySurfaceSystemScript is Script {
         console2.log("  Catalog:               ", catalog);
         console2.log("  Surface (seq) impl:    ", address(sequentialImpl));
         console2.log("  PooledSurface impl:    ", address(pooledImpl));
+        console2.log("  FixedPriceMinter impl: ", address(minterImpl));
         console2.log("  SurfaceFactory:        ", address(factory));
     }
 }

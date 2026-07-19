@@ -11,13 +11,6 @@ import {FixedPriceMinter, FixedPriceMinterInitParams} from "../../../src/surface
 ///      Extends SurfaceBase so collection deployment (artist/collector/
 ///      referrer/stranger, MockRenderer, SurfaceFactory) is not duplicated.
 contract FixedPriceMinterBase is SurfaceBase {
-    FixedPriceMinter internal minterImpl;
-
-    function setUp() public virtual override {
-        super.setUp();
-        minterImpl = new FixedPriceMinter();
-    }
-
     /// @dev A fresh, uninitialized EIP-1167 clone of the minter implementation.
     function _freshMinterClone() internal returns (FixedPriceMinter) {
         return FixedPriceMinter(Clones.clone(address(minterImpl)));

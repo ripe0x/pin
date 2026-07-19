@@ -7,6 +7,7 @@ import {Base64} from "solady/utils/Base64.sol";
 import {Surface} from "../../../src/surface/Surface.sol";
 import {PooledSurface} from "../../../src/surface/PooledSurface.sol";
 import {SurfaceFactory} from "../../../src/surface/SurfaceFactory.sol";
+import {FixedPriceMinter} from "../../../src/surface/minters/FixedPriceMinter.sol";
 import {DefaultRenderer} from "../../../src/surface/renderers/DefaultRenderer.sol";
 import {RenderAssets} from "../../../src/surface/renderers/RenderAssets.sol";
 import {SurfaceConfig, IdMode} from "../../../src/surface/SurfaceTypes.sol";
@@ -32,7 +33,9 @@ contract DefaultRendererTest is Test {
         assets = new RenderAssets();
         renderer = new DefaultRenderer(address(assets));
         impl = new Surface();
-        factory = new SurfaceFactory(address(impl), address(new PooledSurface()), address(renderer), address(0));
+        factory = new SurfaceFactory(
+            address(impl), address(new PooledSurface()), address(new FixedPriceMinter()), address(renderer), address(0)
+        );
 
         SurfaceConfig memory cfg;
         cfg.supplyCap = 0;
@@ -40,7 +43,7 @@ contract DefaultRendererTest is Test {
         address[] memory noMinters = new address[](0);
         address[] memory noArtists = new address[](0);
 
-        collection = Surface(factory.createSurface("Test Surface", "TCOL", artist, cfg, noMinters, noArtists));
+        collection = Surface(factory.createSurfaceCustom("Test Surface", "TCOL", artist, cfg, noMinters, noArtists));
         // Cover art lives in renderer-land: the collection owner writes it to
         // the RenderAssets registry.
         vm.prank(artist);

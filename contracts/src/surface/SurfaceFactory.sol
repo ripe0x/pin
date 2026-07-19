@@ -5,21 +5,46 @@ import {Clones} from "openzeppelin-contracts/contracts/proxy/Clones.sol";
 
 import {SurfaceCore} from "./SurfaceCore.sol";
 import {SurfaceConfig, IdMode, InitParams} from "./SurfaceTypes.sol";
+import {FixedPriceMinter, FixedPriceMinterInitParams} from "./minters/FixedPriceMinter.sol";
+
+/// @notice Sale-config parameters for the canonical minter clone `createSurface`
+///         wires. Matches `FixedPriceMinterInitParams` minus `collection`: the
+///         factory fills that in with the token clone it creates in the same
+///         call, since the caller cannot know that address ahead of time.
+struct SaleConfig {
+    uint256 price; // wei; used when priceStrategy is unset
+    address priceStrategy; // 0 = fixed price
+    uint64 mintStart; // unix seconds; 0 = open immediately
+    uint64 mintEnd; // unix seconds; 0 = open-ended
+    address payout; // 0 = live ISurfaceAuth(collection).owner() at settle time
+    uint256 maxMints; // 0 = unlimited; this minter's own sale ceiling
+    bytes32 allowlistRoot; // 0 = open
+    uint256 walletCap; // 0 = unlimited; per-recipient
+}
 
 /// @title SurfaceFactory
-/// @notice Clones a collection as an immutable EIP-1167 proxy per call:
-///         createSurface (sequential form) or createPooledSurface (pooled
-///         form). No proxy admin or upgrade path, and no fee taken here. New
-///         behavior ships as new implementations behind a new factory, not by
-///         changing a deployed collection.
+/// @notice Clones a collection as an immutable EIP-1167 proxy per call.
+///         `createSurface` (sequential, canonical minter) clones the token and
+///         a `FixedPriceMinter` together and wires them in one transaction.
+///         `createSurfaceCustom` (sequential, bring-your-own minter) and
+///         `createPooledSurface` (pooled, bring-your-own minter) clone only the
+///         token and grant whatever minters the caller passes. No proxy admin
+///         or upgrade path, and no fee taken here. New behavior ships as new
+///         implementations behind a new factory, not by changing a deployed
+///         collection or minter.
 contract SurfaceFactory {
-    /// @notice The sequential implementation every createSurface clone
-    ///         points at.
+    /// @notice The sequential implementation every createSurface/
+    ///         createSurfaceCustom clone points at.
     address public immutable sequentialImplementation;
 
     /// @notice The pooled implementation every createPooledSurface clone
     ///         points at.
     address public immutable pooledImplementation;
+
+    /// @notice The FixedPriceMinter implementation createSurface clones as
+    ///         the canonical minter. Not used by createSurfaceCustom or
+    ///         createPooledSurface, which take their minters from the caller.
+    address public immutable minterImplementation;
 
     /// @notice Renderer assigned to a collection that names none of its own.
     ///         May be zero: with no factory default, a collection that sets no
@@ -53,7 +78,12 @@ contract SurfaceFactory {
     mapping(address => bool) public isSurface;
     address[] public allSurfaces;
 
-    event SurfaceCreated(address indexed owner, address indexed collection, IdMode idMode);
+    /// @notice `minter` is the canonical FixedPriceMinter clone createSurface
+    ///         wired, or address(0) for createSurfaceCustom/createPooledSurface
+    ///         (bring-your-own minter, granted separately or via
+    ///         initialMinters). This is the collection-to-minter binding an
+    ///         indexer reads; there is no minterOf storage mapping.
+    event SurfaceCreated(address indexed owner, address indexed collection, address minter, IdMode idMode);
     event Deprecated(address indexed successor);
     event PausedSet(bool paused);
 
@@ -67,6 +97,7 @@ contract SurfaceFactory {
     constructor(
         address sequentialImplementation_,
         address pooledImplementation_,
+        address minterImplementation_,
         address defaultRenderer_,
         address catalog_
     ) {
@@ -74,6 +105,7 @@ contract SurfaceFactory {
             revert NotAContract(sequentialImplementation_);
         }
         if (pooledImplementation_.code.length == 0) revert NotAContract(pooledImplementation_);
+        if (minterImplementation_.code.length == 0) revert NotAContract(minterImplementation_);
         // The default renderer is optional (0 = no factory default): a collection that names
         // no renderer of its own then reverts RendererRequired at creation, requiring every
         // collection to supply its own. A nonzero value must be a contract, same as catalog
@@ -88,6 +120,7 @@ contract SurfaceFactory {
         if (catalog_ != address(0) && catalog_.code.length == 0) revert NotAContract(catalog_);
         sequentialImplementation = sequentialImplementation_;
         pooledImplementation = pooledImplementation_;
+        minterImplementation = minterImplementation_;
         defaultRenderer = defaultRenderer_;
         catalog = catalog_;
         deployer = msg.sender;
@@ -111,19 +144,80 @@ contract SurfaceFactory {
         emit PausedSet(paused_);
     }
 
-    /// @notice Deploy and configure a sequential collection owned by `owner`:
-    ///         the contract assigns ids and exposes the built-in paid mint
-    ///         entrypoints.
+    /// @notice Deploy a sequential collection owned by `owner` wired to a
+    ///         canonical FixedPriceMinter clone in one transaction: clone the
+    ///         token, clone and initialize the minter bound to it with `sale`,
+    ///         then initialize the token with the minter as its sole initial
+    ///         minter. The common priced-drop path.
     /// @param owner The artist. Explicit, so a deploy helper can create on
     ///        the artist's behalf.
     /// @param cfg The full live config, including the two one-way locks: pass
     ///        them true to initialize the collection locked.
-    /// @param initialMinters Extension minters granted at init. Empty for
-    ///        collections that sell only through the built-in paths.
+    /// @param sale The canonical minter's sale config (price, window, payout,
+    ///        cap, allowlist, wallet cap). See `SaleConfig`.
     /// @param creators Initial listed creators (the owner's side of
     ///        attribution); each confirms by claiming the collection in their
     ///        own Catalog. Empty for solo works.
+    /// @return collection The cloned token.
+    /// @return minter The cloned, initialized, and granted FixedPriceMinter.
     function createSurface(
+        string calldata name,
+        string calldata symbol,
+        address owner,
+        SurfaceConfig calldata cfg,
+        SaleConfig calldata sale,
+        address[] calldata creators
+    ) external returns (address collection, address minter) {
+        _checkCreatable(owner);
+        // Clone order matters: FixedPriceMinter.initialize requires
+        // collection.code.length != 0, and an EIP-1167 clone has code
+        // immediately after Clones.clone, before its own initialize runs. So
+        // the token clones (uninitialized) first, then the minter clones and
+        // initializes against it, then the token initializes with the minter
+        // already known as its sole initial minter.
+        collection = Clones.clone(sequentialImplementation);
+        minter = Clones.clone(minterImplementation);
+        FixedPriceMinter(minter).initialize(
+            FixedPriceMinterInitParams({
+                collection: collection,
+                price: sale.price,
+                priceStrategy: sale.priceStrategy,
+                mintStart: sale.mintStart,
+                mintEnd: sale.mintEnd,
+                payout: sale.payout,
+                maxMints: sale.maxMints,
+                allowlistRoot: sale.allowlistRoot,
+                walletCap: sale.walletCap
+            })
+        );
+        address[] memory initialMinters = new address[](1);
+        initialMinters[0] = minter;
+        SurfaceCore(collection).initialize(
+            InitParams({
+                name: name,
+                symbol: symbol,
+                owner: owner,
+                cfg: cfg,
+                defaultRenderer: defaultRenderer,
+                initialMinters: initialMinters,
+                catalog: catalog,
+                creators: creators
+            })
+        );
+        _record(collection);
+        emit SurfaceCreated(owner, collection, minter, IdMode.Sequential);
+    }
+
+    /// @notice Deploy and configure a sequential collection owned by `owner`
+    ///         with no canonical minter: the caller supplies its own minters
+    ///         (or grants them post-deploy). For a plain priced drop, prefer
+    ///         `createSurface`.
+    /// @param initialMinters Minters granted at init. Empty for collections
+    ///        that grant minters in a later transaction.
+    /// @param creators Initial listed creators (the owner's side of
+    ///        attribution); each confirms by claiming the collection in their
+    ///        own Catalog. Empty for solo works.
+    function createSurfaceCustom(
         string calldata name,
         string calldata symbol,
         address owner,
@@ -131,13 +225,16 @@ contract SurfaceFactory {
         address[] calldata initialMinters,
         address[] calldata creators
     ) external returns (address collection) {
-        return _create(sequentialImplementation, IdMode.Sequential, name, symbol, owner, cfg, initialMinters, creators);
+        collection = _create(sequentialImplementation, name, symbol, owner, cfg, initialMinters, creators);
+        emit SurfaceCreated(owner, collection, address(0), IdMode.Sequential);
     }
 
     /// @notice Deploy and configure a pooled collection owned by `owner`: the
     ///         backed/sourced form where an authorized minter chooses every id
     ///         and owns the pool's economics. Grant it in `initialMinters` so
-    ///         the collection deploys fully wired in one transaction.
+    ///         the collection deploys fully wired in one transaction. There is
+    ///         no canonical-minter form for pooled: a fixed-price pooled sale
+    ///         has no general id-assignment policy a shared minter could use.
     function createPooledSurface(
         string calldata name,
         string calldata symbol,
@@ -146,12 +243,12 @@ contract SurfaceFactory {
         address[] calldata initialMinters,
         address[] calldata creators
     ) external returns (address collection) {
-        return _create(pooledImplementation, IdMode.Pooled, name, symbol, owner, cfg, initialMinters, creators);
+        collection = _create(pooledImplementation, name, symbol, owner, cfg, initialMinters, creators);
+        emit SurfaceCreated(owner, collection, address(0), IdMode.Pooled);
     }
 
     function _create(
         address implementation,
-        IdMode idMode,
         string calldata name,
         string calldata symbol,
         address owner,
@@ -159,9 +256,7 @@ contract SurfaceFactory {
         address[] calldata initialMinters,
         address[] calldata creators
     ) private returns (address collection) {
-        if (deprecated) revert FactoryDeprecated();
-        if (paused) revert FactoryPaused();
-        if (owner == address(0)) revert OwnerRequired();
+        _checkCreatable(owner);
         collection = Clones.clone(implementation);
         SurfaceCore(collection)
             .initialize(
@@ -176,9 +271,18 @@ contract SurfaceFactory {
                     creators: creators
                 })
             );
+        _record(collection);
+    }
+
+    function _checkCreatable(address owner) private view {
+        if (deprecated) revert FactoryDeprecated();
+        if (paused) revert FactoryPaused();
+        if (owner == address(0)) revert OwnerRequired();
+    }
+
+    function _record(address collection) private {
         isSurface[collection] = true;
         allSurfaces.push(collection);
-        emit SurfaceCreated(owner, collection, idMode);
     }
 
     function totalSurfaces() external view returns (uint256) {

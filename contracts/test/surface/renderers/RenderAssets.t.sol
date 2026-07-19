@@ -6,6 +6,7 @@ import {Test} from "forge-std/Test.sol";
 import {Surface} from "../../../src/surface/Surface.sol";
 import {PooledSurface} from "../../../src/surface/PooledSurface.sol";
 import {SurfaceFactory} from "../../../src/surface/SurfaceFactory.sol";
+import {FixedPriceMinter} from "../../../src/surface/minters/FixedPriceMinter.sol";
 import {RenderAssets} from "../../../src/surface/renderers/RenderAssets.sol";
 import {SurfaceConfig} from "../../../src/surface/SurfaceTypes.sol";
 import {MockRenderer} from "../mocks/SurfaceMocks.sol";
@@ -25,11 +26,12 @@ contract RenderAssetsTest is Test {
     function setUp() public {
         assets = new RenderAssets();
         Surface impl = new Surface();
-        SurfaceFactory factory =
-            new SurfaceFactory(address(impl), address(new PooledSurface()), address(new MockRenderer()), address(0));
+        SurfaceFactory factory = new SurfaceFactory(
+            address(impl), address(new PooledSurface()), address(new FixedPriceMinter()), address(new MockRenderer()), address(0)
+        );
         SurfaceConfig memory cfg;
         collection =
-            Surface(factory.createSurface("Assets Test", "AT", artist, cfg, new address[](0), new address[](0)));
+            Surface(factory.createSurfaceCustom("Assets Test", "AT", artist, cfg, new address[](0), new address[](0)));
         vm.prank(artist);
         collection.addAdmin(admin);
     }
@@ -152,10 +154,14 @@ contract RenderAssetsTest is Test {
         {
             Surface impl = new Surface();
             SurfaceFactory factory = new SurfaceFactory(
-                address(impl), address(new PooledSurface()), address(new MockRenderer()), address(0)
+                address(impl),
+                address(new PooledSurface()),
+                address(new FixedPriceMinter()),
+                address(new MockRenderer()),
+                address(0)
             );
             SurfaceConfig memory cfg;
-            other = Surface(factory.createSurface("Other", "OTH", artist, cfg, new address[](0), new address[](0)));
+            other = Surface(factory.createSurfaceCustom("Other", "OTH", artist, cfg, new address[](0), new address[](0)));
         }
         vm.prank(artist);
         assets.setCapturer(address(collection), capturer, true);

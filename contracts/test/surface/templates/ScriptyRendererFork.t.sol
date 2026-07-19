@@ -8,6 +8,7 @@ import {LibString} from "solady/utils/LibString.sol";
 import {Surface} from "../../../src/surface/Surface.sol";
 import {PooledSurface} from "../../../src/surface/PooledSurface.sol";
 import {SurfaceFactory} from "../../../src/surface/SurfaceFactory.sol";
+import {FixedPriceMinter} from "../../../src/surface/minters/FixedPriceMinter.sol";
 import {SurfaceConfig, IdMode} from "../../../src/surface/SurfaceTypes.sol";
 import {ExampleScriptyWork} from "../../../src/surface/templates/ExampleScriptyWork.sol";
 import {CodeKind, CodeRef} from "../../../src/surface/templates/CodeTypes.sol";
@@ -86,14 +87,15 @@ contract ScriptyRendererForkTest is Test {
         Surface impl = new Surface();
         // Factory wires the template as the default renderer, so a plain
         // create points the collection's slot straight at it.
-        SurfaceFactory factory =
-            new SurfaceFactory(address(impl), address(new PooledSurface()), address(renderer), address(0));
+        SurfaceFactory factory = new SurfaceFactory(
+            address(impl), address(new PooledSurface()), address(new FixedPriceMinter()), address(renderer), address(0)
+        );
 
         SurfaceConfig memory cfg;
         cfg.supplyCap = 10;
 
         collection =
-            Surface(factory.createSurface("BYO Proof", "BYO", address(this), cfg, new address[](0), new address[](0)));
+            Surface(factory.createSurfaceCustom("BYO Proof", "BYO", address(this), cfg, new address[](0), new address[](0)));
         // The token has no built-in sale path: this test contract is the
         // collection's owner, so it grants itself as minter and mints directly.
         collection.setMinter(address(this), true);
@@ -183,12 +185,13 @@ contract ScriptyRendererForkTest is Test {
         if (!forked) return;
 
         Surface impl2 = new Surface();
-        SurfaceFactory factory2 =
-            new SurfaceFactory(address(impl2), address(new PooledSurface()), address(renderer), address(0));
+        SurfaceFactory factory2 = new SurfaceFactory(
+            address(impl2), address(new PooledSurface()), address(new FixedPriceMinter()), address(renderer), address(0)
+        );
         SurfaceConfig memory cfg;
         cfg.supplyCap = 10;
         Surface unminted = Surface(
-            factory2.createSurface("No Mints Yet", "NMY", address(this), cfg, new address[](0), new address[](0))
+            factory2.createSurfaceCustom("No Mints Yet", "NMY", address(this), cfg, new address[](0), new address[](0))
         );
 
         bytes32 throwaway = keccak256("what-if");

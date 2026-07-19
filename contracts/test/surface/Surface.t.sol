@@ -533,7 +533,7 @@ contract SurfaceTest is SurfaceBase {
         // new deploys revert...
         address[] memory none = new address[](0);
         vm.expectRevert(SurfaceFactory.FactoryDeprecated.selector);
-        factory.createSurface("After", "AFT", artist, _freeConfig(), none, none);
+        factory.createSurfaceCustom("After", "AFT", artist, _freeConfig(), none, none);
 
         // ...existing collections are untouched (immutable by design)
         _mintTo(existing, collector, 1);
@@ -561,7 +561,7 @@ contract SurfaceTest is SurfaceBase {
         assertTrue(factory.paused());
         address[] memory none = new address[](0);
         vm.expectRevert(SurfaceFactory.FactoryPaused.selector);
-        factory.createSurface("Paused", "PAU", artist, _freeConfig(), none, none);
+        factory.createSurfaceCustom("Paused", "PAU", artist, _freeConfig(), none, none);
 
         // resume → deploys work again (the reversible part `deprecate` can't do)
         factory.setPaused(false);
@@ -580,7 +580,7 @@ contract SurfaceTest is SurfaceBase {
         factory.setPaused(false);
         address[] memory none = new address[](0);
         vm.expectRevert(SurfaceFactory.FactoryDeprecated.selector);
-        factory.createSurface("Nope", "NOP", artist, _freeConfig(), none, none);
+        factory.createSurfaceCustom("Nope", "NOP", artist, _freeConfig(), none, none);
     }
 
     // ── renounceOwnership ─────────────────────────────────────────────────────

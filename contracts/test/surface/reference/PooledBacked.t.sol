@@ -6,6 +6,7 @@ import {ERC20} from "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 
 import {PooledSurface} from "../../../src/surface/PooledSurface.sol";
 import {SurfaceFactory} from "../../../src/surface/SurfaceFactory.sol";
+import {FixedPriceMinter} from "../../../src/surface/minters/FixedPriceMinter.sol";
 import {SurfaceConfig} from "../../../src/surface/SurfaceTypes.sol";
 import {MockRenderer} from "../mocks/SurfaceMocks.sol";
 
@@ -93,8 +94,9 @@ contract PooledBackedTest is Test {
 
     function setUp() public {
         PooledSurface impl = new PooledSurface();
-        SurfaceFactory factory =
-            new SurfaceFactory(address(new PooledSurface()), address(impl), address(new MockRenderer()), address(0));
+        SurfaceFactory factory = new SurfaceFactory(
+            address(new PooledSurface()), address(impl), address(new FixedPriceMinter()), address(new MockRenderer()), address(0)
+        );
         coin = new MockCoin();
 
         SurfaceConfig memory cfg;

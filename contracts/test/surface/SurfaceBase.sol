@@ -8,6 +8,7 @@ import {Surface} from "../../src/surface/Surface.sol";
 import {PooledSurface} from "../../src/surface/PooledSurface.sol";
 import {SurfaceFactory} from "../../src/surface/SurfaceFactory.sol";
 import {SurfaceConfig, InitParams} from "../../src/surface/SurfaceTypes.sol";
+import {FixedPriceMinter} from "../../src/surface/minters/FixedPriceMinter.sol";
 
 import {MockRenderer} from "./mocks/SurfaceMocks.sol";
 
@@ -16,6 +17,7 @@ contract SurfaceBase is Test {
     MockRenderer internal renderer;
     Surface internal impl; // sequential implementation
     PooledSurface internal pooledImpl;
+    FixedPriceMinter internal minterImpl; // canonical minter implementation
     SurfaceFactory internal factory;
 
     address internal artist = makeAddr("artist");
@@ -27,9 +29,11 @@ contract SurfaceBase is Test {
         renderer = new MockRenderer();
         impl = new Surface();
         pooledImpl = new PooledSurface();
+        minterImpl = new FixedPriceMinter();
         // address(0) catalog: creator-confirmation is out of scope for this
         // suite (exercised in CreatorAttribution.t.sol with a real Catalog).
-        factory = new SurfaceFactory(address(impl), address(pooledImpl), address(renderer), address(0));
+        factory =
+            new SurfaceFactory(address(impl), address(pooledImpl), address(minterImpl), address(renderer), address(0));
     }
 
     // ── config builders ──────────────────────────────────────────────────────
@@ -39,16 +43,21 @@ contract SurfaceBase is Test {
     function _freeConfig() internal pure returns (SurfaceConfig memory cfg) {}
 
     // ── deploy helpers ───────────────────────────────────────────────────────
+    // These go through createSurfaceCustom (bring-your-own minter, no
+    // canonical clone): most of the suite grants a minter directly via
+    // setMinter and does not need the wired FixedPriceMinter. The canonical
+    // one-transaction createSurface path has its own coverage in
+    // test/surface/SurfaceFactory.t.sol.
 
     function _collection(SurfaceConfig memory cfg) internal returns (Surface c) {
         address[] memory noMinters = new address[](0);
         address[] memory noCreators = new address[](0);
-        c = Surface(factory.createSurface("Artist Surface", "ACOL", artist, cfg, noMinters, noCreators));
+        c = Surface(factory.createSurfaceCustom("Artist Surface", "ACOL", artist, cfg, noMinters, noCreators));
     }
 
     function _collectionWithMinters(SurfaceConfig memory cfg, address[] memory minters) internal returns (Surface c) {
         address[] memory noCreators = new address[](0);
-        c = Surface(factory.createSurface("Artist Surface", "ACOL", artist, cfg, minters, noCreators));
+        c = Surface(factory.createSurfaceCustom("Artist Surface", "ACOL", artist, cfg, minters, noCreators));
     }
 
     function _pooled(SurfaceConfig memory cfg) internal returns (PooledSurface c) {
