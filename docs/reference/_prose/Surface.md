@@ -9,13 +9,13 @@ stores ownership, one seed per token, the renderer pointer, the EIP-2981 royalty
 creator attribution, and the supply cap. It holds no sale logic and no ETH: it has
 no payable function, and every mint enters through an authorized minter calling
 the non-payable `mintTo`. Each collection is a separate EIP-1167 clone deployed by
-[the factory](/docs/collections/contracts/factory); there is no proxy admin and no
+[the factory](/docs/surface/contracts/factory); there is no proxy admin and no
 upgrade path. The OpenZeppelin upgradeable bases are used only for the initializer
 pattern a clone requires.
 
 Price, mint window, payment, referral, and gating live in the minter that calls
 `mintTo`, not in the token. `createSurface` on the factory clones and grants a
-[FixedPriceMinter](/docs/collections/contracts/fixed-price-minter); a project with
+[FixedPriceMinter](/docs/surface/contracts/fixed-price-minter); a project with
 its own economics grants its own minter contract instead. The owner controls a
 minter through `setMinter` (grant or revoke) and `lockMinter` (freeze the set).
 
@@ -33,8 +33,8 @@ The token authorizes a minter for one operation: calling `mintTo`. It does not
 constrain minter internals. The token-side invariants hold for every minter: the
 supply cap bounds all mints, ids are assigned sequentially, and each mint emits
 `Minted` with the calling minter. Payment, referral, and gating are the minter's
-own surface; see [FixedPriceMinter](/docs/collections/contracts/fixed-price-minter)
-and the [minter guide](/docs/collections/guides/write-a-minter).
+own surface; see [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter)
+and the [minter guide](/docs/surface/guides/write-a-minter).
 
 ### Owner and admins
 
@@ -49,7 +49,7 @@ canonical minter's config setters check the collection's `owner()`/`isAdmin`.
 
 Attribution is a two-sided onchain check with no shared registry write. The owner
 lists creators with `setCreators`, an assertion. A listed creator confirms by
-claiming the collection in the [Catalog](/docs/collections/contracts/catalog)
+claiming the collection in the [Catalog](/docs/catalog/contracts/catalog)
 from their own address.
 `isConfirmedCreator(who)` is the intersection: listed and claimed. Either side can
 retract, and the confirmation follows on the next read; nothing is stored.
@@ -58,7 +58,7 @@ retract, and the confirmation follows on the next read; nothing is stored.
 ### Id modes
 
 The id mode is fixed per contract form; `idMode()` reports it. See
-[id modes](/docs/collections/concepts/id-modes).
+[id modes](/docs/surface/concepts/id-modes).
 
 - Sequential (`Surface`): ids are assigned 1, 2, 3... in mint order and not reused
   after a burn, so the id equals the mint order. The supply cap bounds mints ever.
@@ -336,7 +336,7 @@ collection's minter.
 ## function idMode
 
 The collection form: Sequential (0) or Pooled (1). Fixed by the contract. See
-[id modes](/docs/collections/concepts/id-modes).
+[id modes](/docs/surface/concepts/id-modes).
 
 ## function totalSupply
 

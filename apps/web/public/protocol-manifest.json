@@ -5,85 +5,78 @@
   "docs": "/docs",
   "llms": "/llms.txt",
   "protocols": {
-    "collections": {
-      "title": "Collections",
-      "docs": "/docs/collections/overview",
+    "surface": {
+      "title": "Surface",
+      "docs": "/docs/surface/overview",
       "contracts": {
         "Surface": {
           "address": null,
           "kind": "clone",
           "abi": "/abis/Surface.json",
-          "docs": "/docs/collections/contracts/surface",
+          "docs": "/docs/surface/contracts/surface",
           "role": "Sequential-id ERC721 collection: the token core of the PND Surface System."
         },
         "SurfaceFactory": {
           "address": null,
           "kind": "singleton",
           "abi": "/abis/SurfaceFactory.json",
-          "docs": "/docs/collections/contracts/factory",
-          "role": "Deploys one [Surface](/docs/collections/contracts/surface) collection per call as an EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path."
+          "docs": "/docs/surface/contracts/factory",
+          "role": "Deploys one [Surface](/docs/surface/contracts/surface) collection per call as an EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path."
         },
         "FixedPriceMinter": {
           "address": null,
           "kind": "clone",
           "abi": "/abis/FixedPriceMinter.json",
-          "docs": "/docs/collections/contracts/fixed-price-minter",
-          "role": "Fixed-price minter for a sequential [Surface](/docs/collections/contracts/surface) collection, deployed as one EIP-1167 clone per collection."
+          "docs": "/docs/surface/contracts/fixed-price-minter",
+          "role": "Fixed-price minter for a sequential [Surface](/docs/surface/contracts/surface) collection, deployed as one EIP-1167 clone per collection."
         },
         "DefaultRenderer": {
           "address": null,
           "kind": "singleton",
           "abi": "/abis/DefaultRenderer.json",
-          "docs": "/docs/collections/contracts/default-renderer",
-          "role": "The built-in renderer for [Surface](/docs/collections/contracts/surface)."
+          "docs": "/docs/surface/contracts/default-renderer",
+          "role": "The built-in renderer for [Surface](/docs/surface/contracts/surface)."
         },
         "RenderAssets": {
           "address": null,
           "kind": "singleton",
           "abi": "/abis/RenderAssets.json",
-          "docs": "/docs/collections/contracts/render-assets",
+          "docs": "/docs/surface/contracts/render-assets",
           "role": "Registry of static display assets for renderers: each collection's cover image, per-token captures (thumbnails of rendered output), and a capture template resolved per token id."
-        },
-        "Catalog": {
-          "address": "0x467a9c39e03C595EC3075D856f19C7386b6b915d",
-          "kind": "singleton",
-          "abi": "/abis/Catalog.json",
-          "docs": "/docs/collections/contracts/catalog",
-          "role": "An immutable public registry where an artist address publishes onchain pointers to its work."
         },
         "ScriptyRenderer": {
           "address": null,
           "kind": "clone",
           "abi": "/abis/ScriptyRenderer.json",
-          "docs": "/docs/collections/contracts/scripty-renderer",
-          "role": "A forkable [IRenderer](/docs/collections/contracts/i-renderer) template for script-based generative work, assembled onchain through ScriptyBuilderV2."
+          "docs": "/docs/surface/contracts/scripty-renderer",
+          "role": "A forkable [IRenderer](/docs/surface/contracts/i-renderer) template for script-based generative work, assembled onchain through ScriptyBuilderV2."
         },
         "IPriceStrategy": {
           "address": null,
           "kind": "interface",
           "abi": "/abis/IPriceStrategy.json",
-          "docs": "/docs/collections/contracts/i-price-strategy",
-          "role": "IPriceStrategy is the interface a contract implements to occupy the price slot inside a collection's minter, the optional pricing module on the canonical [FixedPriceMinter](/docs/collections/contracts/fixed-price-minter) (see the [slots and modules](/docs/collections/concepts/four-slots) overview)."
+          "docs": "/docs/surface/contracts/i-price-strategy",
+          "role": "IPriceStrategy is the interface a contract implements to occupy the price slot inside a collection's minter, the optional pricing module on the canonical [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter) (see the [slots and modules](/docs/surface/concepts/four-slots) overview)."
         },
         "IRenderer": {
           "address": null,
           "kind": "interface",
           "abi": "/abis/IRenderer.json",
-          "docs": "/docs/collections/contracts/i-renderer",
-          "role": "IRenderer is the interface a contract implements to occupy a collection's renderer slot, the token's one swappable presentation slot (see [slots and modules](/docs/collections/concepts/four-slots)) on the [Surface](/docs/collections/contracts/surface) core."
+          "docs": "/docs/surface/contracts/i-renderer",
+          "role": "IRenderer is the interface a contract implements to occupy a collection's renderer slot, the token's one swappable presentation slot (see [slots and modules](/docs/surface/concepts/four-slots)) on the [Surface](/docs/surface/contracts/surface) core."
         },
         "ISurfaceView": {
           "address": null,
           "kind": "interface",
           "abi": "/abis/ISurfaceView.json",
-          "docs": "/docs/collections/contracts/i-surface-view",
-          "role": "ISurfaceView is the read surface a collection exposes for its [renderer](/docs/collections/contracts/i-renderer), a [price strategy](/docs/collections/contracts/i-price-strategy), and any minter to read without depending on the full [Surface](/docs/collections/contracts/surface) ABI."
+          "docs": "/docs/surface/contracts/i-surface-view",
+          "role": "ISurfaceView is the read surface a collection exposes for its [renderer](/docs/surface/contracts/i-renderer), a [price strategy](/docs/surface/contracts/i-price-strategy), and any minter to read without depending on the full [Surface](/docs/surface/contracts/surface) ABI."
         },
         "IPreviewRenderer": {
           "address": null,
           "kind": "interface",
           "abi": "/abis/IPreviewRenderer.json",
-          "docs": "/docs/collections/contracts/i-preview-renderer",
+          "docs": "/docs/surface/contracts/i-preview-renderer",
           "role": "An optional extension a renderer implements to render the output for a caller-supplied seed with no token existing."
         }
       }
@@ -105,6 +98,19 @@
           "abi": "/abis/SovereignAuctionHouseFactory.json",
           "docs": "/docs/auctions/contracts/auction-house-factory",
           "role": "SovereignAuctionHouseFactory deploys one [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house) per owner as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs."
+        }
+      }
+    },
+    "catalog": {
+      "title": "Catalog",
+      "docs": "/docs/catalog/overview",
+      "contracts": {
+        "Catalog": {
+          "address": "0x467a9c39e03C595EC3075D856f19C7386b6b915d",
+          "kind": "singleton",
+          "abi": "/abis/Catalog.json",
+          "docs": "/docs/catalog/contracts/catalog",
+          "role": "An immutable public registry where an artist address publishes onchain pointers to its work."
         }
       }
     }

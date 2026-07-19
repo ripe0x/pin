@@ -1,6 +1,6 @@
 # PND onchain protocols
 
-> The onchain protocols PND ships for artists. Each is a self-contained set of contracts with an API reference below. Collections are artist-owned ERC721 contracts built on a thin token core where every mint goes through an authorized minter, with a canonical fixed-price/referral minter wired by the factory. Auctions are per-owner English-auction houses for any ERC721. More protocols land here as they ship.
+> The onchain protocols PND ships for artists. Each is a self-contained set of contracts with an API reference below. Surface is the collection system: artist-owned ERC721 collections on a thin token core where every mint goes through an authorized minter, with a canonical fixed-price/referral minter wired by the factory. Catalog is a general onchain artist registry the Surface System reads for creator attribution. Auctions are per-owner English-auction houses for any ERC721. More protocols land here as they ship.
 
 Machine-readable addresses + ABIs: https://pnd.ripe.wtf/protocol-manifest.json (ABIs under https://pnd.ripe.wtf/abis/).
 
@@ -10,33 +10,32 @@ Machine-readable addresses + ABIs: https://pnd.ripe.wtf/protocol-manifest.json (
 - [Addresses](https://pnd.ripe.wtf/docs/introduction/addresses): The shared singletons of each PND onchain protocol, with ABI and reference links.
 - [Conventions](https://pnd.ripe.wtf/docs/introduction/conventions): How to read examples, addresses, and terms across this reference.
 
-## Collections
+## Surface
 
-- [Overview](https://pnd.ripe.wtf/docs/collections/overview): What the PND Surface System is, its parts, and how this reference is organized.
-- [Slots and modules](https://pnd.ripe.wtf/docs/collections/concepts/four-slots): The renderer slot and the minter set on the token, plus the price-strategy slot inside the canonical minter.
-- [Id modes](https://pnd.ripe.wtf/docs/collections/concepts/id-modes): Sequential and pooled, the two token id assignment models, fixed at init.
-- [Seed and provenance](https://pnd.ripe.wtf/docs/collections/concepts/mint-marks-and-entropy): The one stored per-token fact, the mint-time seed, and the provenance that derives from the id and the Minted event.
-- [Types](https://pnd.ripe.wtf/docs/collections/concepts/types): The shared enums and structs in SurfaceTypes.sol, the data-only surface with no ABI functions of its own.
-- [Surface](https://pnd.ripe.wtf/docs/collections/contracts/surface): Sequential-id ERC721 collection: the token core of the PND Surface System.
-- [SurfaceFactory](https://pnd.ripe.wtf/docs/collections/contracts/factory): Deploys one [Surface](/docs/collections/contracts/surface) collection per call as an EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path.
-- [FixedPriceMinter](https://pnd.ripe.wtf/docs/collections/contracts/fixed-price-minter): Fixed-price minter for a sequential [Surface](/docs/collections/contracts/surface) collection, deployed as one EIP-1167 clone per collection.
-- [DefaultRenderer](https://pnd.ripe.wtf/docs/collections/contracts/default-renderer): The built-in renderer for [Surface](/docs/collections/contracts/surface).
-- [RenderAssets](https://pnd.ripe.wtf/docs/collections/contracts/render-assets): Registry of static display assets for renderers: each collection's cover image, per-token captures (thumbnails of rendered output), and a capture template resolved per token id.
-- [Catalog](https://pnd.ripe.wtf/docs/collections/contracts/catalog): An immutable public registry where an artist address publishes onchain pointers to its work.
-- [ScriptyRenderer](https://pnd.ripe.wtf/docs/collections/contracts/scripty-renderer): A forkable [IRenderer](/docs/collections/contracts/i-renderer) template for script-based generative work, assembled onchain through ScriptyBuilderV2.
-- [IPriceStrategy](https://pnd.ripe.wtf/docs/collections/contracts/i-price-strategy): IPriceStrategy is the interface a contract implements to occupy the price slot inside a collection's minter, the optional pricing module on the canonical [FixedPriceMinter](/docs/collections/contracts/fixed-price-minter) (see the [slots and modules](/docs/collections/concepts/four-slots) overview).
-- [IRenderer](https://pnd.ripe.wtf/docs/collections/contracts/i-renderer): IRenderer is the interface a contract implements to occupy a collection's renderer slot, the token's one swappable presentation slot (see [slots and modules](/docs/collections/concepts/four-slots)) on the [Surface](/docs/collections/contracts/surface) core.
-- [ISurfaceView](https://pnd.ripe.wtf/docs/collections/contracts/i-surface-view): ISurfaceView is the read surface a collection exposes for its [renderer](/docs/collections/contracts/i-renderer), a [price strategy](/docs/collections/contracts/i-price-strategy), and any minter to read without depending on the full [Surface](/docs/collections/contracts/surface) ABI.
-- [IPreviewRenderer](https://pnd.ripe.wtf/docs/collections/contracts/i-preview-renderer): An optional extension a renderer implements to render the output for a caller-supplied seed with no token existing.
-- [Deploy a collection](https://pnd.ripe.wtf/docs/collections/guides/deploy-a-collection): Call the factory to deploy an owned, immutable Surface clone wired to a canonical minter in one transaction.
-- [Mint](https://pnd.ripe.wtf/docs/collections/guides/mint): Minting through the canonical FixedPriceMinter, price resolution, sale windows, gates, and the reverts to handle.
-- [Write a minter](https://pnd.ripe.wtf/docs/collections/guides/write-a-minter): Implement a minter, get authorized via setMinter, and mint through the token's minter-gated mintTo or mintToId.
-- [Write a price strategy](https://pnd.ripe.wtf/docs/collections/guides/write-a-price-strategy): Implement IPriceStrategy's view-only priceOf, install it on the minter with setPriceStrategy, and two worked examples.
-- [Write a renderer](https://pnd.ripe.wtf/docs/collections/guides/write-a-renderer): Implement IRenderer against ISurfaceView, the bundled renderers, and how renderer locking works.
-- [Access control](https://pnd.ripe.wtf/docs/collections/reference/access-control): Every state-changing function in the Collections contracts and who may call it.
-- [Errors index](https://pnd.ripe.wtf/docs/collections/reference/errors): Every custom error in the Collections contracts, its contract, and the condition that raises it.
-- [Events index](https://pnd.ripe.wtf/docs/collections/reference/events): Every event the Collections contracts emit, grouped by contract.
-- [Injection convention](https://pnd.ripe.wtf/docs/collections/reference/injection-convention): How a generative work's code receives its token context, onchain and off, and the determinism rules that make a preview the render.
+- [Overview](https://pnd.ripe.wtf/docs/surface/overview): What the PND Surface System is, its parts, and how this reference is organized.
+- [Slots and modules](https://pnd.ripe.wtf/docs/surface/concepts/four-slots): The renderer slot and the minter set on the token, plus the price-strategy slot inside the canonical minter.
+- [Id modes](https://pnd.ripe.wtf/docs/surface/concepts/id-modes): Sequential and pooled, the two token id assignment models, fixed at init.
+- [Seed and provenance](https://pnd.ripe.wtf/docs/surface/concepts/mint-marks-and-entropy): The one stored per-token fact, the mint-time seed, and the provenance that derives from the id and the Minted event.
+- [Types](https://pnd.ripe.wtf/docs/surface/concepts/types): The shared enums and structs in SurfaceTypes.sol, the data-only surface with no ABI functions of its own.
+- [Surface](https://pnd.ripe.wtf/docs/surface/contracts/surface): Sequential-id ERC721 collection: the token core of the PND Surface System.
+- [SurfaceFactory](https://pnd.ripe.wtf/docs/surface/contracts/factory): Deploys one [Surface](/docs/surface/contracts/surface) collection per call as an EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path.
+- [FixedPriceMinter](https://pnd.ripe.wtf/docs/surface/contracts/fixed-price-minter): Fixed-price minter for a sequential [Surface](/docs/surface/contracts/surface) collection, deployed as one EIP-1167 clone per collection.
+- [DefaultRenderer](https://pnd.ripe.wtf/docs/surface/contracts/default-renderer): The built-in renderer for [Surface](/docs/surface/contracts/surface).
+- [RenderAssets](https://pnd.ripe.wtf/docs/surface/contracts/render-assets): Registry of static display assets for renderers: each collection's cover image, per-token captures (thumbnails of rendered output), and a capture template resolved per token id.
+- [ScriptyRenderer](https://pnd.ripe.wtf/docs/surface/contracts/scripty-renderer): A forkable [IRenderer](/docs/surface/contracts/i-renderer) template for script-based generative work, assembled onchain through ScriptyBuilderV2.
+- [IPriceStrategy](https://pnd.ripe.wtf/docs/surface/contracts/i-price-strategy): IPriceStrategy is the interface a contract implements to occupy the price slot inside a collection's minter, the optional pricing module on the canonical [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter) (see the [slots and modules](/docs/surface/concepts/four-slots) overview).
+- [IRenderer](https://pnd.ripe.wtf/docs/surface/contracts/i-renderer): IRenderer is the interface a contract implements to occupy a collection's renderer slot, the token's one swappable presentation slot (see [slots and modules](/docs/surface/concepts/four-slots)) on the [Surface](/docs/surface/contracts/surface) core.
+- [ISurfaceView](https://pnd.ripe.wtf/docs/surface/contracts/i-surface-view): ISurfaceView is the read surface a collection exposes for its [renderer](/docs/surface/contracts/i-renderer), a [price strategy](/docs/surface/contracts/i-price-strategy), and any minter to read without depending on the full [Surface](/docs/surface/contracts/surface) ABI.
+- [IPreviewRenderer](https://pnd.ripe.wtf/docs/surface/contracts/i-preview-renderer): An optional extension a renderer implements to render the output for a caller-supplied seed with no token existing.
+- [Deploy a collection](https://pnd.ripe.wtf/docs/surface/guides/deploy-a-collection): Call the factory to deploy an owned, immutable Surface clone wired to a canonical minter in one transaction.
+- [Mint](https://pnd.ripe.wtf/docs/surface/guides/mint): Minting through the canonical FixedPriceMinter, price resolution, sale windows, gates, and the reverts to handle.
+- [Write a minter](https://pnd.ripe.wtf/docs/surface/guides/write-a-minter): Implement a minter, get authorized via setMinter, and mint through the token's minter-gated mintTo or mintToId.
+- [Write a price strategy](https://pnd.ripe.wtf/docs/surface/guides/write-a-price-strategy): Implement IPriceStrategy's view-only priceOf, install it on the minter with setPriceStrategy, and two worked examples.
+- [Write a renderer](https://pnd.ripe.wtf/docs/surface/guides/write-a-renderer): Implement IRenderer against ISurfaceView, the bundled renderers, and how renderer locking works.
+- [Access control](https://pnd.ripe.wtf/docs/surface/reference/access-control): Every state-changing function in the Surface contracts and who may call it.
+- [Errors index](https://pnd.ripe.wtf/docs/surface/reference/errors): Every custom error in the Surface contracts, its contract, and the condition that raises it.
+- [Events index](https://pnd.ripe.wtf/docs/surface/reference/events): Every event the Surface contracts emit, grouped by contract.
+- [Injection convention](https://pnd.ripe.wtf/docs/surface/reference/injection-convention): How a generative work's code receives its token context, onchain and off, and the determinism rules that make a preview the render.
 
 ## Auctions
 
@@ -50,6 +49,14 @@ Machine-readable addresses + ABIs: https://pnd.ripe.wtf/protocol-manifest.json (
 - [Access control](https://pnd.ripe.wtf/docs/auctions/reference/access-control): Every state-changing function in the Auctions contracts and who may call it.
 - [Errors index](https://pnd.ripe.wtf/docs/auctions/reference/errors): Every custom error in the Auctions contracts, its contract, and the condition that raises it.
 - [Events index](https://pnd.ripe.wtf/docs/auctions/reference/events): Every event the Auctions contracts emit, grouped by contract.
+
+## Catalog
+
+- [Overview](https://pnd.ripe.wtf/docs/catalog/overview): Catalog, a general onchain artist registry where an address publishes pointers to its work.
+- [Catalog](https://pnd.ripe.wtf/docs/catalog/contracts/catalog): An immutable public registry where an artist address publishes onchain pointers to its work.
+- [Access control](https://pnd.ripe.wtf/docs/catalog/reference/access-control): Every state-changing function in the Catalog contracts and who may call it.
+- [Errors index](https://pnd.ripe.wtf/docs/catalog/reference/errors): Every custom error in the Catalog contracts, its contract, and the condition that raises it.
+- [Events index](https://pnd.ripe.wtf/docs/catalog/reference/events): Every event the Catalog contracts emit, grouped by contract.
 
 ## Off-chain
 

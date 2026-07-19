@@ -8,12 +8,12 @@
  *      + hand-written pages       docs/reference/_pages/**
  *
  * The reference is organized into GROUPS. Two are shared (Introduction,
- * Off-chain); the rest are protocols (Collections, Auctions, and more as they
+ * Off-chain); the rest are protocols (Surface, Auctions, Catalog, and more as they
  * ship). Each protocol is a self-contained doc set: an overview, concept pages,
  * per-contract references, guides, and its own cross-cutting indexes (access
  * control, errors, events). URLs are namespaced by group:
  *   /docs/introduction/overview
- *   /docs/collections/contracts/sovereign-collection
+ *   /docs/surface/contracts/surface
  *   /docs/auctions/contracts/sovereign-auction-house
  *
  * Outputs:
@@ -118,15 +118,15 @@ interface Protocol {
 
 const PROTOCOLS: Protocol[] = [
     {
-        id: 'collections',
-        title: 'Collections',
-        blurb: 'Artist-owned ERC721 collections: a thin token core (ownership, per-token seed, renderer, royalty, supply cap, three one-way locks) where every mint goes through an authorized minter, with a canonical fixed-price/referral minter wired by the factory.',
-        overview: 'collections/overview.md',
+        id: 'surface',
+        title: 'Surface',
+        blurb: 'The PND Surface System: artist-owned ERC721 collections on a thin token core (ownership, per-token seed, renderer, royalty, supply cap, three one-way locks) where every mint goes through an authorized minter, with a canonical fixed-price/referral minter wired by the factory.',
+        overview: 'surface/overview.md',
         concepts: [
-            {section: 'concepts', slug: 'four-slots', file: 'collections/concepts/four-slots.md'},
-            {section: 'concepts', slug: 'id-modes', file: 'collections/concepts/id-modes.md'},
-            {section: 'concepts', slug: 'mint-marks-and-entropy', file: 'collections/concepts/mint-marks-and-entropy.md'},
-            {section: 'concepts', slug: 'types', file: 'collections/concepts/types.md'},
+            {section: 'concepts', slug: 'four-slots', file: 'surface/concepts/four-slots.md'},
+            {section: 'concepts', slug: 'id-modes', file: 'surface/concepts/id-modes.md'},
+            {section: 'concepts', slug: 'mint-marks-and-entropy', file: 'surface/concepts/mint-marks-and-entropy.md'},
+            {section: 'concepts', slug: 'types', file: 'surface/concepts/types.md'},
         ],
         contracts: [
             {
@@ -134,7 +134,7 @@ const PROTOCOLS: Protocol[] = [
                 slug: 'surface',
                 deploymentsKey: null,
                 kind: 'clone',
-                note: 'Deployed per artist as an EIP-1167 clone through the [factory](/docs/collections/contracts/factory). There is no single canonical address; substitute your collection address for `<COLLECTION_ADDRESS>` in the examples below.',
+                note: 'Deployed per artist as an EIP-1167 clone through the [factory](/docs/surface/contracts/factory). There is no single canonical address; substitute your collection address for `<COLLECTION_ADDRESS>` in the examples below.',
             },
             {name: 'SurfaceFactory', slug: 'factory', deploymentsKey: 'surfaceFactory', kind: 'singleton'},
             {
@@ -142,17 +142,16 @@ const PROTOCOLS: Protocol[] = [
                 slug: 'fixed-price-minter',
                 deploymentsKey: null,
                 kind: 'clone',
-                note: 'Deployed per collection as an EIP-1167 clone: [`createSurface`](/docs/collections/contracts/factory#createsurface) wires one automatically and `SurfaceCreated.minter` records it. There is no single canonical address; substitute your collection\'s minter address for `<MINTER_ADDRESS>` in the examples below.',
+                note: 'Deployed per collection as an EIP-1167 clone: [`createSurface`](/docs/surface/contracts/factory#createsurface) wires one automatically and `SurfaceCreated.minter` records it. There is no single canonical address; substitute your collection\'s minter address for `<MINTER_ADDRESS>` in the examples below.',
             },
             {name: 'DefaultRenderer', slug: 'default-renderer', deploymentsKey: 'defaultRenderer', kind: 'singleton'},
             {name: 'RenderAssets', slug: 'render-assets', deploymentsKey: 'renderAssets', kind: 'singleton'},
-            {name: 'Catalog', slug: 'catalog', deploymentsKey: 'catalog', kind: 'singleton'},
             {
                 name: 'ScriptyRenderer',
                 slug: 'scripty-renderer',
                 deploymentsKey: null,
                 kind: 'clone',
-                note: 'A bring-your-own generative renderer template, not a shared deployment. An artist deploys their own instance (one per work) with the work fixed in the constructor, so the renderer is immutable and there is no canonical address, and sets a collection\'s renderer pointer to it. The ABI below is the base template; see [Write a renderer](/docs/collections/guides/write-a-renderer).',
+                note: 'A bring-your-own generative renderer template, not a shared deployment. An artist deploys their own instance (one per work) with the work fixed in the constructor, so the renderer is immutable and there is no canonical address, and sets a collection\'s renderer pointer to it. The ABI below is the base template; see [Write a renderer](/docs/surface/guides/write-a-renderer).',
             },
             {
                 name: 'IPriceStrategy',
@@ -184,14 +183,14 @@ const PROTOCOLS: Protocol[] = [
             },
         ],
         guides: [
-            {section: 'guides', slug: 'deploy-a-collection', file: 'collections/guides/deploy-a-collection.md'},
-            {section: 'guides', slug: 'mint', file: 'collections/guides/mint.md'},
-            {section: 'guides', slug: 'write-a-minter', file: 'collections/guides/write-a-minter.md'},
-            {section: 'guides', slug: 'write-a-price-strategy', file: 'collections/guides/write-a-price-strategy.md'},
-            {section: 'guides', slug: 'write-a-renderer', file: 'collections/guides/write-a-renderer.md'},
+            {section: 'guides', slug: 'deploy-a-collection', file: 'surface/guides/deploy-a-collection.md'},
+            {section: 'guides', slug: 'mint', file: 'surface/guides/mint.md'},
+            {section: 'guides', slug: 'write-a-minter', file: 'surface/guides/write-a-minter.md'},
+            {section: 'guides', slug: 'write-a-price-strategy', file: 'surface/guides/write-a-price-strategy.md'},
+            {section: 'guides', slug: 'write-a-renderer', file: 'surface/guides/write-a-renderer.md'},
         ],
         referencePages: [
-            {section: 'reference', slug: 'injection-convention', file: 'collections/reference/injection-convention.md'},
+            {section: 'reference', slug: 'injection-convention', file: 'surface/reference/injection-convention.md'},
         ],
     },
     {
@@ -219,6 +218,18 @@ const PROTOCOLS: Protocol[] = [
         ],
         referencePages: [],
     },
+    {
+        id: 'catalog',
+        title: 'Catalog',
+        blurb: 'A general onchain artist registry, live on Ethereum mainnet: an address publishes pointers to its work (a contract, a token, or a token-id range). The Surface System reads it for the creator half of collection attribution.',
+        overview: 'catalog/overview.md',
+        concepts: [],
+        contracts: [
+            {name: 'Catalog', slug: 'catalog', deploymentsKey: 'catalog', kind: 'singleton'},
+        ],
+        guides: [],
+        referencePages: [],
+    },
 ];
 
 /** Shared groups: not tied to a single protocol. */
@@ -229,8 +240,9 @@ const SHARED_OFFCHAIN_PAGES: {slug: string; file: string}[] = [
 
 const GROUP_TITLES: Record<string, string> = {
     introduction: 'Introduction',
-    collections: 'Collections',
+    surface: 'Surface',
     auctions: 'Auctions',
+    catalog: 'Catalog',
     offchain: 'Off-chain',
 };
 
@@ -994,7 +1006,7 @@ async function main() {
     llms.push('# PND onchain protocols');
     llms.push('');
     llms.push(
-        '> The onchain protocols PND ships for artists. Each is a self-contained set of contracts with an API reference below. Collections are artist-owned ERC721 contracts built on a thin token core where every mint goes through an authorized minter, with a canonical fixed-price/referral minter wired by the factory. Auctions are per-owner English-auction houses for any ERC721. More protocols land here as they ship.',
+        '> The onchain protocols PND ships for artists. Each is a self-contained set of contracts with an API reference below. Surface is the collection system: artist-owned ERC721 collections on a thin token core where every mint goes through an authorized minter, with a canonical fixed-price/referral minter wired by the factory. Catalog is a general onchain artist registry the Surface System reads for creator attribution. Auctions are per-owner English-auction houses for any ERC721. More protocols land here as they ship.',
     );
     llms.push('');
     llms.push(`Machine-readable addresses + ABIs: ${SITE_ORIGIN}/protocol-manifest.json (ABIs under ${SITE_ORIGIN}/abis/).`);

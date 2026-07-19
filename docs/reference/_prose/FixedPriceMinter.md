@@ -4,9 +4,9 @@ title: FixedPriceMinter
 
 # summary
 
-Fixed-price minter for a sequential [Surface](/docs/collections/contracts/surface)
+Fixed-price minter for a sequential [Surface](/docs/surface/contracts/surface)
 collection, deployed as one EIP-1167 clone per collection.
-`createSurface` on [the factory](/docs/collections/contracts/factory) clones and
+`createSurface` on [the factory](/docs/surface/contracts/factory) clones and
 grants one; `SurfaceCreated.minter` records the address. The clone stores the
 sale config (fixed `price` or an `IPriceStrategy`, mint window, payout, per-clone
 sale ceiling, Merkle allowlist root, per-recipient cap), takes payment in `mint`,

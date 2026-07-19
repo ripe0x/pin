@@ -10,13 +10,13 @@ chain state, like the live view, so an integrator can `eth_call` sample outputs
 without a token.
 
 A renderer that can render from `(tokenId, seed)` alone implements this;
-[ScriptyRenderer](/docs/collections/contracts/scripty-renderer) does. A renderer
+[ScriptyRenderer](/docs/surface/contracts/scripty-renderer) does. A renderer
 whose output depends on state a seed cannot supply (sibling tokens, companion
 contracts, mint-time data recorded by a mint hook) does not. Detection is a
 try/catch `eth_call`, the repo convention, not ERC-165.
 
 A preview document injects `tokenData.context = "preview"` (see the
-[Injection convention](/docs/collections/reference/injection-convention)) so the
+[Injection convention](/docs/surface/reference/injection-convention)) so the
 work's code can distinguish a preview render from a token render. Preview
 metadata carries no provenance attributes.
 

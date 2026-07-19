@@ -4,10 +4,10 @@ title: SurfaceFactory
 
 # summary
 
-Deploys one [Surface](/docs/collections/contracts/surface) collection per call as
+Deploys one [Surface](/docs/surface/contracts/surface) collection per call as
 an EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path.
 `createSurface` clones the sequential token and a
-[FixedPriceMinter](/docs/collections/contracts/fixed-price-minter), initializes
+[FixedPriceMinter](/docs/surface/contracts/fixed-price-minter), initializes
 both, and grants the minter, in one transaction. `createSurfaceCustom`
 (sequential) and `createPooledSurface` (pooled) clone only the token and grant the
 minters the caller passes. The factory takes no fee.
@@ -44,7 +44,7 @@ collection's owner or admin.
 The `creators` argument sets the collection's listed-creator set during
 `initialize`, emitting `CreatorListed` per address. This is the collection's own
 storage, not a shared-registry write: the
-[Catalog](/docs/collections/contracts/catalog) is only read. A listed creator
+[Catalog](/docs/catalog/contracts/catalog) is only read. A listed creator
 confirms by claiming the collection in the Catalog from their own address, after
 which `isConfirmedCreator` reads true. Pass an empty array for solo works; the
 owner can change the listing later with `setCreators`.
@@ -54,7 +54,7 @@ owner can change the listing later with `setCreators`.
 access: permissionless (anyone may deploy; control belongs to the `owner` argument)
 
 Deploys a sequential collection wired to a canonical
-[FixedPriceMinter](/docs/collections/contracts/fixed-price-minter) clone in one
+[FixedPriceMinter](/docs/surface/contracts/fixed-price-minter) clone in one
 transaction: clones the token, clones and initializes the minter bound to it with
 `sale`, then initializes the token with the minter as its sole initial minter.
 Returns both addresses. `owner` is an argument rather than `msg.sender`, so a

@@ -4,7 +4,7 @@ title: ScriptyRenderer
 
 # summary
 
-A forkable [IRenderer](/docs/collections/contracts/i-renderer) template for
+A forkable [IRenderer](/docs/surface/contracts/i-renderer) template for
 script-based generative work, assembled onchain through ScriptyBuilderV2. The
 system ships no shared generative assembler; a generative work deploys its own
 renderer and sets a collection's renderer pointer to it.
@@ -17,20 +17,20 @@ pointer at this contract, the token's presentation is fixed with no post-deploy
 step.
 
 At `tokenURI` time it reads the token's seed through
-[ISurfaceView](/docs/collections/contracts/i-surface-view), injects the
+[ISurfaceView](/docs/surface/contracts/i-surface-view), injects the
 render context (`window.tokenData = { hash, tokenId, collection, chainId,
 version, context }`, the `hash`/`tokenId` pair matching the widely-adopted
 long-form-generative shape so existing sketches run unmodified), assembles
 the dependencies + context + artist code into a complete HTML document, and
 returns metadata whose `animation_url` is a `data:text/html;base64,...` URI.
 See the
-[Injection convention](/docs/collections/reference/injection-convention) for the
+[Injection convention](/docs/surface/reference/injection-convention) for the
 exact parity contract every offchain preview must match, and
-[Write a renderer](/docs/collections/guides/write-a-renderer) for the fork
+[Write a renderer](/docs/surface/guides/write-a-renderer) for the fork
 points (`_workTraits`, `_image`, `_headTags`) a subclass overrides.
 
 It also implements the optional
-[IPreviewRenderer](/docs/collections/contracts/i-preview-renderer) extension:
+[IPreviewRenderer](/docs/surface/contracts/i-preview-renderer) extension:
 `previewURI` renders the same document for a caller-supplied seed, `context` set
 to `"preview"`, with no token needing to exist, so an integrator can `eth_call`
 sample outputs.
@@ -57,7 +57,7 @@ contract-level metadata.
 ## function previewURI
 
 Implements the OPTIONAL
-[IPreviewRenderer](/docs/collections/contracts/i-preview-renderer) extension.
+[IPreviewRenderer](/docs/surface/contracts/i-preview-renderer) extension.
 Same document assembly as `tokenURI`, with the caller's `seed` in place of the
 token's seed and `context: "preview"` injected in place of `"token"`; no token
 needs to exist. The returned metadata is not token provenance: the name is
@@ -67,7 +67,7 @@ is attached (the `animation_url` render is the preview).
 ## function code
 
 The artist's algorithm as an ordered list of onchain
-[code references](/docs/collections/concepts/types) (`CodeRef[]`), each a storage
+[code references](/docs/surface/concepts/types) (`CodeRef[]`), each a storage
 contract, a file name, and whether the file is plain or gzipped. Constructor-set,
 no setter, so this is the code the renderer assembles at `tokenURI` time. Exposed
 for verification.
@@ -97,7 +97,7 @@ the work as `tokenData.version`. Immutable.
 
 ## function renderAssets
 
-The [RenderAssets](/docs/collections/contracts/render-assets) registry this
+The [RenderAssets](/docs/surface/contracts/render-assets) registry this
 renderer reads static images from, or zero when unset. When set, the metadata
 `image` resolves through the registry order (capture, template, cover) and
 `contractURI` carries the cover; when zero, metadata has no `image` and

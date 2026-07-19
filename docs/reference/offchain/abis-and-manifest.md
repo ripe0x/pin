@@ -24,29 +24,29 @@ Four entry points, all served as static JSON:
   "docs": "/docs",
   "llms": "/llms.txt",
   "protocols": {
-    "collections": {
-      "title": "Collections",
-      "docs": "/docs/collections/overview",
+    "surface": {
+      "title": "Surface",
+      "docs": "/docs/surface/overview",
       "contracts": {
         "Surface": {
           "address": null,
           "kind": "clone",
           "abi": "/abis/Surface.json",
-          "docs": "/docs/collections/contracts/surface",
+          "docs": "/docs/surface/contracts/surface",
           "role": "The thin ERC721 token core of the PND Surface System..."
         },
         "SurfaceFactory": {
           "address": "<SURFACE_FACTORY_ADDRESS>",
           "kind": "singleton",
           "abi": "/abis/SurfaceFactory.json",
-          "docs": "/docs/collections/contracts/factory",
+          "docs": "/docs/surface/contracts/factory",
           "role": "Deploys a Surface clone and its canonical minter in one transaction"
         },
         "FixedPriceMinter": {
           "address": null,
           "kind": "clone",
           "abi": "/abis/FixedPriceMinter.json",
-          "docs": "/docs/collections/contracts/fixed-price-minter",
+          "docs": "/docs/surface/contracts/fixed-price-minter",
           "role": "The canonical fixed-price/referral minter, one clone per collection"
         }
       }
@@ -63,6 +63,19 @@ Four entry points, all served as static JSON:
           "role": "A per-owner English-auction house for any ERC721"
         }
       }
+    },
+    "catalog": {
+      "title": "Catalog",
+      "docs": "/docs/catalog/overview",
+      "contracts": {
+        "Catalog": {
+          "address": "0x467a9c39e03C595EC3075D856f19C7386b6b915d",
+          "kind": "singleton",
+          "abi": "/abis/Catalog.json",
+          "docs": "/docs/catalog/contracts/catalog",
+          "role": "A general onchain artist registry, read for creator attribution"
+        }
+      }
     }
   }
 }
@@ -72,15 +85,17 @@ Four entry points, all served as static JSON:
 
 ABIs are served under `/abis/` for every contract and interface across the protocols:
 
-Collections token, factory, and canonical minter: `Surface`, `SurfaceFactory`, `FixedPriceMinter`
+Surface token, factory, and canonical minter: `Surface`, `SurfaceFactory`, `FixedPriceMinter`
 
-Collections shared singletons: `DefaultRenderer`, `RenderAssets`
+Surface shared singletons: `DefaultRenderer`, `RenderAssets`
 
-Collections renderer template: `ScriptyRenderer`
+Surface renderer template: `ScriptyRenderer`
 
-Collections slot and view interfaces: `IPriceStrategy`, `IRenderer`, `ISurfaceView`, `IPreviewRenderer`
+Surface slot and view interfaces: `IPriceStrategy`, `IRenderer`, `ISurfaceView`, `IPreviewRenderer`
 
 Auctions: `SovereignAuctionHouse`, `SovereignAuctionHouseFactory`
+
+Catalog: `Catalog`
 
 Fetch any of these directly, e.g. `/abis/Surface.json`, or import the typed version from the npm workspace package.
 

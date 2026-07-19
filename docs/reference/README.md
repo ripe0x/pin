@@ -8,7 +8,7 @@ pre-rendered copy of the same content.
 
 | Path | What it is |
 | --- | --- |
-| `introduction/`, `concepts/`, `contracts/`, `guides/`, `offchain/`, `reference/` | **Generated output.** Don't edit these files directly |
+| `introduction/`, `surface/`, `auctions/`, `catalog/`, `offchain/` | **Generated output** (one directory per doc group). Don't edit these files directly |
 | `_prose/` | Hand-authored per-contract prose supplements (see [`_prose/SPEC.md`](_prose/SPEC.md)) |
 | `_pages/` | Hand-written pages (overview, concepts, guides, off-chain docs) |
 | `_assets/` | SVG diagrams referenced by hand pages (inlined on the site) |
@@ -47,9 +47,10 @@ pnpm generate:docs                     # the validator points at any new prose g
 
 ## Pre-deploy
 
-The Surface System is pre-deploy. `contracts/deployments.mainnet.json` holds
-the shared-singleton addresses; while they're empty, pages show a "pending deploy"
-note and `{{addr:*}}` tokens render as `<KEY_ADDRESS>` placeholders. Fill the file
-at launch and re-run `pnpm generate:docs` to light up real addresses and cast
-examples. Each artist collection is a separate EIP-1167 clone, so it never appears
-in that file.
+The Surface System is pre-deploy; the Catalog is already live on mainnet.
+`contracts/deployments.mainnet.json` holds the shared-singleton addresses. While
+an address is empty, its page shows a "pending deploy" note and `{{addr:*}}`
+tokens render as `<KEY_ADDRESS>` placeholders; a filled address (like `catalog`)
+resolves in the page header, the Addresses table, and cast examples. Fill the
+Surface singletons at launch and re-run `pnpm generate:docs`. Each artist
+collection is a separate EIP-1167 clone, so it never appears in that file.

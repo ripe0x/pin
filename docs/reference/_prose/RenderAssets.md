@@ -13,7 +13,7 @@ capturer keys.
 
 The collection core stores no presentation data: its `tokenURI` defers to the
 renderer, and the bundled
-[DefaultRenderer](/docs/collections/contracts/default-renderer), plus any
+[DefaultRenderer](/docs/surface/contracts/default-renderer), plus any
 renderer that reads here, resolves its static image from this registry. Captures
 are always writable: a capture is a mirror of already-rendered output for
 surfaces that cannot run the render, and rewriting one does not change the

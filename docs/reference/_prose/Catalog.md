@@ -19,7 +19,7 @@ reader's job; the contract holds no semantics.
 
 Within the Surface System, a collection reads `isContractRegistered(creator,
 collection)` for the creator half of its two-sided attribution: a
-[collection](/docs/collections/contracts/surface) owner lists a creator, and
+[collection](/docs/surface/contracts/surface) owner lists a creator, and
 that creator claims the collection by calling `addContract(collection)` here
 from their own address. The Catalog is a general registry, not specific to
 Surface: any address can register any contract or token.

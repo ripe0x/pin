@@ -7,25 +7,25 @@ title: DefaultRenderer
 
 # summary
 
-The built-in renderer for [Surface](/docs/collections/contracts/surface). Each
+The built-in renderer for [Surface](/docs/surface/contracts/surface). Each
 collection uses it at deploy (`defaultRenderer` in the factory's `InitParams`)
 unless the owner sets the renderer pointer elsewhere. One immutable, ownerless
 instance serves every collection; it stores no per-collection state. `tokenURI`
 and `contractURI` take the collection address as an argument and read what they
-need through [ISurfaceView](/docs/collections/contracts/i-surface-view).
+need through [ISurfaceView](/docs/surface/contracts/i-surface-view).
 
 DefaultRenderer serves one static image per token (a per-token capture, or the
 collection cover), with the token's
-[provenance](/docs/collections/concepts/mint-marks-and-entropy) (mint order,
+[provenance](/docs/surface/concepts/mint-marks-and-entropy) (mint order,
 first/final standing) as derived attributes for sequential-id collections. A
 collection with per-token generative art sets its renderer pointer to an
-[IRenderer](/docs/collections/contracts/i-renderer) the artist deploys.
+[IRenderer](/docs/surface/contracts/i-renderer) the artist deploys.
 
 ## function tokenURI
 
 Builds the token's metadata JSON and returns it as a
 `data:application/json;base64,` URI. The `image` field comes from
-[RenderAssets](/docs/collections/contracts/render-assets): the token's own
+[RenderAssets](/docs/surface/contracts/render-assets): the token's own
 capture if one is set, otherwise the collection's shared cover.
 `attributes` is fully derived, nothing per-token is stored beyond the seed.
 For sequential-id collections the token id is the mint order (ids assigned

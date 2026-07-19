@@ -18,7 +18,7 @@ protocol charge beyond what each contract's reference documents.
 
 ## The protocols
 
-- [Collections](/docs/collections/overview): artist-owned ERC721 collections
+- [Surface](/docs/surface/overview): artist-owned ERC721 collections
   built on a thin token core where every mint goes through an authorized minter,
   with a renderer slot, per-token entropy, and one-way locks over the renderer
   pointer, the supply, and the minter set. Sale economics live in the minter;
@@ -28,6 +28,10 @@ protocol charge beyond what each contract's reference documents.
 - [Auctions](/docs/auctions/overview): a per-owner onchain English-auction
   house for any ERC721, including a collection token. Reserve pricing, an
   anti-snipe time-buffer extension, pull-payment refunds, and a protocol fee
+- [Catalog](/docs/catalog/overview): a general onchain artist registry, live on
+  Ethereum mainnet. An address publishes pointers to its work (a contract, a
+  token, or a token-id range); the Surface System reads it for the creator half
+  of collection attribution
 
 More protocols join this reference as they ship.
 
