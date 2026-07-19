@@ -217,10 +217,20 @@ Emits `Initialized`.
 
 ## function auctions
 
-The full stored state of an auction by id: `tokenId`, `tokenContract`,
-`firstBidTime` (0 before any bid), current high `amount`, `reservePrice`, seller
-`tokenOwner`, `endTime` (0 until the first bid), current high `bidder`, and
-`duration` in seconds. A zero `tokenOwner` means no auction exists at that id.
+The full stored state of an auction by id. A zero `tokenOwner` means no auction
+exists at that id.
+
+| Field | Meaning |
+| --- | --- |
+| `tokenId` | The escrowed token's id |
+| `tokenContract` | The escrowed token's contract |
+| `firstBidTime` | Timestamp of the first bid; `0` before any bid |
+| `amount` | The current high bid in wei |
+| `reservePrice` | The reserve the first bid must meet |
+| `tokenOwner` | The seller who created the auction |
+| `endTime` | When the auction closes; `0` until the first bid starts the timer |
+| `bidder` | The current high bidder |
+| `duration` | The auction length in seconds, consumed on the first bid |
 
 ## function getAuctionFor
 

@@ -5,7 +5,7 @@
 `SurfaceTypes.sol` defines the enums and structs shared across the Surface
 System: the token core and the renderer and price-strategy interfaces. These
 types have no functions or events of their own, only fields, so they do not
-appear as generated contract pages; this page is their reference.
+appear as generated contract pages and are documented here.
 
 ## Enums
 

@@ -2,16 +2,13 @@
 
 # Overview
 
-This is the API reference for the onchain protocols PND ships for artists. Each
-protocol is a self-contained set of contracts with its own section below: an
-overview, the concepts behind it, a per-contract reference, task-oriented
-guides, and cross-cutting indexes of its functions, events, and errors.
+The API reference for the onchain protocols PND ships for artists.
 
 The contracts are deployed once with no proxy admin and no upgrade path. Where a
 protocol is deployed per artist (a collection, an auction house), each instance
 is an immutable EIP-1167 clone from a shared factory, so what deploys is what
-runs. Prices and fees are the values the contract holds; there is no separate
-protocol charge beyond what each contract's reference documents.
+runs. Prices and fees are the values the contract holds; there is no hidden
+protocol charge.
 
 ## The protocols
 

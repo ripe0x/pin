@@ -44,17 +44,3 @@ Each house is a per-owner clone with no fixed address, so its examples use
 `<AUCTION_HOUSE_ADDRESS>`. Read examples use `cast` against a free public RPC;
 write examples use viem. See [Conventions](/docs/introduction/conventions) for how
 to read the examples, addresses, and units.
-
-## Where to go next
-
-- [Auction lifecycle](/docs/auctions/concepts/auction-lifecycle): the full path from
-  create to settle, with the fee and refund math
-- [Deploy an auction house](/docs/auctions/guides/deploy-an-auction-house): call the
-  factory to get your own house
-- [Run an auction](/docs/auctions/guides/run-an-auction): the seller flow, from
-  approving the NFT to ending the auction
-- [Bid and settle](/docs/auctions/guides/bid-and-settle): the bidder flow, refunds,
-  and settlement
-- [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house) and
-  [SovereignAuctionHouseFactory](/docs/auctions/contracts/auction-house-factory): the
-  full contract references
