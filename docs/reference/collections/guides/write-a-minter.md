@@ -20,10 +20,10 @@ function setMinter(address minter, bool allowed) external; // owner or admin (ow
 function isMinter(address minter) external view returns (bool);
 ```
 
-`setMinter` is the artist's visible, onchain choice to trust a minter contract,
-and revoking it is their lever over that minter's future behavior (a revoked
-minter can no longer call `mintTo`/`mintToId`, but tokens it already minted are
-unaffected). `lockMinter` freezes the set permanently.
+`setMinter` authorizes a minter contract; revoking it withdraws that
+authorization (a revoked minter can no longer call `mintTo`/`mintToId`, but
+tokens it already minted are unaffected). `lockMinter` freezes the set
+permanently.
 
 ## The token's mint entrypoints
 
@@ -44,22 +44,21 @@ Which one exists depends on the collection's `idMode`, fixed at deploy:
   decides which id mints next; id `0` is legal). The pooled form has no
   `mintTo`
 
-Both enforce the supply cap (`ExceedsCap`) and stamp a fresh `tokenSeed` per
-token. Neither enforces a mint window or runs any external code: the token's
+Both enforce the supply cap (`ExceedsCap`) and write a `tokenSeed` per token. Neither enforces a mint window or runs any external code: the token's
 mint path is a pure internal state transition. Your minter owns the schedule,
 and the artist's control over it is `setMinter(minter, false)`.
 
 ## Value handling is entirely yours
 
-`mintTo` and `mintToId` take no `msg.value` and do no payment accounting: that
-is the point. If your minter is a paid mint, it is responsible for:
+`mintTo` and `mintToId` take no `msg.value` and do no payment accounting. If
+your minter is a paid mint, it is responsible for:
 
 - collecting and validating payment (ETH, an ERC20, a swap route, whatever the
   form needs), and refunding or escrowing as needed
 - honoring the referral share by convention, not by contract guarantee. The
   canonical minter pays a fixed 10% (`REFERRAL_SHARE_BPS`) out of the price to
-  the referrer; nothing on the token enforces it, so a custom minter's choice
-  is the artist's visible, onchain decision
+  the referrer; nothing on the token enforces it, so a custom minter sets its
+  own referral policy
 - paying out (or escrowing) proceeds itself, since the token holds no value and
   runs no pull-payment ledger
 
@@ -83,9 +82,9 @@ minter that adopts it plugs into the same mint surfaces. Per-minter config
 ## Config authority: borrow it from the collection
 
 The canonical minter has no `Ownable` of its own. Its setters check the
-collection's `owner()`/`isAdmin`, so one keyring governs both contracts and an
-ownership transfer on the collection invalidates delegated admin access to the
-minter's config too. Borrowing authority this way is the recommended pattern
+collection's `owner()`/`isAdmin`, so one owner and admin set governs both
+contracts and an ownership transfer on the collection invalidates delegated
+admin access to the minter's config too. Borrowing authority this way is the recommended pattern
 for a custom minter.
 
 ## Burn semantics differ by id mode

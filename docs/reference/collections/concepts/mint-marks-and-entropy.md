@@ -2,7 +2,7 @@
 
 # Seed and provenance
 
-A token stores exactly one fact of its own: its **seed**, a `bytes32` stamped
+A token stores exactly one fact of its own: its **seed**, a `bytes32` written
 once at mint. Everything else about a token's provenance, its mint order and
 first/final standing, is either derivable from the id and the live config or
 recorded permanently in the `Minted` event. The core stores nothing
@@ -43,8 +43,8 @@ keccak256(abi.encode(block.prevrandao, address(this), tokenId, mintIndex))
 
 - **The only per-token storage**: the seed is the one fact that can never be
   reconstructed later, since randomness only exists at mint time. Everything
-  else about a mint is derivable or event-recorded, so nothing else is stored.
-  That is also the gas story: one slot per mint
+  else about a mint is derivable or event-recorded, so nothing else is stored,
+  one storage slot per mint
 - **The existence sentinel**: keccak output is never zero, so a nonzero seed
   doubles as "was ever minted"; `tokenSeed` reverts `NeverMinted` for an id
   with no mint
@@ -59,17 +59,17 @@ keccak256(abi.encode(block.prevrandao, address(this), tokenId, mintIndex))
 
 `prevrandao`-derived entropy is unpredictable enough for generative art
 (nobody can force a specific outcome short of proposer-level influence over
-the block) but explicitly not suitable for anything value-bearing like a
+the block) but not suitable for anything value-bearing like a
 lottery.
 
 ## Bring-your-own mint-time data
 
 A work that needs mint-time facts the core does not store, the mint block for
 time-based mechanics, pooled mint order, a timestamp, records them through its
-own minter, which sees the mint call and can write to its own storage or a
-companion, then reads them back in its renderer. The cost lands only on works
-that opt in, instead of every mint of every collection paying for fields most
-works never read.
+own minter, which receives the mint call and can write to its own storage or a
+companion, then reads them back in its renderer. Only works that opt in pay that
+cost, rather than every mint of every collection storing fields most works never
+read.
 
 ## What reads these
 

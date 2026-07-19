@@ -11,7 +11,7 @@ upgrade path, what deploys is what runs. `createAuctionHouse` is permissionless:
 anyone (an artist, a collector, an anonymous wallet) calls it and gets back their
 own auction house, owned by the caller. Every clone delegates to the one
 `implementation` deployed alongside this factory, and every house shares the same
-fee terms baked into the factory at construction.
+fee terms, fixed on the factory at construction.
 
 The factory is also the single fixed contract an indexer watches for discovery: one
 `AuctionHouseCreated` event per house, plus an `allHouses` array, a `houseOf`
@@ -37,10 +37,9 @@ front-run.
 The clone salt is the owner address, so each address can have exactly one house
 from this factory (`House already exists` on a repeat call), and the house's address
 is deterministic from the owner alone. `predictHouseAddress` returns that address
-whether or not the house has been deployed yet, so a client can show "your house
-will live at 0x..." before the user signs the deploy transaction. Note that ETH sent
-to the predicted address before the house exists is not recoverable; only deploy the
-house first, then interact with it.
+whether or not the house has been deployed yet, so a client can show it before the
+user signs the deploy transaction. ETH sent to the predicted address before the
+house is deployed is not recoverable; deploy the house first.
 
 ## function createAuctionHouse
 
@@ -76,7 +75,7 @@ Whether an address is an auction house this factory deployed. Cheaper than scann
 
 ## function predictHouseAddress
 
-The address the auction house for a given owner will land at (or already lives at).
+The address the auction house for a given owner will be deployed at (or already is).
 The salt is the owner address, the same input `createAuctionHouse` uses, so the
 result is deterministic regardless of whether the house has been deployed yet. ETH
 or NFTs sent to the predicted address before the house is deployed are not generally
@@ -106,8 +105,8 @@ It is the zero address only when `defaultProtocolFeeBps` is zero.
 
 ## function defaultProtocolFeeBps
 
-The protocol fee in basis points baked into every house this factory deploys, fixed
-at construction and capped at 500 (5%).
+The protocol fee in basis points set on every house this factory deploys, fixed at
+construction and capped at 500 (5%).
 
 ## event AuctionHouseCreated
 

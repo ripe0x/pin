@@ -81,7 +81,7 @@ const abi = await fetch('/abis/Surface.json').then((r) => r.json());
 | Collection | One artist's work, deployed as one `Surface` contract |
 | Clone | A collection's contract: an immutable EIP-1167 proxy pointing at the shared implementation |
 | Slot | A swappable module: the renderer slot on the token, and the price-strategy slot inside the canonical minter |
-| Minter | The mint engine a collection authorizes (`setMinter`); every mint goes through one, and it owns price, window, payment, referral, and gating |
+| Minter | A contract a collection authorizes to mint (`setMinter`); every mint goes through one, and it owns price, window, payment, referral, and gating |
 | Referrer | The address credited with hosting a mint (a frontend, a self-hosted page, or none) |
 | Referral share | The fixed 10% of the price paid to the referrer by the canonical minter (`REFERRAL_SHARE_BPS`) |
 | Provenance | A token's mint order and first/final standing, derived from the id and the live config; the issuing minter and mint index are recorded on the `Minted` event, not in storage |

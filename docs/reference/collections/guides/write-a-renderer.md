@@ -11,7 +11,7 @@ interface IRenderer {
 }
 ```
 
-The collection address is an explicit parameter, not `msg.sender`. That's a deliberate choice: one deployed renderer instance can serve every collection built against the same algorithm, offchain callers can `eth_call` a renderer directly for any collection without transacting, and any contract (not only `Surface`) can adopt the interface by implementing enough of `ISurfaceView` for its chosen renderer to read.
+The collection address is an explicit parameter, not `msg.sender`: one deployed renderer instance can serve every collection built against the same algorithm, offchain callers can `eth_call` a renderer directly for any collection without transacting, and any contract (not only `Surface`) can adopt the interface by implementing enough of `ISurfaceView` for its chosen renderer to read.
 
 ## Reading collection state through ISurfaceView
 
@@ -27,7 +27,7 @@ interface ISurfaceView {
 }
 ```
 
-`Surface` implements this surface in full (though it does not formally inherit the interface, to avoid forcing passthrough re-overrides against its OZ bases for zero behavior). A renderer is a plain onchain view with full EVM read access: the seed, the current owner, sibling tokens, companion state, foreign contracts, block state, anything callable. That is what makes network-based (chain-live) works possible at all; a renderer isn't a sandbox with two inputs, it's an ordinary contract call.
+`Surface` implements this surface in full (though it does not formally inherit the interface, to avoid forcing passthrough re-overrides against its OZ bases for zero behavior). A renderer is an onchain view with full EVM read access: the seed, the current owner, sibling tokens, companion state, other contracts, and block state. A renderer's output can therefore depend on live chain state, not only on the seed.
 
 
 ## DefaultRenderer
@@ -36,12 +36,12 @@ The canonical renderer wired into every collection at deploy. Static: it reads t
 
 ## ScriptyRenderer (bring-your-own generative)
 
-Art Blocks-style script-based work ships as its own renderer. The system provides a concrete template — [ScriptyRenderer](/docs/collections/contracts/scripty-renderer) — that assembles a complete HTML document onchain via ScriptyBuilderV2: at `tokenURI` time it reads the token's seed through [ISurfaceView](/docs/collections/contracts/i-surface-view), injects the render context, emits the work's dependencies + context + code (+ a gunzip helper when anything is gzipped), and returns `tokenURI` JSON whose `animation_url` is a `data:text/html;base64,...` URI. Follow the [Injection convention](/docs/collections/reference/injection-convention) for the exact context object it injects, so an offchain preview is byte-for-byte the render.
+Art Blocks-style script-based work ships as its own renderer. The system provides a template, [ScriptyRenderer](/docs/collections/contracts/scripty-renderer), that assembles a complete HTML document onchain via ScriptyBuilderV2: at `tokenURI` time it reads the token's seed through [ISurfaceView](/docs/collections/contracts/i-surface-view), injects the render context, emits the work's dependencies + context + code (+ a gunzip helper when anything is gzipped), and returns `tokenURI` JSON whose `animation_url` is a `data:text/html;base64,...` URI. Follow the [Injection convention](/docs/collections/reference/injection-convention) for the exact context object it injects, so an offchain preview is byte-for-byte the render.
 
-It is **immutable by construction**: the work definition (its onchain code and dependency refs, the injection version) is fixed in the constructor — no `setWork`, no owner, no lock — so the output is a pure function of chain state any external checker can attest. With the collection's `lockRenderer()` that is provable, end-to-end permanence with zero trusted post-deploy steps. Deploy `ScriptyRenderer` directly with your work for the default provenance traits (`Mint Order` + `Seed`), or subclass it to customize through three fork points:
+The work definition (its onchain code and dependency refs, the injection version) is fixed in the constructor, with no `setWork`, owner, or lock, so the output is a pure function of chain state. With the collection's `lockRenderer()`, the token's presentation is fixed with no post-deploy step. Deploy `ScriptyRenderer` directly with your work for the default provenance traits (`Mint Order` + `Seed`), or subclass it to customize through three fork points:
 
 ```solidity
-// override in a subclass — see ExampleScriptyWork
+// override in a subclass, see ExampleScriptyWork
 function _workTraits(bytes32 seed) internal view virtual returns (bytes memory);        // seed-derived onchain traits
 function _image(address collection, uint256 tokenId) internal view virtual returns (string memory); // a poster/thumbnail
 function _headTags() internal view virtual returns (HTMLTag[] memory);                  // the document <head>
@@ -51,7 +51,7 @@ Onchain traits must be a pure function of the seed, computed the same way your s
 
 ## Fully onchain Solidity SVG
 
-For a Solidity SVG work, implement `IRenderer` directly — there is no abstract base to inherit, on purpose: the whole interface is two views, and the shared `MetadataJson` library (`contracts/src/surface/renderers/MetadataJson.sol`) provides the pieces that should not be rewritten per work (RFC 8259 JSON escaping, the base64 data-URI envelope, and the derived provenance traits every bundled renderer emits the same way).
+For a Solidity SVG work, implement `IRenderer` directly; there is no abstract base to inherit, since the interface is two views, and the shared `MetadataJson` library (`contracts/src/surface/renderers/MetadataJson.sol`) provides the pieces that should not be rewritten per work (RFC 8259 JSON escaping, the base64 data-URI envelope, and the derived provenance traits every bundled renderer emits the same way).
 
 ```solidity
 // SPDX-License-Identifier: GPL-3.0
@@ -89,7 +89,7 @@ contract Dithers is IRenderer {
 }
 ```
 
-Solidity SVG is the highest preservation tier the system offers: no JS runtime, no browser to drift, and it renders in anything that parses SVG, including bare `<img>` tags, so SVG works also mostly skip the capture pipeline used for thumbnails of HTML works.
+A Solidity SVG work has no JS runtime and no browser dependency, and it renders in anything that parses SVG, including bare `<img>` tags, so an SVG work also mostly skips the capture pipeline used for thumbnails of HTML works.
 
 ## Installing a renderer
 
@@ -98,10 +98,10 @@ function setRenderer(address renderer_) external; // owner or admin
 function renderer() external view returns (address); // resolved: override or defaultRenderer
 ```
 
-`setRenderer` reverts `RendererIsLocked` once the owner has called `lockRenderer` (optional, off by default). The lock is one-way and pins the pointer: after locking, this exact renderer contract answers `tokenURI` forever. The core cannot attest what a renderer does internally — an immutable renderer plus a locked pointer is full presentation permanence, while a mutable renderer with a locked pointer is the artist's explicit, inspectable choice.
+`setRenderer` reverts `RendererIsLocked` once the owner has called `lockRenderer` (optional, off by default). The lock is one-way and pins the pointer: after locking, this renderer contract answers `tokenURI` from then on. The core does not verify what a renderer does internally: an immutable renderer behind a locked pointer fixes presentation, while a mutable renderer behind a locked pointer leaves that renderer's output changeable.
 
 ## Renderer permanence
 
-`lockRenderer` (on the collection) pins *which* renderer answers `tokenURI` forever; it does not attest what that renderer does internally. A generative renderer makes its *own* permanence promise: deploy it immutable (no setters at all), or give it a one-way lock over its work definition. A locked pointer plus an immutable renderer is the strongest guarantee the system offers short of the collection contract itself, which is already immutable from deploy.
+`lockRenderer` (on the collection) pins *which* renderer answers `tokenURI`; it does not verify what that renderer does internally. A generative renderer makes its *own* permanence promise: deploy it immutable (no setters at all), or give it a one-way lock over its work definition. A locked pointer at an immutable renderer fixes presentation as firmly as the collection contract itself, which is immutable from deploy.
 
 See [IRenderer](/docs/collections/contracts/i-renderer) and [ISurfaceView](/docs/collections/contracts/i-surface-view) for the generated interface reference, [DefaultRenderer](/docs/collections/contracts/default-renderer) for the deployed fallback singleton, and [Injection convention](/docs/collections/reference/injection-convention) for the render-context contract every offchain preview (studio, mint surface, artist-site embed) must match byte-for-byte with the onchain assembly.

@@ -7,11 +7,11 @@ protocol is a self-contained set of contracts with its own section below: an
 overview, the concepts behind it, a per-contract reference, task-oriented
 guides, and cross-cutting indexes of its functions, events, and errors.
 
-Everything here is honest infrastructure. The contracts are deployed once and
-run forever: no proxy admin, no upgrade path, no seal. Where a protocol is
-deployed per artist (a collection, an auction house), each instance is an
-immutable EIP-1167 clone from a shared factory, so what deploys is what runs.
-Prices and fees are what the contract charges, nothing hidden.
+The contracts are deployed once with no proxy admin and no upgrade path. Where a
+protocol is deployed per artist (a collection, an auction house), each instance
+is an immutable EIP-1167 clone from a shared factory, so what deploys is what
+runs. Prices and fees are the values the contract holds; there is no separate
+protocol charge beyond what each contract's reference documents.
 
 ## The protocols
 
@@ -19,7 +19,7 @@ Prices and fees are what the contract charges, nothing hidden.
   built on a thin token core where every mint goes through an authorized minter,
   with a renderer slot, per-token entropy, and one-way locks over the renderer
   pointer, the supply, and the minter set. Sale economics live in the minter;
-  presentation data lives in renderer-land. Editions, generative drops, onchain
+  presentation data lives in the renderer. Editions, generative drops, onchain
   SVG works, and backed or redeemable works are all the same core with different
   minters and renderers attached
 - [Auctions](/docs/auctions/overview): a per-owner onchain English-auction

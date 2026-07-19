@@ -4,23 +4,21 @@
 
 > Interface (ABI only), OPTIONAL. Implement it on a renderer to support rendering a hypothetical token for a caller-supplied seed with no token needing to exist.
 
-IPreviewRenderer is an OPTIONAL extension a renderer implements to render
-what a token WOULD look like for a caller-supplied seed, without any token
-existing. Previews are a pure function of chain state, exactly like the
-live view, so any integrator, marketplace, or self-hosted mint page can
-`eth_call` sample outputs with nothing but an RPC.
+An optional extension a renderer implements to render the output for a
+caller-supplied seed with no token existing. A preview is a pure function of
+chain state, like the live view, so an integrator can `eth_call` sample outputs
+without a token.
 
-Renderers that can render faithfully from `(tokenId, seed)` alone implement
-this — [ScriptyRenderer](/docs/collections/contracts/scripty-renderer) does.
-Renderers whose output depends on state a preview cannot fake (sibling
-tokens, companion contracts, hook-recorded mint-time data) simply don't;
-detection is a try/catch `eth_call`, the repo convention, not ERC-165.
+A renderer that can render from `(tokenId, seed)` alone implements this;
+[ScriptyRenderer](/docs/collections/contracts/scripty-renderer) does. A renderer
+whose output depends on state a seed cannot supply (sibling tokens, companion
+contracts, mint-time data recorded by a mint hook) does not. Detection is a
+try/catch `eth_call`, the repo convention, not ERC-165.
 
-A preview document MUST inject `tokenData.context = "preview"` (see the
-[Injection convention](/docs/collections/reference/injection-convention)) so
-the work's code can distinguish an exploratory render from a canonical
-token render. Preview metadata carries no provenance attributes: a preview
-is not a token.
+A preview document injects `tokenData.context = "preview"` (see the
+[Injection convention](/docs/collections/reference/injection-convention)) so the
+work's code can distinguish a preview render from a token render. Preview
+metadata carries no provenance attributes.
 
 ## Read functions
 
@@ -30,12 +28,10 @@ is not a token.
 function previewURI(address collection, uint256 tokenId, bytes32 seed) external view returns (string)
 ```
 
-view; renders preview metadata for a hypothetical token. `collection` is
-the collection the preview is for (its name and render settings are read
-live). `tokenId` is the hypothetical token id, art keyed to mint order
-reads this, so callers preview "the next token" by passing minted + 1.
-`seed` is caller-supplied entropy standing in for the token's real seed,
-any value works; throwaway seeds are the point. Returns a
-`data:application/json;base64,` URI shaped like `tokenURI` output (name
-marked as a preview, `animation_url` built from `seed`, seed attribute
-only).
+view; renders preview metadata for a token that need not exist. `collection` is
+the collection the preview is for; its name and render settings are read live.
+`tokenId` is the token id to render; a work keyed to mint order reads it, so a
+caller previews the next token by passing minted + 1. `seed` is a caller-supplied
+value in place of the token's seed; any value is valid. Returns a
+`data:application/json;base64,` URI shaped like `tokenURI` output (name marked as
+a preview, `animation_url` built from `seed`, seed attribute only).

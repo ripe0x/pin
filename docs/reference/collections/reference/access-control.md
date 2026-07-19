@@ -19,7 +19,7 @@ Every state-changing function in the Collections contracts and who may call it. 
 | [`lockSupply`](/docs/collections/contracts/surface#locksupply) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
 | [`lockMinter`](/docs/collections/contracts/surface#lockminter) | owner-only on the pooled form; owner or admin on the sequential form (else `NotAuthorized`) |
 | [`addAdmin`](/docs/collections/contracts/surface#addadmin) | owner-only (`onlyOwner`, else `OwnableUnauthorizedAccount`) |
-| [`removeAdmin`](/docs/collections/contracts/surface#removeadmin) | owner, or the admin itself renouncing (else `NotAuthorized`) |
+| [`removeAdmin`](/docs/collections/contracts/surface#removeadmin) | owner, or the admin itself (else `NotAuthorized`) |
 | [`notifyMetadataUpdate`](/docs/collections/contracts/surface#notifymetadataupdate) | the current renderer, or owner/admin (else `NotAuthorized`) |
 | [`rescueStrayETH`](/docs/collections/contracts/surface#rescuestrayeth) | owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`) |
 | [`initialize`](/docs/collections/contracts/surface#initialize) | deployer one-shot (`initializer`, else `InvalidInitialization`) |
@@ -27,7 +27,7 @@ Every state-changing function in the Collections contracts and who may call it. 
 | [`acceptOwnership`](/docs/collections/contracts/surface#acceptownership) | pending-owner-only (else `OwnableUnauthorizedAccount`) |
 | [`renounceOwnership`](/docs/collections/contracts/surface#renounceownership) | owner-only (`onlyOwner`, else `OwnableUnauthorizedAccount`) |
 | [`approve`](/docs/collections/contracts/surface#approve) | owner-or-operator-only (standard ERC721 approval authority, else an `ERC721` revert) |
-| [`setApprovalForAll`](/docs/collections/contracts/surface#setapprovalforall) | permissionless (any caller sets their own operator approval) |
+| [`setApprovalForAll`](/docs/collections/contracts/surface#setapprovalforall) | permissionless (the caller sets its own operator approval) |
 | [`transferFrom`](/docs/collections/contracts/surface#transferfrom) | owner-or-approved-only (standard ERC721 transfer authority, else `ERC721InsufficientApproval`) |
 | [`safeTransferFrom(address, address, uint256)`](/docs/collections/contracts/surface#safetransferfromaddress-address-uint256) | owner-or-approved-only (standard ERC721 transfer authority, else `ERC721InsufficientApproval`) |
 | [`safeTransferFrom(address, address, uint256, bytes)`](/docs/collections/contracts/surface#safetransferfromaddress-address-uint256-bytes) | owner-or-approved-only (standard ERC721 transfer authority, else `ERC721InsufficientApproval`) |
@@ -36,9 +36,9 @@ Every state-changing function in the Collections contracts and who may call it. 
 
 | Function | Access |
 | --- | --- |
-| [`createSurface`](/docs/collections/contracts/factory#createsurface) | permissionless (anyone may deploy; ongoing control belongs to the `owner` argument) |
-| [`createSurfaceCustom`](/docs/collections/contracts/factory#createsurfacecustom) | permissionless (ongoing control belongs to the `owner` argument) |
-| [`createPooledSurface`](/docs/collections/contracts/factory#createpooledsurface) | permissionless (ongoing control belongs to the `owner` argument) |
+| [`createSurface`](/docs/collections/contracts/factory#createsurface) | permissionless (anyone may deploy; control belongs to the `owner` argument) |
+| [`createSurfaceCustom`](/docs/collections/contracts/factory#createsurfacecustom) | permissionless (control belongs to the `owner` argument) |
+| [`createPooledSurface`](/docs/collections/contracts/factory#createpooledsurface) | permissionless (control belongs to the `owner` argument) |
 | [`deprecate`](/docs/collections/contracts/factory#deprecate) | deployer-only (`msg.sender` must be the factory deployer, else `NotDeployer`) |
 | [`setPaused`](/docs/collections/contracts/factory#setpaused) | deployer-only (`msg.sender` must be the factory deployer, else `NotDeployer`) |
 
@@ -46,8 +46,8 @@ Every state-changing function in the Collections contracts and who may call it. 
 
 | Function | Access |
 | --- | --- |
-| [`mint`](/docs/collections/contracts/fixed-price-minter#mint) | permissionless (payable; no caller gate, guarded by window, ceiling, gate, and payment checks) |
-| [`withdraw`](/docs/collections/contracts/fixed-price-minter#withdraw) | permissionless (no caller gate; funds only ever go to the owed `account`) |
+| [`mint`](/docs/collections/contracts/fixed-price-minter#mint) | permissionless (payable; window, ceiling, gate, and payment checks apply) |
+| [`withdraw`](/docs/collections/contracts/fixed-price-minter#withdraw) | permissionless (funds go only to `account`) |
 | [`setPrice`](/docs/collections/contracts/fixed-price-minter#setprice) | collection owner or admin (`onlyCollectionAdmin`, else `NotAuthorized`) |
 | [`setPriceStrategy`](/docs/collections/contracts/fixed-price-minter#setpricestrategy) | collection owner or admin (`onlyCollectionAdmin`, else `NotAuthorized`) |
 | [`setMintWindow`](/docs/collections/contracts/fixed-price-minter#setmintwindow) | collection owner or admin (`onlyCollectionAdmin`, else `NotAuthorized`) |

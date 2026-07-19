@@ -16,8 +16,9 @@ The house holds ownership, the escrowed NFTs, the live bid state, and the
 pull-payment refund balances. The owner creates auctions on their house, which
 escrows each NFT into the contract. Bidders call `createBid` (payable) to compete;
 each bid must clear the reserve and beat the current high bid by
-`MIN_BID_INCREMENT_BPS` (5%). Bids landing inside the final `TIME_BUFFER`
-(15 minutes) push the end time out, so no one can win by sniping the last block.
+`MIN_BID_INCREMENT_BPS` (5%). A bid inside the final `TIME_BUFFER`
+(15 minutes) pushes the end time out, so a late bid extends the auction rather
+than closing it.
 After the timer runs out, anyone can call `endAuction` to settle: the NFT goes to
 the winner, the seller receives the proceeds minus `protocolFeeBps`, and the fee
 goes to `feeRecipient`. Both fee values are written once at init by the factory
@@ -151,7 +152,7 @@ access: seller-only (`msg.sender` must be the auction's `tokenOwner`, else the c
 
 Cancels a pending auction and returns the escrowed NFT to the seller. Only valid
 before the first bid (`AuctionAlreadyStarted` once a bid has landed), since a
-started auction is a live commitment to its bidders. Reverts `AuctionDoesNotExist`
+started auction cannot be modified once it has bidders. Reverts `AuctionDoesNotExist`
 for an unknown id. Clears the token's reverse index and auction state and emits
 `AuctionCanceled`.
 
@@ -197,8 +198,9 @@ access: owner-only (`onlyOwner`, else `OwnableUnauthorizedAccount`)
 Rescues an ERC721 that landed on the house outside the auction flow, for example a
 holder who did a plain `transferFrom` directly to the house address. Reverts `to
 required` for a zero destination, and `AuctionAlreadyExistsForToken` if the token is
-currently registered in an active auction, so a live escrowed NFT can never be
-pulled out from under its bidders. Transfers the token to `to` and emits
+currently registered in an active auction, so an NFT escrowed in an active
+auction cannot be removed while its bidders hold claims on it. Transfers the token
+to `to` and emits
 `StuckERC721Recovered`.
 
 ## function initialize
@@ -210,7 +212,7 @@ Sets up the clone exactly once with its owner, `feeRecipient`, and
 fee over 500 bps (5%), and `fee recipient required when fee > 0` when a non-zero fee
 has no recipient. The constructor disables initializers on the implementation, so
 only clones can be initialized, and only once. Sets the owner (emitting
-`OwnershipTransferred` from the zero address) and warms the reentrancy-guard slot.
+`OwnershipTransferred` from the zero address) and initializes the reentrancy guard.
 Emits `Initialized`.
 
 ## function auctions
@@ -279,14 +281,14 @@ can recover stuck NFTs. Ownership is locked, so this value never changes.
 
 Disabled: this function is pure and always reverts `OwnershipLocked`. Ownership is
 fixed at init so the house can never be reassigned away from its original owner,
-which keeps the factory's owner-to-house map stable and prevents a house from being
-moved out from under escrowed NFTs.
+which keeps the factory's owner-to-house map stable and keeps a house bound to
+the NFTs it escrows.
 
 ## function renounceOwnership
 
 Disabled: this function is pure and always reverts `OwnershipLocked`. Renouncing
-would orphan the house and strand its owner-only levers, so it is permanently
-disabled alongside `transferOwnership`.
+would set the owner to zero and disable every owner-only function, so it is
+permanently disabled alongside `transferOwnership`.
 
 ## event AuctionCreated
 
@@ -359,8 +361,7 @@ in an auction. Cancel or settle the first to free the slot.
 ## error AuctionAlreadyStarted
 
 An action that requires a pre-bid auction (`cancelAuction`, `bulkCancelAuctions`, or
-`setAuctionReservePrice`) was attempted after the first bid landed. A started
-auction is a live commitment to its bidders.
+`setAuctionReservePrice`) was attempted after the first bid landed. A started auction cannot be modified once it has bidders.
 
 ## error AuctionDoesNotExist
 

@@ -63,7 +63,7 @@ fresh `tokenSeed` per token.
 ## The redeem cycle
 
 Pooled mode exists for works whose ids are drawn from and returned to a pool
-over the work's lifetime, rather than minted once and held forever: an id is
+over the work's lifetime, rather than minted once and kept: an id is
 drawn and minted (`mintToId`), a holder later redeems it (the minter burns it,
 typically after releasing whatever it backed), and the same id becomes
 eligible to be drawn and minted again later. Each pass through the cycle is a

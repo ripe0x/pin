@@ -14,42 +14,42 @@
           "kind": "clone",
           "abi": "/abis/Surface.json",
           "docs": "/docs/collections/contracts/surface",
-          "role": "The token core of the PND Surface System: an OpenZeppelin ERC721 that holds ownership, one mint-time seed per token, renderer wiring, EIP-2981 royalty, creator attribution, and the supply cap, and nothing else."
+          "role": "Sequential-id ERC721 collection: the token core of the PND Surface System."
         },
         "SurfaceFactory": {
           "address": null,
           "kind": "singleton",
           "abi": "/abis/SurfaceFactory.json",
           "docs": "/docs/collections/contracts/factory",
-          "role": "SurfaceFactory deploys one [Surface](/docs/collections/contracts/surface) collection per call as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs."
+          "role": "Deploys one [Surface](/docs/collections/contracts/surface) collection per call as an EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path."
         },
         "FixedPriceMinter": {
           "address": null,
           "kind": "clone",
           "abi": "/abis/FixedPriceMinter.json",
           "docs": "/docs/collections/contracts/fixed-price-minter",
-          "role": "The canonical paid mint path of the Surface System: a fixed-price/referral minter for a sequential [Surface](/docs/collections/contracts/surface) collection, deployed as one immutable EIP-1167 clone per collection."
+          "role": "Fixed-price minter for a sequential [Surface](/docs/collections/contracts/surface) collection, deployed as one EIP-1167 clone per collection."
         },
         "DefaultRenderer": {
           "address": null,
           "kind": "singleton",
           "abi": "/abis/DefaultRenderer.json",
           "docs": "/docs/collections/contracts/default-renderer",
-          "role": "The canonical built-in renderer for [Surface](/docs/collections/contracts/surface)."
+          "role": "The built-in renderer for [Surface](/docs/collections/contracts/surface)."
         },
         "RenderAssets": {
           "address": null,
           "kind": "singleton",
           "abi": "/abis/RenderAssets.json",
           "docs": "/docs/collections/contracts/render-assets",
-          "role": "The renderer-land registry of static display assets: each collection's shared cover image, per-token captures (thumbnails of rendered output), and a capture template that resolves per token id."
+          "role": "Registry of static display assets for renderers: each collection's cover image, per-token captures (thumbnails of rendered output), and a capture template resolved per token id."
         },
         "ScriptyRenderer": {
           "address": null,
           "kind": "clone",
           "abi": "/abis/ScriptyRenderer.json",
           "docs": "/docs/collections/contracts/scripty-renderer",
-          "role": "ScriptyRenderer is the **bring-your-own generative renderer template**: a concrete, forkable [IRenderer](/docs/collections/contracts/i-renderer) for Art Blocks-style script-based work, assembled fully onchain through ScriptyBuilderV2."
+          "role": "A forkable [IRenderer](/docs/collections/contracts/i-renderer) template for script-based generative work, assembled onchain through ScriptyBuilderV2."
         },
         "IPriceStrategy": {
           "address": null,
@@ -77,7 +77,7 @@
           "kind": "interface",
           "abi": "/abis/IPreviewRenderer.json",
           "docs": "/docs/collections/contracts/i-preview-renderer",
-          "role": "IPreviewRenderer is an OPTIONAL extension a renderer implements to render what a token WOULD look like for a caller-supplied seed, without any token existing."
+          "role": "An optional extension a renderer implements to render the output for a caller-supplied seed with no token existing."
         }
       }
     },

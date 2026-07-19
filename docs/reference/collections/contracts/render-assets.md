@@ -4,23 +4,23 @@
 
 > Not yet deployed to Ethereum mainnet. The address lands here at launch; until then, examples use an `<RENDER_ASSETS_ADDRESS>` placeholder.
 
-The renderer-land registry of static display assets: each collection's shared
-cover image, per-token captures (thumbnails of rendered output), and a capture
-template that resolves per token id. One immutable, ownerless singleton serves
-every collection; the cover and role grants are gated by each collection's own
-owner/admin authority, while the two capture writes may also be delegated to
-narrow, admin-granted capturer keys.
+Registry of static display assets for renderers: each collection's cover image,
+per-token captures (thumbnails of rendered output), and a capture template
+resolved per token id. One immutable, ownerless singleton serves every
+collection. The cover and role grants are gated by each collection's owner/admin
+authority; the two capture writes may also be made by narrow, admin-granted
+capturer keys.
 
-This registry exists so the collection core stores NO presentation data — the
-core's `tokenURI` defers wholly to its renderer, and the bundled
-[DefaultRenderer](/docs/collections/contracts/default-renderer) (and any
-renderer that opts in) reads its static images here. Captures are deliberately
-always refreshable: they are convenience mirrors of rendered output for
-surfaces that cannot run it, not part of the art. The art's permanence is the
-collection's `lockRenderer()` plus whatever immutability the renderer itself
-offers (an immutable renderer, or its own one-way lock). That is also why the
-capturer role is safe to delegate: the worst a bad capturer can do is point at
-a wrong thumbnail, and the next write fixes it.
+The collection core stores no presentation data: its `tokenURI` defers to the
+renderer, and the bundled
+[DefaultRenderer](/docs/collections/contracts/default-renderer), plus any
+renderer that reads here, resolves its static image from this registry. Captures
+are always writable: a capture is a mirror of already-rendered output for
+surfaces that cannot run the render, and rewriting one does not change the
+token's onchain output. Presentation permanence comes from the collection's
+`lockRenderer()` and the renderer's own immutability, not from a capture, which
+is why a capturer key can be granted narrowly: the write it can make is a
+thumbnail pointer, overwritten by the next write.
 
 ## Write functions
 
@@ -44,12 +44,9 @@ function setCapturer(address collection, address account, bool allowed) external
 
 **Access:** collection owner or admin (`onlySurfaceAdmin`, else `NotSurfaceAdmin`)
 
-Grants or revokes a capturer for the collection: a narrow key that may write
-captures and the capture template, and nothing else. Lets an artist run
-thumbnail automation on a low-privilege hot key, or delegate capture-writing
-to a mint surface, without handing over an admin key that could reroute money
-or authorize minters. The grant itself is never capturer-writable. Emits
-`CapturerSet`.
+Grants or revokes a capturer for the collection: a key that may write captures
+and the capture template, and nothing else. The grant itself is not
+capturer-writable. Emits `CapturerSet`.
 
 ### setCaptureTemplate
 
@@ -60,12 +57,11 @@ function setCaptureTemplate(address collection, string template) external
 **Access:** collection owner, admin, or granted capturer (else `NotCaptureAuthorized`)
 
 Sets the collection's capture URI template ("" clears it). Every `{id}` in the
-template resolves to the token id at read time, so one small write covers a
-whole drop's thumbnails at once — publish a manifest of frames (e.g.
-`ar://<manifest>/{id}.png`), point the template at it, done. Explicit per-token
-captures still win over the template. To nudge marketplaces to re-fetch,
-follow up with the collection's ERC-4906 `notifyMetadataUpdate` (owner/admin
-may call it). Emits `CaptureTemplateSet`.
+template resolves to the token id at read time, so one write covers every token
+(for example a manifest at `ar://<manifest>/{id}.png`). A per-token capture
+overrides the template. To prompt marketplaces to re-fetch, follow with the
+collection's ERC-4906 `notifyMetadataUpdate` (owner or admin). Emits
+`CaptureTemplateSet`.
 
 ### setCaptures
 
@@ -75,12 +71,11 @@ function setCaptures(address collection, uint256[] tokenIds, string[] uris) exte
 
 **Access:** collection owner, admin, or granted capturer (else `NotCaptureAuthorized`)
 
-Sets per-token capture URIs; a single token is a batch of one. Always
-available — a capture mirrors already-rendered output, so refreshing one can
-never change the art. To nudge marketplaces to re-fetch, follow up with the
-collection's ERC-4906 `notifyMetadataUpdate` (owner/admin may call it).
-Reverts `LengthMismatch` when the id and URI arrays differ in length. Emits
-`CaptureSet` per token.
+Sets per-token capture URIs; a single token is a batch of one. Always writable,
+since a capture mirrors already-rendered output. To prompt marketplaces to
+re-fetch, follow with the collection's ERC-4906 `notifyMetadataUpdate` (owner or
+admin). Reverts `LengthMismatch` when the id and URI arrays differ in length.
+Emits `CaptureSet` per token.
 
 ## Read functions
 
@@ -98,8 +93,8 @@ The collection's shared/cover image URI ("" if none set).
 function imageFor(address collection, uint256 tokenId) external view returns (string)
 ```
 
-The image the bundled renderers serve for a token, resolved down a ladder:
-the token's capture if one exists, else the collection's template with `{id}`
+The image the bundled renderers serve for a token, resolved in order: the
+token's capture if one exists, else the collection's template with `{id}`
 replaced by the token id, else the collection cover, else "".
 
 ### isCapturer

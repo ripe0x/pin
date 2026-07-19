@@ -6,7 +6,7 @@ An auction house is deployed per owner. You get your own house by calling
 `createAuctionHouse` on the shared
 [SovereignAuctionHouseFactory](/docs/auctions/contracts/auction-house-factory). The
 new house is owned by you (the caller), initialized with the factory's default fee
-terms, and lives at an address predictable from your address alone.
+terms, and deployed at an address predictable from your address alone.
 
 ## One house per owner
 

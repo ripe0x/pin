@@ -11,16 +11,15 @@ renderer slot, the token's one swappable presentation slot (see
 collection's `tokenURI` and `contractURI` delegate to whatever renderer sits
 in its renderer slot. The collection address is an explicit parameter on
 both functions rather than `msg.sender`, so a single renderer instance
-serves every collection that adopts it, an off-chain caller can `eth_call`
+serves every collection that adopts it, an offchain caller can `eth_call`
 it directly for any collection without a transaction, and any contract can
 adopt a given renderer as long as it implements
 [ISurfaceView](/docs/collections/contracts/i-surface-view).
 
 Renderers are onchain views with full EVM read access: a token's seed, its
-owner, sibling tokens on the same collection, companion contract state, and
-other foreign contracts, plus current block state. That read access is what
-makes network-based, live-rendering works expressible instead of limiting a
-renderer to data baked in at mint time. See the
+owner, sibling tokens on the same collection, companion contract state, other
+contracts, and current block state. A renderer's output can therefore depend on
+live chain state, not only on data written at mint time. See the
 [write a renderer guide](/docs/collections/guides/write-a-renderer) for a worked
 implementation.
 
@@ -28,7 +27,7 @@ implementation.
 
 view; returns the metadata URI for `tokenId` on `collection`. Called by the
 collection's own `tokenURI` when this renderer occupies its renderer slot,
-and callable directly off-chain against any collection this renderer
+and callable directly offchain against any collection this renderer
 supports. Implementations typically read the token's data through
 [ISurfaceView](/docs/collections/contracts/i-surface-view) on `collection`, its
 seed, mint order and other derived provenance, and so on, to build the

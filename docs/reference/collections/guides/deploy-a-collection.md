@@ -163,8 +163,8 @@ On the token, the owner can still call `setRenderer` and the config setters
 until they lock things down with `lockRenderer` and `lockSupply`, and manage
 minters with `setMinter` / `lockMinter`. On the minter, the owner (or an admin
 they grant on the collection) can change the sale config. Presentation data is
-published separately, in renderer-land: a generative work lives in the artist's
-own renderer, and cover art / captures go to
+published separately: a generative work lives in the artist's own renderer, and
+cover art and captures go to
 [RenderAssets](/docs/collections/contracts/render-assets). Nothing about either
 clone's code changes; only its slot pointers and stored config do. See:
 

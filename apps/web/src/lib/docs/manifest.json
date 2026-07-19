@@ -85,37 +85,37 @@
               "title": "Surface",
               "slug": "surface",
               "path": "/docs/collections/contracts/surface",
-              "description": "The token core of the PND Surface System: an OpenZeppelin ERC721 that holds ownership, one mint-time seed per token, renderer wiring, EIP-2981 royalty, creator attribution, and the supply cap, and nothing else."
+              "description": "Sequential-id ERC721 collection: the token core of the PND Surface System."
             },
             {
               "title": "SurfaceFactory",
               "slug": "factory",
               "path": "/docs/collections/contracts/factory",
-              "description": "SurfaceFactory deploys one [Surface](/docs/collections/contracts/surface) collection per call as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs."
+              "description": "Deploys one [Surface](/docs/collections/contracts/surface) collection per call as an EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path."
             },
             {
               "title": "FixedPriceMinter",
               "slug": "fixed-price-minter",
               "path": "/docs/collections/contracts/fixed-price-minter",
-              "description": "The canonical paid mint path of the Surface System: a fixed-price/referral minter for a sequential [Surface](/docs/collections/contracts/surface) collection, deployed as one immutable EIP-1167 clone per collection."
+              "description": "Fixed-price minter for a sequential [Surface](/docs/collections/contracts/surface) collection, deployed as one EIP-1167 clone per collection."
             },
             {
               "title": "DefaultRenderer",
               "slug": "default-renderer",
               "path": "/docs/collections/contracts/default-renderer",
-              "description": "The canonical built-in renderer for [Surface](/docs/collections/contracts/surface)."
+              "description": "The built-in renderer for [Surface](/docs/collections/contracts/surface)."
             },
             {
               "title": "RenderAssets",
               "slug": "render-assets",
               "path": "/docs/collections/contracts/render-assets",
-              "description": "The renderer-land registry of static display assets: each collection's shared cover image, per-token captures (thumbnails of rendered output), and a capture template that resolves per token id."
+              "description": "Registry of static display assets for renderers: each collection's cover image, per-token captures (thumbnails of rendered output), and a capture template resolved per token id."
             },
             {
               "title": "ScriptyRenderer",
               "slug": "scripty-renderer",
               "path": "/docs/collections/contracts/scripty-renderer",
-              "description": "ScriptyRenderer is the **bring-your-own generative renderer template**: a concrete, forkable [IRenderer](/docs/collections/contracts/i-renderer) for Art Blocks-style script-based work, assembled fully onchain through ScriptyBuilderV2."
+              "description": "A forkable [IRenderer](/docs/collections/contracts/i-renderer) template for script-based generative work, assembled onchain through ScriptyBuilderV2."
             },
             {
               "title": "IPriceStrategy",
@@ -139,7 +139,7 @@
               "title": "IPreviewRenderer",
               "slug": "i-preview-renderer",
               "path": "/docs/collections/contracts/i-preview-renderer",
-              "description": "IPreviewRenderer is an OPTIONAL extension a renderer implements to render what a token WOULD look like for a caller-supplied seed, without any token existing."
+              "description": "An optional extension a renderer implements to render the output for a caller-supplied seed with no token existing."
             }
           ]
         },

@@ -16,7 +16,7 @@ The mechanics are a standard English auction with a small fixed rule set:
 - Minimum increment: every later bid must beat the current high bid by at least 5%
   (`MIN_BID_INCREMENT_BPS`)
 - Anti-snipe extension: a bid inside the last 15 minutes (`TIME_BUFFER`) pushes the
-  end time out, so no one wins by bidding in the final block
+  end time out, so a late bid extends the auction rather than closing it
 - Pull-payment refunds: an outbid bidder's ETH is returned immediately, or credited
   to a withdrawable balance if the push fails, and claimed later with
   `withdrawRefund`
@@ -35,7 +35,7 @@ The mechanics are a standard English auction with a small fixed rule set:
 - [SovereignAuctionHouseFactory](/docs/auctions/contracts/auction-house-factory):
   the shared singleton that deploys houses. Anyone can call `createAuctionHouse` to
   get their own house, owned by the caller, at an address predictable from the owner
-  alone. The factory carries the fee terms baked into every house it creates
+  alone. The factory sets the fee terms on every house it creates
 
 ## Status
 

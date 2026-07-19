@@ -2,21 +2,20 @@
 
 # Slots and modules
 
-`Surface` is one thin ERC721 core for every form of work: an edition, a
-long-form generative drop, an onchain SVG piece, a participatory work, a
-backed and pooled work. The core holds ownership, one seed per token, the
-renderer wiring, the royalty, the supply cap, and the minter authorization,
-and nothing about a sale. What changes between works is which modules attach
-to it and what the minter does. The core never grows a line for a specific
-work; it only ever calls its renderer and trusts its minters.
+`Surface` is one ERC721 core used across forms of work: editions, generative
+drops, onchain SVG works, participatory works, backed pooled works. The core
+holds ownership, one seed per token, the renderer pointer, the royalty, the
+supply cap, and the minter authorization, and no sale logic. What varies between
+works is which modules are attached and what the minter does. The core has no
+work-specific code; it calls its renderer and authorizes its minters.
 
 The token has two attachment points, and the canonical minter adds a third:
 
 - the **renderer slot** on the token: one address, swappable by the owner or
   an admin (`setRenderer`) and pinnable one-way (`lockRenderer`)
 - the **minter set** on the token: addresses the owner grants and revokes
-  individually (`setMinter`), freezable one-way (`lockMinter`). A minter is
-  the mint engine; every mint enters through one
+  individually (`setMinter`), freezable one-way (`lockMinter`). Every mint
+  enters through an authorized minter
 - the **price-strategy slot** inside the canonical minter: one optional
   address on the [FixedPriceMinter](/docs/collections/contracts/fixed-price-minter)
   clone (`setPriceStrategy`), which quotes the price when set and falls back
@@ -61,7 +60,7 @@ See [IRenderer](/docs/collections/contracts/i-renderer),
 [ScriptyRenderer](/docs/collections/contracts/scripty-renderer),
 [Write a renderer](/docs/collections/guides/write-a-renderer).
 
-## Minter (the mint engine)
+## Minter
 
 - **Type**: an address the owner authorizes, tracked in
   `mapping(address => bool)`. The token trusts a minter for one thing:
@@ -71,19 +70,18 @@ See [IRenderer](/docs/collections/contracts/i-renderer),
 - **Set by**: `setMinter(address minter, bool allowed)`, owner or admin (owner
   only on the pooled form). Not a single-slot swap like the renderer: any
   number of minters can be authorized at once, granted and revoked
-  individually. Revoking a grant is the artist's lever over that minter's
-  schedule and behavior once it is live. `lockMinter` freezes the set
-  permanently, one-way
+  individually. Revoking a grant removes a live minter's authorization.
+  `lockMinter` freezes the set permanently, one-way
 - **What it does**: an authorized minter calls `mintTo(to, quantity)` (the
   sequential form) or `mintToId(to, tokenId)` (the pooled form) on the
-  collection. Both are non-payable: the minter carries all economics itself,
-  and the token just assigns the id and stamps the seed
+  collection. Both are non-payable: the minter handles all economics; the
+  token assigns the id and writes the seed
 - **What it can and cannot do**: a minter fully owns its own economics (its
   own price, payment token, window, referral, gates, escrow) and its own
   schedule. It cannot bypass the id-mode rule (each form exposes only its own
   entrypoint) or the supply cap (`ExceedsCap`). The
   [FixedPriceMinter](/docs/collections/contracts/fixed-price-minter) clone the
-  factory wires is the canonical mint engine; bespoke projects grant their own
+  factory wires is the canonical minter; bespoke projects grant their own
 
 See [Surface](/docs/collections/contracts/surface),
 [FixedPriceMinter](/docs/collections/contracts/fixed-price-minter),

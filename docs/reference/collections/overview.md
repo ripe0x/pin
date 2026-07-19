@@ -3,11 +3,11 @@
 # Overview
 
 The PND Surface System is a modular collection protocol for artists. One artist
-collection is one thin ERC721 core, `Surface`: it holds ownership, one seed per
-token, the renderer wiring, the royalty, the supply cap, and the minter
-authorization, and no sale logic and no money. Every collection is deployed by
-a shared factory as an immutable EIP-1167 clone, so what deploys is what runs,
-forever. There is no proxy admin, no upgrade path, and no seal.
+collection is one ERC721 core, `Surface`: it holds ownership, one seed per
+token, the renderer pointer, the royalty, the supply cap, and the minter
+authorization, and no sale logic and no ETH. Every collection is deployed by a
+shared factory as an immutable EIP-1167 clone, so what deploys is what runs.
+There is no proxy admin and no upgrade path.
 
 Sale economics live outside the token, in a **minter**: price, mint window,
 payment, referral, and gating. The common case is the canonical
@@ -44,8 +44,8 @@ third slot:
 - **Renderer** (`IRenderer`) on the token: builds `tokenURI`; falls back to the
   factory `defaultRenderer` when unset; pinnable one-way with `lockRenderer`
 - **Minter** on the token: an address the artist authorizes via `setMinter` to
-  call the non-payable `mintTo`/`mintToId`. The mint engine, where all sale
-  economics live. Freezable one-way with `lockMinter`
+  call the non-payable `mintTo`/`mintToId`. All sale economics live in the
+  minter. Freezable one-way with `lockMinter`
 - **Price strategy** (`IPriceStrategy`) inside the canonical minter: a
   view-only pricing module; falls back to the minter's fixed price when unset
 
@@ -91,15 +91,13 @@ through `mintToId`, a burned id can be re-minted as a new instance). Fixed at
 init, not changeable after. See
 [Id modes](/docs/collections/concepts/id-modes).
 
-## Honest pricing and the referral share
+## Pricing and the referral share
 
-A collector on the canonical minter pays exactly the resolved price: the stored
-fixed price, or whatever the price strategy quotes. Out of that price, a fixed
-10% (`REFERRAL_SHARE_BPS`) goes to whoever hosts the mint, the **referrer**.
-Minting with no referrer, or through a self-hosted page passing the artist's
-own address, folds that share back to the artist. There is no protocol fee
-anywhere in the token or the canonical minter. A custom minter sets its own
-terms, visibly onchain.
+On the canonical minter, the required payment is the resolved price: the stored
+fixed price, or the price strategy's quote. Out of that price, a fixed 10%
+(`REFERRAL_SHARE_BPS`) goes to the **referrer** passed to `mint`. A mint with no
+referrer directs the full price to the payout. There is no protocol fee in the
+token or the canonical minter. A custom minter sets its own terms.
 
 ## Status
 

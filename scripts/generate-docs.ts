@@ -150,7 +150,7 @@ const PROTOCOLS: Protocol[] = [
                 slug: 'scripty-renderer',
                 deploymentsKey: null,
                 kind: 'clone',
-                note: 'A bring-your-own generative renderer template, not a shared deployment. An artist deploys their own instance (one per work) with the work fixed in the constructor — immutable by construction — and points a collection\'s renderer slot at it, so there is no canonical address. The ABI below is the base template; see [Write a renderer](/docs/collections/guides/write-a-renderer).',
+                note: 'A bring-your-own generative renderer template, not a shared deployment. An artist deploys their own instance (one per work) with the work fixed in the constructor, so the renderer is immutable and there is no canonical address, and sets a collection\'s renderer pointer to it. The ABI below is the base template; see [Write a renderer](/docs/collections/guides/write-a-renderer).',
             },
             {
                 name: 'IPriceStrategy',

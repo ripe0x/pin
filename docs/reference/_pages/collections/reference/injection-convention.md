@@ -5,7 +5,7 @@ description: How a generative work's code receives its token context, onchain an
 
 # Injection convention
 
-How a generative work's code receives its token context, onchain and off. This is the load-bearing parity contract of the collection system: a work's onchain generative renderer, the studio previewer, the mint surface, and the artist-site embed must inject the identical object, so a preview is the render.
+How a generative work's code receives its token context, onchain and off. The parity requirement of the collection system: a work's onchain generative renderer, the studio previewer, the mint surface, and the artist-site embed must inject the identical object, so a preview renders identically to the token.
 
 ## The context object
 
@@ -22,17 +22,17 @@ window.tokenData = {
 };
 ```
 
-`hash` and `tokenId` deliberately match Art Blocks' `tokenData` shape, so existing AB-style sketches run unmodified. Everything else is additive. Code SHOULD read only documented fields and tolerate additions.
+`hash` and `tokenId` match Art Blocks' `tokenData` shape, so existing AB-style sketches run unmodified. Everything else is additive. Code SHOULD read only documented fields and tolerate additions.
 
 ## Execution context
 
 `context` tells the work's code why the document was rendered:
 
-- `"token"` — the canonical render of a real token (`tokenURI`, and any offchain parity render of a minted token). The determinism rules below apply in full; a missing/unknown context MUST be treated as `"token"`.
-- `"preview"` — an exploratory what-if render from a throwaway seed (`previewURI` onchain, test seeds in the studio, a mint page's pre-mint explore). Composition MUST be exactly what the same seed would produce as a token, a preview that lies is a bug, but presentation MAY adapt (e.g. skip a long intro).
-- `"capture"` — an offchain headless render for a static image (thumbnail, OG). Code MAY jump straight to the canonical still (skip animation), and MUST settle on it deterministically.
+- `"token"`: the canonical render of a real token (`tokenURI`, and any offchain parity render of a minted token). The determinism rules below apply in full; a missing or unknown context MUST be treated as `"token"`.
+- `"preview"`: a render from a caller-supplied seed with no token existing (`previewURI` onchain, test seeds in the studio, a mint page's pre-mint explore). Composition MUST be exactly what the same seed would produce as a token, but presentation MAY adapt (e.g. skip a long intro).
+- `"capture"`: an offchain headless render for a static image (thumbnail, OG). Code MAY jump straight to the canonical still (skip animation), and MUST settle on it deterministically.
 
-Previews are also an onchain capability: renderers that can render faithfully from `(tokenId, seed)` alone implement the OPTIONAL [IPreviewRenderer](/docs/collections/contracts/i-preview-renderer) extension ([ScriptyRenderer](/docs/collections/contracts/scripty-renderer) does; a bespoke [IRenderer](/docs/collections/contracts/i-renderer) implements it directly when its art is a pure function of the seed). Renderers whose output depends on state a preview cannot fake (sibling tokens, companion contracts, hook-recorded mint-time data) simply don't implement it; detection is a try/catch `eth_call`. A preview document MUST inject `context: "preview"`, and preview metadata carries no provenance attributes, a preview is not a token.
+Previews are also an onchain capability: renderers that can render faithfully from `(tokenId, seed)` alone implement the OPTIONAL [IPreviewRenderer](/docs/collections/contracts/i-preview-renderer) extension ([ScriptyRenderer](/docs/collections/contracts/scripty-renderer) does; a bespoke [IRenderer](/docs/collections/contracts/i-renderer) implements it directly when its art is a pure function of the seed). A renderer whose output depends on state a seed cannot supply (sibling tokens, companion contracts, mint-time data recorded by a mint hook) does not implement it; detection is a try/catch `eth_call`. A preview document MUST inject `context: "preview"`, and preview metadata carries no provenance attributes.
 
 ## Determinism rules for pure works
 
@@ -86,23 +86,21 @@ core, and read via `tokenSeed(tokenId)`:
 seed = keccak256(abi.encode(block.prevrandao, collectionAddress, tokenId, mintIndex))
 ```
 
-Each input earns its place: `prevrandao` gives block-level freshness;
-`collectionAddress` prevents cross-collection reuse; `tokenId` + `mintIndex`
-give per-token and per-instance uniqueness (the index is what re-rolls a
-pooled re-mint of the same id). The recipient is deliberately NOT mixed in:
-it adds no unpredictability and would bake a minter-identity opinion into
-every work.
+The inputs: `prevrandao` gives block-level freshness; `collectionAddress`
+prevents cross-collection reuse; `tokenId` and `mintIndex` give per-token and
+per-instance uniqueness (the index re-rolls a pooled re-mint of the same id).
+The recipient is not mixed in: it adds no unpredictability, and including it
+would make the seed depend on the minter.
 
 Properties renderers and archives can rely on:
 
-- **Canonical and renderer-independent**: the seed is a fixed fact of the
-  token, derived once in the core — never re-derived by renderers, so
-  swapping renderers can never change a token's entropy
+- **Canonical and renderer-independent**: the seed is written once in the core
+  and not re-derived by renderers, so changing renderers does not change a
+  token's entropy
 - **Pre-mint simulatable**: like all same-block entropy (Art Blocks
   included), the seed can be computed by simulating the mint before sending
   it. Acceptable unpredictability for art; disqualifying for lotteries
-- **The substrate, not the ceiling**: an algorithm wanting different seed
-  semantics derives its own value from the canonical seed (any pure function
-  of it), or records extra mint-time materials (block, recipient, pooled
-  order) through its own minter and reads them in a custom renderer, so the
-  cost lands only on works that opt in
+- **Extensible**: an algorithm wanting different seed semantics derives its own
+  value from the canonical seed (any pure function of it), or records extra
+  mint-time data (block, recipient, pooled order) through its own minter and
+  reads it in a custom renderer, so only works that opt in pay that cost

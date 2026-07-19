@@ -20,11 +20,11 @@ function priceOf(address to, uint256 quantity, bytes calldata data) external vie
 ```
 
 - `to` is the recipient and the address any gate evaluates (an allowlist gates
-  the collector, not the payer), so a gift or vault purchase passes the
-  recipient here while `msg.sender` pays
+  the collector, not the payer); `msg.sender` is the payer, so to mint for
+  another address pass it as `to`
 - `referrer` receives the referral share (`REFERRAL_SHARE_BPS`, a fixed 10%)
-  out of the price when nonzero. Passing `address(0)` folds the share back to
-  the artist
+  out of the price when nonzero. `address(0)` directs the full price to the
+  payout
 - `data` carries caller-supplied input a gate consumes, an ABI-encoded
   `bytes32[]` Merkle proof for the allowlist. Gates that read only chain state
   (the per-wallet cap) need no `data`; pass `0x`
