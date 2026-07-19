@@ -92,22 +92,19 @@ cast block-number --rpc-url "$RPC" >/dev/null 2>&1 || { echo "error: Anvil did n
 cast rpc anvil_setBalance "$IMPERSONATE" 0x21e19e0c9bab2400000 --rpc-url "$RPC" >/dev/null
 
 # 3) deploy the collection system.
-# NOTE: unlike DeployEditions.s.sol (which relied on --unlocked so Anvil's
-# auto-impersonate signs via eth_sendTransaction), DeploySurfaceSystem.s.sol
-# reads PRIVATE_KEY via vm.envUint and signs locally with
-# vm.startBroadcast(deployerPk). --unlocked would tell forge to instead send
-# via eth_sendTransaction using --sender as an unlocked account — mixing that
-# with the script's own explicit-key signing is unnecessary and the two
-# signing modes shouldn't be combined. So: pass PRIVATE_KEY, drop --unlocked,
-# keep --sender for clarity/consistency (it must match the PRIVATE_KEY's
-# address, verified above as Anvil account 0).
+# NOTE: DeploySurfaceSystem.s.sol is signer-agnostic — it calls vm.startBroadcast()
+# with no argument, so forge takes the signer from the CLI. Pass --private-key
+# (Anvil account 0's well-known key); the derived sender is account 0, funded on
+# the fork. The older PRIVATE_KEY-env + --sender form is stale: the script no
+# longer reads PRIVATE_KEY, so without a CLI signer forge reverts "No associated
+# wallet for <sender>".
 echo "▸ Deploying Surface system contracts…"
 # CATALOG pins the collections to the REAL Catalog public good (present on the
 # mainnet fork), so the seed's creator claims land in the same Catalog the
 # collections read — the dev roster then actually confirms.
 DEPLOY_OUT="$(cd contracts && CATALOG="0x467a9c39e03C595EC3075D856f19C7386b6b915d" \
-  PRIVATE_KEY="$ANVIL_ACCOUNT_0_PK" forge script script/DeploySurfaceSystem.s.sol \
-  --rpc-url "$RPC" --broadcast --sender "$IMPERSONATE" 2>&1)" || {
+  forge script script/DeploySurfaceSystem.s.sol \
+  --rpc-url "$RPC" --broadcast --private-key "$ANVIL_ACCOUNT_0_PK" 2>&1)" || {
   echo "$DEPLOY_OUT" | tail -30
   echo "error: deploy failed"
   exit 1
@@ -116,14 +113,19 @@ DEPLOY_OUT="$(cd contracts && CATALOG="0x467a9c39e03C595EC3075D856f19C7386b6b915
 # Parse from the script's final "Summary:" block, which always prints in full
 # (unlike the step-by-step logs, which vary).
 CATALOG="$(echo "$DEPLOY_OUT" | grep -i "Catalog:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
-RENDER_ASSETS="$(echo "$DEPLOY_OUT" | grep -i "RenderAssets:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
-DEFAULT_RENDERER="$(echo "$DEPLOY_OUT" | grep -i "DefaultRenderer:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
-GATE_HOOK="$(echo "$DEPLOY_OUT" | grep -i "GateHook:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
+# RenderAssets / DefaultRenderer / GateHook are optional post lean-deploy (the
+# Summary omits them when they aren't deployed). `|| true` keeps a no-match from
+# tripping pipefail+set -e and silently killing the script.
+RENDER_ASSETS="$(echo "$DEPLOY_OUT" | grep -i "RenderAssets:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1 || true)"
+DEFAULT_RENDERER="$(echo "$DEPLOY_OUT" | grep -i "DefaultRenderer:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1 || true)"
+GATE_HOOK="$(echo "$DEPLOY_OUT" | grep -i "GateHook:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1 || true)"
 IMPLEMENTATION="$(echo "$DEPLOY_OUT" | grep -i "Surface (seq) impl:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
 FACTORY="$(echo "$DEPLOY_OUT" | grep -i "SurfaceFactory:" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)"
 
-for pair in "CATALOG:$CATALOG" "RENDER_ASSETS:$RENDER_ASSETS" "DEFAULT_RENDERER:$DEFAULT_RENDERER" \
-            "GATE_HOOK:$GATE_HOOK" "IMPLEMENTATION:$IMPLEMENTATION" "FACTORY:$FACTORY"; do
+# RenderAssets/DefaultRenderer/GateHook are no longer deployed by
+# DeploySurfaceSystem (lean deploy — collections bring their own renderer), so
+# only Catalog, the impl, and the factory are required.
+for pair in "CATALOG:$CATALOG" "IMPLEMENTATION:$IMPLEMENTATION" "FACTORY:$FACTORY"; do
   name="${pair%%:*}"
   value="${pair#*:}"
   if [ -z "$value" ]; then
@@ -139,6 +141,12 @@ echo "▸ DefaultRenderer:            $DEFAULT_RENDERER"
 echo "▸ Surface impl:   $IMPLEMENTATION"
 echo "▸ SurfaceFactory: $FACTORY"
 echo "▸ GateHook:                   $GATE_HOOK"
+
+# The factory is born paused (deploy hardening). Open it so the seeds below can
+# clone collections; setPaused is deployer-only and account 0 deployed it.
+echo "▸ Unpausing factory…"
+cast send "$FACTORY" "setPaused(bool)" false \
+  --rpc-url "$RPC" --private-key "$ANVIL_ACCOUNT_0_PK" >/dev/null
 
 # 3b) optional sample world (SEED_SAMPLE=1, default on): three collections
 #     rendered through the DefaultRenderer with inline-SVG covers — one with a
