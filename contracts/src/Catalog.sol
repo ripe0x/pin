@@ -4,31 +4,30 @@ pragma solidity ^0.8.24;
 import {Multicall} from "openzeppelin-contracts/contracts/utils/Multicall.sol";
 
 /// @title Catalog
-/// @notice Generic, immutable, public infrastructure where an artist
-///         address can publish on-chain pointers that belong in its
-///         public catalog. A pointer is one of three things:
-///         a contract address, a single token on a contract, or a
+/// @notice Immutable public registry where an artist address publishes
+///         on-chain pointers. A pointer is one of three types: a
+///         contract address, a single token on a contract, or a
 ///         contiguous range of token IDs on a contract.
 ///
-/// @dev    CORE MEANING (read carefully before consuming this contract):
+/// @dev    CORE MEANING:
 ///
-///         The catalog only means: "this artist address added this
-///         pointer to its public catalog."
+///         A catalog entry records only that a given artist address
+///         added a given pointer.
 ///
-///         It does NOT prove authorship, provenance, token type,
+///         It does not prove authorship, provenance, token type,
 ///         authenticity, ownership, creator status, or endorsement.
-///         It does NOT verify that the referenced contract or token
+///         It does not verify that the referenced contract or token
 ///         exists, behaves as an NFT, or implements any standard.
 ///
-///         Downstream indexers and UIs are responsible for interpreting
-///         pointers, checking interfaces, resolving metadata, scoring
-///         confidence, surfacing conflicts. The contract stays small on
-///         purpose; semantics live off-chain.
+///         Interpreting pointers, checking interfaces, resolving
+///         metadata, scoring confidence, and surfacing conflicts are
+///         the responsibility of downstream indexers and UIs. The
+///         contract holds no semantics; semantics live off-chain.
 ///
 ///         Order is not guaranteed because removal uses swap-and-pop:
-///         removing an element that isn't last moves the tail element
+///         removing an element that is not last moves the tail element
 ///         into the freed slot. Consumers that need a specific order
-///         can sort off-chain.
+///         sort off-chain.
 ///
 ///         Overlapping token ranges are allowed. Identity for a range
 ///         pointer is the exact `(contract, startTokenId, endTokenId)`
@@ -37,72 +36,72 @@ import {Multicall} from "openzeppelin-contracts/contracts/utils/Multicall.sol";
 ///
 /// @dev    SCOPE BOUNDARIES:
 ///
-///         No admin, no owner, no upgrade path, no fees, no pause, no
-///         protocol logic. The only privileged role is per-artist:
-///         an artist may approve operators to add and remove pointers
-///         on its behalf.
+///         No admin, owner, upgrade path, fees, pause, or protocol
+///         logic. The only privileged role is per-artist: an artist
+///         may approve operators to add and remove pointers on its
+///         behalf.
 ///
-///         Key rotation and identity grouping are intentionally
-///         outside this contract's scope. Artists, platforms, wallets,
-///         and indexers may establish continuity off-chain, through
-///         signatures, public statements, ENS records, social
-///         verification, or other context. This contract only records
+///         Key rotation and identity grouping are out of scope.
+///         Continuity across addresses may be established off-chain
+///         via signatures, public statements, ENS records, social
+///         verification, or other context. This contract records only
 ///         pointers added by a specific address; aggregating records
 ///         across addresses is an off-chain concern.
 ///
 /// @dev    PER-CHAIN, DETERMINISTIC DEPLOYMENT:
 ///
-///         Each catalog instance is scoped to the chain it's deployed
-///         on. Pointers reference contracts on that same chain, there
-///         is no `chainId` field because the deployment chain is the
-///         answer. Catalogs on different chains are independent.
+///         Each catalog instance is scoped to its deployment chain.
+///         Pointers reference contracts on that same chain; there is no
+///         `chainId` field because the deployment chain is implicit.
+///         Catalogs on different chains are independent.
 ///
-///         To land the catalog at the same address on every chain,
+///         To deploy the catalog at the same address on every chain,
 ///         deploy through the canonical CREATE2 deterministic-
 ///         deployment proxy (0x4e59b44847b379578588920cA78FbF26c0B4956C)
 ///         with a chosen salt. Identical addresses across chains
 ///         require ALL of the following to match:
 ///
-///           1. same deployer (the CREATE2 proxy is identical on every
-///              EVM chain it's been deployed to, which is most of them)
+///           1. same deployer (the CREATE2 proxy has an identical
+///              address on every EVM chain it is deployed to, which is
+///              most of them)
 ///           2. same salt
-///           3. same init code hash (i.e. the exact same compiled
-///              bytecode)
+///           3. same init code hash (the exact same compiled bytecode)
 ///           4. same Solidity compiler version
 ///           5. same optimizer settings (including `runs`)
 ///           6. same source code
 ///
-///         Because this contract has no constructor arguments, the
-///         init code hash is a pure function of the compiled bytecode,
-///         which in turn depends on items 4-6. Salt alone is not
-///         enough, pinning the toolchain matters.
+///         This contract has no constructor arguments, so the init code
+///         hash is a function of the compiled bytecode alone, which
+///         depends on items 4-6. Salt alone is not sufficient; the
+///         toolchain must be pinned.
 ///
 /// @dev    BATCHING VIA MULTICALL:
 ///
-///         The contract inherits OpenZeppelin's `Multicall`. An artist
-///         (or an approved operator) can declare an arbitrary mix of
-///         pointer operations in a single transaction by calling
-///         `multicall(bytes[] calls)`, where each `bytes` is an
-///         ABI-encoded call to one of this contract's functions.
+///         Inherits OpenZeppelin's `Multicall`. An artist or approved
+///         operator can submit a mix of pointer operations in one
+///         transaction via `multicall(bytes[] calls)`, where each
+///         `bytes` is an ABI-encoded call to one of this contract's
+///         functions.
 ///
-///         Why: the dominant cost when an artist adds N pointers is the
-///         per-transaction intrinsic gas (~21k) and the wallet signature
-///         friction, both linear in N when issued separately. Batching
-///         collapses those to one tx and one signature. Each inner call
-///         still emits its own event, so off-chain indexers see one
-///         add/remove per pointer with no batch-specific decoding.
+///         When an artist adds N pointers as separate transactions, the
+///         dominant cost is per-transaction intrinsic gas (~21k) plus
+///         wallet signature friction, both linear in N. Batching
+///         reduces these to one transaction and one signature. Each
+///         inner call still emits its own event, so indexers see one
+///         add/remove event per pointer with no batch-specific
+///         decoding.
 ///
 ///         Atomicity: `multicall` reverts the entire batch on the first
 ///         inner revert. A duplicate add, an unauthorized `*For` call,
-///         or an invalid range will undo every preceding operation in
-///         the same batch. Plan batches so any expected reverts are
-///         resolved client-side before submission.
+///         or an invalid range reverts every preceding operation in the
+///         same batch. Resolve expected reverts client-side before
+///         submission.
 ///
-///         Authorization: each inner call is executed via `delegatecall`
+///         Authorization: each inner call executes via `delegatecall`
 ///         from this contract to itself, so `msg.sender` is preserved
-///         as the original external caller. `addContractFor` etc.
-///         continue to enforce the same operator check inside a batch
-///         as they would outside it.
+///         as the original external caller. `addContractFor` and
+///         similar enforce the same operator check inside a batch as
+///         outside it.
 contract Catalog is Multicall {
     // ─── Types ──────────────────────────────────────────────────────
 
@@ -118,11 +117,10 @@ contract Catalog is Multicall {
     ///         on a given contract. `startTokenId == endTokenId` is
     ///         allowed and describes one token, but it remains a range
     ///         pointer and is stored independently from a `TokenPointer`:
-    ///         the same token can be registered as both an
-    ///         `addToken` entry and a single-token range, and the two
-    ///         live in separate lists with separate keys. The catalog
-    ///         does not treat them as equivalent or deduplicate across
-    ///         pointer types.
+    ///         the same token can be registered as both an `addToken`
+    ///         entry and a single-token range, stored in separate lists
+    ///         under separate keys. The catalog does not treat them as
+    ///         equivalent or deduplicate across pointer types.
     /// @param contractAddress  The contract that holds the tokens. Must be non-zero.
     /// @param startTokenId     Inclusive lower bound. Must be <= endTokenId.
     /// @param endTokenId       Inclusive upper bound.
@@ -135,9 +133,9 @@ contract Catalog is Multicall {
     // ─── Storage ────────────────────────────────────────────────────
 
     /// @dev Per-artist enumerable list of contract addresses. Order is
-    ///      not guaranteed, `swap-and-pop` removal swaps the last
-    ///      element into the removed slot. (Contract pointers degenerate
-    ///      to plain addresses since chainId is implicit; no struct.)
+    ///      not guaranteed: swap-and-pop removal swaps the last element
+    ///      into the removed slot. Contract pointers are stored as plain
+    ///      addresses (no struct) since chainId is implicit.
     mapping(address => address[]) private _artistContracts;
 
     /// @dev Per-artist enumerable list of single-token pointers.
@@ -147,14 +145,13 @@ contract Catalog is Multicall {
     mapping(address => TokenRangePointer[]) private _artistTokenRanges;
 
     /// @dev index-plus-one map for O(1) contract-pointer existence
-    ///      checks + swap-and-pop. Zero means "not present"; a value
-    ///      of (index + 1) means "present at _artistContracts[index]".
+    ///      checks and swap-and-pop. Zero means not present; a value of
+    ///      (index + 1) means present at _artistContracts[index].
     //
-    // Why "+1" instead of storing the raw index: Solidity's default for
-    // an unread map entry is zero. If we stored raw indices, "missing"
-    // and "present at slot 0" would both read as zero, breaking the
-    // existence check. Shifting by one preserves a unique sentinel for
-    // "missing" without paying the gas of a parallel boolean map.
+    // The +1 offset provides a sentinel: an unread map entry defaults to
+    // zero, so storing raw indices would make "missing" and "present at
+    // slot 0" both read as zero. Offsetting by one distinguishes
+    // "missing" without a parallel boolean map.
     mapping(address => mapping(bytes32 => uint256)) private _contractIndexPlusOne;
 
     /// @dev index-plus-one map for token pointers. See _contractIndexPlusOne.
@@ -169,22 +166,22 @@ contract Catalog is Multicall {
     /// @dev    Operators cannot sub-delegate (cannot call setOperator
     ///         for another artist).
     //
-    // `public` auto-generates an external `isOperator(address, address)
-    // returns (bool)` getter, which is the public read surface, no
-    // separate `function isOperator(...)` is needed.
+    // `public` auto-generates the external getter
+    // `isOperator(address, address) returns (bool)`, which is the public
+    // read surface; no separate getter is defined.
     mapping(address => mapping(address => bool)) public isOperator;
 
     // ─── Events ─────────────────────────────────────────────────────
 
     /// @notice Emitted when a contract pointer is added to an artist's
     ///         catalog.
-    /// @dev    `actor` is the `msg.sender` of the originating call,
+    /// @dev    `actor` is the `msg.sender` of the originating call:
     ///         either the artist (direct path) or an approved operator
-    ///         (`*For` path). Including it inline makes the operator
-    ///         attribution self-contained in the event so consumers can
-    ///         answer "who changed this catalog?" without correlating
-    ///         against transaction sender out-of-band. For `*For` calls
-    ///         `artist != actor`; for direct calls `artist == actor`.
+    ///         (`*For` path). Including it in the event makes operator
+    ///         attribution self-contained, so consumers need not
+    ///         correlate against the transaction sender separately. For
+    ///         `*For` calls `artist != actor`; for direct calls
+    ///         `artist == actor`.
     /// @param artist           The artist whose catalog was modified.
     /// @param actor            The address that initiated the mutation.
     /// @param contractAddress  The contract address pointed at.
@@ -208,11 +205,10 @@ contract Catalog is Multicall {
 
     /// @notice Emitted when a single-token pointer is added to an
     ///         artist's catalog.
-    /// @dev    `tokenId` is intentionally NOT indexed, log topic slots
-    ///         are limited to three, and `artist` + `actor` +
-    ///         `contractAddress` are the more frequently filtered fields.
-    ///         Indexers that need per-tokenId filtering can decode the
-    ///         data segment.
+    /// @dev    `tokenId` is not indexed: log topic slots are limited to
+    ///         three, and `artist`, `actor`, and `contractAddress` are
+    ///         the more frequently filtered fields. Indexers needing
+    ///         per-tokenId filtering decode it from the data segment.
     /// @param artist           The artist whose catalog was modified.
     /// @param actor            The address that initiated the mutation.
     /// @param contractAddress  The contract that holds the token.
@@ -268,9 +264,9 @@ contract Catalog is Multicall {
         uint256 endTokenId
     );
 
-    /// @notice Emitted whenever `setOperator` is called. Emitted even
-    ///         when the new value equals the existing value, so a
-    ///         downstream consumer can rely on a uniform audit trail.
+    /// @notice Emitted whenever `setOperator` is called, including when
+    ///         the new value equals the existing value, providing a
+    ///         uniform audit trail downstream.
     /// @param artist    The artist whose operator slot was set.
     /// @param operator  The address being approved or revoked.
     /// @param approved  New value of `isOperator[artist][operator]`.
@@ -336,9 +332,7 @@ contract Catalog is Multicall {
     /// @param artist  Artist whose storage is being targeted.
     function _requireAuthorized(address artist) internal view {
         // Validate the artist param first so a caller passing
-        // address(0) gets a precise `InvalidArtist` error instead of a
-        // generic `NotAuthorized`. Useful for clients debugging bad
-        // input.
+        // address(0) gets `InvalidArtist` rather than `NotAuthorized`.
         if (artist == address(0)) revert InvalidArtist();
         if (msg.sender != artist && !isOperator[artist][msg.sender]) {
             revert NotAuthorized();
@@ -351,13 +345,13 @@ contract Catalog is Multicall {
     ///         contract-pointer existence checks.
     /// @dev    `keccak256(abi.encode(contractAddress))`.
     ///
-    ///         We use `abi.encode` (32-byte-aligned) rather than
-    ///         `abi.encodePacked` so the key for a contract pointer
-    ///         cannot collide with the key for any other pointer type
-    ///         even when their packed bytes would coincide. The key
-    ///         spaces are also kept separate by living in distinct
-    ///         mappings, but using `encode` keeps the safety property
-    ///         self-contained at the hashing step.
+    ///         Uses `abi.encode` (32-byte-aligned) rather than
+    ///         `abi.encodePacked` so a contract-pointer key cannot
+    ///         collide with a key for any other pointer type even when
+    ///         their packed bytes would coincide. The key spaces are
+    ///         also separated by distinct mappings; `encode` keeps the
+    ///         non-collision property self-contained at the hashing
+    ///         step.
     /// @param contractAddress  Contract address.
     /// @return                 32-byte key.
     function getContractKey(
@@ -401,9 +395,9 @@ contract Catalog is Multicall {
     // ─── Contract pointers ──────────────────────────────────────────
 
     /// @notice Add a contract pointer to the caller's catalog.
-    /// @dev Reverts if the pointer already exists. Anyone (including
-    ///      an EOA) may be referenced, the contract performs no
-    ///      semantic checks beyond non-zero.
+    /// @dev Reverts if the pointer already exists. Any address,
+    ///      including an EOA, may be referenced; the only check is
+    ///      non-zero.
     /// @param contractAddress  Contract being pointed at. Must be non-zero.
     function addContract(address contractAddress) external {
         _addContract(msg.sender, contractAddress);
@@ -442,7 +436,7 @@ contract Catalog is Multicall {
         _removeContract(artist, contractAddress);
     }
 
-    /// @dev Push a contract pointer to `artist`'s list and remember its
+    /// @dev Push a contract pointer to `artist`'s list and record its
     ///      index. Emits `ContractAdded`.
     function _addContract(
         address artist,
@@ -450,23 +444,22 @@ contract Catalog is Multicall {
     ) internal {
         if (contractAddress == address(0)) revert InvalidContractAddress();
         bytes32 key = getContractKey(contractAddress);
-        // A non-zero indexPlusOne means the pointer is already in the
-        // list at array position (indexPlusOne - 1).
+        // Non-zero indexPlusOne means the pointer is already in the list
+        // at array position (indexPlusOne - 1).
         if (_contractIndexPlusOne[artist][key] != 0) {
             revert ContractAlreadyRegistered();
         }
         _artistContracts[artist].push(contractAddress);
-        // After push, the new entry sits at `length - 1`. We store
-        // `length` (i.e. index + 1) directly, equivalent and avoids
-        // an extra subtraction.
+        // After push, the new entry is at `length - 1`. Store `length`
+        // (index + 1) directly; equivalent and avoids a subtraction.
         _contractIndexPlusOne[artist][key] = _artistContracts[artist].length;
         emit ContractAdded(artist, msg.sender, contractAddress);
     }
 
-    /// @dev Remove a contract pointer via swap-and-pop. When the
-    ///      removed entry is not the last one, the last entry is moved
-    ///      into the removed slot and its index-plus-one value is
-    ///      rewritten. Emits `ContractRemoved`.
+    /// @dev Remove a contract pointer via swap-and-pop. When the removed
+    ///      entry is not the last one, the last entry is moved into the
+    ///      removed slot and its index-plus-one value is rewritten.
+    ///      Emits `ContractRemoved`.
     function _removeContract(
         address artist,
         address contractAddress
@@ -477,15 +470,15 @@ contract Catalog is Multicall {
         uint256 indexPlusOne = _contractIndexPlusOne[artist][key];
         if (indexPlusOne == 0) revert ContractNotRegistered();
 
-        // Step 2: convert to the actual array index.
+        // Step 2: convert to the array index.
         uint256 index = indexPlusOne - 1;
         address[] storage list = _artistContracts[artist];
         uint256 lastIndex = list.length - 1;
 
-        // Step 3: if we're removing from the middle, move the last
-        // entry into the gap and rewrite its position pointer.
-        // Skipping this branch when the removed entry IS the last one
-        // saves an SSTORE on the common case of stack-like removal.
+        // Step 3: when removing from the middle, move the last entry
+        // into the freed slot and rewrite its index-plus-one value.
+        // Skipping this branch when the removed entry is the last one
+        // saves an SSTORE on stack-like removal.
         if (index != lastIndex) {
             address moved = list[lastIndex];
             list[index] = moved;
@@ -494,8 +487,8 @@ contract Catalog is Multicall {
         }
 
         // Step 4: shrink the array and clear the removed entry's
-        // position pointer. Order matters for clarity but not for
-        // correctness, both operations are independent SSTOREs.
+        // index-plus-one value. The two SSTOREs are independent; order
+        // does not affect correctness.
         list.pop();
         delete _contractIndexPlusOne[artist][key];
         emit ContractRemoved(artist, msg.sender, contractAddress);
@@ -551,8 +544,8 @@ contract Catalog is Multicall {
     ///           - if `start >= length`, returns an empty array
     ///           - if `start + count > length`, returns only the
     ///             remaining elements
-    /// @dev    Useful for frontends and indexers reading large records
-    ///         without paying the gas of a full-array copy.
+    /// @dev    Lets frontends and indexers read large records without a
+    ///         full-array copy.
     /// @param artist  Artist whose catalog is being read.
     /// @param start   Zero-based offset into the unordered list.
     /// @param count   Maximum number of items to return.
@@ -566,10 +559,10 @@ contract Catalog is Multicall {
         return _sliceAddresses(list, start, count);
     }
 
-    /// @dev Shared slice helper for the address array (contract
-    ///      pointers). Inlined per-type for the struct lists because
-    ///      Solidity can't generically copy storage to memory across
-    ///      different value types.
+    /// @dev Slice helper for the address array (contract pointers). The
+    ///      struct lists inline their own copy because Solidity cannot
+    ///      generically copy storage to memory across different value
+    ///      types.
     function _sliceAddresses(
         address[] storage list,
         uint256 start,
@@ -638,7 +631,7 @@ contract Catalog is Multicall {
         _removeToken(artist, contractAddress, tokenId);
     }
 
-    /// @dev Push a token pointer to `artist`'s list and remember its
+    /// @dev Push a token pointer to `artist`'s list and record its
     ///      index. Emits `TokenAdded`.
     function _addToken(
         address artist,
@@ -660,9 +653,9 @@ contract Catalog is Multicall {
         emit TokenAdded(artist, msg.sender, contractAddress, tokenId);
     }
 
-    /// @dev Remove a token pointer via swap-and-pop. The algorithm
-    ///      mirrors `_removeContract`, see those step comments for
-    ///      the walk-through. Emits `TokenRemoved`.
+    /// @dev Remove a token pointer via swap-and-pop. Same algorithm as
+    ///      `_removeContract`; see its step comments. Emits
+    ///      `TokenRemoved`.
     function _removeToken(
         address artist,
         address contractAddress,
@@ -831,8 +824,8 @@ contract Catalog is Multicall {
         _removeTokenRange(artist, contractAddress, startTokenId, endTokenId);
     }
 
-    /// @dev Push a token-range pointer to `artist`'s list and remember
-    ///      its index. Reverts on inverted range. Emits `TokenRangeAdded`.
+    /// @dev Push a token-range pointer to `artist`'s list and record its
+    ///      index. Reverts on inverted range. Emits `TokenRangeAdded`.
     function _addTokenRange(
         address artist,
         address contractAddress,
@@ -866,14 +859,14 @@ contract Catalog is Multicall {
         );
     }
 
-    /// @dev Remove a token-range pointer via swap-and-pop. The
-    ///      algorithm mirrors `_removeContract`, see those step
-    ///      comments for the walk-through. Emits `TokenRangeRemoved`.
+    /// @dev Remove a token-range pointer via swap-and-pop. Same
+    ///      algorithm as `_removeContract`; see its step comments.
+    ///      Emits `TokenRangeRemoved`.
     ///
-    ///      Reverts on inverted range (`start > end`) for symmetry
-    ///      with `_addTokenRange`: a tuple that can never be added
-    ///      can never be removed either, and rejecting it early gives
-    ///      callers a precise error instead of `TokenRangeNotRegistered`.
+    ///      Reverts on inverted range (`start > end`) for symmetry with
+    ///      `_addTokenRange`: a tuple that can never be added can never
+    ///      be removed either, and rejecting it early returns
+    ///      `InvalidTokenRange` rather than `TokenRangeNotRegistered`.
     function _removeTokenRange(
         address artist,
         address contractAddress,
@@ -919,8 +912,8 @@ contract Catalog is Multicall {
     /// @notice Check whether `artist` has registered a token-range
     ///         pointer matching the exact tuple.
     /// @dev    Identity is the exact `(contract, start, end)` tuple;
-    ///         this does NOT report ranges that merely cover the
-    ///         queried bounds. Coverage logic belongs in indexers.
+    ///         this does not report ranges that merely cover the queried
+    ///         bounds. Coverage checks are performed by indexers.
     /// @param artist           Artist whose catalog is being queried.
     /// @param contractAddress  Contract being queried.
     /// @param startTokenId     Inclusive lower bound being queried.
@@ -1002,33 +995,32 @@ contract Catalog is Multicall {
 
     // ─── Combined catalog reads ─────────────────────────────────────
 
-    /// @notice Return every pointer in `artist`'s catalog, contracts,
-    ///         single tokens, and token ranges, in a single call.
-    /// @dev    Convenience wrapper over `getContracts`, `getTokens`, and
-    ///         `getTokenRanges`. The bundling is the only reason this
-    ///         function exists: one `eth_call` returns all three lists
-    ///         instead of three round-trips. Same data, same shapes,
-    ///         consumers that need only one or two of the lists should
-    ///         keep calling the per-type getters to avoid copying
-    ///         storage they don't need.
+    /// @notice Return every pointer in `artist`'s catalog (contracts,
+    ///         single tokens, and token ranges) in a single call.
+    /// @dev    Wrapper over `getContracts`, `getTokens`, and
+    ///         `getTokenRanges`: one `eth_call` returns all three lists
+    ///         instead of three round-trips, with the same data and
+    ///         shapes. Consumers that need only one or two lists should
+    ///         call the per-type getters to avoid copying unneeded
+    ///         storage.
     ///
     ///         All caveats from the per-type getters apply:
     ///           - Order is not stable across reads (swap-and-pop
     ///             removal). Sort client-side if a stable ordering is
     ///             required.
-    ///           - For very large catalogs the gas cost grows linearly
+    ///           - For very large catalogs, gas cost grows linearly
     ///             across all three lists combined and the response may
-    ///             approach or exceed RPC return-size limits. Frontends
-    ///             rendering a known-large catalog should prefer the
-    ///             `*Slice` getters and paginate per type.
+    ///             approach or exceed RPC return-size limits. For a
+    ///             known-large catalog, prefer the `*Slice` getters and
+    ///             paginate per type.
     ///           - The arrays are independent; a token registered both
     ///             as `addToken(c, id)` and `addTokenRange(c, id, id)`
-    ///             appears in both `tokens` and `tokenRanges`. Treat
-    ///             pointer types as distinct sets, not as a single
-    ///             deduplicated collection.
+    ///             appears in both `tokens` and `tokenRanges`. Pointer
+    ///             types are distinct sets, not a single deduplicated
+    ///             collection.
     ///
-    ///         Reverts: none. Calling with `artist = address(0)` or any
-    ///         address with no entries returns three empty arrays.
+    ///         Reverts: none. `artist = address(0)` or any address with
+    ///         no entries returns three empty arrays.
     /// @param  artist           Artist whose catalog is being read.
     /// @return contracts        Array of contract pointers.
     /// @return tokens           Array of single-token pointers.
@@ -1050,10 +1042,9 @@ contract Catalog is Multicall {
     /// @notice Return the size of `artist`'s catalog across all three
     ///         pointer types in a single call.
     /// @dev    Cheaper than `getCatalogOf` when the caller only needs
-    ///         to know how big each list is, e.g. a summary header
-    ///         showing "12 contracts, 4 tokens, 1 range", an
-    ///         empty-state check, or a pagination-aware UI deciding
-    ///         how many `*Slice` pages to fetch.
+    ///         each list's length, e.g. a summary header, an empty-state
+    ///         check, or a paginating UI deciding how many `*Slice`
+    ///         pages to fetch.
     ///
     ///         Reverts: none. An address with no entries returns
     ///         `(0, 0, 0)`.
@@ -1080,21 +1071,21 @@ contract Catalog is Multicall {
     /// @notice Approve or revoke an operator for the caller. The
     ///         operator may then call any `*For` pointer function on
     ///         the caller's behalf.
-    /// @dev    Always emits `OperatorSet` even when the new value
-    ///         equals the existing value, uniform audit trail
-    ///         downstream. Only the artist itself may call; operators
-    ///         cannot sub-delegate (calling `setOperator` from an
-    ///         operator address sets that operator's own slot, not
-    ///         the artist's).
+    /// @dev    Always emits `OperatorSet`, including when the new value
+    ///         equals the existing value, for a uniform audit trail.
+    ///         Only the artist itself may call; operators cannot
+    ///         sub-delegate (calling `setOperator` from an operator
+    ///         address sets that operator's own slot, not the
+    ///         artist's).
     /// @param operator  Address being approved or revoked. Must be
     ///                  non-zero.
     /// @param approved  New value for `isOperator[msg.sender][operator]`.
     function setOperator(address operator, bool approved) external {
         if (operator == address(0)) revert InvalidOperator();
         // Scope is enforced by the `msg.sender` key: there is no
-        // `setOperatorFor(artist, …)`, so a caller can only mutate
-        // its own operator slot. An operator invoking this function
-        // sets *its own* operators, not the artist's.
+        // `setOperatorFor(artist, ...)`, so a caller can only mutate its
+        // own operator slot. An operator invoking this function sets its
+        // own operators, not the artist's.
         isOperator[msg.sender][operator] = approved;
         emit OperatorSet(msg.sender, operator, approved);
     }
