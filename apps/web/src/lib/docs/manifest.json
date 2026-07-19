@@ -52,10 +52,10 @@
           "title": "Concepts",
           "items": [
             {
-              "title": "The four slots",
+              "title": "Slots and modules",
               "slug": "four-slots",
               "path": "/docs/collections/concepts/four-slots",
-              "description": "Renderer, price strategy, mint hook, and extension minter, the swappable modules every collection composes from."
+              "description": "The renderer slot and the minter set on the token, plus the price-strategy slot inside the canonical minter."
             },
             {
               "title": "Id modes",
@@ -64,10 +64,10 @@
               "description": "Sequential and pooled, the two token id assignment models, fixed at init."
             },
             {
-              "title": "Mint Marks and entropy",
+              "title": "Seed and provenance",
               "slug": "mint-marks-and-entropy",
               "path": "/docs/collections/concepts/mint-marks-and-entropy",
-              "description": "The derived per-token provenance and the mint-time seed renderers draw from."
+              "description": "The one stored per-token fact, the mint-time seed, and the provenance that derives from the id and the Minted event."
             },
             {
               "title": "Types",
@@ -85,13 +85,19 @@
               "title": "Surface",
               "slug": "surface",
               "path": "/docs/collections/contracts/surface",
-              "description": "The one core of the PND Surface System: a single OpenZeppelin ERC721 that holds ownership, ETH payment paths, and per-token provenance, and nothing else."
+              "description": "The token core of the PND Surface System: an OpenZeppelin ERC721 that holds ownership, one mint-time seed per token, renderer wiring, EIP-2981 royalty, creator attribution, and the supply cap, and nothing else."
             },
             {
               "title": "SurfaceFactory",
               "slug": "factory",
               "path": "/docs/collections/contracts/factory",
-              "description": "SurfaceFactory deploys one [Surface](/docs/collections/contracts/surface) per work as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs."
+              "description": "SurfaceFactory deploys one [Surface](/docs/collections/contracts/surface) collection per call as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs."
+            },
+            {
+              "title": "FixedPriceMinter",
+              "slug": "fixed-price-minter",
+              "path": "/docs/collections/contracts/fixed-price-minter",
+              "description": "The canonical paid mint path of the Surface System: a fixed-price/referral minter for a sequential [Surface](/docs/collections/contracts/surface) collection, deployed as one immutable EIP-1167 clone per collection."
             },
             {
               "title": "DefaultRenderer",
@@ -112,52 +118,22 @@
               "description": "ScriptyRenderer is the **bring-your-own generative renderer template**: a concrete, forkable [IRenderer](/docs/collections/contracts/i-renderer) for Art Blocks-style script-based work, assembled fully onchain through ScriptyBuilderV2."
             },
             {
-              "title": "AllowlistHook",
-              "slug": "allowlist-hook",
-              "path": "/docs/collections/contracts/allowlist-hook",
-              "description": "A reference [mint hook](/docs/collections/contracts/i-mint-hook) gating minting to a Merkle allowlist, the standard shape for a presale."
-            },
-            {
-              "title": "PerWalletCapHook",
-              "slug": "per-wallet-cap-hook",
-              "path": "/docs/collections/contracts/per-wallet-cap-hook",
-              "description": "A reference [mint hook](/docs/collections/contracts/i-mint-hook) capping how many tokens any single wallet can mint from a collection, so a capped drop can't be bought out by one address in a single transaction (or across several)."
-            },
-            {
-              "title": "HoldsSurfaceHook",
-              "slug": "holds-surface-hook",
-              "path": "/docs/collections/contracts/holds-surface-hook",
-              "description": "A reference [mint hook](/docs/collections/contracts/i-mint-hook) gating a mint on the minter holding a token from another collection, typically an earlier collection by the same artist."
-            },
-            {
-              "title": "GateHook",
-              "slug": "gate-hook",
-              "path": "/docs/collections/contracts/gate-hook",
-              "description": "A reference [mint hook](/docs/collections/contracts/i-mint-hook) composing a Merkle allowlist and a per-wallet cap into ONE hook."
-            },
-            {
-              "title": "IMintHook",
-              "slug": "i-mint-hook",
-              "path": "/docs/collections/contracts/i-mint-hook",
-              "description": "IMintHook is the interface a contract implements to occupy a collection's hook slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [Surface](/docs/collections/contracts/surface) core."
-            },
-            {
               "title": "IPriceStrategy",
               "slug": "i-price-strategy",
               "path": "/docs/collections/contracts/i-price-strategy",
-              "description": "IPriceStrategy is the interface a contract implements to occupy a collection's price slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [Surface](/docs/collections/contracts/surface) core."
+              "description": "IPriceStrategy is the interface a contract implements to occupy the price slot inside a collection's minter, the optional pricing module on the canonical [FixedPriceMinter](/docs/collections/contracts/fixed-price-minter) (see the [slots and modules](/docs/collections/concepts/four-slots) overview)."
             },
             {
               "title": "IRenderer",
               "slug": "i-renderer",
               "path": "/docs/collections/contracts/i-renderer",
-              "description": "IRenderer is the interface a contract implements to occupy a collection's renderer slot, one of the [four swappable slots](/docs/collections/concepts/four-slots) on the [Surface](/docs/collections/contracts/surface) core."
+              "description": "IRenderer is the interface a contract implements to occupy a collection's renderer slot, the token's one swappable presentation slot (see [slots and modules](/docs/collections/concepts/four-slots)) on the [Surface](/docs/collections/contracts/surface) core."
             },
             {
               "title": "ISurfaceView",
               "slug": "i-surface-view",
               "path": "/docs/collections/contracts/i-surface-view",
-              "description": "ISurfaceView is the read surface a collection exposes for its swappable slots, [renderer](/docs/collections/contracts/i-renderer), [price strategy](/docs/collections/contracts/i-price-strategy), and any minter, to read without depending on the full [Surface](/docs/collections/contracts/surface) ABI."
+              "description": "ISurfaceView is the read surface a collection exposes for its [renderer](/docs/collections/contracts/i-renderer), a [price strategy](/docs/collections/contracts/i-price-strategy), and any minter to read without depending on the full [Surface](/docs/collections/contracts/surface) ABI."
             },
             {
               "title": "IPreviewRenderer",
@@ -175,31 +151,25 @@
               "title": "Deploy a collection",
               "slug": "deploy-a-collection",
               "path": "/docs/collections/guides/deploy-a-collection",
-              "description": "Call the factory to deploy an owned, immutable Surface clone, and what each config field controls."
+              "description": "Call the factory to deploy an owned, immutable Surface clone wired to a canonical minter in one transaction."
             },
             {
               "title": "Mint",
               "slug": "mint",
               "path": "/docs/collections/guides/mint",
-              "description": "The built-in paid mint paths, price resolution, sale windows, and the reverts to handle."
+              "description": "Minting through the canonical FixedPriceMinter, price resolution, sale windows, gates, and the reverts to handle."
             },
             {
               "title": "Write a minter",
               "slug": "write-a-minter",
               "path": "/docs/collections/guides/write-a-minter",
-              "description": "Implement an extension minter, get authorized via setMinter, and mint through mintTo or mintToId."
+              "description": "Implement a minter, get authorized via setMinter, and mint through the token's minter-gated mintTo or mintToId."
             },
             {
               "title": "Write a price strategy",
               "slug": "write-a-price-strategy",
               "path": "/docs/collections/guides/write-a-price-strategy",
-              "description": "Implement IPriceStrategy's view-only priceOf, install it with setPriceStrategy, and two worked examples."
-            },
-            {
-              "title": "Write a mint hook",
-              "slug": "write-a-mint-hook",
-              "path": "/docs/collections/guides/write-a-mint-hook",
-              "description": "Implement IMintHook's beforeMint/afterMint, install it with setMintHook, and the three reference hooks to start from."
+              "description": "Implement IPriceStrategy's view-only priceOf, install it on the minter with setPriceStrategy, and two worked examples."
             },
             {
               "title": "Write a renderer",

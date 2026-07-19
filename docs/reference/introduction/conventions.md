@@ -49,17 +49,18 @@ Write examples use [viem](https://viem.sh). ABIs come from the `@pin/abi`
 package or from `/abis/<ContractName>.json`:
 
 ```ts
-import {surfaceAbi} from '@pin/abi';
+import {fixedPriceMinterAbi} from '@pin/abi';
 import {createWalletClient, http} from 'viem';
 import {mainnet} from 'viem/chains';
 
 const client = createWalletClient({chain: mainnet, transport: http()});
 
 await client.writeContract({
-  address: '<COLLECTION_ADDRESS>',
-  abi: surfaceAbi,
+  address: '<MINTER_ADDRESS>',
+  abi: fixedPriceMinterAbi,
   functionName: 'mint',
-  args: [1n],
+  // (to, quantity, referrer, data)
+  args: [recipient, 1n, referrer, '0x'],
   value: priceWei,
 });
 ```
@@ -76,10 +77,11 @@ const abi = await fetch('/abis/Surface.json').then((r) => r.json());
 | --- | --- |
 | Collection | One artist's work, deployed as one `Surface` contract |
 | Clone | A collection's contract: an immutable EIP-1167 proxy pointing at the shared implementation |
-| Slot | One of the four swappable modules on a collection: renderer, price strategy, mint hook, extension minter |
+| Slot | A swappable module: the renderer slot on the token, and the price-strategy slot inside the canonical minter |
+| Minter | The mint engine a collection authorizes (`setMinter`); every mint goes through one, and it owns price, window, payment, referral, and gating |
 | Referrer | The address credited with hosting a mint (a frontend, a self-hosted page, or none) |
-| Referral share | The fixed 10% of the built-in-path price paid to the referrer (`REFERRAL_SHARE_BPS`) |
-| Mint mark | The per-token provenance stamped at mint time: mint order and mint block (the referrer and lifecycle status live on the `Minted` event, not in storage) |
+| Referral share | The fixed 10% of the price paid to the referrer by the canonical minter (`REFERRAL_SHARE_BPS`) |
+| Provenance | A token's mint order and first/final standing, derived from the id and the live config; the issuing minter and mint index are recorded on the `Minted` event, not in storage |
 | Entropy / seed | The per-token `bytes32` stamped at mint (`tokenSeed`), the source of randomness a generative renderer draws from |
 | Id mode | Whether a collection assigns ids itself (sequential) or takes minter-supplied ids (pooled), fixed at init |
 | Work / work config | The algorithm or asset definition a renderer executes: code refs, dependency refs, render spec, all defined inside the artist's own renderer |

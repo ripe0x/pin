@@ -25,10 +25,7 @@ interface ISurfaceView {
     function owner() external view returns (address);
     function totalSupply() external view returns (uint256);
     function tokenSeed(uint256 tokenId) external view returns (bytes32);
-    function config()
-        external
-        view
-        returns (SurfaceConfig memory cfg, SurfaceStatus status, uint256 minted);
+    function config() external view returns (SurfaceConfig memory cfg, uint256 minted);
     function idMode() external view returns (IdMode);
 }
 ```

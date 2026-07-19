@@ -101,5 +101,5 @@ Properties renderers and archives can rely on:
 - **The substrate, not the ceiling**: an algorithm wanting different seed
   semantics derives its own value from the canonical seed (any pure function
   of it), or records extra mint-time materials (block, recipient, pooled
-  order) with a one-line mint hook and reads them in a custom renderer —
-  the cost lands only on works that opt in
+  order) through its own minter and reads them in a custom renderer, so the
+  cost lands only on works that opt in
