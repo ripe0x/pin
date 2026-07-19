@@ -68,6 +68,15 @@ test("homage's own /collections/<address> page is immersive, any case, with trai
   assert.equal(chromeForPath(`/collections/${HOMAGE_COLLECTION}/`).navbar, "overlay-dark")
 })
 
+test("pre-deploy /collections/homage landing is immersive by slug (env-independent)", () => {
+  for (const seg of ["homage", "HOMAGE"]) {
+    const chrome = chromeForPath(`/collections/${seg}`)
+    assert.equal(chrome.navbar, "overlay-dark", `/collections/${seg}`)
+    assert.equal(chrome.footer, false)
+    assert.equal(chrome.padTop, false)
+  }
+})
+
 test("homage token detail + redeem sub-pages are immersive (one segment deep)", () => {
   for (const sub of ["redeem", "3104"]) {
     const chrome = chromeForPath(`/collections/${HOMAGE_COLLECTION}/${sub}`)

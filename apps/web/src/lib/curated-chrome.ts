@@ -55,9 +55,11 @@ export function chromeForPath(pathname: string): SiteChrome {
   // The homage collection's own page and its one-segment sub-pages (redeem and
   // each token detail: /collections/<pooled address>, .../redeem, .../<tokenId>)
   // are skinned and immersive, matching /mint/homage. Deeper routes (e.g. a
-  // token's /live doc) fall through to standard chrome.
+  // token's /live doc) fall through to standard chrome. The literal `homage`
+  // slug is the pre-deploy landing (/collections/homage), immersive in the same
+  // way before the pooled address exists.
   const c = pathname.match(/^\/collections\/([^/]+)(?:\/[^/]+)?\/?$/)?.[1]?.toLowerCase()
-  if (c && HOMAGE_COLLECTION !== "" && c === HOMAGE_COLLECTION) {
+  if (c && (c === "homage" || (HOMAGE_COLLECTION !== "" && c === HOMAGE_COLLECTION))) {
     return IMMERSIVE_CHROME
   }
   return DEFAULT_CHROME
