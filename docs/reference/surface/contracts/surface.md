@@ -2,7 +2,9 @@
 
 # Surface
 
-> Deployed per artist as an EIP-1167 clone through the [factory](/docs/surface/contracts/factory). There is no single canonical address; substitute your collection address for `<COLLECTION_ADDRESS>` in the examples below.
+Implementation not yet deployed to Ethereum mainnet; the address lands here at launch.
+
+> Deployed per artist as an EIP-1167 clone of the implementation above through the [factory](/docs/surface/contracts/factory). A collection has no canonical address of its own; substitute your collection address for `<COLLECTION_ADDRESS>` in the examples below.
 
 Sequential-id ERC721 collection: the token core of the PND Surface System. It
 stores ownership, one seed per token, the renderer pointer, the EIP-2981 royalty,

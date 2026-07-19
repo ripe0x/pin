@@ -2,7 +2,9 @@
 
 # FixedPriceMinter
 
-> Deployed per collection as an EIP-1167 clone: [`createSurface`](/docs/surface/contracts/factory#createsurface) wires one automatically and `SurfaceCreated.minter` records it. There is no single canonical address; substitute your collection's minter address for `<MINTER_ADDRESS>` in the examples below.
+Implementation not yet deployed to Ethereum mainnet; the address lands here at launch.
+
+> Deployed per collection as an EIP-1167 clone of the implementation above: [`createSurface`](/docs/surface/contracts/factory#createsurface) wires one automatically and `SurfaceCreated.minter` records it. A minter clone has no canonical address of its own; substitute your collection's minter address for `<MINTER_ADDRESS>` in the examples below.
 
 Fixed-price minter for a sequential [Surface](/docs/surface/contracts/surface)
 collection, deployed as one EIP-1167 clone per collection.
