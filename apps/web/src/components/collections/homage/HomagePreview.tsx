@@ -15,8 +15,8 @@ import {FitHeadline} from "./FitHeadline"
 import {HomageReservation} from "./HomageReservation"
 import {AllowlistCheck} from "@/components/mint/homage-gallery/AllowlistCheck"
 import {CrossfadeArt} from "@/components/mint/homage-gallery/CrossfadeArt"
-import {useLocalArt, useLocalSample} from "@/components/mint/homage-gallery/local"
-import {makeDealer, type Piece} from "@/components/mint/homage-gallery/gallery-deck"
+import {useSyntheticArt, useSyntheticSample} from "@/components/mint/homage-gallery/local"
+import {weightedStatus} from "@/components/mint/homage-gallery/gallery-deck"
 import {accessories, trait} from "@/components/mint/homage-gallery/svg"
 import {statusByCode} from "@/components/mint/homage-gallery/status"
 
@@ -27,7 +27,9 @@ const TARGET_CELL = 200 // cell px; columns derive from width
 const GAP = 8
 const SAMPLE_PX = 2000 // SVG intrinsic size, so copied/saved sample art is large
 
-type Tile = Piece & {key: number}
+// A synthetic sample: a seed (drives colors + ring structure) and a market ground.
+type Sample = {seed: number; status: number}
+type Tile = Sample & {key: number}
 
 // About copy — the long-form record shown while there's no onchain contractURI to
 // read. First block is the lead (no heading, the masthead already names the work).
@@ -192,18 +194,26 @@ export function HomagePreview() {
   )
 }
 
-// The sample wall: a deck-dealt quilt of locally-rendered homages, withheld ids, a
-// featured lead cell, and a click-to-enlarge detail view. Regenerate re-deals a
-// fresh spread. Every render is local (punks SDK) — zero RPC.
+// The sample wall: a quilt of synthetic homages (novel colors sampled from the
+// collection's real ratios — no real punk), with a click-to-enlarge detail view.
+// Regenerate re-deals fresh seeds. Every render is local — zero RPC.
 function SampleWall() {
   const [tiles, setTiles] = useState<Tile[]>([])
-  const [focus, setFocus] = useState<Piece | null>(null)
+  const [focus, setFocus] = useState<Sample | null>(null)
   const nextKey = useRef(0)
 
-  const deal = useCallback((): Tile[] => {
-    const draw = makeDealer()
-    return Array.from({length: POOL}, (): Tile => ({...draw(), key: nextKey.current++}))
-  }, [])
+  const deal = useCallback(
+    (): Tile[] =>
+      Array.from(
+        {length: POOL},
+        (): Tile => ({
+          seed: Math.floor(Math.random() * 0xffffffff),
+          status: weightedStatus(),
+          key: nextKey.current++,
+        }),
+      ),
+    [],
+  )
 
   // First deal is client-side only (Math.random), never during SSR render.
   useEffect(() => setTiles(deal()), [deal])
@@ -220,12 +230,12 @@ function SampleWall() {
         </button>
       </div>
       <Quilt tiles={tiles} onFocus={setFocus} />
-      {focus && <FocusOverlay piece={focus} onClose={() => setFocus(null)} />}
+      {focus && <FocusOverlay sample={focus} onClose={() => setFocus(null)} />}
     </div>
   )
 }
 
-function Quilt({tiles, onFocus}: {tiles: Tile[]; onFocus: (p: Piece) => void}) {
+function Quilt({tiles, onFocus}: {tiles: Tile[]; onFocus: (s: Sample) => void}) {
   const [width, setWidth] = useState(0)
   const ref = useCallback((el: HTMLDivElement | null) => {
     if (!el) return
@@ -254,7 +264,7 @@ function Quilt({tiles, onFocus}: {tiles: Tile[]; onFocus: (p: Piece) => void}) {
         }}
       >
         {visible.map((t) => (
-          <WallTile key={t.key} tile={t} onFocus={() => onFocus({id: t.id, status: t.status})} />
+          <WallTile key={t.key} tile={t} onFocus={() => onFocus({seed: t.seed, status: t.status})} />
         ))}
       </div>
     </div>
@@ -262,7 +272,7 @@ function Quilt({tiles, onFocus}: {tiles: Tile[]; onFocus: (p: Piece) => void}) {
 }
 
 function WallTile({tile, onFocus}: {tile: Tile; onFocus: () => void}) {
-  const {src} = useLocalArt(tile.id, tile.status, SAMPLE_PX)
+  const {src} = useSyntheticArt(tile.seed, tile.status, SAMPLE_PX)
   return (
     <button
       onClick={onFocus}
@@ -274,11 +284,11 @@ function WallTile({tile, onFocus}: {tile: Tile; onFocus: () => void}) {
   )
 }
 
-// The work large on its own ground, with its traits but never its number (which
-// punk it is stays the draw). Click or Esc closes.
-function FocusOverlay({piece, onClose}: {piece: Piece; onClose: () => void}) {
-  const {src, meta} = useLocalSample(piece.id, piece.status, SAMPLE_PX)
-  const ground = statusByCode(piece.status).color
+// The synthetic homage large on its own ground, with its color count + market state.
+// Click or Esc closes.
+function FocusOverlay({sample, onClose}: {sample: Sample; onClose: () => void}) {
+  const {src, meta} = useSyntheticSample(sample.seed, sample.status, SAMPLE_PX)
+  const ground = statusByCode(sample.status).color
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose()
@@ -291,7 +301,7 @@ function FocusOverlay({piece, onClose}: {piece: Piece; onClose: () => void}) {
         trait(meta, "Punk Type"),
         ...accessories(meta),
         `${trait(meta, "Color Count")} colors`,
-        statusByCode(piece.status).label,
+        statusByCode(sample.status).label,
       ].filter(Boolean)
     : []
 
