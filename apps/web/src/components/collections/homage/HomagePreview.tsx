@@ -25,6 +25,7 @@ const META = "text-[10px] font-mono uppercase tracking-wider text-gray-400"
 const POOL = 40 // tiles dealt; the grid renders a whole-row multiple of the column count
 const TARGET_CELL = 200 // cell px; columns derive from width
 const GAP = 8
+const SAMPLE_PX = 2000 // SVG intrinsic size, so copied/saved sample art is large
 
 type Tile = Piece & {key: number}
 
@@ -261,7 +262,7 @@ function Quilt({tiles, onFocus}: {tiles: Tile[]; onFocus: (p: Piece) => void}) {
 }
 
 function WallTile({tile, onFocus}: {tile: Tile; onFocus: () => void}) {
-  const {src} = useLocalArt(tile.id, tile.status)
+  const {src} = useLocalArt(tile.id, tile.status, SAMPLE_PX)
   return (
     <button
       onClick={onFocus}
@@ -276,7 +277,7 @@ function WallTile({tile, onFocus}: {tile: Tile; onFocus: () => void}) {
 // The work large on its own ground, with its traits but never its number (which
 // punk it is stays the draw). Click or Esc closes.
 function FocusOverlay({piece, onClose}: {piece: Piece; onClose: () => void}) {
-  const {src, meta} = useLocalSample(piece.id, piece.status)
+  const {src, meta} = useLocalSample(piece.id, piece.status, SAMPLE_PX)
   const ground = statusByCode(piece.status).color
 
   useEffect(() => {
