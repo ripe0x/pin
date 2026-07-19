@@ -4,9 +4,9 @@ pragma solidity ^0.8.24;
 import {ISurfaceCore} from "./ISurfaceCore.sol";
 
 /// @title ISurface
-/// @notice Sequential ERC721 collection: token id equals mint order (1, 2, 3,
-///         ...); burned ids are not reused. Built-in paid mint entrypoints
-///         below; no id-choosing entrypoint.
+/// @notice Sequential ERC721 collection: ids auto-increment from 1 and are not
+///         reused after a burn. Built-in paid mint entrypoints; an authorized
+///         minter can also mint via mintTo.
 interface ISurface is ISurfaceCore {
     // ── mint: built-in paid paths (value custody stays in the core) ─────────
     /// @notice Mints with no referrer, so the artist receives the full price.

@@ -8,9 +8,8 @@ import {SurfaceStatus, IdMode} from "./SurfaceTypes.sol";
 import {IPriceStrategy} from "./interfaces/IPriceStrategy.sol";
 
 /// @title Surface
-/// @notice Sequential ERC721 collection: token id equals mint order (1, 2, 3,
-///         ...). Burned ids are not reused, so the supply cap bounds total
-///         mints, not live supply. Paid mint entrypoints are below; an
+/// @notice Sequential ERC721 collection: ids auto-increment from 1 and are not
+///         reused after a burn. Built-in paid mint entrypoints below; an
 ///         authorized minter can also mint via mintTo.
 contract Surface is SurfaceCore, ISurface {
     function idMode() public pure override(SurfaceCore, ISurfaceCore) returns (IdMode) {
