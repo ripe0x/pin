@@ -33,24 +33,9 @@ protocol charge beyond what each contract's reference documents.
   token, or a token-id range); the Surface System reads it for the creator half
   of collection attribution
 
-More protocols join this reference as they ship.
-
-## How this reference is organized
-
-- Each protocol section opens with an **Overview**, then **Concepts** (the model
-  behind the contracts), **Contracts** (the per-contract API), **Guides**
-  (how to do a thing), and **Reference** (generated access-control, error, and
-  event indexes for that protocol)
-- [Addresses](/docs/introduction/addresses) lists the shared singletons of every
-  protocol on Ethereum mainnet
-- [Conventions](/docs/introduction/conventions) covers how to read examples,
-  addresses, and terms
-- [Off-chain](/docs/offchain/abis-and-manifest) covers the machine-readable
-  outputs: served ABIs, the protocol manifest, and the agent orientation file
-
 ## Status
 
-The protocols are pre-deploy. Shared-singleton addresses land in
+Auctions and Catalog are live on Ethereum mainnet; their addresses are in
 [Addresses](/docs/introduction/addresses) and the
-[protocol manifest](/protocol-manifest.json) at launch; until then, examples use
-placeholder addresses.
+[protocol manifest](/protocol-manifest.json). The Surface System is pre-deploy,
+so its singleton addresses are placeholders until launch.

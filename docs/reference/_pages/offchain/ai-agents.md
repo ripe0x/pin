@@ -112,6 +112,6 @@ const [cfg, minted] = await client.readContract({
 - Deploying and running an auction house: [Deploy an auction house](/docs/auctions/guides/deploy-an-auction-house) and [Run an auction](/docs/auctions/guides/run-an-auction)
 - Watching auction activity: subscribe to `AuctionCreated`, `AuctionBid`, and `AuctionEnded` on the house, documented on [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house)
 
-## Pre-deploy status
+## Deployment status
 
-The protocols are pre-deploy: every address above is a placeholder until launch, and `/protocol-manifest.json` carries `null` addresses until then. Contract and interface behavior in this reference reflects the code as written.
+Catalog and the auction house factory are live on Ethereum mainnet, with real addresses in `/protocol-manifest.json`. The Surface System is pre-deploy: its singleton addresses are `null` in the manifest and placeholders in examples until launch.

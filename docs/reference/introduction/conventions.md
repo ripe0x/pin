@@ -10,39 +10,26 @@ Every address and transaction link in this reference points at
 - Address: `https://evm.now/address/<address>?chainId=1`
 - Transaction: `https://evm.now/tx/<hash>?chainId=1`
 
-Shared-singleton addresses (the factory, `DefaultRenderer`, `RenderAssets`)
-are written as `{{addr:<key>}}` placeholders in the source of this reference
-and substituted with the real mainnet address once each contract is deployed.
-A per-artist collection clone has no fixed address; examples use
-`<COLLECTION_ADDRESS>` instead.
+A shared-singleton address is written as a `{{addr:<key>}}` placeholder in the
+source and substituted with the real mainnet address (a deployed singleton
+resolves; a Surface singleton stays a placeholder until launch). A per-owner
+clone (a collection, an auction house) has no fixed address; examples use
+`<COLLECTION_ADDRESS>` or `<AUCTION_HOUSE_ADDRESS>`.
 
 ## Currency and units
 
-The currency label is always **ETH**, never the glyph. Amounts read from the
-contracts are wei unless stated otherwise. `bps` means basis points out of
-10,000; the referral share, `REFERRAL_SHARE_BPS`, is `1000` (10%).
+Amounts read from the contracts are wei unless stated otherwise. `bps` means
+basis points out of 10,000; the referral share, `REFERRAL_SHARE_BPS`, is `1000`
+(10%).
 
-## Onchain is one word
+## Examples
 
-This reference writes "onchain" as a single word throughout, never hyphenated.
-
-## Pre-deploy examples
-
-The protocols are pre-deploy: no per-owner clone (a collection, an auction
-house) exists yet, and the shared singletons are not yet at their mainnet
-addresses. Read examples in this reference use `cast` (Foundry) against a
-free public RPC, with a placeholder like `<COLLECTION_ADDRESS>` or
-`<AUCTION_HOUSE_ADDRESS>` standing in for a clone's address once one exists:
+Read examples use `cast` (Foundry) against a free public RPC. A singleton uses
+the `{{addr:...}}` form; a per-owner clone uses a placeholder address:
 
 ```bash
+cast call 0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f "totalHouses()(uint256)" --rpc-url https://ethereum-rpc.publicnode.com
 cast call <COLLECTION_ADDRESS> "totalSupply()(uint256)" --rpc-url https://ethereum-rpc.publicnode.com
-```
-
-Where an example reads a shared singleton, it uses the `{{addr:...}}` form
-so the address resolves automatically once deployed:
-
-```bash
-cast call <SURFACE_FACTORY_ADDRESS> "implementation()(address)" --rpc-url https://ethereum-rpc.publicnode.com
 ```
 
 Write examples use [viem](https://viem.sh). ABIs come from the `@pin/abi`

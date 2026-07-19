@@ -136,8 +136,8 @@ const factory = getContract({address: entry.address, abi, client});
 const total = await factory.read.totalSurfaces();
 ```
 
-## Pre-deploy status
+## Deployment status
 
-The protocols are pre-deploy. Every address in `/protocol-manifest.json` is `null` until launch; contract behavior documented in this reference reflects the code as written, not a live deployment. Once deployed, addresses populate the manifest and every `{{addr:...}}` placeholder across this reference resolves automatically.
+Catalog and the auction house factory are deployed on Ethereum mainnet; their addresses are populated in `/protocol-manifest.json` and resolved in every `{{addr:...}}` placeholder. The Surface System is pre-deploy: its singleton addresses are `null` in the manifest and stay placeholders until launch, at which point they populate automatically.
 
 See [AI agents](/docs/offchain/ai-agents) for task-oriented recipes using these surfaces.
