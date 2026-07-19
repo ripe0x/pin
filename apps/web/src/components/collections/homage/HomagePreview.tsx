@@ -115,30 +115,29 @@ export function HomagePreview() {
                 ))}
               </div>
             ))}
-
-            {/* Schedule — the three windows, all upcoming until times are announced. */}
-            <div className="space-y-3 border-t border-gray-200 pt-6">
-              <h3 className={META}>Mint schedule</h3>
-              <ul className="space-y-2">
-                {WINDOWS.map((w) => (
-                  <li
-                    key={w.name}
-                    className="flex items-baseline justify-between gap-4 text-[11px] font-mono tabular-nums"
-                  >
-                    <span className="flex items-center gap-2">
-                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-status-upcoming" />
-                      <span className="text-fg">{w.name}</span>
-                      <span className="hidden text-gray-500 sm:inline">· {w.detail}</span>
-                    </span>
-                    <span className="shrink-0 text-gray-400">announced at launch</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
           </div>
 
           <div className="mx-auto w-full max-w-[556px] px-6 py-10 lg:px-12 lg:py-12">
             <div className="mx-auto w-full max-w-[460px] space-y-6">
+              {/* Mint schedule — the three windows, all upcoming until times are announced. */}
+              <div className="space-y-3 rounded-lg border border-gray-200 bg-surface p-5">
+                <h3 className={META}>Mint schedule</h3>
+                <ul className="space-y-2.5">
+                  {WINDOWS.map((w) => (
+                    <li key={w.name} className="space-y-0.5">
+                      <div className="flex items-baseline justify-between gap-3 text-[11px] font-mono">
+                        <span className="flex items-center gap-2">
+                          <span className="inline-block h-1.5 w-1.5 rounded-full bg-status-upcoming" />
+                          <span className="text-fg">{w.name}</span>
+                        </span>
+                        <span className="shrink-0 text-gray-400">announced at launch</span>
+                      </div>
+                      <p className="pl-3.5 text-[10px] font-mono text-gray-500">{w.detail}</p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
               {/* Coming-soon instrument — the live mint card's shell in its not-yet-open state. */}
               <section className="overflow-hidden rounded-lg border border-gray-200 bg-surface">
                 <div className="space-y-4 p-5">
