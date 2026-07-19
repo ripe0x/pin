@@ -233,24 +233,108 @@ PR with tests as a first-class deliverable, not a trailing phase.
 6. **ABI uniformity risk.** *Mitigated:* the standardized `IMinter` shape plus
    the canonical minter keep "how do I mint this?" a single answer.
 
-## 7. Open decisions (resolve in Phase 0)
+## 7. Phase 0 decisions
 
-1. **Gate composition.** One `FixedPriceMinter` with allowlist + per-wallet cap
-   as optional config, or small composable minters (`AllowlistMinter`,
-   `CappedMinter`) plus multi-minter authorization? Leaning: one configurable
-   canonical minter for the common case, siblings for the rest.
-2. **`IPriceStrategy` retention.** Keep the external strategy hook inside the
-   canonical minter (TBAM-shaped pricing), or fixed-price-only in canonical and
-   strategies as separate minters? Leaning: keep it inside, it is cheap.
-3. **Multi-minter policy on sequential.** Allow N concurrent minters (Zora
-   model) from launch, or single-minter everywhere for v1 simplicity and open
-   multi later? Leaning: allow N on sequential, keep pooled single.
-4. **Minter immutability.** Cloneable immutable minters (matching the immutable
-   token clones) vs a shared singleton minter keyed by collection? Leaning:
-   immutable clones, consistent with the token trust story.
-5. **Homage retirement scope** (Phase 4): fully collapse `SovereignCollection`
-   onto the platform token, or keep it as a thin subclass? Leaning: collapse if
-   behavior is identical after the token thins out.
+> Recommendations below await owner sign-off before Phase 1 opens. Each is
+> one-way once deployed. Format: decision, rationale, consequence.
+
+### 7.1 Gate composition
+
+**Decision:** the canonical `FixedPriceMinter` carries the two common gates,
+**Merkle allowlist** and **per-wallet cap**, as optional config, AND-composed in
+the one contract. Rarer gates (`holds-a-token`, signature) ship as sibling
+minters. Multi-minter authorization (7.3) is the separate OR axis.
+
+**Rationale:** gate composition has two distinct axes and they need different
+mechanisms. **AND** ("allowlisted *and* under the per-wallet cap") only works if
+both checks run in the *same* mint call, i.e. the same contract. This is exactly
+why `GateHook` had to exist under model A (one hook slot forced bundling). Two
+separately authorized minters cannot AND a single sale; each is its own
+entrypoint, so authorizing `AllowlistMinter` and `CappedMinter` side by side
+gives a buyer an ungated path through whichever is looser. **OR** ("a public
+sale *or* a separate allowlist presale") is the multi-minter case: two distinct
+sales on one collection, each its own minter. So the common AND-pair belongs
+inside one minter; the OR axis is multi-minter.
+
+**Consequence:** `GateHook` is deleted (its reason to exist was the single hook
+slot). `AllowlistHook` + `PerWalletCapHook` logic is absorbed into the canonical
+minter. `HoldsSurfaceHook` becomes `HoldsSurfaceMinter` (or a composed gate).
+
+### 7.2 IPriceStrategy retention
+
+**Decision:** keep the external `IPriceStrategy` inside the canonical minter.
+Fixed `price` when the strategy slot is unset; a set strategy overrides it,
+read once and reused for the settle (the current read-once safety).
+
+**Rationale:** it is one optional slot and a single view call, and it preserves
+TBAM-shaped / time-based pricing the platform may want without a separate minter
+lineage. The read-once-reuse pattern that protects value conservation is already
+audited; it ports unchanged into the minter. Fragmenting dynamic pricing into
+separate minters buys nothing here.
+
+**Consequence:** `IPriceStrategy` survives as a minter-level interface. The
+value-conservation invariant suite (7.4-independent) covers both the fixed and
+strategy branches inside the minter.
+
+### 7.3 Multi-minter on sequential
+
+**Decision:** sequential collections may authorize **N concurrent minters** from
+launch. Pooled collections stay **single-minter** (owner-only
+`setMinter`/`lockMinter`, `#150` M-01), unchanged.
+
+**Rationale:** composing sale mechanics is the point of going modular;
+restricting sequential to one minter for a "simpler v1" discards the core
+benefit and forces a later widening. Sequential id assignment is append-only and
+the token hands out the next id, so concurrent minters cannot collide on ids,
+and the token enforces the supply cap across all of them centrally. The token
+already models a minter *set* (`_minters` mapping), so this is the natural shape,
+not an addition. Pooled must stay single because its minter can custody real
+backing value, where a second minter is a burn/backing hazard.
+
+**Consequence:** "who can mint this collection" is a set, not a scalar, for
+sequential. Frontends enumerate authorized minters. Cap accounting stays on the
+token precisely so it holds across all minters.
+
+### 7.4 Minter immutability
+
+**Decision:** immutable **EIP-1167 clones per collection**, matching the
+immutable token clones. No shared singleton minter.
+
+**Rationale:** value isolation. A per-collection clone holds only that
+collection's transient balance (unclaimed refunds and payouts under the
+pull-payment), so a bug or drain is scoped to one collection, not the whole
+platform. A shared singleton keyed by collection pools every collection's ETH in
+one contract: a larger honeypot and a per-collection-keyed accounting surface
+that is easier to get wrong. The factory already deploys a clone per collection
+in its one-transaction wiring (3.5), so the per-collection deploy cost is already
+budgeted and the singleton's only advantage (skip the clone) is the cost PND is
+willing to pay for isolation. It also keeps the same immutable-clone trust story
+as the token.
+
+**Consequence:** each collection has its own minter address. Minter evolution is
+by factory-offered new implementations, never by mutating a deployed minter,
+mirroring the token.
+
+### 7.5 Homage retirement scope
+
+**Decision (target):** fully collapse `SovereignCollection` onto the platform
+thin token so Homage becomes "the platform token + `HomageMinter`", with the
+subclass deleted. **Contingent** on a Phase 4 diff of `SovereignCollection`
+against the thinned `PooledSurface`: if the only differences are behaviors that
+now live in `HomageMinter`, delete the subclass; if there is genuine
+token-level bespoke behavior (a burn rule, a render hook the base lacks), keep a
+minimal thin subclass instead.
+
+**Rationale:** the entire duplication this proposal removes is the two parallel
+token stacks. Once the platform token thins out, `SovereignCollection` and
+`PooledSurface` should be the same object. Keeping a subclass that adds nothing
+is the exact duplication to delete. But the call cannot be finalized without the
+concrete diff, which only exists after Phase 1 thins the token.
+
+**Consequence:** Phase 4 owns the diff and the final subclass-or-collapse call;
+this decision fixes the *target* (collapse) and the test (is there token-level
+bespoke behavior). `SovereignCollection` lives in `ripe0x/permanence`, so
+Phase 4 spans both repos.
 
 ## 8. Non-goals
 
