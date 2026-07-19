@@ -1,9 +1,20 @@
 # Surface: re-audit notes (post-`43f4ae7`)
 
-> **Purpose.** A running log of changes made to the collection contracts
-> AFTER the audited baseline, so a re-review can be done against this
-> single doc once the batch of changes is complete. Append one section
-> per change. Nothing here has been reviewed yet.
+> **CLOSED 2026-07-19. This log's baseline is superseded.** Everything
+> below tracks changes on top of the fat-token `43f4ae7` baseline. The
+> thin-token + modular-minter rearchitecture (merged to `main` in PR #164,
+> `571a7a1`) replaced the fat token entirely: sale economics left the token
+> for a separate `FixedPriceMinter`, so the fat-token audit baseline no
+> longer describes deployed code. Do not scope a review against this file.
+> The current external-audit scope is **`docs/pnd-surface-audit-scope.md`**,
+> anchored at the post-rearchitecture baseline. This file is retained as the
+> provenance record of what the two prior reviews covered (the parts that
+> carry forward are listed in the scope doc's "inherited" section).
+
+> **Purpose (historical).** A running log of changes made to the collection
+> contracts AFTER the audited baseline, so a re-review could be done against
+> this single doc once the batch of changes was complete. One section per
+> change.
 >
 > **Audited baseline: commit `43f4ae7`** (`fix(collection): security-audit
 > fixes`). That commit applies the notes from **two independent security
