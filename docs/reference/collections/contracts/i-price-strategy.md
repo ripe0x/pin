@@ -4,14 +4,14 @@
 
 > Interface (ABI only), not a deployed contract. Implement it to install a custom pricing module in the price slot.
 
-IPriceStrategy is the interface a contract implements to occupy a
-collection's price slot, one of the
-[four swappable slots](/docs/collections/concepts/four-slots) on the
-[Surface](/docs/collections/contracts/surface) core. A price
-strategy is a view only: the core reads the price and keeps custody of
-funds itself, so a strategy can never introduce a theft or reentrancy path.
-When a collection's price strategy slot is unset, its stored fixed price
-applies instead.
+IPriceStrategy is the interface a contract implements to occupy the price
+slot inside a collection's minter, the optional pricing module on the
+canonical [FixedPriceMinter](/docs/collections/contracts/fixed-price-minter)
+(see the [slots and modules](/docs/collections/concepts/four-slots)
+overview). A price strategy is a view only: the minter reads the price and
+keeps custody of funds itself, so a strategy can never introduce a theft or
+reentrancy path. When the minter's price-strategy slot is unset, its stored
+fixed price applies instead.
 
 A strategy may read anything available to a view function: `block.basefee`,
 companion contract state such as lock counters or attestations, or the
@@ -34,7 +34,7 @@ view; returns the total price in wei for `quantity` tokens minted by
 rather than read from `msg.sender`, so a single strategy instance can serve
 many collections. `data` forwards whatever mint data the caller supplied,
 for example a tier selector, and its interpretation is entirely
-strategy-defined. When a collection's `priceStrategy` slot holds this
-contract's address, the core calls `priceOf` on every paid mint and treats
+strategy-defined. When the minter's `priceStrategy` slot holds this
+contract's address, the minter calls `priceOf` on every paid mint and treats
 the return value as the total amount owed for the requested quantity, not a
 per-token price.

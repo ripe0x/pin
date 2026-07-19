@@ -15,8 +15,9 @@ explicitly and read everything they need back through
 
 DefaultRenderer covers the static-artwork case: one image per token (either
 a per-token override or the collection's shared cover), with the token's
-[Mint Mark](/docs/collections/concepts/mint-marks-and-entropy) surfaced as
-derived provenance attributes for sequential-id collections. A collection
+[provenance](/docs/collections/concepts/mint-marks-and-entropy) (mint order,
+first/final standing) surfaced as derived attributes for sequential-id
+collections. A collection
 that wants unique-per-token generative art points its renderer slot at a
 purpose-built [IRenderer](/docs/collections/contracts/i-renderer) the artist
 deploys (a bring-your-own generative renderer) instead.
@@ -58,10 +59,10 @@ For sequential-id collections the token id is the mint order (ids assigned
 1, 2, 3..., never reused), so the renderer emits a numeric `Mint Order`
 trait equal to the token id, a `Provenance` trait "First mint of the
 collection" on token 1, and a `Provenance` trait "Final mint of the
-collection" on the highest id once the collection reads Closed. Pooled ids
-are not mint order, so pooled-mode collections get an empty `attributes`
-array; a pooled work wanting mint-time traits records its own data via a
-mint hook and reads it in a custom renderer. These are provenance
+collection" on the highest id once the collection mints out against a set
+cap. Pooled ids are not mint order, so pooled-mode collections get an empty
+`attributes` array; a pooled work wanting mint-time traits records its own
+data through its minter and reads it in a custom renderer. These are provenance
 attributes, not rarity traits; DefaultRenderer draws no trait data from the
 work itself. The collection name and the image URI are JSON-escaped per
 RFC 8259 before being embedded, so an owner-controlled name or artwork URI

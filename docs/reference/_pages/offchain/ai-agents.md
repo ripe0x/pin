@@ -28,8 +28,14 @@ Both protocols deploy per owner. Every artist collection is its own `Surface` cl
 The collection factory emits one event per deploy:
 
 ```solidity
-event SurfaceCreated(address indexed owner, address indexed collection, IdMode idMode);
+event SurfaceCreated(address indexed owner, address indexed collection, address minter, IdMode idMode);
 ```
+
+The `minter` field is the collection-to-minter binding: for a `createSurface`
+deploy it is the canonical [FixedPriceMinter](/docs/collections/contracts/fixed-price-minter)
+clone the factory wired, and it is `address(0)` when the caller supplied its own
+minter (`createSurfaceCustom`, `createPooledSurface`). Read it to know where a
+collection's mint calls go.
 
 ```ts
 import {createPublicClient, webSocket, parseAbiItem} from 'viem';
@@ -39,9 +45,9 @@ const client = createPublicClient({chain: mainnet, transport: webSocket()});
 
 client.watchEvent({
   address: '{{addr:surfaceFactory}}',
-  event: parseAbiItem('event SurfaceCreated(address indexed owner, address indexed collection, uint8 idMode)'),
+  event: parseAbiItem('event SurfaceCreated(address indexed owner, address indexed collection, address minter, uint8 idMode)'),
   onLogs: (logs) => {
-    for (const log of logs) console.log('new collection', log.args.collection, 'by', log.args.owner);
+    for (const log of logs) console.log('new collection', log.args.collection, 'by', log.args.owner, 'minter', log.args.minter);
   },
 });
 ```
@@ -76,11 +82,12 @@ cast call {{addr:auctionHouseFactory}} "isHouse(address)(bool)" 0xSomeAddress --
 
 ```bash
 cast call <COLLECTION_ADDRESS> "totalSupply()(uint256)" --rpc-url https://ethereum-rpc.publicnode.com
-cast call <COLLECTION_ADDRESS> "currentPrice(address,uint256,bytes)(uint256)" 0x0000000000000000000000000000000000000000 1 0x --rpc-url https://ethereum-rpc.publicnode.com
+cast call <MINTER_ADDRESS> "priceOf(address,uint256,bytes)(uint256)" 0x0000000000000000000000000000000000000000 1 0x --rpc-url https://ethereum-rpc.publicnode.com
 cast call <AUCTION_HOUSE_ADDRESS> "getAuctionFor(address,uint256)(bool,uint256)" <COLLECTION_ADDRESS> 1 --rpc-url https://ethereum-rpc.publicnode.com
 ```
 
-Or via viem with the typed ABI:
+The price lives on the minter, not the token; get `<MINTER_ADDRESS>` from the
+collection's `SurfaceCreated.minter`. Or via viem with the typed ABI:
 
 ```ts
 import {createPublicClient, http} from 'viem';
@@ -89,7 +96,7 @@ import {surfaceAbi} from '@pin/abi';
 
 const client = createPublicClient({chain: mainnet, transport: http('https://ethereum-rpc.publicnode.com')});
 
-const [cfg, status, minted] = await client.readContract({
+const [cfg, minted] = await client.readContract({
   address: '<COLLECTION_ADDRESS>',
   abi: surfaceAbi,
   functionName: 'config',

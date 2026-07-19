@@ -36,14 +36,21 @@ Four entry points, all served as static JSON:
           "kind": "clone",
           "abi": "/abis/Surface.json",
           "docs": "/docs/collections/contracts/surface",
-          "role": "The one core of the PND Surface System..."
+          "role": "The thin ERC721 token core of the PND Surface System..."
         },
         "SurfaceFactory": {
           "address": "{{addr:surfaceFactory}}",
           "kind": "singleton",
           "abi": "/abis/SurfaceFactory.json",
           "docs": "/docs/collections/contracts/factory",
-          "role": "Deploys and configures Surface clones"
+          "role": "Deploys a Surface clone and its canonical minter in one transaction"
+        },
+        "FixedPriceMinter": {
+          "address": null,
+          "kind": "clone",
+          "abi": "/abis/FixedPriceMinter.json",
+          "docs": "/docs/collections/contracts/fixed-price-minter",
+          "role": "The canonical fixed-price/referral minter, one clone per collection"
         }
       }
     },
@@ -68,13 +75,13 @@ Four entry points, all served as static JSON:
 
 ABIs are served under `/abis/` for every contract and interface across the protocols:
 
-Collections core and factory: `Surface`, `SurfaceFactory`
+Collections token, factory, and canonical minter: `Surface`, `SurfaceFactory`, `FixedPriceMinter`
 
 Collections shared singletons: `DefaultRenderer`, `RenderAssets`
 
-Collections reference mint hooks: `AllowlistHook`, `PerWalletCapHook`, `HoldsSurfaceHook`
+Collections renderer template: `ScriptyRenderer`
 
-Collections slot interfaces: `IMintHook`, `IPriceStrategy`, `IRenderer`, `ISurfaceView`
+Collections slot and view interfaces: `IPriceStrategy`, `IRenderer`, `ISurfaceView`, `IPreviewRenderer`
 
 Auctions: `SovereignAuctionHouse`, `SovereignAuctionHouseFactory`
 
@@ -85,10 +92,9 @@ Fetch any of these directly, e.g. `/abis/Surface.json`, or import the typed vers
 Every ABI is also shipped as a typed TypeScript export in the `@pin/abi` workspace package, `as const` for viem/wagmi type inference:
 
 ```ts
-import {surfaceAbi, surfaceFactoryAbi} from '@pin/abi';
-import {defaultRendererAbi, renderAssetsAbi} from '@pin/abi';
-import {allowlistHookAbi, perWalletCapHookAbi, holdsSurfaceHookAbi} from '@pin/abi';
-import {iMintHookAbi, iPriceStrategyAbi, iRendererAbi, iSurfaceViewAbi} from '@pin/abi';
+import {surfaceAbi, surfaceFactoryAbi, fixedPriceMinterAbi} from '@pin/abi';
+import {defaultRendererAbi, renderAssetsAbi, scriptyRendererAbi} from '@pin/abi';
+import {iPriceStrategyAbi, iRendererAbi, iSurfaceViewAbi, iPreviewRendererAbi} from '@pin/abi';
 import {sovereignAuctionHouseAbi, sovereignAuctionHouseFactoryAbi} from '@pin/abi';
 ```
 

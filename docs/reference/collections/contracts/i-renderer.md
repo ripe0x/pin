@@ -5,8 +5,8 @@
 > Interface (ABI only), not a deployed contract. Implement it to install a custom renderer in the renderer slot.
 
 IRenderer is the interface a contract implements to occupy a collection's
-renderer slot, one of the
-[four swappable slots](/docs/collections/concepts/four-slots) on the
+renderer slot, the token's one swappable presentation slot (see
+[slots and modules](/docs/collections/concepts/four-slots)) on the
 [Surface](/docs/collections/contracts/surface) core. A
 collection's `tokenURI` and `contractURI` delegate to whatever renderer sits
 in its renderer slot. The collection address is an explicit parameter on
@@ -48,4 +48,5 @@ collection's own `tokenURI` when this renderer occupies its renderer slot,
 and callable directly off-chain against any collection this renderer
 supports. Implementations typically read the token's data through
 [ISurfaceView](/docs/collections/contracts/i-surface-view) on `collection`, its
-seed, Mint Mark, work config, and so on, to build the returned metadata.
+seed, mint order and other derived provenance, and so on, to build the
+returned metadata.

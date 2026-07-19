@@ -19,11 +19,12 @@ Prices and fees are what the contract charges, nothing hidden.
 ## The protocols
 
 - [Collections](/docs/collections/overview): artist-owned ERC721 collections
-  built on one core with four swappable slots (renderer, price, mint hook,
-  extension minter), per-token entropy, and one-way locks over the renderer
-  pointer and the supply. Presentation data lives in renderer-land. Editions,
-  generative drops, onchain SVG works, and backed or redeemable works are all
-  the same core with different modules plugged into the same sockets
+  built on a thin token core where every mint goes through an authorized minter,
+  with a renderer slot, per-token entropy, and one-way locks over the renderer
+  pointer, the supply, and the minter set. Sale economics live in the minter;
+  presentation data lives in renderer-land. Editions, generative drops, onchain
+  SVG works, and backed or redeemable works are all the same core with different
+  minters and renderers attached
 - [Auctions](/docs/auctions/overview): a per-owner onchain English-auction
   house for any ERC721, including a collection token. Reserve pricing, an
   anti-snipe time-buffer extension, pull-payment refunds, and a protocol fee
