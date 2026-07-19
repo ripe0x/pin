@@ -7,17 +7,14 @@ import {ISurfaceCore} from "./interfaces/ISurfaceCore.sol";
 import {SurfaceStatus, IdMode} from "./SurfaceTypes.sol";
 
 /// @title PooledSurface
-/// @notice Pooled collection form, for backed and sourced collections where the
-///         token id has meaning outside this contract (tokenId == sourceId).
-///         The authorized minter owns the id pool: it chooses every id and is
-///         the only address that can burn. Holds one minter at a time and can
-///         freeze it via lockMinter, so tokens cannot be affected by another
-///         minter outside the pool's own economics. A burned id may be minted
-///         again as a new instance with a fresh seed; the prior instance's
-///         history remains in the event log.
+/// @notice Pooled ERC721 collection where the token id has meaning outside this
+///         contract (tokenId == sourceId). The authorized minter chooses every
+///         id and is the only address that can burn. Holds one minter at a time
+///         and can freeze it via lockMinter, so another minter cannot affect
+///         these tokens. A burned id may be minted again as a new instance with
+///         a fresh seed; the prior instance's history remains in the event log.
 ///
-///         Has no public sale entrypoint; a pooled collection sells through its
-///         minter. That absence is the structural guarantee.
+///         No built-in paid mint entrypoint; mints go through the minter.
 contract PooledSurface is SurfaceCore, IPooledSurface {
     function idMode() public pure override(SurfaceCore, ISurfaceCore) returns (IdMode) {
         return IdMode.Pooled;
