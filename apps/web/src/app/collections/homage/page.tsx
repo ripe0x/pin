@@ -8,16 +8,17 @@ import "@/components/mint/homage-gallery/homage-gallery.css"
 import "../[address]/homage-skin.css"
 
 /**
- * /collections/homage — the stable homage landing URL. This static segment
- * shadows the [address] dynamic route (Next resolves static before dynamic), so
- * it serves the homage page whether or not a mainnet collection exists yet.
+ * /collections/homage — the stable homage landing URL, shared before launch.
  *
- * Pre-deploy (NEXT_PUBLIC_HOMAGE_COLLECTION_ADDRESS unset): render the coming-soon
- * landing with zero RPC — there is no onchain collection to read.
+ * Pre-deploy (NEXT_PUBLIC_HOMAGE_COLLECTION_ADDRESS unset): this static segment
+ * shadows the [address] dynamic route and renders the coming-soon landing with
+ * zero RPC — there is no onchain collection to read.
  *
- * Post-launch (address set): redirect to /collections/<address>, which detects
- * the homage minter onchain and renders the same terminal skin. Launch is the env
- * flip; this route stays as the permanent entry point rather than being deleted.
+ * Post-launch (address set): a `beforeFiles` rewrite (next.config.ts) serves the
+ * live /collections/<address> page AT this URL, so the shared link keeps working
+ * and stays canonical (no redirect to the raw address). The redirect below is a
+ * defensive fallback for the case the rewrite isn't applied; normally the rewrite
+ * pre-empts this component post-deploy.
  */
 
 const HOMAGE_COLLECTION_ADDRESS = process.env.NEXT_PUBLIC_HOMAGE_COLLECTION_ADDRESS
