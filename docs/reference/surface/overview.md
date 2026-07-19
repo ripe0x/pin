@@ -101,21 +101,5 @@ token or the canonical minter. A custom minter sets its own terms.
 
 ## Status
 
-The Surface System is pre-deploy. Contract and interface behavior in this
-reference reflects the code as written; the shared-singleton addresses below
-are placeholders until launch.
-
-## Where to go next
-
-- [Conventions](/docs/introduction/conventions): how to read the rest of this
-  reference: address links, cast/viem examples, glossary
-- [Slots and modules](/docs/surface/concepts/four-slots),
-  [Id modes](/docs/surface/concepts/id-modes),
-  [Seed and provenance](/docs/surface/concepts/mint-marks-and-entropy),
-  [Types](/docs/surface/concepts/types): the concept pages
-- [Surface](/docs/surface/contracts/surface),
-  [SurfaceFactory](/docs/surface/contracts/factory),
-  [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter): the
-  contract references, generated from the ABI
-- [Deploy a collection](/docs/surface/guides/deploy-a-collection),
-  [Mint](/docs/surface/guides/mint): task-oriented guides
+The Surface System is pre-deploy; the shared-singleton addresses are
+placeholders until launch.

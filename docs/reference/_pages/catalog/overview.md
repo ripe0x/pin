@@ -36,9 +36,3 @@ that creator claims the collection by calling `addContract(collection)` on the
 Catalog from their own address. `isConfirmedCreator` on the collection is true
 only when both sides hold, and reads the Catalog live, so either side can
 retract.
-
-## Reference
-
-- [Catalog](/docs/catalog/contracts/catalog): the full contract reference,
-  including the direct and operator write paths, the read and pagination
-  getters, `multicall` batching, and the events and errors

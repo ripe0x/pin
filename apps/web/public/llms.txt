@@ -6,13 +6,13 @@ Machine-readable addresses + ABIs: https://pnd.ripe.wtf/protocol-manifest.json (
 
 ## Introduction
 
-- [Overview](https://pnd.ripe.wtf/docs/introduction/overview): The onchain protocols PND ships for artists, and how this reference is organized.
+- [Overview](https://pnd.ripe.wtf/docs/introduction/overview): The onchain protocols PND ships for artists.
 - [Addresses](https://pnd.ripe.wtf/docs/introduction/addresses): The shared singletons of each PND onchain protocol, with ABI and reference links.
 - [Conventions](https://pnd.ripe.wtf/docs/introduction/conventions): How to read examples, addresses, and terms across this reference.
 
 ## Surface
 
-- [Overview](https://pnd.ripe.wtf/docs/surface/overview): What the PND Surface System is, its parts, and how this reference is organized.
+- [Overview](https://pnd.ripe.wtf/docs/surface/overview): What the PND Surface System is and its parts.
 - [Slots and modules](https://pnd.ripe.wtf/docs/surface/concepts/four-slots): The renderer slot and the minter set on the token, plus the price-strategy slot inside the canonical minter.
 - [Id modes](https://pnd.ripe.wtf/docs/surface/concepts/id-modes): Sequential and pooled, the two token id assignment models, fixed at init.
 - [Seed and provenance](https://pnd.ripe.wtf/docs/surface/concepts/mint-marks-and-entropy): The one stored per-token fact, the mint-time seed, and the provenance that derives from the id and the Minted event.

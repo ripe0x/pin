@@ -15,7 +15,7 @@ Four entry points, all served as static JSON:
 
 ## The protocol manifest
 
-`/protocol-manifest.json` is the single machine-readable root. It groups every contract under its protocol (`collections`, `auctions`, and more as they ship), and for each carries the address, ABI path, docs link, and the contract "kind" (a `singleton` factory or shared module, a per-owner `clone` template, or an ABI-only `interface`). Per-owner clones (an artist collection, an auction house) aren't individually listed, since there is no fixed set of them; discover them through the relevant factory instead (see [AI agents](/docs/offchain/ai-agents)).
+`/protocol-manifest.json` is the single machine-readable root. It groups every contract under its protocol (`surface`, `auctions`, `catalog`), and for each carries the address, ABI path, docs link, and the contract "kind" (a `singleton` factory or shared module, a per-owner `clone` template, or an ABI-only `interface`). Per-owner clones (an artist collection, an auction house) aren't individually listed, since there is no fixed set of them; discover them through the relevant factory instead (see [AI agents](/docs/offchain/ai-agents)).
 
 ```json
 {
@@ -121,7 +121,7 @@ import {mainnet} from 'viem/chains';
 const ORIGIN = 'https://pnd.ripe.wtf';
 
 const manifest = await fetch(`${ORIGIN}/protocol-manifest.json`).then((r) => r.json());
-const entry = manifest.protocols.collections.contracts.SurfaceFactory;
+const entry = manifest.protocols.surface.contracts.SurfaceFactory;
 const abi = await fetch(`${ORIGIN}${entry.abi}`).then((r) => r.json());
 
 const client = createPublicClient({

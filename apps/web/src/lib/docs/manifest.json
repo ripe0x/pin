@@ -13,7 +13,7 @@
               "title": "Overview",
               "slug": "overview",
               "path": "/docs/introduction/overview",
-              "description": "The onchain protocols PND ships for artists, and how this reference is organized."
+              "description": "The onchain protocols PND ships for artists."
             },
             {
               "title": "Addresses",
@@ -43,7 +43,7 @@
               "title": "Overview",
               "slug": "overview",
               "path": "/docs/surface/overview",
-              "description": "What the PND Surface System is, its parts, and how this reference is organized."
+              "description": "What the PND Surface System is and its parts."
             }
           ]
         },
