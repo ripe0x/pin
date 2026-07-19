@@ -7,45 +7,38 @@ import {ISurfaceCore} from "./interfaces/ISurfaceCore.sol";
 import {SurfaceStatus, IdMode} from "./SurfaceTypes.sol";
 
 /// @title PooledSurface
-/// @notice The pooled collection: for backed and sourced forms where the
-///         token id means something outside this contract (tokenId ==
-///         sourceId). The authorized minter owns the id pool: it chooses
-///         every id, and it alone can burn. The form holds one minter at a
-///         time and can freeze it (lockMinter), so a backed collection's
-///         tokens can never be stranded by some other minter reaching in from
-///         outside the pool's own economics. A burned id may mint again as a
-///         new instance with a fresh seed; the old instance's history stays in
-///         the log.
-///
-///         There is no public sale entrypoint anywhere in this contract; a
-///         pooled work sells through its minter. The absence is the rule.
+/// @notice ERC721 collection with minter-assigned ids (tokenId == sourceId):
+///         one authorized minter at a time chooses every id and is the only
+///         address that can burn; lockMinter freezes it permanently. A burned
+///         id can be minted again as a new instance with a fresh seed. No
+///         built-in paid mint; minting goes through the minter.
 contract PooledSurface is SurfaceCore, IPooledSurface {
     function idMode() public pure override(SurfaceCore, ISurfaceCore) returns (IdMode) {
         return IdMode.Pooled;
     }
 
-    /// @dev The cap bounds LIVE supply: a burn frees room. The structural
-    ///      bound is the pool itself, enforced by the minter.
+    /// @dev Cap bounds live supply; a burn frees capacity. The structural bound
+    ///      is the pool itself, enforced by the minter.
     function _capUsage() internal view override returns (uint256) {
         return totalSupply();
     }
 
-    /// @dev A full pooled cap never closes the collection: the next burn
-    ///      opens it again.
+    /// @dev A filled pooled cap never closes the collection; the next burn frees
+    ///      capacity again.
     function _capFilled() internal pure override returns (bool) {
         return false;
     }
 
-    /// @dev Minters only, and (enforced by the core for the pooled id mode) a
-    ///      single minter at a time, freezable via lockMinter. The minter
-    ///      issues and retires; holders redeem through it, never around it.
+    /// @dev Minters only. The core enforces a single minter at a time for the
+    ///      pooled id mode, freezable via lockMinter. The minter mints and
+    ///      burns; holders redeem through it.
     function _burnAuthorized(address, uint256) internal view override returns (bool) {
         return _minters[msg.sender];
     }
 
-    /// @notice Authorized minters only: mint a specific id (id 0 is legal).
+    /// @notice Authorized minters only: mint a specific id (id 0 is valid).
     ///         Hooks and the cap apply; the sale window does not, since the
-    ///         minter owns its own schedule.
+    ///         minter controls its own schedule.
     function mintToId(address to, uint256 tokenId, address referrer, bytes calldata hookData)
         external
         override

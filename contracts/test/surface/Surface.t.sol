@@ -940,14 +940,31 @@ contract SurfaceTest is SurfaceBase {
         factory.createSurface("Nope", "NOP", artist, _freeConfig(), none, none);
     }
 
-    // ── renounceOwnership disabled ────────────────────────────────────────────
+    // ── renounceOwnership ─────────────────────────────────────────────────────
 
-    function test_renounceOwnership_disabled() public {
+    function test_renounceOwnership_setsOwnerToZero() public {
         Surface c = _collection(_pricedConfig(1 ether));
         vm.prank(artist);
-        vm.expectRevert(ISurfaceCore.RenounceDisabled.selector);
+        c.renounceOwnership();
+        assertEq(c.owner(), address(0));
+    }
+
+    function test_renounceOwnership_onlyOwner() public {
+        Surface c = _collection(_pricedConfig(1 ether));
+        vm.prank(stranger);
+        vm.expectRevert();
         c.renounceOwnership();
         assertEq(c.owner(), artist);
+    }
+
+    function test_renounceOwnership_freezesManagement() public {
+        Surface c = _collection(_pricedConfig(1 ether));
+        vm.prank(artist);
+        c.renounceOwnership();
+        // No owner: owner-or-admin management is uncallable.
+        vm.prank(artist);
+        vm.expectRevert();
+        c.setPrice(2 ether);
     }
 
     // ── Ownable2Step ─────────────────────────────────────────────────────────

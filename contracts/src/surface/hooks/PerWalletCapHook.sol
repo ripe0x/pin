@@ -5,8 +5,7 @@ import {HookBase} from "./HookBase.sol";
 import {IMintHook} from "../interfaces/IMintHook.sol";
 
 /// @title PerWalletCapHook
-/// @notice Caps how many tokens one wallet can mint from a collection, so a
-///         capped drop cannot be bought out by a single address. The
+/// @notice Caps how many tokens one wallet can mint from a collection. The
 ///         collection sets the cap; the hook counts per (collection, minter).
 contract PerWalletCapHook is HookBase {
     mapping(address => uint256) public capOf; // collection => per-wallet cap (0 = unlimited)
@@ -35,7 +34,7 @@ contract PerWalletCapHook is HookBase {
         return IMintHook.beforeMint.selector;
     }
 
-    /// @dev Count only after the mint succeeds (afterMint runs post-payment).
+    /// @dev Counts only after the mint succeeds (afterMint runs post-payment).
     function afterMint(address minter, uint256 quantity, uint256, address, bytes calldata) external override {
         mintedBy[msg.sender][minter] += quantity;
     }

@@ -8,27 +8,23 @@ import {SurfaceStatus, IdMode} from "./SurfaceTypes.sol";
 import {IPriceStrategy} from "./interfaces/IPriceStrategy.sol";
 
 /// @title Surface
-/// @notice A collection whose token id is its mint order: ids are assigned
-///         1, 2, 3, ... and are never reused after a burn, so an edition of
-///         100 stays 100 for the life of the contract. Collectors buy through
-///         the paid paths below; an authorized minter can also mint through
-///         mintTo on its own schedule.
+/// @notice Sequential-id ERC721 collection.
 contract Surface is SurfaceCore, ISurface {
     function idMode() public pure override(SurfaceCore, ISurfaceCore) returns (IdMode) {
         return IdMode.Sequential;
     }
 
-    /// @dev The cap bounds mints EVER: burning a token does not free a seat.
+    /// @dev Cap bounds total mints ever; burning a token does not free capacity.
     function _capUsage() internal view override returns (uint256) {
         return _mintedEver;
     }
 
-    /// @dev A full cap closes the collection for good.
+    /// @dev A filled cap closes the collection permanently.
     function _capFilled() internal view override returns (bool) {
         return _cfg.supplyCap != 0 && _mintedEver >= _cfg.supplyCap;
     }
 
-    /// @dev The standard rule: the holder, or someone the holder approved.
+    /// @dev Burn allowed for the token holder or an address the holder approved.
     function _burnAuthorized(address tokenOwner, uint256 tokenId) internal view override returns (bool) {
         return _isAuthorized(tokenOwner, msg.sender, tokenId);
     }
@@ -37,13 +33,13 @@ contract Surface is SurfaceCore, ISurface {
     // Mint: built-in paid paths (value custody stays here)
     // ─────────────────────────────────────────────────────────────────────────
 
-    /// @notice Simple mint. No referrer, so the artist keeps the full price.
+    /// @notice Mint with no referrer; the referral share accrues to the artist.
     function mint(uint256 quantity) external payable override nonReentrant {
         _mintPaid(msg.sender, quantity, address(0), "");
     }
 
-    /// @notice Mint crediting `referrer` its share. referrer 0 folds the
-    ///         share back to the artist. `hookData` reaches the hook and the
+    /// @notice Mint crediting `referrer` its share. referrer 0 accrues the
+    ///         share to the artist. `hookData` is passed to the hook and the
     ///         price strategy.
     function mintWithReferral(uint256 quantity, address referrer, bytes calldata hookData)
         external
@@ -54,11 +50,11 @@ contract Surface is SurfaceCore, ISurface {
         _mintPaid(msg.sender, quantity, referrer, hookData);
     }
 
-    /// @notice Paid mint to someone else: same paid path and price, only the
-    ///         recipient differs. The event records the true first owner.
-    ///         `to` is who the hook and the price strategy judge (an
-    ///         allowlist gates the collector, not their payer); any
-    ///         overpayment refund accrues to the payer.
+    /// @notice Paid mint to a different recipient: same path and price, only
+    ///         the recipient differs. The Minted event records the first owner
+    ///         as `to`. `to` is the address the hook and price strategy
+    ///         evaluate (an allowlist gates the recipient, not the payer). Any
+    ///         overpayment refund accrues to the payer (msg.sender).
     function mintFor(address to, uint256 quantity, address referrer, bytes calldata hookData)
         external
         payable
@@ -74,11 +70,11 @@ contract Surface is SurfaceCore, ISurface {
         if (_cfg.mintEnd != 0 && block.timestamp >= _cfg.mintEnd) revert MintEnded();
         _checkCap(quantity);
 
-        // Fixed price: exact match, honest pricing. With a strategy set the
-        // price can move between quote and inclusion (basefee terms), so
-        // accept >= and accrue the excess back to the payer. `required` is
-        // read from the strategy exactly once and reused for the settle, so a
-        // misbehaving strategy can never split money the contract never got.
+        // Fixed price: require exact match. With a strategy set, the price can
+        // move between quote and inclusion (basefee terms), so accept >= and
+        // accrue the excess to the payer. `required` is read from the strategy
+        // once and reused for the settle, so a misbehaving strategy cannot
+        // split value the contract never received.
         uint256 required;
         address strategy = _cfg.priceStrategy;
         if (strategy == address(0)) {
@@ -114,10 +110,9 @@ contract Surface is SurfaceCore, ISurface {
     // ─────────────────────────────────────────────────────────────────────────
 
     /// @notice Authorized minters only. Non-payable: the calling minter
-    ///         carries all value handling. Hooks and the cap apply exactly as
-    ///         on the paid path; the sale window does not, since an extension
-    ///         minter owns its own schedule, and the artist's lever is
-    ///         revoking the grant.
+    ///         handles all value. Hooks and the cap apply as on the paid path;
+    ///         the sale window does not, since an extension minter controls its
+    ///         own schedule. The artist's control is revoking the grant.
     function mintTo(address to, address referrer, bytes calldata hookData)
         external
         override

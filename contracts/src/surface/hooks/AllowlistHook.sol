@@ -8,7 +8,7 @@ import {IMintHook} from "../interfaces/IMintHook.sol";
 
 /// @title AllowlistHook
 /// @notice Gates minting to a Merkle allowlist (presale). The collection sets
-///         a root; the minter brings a proof in `hookData`. Leaves use the
+///         a root; the minter passes a proof in `hookData`. Leaves use the
 ///         OpenZeppelin standard-merkle-tree format
 ///         (keccak256(bytes.concat(keccak256(abi.encode(account))))), so the
 ///         standard JS tooling produces compatible proofs.
