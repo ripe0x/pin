@@ -20,7 +20,7 @@ subset of this interface that renderer actually reads.
 ### config
 
 ```solidity
-function config() external view returns (SurfaceConfig cfg, SurfaceStatus status, uint256 minted)
+function config() external view returns (SurfaceConfig cfg, uint256 minted)
 ```
 
 view; the live collection configuration, the derived lifecycle status

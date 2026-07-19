@@ -4,128 +4,105 @@ title: Surface
 
 # summary
 
-The one core of the PND Surface System: a single OpenZeppelin ERC721 that
-holds ownership, ETH payment paths, and per-token provenance, and nothing else.
-Every artist gets their own copy, deployed as an immutable EIP-1167 clone by
-[the factory](/docs/collections/contracts/factory). There is no proxy admin, no upgrade path,
-and no seal: what deploys is what runs. The upgradeable-variant OZ bases are used
-only for the initializer pattern that clones require.
+The token core of the PND Surface System: an OpenZeppelin ERC721 that holds
+ownership, one mint-time seed per token, renderer wiring, EIP-2981 royalty,
+creator attribution, and the supply cap, and nothing else. Every artist gets
+their own copy, deployed as an immutable EIP-1167 clone by
+[the factory](/docs/collections/contracts/factory). There is no proxy admin
+and no upgrade path: what deploys is what runs. The upgradeable-variant OZ
+bases are used only for the initializer pattern that clones require.
 
-All variability lives in [four swappable slots](/docs/collections/concepts/four-slots):
-renderer, price strategy, mint hook, and a set of authorized extension minters.
-The core keeps money custody on the built-in paid mint paths, so a price strategy
-(a view) or a mint hook (non-payable) can never introduce a theft or reentrancy
-path. Payment is honest: the collector pays exactly the resolved price. A fixed
-protocol Referral Share of 10% (`REFERRAL_SHARE_BPS = 1000`) is paid out of that
-price to whoever hosts the mint, and folds back to the artist on a direct mint.
+The token holds no sale logic and no money. It has no payable function, and
+its mint path runs no external code: every mint enters through an authorized
+minter calling the non-payable `mintTo` (sequential form) or `mintToId`
+(pooled form), and price, mint window, payment, referral, and gating all live
+in that minter. The common case is the
+[FixedPriceMinter](/docs/collections/contracts/fixed-price-minter) clone the
+factory wires at creation; bespoke projects grant their own minter contract
+instead. The artist's lever over any minter is `setMinter` (revoke the grant)
+and `lockMinter` (freeze the set permanently).
 
-Each minted token carries its own identity: mint-time entropy read via
-`tokenSeed`, the one per-token fact that can never be reconstructed later. All
-other provenance derives or is event-stamped: in Sequential mode the token id IS
-the mint order, and every `Minted` event permanently records the order, the
-referrer, and the lifecycle status at that moment. The
-[id mode](/docs/collections/concepts/id-modes) is fixed at init: Sequential (the
-core assigns ids, never reused after burn) or Pooled (an authorized minter
-supplies ids, and a burned id can be minted again as a fresh instance). Every
-sale term is a live setting (window, price, royalty, supply cap). The core
-stores NO presentation data: `tokenURI`/`contractURI` defer wholly to the
-renderer slot, with any generative work config living in the artist's own
-renderer and static images in [RenderAssets](/docs/collections/contracts/render-assets).
-Two one-way locks cover the state the core actually owns: `lockRenderer` (pin
-the renderer pointer, optional) and `lockSupply` (the scarcity promise). Payment accrues as
-pull-payment balances claimed through `withdraw`; no external transfer happens
-during a mint, so a reverting recipient can never brick minting.
+What the token does own, it can lock one-way: `lockRenderer` pins the
+tokenURI source, `lockSupply` freezes the cap that bounds every mint path,
+and `lockMinter` freezes who may mint. Per-token provenance is the seed read
+via `tokenSeed`, mint-time entropy that cannot be reconstructed later, plus
+the `Minted` event, which records the issuing minter, recipient, id range,
+and global mint index for every mint.
 
 # concepts
 
-### The four slots
+### Thin token, modular minter
 
-The core delegates all variable behavior to four slots the owner or an admin can
-point at external contracts:
-
-- `renderer` supplies `tokenURI` and `contractURI`; unset falls back to
-  `defaultRenderer`, which is set at init and never zero
-- `priceStrategy` supplies the resolved price on the built-in paid path; unset
-  means the stored fixed `price` applies
-- `mintHook` runs `beforeMint` (which can reject) and `afterMint` on every mint
-  path, built-in and extension alike
-- extension minters are addresses granted via `setMinter` that may call `mintTo`
-  or `mintToId`, carrying their own economics
-
-See [the four-slots concept](/docs/collections/concepts/four-slots) and the
-[minter guide](/docs/collections/guides/write-a-minter).
+The token trusts a minter for exactly one thing: permission to call
+`mintTo`/`mintToId`. It does not prescribe minter internals. The token-side
+guarantees hold across all minters: the supply cap bounds every path, id
+assignment follows the form, and every mint emits `Minted` with the calling
+minter recorded. Sale-side guarantees (what was paid, to whom, under what
+gate) are each minter's own contract surface; see
+[FixedPriceMinter](/docs/collections/contracts/fixed-price-minter) for the
+canonical one and the
+[minter guide](/docs/collections/guides/write-a-minter) for writing your own.
 
 ### Owner and admins
 
-The owner (the artist) is the root of authority and may grant flat, full-access
-admin keys with `addAdmin`. An admin can call every management function the owner
-can except managing the admin set and transferring ownership, which stay
-owner-only. Admin access is real power — an admin can redirect payouts and
-freeze metadata — so grants are explicit, evented, and revocable at any time.
+The owner (the artist) is the root of authority and may grant admin keys with
+`addAdmin`. An admin can call every management function the owner can except
+managing the admin set, transferring ownership, and (on the pooled form)
+changing the minter set. A grant is scoped to the owner that made it: an
+ownership transfer invalidates every existing grant, so a new owner starts
+with no admins. Companion contracts reuse this authority: the canonical
+minter's config setters check the collection's `owner()`/`isAdmin`, so one
+keyring governs both contracts.
 
 ### Creator attribution
 
-Attribution is a two-sided, fully onchain handshake — no shared registry. The
-owner LISTS creators on the collection (`setCreators`, mutable) — their
-assertion of who made the work. Each listed creator CONFIRMS by claiming the
-collection in the Catalog (the artist-record public good) from their own
-address. `isConfirmedCreator(who)` is the live intersection: listed AND
-claimed. Neither side can fake the other — a rando can't be listed, and a
-listed non-participant never claims — so credit is squat- and
-false-credit-proof, and reading the Catalog live means retracting either side
-cleanly revokes it. `owner()` is the deployer and is understood as a creator
-without listing; listing is for co-creators.
+Attribution is a two-sided onchain handshake with no shared registry write.
+The owner lists creators on the collection (`setCreators`, mutable), which is
+an assertion only. Each listed creator confirms by claiming the collection in
+the Catalog from their own address. `isConfirmedCreator(who)` is the live
+intersection: listed and claimed. Either side can retract and the
+confirmation follows, since nothing is stored. `owner()` is understood as a
+creator without listing; listing is for co-creators and explicit records.
 
 ### Id modes
 
-The id mode is fixed at init and governs how ids are assigned and who can mint
-and burn. See [id modes](/docs/collections/concepts/id-modes).
+The id mode is fixed per contract form, not configurable; `idMode()` reports
+which. See [id modes](/docs/collections/concepts/id-modes).
 
-- Sequential: the core assigns `nextId++` (first id is 1). The built-in paid
-  paths (`mint`, `mintWithReferral`) work only here. `mintTo` assigns the next id.
-  The supply cap bounds mints ever, so a burn never frees a new slot. `burn` is
-  the standard owner-or-approved burn
-- Pooled: an authorized extension minter supplies every id through `mintToId`
-  (`tokenId == sourceId` forms, id 0 is legal). The built-in paid paths revert.
-  A burned id can be minted again as a NEW instance with a fresh Mint Mark and
-  fresh entropy; the prior instance's history persists in events. The supply cap
-  bounds live supply. `burn` is minter-only
+- Sequential (`Surface`): the contract assigns ids 1, 2, 3, ... in mint
+  order, so the token id is the mint order. Ids are never reused after a
+  burn, and the supply cap bounds mints ever. `mintTo` is batch-native: one
+  call mints a contiguous id range with one `Minted` event. `burn` is the
+  standard owner-or-approved burn
+- Pooled (`PooledSurface`): the authorized minter chooses every id through
+  `mintToId` (`tokenId == sourceId` forms; id 0 is legal). A burned id can be
+  minted again as a new instance with a fresh seed. The supply cap bounds
+  live supply, and `burn` is minter-only. The pooled form holds one minter at
+  a time
 
-### Mint Marks and entropy
+### Seed
 
-Every mint stamps one `bytes32` of entropy derived from `prevrandao`, the
-collection address, the token id, the recipient, and the mint index — read it
-with `tokenSeed`. That seed is the only per-token storage: it can never be
-retrofitted (randomness only exists at mint time), and a nonzero seed doubles as
-the was-ever-minted sentinel. The Mint Mark itself is fully derived: in
-Sequential mode the token id IS the mint order (first = id 1; final = the
-collection is Closed and the id equals the minted count), and the `Minted` event
-permanently records order, referrer, and status for indexers. A work whose art
-or mechanics need other mint-time data (the mint block, pooled order) records it
-to its own storage with a one-line mint hook — the cost lands only on works that
-opt in. The seed is `prevrandao`-derived: acceptable unpredictability for art,
-not for lotteries. See
-[mint marks and entropy](/docs/collections/concepts/mint-marks-and-entropy).
-
-### Lifecycle status
-
-The collection's status — `Scheduled` (before `mintStart`), `Open`, or `Closed`
-(past `mintEnd`, or a full sequential cap) — is derived purely from the mint
-window, the supply cap, and the clock. Nothing stores it: `config()` reports it
-live, and each `Minted` event stamps the value at mint time. Reschedule the
-window with `setMintWindow` and the status follows.
+Every mint stamps one `bytes32` of entropy, read with `tokenSeed`:
+`keccak256(prevrandao, collection, tokenId, mintIndex)`, per
+`docs/injection-convention.md`. It is the only per-token storage, and a
+nonzero seed doubles as the was-ever-minted sentinel. The recipient address
+is excluded from the formula, so entropy does not depend on the minter and
+there is no wallet-grinding surface. Derived from `prevrandao`: acceptable
+unpredictability for art, not for lotteries. Works whose mechanics need
+other mint-time data (the mint block, pooled order) record it in their own
+minter; the mint block of any token is the `Minted` log's block.
 
 ### Permanence
 
-The core locks only what it owns. `lockRenderer` (optional, off by default)
-permanently pins the renderer pointer; `lockSupply` permanently freezes the
-supply cap — the scarcity promise, binding extension minters too. Everything
-presentation-side is the renderer's own offer: a bring-your-own generative
-renderer makes its own permanence promise (deployed immutable, or with its own
-one-way lock), so pointer lock + an immutable renderer = full presentation
-permanence. The core cannot attest an arbitrary renderer's internals — a
-custom renderer's mutability is the artist's inspectable choice, not the
-core's promise.
+Three one-way locks cover the state the token owns. `lockRenderer`
+(optional) pins the renderer pointer permanently; the token cannot attest a
+renderer's internals, so a locked pointer plus an immutable renderer is full
+presentation permanence, while a mutable renderer behind a locked pointer
+remains changeable within that renderer. `lockSupply` freezes the supply
+cap, the scarcity promise; the cap binds every mint path, so no later minter
+grant can exceed it. `lockMinter` freezes the minter set; for a backed
+pooled collection this guarantees no minter can be swapped in later to
+retire another minter's backed tokens.
 
 ### Live reads
 
@@ -134,299 +111,222 @@ core's promise.
 cast call <COLLECTION_ADDRESS> "totalSupply()(uint256)" \
   --rpc-url https://ethereum-rpc.publicnode.com
 
-# The fixed referral share in bps (1000 = 10%)
-cast call <COLLECTION_ADDRESS> "referralShareBps()(uint16)" \
+# The active renderer
+cast call <COLLECTION_ADDRESS> "renderer()(address)" \
   --rpc-url https://ethereum-rpc.publicnode.com
 
-# Resolved price for 1 token, no extra data
-cast call <COLLECTION_ADDRESS> "currentPrice(address,uint256,bytes)(uint256)" \
-  0x0000000000000000000000000000000000000000 1 0x \
+# Whether an address may mint
+cast call <COLLECTION_ADDRESS> "isMinter(address)(bool)" <MINTER_ADDRESS> \
   --rpc-url https://ethereum-rpc.publicnode.com
 ```
 
-The address lands at launch; the Surface System is pre-deploy, so the examples
-above use a `<COLLECTION_ADDRESS>` placeholder.
-
-## function mint
-
-access: permissionless (payable; no caller gate, guarded by window/cap/payment checks)
-
-The honest default mint path. Passes `referrer = address(0)` so no referral share
-is taken and the full price goes to the artist. This is a sequential-final
-entrypoint; the pooled final ships no built-in paid path at all, selling only
-through its authorized minter (see [Id modes](/docs/collections/concepts/id-modes)).
-
-Reverts `ZeroQuantity` for `quantity == 0`, `MintNotStarted` before `mintStart`,
-`MintEnded` at or after a non-zero `mintEnd`, and `ExceedsCap` when the sequential
-cap would be crossed. With no price strategy set it requires exact payment
-(`WrongPayment` on a mismatch); with a strategy set it reads the price once,
-requires `msg.value >= price` (`Underpayment` otherwise), and accrues any excess
-back to the payer as a pull-refund. A mint hook, if set, runs before and after
-and can reject in `beforeMint` (`HookRejected`). Emits `Minted` for the id range
-`[firstTokenId, firstTokenId + quantity - 1]`.
-
-## function mintWithReferral
-
-access: permissionless (payable; no caller gate, guarded by window/cap/payment checks)
-
-Same paid path as `mint`, but credits a `referrer` its 10% share of the price;
-`referrer == address(0)` folds the share back to the artist. PND's frontend passes
-PND's address, a self-hosted page passes the artist's address. `hookData` is
-forwarded to both the mint hook and the price strategy. Same window, cap,
-payment, and hook behavior and reverts as `mint`. Emits `ReferralPaid` for a
-non-zero referral cut alongside `Minted`.
-
-## function mintFor
-
-access: permissionless (payable; no caller gate, guarded by window/cap/payment checks)
-
-The paid gift-mint: the caller pays, `to` receives — a gift, a hot wallet
-buying for a vault, a sponsor covering a collector. Identical to
-`mintWithReferral` except for who ends up holding the tokens: `to` is who the
-mint hook and the price strategy judge (an allowlist gates the collector, not
-their payer), the `Minted` event records `to` as the true first owner, and any
-overpayment refund on a price-strategy mint accrues back to the payer, who
-sent it. `to == address(0)` reverts in the token layer.
+The Surface System is pre-deploy, so the examples above use a
+`<COLLECTION_ADDRESS>` placeholder; collection addresses come from the
+factory's `SurfaceCreated` events at launch.
 
 ## function mintTo
 
-access: minter-only (`msg.sender` must be an authorized extension minter, else `NotMinter`)
+access: minter-only (`msg.sender` must be an authorized minter, else `NotMinter`)
 
-The extension mint path for authorized minters on the sequential final.
-Non-payable: the calling minter carries all value handling and honors the
-referral share by convention. The core assigns the next id and returns it.
-The cap and id assignment are enforced exactly as on the paid path, but the sale
-window is not: an extension minter owns its own schedule, and the artist's lever
-is revoking the grant with `setMinter`. Hooks still run (`HookRejected` on
-rejection); `ExceedsCap` on a cap crossing. Emits `Minted` with quantity 1.
+The sequential form's only mint entrypoint. Non-payable: the calling minter
+handles all economics before calling. Mints `quantity` tokens to `to` with
+ids `firstTokenId .. firstTokenId + quantity - 1`, where `firstTokenId` is
+one past the mints-ever count, and returns `firstTokenId`. One call, one
+`Minted` event, regardless of quantity. Reverts `ZeroQuantity` for
+`quantity == 0` and `ExceedsCap` when the batch would cross the supply cap.
+The mint path makes no external calls; a contract recipient is not called
+(`_mint`, not `_safeMint`).
 
 ## function burn
 
-access: owner-or-approved in Sequential, minter-only in Pooled (else `NotAuthorized`)
+access: owner-or-approved on the sequential form, minter-only on the pooled form (else `NotAuthorized`)
 
-Burns a token, decrementing live supply. Authority depends on the id mode: in
-Sequential mode the standard owner-or-approved caller may burn; in Pooled mode
-only an authorized extension minter may burn, so a holder or approved operator
-cannot destroy a pooled token out of band and strand its backing or desync the
-pool. Reverts if the token is not owned (nonexistent). The Mint Mark and seed of
-the burned instance stay readable until a pooled re-mint of the same id overwrites
-them. Emits `Burned`.
+Burns a token, decrementing live supply. Authority depends on the form: on
+the sequential form the token holder or an approved address may burn; on the
+pooled form only an authorized minter may burn, so a holder cannot destroy a
+pooled token out of band and strand what backs it. Reverts
+`ERC721NonexistentToken` for an id that is not currently minted. The burned
+token's seed stays readable until a pooled re-mint of the same id overwrites
+it. On the sequential form a burn never frees cap capacity; on the pooled
+form it does. Emits `Burned`.
 
-## function setMintWindow
-
-access: owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`)
-
-Reschedules the built-in paid mint window: push back a delayed start, extend a
-slow sale, or close early by setting the end to now. Reverts `BadMintWindow`
-unless `end` is 0 (open-ended) or strictly after `start`. Governs the built-in
-paid path only; extension minters keep their own schedules. The derived lifecycle
-status follows the new window immediately. Emits `MintWindowSet`.
-
-## function setPrice
+## function setRenderer
 
 access: owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`)
 
-Updates the stored fixed price, ignored while a price strategy is set. Exact-match
-payment on the paid path means a mint transaction in flight against the old price
-reverts (`WrongPayment`) rather than overpaying. Emits `PriceSet`.
+Points the renderer slot at a new renderer. Reverts `RendererIsLocked` once
+`lockRenderer` has run, `RendererRequired` for the zero address, and
+`RendererNotContract` for an address with no code, since a codeless renderer
+would brick `tokenURI`. Emits `RendererSet`, an ERC-4906
+`BatchMetadataUpdate` covering all tokens, and an ERC-7572
+`ContractURIUpdated`, so marketplaces refresh cached metadata at both the
+token and collection level.
 
 ## function setRoyalty
 
 access: owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`)
 
 Updates the EIP-2981 royalty reported by `royaltyInfo`. Capped at 50%
-(`RoyaltyTooHigh` above `5000` bps), same as at init; a zero receiver falls back
-to `owner()`. Royalty is advisory metadata honored at marketplaces' discretion.
-Emits `RoyaltySet`.
+(`RoyaltyTooHigh` above 5000 bps), same as at init; a zero receiver resolves
+to `owner()` at read time. Royalty is advisory metadata honored at
+marketplaces' discretion. Emits `RoyaltySet`.
 
 ## function setSupplyCap
 
 access: owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`)
 
 Updates the supply cap; 0 means open supply. Reverts `SupplyIsLocked` once
-`lockSupply` has run, and `BadSupplyCap` for a non-zero cap below what already
-exists (mints ever in Sequential mode, since ids are never reused; live supply in
-Pooled mode). Shrinking the cap to exactly the minted count closes the collection;
-growing it reopens. Emits `SupplyCapSet`.
+`lockSupply` has run, and `BadSupplyCap` for a nonzero cap below current
+usage (mints ever on the sequential form, live supply on the pooled form).
+The cap determines which token carries a renderer's final-mint trait, so the
+call also emits a full-range `BatchMetadataUpdate` alongside `SupplyCapSet`.
 
-## function lockSupply
-
-access: owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`)
-
-One-way: permanently locks the supply cap — the scarcity promise, beside
-the renderer-side work lock and `lockRenderer`. The cap binds the extension mint paths too, so a
-locked cap is a hard ceiling regardless of what minters are granted later.
-Reverts `SupplyIsLocked` if already locked. Emits `SupplyLocked`.
-
-## function setRenderer
+## function setCreators
 
 access: owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`)
 
-Points the renderer slot at a new renderer, or zero to fall back to
-`defaultRenderer`. Reverts `RendererIsLocked` once `lockRenderer` has run.
-Emits `RendererSet` and an ERC-4906 `BatchMetadataUpdate` covering all tokens, so
-marketplaces refresh cached metadata.
+The owner's side of attribution: list (`listed = true`) or unlist creators,
+any time. A listing is an assertion only; a creator becomes confirmed once
+they also claim this collection in the Catalog, so a listed non-participant
+stays unconfirmed. Emits `CreatorListed` per address.
+
+## function setMinter
+
+access: owner-only on the pooled form; owner or admin on the sequential form (else `NotAuthorized`)
+
+Grants (`allowed = true`) or revokes an authorized minter. Reverts
+`ZeroMinter` for the zero address and `MinterIsLocked` once `lockMinter` has
+run; a call that does not change the state is a no-op. The pooled form holds
+one minter at a time, because its burn authority is minter-wide and a second
+minter could retire a token the first one backs, so granting a second there
+reverts `TooManyMinters`; the sequential form permits any number of grants.
+Minter-set changes on the pooled form are owner-only for the same reason: a
+delegated admin must not be able to rotate the minter under a backed
+collection. Granting a minter is the artist's visible onchain authorization
+of a sale mechanic, and revoking it is the artist's lever over that minter.
+Emits `MinterSet`.
 
 ## function lockRenderer
 
 access: owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`)
 
 One-way, optional (off by default): permanently pin the renderer pointer, so
-`tokenURI`/`contractURI` are answered by the current renderer contract forever.
-The core cannot attest what a renderer does internally — an immutable renderer
-plus a locked pointer is full presentation permanence; a mutable renderer with
-a locked pointer is the artist's explicit, inspectable choice. Pairs with
-whatever permanence a bring-your-own renderer offers (an immutable renderer, or
-its own one-way lock) for generative works. Reverts `RendererIsLocked` if
-already locked. Emits `RendererLocked`.
+`tokenURI`/`contractURI` are answered by the current renderer contract from
+then on. The token cannot attest what a renderer does internally: an
+immutable renderer behind a locked pointer is full presentation permanence,
+while a mutable renderer behind a locked pointer remains changeable within
+that renderer. Reverts `RendererIsLocked` if already locked. Emits
+`RendererLocked`.
 
-## function setCreators
-
-access: owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`)
-
-The owner's side of attribution: list (`listed = true`) or unlist co-creators.
-Mutable — collaborators can be added or corrected any time. A listing is only
-an assertion; a creator becomes confirmed only once they also claim this
-collection in the Catalog, so a listed non-participant shows as
-listed-but-unconfirmed. Emits `CreatorListed` per address.
-
-## function setMintHook
+## function lockSupply
 
 access: owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`)
 
-Points the mint hook slot at a new hook, or zero for none. The hook runs on every
-mint path. Emits `MintHookSet`.
-
-## function setPriceStrategy
-
-access: owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`)
-
-Points the price strategy slot at a new strategy, or zero to use the stored fixed
-`price`. The strategy is read as a view on the built-in paid path. Emits
-`PriceStrategySet`.
-
-## function setMinter
-
-access: Pooled — owner-only; Sequential — owner or admin (else `NotAuthorized`)
-
-Grants (`allowed = true`) or revokes an extension minter that may call `mintTo`
-or `mintToId`. Reverts `ZeroMinter` for the zero address, and `MinterIsLocked`
-once `lockMinter` has run. A redundant call (setting a minter to the state it is
-already in) is a no-op. The Pooled form holds one minter at a time — because its
-burn authority is minter-wide, a second minter could retire a token the first
-one backs — so granting a second there reverts `TooManyMinters`; the Sequential
-form has no such cap. Because a Pooled collection backs real value through that
-single minter, changing the minter set on the Pooled form is **owner-only**: a
-delegated admin must not be able to rotate the minter and strand another minter's
-backed escrow. On the Sequential form (no backing) owner-or-admin applies, like
-every other setter. Authorizing a minter is the artist's visible onchain choice,
-and revoking it is the artist's lever over that minter's schedule and behavior.
-Emits `MinterSet`.
+One-way: permanently lock the supply cap, the scarcity promise. The cap
+binds every mint path, so a locked cap is a hard ceiling regardless of what
+minters are granted later. Reverts `SupplyIsLocked` if already locked. Emits
+`SupplyLocked`.
 
 ## function lockMinter
 
-access: Pooled — owner-only; Sequential — owner or admin (else `NotAuthorized`)
+access: owner-only on the pooled form; owner or admin on the sequential form (else `NotAuthorized`)
 
 One-way, optional (off by default): permanently freeze the minter set, so no
-minter can be granted or revoked afterward. For a backed Pooled collection this
-is the promise that no minter can be swapped in later to retire another minter's
-backed tokens — set it once the intended minter is wired. Harmless but redundant
-on a collection with no extension minters. Reverts `MinterIsLocked` if already
-locked. Emits `MinterLocked`.
+minter can be granted or revoked afterward. For a backed pooled collection
+this is the promise that no minter can be swapped in later to retire another
+minter's backed tokens; call it once the intended minter is wired. On the
+sequential form it freezes the set of sale mechanics. Reverts
+`MinterIsLocked` if already locked. Emits `MinterLocked`.
 
 ## function addAdmin
 
 access: owner-only (`onlyOwner`, else `OwnableUnauthorizedAccount`)
 
-Grants a flat, full-access admin key. An admin can call every management function
-the owner can except managing the admin set, transferring ownership, and changing
-the minter set on a Pooled collection (owner-only there). Reverts `ZeroAccount`
-for the zero address and `AlreadyAdmin` for an existing admin, so every grant is
-one explicit state change with a matching event. A grant is **scoped to the owner
-that made it**: it stops counting the moment ownership transfers, so a new owner
-never silently inherits the old owner's keys and re-grants deliberately. Emits
-`AdminSet`.
+Grants an admin key. An admin can call every management function the owner
+can except managing the admin set, transferring ownership, and changing the
+minter set on a pooled collection (owner-only there). Reverts `ZeroAccount`
+for the zero address and `AlreadyAdmin` for an existing admin or the owner
+(who already counts as an admin), so every grant is one explicit state
+change with a matching event. A grant is scoped to the owner that made it:
+it stops being valid the moment ownership transfers, so a new owner never
+inherits the old owner's keys. Emits `AdminSet`.
 
 ## function removeAdmin
 
 access: owner, or the admin itself renouncing (else `NotAuthorized`)
 
-Revokes an admin. The owner may remove any admin; an admin may renounce itself by
-passing its own address (self-removal only reduces privilege). Reverts
-`NotAnAdmin` if the account is not currently an admin, so a typo or double-remove
-fails loudly. Removing every admin is safe: the owner keeps full access. Emits
+Revokes an admin. The owner may remove any admin; an admin may renounce
+itself by passing its own address. Reverts `NotAnAdmin` if the account holds
+no grant, so a typo or double-remove fails instead of emitting a misleading
+event. Removing every admin is safe: the owner keeps full access. Emits
 `AdminSet`.
-
-## function setPayoutAddress
-
-access: owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`)
-
-Sets where the artist's share accrues for FUTURE mints; zero falls back to
-`owner()`. Past accruals remain claimable at the old address. Emits
-`PayoutAddressSet`.
-
-
-
-
 
 ## function notifyMetadataUpdate
 
 access: the current renderer, or owner/admin (else `NotAuthorized`)
 
-Emits an ERC-4906 `BatchMetadataUpdate` refresh signal for metadata changes the
-core cannot observe: a ChainLive work whose output moved with chain state, or a
-reveal-style renderer flipping state. Marketplaces subscribe to these events on
-the token contract, so the renderer cannot emit them itself — it calls this
-instead. Pure event emission; no state is touched. Deliberately works after
-`lockRenderer`, where the now-pinned renderer is exactly the trusted party
-to signal that a locked live work's output changed.
-
-## function withdraw
-
-access: permissionless (no caller gate; funds only ever go to the owed `account`)
-
-Sends the pull-payment balance owed to `account` to `account`. Anyone may trigger
-it, but funds only ever reach the owed address. Reverts `ZeroAccount` for the zero
-address, `NothingToWithdraw` when nothing is owed, and `WithdrawFailed` if the
-transfer reverts. Emits `Withdrawn`.
+Emits an ERC-4906 `BatchMetadataUpdate` refresh signal for metadata changes
+the token cannot observe: an onchain-live work whose output moved with chain
+state, a reveal, new captures. Marketplaces subscribe to these events on the
+token contract, so the renderer calls this instead of emitting its own.
+Event emission only; no state change. Works after `lockRenderer`, since the
+lock pins the renderer address, not its output.
 
 ## function rescueStrayETH
 
 access: owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`)
 
-Sweeps only ETH that is not owed to any payee (for example ETH force-fed via
-selfdestruct) to `to`. Pull-payment balances are untouchable: only the surplus
-above the running total of owed balances is ever sent. Reverts `ZeroAccount` for
-the zero address, `NoStrayETH` when there is no surplus, and `RescueFailed` if the
-transfer reverts. Emits `StrayETHRescued`.
+Sweeps the contract's entire ETH balance to `to`. The token holds no value
+of its own (no payable function), so any balance was force-fed (selfdestruct
+or a pre-funded address) and nothing is owed to anyone. Reverts
+`ZeroAccount` for the zero address, `NoStrayETH` on a zero balance, and
+`RescueFailed` if the transfer reverts. Emits `StrayETHRescued`.
 
 ## function initialize
 
 access: deployer one-shot (`initializer`, else `InvalidInitialization`)
 
-Sets up the clone exactly once: name, symbol, owner, collection config, work
-config, default renderer, initial extension minters, an optional initial creator listing, and the
-Catalog address used for creator confirmation. Reverts `OwnerRequired` for a zero owner, `RendererRequired` for a
-zero default renderer, `RoyaltyTooHigh` if the royalty exceeds the 50% cap,
-`BadMintWindow` if a non-zero `mintEnd` is not after `mintStart`, and `ZeroMinter`
-for a zero address in the initial minters. The constructor disables initializers
-on the implementation, so only clones can be initialized, and only once. Emits
-`MinterSet` per initial minter and `SurfaceConfigured`.
+Sets up the clone exactly once: name, symbol, owner, the `SurfaceConfig`,
+the factory's default renderer (used when the config names none), initial
+minters, the Catalog address used for creator confirmation, and an optional
+initial creator listing. Reverts `OwnerRequired` for a zero owner,
+`RoyaltyTooHigh` above the 50% cap, `RendererRequired` when neither the
+config nor the factory supplies a renderer, `RendererNotContract` for a
+renderer with no code, `ZeroMinter` for a zero address among the initial
+minters, and `TooManyMinters` when a pooled clone is seeded with more than
+one. Locks passed true in the config apply from initialization. The
+implementation's constructor disables initializers, so only clones can be
+initialized, and only once. Emits `MinterSet` per initial minter,
+`CreatorListed` per listed creator, lock events for locks set at init, and
+`SurfaceConfigured`.
 
 ## function transferOwnership
 
 access: owner-only (`onlyOwner`, else `OwnableUnauthorizedAccount`)
 
 Standard OpenZeppelin Ownable2Step: starts a two-step ownership transfer by
-recording a pending owner who must call `acceptOwnership`. Emits
+recording a pending owner who must call `acceptOwnership`. Existing admin
+grants stop being valid when the transfer completes. Emits
 `OwnershipTransferStarted`.
 
 ## function acceptOwnership
 
-access: pending-owner-only (`msg.sender` must be the pending owner, else `OwnableUnauthorizedAccount`)
+access: pending-owner-only (else `OwnableUnauthorizedAccount`)
 
-Standard Ownable2Step: the pending owner completes the transfer and becomes owner.
-Emits `OwnershipTransferred`.
+Standard Ownable2Step: the pending owner completes the transfer and becomes
+owner. Admin grants made by the previous owner are no longer valid from this
+point; the new owner re-grants explicitly. Emits `OwnershipTransferred`.
+
+## function renounceOwnership
+
+access: owner-only (`onlyOwner`, else `OwnableUnauthorizedAccount`)
+
+Standard OpenZeppelin Ownable: sets the owner to the zero address,
+permanently. Every owner and admin gate closes (an admin grant is valid only
+while its granting owner is the current owner, so a renounced collection has
+no admins), and the config is frozen at its current values. A royalty
+receiver left at zero then reports the zero address. One-way; there is no
+recovery.
 
 ## function approve
 
@@ -445,8 +345,9 @@ tokens. Emits `ApprovalForAll`.
 
 access: owner-or-approved-only (standard ERC721 transfer authority, else `ERC721InsufficientApproval`)
 
-Standard ERC721 transfer. The mint paths and `burn` are the non-standard surface;
-ordinary transfers behave exactly as EIP-721 specifies. Emits `Transfer`.
+Standard ERC721 transfer. The mint entrypoints and `burn` are the
+non-standard surface; ordinary transfers behave exactly as EIP-721
+specifies. Emits `Transfer`.
 
 ## function safeTransferFrom(address,address,uint256)
 
@@ -460,64 +361,50 @@ implements `onERC721Received` (`ERC721InvalidReceiver` otherwise). Emits
 
 access: owner-or-approved-only (standard ERC721 transfer authority, else `ERC721InsufficientApproval`)
 
-Standard ERC721 safe transfer with a data payload forwarded to the recipient's
-`onERC721Received`. Emits `Transfer`.
-
-## function REFERRAL_SHARE_BPS
-
-The fixed protocol referral share as a compile-time constant: 1000 bps, i.e. 10%.
-Not artist-set.
+Standard ERC721 safe transfer with a data payload forwarded to the
+recipient's `onERC721Received`. Emits `Transfer`.
 
 ## function version
 
-The implementation version, a compile-time constant (`1` for this generation).
-The system evolves by deploying a new implementation and factory, never by
-changing a live collection, so a collection reports the version it was cloned
-from for its whole life.
+The implementation version, a compile-time constant (`1` for this
+generation). The system evolves by deploying a new implementation and
+factory, never by changing a live collection, so a collection reports the
+version it was cloned from for its whole life.
 
 ## function config
 
-Returns the live `SurfaceConfig` (every field reflects the current setters,
-including the three module slots), the derived lifecycle `status` (Scheduled,
-Open, or Closed — computed from the window, the cap, and the clock; never
-stored), and `minted` (mints ever, not live supply).
-
-## function currentPrice
-
-The resolved price in wei for a prospective mint: the price strategy's quote if a
-strategy is set, else the stored fixed `price` times `quantity`. Frontends read
-this to quote a mint; with a dynamic strategy it can move between quote and
-inclusion.
+Returns the live `SurfaceConfig` and `minted`, the mints-ever count (not
+live supply). The config's six fields are `supplyCap` (0 = open supply),
+`royaltyBps`, `royaltyReceiver` (0 = `owner()`), `renderer`,
+`rendererLocked`, and `supplyLocked`. Setters edit these fields in place, so
+this view always reports what the contract uses. Sale state (price, window,
+sale phase) is not here; read the collection's minter for that.
 
 ## function idMode
 
-The collection's id mode, fixed at init: Sequential (0) or Pooled (1). See
-[id modes](/docs/collections/concepts/id-modes).
+The collection form: Sequential (0) or Pooled (1). Fixed by the contract,
+not configurable. See [id modes](/docs/collections/concepts/id-modes).
 
 ## function totalSupply
 
-Live supply: mints ever minus burns. In Sequential mode a burn permanently lowers
-this; in Pooled mode a re-mint of a burned id raises it again.
+Live supply: mints ever minus burns. On the sequential form a burn
+permanently lowers this; on the pooled form a re-mint of a burned id raises
+it again.
 
 ## function tokenSeed
 
-The mint-time entropy for a token, stamped in the mint transaction — the only
+The mint-time entropy for a token, stamped in the mint transaction: the only
 per-token storage on the contract. Reverts `NeverMinted` for an id that was
-never minted (a nonzero seed is the existence sentinel). Stays readable for a
-burned id until a pooled re-mint overwrites it; for a pooled re-mint this is the
-current instance's fresh seed.
-
+never minted (a nonzero seed is the existence sentinel). Stays readable for
+a burned id until a pooled re-mint overwrites it with the new instance's
+seed.
 
 ## function isAdmin
 
 True if the account may use the admin-gated setters: the owner, or anyone
-holding an explicit grant. The owner has always held every admin power; this
-view reports it, so external integrations that gate on `isAdmin` (MURI's
-`registerContract`) accept the owner directly.
-
-## function isRendererLocked
-
-True once `lockRenderer` has permanently pinned the renderer pointer.
+holding a currently valid grant. The owner is included because every
+admin-gated function also admits the owner, so external integrations that
+gate on this view accept the owner directly.
 
 ## function isListedCreator
 
@@ -526,15 +413,24 @@ half of confirmation; see `isConfirmedCreator`.
 
 ## function isConfirmedCreator
 
-Live, mutual attribution: true iff the owner has listed `who` AND `who` has
-claimed this collection in the Catalog (`isContractRegistered`). Reads the
-Catalog live, so retracting either side (unlist, or un-claim) cleanly revokes
-credit. Returns false when the collection has no Catalog configured.
+Live, mutual attribution: true only if the owner has listed `who` and `who`
+has claimed this collection in the Catalog (`isContractRegistered`).
+Computed on read, so retracting either side (unlist, or un-claim) revokes
+the confirmation. False when the collection has no Catalog configured.
 
 ## function catalog
 
-The Catalog singleton this collection confirms creators against (address zero
-when confirmation is disabled).
+The Catalog singleton this collection confirms creators against (the zero
+address when confirmation is disabled).
+
+## function isMinter
+
+True if the address is an authorized minter allowed to call the mint
+entrypoint.
+
+## function isRendererLocked
+
+True once `lockRenderer` has permanently pinned the renderer pointer.
 
 ## function isSupplyLocked
 
@@ -544,35 +440,11 @@ True once `lockSupply` has permanently locked the supply cap.
 
 True once `lockMinter` has permanently frozen the minter set.
 
-
-
-
-
-
-
 ## function renderer
 
-The active renderer address that `tokenURI` and `contractURI` delegate to. Set at
-init (the artist's choice, or the factory default when they named none) and
-changeable via `setRenderer` until `lockRenderer`.
-
-## function mintHook
-
-The current mint hook address, or zero when no hook is set.
-
-## function priceStrategy
-
-The current price strategy address, or zero when the stored fixed price applies.
-
-## function isMinter
-
-True if the address is an authorized extension minter allowed to call `mintTo` or
-`mintToId`.
-
-## function pendingWithdrawal
-
-The pull-payment balance in wei currently owed to an account, claimable with
-`withdraw`.
+The active renderer address that `tokenURI` and `contractURI` delegate to.
+Set at init (the artist's choice, or the factory default when they named
+none) and changeable via `setRenderer` until `lockRenderer`.
 
 ## function tokenURI
 
@@ -586,21 +458,14 @@ Collection-level metadata, delegated to the active renderer's `contractURI`.
 
 ## function royaltyInfo
 
-EIP-2981 royalty for a sale price: the receiver (the configured royalty receiver,
-or `owner()` when unset) and the royalty amount computed from the configured
-`royaltyBps`. Advisory, honored at marketplaces' discretion.
+EIP-2981 royalty for a sale price: the receiver (the configured royalty
+receiver, or `owner()` when unset) and the amount computed from the
+configured `royaltyBps`. Advisory, honored at marketplaces' discretion.
 
 ## function supportsInterface
 
 Standard ERC165 support check. Returns true for ERC721, ERC165, EIP-2981
 (`0x2a55205a`), and ERC-4906 (`0x49064906`).
-
-## function renounceOwnership
-
-Disabled: this function is pure and always reverts `RenounceDisabled`. Renouncing
-would orphan the collection, accruing default proceeds to a zero owner and
-bricking every admin lever. Immutability comes from the clone having no upgrade
-path, not from burning the owner.
 
 ## function name
 
@@ -612,13 +477,14 @@ Standard ERC721 collection symbol, set at init.
 
 ## function owner
 
-Standard OpenZeppelin Ownable current owner: the artist address that is the root
-of authority over the config, slots, admin set, and withdrawal surface.
+Standard OpenZeppelin Ownable current owner: the artist address that is the
+root of authority over the config, the minter set, and the admin set.
 
 ## function pendingOwner
 
-Standard Ownable2Step pending owner: the address that has been offered ownership
-and must call `acceptOwnership`, or zero when no transfer is in flight.
+Standard Ownable2Step pending owner: the address that has been offered
+ownership and must call `acceptOwnership`, or zero when no transfer is in
+flight.
 
 ## function balanceOf
 
@@ -626,8 +492,8 @@ Standard ERC721: the number of tokens owned by an address.
 
 ## function ownerOf
 
-Standard ERC721: the current owner of a token. Reverts `ERC721NonexistentToken`
-for an id that is not currently minted.
+Standard ERC721: the current owner of a token. Reverts
+`ERC721NonexistentToken` for an id that is not currently minted.
 
 ## function getApproved
 
@@ -635,45 +501,31 @@ Standard ERC721: the single-token approved spender for a token, or zero.
 
 ## function isApprovedForAll
 
-Standard ERC721: true if an operator is approved to manage all of an owner's
-tokens.
+Standard ERC721: true if an operator is approved to manage all of an
+owner's tokens.
 
 ## event Minted
 
-One event per mint call — THE permanent per-mint provenance record. Built-in
-paths cover `[firstTokenId, firstTokenId + quantity - 1]`; extension mints emit
-quantity 1 with `firstTokenId` the minted id. Indexed by `to` and `referrer`.
-Carries `firstMintIndex` (the global mint order of the call's first token; token
-k's mint index is `firstMintIndex + k` — explicit because pooled order is not
-derivable from reused ids) and `statusAtMint`, the lifecycle status derived at
-mint time (a pooled re-mint after the window truthfully says Closed; an
-extension mint before the public window says Scheduled). The mint block is the
-log's own block number. Nothing here is stored per token; indexers read this
-event and never need per-token calls.
+One event per mint call, the permanent per-mint provenance record. Indexed
+by `minter` (the authorized minter that issued the tokens) and `to` (the
+recipient). On the sequential form a call covers ids
+`[firstTokenId, firstTokenId + quantity - 1]`; on the pooled form
+`firstTokenId` is the minted id and `quantity` is 1. `firstMintIndex` is the
+global mint order of the call's first token (token k of the batch has mint
+index `firstMintIndex + k`); it is carried explicitly because pooled order
+is not derivable from reused ids. The mint block is the log's own block.
+Sale data (payment, referral) is not here; the canonical minter emits its
+own `Sold` event alongside this one.
 
 ## event Burned
 
-Emitted when a token is burned. Indexed by `tokenId`. A pooled id may later be
-re-minted, at which point a new `Minted` covers the fresh instance.
-
-## event ReferralPaid
-
-Emitted when a non-zero referral cut is credited on a paid mint. Indexed by
-`referrer`, with the credited `amount` in wei.
+Emitted when a token is burned. Indexed by `tokenId`. A pooled id may later
+be re-minted, at which point a new `Minted` covers the fresh instance.
 
 ## event SurfaceConfigured
 
-Emitted once at init with the collection's id mode, price, supply cap, mint
-window, and cover artwork URI. Indexers read this to record a new collection's
-terms; every term except the id mode is a live setting with its own update event.
-
-## event MintWindowSet
-
-Emitted when the paid mint window is rescheduled with `setMintWindow`.
-
-## event PriceSet
-
-Emitted when the stored fixed price changes with `setPrice`.
+Emitted once at init with the collection's id mode and supply cap. The id
+mode is fixed; the cap is a live setting with its own update event.
 
 ## event RoyaltySet
 
@@ -684,164 +536,129 @@ Emitted when the EIP-2981 royalty changes with `setRoyalty`. Indexed by
 
 Emitted when the supply cap changes with `setSupplyCap`.
 
+## event RendererSet
+
+Emitted when the renderer slot changes. Indexed by `renderer`.
+
 ## event RendererLocked
 
-Emitted once when `lockRenderer` permanently pins the renderer pointer.
-
-## event CreatorListed
-
-Emitted when the owner lists or unlists a creator (including each creator seeded
-at init). Indexed by `creator`, with the `listed` flag. Indexers build a
-collection's roster from these; confirmed status is a live `isConfirmedCreator`
-read.
+Emitted once when `lockRenderer` permanently pins the renderer pointer
+(via the call or a lock set at init).
 
 ## event SupplyLocked
 
-Emitted once when `lockSupply` permanently locks the supply cap.
+Emitted once when `lockSupply` permanently locks the supply cap (via the
+call or a lock set at init).
 
 ## event MinterLocked
 
 Emitted once when `lockMinter` permanently freezes the minter set.
 
+## event MinterSet
+
+Emitted when a minter is granted or revoked, and once per initial minter at
+init. Indexed by `minter`, with the `allowed` flag. Indexers derive the full
+minter set from these; the factory's `SurfaceCreated` names the
+canonically wired minter directly.
+
+## event CreatorListed
+
+Emitted when the owner lists or unlists a creator (including each creator
+seeded at init). Indexed by `creator`, with the `listed` flag. Indexers
+build a collection's roster from these; confirmed status is a live
+`isConfirmedCreator` read.
+
 ## event AdminSet
 
-Emitted when an admin key is granted (`allowed = true`) or revoked. Indexed by
-`account`.
+Emitted when an admin key is granted (`allowed = true`) or revoked. Indexed
+by `account`.
 
 ## event MetadataUpdate
 
-ERC-4906 single-token refresh signal (declared for interface completeness;
-range refreshes go through `BatchMetadataUpdate` via the setters and
-`notifyMetadataUpdate`). Marketplaces subscribe to this to re-fetch a token's
-metadata.
+ERC-4906 single-token refresh signal, declared for interface completeness;
+range refreshes go through `BatchMetadataUpdate`. Marketplaces subscribe to
+this to re-fetch a token's metadata.
 
 ## event BatchMetadataUpdate
 
-ERC-4906 range refresh signal, emitted by `setRenderer` (covering all tokens)
-and by `notifyMetadataUpdate` (renderer- or admin-chosen range). Marketplaces
-subscribe to this to re-fetch cached metadata.
+ERC-4906 range refresh signal, emitted by `setRenderer` and `setSupplyCap`
+(covering all tokens) and by `notifyMetadataUpdate` (renderer- or
+admin-chosen range). Marketplaces subscribe to this to re-fetch cached
+metadata.
 
 ## event ContractURIUpdated
 
-ERC-7572 contract-level refresh signal, emitted by `setRenderer` alongside the
-token-range refresh: a new renderer can answer `contractURI` differently, and
-this is the event marketplaces watch to re-fetch the collection page.
-
-## event RendererSet
-
-Emitted when the renderer slot changes. Indexed by `renderer`.
-
-## event MintHookSet
-
-Emitted when the mint hook slot changes. Indexed by `hook`.
-
-## event PriceStrategySet
-
-Emitted when the price strategy slot changes. Indexed by `strategy`.
-
-## event MinterSet
-
-Emitted when an extension minter is granted or revoked, and once per initial
-minter at init. Indexed by `minter`, with the `allowed` flag.
-
-
-
-
-
-## event PayoutAddressSet
-
-Emitted when the artist payout address changes. Indexed by `payoutAddress`. Only
-affects future accruals.
-
-## event Withdrawn
-
-Emitted when a pull-payment balance is paid out. Indexed by `account`, with the
-`amount` in wei.
+ERC-7572 contract-level refresh signal, emitted by `setRenderer` alongside
+the token-range refresh: a new renderer can answer `contractURI`
+differently, and this is the event marketplaces watch to re-fetch the
+collection page.
 
 ## event StrayETHRescued
 
-Emitted when stray ETH not owed to any payee is swept. Indexed by `to`, with the
-swept `amount` in wei.
+Emitted when `rescueStrayETH` sweeps force-fed ETH. Indexed by `to`, with
+the swept `amount` in wei.
 
 ## event Transfer
 
-Standard ERC721 transfer event, emitted on mint (from the zero address), transfer,
-and burn (to the zero address). Indexed by `from`, `to`, and `tokenId`.
+Standard ERC721 transfer event, emitted on mint (from the zero address),
+transfer, and burn (to the zero address). Indexed by `from`, `to`, and
+`tokenId`.
 
 ## event Approval
 
-Standard ERC721 single-token approval event. Indexed by `owner`, `approved`, and
-`tokenId`.
+Standard ERC721 single-token approval event. Indexed by `owner`, `approved`,
+and `tokenId`.
 
 ## event ApprovalForAll
 
-Standard ERC721 operator approval event. Indexed by `owner` and `operator`, with
-the `approved` flag.
+Standard ERC721 operator approval event. Indexed by `owner` and `operator`,
+with the `approved` flag.
 
 ## event OwnershipTransferStarted
 
-Standard Ownable2Step event, emitted by `transferOwnership` when a pending owner
-is recorded. Indexed by `previousOwner` and `newOwner`.
+Standard Ownable2Step event, emitted by `transferOwnership` when a pending
+owner is recorded. Indexed by `previousOwner` and `newOwner`.
 
 ## event OwnershipTransferred
 
-Standard Ownable event, emitted at init when the first owner is set and when
-`acceptOwnership` completes a transfer. Indexed by `previousOwner` and `newOwner`.
+Standard Ownable event, emitted at init when the first owner is set, when
+`acceptOwnership` completes a transfer, and when `renounceOwnership` sets
+the owner to zero. Indexed by `previousOwner` and `newOwner`.
 
 ## event Initialized
 
 Standard OpenZeppelin Initializable event, emitted once when the clone is
 initialized.
 
+## error NotMinter
+
+The mint entrypoint was called by an address that is not an authorized
+minter. The owner grants minters with `setMinter`.
+
 ## error ZeroQuantity
 
-A mint was called with `quantity == 0`. Mint at least one token.
-
-## error ZeroAccount
-
-`withdraw`, `rescueStrayETH`, or `addAdmin` was passed the zero address. Supply a
-real account.
-
-## error ZeroMinter
-
-An initial minter in `initialize`, or the `setMinter` target, was the zero
-address. Supply a real minter address.
-
-## error Underpayment
-
-A mint with a price strategy set sent less than the strategy's resolved price.
-Send at least `currentPrice`; any excess accrues back to the payer.
-
-## error WrongPayment
-
-A mint with no price strategy set did not send exactly `price * quantity`. Fixed
-pricing requires an exact match.
+`mintTo` was called with `quantity == 0`. Mint at least one token.
 
 ## error ExceedsCap
 
-A mint would cross the supply cap: mints ever in Sequential mode, or live supply
-in Pooled mode.
-
-## error BadMintWindow
-
-`initialize` or `setMintWindow` was given a non-zero `mintEnd` that is not
-strictly after `mintStart`. Use `mintEnd == 0` for open-ended or an end after the
-start.
+A mint would cross the supply cap: mints ever on the sequential form, or
+live supply on the pooled form.
 
 ## error BadSupplyCap
 
-`setSupplyCap` was given a non-zero cap below what already exists: mints ever in
-Sequential mode (ids are never reused), or live supply in Pooled mode.
-
-## error RendererIsLocked
-
-`setRenderer` or `lockRenderer` was called after `lockRenderer`. The renderer
-pointer is permanently pinned.
+`setSupplyCap` was given a nonzero cap below current usage: mints ever on
+the sequential form (ids are never reused), or live supply on the pooled
+form.
 
 ## error SupplyIsLocked
 
-`setSupplyCap` or `lockSupply` was called after `lockSupply`. The supply cap is
-permanently frozen.
+`setSupplyCap` or `lockSupply` was called after `lockSupply`. The supply cap
+is permanently frozen.
+
+## error RendererIsLocked
+
+`setRenderer` or `lockRenderer` was called after `lockRenderer`. The
+renderer pointer is permanently pinned.
 
 ## error MinterIsLocked
 
@@ -850,116 +667,89 @@ permanently frozen.
 
 ## error TooManyMinters
 
-A minter grant would exceed the form's limit. The Pooled form allows exactly one
-minter at a time (its burn authority is minter-wide), so granting a second — via
-`setMinter` or seeded at init through `initialMinters` — reverts.
+A minter grant would exceed the pooled form's one-minter limit (its burn
+authority is minter-wide), whether via `setMinter` or seeded at init through
+`initialMinters`.
 
-## error MintNotStarted
+## error ZeroMinter
 
-A paid mint was attempted before `mintStart`. Wait for the window to open, or the
-owner reschedules it with `setMintWindow`.
-
-## error MintEnded
-
-A paid mint was attempted at or after a non-zero `mintEnd`. The window has closed
-(the owner can reopen it with `setMintWindow`).
-
-## error HookRejected
-
-The mint hook's `beforeMint` did not return the required selector, so the hook
-rejected the mint.
-
-## error NotMinter
-
-`mintTo` or `mintToId` was called by an address that is not an authorized
-extension minter. The owner grants minters with `setMinter`.
+An initial minter in `initialize`, or the `setMinter` target, was the zero
+address. Supply a real minter address.
 
 ## error NotAuthorized
 
-A management function gated `onlyOwnerOrAdmin` was called by neither the owner nor
-an admin; `removeAdmin` was called by someone other than the owner or the admin
+A management function gated `onlyOwnerOrAdmin` was called by neither the
+owner nor an admin; a pooled minter-set change was attempted by a non-owner;
+`removeAdmin` was called by someone other than the owner or the admin
 itself; `notifyMetadataUpdate` was called by neither the renderer nor an
-owner/admin; or `burn` was called without burn authority for the id mode.
+owner/admin; or `burn` was called without burn authority for the form.
 
 ## error AlreadyAdmin
 
-`addAdmin` was called for an account that is already an admin. Every grant is a
+`addAdmin` was called for the owner or an existing admin. Every grant is a
 single explicit state change.
 
 ## error NotAnAdmin
 
-`removeAdmin` was called for an account that is not currently an admin. A typo or
-double-remove fails loudly rather than emitting a misleading event.
+`removeAdmin` was called for an account that holds no grant. A typo or
+double-remove fails instead of emitting a misleading event.
+
+## error ZeroAccount
+
+`rescueStrayETH` or `addAdmin` was passed the zero address. Supply a real
+account.
 
 ## error OwnerRequired
 
-`initialize` was given the zero address as the owner. A collection must have an
-owner.
+`initialize` was given the zero address as the owner. A collection must have
+an owner.
 
 ## error RendererRequired
 
-`initialize` was given the zero address as the default renderer. A collection must
-have a fallback renderer.
+`initialize` was given no renderer (neither the config nor the factory
+default names one), or `setRenderer` was passed the zero address. The
+renderer slot always holds a nonzero address.
 
 ## error RendererNotContract
 
-The renderer address has no code (carries the offending address as evidence).
-Raised by `initialize` and `setRenderer`: a codeless renderer would brick
-`tokenURI` — fatally so for a collection born `rendererLocked` — so the typo is
-refused at the door instead.
+The renderer address has no code (carries the offending address). Raised by
+`initialize` and `setRenderer`: a codeless renderer would brick `tokenURI`,
+fatally so for a collection initialized `rendererLocked`, so the typo is
+refused at the door.
 
 ## error NotAContract
 
-A hook or price-strategy address is nonzero but has no code (carries the
-offending address). Raised by `initialize`, `setMintHook`, and
-`setPriceStrategy`: an EOA or typo in either slot would revert every mint on the
-ABI-decode of empty returndata, so a nonzero value must be a deployed contract.
-Zero stays legal — it means "no hook" / "fixed price".
+Declared on the shared collection interface for companion use; the
+collection's own contract-code check on renderers raises
+`RendererNotContract` instead, so the collection itself does not raise this.
 
 ## error RoyaltyTooHigh
 
-`initialize` or `setRoyalty` was given a royalty above the 50% cap (`5000` bps).
-
-
-
-
+`initialize` or `setRoyalty` was given a royalty above the 50% cap
+(5000 bps).
 
 ## error NeverMinted
 
-`tokenSeed` was read for an id that was never minted (its seed slot is zero).
-
-## error NothingToWithdraw
-
-`withdraw` was called for an account with a zero owed balance.
-
-## error WithdrawFailed
-
-The ETH transfer inside `withdraw` reverted, for example a recipient that rejects
-payment. Nothing is drained; the balance stays claimable.
+`tokenSeed` was read for an id that was never minted (its seed slot is
+zero).
 
 ## error NoStrayETH
 
-`rescueStrayETH` found no ETH above the owed pull-payment balances to sweep.
+`rescueStrayETH` found a zero ETH balance to sweep.
 
 ## error RescueFailed
 
 The ETH transfer inside `rescueStrayETH` reverted.
 
-
-## error RenounceDisabled
-
-`renounceOwnership` was called. It is permanently disabled to keep the collection
-from being orphaned.
-
 ## error InvalidInitialization
 
-Standard OpenZeppelin Initializable error: `initialize` was called more than once,
-or called on the implementation whose initializers are disabled.
+Standard OpenZeppelin Initializable error: `initialize` was called more than
+once, or called on the implementation whose initializers are disabled.
 
 ## error NotInitializing
 
-Standard OpenZeppelin Initializable error: an `onlyInitializing` step ran outside
-an active initialization.
+Standard OpenZeppelin Initializable error: an `onlyInitializing` step ran
+outside an active initialization.
 
 ## error ReentrancyGuardReentrantCall
 
@@ -968,12 +758,13 @@ re-entered.
 
 ## error ERC721IncorrectOwner
 
-Standard ERC721 error: a token operation named an owner that does not match the
-token's actual owner.
+Standard ERC721 error: a token operation named an owner that does not match
+the token's actual owner.
 
 ## error ERC721InsufficientApproval
 
-Standard ERC721 error: the caller lacks approval to transfer or burn the token.
+Standard ERC721 error: the caller lacks approval to transfer or burn the
+token.
 
 ## error ERC721InvalidApprover
 
@@ -981,35 +772,36 @@ Standard ERC721 error: the approver is not authorized to grant the approval.
 
 ## error ERC721InvalidOperator
 
-Standard ERC721 error: an invalid operator address (for example the zero address)
-was used in an approval.
+Standard ERC721 error: an invalid operator address (for example the zero
+address) was used in an approval.
 
 ## error ERC721InvalidOwner
 
-Standard ERC721 error: an invalid owner address (for example the zero address) was
-used in an ownership query.
+Standard ERC721 error: an invalid owner address (for example the zero
+address) was used in an ownership query.
 
 ## error ERC721InvalidReceiver
 
-Standard ERC721 error: a safe transfer or mint targeted a contract that does not
+Standard ERC721 error: a safe transfer targeted a contract that does not
 accept ERC721 tokens (bad `onERC721Received`).
 
 ## error ERC721InvalidSender
 
-Standard ERC721 error: a transfer named a sender that does not own the token.
+Standard ERC721 error: a transfer named a sender that does not own the
+token.
 
 ## error ERC721NonexistentToken
 
-Standard ERC721 error: the referenced token id does not exist (never minted or
-already burned).
+Standard ERC721 error: the referenced token id does not exist (never minted
+or already burned).
 
 ## error OwnableInvalidOwner
 
-Standard OpenZeppelin Ownable error: an invalid owner address (for example the
-zero address) was supplied.
+Standard OpenZeppelin Ownable error: an invalid owner address (for example
+the zero address) was supplied.
 
 ## error OwnableUnauthorizedAccount
 
 Standard OpenZeppelin Ownable error: an owner-gated function (`addAdmin`,
-`transferOwnership`) was called by a non-owner, or `acceptOwnership` by a
-non-pending-owner.
+`transferOwnership`, `renounceOwnership`) was called by a non-owner, or
+`acceptOwnership` by a non-pending-owner.

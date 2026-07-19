@@ -4,9 +4,5 @@
   "surfaceFactory": "",
   "defaultRenderer": "",
   "renderAssets": "",
-  "allowlistHook": "",
-  "perWalletCapHook": "",
-  "holdsSurfaceHook": "",
-  "gateHook": "",
   "auctionHouseFactory": ""
 }
