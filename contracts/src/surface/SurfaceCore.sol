@@ -15,22 +15,11 @@ import {ICatalog} from "./interfaces/ICatalog.sol";
 import {SurfaceConfig, SurfaceStatus, IdMode, InitParams} from "./SurfaceTypes.sol";
 
 /// @title SurfaceCore
-/// @notice Abstract ERC721 base for both collection forms (Surface and
-///         PooledSurface). Provides ownership, payment/value custody,
-///         configuration, and per-token seed storage. It has no mint
-///         entrypoint; each form defines its own.
-///
-///         Paid mints split the price between the artist (the payout address,
-///         or the owner if unset) and, when an approved referrer is named, a
-///         fixed referral share. No protocol fee.
-///
-///         Storage per token is a single mint-time seed. Mint order, block,
-///         and status are not stored; they are derived from the token id or
-///         the emitted events.
-///
-///         Owner-settable config: renderer, price strategy, mint hook, and
-///         minter set. Two are one-way locks once set: lockRenderer and
-///         lockSupply. Locks passed at initialization apply from the start.
+/// @notice Abstract base shared by both collection forms; defines no mint
+///         entrypoint (each form does). Holds proceeds by pull payment
+///         (recipients withdraw), stores one mint-time seed per token and
+///         nothing else, and provides two permanent one-way locks: lockRenderer
+///         and lockSupply.
 ///
 /// @dev    Deployed as immutable EIP-1167 clones: no proxy admin, no upgrade
 ///         path. The OZ upgradeable bases are used only for their initializer

@@ -7,18 +7,11 @@ import {SurfaceCore} from "./SurfaceCore.sol";
 import {SurfaceConfig, IdMode, InitParams} from "./SurfaceTypes.sol";
 
 /// @title SurfaceFactory
-/// @notice Deploys one collection per call, configured in a single transaction,
-///         as an immutable EIP-1167 clone. Two forms, two implementations, two
-///         entrypoints: createSurface for the sequential form (the contract
-///         assigns ids), createPooledSurface for the pooled form (the minter
-///         chooses ids). No proxy admin and no upgrade path. No fee is stored
-///         here; the referral share is a constant inside the collection, paid
-///         to the mint host.
-///
-///         Emits one SurfaceCreated event per collection, stamped with its
-///         form, from a single fixed address for indexers to watch. New
-///         behavior ships by deploying new implementations and a new factory,
-///         not by modifying a deployed collection.
+/// @notice Clones a collection as an immutable EIP-1167 proxy per call:
+///         createSurface (sequential form) or createPooledSurface (pooled
+///         form). No proxy admin or upgrade path, and no fee taken here. New
+///         behavior ships as new implementations behind a new factory, not by
+///         changing a deployed collection.
 contract SurfaceFactory {
     /// @notice The sequential implementation every createSurface clone
     ///         points at.

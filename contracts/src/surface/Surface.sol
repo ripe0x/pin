@@ -8,9 +8,7 @@ import {SurfaceStatus, IdMode} from "./SurfaceTypes.sol";
 import {IPriceStrategy} from "./interfaces/IPriceStrategy.sol";
 
 /// @title Surface
-/// @notice Sequential ERC721 collection: ids auto-increment from 1 and are not
-///         reused after a burn. Built-in paid mint entrypoints below; an
-///         authorized minter can also mint via mintTo.
+/// @notice Sequential-id ERC721 collection.
 contract Surface is SurfaceCore, ISurface {
     function idMode() public pure override(SurfaceCore, ISurfaceCore) returns (IdMode) {
         return IdMode.Sequential;
