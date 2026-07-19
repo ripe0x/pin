@@ -16,17 +16,17 @@ import {HomageReservation} from "./HomageReservation"
 import {AllowlistCheck} from "@/components/mint/homage-gallery/AllowlistCheck"
 import {CrossfadeArt} from "@/components/mint/homage-gallery/CrossfadeArt"
 import {useLocalArt, useLocalSample} from "@/components/mint/homage-gallery/local"
-import {makeDealer, randomSpan, type Piece} from "@/components/mint/homage-gallery/gallery-deck"
+import {makeDealer, type Piece} from "@/components/mint/homage-gallery/gallery-deck"
 import {accessories, trait} from "@/components/mint/homage-gallery/svg"
 import {statusByCode} from "@/components/mint/homage-gallery/status"
 
 const SUPPLY = 10_000
 const META = "text-[10px] font-mono uppercase tracking-wider text-gray-400"
-const DEAL = 28 // sample tiles per grid
-const TARGET_CELL = 200 // desired 1×1 cell px; columns derive from width
+const POOL = 40 // tiles dealt; the grid renders a whole-row multiple of the column count
+const TARGET_CELL = 200 // cell px; columns derive from width
 const GAP = 8
 
-type Tile = Piece & {span: number; key: number}
+type Tile = Piece & {key: number}
 
 // About copy — the long-form record shown while there's no onchain contractURI to
 // read. First block is the lead (no heading, the masthead already names the work).
@@ -202,7 +202,7 @@ function SampleWall() {
 
   const deal = useCallback((): Tile[] => {
     const draw = makeDealer()
-    return Array.from({length: DEAL}, (): Tile => ({...draw(), span: randomSpan(), key: nextKey.current++}))
+    return Array.from({length: POOL}, (): Tile => ({...draw(), key: nextKey.current++}))
   }, [])
 
   // First deal is client-side only (Math.random), never during SSR render.
@@ -237,6 +237,10 @@ function Quilt({tiles, onFocus}: {tiles: Tile[]; onFocus: (p: Piece) => void}) {
   }, [])
   const cols = Math.max(3, Math.floor((width + GAP) / (TARGET_CELL + GAP)))
   const track = width ? (width - GAP * (cols - 1)) / cols : TARGET_CELL
+  // Render only whole rows: a multiple of the current column count, so the field
+  // never ends on a partial row (the ragged gap the mixed-span layout left). Cells
+  // are uniform 1×1 so every row is full at any width.
+  const visible = tiles.slice(0, Math.floor(tiles.length / cols) * cols)
 
   return (
     <div ref={ref} style={{background: "var(--paper, #0a0a0c)"}}>
@@ -245,44 +249,25 @@ function Quilt({tiles, onFocus}: {tiles: Tile[]; onFocus: (p: Piece) => void}) {
           display: "grid",
           gridTemplateColumns: `repeat(${cols}, ${track}px)`,
           gridAutoRows: `${track}px`,
-          gridAutoFlow: "dense",
           gap: GAP,
           justifyContent: "center",
         }}
       >
-        {tiles.map((t, i) => (
-          <WallTile
-            key={t.key}
-            tile={t}
-            maxSpan={cols}
-            featured={i === 0 && tiles.length >= 5}
-            onFocus={() => onFocus({id: t.id, status: t.status})}
-          />
+        {visible.map((t) => (
+          <WallTile key={t.key} tile={t} onFocus={() => onFocus({id: t.id, status: t.status})} />
         ))}
       </div>
     </div>
   )
 }
 
-function WallTile({
-  tile,
-  maxSpan,
-  featured,
-  onFocus,
-}: {
-  tile: Tile
-  maxSpan: number
-  featured: boolean
-  onFocus: () => void
-}) {
+function WallTile({tile, onFocus}: {tile: Tile; onFocus: () => void}) {
   const {src} = useLocalArt(tile.id, tile.status)
-  const span = Math.min(featured ? Math.max(tile.span, 2) : tile.span, maxSpan)
   return (
     <button
       onClick={onFocus}
       aria-label="view this homage larger"
       className="relative block cursor-pointer overflow-hidden focus:outline-none focus-visible:ring-1 focus-visible:ring-white/50"
-      style={{gridColumn: `span ${span}`, gridRow: `span ${span}`}}
     >
       <CrossfadeArt src={src} alt="a homage from the collection" />
     </button>
