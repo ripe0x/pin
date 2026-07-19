@@ -2,18 +2,20 @@
 
 # Overview
 
-The PND Surface System is a modular collection protocol for artists. One
-artist collection is one contract, `Surface`: a single OZ ERC721
-core that holds ownership, money paths, and provenance, and nothing else.
-Every collection is deployed by a shared factory as an immutable EIP-1167
-clone, so what deploys is what runs, forever. There is no proxy admin, no
-upgrade path, and no seal.
+The PND Surface System is a modular collection protocol for artists. One artist
+collection is one thin ERC721 core, `Surface`: it holds ownership, one seed per
+token, the renderer wiring, the royalty, the supply cap, and the minter
+authorization, and no sale logic and no money. Every collection is deployed by
+a shared factory as an immutable EIP-1167 clone, so what deploys is what runs,
+forever. There is no proxy admin, no upgrade path, and no seal.
 
-All variability lives outside the core, in four swappable slots and optional
-per-work companion contracts. An edition, a long-form generative drop, an
-onchain SVG work, and a live-reading backed work are the same contract with
-different modules plugged into the same four sockets. See
-[The four slots](/docs/collections/concepts/four-slots) for the detail.
+Sale economics live outside the token, in a **minter**: price, mint window,
+payment, referral, and gating. The common case is the canonical
+`FixedPriceMinter` clone the factory wires to a collection at creation; bespoke
+projects grant their own minter contract. An edition, a long-form generative
+drop, an onchain SVG work, and a live-reading backed work are the same token
+core with different minters and renderers attached. See
+[Slots and modules](/docs/collections/concepts/four-slots) for the detail.
 
 ## The parts
 
@@ -21,101 +23,101 @@ different modules plugged into the same four sockets. See
 
 | Contract | Role |
 | --- | --- |
-| `SurfaceFactory` | Clones the `Surface` implementation and wires init params in one transaction |
+| `SurfaceFactory` | Clones the token and its canonical minter and wires them in one transaction |
 | `DefaultRenderer` | The default `IRenderer` a freshly deployed collection points at until the artist sets something else |
 | `RenderAssets` | Shared registry of static display assets (covers + captures), written under each collection's own owner/admin authority. Algorithm-driven (Art Blocks-style) works ship as their own bring-your-own renderer, not a shared assembler |
 
-**Per-artist clone** (deployed once per collection, owned by the artist):
+**Per-collection clones** (deployed per collection):
 
-`Surface` itself. It holds the ERC721 token logic, the sale
-paths, the payment split, and every read an indexer or renderer needs:
-`tokenSeed`, `config`. Nothing about a specific
-work's rendering, pricing, or gating logic lives here; those are the slots.
+`Surface` (or `PooledSurface`), the thin token, owned by the artist, plus a
+minter that drives it. The token holds the ERC721 logic and every read a
+renderer or indexer needs: `tokenSeed`, `config`. The canonical
+`FixedPriceMinter` is a clone per collection too, holding that collection's sale
+config and proceeds. Nothing about a specific work's rendering, pricing, or
+gating lives in the token; those are the renderer and the minter.
 
-## The four slots
+## Slots and modules
 
-Every collection has four independently swappable modules, set at init and
-changeable later by the artist except where noted:
+The token has one swappable slot and a minter set; the canonical minter adds a
+third slot:
 
-- **Renderer** (`IRenderer`): builds `tokenURI`; falls back to the
-  collection's `defaultRenderer` when unset
-- **Price strategy** (`IPriceStrategy`): a view-only pricing module; falls
-  back to the collection's stored fixed price when unset
-- **Mint hook** (`IMintHook`): runs `beforeMint`/`afterMint` on every mint
-  path, built-in and extension; non-payable, so it can gate or record but
-  never touch funds
-- **Extension minter**: an address the artist authorizes via `setMinter`
-  to call `mintTo`/`mintToId`; all value handling for that mint path lives
-  in the minter, not the core
+- **Renderer** (`IRenderer`) on the token: builds `tokenURI`; falls back to the
+  factory `defaultRenderer` when unset; pinnable one-way with `lockRenderer`
+- **Minter** on the token: an address the artist authorizes via `setMinter` to
+  call the non-payable `mintTo`/`mintToId`. The mint engine, where all sale
+  economics live. Freezable one-way with `lockMinter`
+- **Price strategy** (`IPriceStrategy`) inside the canonical minter: a
+  view-only pricing module; falls back to the minter's fixed price when unset
 
-Full detail: [The four slots](/docs/collections/concepts/four-slots).
+Full detail: [Slots and modules](/docs/collections/concepts/four-slots).
 
 ## Provenance and identity
 
-Every mint stamps exactly one piece of per-token state: the token's
-**entropy** (`tokenSeed`), a `bytes32` stable across transfers — the seed a
-generative renderer draws from, and the one fact that can never be
-reconstructed later. The rest of a token's **Mint Mark** is derived or
-event-recorded: in Sequential mode the token id IS the mint order (with
-first/final derived against the live status and minted count), and every
-`Minted` event permanently records the order, the `referrer` that hosted the
-mint, and the lifecycle status at that moment. The core stores nothing
-derivable; works needing more mint-time data record it themselves via a
-mint hook. See
-[Mint Marks and entropy](/docs/collections/concepts/mint-marks-and-entropy).
+Every mint stamps exactly one piece of per-token state: the token's **seed**
+(`tokenSeed`), a `bytes32` stable across transfers, the value a generative
+renderer draws from and the one fact that can never be reconstructed later. The
+rest of a token's provenance is derived or event-recorded: in Sequential mode
+the token id IS the mint order (with first/final derived from the cap), and
+every `Minted` event permanently records the issuing minter, the recipient, the
+id range, and the global mint index. The token stores nothing derivable; works
+needing more mint-time data record it through their own minter. See
+[Seed and provenance](/docs/collections/concepts/mint-marks-and-entropy).
 
-## Live settings and the three locks
+## Live settings and the locks
 
-Every sale term is a live setting the artist (or an admin they grant) can
-change: the mint window (`setMintWindow`), the fixed price (`setPrice`), the
-EIP-2981 royalty (`setRoyalty`), and the supply cap (`setSupplyCap`).
-Lifecycle status — `Scheduled`, `Open`, or `Closed` — is derived from the
-window, the cap, and the clock; nothing stores it, so it can never drift
-from the settings that produce it.
+On the token, the artist (or an admin they grant) can change the renderer
+(`setRenderer`), the EIP-2981 royalty (`setRoyalty`), and the supply cap
+(`setSupplyCap`), and manage minters (`setMinter`). On the minter, they can
+change the price, window, payout, sale ceiling, allowlist, and per-wallet cap.
+The token has no mint window and no lifecycle status; the sale phase is the
+minter's `mintStart`/`mintEnd`.
 
-Against that flexibility stand one-way locks, each converting a setting
-into a permanent promise. On the collection: `lockRenderer` (optional; the
-renderer pointer can never change) and `lockSupply` (the supply can never
-grow — and the cap binds extension minters too, so it holds no matter what
-is granted later). For a generative work, the artist's own renderer supplies
-the algorithm's permanence (deployed immutable, or with its own one-way
-lock); `lockRenderer` pins the pointer to it, so pointer lock + an immutable
-renderer is full presentation permanence. The core stores no presentation
-data — a work's algorithm lives in the artist's renderer, and static images
-live in [RenderAssets](/docs/collections/contracts/render-assets).
+Against that flexibility stand one-way locks, each converting a setting into a
+permanent promise. On the token: `lockRenderer` (the renderer pointer can never
+change), `lockSupply` (the supply can never grow, and the cap binds every
+minter, so it holds no matter what is granted later), and `lockMinter` (the
+minter set can never change). For a generative work, the artist's own renderer
+supplies the algorithm's permanence (deployed immutable, or with its own
+one-way lock); `lockRenderer` pins the pointer to it, so pointer lock plus an
+immutable renderer is full presentation permanence. The token stores no
+presentation data: a work's algorithm lives in the artist's renderer, and
+static images live in [RenderAssets](/docs/collections/contracts/render-assets).
 
 ## Id modes
 
-A collection is either **sequential** (the core assigns ids, built-in `mint`
-is available, ids are never reused) or **pooled** (an extension minter
-supplies every id, a burned id can be re-minted as a new instance). Fixed at
-init, not changeable after. See [Id modes](/docs/collections/concepts/id-modes).
+A collection is either **sequential** (the core assigns ids, `mintTo` mints the
+next ones, ids are never reused) or **pooled** (the minter supplies every id
+through `mintToId`, a burned id can be re-minted as a new instance). Fixed at
+init, not changeable after. See
+[Id modes](/docs/collections/concepts/id-modes).
 
 ## Honest pricing and the referral share
 
-A collector on the built-in path pays exactly the resolved price: the
-stored fixed price, or whatever the price strategy quotes. Out of that
-price, a fixed 10% (`REFERRAL_SHARE_BPS`) goes to whoever hosts the mint,
-the **referrer**. Minting directly against the contract, or through a
-self-hosted page passing the artist's own address as the referrer, folds
-that share back to the artist. There is no other protocol fee anywhere in
-the core.
+A collector on the canonical minter pays exactly the resolved price: the stored
+fixed price, or whatever the price strategy quotes. Out of that price, a fixed
+10% (`REFERRAL_SHARE_BPS`) goes to whoever hosts the mint, the **referrer**.
+Minting with no referrer, or through a self-hosted page passing the artist's
+own address, folds that share back to the artist. There is no protocol fee
+anywhere in the token or the canonical minter. A custom minter sets its own
+terms, visibly onchain.
 
 ## Status
 
-The Surface System is pre-deploy. Contract and interface behavior in
-this reference reflects the code as written; the shared-singleton addresses
-below are placeholders until launch.
+The Surface System is pre-deploy. Contract and interface behavior in this
+reference reflects the code as written; the shared-singleton addresses below
+are placeholders until launch.
 
 ## Where to go next
 
-- [Conventions](/docs/introduction/conventions): how to read the rest of
-  this reference: address links, cast/viem examples, glossary
-- [The four slots](/docs/collections/concepts/four-slots), [Id modes](/docs/collections/concepts/id-modes),
-  [Mint Marks and entropy](/docs/collections/concepts/mint-marks-and-entropy),
+- [Conventions](/docs/introduction/conventions): how to read the rest of this
+  reference: address links, cast/viem examples, glossary
+- [Slots and modules](/docs/collections/concepts/four-slots),
+  [Id modes](/docs/collections/concepts/id-modes),
+  [Seed and provenance](/docs/collections/concepts/mint-marks-and-entropy),
   [Types](/docs/collections/concepts/types): the concept pages
 - [Surface](/docs/collections/contracts/surface),
-  [SurfaceFactory](/docs/collections/contracts/factory): the core contract
-  reference, generated from the ABI
+  [SurfaceFactory](/docs/collections/contracts/factory),
+  [FixedPriceMinter](/docs/collections/contracts/fixed-price-minter): the
+  contract references, generated from the ABI
 - [Deploy a collection](/docs/collections/guides/deploy-a-collection),
   [Mint](/docs/collections/guides/mint): task-oriented guides

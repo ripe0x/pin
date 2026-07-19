@@ -2,78 +2,80 @@
 
 # Id modes
 
-Every collection is one of two id modes — a structural fact, fixed by which
-final the factory deploys (`createSurface` for sequential,
-`createPooledSurface` for pooled) and never changeable afterward. It is not
-a config field; it is read back with `idMode()`. The mode governs who assigns
-token ids, whether a built-in mint path exists at all, and what a burn means.
+Every collection is one of two id modes, a structural fact fixed by which form
+the factory deploys (`createSurface`/`createSurfaceCustom` for sequential,
+`createPooledSurface` for pooled) and never changeable afterward. It is not a
+config field; it is read back with `idMode()`. The mode governs who assigns
+token ids, which mint entrypoint the token exposes, and what a burn means.
 
 ## Sequential
 
 The core assigns every id itself, counting up from `1`.
 
-- `mint`/`mintWithReferral` (the built-in paid path) are available; each call
-  mints `quantity` consecutive ids starting at the current counter
-- An extension minter mints through `mintTo(to, referrer, hookData)`, which
-  also draws the next id from the same counter; it can never choose one
-- `burn(tokenId)` follows standard ERC721 authorization (owner or
-  approved). A burned id is retired: it is never reassigned
-- The supply cap (`SurfaceConfig.supplyCap`, `0` = uncapped) bounds
-  **mints ever**. An edition of 100 stays an edition of 100; burning tokens
-  does not free new mint slots
+- The token exposes one mint entrypoint, `mintTo(to, quantity)`, callable only
+  by an authorized minter. It draws the next id from the core's counter; the
+  minter can never choose one. One call mints `quantity` consecutive ids and
+  emits one `Minted` event
+- `burn(tokenId)` follows standard ERC721 authorization (owner or approved). A
+  burned id is retired: it is never reassigned
+- The supply cap (`SurfaceConfig.supplyCap`, `0` = uncapped) bounds **mints
+  ever**. Burning tokens does not free new mint slots
 
 ## Pooled
 
-An authorized extension minter supplies every id explicitly.
+An authorized minter supplies every id explicitly.
 
-- The built-in paid path does not exist on the pooled final at all: there is
-  no `mint` or `mintWithReferral` in its ABI. A pooled collection sells
-  exclusively through whichever minter owns its id pool
-- The minter mints through `mintToId(to, tokenId, referrer, hookData)`,
-  where `tokenId` is caller-supplied (the pool's own id scheme; `tokenId
-  == sourceId` is the typical form, and `0` is a legal id)
+- The token exposes one mint entrypoint, `mintToId(to, tokenId)`, callable
+  only by the authorized minter. `tokenId` is caller-supplied (the pool's own
+  id scheme; `tokenId == sourceId` is the typical form, and `0` is a legal id)
 - `burn(tokenId)` is restricted to an authorized minter (`NotAuthorized`
   otherwise), not the token owner directly. A pooled collection issues and
-  retires tokens exclusively through its minter, which owns the id pool and
-  any per-token backing, so a holder can't destroy a token out-of-band and
-  strand that backing or desync the pool
+  retires tokens exclusively through its minter, which owns the id pool and any
+  per-token backing, so a holder cannot destroy a token out of band and strand
+  that backing or desync the pool. The pooled form holds one minter at a time
+  and can freeze it (`lockMinter`), so a locked backed collection has exactly
+  one address that can retire an id
 - A burned id **can be minted again**, as a brand-new instance: OZ ERC721
-  allows re-minting a burned id, and doing so stamps a fresh Mint Mark and
-  fresh entropy. The prior instance's history is not erased; it stays
-  readable in past events and offchain indexing, it is simply superseded
-  as the current state of that id
+  allows re-minting a burned id, and doing so stamps a fresh seed. The prior
+  instance's history is not erased; it stays readable in past events and
+  offchain indexing, it is simply superseded as the current state of that id
 - The supply cap bounds **live supply**, not mints ever: `totalSupply() +
-  quantity <= cap`. Redeeming a token (burn) frees its id for a future
-  draw, so the cap is a ceiling on how many instances of the collection
-  exist at once, not a lifetime mint ceiling
+  quantity <= cap`. Redeeming a token (burn) frees its id for a future draw,
+  so the cap is a ceiling on how many instances exist at once
 
 ## Comparison
 
 | | Sequential | Pooled |
 | --- | --- | --- |
-| Who assigns ids | The core (`nextId++`) | The extension minter (`mintToId`) |
-| Built-in `mint`/`mintWithReferral` | Available | Not in the ABI |
-| Extension mint call | `mintTo` | `mintToId` |
+| Who assigns ids | The core (mint order) | The minter (`mintToId`) |
+| Mint entrypoint | `mintTo(to, quantity)` | `mintToId(to, tokenId)` |
 | Burn authority | Owner or approved | Authorized minter only |
 | Burned id | Never reused | May be re-minted as a new instance |
 | Supply cap bounds | Mints ever | Live supply |
-| Mint Mark / entropy on re-mint | N/A, ids aren't reused | Fresh mark, fresh entropy per instance |
+| Seed on re-mint | N/A, ids are not reused | Fresh seed per instance |
+
+Both entrypoints are non-payable and revert `NotMinter` if the caller is not
+an authorized minter. Neither enforces a mint window: the minter owns its own
+schedule, and the artist's control over it is `setMinter(minter, false)`, not
+a token-side window. Both enforce the supply cap (`ExceedsCap`) and stamp a
+fresh `tokenSeed` per token.
 
 ## The redeem cycle
 
-Pooled mode exists for works whose ids are drawn from and returned to a
-pool over the work's lifetime, rather than minted once and held forever:
-an id is drawn and minted (`mintToId`), a holder later redeems it (the
-minter burns it, typically after releasing whatever it backed), and the
-same id becomes eligible to be drawn and minted again later. Each pass
-through the cycle is a distinct instance from the Mint Mark and entropy's
-point of view; only the `tokenId` persists across cycles.
+Pooled mode exists for works whose ids are drawn from and returned to a pool
+over the work's lifetime, rather than minted once and held forever: an id is
+drawn and minted (`mintToId`), a holder later redeems it (the minter burns it,
+typically after releasing whatever it backed), and the same id becomes
+eligible to be drawn and minted again later. Each pass through the cycle is a
+distinct instance from the seed's point of view; only the `tokenId` persists
+across cycles.
 
-Because the minter is the sole caller of both `mintToId` and pooled
-`burn`, it is the only place that needs to track which ids are currently
-live versus available to draw; the collection itself has no pool-state
-concept beyond "this id currently has an owner or it doesn't."
+Because the minter is the sole caller of both `mintToId` and pooled `burn`, it
+is the only place that needs to track which ids are currently live versus
+available to draw; the collection itself has no pool-state concept beyond "this
+id currently has an owner or it does not."
 
-See [Write a minter](/docs/collections/guides/write-a-minter) for building a pooled
-minter, and [Mint Marks and entropy](/docs/collections/concepts/mint-marks-and-entropy)
-for what a re-mint resets.
+See [Write a minter](/docs/collections/guides/write-a-minter) for building a
+pooled minter, and
+[Seed and provenance](/docs/collections/concepts/mint-marks-and-entropy) for
+what a re-mint resets.

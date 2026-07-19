@@ -186,7 +186,6 @@ const PROTOCOLS: Protocol[] = [
             {section: 'guides', slug: 'mint', file: 'collections/guides/mint.md'},
             {section: 'guides', slug: 'write-a-minter', file: 'collections/guides/write-a-minter.md'},
             {section: 'guides', slug: 'write-a-price-strategy', file: 'collections/guides/write-a-price-strategy.md'},
-            {section: 'guides', slug: 'write-a-mint-hook', file: 'collections/guides/write-a-mint-hook.md'},
             {section: 'guides', slug: 'write-a-renderer', file: 'collections/guides/write-a-renderer.md'},
         ],
         referencePages: [
@@ -993,7 +992,7 @@ async function main() {
     llms.push('# PND onchain protocols');
     llms.push('');
     llms.push(
-        '> The onchain protocols PND ships for artists. Each is a self-contained set of contracts with an API reference below. Collections are artist-owned ERC721 contracts built on one core with four swappable slots. Auctions are per-owner English-auction houses for any ERC721. More protocols land here as they ship.',
+        '> The onchain protocols PND ships for artists. Each is a self-contained set of contracts with an API reference below. Collections are artist-owned ERC721 contracts built on a thin token core where every mint goes through an authorized minter, with a canonical fixed-price/referral minter wired by the factory. Auctions are per-owner English-auction houses for any ERC721. More protocols land here as they ship.',
     );
     llms.push('');
     llms.push(`Machine-readable addresses + ABIs: ${SITE_ORIGIN}/protocol-manifest.json (ABIs under ${SITE_ORIGIN}/abis/).`);
