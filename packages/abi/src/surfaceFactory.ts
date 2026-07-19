@@ -15,6 +15,11 @@ export const surfaceFactoryAbi = [
         "internalType": "address"
       },
       {
+        "name": "minterImplementation_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
         "name": "defaultRenderer_",
         "type": "address",
         "internalType": "address"
@@ -84,24 +89,9 @@ export const surfaceFactoryAbi = [
         "internalType": "struct SurfaceConfig",
         "components": [
           {
-            "name": "price",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
             "name": "supplyCap",
             "type": "uint256",
             "internalType": "uint256"
-          },
-          {
-            "name": "mintStart",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "mintEnd",
-            "type": "uint64",
-            "internalType": "uint64"
           },
           {
             "name": "royaltyBps",
@@ -114,22 +104,7 @@ export const surfaceFactoryAbi = [
             "internalType": "address"
           },
           {
-            "name": "payoutAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
             "name": "renderer",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "mintHook",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "priceStrategy",
             "type": "address",
             "internalType": "address"
           },
@@ -190,24 +165,9 @@ export const surfaceFactoryAbi = [
         "internalType": "struct SurfaceConfig",
         "components": [
           {
-            "name": "price",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
             "name": "supplyCap",
             "type": "uint256",
             "internalType": "uint256"
-          },
-          {
-            "name": "mintStart",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "mintEnd",
-            "type": "uint64",
-            "internalType": "uint64"
           },
           {
             "name": "royaltyBps",
@@ -220,22 +180,130 @@ export const surfaceFactoryAbi = [
             "internalType": "address"
           },
           {
-            "name": "payoutAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
             "name": "renderer",
             "type": "address",
             "internalType": "address"
           },
           {
-            "name": "mintHook",
+            "name": "rendererLocked",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "supplyLocked",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ]
+      },
+      {
+        "name": "sale",
+        "type": "tuple",
+        "internalType": "struct SaleConfig",
+        "components": [
+          {
+            "name": "price",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "priceStrategy",
             "type": "address",
             "internalType": "address"
           },
           {
-            "name": "priceStrategy",
+            "name": "mintStart",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "mintEnd",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "payout",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "maxMints",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "allowlistRoot",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "walletCap",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      },
+      {
+        "name": "creators",
+        "type": "address[]",
+        "internalType": "address[]"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "collection",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "minter",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "createSurfaceCustom",
+    "inputs": [
+      {
+        "name": "name",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "symbol",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "owner",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "cfg",
+        "type": "tuple",
+        "internalType": "struct SurfaceConfig",
+        "components": [
+          {
+            "name": "supplyCap",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "royaltyBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "royaltyReceiver",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "renderer",
             "type": "address",
             "internalType": "address"
           },
@@ -338,6 +406,19 @@ export const surfaceFactoryAbi = [
         "name": "",
         "type": "bool",
         "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "minterImplementation",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "view"
@@ -460,6 +541,12 @@ export const surfaceFactoryAbi = [
         "name": "collection",
         "type": "address",
         "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "minter",
+        "type": "address",
+        "indexed": false,
         "internalType": "address"
       },
       {

@@ -1,19 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity ^0.8.24;
 
-import {SurfaceConfig, SurfaceStatus, IdMode, InitParams} from "../SurfaceTypes.sol";
+import {SurfaceConfig, IdMode, InitParams} from "../SurfaceTypes.sol";
 
 /// @title ISurfaceCore
 /// @notice Shared interface of every collection, regardless of id mode. An
-///         OpenZeppelin ERC721 deployed as an immutable EIP-1167 clone: the
-///         collector pays the price, the artist receives it minus a fixed
-///         referral share, and the core stores one seed per token. The four
-///         mutable slots are renderer, price strategy, mint hook, and minters;
+///         OpenZeppelin ERC721 deployed as an immutable EIP-1167 clone: it
+///         holds no value and runs no sale logic, and stores one seed per
+///         token. The two mutable slots are the renderer and the minter set;
 ///         there is no upgrade path.
 ///
 ///         The mint entrypoints are not declared here. Each id mode is its own
-///         contract with its own entrypoints: ISurface (sequential) sells and
-///         counts; IPooledSurface lets its minter choose ids.
+///         contract with its own entrypoints: ISurface (sequential) assigns
+///         ids in mint order; IPooledSurface lets its minter choose ids.
 interface ISurfaceCore {
     // ── errors ──────────────────────────────────────────────────────────────
     error OwnerRequired();
@@ -21,20 +20,12 @@ interface ISurfaceCore {
     error RendererNotContract(address renderer);
     error NotAContract(address account);
     error RoyaltyTooHigh();
-    error BadMintWindow();
     error ZeroMinter();
     error ZeroQuantity();
-    error MintNotStarted();
-    error MintEnded();
-    error WrongPayment(uint256 required, uint256 sent);
-    error Underpayment(uint256 required, uint256 sent);
     error NotMinter();
     error ExceedsCap(uint256 cap, uint256 attempted);
-    error HookRejected();
     error NotAuthorized();
     error ZeroAccount();
-    error NothingToWithdraw();
-    error WithdrawFailed();
     error NoStrayETH();
     error RescueFailed();
     error NeverMinted();
@@ -47,7 +38,7 @@ interface ISurfaceCore {
     error TooManyMinters();
 
     // ── events ──────────────────────────────────────────────────────────────
-    event SurfaceConfigured(IdMode idMode, uint256 price, uint256 supplyCap, uint64 mintStart, uint64 mintEnd);
+    event SurfaceConfigured(IdMode idMode, uint256 supplyCap);
 
     // ── ERC-4906 (metadata refresh signals for marketplaces) ────────────────
     event MetadataUpdate(uint256 _tokenId);
@@ -56,26 +47,21 @@ interface ISurfaceCore {
     // ── ERC-7572 (contract-level metadata refresh signal) ───────────────────
     event ContractURIUpdated();
 
-    /// @notice Emitted once per mint call; the per-mint record. Built-in paths
-    ///         cover [firstTokenId, firstTokenId + quantity - 1]; extension
-    ///         mints emit quantity 1. firstMintIndex is the global mint order
-    ///         of the call's first token (token k's index = firstMintIndex +
-    ///         k), included because pooled ids do not encode it. The mint block
-    ///         is the log's own block. No per-token data is stored; indexers
-    ///         read it from the log.
+    /// @notice Emitted once per mint call; the per-mint record. Sequential
+    ///         mints cover [firstTokenId, firstTokenId + quantity - 1]; pooled
+    ///         mints are always quantity 1. firstMintIndex is the global mint
+    ///         order of the call's first token (token k's index =
+    ///         firstMintIndex + k), included because pooled ids do not encode
+    ///         it. minter is the calling minter (msg.sender), which minted
+    ///         this token; it gives cross-minter attribution without trace
+    ///         lookups. The mint block is the log's own block. No per-token
+    ///         data is stored beyond the seed; indexers read the rest from the
+    ///         log.
     event Minted(
-        address indexed to,
-        address indexed referrer,
-        uint256 firstTokenId,
-        uint256 quantity,
-        uint256 firstMintIndex,
-        SurfaceStatus statusAtMint
+        address indexed minter, address indexed to, uint256 firstTokenId, uint256 quantity, uint256 firstMintIndex
     );
 
     event Burned(uint256 indexed tokenId);
-    event ReferralPaid(address indexed referrer, uint256 amount);
-    event MintWindowSet(uint64 mintStart, uint64 mintEnd);
-    event PriceSet(uint256 price);
     event RoyaltySet(uint16 royaltyBps, address indexed royaltyReceiver);
     event SupplyCapSet(uint256 supplyCap);
     event SupplyLocked();
@@ -83,12 +69,8 @@ interface ISurfaceCore {
     event MinterLocked();
     event CreatorListed(address indexed creator, bool listed);
     event RendererSet(address indexed renderer);
-    event MintHookSet(address indexed hook);
-    event PriceStrategySet(address indexed strategy);
     event MinterSet(address indexed minter, bool allowed);
     event AdminSet(address indexed account, bool allowed);
-    event Withdrawn(address indexed account, uint256 amount);
-    event PayoutAddressSet(address indexed payoutAddress);
     event StrayETHRescued(address indexed to, uint256 amount);
 
     // ── init + config ────────────────────────────────────────────────────────
@@ -99,14 +81,6 @@ interface ISurfaceCore {
     ///         effect here.
     function initialize(InitParams calldata p) external;
 
-    /// @notice Reschedules the built-in paid mint window (owner or admin).
-    ///         `end` 0 means open-ended; otherwise end > start. Applies to the
-    ///         paid path only; extension minters keep their own schedules.
-    function setMintWindow(uint64 start, uint64 end) external;
-    /// @notice Updates the stored fixed price (ignored while a price strategy
-    ///         is set). Payment is exact-match, so a mint in flight at the old
-    ///         price reverts rather than overpaying.
-    function setPrice(uint256 price) external;
     /// @notice Updates the EIP-2981 royalty. Capped at 50%; receiver 0 =
     ///         owner().
     function setRoyalty(uint16 royaltyBps, address royaltyReceiver) external;
@@ -120,8 +94,6 @@ interface ISurfaceCore {
     /// @notice Points tokenURI at a new renderer. Reverts once locked; the
     ///         renderer cannot be the zero address.
     function setRenderer(address renderer) external;
-    function setMintHook(address hook) external;
-    function setPriceStrategy(address strategy) external;
     /// @notice Grants or revokes an extension minter. Reverts once the minter
     ///         set is locked; the pooled form allows one minter at a time.
     function setMinter(address minter, bool allowed) external;
@@ -137,7 +109,6 @@ interface ISurfaceCore {
     ///         renounce itself. Reverts NotAnAdmin when there is no grant to
     ///         remove.
     function removeAdmin(address account) external;
-    function setPayoutAddress(address payoutAddress) external;
     /// @notice Owner's side of attribution: lists or unlists creators. A
     ///         listing is an assertion; confirmation also requires the creator
     ///         to register this collection in the Catalog (isConfirmedCreator).
@@ -160,26 +131,13 @@ interface ISurfaceCore {
     ///         control the id pool and any per-token backing.
     function burn(uint256 tokenId) external;
 
-    // ── withdrawals (pull payments) ──────────────────────────────────────────
-    /// @notice Sends `account` its owed balance. Callable by anyone; funds go
-    ///         only to the owed address.
-    function withdraw(address account) external;
-
-    function pendingWithdrawal(address account) external view returns (uint256);
-
-    /// @notice Owner-or-admin sweep of ETH that is not owed to anyone
-    ///         (force-fed strays). Pull-payment balances are not affected.
+    /// @notice Owner-or-admin sweep of the full ETH balance. The token holds
+    ///         no value of its own, so any balance is force-fed (selfdestruct,
+    ///         pre-funded address); there is nothing owed to sweep around.
     function rescueStrayETH(address to) external;
 
     // ── reads ───────────────────────────────────────────────────────────────
-    function config() external view returns (SurfaceConfig memory cfg, SurfaceStatus status, uint256 minted);
-
-    /// @notice The fixed protocol referral share, in bps.
-    function REFERRAL_SHARE_BPS() external view returns (uint16);
-
-    /// @notice Resolved price for a prospective mint: the strategy price if a
-    ///         strategy is set, else the stored fixed price times quantity.
-    function currentPrice(address minter, uint256 quantity, bytes calldata data) external view returns (uint256);
+    function config() external view returns (SurfaceConfig memory cfg, uint256 minted);
 
     /// @notice Mint-time entropy, stamped per token in the mint transaction.
     function tokenSeed(uint256 tokenId) external view returns (bytes32);
@@ -188,8 +146,6 @@ interface ISurfaceCore {
     ///         setting.
     function idMode() external view returns (IdMode);
     function renderer() external view returns (address);
-    function mintHook() external view returns (address);
-    function priceStrategy() external view returns (address);
     function isMinter(address minter) external view returns (bool);
     /// @notice Whether `account` may call the admin-gated setters: the owner,
     ///         or any address holding an explicit grant.

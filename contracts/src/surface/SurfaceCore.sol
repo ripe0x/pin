@@ -9,17 +9,15 @@ import {
 
 import {ISurfaceCore} from "./interfaces/ISurfaceCore.sol";
 import {IRenderer} from "./interfaces/IRenderer.sol";
-import {IMintHook} from "./interfaces/IMintHook.sol";
-import {IPriceStrategy} from "./interfaces/IPriceStrategy.sol";
 import {ICatalog} from "./interfaces/ICatalog.sol";
-import {SurfaceConfig, SurfaceStatus, IdMode, InitParams} from "./SurfaceTypes.sol";
+import {SurfaceConfig, IdMode, InitParams} from "./SurfaceTypes.sol";
 
 /// @title SurfaceCore
 /// @notice Abstract base shared by both collection forms; defines no mint
-///         entrypoint (each form does). Holds proceeds by pull payment
-///         (recipients withdraw), stores one mint-time seed per token and
-///         nothing else, and provides two permanent one-way locks: lockRenderer
-///         and lockSupply.
+///         entrypoint (each form does). Holds no value and runs no sale logic:
+///         every mint goes through an authorized minter, non-payable. Stores
+///         one mint-time seed per token and nothing else, and provides three
+///         permanent one-way locks: lockRenderer, lockSupply, and lockMinter.
 ///
 /// @dev    Deployed as immutable EIP-1167 clones: no proxy admin, no upgrade
 ///         path. The OZ upgradeable bases are used only for their initializer
@@ -27,6 +25,7 @@ import {SurfaceConfig, SurfaceStatus, IdMode, InitParams} from "./SurfaceTypes.s
 ///         implementations behind a new factory, never by changing a
 ///         deployed collection.
 abstract contract SurfaceCore is
+
     // The OZ "Upgradeable" bases mean initializer-based (constructor-free), which
     // is required because the finals deploy as EIP-1167 clones and a clone never
     // runs a constructor; state is set in initialize(). It does NOT mean these
@@ -41,28 +40,15 @@ abstract contract SurfaceCore is
     /// @notice Implementation version. 1 is the first release.
     uint256 public constant version = 1;
 
-    uint16 internal constant BPS = 10_000;
-    /// @notice Fixed referral share: 10%, paid to the referrer that hosts the
-    ///         mint. Not artist-set, not a protocol fee. On a mint with no
-    ///         referrer this share accrues to the artist.
-    uint16 public constant override REFERRAL_SHARE_BPS = 1_000;
     /// @dev EIP-2981 is advisory. The 50% ceiling caps the royalty a
     ///      permissionless deployer can set on someone else's behalf.
+    uint16 internal constant BPS = 10_000;
     uint16 internal constant MAX_ROYALTY_BPS = 5_000;
     bytes4 internal constant INTERFACE_ID_ERC2981 = 0x2a55205a;
     bytes4 internal constant INTERFACE_ID_ERC4906 = 0x49064906;
 
-    // Pull-payment balances: mints accrue here, recipients claim via
-    // withdraw(). No external transfer during a mint, so a reverting recipient
-    // cannot block minting. Overpayment on a dynamic price accrues back to the
-    // payer the same way.
-    mapping(address => uint256) internal _pending;
-    // Sum of all _pending balances. rescueStrayETH may only sweep the balance
-    // above this amount; owed funds are never swept.
-    uint256 internal _totalPending;
-
     /// @dev Extension minters, granted explicitly by the owner. They call the
-    ///      final's extension entrypoint (non-payable); they handle value
+    ///      final's mint entrypoint (non-payable); they handle all economics
     ///      themselves.
     mapping(address => bool) internal _minters;
 
@@ -99,8 +85,8 @@ abstract contract SurfaceCore is
     // The only per-token storage: mint-time entropy, used as render input that
     // cannot be reconstructed later. keccak output is never zero, so a nonzero
     // seed also serves as the was-ever-minted sentinel. Forms needing more
-    // mint-time data (block, pooled order) record it themselves via a mint
-    // hook or minter.
+    // mint-time data (block, pooled order) record it themselves via their
+    // minter.
     mapping(uint256 => bytes32) internal _seed;
 
     // Attribution is two-sided. The owner lists creators here; each listed
@@ -117,7 +103,6 @@ abstract contract SurfaceCore is
     function initialize(InitParams calldata p) external override initializer {
         if (p.owner == address(0)) revert OwnerRequired();
         if (p.cfg.royaltyBps > MAX_ROYALTY_BPS) revert RoyaltyTooHigh();
-        if (p.cfg.mintEnd != 0 && p.cfg.mintEnd <= p.cfg.mintStart) revert BadMintWindow();
         __ERC721_init(p.name, p.symbol);
         __Ownable_init(p.owner);
         __Ownable2Step_init();
@@ -130,14 +115,6 @@ abstract contract SurfaceCore is
         if (p.cfg.renderer == address(0)) _cfg.renderer = p.defaultRenderer;
         if (_cfg.renderer == address(0)) revert RendererRequired();
         if (_cfg.renderer.code.length == 0) revert RendererNotContract(_cfg.renderer);
-        // The hook and price-strategy slots are optional (0 = none). A nonzero
-        // value must be a deployed contract; an EOA or bad address would revert
-        // every mint on the ABI-decode of empty returndata. Same rule the
-        // setters enforce.
-        if (_cfg.mintHook != address(0) && _cfg.mintHook.code.length == 0) revert NotAContract(_cfg.mintHook);
-        if (_cfg.priceStrategy != address(0) && _cfg.priceStrategy.code.length == 0) {
-            revert NotAContract(_cfg.priceStrategy);
-        }
         _catalog = p.catalog;
         for (uint256 i = 0; i < p.initialMinters.length; i++) {
             address m = p.initialMinters[i];
@@ -158,7 +135,7 @@ abstract contract SurfaceCore is
         // Locks passed true apply from initialization; emit their events.
         if (_cfg.rendererLocked) emit RendererLocked();
         if (_cfg.supplyLocked) emit SupplyLocked();
-        emit SurfaceConfigured(idMode(), p.cfg.price, p.cfg.supplyCap, p.cfg.mintStart, p.cfg.mintEnd);
+        emit SurfaceConfigured(idMode(), p.cfg.supplyCap);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -171,10 +148,6 @@ abstract contract SurfaceCore is
     /// @dev What the supply cap is measured against: mints-ever (sequential)
     ///      or live supply (pooled).
     function _capUsage() internal view virtual returns (uint256);
-
-    /// @dev Whether a full cap closes the collection permanently. True only in
-    ///      the sequential final; a pooled cap frees room again on burn.
-    function _capFilled() internal view virtual returns (bool);
 
     /// @dev Who may burn `tokenId`, given its current owner.
     function _burnAuthorized(address tokenOwner, uint256 tokenId) internal view virtual returns (bool);
@@ -223,71 +196,12 @@ abstract contract SurfaceCore is
         if (attempted > cap) revert ExceedsCap(cap, attempted);
     }
 
-    function _runBeforeHook(
-        address minter,
-        uint256 quantity,
-        uint256 firstTokenId,
-        address referrer,
-        bytes memory hookData
-    ) internal {
-        address hook = _cfg.mintHook;
-        if (hook == address(0)) return;
-        bytes4 answer = IMintHook(hook).beforeMint(minter, quantity, firstTokenId, referrer, hookData);
-        if (answer != IMintHook.beforeMint.selector) revert HookRejected();
-    }
-
-    function _runAfterHook(
-        address minter,
-        uint256 quantity,
-        uint256 firstTokenId,
-        address referrer,
-        bytes memory hookData
-    ) internal {
-        address hook = _cfg.mintHook;
-        if (hook != address(0)) {
-            IMintHook(hook).afterMint(minter, quantity, firstTokenId, referrer, hookData);
-        }
-    }
-
-    /// @dev Accrue `total`, split between the referral share and the artist.
-    ///      referrer 0 accrues the full amount to the artist. No external call
-    ///      here; recipients claim via withdraw().
-    function _settle(uint256 total, address referrer) internal {
-        if (total == 0) return;
-        _totalPending += total;
-        uint256 referralCut = referrer == address(0) ? 0 : (total * REFERRAL_SHARE_BPS) / BPS;
-        if (referralCut > 0) {
-            _pending[referrer] += referralCut;
-            emit ReferralPaid(referrer, referralCut);
-        }
-        uint256 artistCut = total - referralCut;
-        if (artistCut > 0) {
-            _pending[_cfg.payoutAddress == address(0) ? owner() : _cfg.payoutAddress] += artistCut;
-        }
-    }
-
-    /// @notice Send `account` its owed balance. Callable by anyone; funds go
-    ///         only to the owed address.
-    function withdraw(address account) external override nonReentrant {
-        if (account == address(0)) revert ZeroAccount();
-        uint256 amount = _pending[account];
-        if (amount == 0) revert NothingToWithdraw();
-        _pending[account] = 0;
-        _totalPending -= amount;
-        (bool ok,) = payable(account).call{value: amount}("");
-        if (!ok) revert WithdrawFailed();
-        emit Withdrawn(account, amount);
-    }
-
-    function pendingWithdrawal(address account) external view override returns (uint256) {
-        return _pending[account];
-    }
-
-    /// @notice Sweep only ETH that nobody is owed (for example, forced in via
-    ///         selfdestruct). The balance up to _totalPending is not swept.
+    /// @notice Sweep the ETH balance. The token holds no value of its own, so
+    ///         any balance is force-fed (selfdestruct, pre-funded address);
+    ///         there is nothing owed to leave behind.
     function rescueStrayETH(address to) external override onlyOwnerOrAdmin nonReentrant {
         if (to == address(0)) revert ZeroAccount();
-        uint256 stray = address(this).balance - _totalPending;
+        uint256 stray = address(this).balance;
         if (stray == 0) revert NoStrayETH();
         (bool ok,) = payable(to).call{value: stray}("");
         if (!ok) revert RescueFailed();
@@ -351,31 +265,6 @@ abstract contract SurfaceCore is
     // Config (owner root; every setter below also accepts admins)
     // ─────────────────────────────────────────────────────────────────────────
 
-    /// @notice Reschedule the built-in paid mint window: delay, extend,
-    ///         shorten, or reopen. Either bound may be 0 (open immediately /
-    ///         open-ended). Applies to the paid path only; extension minters
-    ///         keep their own schedules. Lifecycle status is derived, so
-    ///         reopening a closed window returns it to Open; each token's
-    ///         recorded statusAtMint is unaffected.
-    function setMintWindow(uint64 start, uint64 end) external override onlyOwnerOrAdmin {
-        if (end != 0 && end <= start) revert BadMintWindow();
-        _cfg.mintStart = start;
-        _cfg.mintEnd = end;
-        emit MintWindowSet(start, end);
-        // The window drives the lifecycle status (Scheduled/Open/Closed), which
-        // the renderer includes in token metadata; signal marketplaces to
-        // refresh.
-        emit BatchMetadataUpdate(0, type(uint256).max);
-    }
-
-    /// @notice Update the stored fixed price. Ignored while a price strategy is
-    ///         set. Payment is exact-match, so a mint in flight at the old price
-    ///         reverts rather than overpaying.
-    function setPrice(uint256 price) external override onlyOwnerOrAdmin {
-        _cfg.price = price;
-        emit PriceSet(price);
-    }
-
     /// @notice Update the EIP-2981 royalty. Same cap as init; receiver 0
     ///         resolves to owner().
     function setRoyalty(uint16 royaltyBps, address royaltyReceiver) external override onlyOwnerOrAdmin {
@@ -422,20 +311,6 @@ abstract contract SurfaceCore is
         emit ContractURIUpdated();
     }
 
-    function setMintHook(address hook) external override onlyOwnerOrAdmin {
-        // 0 = no hook; a nonzero value must be a deployed contract, same rule as setRenderer.
-        if (hook != address(0) && hook.code.length == 0) revert NotAContract(hook);
-        _cfg.mintHook = hook;
-        emit MintHookSet(hook);
-    }
-
-    function setPriceStrategy(address strategy) external override onlyOwnerOrAdmin {
-        // 0 = fixed price; a nonzero strategy must be a deployed contract.
-        if (strategy != address(0) && strategy.code.length == 0) revert NotAContract(strategy);
-        _cfg.priceStrategy = strategy;
-        emit PriceStrategySet(strategy);
-    }
-
     /// @notice Emit an ERC-4906 refresh for changes the core cannot observe:
     ///         an on-chain-live work whose output changed, a reveal, new
     ///         captures. Callable by the current renderer or owner/admin. Works
@@ -465,13 +340,6 @@ abstract contract SurfaceCore is
             _minterCount -= 1;
         }
         emit MinterSet(minter, allowed);
-    }
-
-    /// @notice Update where the artist's share accrues for future mints. Past
-    ///         accruals remain claimable at the previous address.
-    function setPayoutAddress(address payoutAddress) external override onlyOwnerOrAdmin {
-        _cfg.payoutAddress = payoutAddress;
-        emit PayoutAddressSet(payoutAddress);
     }
 
     /// @notice The owner's side of attribution: list or unlist creators at any
@@ -555,57 +423,17 @@ abstract contract SurfaceCore is
         return seed;
     }
 
-    /// @dev Status is a pure function of the window, the cap, and block time.
-    ///      Nothing is stored: change the window and the status follows.
-    ///      Scheduled: before mintStart (the paid path reverts, but an
-    ///      extension minter may mint, and its event records Scheduled).
-    ///      Closed: the window has passed, or the final reports its cap closed
-    ///      it. Open: otherwise.
-    function _lifecycleStatus() internal view returns (SurfaceStatus) {
-        if (_cfg.mintStart != 0 && block.timestamp < _cfg.mintStart) {
-            return SurfaceStatus.Scheduled;
-        }
-        if (_cfg.mintEnd != 0 && block.timestamp >= _cfg.mintEnd) return SurfaceStatus.Closed;
-        if (_capFilled()) return SurfaceStatus.Closed;
-        return SurfaceStatus.Open;
-    }
-
     function totalSupply() public view returns (uint256) {
         return _mintedEver - _burnedCount;
     }
 
-    function config()
-        external
-        view
-        override
-        returns (SurfaceConfig memory cfg, SurfaceStatus status, uint256 minted)
-    {
+    function config() external view override returns (SurfaceConfig memory cfg, uint256 minted) {
         cfg = _cfg;
-        status = _lifecycleStatus();
         minted = _mintedEver;
-    }
-
-    function currentPrice(address minter, uint256 quantity, bytes calldata data)
-        external
-        view
-        override
-        returns (uint256)
-    {
-        address strategy = _cfg.priceStrategy;
-        if (strategy == address(0)) return _cfg.price * quantity;
-        return IPriceStrategy(strategy).priceOf(address(this), minter, quantity, data);
     }
 
     function renderer() public view override returns (address) {
         return _cfg.renderer;
-    }
-
-    function mintHook() external view override returns (address) {
-        return _cfg.mintHook;
-    }
-
-    function priceStrategy() external view override returns (address) {
-        return _cfg.priceStrategy;
     }
 
     function isMinter(address minter) external view override returns (bool) {

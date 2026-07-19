@@ -5,7 +5,7 @@ import {Base64} from "solady/utils/Base64.sol";
 import {LibString} from "solady/utils/LibString.sol";
 
 import {ISurfaceView} from "../interfaces/IRenderer.sol";
-import {SurfaceStatus, IdMode} from "../SurfaceTypes.sol";
+import {SurfaceConfig, IdMode} from "../SurfaceTypes.sol";
 
 /// @title MetadataJson
 /// @notice Shared helpers used by the bundled renderers: JSON escaping,
@@ -41,18 +41,18 @@ library MetadataJson {
     /// @notice Provenance traits, derived at call time; no per-token data is
     ///         stored beyond the seed. In Sequential mode the token id equals
     ///         the mint order: Mint Order = tokenId, First = id 1, Final = the
-    ///         collection is Closed and this is the highest id it assigned.
+    ///         supply cap is set, reached, and this is the id that reached it.
     ///         Pooled ids carry no order, so pooled tokens return an empty
     ///         list; to expose order for a pooled collection, record mint-time
-    ///         data via a hook and read it in a custom renderer.
+    ///         data via the minter and read it in a custom renderer.
     function provenanceAttributes(ISurfaceView cv, uint256 tokenId) internal view returns (string memory) {
         if (cv.idMode() != IdMode.Sequential) return "[]";
-        (, SurfaceStatus status, uint256 minted) = cv.config();
+        (SurfaceConfig memory cfg, uint256 minted) = cv.config();
         string memory a = string.concat("[", numAttr("Mint Order", tokenId));
         if (tokenId == 1) {
             a = string.concat(a, ",", strAttr("Provenance", "First mint of the collection"));
         }
-        if (status == SurfaceStatus.Closed && tokenId == minted) {
+        if (cfg.supplyCap != 0 && minted == cfg.supplyCap && tokenId == cfg.supplyCap) {
             a = string.concat(a, ",", strAttr("Provenance", "Final mint of the collection"));
         }
         return string.concat(a, "]");

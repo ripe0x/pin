@@ -1,16 +1,16 @@
 import "server-only"
 import { createPublicClient, decodeFunctionResult, encodeFunctionData, http, keccak256, stringToBytes, type Address } from "viem"
 import { mainnet } from "viem/chains"
-import { catalogAbi, surfaceAbi, surfaceFactoryAbi, gateHookAbi, renderAssetsAbi } from "@pin/abi"
+import { catalogAbi, surfaceAbi, surfaceFactoryAbi, fixedPriceMinterAbi, renderAssetsAbi } from "@pin/abi"
 import { ARTIST_RECORD_REGISTRY, MAINNET_CHAIN_ID, getAddressOrNull } from "@pin/addresses"
 import { fetchMetadataForUri } from "@pin/token-metadata"
 import { pgCache } from "./pg-cache"
+import { getCollectionMinterFromIndexer } from "./indexer-queries"
 import {
   decodeCollectionConfig,
-  gateHookAddress,
   renderAssetsAddress,
   type Collection,
-  SurfaceStatus,
+  type MinterSaleConfig,
   IdMode,
   ZERO_ADDRESS,
 } from "./collection"
@@ -48,19 +48,68 @@ const lc = (a: string) => a.toLowerCase()
 
 const REGISTRY = getAddressOrNull(ARTIST_RECORD_REGISTRY, MAINNET_CHAIN_ID)
 
-type RawConfigReturn = readonly [Parameters<typeof decodeCollectionConfig>[0], number, bigint]
+type RawConfigReturn = readonly [Parameters<typeof decodeCollectionConfig>[0], bigint]
 
 /**
- * Full collection: identity, config, live status + minted count, plus the
- * mutable slot values (renderer/priceStrategy can be swapped post-deploy, so
- * they're read live rather than trusted from `cfg`). Short TTL.
+ * Live sale config for a canonical FixedPriceMinter clone: the individual
+ * getters (there is no single config() tuple on the minter the way there is
+ * on the token), multicalled together. Returns null on any read failure
+ * (e.g. `minterAddr` is a bring-your-own minter that doesn't implement this
+ * shape) rather than a partially-filled object.
+ */
+async function getMinterSaleConfig(
+  client: ReturnType<typeof getClient>,
+  minterAddr: Address,
+): Promise<MinterSaleConfig | null> {
+  const base = { address: minterAddr, abi: fixedPriceMinterAbi } as const
+  try {
+    const [price, priceStrategy, mintStart, mintEnd, payout, maxMints, allowlistRoot, walletCap] =
+      await client.multicall({
+        allowFailure: false,
+        contracts: [
+          { ...base, functionName: "price" },
+          { ...base, functionName: "priceStrategy" },
+          { ...base, functionName: "mintStart" },
+          { ...base, functionName: "mintEnd" },
+          { ...base, functionName: "payout" },
+          { ...base, functionName: "maxMints" },
+          { ...base, functionName: "allowlistRoot" },
+          { ...base, functionName: "walletCap" },
+        ],
+      })
+    return {
+      price: price as bigint,
+      priceStrategy: priceStrategy as Address,
+      mintStart: mintStart as bigint,
+      mintEnd: mintEnd as bigint,
+      payout: payout as Address,
+      maxMints: maxMints as bigint,
+      allowlistRoot: allowlistRoot as `0x${string}`,
+      walletCap: walletCap as bigint,
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Full collection: identity, config, minted count, the canonical minter's
+ * live sale config (when one is wired), plus the mutable slot values
+ * (renderer can be swapped post-deploy, so it's read live rather than
+ * trusted from `cfg`). Short TTL.
+ *
+ * The minter address itself is NOT a live chain read: the thin token has no
+ * "list of minters" getter (only isMinter(candidate)), so the only source
+ * for "which minter did this collection's factory deploy wire" is the
+ * indexed SurfaceCreated.minter field (see AGENTS.md — this is one of the
+ * few Postgres reads in an otherwise RPC-cached file, not a new RPC call).
  */
 export async function getCollection(address: Address): Promise<Collection | null> {
   return pgCache(`sc-collection:${lc(address)}`, 20, async () => {
     const client = getClient()
     const base = { address, abi: surfaceAbi } as const
     try {
-      const [name, symbol, owner, rendererLocked, supplyLocked, renderer, priceStrategy, idModeRaw, cfgRes] =
+      const [name, symbol, owner, rendererLocked, supplyLocked, renderer, idModeRaw, cfgRes] =
         await client.multicall({
           allowFailure: false,
           contracts: [
@@ -70,14 +119,13 @@ export async function getCollection(address: Address): Promise<Collection | null
             { ...base, functionName: "isRendererLocked" },
             { ...base, functionName: "isSupplyLocked" },
             { ...base, functionName: "renderer" },
-            { ...base, functionName: "priceStrategy" },
             // idMode is a structural fact read separately since the Sequential/
             // Pooled split moved it out of the config struct.
             { ...base, functionName: "idMode" },
             { ...base, functionName: "config" },
           ],
         })
-      const [cfgRaw, status, minted] = cfgRes as RawConfigReturn
+      const [cfgRaw, minted] = cfgRes as RawConfigReturn
 
       // Presentation data lives in renderer-land: the cover in RenderAssets.
       // Generative work now ships as bring-your-own renderers (each renderer
@@ -95,6 +143,11 @@ export async function getCollection(address: Address): Promise<Collection | null
             .catch(() => "")
         : ""
 
+      const minterAddr = await getCollectionMinterFromIndexer(address)
+      const minter =
+        minterAddr && minterAddr.toLowerCase() !== ZERO_ADDRESS ? (minterAddr as Address) : null
+      const sale = minter ? await getMinterSaleConfig(client, minter) : null
+
       return {
         address,
         name: name as string,
@@ -103,14 +156,14 @@ export async function getCollection(address: Address): Promise<Collection | null
         isRendererLocked: rendererLocked as boolean,
         isSupplyLocked: supplyLocked as boolean,
         renderer: renderer as Address,
-        priceStrategy: priceStrategy as Address,
         cfg: decodeCollectionConfig(cfgRaw, Number(idModeRaw) as IdMode),
+        minter,
+        sale,
         // Shared work-config read removed with the shared GenerativeRenderer;
         // bring-your-own renderers own their config. Kept as an empty default
         // so consumers that gate on work.code.length fall back to the cover.
         work: { code: [], deps: [], codeURI: "", codeHash: ("0x" + "0".repeat(64)) as `0x${string}`, injectionVersion: 1, renderParams: "" },
         cover: (cover as string) ?? "",
-        status: Number(status) as SurfaceStatus,
         minted: minted as bigint,
       }
     } catch {
@@ -347,10 +400,12 @@ export async function getRecentCollections(factory: Address, limit = 8): Promise
 }
 
 /**
- * Resolved price for a prospective mint: the strategy's live quote if one is
- * set, else the stored fixed price times quantity (currentPrice() on the
- * collection encodes this branch itself, so this is always the single
- * source of truth for "what would this mint cost right now").
+ * Resolved price for a prospective mint on a canonical FixedPriceMinter
+ * clone: the strategy's live quote if one is set, else the stored fixed
+ * price times quantity (priceOf on the minter encodes this branch itself,
+ * so this is always the single source of truth for "what would this mint
+ * cost right now"). `to` is the prospective recipient (gates evaluate it,
+ * though priceOf itself doesn't check gates or the window).
  *
  * Short 5s TTL rather than the longer TTLs used elsewhere in this file:
  * dynamic price strategies (e.g. basefee-driven) can change every block, and
@@ -361,18 +416,18 @@ export async function getRecentCollections(factory: Address, limit = 8): Promise
  * stale against a fast-moving strategy.
  */
 export async function getCurrentPrice(
-  address: Address,
   minter: Address,
+  to: Address,
   qty: bigint,
 ): Promise<bigint | null> {
-  return pgCache(`sc-price:${lc(address)}:${lc(minter)}:${qty.toString()}`, 5, async () => {
+  return pgCache(`sc-price:${lc(minter)}:${lc(to)}:${qty.toString()}`, 5, async () => {
     const client = getClient()
     try {
       const price = await client.readContract({
-        address,
-        abi: surfaceAbi,
-        functionName: "currentPrice",
-        args: [minter, qty, "0x"],
+        address: minter,
+        abi: fixedPriceMinterAbi,
+        functionName: "priceOf",
+        args: [to, qty, "0x"],
       })
       return price as bigint
     } catch {
@@ -381,57 +436,40 @@ export async function getCurrentPrice(
   })
 }
 
-/** The mint-gate state a collection page needs. `isGateHook` means the
- *  collection's hook is the canonical GateHook, so root/cap are readable
- *  and the eligibility UI applies; any other nonzero hook renders the
- *  generic gated-mint notice. */
-export type GateState = {
-  hook: Address
-  isGateHook: boolean
-  root: `0x${string}`
-  cap: string // bigint as string (serializable to client)
+/**
+ * The live allowlist + wallet-cap gate for a collection's canonical minter.
+ * Only the two fields the eligibility UI needs, read directly rather than
+ * through the full getCollection() multicall (used by the allowlist API
+ * route, which doesn't need identity/renderer/cover). Null when there's no
+ * canonical minter on record (bring-your-own minter, or not yet indexed) —
+ * same "nothing to gate on" case the old GateHook lookup's zero-hook branch
+ * covered. Config-class freshness (20s) — an artist flipping a gate mid-drop
+ * propagates on the same cadence as every other sale setting.
+ */
+export type MinterGate = {
+  minter: Address
+  allowlistRoot: `0x${string}`
+  walletCap: string // bigint as string (serializable to client)
 }
 
-const ZERO_ROOT = ("0x" + "0".repeat(64)) as `0x${string}`
-
-/**
- * The active gate for a collection: which hook is attached and, when it's
- * the canonical GateHook, its live root + per-wallet cap. Config-class
- * freshness (20s) — an artist flipping a gate mid-drop propagates on the
- * same cadence as every other sale setting.
- */
-export async function getGateState(address: Address): Promise<GateState | null> {
-  return pgCache(`sc-gate:${lc(address)}`, 20, async () => {
+export async function getMinterGate(address: Address): Promise<MinterGate | null> {
+  const minterAddr = await getCollectionMinterFromIndexer(address)
+  if (!minterAddr || minterAddr.toLowerCase() === ZERO_ADDRESS) return null
+  const minter = minterAddr as Address
+  return pgCache(`sc-gate:${lc(minter)}`, 20, async () => {
     const client = getClient()
     try {
-      const hook = (await client.readContract({
-        address,
-        abi: surfaceAbi,
-        functionName: "mintHook",
-      })) as Address
-      if (hook === ZERO_ADDRESS) return null
-      const gate = gateHookAddress()
-      const isGateHook = !!gate && lc(hook) === lc(gate)
-      if (!isGateHook) return { hook, isGateHook: false, root: ZERO_ROOT, cap: "0" }
-      const [root, cap] = await Promise.all([
-        client.readContract({
-          address: hook,
-          abi: gateHookAbi,
-          functionName: "rootOf",
-          args: [address],
-        }),
-        client.readContract({
-          address: hook,
-          abi: gateHookAbi,
-          functionName: "capOf",
-          args: [address],
-        }),
-      ])
+      const [allowlistRoot, walletCap] = await client.multicall({
+        allowFailure: false,
+        contracts: [
+          { address: minter, abi: fixedPriceMinterAbi, functionName: "allowlistRoot" },
+          { address: minter, abi: fixedPriceMinterAbi, functionName: "walletCap" },
+        ],
+      })
       return {
-        hook,
-        isGateHook: true,
-        root: root as `0x${string}`,
-        cap: (cap as bigint).toString(),
+        minter,
+        allowlistRoot: allowlistRoot as `0x${string}`,
+        walletCap: (walletCap as bigint).toString(),
       }
     } catch {
       return null

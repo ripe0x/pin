@@ -2,29 +2,32 @@
  * Client-side fetch helpers for the mint gate studio tool. Both hit the
  * same /api/collections/[address]/allowlist route the public mint page's
  * MintGate.tsx uses (see lib/allowlist.ts for the trust model: publishing
- * is permissionless, only the root a collection's owner/admin sets
- * onchain via GateHook.setRoot grants anything). No direct chain reads
- * here — the API's GET already wraps a config-class-cached getGateState.
+ * is permissionless, only the root a collection's owner/admin sets onchain
+ * via FixedPriceMinter.setAllowlistRoot grants anything). No direct chain
+ * reads here — the API's GET already wraps a config-class-cached
+ * getMinterGate.
  */
 
 export const ZERO_ROOT = ("0x" + "0".repeat(64)) as `0x${string}`
 
 /** Mirrors the two response shapes of GET /api/collections/[address]/allowlist
- *  (no ?wallet param — the gate-summary branch). */
+ *  (no ?wallet param — the gate-summary branch). `minter` is present
+ *  whenever a canonical minter is on record (both branches), since
+ *  ActivationQueue writes directly to it. */
 export type GateApiState =
-  | { gated: false; hook: `0x${string}` | null; knownHook: boolean; cap: string }
-  | { gated: true; root: `0x${string}`; cap: string; count: number | null }
+  | { gated: false; minter: `0x${string}` | null; knownMinter: boolean; cap: string }
+  | { gated: true; minter: `0x${string}`; root: `0x${string}`; cap: string; count: number | null }
 
 /** Normalized view of a collection's gate, regardless of which API branch
- *  answered. `root` is the zero root whenever GateHook isn't the active
- *  hook (matching the API's own "gated" definition: attached AND nonzero
- *  root) — reconstructible because the "not gated" branch only omits root
- *  when it's implicitly zero. */
+ *  answered. `root` is the zero root whenever the collection has no
+ *  canonical minter, or its minter's allowlist is unset (matching the API's
+ *  own "gated" definition: a canonical minter AND a nonzero root). */
 export type DerivedGate = {
-  /** mintHook is set to the canonical GateHook contract. */
-  hookAttached: boolean
-  /** mintHook is set to some other nonzero address. */
-  otherHookAddress: `0x${string}` | null
+  /** A canonical FixedPriceMinter is wired for this collection (allowlist +
+   *  wallet-cap config is readable/settable on it directly — there is no
+   *  separate hook to attach anymore). */
+  hasMinter: boolean
+  minter: `0x${string}` | null
   root: `0x${string}`
   cap: string
   /** Published list size for the active root; null when there's no active
@@ -36,16 +39,16 @@ export function deriveGate(state: GateApiState | null): DerivedGate | null {
   if (!state) return null
   if (state.gated) {
     return {
-      hookAttached: true,
-      otherHookAddress: null,
+      hasMinter: true,
+      minter: state.minter,
       root: state.root,
       cap: state.cap,
       count: state.count,
     }
   }
   return {
-    hookAttached: state.knownHook,
-    otherHookAddress: !state.knownHook ? state.hook : null,
+    hasMinter: state.knownMinter,
+    minter: state.minter,
     root: ZERO_ROOT,
     cap: state.cap,
     count: null,

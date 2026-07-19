@@ -14,26 +14,29 @@ import {MockMinter} from "../mocks/SurfaceMocks.sol";
 /// @title SurfaceHandler
 /// @notice Bounded random-walk handler driving two Surface
 ///         instances (one Sequential, one Pooled) through every public mint /
-///         burn / withdraw entrypoint, while maintaining ghost-truth state the
-///         invariant test asserts against.
+///         burn entrypoint, while maintaining ghost-truth state the invariant
+///         test asserts against.
 ///
 /// @dev    Design notes:
-///         - Sequential collection: fixed price, supply-capped, sells through
-///           both the built-in paid path (mint/mintWithReferral) AND a granted
-///           MockMinter (mintTo).
-///         - Pooled collection: no built-in paid path (the entrypoint does
-///           not exist); sells exclusively through a granted MockMinter calling mintToId
-///           with ids bounded to [0, POOLED_ID_MAX], so burn -> re-mint of the
-///           same id is exercised constantly. Also supply-capped, bounding
-///           LIVE totalSupply per pooled cap semantics.
+///         - The token holds no value and runs no sale logic (thin-token
+///           rearchitecture): every mint goes through a granted MockMinter,
+///           standing in for a real minter module. Value-conservation
+///           coverage lives with the Phase 2 minter, not here.
+///         - Sequential collection: supply-capped, sells exclusively through a
+///           granted MockMinter calling batch-native mintTo (quantity varies
+///           per call, exercising both single and batch mints).
+///         - Pooled collection: sells exclusively through a granted MockMinter
+///           calling mintToId with ids bounded to [0, POOLED_ID_MAX], so burn
+///           -> re-mint of the same id is exercised constantly. Also
+///           supply-capped, bounding LIVE totalSupply per pooled cap
+///           semantics.
 ///         - Every actor address is drawn from a small bounded actor set so
 ///           collisions (same collector minting/burning/approving repeatedly)
-///           happen often, which is where id-set and pull-accounting bugs
-///           tend to hide.
-///         - Negative probes (unauthorized mintTo, wrong-mode mint, wrong
-///           payment) are wrapped in try/catch: a probe that does NOT revert
-///           trips a ghost flag the invariant test asserts false, rather than
-///           reverting the whole run (which would silently drop coverage).
+///           happen often, which is where id-set bugs tend to hide.
+///         - Negative probes (unauthorized mintTo, wrong-mode mint) are
+///           wrapped in try/catch: a probe that does NOT revert trips a ghost
+///           flag the invariant test asserts false, rather than reverting the
+///           whole run (which would silently drop coverage).
 contract SurfaceHandler is StdInvariant, Test {
     // ─────────────────────────────────────────────────────────────────────
     // Fixed setup
@@ -44,7 +47,6 @@ contract SurfaceHandler is StdInvariant, Test {
     MockMinter public immutable seqMinter; // granted on seq (mintTo)
     MockMinter public immutable pooledMinter; // granted on pooled (mintToId)
 
-    uint256 public immutable seqPrice;
     uint256 public immutable seqCap;
     uint256 public immutable pooledCap;
 
@@ -54,13 +56,6 @@ contract SurfaceHandler is StdInvariant, Test {
     // ─────────────────────────────────────────────────────────────────────
     // Ghost state (the handler's own truth, checked against the contracts)
     // ─────────────────────────────────────────────────────────────────────
-
-    // Funds
-    uint256 public ghostTotalPaidIn; // sum of all msg.value that entered settle() across both collections
-    uint256 public ghostTotalWithdrawn; // sum of every successful withdraw() amount
-    mapping(address => uint256) public ghostPending; // mirrored per-payee pull balance, both collections combined
-    address[] public ghostPayeesEver; // de-duplicated list of every address ever credited
-    mapping(address => bool) public ghostIsKnownPayee;
 
     // Mint / burn counters, per collection
     uint256 public ghostSeqMints;
@@ -85,13 +80,9 @@ contract SurfaceHandler is StdInvariant, Test {
     mapping(uint256 => bool) public seqEverBurned;
 
     // mintIndex bookkeeping (order invariant): mintIndex must strictly
-    // increase across BOTH paths, on a single shared counter, and never
+    // increase across every mint, on a single shared counter, and never
     // repeat. Mint order is 0-based and global per collection, stamped in
     // the Minted event (sequential id == index + 1); ghosts derive it.
-    uint256 public seqLastMintIndex; // last observed mintIndex + 1 (0 means "none yet")
-    bool public seqHasMinted;
-    uint256 public pooledLastMintIndex;
-    bool public pooledHasMinted;
     mapping(uint256 => bool) public seqMintIndexSeen;
     mapping(uint256 => bool) public pooledMintIndexSeen;
 
@@ -99,16 +90,13 @@ contract SurfaceHandler is StdInvariant, Test {
     // is supposed to revert did NOT revert.
     bool public ghostUnauthorizedMintToSucceeded;
     bool public ghostWrongModeMintSucceeded;
-    bool public ghostWrongPaymentMintSucceeded;
     bool public ghostHolderBurnPooledSucceeded;
 
     // Call counters, useful for sanity-checking run depth in failure reports.
-    uint256 public callsMintSeqPaid;
     uint256 public callsMintSeqExtension;
     uint256 public callsMintPooledExtension;
     uint256 public callsBurnSeq;
     uint256 public callsBurnPooled;
-    uint256 public callsWithdraw;
     uint256 public callsNegativeProbes;
 
     constructor(
@@ -116,7 +104,6 @@ contract SurfaceHandler is StdInvariant, Test {
         PooledSurface pooled_,
         MockMinter seqMinter_,
         MockMinter pooledMinter_,
-        uint256 seqPrice_,
         uint256 seqCap_,
         uint256 pooledCap_
     ) {
@@ -124,34 +111,18 @@ contract SurfaceHandler is StdInvariant, Test {
         pooled = pooled_;
         seqMinter = seqMinter_;
         pooledMinter = pooledMinter_;
-        seqPrice = seqPrice_;
         seqCap = seqCap_;
         pooledCap = pooledCap_;
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // Actor / referrer helpers — small bounded universes so collisions and
-    // repeat interactions (re-approve, re-burn, re-withdraw) happen often.
+    // Actor helpers — a small bounded universe so collisions and repeat
+    // interactions (re-approve, re-burn) happen often.
     // ─────────────────────────────────────────────────────────────────────
 
     function _actor(uint256 seed) internal pure returns (address payable) {
         uint256 idx = seed % NUM_ACTORS;
         return payable(address(uint160(uint256(keccak256(abi.encode("collection-invariant-actor", idx))))));
-    }
-
-    function _referrer(uint256 seed) internal pure returns (address) {
-        // Include address(0) in the referrer universe deliberately: referrer==0
-        // folds the whole amount to the artist, a distinct accounting path.
-        uint256 idx = seed % (NUM_ACTORS + 1);
-        if (idx == NUM_ACTORS) return address(0);
-        return address(uint160(uint256(keccak256(abi.encode("collection-invariant-referrer", idx)))));
-    }
-
-    function _trackPayee(address payee) internal {
-        if (!ghostIsKnownPayee[payee]) {
-            ghostIsKnownPayee[payee] = true;
-            ghostPayeesEver.push(payee);
-        }
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -208,115 +179,32 @@ contract SurfaceHandler is StdInvariant, Test {
         return pooledLiveIds.length;
     }
 
-    function ghostPayeeCount() external view returns (uint256) {
-        return ghostPayeesEver.length;
-    }
-
     // ─────────────────────────────────────────────────────────────────────
-    // Shared settle-accounting mirror: replicates Surface's
-    // _settle() split exactly (10% referral share, folds to artist when
-    // referrer == 0), so ghostPending matches pendingWithdrawal() precisely.
+    // ACTION: batch-native mintTo on the sequential collection
     // ─────────────────────────────────────────────────────────────────────
 
-    uint16 private constant BPS = 10_000;
-    uint16 private constant REFERRAL_SHARE_BPS = 1_000;
-
-    function _mirrorSettle(uint256 total, address referrer, address artistPayout) internal {
-        if (total == 0) return;
-        ghostTotalPaidIn += total;
-        uint256 referralCut = referrer == address(0) ? 0 : (total * REFERRAL_SHARE_BPS) / BPS;
-        if (referralCut > 0) {
-            ghostPending[referrer] += referralCut;
-            _trackPayee(referrer);
-        }
-        uint256 artistCut = total - referralCut;
-        if (artistCut > 0) {
-            ghostPending[artistPayout] += artistCut;
-            _trackPayee(artistPayout);
-        }
-    }
-
-    // ─────────────────────────────────────────────────────────────────────
-    // ACTION: paid mint on the sequential collection (mint / mintWithReferral)
-    // ─────────────────────────────────────────────────────────────────────
-
-    function mintSeqPaid(uint256 actorSeed, uint256 referrerSeed, uint256 qtySeed, bool useReferral) external {
-        address payable buyer = _actor(actorSeed);
-        address referrer = useReferral ? _referrer(referrerSeed) : address(0);
+    function mintSeqExtension(uint256 actorSeed, uint256 qtySeed) external {
+        address to = _actor(actorSeed);
         uint256 quantity = bound(qtySeed, 1, 4);
 
-        // Respect the cap so this is a "normal" action, not a probe: bound
-        // quantity down to whatever room remains (skip the call entirely if
-        // the cap is already exhausted, exercised separately as a probe).
         if (seqCap != 0 && ghostSeqMints >= seqCap) return;
         if (seqCap != 0 && ghostSeqMints + quantity > seqCap) {
             quantity = seqCap - ghostSeqMints;
         }
         if (quantity == 0) return;
 
-        uint256 value = seqPrice * quantity;
-        vm.deal(buyer, value);
-        vm.prank(buyer);
-        if (useReferral) {
-            try seq.mintWithReferral{value: value}(quantity, referrer, "") {
-                _afterSeqMint(quantity, referrer, value);
-                callsMintSeqPaid++;
-            } catch {
-                revert("handler: sequential mintWithReferral unexpectedly reverted");
-            }
-        } else {
-            try seq.mint{value: value}(quantity) {
-                _afterSeqMint(quantity, address(0), value);
-                callsMintSeqPaid++;
-            } catch {
-                revert("handler: sequential mint unexpectedly reverted");
-            }
-        }
-    }
-
-    function _afterSeqMint(uint256 quantity, address referrer, uint256 value) internal {
-        // firstTokenId is whatever _nextId was before this call, which is
-        // ghostSeqMints + 1 (sequential ids start at 1, never recycle).
-        uint256 firstTokenId = ghostSeqMints + 1;
-        for (uint256 i = 0; i < quantity; i++) {
-            uint256 tokenId = firstTokenId + i;
-            _seqLiveAdd(tokenId);
-            uint256 mintIndex = ghostSeqMints + i;
-            require(!seqMintIndexSeen[mintIndex], "handler: seq mintIndex repeat");
-            seqMintIndexSeen[mintIndex] = true;
-        }
-        ghostSeqMints += quantity;
-        seqHasMinted = true;
-        seqLastMintIndex = ghostSeqMints; // next expected mintIndex
-
-        _mirrorSettle(value, referrer, seq.owner());
-    }
-
-    // ─────────────────────────────────────────────────────────────────────
-    // ACTION: extension mintTo on the sequential collection
-    // ─────────────────────────────────────────────────────────────────────
-
-    function mintSeqExtension(uint256 actorSeed, uint256 referrerSeed) external {
-        address to = _actor(actorSeed);
-        address referrer = _referrer(referrerSeed);
-
-        if (seqCap != 0 && ghostSeqMints >= seqCap) return;
-
-        try seqMinter.callMintTo(ISurface(address(seq)), to, referrer, "") returns (uint256 tokenId) {
+        try seqMinter.callMintTo(ISurface(address(seq)), to, quantity) returns (uint256 firstTokenId) {
             callsMintSeqExtension++;
-            uint256 expectedId = ghostSeqMints + 1;
-            require(tokenId == expectedId, "handler: seq mintTo id mismatch");
-            _seqLiveAdd(tokenId);
-            uint256 mintIndex = ghostSeqMints;
-            require(!seqMintIndexSeen[mintIndex], "handler: seq mintIndex repeat (extension)");
-            seqMintIndexSeen[mintIndex] = true;
-            ghostSeqMints += 1;
-            seqHasMinted = true;
-            seqLastMintIndex = ghostSeqMints;
-            // mintTo is non-payable / gas-only from the core's perspective:
-            // no settle() runs, so no ghost funds move. (A real extension
-            // minter might collect its own payment out-of-band, but that
-            // money never touches this collection's pull-accounting.)
+            uint256 expectedFirstId = ghostSeqMints + 1;
+            require(firstTokenId == expectedFirstId, "handler: seq mintTo firstTokenId mismatch");
+            for (uint256 i = 0; i < quantity; i++) {
+                uint256 tokenId = firstTokenId + i;
+                _seqLiveAdd(tokenId);
+                uint256 mintIndex = ghostSeqMints + i;
+                require(!seqMintIndexSeen[mintIndex], "handler: seq mintIndex repeat");
+                seqMintIndexSeen[mintIndex] = true;
+            }
+            ghostSeqMints += quantity;
         } catch {
             revert("handler: authorized seq mintTo unexpectedly reverted");
         }
@@ -327,9 +215,8 @@ contract SurfaceHandler is StdInvariant, Test {
     // including deliberate re-mints of previously burned ids)
     // ─────────────────────────────────────────────────────────────────────
 
-    function mintPooledExtension(uint256 actorSeed, uint256 referrerSeed, uint256 idSeed) external {
+    function mintPooledExtension(uint256 actorSeed, uint256 idSeed) external {
         address to = _actor(actorSeed);
-        address referrer = _referrer(referrerSeed);
         uint256 tokenId = bound(idSeed, 0, POOLED_ID_MAX);
 
         if (pooledIsLive[tokenId]) return; // OZ _mint reverts on a live id; skip (not this action's probe)
@@ -338,15 +225,13 @@ contract SurfaceHandler is StdInvariant, Test {
             if (liveSupply >= pooledCap) return;
         }
 
-        try pooledMinter.callMintToId(IPooledSurface(address(pooled)), to, tokenId, referrer, "") {
+        try pooledMinter.callMintToId(IPooledSurface(address(pooled)), to, tokenId) {
             callsMintPooledExtension++;
             _pooledLiveAdd(tokenId);
             uint256 mintIndex = ghostPooledMints;
             require(!pooledMintIndexSeen[mintIndex], "handler: pooled mintIndex repeat");
             pooledMintIndexSeen[mintIndex] = true;
             ghostPooledMints += 1;
-            pooledHasMinted = true;
-            pooledLastMintIndex = ghostPooledMints;
         } catch {
             revert("handler: authorized pooled mintToId unexpectedly reverted");
         }
@@ -413,32 +298,6 @@ contract SurfaceHandler is StdInvariant, Test {
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // ACTION: withdraw, for any address ever credited on either collection
-    // ─────────────────────────────────────────────────────────────────────
-
-    function withdrawSeq(uint256 payeeSeed) external {
-        if (ghostPayeesEver.length == 0) return;
-        address payee = ghostPayeesEver[payeeSeed % ghostPayeesEver.length];
-        uint256 owed = seq.pendingWithdrawal(payee);
-        if (owed == 0) return;
-        seq.withdraw(payee); // permissionless trigger
-        callsWithdraw++;
-        ghostPending[payee] -= owed;
-        ghostTotalWithdrawn += owed;
-    }
-
-    function withdrawPooled(uint256 payeeSeed) external {
-        if (ghostPayeesEver.length == 0) return;
-        address payee = ghostPayeesEver[payeeSeed % ghostPayeesEver.length];
-        uint256 owed = pooled.pendingWithdrawal(payee);
-        if (owed == 0) return;
-        pooled.withdraw(payee);
-        callsWithdraw++;
-        ghostPending[payee] -= owed;
-        ghostTotalWithdrawn += owed;
-    }
-
-    // ─────────────────────────────────────────────────────────────────────
     // NEGATIVE PROBES — every one of these MUST revert. Wrapped in try/catch
     // so an unexpected success flips a ghost flag instead of killing the run
     // (which would hide the very bug this exists to catch).
@@ -451,7 +310,7 @@ contract SurfaceHandler is StdInvariant, Test {
         address caller = _actor(actorSeed);
         address to = _actor(actorSeed + 1);
         vm.prank(caller);
-        try seq.mintTo(to, address(0), "") returns (uint256) {
+        try seq.mintTo(to, 1) returns (uint256) {
             ghostUnauthorizedMintToSucceeded = true;
         } catch {}
     }
@@ -466,38 +325,11 @@ contract SurfaceHandler is StdInvariant, Test {
         uint256 id = bound(idSeed, 0, POOLED_ID_MAX);
 
         // (a) mintToId on the sequential collection: no such function.
-        (bool okA,) = address(seq)
-            .call(abi.encodeWithSignature("mintToId(address,uint256,address,bytes)", actor, id, address(0), bytes("")));
+        (bool okA,) = address(seq).call(abi.encodeWithSignature("mintToId(address,uint256)", actor, id));
         if (okA) ghostWrongModeMintSucceeded = true;
 
-        // (b) paid mint() on the pooled collection: no such function.
-        vm.deal(actor, 1 ether);
-        vm.prank(actor);
-        (bool okB,) = address(pooled).call(abi.encodeWithSignature("mint(uint256)", uint256(1)));
+        // (b) extension mintTo on the pooled collection: no such function.
+        (bool okB,) = address(pooled).call(abi.encodeWithSignature("mintTo(address,uint256)", actor, uint256(1)));
         if (okB) ghostWrongModeMintSucceeded = true;
-
-        // (c) extension mintTo on the pooled collection: no such function.
-        (bool okC,) =
-            address(pooled).call(abi.encodeWithSignature("mintTo(address,address,bytes)", actor, address(0), bytes("")));
-        if (okC) ghostWrongModeMintSucceeded = true;
-    }
-
-    /// @dev Wrong payment on the sequential paid path: off-by-one under AND
-    ///      over the exact required value must both revert with WrongPayment
-    ///      (the fixed-price path requires an exact match).
-    function probeWrongPayment(uint256 actorSeed, uint256 qtySeed, bool over) external {
-        callsNegativeProbes++;
-        if (seqPrice == 0) return; // no wrong-payment concept on a gas-only price
-        address payable actor = _actor(actorSeed);
-        uint256 quantity = bound(qtySeed, 1, 4);
-        uint256 exact = seqPrice * quantity;
-        uint256 wrongValue = over ? exact + 1 : (exact == 0 ? 0 : exact - 1);
-        if (!over && wrongValue == exact) return; // exact was already 0; nothing "under" to test
-
-        vm.deal(actor, wrongValue + 1 ether);
-        vm.prank(actor);
-        try seq.mint{value: wrongValue}(quantity) {
-            ghostWrongPaymentMintSucceeded = true;
-        } catch {}
     }
 }

@@ -3,10 +3,11 @@ pragma solidity ^0.8.24;
 
 import {Script, console2} from "forge-std/Script.sol";
 
-import {SurfaceFactory} from "../src/surface/SurfaceFactory.sol";
+import {SurfaceFactory, SaleConfig} from "../src/surface/SurfaceFactory.sol";
 import {Surface} from "../src/surface/Surface.sol";
 import {SurfaceConfig} from "../src/surface/SurfaceTypes.sol";
 import {RenderAssets} from "../src/surface/renderers/RenderAssets.sol";
+import {FixedPriceMinter} from "../src/surface/minters/FixedPriceMinter.sol";
 
 interface ICatalogClaim {
     function addContract(address contractAddress) external;
@@ -24,14 +25,23 @@ interface ICatalogClaim {
 ///         longer stands up a shared assembler; a generative seed would deploy
 ///         its own concrete renderer and point the collection's slot at it.
 ///
+///         The token holds no sale economics (thin-token rearchitecture).
+///         Orbit and Drift go through createSurfaceCustom with no minter: the
+///         broadcaster grants itself as a minter, calls mintTo directly, and
+///         revokes the grant, the documented owner-airdrop route. Field Notes
+///         goes through createSurface, the canonical one-transaction path: the
+///         factory clones and wires a FixedPriceMinter alongside the token, and
+///         its 2 mints are real paid mints through that minter, not airdrops.
+///
 ///         Seeds, all owned by the broadcaster (anvil account 0):
 ///         1. "Orbit Studies" — DefaultRenderer + inline-SVG cover, collab
-///            roster [account0, account1], 3 mints, account0's roster claim
-///            filed in the REAL Catalog.
+///            roster [account0, account1], 3 airdropped mints, account0's
+///            roster claim filed in the REAL Catalog.
 ///         2. "Signal Drift" — DefaultRenderer + inline-SVG cover, ZERO mints
 ///            (exercises the pre-mint collection page).
 ///         3. "Field Notes" — edition preset (DefaultRenderer, inline-SVG
-///            cover), 2 mints.
+///            cover), canonical FixedPriceMinter wired by the factory, 2 paid
+///            mints through it.
 ///
 ///         Run (the harness does this with SEED_SAMPLE=1):
 ///           FACTORY=0x… RENDER_ASSETS=0x… PRIVATE_KEY=0x… \
@@ -44,6 +54,9 @@ contract SeedDevSurfaces is Script {
     // anvil account 1 — the collab listed on Orbit's roster who deliberately
     // never files their Catalog claim (shows listed-but-unconfirmed).
     address constant ANVIL_ACCOUNT_1 = 0x70997970C51812dc3A010C7d01b50e0d17dc79C8;
+
+    // Field Notes' canonical-minter fixed price.
+    uint256 constant FIELD_PRICE = 0.002 ether;
 
     // Inline-SVG covers: render with zero IPFS deps.
     string constant ORBIT_COVER = string(
@@ -109,7 +122,6 @@ contract SeedDevSurfaces is Script {
     ///      1) deliberately stays unclaimed (listed-but-unconfirmed).
     function _seedOrbits(address factory, address renderAssets, address artist) private returns (address orbits) {
         SurfaceConfig memory cfg;
-        cfg.price = 0.005 ether;
         cfg.supplyCap = 64;
 
         address[] memory roster = new address[](2);
@@ -117,33 +129,47 @@ contract SeedDevSurfaces is Script {
         roster[1] = ANVIL_ACCOUNT_1;
 
         orbits = SurfaceFactory(factory)
-            .createSurface("Orbit Studies", "ORBIT", artist, cfg, new address[](0), roster);
+            .createSurfaceCustom("Orbit Studies", "ORBIT", artist, cfg, new address[](0), roster);
         // Cover art lives in renderer-land (RenderAssets), not the core.
         RenderAssets(renderAssets).setCover(orbits, ORBIT_COVER);
-        Surface(orbits).mintWithReferral{value: 0.015 ether}(3, address(0), "");
+        _airdrop(orbits, artist, 3);
         ICatalogClaim(CATALOG).addContract(orbits);
     }
 
     /// @dev ZERO mints: exercises the pre-mint collection page (no grid).
     function _seedDrift(address factory, address renderAssets, address artist) private returns (address drift) {
         SurfaceConfig memory cfg;
-        cfg.price = 0.003 ether;
         cfg.supplyCap = 32;
 
         drift = SurfaceFactory(factory)
-            .createSurface("Signal Drift", "DRIFT", artist, cfg, new address[](0), new address[](0));
+            .createSurfaceCustom("Signal Drift", "DRIFT", artist, cfg, new address[](0), new address[](0));
         RenderAssets(renderAssets).setCover(drift, DRIFT_COVER);
     }
 
-    /// @dev Edition preset with an inline-SVG cover (RenderAssets) and 2 mints.
+    /// @dev Edition preset with an inline-SVG cover (RenderAssets), wired
+    ///      through createSurface's canonical one-transaction path: the
+    ///      factory clones and grants a FixedPriceMinter alongside the token.
+    ///      Its 2 seed mints are real paid mints through that minter.
     function _seedField(address factory, address renderAssets, address artist) private returns (address field) {
         SurfaceConfig memory cfg;
-        cfg.price = 0.002 ether;
         cfg.supplyCap = 25;
 
-        field = SurfaceFactory(factory)
-            .createSurface("Field Notes", "FIELD", artist, cfg, new address[](0), new address[](0));
+        SaleConfig memory sale;
+        sale.price = FIELD_PRICE;
+
+        address minter;
+        (field, minter) = SurfaceFactory(factory)
+            .createSurface("Field Notes", "FIELD", artist, cfg, sale, new address[](0));
         RenderAssets(renderAssets).setCover(field, FIELD_COVER);
-        Surface(field).mintWithReferral{value: 0.004 ether}(2, address(0), "");
+        FixedPriceMinter(minter).mint{value: FIELD_PRICE * 2}(artist, 2, address(0), "");
+    }
+
+    /// @dev The owner-airdrop route (7.8): no free-mint path exists on the
+    ///      canonical minter, so a seed mint self-grants, mints directly, and
+    ///      revokes. `artist` is both the broadcaster and the recipient here.
+    function _airdrop(address collection, address artist, uint256 quantity) private {
+        Surface(collection).setMinter(artist, true);
+        Surface(collection).mintTo(artist, quantity);
+        Surface(collection).setMinter(artist, false);
     }
 }

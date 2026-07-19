@@ -1,11 +1,11 @@
 /**
- * Allowlist publish + eligibility for a collection's GateHook gate.
+ * Allowlist publish + eligibility for a collection's canonical minter gate.
  *
  * POST { addresses: string[] } — build the OZ standard merkle tree, store
  *   the list keyed by (collection, root), return { root, count }. The
- *   artist then activates it onchain with GateHook.setRoot — storage is
- *   permissionless because only the onchain root grants anything (see
- *   lib/allowlist.ts for the trust model).
+ *   artist then activates it onchain with FixedPriceMinter.setAllowlistRoot
+ *   — storage is permissionless because only the onchain root grants
+ *   anything (see lib/allowlist.ts for the trust model).
  *
  * GET ?wallet=0x… — eligibility of `wallet` against the root that is
  *   active onchain RIGHT NOW: { gated, eligible, proof?, root, cap }.
@@ -17,7 +17,7 @@
 import { NextResponse } from "next/server"
 import { isAddress, type Address } from "viem"
 import { allowlistCount, eligibilityFor, publishAllowlist } from "@/lib/allowlist"
-import { getGateState } from "@/lib/collection-onchain"
+import { getMinterGate } from "@/lib/collection-onchain"
 
 const ZERO_ROOT = "0x" + "0".repeat(64)
 
@@ -48,8 +48,8 @@ export async function GET(req: Request, { params }: Params) {
   if (!isAddress(address)) {
     return NextResponse.json({ error: "Bad collection address." }, { status: 400 })
   }
-  const gate = await getGateState(address as Address)
-  const gated = !!gate && gate.isGateHook && gate.root.toLowerCase() !== ZERO_ROOT
+  const gate = await getMinterGate(address as Address)
+  const gated = !!gate && gate.allowlistRoot.toLowerCase() !== ZERO_ROOT
 
   const url = new URL(req.url)
   const wallet = url.searchParams.get("wallet")
@@ -57,34 +57,42 @@ export async function GET(req: Request, { params }: Params) {
   if (!gated) {
     return NextResponse.json({
       gated: false,
-      hook: gate?.hook ?? null,
-      knownHook: gate?.isGateHook ?? false,
-      cap: gate?.cap ?? "0",
+      minter: gate?.minter ?? null,
+      knownMinter: !!gate,
+      cap: gate?.walletCap ?? "0",
     })
   }
 
   if (!wallet) {
-    const count = await allowlistCount(address as Address, gate!.root)
-    return NextResponse.json({ gated: true, root: gate!.root, cap: gate!.cap, count })
+    const count = await allowlistCount(address as Address, gate!.allowlistRoot)
+    return NextResponse.json({
+      gated: true,
+      minter: gate!.minter,
+      root: gate!.allowlistRoot,
+      cap: gate!.walletCap,
+      count,
+    })
   }
   if (!isAddress(wallet)) {
     return NextResponse.json({ error: "Bad wallet address." }, { status: 400 })
   }
 
-  const res = await eligibilityFor(address as Address, gate!.root, wallet as Address)
+  const res = await eligibilityFor(address as Address, gate!.allowlistRoot, wallet as Address)
   if (!res.known) {
     return NextResponse.json({
       gated: true,
-      root: gate!.root,
-      cap: gate!.cap,
+      minter: gate!.minter,
+      root: gate!.allowlistRoot,
+      cap: gate!.walletCap,
       eligible: null,
       reason: "no-list",
     })
   }
   return NextResponse.json({
     gated: true,
-    root: gate!.root,
-    cap: gate!.cap,
+    minter: gate!.minter,
+    root: gate!.allowlistRoot,
+    cap: gate!.walletCap,
     eligible: res.eligible,
     proof: res.eligible ? res.proof : undefined,
   })

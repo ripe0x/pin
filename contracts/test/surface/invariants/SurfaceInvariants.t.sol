@@ -9,7 +9,6 @@ import {SurfaceHandler} from "./SurfaceHandler.sol";
 
 import {Surface} from "../../../src/surface/Surface.sol";
 import {PooledSurface} from "../../../src/surface/PooledSurface.sol";
-import {SurfaceCore} from "../../../src/surface/SurfaceCore.sol";
 import {SurfaceConfig} from "../../../src/surface/SurfaceTypes.sol";
 
 /// @title SurfaceInvariants
@@ -31,22 +30,21 @@ contract SurfaceInvariants is StdInvariant, SurfaceBase {
     MockMinter internal seqMinter;
     MockMinter internal pooledMinter;
 
-    uint256 internal constant SEQ_PRICE = 0.01 ether;
     uint256 internal constant SEQ_CAP = 40;
     uint256 internal constant POOLED_CAP = 30; // < POOLED_ID_MAX+1 (51) so the cap actually binds
 
     function setUp() public override {
         super.setUp();
 
-        // ── Sequential collection: fixed price, capped, one granted minter ──
-        SurfaceConfig memory seqCfg = _pricedConfig(SEQ_PRICE);
+        // ── Sequential collection: capped, one granted minter ───────────────
+        SurfaceConfig memory seqCfg = _freeConfig();
         seqCfg.supplyCap = SEQ_CAP;
         seqMinter = new MockMinter();
         address[] memory seqMinters = new address[](1);
         seqMinters[0] = address(seqMinter);
         seq = _collectionWithMinters(seqCfg, seqMinters);
 
-        // ── Pooled collection: no built-in paid path, one granted minter ───
+        // ── Pooled collection: one granted minter ──────────────────────────
         SurfaceConfig memory pooledCfg = _freeConfig();
         pooledCfg.supplyCap = POOLED_CAP;
         pooledMinter = new MockMinter();
@@ -54,64 +52,20 @@ contract SurfaceInvariants is StdInvariant, SurfaceBase {
         pooledMinters[0] = address(pooledMinter);
         pooled = _pooledWithMinters(pooledCfg, pooledMinters);
 
-        handler = new SurfaceHandler(seq, pooled, seqMinter, pooledMinter, SEQ_PRICE, SEQ_CAP, POOLED_CAP);
+        handler = new SurfaceHandler(seq, pooled, seqMinter, pooledMinter, SEQ_CAP, POOLED_CAP);
 
         // Only fuzz calls into the handler; the collections themselves and
         // the minters are reached exclusively through it.
         targetContract(address(handler));
 
-        bytes4[] memory selectors = new bytes4[](11);
-        selectors[0] = SurfaceHandler.mintSeqPaid.selector;
-        selectors[1] = SurfaceHandler.mintSeqExtension.selector;
-        selectors[2] = SurfaceHandler.mintPooledExtension.selector;
-        selectors[3] = SurfaceHandler.burnSeq.selector;
-        selectors[4] = SurfaceHandler.burnPooled.selector;
-        selectors[5] = SurfaceHandler.withdrawSeq.selector;
-        selectors[6] = SurfaceHandler.withdrawPooled.selector;
-        selectors[7] = SurfaceHandler.probeUnauthorizedMintTo.selector;
-        selectors[8] = SurfaceHandler.probeWrongModeMint.selector;
-        selectors[9] = SurfaceHandler.probeWrongPayment.selector;
-        selectors[10] = SurfaceHandler.probeHolderBurnPooled.selector;
+        bytes4[] memory selectors = new bytes4[](6);
+        selectors[0] = SurfaceHandler.mintSeqExtension.selector;
+        selectors[1] = SurfaceHandler.mintPooledExtension.selector;
+        selectors[2] = SurfaceHandler.burnSeq.selector;
+        selectors[3] = SurfaceHandler.burnPooled.selector;
+        selectors[4] = SurfaceHandler.probeUnauthorizedMintTo.selector;
+        selectors[5] = SurfaceHandler.probeWrongModeMint.selector;
         targetSelector(StdInvariant.FuzzSelector({addr: address(handler), selectors: selectors}));
-    }
-
-    // ════════════════════════════════════════════════════════════════════
-    // FUNDS: pull accounting is exact. Handlers never force-feed ETH (no
-    // vm.deal to a collection address, no selfdestruct), so collection
-    // balance must equal the sum of every ghost payee's pending balance,
-    // and paid-in must equal withdrawn + still-pending, on EACH collection
-    // independently (they never share a balance).
-    // ════════════════════════════════════════════════════════════════════
-
-    function invariant_seqFundsMatchPendingSum() public view {
-        uint256 sumPending = _sumGhostPendingOn(seq);
-        assertEq(address(seq).balance, sumPending, "seq balance != sum(pendingWithdrawal)");
-    }
-
-    function invariant_pooledFundsMatchPendingSum() public view {
-        uint256 sumPending = _sumGhostPendingOn(pooled);
-        assertEq(address(pooled).balance, sumPending, "pooled balance != sum(pendingWithdrawal)");
-    }
-
-    /// @dev Pooled mode has no built-in paid path in this suite (mintToId is
-    ///      always called with referrer but zero underlying value moved by the
-    ///      core), so its ghostTotalPaidIn contribution is 0 — all paid-in
-    ///      ETH in this suite flows through the sequential collection. The
-    ///      invariant is still stated over the combined ghost totals so it
-    ///      keeps holding if that ever changes.
-    function invariant_totalPaidInEqualsWithdrawnPlusPending() public view {
-        uint256 sumPendingBoth = _sumGhostPendingOn(seq) + _sumGhostPendingOn(pooled);
-        assertEq(
-            handler.ghostTotalPaidIn(), handler.ghostTotalWithdrawn() + sumPendingBoth, "paidIn != withdrawn + pending"
-        );
-    }
-
-    function _sumGhostPendingOn(SurfaceCore c) internal view returns (uint256 sum) {
-        uint256 n = handler.ghostPayeeCount();
-        for (uint256 i = 0; i < n; i++) {
-            address payee = handler.ghostPayeesEver(i);
-            sum += c.pendingWithdrawal(payee);
-        }
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -201,19 +155,19 @@ contract SurfaceInvariants is StdInvariant, SurfaceBase {
     }
 
     // ════════════════════════════════════════════════════════════════════
-    // ORDER: mint order strictly increases with every successful mint across
-    // BOTH paths and never repeats. Order is no longer stored per token — the
-    // Minted event stamps it, and in Sequential mode the token id IS the
-    // order (id == index + 1, ids never recycle). The handler asserts the
-    // contract's id assignment against the ghost counter at call time; here
-    // we reassert end-to-end coherence: every live sequential id maps into
-    // the ghost-tracked index space with no id above the counter, and both
+    // ORDER: mint order strictly increases with every successful mint and
+    // never repeats. Order is not stored per token — the Minted event
+    // stamps it, and in Sequential mode the token id IS the order (id ==
+    // index + 1, ids never recycle). The handler asserts the contract's id
+    // assignment against the ghost counter at call time; here we reassert
+    // end-to-end coherence: every live sequential id maps into the
+    // ghost-tracked index space with no id above the counter, and both
     // contracts' mintedEver counters match the ghosts exactly.
     // ════════════════════════════════════════════════════════════════════
 
     function invariant_seqMintIndexOrderHolds() public view {
         uint256 mintedEver = handler.ghostSeqMints();
-        (,, uint256 contractMinted) = seq.config();
+        (, uint256 contractMinted) = seq.config();
         assertEq(contractMinted, mintedEver, "seq mintedEver diverged from ghost");
         uint256 n = handler.seqLiveCount();
         for (uint256 i = 0; i < n; i++) {
@@ -227,7 +181,7 @@ contract SurfaceInvariants is StdInvariant, SurfaceBase {
 
     function invariant_pooledMintIndexOrderHolds() public view {
         uint256 mintedEver = handler.ghostPooledMints();
-        (,, uint256 contractMinted) = pooled.config();
+        (, uint256 contractMinted) = pooled.config();
         assertEq(contractMinted, mintedEver, "pooled mintedEver diverged from ghost");
         // Pooled order is event-only (ids are reused); the handler's seen-map
         // bookkeeping at call time covers non-repetition. Here: every live id
@@ -246,7 +200,7 @@ contract SurfaceInvariants is StdInvariant, SurfaceBase {
 
     function invariant_seqMintsNeverExceedCap() public view {
         assertTrue(handler.ghostSeqMints() <= SEQ_CAP, "seq mints exceeded cap");
-        (,, uint256 minted) = seq.config();
+        (, uint256 minted) = seq.config();
         assertTrue(minted <= SEQ_CAP, "seq contract mintedEver exceeded cap");
     }
 
@@ -255,8 +209,8 @@ contract SurfaceInvariants is StdInvariant, SurfaceBase {
     }
 
     // ════════════════════════════════════════════════════════════════════
-    // ROLES: the negative probes (unauthorized mintTo, wrong-mode mint,
-    // wrong payment) must NEVER succeed.
+    // ROLES: the negative probes (unauthorized mintTo, wrong-mode mint) must
+    // NEVER succeed.
     // ════════════════════════════════════════════════════════════════════
 
     function invariant_unauthorizedMintToNeverSucceeds() public view {
@@ -265,10 +219,6 @@ contract SurfaceInvariants is StdInvariant, SurfaceBase {
 
     function invariant_wrongModeMintNeverSucceeds() public view {
         assertFalse(handler.ghostWrongModeMintSucceeded(), "wrong-mode mint succeeded");
-    }
-
-    function invariant_wrongPaymentMintNeverSucceeds() public view {
-        assertFalse(handler.ghostWrongPaymentMintSucceeded(), "wrong-payment mint succeeded");
     }
 
     function invariant_holderBurnPooledNeverSucceeds() public view {

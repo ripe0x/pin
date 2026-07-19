@@ -28,14 +28,8 @@ function GateStatusCard({ loading, derived }: { loading: boolean; derived: Deriv
     <div className="rounded border border-gray-200 bg-surface-muted/40 px-3 py-2.5 space-y-1.5">
       <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">Current gate state</p>
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[11px] font-mono text-gray-600">
-        <dt className="text-gray-400">Hook</dt>
-        <dd>
-          {derived.hookAttached
-            ? "GateHook attached"
-            : derived.otherHookAddress
-              ? `Other hook (${shortAddress(derived.otherHookAddress)})`
-              : "Not attached"}
-        </dd>
+        <dt className="text-gray-400">Minter</dt>
+        <dd>{derived.minter ? shortAddress(derived.minter) : "None on record"}</dd>
         <dt className="text-gray-400">Active root</dt>
         <dd>{derived.root === ZERO_ROOT ? "None" : `${derived.root.slice(0, 10)}…${derived.root.slice(-6)}`}</dd>
         <dt className="text-gray-400">Per-wallet cap</dt>
@@ -69,12 +63,7 @@ export function MintGatePanel({ collection }: { collection: `0x${string}` }) {
 
       <AllowlistEditor collection={collection} onPublished={(root) => setPublishedRoot(root)} />
 
-      <ActivationQueue
-        collection={collection}
-        derived={derived}
-        publishedRoot={publishedRoot}
-        onConfirmed={refetch}
-      />
+      <ActivationQueue derived={derived} publishedRoot={publishedRoot} onConfirmed={refetch} />
 
       <p className="text-[10px] font-mono text-gray-400 leading-relaxed border-t border-gray-100 pt-4">
         Publishing a list only stores it. Nothing is granted until you set

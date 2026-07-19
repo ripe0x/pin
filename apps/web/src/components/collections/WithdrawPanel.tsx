@@ -1,12 +1,14 @@
 "use client"
 
 /**
- * Pull-payment withdraw panel. Collections accrue mint proceeds (artist share
- * + referral share) to per-address balances; recipients claim them here.
- * Renders only when the connected wallet has something to withdraw, so it is
- * invisible to ordinary viewers and shows up for the artist (or a
- * referrer) with a pending balance. withdraw(account) is permissionless —
- * anyone can trigger the payout to `account`, they just can't redirect it.
+ * Pull-payment withdraw panel. The collection's canonical FixedPriceMinter
+ * clone accrues mint proceeds (artist share + referral share) to per-address
+ * balances (the token itself holds no value — thin-token rearchitecture);
+ * recipients claim them here. Renders only when the connected wallet has
+ * something to withdraw, so it is invisible to ordinary viewers and shows up
+ * for the artist (or a referrer) with a pending balance. withdraw(account)
+ * is permissionless — anyone can trigger the payout to `account`, they just
+ * can't redirect it.
  */
 
 import { formatEther } from "viem"
@@ -16,17 +18,17 @@ import {
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi"
-import { surfaceAbi } from "@pin/abi"
+import { fixedPriceMinterAbi } from "@pin/abi"
 import { PREFERRED_CHAIN, TxSuccessBanner, formatWriteError } from "@/components/tx/tx-ui"
 
-export function WithdrawPanel({ collection }: { collection: `0x${string}` }) {
+export function WithdrawPanel({ minter }: { minter: `0x${string}` | null }) {
   const { address } = useAccount()
   const { data: pending, refetch } = useReadContract({
-    address: collection,
-    abi: surfaceAbi,
+    address: minter ?? undefined,
+    abi: fixedPriceMinterAbi,
     functionName: "pendingWithdrawal",
     args: address ? [address] : undefined,
-    query: { enabled: !!address },
+    query: { enabled: !!address && !!minter },
   })
   const { writeContract, data: txHash, isPending: isWritePending, error, reset } =
     useWriteContract()
@@ -34,7 +36,7 @@ export function WithdrawPanel({ collection }: { collection: `0x${string}` }) {
 
   const amount = (pending as bigint | undefined) ?? 0n
   const showSuccess = isSuccess && !!txHash
-  if (!address || (amount === 0n && !showSuccess)) return null
+  if (!minter || !address || (amount === 0n && !showSuccess)) return null
 
   const isPendingTx = isWritePending || isTxPending
 
@@ -66,8 +68,8 @@ export function WithdrawPanel({ collection }: { collection: `0x${string}` }) {
           <button
             onClick={() =>
               writeContract({
-                address: collection,
-                abi: surfaceAbi,
+                address: minter,
+                abi: fixedPriceMinterAbi,
                 functionName: "withdraw",
                 args: [address],
               })

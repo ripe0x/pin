@@ -6,6 +6,7 @@ import {Test} from "forge-std/Test.sol";
 import {PooledSurface} from "../../src/surface/PooledSurface.sol";
 import {Surface} from "../../src/surface/Surface.sol";
 import {SurfaceFactory} from "../../src/surface/SurfaceFactory.sol";
+import {FixedPriceMinter} from "../../src/surface/minters/FixedPriceMinter.sol";
 import {ISurface} from "../../src/surface/interfaces/ISurface.sol";
 import {ISurfaceCore} from "../../src/surface/interfaces/ISurfaceCore.sol";
 import {SurfaceConfig, InitParams, IdMode} from "../../src/surface/SurfaceTypes.sol";
@@ -33,7 +34,11 @@ contract CreatorAttributionTest is Test {
         catalog = new Catalog();
         impl = new Surface();
         factory = new SurfaceFactory(
-            address(impl), address(new PooledSurface()), address(new MockRenderer()), address(catalog)
+            address(impl),
+            address(new PooledSurface()),
+            address(new FixedPriceMinter()),
+            address(new MockRenderer()),
+            address(catalog)
         );
 
         SurfaceConfig memory cfg;
@@ -43,7 +48,7 @@ contract CreatorAttributionTest is Test {
         address[] memory creators = new address[](2);
         creators[0] = collabB;
         creators[1] = collabC;
-        c = Surface(factory.createSurface("Collab", "CLB", artist, cfg, new address[](0), creators));
+        c = Surface(factory.createSurfaceCustom("Collab", "CLB", artist, cfg, new address[](0), creators));
     }
 
     function test_confirmed_requiresListedAndCatalogClaim() public {
@@ -114,12 +119,12 @@ contract CreatorAttributionTest is Test {
     function test_noCatalog_confirmationDisabled() public {
         // A factory with no Catalog: listings work, confirmation always false.
         SurfaceFactory f2 = new SurfaceFactory(
-            address(impl), address(new PooledSurface()), address(new MockRenderer()), address(0)
+            address(impl), address(new PooledSurface()), address(new FixedPriceMinter()), address(new MockRenderer()), address(0)
         );
         SurfaceConfig memory cfg;
         address[] memory creators = new address[](1);
         creators[0] = collabB;
-        Surface c2 = Surface(f2.createSurface("NoCat", "NC", artist, cfg, new address[](0), creators));
+        Surface c2 = Surface(f2.createSurfaceCustom("NoCat", "NC", artist, cfg, new address[](0), creators));
         assertEq(c2.catalog(), address(0));
         assertTrue(c2.isListedCreator(collabB));
         assertFalse(c2.isConfirmedCreator(collabB), "no catalog => never confirmed");
@@ -132,8 +137,9 @@ contract CreatorAttributionTest is Test {
         address eoaCatalog = makeAddr("notACatalog");
         // deploy the other args BEFORE expectRevert so the only CREATE it guards is the factory
         address pooled = address(new PooledSurface());
+        address minter = address(new FixedPriceMinter());
         address rend = address(new MockRenderer());
         vm.expectRevert(abi.encodeWithSelector(SurfaceFactory.NotAContract.selector, eoaCatalog));
-        new SurfaceFactory(address(impl), pooled, rend, eoaCatalog);
+        new SurfaceFactory(address(impl), pooled, minter, rend, eoaCatalog);
     }
 }

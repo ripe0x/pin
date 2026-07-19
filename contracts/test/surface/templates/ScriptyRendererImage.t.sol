@@ -8,6 +8,7 @@ import {LibString} from "solady/utils/LibString.sol";
 import {Surface} from "../../../src/surface/Surface.sol";
 import {PooledSurface} from "../../../src/surface/PooledSurface.sol";
 import {SurfaceFactory} from "../../../src/surface/SurfaceFactory.sol";
+import {FixedPriceMinter} from "../../../src/surface/minters/FixedPriceMinter.sol";
 import {RenderAssets} from "../../../src/surface/renderers/RenderAssets.sol";
 import {ScriptyRenderer} from "../../../src/surface/templates/ScriptyRenderer.sol";
 import {CodeKind, CodeRef} from "../../../src/surface/templates/CodeTypes.sol";
@@ -50,14 +51,16 @@ contract ScriptyRendererImageTest is Test {
 
         Surface impl = new Surface();
         SurfaceFactory factory = new SurfaceFactory(
-            address(impl), address(new PooledSurface()), address(new MockRenderer()), address(0)
+            address(impl), address(new PooledSurface()), address(new FixedPriceMinter()), address(new MockRenderer()), address(0)
         );
         SurfaceConfig memory cfg;
-        collection = Surface(
-            factory.createSurface("Scripty Work", "SW", artist, cfg, new address[](0), new address[](0))
-        );
-        vm.prank(collector);
-        collection.mint(1); // token 1 exists, seed stamped
+        collection =
+            Surface(factory.createSurfaceCustom("Scripty Work", "SW", artist, cfg, new address[](0), new address[](0)));
+        // The token has no built-in sale path: grant this test contract as
+        // minter and mint directly (token 1 exists, seed stamped).
+        vm.prank(artist);
+        collection.setMinter(address(this), true);
+        collection.mintTo(collector, 1);
 
         vm.prank(artist);
         assets.setCover(address(collection), "ipfs://scripty-cover");

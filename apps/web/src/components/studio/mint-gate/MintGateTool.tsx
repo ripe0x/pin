@@ -2,9 +2,9 @@
 
 /**
  * Entry point for the mint gate studio tool: pick a collection, then
- * manage its GateHook allowlist + per-wallet cap. There is no existing
- * "collections owned by this address" read (the factory only lists
- * newest-first, not by owner — see getRecentCollections in
+ * manage its canonical minter's allowlist + per-wallet cap. There is no
+ * existing "collections owned by this address" read (the factory only
+ * lists newest-first, not by owner — see getRecentCollections in
  * collection-onchain.ts), so this accepts a pasted collection address
  * rather than inventing a new chain-scanning read.
  */
@@ -27,8 +27,8 @@ export function MintGateTool() {
         <h2 className="text-xl font-semibold tracking-tight">Mint gate</h2>
         <p className="text-sm text-gray-500 leading-relaxed">
           Gate a collection&apos;s mint with an allowlist and a per-wallet
-          limit, enforced by GateHook, a shared, public-good hook
-          contract. Only the collection&apos;s own owner or an admin can
+          limit, configured directly on its canonical FixedPriceMinter
+          clone. Only the collection&apos;s own owner or an admin can
           activate a gate on it.
         </p>
       </header>

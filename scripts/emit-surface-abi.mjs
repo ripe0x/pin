@@ -51,6 +51,19 @@ emit({
     "apps/indexer/abis/SurfaceFactory.ts",
   ],
 });
+// Canonical fixed-price/referral minter (Phase 2/3): one EIP-1167 clone per
+// collection, cloned and wired by SurfaceFactory.createSurface. Emitted to
+// both packages/abi/src and apps/indexer/abis like Surface/SurfaceFactory
+// above, since the indexer binds Sold/ReferralPaid per clone via the
+// factory() child-contract pattern keyed off SurfaceCreated's minter field.
+emit({
+  artifact: "FixedPriceMinter.sol/FixedPriceMinter.json",
+  exportName: "fixedPriceMinterAbi",
+  outFiles: [
+    "packages/abi/src/fixedPriceMinter.ts",
+    "apps/indexer/abis/FixedPriceMinter.ts",
+  ],
+});
 emit({
   artifact: "DefaultRenderer.sol/DefaultRenderer.json",
   exportName: "defaultRendererAbi",
@@ -65,30 +78,6 @@ emit({
   outFiles: ["packages/abi/src/scriptyRenderer.ts"],
 });
 
-// Reference mint hooks (swappable mint-hook slot implementations).
-emit({
-  artifact: "AllowlistHook.sol/AllowlistHook.json",
-  exportName: "allowlistHookAbi",
-  outFiles: ["packages/abi/src/allowlistHook.ts"],
-});
-emit({
-  artifact: "PerWalletCapHook.sol/PerWalletCapHook.json",
-  exportName: "perWalletCapHookAbi",
-  outFiles: ["packages/abi/src/perWalletCapHook.ts"],
-});
-emit({
-  artifact: "HoldsSurfaceHook.sol/HoldsSurfaceHook.json",
-  exportName: "holdsSurfaceHookAbi",
-  outFiles: ["packages/abi/src/holdsSurfaceHook.ts"],
-});
-// Merkle allowlist + per-wallet cap composed into one hook (the two gates a
-// real gated drop typically wants at once).
-emit({
-  artifact: "GateHook.sol/GateHook.json",
-  exportName: "gateHookAbi",
-  outFiles: ["packages/abi/src/gateHook.ts"],
-});
-
 // Render-land registry of static display assets (covers + captures).
 emit({
   artifact: "RenderAssets.sol/RenderAssets.json",
@@ -97,11 +86,6 @@ emit({
 });
 
 // Swappable-slot interfaces (the third-party API surface implementers satisfy).
-emit({
-  artifact: "IMintHook.sol/IMintHook.json",
-  exportName: "iMintHookAbi",
-  outFiles: ["packages/abi/src/iMintHook.ts"],
-});
 emit({
   artifact: "IPriceStrategy.sol/IPriceStrategy.json",
   exportName: "iPriceStrategyAbi",

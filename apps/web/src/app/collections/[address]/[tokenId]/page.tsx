@@ -171,7 +171,7 @@ export default async function CollectionTokenPage({ params }: { params: Params }
           <CollectionMintMarkCard
             mintOrder={t.mintOrder}
             seed={null /* the dedicated Seed card below shows it in full */}
-            status={c.status}
+            supplyCap={c.cfg.supplyCap}
             minted={c.minted}
           />
 

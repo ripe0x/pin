@@ -69,17 +69,25 @@ const GENERATED_BANNER = (src: string) =>
 
 // ── ABI registry (checked-in @pin/abi exports, keyed by contract name) ──
 
+// NOTE (thin-token rearchitecture, Phase 5): Surface/SurfaceFactory below are
+// regenerated from the post-rearchitecture ABIs (mintTo/mintToId, shrunk
+// SurfaceConfig, new Minted/SurfaceCreated shapes), but the hand-authored
+// prose in docs/reference/_prose/{Surface,SurfaceFactory}.md still documents
+// the pre-rearchitecture surface (mint/mintWithReferral/mintFor, withdraw,
+// price/window/payout fields, SurfaceStatus) and will fail this generator's
+// strict ABI/prose cross-check until it's rewritten. FixedPriceMinter (the
+// new canonical minter) has no prose yet and is deliberately left out of this
+// registry and PROTOCOLS below rather than added half-documented. Running
+// `pnpm docs:generate` end-to-end needs a prose-authoring pass across both
+// contracts before it will succeed again; apps/web/public/abis/*.json for
+// this contract set is synced separately in the interim (see
+// scripts/sync-surface-public-abis.mjs).
 const ABI_BY_NAME: Record<string, AbiItem[]> = {
     Surface: abis.surfaceAbi as unknown as AbiItem[],
     SurfaceFactory: abis.surfaceFactoryAbi as unknown as AbiItem[],
     DefaultRenderer: abis.defaultRendererAbi as unknown as AbiItem[],
     ScriptyRenderer: abis.scriptyRendererAbi as unknown as AbiItem[],
     RenderAssets: abis.renderAssetsAbi as unknown as AbiItem[],
-    AllowlistHook: abis.allowlistHookAbi as unknown as AbiItem[],
-    PerWalletCapHook: abis.perWalletCapHookAbi as unknown as AbiItem[],
-    HoldsSurfaceHook: abis.holdsSurfaceHookAbi as unknown as AbiItem[],
-    GateHook: abis.gateHookAbi as unknown as AbiItem[],
-    IMintHook: abis.iMintHookAbi as unknown as AbiItem[],
     IPriceStrategy: abis.iPriceStrategyAbi as unknown as AbiItem[],
     IRenderer: abis.iRendererAbi as unknown as AbiItem[],
     ISurfaceView: abis.iSurfaceViewAbi as unknown as AbiItem[],
@@ -149,17 +157,11 @@ const PROTOCOLS: Protocol[] = [
                 kind: 'clone',
                 note: 'A bring-your-own generative renderer template, not a shared deployment. An artist deploys their own instance (one per work) with the work fixed in the constructor — immutable by construction — and points a collection\'s renderer slot at it, so there is no canonical address. The ABI below is the base template; see [Write a renderer](/docs/collections/guides/write-a-renderer).',
             },
-            {name: 'AllowlistHook', slug: 'allowlist-hook', deploymentsKey: 'allowlistHook', kind: 'singleton'},
-            {name: 'PerWalletCapHook', slug: 'per-wallet-cap-hook', deploymentsKey: 'perWalletCapHook', kind: 'singleton'},
-            {name: 'HoldsSurfaceHook', slug: 'holds-surface-hook', deploymentsKey: 'holdsSurfaceHook', kind: 'singleton'},
-            {name: 'GateHook', slug: 'gate-hook', deploymentsKey: 'gateHook', kind: 'singleton'},
-            {
-                name: 'IMintHook',
-                slug: 'i-mint-hook',
-                deploymentsKey: null,
-                kind: 'interface',
-                note: 'Interface (ABI only), not a deployed contract. Implement it to install a custom mint hook in the hook slot.',
-            },
+            // AllowlistHook, PerWalletCapHook, HoldsSurfaceHook, GateHook, and
+            // IMintHook were removed here (thin-token rearchitecture): the
+            // mint-hook slot no longer exists on the token, and allowlist +
+            // per-wallet-cap gating moved into FixedPriceMinter's own config.
+            // See the ABI_BY_NAME note above.
             {
                 name: 'IPriceStrategy',
                 slug: 'i-price-strategy',

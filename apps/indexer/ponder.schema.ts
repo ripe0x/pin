@@ -370,6 +370,18 @@ export const muriTokens = onchainTable(
 // (`collection_tokens`), and an append-only mint log (`collection_mints`).
 // Handlers are kept minimal per AGENTS.md — enrichment (metadata, rendered
 // art, etc.) is the worker's/web's job reading these rows, not Ponder's.
+//
+// Thin-token rearchitecture (docs/pnd-surface-thin-token-rearchitecture.md):
+// the token no longer carries sale economics (price, window, referral,
+// value custody, SurfaceStatus) — that moved to the per-collection
+// FixedPriceMinter clone `createSurface` wires. `Minted` dropped
+// referrer/statusAtMint/mintBlock and gained `minter` (the calling minter,
+// cross-minter attribution). `collections.minter` is the collection-to-
+// minter binding read off `SurfaceCreated`, null for the bring-your-own/
+// pooled paths that skip the canonical clone. `minters` is the reverse
+// index (minter clone -> collection) the FixedPriceMinter:Sold/ReferralPaid
+// handlers use to resolve which collection a sale belongs to, since those
+// events are emitted by the minter contract, not the collection.
 
 export const collections = onchainTable(
   "collections",
@@ -377,6 +389,11 @@ export const collections = onchainTable(
     // The deployed Collection clone address.
     collection: t.hex().primaryKey(),
     owner: t.hex().notNull(),
+    // The canonical FixedPriceMinter clone SurfaceCreated wired, or null
+    // for createSurfaceCustom/createPooledSurface (bring-your-own minter,
+    // granted separately or via initialMinters — there is no minterOf
+    // storage mapping onchain, so this column IS the discovery record).
+    minter: t.hex(),
     createdAtBlock: t.bigint().notNull(),
     createdAtTime: t.bigint().notNull(),
     createdTxHash: t.hex().notNull(),
@@ -385,6 +402,15 @@ export const collections = onchainTable(
     ownerIdx: index().on(table.owner),
   }),
 )
+
+// Reverse index for the collections.minter binding: given a FixedPriceMinter
+// clone address (the Sold/ReferralPaid event's own contract), resolve which
+// collection it sells for. Populated alongside `collections` whenever
+// SurfaceCreated carries a nonzero minter.
+export const minters = onchainTable("minters", (t) => ({
+  minter: t.hex().primaryKey(),
+  collection: t.hex().notNull(),
+}))
 
 // Current state per token. Pooled collections can burn-then-remint the
 // same tokenId as a new instance (see IPooledSurface.mintToId) — a
@@ -397,26 +423,24 @@ export const collectionTokens = onchainTable(
     id: t.text().primaryKey(), // `${collection}-${tokenId}`
     collection: t.hex().notNull(),
     tokenId: t.bigint().notNull(),
-    // Current holder. For built-in paid mints (Minted event `to`) this is
-    // the minter; extension mints (mintTo/mintToId) also resolve `to` from
-    // the same event, so no separate "minter" vs "owner" split is needed
-    // here — Ponder does not track post-mint Transfer for this contract
-    // (that's an owner-tracking concern the web/worker layer can add via
-    // Transfer if/when needed).
+    // Current holder, from the Minted event's `to`. Ponder does not track
+    // post-mint Transfer for this contract (that's an owner-tracking
+    // concern the web/worker layer can add via Transfer if/when needed).
     mintedTo: t.hex().notNull(),
-    referrer: t.hex().notNull(),
-    mintBlock: t.bigint().notNull(),
+    // The minter contract that issued this token (Minted event's `minter`,
+    // i.e. msg.sender on the token) — cross-minter attribution with no
+    // trace lookup. referrer/statusAtMint/mintBlock no longer exist: the
+    // token no longer sees value (referral is the minter's own event), and
+    // the mint block is this row's own updatedAtBlock/updatedAtTime.
+    minter: t.hex().notNull(),
     // Offset of this tokenId within its own Minted call's
-    // [firstTokenId, firstTokenId + quantity - 1] range (0 for extension
-    // mints, which always emit quantity 1). NOT the contract's global
-    // per-collection mint order (MintRecord.mintIndex / mintMarkOf()) —
+    // [firstTokenId, firstTokenId + quantity - 1] range (0 for a single-id
+    // pooled mint). NOT the contract's global per-collection mint order —
     // that value isn't emitted by Minted and reading it back onchain per
     // event would mean an extra RPC call per mint, which these handlers
     // deliberately avoid (see AGENTS.md: worker/web enrich, Ponder stays
-    // dumb). Read mintMarkOf(tokenId) directly if the global index is
-    // ever needed.
+    // dumb).
     mintIndex: t.integer().notNull(),
-    statusAtMint: t.integer().notNull(), // SurfaceStatus enum (0 Open, 1 Closing, 2 Closed)
     burned: t.boolean().notNull(),
     updatedAtBlock: t.bigint().notNull(),
     updatedAtTime: t.bigint().notNull(),
@@ -435,12 +459,10 @@ export const collectionMints = onchainTable(
   (t) => ({
     id: t.text().primaryKey(), // `${txHash}-${logIndex}`
     collection: t.hex().notNull(),
+    minter: t.hex().notNull(),
     firstTokenId: t.bigint().notNull(),
     quantity: t.bigint().notNull(),
     to: t.hex().notNull(),
-    referrer: t.hex().notNull(),
-    mintBlock: t.bigint().notNull(),
-    statusAtMint: t.integer().notNull(),
     blockNumber: t.bigint().notNull(),
     blockTime: t.bigint().notNull(),
     txHash: t.hex().notNull(),
@@ -448,5 +470,55 @@ export const collectionMints = onchainTable(
   (table) => ({
     collectionIdx: index().on(table.collection, table.blockNumber),
     toIdx: index().on(table.to),
+  }),
+)
+
+// Append-only: one row per FixedPriceMinter Sold event (the canonical
+// minter's own sale record — price, referrer, payer, distinct from the
+// token's Minted event, which carries no economics). `collection` is
+// resolved via the `minters` reverse index since Sold is emitted by the
+// minter clone, not the collection.
+export const collectionSales = onchainTable(
+  "collection_sales",
+  (t) => ({
+    id: t.text().primaryKey(), // `${txHash}-${logIndex}`
+    collection: t.hex().notNull(),
+    minter: t.hex().notNull(),
+    payer: t.hex().notNull(),
+    to: t.hex().notNull(),
+    referrer: t.hex().notNull(),
+    quantity: t.bigint().notNull(),
+    paid: t.bigint().notNull(),
+    firstTokenId: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    blockTime: t.bigint().notNull(),
+    txHash: t.hex().notNull(),
+  }),
+  (table) => ({
+    collectionIdx: index().on(table.collection, table.blockNumber),
+    payerIdx: index().on(table.payer),
+  }),
+)
+
+// Append-only: one row per FixedPriceMinter ReferralPaid event. Separate
+// from `collection_sales` rather than fused onto the Sold row: both events
+// fire in the same `mint()` call (ReferralPaid from inside `_settle`,
+// before the trailing `Sold` emit) but keying a join on tx hash + call
+// ordering is more fragile than two independent append-only logs.
+export const collectionReferrals = onchainTable(
+  "collection_referrals",
+  (t) => ({
+    id: t.text().primaryKey(), // `${txHash}-${logIndex}`
+    collection: t.hex().notNull(),
+    minter: t.hex().notNull(),
+    referrer: t.hex().notNull(),
+    amount: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    blockTime: t.bigint().notNull(),
+    txHash: t.hex().notNull(),
+  }),
+  (table) => ({
+    collectionIdx: index().on(table.collection, table.blockNumber),
+    referrerIdx: index().on(table.referrer),
   }),
 )

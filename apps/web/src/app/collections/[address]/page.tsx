@@ -24,7 +24,6 @@ import {
   getCollectionMintHistory,
   getCollectionToken,
   getContractDescription,
-  getGateState,
   getRecentTokenMarks,
   getRendererPreviews,
 } from "@/lib/collection-onchain"
@@ -44,6 +43,8 @@ import {
   formatBps,
   hasPriceStrategy,
   ipfsToHttp,
+  lifecycleStatus,
+  saleWindowOf,
   sellsViaMinterOnly,
   shortAddress,
 } from "@/lib/collection"
@@ -107,11 +108,10 @@ export default async function CollectionPage({
   // pre-mint / fill state draws from.
   const homageMintedIds = homageSkin ? await getHomageMintedIds(addr) : []
   const homageSampleIds = Array.from({ length: 12 }, (_, i) => Math.floor((i + 0.5) * (10_000 / 12)))
-  const [history, attribution, recent, gate] = await Promise.all([
+  const [history, attribution, recent] = await Promise.all([
     getCollectionMintHistory(addr, c.minted, c.cfg.idMode),
     getAttribution(addr),
     getRecentTokenMarks(addr, c.minted, c.cfg.idMode),
-    c.cfg.mintHook !== ZERO_ADDRESS ? getGateState(addr) : Promise.resolve(null),
   ])
 
   const hasCover = c.cover.length > 0
@@ -129,19 +129,28 @@ export default async function CollectionPage({
       : ""
 
   const permanent = c.isRendererLocked
-  const pooled = sellsViaMinterOnly(c.cfg.idMode)
-  const strategy = hasPriceStrategy(c.priceStrategy)
+  // sellsViaMinterOnly(idMode) covers the structural pooled case; `!c.minter`
+  // additionally covers a sequential collection with no canonical minter on
+  // record (bring-your-own, or not yet indexed) — both render the quiet
+  // "mints through its minter" notice instead of the direct buy flow.
+  const pooled = sellsViaMinterOnly(c.cfg.idMode) || !c.minter
+  const strategy = hasPriceStrategy(c.sale?.priceStrategy ?? ZERO_ADDRESS)
 
+  // Lifecycle status is no longer stored on the token (thin-token
+  // rearchitecture, §7.6): derive it here from the minter's sale window
+  // (saleWindowOf folds in "no minter" as an always-open default) plus the
+  // token's own cap state, same as every other client-side status read.
+  const nowSec = Math.floor(Date.now() / 1000)
+  const status = lifecycleStatus(saleWindowOf(c), c.minted, nowSec)
   const capReached = c.cfg.supplyCap > 0n && c.minted >= c.cfg.supplyCap
-  const soldOut = c.status === SurfaceStatus.Closed && capReached
-  const mintCouldBeLive =
-    c.status === SurfaceStatus.Scheduled || c.status === SurfaceStatus.Open
+  const soldOut = status === SurfaceStatus.Closed && capReached
+  const mintCouldBeLive = status === SurfaceStatus.Scheduled || status === SurfaceStatus.Open
 
   const placard = {
-    price: c.cfg.price.toString(),
+    price: (c.sale?.price ?? 0n).toString(),
     supplyCap: c.cfg.supplyCap.toString(),
-    mintStart: c.cfg.mintStart.toString(),
-    mintEnd: c.cfg.mintEnd.toString(),
+    mintStart: (c.sale?.mintStart ?? 0n).toString(),
+    mintEnd: (c.sale?.mintEnd ?? 0n).toString(),
     minted: c.minted.toString(),
     hasStrategy: strategy,
     pooled,
@@ -354,18 +363,20 @@ export default async function CollectionPage({
                   ? "The renderer is locked: this collection renders through its current contract forever. The contract itself has had no upgrade path since deploy."
                   : "The contract is immutable from deploy. The renderer can change until the artist locks it."}
               </p>
-              <div className="pt-2">
-                <h3 className="mb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400">
-                  Self host this mint
-                </h3>
-                <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
-                  This collection is the artist&apos;s own contract and can be minted
-                  from any interface. From your own page, call{" "}
-                  <code className="text-fg">mintWithReferral(qty, yourAddress, 0x)</code> on{" "}
-                  <code className="break-all text-fg">{addr}</code> so the{" "}
-                  {formatBps(REFERRAL_SHARE_BPS)} referral share routes to you, not PND.
-                </p>
-              </div>
+              {c.minter && (
+                <div className="pt-2">
+                  <h3 className="mb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400">
+                    Self host this mint
+                  </h3>
+                  <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
+                    This collection sells through its own canonical minter and can be
+                    minted from any interface. From your own page, call{" "}
+                    <code className="text-fg">mint(to, qty, yourAddress, 0x)</code> on{" "}
+                    <code className="break-all text-fg">{c.minter}</code> so the{" "}
+                    {formatBps(REFERRAL_SHARE_BPS)} referral share routes to you, not PND.
+                  </p>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -387,17 +398,19 @@ export default async function CollectionPage({
           ) : (
             <MintCollectionCTA
               collection={addr}
+              minter={c.minter}
               work={hasWork ? c.work : null}
-              gate={gate}
               snapshot={{
-                price: c.cfg.price.toString(),
+                price: (c.sale?.price ?? 0n).toString(),
+                priceStrategy: c.sale?.priceStrategy ?? ZERO_ADDRESS,
+                mintStart: (c.sale?.mintStart ?? 0n).toString(),
+                mintEnd: (c.sale?.mintEnd ?? 0n).toString(),
+                payout: c.sale?.payout ?? ZERO_ADDRESS,
+                allowlistRoot:
+                  c.sale?.allowlistRoot ?? ("0x" + "0".repeat(64) as `0x${string}`),
+                walletCap: (c.sale?.walletCap ?? 0n).toString(),
                 supplyCap: c.cfg.supplyCap.toString(),
-                mintStart: c.cfg.mintStart.toString(),
-                mintEnd: c.cfg.mintEnd.toString(),
                 minted: c.minted.toString(),
-                status: c.status,
-                priceStrategy: c.priceStrategy,
-                idMode: c.cfg.idMode,
               }}
             />
           )}
@@ -461,7 +474,11 @@ export default async function CollectionPage({
                   Payout
                 </dt>
                 <dd className="text-[10px] font-mono">
-                  <AddrLink addr={c.cfg.payoutAddress === ZERO_ADDRESS ? c.owner : c.cfg.payoutAddress} />
+                  <AddrLink
+                    addr={
+                      !c.sale || c.sale.payout === ZERO_ADDRESS ? c.owner : c.sale.payout
+                    }
+                  />
                 </dd>
                 <dt className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
                   Renderer
@@ -501,7 +518,7 @@ export default async function CollectionPage({
           <div className="mx-auto grid max-w-[1400px] grid-cols-1 gap-x-16 px-6 py-10 md:grid-cols-2 lg:grid-cols-3 lg:px-12 lg:py-14">
             <div>
               <AttributionRoster entries={attribution} chainId={PND_CHAIN_ID} />
-              <WithdrawPanel collection={addr} />
+              <WithdrawPanel minter={c.minter} />
             </div>
             <div>
               <CollectionMintHistory history={history} chainId={PND_CHAIN_ID} />
@@ -532,9 +549,9 @@ export default async function CollectionPage({
               <Fact
                 label="Payout"
                 value={
-                  c.cfg.payoutAddress === ZERO_ADDRESS
+                  !c.sale || c.sale.payout === ZERO_ADDRESS
                     ? shortAddress(c.owner)
-                    : shortAddress(c.cfg.payoutAddress)
+                    : shortAddress(c.sale.payout)
                 }
               />
               <div className="pt-1">

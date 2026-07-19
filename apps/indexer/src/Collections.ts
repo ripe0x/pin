@@ -1,15 +1,22 @@
 import { ponder } from "ponder:registry"
-import { collections, collectionMints, collectionTokens } from "ponder:schema"
+import {
+  collections,
+  collectionMints,
+  collectionTokens,
+  collectionReferrals,
+  collectionSales,
+  minters,
+} from "ponder:schema"
 
 /**
  * PND Surface System (contracts/src/surface/) handlers.
  *
- * DEPLOY-GATED: SurfaceFactory + Surface are only
+ * DEPLOY-GATED: SurfaceFactory + Surface + FixedPriceMinter are only
  * present in ponder.config.ts's `contracts` once the real factory address
  * replaces the zero-address sentinel there. Until then, Ponder's generated
  * `EventNames` type structurally does not include
- * "SurfaceFactory:SurfaceCreated" /
- * "Surface:Minted" / "Surface:Burned" — there is
+ * "SurfaceFactory:SurfaceCreated" / "Surface:Minted" / "Surface:Burned" /
+ * "FixedPriceMinter:Sold" / "FixedPriceMinter:ReferralPaid" — there is
  * nothing in `contracts` for those strings to refer to.
  *
  * `ponder.on` is deliberately typed generically over the live config (see
@@ -30,7 +37,8 @@ import { collections, collectionMints, collectionTokens } from "ponder:schema"
  * further change needed here.
  *
  * Kept minimal per AGENTS.md: handlers just mirror onchain state into
- * `collections` / `collection_tokens` / `collection_mints`. Metadata
+ * `collections` / `collection_tokens` / `collection_mints` /
+ * `collection_sales` / `collection_referrals` / `minters`. Metadata
  * enrichment, rendering, and anything beyond raw event data is out of
  * scope here — that's the worker's/web's job reading these rows.
  */
@@ -50,41 +58,55 @@ const tokenRowId = (collection: string, tokenId: bigint) =>
 
 // ─── Factory discovery ────────────────────────────────────────────────────
 
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
+
 on("SurfaceFactory:SurfaceCreated", async ({ event, context }) => {
-  const { owner, collection } = event.args
+  const { owner, collection, minter } = event.args as {
+    owner: `0x${string}`
+    collection: `0x${string}`
+    minter: `0x${string}`
+    idMode: number
+  }
+  const hasMinter = minter.toLowerCase() !== ZERO_ADDRESS
   await context.db
     .insert(collections)
     .values({
       collection,
       owner,
+      minter: hasMinter ? minter : null,
       createdAtBlock: event.block.number,
       createdAtTime: event.block.timestamp,
       createdTxHash: event.transaction.hash,
     })
     .onConflictDoNothing()
+
+  // Reverse index for FixedPriceMinter:Sold/ReferralPaid, which are emitted
+  // by the minter clone and carry no collection field of their own.
+  // createSurfaceCustom/createPooledSurface emit minter = address(0) (no
+  // canonical clone), so there's nothing to index here.
+  if (hasMinter) {
+    await context.db.insert(minters).values({ minter, collection }).onConflictDoNothing()
+  }
 })
 
 // ─── Per-collection state machine (via factory() child indexing) ────────
 
-// One event per mint call. Built-in paid paths cover the contiguous range
-// [firstTokenId, firstTokenId + quantity - 1]; extension mints (mintTo,
-// mintToId) always emit quantity 1. A pooled collection may re-mint a
-// previously burned tokenId (mintToId) — same id, new instance: the row
-// is UPDATEd in place with fresh mark fields and burned reset to false,
-// not inserted as a second row (there is exactly one live row per
-// (collection, tokenId) at any time; collection_mints is the immutable
-// history of every mint call, including re-mints).
+// One event per mint call. mintTo covers the contiguous range
+// [firstTokenId, firstTokenId + quantity - 1]; mintToId always emits
+// quantity 1. A pooled collection may re-mint a previously burned tokenId
+// (mintToId) — same id, new instance: the row is UPDATEd in place with
+// fresh mark fields and burned reset to false, not inserted as a second
+// row (there is exactly one live row per (collection, tokenId) at any
+// time; collection_mints is the immutable history of every mint call,
+// including re-mints).
 on("Surface:Minted", async ({ event, context }) => {
-  const { to, referrer, firstTokenId, quantity, firstMintIndex, mintBlock, statusAtMint } =
-    event.args as {
-      to: `0x${string}`
-      referrer: `0x${string}`
-      firstTokenId: bigint
-      quantity: bigint
-      firstMintIndex: bigint
-      mintBlock: bigint
-      statusAtMint: number
-    }
+  const { minter, to, firstTokenId, quantity, firstMintIndex } = event.args as {
+    minter: `0x${string}`
+    to: `0x${string}`
+    firstTokenId: bigint
+    quantity: bigint
+    firstMintIndex: bigint
+  }
   const collection = event.log.address as `0x${string}`
 
   await context.db
@@ -92,12 +114,10 @@ on("Surface:Minted", async ({ event, context }) => {
     .values({
       id: `${event.transaction.hash}-${event.log.logIndex}`,
       collection,
+      minter,
       firstTokenId,
       quantity,
       to,
-      referrer,
-      mintBlock,
-      statusAtMint,
       blockNumber: event.block.number,
       blockTime: event.block.timestamp,
       txHash: event.transaction.hash,
@@ -114,10 +134,8 @@ on("Surface:Minted", async ({ event, context }) => {
       // Pooled re-mint of a previously burned id: fresh mark, live again.
       await context.db.update(collectionTokens, { id }).set({
         mintedTo: to,
-        referrer,
-        mintBlock,
+        minter,
         mintIndex,
-        statusAtMint,
         burned: false,
         updatedAtBlock: event.block.number,
         updatedAtTime: event.block.timestamp,
@@ -128,16 +146,75 @@ on("Surface:Minted", async ({ event, context }) => {
         collection,
         tokenId,
         mintedTo: to,
-        referrer,
-        mintBlock,
+        minter,
         mintIndex,
-        statusAtMint,
         burned: false,
         updatedAtBlock: event.block.number,
         updatedAtTime: event.block.timestamp,
       })
     }
   }
+})
+
+// ─── Canonical minter sale record (via factory() child indexing) ────────
+//
+// Sold/ReferralPaid are emitted by the FixedPriceMinter clone itself
+// (event.log.address is the minter, not the collection), so both handlers
+// resolve the owning collection via the `minters` reverse index populated
+// in SurfaceCreated above. A minter row always exists for any minter Ponder
+// is subscribed to (they're the same factory() child set), so a miss here
+// means an event arrived before its own SurfaceCreated indexed — not
+// expected, but handled by skipping the row rather than throwing.
+
+on("FixedPriceMinter:Sold", async ({ event, context }) => {
+  const minter = event.log.address as `0x${string}`
+  const row = await context.db.find(minters, { minter })
+  if (!row) return
+  const { payer, to, referrer, quantity, paid, firstTokenId } = event.args as {
+    payer: `0x${string}`
+    to: `0x${string}`
+    referrer: `0x${string}`
+    quantity: bigint
+    paid: bigint
+    firstTokenId: bigint
+  }
+  await context.db
+    .insert(collectionSales)
+    .values({
+      id: `${event.transaction.hash}-${event.log.logIndex}`,
+      collection: row.collection,
+      minter,
+      payer,
+      to,
+      referrer,
+      quantity,
+      paid,
+      firstTokenId,
+      blockNumber: event.block.number,
+      blockTime: event.block.timestamp,
+      txHash: event.transaction.hash,
+    })
+    .onConflictDoNothing()
+})
+
+on("FixedPriceMinter:ReferralPaid", async ({ event, context }) => {
+  const minter = event.log.address as `0x${string}`
+  const row = await context.db.find(minters, { minter })
+  if (!row) return
+  const { referrer, amount } = event.args as { referrer: `0x${string}`; amount: bigint }
+  await context.db
+    .insert(collectionReferrals)
+    .values({
+      id: `${event.transaction.hash}-${event.log.logIndex}`,
+      collection: row.collection,
+      minter,
+      referrer,
+      amount,
+      blockNumber: event.block.number,
+      blockTime: event.block.timestamp,
+      txHash: event.transaction.hash,
+    })
+    .onConflictDoNothing()
 })
 
 on("Surface:Burned", async ({ event, context }) => {

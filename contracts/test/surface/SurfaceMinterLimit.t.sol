@@ -67,7 +67,7 @@ contract SurfaceMinterLimitTest is SurfaceBase {
         PooledSurface c = _pooledWithMinters(_freeConfig(), _one(minterA));
 
         vm.prank(minterA);
-        c.mintToId(collector, 42, address(0), "");
+        c.mintToId(collector, 42);
         assertEq(c.ownerOf(42), collector);
 
         vm.expectRevert(ISurfaceCore.TooManyMinters.selector);
@@ -107,7 +107,7 @@ contract SurfaceMinterLimitTest is SurfaceBase {
 
         // the frozen single minter is still fully operational (the Homage path)
         vm.startPrank(minterA);
-        c.mintToId(collector, 7, address(0), "");
+        c.mintToId(collector, 7);
         c.burn(7);
         vm.stopPrank();
         assertEq(c.balanceOf(collector), 0);

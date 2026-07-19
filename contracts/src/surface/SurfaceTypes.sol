@@ -4,19 +4,12 @@ pragma solidity ^0.8.24;
 // ─────────────────────────────────────────────────────────────────────────────
 // Surface, shared types
 //
-// The core stores per-token ownership, the payout destination, and one seed
-// per token. tokenURI is delegated to the renderer, held in a config slot the
-// owner can change or lock. The core does not store or reference the artwork.
+// The core stores per-token ownership and one seed per token. tokenURI is
+// delegated to the renderer, held in a config slot the owner can change or
+// lock. The core does not store or reference the artwork, and holds no sale
+// economics: price, mint window, and payment custody live in the minter that
+// calls mintTo/mintToId.
 // ─────────────────────────────────────────────────────────────────────────────
-
-/// @notice Mint status, derived from the window, the cap, and the current time.
-///         Never stored. config() reports it live and each Minted event stamps
-///         the value observed at mint.
-enum SurfaceStatus {
-    Scheduled, // window has not opened yet
-    Open, // minting now
-    Closed // window passed, or a sequential cap filled
-}
 
 /// @notice How token ids are assigned. Not a setting; each mode is a separate
 ///         contract, and idMode() reports which.
@@ -36,16 +29,10 @@ enum IdMode {
 ///         collection is initialized locked, with no second transaction
 ///         required.
 struct SurfaceConfig {
-    uint256 price; // wei; used when priceStrategy is unset. 0 = gas only
     uint256 supplyCap; // 0 = open supply
-    uint64 mintStart; // unix seconds; 0 = open immediately
-    uint64 mintEnd; // unix seconds; 0 = open-ended
     uint16 royaltyBps; // EIP-2981, advisory
     address royaltyReceiver; // 0 = owner()
-    address payoutAddress; // artist proceeds; 0 = owner()
     address renderer; // provides tokenURI; 0 at init = use the factory default
-    address mintHook; // 0 = none
-    address priceStrategy; // 0 = the stored fixed price
     bool rendererLocked; // one-way; see lockRenderer()
     bool supplyLocked; // one-way; see lockSupply()
 }

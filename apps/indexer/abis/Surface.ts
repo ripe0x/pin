@@ -3,19 +3,6 @@
 export const surfaceAbi = [
   {
     "type": "function",
-    "name": "REFERRAL_SHARE_BPS",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "acceptOwnership",
     "inputs": [],
     "outputs": [],
@@ -108,24 +95,9 @@ export const surfaceAbi = [
         "internalType": "struct SurfaceConfig",
         "components": [
           {
-            "name": "price",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
             "name": "supplyCap",
             "type": "uint256",
             "internalType": "uint256"
-          },
-          {
-            "name": "mintStart",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "mintEnd",
-            "type": "uint64",
-            "internalType": "uint64"
           },
           {
             "name": "royaltyBps",
@@ -138,22 +110,7 @@ export const surfaceAbi = [
             "internalType": "address"
           },
           {
-            "name": "payoutAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
             "name": "renderer",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "mintHook",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "priceStrategy",
             "type": "address",
             "internalType": "address"
           },
@@ -168,11 +125,6 @@ export const surfaceAbi = [
             "internalType": "bool"
           }
         ]
-      },
-      {
-        "name": "status",
-        "type": "uint8",
-        "internalType": "enum SurfaceStatus"
       },
       {
         "name": "minted",
@@ -191,35 +143,6 @@ export const surfaceAbi = [
         "name": "",
         "type": "string",
         "internalType": "string"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "currentPrice",
-    "inputs": [
-      {
-        "name": "minter",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "quantity",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "data",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -286,24 +209,9 @@ export const surfaceAbi = [
             "internalType": "struct SurfaceConfig",
             "components": [
               {
-                "name": "price",
-                "type": "uint256",
-                "internalType": "uint256"
-              },
-              {
                 "name": "supplyCap",
                 "type": "uint256",
                 "internalType": "uint256"
-              },
-              {
-                "name": "mintStart",
-                "type": "uint64",
-                "internalType": "uint64"
-              },
-              {
-                "name": "mintEnd",
-                "type": "uint64",
-                "internalType": "uint64"
               },
               {
                 "name": "royaltyBps",
@@ -316,22 +224,7 @@ export const surfaceAbi = [
                 "internalType": "address"
               },
               {
-                "name": "payoutAddress",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
                 "name": "renderer",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "mintHook",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "priceStrategy",
                 "type": "address",
                 "internalType": "address"
               },
@@ -535,60 +428,6 @@ export const surfaceAbi = [
   },
   {
     "type": "function",
-    "name": "mint",
-    "inputs": [
-      {
-        "name": "quantity",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "payable"
-  },
-  {
-    "type": "function",
-    "name": "mintFor",
-    "inputs": [
-      {
-        "name": "to",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "quantity",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "referrer",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "hookData",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "payable"
-  },
-  {
-    "type": "function",
-    "name": "mintHook",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "mintTo",
     "inputs": [
       {
@@ -597,47 +436,19 @@ export const surfaceAbi = [
         "internalType": "address"
       },
       {
-        "name": "referrer",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "hookData",
-        "type": "bytes",
-        "internalType": "bytes"
+        "name": "quantity",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [
       {
-        "name": "tokenId",
+        "name": "firstTokenId",
         "type": "uint256",
         "internalType": "uint256"
       }
     ],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "mintWithReferral",
-    "inputs": [
-      {
-        "name": "quantity",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "referrer",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "hookData",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "payable"
   },
   {
     "type": "function",
@@ -717,38 +528,6 @@ export const surfaceAbi = [
   },
   {
     "type": "function",
-    "name": "pendingWithdrawal",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "priceStrategy",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "removeAdmin",
     "inputs": [
       {
@@ -778,7 +557,7 @@ export const surfaceAbi = [
     "name": "renounceOwnership",
     "inputs": [],
     "outputs": [],
-    "stateMutability": "pure"
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -911,37 +690,6 @@ export const surfaceAbi = [
   },
   {
     "type": "function",
-    "name": "setMintHook",
-    "inputs": [
-      {
-        "name": "hook",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setMintWindow",
-    "inputs": [
-      {
-        "name": "start",
-        "type": "uint64",
-        "internalType": "uint64"
-      },
-      {
-        "name": "end",
-        "type": "uint64",
-        "internalType": "uint64"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "setMinter",
     "inputs": [
       {
@@ -953,45 +701,6 @@ export const surfaceAbi = [
         "name": "allowed",
         "type": "bool",
         "internalType": "bool"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setPayoutAddress",
-    "inputs": [
-      {
-        "name": "payoutAddress",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setPrice",
-    "inputs": [
-      {
-        "name": "price",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setPriceStrategy",
-    "inputs": [
-      {
-        "name": "strategy",
-        "type": "address",
-        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -1174,19 +883,6 @@ export const surfaceAbi = [
     "stateMutability": "view"
   },
   {
-    "type": "function",
-    "name": "withdraw",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
     "type": "event",
     "name": "AdminSet",
     "inputs": [
@@ -1340,48 +1036,16 @@ export const surfaceAbi = [
   },
   {
     "type": "event",
-    "name": "MintHookSet",
-    "inputs": [
-      {
-        "name": "hook",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "MintWindowSet",
-    "inputs": [
-      {
-        "name": "mintStart",
-        "type": "uint64",
-        "indexed": false,
-        "internalType": "uint64"
-      },
-      {
-        "name": "mintEnd",
-        "type": "uint64",
-        "indexed": false,
-        "internalType": "uint64"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "Minted",
     "inputs": [
       {
-        "name": "to",
+        "name": "minter",
         "type": "address",
         "indexed": true,
         "internalType": "address"
       },
       {
-        "name": "referrer",
+        "name": "to",
         "type": "address",
         "indexed": true,
         "internalType": "address"
@@ -1403,12 +1067,6 @@ export const surfaceAbi = [
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
-      },
-      {
-        "name": "statusAtMint",
-        "type": "uint8",
-        "indexed": false,
-        "internalType": "enum SurfaceStatus"
       }
     ],
     "anonymous": false
@@ -1472,64 +1130,6 @@ export const surfaceAbi = [
         "type": "address",
         "indexed": true,
         "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "PayoutAddressSet",
-    "inputs": [
-      {
-        "name": "payoutAddress",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "PriceSet",
-    "inputs": [
-      {
-        "name": "price",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "PriceStrategySet",
-    "inputs": [
-      {
-        "name": "strategy",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "ReferralPaid",
-    "inputs": [
-      {
-        "name": "referrer",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "amount",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -1621,28 +1221,10 @@ export const surfaceAbi = [
         "internalType": "enum IdMode"
       },
       {
-        "name": "price",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
         "name": "supplyCap",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
-      },
-      {
-        "name": "mintStart",
-        "type": "uint64",
-        "indexed": false,
-        "internalType": "uint64"
-      },
-      {
-        "name": "mintEnd",
-        "type": "uint64",
-        "indexed": false,
-        "internalType": "uint64"
       }
     ],
     "anonymous": false
@@ -1673,32 +1255,8 @@ export const surfaceAbi = [
     "anonymous": false
   },
   {
-    "type": "event",
-    "name": "Withdrawn",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "amount",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
     "type": "error",
     "name": "AlreadyAdmin",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "BadMintWindow",
     "inputs": []
   },
   {
@@ -1838,22 +1396,7 @@ export const surfaceAbi = [
   },
   {
     "type": "error",
-    "name": "HookRejected",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "InvalidInitialization",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "MintEnded",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "MintNotStarted",
     "inputs": []
   },
   {
@@ -1900,11 +1443,6 @@ export const surfaceAbi = [
   {
     "type": "error",
     "name": "NotMinter",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NothingToWithdraw",
     "inputs": []
   },
   {
@@ -1962,11 +1500,6 @@ export const surfaceAbi = [
   },
   {
     "type": "error",
-    "name": "RenounceDisabled",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "RescueFailed",
     "inputs": []
   },
@@ -1984,43 +1517,6 @@ export const surfaceAbi = [
     "type": "error",
     "name": "TooManyMinters",
     "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "Underpayment",
-    "inputs": [
-      {
-        "name": "required",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "sent",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "WithdrawFailed",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "WrongPayment",
-    "inputs": [
-      {
-        "name": "required",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "sent",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
   },
   {
     "type": "error",

@@ -3,11 +3,18 @@
 /**
  * Final step: a single createSurface write on SurfaceFactory, ported
  * from CreateEditionForm's useWriteContract + useWaitForTransactionReceipt +
- * parseEventLogs pattern. Builds SurfaceConfig from wizard state per preset:
+ * parseEventLogs pattern. createSurface takes the token's shrunk
+ * SurfaceConfig (identity/renderer/royalty/cap; no more price, window,
+ * payout, or mint hook — thin-token rearchitecture) and a separate
+ * SaleConfig the factory hands to the canonical FixedPriceMinter clone it
+ * wires in the same transaction:
  *
  *   EDITION:   Sequential id mode, renderer = zero (DefaultRenderer, the
  *              factory's baked-in default); optional cover to RenderAssets.
  *   RENDERER:  renderer = the artist-supplied address (bring-your-own).
+ *
+ * Economics (price/window/payout) are preset-independent and now live
+ * entirely in `sale`, not the collection config.
  *
  * GENERATIVE via a shared onchain assembler was removed: generative works now
  * ship as bring-your-own renderers (a work-specific IRenderer the artist
@@ -30,6 +37,8 @@ import { studioToolHref } from "@/lib/studio-tools"
 import { validateCollaborators } from "./SharedFields"
 import type { WizardState } from "./types"
 import { BTN, BTN_SECONDARY, ERROR } from "./wizard-ui"
+
+const ZERO_ROOT = ("0x" + "0".repeat(64)) as `0x${string}`
 
 export function DeployStep({
   state,
@@ -80,24 +89,36 @@ export function DeployStep({
         ? (state.customRenderer as Address)
         : (ZERO_ADDRESS as Address)
 
-    // Economics are preset-independent: renderer-native works sell through
-    // the same built-in paid path; only the artwork source differs.
+    // Thin-token rearchitecture: SurfaceConfig carries only the token's own
+    // structural facts now (supply cap, royalty, renderer, locks). Sale
+    // economics moved to `buildSale` below, wired onto the canonical minter.
     return {
-      price: priceWei,
       supplyCap: state.openSupply ? 0n : BigInt(Math.floor(Number(state.supplyCap))),
-      mintStart: state.hasWindow ? toUnix(state.startAt) : 0n,
-      mintEnd: state.hasWindow ? toUnix(state.endAt) : 0n,
       royaltyBps,
       royaltyReceiver: ZERO_ADDRESS as Address,
-      payoutAddress: (state.payout !== "" ? state.payout : ZERO_ADDRESS) as Address,
       renderer: rendererAddr,
-      mintHook: ZERO_ADDRESS as Address,
-      priceStrategy: ZERO_ADDRESS as Address,
-      // idMode left the config struct in the Sequential/Pooled split (it's
-      // structural — this wizard deploys via createSurface = Sequential).
-      // The two one-way locks default off; the wizard doesn't offer born-locked.
+      // The two one-way locks default off; the wizard doesn't offer
+      // born-locked.
       rendererLocked: false,
       supplyLocked: false,
+    }
+  }
+
+  function buildSale() {
+    // Economics are preset-independent: renderer-native works sell through
+    // the same canonical minter; only the artwork source differs. The
+    // wizard doesn't yet offer allowlist/wallet-cap/maxMints/priceStrategy
+    // at deploy time — those are studio follow-up actions (mint gate tool,
+    // ActivationQueue) directly on the minter after deploy.
+    return {
+      price: priceWei,
+      priceStrategy: ZERO_ADDRESS as Address,
+      mintStart: state.hasWindow ? toUnix(state.startAt) : 0n,
+      mintEnd: state.hasWindow ? toUnix(state.endAt) : 0n,
+      payout: (state.payout !== "" ? state.payout : ZERO_ADDRESS) as Address,
+      maxMints: 0n,
+      allowlistRoot: ZERO_ROOT,
+      walletCap: 0n,
     }
   }
 
@@ -114,7 +135,7 @@ export function DeployStep({
       address: factory,
       abi: surfaceFactoryAbi,
       functionName: "createSurface",
-      args: [state.name.trim(), state.symbol.trim(), address, buildCfg(), [], creators],
+      args: [state.name.trim(), state.symbol.trim(), address, buildCfg(), buildSale(), creators],
     })
   }
 
