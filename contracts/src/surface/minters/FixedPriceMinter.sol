@@ -1,0 +1,318 @@
+// SPDX-License-Identifier: GPL-3.0
+pragma solidity ^0.8.24;
+
+import {Initializable} from "openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol";
+import {
+    ReentrancyGuardUpgradeable
+} from "openzeppelin-contracts-upgradeable/contracts/utils/ReentrancyGuardUpgradeable.sol";
+import {MerkleProof} from "openzeppelin-contracts/contracts/utils/cryptography/MerkleProof.sol";
+
+import {IMinter} from "../interfaces/IMinter.sol";
+import {ISurface} from "../interfaces/ISurface.sol";
+import {ISurfaceAuth} from "../interfaces/ISurfaceAuth.sol";
+import {IPriceStrategy} from "../interfaces/IPriceStrategy.sol";
+
+/// @notice All parameters initialize() needs, in one struct so the call
+///         stays within legacy-codegen stack limits and can grow without
+///         changing the signature.
+struct FixedPriceMinterInitParams {
+    address collection;
+    uint256 price; // wei; used when priceStrategy is unset
+    address priceStrategy; // 0 = fixed price
+    uint64 mintStart; // unix seconds; 0 = open immediately
+    uint64 mintEnd; // unix seconds; 0 = open-ended
+    address payout; // 0 = live ISurfaceAuth(collection).owner() at settle time
+    uint256 maxMints; // 0 = unlimited; this minter's own sale ceiling
+    bytes32 allowlistRoot; // 0 = open
+    uint256 walletCap; // 0 = unlimited; per-recipient
+}
+
+/// @title FixedPriceMinter
+/// @notice Canonical fixed-price/referral minter for a sequential Surface
+///         collection: one EIP-1167 clone per collection, calling
+///         `ISurface(collection).mintTo`. Pooled collections assign ids
+///         through their own minter (there is no general id-assignment
+///         policy a fixed-price pooled sale could use), so this minter is
+///         sequential-only.
+///
+///         Holds proceeds by pull payment (recipients withdraw); config
+///         authority is borrowed from the collection (owner or admin, the
+///         pattern the deleted HookBase used). Every mint through this
+///         contract is paid: price 0 is legal config but not a free-mint
+///         special case, and there is no owner-mint path. Owner airdrops go
+///         around the minter (grant a one-off minter, mint, revoke).
+///
+/// @dev    Deployed as an immutable EIP-1167 clone: no proxy admin, no
+///         upgrade path. The OZ "Upgradeable" bases are used only for the
+///         initializer pattern (a clone runs no constructor); the collection
+///         binding is set once in initialize() with no setter.
+contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter {
+    uint16 internal constant BPS = 10_000;
+    /// @notice Fixed referral share: 10%, paid to the referrer that hosts the
+    ///         mint. Not artist-set, not a protocol fee. A mint with no
+    ///         referrer accrues the full share to the artist.
+    uint16 public constant REFERRAL_SHARE_BPS = 1_000;
+
+    /// @notice The collection this clone sells for. Set once at
+    ///         initialize(); no setter.
+    address public collection;
+
+    uint256 public price;
+    address public priceStrategy;
+    uint64 public mintStart;
+    uint64 public mintEnd;
+    address public payout;
+    uint256 public maxMints;
+    bytes32 public allowlistRoot;
+    uint256 public walletCap;
+
+    /// @notice Tokens minted through this clone across its lifetime, for
+    ///         the maxMints ceiling.
+    uint256 public totalMinted;
+    /// @notice Tokens minted to `to` through this clone, for the wallet cap.
+    ///         Counted after a mint succeeds, matching the deleted
+    ///         GateHook's ordering.
+    mapping(address => uint256) public mintedBy;
+
+    // Pull-payment balances: mints accrue here, recipients claim via
+    // withdraw(). No external transfer during a mint, so a reverting
+    // recipient cannot block minting. Overpayment on a strategy price
+    // accrues back to the payer the same way.
+    mapping(address => uint256) internal _pending;
+    // Sum of all _pending balances. rescueStrayETH may only sweep the
+    // balance above this amount; owed funds are never swept.
+    uint256 internal _totalPending;
+
+    error CollectionRequired();
+    error NotAContract(address account);
+    error BadMintWindow();
+    error NotAuthorized();
+    error ZeroAccount();
+    error NothingToWithdraw();
+    error WithdrawFailed();
+    error NoStrayETH();
+    error RescueFailed();
+
+    event MinterConfigured(
+        address indexed collection,
+        uint256 price,
+        address priceStrategy,
+        uint64 mintStart,
+        uint64 mintEnd,
+        address payout,
+        uint256 maxMints,
+        bytes32 allowlistRoot,
+        uint256 walletCap
+    );
+    event PriceSet(uint256 price);
+    event PriceStrategySet(address indexed strategy);
+    event MintWindowSet(uint64 mintStart, uint64 mintEnd);
+    event PayoutSet(address indexed payout);
+    event MaxMintsSet(uint256 maxMints);
+    event AllowlistRootSet(bytes32 root);
+    event WalletCapSet(uint256 cap);
+    event Withdrawn(address indexed account, uint256 amount);
+    event StrayETHRescued(address indexed to, uint256 amount);
+
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(FixedPriceMinterInitParams calldata p) external initializer {
+        if (p.collection == address(0)) revert CollectionRequired();
+        if (p.collection.code.length == 0) revert NotAContract(p.collection);
+        if (p.priceStrategy != address(0) && p.priceStrategy.code.length == 0) {
+            revert NotAContract(p.priceStrategy);
+        }
+        if (p.mintEnd != 0 && p.mintEnd <= p.mintStart) revert BadMintWindow();
+        __ReentrancyGuard_init();
+        collection = p.collection;
+        price = p.price;
+        priceStrategy = p.priceStrategy;
+        mintStart = p.mintStart;
+        mintEnd = p.mintEnd;
+        payout = p.payout;
+        maxMints = p.maxMints;
+        allowlistRoot = p.allowlistRoot;
+        walletCap = p.walletCap;
+        emit MinterConfigured(
+            p.collection, p.price, p.priceStrategy, p.mintStart, p.mintEnd, p.payout, p.maxMints, p.allowlistRoot, p.walletCap
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Mint
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// @inheritdoc IMinter
+    function mint(address to, uint256 quantity, address referrer, bytes calldata data)
+        external
+        payable
+        override
+        nonReentrant
+    {
+        if (quantity == 0) revert ZeroQuantity();
+        if (mintStart != 0 && block.timestamp < mintStart) revert MintNotStarted();
+        if (mintEnd != 0 && block.timestamp >= mintEnd) revert MintEnded();
+
+        uint256 max = maxMints;
+        uint256 mintedSoFar = totalMinted;
+        if (max != 0 && mintedSoFar + quantity > max) revert MaxMintsExceeded(max, mintedSoFar + quantity);
+
+        bytes32 root = allowlistRoot;
+        if (root != bytes32(0)) {
+            bytes32[] memory proof = abi.decode(data, (bytes32[]));
+            bytes32 leaf = keccak256(bytes.concat(keccak256(abi.encode(to))));
+            if (!MerkleProof.verify(proof, root, leaf)) revert NotAllowlisted();
+        }
+
+        uint256 cap = walletCap;
+        uint256 mintedByRecipient = mintedBy[to];
+        if (cap != 0) {
+            uint256 attempted = mintedByRecipient + quantity;
+            if (attempted > cap) revert WalletCapExceeded(cap, attempted);
+        }
+
+        // Fixed price: require exact match. With a strategy set, the price
+        // can move between quote and inclusion (basefee terms), so accept
+        // >= and accrue the excess to the payer. `required` is read from the
+        // strategy once and reused for the settle, so a misbehaving
+        // strategy cannot split value this contract never received.
+        uint256 required;
+        address strategy = priceStrategy;
+        if (strategy == address(0)) {
+            required = price * quantity;
+            if (msg.value != required) revert WrongPayment(required, msg.value);
+        } else {
+            required = IPriceStrategy(strategy).priceOf(collection, to, quantity, data);
+            if (msg.value < required) revert Underpayment(required, msg.value);
+            uint256 excess = msg.value - required;
+            if (excess > 0) {
+                _pending[msg.sender] += excess;
+                _totalPending += excess;
+            }
+        }
+
+        uint256 firstTokenId = ISurface(collection).mintTo(to, quantity);
+
+        totalMinted = mintedSoFar + quantity;
+        if (cap != 0) {
+            mintedBy[to] = mintedByRecipient + quantity;
+        }
+
+        _settle(required, referrer);
+
+        emit Sold(msg.sender, to, referrer, quantity, required, firstTokenId);
+    }
+
+    /// @inheritdoc IMinter
+    function priceOf(address to, uint256 quantity, bytes calldata data) external view override returns (uint256) {
+        address strategy = priceStrategy;
+        if (strategy == address(0)) return price * quantity;
+        return IPriceStrategy(strategy).priceOf(collection, to, quantity, data);
+    }
+
+    /// @dev Accrue `total`, split between the referral share and the artist
+    ///      payout. referrer 0 accrues the full amount to the payout. No
+    ///      external call here; recipients claim via withdraw().
+    function _settle(uint256 total, address referrer) internal {
+        if (total == 0) return;
+        _totalPending += total;
+        uint256 referralCut = referrer == address(0) ? 0 : (total * REFERRAL_SHARE_BPS) / BPS;
+        if (referralCut > 0) {
+            _pending[referrer] += referralCut;
+            emit ReferralPaid(referrer, referralCut);
+        }
+        uint256 artistCut = total - referralCut;
+        if (artistCut > 0) {
+            address payoutTo = payout == address(0) ? ISurfaceAuth(collection).owner() : payout;
+            _pending[payoutTo] += artistCut;
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Pull payments
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// @notice Send `account` its owed balance. Callable by anyone; funds go
+    ///         only to the owed address.
+    function withdraw(address account) external nonReentrant {
+        if (account == address(0)) revert ZeroAccount();
+        uint256 amount = _pending[account];
+        if (amount == 0) revert NothingToWithdraw();
+        _pending[account] = 0;
+        _totalPending -= amount;
+        (bool ok,) = payable(account).call{value: amount}("");
+        if (!ok) revert WithdrawFailed();
+        emit Withdrawn(account, amount);
+    }
+
+    function pendingWithdrawal(address account) external view returns (uint256) {
+        return _pending[account];
+    }
+
+    /// @notice Sweep only ETH nobody is owed (for example, forced in via
+    ///         selfdestruct). The balance up to _totalPending is not swept.
+    function rescueStrayETH(address to) external onlyCollectionAdmin nonReentrant {
+        if (to == address(0)) revert ZeroAccount();
+        uint256 stray = address(this).balance - _totalPending;
+        if (stray == 0) revert NoStrayETH();
+        (bool ok,) = payable(to).call{value: stray}("");
+        if (!ok) revert RescueFailed();
+        emit StrayETHRescued(to, stray);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Config (borrowed authority: the collection's owner or admin)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// @dev Same authority root as the collection's own setters: owner or
+    ///      admin. Borrowed rather than a separate Ownable, so one keyring
+    ///      governs both contracts and an ownership transfer invalidates
+    ///      delegated admins for minter config too.
+    modifier onlyCollectionAdmin() {
+        address c = collection;
+        if (msg.sender != ISurfaceAuth(c).owner() && !ISurfaceAuth(c).isAdmin(msg.sender)) {
+            revert NotAuthorized();
+        }
+        _;
+    }
+
+    function setPrice(uint256 price_) external onlyCollectionAdmin {
+        price = price_;
+        emit PriceSet(price_);
+    }
+
+    function setPriceStrategy(address strategy) external onlyCollectionAdmin {
+        if (strategy != address(0) && strategy.code.length == 0) revert NotAContract(strategy);
+        priceStrategy = strategy;
+        emit PriceStrategySet(strategy);
+    }
+
+    function setMintWindow(uint64 start, uint64 end) external onlyCollectionAdmin {
+        if (end != 0 && end <= start) revert BadMintWindow();
+        mintStart = start;
+        mintEnd = end;
+        emit MintWindowSet(start, end);
+    }
+
+    function setPayout(address payout_) external onlyCollectionAdmin {
+        payout = payout_;
+        emit PayoutSet(payout_);
+    }
+
+    function setMaxMints(uint256 maxMints_) external onlyCollectionAdmin {
+        maxMints = maxMints_;
+        emit MaxMintsSet(maxMints_);
+    }
+
+    function setAllowlistRoot(bytes32 root) external onlyCollectionAdmin {
+        allowlistRoot = root;
+        emit AllowlistRootSet(root);
+    }
+
+    function setWalletCap(uint256 cap) external onlyCollectionAdmin {
+        walletCap = cap;
+        emit WalletCapSet(cap);
+    }
+}
