@@ -12,7 +12,7 @@ Every event the Collections contracts emit, grouped by contract. Signatures and 
 
 **[`ApprovalForAll`](/docs/collections/contracts/surface#approvalforall)** · Standard ERC721 operator approval event.
 
-**[`BatchMetadataUpdate`](/docs/collections/contracts/surface#batchmetadataupdate)** · ERC-4906 range refresh signal, emitted by `setRenderer` (covering all tokens) and by `notifyMetadataUpdate` (renderer- or admin-chosen range).
+**[`BatchMetadataUpdate`](/docs/collections/contracts/surface#batchmetadataupdate)** · ERC-4906 range refresh signal, emitted by `setRenderer` and `setSupplyCap` (covering all tokens) and by `notifyMetadataUpdate` (renderer- or admin-chosen range).
 
 **[`Burned`](/docs/collections/contracts/surface#burned)** · Emitted when a token is burned.
 
@@ -22,47 +22,33 @@ Every event the Collections contracts emit, grouped by contract. Signatures and 
 
 **[`Initialized`](/docs/collections/contracts/surface#initialized)** · Standard OpenZeppelin Initializable event, emitted once when the clone is initialized.
 
-**[`MetadataUpdate`](/docs/collections/contracts/surface#metadataupdate)** · ERC-4906 single-token refresh signal (declared for interface completeness; range refreshes go through `BatchMetadataUpdate` via the setters and `notifyMetadataUpdate`).
+**[`MetadataUpdate`](/docs/collections/contracts/surface#metadataupdate)** · ERC-4906 single-token refresh signal, declared for interface completeness; range refreshes go through `BatchMetadataUpdate`.
 
-**[`Minted`](/docs/collections/contracts/surface#minted)** · One event per mint call — THE permanent per-mint provenance record.
+**[`Minted`](/docs/collections/contracts/surface#minted)** · One event per mint call, the permanent per-mint provenance record.
 
 **[`MinterLocked`](/docs/collections/contracts/surface#minterlocked)** · Emitted once when `lockMinter` permanently freezes the minter set.
 
-**[`MinterSet`](/docs/collections/contracts/surface#minterset)** · Emitted when an extension minter is granted or revoked, and once per initial minter at init.
+**[`MinterSet`](/docs/collections/contracts/surface#minterset)** · Emitted when a minter is granted or revoked, and once per initial minter at init.
 
-**[`MintHookSet`](/docs/collections/contracts/surface#minthookset)** · Emitted when the mint hook slot changes.
-
-**[`MintWindowSet`](/docs/collections/contracts/surface#mintwindowset)** · Emitted when the paid mint window is rescheduled with `setMintWindow`.
-
-**[`OwnershipTransferred`](/docs/collections/contracts/surface#ownershiptransferred)** · Standard Ownable event, emitted at init when the first owner is set and when `acceptOwnership` completes a transfer.
+**[`OwnershipTransferred`](/docs/collections/contracts/surface#ownershiptransferred)** · Standard Ownable event, emitted at init when the first owner is set, when `acceptOwnership` completes a transfer, and when `renounceOwnership` sets the owner to zero.
 
 **[`OwnershipTransferStarted`](/docs/collections/contracts/surface#ownershiptransferstarted)** · Standard Ownable2Step event, emitted by `transferOwnership` when a pending owner is recorded.
 
-**[`PayoutAddressSet`](/docs/collections/contracts/surface#payoutaddressset)** · Emitted when the artist payout address changes.
-
-**[`PriceSet`](/docs/collections/contracts/surface#priceset)** · Emitted when the stored fixed price changes with `setPrice`.
-
-**[`PriceStrategySet`](/docs/collections/contracts/surface#pricestrategyset)** · Emitted when the price strategy slot changes.
-
-**[`ReferralPaid`](/docs/collections/contracts/surface#referralpaid)** · Emitted when a non-zero referral cut is credited on a paid mint.
-
-**[`RendererLocked`](/docs/collections/contracts/surface#rendererlocked)** · Emitted once when `lockRenderer` permanently pins the renderer pointer.
+**[`RendererLocked`](/docs/collections/contracts/surface#rendererlocked)** · Emitted once when `lockRenderer` permanently pins the renderer pointer (via the call or a lock set at init).
 
 **[`RendererSet`](/docs/collections/contracts/surface#rendererset)** · Emitted when the renderer slot changes.
 
 **[`RoyaltySet`](/docs/collections/contracts/surface#royaltyset)** · Emitted when the EIP-2981 royalty changes with `setRoyalty`.
 
-**[`StrayETHRescued`](/docs/collections/contracts/surface#strayethrescued)** · Emitted when stray ETH not owed to any payee is swept.
+**[`StrayETHRescued`](/docs/collections/contracts/surface#strayethrescued)** · Emitted when `rescueStrayETH` sweeps force-fed ETH.
 
 **[`SupplyCapSet`](/docs/collections/contracts/surface#supplycapset)** · Emitted when the supply cap changes with `setSupplyCap`.
 
-**[`SupplyLocked`](/docs/collections/contracts/surface#supplylocked)** · Emitted once when `lockSupply` permanently locks the supply cap.
+**[`SupplyLocked`](/docs/collections/contracts/surface#supplylocked)** · Emitted once when `lockSupply` permanently locks the supply cap (via the call or a lock set at init).
 
-**[`SurfaceConfigured`](/docs/collections/contracts/surface#surfaceconfigured)** · Emitted once at init with the collection's id mode, price, supply cap, mint window, and cover artwork URI.
+**[`SurfaceConfigured`](/docs/collections/contracts/surface#surfaceconfigured)** · Emitted once at init with the collection's id mode and supply cap.
 
 **[`Transfer`](/docs/collections/contracts/surface#transfer)** · Standard ERC721 transfer event, emitted on mint (from the zero address), transfer, and burn (to the zero address).
-
-**[`Withdrawn`](/docs/collections/contracts/surface#withdrawn)** · Emitted when a pull-payment balance is paid out.
 
 ## SurfaceFactory
 
@@ -70,7 +56,35 @@ Every event the Collections contracts emit, grouped by contract. Signatures and 
 
 **[`PausedSet`](/docs/collections/contracts/factory#pausedset)** · Emitted when the deployer pauses or resumes new deploys, carrying the new `paused` state.
 
-**[`SurfaceCreated`](/docs/collections/contracts/factory#surfacecreated)** · Emitted once per successful `createSurface` call, with `owner` and `collection` both indexed.
+**[`SurfaceCreated`](/docs/collections/contracts/factory#surfacecreated)** · Emitted once per successful create call, with `owner` and `collection` indexed.
+
+## FixedPriceMinter
+
+**[`AllowlistRootSet`](/docs/collections/contracts/fixed-price-minter#allowlistrootset)** · Emitted when the allowlist root changes with `setAllowlistRoot`.
+
+**[`Initialized`](/docs/collections/contracts/fixed-price-minter#initialized)** · Standard OpenZeppelin Initializable event, emitted once when the clone is initialized.
+
+**[`MaxMintsSet`](/docs/collections/contracts/fixed-price-minter#maxmintsset)** · Emitted when the sale ceiling changes with `setMaxMints`.
+
+**[`MinterConfigured`](/docs/collections/contracts/fixed-price-minter#minterconfigured)** · Emitted once at `initialize` with the collection binding and the full opening sale config.
+
+**[`MintWindowSet`](/docs/collections/contracts/fixed-price-minter#mintwindowset)** · Emitted when the sale window is rescheduled with `setMintWindow`.
+
+**[`PayoutSet`](/docs/collections/contracts/fixed-price-minter#payoutset)** · Emitted when the payout address changes with `setPayout`.
+
+**[`PriceSet`](/docs/collections/contracts/fixed-price-minter#priceset)** · Emitted when the fixed price changes with `setPrice`.
+
+**[`PriceStrategySet`](/docs/collections/contracts/fixed-price-minter#pricestrategyset)** · Emitted when the price strategy slot changes with `setPriceStrategy`.
+
+**[`ReferralPaid`](/docs/collections/contracts/fixed-price-minter#referralpaid)** · Emitted when a nonzero referral cut is credited on a mint.
+
+**[`Sold`](/docs/collections/contracts/fixed-price-minter#sold)** · One event per successful `mint` call, the minter's sale record.
+
+**[`StrayETHRescued`](/docs/collections/contracts/fixed-price-minter#strayethrescued)** · Emitted when `rescueStrayETH` sweeps ETH nobody is owed.
+
+**[`WalletCapSet`](/docs/collections/contracts/fixed-price-minter#walletcapset)** · Emitted when the per-recipient cap changes with `setWalletCap`.
+
+**[`Withdrawn`](/docs/collections/contracts/fixed-price-minter#withdrawn)** · Emitted when a pull-payment balance is paid out.
 
 ## RenderAssets
 
@@ -81,21 +95,3 @@ Every event the Collections contracts emit, grouped by contract. Signatures and 
 **[`CaptureTemplateSet`](/docs/collections/contracts/render-assets#capturetemplateset)** · Emitted when a collection's capture template changes.
 
 **[`CoverSet`](/docs/collections/contracts/render-assets#coverset)** · Emitted when a collection's cover image changes.
-
-## AllowlistHook
-
-**[`RootSet`](/docs/collections/contracts/allowlist-hook#rootset)** · Emitted on every `setRoot` call, including clearing the gate back to `bytes32(0)`.
-
-## PerWalletCapHook
-
-**[`CapSet`](/docs/collections/contracts/per-wallet-cap-hook#capset)** · Emitted on every `setCap` call, including clearing the cap back to `0`.
-
-## HoldsSurfaceHook
-
-**[`RequiredSet`](/docs/collections/contracts/holds-surface-hook#requiredset)** · Emitted on every `setRequired` call, including clearing the gate back to the zero address.
-
-## GateHook
-
-**[`CapSet`](/docs/collections/contracts/gate-hook#capset)** · Emitted on every `setCap` call, including clearing the cap back to `0`.
-
-**[`RootSet`](/docs/collections/contracts/gate-hook#rootset)** · Emitted on every `setRoot` call, including clearing the gate back to `bytes32(0)`.

@@ -11,10 +11,6 @@ The PND onchain protocols are pre-deploy. These are the shared singletons; their
 | SurfaceFactory | _pending deploy_ | [reference](/docs/collections/contracts/factory) |
 | DefaultRenderer | _pending deploy_ | [reference](/docs/collections/contracts/default-renderer) |
 | RenderAssets | _pending deploy_ | [reference](/docs/collections/contracts/render-assets) |
-| AllowlistHook | _pending deploy_ | [reference](/docs/collections/contracts/allowlist-hook) |
-| PerWalletCapHook | _pending deploy_ | [reference](/docs/collections/contracts/per-wallet-cap-hook) |
-| HoldsSurfaceHook | _pending deploy_ | [reference](/docs/collections/contracts/holds-surface-hook) |
-| GateHook | _pending deploy_ | [reference](/docs/collections/contracts/gate-hook) |
 
 ## Auctions
 

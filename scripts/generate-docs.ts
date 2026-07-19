@@ -69,22 +69,10 @@ const GENERATED_BANNER = (src: string) =>
 
 // ── ABI registry (checked-in @pin/abi exports, keyed by contract name) ──
 
-// NOTE (thin-token rearchitecture, Phase 5): Surface/SurfaceFactory below are
-// regenerated from the post-rearchitecture ABIs (mintTo/mintToId, shrunk
-// SurfaceConfig, new Minted/SurfaceCreated shapes), but the hand-authored
-// prose in docs/reference/_prose/{Surface,SurfaceFactory}.md still documents
-// the pre-rearchitecture surface (mint/mintWithReferral/mintFor, withdraw,
-// price/window/payout fields, SurfaceStatus) and will fail this generator's
-// strict ABI/prose cross-check until it's rewritten. FixedPriceMinter (the
-// new canonical minter) has no prose yet and is deliberately left out of this
-// registry and PROTOCOLS below rather than added half-documented. Running
-// `pnpm docs:generate` end-to-end needs a prose-authoring pass across both
-// contracts before it will succeed again; apps/web/public/abis/*.json for
-// this contract set is synced separately in the interim (see
-// scripts/sync-surface-public-abis.mjs).
 const ABI_BY_NAME: Record<string, AbiItem[]> = {
     Surface: abis.surfaceAbi as unknown as AbiItem[],
     SurfaceFactory: abis.surfaceFactoryAbi as unknown as AbiItem[],
+    FixedPriceMinter: abis.fixedPriceMinterAbi as unknown as AbiItem[],
     DefaultRenderer: abis.defaultRendererAbi as unknown as AbiItem[],
     ScriptyRenderer: abis.scriptyRendererAbi as unknown as AbiItem[],
     RenderAssets: abis.renderAssetsAbi as unknown as AbiItem[],
@@ -131,7 +119,7 @@ const PROTOCOLS: Protocol[] = [
     {
         id: 'collections',
         title: 'Collections',
-        blurb: 'Artist-owned ERC721 collections built on one core with four swappable slots (minter, price, renderer, mint hook), per-token Mint Marks and entropy, and three one-way locks (work, presentation, supply).',
+        blurb: 'Artist-owned ERC721 collections: a thin token core (ownership, per-token seed, renderer, royalty, supply cap, three one-way locks) where every mint goes through an authorized minter, with a canonical fixed-price/referral minter wired by the factory.',
         overview: 'collections/overview.md',
         concepts: [
             {section: 'concepts', slug: 'four-slots', file: 'collections/concepts/four-slots.md'},
@@ -148,6 +136,13 @@ const PROTOCOLS: Protocol[] = [
                 note: 'Deployed per artist as an EIP-1167 clone through the [factory](/docs/collections/contracts/factory). There is no single canonical address; substitute your collection address for `<COLLECTION_ADDRESS>` in the examples below.',
             },
             {name: 'SurfaceFactory', slug: 'factory', deploymentsKey: 'surfaceFactory', kind: 'singleton'},
+            {
+                name: 'FixedPriceMinter',
+                slug: 'fixed-price-minter',
+                deploymentsKey: null,
+                kind: 'clone',
+                note: 'Deployed per collection as an EIP-1167 clone: [`createSurface`](/docs/collections/contracts/factory#createsurface) wires one automatically and `SurfaceCreated.minter` records it. There is no single canonical address; substitute your collection\'s minter address for `<MINTER_ADDRESS>` in the examples below.',
+            },
             {name: 'DefaultRenderer', slug: 'default-renderer', deploymentsKey: 'defaultRenderer', kind: 'singleton'},
             {name: 'RenderAssets', slug: 'render-assets', deploymentsKey: 'renderAssets', kind: 'singleton'},
             {
@@ -157,11 +152,6 @@ const PROTOCOLS: Protocol[] = [
                 kind: 'clone',
                 note: 'A bring-your-own generative renderer template, not a shared deployment. An artist deploys their own instance (one per work) with the work fixed in the constructor — immutable by construction — and points a collection\'s renderer slot at it, so there is no canonical address. The ABI below is the base template; see [Write a renderer](/docs/collections/guides/write-a-renderer).',
             },
-            // AllowlistHook, PerWalletCapHook, HoldsSurfaceHook, GateHook, and
-            // IMintHook were removed here (thin-token rearchitecture): the
-            // mint-hook slot no longer exists on the token, and allowlist +
-            // per-wallet-cap gating moved into FixedPriceMinter's own config.
-            // See the ABI_BY_NAME note above.
             {
                 name: 'IPriceStrategy',
                 slug: 'i-price-strategy',
