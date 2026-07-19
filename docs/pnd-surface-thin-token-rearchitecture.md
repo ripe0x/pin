@@ -37,9 +37,11 @@ proposal:
 2. **The flagship project already ignores the fat-token machinery.** Homage
    drives a **stock `PooledSurface`** purely through the extension path:
    `HomageMinter` is the collection's authorized minter and calls
-   `mintToId`/`burn`, while all economics (the $111 escrow, refunds, referral)
-   live in `HomageMinter`. It never touches the token's built-in paid mint,
-   price fields, or `mintHook`. So the thin-token model is already how PND's real
+   `mintToId`/`burn`, while all economics (the per-wallet fee escalator, the
+   Uniswap v4 ETH-to-$111 swap, the $111 escrow, and redeem) live in
+   `HomageMinter`. It never touches the token's built-in paid mint, price fields,
+   or `mintHook`, and it does not even use the token's referral (it passes
+   `referrer = address(0)`). So the thin-token model is already how PND's real
    project works; model A is carrying a paid-mint apparatus the flagship proves
    unnecessary. (`HomageMinter` uses the model-B shape today; there is no
    Homage-specific token subclass, it uses `PooledSurface` as-is.)
