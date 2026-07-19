@@ -6,11 +6,11 @@ import {ISurfaceCore} from "./ISurfaceCore.sol";
 /// @title IPooledSurface
 /// @notice ERC721 collection with minter-assigned ids (tokenId == sourceId):
 ///         one authorized minter chooses every id and is the only address that
-///         can burn. No built-in paid mint; minting goes through the minter.
+///         can burn. No built-in mint economics; minting goes through the
+///         minter.
 interface IPooledSurface is ISurfaceCore {
     /// @notice Authorized minters only. Mints a specific id (id 0 is valid).
     ///         A burned id can be minted again as a new instance with fresh
     ///         entropy; the prior instance's history remains in the event log.
-    ///         Runs hooks.
-    function mintToId(address to, uint256 tokenId, address referrer, bytes calldata hookData) external;
+    function mintToId(address to, uint256 tokenId) external;
 }

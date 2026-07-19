@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity ^0.8.24;
 
-import {SurfaceConfig, SurfaceStatus, IdMode} from "../SurfaceTypes.sol";
+import {SurfaceConfig, IdMode} from "../SurfaceTypes.sol";
 
 /// @title IRenderer
 /// @notice Swappable metadata renderer. A collection's tokenURI/contractURI
@@ -35,11 +35,10 @@ interface ISurfaceView {
     ///         for an id with no mint.
     function tokenSeed(uint256 tokenId) external view returns (bytes32);
 
-    /// @notice Live config, derived lifecycle status, and mints-ever count.
-    ///         Sufficient to derive provenance: in Sequential mode the token
-    ///         id equals the mint order (first = id 1; final = Closed and id
-    ///         == minted).
-    function config() external view returns (SurfaceConfig memory cfg, SurfaceStatus status, uint256 minted);
+    /// @notice Live config and mints-ever count. Sufficient to derive
+    ///         provenance: in Sequential mode the token id equals the mint
+    ///         order (first = id 1; final = cap reached and id == minted).
+    function config() external view returns (SurfaceConfig memory cfg, uint256 minted);
 
     function idMode() external view returns (IdMode);
 }

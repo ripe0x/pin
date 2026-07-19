@@ -6,9 +6,7 @@ import {MockRenderer} from "./mocks/SurfaceMocks.sol";
 
 import {Surface} from "../../src/surface/Surface.sol";
 import {PooledSurface} from "../../src/surface/PooledSurface.sol";
-import {ISurface} from "../../src/surface/interfaces/ISurface.sol";
 import {ISurfaceCore} from "../../src/surface/interfaces/ISurfaceCore.sol";
-import {SurfaceConfig, SurfaceStatus} from "../../src/surface/SurfaceTypes.sol";
 
 /// @dev Admins: the owner may grant flat, full-access admin keys. An admin can
 ///      call every management function the owner can EXCEPT managing the admin
@@ -140,10 +138,8 @@ contract SurfaceAdminTest is SurfaceBase {
         // and having renounced, it can no longer manage
         vm.expectRevert(ISurfaceCore.NotAuthorized.selector);
         vm.prank(admin);
-        c.setMintWindow(0, 0);
+        c.setSupplyCap(0);
     }
-
-    // ── admin has full management access ──────────────────────────────────────
 
     // ── admin grants are scoped to the granting owner ─────────────────────────
 
@@ -167,7 +163,7 @@ contract SurfaceAdminTest is SurfaceBase {
         assertFalse(c.isAdmin(admin), "stale admin invalidated by the transfer");
         vm.prank(admin);
         vm.expectRevert(ISurfaceCore.NotAuthorized.selector);
-        c.setPayoutAddress(admin);
+        c.setSupplyCap(0);
 
         // the new owner is an admin and can re-grant deliberately
         assertTrue(c.isAdmin(newOwner), "new owner is an admin");
@@ -175,7 +171,7 @@ contract SurfaceAdminTest is SurfaceBase {
         c.addAdmin(admin);
         assertTrue(c.isAdmin(admin), "re-granted under the new owner");
         vm.prank(admin);
-        c.setPayoutAddress(admin); // now allowed
+        c.setSupplyCap(0); // now allowed
     }
 
     // ── pooled minter authority is owner-only ─────────────────────────────────
@@ -219,52 +215,20 @@ contract SurfaceAdminTest is SurfaceBase {
         assertTrue(c.isMinter(m), "admin set a sequential minter");
     }
 
-    /// @dev The hook and price-strategy slots must hold a deployed contract (or 0 for none):
-    ///      an EOA/typo would revert every mint on the ABI-decode of empty returndata. Same
-    ///      rule setRenderer already enforces.
-    function test_setMintHook_rejectsNonContract_allowsZeroAndContract() public {
-        Surface c = _collection(_freeConfig());
-        address eoa = makeAddr("notAHook");
-        vm.startPrank(artist);
-        vm.expectRevert(abi.encodeWithSelector(ISurfaceCore.NotAContract.selector, eoa));
-        c.setMintHook(eoa);
-        c.setMintHook(address(0)); // 0 = no hook, allowed
-        c.setMintHook(address(new MockRenderer())); // any deployed contract, allowed
-        vm.stopPrank();
-    }
-
-    function test_setPriceStrategy_rejectsNonContract_allowsZeroAndContract() public {
-        Surface c = _collection(_freeConfig());
-        address eoa = makeAddr("notAStrategy");
-        vm.startPrank(artist);
-        vm.expectRevert(abi.encodeWithSelector(ISurfaceCore.NotAContract.selector, eoa));
-        c.setPriceStrategy(eoa);
-        c.setPriceStrategy(address(0)); // 0 = fixed price, allowed
-        c.setPriceStrategy(address(new MockRenderer())); // any deployed contract, allowed
-        vm.stopPrank();
-    }
-
     function test_admin_canRunEveryManagementFunction() public {
-        Surface c = _collection(_pricedConfig(1 ether));
+        Surface c = _collection(_freeConfig());
         vm.prank(artist);
         c.addAdmin(admin);
 
-        vm.deal(collector, 1 ether);
-        vm.prank(collector);
-        c.mint{value: 1 ether}(1);
+        _mintTo(c, collector, 1);
 
         address newRenderer = address(new MockRenderer());
         vm.startPrank(admin);
-        c.setMintWindow(0, 0);
-        c.setPrice(0.5 ether);
         c.setRoyalty(250, makeAddr("royalty"));
         c.setSupplyCap(100);
         c.setRenderer(newRenderer);
-        c.setMintHook(newRenderer); // hook/strategy now require a deployed contract (any works here)
-        c.setPriceStrategy(newRenderer);
         c.setMinter(makeAddr("minter"), true);
         c.notifyMetadataUpdate(1, 1);
-        c.setPayoutAddress(makeAddr("payout")); // money routing is in scope for full-access admins
         c.lockSupply();
         c.lockRenderer();
         vm.stopPrank();
@@ -272,25 +236,6 @@ contract SurfaceAdminTest is SurfaceBase {
         assertTrue(c.isMinter(makeAddr("minter")));
         assertTrue(c.isSupplyLocked());
         assertTrue(c.isRendererLocked());
-    }
-
-    /// @dev Full access is not cosmetic: an admin can actually redirect the
-    ///      artist's proceeds. This is the deliberate power of the model, and
-    ///      the test documents it so nobody grants an admin key casually.
-    function test_admin_setPayoutAddress_redirectsFutureProceeds() public {
-        Surface c = _collection(_pricedConfig(1 ether));
-        vm.prank(artist);
-        c.addAdmin(admin);
-
-        address newPayout = makeAddr("newPayout");
-        vm.prank(admin);
-        c.setPayoutAddress(newPayout);
-
-        vm.deal(collector, 1 ether);
-        vm.prank(collector);
-        c.mint{value: 1 ether}(1);
-        assertEq(c.pendingWithdrawal(newPayout), 1 ether);
-        assertEq(c.pendingWithdrawal(artist), 0);
     }
 
     // ── the two owner-only exceptions ─────────────────────────────────────────
@@ -336,14 +281,14 @@ contract SurfaceAdminTest is SurfaceBase {
 
         vm.expectRevert(ISurfaceCore.NotAuthorized.selector);
         vm.prank(admin);
-        c.setMintWindow(0, 0);
+        c.setSupplyCap(0);
     }
 
     function test_nonAdmin_cannotManage() public {
         Surface c = _collection(_freeConfig());
         vm.expectRevert(ISurfaceCore.NotAuthorized.selector);
         vm.prank(stranger);
-        c.setMintWindow(0, 0);
+        c.setSupplyCap(0);
     }
 
     function test_owner_remainsAuthorizedAlongsideAdmins() public {
@@ -353,9 +298,9 @@ contract SurfaceAdminTest is SurfaceBase {
 
         // owner is an implicit admin and keeps full access
         vm.prank(artist);
-        c.setMintWindow(uint64(block.timestamp + 100), 0);
-        (, SurfaceStatus status,) = c.config();
-        assertEq(uint8(status), uint8(SurfaceStatus.Scheduled));
+        c.setSupplyCap(10);
+        (, uint256 minted) = c.config();
+        assertEq(minted, 0);
     }
 
     // ── renderer lock still supreme over admins ──────────────────────────────

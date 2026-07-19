@@ -9,12 +9,11 @@ import {PooledSurface} from "../../src/surface/PooledSurface.sol";
 import {ISurface} from "../../src/surface/interfaces/ISurface.sol";
 import {ISurfaceCore} from "../../src/surface/interfaces/ISurfaceCore.sol";
 import {IPooledSurface} from "../../src/surface/interfaces/IPooledSurface.sol";
-import {SurfaceConfig, SurfaceStatus} from "../../src/surface/SurfaceTypes.sol";
 
 /// @dev tokenSeed() + mintIndex provenance: nonzero, distinct across tokens
 ///      in one tx and across txs (varying prevrandao), stable across
 ///      transfers, re-rolled on pooled re-mint, and mintIndex monotonic
-///      across BOTH the paid path and the extension paths.
+///      across interleaved mintTo/mintToId calls.
 contract SurfaceEntropyTest is SurfaceBase {
     MockMinter internal minter;
 
@@ -29,8 +28,7 @@ contract SurfaceEntropyTest is SurfaceBase {
         uint256 qty = bound(qtyRaw, 1, 20);
         vm.prevrandao(bytes32(prevrandaoSeed));
         Surface c = _collection(_freeConfig());
-        vm.prank(collector);
-        c.mint(qty);
+        _mintTo(c, collector, qty);
         for (uint256 t = 1; t <= qty; t++) {
             assertTrue(c.tokenSeed(t) != bytes32(0), "seed must be nonzero");
         }
@@ -40,8 +38,7 @@ contract SurfaceEntropyTest is SurfaceBase {
 
     function test_seed_distinctAcrossTokensInOneTx() public {
         Surface c = _collection(_freeConfig());
-        vm.prank(collector);
-        c.mint(5); // ids 1..5, all in one tx / one block
+        _mintTo(c, collector, 5); // ids 1..5, all in one tx / one block
 
         bytes32[] memory seeds = new bytes32[](5);
         for (uint256 t = 1; t <= 5; t++) {
@@ -61,12 +58,10 @@ contract SurfaceEntropyTest is SurfaceBase {
         Surface c = _collection(_freeConfig());
 
         vm.prevrandao(bytes32(randaoA));
-        vm.prank(collector);
-        c.mint(1); // token 1
+        _mintTo(c, collector, 1); // token 1
 
         vm.prevrandao(bytes32(randaoB));
-        vm.prank(collector);
-        c.mint(1); // token 2
+        _mintTo(c, collector, 1); // token 2
 
         assertTrue(c.tokenSeed(1) != c.tokenSeed(2), "seeds must differ across txs with different prevrandao");
     }
@@ -75,8 +70,7 @@ contract SurfaceEntropyTest is SurfaceBase {
 
     function test_seed_stableAcrossTransfer() public {
         Surface c = _collection(_freeConfig());
-        vm.prank(collector);
-        c.mint(1);
+        _mintTo(c, collector, 1);
         bytes32 before = c.tokenSeed(1);
 
         vm.prank(collector);
@@ -93,13 +87,13 @@ contract SurfaceEntropyTest is SurfaceBase {
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
-        minter.callMintToId(IPooledSurface(address(c)), collector, 1, address(0), "");
+        minter.callMintToId(IPooledSurface(address(c)), collector, 1);
         bytes32 seed1 = c.tokenSeed(1);
 
         minter.callBurn(ISurfaceCore(address(c)), 1);
 
         vm.prevrandao(bytes32(uint256(12345)));
-        minter.callMintToId(IPooledSurface(address(c)), collector, 1, address(0), "");
+        minter.callMintToId(IPooledSurface(address(c)), collector, 1);
         bytes32 seed2 = c.tokenSeed(1);
 
         assertTrue(seed1 != seed2, "re-mint must produce a fresh seed");
@@ -114,7 +108,7 @@ contract SurfaceEntropyTest is SurfaceBase {
         bytes32 prevSeed = bytes32(0);
         for (uint256 i = 0; i < cycles; i++) {
             vm.prevrandao(bytes32(uint256(keccak256(abi.encode("cycle", i)))));
-            minter.callMintToId(IPooledSurface(address(c)), collector, 7, address(0), "");
+            minter.callMintToId(IPooledSurface(address(c)), collector, 7);
             bytes32 seed = c.tokenSeed(7);
             assertTrue(seed != prevSeed, "each re-mint cycle must re-roll the seed");
             prevSeed = seed;
@@ -122,30 +116,27 @@ contract SurfaceEntropyTest is SurfaceBase {
         }
     }
 
-    // ── mint order is monotonic across BOTH mint paths (event-stamped) ───
+    // ── mint order is monotonic across interleaved batch/single mints ────
     // Order is not stored per token: sequential order IS the token id, and
-    // every Minted event carries firstMintIndex. These tests pin the emitted
-    // index against the expected global counter across path interleavings.
+    // every Minted event carries firstMintIndex.
 
-    function test_mintIndex_monotonic_acrossPaidAndExtensionPaths() public {
+    function test_mintIndex_monotonic_acrossInterleavedMints() public {
         Surface c = _collection(_freeConfig());
         vm.prank(artist);
         c.setMinter(address(minter), true);
 
         vm.expectEmit(true, true, false, true, address(c));
-        emit ISurfaceCore.Minted(collector, address(0), 1, 2, 0, SurfaceStatus.Open);
-        vm.prank(collector);
-        c.mint(2); // tokens 1,2 -> indexes 0,1
+        emit ISurfaceCore.Minted(address(minter), collector, 1, 2, 0);
+        minter.callMintTo(ISurface(address(c)), collector, 2); // tokens 1,2 -> indexes 0,1
 
         vm.expectEmit(true, true, false, true, address(c));
-        emit ISurfaceCore.Minted(collector, address(0), 3, 1, 2, SurfaceStatus.Open);
-        uint256 tokenId3 = minter.callMintTo(ISurface(address(c)), collector, address(0), "");
+        emit ISurfaceCore.Minted(address(minter), collector, 3, 1, 2);
+        uint256 tokenId3 = minter.callMintTo(ISurface(address(c)), collector, 1);
         assertEq(tokenId3, 3); // continues the same counter: id == order + 1
 
         vm.expectEmit(true, true, false, true, address(c));
-        emit ISurfaceCore.Minted(collector, address(0), 4, 1, 3, SurfaceStatus.Open);
-        vm.prank(collector);
-        c.mint(1); // token 4
+        emit ISurfaceCore.Minted(address(minter), collector, 4, 1, 3);
+        minter.callMintTo(ISurface(address(c)), collector, 1); // token 4
     }
 
     function test_mintIndex_monotonic_pooledMode_acrossBurnRemint() public {
@@ -154,21 +145,21 @@ contract SurfaceEntropyTest is SurfaceBase {
         c.setMinter(address(minter), true);
 
         vm.expectEmit(true, true, false, true, address(c));
-        emit ISurfaceCore.Minted(collector, address(0), 1, 1, 0, SurfaceStatus.Open);
-        minter.callMintToId(IPooledSurface(address(c)), collector, 1, address(0), "");
+        emit ISurfaceCore.Minted(address(minter), collector, 1, 1, 0);
+        minter.callMintToId(IPooledSurface(address(c)), collector, 1);
         vm.expectEmit(true, true, false, true, address(c));
-        emit ISurfaceCore.Minted(collector, address(0), 2, 1, 1, SurfaceStatus.Open);
-        minter.callMintToId(IPooledSurface(address(c)), collector, 2, address(0), "");
+        emit ISurfaceCore.Minted(address(minter), collector, 2, 1, 1);
+        minter.callMintToId(IPooledSurface(address(c)), collector, 2);
 
         minter.callBurn(ISurfaceCore(address(c)), 1);
         // Re-mint of id 1 is index 2, NOT 0 again: order never repeats.
         vm.expectEmit(true, true, false, true, address(c));
-        emit ISurfaceCore.Minted(collector, address(0), 1, 1, 2, SurfaceStatus.Open);
-        minter.callMintToId(IPooledSurface(address(c)), collector, 1, address(0), "");
+        emit ISurfaceCore.Minted(address(minter), collector, 1, 1, 2);
+        minter.callMintToId(IPooledSurface(address(c)), collector, 1);
 
         vm.expectEmit(true, true, false, true, address(c));
-        emit ISurfaceCore.Minted(collector, address(0), 3, 1, 3, SurfaceStatus.Open);
-        minter.callMintToId(IPooledSurface(address(c)), collector, 3, address(0), "");
+        emit ISurfaceCore.Minted(address(minter), collector, 3, 1, 3);
+        minter.callMintToId(IPooledSurface(address(c)), collector, 3);
     }
 
     function testFuzz_mintIndex_monotonic_interleavedBatchesAndSingles(uint8 batchesRaw) public {
@@ -185,17 +176,14 @@ contract SurfaceEntropyTest is SurfaceBase {
                 // The event stamps the batch's first index; ids advance in
                 // lockstep with the counter (sequential id == index + 1).
                 vm.expectEmit(true, true, false, true, address(c));
-                emit ISurfaceCore.Minted(
-                    collector, address(0), nextTokenId, qty, expectedIndex, SurfaceStatus.Open
-                );
-                vm.prank(collector);
-                c.mint(qty);
+                emit ISurfaceCore.Minted(address(minter), collector, nextTokenId, qty, expectedIndex);
+                minter.callMintTo(ISurface(address(c)), collector, qty);
                 nextTokenId += qty;
                 expectedIndex += qty;
             } else {
                 vm.expectEmit(true, true, false, true, address(c));
-                emit ISurfaceCore.Minted(collector, address(0), nextTokenId, 1, expectedIndex, SurfaceStatus.Open);
-                uint256 tokenId = minter.callMintTo(ISurface(address(c)), collector, address(0), "");
+                emit ISurfaceCore.Minted(address(minter), collector, nextTokenId, 1, expectedIndex);
+                uint256 tokenId = minter.callMintTo(ISurface(address(c)), collector, 1);
                 assertEq(tokenId, nextTokenId);
                 nextTokenId++;
                 expectedIndex++;

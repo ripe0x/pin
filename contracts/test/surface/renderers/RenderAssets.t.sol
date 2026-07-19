@@ -25,13 +25,11 @@ contract RenderAssetsTest is Test {
     function setUp() public {
         assets = new RenderAssets();
         Surface impl = new Surface();
-        SurfaceFactory factory = new SurfaceFactory(
-            address(impl), address(new PooledSurface()), address(new MockRenderer()), address(0)
-        );
+        SurfaceFactory factory =
+            new SurfaceFactory(address(impl), address(new PooledSurface()), address(new MockRenderer()), address(0));
         SurfaceConfig memory cfg;
-        collection = Surface(
-            factory.createSurface("Assets Test", "AT", artist, cfg, new address[](0), new address[](0))
-        );
+        collection =
+            Surface(factory.createSurface("Assets Test", "AT", artist, cfg, new address[](0), new address[](0)));
         vm.prank(artist);
         collection.addAdmin(admin);
     }
@@ -157,9 +155,7 @@ contract RenderAssetsTest is Test {
                 address(impl), address(new PooledSurface()), address(new MockRenderer()), address(0)
             );
             SurfaceConfig memory cfg;
-            other = Surface(
-                factory.createSurface("Other", "OTH", artist, cfg, new address[](0), new address[](0))
-            );
+            other = Surface(factory.createSurface("Other", "OTH", artist, cfg, new address[](0), new address[](0)));
         }
         vm.prank(artist);
         assets.setCapturer(address(collection), capturer, true);

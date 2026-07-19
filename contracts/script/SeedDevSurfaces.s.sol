@@ -24,6 +24,10 @@ interface ICatalogClaim {
 ///         longer stands up a shared assembler; a generative seed would deploy
 ///         its own concrete renderer and point the collection's slot at it.
 ///
+///         The token holds no sale economics (thin-token rearchitecture): the
+///         broadcaster grants itself as a minter, calls mintTo directly, and
+///         revokes the grant, the documented owner-airdrop route.
+///
 ///         Seeds, all owned by the broadcaster (anvil account 0):
 ///         1. "Orbit Studies" — DefaultRenderer + inline-SVG cover, collab
 ///            roster [account0, account1], 3 mints, account0's roster claim
@@ -109,25 +113,22 @@ contract SeedDevSurfaces is Script {
     ///      1) deliberately stays unclaimed (listed-but-unconfirmed).
     function _seedOrbits(address factory, address renderAssets, address artist) private returns (address orbits) {
         SurfaceConfig memory cfg;
-        cfg.price = 0.005 ether;
         cfg.supplyCap = 64;
 
         address[] memory roster = new address[](2);
         roster[0] = artist;
         roster[1] = ANVIL_ACCOUNT_1;
 
-        orbits = SurfaceFactory(factory)
-            .createSurface("Orbit Studies", "ORBIT", artist, cfg, new address[](0), roster);
+        orbits = SurfaceFactory(factory).createSurface("Orbit Studies", "ORBIT", artist, cfg, new address[](0), roster);
         // Cover art lives in renderer-land (RenderAssets), not the core.
         RenderAssets(renderAssets).setCover(orbits, ORBIT_COVER);
-        Surface(orbits).mintWithReferral{value: 0.015 ether}(3, address(0), "");
+        _airdrop(orbits, artist, 3);
         ICatalogClaim(CATALOG).addContract(orbits);
     }
 
     /// @dev ZERO mints: exercises the pre-mint collection page (no grid).
     function _seedDrift(address factory, address renderAssets, address artist) private returns (address drift) {
         SurfaceConfig memory cfg;
-        cfg.price = 0.003 ether;
         cfg.supplyCap = 32;
 
         drift = SurfaceFactory(factory)
@@ -138,12 +139,20 @@ contract SeedDevSurfaces is Script {
     /// @dev Edition preset with an inline-SVG cover (RenderAssets) and 2 mints.
     function _seedField(address factory, address renderAssets, address artist) private returns (address field) {
         SurfaceConfig memory cfg;
-        cfg.price = 0.002 ether;
         cfg.supplyCap = 25;
 
         field = SurfaceFactory(factory)
             .createSurface("Field Notes", "FIELD", artist, cfg, new address[](0), new address[](0));
         RenderAssets(renderAssets).setCover(field, FIELD_COVER);
-        Surface(field).mintWithReferral{value: 0.004 ether}(2, address(0), "");
+        _airdrop(field, artist, 2);
+    }
+
+    /// @dev The owner-airdrop route (7.8): no free-mint path exists on the
+    ///      canonical minter, so a seed mint self-grants, mints directly, and
+    ///      revokes. `artist` is both the broadcaster and the recipient here.
+    function _airdrop(address collection, address artist, uint256 quantity) private {
+        Surface(collection).setMinter(artist, true);
+        Surface(collection).mintTo(artist, quantity);
+        Surface(collection).setMinter(artist, false);
     }
 }

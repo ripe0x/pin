@@ -6,26 +6,9 @@ import {ISurfaceCore} from "./ISurfaceCore.sol";
 /// @title ISurface
 /// @notice Sequential-id ERC721 collection.
 interface ISurface is ISurfaceCore {
-    // ── mint: built-in paid paths (value custody stays in the core) ─────────
-    /// @notice Mints with no referrer, so the artist receives the full price.
-    function mint(uint256 quantity) external payable;
-
-    /// @notice Mints, crediting `referrer` its share. A caller naming a
-    ///         referrer earns that address the share; a zero referrer folds
-    ///         the share back to the artist. `hookData` is forwarded to the
-    ///         mint hook and the price strategy.
-    function mintWithReferral(uint256 quantity, address referrer, bytes calldata hookData) external payable;
-
-    /// @notice Paid mint to a different recipient. `to` is the address the
-    ///         mint hook and price strategy evaluate; overpayment refunds
-    ///         accrue to the payer. The Minted event records `to` as the first
-    ///         owner.
-    function mintFor(address to, uint256 quantity, address referrer, bytes calldata hookData) external payable;
-
-    // ── mint: extension path (economics live in the authorized minter) ──────
     /// @notice Authorized minters only. Non-payable; the calling minter
-    ///         handles all value. Hooks and the supply cap apply as on the
-    ///         paid path; the mint window does not, since a minter runs its
-    ///         own schedule. Returns the assigned id.
-    function mintTo(address to, address referrer, bytes calldata hookData) external returns (uint256 tokenId);
+    ///         handles all economics. Mints `quantity` tokens with ids
+    ///         `firstTokenId .. firstTokenId + quantity - 1` in one call, one
+    ///         Minted event. Reverts ZeroQuantity on a zero quantity.
+    function mintTo(address to, uint256 quantity) external returns (uint256 firstTokenId);
 }

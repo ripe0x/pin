@@ -35,7 +35,6 @@ contract DefaultRendererTest is Test {
         factory = new SurfaceFactory(address(impl), address(new PooledSurface()), address(renderer), address(0));
 
         SurfaceConfig memory cfg;
-        cfg.price = 0; // gas-only mint
         cfg.supplyCap = 0;
 
         address[] memory noMinters = new address[](0);
@@ -46,13 +45,16 @@ contract DefaultRendererTest is Test {
         // the RenderAssets registry.
         vm.prank(artist);
         assets.setCover(address(collection), ARTWORK);
+        // The token has no built-in sale path: grant this test contract as
+        // minter so _mint() can call mintTo directly.
+        vm.prank(artist);
+        collection.setMinter(address(this), true);
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
 
     function _mint() internal returns (uint256 tokenId) {
-        vm.prank(collector);
-        collection.mint(1);
+        collection.mintTo(collector, 1);
         tokenId = 1;
     }
 
@@ -147,46 +149,28 @@ contract DefaultRendererTest is Test {
 
     function test_tokenURI_markAttributes_secondMintIsNotFirst() public {
         _mint(); // token 1
-        vm.prank(collector);
-        collection.mint(1); // token 2
+        collection.mintTo(collector, 1); // token 2
         string memory json = _decode(collection.tokenURI(2));
 
         assertTrue(_contains(json, '"trait_type":"Mint Order","value":2'), "wrong Mint Order");
         assertFalse(_contains(json, "First mint of the collection"), "second mint should not carry First provenance");
     }
 
-    /// @dev Final provenance is derived live from status + minted count, so
-    ///      it appears when the window closes and DISAPPEARS if the window
-    ///      reopens — the un-finalize behavior that stored marks could never
-    ///      express honestly.
-    function test_tokenURI_finalProvenance_derivedAndReversible() public {
-        vm.warp(1000);
+    /// @dev Final provenance derives from cap state alone (7.6): it appears
+    ///      once the cap is set and reached, and disappears if the cap is
+    ///      raised again before being locked.
+    function test_tokenURI_finalProvenance_derivedFromCapAlone() public {
         vm.prank(artist);
-        collection.setMintWindow(0, uint64(block.timestamp + 100));
+        collection.setSupplyCap(1);
         uint256 tokenId = _mint();
 
-        string memory open_ = _decode(collection.tokenURI(tokenId));
-        assertFalse(_contains(open_, "Final mint of the collection"), "open: not final");
-
-        vm.warp(block.timestamp + 100); // window ends -> derived Closed
         string memory closed = _decode(collection.tokenURI(tokenId));
-        assertTrue(_contains(closed, "Final mint of the collection"), "closed: last minted token derives Final");
+        assertTrue(_contains(closed, "Final mint of the collection"), "cap reached: last minted token derives Final");
 
         vm.prank(artist);
-        collection.setMintWindow(0, 0); // reopen
+        collection.setSupplyCap(2); // raise the cap before locking
         string memory reopened = _decode(collection.tokenURI(tokenId));
-        assertFalse(_contains(reopened, "Final mint of the collection"), "reopened: Final derives away");
-    }
-
-    function test_tokenURI_referrerIsNotATrait() public {
-        address referrer = makeAddr("referrer");
-        vm.prank(collector);
-        collection.mintWithReferral(1, referrer, "");
-
-        // referrer is event-only provenance (Minted); it must NOT leak into
-        // token metadata.
-        string memory json = _decode(collection.tokenURI(1));
-        assertFalse(_contains(json, _toHexString(referrer)), "referrer must not appear in metadata");
+        assertFalse(_contains(reopened, "Final mint of the collection"), "cap raised: Final derives away");
     }
 
     /// @dev The template rung sits between explicit captures and the cover:
@@ -251,19 +235,5 @@ contract DefaultRendererTest is Test {
             if (ok) return true;
         }
         return false;
-    }
-
-    function _toHexString(address a) internal pure returns (string memory) {
-        bytes memory hexc = "0123456789abcdef";
-        bytes memory out = new bytes(42);
-        out[0] = "0";
-        out[1] = "x";
-        uint160 v = uint160(a);
-        for (uint256 i = 0; i < 20; i++) {
-            uint8 b = uint8(v >> (8 * (19 - i)));
-            out[2 + i * 2] = hexc[b >> 4];
-            out[3 + i * 2] = hexc[b & 0x0f];
-        }
-        return string(out);
     }
 }

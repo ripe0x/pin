@@ -49,15 +49,16 @@ contract ScriptyRendererImageTest is Test {
         unwired = new ScriptyRenderer(builder, address(0), "", code, deps, 1, address(0));
 
         Surface impl = new Surface();
-        SurfaceFactory factory = new SurfaceFactory(
-            address(impl), address(new PooledSurface()), address(new MockRenderer()), address(0)
-        );
+        SurfaceFactory factory =
+            new SurfaceFactory(address(impl), address(new PooledSurface()), address(new MockRenderer()), address(0));
         SurfaceConfig memory cfg;
-        collection = Surface(
-            factory.createSurface("Scripty Work", "SW", artist, cfg, new address[](0), new address[](0))
-        );
-        vm.prank(collector);
-        collection.mint(1); // token 1 exists, seed stamped
+        collection =
+            Surface(factory.createSurface("Scripty Work", "SW", artist, cfg, new address[](0), new address[](0)));
+        // The token has no built-in sale path: grant this test contract as
+        // minter and mint directly (token 1 exists, seed stamped).
+        vm.prank(artist);
+        collection.setMinter(address(this), true);
+        collection.mintTo(collector, 1);
 
         vm.prank(artist);
         assets.setCover(address(collection), "ipfs://scripty-cover");

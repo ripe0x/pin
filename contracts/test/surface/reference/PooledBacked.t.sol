@@ -2,14 +2,11 @@
 pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
-import {Vm} from "forge-std/Vm.sol";
 import {ERC20} from "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 
 import {PooledSurface} from "../../../src/surface/PooledSurface.sol";
-import {ISurface} from "../../../src/surface/interfaces/ISurface.sol";
-import {ISurfaceCore} from "../../../src/surface/interfaces/ISurfaceCore.sol";
 import {SurfaceFactory} from "../../../src/surface/SurfaceFactory.sol";
-import {SurfaceConfig, SurfaceStatus, IdMode} from "../../../src/surface/SurfaceTypes.sol";
+import {SurfaceConfig} from "../../../src/surface/SurfaceTypes.sol";
 import {MockRenderer} from "../mocks/SurfaceMocks.sol";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -21,9 +18,7 @@ import {MockRenderer} from "../mocks/SurfaceMocks.sol";
 //      fresh instance (new seed, new mark, new escrow);
 //   2. ALL economics (coin custody, escrow, redemption) live in the minter;
 //      the core's involvement is exactly mintToId + minter-gated burn;
-//   3. the pooled supply cap bounds LIVE supply, so redemption reopens room;
-//   4. Mint Marks stay truthful on the extension path: a re-mint after the
-//      sale window records statusAtMint == Closed.
+//   3. the pooled supply cap bounds LIVE supply, so redemption reopens room.
 // ─────────────────────────────────────────────────────────────────────────────
 
 contract MockCoin is ERC20 {
@@ -69,7 +64,7 @@ contract BackedPoolMinter {
 
         coin.transferFrom(msg.sender, address(this), escrowPerToken);
         escrowOf[tokenId] = escrowPerToken;
-        collection.mintToId(msg.sender, tokenId, address(0), "");
+        collection.mintToId(msg.sender, tokenId);
     }
 
     /// @dev Holder redeems: the minter burns (minter-only authority) +
@@ -98,14 +93,12 @@ contract PooledBackedTest is Test {
 
     function setUp() public {
         PooledSurface impl = new PooledSurface();
-        SurfaceFactory factory = new SurfaceFactory(
-            address(new PooledSurface()), address(impl), address(new MockRenderer()), address(0)
-        );
+        SurfaceFactory factory =
+            new SurfaceFactory(address(new PooledSurface()), address(impl), address(new MockRenderer()), address(0));
         coin = new MockCoin();
 
         SurfaceConfig memory cfg;
         cfg.supplyCap = POOL_SIZE; // pooled cap bounds LIVE supply
-        cfg.mintEnd = uint64(block.timestamp + 1 days);
 
         // Predict the minter address so the collection deploys fully wired
         // in one factory tx (initialMinters), the studio one-click property.
@@ -116,9 +109,8 @@ contract PooledBackedTest is Test {
         address[] memory minters = new address[](1);
         minters[0] = predictedMinter;
 
-        collection = PooledSurface(
-            factory.createPooledSurface("Pooled Backed", "PB", artist, cfg, minters, new address[](0))
-        );
+        collection =
+            PooledSurface(factory.createPooledSurface("Pooled Backed", "PB", artist, cfg, minters, new address[](0)));
         minter = new BackedPoolMinter(address(collection), coin, ESCROW, POOL_SIZE);
         assertEq(address(minter), predictedMinter, "wiring prediction held");
 
@@ -206,54 +198,15 @@ contract PooledBackedTest is Test {
         // 4th mint EVER succeeds because live supply dropped below cap.
         uint256 again = _mintAs(alice);
         assertEq(again, c);
-        (,, uint256 mintedEver) = collection.config();
+        (, uint256 mintedEver) = collection.config();
         assertEq(mintedEver, 4, "mints-ever exceeds cap; live supply never does");
         assertEq(collection.totalSupply(), POOL_SIZE);
     }
 
-    // ── claim 4: Minted events stay truthful after the window ────────────────
+    // ── guardrail: no built-in mint entrypoint exists on the pooled form ────
 
-    /// @dev Lifecycle status is derived at mint time and stamped into the
-    ///      Minted event (never stored per token): an in-window mint says Open;
-    ///      a post-window pooled re-mint (a redeem cycle) truthfully says
-    ///      Closed. Indexers read the event; nothing onchain re-reads it.
-    function test_remintAfterWindowEmitsClosedStatus() public {
-        vm.recordLogs();
-        uint256 a = _mintAs(alice);
-        assertEq(uint8(_lastMintedStatus()), uint8(SurfaceStatus.Open), "in-window mint stamped Open");
-
-        vm.prank(alice);
-        minter.redeem(a);
-
-        vm.warp(block.timestamp + 2 days); // sale window over
-        vm.recordLogs();
-        uint256 again = _mintAs(bob);
-        assertEq(again, a);
-        assertEq(
-            uint8(_lastMintedStatus()), uint8(SurfaceStatus.Closed), "post-window re-mint stamped Closed, truthfully"
-        );
-    }
-
-    /// @dev Decode statusAtMint from the most recent Minted event in the
-    ///      recorded logs (the last non-indexed field in the event data).
-    function _lastMintedStatus() internal returns (SurfaceStatus status) {
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        bytes32 sig = keccak256("Minted(address,address,uint256,uint256,uint256,uint8)");
-        for (uint256 i = logs.length; i > 0; i--) {
-            if (logs[i - 1].topics[0] == sig) {
-                (,,, uint8 s) = abi.decode(logs[i - 1].data, (uint256, uint256, uint256, uint8));
-                return SurfaceStatus(s);
-            }
-        }
-        revert("no Minted event recorded");
-    }
-
-    // ── guardrail: the paid path does not exist on the pooled form ──────────
-
-    function test_paidPathBlockedInPooledMode() public {
-        vm.deal(alice, 1 ether);
-        vm.prank(alice);
-        (bool ok,) = address(collection).call(abi.encodeWithSignature("mint(uint256)", uint256(1)));
-        assertFalse(ok, "pooled form must not expose mint");
+    function test_noBuiltInMintInPooledMode() public {
+        (bool ok,) = address(collection).call(abi.encodeWithSignature("mintTo(address,uint256)", alice, uint256(1)));
+        assertFalse(ok, "pooled form must not expose mintTo");
     }
 }

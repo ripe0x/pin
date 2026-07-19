@@ -12,11 +12,11 @@ import {SurfaceFactory} from "../src/surface/SurfaceFactory.sol";
 ///
 ///         The factory reuses the already-deployed Catalog and ships with NO
 ///         default renderer. Every collection brings its own renderer in its
-///         config (cfg.renderer), so RenderAssets, DefaultRenderer, and the
-///         GateHook are deliberately not deployed here. Each can be deployed
-///         later as a standalone singleton and opted into per collection
-///         (cfg.renderer / cfg.mintHook) with no change to the factory. This
-///         keeps the deploy to only the contracts the platform actually needs.
+///         config (cfg.renderer), so RenderAssets and DefaultRenderer are
+///         deliberately not deployed here. Each can be deployed later as a
+///         standalone singleton and opted into per collection (cfg.renderer)
+///         with no change to the factory. This keeps the deploy to only the
+///         contracts the platform actually needs.
 ///
 /// @dev    Catalog is a public good already live on mainnet at
 ///         0x467a9c39e03C595EC3075D856f19C7386b6b915d (a CREATE2 deterministic
@@ -88,8 +88,7 @@ contract DeploySurfaceSystemScript is Script {
         //      No default renderer: every collection brings its own via
         //      cfg.renderer, and one that names none reverts RendererRequired.
         vm.startBroadcast();
-        SurfaceFactory factory =
-            new SurfaceFactory(address(sequentialImpl), address(pooledImpl), address(0), catalog);
+        SurfaceFactory factory = new SurfaceFactory(address(sequentialImpl), address(pooledImpl), address(0), catalog);
         vm.stopBroadcast();
 
         require(factory.sequentialImplementation() == address(sequentialImpl), "seq impl mismatch");

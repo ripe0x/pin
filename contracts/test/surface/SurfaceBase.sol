@@ -34,14 +34,9 @@ contract SurfaceBase is Test {
 
     // ── config builders ──────────────────────────────────────────────────────
 
-    /// @dev A free (gas-only), open-supply, open-window config.
+    /// @dev An open-supply config with every field at its zero default. The
+    ///      token carries no price or sale schedule; those live in a minter.
     function _freeConfig() internal pure returns (SurfaceConfig memory cfg) {}
-
-    /// @dev A priced config. Referral share is a fixed protocol constant, not
-    ///      configurable here.
-    function _pricedConfig(uint256 price) internal pure returns (SurfaceConfig memory cfg) {
-        cfg.price = price;
-    }
 
     // ── deploy helpers ───────────────────────────────────────────────────────
 
@@ -51,10 +46,7 @@ contract SurfaceBase is Test {
         c = Surface(factory.createSurface("Artist Surface", "ACOL", artist, cfg, noMinters, noCreators));
     }
 
-    function _collectionWithMinters(SurfaceConfig memory cfg, address[] memory minters)
-        internal
-        returns (Surface c)
-    {
+    function _collectionWithMinters(SurfaceConfig memory cfg, address[] memory minters) internal returns (Surface c) {
         address[] memory noCreators = new address[](0);
         c = Surface(factory.createSurface("Artist Surface", "ACOL", artist, cfg, minters, noCreators));
     }
@@ -62,19 +54,12 @@ contract SurfaceBase is Test {
     function _pooled(SurfaceConfig memory cfg) internal returns (PooledSurface c) {
         address[] memory noMinters = new address[](0);
         address[] memory noCreators = new address[](0);
-        c = PooledSurface(
-            factory.createPooledSurface("Artist Surface", "ACOL", artist, cfg, noMinters, noCreators)
-        );
+        c = PooledSurface(factory.createPooledSurface("Artist Surface", "ACOL", artist, cfg, noMinters, noCreators));
     }
 
-    function _pooledWithMinters(SurfaceConfig memory cfg, address[] memory minters)
-        internal
-        returns (PooledSurface c)
-    {
+    function _pooledWithMinters(SurfaceConfig memory cfg, address[] memory minters) internal returns (PooledSurface c) {
         address[] memory noCreators = new address[](0);
-        c = PooledSurface(
-            factory.createPooledSurface("Artist Surface", "ACOL", artist, cfg, minters, noCreators)
-        );
+        c = PooledSurface(factory.createPooledSurface("Artist Surface", "ACOL", artist, cfg, minters, noCreators));
     }
 
     /// @dev A fresh, uninitialized EIP-1167 clone of the sequential impl, for
@@ -100,5 +85,23 @@ contract SurfaceBase is Test {
             catalog: address(0),
             creators: noCreators
         });
+    }
+
+    // ── mint helpers ─────────────────────────────────────────────────────────
+    // The token has no built-in sale path: minting requires a granted minter.
+    // These grant this test contract as the minter (owner-authorized) and mint
+    // directly, for tests that only need tokens to exist and do not care which
+    // address is the minter of record.
+
+    function _mintTo(Surface c, address to, uint256 quantity) internal returns (uint256 firstTokenId) {
+        vm.prank(artist);
+        c.setMinter(address(this), true);
+        firstTokenId = c.mintTo(to, quantity);
+    }
+
+    function _mintToId(PooledSurface c, address to, uint256 tokenId) internal {
+        vm.prank(artist);
+        c.setMinter(address(this), true);
+        c.mintToId(to, tokenId);
     }
 }
