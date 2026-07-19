@@ -15,9 +15,8 @@ import {FitHeadline} from "./FitHeadline"
 import {HomageReservation} from "./HomageReservation"
 import {AllowlistCheck} from "@/components/mint/homage-gallery/AllowlistCheck"
 import {CrossfadeArt} from "@/components/mint/homage-gallery/CrossfadeArt"
-import {useSyntheticArt, useSyntheticSample} from "@/components/mint/homage-gallery/local"
+import {useGeneratedArt, useGeneratedSample} from "./synthetic-punk"
 import {weightedStatus} from "@/components/mint/homage-gallery/gallery-deck"
-import {accessories, trait} from "@/components/mint/homage-gallery/svg"
 import {statusByCode} from "@/components/mint/homage-gallery/status"
 
 const SUPPLY = 10_000
@@ -272,7 +271,7 @@ function Quilt({tiles, onFocus}: {tiles: Tile[]; onFocus: (s: Sample) => void}) 
 }
 
 function WallTile({tile, onFocus}: {tile: Tile; onFocus: () => void}) {
-  const {src} = useSyntheticArt(tile.seed, tile.status, SAMPLE_PX)
+  const {src} = useGeneratedArt(tile.seed, tile.status, SAMPLE_PX)
   return (
     <button
       onClick={onFocus}
@@ -284,10 +283,9 @@ function WallTile({tile, onFocus}: {tile: Tile; onFocus: () => void}) {
   )
 }
 
-// The synthetic homage large on its own ground, with its color count + market state.
-// Click or Esc closes.
+// The generated homage large on its own ground, with its full trait list. Click or Esc closes.
 function FocusOverlay({sample, onClose}: {sample: Sample; onClose: () => void}) {
-  const {src, meta} = useSyntheticSample(sample.seed, sample.status, SAMPLE_PX)
+  const {src, traits: generated, colorCount} = useGeneratedSample(sample.seed, sample.status, SAMPLE_PX)
   const ground = statusByCode(sample.status).color
 
   useEffect(() => {
@@ -296,13 +294,8 @@ function FocusOverlay({sample, onClose}: {sample: Sample; onClose: () => void}) 
     return () => window.removeEventListener("keydown", onKey)
   }, [onClose])
 
-  const traits = meta
-    ? [
-        trait(meta, "Punk Type"),
-        ...accessories(meta),
-        `${trait(meta, "Color Count")} colors`,
-        statusByCode(sample.status).label,
-      ].filter(Boolean)
+  const traits = generated
+    ? [...generated, `${colorCount} colors`, statusByCode(sample.status).label].filter(Boolean)
     : []
 
   return (
