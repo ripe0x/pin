@@ -58,14 +58,27 @@ function pixels({ sdk, palById }: Loaded, id: number): Uint8Array {
 
 const STATUS_LABEL = ["Not For Sale", "Wrapped", "For Sale", "Has Bid"];
 
+// Inject an intrinsic pixel size so a copied/saved raster is `px` wide, not the
+// 240 the viewBox implies. Geometry stays in the 240 coordinate space (the
+// contract's), so render.ts's byte-identical svg() is untouched — this only sets
+// the display resolution.
+function atSize(svg: string, px: number): string {
+  return svg.replace("<svg ", `<svg width="${px}" height="${px}" `);
+}
+
 export type LocalHomage = { svg: string; colorCount: number; type: string; accessories: string[] };
 
-/** Render a punk's homage fully locally. `status` colours the ground (default 0 = not for sale). */
-export async function localHomage(id: number, opts: { status?: number; circle?: boolean } = {}): Promise<LocalHomage> {
+/** Render a punk's homage fully locally. `status` colours the ground (default 0 = not for sale).
+ *  `sizePx` sets the SVG's intrinsic size (copy/paste resolution); omit for the 240 default. */
+export async function localHomage(
+  id: number,
+  opts: { status?: number; circle?: boolean; sizePx?: number } = {}
+): Promise<LocalHomage> {
   const loaded = await getSdk();
   const img = pixels(loaded, id);
   const { cols, cnts } = distill(img);
-  const svgStr = svg(groundForStatus(opts.status ?? 0), rings(cols, cnts), opts.circle ?? false);
+  let svgStr = svg(groundForStatus(opts.status ?? 0), rings(cols, cnts), opts.circle ?? false);
+  if (opts.sizePx) svgStr = atSize(svgStr, opts.sizePx);
   const attrs = loaded.sdk.render.metadata(id).attributes ?? [];
   const type = String(
     attrs.find((a) => a.trait_type === "Head Variant")?.value ?? attrs.find((a) => a.trait_type === "Type")?.value ?? ""
@@ -87,13 +100,14 @@ function toMeta(h: LocalHomage, status: number): TokenMeta {
   };
 }
 
-/** Focus/reveal overlays — src + full trait metadata, rendered locally. */
-export function useLocalSample(id: number, status = 0) {
+/** Focus/reveal overlays — src + full trait metadata, rendered locally. `sizePx`
+ *  sets the SVG's intrinsic copy/paste resolution. */
+export function useLocalSample(id: number, status = 0, sizePx?: number) {
   const [state, setState] = useState<{ src?: string; meta?: TokenMeta; isLoading: boolean }>({ isLoading: true });
   useEffect(() => {
     let cancelled = false;
     setState((s) => ({ ...s, isLoading: true }));
-    localHomage(id, { status })
+    localHomage(id, { status, sizePx })
       .then((h) => {
         if (cancelled) return;
         setState({ src: anySvgToSrc(h.svg), meta: toMeta(h, status), isLoading: false });
@@ -104,16 +118,17 @@ export function useLocalSample(id: number, status = 0) {
     return () => {
       cancelled = true;
     };
-  }, [id, status]);
+  }, [id, status, sizePx]);
   return state;
 }
 
-/** Wall tile — just the classic src, rendered locally. */
-export function useLocalArt(id: number, status = 0) {
+/** Wall tile — just the classic src, rendered locally. `sizePx` sets the SVG's
+ *  intrinsic copy/paste resolution. */
+export function useLocalArt(id: number, status = 0, sizePx?: number) {
   const [src, setSrc] = useState<string>();
   useEffect(() => {
     let cancelled = false;
-    localHomage(id, { status })
+    localHomage(id, { status, sizePx })
       .then((h) => {
         if (!cancelled) setSrc(anySvgToSrc(h.svg));
       })
@@ -121,6 +136,6 @@ export function useLocalArt(id: number, status = 0) {
     return () => {
       cancelled = true;
     };
-  }, [id, status]);
+  }, [id, status, sizePx]);
   return { src };
 }
