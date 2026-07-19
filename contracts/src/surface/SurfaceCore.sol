@@ -552,14 +552,6 @@ abstract contract SurfaceCore is
         }
     }
 
-    /// @notice Disabled. Renouncing would orphan the collection: proceeds would
-    ///         accrue to owner() == address(0) and every management function
-    ///         would be unusable. Immutability comes from the clone having no
-    ///         upgrade path, not from clearing the owner.
-    function renounceOwnership() public pure override {
-        revert RenounceDisabled();
-    }
-
     // ─────────────────────────────────────────────────────────────────────────
     // Provenance + reads
     // ─────────────────────────────────────────────────────────────────────────

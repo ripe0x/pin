@@ -38,7 +38,6 @@ interface ISurfaceCore {
     error NoStrayETH();
     error RescueFailed();
     error NeverMinted();
-    error RenounceDisabled();
     error AlreadyAdmin();
     error NotAnAdmin();
     error BadSupplyCap(uint256 floor, uint256 requested);
