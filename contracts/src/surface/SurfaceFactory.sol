@@ -16,7 +16,7 @@ struct SaleConfig {
     address priceStrategy; // 0 = fixed price
     uint64 mintStart; // unix seconds; 0 = open immediately
     uint64 mintEnd; // unix seconds; 0 = open-ended
-    address payout; // 0 = live ISurfaceAuth(collection).owner() at settle time
+    address payoutRecipient; // 0 = default to the deploy-time `owner` argument
     uint256 maxMints; // 0 = unlimited; this minter's own sale ceiling
     bytes32 allowlistRoot; // 0 = open
     uint256 walletCap; // 0 = unlimited; per-recipient
@@ -177,6 +177,8 @@ contract SurfaceFactory {
         // already known as its sole initial minter.
         collection = Clones.clone(sequentialImplementation);
         minter = Clones.clone(minterImplementation);
+        // A caller-left-zero payoutRecipient defaults to `owner`: a deploy-time
+        // snapshot of that address, not a live read, so it stays renounce-safe.
         FixedPriceMinter(minter).initialize(
             FixedPriceMinterInitParams({
                 collection: collection,
@@ -184,7 +186,7 @@ contract SurfaceFactory {
                 priceStrategy: sale.priceStrategy,
                 mintStart: sale.mintStart,
                 mintEnd: sale.mintEnd,
-                payout: sale.payout,
+                payoutRecipient: sale.payoutRecipient == address(0) ? owner : sale.payoutRecipient,
                 maxMints: sale.maxMints,
                 allowlistRoot: sale.allowlistRoot,
                 walletCap: sale.walletCap

@@ -49,6 +49,26 @@ contract SurfaceMinterLimitTest is SurfaceBase {
         assertTrue(c.isMinter(minterB));
     }
 
+    /// @dev SurfaceCore.initialize's own dedup branch (`if (_minters[m])
+    ///      continue;`), distinct from test_pooled_redundantGrantDoesNotDriftCount
+    ///      which covers the post-init setMinter path. If the duplicate
+    ///      address in initialMinters were double-counted, _minterCount
+    ///      would reach 2 at init and the pooled cap would revert
+    ///      TooManyMinters before construction even returns.
+    function test_pooled_initWithDuplicateMinterAddress_dedupesCount() public {
+        address[] memory dup = new address[](2);
+        dup[0] = minterA;
+        dup[1] = minterA;
+        PooledSurface c = _pooledWithMinters(_freeConfig(), dup);
+        assertTrue(c.isMinter(minterA));
+
+        // Confirms the count landed at exactly 1, not 2: granting a second,
+        // distinct minter is still refused under the pooled one-at-a-time cap.
+        vm.expectRevert(ISurfaceCore.TooManyMinters.selector);
+        vm.prank(artist);
+        c.setMinter(minterB, true);
+    }
+
     function test_pooled_redundantGrantDoesNotDriftCount() public {
         PooledSurface c = _pooledWithMinters(_freeConfig(), _one(minterA));
         // re-granting the same minter is a no-op, so the count stays 1 and a

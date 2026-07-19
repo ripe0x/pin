@@ -52,15 +52,18 @@ contract FixedPriceMinterTest is FixedPriceMinterBase {
         assertEq(m.pendingWithdrawal(artist), PRICE);
     }
 
-    function test_payoutFallsBackToLiveOwner() public {
+    /// @dev The factory default (unset SaleConfig.payoutRecipient resolves to
+    ///      the deploy-time `owner` argument) is covered end-to-end in
+    ///      SurfaceFactory.t.sol's test_factoryDefaultsPayoutRecipientToDeployOwner.
+    ///      Ownership transfer after deploy must NOT move the payout: it is a
+    ///      stored value, not a live owner() read.
+    function test_ownershipTransfer_doesNotMovePayoutRecipient() public {
         (Surface c, FixedPriceMinter m) = _collectionWithMinter(PRICE);
         vm.deal(collector, PRICE);
         vm.prank(collector);
         m.mint{value: PRICE}(collector, 1, address(0), "");
         assertEq(m.pendingWithdrawal(artist), PRICE);
 
-        // Transfer ownership; a later mint's payout follows the LIVE owner,
-        // not the owner at minter-init time.
         address newOwner = makeAddr("newOwner");
         vm.prank(artist);
         c.transferOwnership(newOwner);
@@ -70,14 +73,14 @@ contract FixedPriceMinterTest is FixedPriceMinterBase {
         vm.deal(collector, PRICE);
         vm.prank(collector);
         m.mint{value: PRICE}(collector, 1, address(0), "");
-        assertEq(m.pendingWithdrawal(newOwner), PRICE, "payout follows the live owner after transfer");
-        assertEq(m.pendingWithdrawal(artist), PRICE, "the old owner's prior accrual is untouched");
+        assertEq(m.pendingWithdrawal(newOwner), 0, "payout does not follow ownership transfer");
+        assertEq(m.pendingWithdrawal(artist), PRICE * 2, "the stored payoutRecipient keeps accruing");
     }
 
-    function test_payoutUsesConfiguredPayout() public {
+    function test_payoutUsesConfiguredPayoutRecipient() public {
         address payoutAddr = makeAddr("payoutAddr");
         FixedPriceMinterInitParams memory p = _minterParams(address(0), PRICE);
-        p.payout = payoutAddr;
+        p.payoutRecipient = payoutAddr;
         (, FixedPriceMinter m) = _collectionWithConfiguredMinter(p);
 
         vm.deal(collector, PRICE);
@@ -404,7 +407,7 @@ contract FixedPriceMinterTest is FixedPriceMinterBase {
         vm.expectRevert(FixedPriceMinter.NotAuthorized.selector);
         m.setMintWindow(0, 0);
         vm.expectRevert(FixedPriceMinter.NotAuthorized.selector);
-        m.setPayout(stranger);
+        m.setPayoutRecipient(stranger);
         vm.expectRevert(FixedPriceMinter.NotAuthorized.selector);
         m.setMaxMints(1);
         vm.expectRevert(FixedPriceMinter.NotAuthorized.selector);
@@ -455,6 +458,7 @@ contract FixedPriceMinterTest is FixedPriceMinterBase {
         FixedPriceMinterInitParams memory p = _minterParams(address(c), PRICE);
         p.priceStrategy = stranger;
         vm.expectRevert(abi.encodeWithSelector(FixedPriceMinter.NotAContract.selector, stranger));
+        vm.prank(artist);
         m.initialize(p);
     }
 
@@ -465,6 +469,17 @@ contract FixedPriceMinterTest is FixedPriceMinterBase {
         p.mintStart = 100;
         p.mintEnd = 100;
         vm.expectRevert(FixedPriceMinter.BadMintWindow.selector);
+        vm.prank(artist);
+        m.initialize(p);
+    }
+
+    function test_initialize_zeroPayoutRecipient_reverts() public {
+        Surface c = _collection(_freeConfig());
+        FixedPriceMinter m = _freshMinterClone();
+        FixedPriceMinterInitParams memory p = _minterParams(address(c), PRICE);
+        p.payoutRecipient = address(0);
+        vm.expectRevert(FixedPriceMinter.PayoutRecipientRequired.selector);
+        vm.prank(artist);
         m.initialize(p);
     }
 
@@ -492,7 +507,7 @@ contract FixedPriceMinterTest is FixedPriceMinterBase {
     function test_revertingRecipient_cannotBlockMint_butItsOwnWithdrawFails() public {
         RevertingReceiver bad = new RevertingReceiver();
         FixedPriceMinterInitParams memory p = _minterParams(address(0), PRICE);
-        p.payout = address(bad);
+        p.payoutRecipient = address(bad);
         (, FixedPriceMinter m) = _collectionWithConfiguredMinter(p);
 
         vm.deal(collector, PRICE);
@@ -560,11 +575,291 @@ contract FixedPriceMinterTest is FixedPriceMinterBase {
     function test_mintWithoutGrantOnCollection_reverts_NotMinter() public {
         Surface c = _collection(_freeConfig());
         FixedPriceMinter m = _freshMinterClone();
+        vm.prank(artist);
         m.initialize(_minterParams(address(c), PRICE)); // never granted on c
 
         vm.deal(collector, PRICE);
         vm.prank(collector);
         vm.expectRevert(ISurfaceCore.NotMinter.selector);
         m.mint{value: PRICE}(collector, 1, address(0), "");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Renounce: payoutRecipient is a stored value, decoupled from owner().
+    // A renounced collection keeps selling and keeps paying it.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function test_renouncedCollection_stillPaysStoredRecipient() public {
+        (Surface c, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        vm.prank(artist);
+        c.renounceOwnership();
+        assertEq(c.owner(), address(0));
+
+        vm.deal(collector, PRICE);
+        vm.prank(collector);
+        m.mint{value: PRICE}(collector, 1, address(0), "");
+        assertEq(c.ownerOf(1), collector, "renounced collection still mints");
+        assertEq(m.pendingWithdrawal(artist), PRICE, "the stored payoutRecipient is credited");
+
+        uint256 before = artist.balance;
+        m.withdraw(artist);
+        assertEq(artist.balance, before + PRICE, "the stored recipient can still withdraw");
+    }
+
+    function test_renouncedCollection_explicitPayoutRecipient_stillMintsAndPays() public {
+        address payoutAddr = makeAddr("payoutAddr");
+        FixedPriceMinterInitParams memory p = _minterParams(address(0), PRICE);
+        p.payoutRecipient = payoutAddr;
+        (Surface c, FixedPriceMinter m) = _collectionWithConfiguredMinter(p);
+        vm.prank(artist);
+        c.renounceOwnership();
+
+        vm.deal(collector, PRICE);
+        vm.prank(collector);
+        m.mint{value: PRICE}(collector, 1, address(0), "");
+        assertEq(c.ownerOf(1), collector);
+        assertEq(m.pendingWithdrawal(payoutAddr), PRICE, "explicit payoutRecipient is unaffected by a renounced owner");
+    }
+
+    /// @dev price 0 (7.8) means _settle(0, ...) returns before touching
+    ///      payoutRecipient at all, so a renounced collection with a zero
+    ///      price still mints: there is no artist cut to pay.
+    function test_renouncedCollection_zeroPrice_defaultPayoutRecipient_stillMints() public {
+        (Surface c, FixedPriceMinter m) = _collectionWithMinter(0);
+        vm.prank(artist);
+        c.renounceOwnership();
+
+        vm.prank(collector);
+        m.mint(collector, 1, address(0), "");
+        assertEq(c.ownerOf(1), collector);
+    }
+
+    /// @dev Once the owner has renounced and no admin is granted, nobody can
+    ///      call setPayoutRecipient (borrowed auth has no live owner/admin),
+    ///      but the existing stored value keeps paying out correctly. This
+    ///      is the "can no longer be changed" half of the renounce story.
+    function test_renouncedCollection_payoutRecipientNoLongerChangeable() public {
+        (Surface c, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        vm.prank(artist);
+        c.renounceOwnership();
+
+        vm.expectRevert(FixedPriceMinter.NotAuthorized.selector);
+        m.setPayoutRecipient(makeAddr("newRecipient"));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Fix 3: initialize() caller-authority gate
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function test_standaloneInit_strangerCannotInitializeAgainstLiveCollection() public {
+        Surface c = _collection(_freeConfig()); // live, owned by artist
+        FixedPriceMinter m = _freshMinterClone();
+        vm.prank(stranger);
+        vm.expectRevert(FixedPriceMinter.NotAuthorized.selector);
+        m.initialize(_minterParams(address(c), PRICE));
+    }
+
+    function test_standaloneInit_collectionOwnerCanInitialize() public {
+        Surface c = _collection(_freeConfig());
+        FixedPriceMinter m = _freshMinterClone();
+        vm.prank(artist);
+        m.initialize(_minterParams(address(c), PRICE));
+        assertEq(m.collection(), address(c));
+    }
+
+    function test_standaloneInit_collectionAdminCanInitialize() public {
+        Surface c = _collection(_freeConfig());
+        address admin = makeAddr("minterAdmin");
+        vm.prank(artist);
+        c.addAdmin(admin);
+
+        FixedPriceMinter m = _freshMinterClone();
+        vm.prank(admin);
+        m.initialize(_minterParams(address(c), PRICE));
+        assertEq(m.collection(), address(c));
+    }
+
+    /// @dev Mirrors the token side's own implementation-cannot-be-initialized
+    ///      guarantee (SurfaceSecurity.t.sol's test_confirm_implCannotBeInitialized).
+    function test_confirm_minterImplCannotBeInitialized() public {
+        Surface c = _collection(_freeConfig());
+        vm.expectRevert(abi.encodeWithSignature("InvalidInitialization()"));
+        minterImpl.initialize(_minterParams(address(c), PRICE));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Config setter success paths
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function test_setPriceStrategy_success() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        MockFixedStrategy strategy = new MockFixedStrategy(PRICE * 2);
+        vm.prank(artist);
+        vm.expectEmit(true, false, false, true, address(m));
+        emit FixedPriceMinter.PriceStrategySet(address(strategy));
+        m.setPriceStrategy(address(strategy));
+        assertEq(m.priceStrategy(), address(strategy));
+    }
+
+    function test_setPriceStrategy_notAContract_reverts() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        vm.prank(artist);
+        vm.expectRevert(abi.encodeWithSelector(FixedPriceMinter.NotAContract.selector, stranger));
+        m.setPriceStrategy(stranger);
+    }
+
+    function test_setMintWindow_success() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        uint64 start = uint64(block.timestamp + 1 days);
+        uint64 end = uint64(block.timestamp + 2 days);
+        vm.prank(artist);
+        vm.expectEmit(false, false, false, true, address(m));
+        emit FixedPriceMinter.MintWindowSet(start, end);
+        m.setMintWindow(start, end);
+        assertEq(m.mintStart(), start);
+        assertEq(m.mintEnd(), end);
+    }
+
+    function test_setMintWindow_badWindow_reverts() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        vm.prank(artist);
+        vm.expectRevert(FixedPriceMinter.BadMintWindow.selector);
+        m.setMintWindow(100, 100);
+    }
+
+    function test_setPayoutRecipient_success() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        address newRecipient = makeAddr("newRecipient");
+        vm.prank(artist);
+        vm.expectEmit(true, false, false, true, address(m));
+        emit FixedPriceMinter.PayoutRecipientSet(newRecipient);
+        m.setPayoutRecipient(newRecipient);
+        assertEq(m.payoutRecipient(), newRecipient);
+    }
+
+    /// @dev The new recipient is credited on the NEXT mint, proving the
+    ///      change actually takes effect on settlement, not just storage.
+    function test_setPayoutRecipient_ownerChange_takesEffectOnNextMint() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        address newRecipient = makeAddr("newRecipient");
+        vm.prank(artist);
+        m.setPayoutRecipient(newRecipient);
+
+        vm.deal(collector, PRICE);
+        vm.prank(collector);
+        m.mint{value: PRICE}(collector, 1, address(0), "");
+        assertEq(m.pendingWithdrawal(newRecipient), PRICE, "the new recipient is paid");
+        assertEq(m.pendingWithdrawal(artist), 0, "the old recipient accrues nothing further");
+    }
+
+    /// @dev Borrowed authority (onlyCollectionAdmin) covers admins too, not
+    ///      just the owner: a collection admin can redirect payout post-deploy.
+    function test_setPayoutRecipient_grantedAdmin_takesEffectOnNextMint() public {
+        (Surface c, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        address admin = makeAddr("payoutAdmin");
+        vm.prank(artist);
+        c.addAdmin(admin);
+
+        address newRecipient = makeAddr("adminChosenRecipient");
+        vm.prank(admin);
+        vm.expectEmit(true, false, false, true, address(m));
+        emit FixedPriceMinter.PayoutRecipientSet(newRecipient);
+        m.setPayoutRecipient(newRecipient);
+        assertEq(m.payoutRecipient(), newRecipient);
+
+        vm.deal(collector, PRICE);
+        vm.prank(collector);
+        m.mint{value: PRICE}(collector, 1, address(0), "");
+        assertEq(m.pendingWithdrawal(newRecipient), PRICE, "the admin-chosen recipient is paid");
+        assertEq(m.pendingWithdrawal(artist), 0);
+    }
+
+    function test_setPayoutRecipient_stranger_reverts() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        vm.prank(stranger);
+        vm.expectRevert(FixedPriceMinter.NotAuthorized.selector);
+        m.setPayoutRecipient(makeAddr("newRecipient"));
+    }
+
+    function test_setPayoutRecipient_zero_reverts() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        vm.prank(artist);
+        vm.expectRevert(FixedPriceMinter.PayoutRecipientRequired.selector);
+        m.setPayoutRecipient(address(0));
+    }
+
+    function test_setMaxMints_success() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        vm.prank(artist);
+        vm.expectEmit(false, false, false, true, address(m));
+        emit FixedPriceMinter.MaxMintsSet(5);
+        m.setMaxMints(5);
+        assertEq(m.maxMints(), 5);
+    }
+
+    function test_setAllowlistRoot_success() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        bytes32 root = bytes32(uint256(123));
+        vm.prank(artist);
+        vm.expectEmit(false, false, false, true, address(m));
+        emit FixedPriceMinter.AllowlistRootSet(root);
+        m.setAllowlistRoot(root);
+        assertEq(m.allowlistRoot(), root);
+    }
+
+    /// @dev The 0-default is exercised elsewhere (allowlist/window tests all
+    ///      leave it unset); this covers the 0-to-nonzero transition itself,
+    ///      distinct from test_walletCap_loweredBelowCount_blocksFurtherMints
+    ///      (nonzero-to-nonzero, mid-sale).
+    function test_setWalletCap_zeroToNonzero_success() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        assertEq(m.walletCap(), 0);
+        vm.prank(artist);
+        vm.expectEmit(false, false, false, true, address(m));
+        emit FixedPriceMinter.WalletCapSet(3);
+        m.setWalletCap(3);
+        assertEq(m.walletCap(), 3);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // rescueStrayETH success path
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function test_rescueStrayETH_success_sweepsOnlyStrayBalance() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        vm.deal(collector, PRICE);
+        vm.prank(collector);
+        m.mint{value: PRICE}(collector, 1, address(0), ""); // artist owed PRICE, held in _pending
+
+        uint256 strayAmount = 0.3 ether;
+        // Forced ETH (e.g. selfdestruct), not routed through mint/_settle.
+        vm.deal(address(m), address(m).balance + strayAmount);
+
+        address rescueTo = makeAddr("rescueTo");
+        vm.prank(artist);
+        vm.expectEmit(true, false, false, true, address(m));
+        emit FixedPriceMinter.StrayETHRescued(rescueTo, strayAmount);
+        m.rescueStrayETH(rescueTo);
+
+        assertEq(rescueTo.balance, strayAmount, "only the stray balance is swept");
+        assertEq(m.pendingWithdrawal(artist), PRICE, "owed _pending balance is untouched");
+        assertEq(address(m).balance, PRICE, "minter retains exactly the owed balance");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ZeroQuantity at the minter layer + priceOf, fixed-price branch
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function test_mint_zeroQuantity_reverts() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        vm.prank(collector);
+        vm.expectRevert(IMinter.ZeroQuantity.selector);
+        m.mint(collector, 0, address(0), "");
+    }
+
+    function test_priceOf_fixedPriceBranch() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        assertEq(m.priceOf(collector, 1, ""), PRICE, "single unit");
+        assertEq(m.priceOf(collector, 3, ""), PRICE * 3, "scales with quantity");
     }
 }

@@ -368,6 +368,35 @@ contract SurfaceTest is SurfaceBase {
         assertEq(receiver, artist);
     }
 
+    /// @dev A renounced collection with no explicit royaltyReceiver resolves
+    ///      owner() to address(0); a marketplace must not route royalties
+    ///      there, so the amount zeroes out alongside the zero receiver.
+    function test_royaltyInfo_renouncedCollection_noReceiver_zeroesAmount() public {
+        SurfaceConfig memory cfg = _freeConfig();
+        cfg.royaltyBps = 250;
+        Surface c = _collection(cfg);
+        vm.prank(artist);
+        c.renounceOwnership();
+
+        (address receiver, uint256 amount) = c.royaltyInfo(1, 1 ether);
+        assertEq(receiver, address(0));
+        assertEq(amount, 0, "no amount is routed to the zero address");
+    }
+
+    /// @dev An explicit royaltyReceiver is unaffected by a renounced owner.
+    function test_royaltyInfo_renouncedCollection_explicitReceiver_unaffected() public {
+        SurfaceConfig memory cfg = _freeConfig();
+        cfg.royaltyBps = 500;
+        cfg.royaltyReceiver = makeAddr("royalty");
+        Surface c = _collection(cfg);
+        vm.prank(artist);
+        c.renounceOwnership();
+
+        (address receiver, uint256 amount) = c.royaltyInfo(1, 1 ether);
+        assertEq(receiver, cfg.royaltyReceiver);
+        assertEq(amount, 0.05 ether);
+    }
+
     // ── rescueStrayETH ───────────────────────────────────────────────────────
 
     /// @dev The token holds no value of its own: any balance is force-fed

@@ -17,23 +17,29 @@ contract FixedPriceMinterBase is SurfaceBase {
     }
 
     /// @dev Full init params with every optional field at its open/unlimited
-    ///      default. Override individual fields on the returned struct
-    ///      before calling initialize().
+    ///      default and payoutRecipient defaulted to `artist` (initialize()
+    ///      requires it nonzero). Override individual fields on the returned
+    ///      struct before calling initialize().
     function _minterParams(address collection_, uint256 price_)
         internal
-        pure
+        view
         returns (FixedPriceMinterInitParams memory p)
     {
         p.collection = collection_;
         p.price = price_;
+        p.payoutRecipient = artist;
     }
 
     /// @dev Deploy a collection, deploy and initialize a minter clone for it
     ///      with the given fixed price and no other config, and grant the
-    ///      minter on the collection. The common happy-path setup.
+    ///      minter on the collection. The common happy-path setup. The
+    ///      collection is already live (owned by `artist`) by the time the
+    ///      minter initializes, so standalone init requires the collection's
+    ///      owner/admin authority (FixedPriceMinter.initialize's caller gate).
     function _collectionWithMinter(uint256 price_) internal returns (Surface c, FixedPriceMinter m) {
         c = _collection(_freeConfig());
         m = _freshMinterClone();
+        vm.prank(artist);
         m.initialize(_minterParams(address(c), price_));
         vm.prank(artist);
         c.setMinter(address(m), true);
@@ -48,6 +54,7 @@ contract FixedPriceMinterBase is SurfaceBase {
         c = _collection(_freeConfig());
         m = _freshMinterClone();
         p.collection = address(c);
+        vm.prank(artist);
         m.initialize(p);
         vm.prank(artist);
         c.setMinter(address(m), true);

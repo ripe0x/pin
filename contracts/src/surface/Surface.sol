@@ -38,8 +38,11 @@ contract Surface is SurfaceCore, ISurface {
         uint256 firstMintIndex = _mintedEver;
         firstTokenId = firstMintIndex + 1;
         for (uint256 i = 0; i < quantity; i++) {
-            _mintOne(to, firstTokenId + i);
+            _mintOne(to, firstTokenId + i, firstMintIndex + i);
         }
+        // Written once per call regardless of quantity: every iteration's
+        // order is already fixed by firstMintIndex + i above.
+        _mintedEver = firstMintIndex + quantity;
         emit Minted(msg.sender, to, firstTokenId, quantity, firstMintIndex);
     }
 }

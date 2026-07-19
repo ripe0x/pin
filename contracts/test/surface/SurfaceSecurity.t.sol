@@ -151,4 +151,13 @@ contract SurfaceSecurityTest is SurfaceBase {
         vm.expectRevert(abi.encodeWithSignature("InvalidInitialization()"));
         impl.initialize(p);
     }
+
+    /// @dev Mirrors the sequential implementation's own guarantee above: the
+    ///      pooled implementation is likewise a bare, un-owned clone target
+    ///      and must never be initializable directly.
+    function test_confirm_pooledImplCannotBeInitialized() public {
+        InitParams memory p = _rawInitParams(_freeConfig());
+        vm.expectRevert(abi.encodeWithSignature("InvalidInitialization()"));
+        pooledImpl.initialize(p);
+    }
 }
