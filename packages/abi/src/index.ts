@@ -6,14 +6,16 @@ export { sovereignAuctionHouseFactoryAbi } from "./sovereignAuctionHouseFactory.
 export { surfaceAbi } from "./surface.ts"
 export { pooledSurfaceAbi } from "./pooledSurface.ts"
 export { surfaceFactoryAbi } from "./surfaceFactory.ts"
+// Canonical fixed-price/referral minter clone (Phase 2/3): the mint/withdraw/
+// sale-config ABI every canonical-minter collection shares.
+export { fixedPriceMinterAbi } from "./fixedPriceMinter.ts"
 export { defaultRendererAbi } from "./defaultRenderer.ts"
 export { scriptyRendererAbi } from "./scriptyRenderer.ts"
-// Surface slot implementations + interfaces (docs generator + integrators)
-export { allowlistHookAbi } from "./allowlistHook.ts"
-export { perWalletCapHookAbi } from "./perWalletCapHook.ts"
-export { holdsSurfaceHookAbi } from "./holdsSurfaceHook.ts"
-export { gateHookAbi } from "./gateHook.ts"
-export { iMintHookAbi } from "./iMintHook.ts"
+// Surface slot interfaces (docs generator + integrators). The mint-hook
+// interface and its reference implementations (AllowlistHook, PerWalletCapHook,
+// HoldsSurfaceHook, GateHook, IMintHook) were deleted in the thin-token
+// rearchitecture: gating moved into FixedPriceMinter's built-in allowlist +
+// wallet-cap config.
 export { iPriceStrategyAbi } from "./iPriceStrategy.ts"
 export { iRendererAbi } from "./iRenderer.ts"
 export { iSurfaceViewAbi } from "./iSurfaceView.ts"

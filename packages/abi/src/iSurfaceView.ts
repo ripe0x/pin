@@ -12,24 +12,9 @@ export const iSurfaceViewAbi = [
         "internalType": "struct SurfaceConfig",
         "components": [
           {
-            "name": "price",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
             "name": "supplyCap",
             "type": "uint256",
             "internalType": "uint256"
-          },
-          {
-            "name": "mintStart",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "mintEnd",
-            "type": "uint64",
-            "internalType": "uint64"
           },
           {
             "name": "royaltyBps",
@@ -42,22 +27,7 @@ export const iSurfaceViewAbi = [
             "internalType": "address"
           },
           {
-            "name": "payoutAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
             "name": "renderer",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "mintHook",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "priceStrategy",
             "type": "address",
             "internalType": "address"
           },
@@ -72,11 +42,6 @@ export const iSurfaceViewAbi = [
             "internalType": "bool"
           }
         ]
-      },
-      {
-        "name": "status",
-        "type": "uint8",
-        "internalType": "enum SurfaceStatus"
       },
       {
         "name": "minted",

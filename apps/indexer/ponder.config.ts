@@ -11,6 +11,7 @@ import { superrareNftAbi } from "./abis/SuperRareNFT"
 import { muriProtocolAbi } from "./abis/MURIProtocol"
 import { surfaceAbi } from "./abis/Surface"
 import { surfaceFactoryAbi } from "./abis/SurfaceFactory"
+import { fixedPriceMinterAbi } from "./abis/FixedPriceMinter"
 
 /**
  * PND v2 Ponder scope — REDUCED from v1.
@@ -264,15 +265,43 @@ export default createConfig({
           // state-machine indexing here is in-bounds per AGENTS.md — it
           // is NOT the long-tail per-artist-platform scanning that
           // belongs in the worker.
+          //
+          // SurfaceCreated gained a `minter` field (thin-token
+          // rearchitecture, docs/pnd-surface-thin-token-rearchitecture.md
+          // §3.5): the canonical FixedPriceMinter clone createSurface
+          // wired, or the zero address for createSurfaceCustom/
+          // createPooledSurface (bring-your-own minter). Not `indexed` —
+          // Ponder's factory() pattern reads it from the log data
+          // regardless.
           Surface: {
             chain: "mainnet",
             abi: surfaceAbi,
             address: factory({
               address: SURFACE_FACTORY_ADDRESS,
               event: parseAbiItem(
-                "event SurfaceCreated(address indexed owner, address indexed collection, uint8 idMode)",
+                "event SurfaceCreated(address indexed owner, address indexed collection, address minter, uint8 idMode)",
               ),
               parameter: "collection",
+            }),
+            startBlock: SURFACE_FACTORY_DEPLOY_BLOCK,
+          },
+          // Canonical minter clones, bound the same way as Surface above
+          // but keyed off SurfaceCreated's `minter` field instead of
+          // `collection`. A collection created via createSurfaceCustom/
+          // createPooledSurface emits minter = address(0), which Ponder
+          // will add to its watched set as a harmless no-op address (it
+          // never emits logs). Sold/ReferralPaid resolve their owning
+          // collection via the `minters` reverse-index table (see
+          // Collections.ts), since these events carry no collection field.
+          FixedPriceMinter: {
+            chain: "mainnet",
+            abi: fixedPriceMinterAbi,
+            address: factory({
+              address: SURFACE_FACTORY_ADDRESS,
+              event: parseAbiItem(
+                "event SurfaceCreated(address indexed owner, address indexed collection, address minter, uint8 idMode)",
+              ),
+              parameter: "minter",
             }),
             startBlock: SURFACE_FACTORY_DEPLOY_BLOCK,
           },

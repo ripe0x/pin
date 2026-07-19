@@ -1,26 +1,27 @@
 /**
  * Provenance display for a token's Mint Mark — fully DERIVED, matching the
  * onchain renderers: sequential token id IS the mint order; First/Final
- * derive from the id against the live minted count and status. Framed as
- * provenance, never as rarity: no rank, no score, no floor.
+ * derive from the id against the live minted count and supply cap alone
+ * (thin-token rearchitecture §7.6: the token no longer carries a lifecycle
+ * status to derive Final from — a reopened window can no longer retract
+ * it). Framed as provenance, never as rarity: no rank, no score, no floor.
  */
-import { SurfaceStatus } from "@/lib/collection"
 
 export function CollectionMintMarkCard({
   mintOrder,
   seed,
-  status,
+  supplyCap,
   minted,
 }: {
   /** Sequential: the token id (== mint order). Null for pooled ids. */
   mintOrder: number | null
   seed: `0x${string}` | null
-  status: SurfaceStatus
+  supplyCap: bigint
   minted: bigint
 }) {
   const isFirst = mintOrder === 1
   const isFinal =
-    mintOrder !== null && status === SurfaceStatus.Closed && BigInt(mintOrder) === minted
+    mintOrder !== null && supplyCap > 0n && minted === supplyCap && BigInt(mintOrder) === minted
   return (
     <div className="rounded-lg border border-gray-200 bg-surface overflow-hidden">
       <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-2">

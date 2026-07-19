@@ -1314,3 +1314,34 @@ export async function getActiveAuctionCountFromIndexer(
     return Number(rows[0]?.count ?? 0)
   }, 2_000)
 }
+
+// ─── PND Surface System (contracts/src/surface/) ─────────────────────────
+//
+// The collection-to-minter binding (thin-token rearchitecture, docs/
+// pnd-surface-thin-token-rearchitecture.md §3.5): there is no live-chain way
+// to recover which FixedPriceMinter clone a collection's factory deploy
+// wired — the token exposes only isMinter(candidate), not a "list of
+// minters" getter — so this is the only source for it. Returns null when
+// the indexer doesn't have a row yet (not synced, disabled, unavailable) or
+// when the collection was deployed via createSurfaceCustom/
+// createPooledSurface (bring-your-own minter, column is NULL onchain too).
+// Callers treat null as "no canonical minter": lib/collection-onchain.ts's
+// getCollection() sets `minter`/`sale` to null rather than guessing.
+export async function getCollectionMinterFromIndexer(
+  collection: string,
+): Promise<string | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+  return withTimeout(async () => {
+    const addr = collection.toLowerCase()
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+      /[^a-zA-Z0-9_]/g,
+      "",
+    )
+    const rows = (await db.unsafe(
+      `SELECT minter FROM ${schema}.collections WHERE collection = $1 LIMIT 1`,
+      [addr],
+    )) as Array<{ minter: string | null }>
+    return rows[0]?.minter ?? null
+  })
+}

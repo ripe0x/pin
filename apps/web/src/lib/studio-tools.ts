@@ -25,7 +25,7 @@
  */
 
 import { MAINNET_CHAIN_ID } from "@pin/addresses"
-import { surfaceFactory, gateHookAddress } from "./collection"
+import { surfaceFactory } from "./collection"
 
 export type StudioTool = {
   /** Route segment under /studio/[address]/ */
@@ -79,11 +79,15 @@ export const STUDIO_TOOLS: StudioTool[] = [
     id: "mint-gate",
     label: "Mint gate",
     description:
-      "Gate a collection's mint with an allowlist and a per-wallet limit, on your own hook contract.",
-    // Ships dark on mainnet until GateHook deploys there; live in dev via
-    // the harness's NEXT_PUBLIC_GATE_HOOK override (see scripts/dev-collections.sh).
+      "Gate a collection's mint with an allowlist and a per-wallet limit, directly on its canonical minter.",
+    // Allowlist + wallet-cap config live on the collection's own canonical
+    // FixedPriceMinter clone (thin-token rearchitecture — there's no
+    // separate GateHook to deploy anymore), so this tool ships dark until
+    // Surface itself is live on mainnet, same gate as the collections
+    // surfaces; live in dev via the harness's NEXT_PUBLIC_SURFACE_FACTORY
+    // override (see scripts/dev-collections.sh).
     available: () =>
-      gateHookAddress(MAINNET_CHAIN_ID) !== null || process.env.NEXT_PUBLIC_GATE_HOOK !== undefined,
+      surfaceFactory(MAINNET_CHAIN_ID) !== null || process.env.NEXT_PUBLIC_SURFACE_FACTORY !== undefined,
   },
 ]
 

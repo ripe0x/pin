@@ -5,9 +5,9 @@
  * collection the collector pays exactly price * quantity, shown up front. For
  * a collection with a price strategy (hasPriceStrategy), the price can change
  * block to block (e.g. a basefee-driven strategy), so this reads a live quote
- * via currentPrice on a slow poll (12s — never tighter, this is a paid RPC
- * path) and sends that quoted value as msg.value. The contract accepts
- * `msg.value >= currentPrice` and pull-refunds any excess to the pending
+ * via priceOf on the minter on a slow poll (12s — never tighter, this is a
+ * paid RPC path) and sends that quoted value as msg.value. The minter accepts
+ * `msg.value >= priceOf(...)` and pull-refunds any excess to the pending
  * withdrawal balance, so a quote that goes slightly stale between read and
  * broadcast still succeeds — it just leaves a small refund claimable via
  * WithdrawPanel instead of reverting.
@@ -16,9 +16,12 @@
  * paid to whoever hosts this mint (PND here, the artist on their own site). A
  * 0 ETH price is "Gas only", never "free".
  *
- * Pooled-mode collections (sellsViaMinterOnly) never sell through this direct
- * path — they mint exclusively through an authorized minter extension — so
- * this component renders a quiet notice instead of a buy flow.
+ * Minting itself always goes through the collection's canonical
+ * FixedPriceMinter clone (thin-token rearchitecture — the token has no paid
+ * mint path of its own). When there's no canonical minter on record (a
+ * bring-your-own minter, or a pooled collection — createPooledSurface never
+ * wires one, see sellsViaMinterOnly), this component renders a quiet notice
+ * instead of a buy flow.
  */
 
 import { useEffect, useMemo, useState } from "react"
@@ -34,7 +37,7 @@ import {
   useWriteContract,
 } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
-import { surfaceAbi, gateHookAbi } from "@pin/abi"
+import { surfaceAbi, fixedPriceMinterAbi } from "@pin/abi"
 import {
   AllowlistChecker,
   EligibilityVerdict,
@@ -61,41 +64,40 @@ import {
   isMintable,
   lifecycleStatus,
   pndReferrerAddress,
-  sellsViaMinterOnly,
   shortAddress,
-  type IdMode,
-  type WorkConfig,
 } from "@/lib/collection"
+import type { WorkConfig } from "@/lib/collection"
 
+/** Serializable mirror of the collection's canonical minter sale config
+ *  (lib/collection.ts's MinterSaleConfig), plus the token-level cap/minted
+ *  state the derived status also needs. */
 export type MintCollectionSnapshot = {
   price: string
-  supplyCap: string
+  priceStrategy: `0x${string}`
   mintStart: string
   mintEnd: string
+  payout: `0x${string}`
+  allowlistRoot: `0x${string}`
+  walletCap: string
+  supplyCap: string
   minted: string
-  status: number
-  priceStrategy: `0x${string}`
-  idMode: IdMode
-}
-
-/** Serializable mirror of collection-onchain's GateState. */
-export type MintGateSnapshot = {
-  hook: `0x${string}`
-  isGateHook: boolean
-  root: `0x${string}`
-  cap: string
 }
 
 const ZERO_ROOT = ("0x" + "0".repeat(64)) as `0x${string}`
 
 export function MintCollectionCTA({
   collection,
+  minter,
   snapshot,
   referrer,
   work,
-  gate,
 }: {
   collection: `0x${string}`
+  /** The collection's canonical FixedPriceMinter clone. Null means no
+   *  canonical minter is on record (bring-your-own minter, or a pooled
+   *  collection that never wires one, or not yet indexed) — renders the
+   *  quiet notice instead of a buy flow. */
+  minter: `0x${string}` | null
   snapshot: MintCollectionSnapshot
   /** Override the mint referrer (a self-hosted page passes the artist's own
    *  address). Defaults to PND's configured referrer. */
@@ -103,8 +105,6 @@ export function MintCollectionCTA({
   /** The collection's work config when generative — enables the live reveal
    *  after a successful mint. Omit/null for edition presets. */
   work?: WorkConfig | null
-  /** The collection's mint gate, when a hook is attached (server-read). */
-  gate?: MintGateSnapshot | null
 }) {
   const { address } = useAccount()
   const chainId = useChainId()
@@ -120,24 +120,26 @@ export function MintCollectionCTA({
   const mintStart = BigInt(snapshot.mintStart)
   const referrerAddr = referrer ?? pndReferrerAddress()
   const strategy = hasPriceStrategy(snapshot.priceStrategy)
-  const pooled = sellsViaMinterOnly(snapshot.idMode)
+  // No canonical minter on record: nothing here can drive a mint.
+  const pooled = !minter
 
   const [amount, setAmount] = useState(1)
   const amountValid = Number.isInteger(amount) && amount >= 1
 
   // Live price quote for strategy collections. 12s poll — this is a paid RPC
-  // read (currentPrice), never tighten below this without checking the RPC
-  // budget. Fixed-price collections skip the read entirely (query.enabled).
+  // read (priceOf on the minter), never tighten below this without checking
+  // the RPC budget. Fixed-price collections skip the read entirely
+  // (query.enabled).
   const {
     data: liveQuote,
     refetch: refetchLiveQuote,
   } = useReadContract({
-    address: collection,
-    abi: surfaceAbi,
-    functionName: "currentPrice",
+    address: minter ?? undefined,
+    abi: fixedPriceMinterAbi,
+    functionName: "priceOf",
     args: [address ?? ZERO_ADDRESS, BigInt(amountValid ? amount : 1), "0x"],
     query: {
-      enabled: strategy,
+      enabled: strategy && !!minter,
       refetchInterval: 12_000,
     },
   })
@@ -151,25 +153,26 @@ export function MintCollectionCTA({
     setPriceConfirmPending(false)
   }, [amount])
 
-  // ── mint gate (GateHook: merkle allowlist + per-wallet cap) ─────────────
-  const allowlisted = !!gate && gate.isGateHook && gate.root !== ZERO_ROOT
-  const walletCap = gate && gate.isGateHook ? BigInt(gate.cap) : 0n
-  const unknownHook = !!gate && !gate.isGateHook
+  // ── mint gate (allowlist + per-wallet cap, built into the minter) ───────
+  const allowlisted = !!minter && snapshot.allowlistRoot !== ZERO_ROOT
+  const walletCap = BigInt(snapshot.walletCap)
   // Eligibility of the connected wallet (one API lookup per wallet; the
-  // proof rides back with it and goes into hookData at mint time).
+  // proof rides back with it and goes into `data` at mint time).
   const eligibility = useEligibility(collection, allowlisted ? address : undefined)
   const proof = eligibility && eligibility.eligible === true ? eligibility.proof ?? [] : null
-  // Per-wallet remaining allowance: one eth_call per connected wallet, only
-  // when a cap is actually set — this is mint-time correctness, not polling.
-  const { data: walletRemainingRaw } = useReadContract({
-    address: gate?.hook,
-    abi: gateHookAbi,
-    functionName: "remainingFor",
-    args: [collection, address ?? ZERO_ADDRESS],
-    query: { enabled: !!address && !!gate && gate.isGateHook && walletCap > 0n, staleTime: 15_000 },
+  // Per-wallet remaining allowance: derived from the minter's own
+  // mintedBy(address) counter (there's no dedicated "remaining" getter),
+  // one eth_call per connected wallet, only when a cap is actually set —
+  // this is mint-time correctness, not polling.
+  const { data: mintedByWallet } = useReadContract({
+    address: minter ?? undefined,
+    abi: fixedPriceMinterAbi,
+    functionName: "mintedBy",
+    args: [address ?? ZERO_ADDRESS],
+    query: { enabled: !!address && !!minter && walletCap > 0n, staleTime: 15_000 },
   })
   const walletRemaining =
-    walletCap > 0n && walletRemainingRaw !== undefined ? (walletRemainingRaw as bigint) : null
+    walletCap > 0n && mintedByWallet !== undefined ? walletCap - (mintedByWallet as bigint) : null
   const walletCapReached = walletRemaining !== null && walletRemaining <= 0n
 
   const remaining = supplyCap > 0n ? supplyCap - minted : null
@@ -184,7 +187,7 @@ export function MintCollectionCTA({
     isMintable({ mintStart, mintEnd, supplyCap }, minted, nowSec || Number(mintStart))
 
   // For a strategy collection, `total` is the live quote for the current
-  // quantity (already scaled by quantity by currentPrice itself). For a
+  // quantity (already scaled by quantity by priceOf itself). For a
   // fixed-price collection it's simply price * quantity.
   const total = strategy
     ? (liveQuote as bigint | undefined) ?? 0n
@@ -240,8 +243,8 @@ export function MintCollectionCTA({
   }, [receipt, collection])
 
   async function handleMint() {
-    if (!amountValid) return
-    // Allowlist gates verify a merkle proof from hookData; without one the
+    if (!amountValid || !minter || !address) return
+    // Allowlist gates verify a merkle proof from `data`; without one the
     // tx is doomed, so the button never enables in that state (belt) and we
     // bail here too (suspenders).
     if (allowlisted && !proof) return
@@ -261,15 +264,15 @@ export function MintCollectionCTA({
       sendValue = fresh ?? total
     }
     setPriceConfirmPending(false)
-    const hookData =
+    const data =
       allowlisted && proof
         ? encodeAbiParameters([{ type: "bytes32[]" }], [proof])
         : "0x"
     writeContract({
-      address: collection,
-      abi: surfaceAbi,
-      functionName: "mintWithReferral",
-      args: [BigInt(amount), referrerAddr, hookData],
+      address: minter,
+      abi: fixedPriceMinterAbi,
+      functionName: "mint",
+      args: [address, BigInt(amount), referrerAddr, data],
       value: sendValue,
     })
   }
@@ -430,14 +433,6 @@ export function MintCollectionCTA({
               )}
             </p>
           )}
-          {unknownHook && !(isSuccess && txHash) && (
-            <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
-              This mint has additional onchain conditions set by its artist
-              (hook {shortAddress(gate!.hook)}). If they are not met, the
-              transaction reverts.
-            </p>
-          )}
-
           {mintable && !(isSuccess && txHash) && (
             <>
               <label className="block">

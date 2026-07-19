@@ -1,21 +1,22 @@
 "use client"
 
 /**
- * Wallet-driven onchain activation for the mint gate: three independent
- * transactions (attach the hook, activate the published root, set the
- * per-wallet cap) plus a detach path, each its own useWriteContract +
- * useWaitForTransactionReceipt pair so their pending/success states don't
- * collide. Every confirmed tx calls `onConfirmed`, which the parent uses
- * to re-read gate state through the cached API (never a fresh client-side
- * chain read here).
+ * Wallet-driven onchain activation for the mint gate: two independent
+ * transactions (activate the published root, set the per-wallet cap)
+ * directly on the collection's canonical FixedPriceMinter clone, each its
+ * own useWriteContract + useWaitForTransactionReceipt pair so their
+ * pending/success states don't collide. There is no "attach a hook" step
+ * anymore (thin-token rearchitecture): allowlist + wallet-cap config live
+ * on the minter itself, not a separately-attached hook contract. Every
+ * confirmed tx calls `onConfirmed`, which the parent uses to re-read gate
+ * state through the cached API (never a fresh client-side chain read here).
  */
 
 import { useEffect, useState } from "react"
-import { useChainId, useWaitForTransactionReceipt, useWriteContract } from "wagmi"
-import { surfaceAbi, gateHookAbi } from "@pin/abi"
+import { useWaitForTransactionReceipt, useWriteContract } from "wagmi"
+import { fixedPriceMinterAbi } from "@pin/abi"
 import { formatWriteError } from "@/components/tx/tx-ui"
 import { BTN, BTN_SECONDARY, ERROR, INPUT } from "@/components/studio/create/wizard-ui"
-import { ZERO_ADDRESS, gateHookAddress, shortAddress } from "@/lib/collection"
 import { type DerivedGate, ZERO_ROOT } from "./gate-api"
 
 function WriteStep({
@@ -68,28 +69,17 @@ function WriteStep({
 }
 
 export function ActivationQueue({
-  collection,
   derived,
   publishedRoot,
   onConfirmed,
 }: {
-  collection: `0x${string}`
   derived: DerivedGate | null
   publishedRoot: `0x${string}` | null
   onConfirmed: () => void
 }) {
-  const chainId = useChainId()
-  const gateHook = gateHookAddress(chainId)
+  const minter = derived?.minter ?? null
 
-  // Step 1: attach the hook.
-  const attach = useWriteContract()
-  const attachReceipt = useWaitForTransactionReceipt({ hash: attach.data })
-  useEffect(() => {
-    if (attachReceipt.isSuccess) onConfirmed()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [attachReceipt.isSuccess])
-
-  // Step 2: activate the published root.
+  // Step 1: activate the published root directly on the minter.
   const activate = useWriteContract()
   const activateReceipt = useWaitForTransactionReceipt({ hash: activate.data })
   useEffect(() => {
@@ -97,7 +87,7 @@ export function ActivationQueue({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activateReceipt.isSuccess])
 
-  // Step 3: set the per-wallet cap.
+  // Step 2: set the per-wallet cap.
   const [capInput, setCapInput] = useState("0")
   const setCapWrite = useWriteContract()
   const setCapReceipt = useWaitForTransactionReceipt({ hash: setCapWrite.data })
@@ -108,34 +98,40 @@ export function ActivationQueue({
   const capNum = Number(capInput)
   const capValid = capInput.trim() !== "" && Number.isInteger(capNum) && capNum >= 0
 
-  // Remove: detach the hook. Confirm-by-second-click, no browser dialog —
+  // Clear: reset the allowlist root to zero (open mint, subject to any
+  // other sale settings). Confirm-by-second-click, no browser dialog —
   // first click arms the button, second click (within a short window)
   // fires the tx.
-  const [removeArmed, setRemoveArmed] = useState(false)
-  const remove = useWriteContract()
-  const removeReceipt = useWaitForTransactionReceipt({ hash: remove.data })
+  const [clearArmed, setClearArmed] = useState(false)
+  const clear = useWriteContract()
+  const clearReceipt = useWaitForTransactionReceipt({ hash: clear.data })
   useEffect(() => {
-    if (removeReceipt.isSuccess) {
-      setRemoveArmed(false)
+    if (clearReceipt.isSuccess) {
+      setClearArmed(false)
       onConfirmed()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [removeReceipt.isSuccess])
+  }, [clearReceipt.isSuccess])
   useEffect(() => {
-    if (!removeArmed) return
-    const t = setTimeout(() => setRemoveArmed(false), 6000)
+    if (!clearArmed) return
+    const t = setTimeout(() => setClearArmed(false), 6000)
     return () => clearTimeout(t)
-  }, [removeArmed])
+  }, [clearArmed])
 
-  if (!gateHook) {
-    return <p className={ERROR}>No GateHook is configured for this network.</p>
+  if (!minter) {
+    return (
+      <p className={ERROR}>
+        No canonical minter is on record for this collection yet. The mint
+        gate lives on the minter FixedPriceMinter wired at deploy — a
+        bring-your-own minter, or a collection not yet indexed, has no gate
+        to activate here.
+      </p>
+    )
   }
 
-  const hookAttached = derived?.hookAttached ?? false
-  const otherHookAddress = derived?.otherHookAddress ?? null
   const activeRoot = derived?.root ?? ZERO_ROOT
   const rootActive = !!publishedRoot && publishedRoot.toLowerCase() === activeRoot.toLowerCase()
-  const someHookAttached = hookAttached || !!otherHookAddress
+  const gateSet = activeRoot !== ZERO_ROOT
 
   return (
     <div className="space-y-4">
@@ -143,41 +139,17 @@ export function ActivationQueue({
         <h3 className="text-sm font-medium">Activate onchain</h3>
         <p className="text-xs text-gray-500 leading-relaxed">
           Each step is its own transaction, signed by this collection&apos;s
-          owner or an admin. Nothing above is granted until it lands here.
+          owner or an admin, written directly to the minter. Nothing above is
+          granted until it lands here.
         </p>
       </header>
 
       <WriteStep
         step={1}
-        title="Attach the gate hook"
-        description={
-          otherHookAddress
-            ? `This collection currently uses a different hook (${shortAddress(otherHookAddress)}). Attaching GateHook replaces it.`
-            : "Point this collection's mint hook at the shared GateHook contract."
-        }
-        ctaLabel={otherHookAddress ? "Replace hook with GateHook" : "Attach gate hook"}
-        pendingLabel="Attaching…"
-        done={hookAttached}
-        disabled={false}
-        onRun={() =>
-          attach.writeContract({
-            address: collection,
-            abi: surfaceAbi,
-            functionName: "setMintHook",
-            args: [gateHook],
-          })
-        }
-        isPending={attach.isPending}
-        isMining={attachReceipt.isLoading}
-        error={attach.error}
-      />
-
-      <WriteStep
-        step={2}
         title="Activate the published list"
         description={
           publishedRoot
-            ? "Set the published root as the active allowlist on GateHook."
+            ? "Set the published root as the minter's active allowlist."
             : "Publish a list above first."
         }
         ctaLabel="Activate published list"
@@ -187,10 +159,10 @@ export function ActivationQueue({
         onRun={() => {
           if (!publishedRoot) return
           activate.writeContract({
-            address: gateHook,
-            abi: gateHookAbi,
-            functionName: "setRoot",
-            args: [collection, publishedRoot],
+            address: minter,
+            abi: fixedPriceMinterAbi,
+            functionName: "setAllowlistRoot",
+            args: [publishedRoot],
           })
         }}
         isPending={activate.isPending}
@@ -200,7 +172,7 @@ export function ActivationQueue({
 
       <div className="rounded border border-gray-200 p-3 space-y-2">
         <div className="space-y-0.5">
-          <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">Step 3</p>
+          <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">Step 2</p>
           <p className="text-sm font-medium">Per-wallet limit</p>
           <p className="text-xs text-gray-500 leading-relaxed">
             Maximum tokens any one wallet may mint while the cap is set. 0
@@ -222,10 +194,10 @@ export function ActivationQueue({
             type="button"
             onClick={() =>
               setCapWrite.writeContract({
-                address: gateHook,
-                abi: gateHookAbi,
-                functionName: "setCap",
-                args: [collection, BigInt(capNum)],
+                address: minter,
+                abi: fixedPriceMinterAbi,
+                functionName: "setWalletCap",
+                args: [BigInt(capNum)],
               })
             }
             disabled={!capValid || setCapWrite.isPending || setCapReceipt.isLoading}
@@ -243,41 +215,41 @@ export function ActivationQueue({
         {setCapWrite.error && <p className={ERROR}>{formatWriteError(setCapWrite.error, "Set cap")}</p>}
       </div>
 
-      {someHookAttached && (
+      {gateSet && (
         <div className="rounded border border-gray-200 p-3 space-y-2">
           <div className="space-y-0.5">
             <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">Remove the gate</p>
             <p className="text-xs text-gray-500 leading-relaxed">
-              Detaches the mint hook entirely. The mint opens to anyone,
+              Resets the allowlist root to zero. The mint opens to anyone,
               subject to any other sale settings.
             </p>
           </div>
           <button
             type="button"
             onClick={() => {
-              if (!removeArmed) {
-                setRemoveArmed(true)
+              if (!clearArmed) {
+                setClearArmed(true)
                 return
               }
-              remove.writeContract({
-                address: collection,
-                abi: surfaceAbi,
-                functionName: "setMintHook",
-                args: [ZERO_ADDRESS],
+              clear.writeContract({
+                address: minter,
+                abi: fixedPriceMinterAbi,
+                functionName: "setAllowlistRoot",
+                args: [ZERO_ROOT],
               })
             }}
-            disabled={remove.isPending || removeReceipt.isLoading}
+            disabled={clear.isPending || clearReceipt.isLoading}
             className={BTN_SECONDARY}
           >
-            {remove.isPending
+            {clear.isPending
               ? "Confirm in wallet…"
-              : removeReceipt.isLoading
+              : clearReceipt.isLoading
                 ? "Removing…"
-                : removeArmed
+                : clearArmed
                   ? "Click again to confirm removal"
                   : "Remove the gate"}
           </button>
-          {remove.error && <p className={ERROR}>{formatWriteError(remove.error, "Remove")}</p>}
+          {clear.error && <p className={ERROR}>{formatWriteError(clear.error, "Remove")}</p>}
         </div>
       )}
     </div>

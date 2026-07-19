@@ -3,9 +3,11 @@ import Link from "next/link"
 import { getRecentCollections } from "@/lib/collection-onchain"
 import {
   SurfaceStatus,
+  ZERO_ADDRESS,
   formatPriceLabel,
   hasPriceStrategy,
   lifecycleStatus,
+  saleWindowOf,
   shortAddress,
   surfaceFactory,
   type Collection,
@@ -38,7 +40,7 @@ function groupByLifecycle(collections: Collection[], nowSec: number): Collection
     { key: "past", label: "Past", items: [] },
   ]
   for (const c of collections) {
-    const status = lifecycleStatus(c.cfg, c.minted, nowSec)
+    const status = lifecycleStatus(saleWindowOf(c), c.minted, nowSec)
     if (status === SurfaceStatus.Open) groups[0].items.push(c)
     else if (status === SurfaceStatus.Scheduled) groups[1].items.push(c)
     else groups[2].items.push(c)
@@ -88,14 +90,15 @@ export default async function CollectionsHome() {
               )}
               <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {g.items.map((c) => {
-                  const status = lifecycleStatus(c.cfg, c.minted, nowSec)
+                  const window = saleWindowOf(c)
+                  const status = lifecycleStatus(window, c.minted, nowSec)
                   const soldOut =
                     status === SurfaceStatus.Closed &&
                     c.cfg.supplyCap > 0n &&
                     c.minted >= c.cfg.supplyCap
-                  const priceLabel = hasPriceStrategy(c.priceStrategy)
+                  const priceLabel = hasPriceStrategy(c.sale?.priceStrategy ?? ZERO_ADDRESS)
                     ? "Live price"
-                    : formatPriceLabel(c.cfg.price)
+                    : formatPriceLabel(c.sale?.price ?? 0n)
                   const mintedLabel =
                     c.cfg.supplyCap > 0n
                       ? `${Number(c.minted)} / ${Number(c.cfg.supplyCap)} minted`
@@ -116,7 +119,7 @@ export default async function CollectionsHome() {
                             soldOut={soldOut}
                             opensInSec={
                               status === SurfaceStatus.Scheduled
-                                ? Number(c.cfg.mintStart) - nowSec
+                                ? Number(window.mintStart) - nowSec
                                 : null
                             }
                           />

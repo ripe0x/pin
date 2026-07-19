@@ -13,7 +13,6 @@
 import { type Address, formatEther, isAddress } from "viem"
 import { foundry, mainnet } from "wagmi/chains"
 import {
-  GATE_HOOK,
   RENDER_ASSETS,
   SURFACE_FACTORY,
   getAddressOrNull,
@@ -21,7 +20,9 @@ import {
 
 export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
 
-/** Fixed protocol referral share, in bps. Must match Surface.REFERRAL_SHARE_BPS. */
+/** Fixed referral share, in bps. Must match FixedPriceMinter.REFERRAL_SHARE_BPS
+ *  (moved off the token in the thin-token rearchitecture — the canonical
+ *  minter pays it, not the collection). */
 export const REFERRAL_SHARE_BPS = 1000 // 10%
 
 const FORK_MODE = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
@@ -42,15 +43,6 @@ export function renderAssetsAddress(chainId: number = PND_CHAIN_ID): Address | n
   const env = process.env.NEXT_PUBLIC_RENDER_ASSETS
   if (env && isAddress(env)) return env as Address
   return getAddressOrNull(RENDER_ASSETS, chainId)
-}
-
-/** The canonical GateHook address (env override for local dev wins). A
- *  collection whose mintHook equals this gets the full eligibility UI;
- *  any other nonzero hook gets the generic gated-mint notice. */
-export function gateHookAddress(chainId: number = PND_CHAIN_ID): Address | null {
-  const env = process.env.NEXT_PUBLIC_GATE_HOOK
-  if (env && isAddress(env)) return env as Address
-  return getAddressOrNull(GATE_HOOK, chainId)
 }
 
 /**
@@ -120,18 +112,45 @@ export type WorkConfig = {
   renderParams: string
 }
 
+/** Mirrors the token's shrunk SurfaceConfig (thin-token rearchitecture): sale
+ *  economics (price, window, payout, priceStrategy) and the mint-hook slot
+ *  moved off the token entirely, onto the canonical minter — see
+ *  MinterSaleConfig. idMode stays separate (read via idMode(), not part of
+ *  the struct). */
 export type SurfaceConfig = {
-  price: bigint
   supplyCap: bigint
-  mintStart: bigint
-  mintEnd: bigint
   royaltyBps: number
   royaltyReceiver: Address
-  payoutAddress: Address
   renderer: Address
-  mintHook: Address
-  priceStrategy: Address
   idMode: IdMode
+}
+
+/** A canonical FixedPriceMinter clone's live sale config — everything that
+ *  used to live on the token's SurfaceConfig (price, window, payout,
+ *  priceStrategy) plus the gating fields that used to live on a GateHook
+ *  (allowlistRoot, walletCap; the mint-hook slot is gone, these are just
+ *  minter config now). `null` on a Collection means no canonical minter is
+ *  wired (bring-your-own minter, or a pooled collection — createPooledSurface
+ *  never sets one): the mint page shows a quiet notice instead of a buy flow
+ *  in that case, per sellsViaMinterOnly. */
+export type MinterSaleConfig = {
+  price: bigint
+  priceStrategy: Address
+  mintStart: bigint
+  mintEnd: bigint
+  payout: Address
+  maxMints: bigint
+  allowlistRoot: `0x${string}`
+  walletCap: bigint
+}
+
+/** The window/cap inputs lifecycleStatus/isMintable derive a status from.
+ *  mintStart/mintEnd now come from the minter's sale config (or zero when
+ *  there is none); supplyCap is still a token-level (structural) fact. */
+export type SaleWindow = {
+  mintStart: bigint
+  mintEnd: bigint
+  supplyCap: bigint
 }
 
 export type Collection = {
@@ -143,16 +162,35 @@ export type Collection = {
   isRendererLocked: boolean
   isSupplyLocked: boolean
   renderer: Address
-  priceStrategy: Address
   cfg: SurfaceConfig
+  /** The canonical FixedPriceMinter clone SurfaceCreated wired for this
+   *  collection, from the indexed SurfaceCreated.minter field — null when
+   *  none is on record yet (not indexed, or a bring-your-own/pooled
+   *  collection that skipped the canonical clone). There is no live-chain
+   *  way to recover this: the token has no "list of minters" getter, only
+   *  isMinter(candidate). */
+  minter: Address | null
+  /** The minter's live sale config, read directly off `minter` when present.
+   *  Null exactly when `minter` is null. */
+  sale: MinterSaleConfig | null
   /** What the work is, executably — read from the GenerativeRenderer's
    *  work registry (renderer-land), empty for renderer-native works or
    *  custom renderers. */
   work: WorkConfig
   /** Cover image from the RenderAssets registry ("" when unset). */
   cover: string
-  status: SurfaceStatus
   minted: bigint
+}
+
+/** The sale window a collection currently offers, folding in the "no
+ *  canonical minter" case as an always-open, no-window / no-cap-beyond-token
+ *  default (mintStart/mintEnd 0). supplyCap is always the token's own. */
+export function saleWindowOf(c: Pick<Collection, "cfg" | "sale">): SaleWindow {
+  return {
+    mintStart: c.sale?.mintStart ?? 0n,
+    mintEnd: c.sale?.mintEnd ?? 0n,
+    supplyCap: c.cfg.supplyCap,
+  }
 }
 
 // ── ABI-return decoders ──────────────────────────────────────────────────────
@@ -187,21 +225,17 @@ export function decodeWorkConfig(raw: RawWorkConfig): WorkConfig {
   }
 }
 
-// Mirrors the onchain SurfaceConfig struct returned by config(). idMode is
-// NOT a field here — it's a structural fact read separately via idMode(). The
-// two one-way locks live on the struct but are surfaced separately on the
+// Mirrors the onchain SurfaceConfig struct returned by config() (thin-token
+// rearchitecture: price/window/payout/mintHook/priceStrategy moved off the
+// token onto the canonical minter, see MinterSaleConfig). idMode is NOT a
+// field here — it's a structural fact read separately via idMode(). The two
+// one-way locks live on the struct but are surfaced separately on the
 // collection (isRendererLocked/isSupplyLocked), so this decoder ignores them.
 type RawSurfaceConfig = {
-  price: bigint
   supplyCap: bigint
-  mintStart: bigint
-  mintEnd: bigint
   royaltyBps: number
   royaltyReceiver: Address
-  payoutAddress: Address
   renderer: Address
-  mintHook: Address
-  priceStrategy: Address
   rendererLocked: boolean
   supplyLocked: boolean
 }
@@ -210,16 +244,10 @@ type RawSurfaceConfig = {
  *  Sequential/Pooled split, so it's passed in rather than decoded from raw. */
 export function decodeCollectionConfig(raw: RawSurfaceConfig, idMode: IdMode): SurfaceConfig {
   return {
-    price: raw.price,
     supplyCap: raw.supplyCap,
-    mintStart: raw.mintStart,
-    mintEnd: raw.mintEnd,
     royaltyBps: Number(raw.royaltyBps),
     royaltyReceiver: raw.royaltyReceiver,
-    payoutAddress: raw.payoutAddress,
     renderer: raw.renderer,
-    mintHook: raw.mintHook,
-    priceStrategy: raw.priceStrategy,
     idMode,
   }
 }
@@ -236,9 +264,9 @@ export function hasPriceStrategy(priceStrategy: Address): boolean {
 }
 
 /**
- * Formats a collection's stored fixed price. Only meaningful when
- * `!hasPriceStrategy(cfg.priceStrategy)` — when a strategy is set, prices
- * must come from a live `currentPrice` read (see getCurrentPrice in
+ * Formats a minter's stored fixed price. Only meaningful when
+ * `!hasPriceStrategy(sale.priceStrategy)` — when a strategy is set, prices
+ * must come from a live `priceOf` read on the minter (see getCurrentPrice in
  * collection-onchain.ts), not this stored field. Currency label is always
  * "ETH".
  */
@@ -247,7 +275,7 @@ export function formatPriceLabel(price: bigint): string {
 }
 
 /**
- * Formats a live-read price (e.g. from currentPrice). Same rendering as
+ * Formats a live-read price (e.g. from priceOf). Same rendering as
  * formatPriceLabel; kept as a distinct name so call sites are explicit about
  * whether the value came from stored config or a live strategy read.
  */
@@ -265,24 +293,19 @@ export function formatBps(bps: number): string {
   return `${Number.isInteger(pct) ? pct : pct.toFixed(2)}%`
 }
 
-/** Mirror of Surface._lifecycleStatus(): derived purely from the window,
- * the cap, and the clock — never from stored state. */
-export function lifecycleStatus(
-  cfg: Pick<SurfaceConfig, "mintStart" | "mintEnd" | "supplyCap">,
-  minted: bigint,
-  nowSec: number,
-): SurfaceStatus {
+/** Derived sale-phase status (Scheduled/Open/Closed): the token no longer
+ * carries this (7.6 of the thin-token rearchitecture removed SurfaceStatus
+ * from the token entirely), so it's computed client/lib-side from the
+ * minter's window (mintStart/mintEnd, via saleWindowOf) plus the token's own
+ * cap state — never from stored state. */
+export function lifecycleStatus(cfg: SaleWindow, minted: bigint, nowSec: number): SurfaceStatus {
   if (cfg.mintStart !== 0n && BigInt(nowSec) < cfg.mintStart) return SurfaceStatus.Scheduled
   if (cfg.mintEnd !== 0n && BigInt(nowSec) >= cfg.mintEnd) return SurfaceStatus.Closed
   if (cfg.supplyCap !== 0n && minted >= cfg.supplyCap) return SurfaceStatus.Closed
   return SurfaceStatus.Open
 }
 
-export function isMintable(
-  cfg: Pick<SurfaceConfig, "mintStart" | "mintEnd" | "supplyCap">,
-  minted: bigint,
-  nowSec: number,
-): boolean {
+export function isMintable(cfg: SaleWindow, minted: bigint, nowSec: number): boolean {
   if (cfg.mintStart !== 0n && BigInt(nowSec) < cfg.mintStart) return false
   if (cfg.mintEnd !== 0n && BigInt(nowSec) >= cfg.mintEnd) return false
   if (cfg.supplyCap !== 0n && minted >= cfg.supplyCap) return false
@@ -290,7 +313,12 @@ export function isMintable(
 }
 
 /** True when the collection sells exclusively through an authorized minter
- * extension (pooled collections never sell via the built-in paid path). */
+ * extension with no direct buy flow on this page (pooled collections never
+ * wire a canonical minter — createPooledSurface has no canonical-minter
+ * form, per docs/pnd-surface-thin-token-rearchitecture.md §3.5). Sequential
+ * collections with no canonical minter on record (bring-your-own, or not yet
+ * indexed) hit the same notice — see the `minter === null` check at call
+ * sites, which this idMode-only helper doesn't see. */
 export function sellsViaMinterOnly(idMode: IdMode): boolean {
   return idMode === IdMode.Pooled
 }
