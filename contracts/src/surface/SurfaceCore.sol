@@ -13,7 +13,11 @@ import {ICatalog} from "./interfaces/ICatalog.sol";
 import {SurfaceConfig, IdMode, InitParams} from "./SurfaceTypes.sol";
 
 /// @title SurfaceCore
-/// @notice Abstract base shared by both collection forms; defines no mint
+/// @notice A Surface collection is one artist-owned ERC721: the owner controls
+///         the renderer, supply, royalty, and the authorized minters, and can
+///         lock chosen properties permanently.
+///
+///         Abstract base shared by both collection forms; defines no mint
 ///         entrypoint (each form does). Holds no value and runs no sale logic:
 ///         every mint goes through an authorized minter, non-payable. Stores
 ///         one mint-time seed per token and nothing else, and provides three
