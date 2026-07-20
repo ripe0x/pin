@@ -211,10 +211,10 @@ export default async function CollectionPage({
             <p className="text-[11px] font-mono uppercase tracking-wider text-gray-500">
               by{" "}
               {homageSkin ? (
-                // Homage is ripe's work — the byline names the artist, not the
-                // resolved owner address, and links to it on the explorer.
+                // Homage is ripe's work — the byline names the artist and links to
+                // their X account.
                 <a
-                  href={evmNowAddressUrl(artists[0], PND_CHAIN_ID)}
+                  href="https://x.com/ripe0x"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="underline decoration-gray-300 underline-offset-2 hover:text-fg"
