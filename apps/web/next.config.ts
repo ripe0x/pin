@@ -36,6 +36,20 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "dweb.link" },
     ],
   },
+  // Keep the shared /collections/homage URL canonical after launch: once the homage
+  // collection address is configured, serve the live /collections/<address> page AT
+  // /collections/homage (URL unchanged) instead of redirecting to the raw address —
+  // the slug will have been shared pre-launch. `beforeFiles` runs before the filesystem
+  // homage/page.tsx, so post-deploy this wins and pre-deploy (address unset) the
+  // coming-soon page renders. The [address] page auto-detects the homage skin; the
+  // immersive chrome already keys off the /collections/homage path (curated-chrome.ts).
+  async rewrites() {
+    const homage = (process.env.NEXT_PUBLIC_HOMAGE_COLLECTION_ADDRESS ?? "").trim()
+    const beforeFiles = /^0x[0-9a-fA-F]{40}$/.test(homage)
+      ? [{ source: "/collections/homage", destination: `/collections/${homage}` }]
+      : []
+    return { beforeFiles }
+  },
   // No Next-level proxy to the worker — the web app calls it directly via fetch
   // from its own server-side code. `WORKER_URL` is set in the Railway environment.
   async redirects() {

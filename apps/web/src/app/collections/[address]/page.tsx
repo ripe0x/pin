@@ -210,19 +210,32 @@ export default async function CollectionPage({
           const byline = (
             <p className="text-[11px] font-mono uppercase tracking-wider text-gray-500">
               by{" "}
-              {artists.map((a, i) => (
-                <span key={a}>
-                  {i > 0 && ", "}
-                  <a
-                    href={evmNowAddressUrl(a, PND_CHAIN_ID)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline decoration-gray-300 underline-offset-2 hover:text-fg"
-                  >
-                    <ArtistName address={a} />
-                  </a>
-                </span>
-              ))}
+              {homageSkin ? (
+                // Homage is ripe's work — the byline names the artist and links to
+                // their X account.
+                <a
+                  href="https://x.com/ripe0x"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline decoration-gray-300 underline-offset-2 hover:text-fg"
+                >
+                  ripe
+                </a>
+              ) : (
+                artists.map((a, i) => (
+                  <span key={a}>
+                    {i > 0 && ", "}
+                    <a
+                      href={evmNowAddressUrl(a, PND_CHAIN_ID)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline decoration-gray-300 underline-offset-2 hover:text-fg"
+                    >
+                      <ArtistName address={a} />
+                    </a>
+                  </span>
+                ))
+              )}
               {!homageSkin && (
                 <>
                   {" · "}
