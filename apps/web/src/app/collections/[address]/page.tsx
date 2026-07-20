@@ -129,11 +129,12 @@ export default async function CollectionPage({
       : ""
 
   const permanent = c.isRendererLocked
-  // sellsViaMinterOnly(idMode) covers the structural pooled case; `!c.minter`
-  // additionally covers a sequential collection with no canonical minter on
-  // record (bring-your-own, or not yet indexed) — both render the quiet
-  // "mints through its minter" notice instead of the direct buy flow.
-  const pooled = sellsViaMinterOnly(c.cfg.idMode) || !c.minter
+  // sellsViaMinterOnly(idMode) covers the structural pooled case;
+  // `!c.primaryMinter` additionally covers a sequential collection with no
+  // primary minter on record (bring-your-own, or not yet indexed) — both
+  // render the quiet "mints through its minter" notice instead of the
+  // direct buy flow.
+  const pooled = sellsViaMinterOnly(c.cfg.idMode) || !c.primaryMinter
   const strategy = hasPriceStrategy(c.sale?.priceStrategy ?? ZERO_ADDRESS)
 
   // Lifecycle status is no longer stored on the token (thin-token
@@ -363,16 +364,16 @@ export default async function CollectionPage({
                   ? "The renderer is locked: this collection renders through its current contract forever. The contract itself has had no upgrade path since deploy."
                   : "The contract is immutable from deploy. The renderer can change until the artist locks it."}
               </p>
-              {c.minter && (
+              {c.primaryMinter && (
                 <div className="pt-2">
                   <h3 className="mb-2 text-[10px] font-mono uppercase tracking-wider text-gray-400">
                     Self host this mint
                   </h3>
                   <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
-                    This collection sells through its own canonical minter and can be
+                    This collection sells through its own primary minter and can be
                     minted from any interface. From your own page, call{" "}
                     <code className="text-fg">mint(to, qty, yourAddress, 0x)</code> on{" "}
-                    <code className="break-all text-fg">{c.minter}</code> so the{" "}
+                    <code className="break-all text-fg">{c.primaryMinter}</code> so the{" "}
                     {formatBps(REFERRAL_SHARE_BPS)} referral share routes to you, not PND.
                   </p>
                 </div>
@@ -398,7 +399,7 @@ export default async function CollectionPage({
           ) : (
             <MintCollectionCTA
               collection={addr}
-              minter={c.minter}
+              minter={c.primaryMinter}
               work={hasWork ? c.work : null}
               snapshot={{
                 price: (c.sale?.price ?? 0n).toString(),
@@ -518,7 +519,7 @@ export default async function CollectionPage({
           <div className="mx-auto grid max-w-[1400px] grid-cols-1 gap-x-16 px-6 py-10 md:grid-cols-2 lg:grid-cols-3 lg:px-12 lg:py-14">
             <div>
               <AttributionRoster entries={attribution} chainId={PND_CHAIN_ID} />
-              <WithdrawPanel minter={c.minter} />
+              <WithdrawPanel minter={c.primaryMinter} />
             </div>
             <div>
               <CollectionMintHistory history={history} chainId={PND_CHAIN_ID} />

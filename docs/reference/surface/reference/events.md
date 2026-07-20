@@ -34,6 +34,8 @@ Every event the Surface contracts emit, grouped by contract. Signatures and fiel
 
 **[`OwnershipTransferStarted`](/docs/surface/contracts/surface#ownershiptransferstarted)** · Standard Ownable2Step event, emitted by `transferOwnership` when a pending owner is recorded.
 
+**[`PrimaryMinterSet`](/docs/surface/contracts/surface#primaryminterset)** · Emitted whenever the frontend-discovery pointer changes: `setPrimaryMinter` on the sequential form, a pooled sole-minter grant or revoke tracking automatically, a revoke of the current primary clearing it to zero on either form, or the value seeded at init.
+
 **[`RendererLocked`](/docs/surface/contracts/surface#rendererlocked)** · Emitted once when `lockRenderer` runs, or for a lock set at init.
 
 **[`RendererSet`](/docs/surface/contracts/surface#rendererset)** · Emitted when the renderer pointer changes.
@@ -70,7 +72,7 @@ Every event the Surface contracts emit, grouped by contract. Signatures and fiel
 
 **[`MintWindowSet`](/docs/surface/contracts/fixed-price-minter#mintwindowset)** · Emitted when the window changes with `setMintWindow`.
 
-**[`PayoutSet`](/docs/surface/contracts/fixed-price-minter#payoutset)** · Emitted when the payout address changes with `setPayout`.
+**[`PayoutRecipientSet`](/docs/surface/contracts/fixed-price-minter#payoutrecipientset)** · Emitted when the payout address changes with `setPayoutRecipient`.
 
 **[`PriceSet`](/docs/surface/contracts/fixed-price-minter#priceset)** · Emitted when the fixed price changes with `setPrice`.
 

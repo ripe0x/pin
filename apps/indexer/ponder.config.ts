@@ -266,42 +266,50 @@ export default createConfig({
           // is NOT the long-tail per-artist-platform scanning that
           // belongs in the worker.
           //
-          // SurfaceCreated gained a `minter` field (thin-token
-          // rearchitecture, docs/pnd-surface-thin-token-rearchitecture.md
-          // §3.5): the canonical FixedPriceMinter clone createSurface
-          // wired, or the zero address for createSurfaceCustom/
-          // createPooledSurface (bring-your-own minter). Not `indexed` —
-          // Ponder's factory() pattern reads it from the log data
-          // regardless.
+          // SurfaceCreated's third field is `primaryMinter` (primary-minter
+          // discovery, docs/pnd-surface-thin-token-rearchitecture.md §3.5,
+          // renamed from `minter` name-only — the event topic and the
+          // field's position in the log's non-indexed data are unchanged,
+          // so this positional decode is unaffected): the chosen primary on
+          // every creation path now, not just the canonical clone
+          // createSurface wires. Not `indexed` — Ponder's factory() pattern
+          // reads it from the log data regardless. The Surface ABI's own
+          // PrimaryMinterSet event (per-collection, handled in
+          // Collections.ts) is what keeps `collections.primaryMinter`
+          // current after deploy; this factory() binding only seeds it.
           Surface: {
             chain: "mainnet",
             abi: surfaceAbi,
             address: factory({
               address: SURFACE_FACTORY_ADDRESS,
               event: parseAbiItem(
-                "event SurfaceCreated(address indexed owner, address indexed collection, address minter, uint8 idMode)",
+                "event SurfaceCreated(address indexed owner, address indexed collection, address primaryMinter, uint8 idMode)",
               ),
               parameter: "collection",
             }),
             startBlock: SURFACE_FACTORY_DEPLOY_BLOCK,
           },
           // Canonical minter clones, bound the same way as Surface above
-          // but keyed off SurfaceCreated's `minter` field instead of
+          // but keyed off SurfaceCreated's `primaryMinter` field instead of
           // `collection`. A collection created via createSurfaceCustom/
-          // createPooledSurface emits minter = address(0), which Ponder
-          // will add to its watched set as a harmless no-op address (it
-          // never emits logs). Sold/ReferralPaid resolve their owning
-          // collection via the `minters` reverse-index table (see
-          // Collections.ts), since these events carry no collection field.
+          // createPooledSurface with no primary supplied emits
+          // primaryMinter = address(0), which Ponder will add to its
+          // watched set as a harmless no-op address (it never emits logs).
+          // Sold/ReferralPaid resolve their owning collection via the
+          // `minters` reverse-index table (see Collections.ts), since these
+          // events carry no collection field. This binding is fixed at
+          // SurfaceCreated time — a later primaryMinter repoint does not
+          // change which minter clone's Sold/ReferralPaid events are
+          // indexed here, only `collections.primaryMinter`'s value.
           FixedPriceMinter: {
             chain: "mainnet",
             abi: fixedPriceMinterAbi,
             address: factory({
               address: SURFACE_FACTORY_ADDRESS,
               event: parseAbiItem(
-                "event SurfaceCreated(address indexed owner, address indexed collection, address minter, uint8 idMode)",
+                "event SurfaceCreated(address indexed owner, address indexed collection, address primaryMinter, uint8 idMode)",
               ),
-              parameter: "minter",
+              parameter: "primaryMinter",
             }),
             startBlock: SURFACE_FACTORY_DEPLOY_BLOCK,
           },

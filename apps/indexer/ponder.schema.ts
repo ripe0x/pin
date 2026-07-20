@@ -376,12 +376,16 @@ export const muriTokens = onchainTable(
 // value custody, SurfaceStatus) — that moved to the per-collection
 // FixedPriceMinter clone `createSurface` wires. `Minted` dropped
 // referrer/statusAtMint/mintBlock and gained `minter` (the calling minter,
-// cross-minter attribution). `collections.minter` is the collection-to-
-// minter binding read off `SurfaceCreated`, null for the bring-your-own/
-// pooled paths that skip the canonical clone. `minters` is the reverse
-// index (minter clone -> collection) the FixedPriceMinter:Sold/ReferralPaid
-// handlers use to resolve which collection a sale belongs to, since those
-// events are emitted by the minter contract, not the collection.
+// cross-minter attribution). `collections.primaryMinter` is the collection's
+// frontend-discovery default: seeded from `SurfaceCreated.primaryMinter` and
+// kept current by the per-collection `PrimaryMinterSet` event (repoint,
+// revoke-clear, pooled sole-minter churn), null when none is set. `minters`
+// is the reverse index (minter clone -> collection) the FixedPriceMinter:
+// Sold/ReferralPaid handlers use to resolve which collection a sale belongs
+// to, since those events are emitted by the minter contract, not the
+// collection. The `minters` reverse index is keyed off SurfaceCreated's
+// primaryMinter too (the canonical clone createSurface wires), independent
+// of later primaryMinter repoints.
 
 export const collections = onchainTable(
   "collections",
@@ -389,11 +393,11 @@ export const collections = onchainTable(
     // The deployed Collection clone address.
     collection: t.hex().primaryKey(),
     owner: t.hex().notNull(),
-    // The canonical FixedPriceMinter clone SurfaceCreated wired, or null
-    // for createSurfaceCustom/createPooledSurface (bring-your-own minter,
-    // granted separately or via initialMinters — there is no minterOf
-    // storage mapping onchain, so this column IS the discovery record).
-    minter: t.hex(),
+    // Frontend-discovery default: mirrors the collection's own
+    // primaryMinter(), null when unset. Seeded from SurfaceCreated and kept
+    // live by the Surface:PrimaryMinterSet handler — there is no minterOf
+    // storage mapping onchain, so this column IS the discovery record.
+    primaryMinter: t.hex(),
     createdAtBlock: t.bigint().notNull(),
     createdAtTime: t.bigint().notNull(),
     createdTxHash: t.hex().notNull(),
@@ -403,10 +407,11 @@ export const collections = onchainTable(
   }),
 )
 
-// Reverse index for the collections.minter binding: given a FixedPriceMinter
+// Reverse index for the canonical-minter binding: given a FixedPriceMinter
 // clone address (the Sold/ReferralPaid event's own contract), resolve which
 // collection it sells for. Populated alongside `collections` whenever
-// SurfaceCreated carries a nonzero minter.
+// SurfaceCreated carries a nonzero primaryMinter; independent of later
+// primaryMinter repoints on `collections`.
 export const minters = onchainTable("minters", (t) => ({
   minter: t.hex().primaryKey(),
   collection: t.hex().notNull(),

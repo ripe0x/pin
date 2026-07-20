@@ -1317,17 +1317,17 @@ export async function getActiveAuctionCountFromIndexer(
 
 // ─── PND Surface System (contracts/src/surface/) ─────────────────────────
 //
-// The collection-to-minter binding (thin-token rearchitecture, docs/
-// pnd-surface-thin-token-rearchitecture.md §3.5): there is no live-chain way
-// to recover which FixedPriceMinter clone a collection's factory deploy
-// wired — the token exposes only isMinter(candidate), not a "list of
-// minters" getter — so this is the only source for it. Returns null when
-// the indexer doesn't have a row yet (not synced, disabled, unavailable) or
-// when the collection was deployed via createSurfaceCustom/
-// createPooledSurface (bring-your-own minter, column is NULL onchain too).
-// Callers treat null as "no canonical minter": lib/collection-onchain.ts's
-// getCollection() sets `minter`/`sale` to null rather than guessing.
-export async function getCollectionMinterFromIndexer(
+// The collection-to-primary-minter binding (primary minter discovery, docs/
+// pnd-surface-thin-token-rearchitecture.md §3.5): a live primaryMinter()
+// read exists on the token, but the indexed row (seeded from
+// SurfaceCreated, kept current by PrimaryMinterSet) gives the same value
+// without an RPC call, so this is the source used. Returns null when the
+// indexer doesn't have a row yet (not synced, disabled, unavailable) or
+// when the collection has no primary minter set (bring-your-own minter that
+// skipped it, or explicitly cleared; column is NULL onchain too). Callers
+// treat null as "no primary minter": lib/collection-onchain.ts's
+// getCollection() sets `primaryMinter`/`sale` to null rather than guessing.
+export async function getCollectionPrimaryMinterFromIndexer(
   collection: string,
 ): Promise<string | null> {
   if (INDEXER_DISABLED || !sql) return null
@@ -1339,9 +1339,9 @@ export async function getCollectionMinterFromIndexer(
       "",
     )
     const rows = (await db.unsafe(
-      `SELECT minter FROM ${schema}.collections WHERE collection = $1 LIMIT 1`,
+      `SELECT primary_minter FROM ${schema}.collections WHERE collection = $1 LIMIT 1`,
       [addr],
-    )) as Array<{ minter: string | null }>
-    return rows[0]?.minter ?? null
+    )) as Array<{ primary_minter: string | null }>
+    return rows[0]?.primary_minter ?? null
   })
 }

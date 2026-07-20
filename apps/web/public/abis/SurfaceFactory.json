@@ -124,6 +124,11 @@
         "internalType": "address[]"
       },
       {
+        "name": "primaryMinter",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
         "name": "creators",
         "type": "address[]",
         "internalType": "address[]"
@@ -220,7 +225,7 @@
             "internalType": "uint64"
           },
           {
-            "name": "payout",
+            "name": "payoutRecipient",
             "type": "address",
             "internalType": "address"
           },
@@ -321,6 +326,11 @@
         "name": "initialMinters",
         "type": "address[]",
         "internalType": "address[]"
+      },
+      {
+        "name": "primaryMinter",
+        "type": "address",
+        "internalType": "address"
       },
       {
         "name": "creators",
@@ -542,7 +552,7 @@
         "internalType": "address"
       },
       {
-        "name": "minter",
+        "name": "primaryMinter",
         "type": "address",
         "indexed": false,
         "internalType": "address"
@@ -611,6 +621,11 @@
   {
     "type": "error",
     "name": "OwnerRequired",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "PrimaryMinterNotAuthorized",
     "inputs": []
   }
 ]

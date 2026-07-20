@@ -80,7 +80,7 @@ export const fixedPriceMinterAbi = [
             "internalType": "uint64"
           },
           {
-            "name": "payout",
+            "name": "payoutRecipient",
             "type": "address",
             "internalType": "address"
           },
@@ -117,6 +117,19 @@ export const fixedPriceMinterAbi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "mint",
+    "inputs": [
+      {
+        "name": "quantity",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "payable"
   },
   {
     "type": "function",
@@ -193,7 +206,7 @@ export const fixedPriceMinterAbi = [
   },
   {
     "type": "function",
-    "name": "payout",
+    "name": "payoutRecipient",
     "inputs": [],
     "outputs": [
       {
@@ -337,10 +350,10 @@ export const fixedPriceMinterAbi = [
   },
   {
     "type": "function",
-    "name": "setPayout",
+    "name": "setPayoutRecipient",
     "inputs": [
       {
-        "name": "payout_",
+        "name": "payoutRecipient_",
         "type": "address",
         "internalType": "address"
       }
@@ -519,7 +532,7 @@ export const fixedPriceMinterAbi = [
         "internalType": "uint64"
       },
       {
-        "name": "payout",
+        "name": "payoutRecipient",
         "type": "address",
         "indexed": false,
         "internalType": "address"
@@ -547,10 +560,10 @@ export const fixedPriceMinterAbi = [
   },
   {
     "type": "event",
-    "name": "PayoutSet",
+    "name": "PayoutRecipientSet",
     "inputs": [
       {
-        "name": "payout",
+        "name": "payoutRecipient",
         "type": "address",
         "indexed": true,
         "internalType": "address"
@@ -772,6 +785,11 @@ export const fixedPriceMinterAbi = [
   {
     "type": "error",
     "name": "NothingToWithdraw",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "PayoutRecipientRequired",
     "inputs": []
   },
   {

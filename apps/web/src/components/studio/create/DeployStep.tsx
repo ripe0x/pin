@@ -115,7 +115,7 @@ export function DeployStep({
       priceStrategy: ZERO_ADDRESS as Address,
       mintStart: state.hasWindow ? toUnix(state.startAt) : 0n,
       mintEnd: state.hasWindow ? toUnix(state.endAt) : 0n,
-      payout: (state.payout !== "" ? state.payout : ZERO_ADDRESS) as Address,
+      payoutRecipient: (state.payout !== "" ? state.payout : ZERO_ADDRESS) as Address,
       maxMints: 0n,
       allowlistRoot: ZERO_ROOT,
       walletCap: 0n,

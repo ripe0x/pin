@@ -142,6 +142,9 @@ The mint entrypoint was called by an address that is not an authorized minter.
 **`NotSurfaceAdmin`** · [RenderAssets](/docs/surface/contracts/render-assets#errors)\
 A write was attempted by an address that is neither the collection's owner nor one of its admins.
 
+**`OnlySequential`** · [Surface](/docs/surface/contracts/surface#errors)\
+`setPrimaryMinter` was called on a pooled collection, whose primary tracks its sole granted minter automatically instead of taking an explicit setter.
+
 **`OwnableInvalidOwner`** · [Surface](/docs/surface/contracts/surface#errors)\
 Standard OpenZeppelin Ownable error: an invalid owner address (for example the zero address) was supplied.
 
@@ -153,6 +156,15 @@ A create function was given the zero address as the collection `owner`.
 
 **`OwnerRequired`** · [Surface](/docs/surface/contracts/surface#errors)\
 `initialize` was given the zero address as the owner.
+
+**`PayoutRecipientRequired`** · [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter#errors)\
+`initialize` or `setPayoutRecipient` was given the zero address.
+
+**`PrimaryMinterNotAuthorized`** · [SurfaceFactory](/docs/surface/contracts/factory#errors)\
+`createSurfaceCustom` or `createPooledSurface` was given a nonzero `primaryMinter` that is not a member of `initialMinters` (the sole entry, for the pooled form).
+
+**`PrimaryMinterNotAuthorized`** · [Surface](/docs/surface/contracts/surface#errors)\
+`initialize` or `setPrimaryMinter` was given a nonzero primary minter that is not a member of the granted minter set (the sole entry, for the pooled form).
 
 **`ReentrancyGuardReentrantCall`** · [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter#errors)\
 OpenZeppelin ReentrancyGuard error: a `nonReentrant` function was re-entered.
