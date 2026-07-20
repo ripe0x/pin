@@ -111,8 +111,13 @@ contract PooledBackedTest is Test {
         address[] memory minters = new address[](1);
         minters[0] = predictedMinter;
 
-        collection =
-            PooledSurface(factory.createPooledSurface("Pooled Backed", "PB", artist, cfg, minters, new address[](0)));
+        // predictedMinter is the pool's sole minter and its designated
+        // frontend-discovery default in the same call.
+        collection = PooledSurface(
+            factory.createPooledSurface(
+                "Pooled Backed", "PB", artist, cfg, minters, predictedMinter, new address[](0)
+            )
+        );
         minter = new BackedPoolMinter(address(collection), coin, ESCROW, POOL_SIZE);
         assertEq(address(minter), predictedMinter, "wiring prediction held");
 

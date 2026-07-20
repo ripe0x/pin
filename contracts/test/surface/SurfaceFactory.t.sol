@@ -152,7 +152,7 @@ contract SurfaceFactoryTest is FixedPriceMinterBase {
 
         uint256 nonceBefore = vm.getNonce(address(factory));
         address collection =
-            factory.createSurfaceCustom("BYO Drop", "BYO", artist, _freeConfig(), minters, _empty());
+            factory.createSurfaceCustom("BYO Drop", "BYO", artist, _freeConfig(), minters, address(0), _empty());
         uint256 nonceAfter = vm.getNonce(address(factory));
 
         assertTrue(Surface(collection).isMinter(byoMinter), "supplied minter granted");
@@ -164,18 +164,56 @@ contract SurfaceFactoryTest is FixedPriceMinterBase {
 
     function test_createSurfaceCustom_eventCarriesZeroMinter() public {
         vm.recordLogs();
-        address collection = factory.createSurfaceCustom("Zero Minter", "ZM", artist, _freeConfig(), _empty(), _empty());
+        address collection =
+            factory.createSurfaceCustom("Zero Minter", "ZM", artist, _freeConfig(), _empty(), address(0), _empty());
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found;
         for (uint256 i = 0; i < logs.length; i++) {
             if (logs[i].topics[0] != SurfaceFactory.SurfaceCreated.selector) continue;
             assertEq(address(uint160(uint256(logs[i].topics[2]))), collection, "collection indexed");
             (address loggedMinter, IdMode loggedMode) = abi.decode(logs[i].data, (address, IdMode));
-            assertEq(loggedMinter, address(0), "no canonical clone => zero minter in the event");
+            assertEq(loggedMinter, address(0), "no primary supplied => zero minter in the event");
             assertEq(uint8(loggedMode), uint8(IdMode.Sequential));
             found = true;
         }
         assertTrue(found, "SurfaceCreated emitted");
+    }
+
+    /// @dev createSurfaceCustom's caller-supplied primaryMinter passes through
+    ///      to both the collection's primaryMinter() and the SurfaceCreated
+    ///      event, unlike the zero-minter case above.
+    function test_createSurfaceCustom_suppliedPrimaryMinter_exposedOnCollectionAndEvent() public {
+        address byoMinter = address(new MockMinter());
+        address[] memory minters = new address[](1);
+        minters[0] = byoMinter;
+
+        vm.recordLogs();
+        address collection =
+            factory.createSurfaceCustom("Primary Set", "PRI", artist, _freeConfig(), minters, byoMinter, _empty());
+
+        assertEq(Surface(collection).primaryMinter(), byoMinter, "collection exposes the supplied primary");
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bool found;
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] != SurfaceFactory.SurfaceCreated.selector) continue;
+            (address loggedMinter,) = abi.decode(logs[i].data, (address, IdMode));
+            assertEq(loggedMinter, byoMinter, "event carries the supplied primary");
+            found = true;
+        }
+        assertTrue(found, "SurfaceCreated emitted");
+    }
+
+    /// @dev primaryMinter must be a member of initialMinters; a non-member
+    ///      reverts before any clone happens.
+    function test_createSurfaceCustom_primaryMinterNotInInitialMinters_reverts() public {
+        address byoMinter = address(new MockMinter());
+        address notGranted = address(new MockMinter());
+        address[] memory minters = new address[](1);
+        minters[0] = byoMinter;
+
+        vm.expectRevert(SurfaceFactory.PrimaryMinterNotAuthorized.selector);
+        factory.createSurfaceCustom("Bad Primary", "BAD", artist, _freeConfig(), minters, notGranted, _empty());
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -189,7 +227,8 @@ contract SurfaceFactoryTest is FixedPriceMinterBase {
 
         uint256 nonceBefore = vm.getNonce(address(factory));
         vm.recordLogs();
-        address collection = factory.createPooledSurface("Pooled", "PLD", artist, _freeConfig(), minters, _empty());
+        address collection =
+            factory.createPooledSurface("Pooled", "PLD", artist, _freeConfig(), minters, address(0), _empty());
         uint256 nonceAfter = vm.getNonce(address(factory));
 
         assertTrue(PooledSurface(collection).isMinter(byoMinter));
@@ -207,12 +246,52 @@ contract SurfaceFactoryTest is FixedPriceMinterBase {
         assertTrue(found);
     }
 
+    /// @dev createPooledSurface's caller-supplied primaryMinter (the sole
+    ///      granted minter) passes through to primaryMinter() and the event.
+    function test_createPooledSurface_suppliedPrimaryMinter_exposedOnCollectionAndEvent() public {
+        address byoMinter = address(new MockMinter());
+        address[] memory minters = new address[](1);
+        minters[0] = byoMinter;
+
+        vm.recordLogs();
+        address collection =
+            factory.createPooledSurface("Pooled Primary", "PP", artist, _freeConfig(), minters, byoMinter, _empty());
+
+        assertEq(PooledSurface(collection).primaryMinter(), byoMinter, "collection exposes the supplied primary");
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bool found;
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] != SurfaceFactory.SurfaceCreated.selector) continue;
+            (address loggedMinter,) = abi.decode(logs[i].data, (address, IdMode));
+            assertEq(loggedMinter, byoMinter, "event carries the supplied primary");
+            found = true;
+        }
+        assertTrue(found, "SurfaceCreated emitted");
+    }
+
     function test_createPooledSurface_stillEnforcesSingleMinterAtInit() public {
         address[] memory twoMinters = new address[](2);
         twoMinters[0] = address(new MockMinter());
         twoMinters[1] = address(new MockMinter());
         vm.expectRevert(ISurfaceCore.TooManyMinters.selector);
-        factory.createPooledSurface("Too Many", "TM", artist, _freeConfig(), twoMinters, _empty());
+        factory.createPooledSurface("Too Many", "TM", artist, _freeConfig(), twoMinters, address(0), _empty());
+    }
+
+    /// @dev A primaryMinter that is not the pool's sole minter reverts at the
+    ///      core (init's own membership+sole-minter check), even though the
+    ///      factory's own membership check alone would have allowed it.
+    function test_createPooledSurface_primaryMinterNotSoleMinter_reverts() public {
+        address minterA = address(new MockMinter());
+        address minterB = address(new MockMinter());
+        address[] memory twoMinters = new address[](2);
+        twoMinters[0] = minterA;
+        twoMinters[1] = minterB;
+        // TooManyMinters fires first (the core checks minter count before
+        // primaryMinter), so this already covers the pooled multi-minter
+        // rejection path from the primaryMinter angle too.
+        vm.expectRevert(ISurfaceCore.TooManyMinters.selector);
+        factory.createPooledSurface("Bad Pooled Primary", "BPP", artist, _freeConfig(), twoMinters, minterA, _empty());
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -246,10 +325,10 @@ contract SurfaceFactoryTest is FixedPriceMinterBase {
         factory.createSurface("A", "A", address(0), _freeConfig(), _sale(PRICE), _empty());
 
         vm.expectRevert(SurfaceFactory.OwnerRequired.selector);
-        factory.createSurfaceCustom("B", "B", address(0), _freeConfig(), _empty(), _empty());
+        factory.createSurfaceCustom("B", "B", address(0), _freeConfig(), _empty(), address(0), _empty());
 
         vm.expectRevert(SurfaceFactory.OwnerRequired.selector);
-        factory.createPooledSurface("C", "C", address(0), _freeConfig(), _empty(), _empty());
+        factory.createPooledSurface("C", "C", address(0), _freeConfig(), _empty(), address(0), _empty());
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -263,10 +342,10 @@ contract SurfaceFactoryTest is FixedPriceMinterBase {
         factory.createSurface("A", "A", artist, _freeConfig(), _sale(PRICE), _empty());
 
         vm.expectRevert(SurfaceFactory.FactoryPaused.selector);
-        factory.createSurfaceCustom("B", "B", artist, _freeConfig(), _empty(), _empty());
+        factory.createSurfaceCustom("B", "B", artist, _freeConfig(), _empty(), address(0), _empty());
 
         vm.expectRevert(SurfaceFactory.FactoryPaused.selector);
-        factory.createPooledSurface("C", "C", artist, _freeConfig(), _empty(), _empty());
+        factory.createPooledSurface("C", "C", artist, _freeConfig(), _empty(), address(0), _empty());
     }
 
     function test_deprecate_blocksAllThreeCreatePaths() public {
@@ -276,9 +355,9 @@ contract SurfaceFactoryTest is FixedPriceMinterBase {
         factory.createSurface("A", "A", artist, _freeConfig(), _sale(PRICE), _empty());
 
         vm.expectRevert(SurfaceFactory.FactoryDeprecated.selector);
-        factory.createSurfaceCustom("B", "B", artist, _freeConfig(), _empty(), _empty());
+        factory.createSurfaceCustom("B", "B", artist, _freeConfig(), _empty(), address(0), _empty());
 
         vm.expectRevert(SurfaceFactory.FactoryDeprecated.selector);
-        factory.createPooledSurface("C", "C", artist, _freeConfig(), _empty(), _empty());
+        factory.createPooledSurface("C", "C", artist, _freeConfig(), _empty(), address(0), _empty());
     }
 }

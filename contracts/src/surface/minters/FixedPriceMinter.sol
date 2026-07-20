@@ -181,6 +181,27 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
         override
         nonReentrant
     {
+        _executeMint(msg.sender, to, quantity, referrer, data);
+    }
+
+    /// @notice Ergonomic overload for the common case: mint to the caller,
+    ///         no referrer, no gate data. Same guarded path as the 4-arg
+    ///         entrypoint (`_executeMint`), so settlement, gates, and
+    ///         reentrancy protection are identical.
+    function mint(uint256 quantity) external payable nonReentrant {
+        _executeMint(msg.sender, msg.sender, quantity, address(0), "");
+    }
+
+    /// @dev The mint body shared by both external entrypoints. `payer` is
+    ///      msg.sender at the call site, passed explicitly rather than read
+    ///      here so this can only ever be reached through one of the two
+    ///      nonReentrant externals, never a self-call that would change
+    ///      msg.sender and misroute the excess-refund accrual or the Sold
+    ///      event's payer field. Reads msg.value directly: it is preserved
+    ///      across an internal call.
+    function _executeMint(address payer, address to, uint256 quantity, address referrer, bytes memory data)
+        internal
+    {
         if (quantity == 0) revert ZeroQuantity();
         if (mintStart != 0 && block.timestamp < mintStart) revert MintNotStarted();
         if (mintEnd != 0 && block.timestamp >= mintEnd) revert MintEnded();
@@ -218,7 +239,7 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
             if (msg.value < required) revert Underpayment(required, msg.value);
             uint256 excess = msg.value - required;
             if (excess > 0) {
-                _pending[msg.sender] += excess;
+                _pending[payer] += excess;
                 _totalPending += excess;
             }
         }
@@ -232,7 +253,7 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
 
         _settle(required, referrer);
 
-        emit Sold(msg.sender, to, referrer, quantity, required, firstTokenId);
+        emit Sold(payer, to, referrer, quantity, required, firstTokenId);
     }
 
     /// @inheritdoc IMinter

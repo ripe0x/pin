@@ -36,6 +36,8 @@ interface ISurfaceCore {
     error RendererIsLocked();
     error MinterIsLocked();
     error TooManyMinters();
+    error PrimaryMinterNotAuthorized();
+    error OnlySequential();
 
     // ── events ──────────────────────────────────────────────────────────────
     event SurfaceConfigured(IdMode idMode, uint256 supplyCap);
@@ -70,6 +72,7 @@ interface ISurfaceCore {
     event CreatorListed(address indexed creator, bool listed);
     event RendererSet(address indexed renderer);
     event MinterSet(address indexed minter, bool allowed);
+    event PrimaryMinterSet(address indexed minter);
     event AdminSet(address indexed account, bool allowed);
     event StrayETHRescued(address indexed to, uint256 amount);
 
@@ -101,6 +104,12 @@ interface ISurfaceCore {
     ///         pooled collection sets this so no minter can be swapped in later
     ///         to burn another minter's backed tokens.
     function lockMinter() external;
+    /// @notice Sequential-only: point the frontend-discovery default at
+    ///         `minter` (must be a currently granted minter, or the zero
+    ///         address to clear it). Reverts OnlySequential on a pooled
+    ///         collection, whose primary follows its sole minter automatically;
+    ///         reverts once the minter set is locked.
+    function setPrimaryMinter(address minter) external;
     /// @notice Grants an admin. An admin can call every management function the
     ///         owner can, except managing admins and transferring ownership.
     ///         Owner-only; reverts AlreadyAdmin / ZeroAccount.
@@ -147,6 +156,13 @@ interface ISurfaceCore {
     function idMode() external view returns (IdMode);
     function renderer() external view returns (address);
     function isMinter(address minter) external view returns (bool);
+    /// @notice Frontend-discovery default: the minter a generic client should
+    ///         read/call first. Not proof that no other authorized minter
+    ///         exists; every granted minter in isMinter is equally callable.
+    ///         Sequential: owner/admin-set via setPrimaryMinter, cleared on
+    ///         revoke of the current primary. Pooled: tracks the sole minter
+    ///         automatically, 0 when none is granted.
+    function primaryMinter() external view returns (address);
     /// @notice Whether `account` may call the admin-gated setters: the owner,
     ///         or any address holding an explicit grant.
     function isAdmin(address account) external view returns (bool);

@@ -43,7 +43,8 @@ contract DefaultRendererTest is Test {
         address[] memory noMinters = new address[](0);
         address[] memory noArtists = new address[](0);
 
-        collection = Surface(factory.createSurfaceCustom("Test Surface", "TCOL", artist, cfg, noMinters, noArtists));
+        collection =
+            Surface(factory.createSurfaceCustom("Test Surface", "TCOL", artist, cfg, noMinters, address(0), noArtists));
         // Cover art lives in renderer-land: the collection owner writes it to
         // the RenderAssets registry.
         vm.prank(artist);

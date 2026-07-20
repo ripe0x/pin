@@ -54,8 +54,9 @@ contract ScriptyRendererImageTest is Test {
             address(impl), address(new PooledSurface()), address(new FixedPriceMinter()), address(new MockRenderer()), address(0)
         );
         SurfaceConfig memory cfg;
-        collection =
-            Surface(factory.createSurfaceCustom("Scripty Work", "SW", artist, cfg, new address[](0), new address[](0)));
+        collection = Surface(
+            factory.createSurfaceCustom("Scripty Work", "SW", artist, cfg, new address[](0), address(0), new address[](0))
+        );
         // The token has no built-in sale path: grant this test contract as
         // minter and mint directly (token 1 exists, seed stamped).
         vm.prank(artist);

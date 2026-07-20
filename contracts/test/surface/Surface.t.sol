@@ -167,6 +167,40 @@ contract SurfaceTest is SurfaceBase {
         assertFalse(ok, "pooled must not expose mintTo");
     }
 
+    /// @dev primaryMinter is discovery metadata only: the token itself never
+    ///      gains a value-facing mint entrypoint, the minter's ergonomic
+    ///      mint(uint256) overload, or a payable "purchase" path. Every
+    ///      selector below either does not exist on the token or, where it
+    ///      exists (mintTo), is non-payable and minter-gated.
+    function test_noValueFacingMintEntrypointExistsOnEitherForm() public {
+        Surface seq = _collection(_freeConfig());
+        PooledSurface pooled = _pooled(_freeConfig());
+        vm.deal(address(this), 1 ether);
+
+        // mint(uint256): the minter's ergonomic overload, absent from the token.
+        (bool okSeqMintQty,) = address(seq).call{value: 0}(abi.encodeWithSignature("mint(uint256)", uint256(1)));
+        assertFalse(okSeqMintQty, "sequential token must not expose mint(uint256)");
+        (bool okPooledMintQty,) = address(pooled).call{value: 0}(abi.encodeWithSignature("mint(uint256)", uint256(1)));
+        assertFalse(okPooledMintQty, "pooled token must not expose mint(uint256)");
+
+        // mint(address,uint256,address,bytes): the minter's value-facing ABI.
+        (bool okSeqMint4,) =
+            address(seq).call(abi.encodeWithSignature("mint(address,uint256,address,bytes)", collector, 1, address(0), ""));
+        assertFalse(okSeqMint4, "sequential token must not expose the minter's mint ABI");
+
+        // purchase(...): no such entrypoint ever existed on either form.
+        (bool okSeqPurchase,) = address(seq).call{value: 1 wei}(abi.encodeWithSignature("purchase(uint256)", uint256(1)));
+        assertFalse(okSeqPurchase, "sequential token must not expose purchase");
+        (bool okPooledPurchase,) =
+            address(pooled).call{value: 1 wei}(abi.encodeWithSignature("purchase(uint256)", uint256(1)));
+        assertFalse(okPooledPurchase, "pooled token must not expose purchase");
+
+        // mintTo exists on the sequential form but is non-payable and gated.
+        (bool okValue,) =
+            address(seq).call{value: 1 wei}(abi.encodeWithSignature("mintTo(address,uint256)", collector, uint256(1)));
+        assertFalse(okValue, "the one existing mint entrypoint must reject value");
+    }
+
     function test_Minted_eventShape() public {
         Surface c = _collection(_freeConfig());
         vm.prank(artist);
@@ -562,7 +596,7 @@ contract SurfaceTest is SurfaceBase {
         // new deploys revert...
         address[] memory none = new address[](0);
         vm.expectRevert(SurfaceFactory.FactoryDeprecated.selector);
-        factory.createSurfaceCustom("After", "AFT", artist, _freeConfig(), none, none);
+        factory.createSurfaceCustom("After", "AFT", artist, _freeConfig(), none, address(0), none);
 
         // ...existing collections are untouched (immutable by design)
         _mintTo(existing, collector, 1);
@@ -590,7 +624,7 @@ contract SurfaceTest is SurfaceBase {
         assertTrue(factory.paused());
         address[] memory none = new address[](0);
         vm.expectRevert(SurfaceFactory.FactoryPaused.selector);
-        factory.createSurfaceCustom("Paused", "PAU", artist, _freeConfig(), none, none);
+        factory.createSurfaceCustom("Paused", "PAU", artist, _freeConfig(), none, address(0), none);
 
         // resume → deploys work again (the reversible part `deprecate` can't do)
         factory.setPaused(false);
@@ -609,7 +643,7 @@ contract SurfaceTest is SurfaceBase {
         factory.setPaused(false);
         address[] memory none = new address[](0);
         vm.expectRevert(SurfaceFactory.FactoryDeprecated.selector);
-        factory.createSurfaceCustom("Nope", "NOP", artist, _freeConfig(), none, none);
+        factory.createSurfaceCustom("Nope", "NOP", artist, _freeConfig(), none, address(0), none);
     }
 
     // ── renounceOwnership ─────────────────────────────────────────────────────

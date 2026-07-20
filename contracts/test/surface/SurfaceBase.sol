@@ -52,23 +52,35 @@ contract SurfaceBase is Test {
     function _collection(SurfaceConfig memory cfg) internal returns (Surface c) {
         address[] memory noMinters = new address[](0);
         address[] memory noCreators = new address[](0);
-        c = Surface(factory.createSurfaceCustom("Artist Surface", "ACOL", artist, cfg, noMinters, noCreators));
+        c = Surface(
+            factory.createSurfaceCustom("Artist Surface", "ACOL", artist, cfg, noMinters, address(0), noCreators)
+        );
     }
 
+    /// @dev No primaryMinter is designated here: callers that need one set
+    ///      exercise it explicitly via setPrimaryMinter or the factory
+    ///      primaryMinter-specific tests, so a plain multi-minter grant here
+    ///      stays a no-primary baseline.
     function _collectionWithMinters(SurfaceConfig memory cfg, address[] memory minters) internal returns (Surface c) {
         address[] memory noCreators = new address[](0);
-        c = Surface(factory.createSurfaceCustom("Artist Surface", "ACOL", artist, cfg, minters, noCreators));
+        c = Surface(
+            factory.createSurfaceCustom("Artist Surface", "ACOL", artist, cfg, minters, address(0), noCreators)
+        );
     }
 
     function _pooled(SurfaceConfig memory cfg) internal returns (PooledSurface c) {
         address[] memory noMinters = new address[](0);
         address[] memory noCreators = new address[](0);
-        c = PooledSurface(factory.createPooledSurface("Artist Surface", "ACOL", artist, cfg, noMinters, noCreators));
+        c = PooledSurface(
+            factory.createPooledSurface("Artist Surface", "ACOL", artist, cfg, noMinters, address(0), noCreators)
+        );
     }
 
     function _pooledWithMinters(SurfaceConfig memory cfg, address[] memory minters) internal returns (PooledSurface c) {
         address[] memory noCreators = new address[](0);
-        c = PooledSurface(factory.createPooledSurface("Artist Surface", "ACOL", artist, cfg, minters, noCreators));
+        c = PooledSurface(
+            factory.createPooledSurface("Artist Surface", "ACOL", artist, cfg, minters, address(0), noCreators)
+        );
     }
 
     /// @dev A fresh, uninitialized EIP-1167 clone of the sequential impl, for
@@ -91,6 +103,7 @@ contract SurfaceBase is Test {
             cfg: cfg,
             defaultRenderer: address(renderer),
             initialMinters: noMinters,
+            primaryMinter: address(0),
             catalog: address(0),
             creators: noCreators
         });

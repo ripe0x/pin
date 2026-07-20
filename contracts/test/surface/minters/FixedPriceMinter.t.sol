@@ -52,6 +52,64 @@ contract FixedPriceMinterTest is FixedPriceMinterBase {
         assertEq(m.pendingWithdrawal(artist), PRICE);
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // mint(uint256): ergonomic overload, mints to msg.sender, no referrer
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function test_mintQuantityOverload_mintsToCallerWithNoReferrer() public {
+        (Surface c, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        vm.deal(collector, PRICE);
+        vm.prank(collector);
+        m.mint{value: PRICE}(1);
+
+        assertEq(c.ownerOf(1), collector, "minted to the caller");
+        assertEq(m.pendingWithdrawal(artist), PRICE, "full price accrues to artist, no referrer");
+        assertEq(m.pendingWithdrawal(collector), 0);
+    }
+
+    /// @dev Same settlement/pending outcome as the 4-arg path for an
+    ///      equivalent call (to == msg.sender, referrer == 0, no data): the
+    ///      overload delegates to the same guarded _executeMint body.
+    function test_mintQuantityOverload_matchesFourArgPathSettlement() public {
+        (, FixedPriceMinter m4) = _collectionWithMinter(PRICE);
+        (, FixedPriceMinter mOverload) = _collectionWithMinter(PRICE);
+
+        vm.deal(collector, PRICE * 2);
+        vm.prank(collector);
+        m4.mint{value: PRICE}(collector, 1, address(0), "");
+        vm.prank(collector);
+        mOverload.mint{value: PRICE}(1);
+
+        assertEq(m4.pendingWithdrawal(artist), mOverload.pendingWithdrawal(artist), "identical artist accrual");
+        assertEq(m4.totalMinted(), mOverload.totalMinted(), "identical totalMinted bookkeeping");
+    }
+
+    function test_mintQuantityOverload_wrongPaymentReverts() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        vm.deal(collector, PRICE);
+        vm.expectRevert(abi.encodeWithSelector(IMinter.WrongPayment.selector, PRICE, PRICE - 1));
+        vm.prank(collector);
+        m.mint{value: PRICE - 1}(1);
+    }
+
+    /// @dev Strategy-priced excess on the overload refunds to msg.sender
+    ///      (the payer), never to the minter contract itself.
+    function test_mintQuantityOverload_strategyExcessRefundsToPayerNotMinter() public {
+        MockFixedStrategy strategy = new MockFixedStrategy(PRICE);
+        FixedPriceMinterInitParams memory p = _minterParams(address(0), 0);
+        p.priceStrategy = address(strategy);
+        (, FixedPriceMinter m) = _collectionWithConfiguredMinter(p);
+
+        uint256 sent = PRICE + 0.3 ether;
+        vm.deal(collector, sent);
+        vm.prank(collector);
+        m.mint{value: sent}(1);
+
+        assertEq(m.pendingWithdrawal(collector), 0.3 ether, "excess accrues to the payer, not the minter");
+        assertEq(m.pendingWithdrawal(address(m)), 0, "the minter contract itself is never a payee");
+        assertEq(m.pendingWithdrawal(artist), PRICE);
+    }
+
     /// @dev The factory default (unset SaleConfig.payoutRecipient resolves to
     ///      the deploy-time `owner` argument) is covered end-to-end in
     ///      SurfaceFactory.t.sol's test_factoryDefaultsPayoutRecipientToDeployOwner.
