@@ -88,10 +88,42 @@ const ABOUT: {h: string | null; p: ReactNode[]}[] = [
 ]
 
 // The mint windows, in order. Punk-owner claim and allowlist open together as one phase.
+// `at` is the absolute instant (ET / EDT −04:00); the display converts it to the
+// viewer's local timezone client-side. `etLabel` is the SSR/no-JS fallback.
 const WINDOWS = [
-  {name: "Punk owner and allowlist", detail: "claim your id or enter the allowlist draw"},
-  {name: "Public", detail: "anyone, random draw"},
+  {
+    name: "Punk owner and allowlist",
+    at: "2026-07-21T20:00:00-04:00",
+    etLabel: "Tue, Jul 21 · 8:00 PM ET",
+    detail: "claim your id or enter the allowlist draw",
+  },
+  {
+    name: "Public",
+    at: "2026-07-22T12:00:00-04:00",
+    etLabel: "Wed, Jul 22 · 12:00 PM ET",
+    detail: "all unclaimed Punk ids release into the draw",
+  },
 ]
+
+// Format an absolute instant in the viewer's local timezone. Renders `fallback` (the ET
+// label) on the server and first client paint so hydration matches, then swaps to local
+// time after mount.
+function LocalTime({at, fallback}: {at: string; fallback: string}) {
+  const [text, setText] = useState(fallback)
+  useEffect(() => {
+    setText(
+      new Date(at).toLocaleString(undefined, {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        timeZoneName: "short",
+      }),
+    )
+  }, [at])
+  return <>{text}</>
+}
 
 export function HomagePreview() {
   return (
@@ -186,13 +218,13 @@ export function HomagePreview() {
                 <ul className="space-y-2.5">
                   {WINDOWS.map((w) => (
                     <li key={w.name} className="space-y-0.5">
-                      <div className="flex items-baseline justify-between gap-3 text-[11px] font-mono">
-                        <span className="flex items-center gap-2">
-                          <span className="inline-block h-1.5 w-1.5 rounded-full bg-status-upcoming" />
-                          <span className="text-fg">{w.name}</span>
-                        </span>
-                        <span className="shrink-0 text-gray-400">announced at launch</span>
+                      <div className="flex items-center gap-2 text-[11px] font-mono">
+                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-status-upcoming" />
+                        <span className="text-fg">{w.name}</span>
                       </div>
+                      <p className="pl-3.5 text-[11px] font-mono tabular-nums text-gray-300">
+                        <LocalTime at={w.at} fallback={w.etLabel} />
+                      </p>
                       <p className="pl-3.5 text-[10px] font-mono text-gray-500">{w.detail}</p>
                     </li>
                   ))}
