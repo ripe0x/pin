@@ -158,7 +158,7 @@ export function HomagePreview() {
       {/* Editorial band: the record beside the coming-soon instrument. */}
       <div className="border-b border-gray-200">
         <div className="mx-auto grid w-full max-w-[1400px] grid-cols-1 lg:grid-cols-[1fr_556px] lg:divide-x lg:divide-gray-200">
-          <div className="max-w-[720px] space-y-8 px-6 py-10 lg:px-12 lg:py-12">
+          <div className="order-2 max-w-[720px] space-y-8 px-6 py-10 lg:order-none lg:px-12 lg:py-12">
             <h2 className={META}>About this work</h2>
             {ABOUT.map((s, i) => (
               <div key={i} className="space-y-4">
@@ -181,7 +181,7 @@ export function HomagePreview() {
             ))}
           </div>
 
-          <div className="mx-auto w-full max-w-[556px] px-6 py-10 lg:px-12 lg:py-12">
+          <div className="order-1 mx-auto w-full max-w-[556px] px-6 py-10 lg:order-none lg:px-12 lg:py-12">
             <div className="mx-auto w-full max-w-[460px] space-y-6">
               {/* Coming-soon instrument — the live mint card's shell in its not-yet-open state. */}
               <section className="overflow-hidden rounded-lg border border-gray-200 bg-surface">
