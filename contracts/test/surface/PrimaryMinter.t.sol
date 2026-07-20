@@ -73,6 +73,30 @@ contract PrimaryMinterTest is SurfaceBase {
         assertEq(c.primaryMinter(), minterA);
     }
 
+    /// @dev Same invalidation model as every other admin-gated setter
+    ///      (SurfaceAdmin.t.sol test_adminGrant_expiresOnOwnershipTransfer):
+    ///      an admin grant is scoped to the granting owner, so an ownership
+    ///      transfer invalidates it and the stale admin can no longer call
+    ///      setPrimaryMinter.
+    function test_setPrimaryMinter_adminGrantExpiresOnOwnershipTransfer() public {
+        Surface c = _collectionWithMinters(_freeConfig(), _one(minterA));
+        address admin = makeAddr("admin");
+        address newOwner = makeAddr("newOwner");
+        vm.prank(artist);
+        c.addAdmin(admin);
+        assertTrue(c.isAdmin(admin), "granted under the original owner");
+
+        vm.prank(artist);
+        c.transferOwnership(newOwner);
+        vm.prank(newOwner);
+        c.acceptOwnership();
+
+        assertFalse(c.isAdmin(admin), "stale admin invalidated by the transfer");
+        vm.expectRevert(ISurfaceCore.NotAuthorized.selector);
+        vm.prank(admin);
+        c.setPrimaryMinter(minterA);
+    }
+
     function test_setPrimaryMinter_pooledReverts_OnlySequential() public {
         PooledSurface c = _pooledWithMinters(_freeConfig(), _one(minterA));
         vm.expectRevert(ISurfaceCore.OnlySequential.selector);

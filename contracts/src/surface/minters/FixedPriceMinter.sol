@@ -68,12 +68,22 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
     ///         not affect where proceeds go, only whether this can still be
     ///         changed.
     address public payoutRecipient;
+    /// @notice This minter clone's own sale ceiling (0 = unlimited),
+    ///         distinct from the collection's supplyCap: maxMints bounds
+    ///         what this clone alone can sell, supplyCap bounds the
+    ///         collection across every minter it grants. See saleCap() for
+    ///         the same value under an integration-facing name.
     uint256 public maxMints;
     bytes32 public allowlistRoot;
     uint256 public walletCap;
 
-    /// @notice Tokens minted through this clone across its lifetime, for
-    ///         the maxMints ceiling.
+    /// @notice Count minted through this minter clone across its lifetime,
+    ///         for the maxMints ceiling. Not the collection's lifetime mint
+    ///         count: other minters granted on the same collection mint
+    ///         against their own totalMinted, and the collection's own
+    ///         mint-order counter is separate state. See
+    ///         totalMintedByThisMinter() for the same value under an
+    ///         integration-facing name.
     uint256 public totalMinted;
     /// @notice Tokens minted to `to` through this clone, for the wallet cap.
     ///         Counted after a mint succeeds, matching the deleted
@@ -206,6 +216,8 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
         if (mintStart != 0 && block.timestamp < mintStart) revert MintNotStarted();
         if (mintEnd != 0 && block.timestamp >= mintEnd) revert MintEnded();
 
+        // This minter's own sale ceiling, not the collection's supplyCap (that
+        // cap is enforced separately, inside the collection's mintTo).
         uint256 max = maxMints;
         uint256 mintedSoFar = totalMinted;
         if (max != 0 && mintedSoFar + quantity > max) revert MaxMintsExceeded(max, mintedSoFar + quantity);
@@ -263,6 +275,23 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
         return IPriceStrategy(strategy).priceOf(collection, to, quantity, data);
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Integration aliases (same value as the underlying public getter, under
+    // a clearer name for a client reading across multiple minters/forms)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// @notice Alias for totalMinted: the count minted through this minter
+    ///         clone, not the collection's lifetime count.
+    function totalMintedByThisMinter() external view returns (uint256) {
+        return totalMinted;
+    }
+
+    /// @notice Alias for maxMints: this minter clone's own sale ceiling,
+    ///         distinct from the collection's supplyCap.
+    function saleCap() external view returns (uint256) {
+        return maxMints;
+    }
+
     /// @dev Accrue `total`, split between the referral share and the artist
     ///      payout. referrer 0 accrues the full amount to payoutRecipient. No
     ///      external call here; recipients claim via withdraw(). payoutRecipient
@@ -306,7 +335,7 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
 
     /// @notice Sweep only ETH nobody is owed (for example, forced in via
     ///         selfdestruct). The balance up to _totalPending is not swept.
-    function rescueStrayETH(address to) external onlyCollectionAdmin nonReentrant {
+    function rescueStrayETH(address to) external onlyCollectionOwnerOrAdmin nonReentrant {
         if (to == address(0)) revert ZeroAccount();
         uint256 stray = address(this).balance - _totalPending;
         if (stray == 0) revert NoStrayETH();
@@ -323,7 +352,7 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
     ///      admin. Borrowed rather than a separate Ownable, so one keyring
     ///      governs both contracts and an ownership transfer invalidates
     ///      delegated admins for minter config too.
-    modifier onlyCollectionAdmin() {
+    modifier onlyCollectionOwnerOrAdmin() {
         address c = collection;
         if (msg.sender != ISurfaceAuth(c).owner() && !ISurfaceAuth(c).isAdmin(msg.sender)) {
             revert NotAuthorized();
@@ -331,18 +360,18 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
         _;
     }
 
-    function setPrice(uint256 price_) external onlyCollectionAdmin {
+    function setPrice(uint256 price_) external onlyCollectionOwnerOrAdmin {
         price = price_;
         emit PriceSet(price_);
     }
 
-    function setPriceStrategy(address strategy) external onlyCollectionAdmin {
+    function setPriceStrategy(address strategy) external onlyCollectionOwnerOrAdmin {
         if (strategy != address(0) && strategy.code.length == 0) revert NotAContract(strategy);
         priceStrategy = strategy;
         emit PriceStrategySet(strategy);
     }
 
-    function setMintWindow(uint64 start, uint64 end) external onlyCollectionAdmin {
+    function setMintWindow(uint64 start, uint64 end) external onlyCollectionOwnerOrAdmin {
         if (end != 0 && end <= start) revert BadMintWindow();
         mintStart = start;
         mintEnd = end;
@@ -354,23 +383,23 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
     ///         admin); if the collection's owner has renounced and no admin
     ///         is granted, this can no longer be called, but the existing
     ///         stored value keeps paying out.
-    function setPayoutRecipient(address payoutRecipient_) external onlyCollectionAdmin {
+    function setPayoutRecipient(address payoutRecipient_) external onlyCollectionOwnerOrAdmin {
         if (payoutRecipient_ == address(0)) revert PayoutRecipientRequired();
         payoutRecipient = payoutRecipient_;
         emit PayoutRecipientSet(payoutRecipient_);
     }
 
-    function setMaxMints(uint256 maxMints_) external onlyCollectionAdmin {
+    function setMaxMints(uint256 maxMints_) external onlyCollectionOwnerOrAdmin {
         maxMints = maxMints_;
         emit MaxMintsSet(maxMints_);
     }
 
-    function setAllowlistRoot(bytes32 root) external onlyCollectionAdmin {
+    function setAllowlistRoot(bytes32 root) external onlyCollectionOwnerOrAdmin {
         allowlistRoot = root;
         emit AllowlistRootSet(root);
     }
 
-    function setWalletCap(uint256 cap) external onlyCollectionAdmin {
+    function setWalletCap(uint256 cap) external onlyCollectionOwnerOrAdmin {
         walletCap = cap;
         emit WalletCapSet(cap);
     }
