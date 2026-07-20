@@ -89,8 +89,8 @@ const ABOUT: {h: string | null; p: ReactNode[]}[] = [
 
 // The mint windows, in order. Punk-owner claim and allowlist open together as one phase.
 const WINDOWS = [
-  {name: "Punk owner and allowlist", detail: "claim your id or enter the allowlist draw"},
-  {name: "Public", detail: "anyone, random draw"},
+  {name: "Punk owner and allowlist", when: "Tue · 8 PM ET", detail: "claim your id or enter the allowlist draw"},
+  {name: "Public", when: "Wed · 12 PM ET", detail: "all unclaimed Punk ids release into the draw"},
 ]
 
 export function HomagePreview() {
@@ -191,7 +191,7 @@ export function HomagePreview() {
                           <span className="inline-block h-1.5 w-1.5 rounded-full bg-status-upcoming" />
                           <span className="text-fg">{w.name}</span>
                         </span>
-                        <span className="shrink-0 text-gray-400">announced at launch</span>
+                        <span className="shrink-0 text-gray-400">{w.when}</span>
                       </div>
                       <p className="pl-3.5 text-[10px] font-mono text-gray-500">{w.detail}</p>
                     </li>
