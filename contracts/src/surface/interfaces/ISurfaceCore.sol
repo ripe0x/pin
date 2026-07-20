@@ -80,8 +80,10 @@ interface ISurfaceCore {
     /// @notice One-shot initializer. `p.initialMinters` grants extension
     ///         minters and `p.creators` seeds the owner's side of attribution,
     ///         so pooled, backed, and collaborative forms deploy fully
-    ///         configured in one transaction. Locks set true in `p.cfg` take
-    ///         effect here.
+    ///         configured in one transaction. rendererLocked/supplyLocked set
+    ///         true in `p.cfg` take effect here; the minter set has no
+    ///         initialize-time lock and is frozen afterward by the separate
+    ///         lockMinter() call.
     function initialize(InitParams calldata p) external;
 
     /// @notice Updates the EIP-2981 royalty. Capped at 50%; receiver 0 =

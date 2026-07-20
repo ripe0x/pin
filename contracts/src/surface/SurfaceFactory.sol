@@ -82,12 +82,16 @@ contract SurfaceFactory {
     ///         createSurface wired, the caller-supplied primary for
     ///         createSurfaceCustom/createPooledSurface, or address(0) when
     ///         none was designated. This mirrors the collection's own
-    ///         primaryMinter() at the moment of creation, the collection-to-
-    ///         minter binding an indexer or frontend reads first; there is no
-    ///         separate minterOf storage mapping. Renamed from `minter`
-    ///         (#primaryMinter): the event topic is unchanged, the field is
-    ///         still the second non-indexed word, so positional ABI decoding
-    ///         is unaffected.
+    ///         primaryMinter() at the moment of creation: the recommended
+    ///         PRIMARY public-integration endpoint for a generic client, not
+    ///         the complete authorization set. A sequential collection may
+    ///         authorize additional minters after creation; the record of
+    ///         who is authorized to mint is the collection's MinterSet event
+    ///         log (and the live isMinter/isMinterLocked views), not this
+    ///         field. There is no separate minterOf storage mapping. Renamed
+    ///         from `minter` (#primaryMinter): the event topic is unchanged,
+    ///         the field is still the second non-indexed word, so positional
+    ///         ABI decoding is unaffected.
     event SurfaceCreated(address indexed owner, address indexed collection, address primaryMinter, IdMode idMode);
     event Deprecated(address indexed successor);
     event PausedSet(bool paused);

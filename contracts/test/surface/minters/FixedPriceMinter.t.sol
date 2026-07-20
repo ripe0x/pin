@@ -257,6 +257,27 @@ contract FixedPriceMinterTest is FixedPriceMinterBase {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // Integration aliases: same values as the underlying getters
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function test_saleCap_aliasesMaxMints() public {
+        FixedPriceMinterInitParams memory p = _minterParams(address(0), PRICE);
+        p.maxMints = 7;
+        (, FixedPriceMinter m) = _collectionWithConfiguredMinter(p);
+        assertEq(m.saleCap(), m.maxMints());
+        assertEq(m.saleCap(), 7);
+    }
+
+    function test_totalMintedByThisMinter_aliasesTotalMinted() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        vm.deal(collector, PRICE * 3);
+        vm.prank(collector);
+        m.mint{value: PRICE * 3}(collector, 3, address(0), "");
+        assertEq(m.totalMintedByThisMinter(), m.totalMinted());
+        assertEq(m.totalMintedByThisMinter(), 3);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Allowlist
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -810,7 +831,7 @@ contract FixedPriceMinterTest is FixedPriceMinterBase {
         assertEq(m.pendingWithdrawal(artist), 0, "the old recipient accrues nothing further");
     }
 
-    /// @dev Borrowed authority (onlyCollectionAdmin) covers admins too, not
+    /// @dev Borrowed authority (onlyCollectionOwnerOrAdmin) covers admins too, not
     ///      just the owner: a collection admin can redirect payout post-deploy.
     function test_setPayoutRecipient_grantedAdmin_takesEffectOnNextMint() public {
         (Surface c, FixedPriceMinter m) = _collectionWithMinter(PRICE);

@@ -59,7 +59,10 @@ abstract contract SurfaceCore is
 
     /// @dev One-way freeze of the minter set. Once true, no grant or revoke
     ///      succeeds. A backed pooled collection sets this so no minter can be
-    ///      swapped in later to retire another minter's backed tokens.
+    ///      swapped in later to retire another minter's backed tokens. This is
+    ///      the third one-way collection lock alongside rendererLocked and
+    ///      supplyLocked, but it is not a SurfaceConfig field: it is set by
+    ///      the separate lockMinter() call, not by initialize(p.cfg).
     bool internal _minterLocked;
 
     /// @dev Frontend-discovery default, not an authority record: every granted
@@ -78,9 +81,12 @@ abstract contract SurfaceCore is
     // grant; the new owner starts with no admins and re-grants explicitly.
     mapping(address => address) internal _admins;
 
-    // Single source of truth for every setting, including the module slots and
-    // the two one-way locks. Setters edit fields in place, so config() always
-    // reflects what the contract uses.
+    // Source of the renderer, supply-cap, and royalty configuration,
+    // including rendererLocked and supplyLocked, the two one-way locks
+    // contained in SurfaceConfig. Setters edit fields in place, so config()
+    // always reflects what the contract uses. The minter set and its own
+    // one-way lock (_minterLocked above) are separate state, not part of
+    // this struct.
     SurfaceConfig internal _cfg;
 
     // Total mints across the contract's lifetime, both forms. Burns do not
@@ -147,7 +153,12 @@ abstract contract SurfaceCore is
             isListedCreator[p.creators[i]] = true;
             emit CreatorListed(p.creators[i], true);
         }
-        // Locks passed true apply from initialization; emit their events.
+        // rendererLocked/supplyLocked, passed in p.cfg, apply from
+        // initialization; emit their events. The minter set has no
+        // initialize-time lock: it is frozen after deploy by the separate
+        // owner-only lockMinter() call, applied once the intended minter
+        // set is in place (immediately after this transaction, or via the
+        // factory's atomic createSurface ordering for the canonical minter).
         if (_cfg.rendererLocked) emit RendererLocked();
         if (_cfg.supplyLocked) emit SupplyLocked();
         emit SurfaceConfigured(idMode(), p.cfg.supplyCap);
