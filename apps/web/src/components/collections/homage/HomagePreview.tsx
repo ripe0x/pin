@@ -222,7 +222,7 @@ export function HomagePreview() {
                         <span className="inline-block h-1.5 w-1.5 rounded-full bg-status-upcoming" />
                         <span className="text-fg">{w.name}</span>
                       </div>
-                      <p className="pl-3.5 text-[11px] font-mono tabular-nums text-gray-300">
+                      <p className="pl-3.5 text-[11px] font-mono tabular-nums text-fg-muted">
                         <LocalTime at={w.at} fallback={w.etLabel} />
                       </p>
                       <p className="pl-3.5 text-[10px] font-mono text-gray-500">{w.detail}</p>
