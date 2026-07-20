@@ -2,18 +2,14 @@
 
 // Pre-deploy homage landing for /collections/homage, rendered before the mainnet
 // homage collection exists. Mirrors the live /collections/<address>?skin=homage
-// sections (masthead, About, sample field, schedule, mint instrument) so the two
-// states are visually continuous, but issues ZERO contract RPC: the sample field
-// renders through the local punks SDK, the allowlist checker runs off the build's
-// baked merkle proofs, and the reservation form captures to Netlify Forms. Once
-// the NEXT_PUBLIC_HOMAGE_* env vars are set the route redirects to the live page
-// instead of rendering this.
+// sections (masthead, About, sample field, schedule, coming-soon mint) so the two
+// states are visually continuous, but issues ZERO contract RPC: the sample field is
+// generated locally from the per-trait color table (no SDK, no chain). Once the
+// NEXT_PUBLIC_HOMAGE_* env vars are set, a rewrite serves the live page here instead.
 
-import {useCallback, useEffect, useRef, useState} from "react"
+import {useCallback, useEffect, useRef, useState, type ReactNode} from "react"
 import Link from "next/link"
 import {FitHeadline} from "./FitHeadline"
-import {HomageReservation} from "./HomageReservation"
-import {AllowlistCheck} from "@/components/mint/homage-gallery/AllowlistCheck"
 import {CrossfadeArt} from "@/components/mint/homage-gallery/CrossfadeArt"
 import {useGeneratedArt, useGeneratedSample} from "./synthetic-punk"
 import {weightedStatus} from "@/components/mint/homage-gallery/gallery-deck"
@@ -21,10 +17,20 @@ import {statusByCode} from "@/components/mint/homage-gallery/status"
 
 const SUPPLY = 10_000
 const META = "text-[10px] font-mono uppercase tracking-wider text-gray-400"
-const POOL = 40 // tiles dealt; the grid renders a whole-row multiple of the column count
-const TARGET_CELL = 200 // cell px; columns derive from width
+const POOL = 60 // seeds dealt; the layout uses however many fill the cell budget
+const TARGET_CELL = 200 // 1× cell px; columns derive from width
+const TARGET_ROWS = 6 // rows the wall fills; budget = cols × TARGET_ROWS
 const GAP = 8
 const SAMPLE_PX = 2000 // SVG intrinsic size, so copied/saved sample art is large
+
+// A tile's desired span from its seed (stable across re-renders): ~72% 1×1, ~23%
+// 2×2, ~5% 3×3. Clamped to the cell budget at layout time so the grid stays flush.
+function desiredSpan(seed: number): number {
+  let x = (seed ^ 0x9e3779b9) >>> 0
+  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b) >>> 0
+  const r = ((x >>> 8) & 0xffffff) / 0xffffff
+  return r < 0.05 ? 3 : r < 0.28 ? 2 : 1
+}
 
 // A synthetic sample: a seed (drives colors + ring structure) and a market ground.
 type Sample = {seed: number; status: number}
@@ -32,13 +38,26 @@ type Tile = Sample & {key: number}
 
 // About copy — the long-form record shown while there's no onchain contractURI to
 // read. First block is the lead (no heading, the masthead already names the work).
-const ABOUT: {h: string | null; p: string[]}[] = [
+const PC_LINK = "underline decoration-gray-500 underline-offset-2 hover:text-fg"
+const ABOUT: {h: string | null; p: ReactNode[]}[] = [
   {
     h: null,
     p: [
       "Ten thousand generative artworks, one for every CryptoPunk. Each is composed from the punk’s onchain data and its live market state, rendered fully onchain.",
-      "Every piece is backed by a fixed amount of $111, redeemable in full at any time: burn the homage to take the coins back out. Half of every fee feeds the Permanent Collection, a pool that buys real punks and holds them.",
       "Each Homage reads directly from the official CryptoPunks data contract and uses that shared source as material for a new generative system. The work draws from the forms, colors, and attributes of the collection while producing an artwork of its own.",
+      <>
+        Every piece is backed by a fixed amount of{" "}
+        <a href="https://permanentcollection.art/trade" target="_blank" rel="noopener noreferrer" className={PC_LINK}>
+          $111
+        </a>
+        , redeemable in full at any time: burn the Homage to take the coins back out. Trading $111 feeds
+        the{" "}
+        <a href="https://permanentcollection.art" target="_blank" rel="noopener noreferrer" className={PC_LINK}>
+          Permanent Collection
+        </a>{" "}
+        bid pool, an onchain protocol building a permanent collection of CryptoPunks, with one Punk for
+        each of the 111 traits.
+      </>,
       "The entire collection lives on Ethereum. The code, metadata, source data, and rendered artwork are all onchain. No hosted image server, external metadata service, or offchain renderer is required for a Homage to exist.",
     ],
   },
@@ -68,10 +87,9 @@ const ABOUT: {h: string | null; p: string[]}[] = [
   },
 ]
 
-// The three windows, in order, with the same descriptions the live schedule uses.
+// The mint windows, in order. Punk-owner claim and allowlist open together as one phase.
 const WINDOWS = [
-  {name: "Punk owner claim", detail: "punk holders mint their own id"},
-  {name: "Allowlist", detail: "random draw, flat fee"},
+  {name: "Punk owner and allowlist", detail: "claim your id or enter the allowlist draw"},
   {name: "Public", detail: "anyone, random draw"},
 ]
 
@@ -111,7 +129,14 @@ export function HomagePreview() {
                   <h3 className="text-sm font-medium tracking-tight text-fg">{s.h}</h3>
                 )}
                 {s.p.map((para, j) => (
-                  <p key={j} className="text-sm leading-relaxed text-fg-muted">
+                  <p
+                    key={j}
+                    className={
+                      i === 0 && j === 0
+                        ? "text-lg leading-relaxed text-fg sm:text-xl" // lead paragraph
+                        : "text-sm leading-relaxed text-fg-muted"
+                    }
+                  >
                     {para}
                   </p>
                 ))}
@@ -121,25 +146,6 @@ export function HomagePreview() {
 
           <div className="mx-auto w-full max-w-[556px] px-6 py-10 lg:px-12 lg:py-12">
             <div className="mx-auto w-full max-w-[460px] space-y-6">
-              {/* Mint schedule — the three windows, all upcoming until times are announced. */}
-              <div className="space-y-3 rounded-lg border border-gray-200 bg-surface p-5">
-                <h3 className={META}>Mint schedule</h3>
-                <ul className="space-y-2.5">
-                  {WINDOWS.map((w) => (
-                    <li key={w.name} className="space-y-0.5">
-                      <div className="flex items-baseline justify-between gap-3 text-[11px] font-mono">
-                        <span className="flex items-center gap-2">
-                          <span className="inline-block h-1.5 w-1.5 rounded-full bg-status-upcoming" />
-                          <span className="text-fg">{w.name}</span>
-                        </span>
-                        <span className="shrink-0 text-gray-400">announced at launch</span>
-                      </div>
-                      <p className="pl-3.5 text-[10px] font-mono text-gray-500">{w.detail}</p>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
               {/* Coming-soon instrument — the live mint card's shell in its not-yet-open state. */}
               <section className="overflow-hidden rounded-lg border border-gray-200 bg-surface">
                 <div className="space-y-4 p-5">
@@ -169,14 +175,23 @@ export function HomagePreview() {
                 </div>
               </section>
 
-              {/* Punk holders (held or delegated) reserve their id ahead of launch. */}
-              <HomageReservation />
-
-              {/* Anyone can check any address against the allowlist during the teaser.
-                  Purely client-side against the baked merkle proofs — no wallet, no RPC. */}
-              <div className="rounded-lg border border-gray-200 bg-surface p-5">
-                <p className="mb-3 text-[10px] font-mono uppercase tracking-wider text-gray-400">Allowlist</p>
-                <AllowlistCheck />
+              {/* Mint schedule — the three windows, all upcoming until times are announced. */}
+              <div className="space-y-3 rounded-lg border border-gray-200 bg-surface p-5">
+                <h3 className={META}>Mint schedule</h3>
+                <ul className="space-y-2.5">
+                  {WINDOWS.map((w) => (
+                    <li key={w.name} className="space-y-0.5">
+                      <div className="flex items-baseline justify-between gap-3 text-[11px] font-mono">
+                        <span className="flex items-center gap-2">
+                          <span className="inline-block h-1.5 w-1.5 rounded-full bg-status-upcoming" />
+                          <span className="text-fg">{w.name}</span>
+                        </span>
+                        <span className="shrink-0 text-gray-400">announced at launch</span>
+                      </div>
+                      <p className="pl-3.5 text-[10px] font-mono text-gray-500">{w.detail}</p>
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
           </div>
@@ -198,7 +213,7 @@ export function HomagePreview() {
 // Regenerate re-deals fresh seeds. Every render is local — zero RPC.
 function SampleWall() {
   const [tiles, setTiles] = useState<Tile[]>([])
-  const [focus, setFocus] = useState<Sample | null>(null)
+  const [focusIdx, setFocusIdx] = useState<number | null>(null)
   const nextKey = useRef(0)
 
   const deal = useCallback(
@@ -228,13 +243,20 @@ function SampleWall() {
           ↻ Regenerate
         </button>
       </div>
-      <Quilt tiles={tiles} onFocus={setFocus} />
-      {focus && <FocusOverlay sample={focus} onClose={() => setFocus(null)} />}
+      <Quilt tiles={tiles} onFocus={setFocusIdx} />
+      {focusIdx !== null && tiles.length > 0 && (
+        <FocusOverlay
+          samples={tiles}
+          index={focusIdx}
+          onNavigate={setFocusIdx}
+          onClose={() => setFocusIdx(null)}
+        />
+      )}
     </div>
   )
 }
 
-function Quilt({tiles, onFocus}: {tiles: Tile[]; onFocus: (s: Sample) => void}) {
+function Quilt({tiles, onFocus}: {tiles: Tile[]; onFocus: (index: number) => void}) {
   const [width, setWidth] = useState(0)
   const ref = useCallback((el: HTMLDivElement | null) => {
     if (!el) return
@@ -246,10 +268,32 @@ function Quilt({tiles, onFocus}: {tiles: Tile[]; onFocus: (s: Sample) => void}) 
   }, [])
   const cols = Math.max(3, Math.floor((width + GAP) / (TARGET_CELL + GAP)))
   const track = width ? (width - GAP * (cols - 1)) / cols : TARGET_CELL
-  // Render only whole rows: a multiple of the current column count, so the field
-  // never ends on a partial row (the ragged gap the mixed-span layout left). Cells
-  // are uniform 1×1 so every row is full at any width.
-  const visible = tiles.slice(0, Math.floor(tiles.length / cols) * cols)
+  // Varied sizes with a guaranteed flush bottom: pack tiles into an exact
+  // TARGET_ROWS × cols grid. Scanning every cell row-major and placing a tile at
+  // each still-free cell (a featured lead, then seed-derived spans, each shrunk to
+  // the free space) covers every cell — so explicit positions fill a clean
+  // rectangle with no holes and no ragged final row, at any width.
+  const R = TARGET_ROWS
+  const occ = Array.from({length: R}, () => new Array<boolean>(cols).fill(false))
+  const placed: {tile: Tile; idx: number; r: number; c: number; span: number}[] = []
+  let ti = 0
+  for (let r = 0; r < R && ti < tiles.length; r++) {
+    for (let c = 0; c < cols && ti < tiles.length; c++) {
+      if (occ[r][c]) continue
+      const tile = tiles[ti]
+      const want = placed.length === 0 ? Math.min(3, cols - 1) : desiredSpan(tile.seed)
+      let span = Math.min(want, R - r, cols - c)
+      for (; span > 1; span--) {
+        let free = true
+        for (let dr = 0; dr < span && free; dr++)
+          for (let dc = 0; dc < span; dc++) if (occ[r + dr][c + dc]) { free = false; break }
+        if (free) break
+      }
+      for (let dr = 0; dr < span; dr++) for (let dc = 0; dc < span; dc++) occ[r + dr][c + dc] = true
+      placed.push({tile, idx: ti, r, c, span})
+      ti++
+    }
+  }
 
   return (
     <div ref={ref} style={{background: "var(--paper, #0a0a0c)"}}>
@@ -257,42 +301,81 @@ function Quilt({tiles, onFocus}: {tiles: Tile[]; onFocus: (s: Sample) => void}) 
         style={{
           display: "grid",
           gridTemplateColumns: `repeat(${cols}, ${track}px)`,
-          gridAutoRows: `${track}px`,
+          gridTemplateRows: `repeat(${R}, ${track}px)`,
           gap: GAP,
           justifyContent: "center",
         }}
       >
-        {visible.map((t) => (
-          <WallTile key={t.key} tile={t} onFocus={() => onFocus({seed: t.seed, status: t.status})} />
+        {placed.map(({tile, idx, r, c, span}) => (
+          <WallTile
+            key={tile.key}
+            tile={tile}
+            col={c + 1}
+            row={r + 1}
+            span={span}
+            onFocus={() => onFocus(idx)}
+          />
         ))}
       </div>
     </div>
   )
 }
 
-function WallTile({tile, onFocus}: {tile: Tile; onFocus: () => void}) {
+function WallTile({
+  tile,
+  col,
+  row,
+  span,
+  onFocus,
+}: {
+  tile: Tile
+  col: number
+  row: number
+  span: number
+  onFocus: () => void
+}) {
   const {src} = useGeneratedArt(tile.seed, tile.status, SAMPLE_PX)
   return (
     <button
       onClick={onFocus}
       aria-label="view this homage larger"
       className="relative block cursor-pointer overflow-hidden focus:outline-none focus-visible:ring-1 focus-visible:ring-white/50"
+      style={{gridColumn: `${col} / span ${span}`, gridRow: `${row} / span ${span}`}}
     >
       <CrossfadeArt src={src} alt="a homage from the collection" />
     </button>
   )
 }
 
-// The generated homage large on its own ground, with its full trait list. Click or Esc closes.
-function FocusOverlay({sample, onClose}: {sample: Sample; onClose: () => void}) {
+// The generated homage large on its own ground, with its full trait list. ← / →
+// step through the samples (wrapping); click the ground or Esc closes.
+function FocusOverlay({
+  samples,
+  index,
+  onNavigate,
+  onClose,
+}: {
+  samples: Sample[]
+  index: number
+  onNavigate: (i: number) => void
+  onClose: () => void
+}) {
+  const n = samples.length
+  const sample = samples[index]
   const {src, traits: generated, colorCount} = useGeneratedSample(sample.seed, sample.status, SAMPLE_PX)
   const ground = statusByCode(sample.status).color
+  const prev = () => onNavigate((index - 1 + n) % n)
+  const next = () => onNavigate((index + 1) % n)
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose()
+      else if (e.key === "ArrowRight") onNavigate((index + 1) % n)
+      else if (e.key === "ArrowLeft") onNavigate((index - 1 + n) % n)
+    }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [onClose])
+  }, [onClose, onNavigate, index, n])
 
   const traits = generated
     ? [...generated, `${colorCount} colors`, statusByCode(sample.status).label].filter(Boolean)
@@ -307,6 +390,19 @@ function FocusOverlay({sample, onClose}: {sample: Sample; onClose: () => void}) 
       className="fixed inset-0 z-[60] flex cursor-pointer flex-col items-center justify-center"
       style={{background: ground, transition: "background-color 600ms ease"}}
     >
+      <button
+        aria-label="close"
+        onClick={(e) => {
+          e.stopPropagation()
+          onClose()
+        }}
+        className="absolute right-3 top-3 z-[61] flex h-11 w-11 items-center justify-center font-mono text-xl leading-none transition-opacity hover:opacity-100 sm:right-6 sm:top-5"
+        style={{color: "rgba(255,255,255,0.7)", opacity: 0.6}}
+      >
+        ✕
+      </button>
+      <NavArrow side="left" onClick={prev} />
+      <NavArrow side="right" onClick={next} />
       <div
         className="relative"
         onClick={(e) => e.stopPropagation()}
@@ -315,12 +411,6 @@ function FocusOverlay({sample, onClose}: {sample: Sample; onClose: () => void}) 
         <CrossfadeArt src={src} alt="a homage from the collection" fadeMs={500} />
       </div>
       <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col items-center gap-2 px-6 pb-7 text-center">
-        <span
-          className="font-mono text-[11px] uppercase tracking-[0.22em]"
-          style={{color: "rgba(255,255,255,0.9)"}}
-        >
-          one of ten thousand
-        </span>
         {traits.length > 0 && (
           <span
             className="max-w-[64ch] font-mono text-[11px] leading-relaxed tracking-[0.06em]"
@@ -329,7 +419,29 @@ function FocusOverlay({sample, onClose}: {sample: Sample; onClose: () => void}) 
             {traits.join(" · ")}
           </span>
         )}
+        <span
+          className="font-mono text-[10px] uppercase tracking-[0.18em]"
+          style={{color: "rgba(255,255,255,0.4)"}}
+        >
+          ← → to browse · esc to close
+        </span>
       </div>
     </div>
+  )
+}
+
+function NavArrow({side, onClick}: {side: "left" | "right"; onClick: () => void}) {
+  return (
+    <button
+      aria-label={side === "left" ? "previous homage" : "next homage"}
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
+      className={`absolute top-1/2 -translate-y-1/2 ${side === "left" ? "left-3 sm:left-6" : "right-3 sm:right-6"} z-[61] flex h-11 w-11 items-center justify-center font-mono text-2xl leading-none transition-opacity hover:opacity-100`}
+      style={{color: "rgba(255,255,255,0.7)", opacity: 0.6}}
+    >
+      {side === "left" ? "‹" : "›"}
+    </button>
   )
 }
