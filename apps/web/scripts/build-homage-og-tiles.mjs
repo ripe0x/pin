@@ -131,14 +131,12 @@ const homageRings = (id) => {
   return rings(cols, cnts).map(hex)
 }
 
-// ---- curated selection: rare types for distinctive color + a spread of regulars ----
-const first = (name, k) => ds.search({attributes: {required: [name]}}).slice(0, k)
-const picks = [
-  ...first("Alien", 1),
-  ...first("Ape", 1),
-  ...first("Zombie", 2),
-]
-for (let id = 250; picks.length < 18; id += 517) if (!picks.includes(id)) picks.push(id)
+// ---- curated selection: one of each rare type for distinctive color + a spread of
+// regulars (the fill skips all rare-type ids so the counts stay exactly 1/1/1) ----
+const ofType = (name) => ds.search({attributes: {required: [name]}})
+const rare = new Set([...ofType("Alien"), ...ofType("Ape"), ...ofType("Zombie")])
+const picks = [ofType("Alien")[0], ofType("Ape")[0], ofType("Zombie")[0]]
+for (let id = 250; picks.length < 18; id += 517) if (!picks.includes(id) && !rare.has(id)) picks.push(id)
 
 const tiles = picks.slice(0, 18).map((id) => ({id, rings: homageRings(id)}))
 const url = new URL("../src/app/collections/homage/og-tiles.json", import.meta.url)
