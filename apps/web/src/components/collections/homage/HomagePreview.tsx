@@ -106,7 +106,12 @@ export function HomagePreview() {
         <div className="space-y-6">
           <FitHeadline text="Homage to the Punk" className="w-full" max={260} />
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-[11px] font-mono uppercase tracking-wider text-gray-500">by ripe</p>
+            <p className="text-[11px] font-mono uppercase tracking-wider text-gray-500">
+              by{" "}
+              <a href="https://x.com/ripe0x" target="_blank" rel="noopener noreferrer" className={PC_LINK}>
+                ripe
+              </a>
+            </p>
             <span className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-3 py-1 text-[10px] font-mono uppercase tracking-wider text-gray-400">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-status-upcoming" />
               Minting soon
