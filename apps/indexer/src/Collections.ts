@@ -61,19 +61,19 @@ const tokenRowId = (collection: string, tokenId: bigint) =>
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
 
 on("SurfaceFactory:SurfaceCreated", async ({ event, context }) => {
-  const { owner, collection, minter } = event.args as {
+  const { owner, collection, primaryMinter } = event.args as {
     owner: `0x${string}`
     collection: `0x${string}`
-    minter: `0x${string}`
+    primaryMinter: `0x${string}`
     idMode: number
   }
-  const hasMinter = minter.toLowerCase() !== ZERO_ADDRESS
+  const hasPrimaryMinter = primaryMinter.toLowerCase() !== ZERO_ADDRESS
   await context.db
     .insert(collections)
     .values({
       collection,
       owner,
-      minter: hasMinter ? minter : null,
+      primaryMinter: hasPrimaryMinter ? primaryMinter : null,
       createdAtBlock: event.block.number,
       createdAtTime: event.block.timestamp,
       createdTxHash: event.transaction.hash,
@@ -81,12 +81,34 @@ on("SurfaceFactory:SurfaceCreated", async ({ event, context }) => {
     .onConflictDoNothing()
 
   // Reverse index for FixedPriceMinter:Sold/ReferralPaid, which are emitted
-  // by the minter clone and carry no collection field of their own.
-  // createSurfaceCustom/createPooledSurface emit minter = address(0) (no
-  // canonical clone), so there's nothing to index here.
-  if (hasMinter) {
-    await context.db.insert(minters).values({ minter, collection }).onConflictDoNothing()
+  // by the minter clone and carry no collection field of their own. Fixed
+  // at creation time (see ponder.config.ts's FixedPriceMinter factory()
+  // binding) — a later primaryMinter repoint doesn't add/remove rows here.
+  // createSurfaceCustom/createPooledSurface with no primary supplied emit
+  // primaryMinter = address(0), so there's nothing to index here.
+  if (hasPrimaryMinter) {
+    await context.db
+      .insert(minters)
+      .values({ minter: primaryMinter, collection })
+      .onConflictDoNothing()
   }
+})
+
+// Keeps collections.primaryMinter current after deploy: a sequential
+// collection's owner/admin can repoint it (setPrimaryMinter), and either
+// form clears it to zero when the current primary is revoked. Pooled
+// collections emit this automatically as their sole minter changes. Does
+// NOT touch the `minters` reverse index — that stays keyed to the
+// SurfaceCreated-time canonical clone regardless of later repoints.
+on("Surface:PrimaryMinterSet", async ({ event, context }) => {
+  const { minter } = event.args as { minter: `0x${string}` }
+  const collection = event.log.address as `0x${string}`
+  const existing = await context.db.find(collections, { collection })
+  if (!existing) return
+  const hasPrimaryMinter = minter.toLowerCase() !== ZERO_ADDRESS
+  await context.db
+    .update(collections, { collection })
+    .set({ primaryMinter: hasPrimaryMinter ? minter : null })
 })
 
 // ─── Per-collection state machine (via factory() child indexing) ────────

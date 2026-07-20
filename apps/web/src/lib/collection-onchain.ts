@@ -5,7 +5,7 @@ import { catalogAbi, surfaceAbi, surfaceFactoryAbi, fixedPriceMinterAbi, renderA
 import { ARTIST_RECORD_REGISTRY, MAINNET_CHAIN_ID, getAddressOrNull } from "@pin/addresses"
 import { fetchMetadataForUri } from "@pin/token-metadata"
 import { pgCache } from "./pg-cache"
-import { getCollectionMinterFromIndexer } from "./indexer-queries"
+import { getCollectionPrimaryMinterFromIndexer } from "./indexer-queries"
 import {
   decodeCollectionConfig,
   renderAssetsAddress,
@@ -71,7 +71,7 @@ async function getMinterSaleConfig(
           { ...base, functionName: "priceStrategy" },
           { ...base, functionName: "mintStart" },
           { ...base, functionName: "mintEnd" },
-          { ...base, functionName: "payout" },
+          { ...base, functionName: "payoutRecipient" },
           { ...base, functionName: "maxMints" },
           { ...base, functionName: "allowlistRoot" },
           { ...base, functionName: "walletCap" },
@@ -93,16 +93,16 @@ async function getMinterSaleConfig(
 }
 
 /**
- * Full collection: identity, config, minted count, the canonical minter's
+ * Full collection: identity, config, minted count, the primary minter's
  * live sale config (when one is wired), plus the mutable slot values
  * (renderer can be swapped post-deploy, so it's read live rather than
  * trusted from `cfg`). Short TTL.
  *
- * The minter address itself is NOT a live chain read: the thin token has no
- * "list of minters" getter (only isMinter(candidate)), so the only source
- * for "which minter did this collection's factory deploy wire" is the
- * indexed SurfaceCreated.minter field (see AGENTS.md — this is one of the
- * few Postgres reads in an otherwise RPC-cached file, not a new RPC call).
+ * The primary minter address itself is NOT a live chain read even though
+ * the token exposes primaryMinter(): the indexed row (seeded from
+ * SurfaceCreated, kept current by PrimaryMinterSet) is already the same
+ * value at far lower cost — this is one of the few Postgres reads in an
+ * otherwise RPC-cached file, not a new RPC call (see AGENTS.md).
  */
 export async function getCollection(address: Address): Promise<Collection | null> {
   return pgCache(`sc-collection:${lc(address)}`, 20, async () => {
@@ -143,10 +143,10 @@ export async function getCollection(address: Address): Promise<Collection | null
             .catch(() => "")
         : ""
 
-      const minterAddr = await getCollectionMinterFromIndexer(address)
-      const minter =
+      const minterAddr = await getCollectionPrimaryMinterFromIndexer(address)
+      const primaryMinter =
         minterAddr && minterAddr.toLowerCase() !== ZERO_ADDRESS ? (minterAddr as Address) : null
-      const sale = minter ? await getMinterSaleConfig(client, minter) : null
+      const sale = primaryMinter ? await getMinterSaleConfig(client, primaryMinter) : null
 
       return {
         address,
@@ -157,7 +157,7 @@ export async function getCollection(address: Address): Promise<Collection | null
         isSupplyLocked: supplyLocked as boolean,
         renderer: renderer as Address,
         cfg: decodeCollectionConfig(cfgRaw, Number(idModeRaw) as IdMode),
-        minter,
+        primaryMinter,
         sale,
         // Shared work-config read removed with the shared GenerativeRenderer;
         // bring-your-own renderers own their config. Kept as an empty default
@@ -437,11 +437,11 @@ export async function getCurrentPrice(
 }
 
 /**
- * The live allowlist + wallet-cap gate for a collection's canonical minter.
+ * The live allowlist + wallet-cap gate for a collection's primary minter.
  * Only the two fields the eligibility UI needs, read directly rather than
  * through the full getCollection() multicall (used by the allowlist API
  * route, which doesn't need identity/renderer/cover). Null when there's no
- * canonical minter on record (bring-your-own minter, or not yet indexed) —
+ * primary minter on record (bring-your-own minter, or not yet indexed) —
  * same "nothing to gate on" case the old GateHook lookup's zero-hook branch
  * covered. Config-class freshness (20s) — an artist flipping a gate mid-drop
  * propagates on the same cadence as every other sale setting.
@@ -453,7 +453,7 @@ export type MinterGate = {
 }
 
 export async function getMinterGate(address: Address): Promise<MinterGate | null> {
-  const minterAddr = await getCollectionMinterFromIndexer(address)
+  const minterAddr = await getCollectionPrimaryMinterFromIndexer(address)
   if (!minterAddr || minterAddr.toLowerCase() === ZERO_ADDRESS) return null
   const minter = minterAddr as Address
   return pgCache(`sc-gate:${lc(minter)}`, 20, async () => {

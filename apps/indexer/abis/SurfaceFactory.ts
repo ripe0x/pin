@@ -126,6 +126,11 @@ export const surfaceFactoryAbi = [
         "internalType": "address[]"
       },
       {
+        "name": "primaryMinter",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
         "name": "creators",
         "type": "address[]",
         "internalType": "address[]"
@@ -222,7 +227,7 @@ export const surfaceFactoryAbi = [
             "internalType": "uint64"
           },
           {
-            "name": "payout",
+            "name": "payoutRecipient",
             "type": "address",
             "internalType": "address"
           },
@@ -323,6 +328,11 @@ export const surfaceFactoryAbi = [
         "name": "initialMinters",
         "type": "address[]",
         "internalType": "address[]"
+      },
+      {
+        "name": "primaryMinter",
+        "type": "address",
+        "internalType": "address"
       },
       {
         "name": "creators",
@@ -544,7 +554,7 @@ export const surfaceFactoryAbi = [
         "internalType": "address"
       },
       {
-        "name": "minter",
+        "name": "primaryMinter",
         "type": "address",
         "indexed": false,
         "internalType": "address"
@@ -613,6 +623,11 @@ export const surfaceFactoryAbi = [
   {
     "type": "error",
     "name": "OwnerRequired",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "PrimaryMinterNotAuthorized",
     "inputs": []
   }
 ] as const;

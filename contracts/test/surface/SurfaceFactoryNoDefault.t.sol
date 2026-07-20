@@ -46,20 +46,20 @@ contract SurfaceFactoryNoDefaultTest is Test {
     function test_createSurface_withOwnRenderer_succeeds() public {
         SurfaceConfig memory cfg;
         cfg.renderer = address(renderer);
-        Surface c = Surface(factory.createSurfaceCustom("N", "S", artist, cfg, _empty(), _empty()));
+        Surface c = Surface(factory.createSurfaceCustom("N", "S", artist, cfg, _empty(), address(0), _empty()));
         assertEq(c.renderer(), address(renderer), "collection uses its own renderer");
     }
 
     function test_createSurface_withoutRenderer_revertsRendererRequired() public {
         SurfaceConfig memory cfg; // cfg.renderer == 0, and no factory default
         vm.expectRevert(ISurfaceCore.RendererRequired.selector);
-        factory.createSurfaceCustom("N", "S", artist, cfg, _empty(), _empty());
+        factory.createSurfaceCustom("N", "S", artist, cfg, _empty(), address(0), _empty());
     }
 
     function test_createPooled_withoutRenderer_revertsRendererRequired() public {
         SurfaceConfig memory cfg;
         vm.expectRevert(ISurfaceCore.RendererRequired.selector);
-        factory.createPooledSurface("N", "S", artist, cfg, _empty(), _empty());
+        factory.createPooledSurface("N", "S", artist, cfg, _empty(), address(0), _empty());
     }
 
     function test_constructor_stillRejectsNonContractDefaultRenderer() public {

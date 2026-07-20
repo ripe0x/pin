@@ -62,6 +62,13 @@ abstract contract SurfaceCore is
     ///      swapped in later to retire another minter's backed tokens.
     bool internal _minterLocked;
 
+    /// @dev Frontend-discovery default, not an authority record: every granted
+    ///      minter in _minters is independently callable regardless of this
+    ///      pointer. Sequential: owner/admin-set, cleared when the pointed-to
+    ///      minter is revoked. Pooled: mirrors the sole granted minter, so it
+    ///      needs no separate setter.
+    address internal _primaryMinter;
+
     /// @dev Admins, granted by the owner. An admin can call every management
     ///      function the owner can, except managing the admin set and
     ///      transferring ownership, which remain owner-only. The owner is the
@@ -128,6 +135,14 @@ abstract contract SurfaceCore is
         // a second minter could retire a token the first one backs. Enforced at
         // init as well.
         if (idMode() == IdMode.Pooled && _minterCount > 1) revert TooManyMinters();
+        if (p.primaryMinter != address(0)) {
+            if (!_minters[p.primaryMinter]) revert PrimaryMinterNotAuthorized();
+            // Pooled holds one minter at a time; the primary can only be that
+            // sole minter, never a second address the pool has no room for.
+            if (idMode() == IdMode.Pooled && _minterCount != 1) revert PrimaryMinterNotAuthorized();
+            _primaryMinter = p.primaryMinter;
+            emit PrimaryMinterSet(p.primaryMinter);
+        }
         for (uint256 i = 0; i < p.creators.length; i++) {
             isListedCreator[p.creators[i]] = true;
             emit CreatorListed(p.creators[i], true);
@@ -328,7 +343,9 @@ abstract contract SurfaceCore is
     /// @notice Grant or revoke an extension minter. Reverts once the minter set
     ///         is locked. The pooled form holds one minter at a time; a call
     ///         that does not change the state is a no-op, so it cannot drift the
-    ///         count.
+    ///         count. A pooled grant becomes the primary automatically (it is
+    ///         the pool's only minter); revoking the current primary (either
+    ///         form) clears the pointer.
     function setMinter(address minter, bool allowed) external override {
         _requireMinterAuthority();
         if (minter == address(0)) revert ZeroMinter();
@@ -337,11 +354,33 @@ abstract contract SurfaceCore is
         _minters[minter] = allowed;
         if (allowed) {
             _minterCount += 1;
-            if (idMode() == IdMode.Pooled && _minterCount > 1) revert TooManyMinters();
+            if (idMode() == IdMode.Pooled) {
+                if (_minterCount > 1) revert TooManyMinters();
+                _primaryMinter = minter;
+                emit PrimaryMinterSet(minter);
+            }
         } else {
             _minterCount -= 1;
+            if (minter == _primaryMinter) {
+                _primaryMinter = address(0);
+                emit PrimaryMinterSet(address(0));
+            }
         }
         emit MinterSet(minter, allowed);
+    }
+
+    /// @notice Sequential-only: repoint the frontend-discovery default at
+    ///         `minter`, or clear it with the zero address. `minter` must be a
+    ///         currently granted minter. Pooled collections derive their
+    ///         primary from the sole minter lifecycle in setMinter and have no
+    ///         separate setter. Reverts once the minter set is locked, so the
+    ///         primary is stable alongside the rest of the frozen minter set.
+    function setPrimaryMinter(address minter) external override onlyOwnerOrAdmin {
+        if (idMode() == IdMode.Pooled) revert OnlySequential();
+        if (_minterLocked) revert MinterIsLocked();
+        if (minter != address(0) && !_minters[minter]) revert PrimaryMinterNotAuthorized();
+        _primaryMinter = minter;
+        emit PrimaryMinterSet(minter);
     }
 
     /// @notice The owner's side of attribution: list or unlist creators at any
@@ -440,6 +479,11 @@ abstract contract SurfaceCore is
 
     function isMinter(address minter) external view override returns (bool) {
         return _minters[minter];
+    }
+
+    /// @notice Frontend-discovery default (see ISurfaceCore.primaryMinter).
+    function primaryMinter() external view override returns (address) {
+        return _primaryMinter;
     }
 
     function isRendererLocked() external view override returns (bool) {

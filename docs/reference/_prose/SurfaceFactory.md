@@ -10,13 +10,14 @@ an EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path.
 [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter), initializes
 both, and grants the minter, in one transaction. `createSurfaceCustom`
 (sequential) and `createPooledSurface` (pooled) clone only the token and grant the
-minters the caller passes. The factory takes no fee.
+minters the caller passes, plus a caller-chosen `primaryMinter` (frontend-discovery
+default) validated against that grant list. The factory takes no fee.
 
-An indexer reads one `SurfaceCreated` event per collection, carrying the wired
-canonical minter (or zero for the bring-your-own paths), plus the `allSurfaces`
-array and the `isSurface` map for enumeration. A new implementation ships behind a
-new factory. `deprecate` is a one-way stop for this factory's deploy paths;
-`setPaused` is a reversible pause.
+An indexer reads one `SurfaceCreated` event per collection, carrying the chosen
+primary minter (the canonical clone on `createSurface`, the caller's choice or zero
+on the two custom paths), plus the `allSurfaces` array and the `isSurface` map for
+enumeration. A new implementation ships behind a new factory. `deprecate` is a
+one-way stop for this factory's deploy paths; `setPaused` is a reversible pause.
 
 # concepts
 
@@ -41,7 +42,7 @@ afterward by the collection's owner or admin.
 | `priceStrategy` | `address` | `0` uses the fixed `price`; a set strategy quotes the price |
 | `mintStart` | `uint64` | Sale start, unix seconds; `0` opens immediately |
 | `mintEnd` | `uint64` | Sale end, unix seconds; `0` is open-ended |
-| `payout` | `address` | Where the artist share accrues; `0` uses the collection's `owner()` at settle time |
+| `payoutRecipient` | `address` | Where the artist share accrues; `0` defaults to the deploy-time `owner` argument |
 | `maxMints` | `uint256` | This minter's sale ceiling; `0` is unlimited |
 | `allowlistRoot` | `bytes32` | Merkle allowlist root; `0` is no allowlist |
 | `walletCap` | `uint256` | Per-recipient mint cap; `0` is unlimited |
@@ -70,7 +71,7 @@ owner, `FactoryDeprecated` after deprecation, and `FactoryPaused` while paused.
 Token-side init reverts (`RoyaltyTooHigh`, `RendererRequired`) and minter-side init
 reverts (`BadMintWindow`, `NotAContract` for a codeless price strategy) surface
 through this call. On success, records the collection in `isSurface`/`allSurfaces`
-and emits `SurfaceCreated` with the minter address.
+and emits `SurfaceCreated` naming the minter as `primaryMinter`.
 
 ```solidity
 (address collection, address minter) = factory.createSurface(
@@ -89,10 +90,13 @@ access: permissionless (control belongs to the `owner` argument)
 
 Deploys a sequential collection with no canonical minter: clones the token and
 initializes it with the caller's `initialMinters` (empty for collections that grant
-minters later). For projects whose economics live in their own minter contract.
-Same creation gates as `createSurface`. Emits `SurfaceCreated` with
-`minter = address(0)`; the project's own minter grants appear as `MinterSet` events
-on the collection.
+minters later) and a caller-chosen `primaryMinter` (the frontend-discovery
+default), which must be the zero address or a member of `initialMinters`, else
+`PrimaryMinterNotAuthorized`. For projects whose economics live in their own
+minter contract. Same creation gates as `createSurface`. Emits `SurfaceCreated`
+with the supplied `primaryMinter` (zero if none was chosen); the collection's
+owner can repoint it later with `setPrimaryMinter`. Minter grants beyond the
+initial set appear as `MinterSet` events on the collection.
 
 ## function createPooledSurface
 
@@ -103,8 +107,11 @@ Deploys a pooled collection: the form where the minter chooses each id
 `initialMinters` so the collection deploys wired in one transaction; the pooled
 form holds one minter at a time, so more than one entry reverts `TooManyMinters` in
 the token's init. There is no canonical-minter form for pooled: a fixed-price
-pooled sale has no id-assignment policy a shared minter could apply. Emits
-`SurfaceCreated` with `minter = address(0)` and the pooled `idMode`.
+pooled sale has no id-assignment policy a shared minter could apply. `primaryMinter`
+must be the zero address or the sole entry of `initialMinters`, else
+`PrimaryMinterNotAuthorized`; once set it tracks the pool's sole minter
+automatically and has no separate setter. Emits `SurfaceCreated` with the supplied
+`primaryMinter` (zero if none was chosen) and the pooled `idMode`.
 
 ## function deprecate
 
@@ -193,11 +200,15 @@ The replacement factory set at deprecation, or zero. Informational.
 ## event SurfaceCreated
 
 Emitted once per successful create call, with `owner` and `collection` indexed.
-`minter` is the canonical `FixedPriceMinter` clone `createSurface` wired, or
-`address(0)` for the two bring-your-own paths, so this event is the
-collection-to-minter binding an indexer reads. `idMode` records the form. It fires
-in the transaction that initializes the collection, so an indexer reading it can
-treat the collection and any wired minter as fully configured.
+`primaryMinter` is the chosen primary at creation: the canonical
+`FixedPriceMinter` clone `createSurface` wired, the caller's supplied primary on
+`createSurfaceCustom`/`createPooledSurface`, or `address(0)` when none was
+designated. This mirrors the collection's own `primaryMinter()` at creation time,
+the collection-to-minter binding an indexer reads first, but the collection's
+`PrimaryMinterSet` event is what keeps it current after a repoint, revoke-clear,
+or pooled sole-minter change. `idMode` records the form. It fires in the
+transaction that initializes the collection, so an indexer reading it can treat
+the collection and any wired minter as fully configured.
 
 ## event Deprecated
 
@@ -230,6 +241,13 @@ deployer.
 ## error OwnerRequired
 
 A create function was given the zero address as the collection `owner`.
+
+## error PrimaryMinterNotAuthorized
+
+`createSurfaceCustom` or `createPooledSurface` was given a nonzero
+`primaryMinter` that is not a member of `initialMinters` (the sole entry, for
+the pooled form). The token's own `initialize` re-checks this independently of
+the factory.
 
 ## error NotAContract
 

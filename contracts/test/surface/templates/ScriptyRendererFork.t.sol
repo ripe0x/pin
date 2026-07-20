@@ -94,8 +94,11 @@ contract ScriptyRendererForkTest is Test {
         SurfaceConfig memory cfg;
         cfg.supplyCap = 10;
 
-        collection =
-            Surface(factory.createSurfaceCustom("BYO Proof", "BYO", address(this), cfg, new address[](0), new address[](0)));
+        collection = Surface(
+            factory.createSurfaceCustom(
+                "BYO Proof", "BYO", address(this), cfg, new address[](0), address(0), new address[](0)
+            )
+        );
         // The token has no built-in sale path: this test contract is the
         // collection's owner, so it grants itself as minter and mints directly.
         collection.setMinter(address(this), true);
@@ -191,7 +194,9 @@ contract ScriptyRendererForkTest is Test {
         SurfaceConfig memory cfg;
         cfg.supplyCap = 10;
         Surface unminted = Surface(
-            factory2.createSurfaceCustom("No Mints Yet", "NMY", address(this), cfg, new address[](0), new address[](0))
+            factory2.createSurfaceCustom(
+                "No Mints Yet", "NMY", address(this), cfg, new address[](0), address(0), new address[](0)
+            )
         );
 
         bytes32 throwaway = keccak256("what-if");

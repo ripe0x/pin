@@ -147,7 +147,7 @@ const PROTOCOLS: Protocol[] = [
                 deploymentsKey: null,
                 kind: 'clone',
                 implementationKey: 'minterImplementation',
-                note: 'Deployed per collection as an EIP-1167 clone of the implementation above: [`createSurface`](/docs/surface/contracts/factory#createsurface) wires one automatically and `SurfaceCreated.minter` records it. A minter clone has no canonical address of its own; substitute your collection\'s minter address for `<MINTER_ADDRESS>` in the examples below.',
+                note: 'Deployed per collection as an EIP-1167 clone of the implementation above: [`createSurface`](/docs/surface/contracts/factory#createsurface) wires one automatically and `SurfaceCreated.primaryMinter` records it. A minter clone has no canonical address of its own; substitute your collection\'s minter address for `<MINTER_ADDRESS>` in the examples below.',
             },
             {name: 'DefaultRenderer', slug: 'default-renderer', deploymentsKey: 'defaultRenderer', kind: 'singleton'},
             {name: 'RenderAssets', slug: 'render-assets', deploymentsKey: 'renderAssets', kind: 'singleton'},

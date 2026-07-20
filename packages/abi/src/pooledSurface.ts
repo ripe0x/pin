@@ -251,6 +251,11 @@ export const pooledSurfaceAbi = [
             "internalType": "address[]"
           },
           {
+            "name": "primaryMinter",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
             "name": "catalog",
             "type": "address",
             "internalType": "address"
@@ -522,6 +527,19 @@ export const pooledSurfaceAbi = [
   },
   {
     "type": "function",
+    "name": "primaryMinter",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "removeAdmin",
     "inputs": [
       {
@@ -695,6 +713,19 @@ export const pooledSurfaceAbi = [
         "name": "allowed",
         "type": "bool",
         "internalType": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setPrimaryMinter",
+    "inputs": [
+      {
+        "name": "minter",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -1130,6 +1161,19 @@ export const pooledSurfaceAbi = [
   },
   {
     "type": "event",
+    "name": "PrimaryMinterSet",
+    "inputs": [
+      {
+        "name": "minter",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "RendererLocked",
     "inputs": [],
     "anonymous": false
@@ -1441,6 +1485,11 @@ export const pooledSurfaceAbi = [
   },
   {
     "type": "error",
+    "name": "OnlySequential",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "OwnableInvalidOwner",
     "inputs": [
       {
@@ -1464,6 +1513,11 @@ export const pooledSurfaceAbi = [
   {
     "type": "error",
     "name": "OwnerRequired",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "PrimaryMinterNotAuthorized",
     "inputs": []
   },
   {

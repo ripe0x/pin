@@ -47,6 +47,7 @@ struct InitParams {
     SurfaceConfig cfg;
     address defaultRenderer; // used when cfg.renderer is 0
     address[] initialMinters; // extension minters granted at init
+    address primaryMinter; // discovery default; 0 = none. Must be one of initialMinters.
     address catalog; // Catalog singleton read for creator confirmation; 0 = none
     address[] creators; // the owner's side of attribution; each confirms via Catalog
 }

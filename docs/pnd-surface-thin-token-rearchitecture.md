@@ -549,6 +549,52 @@ of laundered through a price-0 sale.
 airdrop pattern is documented as the supported route; the studio does not
 grow a free-mint feature.
 
+### 7.9 Minter discovery (`primaryMinter`)
+
+**Decision:** each collection stores `primaryMinter`, a frontend-discovery
+pointer at one of its granted minters, with no new value-facing surface on
+the token. A generic client that only has a collection address reads
+`collection.primaryMinter()`, then reads/calls that minter's own ABI
+directly (the canonical `FixedPriceMinter`'s `mint(uint256)` ergonomic
+overload for the common paid-mint case, or the full
+`mint(address,uint256,address,bytes)` for a recipient/referrer/gate-data
+mint). `primaryMinter` is the frontend default, not an authority record:
+every address in `isMinter` is equally callable, and a client that already
+knows which minter it wants should call that minter directly rather than
+resolve through `primaryMinter`.
+
+**Lifecycle, by form:**
+- **Sequential:** owner/admin-set via `setPrimaryMinter(minter)` (must be a
+  currently granted minter, or the zero address to clear it); automatically
+  cleared to zero if the pointed-to minter is later revoked via `setMinter`.
+  `createSurface` sets it to the canonical `FixedPriceMinter` clone it wires;
+  `createSurfaceCustom` takes a caller-supplied `primaryMinter` (validated
+  against `initialMinters`). Stable once `lockMinter()` freezes the minter
+  set: `setPrimaryMinter` reverts `MinterIsLocked` after that point, matching
+  the rest of the frozen minter surface.
+- **Pooled:** no separate setter. The pointer tracks the pool's sole minter
+  automatically: granting a minter via `setMinter` sets it as primary,
+  revoking the current primary clears it, and replacing the minter (revoke
+  old, grant new) moves the pointer to the new one. `createPooledSurface`
+  can pass a caller-supplied `primaryMinter`, which the core validates is
+  both a granted minter and the pool's sole one. `setPrimaryMinter` on a
+  pooled collection reverts `OnlySequential`.
+
+**Rationale:** the audit-driven reduction (2026-07) stripped every mint path
+off the token; the only way a generic client resolves "how do I mint this"
+today is an indexer heuristic over `MinterSet`/`Minted` history, which is
+fragile for a collection an indexer has not seen yet. `primaryMinter` gives
+a direct onchain answer with no new custody, payability, or authority: it is
+a pointer, validated against the existing `_minters` set at every write, not
+a second grant mechanism.
+
+**Consequence:** `SurfaceFactory.SurfaceCreated`'s `primaryMinter` field (renamed
+from `minter`, a name-only change: the event topic and the field's position
+in the log's non-indexed data are unchanged, so positional ABI decoding is
+unaffected) now carries the chosen primary on every creation path, not just
+the canonical one, so an indexer backfills the pointer without a special case
+for `createSurfaceCustom`/`createPooledSurface`.
+
 ## 8. Non-goals
 
 - No change to the renderer, Catalog, or lifecycle-lock designs.

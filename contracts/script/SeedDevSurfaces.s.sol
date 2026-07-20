@@ -129,7 +129,7 @@ contract SeedDevSurfaces is Script {
         roster[1] = ANVIL_ACCOUNT_1;
 
         orbits = SurfaceFactory(factory)
-            .createSurfaceCustom("Orbit Studies", "ORBIT", artist, cfg, new address[](0), roster);
+            .createSurfaceCustom("Orbit Studies", "ORBIT", artist, cfg, new address[](0), address(0), roster);
         // Cover art lives in renderer-land (RenderAssets), not the core.
         RenderAssets(renderAssets).setCover(orbits, ORBIT_COVER);
         _airdrop(orbits, artist, 3);
@@ -142,7 +142,7 @@ contract SeedDevSurfaces is Script {
         cfg.supplyCap = 32;
 
         drift = SurfaceFactory(factory)
-            .createSurfaceCustom("Signal Drift", "DRIFT", artist, cfg, new address[](0), new address[](0));
+            .createSurfaceCustom("Signal Drift", "DRIFT", artist, cfg, new address[](0), address(0), new address[](0));
         RenderAssets(renderAssets).setCover(drift, DRIFT_COVER);
     }
 

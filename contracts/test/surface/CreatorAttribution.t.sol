@@ -48,7 +48,7 @@ contract CreatorAttributionTest is Test {
         address[] memory creators = new address[](2);
         creators[0] = collabB;
         creators[1] = collabC;
-        c = Surface(factory.createSurfaceCustom("Collab", "CLB", artist, cfg, new address[](0), creators));
+        c = Surface(factory.createSurfaceCustom("Collab", "CLB", artist, cfg, new address[](0), address(0), creators));
     }
 
     function test_confirmed_requiresListedAndCatalogClaim() public {
@@ -124,7 +124,7 @@ contract CreatorAttributionTest is Test {
         SurfaceConfig memory cfg;
         address[] memory creators = new address[](1);
         creators[0] = collabB;
-        Surface c2 = Surface(f2.createSurfaceCustom("NoCat", "NC", artist, cfg, new address[](0), creators));
+        Surface c2 = Surface(f2.createSurfaceCustom("NoCat", "NC", artist, cfg, new address[](0), address(0), creators));
         assertEq(c2.catalog(), address(0));
         assertTrue(c2.isListedCreator(collabB));
         assertFalse(c2.isConfirmedCreator(collabB), "no catalog => never confirmed");

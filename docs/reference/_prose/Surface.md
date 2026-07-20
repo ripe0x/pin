@@ -18,6 +18,9 @@ Price, mint window, payment, referral, and gating live in the minter that calls
 [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter); a project with
 its own economics grants its own minter contract instead. The owner controls a
 minter through `setMinter` (grant or revoke) and `lockMinter` (freeze the set).
+`primaryMinter` is a separate frontend-discovery pointer at one granted minter,
+the one a generic client reads and calls first; `isMinter` is the full
+authorization check every granted minter passes equally.
 
 Three one-way locks cover the state the token owns: `lockRenderer` pins the
 renderer pointer, `lockSupply` freezes the cap, and `lockMinter` freezes the
@@ -35,6 +38,21 @@ supply cap bounds all mints, ids are assigned sequentially, and each mint emits
 `Minted` with the calling minter. Payment, referral, and gating are the minter's
 own surface; see [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter)
 and the [minter guide](/docs/surface/guides/write-a-minter).
+
+### Primary minter
+
+`primaryMinter` names one granted minter as the frontend-discovery default, so a
+generic client can go from a collection address to its intended mint module
+without enumerating every grant. It is metadata, not a payment router: minting
+still calls the named minter directly, and every other granted minter is equally
+callable through `isMinter`. On the sequential form the owner or admin sets it
+with `setPrimaryMinter`, which reverts `OnlySequential` on the pooled form and
+`MinterIsLocked` once `lockMinter` has run; revoking the current primary through
+`setMinter` clears the pointer to zero. On the pooled form there is no separate
+setter: the pointer tracks whichever minter is currently granted, since the form
+holds at most one at a time. `initialize` seeds the pointer from `InitParams`,
+validated against `initialMinters` (and, for pooled, required to be the sole
+entry). Every change emits `PrimaryMinterSet`.
 
 ### Owner and admins
 
@@ -102,6 +120,10 @@ cast call <COLLECTION_ADDRESS> "renderer()(address)" \
 
 # Whether an address may mint
 cast call <COLLECTION_ADDRESS> "isMinter(address)(bool)" <MINTER_ADDRESS> \
+  --rpc-url https://ethereum-rpc.publicnode.com
+
+# The frontend-discovery default minter
+cast call <COLLECTION_ADDRESS> "primaryMinter()(address)" \
   --rpc-url https://ethereum-rpc.publicnode.com
 ```
 
@@ -178,6 +200,16 @@ its burn authority is minter-wide and a second minter could burn a token the fir
 backs, so a second grant reverts `TooManyMinters`; the sequential form permits any
 number. Minter-set changes on the pooled form are owner-only for the same reason.
 Emits `MinterSet`.
+
+## function setPrimaryMinter
+
+access: owner or admin (`onlyOwnerOrAdmin`, else `NotAuthorized`)
+
+Sequential-only: repoints the frontend-discovery default at `minter`, or clears
+it with the zero address. Reverts `OnlySequential` on the pooled form, whose
+primary tracks its sole granted minter automatically instead; `MinterIsLocked`
+once `lockMinter` has run; and `PrimaryMinterNotAuthorized` for a nonzero target
+that is not currently granted. Emits `PrimaryMinterSet`.
 
 ## function lockRenderer
 
@@ -375,6 +407,14 @@ confirmation is disabled).
 
 True if the address is an authorized minter allowed to call the mint entrypoint.
 
+## function primaryMinter
+
+The frontend-discovery default: the minter a generic client should read and call
+first. Not proof that no other authorized minter exists; every granted minter in
+`isMinter` is equally callable. Zero when none is set. On the sequential form,
+set via `setPrimaryMinter` and cleared when the current primary is revoked; on
+the pooled form it tracks the sole granted minter automatically.
+
 ## function isRendererLocked
 
 True after `lockRenderer`.
@@ -496,7 +536,15 @@ Emitted once when `lockMinter` runs.
 
 Emitted when a minter is granted or revoked, and once per initial minter at init.
 Indexed by `minter`, with the `allowed` flag. The factory's `SurfaceCreated` names
-the canonically wired minter directly.
+the chosen primary minter directly (see `PrimaryMinterSet` for the live pointer).
+
+## event PrimaryMinterSet
+
+Emitted whenever the frontend-discovery pointer changes: `setPrimaryMinter` on
+the sequential form, a pooled sole-minter grant or revoke tracking
+automatically, a revoke of the current primary clearing it to zero on either
+form, or the value seeded at init. Indexed by `minter` (the new value, zero when
+cleared).
 
 ## event CreatorListed
 
@@ -598,6 +646,16 @@ seeded at init through `initialMinters`.
 
 An initial minter in `initialize`, or the `setMinter` target, was the zero
 address.
+
+## error OnlySequential
+
+`setPrimaryMinter` was called on a pooled collection, whose primary tracks its
+sole granted minter automatically instead of taking an explicit setter.
+
+## error PrimaryMinterNotAuthorized
+
+`initialize` or `setPrimaryMinter` was given a nonzero primary minter that is
+not a member of the granted minter set (the sole entry, for the pooled form).
 
 ## error NotAuthorized
 

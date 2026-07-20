@@ -78,7 +78,7 @@
             "internalType": "uint64"
           },
           {
-            "name": "payout",
+            "name": "payoutRecipient",
             "type": "address",
             "internalType": "address"
           },
@@ -115,6 +115,19 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "mint",
+    "inputs": [
+      {
+        "name": "quantity",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "payable"
   },
   {
     "type": "function",
@@ -191,7 +204,7 @@
   },
   {
     "type": "function",
-    "name": "payout",
+    "name": "payoutRecipient",
     "inputs": [],
     "outputs": [
       {
@@ -335,10 +348,10 @@
   },
   {
     "type": "function",
-    "name": "setPayout",
+    "name": "setPayoutRecipient",
     "inputs": [
       {
-        "name": "payout_",
+        "name": "payoutRecipient_",
         "type": "address",
         "internalType": "address"
       }
@@ -517,7 +530,7 @@
         "internalType": "uint64"
       },
       {
-        "name": "payout",
+        "name": "payoutRecipient",
         "type": "address",
         "indexed": false,
         "internalType": "address"
@@ -545,10 +558,10 @@
   },
   {
     "type": "event",
-    "name": "PayoutSet",
+    "name": "PayoutRecipientSet",
     "inputs": [
       {
-        "name": "payout",
+        "name": "payoutRecipient",
         "type": "address",
         "indexed": true,
         "internalType": "address"
@@ -770,6 +783,11 @@
   {
     "type": "error",
     "name": "NothingToWithdraw",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "PayoutRecipientRequired",
     "inputs": []
   },
   {

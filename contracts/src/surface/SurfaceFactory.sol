@@ -78,12 +78,17 @@ contract SurfaceFactory {
     mapping(address => bool) public isSurface;
     address[] public allSurfaces;
 
-    /// @notice `minter` is the canonical FixedPriceMinter clone createSurface
-    ///         wired, or address(0) for createSurfaceCustom/createPooledSurface
-    ///         (bring-your-own minter, granted separately or via
-    ///         initialMinters). This is the collection-to-minter binding an
-    ///         indexer reads; there is no minterOf storage mapping.
-    event SurfaceCreated(address indexed owner, address indexed collection, address minter, IdMode idMode);
+    /// @notice `primaryMinter` is the canonical FixedPriceMinter clone
+    ///         createSurface wired, the caller-supplied primary for
+    ///         createSurfaceCustom/createPooledSurface, or address(0) when
+    ///         none was designated. This mirrors the collection's own
+    ///         primaryMinter() at the moment of creation, the collection-to-
+    ///         minter binding an indexer or frontend reads first; there is no
+    ///         separate minterOf storage mapping. Renamed from `minter`
+    ///         (#primaryMinter): the event topic is unchanged, the field is
+    ///         still the second non-indexed word, so positional ABI decoding
+    ///         is unaffected.
+    event SurfaceCreated(address indexed owner, address indexed collection, address primaryMinter, IdMode idMode);
     event Deprecated(address indexed successor);
     event PausedSet(bool paused);
 
@@ -93,6 +98,10 @@ contract SurfaceFactory {
     error AlreadyDeprecated();
     error NotAContract(address account);
     error OwnerRequired();
+    /// @dev Distinct from ISurfaceCore.PrimaryMinterNotAuthorized: the core
+    ///      re-checks membership (and, for pooled, sole-minter-ness) at init
+    ///      regardless of what the factory validates here.
+    error PrimaryMinterNotAuthorized();
 
     constructor(
         address sequentialImplementation_,
@@ -202,6 +211,7 @@ contract SurfaceFactory {
                 cfg: cfg,
                 defaultRenderer: defaultRenderer,
                 initialMinters: initialMinters,
+                primaryMinter: minter,
                 catalog: catalog,
                 creators: creators
             })
@@ -216,6 +226,9 @@ contract SurfaceFactory {
     ///         `createSurface`.
     /// @param initialMinters Minters granted at init. Empty for collections
     ///        that grant minters in a later transaction.
+    /// @param primaryMinter Frontend-discovery default; must be address(0) or
+    ///        a member of `initialMinters`. The collection's own
+    ///        setPrimaryMinter can repoint it later (sequential only).
     /// @param creators Initial listed creators (the owner's side of
     ///        attribution); each confirms by claiming the collection in their
     ///        own Catalog. Empty for solo works.
@@ -225,10 +238,11 @@ contract SurfaceFactory {
         address owner,
         SurfaceConfig calldata cfg,
         address[] calldata initialMinters,
+        address primaryMinter,
         address[] calldata creators
     ) external returns (address collection) {
-        collection = _create(sequentialImplementation, name, symbol, owner, cfg, initialMinters, creators);
-        emit SurfaceCreated(owner, collection, address(0), IdMode.Sequential);
+        collection = _create(sequentialImplementation, name, symbol, owner, cfg, initialMinters, primaryMinter, creators);
+        emit SurfaceCreated(owner, collection, primaryMinter, IdMode.Sequential);
     }
 
     /// @notice Deploy and configure a pooled collection owned by `owner`: the
@@ -237,16 +251,21 @@ contract SurfaceFactory {
     ///         the collection deploys fully wired in one transaction. There is
     ///         no canonical-minter form for pooled: a fixed-price pooled sale
     ///         has no general id-assignment policy a shared minter could use.
+    /// @param primaryMinter Frontend-discovery default; must be address(0) or
+    ///        the sole entry of `initialMinters` (the core also enforces this
+    ///        at init). The pooled form has no separate setter afterward: the
+    ///        primary tracks whichever minter is granted.
     function createPooledSurface(
         string calldata name,
         string calldata symbol,
         address owner,
         SurfaceConfig calldata cfg,
         address[] calldata initialMinters,
+        address primaryMinter,
         address[] calldata creators
     ) external returns (address collection) {
-        collection = _create(pooledImplementation, name, symbol, owner, cfg, initialMinters, creators);
-        emit SurfaceCreated(owner, collection, address(0), IdMode.Pooled);
+        collection = _create(pooledImplementation, name, symbol, owner, cfg, initialMinters, primaryMinter, creators);
+        emit SurfaceCreated(owner, collection, primaryMinter, IdMode.Pooled);
     }
 
     function _create(
@@ -256,9 +275,13 @@ contract SurfaceFactory {
         address owner,
         SurfaceConfig calldata cfg,
         address[] calldata initialMinters,
+        address primaryMinter,
         address[] calldata creators
     ) private returns (address collection) {
         _checkCreatable(owner);
+        if (primaryMinter != address(0) && !_isMember(initialMinters, primaryMinter)) {
+            revert PrimaryMinterNotAuthorized();
+        }
         collection = Clones.clone(implementation);
         SurfaceCore(collection)
             .initialize(
@@ -269,11 +292,19 @@ contract SurfaceFactory {
                     cfg: cfg,
                     defaultRenderer: defaultRenderer,
                     initialMinters: initialMinters,
+                    primaryMinter: primaryMinter,
                     catalog: catalog,
                     creators: creators
                 })
             );
         _record(collection);
+    }
+
+    function _isMember(address[] calldata list, address account) private pure returns (bool) {
+        for (uint256 i = 0; i < list.length; i++) {
+            if (list[i] == account) return true;
+        }
+        return false;
     }
 
     function _checkCreatable(address owner) private view {

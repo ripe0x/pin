@@ -163,15 +163,19 @@ export type Collection = {
   isSupplyLocked: boolean
   renderer: Address
   cfg: SurfaceConfig
-  /** The canonical FixedPriceMinter clone SurfaceCreated wired for this
-   *  collection, from the indexed SurfaceCreated.minter field — null when
-   *  none is on record yet (not indexed, or a bring-your-own/pooled
-   *  collection that skipped the canonical clone). There is no live-chain
-   *  way to recover this: the token has no "list of minters" getter, only
-   *  isMinter(candidate). */
-  minter: Address | null
-  /** The minter's live sale config, read directly off `minter` when present.
-   *  Null exactly when `minter` is null. */
+  /** Frontend-discovery default: mirrors the collection's own
+   *  primaryMinter(), from the indexed row (seeded from SurfaceCreated,
+   *  kept current by PrimaryMinterSet) — null when none is on record
+   *  (not indexed, or a bring-your-own/pooled collection with no primary
+   *  set). Not proof that no other authorized minter exists; only that no
+   *  primary is on record. There is no live-chain way to recover this
+   *  cheaply beyond the single primaryMinter() read: the token has no
+   *  "list of minters" getter, only isMinter(candidate). */
+  primaryMinter: Address | null
+  /** The primary minter's live sale config, read directly off
+   *  `primaryMinter` when present. Null exactly when `primaryMinter` is
+   *  null, or when it's set but doesn't implement this sale shape (a
+   *  bring-your-own minter). */
   sale: MinterSaleConfig | null
   /** What the work is, executably — read from the GenerativeRenderer's
    *  work registry (renderer-land), empty for renderer-native works or
@@ -316,9 +320,9 @@ export function isMintable(cfg: SaleWindow, minted: bigint, nowSec: number): boo
  * extension with no direct buy flow on this page (pooled collections never
  * wire a canonical minter — createPooledSurface has no canonical-minter
  * form, per docs/pnd-surface-thin-token-rearchitecture.md §3.5). Sequential
- * collections with no canonical minter on record (bring-your-own, or not yet
- * indexed) hit the same notice — see the `minter === null` check at call
- * sites, which this idMode-only helper doesn't see. */
+ * collections with no primary minter on record (bring-your-own, or not yet
+ * indexed) hit the same notice — see the `primaryMinter === null` check at
+ * call sites, which this idMode-only helper doesn't see. */
 export function sellsViaMinterOnly(idMode: IdMode): boolean {
   return idMode === IdMode.Pooled
 }
