@@ -34,6 +34,50 @@ export function allowlistProofIn(data: ProofFile, address: string): `0x${string}
   return data.proofs[address.toLowerCase()] ?? null
 }
 
+// The full proof file is ~31MB (27k addresses). The pre-public CHECKER only needs
+// membership, not proofs, so it loads this ~1MB address-only companion instead; the heavy
+// proof file is fetched only when an actual mint needs a proof (post-deploy). Both are
+// vendored from the same build, so `root` matches.
+export type AddressFile = {root: `0x${string}`; count: number; addresses: string[]}
+
+let addrCache: Promise<Set<string>> | null = null
+
+/** Fetch-and-cache the lightweight membership set (lowercased). One request per session. */
+export function loadAllowlistAddresses(): Promise<Set<string>> {
+  addrCache ??= fetch("/data/homage-allowlist-addresses.json")
+    .then((r) => {
+      if (!r.ok) {
+        addrCache = null // let a transient failure retry
+        throw new Error(`allowlist addresses fetch failed: ${r.status}`)
+      }
+      return r.json() as Promise<AddressFile>
+    })
+    .then((d) => new Set(d.addresses.map((a) => a.toLowerCase())))
+  return addrCache
+}
+
+/** Lazy membership hook: null while loading (UNKNOWN; never render a negative from null),
+ *  the lowercased address Set after. Loads the ~1MB list, not the ~31MB proofs, so eligibility
+ *  UI can resolve without pulling the heavy file; fetch the proof separately only at mint. */
+export function useAllowlistMembership(enabled: boolean): Set<string> | null {
+  const [members, setMembers] = useState<Set<string> | null>(null)
+  useEffect(() => {
+    if (!enabled || members) return
+    let cancelled = false
+    loadAllowlistAddresses()
+      .then((s) => {
+        if (!cancelled) setMembers(s)
+      })
+      .catch(() => {
+        /* stays null; a later mount retries via the reset cache */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [enabled, members])
+  return members
+}
+
 /** Lazy allowlist hook: null while loading (UNKNOWN — callers must not render a
  *  negative state from it), the loaded file after. `enabled` defers the 3.6MB fetch
  *  until a surface actually needs eligibility (e.g. the allowlist window is open). */

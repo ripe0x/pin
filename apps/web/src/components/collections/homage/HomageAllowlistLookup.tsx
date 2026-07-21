@@ -1,14 +1,14 @@
 "use client"
 
 // Pre-public allowlist checker: paste any address (or ENS name) and see whether it's
-// on the window-2 allowlist. Pure client-side against the vendored Merkle proof file
-// (the same data the mint itself proves against), so the check costs zero RPC; an ENS
-// name resolves through /api/homage/ens, which offloads to a hosted service (ensideas,
-// with an ensdata fallback), so no RPC call is made for resolution either.
+// on the window-2 allowlist. Membership uses the ~1MB address companion (not the ~31MB
+// proof file the mint later proves against), so the check costs zero RPC and no heavy
+// fetch; an ENS name resolves through /api/homage/ens, which offloads to a hosted service
+// (ensideas, with an ensdata fallback), so no RPC call is made for resolution either.
 
 import {useCallback, useState} from "react"
 import {isAddress} from "viem"
-import {allowlistProofIn, loadAllowlist} from "@/lib/homage/allowlist"
+import {loadAllowlistAddresses} from "@/lib/homage/allowlist"
 import {resolveEns} from "@/lib/homage/ens"
 
 type Result = {who: string; listed: boolean} | null
@@ -38,7 +38,7 @@ export function HomageAllowlistLookup() {
         if (!resolved) throw new Error("That name doesn't resolve.")
         addr = resolved
       }
-      setResult({who: raw, listed: allowlistProofIn(await loadAllowlist(), addr) !== null})
+      setResult({who: raw, listed: (await loadAllowlistAddresses()).has(addr.toLowerCase())})
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Lookup failed.")
     } finally {
