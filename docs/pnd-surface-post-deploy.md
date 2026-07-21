@@ -13,11 +13,13 @@
 
 ## Studio follow-ups
 
-- [ ] **Surface the admin list during ownership transfer.** The accepted
-  contract behavior (reaudit notes, Change 1) is that `_admins` survives
-  `transferOwnership` — the new owner inherits the old operator's keys.
-  The agreed mitigation is product-side: any transfer flow shows the
-  current admin roster loudly so both parties see who still holds keys.
+- [ ] **Surface the admin list during ownership transfer.** (Updated
+  2026-07-21: the contract behavior changed since this was written —
+  admin grants are owner-scoped (#150), so a transfer INVALIDATES every
+  inherited grant and the new owner starts with no admins.) The product
+  work that remains: the transfer flow should still show the outgoing
+  roster so the old owner knows which delegations just died, and the
+  new owner knows nothing carried over.
 
 ## First HTML-generative drop (gates that drop, not the SVG launch)
 
@@ -52,12 +54,16 @@ cover/captures/template/capturer) is shipped; this is the offchain half.
 None of these touch deployed collections — that is the point of the
 slot architecture. Each is a small singleton + tests + a studio surface.
 
-- [ ] **HookChain**: compose N mint hooks (allowlist + wallet cap
-  together currently needs custom code; the core has one hook slot).
-- [ ] **Signed-mint hook**: EIP-712 gate with an artist-held signer, for
+- [ ] **OwnerMinter**: owner-gated free mint (airdrops, artist proofs,
+  gifts). The canonical minter is paid-only by design and the documented
+  workaround (grant a one-off minter, mint, revoke) requires writing a
+  minter contract — a stock singleton closes that gap for no-Solidity
+  artists. Small: onlyCollectionOwnerOrAdmin passthrough to mintTo.
+- [ ] **Signed-mint minter**: EIP-712 gate with an artist-held signer, for
   dynamic allowlists with no merkle re-roots. Copy SeaDrop's
   `SignedMintValidationParams` bounds idea so a leaked signer key is
-  bounded in what it can authorize.
+  bounded in what it can authorize. (Pre-#164 this was sketched as a
+  mint hook; the hook slot is gone, so it ships as an extension minter.)
 - [ ] **DropMinter**: stage-rich drops (concurrent phases, per-stage
   price/caps, payer delegation) as ONE stock extension-minter singleton
   serving many collections — the SeaDrop feature set with the trust

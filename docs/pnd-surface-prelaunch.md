@@ -17,16 +17,15 @@
 
 ## Phase 0 — the deploy itself (Dave broadcasts; gated on the external audit)
 
-Two scripts, independent of each other, both fork-dry-run verified
-2026-07-21 (sender `0xCB43078C32423F5348Cab5885911C3B5faE217F9`, ~12.4M gas
-core + ~2.5M gas renderer modules, ~0.0036 ETH total at 0.24 gwei):
+The launch deploy is ONE script (the lean-deploy decision, `6f8ce9e`:
+impls + factory only, nothing unused in the deploy history):
 
 - `DeploySurfaceSystem.s.sol` — Surface impl, PooledSurface impl,
   FixedPriceMinter impl, SurfaceFactory (reuses the live mainnet Catalog,
   no default renderer), factory lands PAUSED (`setPaused(false)` opens it).
-- `DeployRenderModules.s.sol` — RenderAssets, then
-  DefaultRenderer(renderAssets). Ownerless singletons; not referenced by
-  the factory, so order relative to the core deploy does not matter.
+  Fork-dry-run verified 2026-07-21 (sender
+  `0xCB43078C32423F5348Cab5885911C3B5faE217F9`, ~12.4M gas, ~0.0030 ETH
+  at 0.24 gwei).
 
 ```
 cd contracts
@@ -34,16 +33,21 @@ forge script script/DeploySurfaceSystem.s.sol \
   --rpc-url $MAINNET_RPC_URL \
   --account <keystore name> --sender <deployer address> \
   --broadcast --verify --etherscan-api-key $ETHERSCAN_API_KEY
-
-forge script script/DeployRenderModules.s.sol \
-  --rpc-url $MAINNET_RPC_URL \
-  --account <keystore name> --sender <deployer address> \
-  --broadcast --verify --etherscan-api-key $ETHERSCAN_API_KEY
 ```
 
 - [ ] external audit closed at the deployed commit (the deploy gate)
-- [ ] both scripts broadcast; per-script summary addresses recorded
+- [ ] script broadcast; summary addresses recorded
 - [ ] factory left paused until launch readiness (Phase B/C prep done)
+
+**Deferred, staged and ready:** `DeployRenderModules.s.sol` (RenderAssets,
+then DefaultRenderer bound to it; ~2.5M gas, fork-dry-run verified same
+date). Per the lean-deploy decision these ship only when something needs
+them: the studio wizard's edition preset (which requires a deployed
+DefaultRenderer to pass as cfg.renderer — see T10), the capture/cover
+tooling (`pnd-surface-post-deploy.md`), or a launch-collection cover via
+`RenderAssets.setCover` (C4). Until then `defaultRenderer`/`renderAssets`
+stay empty in deployments.mainnet.json and packages/addresses, and A1
+fills only the core-system keys.
 
 ## Phase A — the hour after the deploy tx lands
 
@@ -330,6 +334,14 @@ historical sections that are explicitly marked historical.
 The wizard shipped unverified; the launch used scripts. Before opening
 studio deploys to other artists, prove the wizard produces a correct,
 fully-wired collection.
+
+**Known break to fix first:** the EDITION preset builds
+`cfg.renderer = address(0)` (`DeployStep.tsx` `buildCfg`) on the
+assumption the factory supplies a default renderer. The lean-deploy
+factory has none, so that path reverts `RendererRequired` at
+`createSurface`. Fix = deploy the renderer modules (Phase 0's deferred
+script) and pass the DefaultRenderer address explicitly, or gate the
+edition preset off until then.
 
 ```
 Prompt: You are a hands-on implementer; do this yourself. In the pnd
