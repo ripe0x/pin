@@ -1,21 +1,19 @@
 "use client"
 
-// Pre-public allowlist checker — paste any address (or ENS name) and see whether it's
+// Pre-public allowlist checker: paste any address (or ENS name) and see whether it's
 // on the window-2 allowlist. Pure client-side against the vendored Merkle proof file
 // (the same data the mint itself proves against), so the check costs zero RPC; an ENS
-// name resolves through the existing public client (one read, on demand).
+// name resolves through /api/homage/ens, which offloads to a hosted service (ensideas,
+// with an ensdata fallback), so no RPC call is made for resolution either.
 
 import {useCallback, useState} from "react"
 import {isAddress} from "viem"
-import {normalize} from "viem/ens"
-import {usePublicClient} from "wagmi"
-import {PREFERRED_CHAIN} from "@/components/tx/tx-ui"
 import {allowlistProofIn, loadAllowlist} from "@/lib/homage/allowlist"
+import {resolveEns} from "@/lib/homage/ens"
 
 type Result = {who: string; listed: boolean} | null
 
 export function HomageAllowlistLookup() {
-  const publicClient = usePublicClient({chainId: PREFERRED_CHAIN.id})
   const [input, setInput] = useState("")
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<Result>(null)
@@ -30,8 +28,13 @@ export function HomageAllowlistLookup() {
     try {
       let addr = raw
       if (!isAddress(raw)) {
-        if (!raw.includes(".") || !publicClient) throw new Error("Enter an address or ENS name.")
-        const resolved = await publicClient.getEnsAddress({name: normalize(raw)})
+        if (!raw.includes(".")) throw new Error("Enter an address or ENS name.")
+        let resolved: string | null
+        try {
+          resolved = (await resolveEns(raw)).address
+        } catch {
+          throw new Error("Couldn't reach the ENS resolver. Paste an address.")
+        }
         if (!resolved) throw new Error("That name doesn't resolve.")
         addr = resolved
       }
@@ -41,7 +44,7 @@ export function HomageAllowlistLookup() {
     } finally {
       setBusy(false)
     }
-  }, [input, publicClient])
+  }, [input])
 
   return (
     <div className="space-y-2">
