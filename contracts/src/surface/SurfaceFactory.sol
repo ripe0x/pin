@@ -23,7 +23,13 @@ struct SaleConfig {
 }
 
 /// @title SurfaceFactory
-/// @notice Clones a collection as an immutable EIP-1167 proxy per call.
+/// @notice The entry point for Surface: an artist deploys a collection and owns
+///         the systems around the work, not just the token. Each collection is an
+///         immutable clone whose owner controls the sale (the authorized minters),
+///         the art (the renderer slot), the payout, and the proceeds, and can make
+///         chosen properties permanent.
+///
+///         Clones a collection as an immutable EIP-1167 proxy per call.
 ///         `createSurface` (sequential, canonical minter) clones the token and
 ///         a `FixedPriceMinter` together and wires them in one transaction.
 ///         `createSurfaceCustom` (sequential, bring-your-own minter) and

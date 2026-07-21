@@ -7,7 +7,8 @@ import {ISurfaceCore} from "./interfaces/ISurfaceCore.sol";
 import {IdMode} from "./SurfaceTypes.sol";
 
 /// @title Surface
-/// @notice Sequential-id ERC721 collection.
+/// @notice Sequential-id ERC721 collection: the contract assigns ids in mint
+///         order (1, 2, 3, ...) and never reuses them after a burn.
 contract Surface is SurfaceCore, ISurface {
     function idMode() public pure override(SurfaceCore, ISurfaceCore) returns (IdMode) {
         return IdMode.Sequential;
