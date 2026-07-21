@@ -2,10 +2,15 @@
 
 > **Baseline for review: pin `main` @ `571a7a1`** (PR #164, the thin-token +
 > modular-minter rearchitecture) plus the internal pre-audit remediations on
-> branch `chore/surface-audit-baseline-reset` (`7056c77`). This is the deploy
-> gate: nothing here has had external review yet. It supersedes
-> `docs/pnd-surface-reaudit-notes.md`, whose fat-token `43f4ae7` baseline no
-> longer describes deployed code.
+> branch `chore/surface-audit-baseline-reset` (`7056c77`; merged to `main` as
+> PR #167, `65d770e`). This is the deploy gate: nothing here has had external
+> review yet. It supersedes `docs/pnd-surface-reaudit-notes.md`, whose
+> fat-token `43f4ae7` baseline no longer describes deployed code.
+>
+> **Post-baseline delta (fold into the same engagement).** Two contract PRs
+> landed on `main` after this baseline and are part of the code that deploys;
+> see "Changes after the baseline" below: PR #172 (primaryMinter discovery
+> pointer) and PR #174 (comment pass + additive integration aliases).
 
 ## What changed since the last audited baseline
 
@@ -131,6 +136,37 @@ confirm rather than re-flag):
   the referrer and keep the share. This is the platform's stated no-gatekeeper
   position, not a defect.
 
+## Changes after the baseline (PRs #172, #174; on `main`)
+
+Both landed after the baseline above and before deploy, so the audited code
+must be `main`'s tip, not the baseline commit. The full diff is
+`git diff 65d770e main -- contracts/src/surface/` (~205 lines, 6 files).
+
+- **PR #172, primaryMinter (behavioral, new state + ABI).** One new storage
+  slot on the core (`_primaryMinter`), declared a frontend-discovery default
+  only: every granted minter in `_minters` stays independently callable
+  regardless of the pointer, so it carries no authority. Written at
+  `initialize` (validated as a member of `initialMinters`; pooled additionally
+  requires it be the sole minter), by `setMinter` (a pooled grant becomes
+  primary automatically; revoking the current primary clears it in either
+  form), and by the new sequential-only `setPrimaryMinter`
+  (owner-or-admin, frozen once `lockMinter` fires). ABI changes:
+  `createSurfaceCustom`/`createPooledSurface` gained a `primaryMinter`
+  parameter (new selectors), `SurfaceCreated`'s third field is now the
+  designated primary instead of always address(0) on the BYO paths (topic
+  unchanged), and `primaryMinter()`/`setPrimaryMinter`/`PrimaryMinterSet`/
+  two errors were added. Review focus: confirm the pointer can never mint,
+  never dangles at a revoked minter, and cannot be set past lockMinter.
+- **PR #174, source clarity + aliases (intended no behavior change).**
+  `FixedPriceMinter.mint(address,uint256,address,bytes)` body extracted to
+  `_executeMint(payer, ...)` with `payer = msg.sender` at both call sites; a
+  new `mint(uint256)` convenience overload (mints to caller, no referrer, no
+  data) enters the same body under its own `nonReentrant`; two additive view
+  aliases `totalMintedByThisMinter()`/`saleCap()`; internal modifier rename.
+  Review focus: confirm `_executeMint` is reachable only from the two
+  nonReentrant externals and that the excess-refund accrual and `Sold` payer
+  field still bind to the true msg.sender.
+
 ## Verification state at handoff
 
 - Full suite: **452 passed, 0 failed, 2 skipped** (the two skips are opt-in
@@ -138,6 +174,10 @@ confirm rather than re-flag):
   coverage). Deep invariant profile (`FOUNDRY_PROFILE=invariant`, 512 runs x
   100 depth): `FixedPriceMinterInvariants` and `SurfaceInvariants` green, 0
   reverts across the mint/withdraw/config-mutation action set.
+- At `main` post-#174 (2026-07-21, includes the #172/#174 delta above): full
+  suite **476 passed, 0 failed, 2 skipped**; deep invariant profile green
+  (18 tests, 0 failed); sizes Surface 13,781, PooledSurface 13,698,
+  FixedPriceMinter 9,521, SurfaceFactory 5,310 bytes, all under the gate.
 - Sizes under the 23,576-byte internal gate: Surface 13,091, PooledSurface
   13,065, FixedPriceMinter 9,122, SurfaceFactory 5,051 bytes.
 - `slither` clean on the new minter/factory/token code (triaged; all real

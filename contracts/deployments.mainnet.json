@@ -1,10 +1,11 @@
 {
-  "_note": "Addresses for the PND onchain-protocol reference. Two kinds of key: shared singletons (one canonical instance) and `*Implementation` keys (the shared logic contract that per-owner EIP-1167 clones delegatecall to, shown at the top of each clone's page). `catalog`, `auctionHouseFactory`, and `auctionHouseImplementation` are deployed; the Surface System keys (`surfaceFactory`, `defaultRenderer`, `renderAssets`, `sequentialImplementation`, `minterImplementation`) are pre-deploy and empty until launch. Fill an empty value and re-run `pnpm generate:docs` to resolve its address.",
+  "_note": "Addresses for the PND onchain-protocol reference. Two kinds of key: shared singletons (one canonical instance) and `*Implementation` keys (the shared logic contract that per-owner EIP-1167 clones delegatecall to, shown at the top of each clone's page). `catalog`, `auctionHouseFactory`, and `auctionHouseImplementation` are deployed; the Surface System keys (`surfaceFactory`, `defaultRenderer`, `renderAssets`, `sequentialImplementation`, `pooledImplementation`, `minterImplementation`) are pre-deploy and empty until launch. Fill an empty value and re-run `pnpm generate:docs` to resolve its address.",
   "chainId": 1,
   "surfaceFactory": "",
   "defaultRenderer": "",
   "renderAssets": "",
   "sequentialImplementation": "",
+  "pooledImplementation": "",
   "minterImplementation": "",
   "catalog": "0x467a9c39e03C595EC3075D856f19C7386b6b915d",
   "auctionHouseFactory": "0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f",

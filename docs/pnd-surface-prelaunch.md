@@ -15,14 +15,46 @@
 
 ---
 
+## Phase 0 — the deploy itself (Dave broadcasts; gated on the external audit)
+
+Two scripts, independent of each other, both fork-dry-run verified
+2026-07-21 (sender `0xCB43078C32423F5348Cab5885911C3B5faE217F9`, ~12.4M gas
+core + ~2.5M gas renderer modules, ~0.0036 ETH total at 0.24 gwei):
+
+- `DeploySurfaceSystem.s.sol` — Surface impl, PooledSurface impl,
+  FixedPriceMinter impl, SurfaceFactory (reuses the live mainnet Catalog,
+  no default renderer), factory lands PAUSED (`setPaused(false)` opens it).
+- `DeployRenderModules.s.sol` — RenderAssets, then
+  DefaultRenderer(renderAssets). Ownerless singletons; not referenced by
+  the factory, so order relative to the core deploy does not matter.
+
+```
+cd contracts
+forge script script/DeploySurfaceSystem.s.sol \
+  --rpc-url $MAINNET_RPC_URL \
+  --account <keystore name> --sender <deployer address> \
+  --broadcast --verify --etherscan-api-key $ETHERSCAN_API_KEY
+
+forge script script/DeployRenderModules.s.sol \
+  --rpc-url $MAINNET_RPC_URL \
+  --account <keystore name> --sender <deployer address> \
+  --broadcast --verify --etherscan-api-key $ETHERSCAN_API_KEY
+```
+
+- [ ] external audit closed at the deployed commit (the deploy gate)
+- [ ] both scripts broadcast; per-script summary addresses recorded
+- [ ] factory left paused until launch readiness (Phase B/C prep done)
+
 ## Phase A — the hour after the deploy tx lands
 
 ### A1. Record the addresses everywhere they belong
 
 Three places hold protocol addresses and all currently carry
 placeholders: `contracts/deployments.mainnet.json` (feeds the docs
-generator, which prints an unresolved-placeholder warning until filled),
-`packages/addresses/src/index.ts` (`SOVEREIGN_COLLECTION_FACTORY`,
+generator, which prints an unresolved-placeholder warning until filled;
+keys: `surfaceFactory`, `sequentialImplementation`,
+`pooledImplementation`, `minterImplementation`, `defaultRenderer`,
+`renderAssets`), `packages/addresses/src/index.ts` (`SURFACE_FACTORY`,
 `RENDER_ASSETS`, `DEFAULT_RENDERER` — the web app's source of truth),
 and the reference docs regenerate from the first.
 
@@ -35,10 +67,11 @@ and the reference docs regenerate from the first.
 ```
 Prompt: You are a hands-on implementer; do this yourself. In the pnd
 repo (~/foundation): the Surface system just deployed to mainnet.
-Addresses: <paste factory, sequential impl, pooled impl,
-DefaultRenderer, RenderAssets from the deploy broadcast>. Fill
+Addresses: <paste factory, sequential impl, pooled impl, minter impl,
+DefaultRenderer, RenderAssets from the deploy broadcasts
+(DeploySurfaceSystem.s.sol + DeployRenderModules.s.sol)>. Fill
 contracts/deployments.mainnet.json and the placeholder entries in
-packages/addresses/src/index.ts (SOVEREIGN_COLLECTION_FACTORY,
+packages/addresses/src/index.ts (SURFACE_FACTORY,
 RENDER_ASSETS, DEFAULT_RENDERER). Run pnpm generate:docs and confirm
 the unresolved-placeholder warning is gone, then pnpm --filter web
 typecheck. Cross-check each address against the deploy broadcast in

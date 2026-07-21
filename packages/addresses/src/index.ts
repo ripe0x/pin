@@ -166,11 +166,12 @@ export const MURI_MANIFOLD_EXTENSION: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0FFc4A1906157248ae64F28fD259bB7a2790606C",
 }
 
-// CollectionFactory — deploys one Collection per work as an
-// immutable EIP-1167 clone (no protocol fee; Referral Share is fixed inside the
-// collection). NOT yet deployed to mainnet — paste the address here after
-// running the collection deploy script. For local Anvil dev, set the
-// corresponding NEXT_PUBLIC_* env var instead of editing this file.
+// SurfaceFactory — deploys one Surface collection per work as an
+// immutable EIP-1167 clone (no protocol fee; the Referral Share is fixed
+// inside the canonical FixedPriceMinter). NOT yet deployed to mainnet —
+// paste the address here after running DeploySurfaceSystem.s.sol. For local
+// Anvil dev, set the corresponding NEXT_PUBLIC_* env var instead of editing
+// this file.
 export const SURFACE_FACTORY: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
 }
@@ -183,17 +184,20 @@ export const RENDER_ASSETS: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
 }
 
-// DefaultRenderer — the canonical built-in renderer every
-// CollectionFactory wires into its clones unless the owner swaps it.
-// NOT yet deployed to mainnet — paste the address here after deploy.
+// DefaultRenderer — the stock data-URI renderer (reads RenderAssets). The
+// factory ships with no default renderer; a collection opts in by passing
+// this address as cfg.renderer at create (or via setRenderer later).
+// NOT yet deployed to mainnet — paste the address here after running
+// DeployRenderModules.s.sol.
 export const DEFAULT_RENDERER: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
 }
 
-// GateHook — public-good composite mint gate (merkle allowlist + per-wallet
-// cap, each independently optional), attached per collection via
-// setMintHook and configured by that collection's owner/admins. NOT yet
-// deployed to mainnet — paste the address here after deploy.
+// SUPERSEDED — GateHook was deleted in the thin-token rearchitecture
+// (PR #164): the merkle allowlist and per-wallet cap moved into
+// FixedPriceMinter itself, and the core's hook slot was removed. Never
+// deployed (still zero); kept only in case an external reference points at
+// this exported name. Do not wire up new code against this.
 export const GATE_HOOK: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
 }
