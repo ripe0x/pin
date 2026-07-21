@@ -10,6 +10,7 @@
 import {useCallback, useEffect, useRef, useState, type ReactNode} from "react"
 import Link from "next/link"
 import {FitHeadline} from "./FitHeadline"
+import {HomageAllowlistLookup} from "./HomageAllowlistLookup"
 import {CrossfadeArt} from "@/components/mint/homage-gallery/CrossfadeArt"
 import {useGeneratedArt, useGeneratedSample} from "./synthetic-punk"
 import {weightedStatus} from "@/components/mint/homage-gallery/gallery-deck"
@@ -235,6 +236,15 @@ export function HomagePreview() {
                     </li>
                   ))}
                 </ul>
+              </div>
+
+              {/* Allowlist checker: anyone can confirm eligibility before the window opens.
+                  Membership only (the ~1MB companion), so no heavy fetch and zero RPC. */}
+              <div className="space-y-3 rounded-lg border border-gray-200 bg-surface p-5">
+                <HomageAllowlistLookup />
+                <p className="text-[10px] font-mono leading-relaxed text-gray-500">
+                  Eligibility is a fixed snapshot (July 21, 2026). Assets acquired after aren&rsquo;t reflected.
+                </p>
               </div>
             </div>
           </div>
