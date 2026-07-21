@@ -87,20 +87,26 @@ const ABOUT: {h: string | null; p: ReactNode[]}[] = [
   },
 ]
 
-// The mint windows, in order. Punk-owner claim and allowlist open together as one phase.
-// `at` is the absolute instant (ET / EDT −04:00); the display converts it to the
-// viewer's local timezone client-side. `etLabel` is the SSR/no-JS fallback.
+// The mint windows, in order. `at` is the absolute instant (ET / EDT −04:00); the
+// display converts it to the viewer's local timezone client-side. `etLabel` is the
+// SSR/no-JS fallback.
 const WINDOWS = [
   {
-    name: "Punk owner and allowlist",
-    at: "2026-07-21T20:00:00-04:00",
-    etLabel: "Tue, Jul 21 · 8:00 PM ET",
-    detail: "claim your id or enter the allowlist draw",
+    name: "Punk owners",
+    at: "2026-07-23T16:20:00-04:00",
+    etLabel: "Thu, Jul 23 · 4:20 PM ET",
+    detail: "claim your punk's id",
+  },
+  {
+    name: "Allowlist",
+    at: "2026-07-23T18:00:00-04:00",
+    etLabel: "Thu, Jul 23 · 6:00 PM ET",
+    detail: "random draw",
   },
   {
     name: "Public",
-    at: "2026-07-22T12:00:00-04:00",
-    etLabel: "Wed, Jul 22 · 12:00 PM ET",
+    at: "2026-07-24T12:00:00-04:00",
+    etLabel: "Fri, Jul 24 · 12:00 PM ET",
     detail: "all unclaimed Punk ids release into the draw",
   },
 ]
