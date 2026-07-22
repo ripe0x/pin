@@ -10,7 +10,8 @@ import {ISurfaceCore} from "./ISurfaceCore.sol";
 ///         minter.
 interface IPooledSurface is ISurfaceCore {
     /// @notice Authorized minters only. Mints a specific id (id 0 is valid).
-    ///         A burned id can be minted again as a new instance with fresh
-    ///         entropy; the prior instance's history remains in the event log.
+    ///         An authorized minter can mint a burned id again as a new
+    ///         instance with fresh entropy; the previous instance's history
+    ///         stays in the event log.
     function mintToId(address to, uint256 tokenId) external;
 }

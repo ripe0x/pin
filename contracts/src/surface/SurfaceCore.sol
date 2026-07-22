@@ -30,9 +30,9 @@ import {SurfaceConfig, IdMode, InitParams} from "./SurfaceTypes.sol";
 ///         deployed collection.
 abstract contract SurfaceCore is
 
-    // The OZ "Upgradeable" bases mean initializer-based (constructor-free), which
-    // is required because the finals deploy as EIP-1167 clones and a clone never
-    // runs a constructor; state is set in initialize(). It does NOT mean these
+    // The finals deploy as EIP-1167 clones. A clone never runs a constructor,
+    // so the OZ "Upgradeable" bases supply the initializer pattern and
+    // initialize() sets all state. It does NOT mean these
     // are upgradeable: the clones are immutable, with no proxy admin and no
     // upgrade path (the implementation calls _disableInitializers). To change
     // behavior, deploy a new implementation and a new factory.
@@ -62,8 +62,8 @@ abstract contract SurfaceCore is
     uint256 internal _minterCount;
 
     /// @dev One-way freeze of the minter set. Once true, no grant or revoke
-    ///      succeeds. A backed pooled collection sets this so no minter can be
-    ///      swapped in later to retire another minter's backed tokens. This is
+    ///      succeeds. A backed pooled collection sets this so no one can swap
+    ///      in a later minter to burn another minter's backed tokens. This is
     ///      the third one-way collection lock alongside rendererLocked and
     ///      supplyLocked, but it is not a SurfaceConfig field: it is set by
     ///      the separate lockMinter() call, not by initialize(p.cfg).
@@ -188,14 +188,13 @@ abstract contract SurfaceCore is
     ///      on an existing id; that check is the pooled-form correctness
     ///      guarantee, since a live id cannot be minted over. Does not touch
     ///      _mintedEver: the caller passes the mint order this token consumes
-    ///      and is responsible for writing _mintedEver once per external
-    ///      call (a batch call amortizes the write across every token it
-    ///      mints instead of writing it per iteration).
+    ///      and writes _mintedEver once per external call. A batch call then
+    ///      pays that storage write once, not once per token.
     function _mintOne(address to, uint256 tokenId, uint256 mintIndex) internal {
         _mint(to, tokenId);
-        // Seed: a pure function of public chain state and token identity. The
-        // recipient address is excluded, to avoid making entropy
-        // depend on the minter and to avoid a wallet-grinding surface.
+        // Seed: a pure function of public chain state and token identity. It
+        // excludes the recipient address: entropy must not depend on the
+        // minter, and a recipient input would open a wallet-grinding surface.
         // mintIndex re-rolls the seed on a pooled re-mint of the same id.
         // Spec: docs/injection-convention.md.
         _seed[tokenId] = keccak256(abi.encode(block.prevrandao, address(this), tokenId, mintIndex));
@@ -386,8 +385,8 @@ abstract contract SurfaceCore is
     ///         `minter`, or clear it with the zero address. `minter` must be a
     ///         currently granted minter. Pooled collections derive their
     ///         primary from the sole minter lifecycle in setMinter and have no
-    ///         separate setter. Reverts once the minter set is locked, so the
-    ///         primary is stable alongside the rest of the frozen minter set.
+    ///         separate setter. Reverts after lockMinter, so the
+    ///         primary freezes with the rest of the minter set.
     function setPrimaryMinter(address minter) external override onlyOwnerOrAdmin {
         if (idMode() == IdMode.Pooled) revert OnlySequential();
         if (_minterLocked) revert MinterIsLocked();
@@ -437,14 +436,15 @@ abstract contract SurfaceCore is
         emit RendererLocked();
     }
 
-    /// @notice One-way, optional: freeze the set of authorized minters
-    ///         permanently. For a backed pooled collection this guarantees no
-    ///         minter can be swapped in later to retire another minter's backed
-    ///         tokens; call it after granting the intended minter. Locking
-    ///         freezes the minter set as it stands: locking with none granted
-    ///         permanently prevents granting any, and since both forms mint
-    ///         only through authorized minters, that permanently prevents
-    ///         minting.
+    /// @notice One-way, optional. Freezes the list of authorized minters:
+    ///         after this call, setMinter always reverts, so no one can add
+    ///         or remove a minter. The lock does not stop minting. Every
+    ///         minter granted before the lock keeps its authority and can
+    ///         still mint. Locking with no minter granted leaves the
+    ///         collection unable to mint, forever, because all minting goes
+    ///         through authorized minters. For a backed pooled collection,
+    ///         grant the one intended minter, then lock: no later minter can
+    ///         then burn another minter's backed tokens.
     function lockMinter() external override {
         _requireMinterAuthority();
         if (_minterLocked) revert MinterIsLocked();
@@ -528,9 +528,9 @@ abstract contract SurfaceCore is
     }
 
     /// @dev A renounced collection with no explicit royaltyReceiver resolves
-    ///      to owner() == address(0); returning a nonzero amount there would
-    ///      direct a marketplace's royalty payment to the zero address, so
-    ///      the amount is zeroed instead.
+    ///      to owner() == address(0). A nonzero amount there would send a
+    ///      marketplace's royalty payment to the zero address, so the
+    ///      function returns zero instead.
     function royaltyInfo(uint256, uint256 salePrice) external view returns (address receiver, uint256 royaltyAmount) {
         receiver = _cfg.royaltyReceiver == address(0) ? owner() : _cfg.royaltyReceiver;
         if (receiver == address(0)) return (address(0), 0);

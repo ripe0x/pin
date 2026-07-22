@@ -103,9 +103,11 @@ interface ISurfaceCore {
     /// @notice Grants or revokes an extension minter. Reverts once the minter
     ///         set is locked; the pooled form allows one minter at a time.
     function setMinter(address minter, bool allowed) external;
-    /// @notice One-way, optional: freezes the minter set permanently. A backed
-    ///         pooled collection sets this so no minter can be swapped in later
-    ///         to burn another minter's backed tokens.
+    /// @notice One-way, optional. Freezes the list of authorized minters:
+    ///         setMinter always reverts afterward. The lock does not stop
+    ///         minting; granted minters keep minting. A backed pooled
+    ///         collection locks so no one can swap in a later minter to burn
+    ///         another minter's backed tokens.
     function lockMinter() external;
     /// @notice Sequential-only: point the frontend-discovery default at
     ///         `minter` (must be a currently granted minter, or the zero

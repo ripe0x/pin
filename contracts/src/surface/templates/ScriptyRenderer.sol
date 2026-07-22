@@ -103,9 +103,9 @@ contract ScriptyRenderer is IRenderer, IPreviewRenderer {
         injectionVersion = injectionVersion_;
         renderAssets = RenderAssets(renderAssets_);
         // Every referenced file store must be a deployed contract. An EOA store
-        // makes tokenURI revert, and if the renderer is then locked in, that
-        // break is permanent — the same door-check the core applies to the
-        // renderer slot, pushed down to the files this renderer reads.
+        // makes tokenURI revert; if the renderer is then locked, the break is
+        // permanent. The core runs the same code-length check on the renderer
+        // slot; this applies it to the files the renderer reads.
         bool needsGunzip;
         for (uint256 i = 0; i < code_.length; i++) {
             if (code_[i].store.code.length == 0) revert StoreNotContract(code_[i].store);

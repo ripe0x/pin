@@ -82,17 +82,15 @@ contract SurfaceFactory {
     mapping(address => bool) public isSurface;
     address[] public allSurfaces;
 
-    /// @notice `primaryMinter` is the canonical FixedPriceMinter clone
+    /// @notice `primaryMinter` is the canonical FixedPriceMinter clone that
     ///         createSurface wired, the caller-supplied primary for
-    ///         createSurfaceCustom/createPooledSurface, or address(0) when
-    ///         none was designated. This mirrors the collection's own
-    ///         primaryMinter() at the moment of creation: the default
-    ///         integration endpoint for a generic client, not the complete
-    ///         authorization set. A sequential collection may authorize
-    ///         additional minters after creation; the record of who is
-    ///         authorized to mint is the collection's MinterSet event log
-    ///         (and the live isMinter/isMinterLocked views), not this field.
-    ///         There is no separate minterOf storage mapping.
+    ///         createSurfaceCustom/createPooledSurface, or address(0) when the
+    ///         caller named none. It mirrors the collection's primaryMinter()
+    ///         at creation: the default integration endpoint, not the complete
+    ///         authorization set. A sequential collection may authorize more
+    ///         minters later. The full record is the collection's MinterSet
+    ///         event log plus the live isMinter/isMinterLocked views. There is
+    ///         no minterOf storage mapping.
     event SurfaceCreated(address indexed owner, address indexed collection, address primaryMinter, IdMode idMode);
     event Deprecated(address indexed successor);
     event PausedSet(bool paused);

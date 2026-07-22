@@ -68,10 +68,10 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
     uint64 public mintEnd;
     /// @notice The artist payout address. A concrete stored value set at
     ///         initialize() and updatable via setPayoutRecipient(); never
-    ///         derived from the collection's owner(). Enforced nonzero at
-    ///         both write points, so renouncing collection ownership does
-    ///         not affect where proceeds go, only whether this can still be
-    ///         changed.
+    ///         derived from the collection's owner(). Both write points
+    ///         require a nonzero value, so renouncing collection ownership
+    ///         never changes where proceeds go; it only removes the
+    ///         authority to change it.
     address public payoutRecipient;
     /// @notice This minter clone's own sale ceiling (0 = unlimited),
     ///         distinct from the collection's supplyCap: maxMints bounds
@@ -143,12 +143,12 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
         _disableInitializers();
     }
 
-    /// @dev Caller authority: permitted when the collection clone is not yet
-    ///      initialized (owner() == address(0), the window the factory's
-    ///      atomic createSurface uses: token clones first, then the minter
-    ///      clones and initializes against it, then the token initializes),
-    ///      or when the caller is that collection's live owner or admin
-    ///      (standalone deployment against an already-live collection).
+    /// @dev Caller authority, two cases. Case one: the collection clone is
+    ///      not yet initialized (owner() == address(0)). The factory's
+    ///      createSurface uses this window: the token clones first, the
+    ///      minter clones and initializes against it, then the token
+    ///      initializes. Case two: the caller is the live collection's owner
+    ///      or admin (a standalone deploy against a live collection).
     function initialize(FixedPriceMinterInitParams calldata p) external initializer {
         if (p.collection == address(0)) revert CollectionRequired();
         if (p.collection.code.length == 0) revert NotAContract(p.collection);
@@ -209,13 +209,12 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
         _executeMint(msg.sender, msg.sender, quantity, address(0), "");
     }
 
-    /// @dev The mint body shared by both external entrypoints. `payer` is
-    ///      msg.sender at the call site, passed explicitly rather than read
-    ///      here so this can only ever be reached through one of the two
-    ///      nonReentrant externals, never a self-call that would change
-    ///      msg.sender and misroute the excess-refund accrual or the Sold
-    ///      event's payer field. Reads msg.value directly: it is preserved
-    ///      across an internal call.
+    /// @dev The mint body shared by both external entrypoints. Each caller
+    ///      passes `payer` = its own msg.sender instead of reading it here.
+    ///      This keeps the only paths in through the two nonReentrant
+    ///      externals; a self-call could otherwise change msg.sender and
+    ///      misroute the excess-refund accrual or the Sold event's payer
+    ///      field. Reads msg.value directly: an internal call preserves it.
     function _executeMint(address payer, address to, uint256 quantity, address referrer, bytes memory data)
         internal
     {
@@ -387,9 +386,8 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
 
     /// @notice Update the stored artist payout address. Same borrowed
     ///         authority as the other config setters (collection owner or
-    ///         admin); if the collection's owner has renounced and no admin
-    ///         is granted, this can no longer be called, but the existing
-    ///         stored value keeps paying out.
+    ///         admin). After an owner renounce with no admin granted, no one
+    ///         can call this again; the stored value keeps paying out.
     function setPayoutRecipient(address payoutRecipient_) external onlyCollectionOwnerOrAdmin {
         if (payoutRecipient_ == address(0)) revert PayoutRecipientRequired();
         payoutRecipient = payoutRecipient_;
