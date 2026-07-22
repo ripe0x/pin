@@ -215,11 +215,13 @@ code must be `main`'s tip, not the baseline commit. The full diff is
   FixedPriceMinter 9,521, SurfaceFactory 5,310 bytes, all under the gate.
 - Sizes under the 23,576-byte internal gate: Surface 13,091, PooledSurface
   13,065, FixedPriceMinter 9,122, SurfaceFactory 5,051 bytes.
-- **Not re-run for #182/#189** (test counts and sizes above predate both):
-  #182 adds one storage slot and a setter to `FixedPriceMinter`, #189 only
-  changes an event signature, so neither is expected to move the size gate
-  meaningfully, but this needs a fresh `forge test` + size check before
-  handoff, not an assumption.
+- **Re-run at `main` @ `4fbc010` (2026-07-22, includes #182/#189):** full
+  suite **480 passed, 0 failed, 2 skipped**; deep invariant profile
+  (`FOUNDRY_PROFILE=invariant`) green, 480/0/2 across 26 suites. Runtime
+  sizes: Surface 13,781, PooledSurface 13,698, FixedPriceMinter 10,061,
+  SurfaceFactory 5,775 bytes, all under the 23,576-byte gate (#182's
+  storage slot + setter grew the minter ~540 bytes, #189's `name`/`symbol`
+  emission grew the factory ~465; both expected).
 - `slither` clean on the new minter/factory/token code (triaged; all real
   items are accepted pull-payment/factory patterns).
 - `contracts/.gas-snapshot` regenerated at this baseline.
