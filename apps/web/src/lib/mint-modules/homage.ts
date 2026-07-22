@@ -578,7 +578,7 @@ export function isSlippageError(e: unknown): boolean {
 
 // ── allowlist phase: eligibility + args ("homage-allowlist") ─────────────────
 
-type HomageAllowlistData = { proof: `0x${string}`[]; remaining: number; max: number }
+type HomageAllowlistData = { proof: `0x${string}`[] }
 
 registerEligibilityProvider("homage-allowlist", async ({ client, wallet }) => {
   if (!HOMAGE_MINTER_ADDRESS || !isAddress(HOMAGE_MINTER_ADDRESS))
@@ -589,14 +589,11 @@ registerEligibilityProvider("homage-allowlist", async ({ client, wallet }) => {
   if (!proof) return { eligible: false, reason: "This wallet is not on the allowlist." }
   const minter = HOMAGE_MINTER_ADDRESS as Address
 
-  // Remaining cap + a root sanity check, one multicall once per wallet+phase.
-  const [rootRes, maxRes, usedRes] = await client.multicall({
+  // Root sanity check, once per wallet+phase. There is no per-wallet allowance to read:
+  // allowlist mints are uncapped and throttled only by the fee escalator.
+  const [rootRes] = await client.multicall({
     allowFailure: true,
-    contracts: [
-      { address: minter, abi: homageMinterAbi as Abi, functionName: "allowlistRoot" },
-      { address: minter, abi: homageMinterAbi as Abi, functionName: "maxPerAllowlisted" },
-      { address: minter, abi: homageMinterAbi as Abi, functionName: "allowlistMinted", args: [wallet] },
-    ],
+    contracts: [{ address: minter, abi: homageMinterAbi as Abi, functionName: "allowlistRoot" }],
   })
   // Guard against a rotated onchain root: baked proofs would revert with
   // NotAllowlisted, so fail the check with an honest reason instead.
@@ -606,20 +603,10 @@ registerEligibilityProvider("homage-allowlist", async ({ client, wallet }) => {
       reason: "The onchain allowlist root doesn't match this build's proofs. Mint on the Homage site.",
     }
   }
-  const max = maxRes.status === "success" ? Number(maxRes.result as bigint) : 0
-  const used = usedRes.status === "success" ? Number(usedRes.result as bigint) : 0
-  // max >= 10_000 (the full supply) is the "no per-address cap" configuration.
-  const uncapped = max >= 10_000
-  const remaining = Math.max(max - used, 0)
-  if (!uncapped && remaining <= 0) {
-    return { eligible: false, reason: `Allowlist cap reached (${used} of ${max} used).` }
-  }
-  const data: HomageAllowlistData = { proof, remaining, max }
+  const data: HomageAllowlistData = { proof }
   return {
     eligible: true,
-    reason: uncapped
-      ? "On the allowlist. A random punk is drawn at mint."
-      : `On the allowlist. ${remaining} of ${max} mints left; a random punk is drawn at mint.`,
+    reason: "On the allowlist. A random punk is drawn at mint.",
     data,
   }
 })

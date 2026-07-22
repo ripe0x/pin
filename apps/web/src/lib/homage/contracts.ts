@@ -102,8 +102,6 @@ export const homageMinterAbi = parseAbi([
   "function setSchedule(uint64 claimStart_, uint64 allowlistStart_, uint64 publicStart_)",
   // allowlist
   "function allowlistRoot() view returns (bytes32)",
-  "function maxPerAllowlisted() view returns (uint256)",
-  "function allowlistMinted(address who) view returns (uint256)",
   // punk-id reservation — a holder withholds their punk id from the random draw
   // pool until claim opens; unclaimed reservations release into the pool then.
   "function reserve(uint256[] ids) external",

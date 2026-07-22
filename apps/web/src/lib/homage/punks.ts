@@ -44,10 +44,13 @@ const USE_OWNED_PUNKS_API = !FORK_MODE && !SEPOLIA_MODE
 // for the test instances, and inventing holdings on the live mint would be a lie about
 // what a wallet owns.
 const TEST_PUNKS_ALLOWED = SEPOLIA_MODE || FORK_MODE
-const TEST_PUNKS: Omit<PunkPick, "minted">[] = [
-  {id: 1234, wrapped: false},
-  {id: 5678, wrapped: true},
-  {id: 9012, wrapped: false, vault: "0x1234567890AbcdEF1234567890aBcdef12345678"},
+const TEST_PUNKS: PunkPick[] = [
+  {id: 1234, wrapped: false, minted: false},
+  {id: 5678, wrapped: true, minted: false},
+  {id: 9012, wrapped: false, vault: "0x1234567890AbcdEF1234567890aBcdef12345678", minted: false},
+  // One already minted, so the "already minted, view" row shows up alongside the
+  // claimable ones rather than only appearing once someone mints for real.
+  {id: 3456, wrapped: false, minted: true},
 ]
 
 function testPunksRequested(): boolean {
@@ -226,7 +229,7 @@ export function useOwnedPunks(minter: Address, address?: Address, refreshKey?: n
         return
       }
       if (testPunksRequested()) {
-        setState({punks: TEST_PUNKS.map((p) => ({...p, minted: false})), status: "ok"})
+        setState({punks: TEST_PUNKS, status: "ok"})
         return
       }
       setState((s) => ({...s, status: "loading"}))

@@ -78,9 +78,6 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
       {address: minter, abi: homageMinterAbi, functionName: "allowlistStart", chainId: PREFERRED_CHAIN.id},
       {address: minter, abi: homageMinterAbi, functionName: "publicStart", chainId: PREFERRED_CHAIN.id},
       {address: minter, abi: homageMinterAbi, functionName: "baseFee", chainId: PREFERRED_CHAIN.id},
-      {address: minter, abi: homageMinterAbi, functionName: "maxPerAllowlisted", chainId: PREFERRED_CHAIN.id},
-      {address: minter, abi: homageMinterAbi, functionName: "allowlistMinted", args: [address ?? ZERO], chainId: PREFERRED_CHAIN.id},
-      {address: minter, abi: homageMinterAbi, functionName: "exitFee", chainId: PREFERRED_CHAIN.id},
       {address: minter, abi: homageMinterAbi, functionName: "feeGrowthBps", chainId: PREFERRED_CHAIN.id},
       {address: minter, abi: homageMinterAbi, functionName: "mintCount", args: [address ?? ZERO], chainId: PREFERRED_CHAIN.id},
       {address: minter, abi: homageMinterAbi, functionName: "reservedRemaining", chainId: PREFERRED_CHAIN.id},
@@ -94,12 +91,11 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
           publicStart: Number(cfg.data[2].result as bigint),
         }
       : null
+  // Positional, in the order the contracts array above lists them. Keep the two in step.
   const baseFee = cfg.data?.[3]?.status === "success" ? (cfg.data[3].result as bigint) : BASE_FEE
-  const maxPerAllowlisted = cfg.data?.[4]?.status === "success" ? Number(cfg.data[4].result as bigint) : undefined
-  const allowlistUsed = cfg.data?.[5]?.status === "success" ? Number(cfg.data[5].result as bigint) : 0
-  const feeGrowthBps = cfg.data?.[7]?.status === "success" ? (cfg.data[7].result as bigint) : 0n
-  const walletMintCount = cfg.data?.[8]?.status === "success" ? (cfg.data[8].result as bigint) : 0n
-  const reservedRemaining = cfg.data?.[9]?.status === "success" ? Number(cfg.data[9].result as bigint) : undefined
+  const feeGrowthBps = cfg.data?.[4]?.status === "success" ? (cfg.data[4].result as bigint) : 0n
+  const walletMintCount = cfg.data?.[5]?.status === "success" ? (cfg.data[5].result as bigint) : 0n
+  const reservedRemaining = cfg.data?.[6]?.status === "success" ? Number(cfg.data[6].result as bigint) : undefined
 
   const minted = totalMinted.data !== undefined ? Number(totalMinted.data as bigint) : null
   const left = remaining.data !== undefined ? Number(remaining.data as bigint) : null
@@ -145,9 +141,6 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
   // window (i.e. about to mint); the proof itself is what the allowlistMint tx needs.
   const allowlist = useAllowlist(phase === "allowlist" && isAllowlisted)
   const allowlistProof = address && allowlist ? allowlistProofIn(allowlist, address) : null
-  // max >= SUPPLY is the "no per-address cap" configuration — hide cap language entirely.
-  const allowlistUncapped = maxPerAllowlisted !== undefined && maxPerAllowlisted >= SUPPLY
-  const allowlistRemaining = maxPerAllowlisted !== undefined ? Math.max(maxPerAllowlisted - allowlistUsed, 0) : undefined
 
   // ── live quote ───────────────────────────────────────────────────────────────
   const [quote, setQuote] = useState<MintQuote | null>(null)
@@ -567,25 +560,22 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                   )}
                 </div>
               ) : phase === "allowlist" ? (
-                isAllowlisted && (allowlistUncapped || (allowlistRemaining ?? 0) > 0) ? (
+                // Allowlist mints are uncapped: the contract keeps no per-wallet count
+                // and throttles only through the fee escalator, so membership is the
+                // whole test.
+                isAllowlisted ? (
                   <button
                     onClick={doAllowlistMint}
                     disabled={isPending || soldOut || drawExhausted || claimTotal === undefined}
                     className={btnPrimary}
                   >
-                    {isPending
-                      ? "Minting…"
-                      : drawExhausted
-                        ? "Draw pool empty"
-                        : `Allowlist mint${!allowlistUncapped && allowlistRemaining !== undefined ? ` · ${allowlistRemaining} left` : ""}`}
+                    {isPending ? "Minting…" : drawExhausted ? "Draw pool empty" : "Allowlist mint"}
                   </button>
                 ) : (
                   <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
-                    {isAllowlisted
-                      ? "Your allowlist allocation is used up."
-                      : !allowlist
-                        ? "Checking the allowlist…"
-                        : "This wallet isn’t on the allowlist. The public mint opens next."}
+                    {!allowlist
+                      ? "Checking the allowlist…"
+                      : "This wallet isn’t on the allowlist. The public mint opens next."}
                   </p>
                 )
               ) : phase === "closed" && reservationIsOpen ? (
