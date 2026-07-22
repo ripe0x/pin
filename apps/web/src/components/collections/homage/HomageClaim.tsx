@@ -125,10 +125,15 @@ export function HomageClaim({
         </ul>
       )}
 
+      {/* Reads as a state of the wallet's holdings, matching the rows it stands in for,
+          rather than as another line of explanatory copy. */}
       {punks.length === 0 && status !== "loading" && (
-        <p className="text-[10px] font-mono text-gray-400 leading-relaxed">
-          No claimable punks found for this wallet{status === "partial" ? " in the recent window" : ""}.
-        </p>
+        <div className="flex items-center gap-2 rounded border border-gray-200 bg-surface-muted/40 px-3 py-2">
+          <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-gray-300 dark:bg-gray-700" />
+          <span className="text-[11px] font-mono text-gray-400">
+            No claimable punks{status === "partial" ? " found in the recent window" : ""}
+          </span>
+        </div>
       )}
 
       {/* Mint by id (claimTo): the fallback for a punk the list above cannot see, e.g.
