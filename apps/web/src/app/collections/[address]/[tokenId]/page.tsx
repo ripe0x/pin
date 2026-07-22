@@ -80,7 +80,6 @@ export default async function CollectionTokenPage({ params }: { params: Params }
           tokenId={id}
           owner={t.owner}
           art={t.image}
-          animationUrl={t.animationUrl}
           punkImageSrc={punkImageSrc}
           punkBg={extractHomageGround(t.image)}
           facts={parseHomageFacts(t.tokenURI)}
