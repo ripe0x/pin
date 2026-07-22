@@ -163,6 +163,7 @@ export default async function CollectionPage({
     <HomageField
       collection={addr}
       renderer={c.renderer}
+      minter={homageMinter ?? undefined}
       mintedIds={homageMintedIds}
       sampleIds={homageSampleIds}
       supply={c.cfg.supplyCap > 0n ? Number(c.cfg.supplyCap) : 10_000}

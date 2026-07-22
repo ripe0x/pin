@@ -451,8 +451,11 @@ export function HomagePreview() {
 
 // The sample wall: a quilt of synthetic homages (novel colors sampled from the
 // collection's real ratios — no real punk), with a click-to-enlarge detail view.
-// Regenerate re-deals fresh seeds. Every render is local — zero RPC.
-function SampleWall() {
+// Regenerate re-deals fresh seeds. Every render is local — zero RPC. Exported for
+// reuse on the live collection page's pre-open state (HomageField), where the
+// onchain renderer can't yet produce varied output (e.g. a sepolia mock punk data
+// source returning one fixture for every id).
+export function SampleWall() {
   const [tiles, setTiles] = useState<Tile[]>([])
   const [focusIdx, setFocusIdx] = useState<number | null>(null)
   const nextKey = useRef(0)
