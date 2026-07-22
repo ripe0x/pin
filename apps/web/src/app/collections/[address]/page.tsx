@@ -11,7 +11,7 @@ import { ArtistName } from "@/components/collections/homage/ArtistName"
 import { HomageMintLog } from "@/components/collections/homage/HomageMintLog"
 import { HomageField } from "@/components/collections/homage/HomageField"
 import { HomageAbout } from "@/components/collections/homage/HomageAbout"
-import { getHomageMintedIds } from "@/lib/homage/collection.server"
+import { getHomageMintFeed, getHomageMintedIds } from "@/lib/homage/collection.server"
 import { WithdrawPanel } from "@/components/collections/WithdrawPanel"
 import { CollectionMintHistory } from "@/components/collections/CollectionMintHistory"
 import { AttributionRoster } from "@/components/collections/AttributionRoster"
@@ -100,9 +100,13 @@ export default async function CollectionPage({
   // Alt arrangement (?layout=mint-first): the About|Mint band sits ABOVE the field so
   // the instrument is the second thing on the page instead of below the full-bleed grid.
   const mintFirst = homageSkin && layout === "mint-first"
-  // Homage field: the minted set (chain-enumerated). With none minted the field shows
-  // the curated wall, which generates its own samples.
-  const homageMintedIds = homageSkin ? await getHomageMintedIds(addr) : []
+  // Homage field: the minted set (indexer SELECT; chain scan only as
+  // fallback). With none minted the field shows the curated wall, which
+  // generates its own samples. The mint feed is fetched once here and
+  // passed to both HomageMintLog mounts (desktop sidebar + mobile record).
+  const [homageMintedIds, homageMintFeed] = homageSkin
+    ? await Promise.all([getHomageMintedIds(addr), getHomageMintFeed(addr)])
+    : [[], []]
   const [history, attribution, recent] = await Promise.all([
     getCollectionMintHistory(addr, c.minted, c.cfg.idMode),
     getAttribution(addr),
@@ -396,7 +400,7 @@ export default async function CollectionPage({
             // The cell is capped at the instrument's width (556 = 460 + 2×48 gutters)
             // and centered by the grid when it stands alone, so the card never floats.
             <div className="mx-auto w-full max-w-[460px]">
-              <HomageMint collection={addr} minter={homageMinter} />
+              <HomageMint collection={addr} minter={homageMinter} mintFeed={homageMintFeed} />
             </div>
           ) : (
             <MintCollectionCTA
@@ -445,7 +449,7 @@ export default async function CollectionPage({
                 its stack there. Below lg the sidebar isn't a separate column, so this stays
                 in its original spot. */}
             <div className="lg:hidden">
-              <HomageMintLog collection={addr} chainId={PND_CHAIN_ID} variant="mobile" />
+              <HomageMintLog collection={addr} chainId={PND_CHAIN_ID} mints={homageMintFeed} variant="mobile" />
             </div>
             {/* Contract details, matching the 1/1 auction token page's
                 treatment (see src/app/[handle]/[tokenId]/page.tsx): a small

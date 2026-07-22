@@ -1,38 +1,28 @@
 "use client"
 
-// Proof that mints ARE reconstructable from onchain data: scans recent
-// Transfer(from=0x0) events straight off the collection contract and renders
-// them as a mint feed (thumbnail + "Homage to Punk <id>" + minter identity),
-// mirroring the row shape of the homepage activity feed
-// (components/home/v2/ActivityRow.tsx) — thumbnail, primary line, secondary
-// line joined by " · " — without pulling in its indexer/pagination machinery.
-// Mints are still discovered the same way as before: same fromBlock-windowed
-// getContractEvents call used by useOwnedHomages (lib/homage/punks.ts), just
-// filtered on `from` instead of `to`. Thumbnails are a single batched
-// tokenURI read (useReadContracts) over the page's mint ids, same decode
+// Mint feed for the homage collection page (thumbnail + "Homage to Punk
+// <id>" + minter identity), mirroring the row shape of the homepage
+// activity feed (components/home/v2/ActivityRow.tsx) — thumbnail, primary
+// line, secondary line joined by " · ". The mint rows arrive as a prop
+// from the server page (indexer SELECT over ponder collection_mints, with
+// a chain-scan fallback — see getHomageMintFeed in
+// lib/homage/collection.server.ts); this component no longer runs its own
+// per-visitor Transfer getLogs scan. Thumbnails stay a single batched
+// tokenURI read (useReadContracts) over the visible mint ids —
+// reveal-dependent, so they can't be cached long anywhere — same decode
 // pattern as HomageBatchReveal's per-token reveal grid.
 
 import {useEffect, useMemo, useState} from "react"
 import Link from "next/link"
 import {type Address} from "viem"
-import {usePublicClient, useReadContracts} from "wagmi"
+import {useReadContracts} from "wagmi"
 import {PREFERRED_CHAIN, evmNowTxUrl} from "@/components/tx/tx-ui"
 import {evmNowAddressUrl} from "@/lib/collection"
 import {homageCollectionAbi} from "@/lib/homage/contracts"
+import type {HomageMintEntry} from "@/lib/homage/collection.server"
 import {ArtistName} from "./ArtistName"
 
-const SCAN_WINDOW = 300_000n
-const MAX_ROWS = 12
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
-
-type MintEntry = {
-  tokenId: number
-  to: `0x${string}`
-  txHash: `0x${string}`
-  blockNumber: bigint
-  timestamp?: number
-}
-type Status = "idle" | "loading" | "ok" | "error"
+type MintEntry = HomageMintEntry
 
 /** "3h ago", "2d ago", etc. — coarse, no live-updating clock needed for a mint feed. */
 function formatRelativeTime(unixSeconds: number, nowSeconds: number): string {
@@ -75,81 +65,11 @@ function useLgViewport(): boolean | null {
   return lg
 }
 
-function useRecentMints(collection: `0x${string}`, enabled: boolean): {mints: MintEntry[]; status: Status} {
-  const client = usePublicClient({chainId: PREFERRED_CHAIN.id})
-  const [state, setState] = useState<{mints: MintEntry[]; status: Status}>({mints: [], status: "idle"})
-
-  useEffect(() => {
-    let cancelled = false
-    void (async () => {
-      if (!client || !enabled) {
-        setState({mints: [], status: "idle"})
-        return
-      }
-      setState((s) => ({...s, status: "loading"}))
-      try {
-        const latest = await client.getBlockNumber()
-        const fromBlock = latest > SCAN_WINDOW ? latest - SCAN_WINDOW : 0n
-        const logs = await client.getContractEvents({
-          address: collection,
-          abi: homageCollectionAbi,
-          eventName: "Transfer",
-          args: {from: ZERO_ADDRESS},
-          fromBlock,
-          toBlock: "latest",
-        })
-        if (cancelled) return
-        const byTokenId = new Map<number, MintEntry>()
-        for (const l of logs) {
-          const tokenId = (l.args as {tokenId?: bigint}).tokenId
-          const to = (l.args as {to?: string}).to
-          if (tokenId === undefined || to === undefined || !l.transactionHash || l.blockNumber === null) continue
-          byTokenId.set(Number(tokenId), {
-            tokenId: Number(tokenId),
-            to: to as `0x${string}`,
-            txHash: l.transactionHash,
-            blockNumber: l.blockNumber,
-          })
-        }
-        const mints = Array.from(byTokenId.values())
-          .sort((a, b) => b.tokenId - a.tokenId)
-          .slice(0, MAX_ROWS)
-        if (cancelled) return
-        setState({mints, status: "ok"})
-
-        // Timestamps aren't in the Transfer log — one getBlock per unique block among
-        // the visible rows (batch mints share a block, so this is well under MAX_ROWS
-        // calls), then patched onto the rows already on screen.
-        const uniqueBlocks = Array.from(new Set(mints.map((m) => m.blockNumber)))
-        const blocks = await Promise.all(
-          uniqueBlocks.map((bn) => client.getBlock({blockNumber: bn}).catch(() => null)),
-        )
-        if (cancelled) return
-        const tsByBlock = new Map<bigint, number>()
-        uniqueBlocks.forEach((bn, i) => {
-          const b = blocks[i]
-          if (b) tsByBlock.set(bn, Number(b.timestamp))
-        })
-        setState((s) => ({
-          ...s,
-          mints: s.mints.map((m) => ({...m, timestamp: tsByBlock.get(m.blockNumber)})),
-        }))
-      } catch {
-        if (!cancelled) setState({mints: [], status: "error"})
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [client, collection, enabled])
-
-  return state
-}
-
 /** Single batched tokenURI read over the visible mint ids (not one hook per
- * row) — same RPC-discipline intent as the log scan itself: one round trip
- * for the whole feed, cached for 60s so remounts/re-renders don't re-fetch. */
-function useMintThumbnails(collection: Address, mints: MintEntry[]): Map<number, string> {
+ * row) — one round trip for the whole feed, cached for 60s so remounts/
+ * re-renders don't re-fetch. `enabled` gates the inactive breakpoint copy
+ * (see the `variant` prop) so a hidden mount fires no reads. */
+function useMintThumbnails(collection: Address, mints: MintEntry[], enabled: boolean): Map<number, string> {
   const tokenIds = useMemo(() => mints.map((m) => m.tokenId), [mints])
   const contracts = useMemo(
     () =>
@@ -164,7 +84,7 @@ function useMintThumbnails(collection: Address, mints: MintEntry[]): Map<number,
   )
   const {data} = useReadContracts({
     contracts,
-    query: {enabled: contracts.length > 0, staleTime: 60_000},
+    query: {enabled: enabled && contracts.length > 0, staleTime: 60_000},
   })
   return useMemo(() => {
     const map = new Map<number, string>()
@@ -181,29 +101,31 @@ function useMintThumbnails(collection: Address, mints: MintEntry[]): Map<number,
 export function HomageMintLog({
   collection,
   chainId,
+  mints,
   variant,
 }: {
   collection: `0x${string}`
   chainId: number
+  /** Server-fetched mint rows (getHomageMintFeed) — the component renders,
+   * it does not discover. */
+  mints: MintEntry[]
   /** The page mounts a copy per breakpoint (sidebar at lg+, record section below);
    * CSS hides the inactive one but display:none doesn't stop hooks, so each copy
-   * declares its breakpoint and only the visible one runs the RPC scan. Omit when
-   * the component is mounted once. */
+   * declares its breakpoint and only the visible one runs the thumbnail reads.
+   * Omit when the component is mounted once. */
   variant?: "desktop" | "mobile"
 }) {
   const lg = useLgViewport()
-  // null (pre-paint) fetches nothing — the matching copy starts its scan one effect
-  // tick later, and the hidden copy never does.
+  // null (pre-paint) fetches nothing — the matching copy starts its reads one
+  // effect tick later, and the hidden copy never does.
   const active = variant === undefined ? true : lg !== null && (variant === "desktop") === lg
-  const {mints, status} = useRecentMints(collection, active)
-  const thumbnails = useMintThumbnails(collection, mints)
+  const thumbnails = useMintThumbnails(collection, mints, active)
   const nowSeconds = useMemo(() => Math.floor(Date.now() / 1000), [])
 
   return (
     <div className="flex flex-col gap-2">
       <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">Mint history</p>
-      {status === "loading" && <p className="font-mono text-[10px] text-gray-400">…</p>}
-      {status !== "loading" && mints.length === 0 && (
+      {mints.length === 0 && (
         <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">No mints yet.</p>
       )}
       {mints.length > 0 && (
