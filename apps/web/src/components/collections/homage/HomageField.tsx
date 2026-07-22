@@ -125,7 +125,7 @@ export function HomageField({
           style={{
             gridTemplateColumns: "repeat(auto-fill, minmax(clamp(150px, 22vw, 300px), 1fr))",
             background: "var(--paper, #0a0a0c)",
-            maxHeight: "clamp(300px, 44vw, 600px)",
+            maxHeight: "clamp(420px, 62vw, 800px)",
           }}
         >
           {cells.map((c, i) => (
