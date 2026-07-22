@@ -442,7 +442,8 @@ abstract contract SurfaceCore is
     ///         in later to retire another minter's backed tokens; call it once
     ///         the intended minter is set. Locking freezes the set as it stands:
     ///         locking an empty set permanently prevents granting any minter,
-    ///         which on a sequential collection permanently prevents minting.
+    ///         and since both forms mint only through authorized minters, that
+    ///         permanently prevents minting.
     function lockMinter() external override {
         _requireMinterAuthority();
         if (_minterLocked) revert MinterIsLocked();
