@@ -5,10 +5,15 @@ import { catalogAbi, surfaceAbi, surfaceFactoryAbi, fixedPriceMinterAbi, renderA
 import { ARTIST_RECORD_REGISTRY, MAINNET_CHAIN_ID, getAddressOrNull } from "@pin/addresses"
 import { fetchMetadataForUri } from "@pin/token-metadata"
 import { pgCache } from "./pg-cache"
-import { getCollectionPrimaryMinterFromIndexer } from "./indexer-queries"
+import {
+  getCollectionAddressesFromIndexer,
+  getCollectionPrimaryMinterFromIndexer,
+  isCollectionInIndexer,
+} from "./indexer-queries"
 import {
   decodeCollectionConfig,
   renderAssetsAddress,
+  surfaceFactory,
   type Collection,
   type MinterSaleConfig,
   IdMode,
@@ -134,7 +139,48 @@ export async function getCollectionCover(address: Address): Promise<string> {
   })
 }
 
+/**
+ * Membership gate: is `address` a Surface deployed by our factory? The
+ * indexed SurfaceCreated set answers first (a SELECT, no RPC); one cached
+ * factory isSurface() read covers the two cases the table can't — the
+ * indexer being unavailable, and the indexing lag right after a create
+ * (the artist lands on their new collection page before Ponder's next
+ * poll). On a fork/sepolia instance the table describes mainnet, so the
+ * live read is the primary path there. 60s TTL either way: in steady
+ * state the indexed set answers first and this read never fires, so the
+ * cache only carries the lag window.
+ */
+export async function isFactoryCollection(address: Address): Promise<boolean> {
+  if (!FORK_MODE && !USE_SEPOLIA) {
+    const indexed = await isCollectionInIndexer(address)
+    if (indexed === true) return true
+  }
+  const factory = surfaceFactory()
+  if (!factory) return false
+  const live = await pgCache(`sc-issurface:${lc(address)}`, 60, async () => {
+    const client = getClient()
+    try {
+      const ok = (await client.readContract({
+        address: factory,
+        abi: surfaceFactoryAbi,
+        functionName: "isSurface",
+        args: [address],
+      })) as boolean
+      return ok
+    } catch {
+      return null // read failed — unknown, distinct from a confirmed "no"
+    }
+  })
+  return live === true
+}
+
 export async function getCollection(address: Address): Promise<Collection | null> {
+  // Membership gate first (indexed set, RPC fallback — see
+  // isFactoryCollection): an arbitrary pasted address that merely
+  // implements the Surface read surface must not render as a collection
+  // page, and a non-member costs one SELECT instead of a speculative
+  // multicall against an unknown contract.
+  if (!(await isFactoryCollection(address))) return null
   return pgCache(`sc-collection:${lc(address)}`, 20, async () => {
     const client = getClient()
     const base = { address, abi: surfaceAbi } as const
@@ -395,8 +441,27 @@ export async function getCollectionMintHistory(
   })
 }
 
-/** Recent collections from the factory, newest first. For the landing. */
+/**
+ * Recent collections, newest first. For the landing.
+ *
+ * The address list comes from the indexed SurfaceCreated table (a pure
+ * SELECT — zero chain reads in the list path, per AGENTS.md); the
+ * factory-enumeration read (totalSurfaces + allSurfaces multicall) is the
+ * fallback for when the indexer is unavailable, and the primary path on a
+ * fork/sepolia instance, where the indexed table describes mainnet, not
+ * the local factory. Per-collection live state still comes from
+ * getCollection()'s cached reads either way.
+ */
 export async function getRecentCollections(factory: Address, limit = 8): Promise<Collection[]> {
+  if (!FORK_MODE && !USE_SEPOLIA) {
+    const indexed = await getCollectionAddressesFromIndexer(limit)
+    if (indexed !== null) {
+      const collections = await Promise.all(
+        indexed.map((a) => getCollection(a as Address)),
+      )
+      return collections.filter((c): c is Collection => c !== null)
+    }
+  }
   return pgCache(`sc-recent:${lc(factory)}:${limit}`, 60, async () => {
     const client = getClient()
     try {

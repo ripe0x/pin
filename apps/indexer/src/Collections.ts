@@ -11,47 +11,12 @@ import {
 /**
  * PND Surface System (contracts/src/surface/) handlers.
  *
- * DEPLOY-GATED: SurfaceFactory + Surface + FixedPriceMinter are only
- * present in ponder.config.ts's `contracts` once the real factory address
- * replaces the zero-address sentinel there. Until then, Ponder's generated
- * `EventNames` type structurally does not include
- * "SurfaceFactory:SurfaceCreated" / "Surface:Minted" / "Surface:Burned" /
- * "FixedPriceMinter:Sold" / "FixedPriceMinter:ReferralPaid" — there is
- * nothing in `contracts` for those strings to refer to.
- *
- * `ponder.on` is deliberately typed generically over the live config (see
- * node_modules/ponder Virtual.Registry), so a handler for a not-yet-
- * configured contract can't type-check as a literal call. Rather than
- * fight that by inventing a fake config-shaped type (or, worse, writing
- * real indexing logic against phantom types), this file registers through
- * `ponder.on` cast to its own generic shape at this one boundary — the
- * single place a deploy-gated contract's handlers meet Ponder's config-
- * derived typing. Every other line here (args, db calls, schema tables) is
- * fully typed against the real ponder.schema.ts tables.
- *
- * At runtime this is inert either way: when the factory isn't in
- * `contracts`, Ponder never emits these events, so these callbacks simply
- * never fire (same as any other unregistered event name — not an error).
- * Once the factory address is set in ponder.config.ts and `ponder codegen`
- * is re-run, these become ordinary statically-typed handlers with no
- * further change needed here.
- *
  * Kept minimal per AGENTS.md: handlers just mirror onchain state into
  * `collections` / `collection_tokens` / `collection_mints` /
  * `collection_sales` / `collection_referrals` / `minters`. Metadata
  * enrichment, rendering, and anything beyond raw event data is out of
  * scope here — that's the worker's/web's job reading these rows.
  */
-
-type GatedIndexingFunction = (args: {
-  event: any
-  context: any
-}) => Promise<void> | void
-
-const on = ponder.on as unknown as (
-  name: string,
-  fn: GatedIndexingFunction,
-) => void
 
 const tokenRowId = (collection: string, tokenId: bigint) =>
   `${collection.toLowerCase()}-${tokenId.toString()}`
@@ -60,15 +25,8 @@ const tokenRowId = (collection: string, tokenId: bigint) =>
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
 
-on("SurfaceFactory:SurfaceCreated", async ({ event, context }) => {
-  const { owner, collection, primaryMinter, name, symbol } = event.args as {
-    owner: `0x${string}`
-    collection: `0x${string}`
-    primaryMinter: `0x${string}`
-    idMode: number
-    name: string
-    symbol: string
-  }
+ponder.on("SurfaceFactory:SurfaceCreated", async ({ event, context }) => {
+  const { owner, collection, primaryMinter, idMode, name, symbol } = event.args
   const hasPrimaryMinter = primaryMinter.toLowerCase() !== ZERO_ADDRESS
   await context.db
     .insert(collections)
@@ -78,6 +36,7 @@ on("SurfaceFactory:SurfaceCreated", async ({ event, context }) => {
       name,
       symbol,
       primaryMinter: hasPrimaryMinter ? primaryMinter : null,
+      idMode: Number(idMode),
       createdAtBlock: event.block.number,
       createdAtTime: event.block.timestamp,
       createdTxHash: event.transaction.hash,
@@ -104,9 +63,9 @@ on("SurfaceFactory:SurfaceCreated", async ({ event, context }) => {
 // collections emit this automatically as their sole minter changes. Does
 // NOT touch the `minters` reverse index — that stays keyed to the
 // SurfaceCreated-time canonical clone regardless of later repoints.
-on("Surface:PrimaryMinterSet", async ({ event, context }) => {
-  const { minter } = event.args as { minter: `0x${string}` }
-  const collection = event.log.address as `0x${string}`
+ponder.on("Surface:PrimaryMinterSet", async ({ event, context }) => {
+  const { minter } = event.args
+  const collection = event.log.address
   const existing = await context.db.find(collections, { collection })
   if (!existing) return
   const hasPrimaryMinter = minter.toLowerCase() !== ZERO_ADDRESS
@@ -125,15 +84,9 @@ on("Surface:PrimaryMinterSet", async ({ event, context }) => {
 // row (there is exactly one live row per (collection, tokenId) at any
 // time; collection_mints is the immutable history of every mint call,
 // including re-mints).
-on("Surface:Minted", async ({ event, context }) => {
-  const { minter, to, firstTokenId, quantity, firstMintIndex } = event.args as {
-    minter: `0x${string}`
-    to: `0x${string}`
-    firstTokenId: bigint
-    quantity: bigint
-    firstMintIndex: bigint
-  }
-  const collection = event.log.address as `0x${string}`
+ponder.on("Surface:Minted", async ({ event, context }) => {
+  const { minter, to, firstTokenId, quantity, firstMintIndex } = event.args
+  const collection = event.log.address
 
   await context.db
     .insert(collectionMints)
@@ -192,18 +145,11 @@ on("Surface:Minted", async ({ event, context }) => {
 // means an event arrived before its own SurfaceCreated indexed — not
 // expected, but handled by skipping the row rather than throwing.
 
-on("FixedPriceMinter:Sold", async ({ event, context }) => {
-  const minter = event.log.address as `0x${string}`
+ponder.on("FixedPriceMinter:Sold", async ({ event, context }) => {
+  const minter = event.log.address
   const row = await context.db.find(minters, { minter })
   if (!row) return
-  const { payer, to, referrer, quantity, paid, firstTokenId } = event.args as {
-    payer: `0x${string}`
-    to: `0x${string}`
-    referrer: `0x${string}`
-    quantity: bigint
-    paid: bigint
-    firstTokenId: bigint
-  }
+  const { payer, to, referrer, quantity, paid, firstTokenId } = event.args
   await context.db
     .insert(collectionSales)
     .values({
@@ -223,11 +169,11 @@ on("FixedPriceMinter:Sold", async ({ event, context }) => {
     .onConflictDoNothing()
 })
 
-on("FixedPriceMinter:ReferralPaid", async ({ event, context }) => {
-  const minter = event.log.address as `0x${string}`
+ponder.on("FixedPriceMinter:ReferralPaid", async ({ event, context }) => {
+  const minter = event.log.address
   const row = await context.db.find(minters, { minter })
   if (!row) return
-  const { referrer, amount } = event.args as { referrer: `0x${string}`; amount: bigint }
+  const { referrer, amount } = event.args
   await context.db
     .insert(collectionReferrals)
     .values({
@@ -243,9 +189,9 @@ on("FixedPriceMinter:ReferralPaid", async ({ event, context }) => {
     .onConflictDoNothing()
 })
 
-on("Surface:Burned", async ({ event, context }) => {
-  const { tokenId } = event.args as { tokenId: bigint }
-  const collection = event.log.address as `0x${string}`
+ponder.on("Surface:Burned", async ({ event, context }) => {
+  const { tokenId } = event.args
+  const collection = event.log.address
   const id = tokenRowId(collection, tokenId)
   const existing = await context.db.find(collectionTokens, { id })
   if (!existing) return
