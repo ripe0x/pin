@@ -19,12 +19,9 @@ export default function HomePage() {
     <div className="mx-auto max-w-3xl px-6 py-8 space-y-12">
       <header className="space-y-3 pt-2">
         <h1 className="text-2xl md:text-[28px] font-semibold tracking-tight leading-tight max-w-xl">
-          Independent artists publishing directly through Ethereum.
+          Independent artists running their own auctions, contracts, and
+          sites on Ethereum.
         </h1>
-        <p className="text-sm text-gray-500 max-w-xl">
-          Auctions, editions, and generative releases on contracts each
-          artist owns.
-        </p>
         <Suspense fallback={null}>
           <CountersInline />
         </Suspense>
