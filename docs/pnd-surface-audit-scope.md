@@ -7,10 +7,14 @@
 > review yet. It supersedes `docs/pnd-surface-reaudit-notes.md`, whose
 > fat-token `43f4ae7` baseline no longer describes deployed code.
 >
-> **Post-baseline delta (fold into the same engagement).** Two contract PRs
+> **Post-baseline delta (fold into the same engagement).** Four contract PRs
 > landed on `main` after this baseline and are part of the code that deploys;
 > see "Changes after the baseline" below: PR #172 (primaryMinter discovery
-> pointer) and PR #174 (comment pass + additive integration aliases).
+> pointer), PR #174 (comment pass + additive integration aliases), PR #182
+> (referral share moved from a constant to owner-settable storage), and PR
+> #189 (`SurfaceCreated` gains `name`/`symbol`). Several comment-only passes
+> (#175, #184-#188) also landed in the same window; no behavior, storage, or
+> ABI change, verified against their diffs.
 
 ## What changed since the last audited baseline
 
@@ -136,11 +140,11 @@ confirm rather than re-flag):
   the referrer and keep the share. This is the platform's stated no-gatekeeper
   position, not a defect.
 
-## Changes after the baseline (PRs #172, #174; on `main`)
+## Changes after the baseline (PRs #172, #174, #182, #189; on `main`)
 
-Both landed after the baseline above and before deploy, so the audited code
-must be `main`'s tip, not the baseline commit. The full diff is
-`git diff 65d770e main -- contracts/src/surface/` (~205 lines, 6 files).
+All four landed after the baseline above and before deploy, so the audited
+code must be `main`'s tip, not the baseline commit. The full diff is
+`git diff 65d770e main -- contracts/src/surface/`.
 
 - **PR #172, primaryMinter (behavioral, new state + ABI).** One new storage
   slot on the core (`_primaryMinter`), declared a frontend-discovery default
@@ -166,6 +170,37 @@ must be `main`'s tip, not the baseline commit. The full diff is
   Review focus: confirm `_executeMint` is reachable only from the two
   nonReentrant externals and that the excess-refund accrual and `Sold` payer
   field still bind to the true msg.sender.
+- **PR #182, referral share editable (behavioral, new state + ABI).**
+  `FixedPriceMinter.REFERRAL_SHARE_BPS` (constant, 1_000/10%) is replaced by
+  `MAX_REFERRAL_SHARE_BPS` (constant, same value, now a cap not a fixed rate)
+  plus one new storage slot, `referralShareBps` (uint16). `initialize` sets it
+  to the cap; the collection owner/admin can lower or raise it up to the cap
+  via the new `setReferralShareBps`, which reverts `ReferralShareAboveCap`
+  above the cap and emits `ReferralShareSet`. `_settle` reads the stored
+  value instead of the constant when it splits proceeds. ABI changes: the
+  `REFERRAL_SHARE_BPS()` selector is gone, replaced by
+  `MAX_REFERRAL_SHARE_BPS()`, `referralShareBps()`, `setReferralShareBps`,
+  `ReferralShareSet`, and `ReferralShareAboveCap`. Storage impact: one new
+  slot on a not-yet-deployed clone implementation, no migration concern.
+  Review focus: confirm `setReferralShareBps` is reachable only through
+  `onlyCollectionOwnerOrAdmin`, the cap check cannot be bypassed with a
+  crafted `bps` value, and `_settle` always uses the value stored at
+  settlement time (no way to front-run a share change mid-mint).
+- **PR #189, `SurfaceCreated` carries name/symbol (event-only, no storage).**
+  `SurfaceCreated` gains two new non-indexed fields, `name` and `symbol`: the
+  collection's ERC721 identity, fixed at `initialize` with no setter, so the
+  factory emits it from the same calldata/memory the creation call already
+  received rather than requiring an indexer to read it back from the
+  collection. No new storage or control-flow change; `createSurface`'s init
+  sequence was split into two private helpers, `_initCanonicalMinter` and
+  `_initCanonicalToken`, solely to stay inside the legacy-codegen stack-depth
+  limit; same calls, same order, same effects. ABI change: `SurfaceCreated`'s
+  signature (and therefore topic0) changes; the existing indexed `owner`/
+  `collection` topics are unaffected. Review focus: confirm the emitted
+  `name`/`symbol` on all three creation paths (`createSurface`,
+  `createSurfaceCustom`, `createPooledSurface`) match what is actually
+  written to the token at `initialize`, and that the private-helper split
+  didn't change the atomicity of minter-then-token wiring.
 
 ## Verification state at handoff
 
@@ -180,6 +215,11 @@ must be `main`'s tip, not the baseline commit. The full diff is
   FixedPriceMinter 9,521, SurfaceFactory 5,310 bytes, all under the gate.
 - Sizes under the 23,576-byte internal gate: Surface 13,091, PooledSurface
   13,065, FixedPriceMinter 9,122, SurfaceFactory 5,051 bytes.
+- **Not re-run for #182/#189** (test counts and sizes above predate both):
+  #182 adds one storage slot and a setter to `FixedPriceMinter`, #189 only
+  changes an event signature, so neither is expected to move the size gate
+  meaningfully, but this needs a fresh `forge test` + size check before
+  handoff, not an assumption.
 - `slither` clean on the new minter/factory/token code (triaged; all real
   items are accepted pull-payment/factory patterns).
 - `contracts/.gas-snapshot` regenerated at this baseline.
