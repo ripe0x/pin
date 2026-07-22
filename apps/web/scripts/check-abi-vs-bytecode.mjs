@@ -1,6 +1,8 @@
 /**
- * Checks every function the web app declares in an ABI against the
- * deployed contract's actual runtime bytecode.
+ * Checks every function, event, and error the web app declares in an ABI
+ * against the deployed contract's actual runtime bytecode (functions,
+ * events) or its compiled artifact (errors — see the note below on why
+ * errors can't use the bytecode method).
  *
  * A hand-synced ABI can drift from the deployed contract: a function gets
  * removed or renamed onchain but stays in the ABI, viem happily encodes a
@@ -9,17 +11,42 @@
  * sites treat as "no data" and fall back to a default. That default can
  * read as real state — this is exactly how `maxPerAllowlisted` and
  * `allowlistMinted` (removed from HomageMinter, still in the ABI) turned a
- * reverted read into "your allowlist allocation is used up".
+ * reverted read into "your allowlist allocation is used up". A missing
+ * error is a different failure mode: the call still reverts correctly, but
+ * viem can't name the reason, so a revert reaches the UI as a bare `0x...`
+ * selector instead of `RedeemLocked(opensAt)`.
  *
- * Method: Solidity's function dispatcher compiles each selector as a literal
- * PUSH operand in the runtime bytecode, so a selector byte sequence
- * appearing anywhere in the bytecode is strong evidence the function exists
- * (dispatcher, not necessarily a data blob). A selector NOT appearing
- * anywhere is a solid negative: the function cannot be reached by its own
- * dispatcher entry. The optimizer picks the smallest PUSH that fits, so a
- * selector with leading zero bytes (e.g. 0x00844d13) compiles to PUSH3
- * 0x844d13, not PUSH4 0x00844d13 — the selector-match check strips leading
- * zero-byte pairs and checks the resulting shorter sequence too.
+ * FUNCTION method: Solidity's function dispatcher compiles each selector as
+ * a literal PUSH operand in the runtime bytecode, so a selector byte
+ * sequence appearing anywhere in the bytecode is strong evidence the
+ * function exists (dispatcher, not necessarily a data blob). A selector NOT
+ * appearing anywhere is a solid negative: the function cannot be reached by
+ * its own dispatcher entry. The optimizer picks the smallest PUSH that
+ * fits, so a selector with leading zero bytes (e.g. 0x00844d13) compiles to
+ * PUSH3 0x844d13, not PUSH4 0x00844d13 — the selector-match check strips
+ * leading zero-byte pairs and checks the resulting shorter sequence too.
+ * This same method is reliable for EVENT topic0 hashes: a `LOG` opcode's
+ * topic is always a literal 32-byte PUSH, so it appears in full.
+ *
+ * ERROR method is different, deliberately NOT bytecode substring search: a
+ * custom error selector is only emitted where a `revert Error(...)`
+ * statement compiles, and under `via_ir` the optimizer does not reliably
+ * leave it as a contiguous literal PUSH4 the way function/event selectors
+ * are. Confirmed on this exact contract: `RedeemLocked(uint256)`
+ * (0xf247dde6) and `PublicClosed()` (0xe23c8858) both do NOT appear as a
+ * byte substring anywhere in the deployed HomageMinter bytecode, yet a live
+ * `cast call` against the deployed contract reverts with exactly those
+ * selectors (`redeem()` before `redeemOpensAt()`, `mint()`/`mintBatch()`
+ * outside the public window) — so the bytecode-substring method gives false
+ * negatives for errors and cannot gate on "absent from bytecode" the way it
+ * does for functions. Error coverage is instead checked against the
+ * contract's COMPILED ARTIFACT ABI (the `abi` key of a forge
+ * `out/<Contract>.sol/<Contract>.json`), which lists every error the source
+ * declares regardless of how the optimizer encodes the revert. This needs a
+ * local `forge build` of the matching contracts checkout; it's optional — set
+ * the `ARTIFACT_PATH` env vars below to enable it, otherwise the script
+ * still runs the function/event bytecode checks and says plainly that error
+ * coverage was skipped.
  *
  * EIP-1167 minimal-proxy clones (e.g. the Homage collection) forward every
  * call to a fixed implementation address baked into ~45 bytes of stub
@@ -31,11 +58,21 @@
  *   node --experimental-strip-types apps/web/scripts/check-abi-vs-bytecode.mjs
  *   pnpm --filter web check:abi
  *
- * Exit code is non-zero when any declared function is absent from bytecode,
- * so this can gate a deploy.
+ *   # with error-coverage checking against a local forge build:
+ *   HOMAGE_MINTER_ARTIFACT_PATH=/path/to/out/HomageMinter.sol/HomageMinter.json \
+ *   HOMAGE_COLLECTION_ARTIFACT_PATH=/path/to/out/PooledSurface.sol/PooledSurface.json \
+ *   HOMAGE_RENDERER_ARTIFACT_PATH=/path/to/out/HomageRendererSovereign.sol/HomageRendererSovereign.json \
+ *     pnpm --filter web check:abi
+ *
+ * Exit code is non-zero when any declared function/event is absent from
+ * bytecode, or (when an artifact path is set) when the deployed contract's
+ * artifact defines an error the ABI does not declare — that inverse
+ * direction is the actual drift class this was added for.
  */
 
-import { createPublicClient, http, toFunctionSelector } from "viem"
+import { readFileSync } from "node:fs"
+
+import { createPublicClient, http, toFunctionSelector, toEventSelector } from "viem"
 
 import {
   surfaceFactoryAbi,
@@ -123,6 +160,8 @@ const sepoliaTargets = [
       { source: "@pin/abi homageCollectionAbi", abi: pkgHomageCollectionAbi },
       { source: "apps/web/src/lib/homage/contracts.ts homageCollectionAbi", abi: webHomageCollectionAbi },
     ],
+    artifactPath: process.env.HOMAGE_COLLECTION_ARTIFACT_PATH,
+    artifactEnvVar: "HOMAGE_COLLECTION_ARTIFACT_PATH",
   },
   {
     label: "HomageMinter (sepolia)",
@@ -133,6 +172,8 @@ const sepoliaTargets = [
       { source: "@pin/abi homageMinterAbi", abi: pkgHomageMinterAbi },
       { source: "apps/web/src/lib/homage/contracts.ts homageMinterAbi", abi: webHomageMinterAbi },
     ],
+    artifactPath: process.env.HOMAGE_MINTER_ARTIFACT_PATH,
+    artifactEnvVar: "HOMAGE_MINTER_ARTIFACT_PATH",
   },
   {
     label: "HomageRendererSovereign (sepolia)",
@@ -143,6 +184,8 @@ const sepoliaTargets = [
       { source: "@pin/abi homageRendererAbi", abi: pkgHomageRendererAbi },
       { source: "apps/web/src/lib/homage/contracts.ts homageRendererViewAbi", abi: webHomageRendererViewAbi },
     ],
+    artifactPath: process.env.HOMAGE_RENDERER_ARTIFACT_PATH,
+    artifactEnvVar: "HOMAGE_RENDERER_ARTIFACT_PATH",
   },
   {
     label: "HomageFeeSplitter (sepolia)",
@@ -222,8 +265,32 @@ function functionsOf(abi) {
   return abi.filter((item) => item.type === "function")
 }
 
+function eventsOf(abi) {
+  return abi.filter((item) => item.type === "event")
+}
+
+function errorsOf(abi) {
+  return abi.filter((item) => item.type === "error")
+}
+
 function selectorsOf(abi) {
   return functionsOf(abi).map((fn) => ({ fn, selector: toFunctionSelector(fn) }))
+}
+
+// Event topic0 is a full 32-byte keccak of the signature, always emitted as
+// a literal PUSH32 (no leading-zero-byte shrink like function selectors get,
+// there is no smaller PUSH that holds 32 bytes) — the same substring method
+// used for functions is reliable here too.
+function topicsOf(abi) {
+  return eventsOf(abi).map((ev) => ({ ev, topic: toEventSelector(ev) }))
+}
+
+// Error selector signature string (same keccak256(sig)[0:4] formula as a
+// function selector), used only to name a declared error for the artifact
+// diff below — NOT checked against bytecode. See the file header for why.
+function errorSignature(item) {
+  const types = item.inputs.map((i) => i.type).join(",")
+  return `${item.name}(${types})`
 }
 
 function bytecodeContainsSelector(codeHex, selector) {
@@ -241,6 +308,28 @@ function bytecodeContainsSelector(codeHex, selector) {
     hex = hex.slice(2)
   }
   return false
+}
+
+// ── compiled artifact (optional, for error coverage) ────────────────────
+
+function loadArtifactAbi(path) {
+  if (!path) return null
+  const json = JSON.parse(readFileSync(path, "utf8"))
+  if (!Array.isArray(json.abi)) throw new Error(`${path} has no top-level "abi" array`)
+  return json.abi
+}
+
+// Both directions matter: an error the ABI declares that the artifact
+// doesn't define is stale (should be removed); an error the artifact
+// defines that the ABI doesn't declare is the actionable gap — that error's
+// revert will decode as a bare selector until the ABI is synced.
+function diffErrors(abiErrors, artifactErrors) {
+  const abiSigs = new Set(abiErrors.map(errorSignature))
+  const artifactSigs = new Set(artifactErrors.map(errorSignature))
+  return {
+    staleInAbi: [...abiSigs].filter((s) => !artifactSigs.has(s)).sort(),
+    missingFromAbi: [...artifactSigs].filter((s) => !abiSigs.has(s)).sort(),
+  }
 }
 
 // ── call-site grep ──────────────────────────────────────────────────────
@@ -270,6 +359,7 @@ async function grepCallSites(functionName) {
 
 async function checkTarget(target) {
   const findings = []
+  const eventFindings = []
   const codeRaw = await target.client.getCode({ address: target.address })
   if (!codeRaw || codeRaw === "0x") {
     return { target, error: "no code at this address (not deployed on this RPC/chain)" }
@@ -307,9 +397,40 @@ async function checkTarget(target) {
       }
       findings.push({ source, absent })
     }
+
+    const absentEvents = []
+    for (const { ev, topic } of topicsOf(abi)) {
+      if (!bytecodeContainsSelector(code, topic)) {
+        absentEvents.push({ name: ev.name, topic, inputs: ev.inputs.map((i) => i.type).join(",") })
+      }
+    }
+    if (absentEvents.length > 0) {
+      eventFindings.push({ source, absent: absentEvents })
+    }
   }
 
-  return { target, checkedAddress, cloneNote, findings }
+  // Error coverage: only against a compiled artifact (see file header for
+  // why bytecode substring search is unreliable for error selectors), and
+  // only for an ABI that declares at least one write (payable/nonpayable)
+  // function. A read-only ABI subset (e.g. homageCollectionAbi's
+  // ownerOf/balanceOf/tokenURI) never drives a formatWriteError-style
+  // revert decode, so the full error surface of its underlying contract
+  // (e.g. every ERC721/admin error PooledSurface defines) isn't a gap for
+  // that ABI specifically — it's already covered wherever the write-capable
+  // ABI for the same contract (pooledSurfaceAbi) is checked.
+  let errorReport = null
+  if (target.artifactPath) {
+    const artifactAbi = loadArtifactAbi(target.artifactPath)
+    const artifactErrors = errorsOf(artifactAbi)
+    errorReport = target.abis
+      .filter(({ abi }) => functionsOf(abi).some((fn) => fn.stateMutability === "payable" || fn.stateMutability === "nonpayable"))
+      .map(({ source, abi }) => ({
+        source,
+        ...diffErrors(errorsOf(abi), artifactErrors),
+      }))
+  }
+
+  return { target, checkedAddress, cloneNote, findings, eventFindings, errorReport }
 }
 
 async function main() {
@@ -338,6 +459,7 @@ async function main() {
   console.log("")
 
   let anyAbsent = false
+  let anyMissingErrors = false
 
   for (const r of results) {
     console.log(`## ${r.target.label}`)
@@ -353,32 +475,80 @@ async function main() {
       continue
     }
     if (r.cloneNote) console.log(`   ${r.cloneNote}`)
+
     if (r.findings.length === 0) {
-      console.log("   OK — every declared function's selector appears in the runtime bytecode.")
-      console.log("")
-      continue
+      console.log("   functions: OK — every declared selector appears in the runtime bytecode.")
+    } else {
+      anyAbsent = true
+      for (const f of r.findings) {
+        console.log(`   functions ABSENT in ${f.source}:`)
+        for (const a of f.absent) {
+          console.log(`     - ${a.name}(${a.inputs}) selector ${a.selector}`)
+          if (a.callSites.length === 0) {
+            console.log("       call sites: none found")
+          } else {
+            console.log("       call sites:")
+            for (const cs of a.callSites) console.log(`         ${cs}`)
+          }
+        }
+      }
     }
-    anyAbsent = true
-    for (const f of r.findings) {
-      console.log(`   ABSENT in ${f.source}:`)
-      for (const a of f.absent) {
-        console.log(`     - ${a.name}(${a.inputs}) selector ${a.selector}`)
-        if (a.callSites.length === 0) {
-          console.log("       call sites: none found")
-        } else {
-          console.log("       call sites:")
-          for (const cs of a.callSites) console.log(`         ${cs}`)
+
+    if (r.eventFindings.length === 0) {
+      console.log("   events: OK — every declared event's topic0 appears in the runtime bytecode.")
+    } else {
+      anyAbsent = true
+      for (const f of r.eventFindings) {
+        console.log(`   events ABSENT in ${f.source}:`)
+        for (const a of f.absent) {
+          console.log(`     - ${a.name}(${a.inputs}) topic0 ${a.topic}`)
+        }
+      }
+    }
+
+    if (r.target.artifactEnvVar && !r.target.artifactPath) {
+      console.log(
+        `   errors: SKIPPED — set ${r.target.artifactEnvVar} to a compiled forge artifact ` +
+          `(out/<Contract>.sol/<Contract>.json) to check error coverage against it.`,
+      )
+    } else if (r.errorReport && r.errorReport.length === 0) {
+      console.log("   errors: no write-capable ABI declared against this address — nothing to check.")
+    } else if (r.errorReport) {
+      for (const er of r.errorReport) {
+        const clean = er.staleInAbi.length === 0 && er.missingFromAbi.length === 0
+        if (clean) {
+          console.log(`   errors in ${er.source}: OK — matches the compiled artifact exactly.`)
+          continue
+        }
+        if (er.missingFromAbi.length > 0) {
+          anyMissingErrors = true
+          console.log(`   errors MISSING from ${er.source} (artifact defines, ABI does not declare):`)
+          for (const sig of er.missingFromAbi) console.log(`     - ${sig}`)
+        }
+        if (er.staleInAbi.length > 0) {
+          console.log(`   errors STALE in ${er.source} (ABI declares, artifact does not define):`)
+          for (const sig of er.staleInAbi) console.log(`     - ${sig}`)
         }
       }
     }
     console.log("")
   }
 
-  if (anyAbsent) {
-    console.log("FAIL: one or more declared functions are absent from deployed bytecode. See above.")
+  if (anyMissingErrors) {
+    console.log(
+      "FAIL: one or more compiled-artifact errors are not declared in an ABI — those reverts will decode " +
+        "as a bare selector instead of a named reason. See above.",
+    )
     process.exitCode = 1
-  } else {
-    console.log("PASS: every checked ABI's declared functions resolve to a selector in bytecode.")
+  }
+  if (anyAbsent) {
+    console.log("FAIL: one or more declared functions/events are absent from deployed bytecode. See above.")
+    process.exitCode = 1
+  } else if (!anyMissingErrors) {
+    console.log(
+      "PASS: every checked ABI's declared functions/events resolve to a selector in bytecode, " +
+        "and every artifact-checked contract's errors are fully declared.",
+    )
   }
 }
 

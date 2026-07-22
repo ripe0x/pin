@@ -9,11 +9,10 @@
  *
  *   - `homageMinterAbi`     — HomageMinter: the three phased mint writes
  *     (`claim` / `claimFor` / `claimTo` / `allowlistMint` / `mint`), `redeem`,
- *     every view the quote / eligibility / schedule plumbing reads, the
- *     `Minted`/`Claimed`/`Redeemed` events, and a partial set of custom
- *     `error` definitions covering the mint-path reverts, so viem decodes a
- *     revert selector to a named reason (`NotPunkOwner()`) instead of a bare
- *     `0x...` on a failed mint.
+ *     every view the quote / eligibility / schedule plumbing reads, every
+ *     event the contract emits, and every custom `error` it defines, so
+ *     viem decodes a revert selector to a named reason (`NotPunkOwner()`)
+ *     instead of a bare `0x...` on a failed mint.
  *   - `homageCollectionAbi` — the pooled PND Collection (the ERC-721 core
  *     itself): `ownerOf` / `balanceOf` / `tokenURI` / `Transfer` ONLY.
  *     Ownership, transfers, and metadata live here; economics/schedule/
@@ -24,26 +23,22 @@
  * of this sync — see the note there); this one adds the writes for the web
  * `/mint/homage` venue.
  *
- * HAND-SYNCED SNAPSHOT — PENDING AUDIT FREEZE (launch-plan gate G1).
- * Synced from the Homage repo working tree
- * (/Users/dd/CascadeProjects/homage to the punk, sovereign-rebuild branch:
- * `contracts/src/HomageMinter.sol`), cross-checked against
- * `web/lib/homage.ts`'s `homageMinterAbi`/`homageCollectionAbi` (parseAbi
- * form — this file mirrors the same surface as PIN's raw-JSON-array ABI
- * style). Re-derive this file (and the renderer ABI below) from the audited
- * build before the mainnet deploy.
+ * `homageMinterAbi`'s errors and events are generated from the compiled
+ * `HomageMinter.sol` artifact (`out/HomageMinter.sol/HomageMinter.json`),
+ * built from the Homage repo at commit f2d231f (origin/master), confirmed
+ * byte-identical to the deployed sepolia bytecode at
+ * `0xc9f3c81556fcb4cf70a37d1a7248d6ec68256b7c` outside of immutable slots.
+ * Function entries are unchanged from the prior hand-synced set; re-run
+ * `pnpm --filter web check:abi` and diff against a fresh artifact before the
+ * mainnet deploy.
  */
 export const homageMinterAbi = [
   // ── Events ──────────────────────────────────────────────────────────
+  { type: "event", name: "Activated", inputs: [], anonymous: false },
   {
     type: "event",
-    name: "Minted",
-    inputs: [
-      { name: "to", type: "address", indexed: true, internalType: "address" },
-      { name: "punkId", type: "uint256", indexed: true, internalType: "uint256" },
-      { name: "ethSwapped", type: "uint256", indexed: false, internalType: "uint256" },
-      { name: "received111", type: "uint256", indexed: false, internalType: "uint256" },
-    ],
+    name: "AllowlistRootSet",
+    inputs: [{ name: "root", type: "bytes32", indexed: false, internalType: "bytes32" }],
     anonymous: false,
   },
   {
@@ -59,12 +54,90 @@ export const homageMinterAbi = [
   },
   {
     type: "event",
+    name: "ExitFeeSet",
+    inputs: [{ name: "exitFee", type: "uint256", indexed: false, internalType: "uint256" }],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "FeeRecipientSet",
+    inputs: [{ name: "feeRecipient", type: "address", indexed: false, internalType: "address" }],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "FeeScheduleSet",
+    inputs: [
+      { name: "baseFee", type: "uint256", indexed: false, internalType: "uint256" },
+      { name: "feeGrowthBps", type: "uint256", indexed: false, internalType: "uint256" },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "Minted",
+    inputs: [
+      { name: "to", type: "address", indexed: true, internalType: "address" },
+      { name: "punkId", type: "uint256", indexed: true, internalType: "uint256" },
+      { name: "ethSwapped", type: "uint256", indexed: false, internalType: "uint256" },
+      { name: "received111", type: "uint256", indexed: false, internalType: "uint256" },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "OwnershipTransferred",
+    inputs: [
+      { name: "previousOwner", type: "address", indexed: true, internalType: "address" },
+      { name: "newOwner", type: "address", indexed: true, internalType: "address" },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "RedeemDelaySet",
+    inputs: [{ name: "redeemDelay", type: "uint64", indexed: false, internalType: "uint64" }],
+    anonymous: false,
+  },
+  {
+    type: "event",
     name: "Redeemed",
     inputs: [
       { name: "from", type: "address", indexed: true, internalType: "address" },
       { name: "punkId", type: "uint256", indexed: true, internalType: "uint256" },
       { name: "amount111", type: "uint256", indexed: false, internalType: "uint256" },
     ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "ReservationReleased",
+    inputs: [{ name: "punkId", type: "uint256", indexed: true, internalType: "uint256" }],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "Reserved",
+    inputs: [
+      { name: "punkId", type: "uint256", indexed: true, internalType: "uint256" },
+      { name: "by", type: "address", indexed: true, internalType: "address" },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "ScheduleSet",
+    inputs: [
+      { name: "claimStart", type: "uint64", indexed: false, internalType: "uint64" },
+      { name: "allowlistStart", type: "uint64", indexed: false, internalType: "uint64" },
+      { name: "publicStart", type: "uint64", indexed: false, internalType: "uint64" },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "ThresholdSet",
+    inputs: [{ name: "threshold", type: "uint256", indexed: false, internalType: "uint256" }],
     anonymous: false,
   },
 
@@ -226,13 +299,94 @@ export const homageMinterAbi = [
   },
 
   // ── Custom errors ───────────────────────────────────────────────────
-  // Partial set, mirrored from HomageMinter.sol, so viem decodes a revert to
-  // its name (e.g. `NotPunkOwner()`) instead of a bare `0x...` selector on a
-  // failed mint. The contract defines more errors than are listed here
-  // (activation/config/redeem/admin paths); this covers the mint-path
-  // reverts a mint frontend needs to surface a reason for.
+  // Every error HomageMinter.sol defines, so viem decodes a revert to its
+  // name and arguments (e.g. `RedeemLocked(opensAt)`) instead of a bare
+  // `0x...` selector on a failed mint/redeem/admin call.
+  { type: "error", name: "AllowlistClosed", inputs: [] },
+  { type: "error", name: "AlreadyActivated", inputs: [] },
+  { type: "error", name: "AlreadyMinted", inputs: [] },
+  { type: "error", name: "BadPunkId", inputs: [] },
+  { type: "error", name: "BadSchedule", inputs: [] },
+  { type: "error", name: "ClaimClosed", inputs: [] },
+  { type: "error", name: "CollectionAlreadyMinted", inputs: [] },
+  { type: "error", name: "CollectionNotPooled", inputs: [] },
+  {
+    type: "error",
+    name: "CostExceedsBudget",
+    inputs: [
+      { name: "ethNeeded", type: "uint256", internalType: "uint256" },
+      { name: "ethBudget", type: "uint256", internalType: "uint256" },
+    ],
+  },
+  { type: "error", name: "DrawPoolDesync", inputs: [] },
+  { type: "error", name: "ExitFeeOutOfBounds", inputs: [] },
+  { type: "error", name: "FeeScheduleOutOfBounds", inputs: [] },
+  { type: "error", name: "FeeTransferFailed", inputs: [] },
+  {
+    type: "error",
+    name: "InsufficientValue",
+    inputs: [
+      { name: "required", type: "uint256", internalType: "uint256" },
+      { name: "provided", type: "uint256", internalType: "uint256" },
+    ],
+  },
+  {
+    type: "error",
+    name: "InvalidBatchQuantity",
+    inputs: [
+      { name: "qty", type: "uint256", internalType: "uint256" },
+      { name: "maxBatch", type: "uint256", internalType: "uint256" },
+    ],
+  },
+  { type: "error", name: "InvalidThreshold", inputs: [] },
+  { type: "error", name: "MinterNotGranted", inputs: [] },
+  { type: "error", name: "MinterNotLocked", inputs: [] },
+  {
+    type: "error",
+    name: "NonexistentToken",
+    inputs: [{ name: "id", type: "uint256", internalType: "uint256" }],
+  },
+  { type: "error", name: "NotActivated", inputs: [] },
+  { type: "error", name: "NotAllowlisted", inputs: [] },
+  { type: "error", name: "NotBacked", inputs: [] },
+  {
+    type: "error",
+    name: "NotContract",
+    inputs: [{ name: "dependency", type: "address", internalType: "address" }],
+  },
+  { type: "error", name: "NotDelegated", inputs: [] },
   { type: "error", name: "NotManager", inputs: [] },
-  { type: "error", name: "SoldOut", inputs: [] },
+  { type: "error", name: "NotPunkOwner", inputs: [] },
+  { type: "error", name: "NotTokenOwner", inputs: [] },
+  { type: "error", name: "NothingToCollect", inputs: [] },
+  { type: "error", name: "NothingToRescue", inputs: [] },
+  {
+    type: "error",
+    name: "OwnableInvalidOwner",
+    inputs: [{ name: "owner", type: "address", internalType: "address" }],
+  },
+  {
+    type: "error",
+    name: "OwnableUnauthorizedAccount",
+    inputs: [{ name: "account", type: "address", internalType: "address" }],
+  },
+  { type: "error", name: "PublicClosed", inputs: [] },
+  { type: "error", name: "RedeemDelayOutOfBounds", inputs: [] },
+  {
+    type: "error",
+    name: "RedeemLocked",
+    inputs: [{ name: "opensAt", type: "uint256", internalType: "uint256" }],
+  },
+  { type: "error", name: "ReentrancyGuardReentrantCall", inputs: [] },
+  { type: "error", name: "RefundFailed", inputs: [] },
+  { type: "error", name: "ReleaseNotOpen", inputs: [] },
+  { type: "error", name: "RescueTransferFailed", inputs: [] },
+  { type: "error", name: "ReservationClosed", inputs: [] },
+  {
+    type: "error",
+    name: "SafeERC20FailedOperation",
+    inputs: [{ name: "token", type: "address", internalType: "address" }],
+  },
   {
     type: "error",
     name: "Slippage",
@@ -241,14 +395,20 @@ export const homageMinterAbi = [
       { name: "needed", type: "uint256", internalType: "uint256" },
     ],
   },
-  { type: "error", name: "ClaimClosed", inputs: [] },
-  { type: "error", name: "AllowlistClosed", inputs: [] },
-  { type: "error", name: "PublicClosed", inputs: [] },
-  { type: "error", name: "NotPunkOwner", inputs: [] },
-  { type: "error", name: "NotDelegated", inputs: [] },
-  { type: "error", name: "AlreadyMinted", inputs: [] },
-  { type: "error", name: "NotAllowlisted", inputs: [] },
-  { type: "error", name: "BadSchedule", inputs: [] },
+  { type: "error", name: "SoldOut", inputs: [] },
+  { type: "error", name: "SupplyCapTooLow", inputs: [] },
+  { type: "error", name: "ThresholdLocked", inputs: [] },
+  {
+    type: "error",
+    name: "WrongExitFee",
+    inputs: [
+      { name: "expected", type: "uint256", internalType: "uint256" },
+      { name: "provided", type: "uint256", internalType: "uint256" },
+    ],
+  },
+  { type: "error", name: "WrongPoolCurrency", inputs: [] },
+  { type: "error", name: "ZeroAddress", inputs: [] },
+  { type: "error", name: "ZeroDependency", inputs: [] },
 ] as const
 
 /**
