@@ -264,6 +264,45 @@ show decoded revert reasons. Exercise the full flow on local dev
 against a fork before calling it done, and link the local URL tested.
 ```
 
+### Homage mainnet env flip
+
+Homage to the Punk ships as its own bespoke launch (see
+`docs/pnd-surface-system.md` §8), and it needs one flip beyond the
+generic D6 mint page: three Netlify env vars plus one code edit.
+
+- [ ] `NEXT_PUBLIC_HOMAGE_COLLECTION_ADDRESS` set (the deployed Homage
+      collection; read in `apps/web/next.config.ts:47`,
+      `apps/web/src/lib/curated-chrome.ts:43`,
+      `apps/web/src/app/collections/homage/page.tsx:24`,
+      `apps/web/src/lib/mint-modules/homage.ts:140`)
+- [ ] `NEXT_PUBLIC_HOMAGE_MINTER_ADDRESS` set (the `HomageMinter`
+      extension address; `curated-chrome.ts:40`, `mint-modules/homage.ts:139`)
+- [ ] `NEXT_PUBLIC_HOMAGE_RENDERER` set (`mint-modules/homage.ts:141`)
+- [ ] `apps/web/src/lib/homage/registry.ts` `MAINNET_HOMAGE` const
+      (line 29) edited from `null` to the deployed
+      `{collection, minter}` pair and committed. This is separate from
+      the three env vars above: `homageMinterFor()` in that file reads
+      `MAINNET_HOMAGE` only on mainnet (the fork-mode branch reads env
+      instead, see below), and it backs `detectHomageMinter()`
+      (`apps/web/src/lib/homage/detect.server.ts`), which
+      `apps/web/src/app/collections/[address]/page.tsx` (and its
+      `redeem`/`[tokenId]` siblings) call to decide whether a
+      collection address is the registered Homage collection and
+      should render the bespoke Homage UI instead of the generic
+      collection page. Env vars alone do not light this up; leaving
+      `MAINNET_HOMAGE` at `null` leaves that detection dark on
+      mainnet even with all three env vars set.
+
+Note: `NEXT_PUBLIC_HOMAGE_COLLECTION` / `NEXT_PUBLIC_HOMAGE_MINTER`
+(no `_ADDRESS` suffix) are a separate, fork-mode-only pair written by
+`scripts/dev-collections.sh` and gated on
+`NEXT_PUBLIC_USE_LOCAL_RPC === "1"` (`registry.ts` `forkHomage()`).
+They are not read on mainnet and do not need to be set in Netlify.
+
+None of the above vars are currently in any `.env.example`; the three
+`_ADDRESS`/`_RENDERER` vars are documented (empty) in
+`apps/web/.env.example`.
+
 ### D7. Artist-site embed (if the launch mints from the artist's own site)
 
 - [ ] the sovereign artist-site template mints the launch collection
