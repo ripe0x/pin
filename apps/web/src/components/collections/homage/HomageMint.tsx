@@ -54,6 +54,7 @@ import {HomageClaim} from "./HomageClaim"
 import {HomageReserve} from "./HomageReserve"
 import {HomageSchedule} from "./HomageSchedule"
 import {ALLOWLIST_SNAPSHOT_CAPTION, HomageAllowlistLookup} from "./HomageAllowlistLookup"
+import {HomageMintLog} from "./HomageMintLog"
 
 const SUPPLY = 10_000
 const QUOTE_POLL_MS = 30_000 // paid RPC path in prod — never tighten below this
@@ -693,6 +694,13 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
           <p className="text-[10px] font-mono leading-relaxed text-gray-500">{ALLOWLIST_SNAPSHOT_CAPTION}</p>
         </div>
       )}
+
+      {/* Mint history lives here (end of the sidebar stack) only at the lg breakpoint,
+          where the sidebar is a real right-hand column; below that it stays in its
+          original spot in the page's record section (see collections/[address]/page.tsx). */}
+      <div className="hidden border-t border-gray-100 pt-4 lg:block">
+        <HomageMintLog collection={collection} chainId={PREFERRED_CHAIN.id} />
+      </div>
     </section>
   )
 }

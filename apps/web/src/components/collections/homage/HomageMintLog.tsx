@@ -25,8 +25,25 @@ const SCAN_WINDOW = 300_000n
 const MAX_ROWS = 12
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
 
-type MintEntry = {tokenId: number; to: `0x${string}`; txHash: `0x${string}`}
+type MintEntry = {
+  tokenId: number
+  to: `0x${string}`
+  txHash: `0x${string}`
+  blockNumber: bigint
+  timestamp?: number
+}
 type Status = "idle" | "loading" | "ok" | "error"
+
+/** "3h ago", "2d ago", etc. — coarse, no live-updating clock needed for a mint feed. */
+function formatRelativeTime(unixSeconds: number, nowSeconds: number): string {
+  const diff = Math.max(0, nowSeconds - unixSeconds)
+  if (diff < 60) return "just now"
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86_400) return `${Math.floor(diff / 3600)}h ago`
+  if (diff < 2_592_000) return `${Math.floor(diff / 86_400)}d ago`
+  if (diff < 31_536_000) return `${Math.floor(diff / 2_592_000)}mo ago`
+  return `${Math.floor(diff / 31_536_000)}y ago`
+}
 
 function decodeDataUriJson(uri: string): {name?: string; image?: string} | null {
   try {
@@ -73,13 +90,37 @@ function useRecentMints(collection: `0x${string}`): {mints: MintEntry[]; status:
         for (const l of logs) {
           const tokenId = (l.args as {tokenId?: bigint}).tokenId
           const to = (l.args as {to?: string}).to
-          if (tokenId === undefined || to === undefined || !l.transactionHash) continue
-          byTokenId.set(Number(tokenId), {tokenId: Number(tokenId), to: to as `0x${string}`, txHash: l.transactionHash})
+          if (tokenId === undefined || to === undefined || !l.transactionHash || l.blockNumber === null) continue
+          byTokenId.set(Number(tokenId), {
+            tokenId: Number(tokenId),
+            to: to as `0x${string}`,
+            txHash: l.transactionHash,
+            blockNumber: l.blockNumber,
+          })
         }
         const mints = Array.from(byTokenId.values())
           .sort((a, b) => b.tokenId - a.tokenId)
           .slice(0, MAX_ROWS)
+        if (cancelled) return
         setState({mints, status: "ok"})
+
+        // Timestamps aren't in the Transfer log — one getBlock per unique block among
+        // the visible rows (batch mints share a block, so this is well under MAX_ROWS
+        // calls), then patched onto the rows already on screen.
+        const uniqueBlocks = Array.from(new Set(mints.map((m) => m.blockNumber)))
+        const blocks = await Promise.all(
+          uniqueBlocks.map((bn) => client.getBlock({blockNumber: bn}).catch(() => null)),
+        )
+        if (cancelled) return
+        const tsByBlock = new Map<bigint, number>()
+        uniqueBlocks.forEach((bn, i) => {
+          const b = blocks[i]
+          if (b) tsByBlock.set(bn, Number(b.timestamp))
+        })
+        setState((s) => ({
+          ...s,
+          mints: s.mints.map((m) => ({...m, timestamp: tsByBlock.get(m.blockNumber)})),
+        }))
       } catch {
         if (!cancelled) setState({mints: [], status: "error"})
       }
@@ -127,6 +168,7 @@ function useMintThumbnails(collection: Address, mints: MintEntry[]): Map<number,
 export function HomageMintLog({collection, chainId}: {collection: `0x${string}`; chainId: number}) {
   const {mints, status} = useRecentMints(collection)
   const thumbnails = useMintThumbnails(collection, mints)
+  const nowSeconds = useMemo(() => Math.floor(Date.now() / 1000), [])
 
   return (
     <div className="flex flex-col gap-2">
@@ -164,6 +206,9 @@ export function HomageMintLog({collection, chainId}: {collection: `0x${string}`;
                     </Link>
                   </p>
                   <p className="truncate text-[10px] font-mono text-gray-400">
+                    {m.timestamp !== undefined && (
+                      <>{formatRelativeTime(m.timestamp, nowSeconds)}{" · "}</>
+                    )}
                     minted by{" "}
                     <a
                       href={evmNowAddressUrl(m.to, chainId)}

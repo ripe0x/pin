@@ -135,7 +135,7 @@ export function HomageField({
           style={{
             gridTemplateColumns: "repeat(auto-fill, minmax(clamp(150px, 22vw, 300px), 1fr))",
             background: "var(--paper, #0a0a0c)",
-            maxHeight: capped && !expanded ? "clamp(420px, 62vw, 800px)" : "none",
+            maxHeight: capped && !expanded ? "clamp(630px, 93vw, 1200px)" : "none",
           }}
         >
           {cells.map((c, i) => (
@@ -170,7 +170,7 @@ export function HomageField({
               onClick={() => setExpanded((v) => !v)}
               className="font-mono text-[10px] uppercase tracking-wider text-gray-400 underline decoration-dotted underline-offset-4 hover:text-gray-300"
             >
-              {expanded ? "Show less" : `Show all ${cells.length}`}
+              {expanded ? "Collapse" : "Expand"}
             </button>
           )}
           {viewAllHref && (

@@ -439,9 +439,14 @@ export default async function CollectionPage({
       {/* ── The record: mints (read live from chain), and the load-bearing facts. ── */}
       {homageSkin ? (
         <section className="border-t border-gray-200">
-          <div className="mx-auto grid max-w-[1400px] grid-cols-1 gap-x-16 gap-y-10 px-6 py-10 md:grid-cols-2 lg:px-12 lg:py-14">
-            {/* Mints ARE readable onchain (Transfer scan) — show them, don't defer to an indexer. */}
-            <HomageMintLog collection={addr} chainId={PND_CHAIN_ID} />
+          <div className="mx-auto grid max-w-[1400px] grid-cols-1 gap-x-16 gap-y-10 px-6 py-10 md:grid-cols-2 lg:grid-cols-1 lg:px-12 lg:py-14">
+            {/* Mints ARE readable onchain (Transfer scan) — show them, don't defer to an indexer.
+                Hidden at lg: the sidebar (HomageMint) carries its own copy at the bottom of
+                its stack there. Below lg the sidebar isn't a separate column, so this stays
+                in its original spot. */}
+            <div className="lg:hidden">
+              <HomageMintLog collection={addr} chainId={PND_CHAIN_ID} />
+            </div>
             {/* Contract details, matching the 1/1 auction token page's
                 treatment (see src/app/[handle]/[tokenId]/page.tsx): a small
                 caps header, then a definition list of load-bearing facts,
