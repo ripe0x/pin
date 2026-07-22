@@ -9,13 +9,16 @@
 // circle form, renderSVG(id, status, true) (passed down server-read); the client transform in
 // lib/homage/art.ts derives the same circles from the classic SVG as a zero-RPC fallback.
 //
-// Quiet meta row: classic/pfp toggle · PNG export (2400px).
+// Quiet meta row: classic/pfp toggle · copy-to-clipboard · PNG export (both 2400px, full
+// resolution regardless of the on-screen display size — a right-click "copy image" on the
+// <img>/<iframe> below only rasterizes at whatever size the browser happens to be showing it).
 
 import {useMemo, useState} from "react"
 import {decodeSvg, downloadBlob, pfpSvg, svgToPngBlob} from "@/lib/homage/art"
 import {buildConveyorHtml} from "@/lib/homage/conveyor"
 
 const META = "text-[10px] font-mono uppercase tracking-wider text-gray-400"
+const EXPORT_SIZE = 2400
 
 export function HomageArtStage({
   art,
@@ -28,7 +31,8 @@ export function HomageArtStage({
   onchainPfpSrc: string | null
 }) {
   const [view, setView] = useState<"classic" | "pfp">("classic")
-  const [saving, setSaving] = useState(false)
+  const [busy, setBusy] = useState<"copy" | "download" | null>(null)
+  const [copied, setCopied] = useState(false)
 
   // Raw SVG per form: classic straight off the token image; PFP from the onchain circle
   // render, else derived client-side from the classic SVG.
@@ -41,18 +45,49 @@ export function HomageArtStage({
   // The active view's animation document — both forms animate on click.
   const activeSvg = showPfp ? pfpRawSvg : classicSvg
   const conveyorDoc = useMemo(() => (activeSvg ? buildConveyorHtml(activeSvg) : null), [activeSvg])
+  const filename = `homage-${tokenId}${showPfp ? "-pfp" : ""}.png`
 
   const download = async () => {
-    if (saving) return
-    setSaving(true)
+    if (busy) return
+    setBusy("download")
     try {
       const raw = activeSvg
       if (!raw) return
-      downloadBlob(await svgToPngBlob(raw, 2400), `homage-${tokenId}${showPfp ? "-pfp" : ""}.png`)
+      downloadBlob(await svgToPngBlob(raw, EXPORT_SIZE), filename)
     } catch {
       // quiet failure — the still is on screen either way
     } finally {
-      setSaving(false)
+      setBusy(null)
+    }
+  }
+
+  // Clipboard write takes the blob PROMISE directly (not awaited first) — Safari requires
+  // the ClipboardItem be constructed synchronously within the click handler's call stack;
+  // passing the pending promise satisfies that while Chrome/Firefox resolve it async same as
+  // any other browser. Falls back to a download if the Clipboard API/permission is unavailable,
+  // so the image is never just stuck.
+  const copy = async () => {
+    if (busy) return
+    setBusy("copy")
+    try {
+      const raw = activeSvg
+      if (!raw) return
+      if (typeof ClipboardItem === "undefined" || !navigator.clipboard?.write) {
+        downloadBlob(await svgToPngBlob(raw, EXPORT_SIZE), filename)
+        return
+      }
+      await navigator.clipboard.write([new ClipboardItem({"image/png": svgToPngBlob(raw, EXPORT_SIZE)})])
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      try {
+        const raw = activeSvg
+        if (raw) downloadBlob(await svgToPngBlob(raw, EXPORT_SIZE), filename)
+      } catch {
+        // quiet failure — the still is on screen either way
+      }
+    } finally {
+      setBusy(null)
     }
   }
 
@@ -98,8 +133,11 @@ export function HomageArtStage({
           )}
         </span>
         <span className="flex items-center gap-3">
-          <button type="button" onClick={download} disabled={saving} className="hover:text-fg disabled:opacity-50">
-            {saving ? "Saving…" : "PNG ↓"}
+          <button type="button" onClick={copy} disabled={!!busy} className="hover:text-fg disabled:opacity-50">
+            {busy === "copy" ? "Copying…" : copied ? "Copied" : "Copy"}
+          </button>
+          <button type="button" onClick={download} disabled={!!busy} className="hover:text-fg disabled:opacity-50">
+            {busy === "download" ? "Saving…" : "PNG ↓"}
           </button>
         </span>
       </div>
