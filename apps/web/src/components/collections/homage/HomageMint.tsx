@@ -699,7 +699,7 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
           where the sidebar is a real right-hand column; below that it stays in its
           original spot in the page's record section (see collections/[address]/page.tsx). */}
       <div className="hidden border-t border-gray-100 pt-4 lg:block">
-        <HomageMintLog collection={collection} chainId={PREFERRED_CHAIN.id} />
+        <HomageMintLog collection={collection} chainId={PREFERRED_CHAIN.id} variant="desktop" />
       </div>
     </section>
   )

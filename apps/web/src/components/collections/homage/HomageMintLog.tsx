@@ -62,14 +62,27 @@ function decodeDataUriJson(uri: string): {name?: string; image?: string} | null 
   }
 }
 
-function useRecentMints(collection: `0x${string}`): {mints: MintEntry[]; status: Status} {
+/** Tracks the lg breakpoint (1024px, Tailwind's lg). null until first client paint. */
+function useLgViewport(): boolean | null {
+  const [lg, setLg] = useState<boolean | null>(null)
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)")
+    const update = () => setLg(mq.matches)
+    update()
+    mq.addEventListener("change", update)
+    return () => mq.removeEventListener("change", update)
+  }, [])
+  return lg
+}
+
+function useRecentMints(collection: `0x${string}`, enabled: boolean): {mints: MintEntry[]; status: Status} {
   const client = usePublicClient({chainId: PREFERRED_CHAIN.id})
   const [state, setState] = useState<{mints: MintEntry[]; status: Status}>({mints: [], status: "idle"})
 
   useEffect(() => {
     let cancelled = false
     void (async () => {
-      if (!client) {
+      if (!client || !enabled) {
         setState({mints: [], status: "idle"})
         return
       }
@@ -128,7 +141,7 @@ function useRecentMints(collection: `0x${string}`): {mints: MintEntry[]; status:
     return () => {
       cancelled = true
     }
-  }, [client, collection])
+  }, [client, collection, enabled])
 
   return state
 }
@@ -165,8 +178,24 @@ function useMintThumbnails(collection: Address, mints: MintEntry[]): Map<number,
   }, [data, tokenIds])
 }
 
-export function HomageMintLog({collection, chainId}: {collection: `0x${string}`; chainId: number}) {
-  const {mints, status} = useRecentMints(collection)
+export function HomageMintLog({
+  collection,
+  chainId,
+  variant,
+}: {
+  collection: `0x${string}`
+  chainId: number
+  /** The page mounts a copy per breakpoint (sidebar at lg+, record section below);
+   * CSS hides the inactive one but display:none doesn't stop hooks, so each copy
+   * declares its breakpoint and only the visible one runs the RPC scan. Omit when
+   * the component is mounted once. */
+  variant?: "desktop" | "mobile"
+}) {
+  const lg = useLgViewport()
+  // null (pre-paint) fetches nothing — the matching copy starts its scan one effect
+  // tick later, and the hidden copy never does.
+  const active = variant === undefined ? true : lg !== null && (variant === "desktop") === lg
+  const {mints, status} = useRecentMints(collection, active)
   const thumbnails = useMintThumbnails(collection, mints)
   const nowSeconds = useMemo(() => Math.floor(Date.now() / 1000), [])
 

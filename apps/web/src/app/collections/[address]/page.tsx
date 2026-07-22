@@ -445,7 +445,7 @@ export default async function CollectionPage({
                 its stack there. Below lg the sidebar isn't a separate column, so this stays
                 in its original spot. */}
             <div className="lg:hidden">
-              <HomageMintLog collection={addr} chainId={PND_CHAIN_ID} />
+              <HomageMintLog collection={addr} chainId={PND_CHAIN_ID} variant="mobile" />
             </div>
             {/* Contract details, matching the 1/1 auction token page's
                 treatment (see src/app/[handle]/[tokenId]/page.tsx): a small
