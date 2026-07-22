@@ -36,6 +36,8 @@ export async function AmbientCounters() {
 
   if (clauses.length === 0) return null
 
+  clauses.push("Zero platform fees on auctions.")
+
   return (
     <p className="text-xs font-mono text-gray-500 italic text-center pt-8">
       {clauses.join(" ")}

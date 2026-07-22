@@ -114,6 +114,9 @@ async function CountersInline() {
     clauses.push(`${formatEth(stats.ethToArtistsWei)} ETH to artists`)
   }
   if (clauses.length === 0) return null
+  // Auction-scoped on purpose: Surface mints through a hosted interface
+  // carry a referral share, so the blanket claim is no longer accurate.
+  clauses.push("zero platform fees on auctions")
 
   return (
     <ul className="font-mono text-xs text-gray-500 flex flex-col gap-y-0.5 sm:flex-row sm:flex-wrap sm:gap-x-2">
