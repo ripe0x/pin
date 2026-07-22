@@ -161,6 +161,7 @@ export default async function CollectionPage({
       mintedIds={homageMintedIds}
       supply={c.cfg.supplyCap > 0n ? Number(c.cfg.supplyCap) : 10_000}
       minted={Number(c.minted)}
+      viewAllHref={`/collections/${addr}/gallery`}
     />
   ) : hasWork ? (
     <ParityMosaic

@@ -19,7 +19,7 @@
 // minted set. The mint being open or closed does not enter into it: what matters is
 // whether any token exists to show.
 
-import {useMemo} from "react"
+import {useMemo, useState} from "react"
 import Link from "next/link"
 import {type Address} from "viem"
 import {useReadContract} from "wagmi"
@@ -86,13 +86,23 @@ export function HomageField({
   mintedIds,
   supply,
   minted,
+  viewAllHref,
+  mintHref,
+  capped = true,
 }: {
   collection: Address
   renderer: Address
   mintedIds: number[]
   supply: number
   minted: number
+  /** Link to the dedicated full-collection page; omitted on that page itself. */
+  viewAllHref?: string
+  /** Where the "Mint" control points; defaults to the in-page instrument anchor. */
+  mintHref?: string
+  /** False on the full-collection page: no height cap, no expand toggle. */
+  capped?: boolean
 }) {
+  const [expanded, setExpanded] = useState(false)
   const state: FieldState = minted === 0 ? "premint" : minted >= supply ? "soldout" : "minting"
 
   // The field carries only real mints: never mix samples in with live outputs, which
@@ -125,7 +135,7 @@ export function HomageField({
           style={{
             gridTemplateColumns: "repeat(auto-fill, minmax(clamp(150px, 22vw, 300px), 1fr))",
             background: "var(--paper, #0a0a0c)",
-            maxHeight: "clamp(420px, 62vw, 800px)",
+            maxHeight: capped && !expanded ? "clamp(420px, 62vw, 800px)" : "none",
           }}
         >
           {cells.map((c, i) => (
@@ -139,20 +149,39 @@ export function HomageField({
             />
           ))}
         </div>
-        {cells.length > 8 && (
+        {capped && !expanded && cells.length > 8 && (
           <div
             className="pointer-events-none absolute inset-x-0 bottom-0 h-16"
             style={{background: "linear-gradient(to bottom, transparent, var(--paper, #0a0a0c))"}}
           />
         )}
       </div>
-      <div className="flex items-center justify-between px-6 py-3 lg:px-12">
-        <Link
-          href="#mint-instrument"
-          className="font-mono text-[10px] uppercase tracking-wider text-gray-400 underline decoration-dotted underline-offset-4 hover:text-gray-300"
-        >
-          Mint
-        </Link>
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-6 py-3 lg:px-12">
+        <div className="flex items-center gap-4">
+          <Link
+            href={mintHref ?? "#mint-instrument"}
+            className="font-mono text-[10px] uppercase tracking-wider text-gray-400 underline decoration-dotted underline-offset-4 hover:text-gray-300"
+          >
+            Mint
+          </Link>
+          {capped && cells.length > 8 && (
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              className="font-mono text-[10px] uppercase tracking-wider text-gray-400 underline decoration-dotted underline-offset-4 hover:text-gray-300"
+            >
+              {expanded ? "Show less" : `Show all ${cells.length}`}
+            </button>
+          )}
+          {viewAllHref && (
+            <Link
+              href={viewAllHref}
+              className="font-mono text-[10px] uppercase tracking-wider text-gray-400 underline decoration-dotted underline-offset-4 hover:text-gray-300"
+            >
+              View full collection
+            </Link>
+          )}
+        </div>
         <span className="font-mono text-[10px] uppercase tracking-wider text-gray-400">
           {minted} / {supply} minted
         </span>
