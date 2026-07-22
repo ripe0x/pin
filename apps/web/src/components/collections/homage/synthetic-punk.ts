@@ -3,12 +3,12 @@
 // Generate a NOVEL punk (not one of the 10k) for the pre-deploy sample wall: pick a head
 // and compatible accessories in the collection's real ratios, sum the colors each trait
 // contributes (precomputed offline into homage-traits.json — see scripts/build-homage-traits.mjs)
-// into a pixel histogram, and render the homage through the shared distill/rings/svg pipeline.
+// into a pixel histogram, and render the homage through the shared colors/rings/svg pipeline.
 // So the colors are coherent with the generated traits, the full trait list is real, and no
 // SDK / punk pixels are loaded at runtime — only the ~10KB trait table.
 
 import {useEffect, useState} from "react"
-import {distill, groundForStatus, rings, svg} from "@/components/mint/homage-gallery/render"
+import {colors, groundForStatus, rings, svg} from "@/components/mint/homage-gallery/render"
 import {anySvgToSrc} from "@/components/mint/homage-gallery/svg"
 
 // [rgb, avgPixelCount] per color the trait contributes.
@@ -56,8 +56,8 @@ function weightedIndex(weights: number[], rng: () => number): number {
 }
 
 // A histogram of {rgb -> pixel count} laid into a 576-pixel image (rest transparent), so the
-// existing distill (merge near shades, cap rings, rec ordering) processes it identically to a
-// real punk's pixels. Spatial position is irrelevant — distill only counts colors.
+// shared colors pass processes it identically to a real punk's pixels. Spatial position is
+// irrelevant — the pass only counts colors.
 function histToImage(hist: Map<number, number>): Uint8Array {
   const img = new Uint8Array(2304)
   const entries = [...hist.entries()]
@@ -113,7 +113,7 @@ function assemble(
     accNames.push(table.accessories[idx].name)
   }
 
-  const {cols, cnts} = distill(histToImage(hist))
+  const {cols, cnts} = colors(histToImage(hist))
   const order = rings(cols, cnts)
   let s = svg(groundForStatus(opts.status ?? 0), order, false)
   if (opts.sizePx) s = s.replace("<svg ", `<svg width="${opts.sizePx}" height="${opts.sizePx}" `)

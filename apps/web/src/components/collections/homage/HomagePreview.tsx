@@ -85,7 +85,7 @@ const ABOUT: {h: string | null; blocks: Block[]}[] = [
       {t: "p", node: "Every Punk supplies a different palette."},
       {
         t: "p",
-        node: "The renderer reads the colors in the source Punk, measures how much of each color appears, combines closely related shades, and arranges the result into nested fields.",
+        node: "The renderer reads the colors in the source Punk, measures how much of each color appears, and arranges the result into nested fields, one ring for every distinct color.",
       },
       {t: "p", node: "The same Punk always produces the same central composition."},
       {
@@ -125,8 +125,8 @@ const ABOUT: {h: string | null; blocks: Block[]}[] = [
             <a href="https://x.com/jalilwahdat" target="_blank" rel="noopener noreferrer" className={PC_LINK}>
               @jalilwahdat
             </a>
-            , measures how much of each color appears, combines closely related shades, and arranges the
-            resulting palette into nested fields.
+            , measures how much of each color appears, and arranges the resulting palette into nested
+            fields, one ring for every distinct color.
           </>
         ),
       },
