@@ -128,11 +128,13 @@ export default createConfig({
     mainnet: {
       id: 1,
       rpc: http(RPC_URL),
-      // 300s poll. Per-poll work scales linearly with the indexed-
-      // contract surface; v2's smaller surface means we could go
-      // tighter (60s) without bill impact, but auction-state freshness
-      // beyond 5min isn't a product requirement here.
-      pollingInterval: 300_000,
+      // 15s poll. Per-poll work scales linearly with the indexed-
+      // contract surface, and a head-follow poll is one small getLogs
+      // batch per filter over a few blocks — free-RPC cheap. The old
+      // 300s setting predates the Surface launch; a live mint feed
+      // (homage mint history reads collection_mints) needs rows within
+      // seconds, not minutes.
+      pollingInterval: 15_000,
       // drpc free tier caps eth_getLogs at 10K blocks per request and
       // throttles at ~100 RPS. Hard limit, not soft throttle — requests
       // over 10K return error code 35. Ponder auto-chunks on errors so
