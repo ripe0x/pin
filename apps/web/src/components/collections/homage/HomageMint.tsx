@@ -164,12 +164,12 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
   const refreshQuote = useCallback(async () => {
     if (!publicClient) return
     try {
-      setQuote(await quoteMint(publicClient, activeFee))
+      setQuote(await quoteMint(publicClient, minter, activeFee))
       setQuoteErr(null)
     } catch (e) {
       setQuoteErr(e instanceof Error ? e.message : "quote failed")
     }
-  }, [publicClient, activeFee])
+  }, [publicClient, minter, activeFee])
 
   useEffect(() => {
     // Pre-open: one fetch (no poll) so the price card can show an expected cost
@@ -239,7 +239,7 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
     if (!publicClient) return
     let q = quote
     try {
-      q = await quoteMint(publicClient, publicFee)
+      q = await quoteMint(publicClient, minter, publicFee)
       setQuote(q)
     } catch {
       /* fall back to last shown quote */
@@ -268,7 +268,7 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
     if (!publicClient || !allowlistProof) return
     let q = quote
     try {
-      q = await quoteMint(publicClient, publicFee)
+      q = await quoteMint(publicClient, minter, publicFee)
       setQuote(q)
     } catch {
       /* fall back */
@@ -320,7 +320,7 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
         }
       }
       try {
-        const q = await quoteMint(publicClient, fee)
+        const q = await quoteMint(publicClient, minter, fee)
         setQuote(q)
         return q.ethForSwap + fee
       } catch {

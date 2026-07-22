@@ -70,9 +70,11 @@ export const HAS_WRAPPED_PUNKS = !USE_SEPOLIA
 // holder-priority claim via `claimFor` (mints to the vault).
 export const DELEGATE_REGISTRY = "0x00000000000000447e69651d841bD8D104Bed493" as const
 
-// Economic constants — mirror HomageMinter. THRESHOLD is structural; the fees are
-// deploy defaults and MUST be read live (mintFeeOf / exitFee are owner-tunable).
-export const THRESHOLD = 50_000n * 10n ** 18n // 50k $111 escrowed per homage
+// Economic constants — mirror HomageMinter deploy defaults; every value is
+// owner-tunable (setThreshold / setFeeSchedule / setExitFee) and MUST be
+// read live before it drives a mint. A prior hardcoded THRESHOLD (50,000)
+// drifted from the deployed default (30,000), sizing every quoted swap
+// ~67% too large — quoteMint below reads threshold() live instead.
 export const BASE_FEE = 5_000_000_000_000_000n // 0.005 ETH — deploy default; real fee is mintFeeOf()
 export const EXIT_FEE = 3_000_000_000_000_000n // 0.003 ETH — deploy default; read exitFee() live before redeem
 
@@ -81,7 +83,7 @@ export const EXIT_FEE = 3_000_000_000_000_000n // 0.003 ETH — deploy default; 
 // HomageMinter — the mint engine. Economics, schedule, allowlist, supply, and the
 // mint/redeem writes. NOT the ERC721: ownership / tokenURI live on the collection.
 export const homageMinterAbi = parseAbi([
-  "function THRESHOLD() view returns (uint256)",
+  "function threshold() view returns (uint256)",
   "function exitFee() view returns (uint256)",
   "function SUPPLY() view returns (uint256)",
   "function remaining() view returns (uint256)",
@@ -130,9 +132,10 @@ export const homageMinterAbi = parseAbi([
   "event Redeemed(address indexed from, uint256 indexed punkId, uint256 amount111)",
   "event Reserved(uint256 indexed punkId, address indexed by)",
   "event ReservationReleased(uint256 indexed punkId)",
-  // Custom errors — so viem decodes a revert selector to a named reason.
+  // Custom errors — so viem decodes a revert selector to a named reason. Partial
+  // set covering the mint-path reverts; the contract defines more errors than are
+  // listed here (activation/config/redeem/admin paths).
   "error NotManager()",
-  "error BadValue()",
   "error SoldOut()",
   "error Slippage(uint256 received, uint256 needed)",
   "error ClaimClosed()",
@@ -142,7 +145,6 @@ export const homageMinterAbi = parseAbi([
   "error NotDelegated()",
   "error AlreadyMinted()",
   "error NotAllowlisted()",
-  "error AllowlistCapReached()",
   "error BadSchedule()",
 ])
 
@@ -241,10 +243,14 @@ export function homageFlows(minter: Address) {
 
 // ─── Quote the mint cost ──────────────────────────────────────────────────────────
 //
-// What ETH should `mint()` swap so it nets >= THRESHOLD $111? Read spot (StateView)
-// to size a probe, run ONE real quote through the live pool (V4Quoter — reflects LP
-// fee, 6% skim, price impact), then scale linearly to clear THRESHOLD with a small
-// safety margin. Exact-input, so any $111 over THRESHOLD is refunded; erring high is safe.
+// What ETH should `mint()` swap so it nets >= the minter's live escrow threshold
+// ($111)? Read spot (StateView) to size a probe, run ONE real quote through the live
+// pool (V4Quoter — reflects LP fee, 6% skim, price impact), then scale linearly to
+// clear the threshold with a small safety margin. Exact-input, so any $111 over the
+// threshold is refunded; erring high is safe. `threshold` is owner-tunable
+// (`HomageMinter.setThreshold`) and is read live in every branch below, never
+// hardcoded — a stale hardcoded 50,000 previously drifted from the deployed 30,000
+// default, sizing every quoted swap ~67% too large.
 
 const Q192 = 1n << 192n
 const WAD = 10n ** 18n
@@ -271,11 +277,24 @@ async function quoteExactInput(client: PublicClient, ethIn: bigint): Promise<big
 }
 
 /**
- * Quote the mint. `fee` is the ETH fee to fold into the tx value (the caller's
- * `mintFeeOf()` for a public mint, or `baseFee()` for a claim / allowlist mint).
- * `safetyBps` is headroom over THRESHOLD (default 5%) to absorb price drift.
+ * Quote the mint. `minter` is read for the live `threshold()` (owner-tunable,
+ * must not be hardcoded). `fee` is the ETH fee to fold into the tx value (the
+ * caller's `mintFeeOf()` for a public mint, or `baseFee()` for a claim /
+ * allowlist mint). `safetyBps` is headroom over the threshold (default 5%) to
+ * absorb price drift.
  */
-export async function quoteMint(client: PublicClient, fee: bigint, safetyBps = 500): Promise<MintQuote> {
+export async function quoteMint(
+  client: PublicClient,
+  minter: Address,
+  fee: bigint,
+  safetyBps = 500,
+): Promise<MintQuote> {
+  const threshold = (await client.readContract({
+    address: minter,
+    abi: homageMinterAbi,
+    functionName: "threshold",
+  })) as bigint
+
   // Sepolia: MOCK_POOL_MANAGER has no StateView/Quoter — it mints TOKEN_111 to
   // the caller for a flat ETH cost per swap (`weiPerSwap`, read live rather
   // than hardcoded). No headroom/refund math applies to a flat price.
@@ -289,7 +308,7 @@ export async function quoteMint(client: PublicClient, fee: bigint, safetyBps = 5
       ethForSwap,
       totalValue: ethForSwap + fee,
       fee,
-      estReceived: THRESHOLD,
+      estReceived: threshold,
       estRefund: 0n,
       spotEthForThreshold: ethForSwap,
       price111PerEth: 0n,
@@ -306,16 +325,16 @@ export async function quoteMint(client: PublicClient, fee: bigint, safetyBps = 5
   if (sqrtP === 0n) throw new Error("pool not initialized")
 
   const price111PerEth = (sqrtP * sqrtP * WAD) / Q192
-  const spotEthForThreshold = (THRESHOLD * Q192) / (sqrtP * sqrtP)
+  const spotEthForThreshold = (threshold * Q192) / (sqrtP * sqrtP)
   const probe = spotEthForThreshold > 0n ? spotEthForThreshold : WAD / 1000n
 
   const out = await quoteExactInput(client, probe)
   if (out === 0n) throw new Error("quote returned zero")
 
-  const target = (THRESHOLD * BigInt(10000 + safetyBps)) / 10000n
+  const target = (threshold * BigInt(10000 + safetyBps)) / 10000n
   const ethForSwap = (probe * target) / out + 1n
   const estReceived = (out * ethForSwap) / probe
-  const estRefund = estReceived > THRESHOLD ? estReceived - THRESHOLD : 0n
+  const estRefund = estReceived > threshold ? estReceived - threshold : 0n
 
   return {
     ethForSwap,

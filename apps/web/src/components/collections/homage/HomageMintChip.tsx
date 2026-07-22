@@ -65,12 +65,12 @@ function useChipState(minter: Address) {
   const refresh = useCallback(async () => {
     if (!publicClient) return
     try {
-      const q = await quoteMint(publicClient, BASE_FEE)
+      const q = await quoteMint(publicClient, minter, BASE_FEE)
       setPrice(q.totalValue)
     } catch {
       /* keep last */
     }
-  }, [publicClient])
+  }, [publicClient, minter])
   useEffect(() => {
     if (phase === "closed" || soldOut) return
     void refresh()

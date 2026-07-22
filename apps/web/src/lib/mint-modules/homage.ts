@@ -174,6 +174,14 @@ export async function allowlistProofFor(address: string): Promise<`0x${string}`[
   return allowlistProofIn(await loadAllowlist(), address)
 }
 
+/** Format an 18-decimal token amount as a whole-number, comma-grouped string
+ *  for a breakdown label (e.g. `30000n * WAD` -> "30,000"). Threshold values
+ *  are always whole-token amounts. */
+function formatWholeToken(amountWad: bigint): string {
+  const whole = amountWad / 10n ** 18n
+  return whole.toLocaleString("en-US")
+}
+
 // ── quote provider: "homage-quote" ────────────────────────────────────────────
 // One provider serves all three phases. Every window now folds in the caller's
 // escalating `mintFeeOf(wallet)` (claims and allowlist mints escalate on the same
@@ -191,11 +199,12 @@ registerQuoteProvider("homage-quote", async ({ client, wallet, phaseKey }) => {
   // live rather than hardcoded so a mock redeploy at a different price needs
   // no frontend change). No headroom/refund math applies to a flat price.
   if (USE_SEPOLIA) {
-    const [feeRes, weiPerSwapRes] = await client.multicall({
+    const [feeRes, weiPerSwapRes, thresholdRes] = await client.multicall({
       allowFailure: true,
       contracts: [
         { address: minter, abi: homageMinterAbi as Abi, functionName: "mintFeeOf", args: [wallet ?? zeroAddress] },
         { address: MOCK_POOL_MANAGER, abi: mockPoolManagerAbi, functionName: "weiPerSwap" },
+        { address: minter, abi: homageMinterAbi as Abi, functionName: "threshold" },
       ],
     })
     if (feeRes.status !== "success") throw new Error("mint fee unavailable")
@@ -203,10 +212,12 @@ registerQuoteProvider("homage-quote", async ({ client, wallet, phaseKey }) => {
     const fee = feeRes.result as bigint
     const ethForSwap = weiPerSwapRes.result as bigint
     const value = ethForSwap + fee
+    const thresholdLabel =
+      thresholdRes.status === "success" ? formatWholeToken(thresholdRes.result as bigint) : "the escrow threshold of"
     return {
       value,
       breakdown: [
-        { label: "Buys 50,000 $111 (sepolia mock pool, flat price)", wei: ethForSwap },
+        { label: `Buys ${thresholdLabel} $111 (sepolia mock pool, flat price)`, wei: ethForSwap },
         { label: "Mint fee (this wallet)", wei: fee },
         { label: "Total", wei: value },
       ],
@@ -215,25 +226,32 @@ registerQuoteProvider("homage-quote", async ({ client, wallet, phaseKey }) => {
     }
   }
 
-  // Pool spot + the phase's ETH fee in one multicall. Fee reads hit the
-  // MINTER — economics live there, not the collection.
-  const [slot0Res, feeRes] = await client.multicall({
+  // Pool spot + the phase's ETH fee + the live escrow threshold in one
+  // multicall. Threshold and fee reads hit the MINTER — economics live
+  // there, not the collection. `threshold` is owner-tunable
+  // (`HomageMinter.setThreshold`), so it must be read live rather than
+  // hardcoded: a stale constant here previously sized every swap for
+  // 50,000 $111 against a deployed threshold of 30,000.
+  const [slot0Res, feeRes, thresholdRes] = await client.multicall({
     allowFailure: true,
     contracts: [
       { address: V4_STATE_VIEW, abi: stateViewAbi, functionName: "getSlot0", args: [HOMAGE_POOL_ID] },
       { address: minter, abi: homageMinterAbi as Abi, functionName: "mintFeeOf", args: [wallet ?? zeroAddress] },
+      { address: minter, abi: homageMinterAbi as Abi, functionName: "threshold" },
     ],
   })
   if (slot0Res.status !== "success") throw new Error("pool price unavailable")
   if (feeRes.status !== "success") throw new Error("mint fee unavailable")
+  if (thresholdRes.status !== "success") throw new Error("escrow threshold unavailable")
   const sqrtP = (slot0Res.result as readonly [bigint, number, number, number])[0]
   const fee = feeRes.result as bigint
+  const threshold = thresholdRes.result as bigint
 
   // Size the probe from spot, then run ONE real quote through the live pool
   // (LP fee + skim + price impact all reflected) and scale linearly to clear
-  // THRESHOLD + 5%. Excess $111/ETH is refunded by the contract.
+  // threshold + 5%. Excess $111/ETH is refunded by the contract.
   const probe = (() => {
-    const spot = spotEthForThreshold(sqrtP) // throws "pool not initialized" on 0
+    const spot = spotEthForThreshold(sqrtP, threshold) // throws "pool not initialized" on 0
     return spot > 0n ? spot : 10n ** 15n
   })()
   const [probeOut] = (await client.readContract({
@@ -242,13 +260,13 @@ registerQuoteProvider("homage-quote", async ({ client, wallet, phaseKey }) => {
     functionName: "quoteExactInputSingle",
     args: [{ poolKey: POOL_KEY, zeroForOne: true, exactAmount: probe, hookData: "0x" }],
   })) as readonly [bigint, bigint]
-  const { ethForSwap } = scaleSwapForThreshold(probe, probeOut, DEFAULT_SAFETY_BPS)
+  const { ethForSwap } = scaleSwapForThreshold(probe, probeOut, threshold, DEFAULT_SAFETY_BPS)
 
   const value = ethForSwap + fee
   return {
     value,
     breakdown: [
-      { label: "Buys 50,000 $111", wei: ethForSwap },
+      { label: `Buys ${formatWholeToken(threshold)} $111`, wei: ethForSwap },
       { label: "Mint fee (this wallet)", wei: fee },
       { label: "Total", wei: value },
     ],
