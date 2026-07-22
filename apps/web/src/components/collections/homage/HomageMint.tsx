@@ -145,7 +145,7 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
   // ── live quote ───────────────────────────────────────────────────────────────
   const [quote, setQuote] = useState<MintQuote | null>(null)
   const [quoteErr, setQuoteErr] = useState<string | null>(null)
-  // Batch: 1..MAX_BATCH tokens per public mint. Claim/allowlist stay single.
+  // Batch: 1..MAX_BATCH tokens per public OR allowlist mint. Claim stays single.
   // qty is the committed value the math runs on; qtyText is what the input shows, so
   // typing can pass through transient states ("", leading digit of a larger number)
   // without the quote math ever seeing 0 or NaN.
@@ -160,7 +160,9 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
     address: minter, abi: homageMinterAbi, functionName: "MAX_BATCH", chainId: PREFERRED_CHAIN.id,
   })
   const maxBatch = maxBatchRead.data !== undefined ? Number(maxBatchRead.data as bigint) : 20
-  const batchQty = phase === "public" ? qty : 1
+  // Batch is available in public AND allowlist (the contract exposes both
+  // mintBatch and allowlistMintBatch). Claim stays single (one punk id per call).
+  const batchQty = phase === "public" || phase === "allowlist" ? qty : 1
   const refreshQuote = useCallback(async () => {
     if (!publicClient) return
     try {
@@ -219,15 +221,15 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
   // contract to the wei). One source for the itemized rows, the total, and the headline —
   // so the list always sums to its total. The tx itself uses the on-chain quoteBatchFee.
   const batchItems = useMemo(() => {
-    if (phase !== "public" || !quote) return null
+    if ((phase !== "public" && phase !== "allowlist") || !quote) return null
     return Array.from({length: batchQty}, (_, i) => ({
       cost: quote.ethForSwap + feeForCount(baseFee, feeGrowthBps, walletMintCount + BigInt(i)),
     }))
   }, [phase, batchQty, quote, baseFee, feeGrowthBps, walletMintCount])
   const batchTotal = batchItems ? batchItems.reduce((s, it) => s + it.cost, 0n) : undefined
   const insufficient = !!balance && batchTotal !== undefined && !wrongNetwork && balance.value < batchTotal
-  // Headline price: the escalating batch total in public, the flat claim fee otherwise.
-  const priceValue = phase === "public" ? batchTotal : claimTotal
+  // Headline price: the escalating batch total in public/allowlist, the flat claim fee otherwise.
+  const priceValue = phase === "public" || phase === "allowlist" ? batchTotal : claimTotal
 
   const doMint = useCallback(async () => {
     if (!publicClient) return
@@ -268,8 +270,25 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
       /* fall back */
     }
     if (!q) return
-    writeContract({...homageFlows(minter).allowlistMint(allowlistProof, q.ethForSwap + publicFee), chainId: PREFERRED_CHAIN.id})
-  }, [publicClient, quote, publicFee, allowlistProof, minter, writeContract])
+    if (batchQty <= 1) {
+      writeContract({...homageFlows(minter).allowlistMint(allowlistProof, q.ethForSwap + publicFee), chainId: PREFERRED_CHAIN.id})
+      return
+    }
+    // Allowlist batch: same escalating fee leg as the public batch (quoteBatchFee
+    // covers any qty) plus a per-swap budget with headroom; the contract refunds
+    // whatever it doesn't spend.
+    const batchFee = (await publicClient.readContract({
+      address: minter,
+      abi: homageMinterAbi,
+      functionName: "quoteBatchFee",
+      args: [address ?? ZERO, BigInt(batchQty)],
+    })) as bigint
+    const swapBudget = (BigInt(batchQty) * q.ethForSwap * 112n) / 100n
+    writeContract({
+      ...homageFlows(minter).allowlistMintBatch(BigInt(batchQty), allowlistProof, batchFee + swapBudget),
+      chainId: PREFERRED_CHAIN.id,
+    })
+  }, [publicClient, quote, publicFee, allowlistProof, minter, writeContract, batchQty, address])
 
   // claim routes are driven from HomageClaim. The escalating fee is keyed on the RECIPIENT
   // (the wallet the homage mints to): the connected wallet for a direct claim, the vault for
@@ -336,6 +355,77 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
           ? "Allowlist mint open"
           : "Not yet open"
 
+  // Batch controls shared by the public and allowlist phases (the contract
+  // exposes mintBatch and allowlistMintBatch; only the write path differs).
+  const qtyStepper = maxBatch > 1 && (phase === "public" || phase === "allowlist") ? (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-[10px] font-mono uppercase tracking-wider text-gray-400">Quantity</span>
+      <div className="flex items-center rounded border border-gray-200">
+        <button
+          onClick={() => commitQty(qty - 1, maxBatch)}
+          disabled={qty <= 1 || isPending}
+          className="px-3 py-1.5 text-sm font-mono text-gray-500 transition-colors hover:text-fg disabled:opacity-30"
+          aria-label="decrease quantity"
+        >
+          −
+        </button>
+        <input
+          value={qtyText}
+          onChange={(e) => {
+            const raw = e.target.value.replace(/[^\d]/g, "").slice(0, 2)
+            const n = parseInt(raw, 10)
+            if (!Number.isFinite(n)) {
+              setQtyText("")
+              return
+            }
+            if (n < 1) {
+              setQtyText(raw)
+              return
+            }
+            commitQty(n, maxBatch)
+          }}
+          onBlur={() => commitQty(qty, maxBatch)}
+          disabled={isPending}
+          inputMode="numeric"
+          pattern="[0-9]*"
+          aria-label="quantity"
+          className="w-10 bg-transparent text-center text-sm font-mono tabular-nums outline-none disabled:opacity-30"
+        />
+        <button
+          onClick={() => commitQty(qty + 1, maxBatch)}
+          disabled={qty >= maxBatch || isPending}
+          className="px-3 py-1.5 text-sm font-mono text-gray-500 transition-colors hover:text-fg disabled:opacity-30"
+          aria-label="increase quantity"
+        >
+          +
+        </button>
+      </div>
+    </div>
+  ) : null
+
+  const batchBreakdown =
+    batchItems && batchQty > 1 ? (
+      <>
+        <ul className="space-y-1 pt-1">
+          {batchItems.map((it, i) => (
+            <li
+              key={i}
+              className="flex items-baseline justify-between gap-3 text-[10px] font-mono uppercase tracking-wider text-gray-400 tabular-nums"
+            >
+              <span>Mint {i + 1}</span>
+              <span className="text-fg">{fmtEth(it.cost)} ETH</span>
+            </li>
+          ))}
+          <li className="flex items-baseline justify-between gap-3 border-t border-gray-200 pt-1 text-[10px] font-mono uppercase tracking-wider text-gray-500 tabular-nums">
+            <span>Total</span>
+            <span className="text-fg">{batchTotal !== undefined ? fmtEth(batchTotal) : "…"} ETH</span>
+          </li>
+        </ul>
+        <p className="text-[10px] font-mono leading-relaxed text-gray-400">
+          The mint fee rises 10% with each mint from your wallet, so each is a little more than the last.
+        </p>
+      </>
+    ) : null
 
   return (
     <section className="py-5 border-b border-gray-100 space-y-3">
@@ -474,56 +564,7 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                 </button>
               ) : phase === "public" ? (
                 <div className="space-y-3">
-                  {maxBatch > 1 && (
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-                        Quantity
-                      </span>
-                      <div className="flex items-center rounded border border-gray-200">
-                        <button
-                          onClick={() => commitQty(qty - 1, maxBatch)}
-                          disabled={qty <= 1 || isPending}
-                          className="px-3 py-1.5 text-sm font-mono text-gray-500 transition-colors hover:text-fg disabled:opacity-30"
-                          aria-label="decrease quantity"
-                        >
-                          −
-                        </button>
-                        <input
-                          value={qtyText}
-                          onChange={(e) => {
-                            // digits only (strips paste junk, e/+/-/. included), capped at
-                            // 2 chars (MAX_BATCH is 20); empty is a valid TYPING state, and
-                            // an over-max entry snaps to max immediately (not on blur).
-                            const raw = e.target.value.replace(/[^\d]/g, "").slice(0, 2)
-                            const n = parseInt(raw, 10)
-                            if (!Number.isFinite(n)) {
-                              setQtyText("")
-                              return
-                            }
-                            if (n < 1) {
-                              setQtyText(raw) // "0" while typing e.g. "05" — commit on blur
-                              return
-                            }
-                            commitQty(n, maxBatch)
-                          }}
-                          onBlur={() => commitQty(qty, maxBatch)}
-                          disabled={isPending}
-                          inputMode="numeric"
-                          pattern="[0-9]*"
-                          aria-label="quantity"
-                          className="w-10 bg-transparent text-center text-sm font-mono tabular-nums outline-none disabled:opacity-30"
-                        />
-                        <button
-                          onClick={() => commitQty(qty + 1, maxBatch)}
-                          disabled={qty >= maxBatch || isPending}
-                          className="px-3 py-1.5 text-sm font-mono text-gray-500 transition-colors hover:text-fg disabled:opacity-30"
-                          aria-label="increase quantity"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                  {qtyStepper}
                   <button
                     onClick={doMint}
                     disabled={isPending || soldOut || drawExhausted || total === undefined || insufficient}
@@ -541,43 +582,34 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                               ? `Mint ${qty} homages`
                               : "Mint a homage"}
                   </button>
-                  {/* Itemized per-mint cost — each token's own escalating fee, so the
-                      +10%/mint climb is explicit. */}
-                  {batchItems && batchQty > 1 && (
-                    <ul className="space-y-1 pt-1">
-                      {batchItems.map((it, i) => (
-                        <li
-                          key={i}
-                          className="flex items-baseline justify-between gap-3 text-[10px] font-mono uppercase tracking-wider text-gray-400 tabular-nums"
-                        >
-                          <span>Mint {i + 1}</span>
-                          <span className="text-fg">{fmtEth(it.cost)} ETH</span>
-                        </li>
-                      ))}
-                      <li className="flex items-baseline justify-between gap-3 border-t border-gray-200 pt-1 text-[10px] font-mono uppercase tracking-wider text-gray-500 tabular-nums">
-                        <span>Total</span>
-                        <span className="text-fg">{batchTotal !== undefined ? fmtEth(batchTotal) : "…"} ETH</span>
-                      </li>
-                    </ul>
-                  )}
-                  {batchQty > 1 && (
-                    <p className="text-[10px] font-mono leading-relaxed text-gray-400">
-                      The mint fee rises 10% with each mint from your wallet, so each is a little more than the last.
-                    </p>
-                  )}
+                  {batchBreakdown}
                 </div>
               ) : phase === "allowlist" ? (
                 // Allowlist mints are uncapped: the contract keeps no per-wallet count
                 // and throttles only through the fee escalator, so membership is the
-                // whole test.
+                // whole test. Batch is allowed here too (allowlistMintBatch).
                 isAllowlisted ? (
-                  <button
-                    onClick={doAllowlistMint}
-                    disabled={isPending || soldOut || drawExhausted || claimTotal === undefined}
-                    className={btnPrimary}
-                  >
-                    {isPending ? "Minting…" : drawExhausted ? "Draw pool empty" : "Allowlist mint"}
-                  </button>
+                  <div className="space-y-3">
+                    {qtyStepper}
+                    <button
+                      onClick={doAllowlistMint}
+                      disabled={isPending || soldOut || drawExhausted || priceValue === undefined || insufficient}
+                      className={btnPrimary}
+                    >
+                      {soldOut
+                        ? "Sold out"
+                        : drawExhausted
+                          ? "Draw pool empty"
+                          : isPending
+                            ? "Minting…"
+                            : insufficient
+                              ? "Insufficient balance"
+                              : qty > 1
+                                ? `Allowlist mint ${qty} homages`
+                                : "Allowlist mint"}
+                    </button>
+                    {batchBreakdown}
+                  </div>
                 ) : (
                   <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
                     {!allowlist
