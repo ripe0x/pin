@@ -5,6 +5,7 @@
 // show its `image` (itself a data URI). No indexer, no gateway.
 
 import {useMemo} from "react"
+import Link from "next/link"
 import {type Address} from "viem"
 import {useReadContract} from "wagmi"
 import {PREFERRED_CHAIN, evmNowTxUrl} from "@/components/tx/tx-ui"
@@ -76,16 +77,26 @@ export function HomageReveal({
         )}
       </div>
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <p className="text-[11px] font-mono text-fg">{meta?.name ?? `Homage to Punk ${punkId.toString()}`}</p>
-        <a
-          href={evmNowTxUrl(txHash, PREFERRED_CHAIN.id)}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-[10px] font-mono uppercase tracking-wider text-gray-400 underline hover:text-fg"
-        >
-          View tx ↗
-        </a>
+        <div className="flex shrink-0 items-center gap-3">
+          {/* The minted token's own page, the same destination each thumb in the batch
+              reveal links to. */}
+          <Link
+            href={`/collections/${collection}/${punkId.toString()}`}
+            className="text-[10px] font-mono uppercase tracking-wider text-gray-400 underline hover:text-fg"
+          >
+            View token →
+          </Link>
+          <a
+            href={evmNowTxUrl(txHash, PREFERRED_CHAIN.id)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[10px] font-mono uppercase tracking-wider text-gray-400 underline hover:text-fg"
+          >
+            View tx ↗
+          </a>
+        </div>
       </div>
     </div>
   )
