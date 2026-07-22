@@ -225,6 +225,12 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
     }))
   }, [phase, batchQty, quote, baseFee, feeGrowthBps, walletMintCount])
   const batchTotal = batchItems ? batchItems.reduce((s, it) => s + it.cost, 0n) : undefined
+  // What this wallet pays for the mint AFTER the one priced above, in the windows that
+  // mint one at a time. Same feeForCount the batch rows use, one step further along.
+  const nextMintCost =
+    quote && phase !== "public" && phase !== "closed"
+      ? quote.ethForSwap + feeForCount(baseFee, feeGrowthBps, walletMintCount + 1n)
+      : undefined
   const insufficient = !!balance && batchTotal !== undefined && !wrongNetwork && balance.value < batchTotal
   // Headline price: the escalating batch total in public, the flat claim fee otherwise.
   const priceValue = phase === "public" ? batchTotal : claimTotal
@@ -398,6 +404,15 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                 <span className="text-sm font-mono text-gray-500">quoting…</span>
               )}
             </p>
+            {/* Single-mint windows escalate on the same per-wallet counter as public, but
+                mint one token at a time (the contract has no allowlist or claim batch), so
+                there is no itemized list to carry the climb. Naming the next mint's cost
+                is what shows it. */}
+            {nextMintCost !== undefined && priceValue !== undefined && nextMintCost > priceValue && (
+              <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400 tabular-nums">
+                Your next mint · {fmtEth(nextMintCost)} <span className="text-gray-500">ETH</span>
+              </p>
+            )}
             {/* Pre-open: base fee + the live $111 swap quote, so a wallet can plan around
                 the expected cost before the window opens (the fee itself may still change
                 per-wallet once minting starts escalating). */}
