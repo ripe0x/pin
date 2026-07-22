@@ -15,14 +15,50 @@
 
 ---
 
+## Phase 0 — the deploy itself (Dave broadcasts; gated on the external audit)
+
+The launch deploy is ONE script (the lean-deploy decision, `6f8ce9e`:
+impls + factory only, nothing unused in the deploy history):
+
+- `DeploySurfaceSystem.s.sol` — Surface impl, PooledSurface impl,
+  FixedPriceMinter impl, SurfaceFactory (reuses the live mainnet Catalog,
+  no default renderer), factory lands PAUSED (`setPaused(false)` opens it).
+  Fork-dry-run verified 2026-07-21 (sender
+  `0xCB43078C32423F5348Cab5885911C3B5faE217F9`, ~12.4M gas, ~0.0030 ETH
+  at 0.24 gwei).
+
+```
+cd contracts
+forge script script/DeploySurfaceSystem.s.sol \
+  --rpc-url $MAINNET_RPC_URL \
+  --account <keystore name> --sender <deployer address> \
+  --broadcast --verify --etherscan-api-key $ETHERSCAN_API_KEY
+```
+
+- [ ] external audit closed at the deployed commit (the deploy gate)
+- [ ] script broadcast; summary addresses recorded
+- [ ] factory left paused until launch readiness (Phase B/C prep done)
+
+**Deferred, staged and ready:** `DeployRenderModules.s.sol` (RenderAssets,
+then DefaultRenderer bound to it; ~2.5M gas, fork-dry-run verified same
+date). Per the lean-deploy decision these ship only when something needs
+them: the studio wizard's edition preset (which requires a deployed
+DefaultRenderer to pass as cfg.renderer — see T10), the capture/cover
+tooling (`pnd-surface-post-deploy.md`), or a launch-collection cover via
+`RenderAssets.setCover` (C4). Until then `defaultRenderer`/`renderAssets`
+stay empty in deployments.mainnet.json and packages/addresses, and A1
+fills only the core-system keys.
+
 ## Phase A — the hour after the deploy tx lands
 
 ### A1. Record the addresses everywhere they belong
 
 Three places hold protocol addresses and all currently carry
 placeholders: `contracts/deployments.mainnet.json` (feeds the docs
-generator, which prints an unresolved-placeholder warning until filled),
-`packages/addresses/src/index.ts` (`SOVEREIGN_COLLECTION_FACTORY`,
+generator, which prints an unresolved-placeholder warning until filled;
+keys: `surfaceFactory`, `sequentialImplementation`,
+`pooledImplementation`, `minterImplementation`, `defaultRenderer`,
+`renderAssets`), `packages/addresses/src/index.ts` (`SURFACE_FACTORY`,
 `RENDER_ASSETS`, `DEFAULT_RENDERER` — the web app's source of truth),
 and the reference docs regenerate from the first.
 
@@ -35,10 +71,11 @@ and the reference docs regenerate from the first.
 ```
 Prompt: You are a hands-on implementer; do this yourself. In the pnd
 repo (~/foundation): the Surface system just deployed to mainnet.
-Addresses: <paste factory, sequential impl, pooled impl,
-DefaultRenderer, RenderAssets from the deploy broadcast>. Fill
+Addresses: <paste factory, sequential impl, pooled impl, minter impl,
+DefaultRenderer, RenderAssets from the deploy broadcasts
+(DeploySurfaceSystem.s.sol + DeployRenderModules.s.sol)>. Fill
 contracts/deployments.mainnet.json and the placeholder entries in
-packages/addresses/src/index.ts (SOVEREIGN_COLLECTION_FACTORY,
+packages/addresses/src/index.ts (SURFACE_FACTORY,
 RENDER_ASSETS, DEFAULT_RENDERER). Run pnpm generate:docs and confirm
 the unresolved-placeholder warning is gone, then pnpm --filter web
 typecheck. Cross-check each address against the deploy broadcast in
@@ -297,6 +334,14 @@ historical sections that are explicitly marked historical.
 The wizard shipped unverified; the launch used scripts. Before opening
 studio deploys to other artists, prove the wizard produces a correct,
 fully-wired collection.
+
+**Known break to fix first:** the EDITION preset builds
+`cfg.renderer = address(0)` (`DeployStep.tsx` `buildCfg`) on the
+assumption the factory supplies a default renderer. The lean-deploy
+factory has none, so that path reverts `RendererRequired` at
+`createSurface`. Fix = deploy the renderer modules (Phase 0's deferred
+script) and pass the DefaultRenderer address explicitly, or gate the
+edition preset off until then.
 
 ```
 Prompt: You are a hands-on implementer; do this yourself. In the pnd
