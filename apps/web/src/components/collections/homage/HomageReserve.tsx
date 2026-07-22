@@ -84,7 +84,7 @@ export function HomageReserve({minter}: {minter: Address}) {
       {!address ? (
         <div className="space-y-3">
           <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
-            Punk owners can reserve their punk&apos;s homage before the claim opens,
+            Punk owners can reserve their punk&apos;s homage before the punk mint claim opens,
             withholding it from the random draw pool. Connect to see which of your
             punks are available to reserve.
           </p>

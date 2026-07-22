@@ -24,7 +24,7 @@ const QUOTE_POLL_MS = 60_000 // indicative price only — keep this cold (paid R
 
 const PHASE_CHIP_LABEL: Record<Phase, string> = {
   closed: "Mint not open",
-  claim: "Claim open",
+  claim: "Punk mint claim open",
   allowlist: "Allowlist open",
   public: "Mint open",
 }
@@ -32,7 +32,7 @@ const PHASE_CHIP_LABEL: Record<Phase, string> = {
 // How a window is NAMED in the masthead countdown label ("punk owner claim closes in …").
 const WINDOW_NAME: Record<Phase, string> = {
   closed: "mint",
-  claim: "punk owner claim",
+  claim: "punk mint claim",
   allowlist: "allowlist",
   public: "public mint",
 }

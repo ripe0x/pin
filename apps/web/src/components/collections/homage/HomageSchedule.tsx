@@ -45,7 +45,7 @@ export function HomageSchedule({minter}: {minter: Address}) {
 
   const rows: Row[] = []
   if (claimStart !== 0 && claimStart < allowlistStart)
-    rows.push({name: "Punk owner claim", detail: "punk holders mint their own id", start: claimStart, end: allowlistStart})
+    rows.push({name: "Punk mint claim", detail: "punk holders mint their own id", start: claimStart, end: allowlistStart})
   if (allowlistStart !== 0 && allowlistStart < publicStart)
     rows.push({name: "Allowlist", detail: "random draw, flat fee", start: allowlistStart, end: publicStart})
   if (publicStart !== 0)

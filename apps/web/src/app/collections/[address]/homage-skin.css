@@ -20,9 +20,3 @@
   letter-spacing: 0.01em;
   line-height: 0.94;
 }
-
-/* $111 / live-status accent, borrowed from the gallery, for the status dot's
-   "available" state so the masthead reads as the same family. */
-.collection-homage-skin .bg-status-available {
-  background-color: var(--accent);
-}

@@ -111,7 +111,7 @@ export function HomageClaim({
                   disabled={disabled || pendingId !== null}
                   className="text-[10px] font-mono font-medium uppercase tracking-wider px-3 py-1.5 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  {pendingId === p.id ? "…" : p.vault ? "Claim to vault" : "Claim"}
+                  {pendingId === p.id ? "…" : p.vault ? "Punk mint claim to vault" : "Punk mint claim"}
                 </button>
               )}
             </li>

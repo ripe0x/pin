@@ -342,7 +342,7 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
     : phase === "public"
       ? "Public mint open"
       : phase === "claim"
-        ? "Punk-owner claim open"
+        ? "Punk mint claim open"
         : phase === "allowlist"
           ? "Allowlist mint open"
           : "Not yet open"
@@ -392,7 +392,7 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                   : "Price"
                 : phase === "closed"
                   ? "Opens"
-                  : "Price · flat claim fee"}
+                  : "Price · flat punk mint claim fee"}
             </p>
             <p className="text-2xl font-mono font-medium tabular-nums tracking-tight leading-none">
               {phase === "closed" ? (
@@ -599,7 +599,7 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                       {/* Name the window that actually opens next: claim, allowlist
                           and public open at their own times. */}
                       {next.to === "claim"
-                        ? "Punk owner claim opens in"
+                        ? "Punk mint claim opens in"
                         : next.to === "allowlist"
                           ? "Allowlist opens in"
                           : "Public mint opens in"}{" "}
@@ -621,7 +621,7 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                   sibling to that phase-driven block, not one of its branches. */}
               {address && !wrongNetwork && claimIsOpen && (
                 <div className="border-t border-gray-100 pt-3 space-y-3">
-                  <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">Your punks · claim</p>
+                  <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">Your punks · punk mint claim</p>
                   <HomageClaim
                     minter={minter}
                     collection={collection}

@@ -46,10 +46,10 @@ const PC_LINK = "underline decoration-gray-500 underline-offset-2 hover:text-fg"
 // SSR/no-JS fallback.
 const WINDOWS = [
   {
-    name: "Punk owners",
+    name: "Punk mint claim",
     at: "2026-07-22T16:20:00-04:00",
     etLabel: "Wed, Jul 22 · 4:20 PM ET",
-    detail: "claim your punk's id",
+    detail: "mint your own punk's id",
   },
   {
     name: "Allowlist",
