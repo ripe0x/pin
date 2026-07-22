@@ -152,7 +152,7 @@ contract FixedPriceMinterHandler is StdInvariant, Test {
         if (activeStrategy == address(0)) {
             required = minter.price() * quantity;
         } else {
-            required = IPriceStrategy(activeStrategy).priceOf(address(collection), buyer, quantity, "");
+            required = IPriceStrategy(activeStrategy).priceOf(address(collection), buyer, quantity);
         }
 
         vm.deal(buyer, required);

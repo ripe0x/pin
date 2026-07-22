@@ -41,7 +41,7 @@ contract LockCurvePriceStrategy is IPriceStrategy {
         lockCounter = lockCounter_;
     }
 
-    function priceOf(address collection, address, uint256 quantity, bytes calldata)
+    function priceOf(address collection, address, uint256 quantity)
         external
         view
         override
@@ -73,26 +73,26 @@ contract MinterTBAMTest is FixedPriceMinterBase {
 
     function test_priceTracksBasefee() public {
         vm.fee(10 gwei);
-        uint256 p1 = minter.priceOf(collector, 1, "");
+        uint256 p1 = minter.priceOf(collector, 1);
         assertEq(p1, 10 gwei * 60_000);
 
         vm.fee(30 gwei);
-        assertEq(minter.priceOf(collector, 1, ""), 3 * p1);
+        assertEq(minter.priceOf(collector, 1), 3 * p1);
     }
 
     function test_priceClimbsWithLocks() public {
-        uint256 before = minter.priceOf(collector, 1, "");
+        uint256 before = minter.priceOf(collector, 1);
 
         lockCounter.lock(address(collection));
-        uint256 afterOne = minter.priceOf(collector, 1, "");
+        uint256 afterOne = minter.priceOf(collector, 1);
         assertEq(afterOne, 2 * before, "one lock doubles the linear curve");
 
         lockCounter.lock(address(collection));
-        assertEq(minter.priceOf(collector, 1, ""), 3 * before);
+        assertEq(minter.priceOf(collector, 1), 3 * before);
     }
 
     function test_dynamicPriceMint_mintsThroughCollectionAndRefundsExcess() public {
-        uint256 quote = minter.priceOf(collector, 1, "");
+        uint256 quote = minter.priceOf(collector, 1);
         vm.prank(collector);
         minter.mint{value: quote + 0.5 ether}(collector, 1, address(0), "");
 
@@ -103,7 +103,7 @@ contract MinterTBAMTest is FixedPriceMinterBase {
 
     function test_dynamicPriceMint_withReferral() public {
         lockCounter.lock(address(collection));
-        uint256 quote = minter.priceOf(collector, 1, "");
+        uint256 quote = minter.priceOf(collector, 1);
 
         vm.prank(collector);
         minter.mint{value: quote}(collector, 1, referrer, "");

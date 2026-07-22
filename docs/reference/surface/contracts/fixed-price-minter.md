@@ -359,7 +359,7 @@ The fixed price per token in wei, used when `priceStrategy` is zero.
 ### priceOf
 
 ```solidity
-function priceOf(address to, uint256 quantity, bytes data) external view returns (uint256)
+function priceOf(address to, uint256 quantity) external view returns (uint256)
 ```
 
 The required payment in wei to mint `quantity` tokens to `to` given `data`:

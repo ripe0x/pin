@@ -262,11 +262,6 @@ export const fixedPriceMinterAbi = [
         "name": "quantity",
         "type": "uint256",
         "internalType": "uint256"
-      },
-      {
-        "name": "data",
-        "type": "bytes",
-        "internalType": "bytes"
       }
     ],
     "outputs": [

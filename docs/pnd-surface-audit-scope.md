@@ -7,14 +7,16 @@
 > review yet. It supersedes `docs/pnd-surface-reaudit-notes.md`, whose
 > fat-token `43f4ae7` baseline no longer describes deployed code.
 >
-> **Post-baseline delta (fold into the same engagement).** Four contract PRs
+> **Post-baseline delta (fold into the same engagement).** Contract PRs that
 > landed on `main` after this baseline and are part of the code that deploys;
 > see "Changes after the baseline" below: PR #172 (primaryMinter discovery
 > pointer), PR #174 (comment pass + additive integration aliases), PR #182
-> (referral share moved from a constant to owner-settable storage), and PR
-> #189 (`SurfaceCreated` gains `name`/`symbol`). Several comment-only passes
-> (#175, #184-#188) also landed in the same window; no behavior, storage, or
-> ABI change, verified against their diffs.
+> (referral share moved from a constant to owner-settable storage), PR #189
+> (`SurfaceCreated` gains `name`/`symbol`), and the pre-deploy audit fixes
+> below (`IPriceStrategy`/`IMinter` `priceOf` drops its `data` param; the
+> allowlist branch reverts `NotAllowlisted` on empty data). Several
+> comment-only passes (#175, #184-#188) also landed in the same window; no
+> behavior, storage, or ABI change, verified against their diffs.
 
 ## What changed since the last audited baseline
 
@@ -201,6 +203,28 @@ code must be `main`'s tip, not the baseline commit. The full diff is
   `createSurfaceCustom`, `createPooledSurface`) match what is actually
   written to the token at `initialize`, and that the private-helper split
   didn't change the atomicity of minter-then-token wiring.
+- **Pre-deploy audit fixes (2026-07-22, this doc's commit).** Two items from
+  the internal pre-deploy audit pass over the deploy set:
+  - **`priceOf` drops its `data` param (`IPriceStrategy` + `IMinter` + the
+    `FixedPriceMinter` view/strategy call).** The pre-fix code decoded the
+    single `data` argument as the allowlist Merkle proof AND forwarded the
+    same bytes verbatim to `IPriceStrategy.priceOf`, so a collection with both
+    an allowlist and a data-reading strategy could not encode both. Resolved
+    structurally: a strategy quote is now a pure function of
+    `(collection, minter, quantity)` + chain state with no caller bytes, and
+    `data` on the mint entrypoint is unambiguously the allowlist proof, never
+    forwarded. The `mint(to, quantity, referrer, data)` signature is
+    unchanged; only the `priceOf` views lose their trailing `bytes` param.
+    Review focus: confirm no path forwards caller data into pricing, and that
+    the fixed-price branch (the launch config, `priceStrategy == 0`) is
+    unaffected.
+  - **Empty-data allowlist revert.** The allowlist branch now reverts
+    `NotAllowlisted` when `data.length == 0` instead of letting
+    `abi.decode("", (bytes32[]))` panic, so the no-arg `mint(quantity)`
+    overload fails cleanly on a gated collection. Fail-closed either way; this
+    only changes the revert reason. Added coverage:
+    `test_allowlist_noArgOverload_emptyData_revertsNotAllowlisted`,
+    `test_allowlist_emptyData_revertsNotAllowlisted`.
 
 ## Verification state at handoff
 
@@ -222,6 +246,13 @@ code must be `main`'s tip, not the baseline commit. The full diff is
   SurfaceFactory 5,775 bytes, all under the 23,576-byte gate (#182's
   storage slot + setter grew the minter ~540 bytes, #189's `name`/`symbol`
   emission grew the factory ~465; both expected).
+- **Re-run after the pre-deploy audit fixes (2026-07-22):** full suite
+  **482 passed, 0 failed, 2 skipped** (+2 new allowlist empty-data tests);
+  deep invariant profile green (14/0/0 in the invariant suites). Runtime
+  sizes: Surface 13,781, PooledSurface 13,698, FixedPriceMinter 9,831,
+  SurfaceFactory 5,775 bytes, all under gate (dropping the `data` forward
+  shrank the minter ~230 bytes). `@pin/abi` regenerated from the new
+  artifacts and `pnpm generate:docs` re-run; `apps/web` typecheck green.
 - `slither` clean on the new minter/factory/token code (triaged; all real
   items are accepted pull-payment/factory patterns).
 - `contracts/.gas-snapshot` regenerated at this baseline.
