@@ -7,8 +7,10 @@
  * (a plain ERC-721 core), and minting/economics/redeem run through a
  * separate `HomageMinter` engine that mints INTO that collection.
  *
- *   - `homageMinterAbi`     — HomageMinter: the three phased mint writes
- *     (`claim` / `claimFor` / `claimTo` / `allowlistMint` / `mint`), `redeem`,
+ *   - `homageMinterAbi`     — HomageMinter: the phased mint writes
+ *     (`claim` / `claimFor` / `claimTo` / `allowlistMint` /
+ *     `allowlistMintAsHolder` / `allowlistMintAsHolderFor` / `mint` /
+ *     `mintBatch`), `redeem`,
  *     every view the quote / eligibility / schedule plumbing reads, every
  *     event the contract emits, and every custom `error` it defines, so
  *     viem decodes a revert selector to a named reason (`NotPunkOwner()`)
@@ -151,6 +153,13 @@ export const homageMinterAbi = [
   },
   {
     type: "function",
+    name: "mintBatch",
+    inputs: [{ name: "qty", type: "uint256", internalType: "uint256" }],
+    outputs: [{ name: "ids", type: "uint256[]", internalType: "uint256[]" }],
+    stateMutability: "payable",
+  },
+  {
+    type: "function",
     name: "claim",
     inputs: [{ name: "punkId", type: "uint256", internalType: "uint256" }],
     outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
@@ -182,10 +191,38 @@ export const homageMinterAbi = [
   },
   {
     type: "function",
+    name: "allowlistMintAsHolder",
+    inputs: [{ name: "punkId", type: "uint256", internalType: "uint256" }],
+    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+    stateMutability: "payable",
+  },
+  {
+    type: "function",
+    name: "allowlistMintAsHolderFor",
+    inputs: [
+      { name: "punkId", type: "uint256", internalType: "uint256" },
+      { name: "vault", type: "address", internalType: "address" },
+    ],
+    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+    stateMutability: "payable",
+  },
+  {
+    type: "function",
     name: "redeem",
     inputs: [{ name: "punkId", type: "uint256", internalType: "uint256" }],
     outputs: [],
     stateMutability: "payable",
+  },
+  {
+    type: "function",
+    name: "setSchedule",
+    inputs: [
+      { name: "claimStart_", type: "uint64", internalType: "uint64" },
+      { name: "allowlistStart_", type: "uint64", internalType: "uint64" },
+      { name: "publicStart_", type: "uint64", internalType: "uint64" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
   },
 
   // ── Economics (views) ───────────────────────────────────────────────
@@ -222,6 +259,16 @@ export const homageMinterAbi = [
     name: "mintFeeOf",
     inputs: [{ name: "who", type: "address", internalType: "address" }],
     outputs: [{ name: "fee", type: "uint256", internalType: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "quoteBatchFee",
+    inputs: [
+      { name: "who", type: "address", internalType: "address" },
+      { name: "qty", type: "uint256", internalType: "uint256" },
+    ],
+    outputs: [{ name: "total", type: "uint256", internalType: "uint256" }],
     stateMutability: "view",
   },
   {
@@ -278,6 +325,13 @@ export const homageMinterAbi = [
   },
   {
     type: "function",
+    name: "MAX_BATCH",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
     name: "remaining",
     inputs: [],
     outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
@@ -295,6 +349,46 @@ export const homageMinterAbi = [
     name: "isMinted",
     inputs: [{ name: "punkId", type: "uint256", internalType: "uint256" }],
     outputs: [{ name: "", type: "bool", internalType: "bool" }],
+    stateMutability: "view",
+  },
+
+  // ── Reserve + redeem window (writes + views) ────────────────────────
+  {
+    type: "function",
+    name: "isReserved",
+    inputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+    outputs: [{ name: "", type: "bool", internalType: "bool" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "reserveMine",
+    inputs: [{ name: "ids", type: "uint256[]", internalType: "uint256[]" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "reserveVia",
+    inputs: [
+      { name: "ids", type: "uint256[]", internalType: "uint256[]" },
+      { name: "vault", type: "address", internalType: "address" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "reservedRemaining",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "redeemOpensAt",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
     stateMutability: "view",
   },
 
