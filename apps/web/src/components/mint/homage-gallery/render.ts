@@ -2,7 +2,7 @@
 // HomageRendererSovereign adapter) — byte-identical to the on-chain output.
 //
 // Input is the punk's raw pixels (DATA.punkImage(id): 2304 bytes RGBA, 576 pixels) + market
-// status. Everything else (distillation, rec ordering, sized-to-count geometry, SVG string) is
+// status. Everything else (color tally, rec ordering, sized-to-count geometry, SVG string) is
 // pure integer arithmetic on small numbers — no BigInt, no keccak, no adjacency grid (the rec
 // ordering is deterministic, so `grid` and `seed` are unused on-chain too).
 //
@@ -11,10 +11,7 @@
 // comparisons keep the first index on ties (matching the contract's selection + stable sorts).
 
 // ---- constants (must match the contract) ----
-const MERGE_T = 24; // fold shades within this RGB Manhattan distance
 const W_OUTER = (240 * 4) / 5; // 192, fixed outer field
-const MIN_CENTER = 10;
-const MAX_RINGS = W_OUTER / MIN_CENTER; // 19, palette cap
 const W_CHROMA = 7;
 const W_RARITY = 3;
 const UNIT = 240;
@@ -37,11 +34,6 @@ const r8 = (c: number) => (c >> 16) & 0xff;
 const g8 = (c: number) => (c >> 8) & 0xff;
 const b8 = (c: number) => c & 0xff;
 
-/** RGB Manhattan distance — the contract's `_dist`. */
-function dist(a: number, b: number): number {
-  return Math.abs(r8(a) - r8(b)) + Math.abs(g8(a) - g8(b)) + Math.abs(b8(a) - b8(b));
-}
-
 /** R+G+B luminance proxy — the contract's `_lum`. */
 function lum(c: number): number {
   return r8(c) + g8(c) + b8(c);
@@ -53,11 +45,12 @@ export function hex(c: number): string {
 }
 
 /**
- * `_colorsGrid` colour half: pixels -> distilled colours (value) + counts, count-descending.
- * The per-pixel `grid` the contract also builds is skipped: the rec ordering ignores it, so it
- * has no effect on cols/cnts or the SVG. Returns colours as 0xRRGGBB numbers.
+ * `_colors` port: pixels -> distinct opaque colours (value) + pixel counts, count-descending.
+ * Every distinct colour is kept 1:1, no folding; the sealed punk set peaks at 14 colours.
+ * The count-desc sort is stable, so equal counts keep first-seen order, matching the
+ * contract's insertion sort. Returns colours as 0xRRGGBB numbers.
  */
-export function distill(img: Uint8Array): { cols: number[]; cnts: number[] } {
+export function colors(img: Uint8Array): { cols: number[]; cnts: number[] } {
   const col: number[] = [];
   const cnt: number[] = [];
   let n = 0;
@@ -94,66 +87,7 @@ export function distill(img: Uint8Array): { cols: number[]; cnts: number[] } {
     ord[j] = v;
   }
 
-  // distill: fold near-identical shades (Manhattan < MERGE_T); representative = the more common
-  const mc: number[] = [];
-  const mn: number[] = [];
-  const used: boolean[] = new Array(n).fill(false);
-  let m = 0;
-  for (let a = 0; a < n; a++) {
-    const i = ord[a];
-    if (used[i]) continue;
-    let c = cnt[i];
-    for (let b = a + 1; b < n; b++) {
-      const j = ord[b];
-      if (!used[j] && dist(col[i], col[j]) < MERGE_T) {
-        used[j] = true;
-        c += cnt[j];
-      }
-    }
-    mc[m] = col[i];
-    mn[m] = c;
-    m++;
-  }
-
-  // cap to MAX_RINGS: fold the two NEAREST distilled colours (rarer into the more common)
-  const gone: boolean[] = new Array(m).fill(false);
-  let liveN = m;
-  while (liveN > MAX_RINGS) {
-    let bi = 0;
-    let bj = 0;
-    let bestD = Infinity;
-    for (let i = 0; i < m; i++) {
-      if (gone[i]) continue;
-      for (let j = i + 1; j < m; j++) {
-        if (gone[j]) continue;
-        const dd = dist(mc[i], mc[j]);
-        if (dd < bestD) {
-          bestD = dd;
-          bi = i;
-          bj = j;
-        }
-      }
-    }
-    if (mn[bi] < mn[bj]) {
-      const t = bi;
-      bi = bj;
-      bj = t;
-    }
-    mn[bi] += mn[bj];
-    gone[bj] = true;
-    liveN--;
-  }
-
-  // compact survivors in original distilled order (still count-desc from the distill pass)
-  const cols: number[] = [];
-  const cnts: number[] = [];
-  for (let i = 0; i < m; i++) {
-    if (!gone[i]) {
-      cols.push(mc[i]);
-      cnts.push(mn[i]);
-    }
-  }
-  return { cols, cnts };
+  return { cols: ord.map((i) => col[i]), cnts: ord.map((i) => cnt[i]) };
 }
 
 /**
@@ -214,7 +148,7 @@ export function rings(cols: number[], cnts: number[]): number[] {
 }
 
 /**
- * Pure-luminance ordering: distilled colours sorted darkest -> lightest (outer -> centre) — a plain
+ * Pure-luminance ordering: colours sorted darkest -> lightest (outer -> centre) — a plain
  * value ramp, ignoring the dominant/accent logic. NOT the on-chain order; offered on the preview
  * page for comparison. Stable sort, so equal-luminance colours keep their count-descending order.
  */
@@ -259,12 +193,12 @@ export function renderHomageSVG(
   img: Uint8Array,
   opts: { status?: number; circle?: boolean; order?: "rec" | "luminance" } = {}
 ): string {
-  const { cols, cnts } = distill(img);
+  const { cols, cnts } = colors(img);
   const ordered = opts.order === "luminance" ? ringsLuminance(cols) : rings(cols, cnts);
   return svg(groundForStatus(opts.status ?? 0), ordered, opts.circle ?? false);
 }
 
-/** Distilled colour count (= ring count) from raw pixels — the contract's `colorCount`. */
+/** Distinct colour count (= ring count) from raw pixels — the contract's `colorCount`. */
 export function colorCountFromPixels(img: Uint8Array): number {
-  return distill(img).cols.length;
+  return colors(img).cols.length;
 }
