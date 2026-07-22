@@ -27,10 +27,11 @@ const USE_SEPOLIA = process.env.NEXT_PUBLIC_USE_SEPOLIA === "1"
 
 export type HomagePair = {collection: Address; minter: Address}
 
-/** Canonical mainnet homage. Null until homage ships on mainnet. */
-const MAINNET_HOMAGE: HomagePair | null = null
-// e.g. once live:
-// { collection: "0x…", minter: "0x…" }
+/** Canonical mainnet homage. */
+const MAINNET_HOMAGE: HomagePair | null = {
+  collection: "0xd938fF57d2c7111880A4ea5c8e6A92796C72a76e",
+  minter: "0xe516668f7CE220d7418eB0e9D24AF89B23Be59F8",
+}
 
 function forkHomage(): HomagePair | null {
   const collection = process.env.NEXT_PUBLIC_HOMAGE_COLLECTION
