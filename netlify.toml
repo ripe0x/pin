@@ -15,6 +15,9 @@
 
 [build.environment]
   NODE_VERSION = "22.19.0"
+  # PND treasury: receives the FixedPriceMinter referral share on mints made
+  # through this site (pndReferrerAddress in lib/collection.ts).
+  NEXT_PUBLIC_PND_REFERRAL_ADDRESS = "0xea194A186EBe76A84E2B2027f5f23F81939c05AD"
   # Force pnpm via corepack so the lockfile is honored. Without this
   # Netlify may try to use npm and fail on the workspace protocol.
   NPM_FLAGS = "--version"
