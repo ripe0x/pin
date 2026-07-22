@@ -452,7 +452,7 @@ export async function getCurrentPrice(
         address: minter,
         abi: fixedPriceMinterAbi,
         functionName: "priceOf",
-        args: [to, qty, "0x"],
+        args: [to, qty],
       })
       return price as bigint
     } catch {

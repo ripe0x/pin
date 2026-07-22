@@ -18,11 +18,14 @@ interface IPriceStrategy {
     /// @param minter The mint recipient the quote is for; FixedPriceMinter
     ///        passes the mint's `to` address, the same address its gates evaluate.
     /// @param quantity Tokens requested in this call.
-    /// @param data Forwarded mint data (e.g. tier selectors); strategy-defined.
+    /// @dev A strategy takes no caller-supplied data: the price is a function of
+    ///      `(collection, minter, quantity)` and chain state only. Caller input
+    ///      belongs to the gate path (the allowlist proof), which the minter
+    ///      keeps separate. Pricing that needs a caller-chosen selector belongs
+    ///      in a dedicated minter, not a bytes passthrough on this shared quote.
     function priceOf(
         address collection,
         address minter,
-        uint256 quantity,
-        bytes calldata data
+        uint256 quantity
     ) external view returns (uint256);
 }

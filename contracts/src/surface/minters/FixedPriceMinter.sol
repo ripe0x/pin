@@ -230,6 +230,11 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
 
         bytes32 root = allowlistRoot;
         if (root != bytes32(0)) {
+            // Empty data carries no proof, so it can never be allowlisted. Fail
+            // with NotAllowlisted rather than letting abi.decode panic on empty
+            // bytes: the no-arg mint(quantity) overload passes "" and must give
+            // a clean revert on a gated collection instead of a decode error.
+            if (data.length == 0) revert NotAllowlisted();
             bytes32[] memory proof = abi.decode(data, (bytes32[]));
             bytes32 leaf = keccak256(bytes.concat(keccak256(abi.encode(to))));
             if (!MerkleProof.verify(proof, root, leaf)) revert NotAllowlisted();
@@ -254,7 +259,7 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
             required = price * quantity;
             if (msg.value != required) revert WrongPayment(required, msg.value);
         } else {
-            required = IPriceStrategy(strategy).priceOf(collection, to, quantity, data);
+            required = IPriceStrategy(strategy).priceOf(collection, to, quantity);
             if (msg.value < required) revert Underpayment(required, msg.value);
             uint256 excess = msg.value - required;
             if (excess > 0) {
@@ -276,10 +281,10 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
     }
 
     /// @inheritdoc IMinter
-    function priceOf(address to, uint256 quantity, bytes calldata data) external view override returns (uint256) {
+    function priceOf(address to, uint256 quantity) external view override returns (uint256) {
         address strategy = priceStrategy;
         if (strategy == address(0)) return price * quantity;
-        return IPriceStrategy(strategy).priceOf(collection, to, quantity, data);
+        return IPriceStrategy(strategy).priceOf(collection, to, quantity);
     }
 
     // ─────────────────────────────────────────────────────────────────────────

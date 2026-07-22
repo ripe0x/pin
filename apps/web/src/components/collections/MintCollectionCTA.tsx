@@ -137,7 +137,7 @@ export function MintCollectionCTA({
     address: minter ?? undefined,
     abi: fixedPriceMinterAbi,
     functionName: "priceOf",
-    args: [address ?? ZERO_ADDRESS, BigInt(amountValid ? amount : 1), "0x"],
+    args: [address ?? ZERO_ADDRESS, BigInt(amountValid ? amount : 1)],
     query: {
       enabled: strategy && !!minter,
       refetchInterval: 12_000,

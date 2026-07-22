@@ -26,7 +26,7 @@ worked implementation.
 ### priceOf
 
 ```solidity
-function priceOf(address collection, address minter, uint256 quantity, bytes data) external view returns (uint256)
+function priceOf(address collection, address minter, uint256 quantity) external view returns (uint256)
 ```
 
 view; returns the total price in wei for `quantity` tokens minted by
