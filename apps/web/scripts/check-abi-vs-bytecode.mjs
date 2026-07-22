@@ -28,6 +28,11 @@
  * This same method is reliable for EVENT topic0 hashes: a `LOG` opcode's
  * topic is always a literal 32-byte PUSH, so it appears in full.
  *
+ * One event class is exempt: an event a contract inherits from a standard
+ * interface but never emits has no LOG opcode and so no topic0 in the code.
+ * Those are listed in NEVER_EMITTED_EVENTS with a reason, skipped by the
+ * check, and named in the output rather than dropped silently.
+ *
  * ERROR method is different, deliberately NOT bytecode substring search: a
  * custom error selector is only emitted where a `revert Error(...)`
  * statement compiles, and under `via_ir` the optimizer does not reliably
@@ -277,12 +282,38 @@ function selectorsOf(abi) {
   return functionsOf(abi).map((fn) => ({ fn, selector: toFunctionSelector(fn) }))
 }
 
+// Events an ABI declares by inheriting a standard interface but whose `emit`
+// statement exists nowhere in the source. A topic0 reaches the runtime
+// bytecode only where a LOG opcode compiles, so a declared-never-emitted
+// event is legitimately absent from the code and is not drift. Keyed by
+// event signature; each entry needs a reason.
+//
+// MetadataUpdate(uint256): ERC-4906 declares a single-token and a batch
+// refresh event. SurfaceCore advertises 0x49064906 in supportsInterface and
+// signals every refresh with the batch form (setRenderer, lockRenderer,
+// notifyMetadataUpdate all emit BatchMetadataUpdate), so the single-token
+// form is inherited into the compiled ABI via ISurfaceCore and never
+// emitted. The ABI files are generated from the forge artifact by
+// scripts/emit-surface-abi.mjs, so the entry cannot be hand-removed — the
+// next regen restores it.
+const NEVER_EMITTED_EVENTS = new Set(["MetadataUpdate(uint256)"])
+
+function eventSignature(ev) {
+  return `${ev.name}(${ev.inputs.map((i) => i.type).join(",")})`
+}
+
 // Event topic0 is a full 32-byte keccak of the signature, always emitted as
 // a literal PUSH32 (no leading-zero-byte shrink like function selectors get,
 // there is no smaller PUSH that holds 32 bytes) — the same substring method
 // used for functions is reliable here too.
 function topicsOf(abi) {
-  return eventsOf(abi).map((ev) => ({ ev, topic: toEventSelector(ev) }))
+  return eventsOf(abi)
+    .filter((ev) => !NEVER_EMITTED_EVENTS.has(eventSignature(ev)))
+    .map((ev) => ({ ev, topic: toEventSelector(ev) }))
+}
+
+function skippedEventsOf(abi) {
+  return eventsOf(abi).map(eventSignature).filter((sig) => NEVER_EMITTED_EVENTS.has(sig))
 }
 
 // Error selector signature string (same keccak256(sig)[0:4] formula as a
@@ -360,6 +391,7 @@ async function grepCallSites(functionName) {
 async function checkTarget(target) {
   const findings = []
   const eventFindings = []
+  const skippedEvents = new Set()
   const codeRaw = await target.client.getCode({ address: target.address })
   if (!codeRaw || codeRaw === "0x") {
     return { target, error: "no code at this address (not deployed on this RPC/chain)" }
@@ -398,6 +430,8 @@ async function checkTarget(target) {
       findings.push({ source, absent })
     }
 
+    for (const sig of skippedEventsOf(abi)) skippedEvents.add(sig)
+
     const absentEvents = []
     for (const { ev, topic } of topicsOf(abi)) {
       if (!bytecodeContainsSelector(code, topic)) {
@@ -430,7 +464,15 @@ async function checkTarget(target) {
       }))
   }
 
-  return { target, checkedAddress, cloneNote, findings, eventFindings, errorReport }
+  return {
+    target,
+    checkedAddress,
+    cloneNote,
+    findings,
+    eventFindings,
+    skippedEvents: [...skippedEvents].sort(),
+    errorReport,
+  }
 }
 
 async function main() {
@@ -504,6 +546,11 @@ async function main() {
           console.log(`     - ${a.name}(${a.inputs}) topic0 ${a.topic}`)
         }
       }
+    }
+    if (r.skippedEvents?.length > 0) {
+      console.log(
+        `   events not checked (declared by a standard interface, never emitted): ${r.skippedEvents.join(", ")}`,
+      )
     }
 
     if (r.target.artifactEnvVar && !r.target.artifactPath) {
