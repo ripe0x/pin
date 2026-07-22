@@ -17,7 +17,7 @@
           "role": "Sequential-id ERC721 collection: the token core of the PND Surface System."
         },
         "SurfaceFactory": {
-          "address": null,
+          "address": "0xdB81d3F33EF3D84685486916E0d372E247558094",
           "kind": "singleton",
           "abi": "/abis/SurfaceFactory.json",
           "docs": "/docs/surface/contracts/factory",

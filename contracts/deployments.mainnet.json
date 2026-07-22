@@ -1,12 +1,12 @@
 {
-  "_note": "Addresses for the PND onchain-protocol reference. Two kinds of key: shared singletons (one canonical instance) and `*Implementation` keys (the shared logic contract that per-owner EIP-1167 clones delegatecall to, shown at the top of each clone's page). `catalog`, `auctionHouseFactory`, and `auctionHouseImplementation` are deployed; the Surface System keys (`surfaceFactory`, `defaultRenderer`, `renderAssets`, `sequentialImplementation`, `pooledImplementation`, `minterImplementation`) are pre-deploy and empty until launch. Fill an empty value and re-run `pnpm generate:docs` to resolve its address.",
+  "_note": "Addresses for the PND onchain-protocol reference. Two kinds of key: shared singletons (one canonical instance) and `*Implementation` keys (the shared logic contract that per-owner EIP-1167 clones delegatecall to, shown at the top of each clone's page). The Surface core (`surfaceFactory`, `sequentialImplementation`, `pooledImplementation`, `minterImplementation`) deployed to mainnet 2026-07-22 from commit fa5af29 (DeploySurfaceSystem.s.sol); the factory lands paused. `defaultRenderer` and `renderAssets` are the deferred render modules (DeployRenderModules.s.sol) and stay empty until a collection needs them. Fill an empty value and re-run `pnpm generate:docs` to resolve its address.",
   "chainId": 1,
-  "surfaceFactory": "",
+  "surfaceFactory": "0xdB81d3F33EF3D84685486916E0d372E247558094",
   "defaultRenderer": "",
   "renderAssets": "",
-  "sequentialImplementation": "",
-  "pooledImplementation": "",
-  "minterImplementation": "",
+  "sequentialImplementation": "0xd0cC38cB3BD18FbdAD278f14AD1f40E513f846Ef",
+  "pooledImplementation": "0xd2e3Ac74DbF40c454a4211db5CF137c7355421eA",
+  "minterImplementation": "0x50941e5fd0B177826AB86419502b221049821Ba3",
   "catalog": "0x467a9c39e03C595EC3075D856f19C7386b6b915d",
   "auctionHouseFactory": "0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f",
   "auctionHouseImplementation": "0xC70D8a99b915BeDA52C5A952E29FFE152CbfCB34"

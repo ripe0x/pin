@@ -110,7 +110,7 @@ import {createWalletClient, createPublicClient, http, parseEther} from 'viem';
 import {mainnet} from 'viem/chains';
 import {surfaceFactoryAbi} from '@pin/abi';
 
-const FACTORY = '<SURFACE_FACTORY_ADDRESS>';
+const FACTORY = '0xdB81d3F33EF3D84685486916E0d372E247558094';
 const ZERO = '0x0000000000000000000000000000000000000000';
 
 const publicClient = createPublicClient({

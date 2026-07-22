@@ -36,7 +36,7 @@ Four entry points, all served as static JSON:
           "role": "The thin ERC721 token core of the PND Surface System..."
         },
         "SurfaceFactory": {
-          "address": "<SURFACE_FACTORY_ADDRESS>",
+          "address": "0xdB81d3F33EF3D84685486916E0d372E247558094",
           "kind": "singleton",
           "abi": "/abis/SurfaceFactory.json",
           "docs": "/docs/surface/contracts/factory",

@@ -41,7 +41,7 @@ import {mainnet} from 'viem/chains';
 const client = createPublicClient({chain: mainnet, transport: webSocket()});
 
 client.watchEvent({
-  address: '<SURFACE_FACTORY_ADDRESS>',
+  address: '0xdB81d3F33EF3D84685486916E0d372E247558094',
   event: parseAbiItem('event SurfaceCreated(address indexed owner, address indexed collection, address minter, uint8 idMode)'),
   onLogs: (logs) => {
     for (const log of logs) console.log('new collection', log.args.collection, 'by', log.args.owner, 'minter', log.args.minter);
@@ -52,9 +52,9 @@ client.watchEvent({
 For a point-in-time list, read the factory arrays:
 
 ```bash
-cast call <SURFACE_FACTORY_ADDRESS> "totalSurfaces()(uint256)" --rpc-url https://ethereum-rpc.publicnode.com
-cast call <SURFACE_FACTORY_ADDRESS> "allSurfaces(uint256)(address)" 0 --rpc-url https://ethereum-rpc.publicnode.com
-cast call <SURFACE_FACTORY_ADDRESS> "isSurface(address)(bool)" 0xSomeAddress --rpc-url https://ethereum-rpc.publicnode.com
+cast call 0xdB81d3F33EF3D84685486916E0d372E247558094 "totalSurfaces()(uint256)" --rpc-url https://ethereum-rpc.publicnode.com
+cast call 0xdB81d3F33EF3D84685486916E0d372E247558094 "allSurfaces(uint256)(address)" 0 --rpc-url https://ethereum-rpc.publicnode.com
+cast call 0xdB81d3F33EF3D84685486916E0d372E247558094 "isSurface(address)(bool)" 0xSomeAddress --rpc-url https://ethereum-rpc.publicnode.com
 ```
 
 `isSurface(address)` is the cheap way to confirm an address is a real collection from this factory before trusting anything it returns.

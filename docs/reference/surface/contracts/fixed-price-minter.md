@@ -2,7 +2,7 @@
 
 # FixedPriceMinter
 
-Implementation not yet deployed to Ethereum mainnet; the address lands here at launch.
+Implementation `0x50941e5fd0B177826AB86419502b221049821Ba3` · [view on evm.now](https://evm.now/address/0x50941e5fd0B177826AB86419502b221049821Ba3?chainId=1) · Ethereum mainnet
 
 > Deployed per collection as an EIP-1167 clone of the implementation above: [`createSurface`](/docs/surface/contracts/factory#createsurface) wires one automatically and `SurfaceCreated.primaryMinter` records it. A minter clone has no canonical address of its own; substitute your collection's minter address for `<MINTER_ADDRESS>` in the examples below.
 
