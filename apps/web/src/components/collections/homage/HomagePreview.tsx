@@ -10,7 +10,7 @@
 import {useCallback, useEffect, useRef, useState, type ReactNode} from "react"
 import Link from "next/link"
 import {FitHeadline} from "./FitHeadline"
-import {HomageAllowlistLookup} from "./HomageAllowlistLookup"
+import {ALLOWLIST_SNAPSHOT_CAPTION, HomageAllowlistLookup} from "./HomageAllowlistLookup"
 import {CrossfadeArt} from "@/components/mint/homage-gallery/CrossfadeArt"
 import {useGeneratedArt, useGeneratedSample} from "./synthetic-punk"
 import {weightedStatus} from "@/components/mint/homage-gallery/gallery-deck"
@@ -187,7 +187,7 @@ const ABOUT: {h: string | null; blocks: Block[]}[] = [
       },
       {t: "p", node: "Because the amount of $111 is fixed, the ETH required to mint changes with the market."},
       {t: "p", node: "Mint price is determined by"},
-      {t: "list", items: ["base mint fee of 0.0042 ETH", "market price of $111 at mint time"]},
+      {t: "list", items: ["base mint fee of 0.005 ETH", "market price of $111 at mint time"]},
       {
         t: "p",
         node: "Each Homage mint market-buys and holds a fixed amount of $111, and the value of those tokens determines the final mint price.",
@@ -431,7 +431,7 @@ export function HomagePreview() {
               <div className="space-y-3 rounded-lg border border-gray-200 bg-surface p-5">
                 <HomageAllowlistLookup />
                 <p className="text-[10px] font-mono leading-relaxed text-gray-500">
-                  Eligibility is a fixed snapshot (July 21, 2026). Assets acquired after aren&rsquo;t reflected.
+                  {ALLOWLIST_SNAPSHOT_CAPTION}
                 </p>
               </div>
             </div>

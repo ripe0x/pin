@@ -52,7 +52,7 @@ import {HomageReveal} from "./HomageReveal"
 import {HomageBatchReveal} from "./HomageBatchReveal"
 import {HomageClaim} from "./HomageClaim"
 import {HomageReserve} from "./HomageReserve"
-import {HomageAllowlistLookup} from "./HomageAllowlistLookup"
+import {ALLOWLIST_SNAPSHOT_CAPTION, HomageAllowlistLookup} from "./HomageAllowlistLookup"
 
 const SUPPLY = 10_000
 const QUOTE_POLL_MS = 30_000 // paid RPC path in prod — never tighten below this
@@ -182,8 +182,10 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
   }, [publicClient, activeFee])
 
   useEffect(() => {
-    if (phase === "closed") return
+    // Pre-open: one fetch (no poll) so the price card can show an expected cost
+    // ahead of the window opening. Open phases additionally poll at QUOTE_POLL_MS.
     void refreshQuote()
+    if (phase === "closed") return
     const t = setInterval(() => {
       if (typeof document !== "undefined" && document.visibilityState !== "visible") return
       void refreshQuote()
@@ -406,6 +408,18 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                 <span className="text-sm font-mono text-gray-500">quoting…</span>
               )}
             </p>
+            {/* Pre-open: base fee + the live $111 swap quote, so a wallet can plan around
+                the expected cost before the window opens (the fee itself may still change
+                per-wallet once minting starts escalating). */}
+            {phase === "closed" && (
+              <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400 tabular-nums">
+                {claimTotal !== undefined
+                  ? <>Expected cost · {fmtEth(claimTotal)} <span className="text-gray-500">ETH</span></>
+                  : quoteErr
+                    ? "Expected cost unavailable"
+                    : "Estimating expected cost…"}
+              </p>
+            )}
           </div>
 
           {/* reveal / success — a grid for a batch, the full reveal for one */}
@@ -631,8 +645,9 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
       {/* Pre-public: anyone can check any address against the allowlist, below the
           instrument (the mint itself proves against the same vendored tree). */}
       {phase !== "public" && !soldOut && (
-        <div className="rounded-lg border border-gray-200 bg-surface p-5">
+        <div className="space-y-3 rounded-lg border border-gray-200 bg-surface p-5">
           <HomageAllowlistLookup />
+          <p className="text-[10px] font-mono leading-relaxed text-gray-500">{ALLOWLIST_SNAPSHOT_CAPTION}</p>
         </div>
       )}
     </section>
