@@ -595,7 +595,13 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                 <div className="space-y-3">
                   {next && (
                     <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400 tabular-nums">
-                      Claiming and allowlist open in{" "}
+                      {/* Name the window that actually opens next: claim, allowlist
+                          and public open at their own times. */}
+                      {next.to === "claim"
+                        ? "Punk owner claim opens in"
+                        : next.to === "allowlist"
+                          ? "Allowlist opens in"
+                          : "Public mint opens in"}{" "}
                       <span className="text-fg">
                         <Countdown endTime={BigInt(next.at)} nowSec={nowSec} />
                       </span>

@@ -326,11 +326,7 @@ export default async function CollectionPage({
       >
         <div className="max-w-[720px] px-6 py-10 lg:px-12 lg:py-12">
           {homageSkin ? (
-            <div className="space-y-8">
-              <HomageAbout headingClassName="text-[10px] font-mono uppercase tracking-wider text-gray-400" />
-              {/* The mint schedule lives with the story — every window, every state. */}
-              {homageMinter && <HomageSchedule minter={homageMinter} />}
-            </div>
+            <HomageAbout headingClassName="text-[10px] font-mono uppercase tracking-wider text-gray-400" />
           ) : (
             <div className="space-y-6">
               <h2 className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
@@ -392,8 +388,11 @@ export default async function CollectionPage({
           {homageMinter ? (
             // The cell is capped at the instrument's width (556 = 460 + 2×48 gutters)
             // and centered by the grid when it stands alone, so the card never floats.
-            <div className="mx-auto w-full max-w-[460px]">
+            <div className="mx-auto w-full max-w-[460px] space-y-6">
               <HomageMint collection={addr} minter={homageMinter} />
+              {/* The schedule sits with the instrument: the countdown names one
+                  window, this names all three and when each opens. */}
+              <HomageSchedule minter={homageMinter} />
             </div>
           ) : (
             <MintCollectionCTA
