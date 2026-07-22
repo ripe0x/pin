@@ -10,7 +10,7 @@
 // loads when the first homage renders. All renders share one SDK instance.
 
 import { useEffect, useState } from "react";
-import { distill, rings, svg, groundForStatus } from "./render";
+import { colors, rings, svg, groundForStatus } from "./render";
 import { anySvgToSrc, type TokenMeta } from "./svg";
 
 type Loaded = {
@@ -41,7 +41,7 @@ function getSdk(): Promise<Loaded> {
 
 // Reconstruct the raw transparent-background RGBA (as CryptoPunksData.punkImage returns) from the
 // SDK's indexed pixels + palette — index 0 is transparent. (render.rgba composites onto a solid
-// background, which our distillation must not see.)
+// background, which the colour tally must not see.)
 function pixels({ sdk, palById }: Loaded, id: number): Uint8Array {
   const idx = sdk.dataset.indexedPixels(id);
   const img = new Uint8Array(2304);
@@ -76,7 +76,7 @@ export async function localHomage(
 ): Promise<LocalHomage> {
   const loaded = await getSdk();
   const img = pixels(loaded, id);
-  const { cols, cnts } = distill(img);
+  const { cols, cnts } = colors(img);
   let svgStr = svg(groundForStatus(opts.status ?? 0), rings(cols, cnts), opts.circle ?? false);
   if (opts.sizePx) svgStr = atSize(svgStr, opts.sizePx);
   const attrs = loaded.sdk.render.metadata(id).attributes ?? [];
