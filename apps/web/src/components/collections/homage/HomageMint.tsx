@@ -241,6 +241,12 @@ export function HomageMint({
   const insufficient = !!balance && batchTotal !== undefined && !wrongNetwork && balance.value < batchTotal
   // Headline price: the escalating batch total in public/allowlist, the flat claim fee otherwise.
   const priceValue = phase === "public" || phase === "allowlist" ? batchTotal : claimTotal
+  // Before a wallet connects the fee leg defaults to baseFee (the first-mint floor);
+  // once connected it reads the wallet's live mintFeeOf, which is higher for a wallet
+  // that has already minted (the +10%/mint escalator). So the pre-connect figure is a
+  // "from" floor, not a firm quote — label it that way so connecting doesn't look like
+  // a surprise price bump.
+  const priceIsFloor = !address && phase !== "closed" && priceValue !== undefined
 
   const doMint = useCallback(async () => {
     if (!publicClient) return
@@ -491,6 +497,7 @@ export function HomageMint({
                 </span>
               ) : priceValue !== undefined ? (
                 <>
+                  {priceIsFloor && <span className="text-sm font-mono text-gray-500">from </span>}
                   {fmtEth(priceValue)} <span className="text-sm font-mono text-gray-500">ETH</span>
                 </>
               ) : quoteErr ? (
@@ -504,6 +511,11 @@ export function HomageMint({
             {phase !== "closed" && quote && (
               <p className="text-[10px] font-mono text-gray-400 tabular-nums">
                 {fmtEth(quote.fee)} ETH + {compactTokens(quote.threshold)} $111
+              </p>
+            )}
+            {priceIsFloor && (
+              <p className="text-[10px] font-mono leading-relaxed text-gray-400">
+                Starting price. The fee rises 10% with each mint from a wallet — connect to see yours.
               </p>
             )}
             {/* Pre-open: base fee + the live $111 swap quote, so a wallet can plan around

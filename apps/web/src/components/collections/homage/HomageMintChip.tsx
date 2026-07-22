@@ -175,7 +175,10 @@ export function HomageMastheadStat({
           </span>
         )}
         {!soldOut && phase !== "closed" && price !== null && (
-          <span className="font-mono text-[11px] tabular-nums text-fg">{fmtEth(price)} ETH</span>
+          <span className="font-mono text-[11px] tabular-nums text-fg">
+            <span className="text-gray-500">from </span>
+            {fmtEth(price)} ETH
+          </span>
         )}
         {!soldOut && phase !== "closed" && (
           <a
@@ -247,7 +250,12 @@ export function HomageStickyMintBar({
           <Dot phase={phase} soldOut={soldOut} />
           <span>{PHASE_CHIP_LABEL[phase]}</span>
           <ChipCountdown phase={phase} next={next} nowSec={nowSec} />
-          {price !== null && <span className="text-fg">{fmtEth(price)} ETH</span>}
+          {price !== null && (
+            <span className="text-fg">
+              <span className="text-gray-500">from </span>
+              {fmtEth(price)} ETH
+            </span>
+          )}
         </p>
         <a
           href={`#${anchorId}`}
