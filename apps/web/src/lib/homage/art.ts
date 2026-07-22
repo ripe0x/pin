@@ -62,15 +62,28 @@ export const pfpSrc = (deployedSvg: string): string | null => {
   return svg ? svgToSrc(svg) : null
 }
 
-/** Rasterize an SVG string to a PNG Blob at `size`×`size`. Injects an explicit pixel
- *  width/height on the root <svg> so the browser rasterizes at high resolution;
- *  imageSmoothingEnabled=false keeps the hard Albers edges crisp. */
+/** Inject an explicit pixel width/height onto the root <svg>, replacing any existing ones.
+ *  The renderer's raw SVG carries only a viewBox — no intrinsic size — so an <img> pointed
+ *  at it gets the browser's tiny default natural size (300×150-ish). That's what a
+ *  right-click "copy image" / "save image as" / drag-out rasterizes at, regardless of the
+ *  on-screen CSS display size. Stamping a real width/height fixes the intrinsic size the
+ *  browser reports, so those native, button-free actions produce a full-resolution image. */
+export function sizedSvg(raw: string, size: number): string {
+  return raw.replace(/<svg([^>]*)>/, (_m, attrs: string) => {
+    const cleaned = attrs.replace(/\s(width|height)="[^"]*"/g, "")
+    return `<svg${cleaned} width="${size}" height="${size}">`
+  })
+}
+
+/** `<img>`-ready src for an SVG string, stamped to `size`×`size` (see `sizedSvg`). */
+export function sizedSvgSrc(raw: string, size: number): string {
+  return svgToSrc(sizedSvg(raw, size))
+}
+
+/** Rasterize an SVG string to a PNG Blob at `size`×`size`. imageSmoothingEnabled=false
+ *  keeps the hard Albers edges crisp. */
 export function svgToPngBlob(raw: string, size: number): Promise<Blob> {
   return new Promise((resolve, reject) => {
-    const sized = raw.replace(/<svg([^>]*)>/, (_m, attrs: string) => {
-      const cleaned = attrs.replace(/\s(width|height)="[^"]*"/g, "")
-      return `<svg${cleaned} width="${size}" height="${size}">`
-    })
     const img = new Image()
     img.onload = () => {
       const c = document.createElement("canvas")
@@ -82,7 +95,7 @@ export function svgToPngBlob(raw: string, size: number): Promise<Blob> {
       c.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("toBlob failed"))), "image/png")
     }
     img.onerror = () => reject(new Error("svg failed to load for rasterization"))
-    img.src = svgToSrc(sized)
+    img.src = sizedSvgSrc(raw, size)
   })
 }
 
