@@ -320,7 +320,13 @@ export default async function CollectionPage({
             : "lg:grid-cols-[1fr_460px] lg:divide-x lg:divide-gray-200"
         }`}
       >
-        <div className="max-w-[720px] px-6 py-10 lg:px-12 lg:py-12">
+        <div
+          className={`max-w-[720px] px-6 py-10 lg:px-12 lg:py-12 ${
+            // Stacked on phones the instrument leads and the editorial follows, matching
+            // the pre-deploy landing. Side by side, source order applies.
+            homageSkin ? "order-2 lg:order-none" : ""
+          }`}
+        >
           {homageSkin ? (
             <HomageAbout headingClassName="text-[10px] font-mono uppercase tracking-wider text-gray-400" />
           ) : (
@@ -380,7 +386,11 @@ export default async function CollectionPage({
           )}
         </div>
 
-        <div className="mx-auto w-full max-w-[556px] px-6 py-10 lg:px-12 lg:py-12">
+        <div
+          className={`mx-auto w-full max-w-[556px] px-6 py-10 lg:px-12 lg:py-12 ${
+            homageSkin ? "order-1 lg:order-none" : ""
+          }`}
+        >
           {homageMinter ? (
             // The cell is capped at the instrument's width (556 = 460 + 2×48 gutters)
             // and centered by the grid when it stands alone, so the card never floats.

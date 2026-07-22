@@ -143,7 +143,9 @@ export function HomageMastheadStat({
   const showReservation = !soldOut && phase === "closed" && reservationIsOpen
 
   return (
-    <div className="flex items-center gap-5">
+    // Stacked on phones: side by side, the countdown and the chip each get too little
+    // width and both wrap mid-value.
+    <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:gap-5">
       <p className="font-mono text-xl tabular-nums tracking-tight text-fg sm:text-2xl">
         {timed ? (
           <>
