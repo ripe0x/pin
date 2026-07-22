@@ -304,6 +304,7 @@ export type MintQuote = {
   ethForSwap: bigint // ETH the mint will route into the pool
   totalValue: bigint // tx value = ethForSwap + the caller's current mint fee
   fee: bigint // the ETH fee folded in (mintFeeOf for public; baseFee for claim/allowlist)
+  threshold: bigint // $111 (1e18) escrowed per homage — the minter's live threshold()
   estReceived: bigint // ~$111 the swap nets (>= THRESHOLD)
   estRefund: bigint // ~$111 over THRESHOLD, refunded to the minter
   spotEthForThreshold: bigint // naive spot ETH for exactly THRESHOLD (no fee/skim/impact)
@@ -353,6 +354,7 @@ export async function quoteMint(
       ethForSwap,
       totalValue: ethForSwap + fee,
       fee,
+      threshold,
       estReceived: threshold,
       estRefund: 0n,
       spotEthForThreshold: ethForSwap,
@@ -385,6 +387,7 @@ export async function quoteMint(
     ethForSwap,
     totalValue: ethForSwap + fee,
     fee,
+    threshold,
     estReceived,
     estRefund,
     spotEthForThreshold,

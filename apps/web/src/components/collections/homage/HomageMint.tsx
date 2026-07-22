@@ -398,6 +398,13 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                 <span className="text-sm font-mono text-gray-500">quoting…</span>
               )}
             </p>
+            {/* Cost breakdown: the flat/escalating fee leg plus the fixed $111 amount every
+                mint escrows, so the price isn't just one opaque ETH figure. */}
+            {phase !== "closed" && quote && (
+              <p className="text-[10px] font-mono text-gray-400 tabular-nums">
+                {fmtEth(quote.fee)} ETH + {compactTokens(quote.threshold)} $111 (~{fmtEth(quote.ethForSwap)} ETH)
+              </p>
+            )}
             {/* Pre-open: base fee + the live $111 swap quote, so a wallet can plan around
                 the expected cost before the window opens (the fee itself may still change
                 per-wallet once minting starts escalating). */}
@@ -740,6 +747,12 @@ function fmtEth(wei: bigint): string {
   const [int, frac = ""] = formatEther(wei).split(".")
   const trimmed = frac.slice(0, 4).replace(/0+$/, "")
   return trimmed ? `${int}.${trimmed}` : int
+}
+
+// $111 token count display: 20,000 (1e18-scaled) → "20K".
+function compactTokens(wei: bigint): string {
+  const whole = wei / 10n ** 18n
+  return whole >= 1000n ? `${whole / 1000n}K` : whole.toString()
 }
 
 // The public-mint fee for a wallet that has already done `n` public mints — a faithful
