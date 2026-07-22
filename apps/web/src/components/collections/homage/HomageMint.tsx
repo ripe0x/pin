@@ -55,13 +55,23 @@ import {HomageReserve} from "./HomageReserve"
 import {HomageSchedule} from "./HomageSchedule"
 import {ALLOWLIST_SNAPSHOT_CAPTION, HomageAllowlistLookup} from "./HomageAllowlistLookup"
 import {HomageMintLog} from "./HomageMintLog"
+import type {HomageMintEntry} from "@/lib/homage/collection.server"
 
 const SUPPLY = 10_000
 const QUOTE_POLL_MS = 30_000 // paid RPC path in prod — never tighten below this
 const FORK_MODE = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
 const ZERO = "0x0000000000000000000000000000000000000000" as const
 
-export function HomageMint({collection, minter}: {collection: Address; minter: Address}) {
+export function HomageMint({
+  collection,
+  minter,
+  mintFeed = [],
+}: {
+  collection: Address
+  minter: Address
+  /** Server-fetched mint rows, forwarded to the sidebar HomageMintLog. */
+  mintFeed?: HomageMintEntry[]
+}) {
   const {address} = useAccount()
   const chainId = useChainId()
   const publicClient = usePublicClient({chainId: PREFERRED_CHAIN.id})
@@ -699,7 +709,7 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
           where the sidebar is a real right-hand column; below that it stays in its
           original spot in the page's record section (see collections/[address]/page.tsx). */}
       <div className="hidden border-t border-gray-100 pt-4 lg:block">
-        <HomageMintLog collection={collection} chainId={PREFERRED_CHAIN.id} variant="desktop" />
+        <HomageMintLog collection={collection} chainId={PREFERRED_CHAIN.id} mints={mintFeed} variant="desktop" />
       </div>
     </section>
   )

@@ -1586,3 +1586,72 @@ export async function isCollectionInIndexer(
     return rows.length > 0
   })
 }
+
+/**
+ * Live (non-burned) token ids for a collection, newest-minted first —
+ * from `collection_tokens`, which Ponder keeps current per id across
+ * pooled burn/re-mint cycles. Replaces the Transfer(from=0) getLogs
+ * scan the homage field/gallery used. Null when the indexer is
+ * unavailable; callers fall back to the chain scan.
+ */
+export async function getCollectionMintedIdsFromIndexer(
+  collection: string,
+  limit: number,
+): Promise<number[] | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+  return withTimeout(async () => {
+    const rows = (await db.unsafe(
+      `SELECT token_id FROM ${indexerSchema()}.collection_tokens
+       WHERE collection = $1 AND NOT burned
+       ORDER BY updated_at_block DESC, token_id DESC LIMIT $2`,
+      [collection.toLowerCase(), limit],
+    )) as Array<{ token_id: string }>
+    return rows.map((r) => Number(r.token_id))
+  })
+}
+
+export type IndexedCollectionMint = {
+  firstTokenId: number
+  quantity: number
+  to: string
+  txHash: string
+  blockTime: number
+}
+
+/**
+ * Recent Minted calls for a collection, newest first — the mint-history
+ * feed source (`collection_mints` is append-only; pooled re-mints of a
+ * previously burned id appear as their own rows). Replaces the
+ * per-visitor client-side Transfer getLogs scan on the homage mint page.
+ * Null when the indexer is unavailable.
+ */
+export async function getCollectionMintFeedFromIndexer(
+  collection: string,
+  limit: number,
+): Promise<IndexedCollectionMint[] | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+  return withTimeout(async () => {
+    const rows = (await db.unsafe(
+      `SELECT first_token_id, quantity, "to", tx_hash, block_time
+       FROM ${indexerSchema()}.collection_mints
+       WHERE collection = $1
+       ORDER BY block_number DESC, id DESC LIMIT $2`,
+      [collection.toLowerCase(), limit],
+    )) as Array<{
+      first_token_id: string
+      quantity: string
+      to: string
+      tx_hash: string
+      block_time: string
+    }>
+    return rows.map((r) => ({
+      firstTokenId: Number(r.first_token_id),
+      quantity: Number(r.quantity),
+      to: r.to,
+      txHash: r.tx_hash,
+      blockTime: Number(r.block_time),
+    }))
+  })
+}
