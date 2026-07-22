@@ -26,8 +26,29 @@ import {
 } from "./contracts"
 
 const FORK_MODE = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
+const SEPOLIA_MODE = process.env.NEXT_PUBLIC_USE_SEPOLIA === "1"
 const SCAN_WINDOW = 9_000n
 const MAX_DELEGATION_VAULTS = 4
+
+// ── test state ────────────────────────────────────────────────────────────────
+// `?testPunks=1` fills the claim picker with stand-in punks so the holder UI can be
+// seen without holding one: a raw punk, a wrapped punk, and one reached through a
+// delegate.xyz vault, which is every row variant the list can draw. Discovery only,
+// so the rows render and the buttons enable, but any mint still goes to the contract
+// and reverts for a wallet that does not hold the punk. Refused on mainnet: it exists
+// for the test instances, and inventing holdings on the live mint would be a lie about
+// what a wallet owns.
+const TEST_PUNKS_ALLOWED = SEPOLIA_MODE || FORK_MODE
+const TEST_PUNKS: Omit<PunkPick, "minted">[] = [
+  {id: 1234, wrapped: false},
+  {id: 5678, wrapped: true},
+  {id: 9012, wrapped: false, vault: "0x1234567890AbcdEF1234567890aBcdef12345678"},
+]
+
+function testPunksRequested(): boolean {
+  if (!TEST_PUNKS_ALLOWED || typeof window === "undefined") return false
+  return new URLSearchParams(window.location.search).get("testPunks") === "1"
+}
 
 export type OwnedStatus = "idle" | "loading" | "ok" | "partial" | "error"
 export type PunkPick = {id: number; wrapped: boolean; vault?: Address; minted: boolean}
@@ -144,6 +165,10 @@ export function useOwnedPunks(minter: Address, address?: Address, refreshKey?: n
     void (async () => {
       if (!client || !address) {
         setState({punks: [], status: "idle"})
+        return
+      }
+      if (testPunksRequested()) {
+        setState({punks: TEST_PUNKS.map((p) => ({...p, minted: false})), status: "ok"})
         return
       }
       setState((s) => ({...s, status: "loading"}))
