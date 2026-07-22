@@ -12,6 +12,7 @@ import Link from "next/link"
 import {type Address} from "viem"
 import {ArtistName} from "./ArtistName"
 import {HomageArtStage} from "./HomageArtStage"
+import {HomageCompare} from "./HomageCompare"
 import {HomageRedeemLink} from "./HomageRedeemLink"
 import {CopyAddressButton} from "@/components/CopyAddressButton"
 import {PND_CHAIN_ID, evmNowAddressUrl, ipfsToHttp, shortAddress} from "@/lib/collection"
@@ -120,6 +121,8 @@ export function HomageTokenDetail({
             <div className="mt-0.5 font-mono text-[13px] text-fg">CryptoPunk {id} ↗</div>
           </div>
         </a>
+
+        <HomageCompare art={ipfsToHttp(art)} punkImageSrc={punkImageSrc} ground={punkBg} tokenId={id} />
 
         {/* Traits — the four things the token actually carries. */}
         <div className="mt-6 grid grid-cols-2 border-l border-t border-gray-200">
