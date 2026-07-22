@@ -80,6 +80,8 @@ Every event the Surface contracts emit, grouped by contract. Signatures and fiel
 
 **[`ReferralPaid`](/docs/surface/contracts/fixed-price-minter#referralpaid)** · Emitted when a nonzero referral cut is credited.
 
+**[`ReferralShareSet`](/docs/surface/contracts/fixed-price-minter#referralshareset)** · Emitted when the referral share changes with `setReferralShareBps`.
+
 **[`Sold`](/docs/surface/contracts/fixed-price-minter#sold)** · Emitted once per `mint` call.
 
 **[`StrayETHRescued`](/docs/surface/contracts/fixed-price-minter#strayethrescued)** · Emitted when `rescueStrayETH` sweeps unowed ETH.

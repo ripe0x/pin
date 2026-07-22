@@ -59,9 +59,9 @@ your minter is a paid mint, it is responsible for:
 - collecting and validating payment (ETH, an ERC20, a swap route, whatever the
   form needs), and refunding or escrowing as needed
 - honoring the referral share by convention, not by contract guarantee. The
-  canonical minter pays a fixed 10% (`REFERRAL_SHARE_BPS`) out of the price to
-  the referrer; nothing on the token enforces it, so a custom minter sets its
-  own referral policy
+  canonical minter pays `referralShareBps` (initialized to its 10% cap) out of
+  the price to the referrer; nothing on the token enforces it, so a custom
+  minter sets its own referral policy
 - paying out (or escrowing) proceeds itself, since the token holds no value and
   runs no pull-payment ledger
 

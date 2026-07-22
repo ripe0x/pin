@@ -15,9 +15,9 @@ Pooled collections assign ids through their own minter, so this minter is
 sequential only.
 
 `mint` requires exact payment on a fixed price, or `msg.value` at least the
-strategy quote with the excess refunded, and pays a fixed 10% referral share
-(`REFERRAL_SHARE_BPS = 1000`) to the `referrer` argument when nonzero, the rest
-to `payoutRecipient`. Proceeds accrue as pull-payment balances withdrawn through
+strategy quote with the excess refunded, and pays a referral share
+(`referralShareBps`, initialized to the 10% cap) to the `referrer` argument
+when nonzero, the rest to `payoutRecipient`. Proceeds accrue as pull-payment balances withdrawn through
 `withdraw`; no ETH is transferred during a mint, so a reverting recipient does
 not block minting. `price = 0` is valid config; there is no separate free-mint or
 owner-mint entrypoint. An owner mint is done by granting a minter on the
@@ -186,6 +186,13 @@ access: collection owner or admin (`onlyCollectionAdmin`, else `NotAuthorized`)
 Sets the per-recipient cap (0 = unlimited), checked against `mintedBy[to]`.
 Counted per recipient on this clone only. Emits `WalletCapSet`.
 
+## function setReferralShareBps
+
+access: collection owner or admin (`onlyCollectionOwnerOrAdmin`, else `NotAuthorized`)
+
+Sets the referral share in bps. Reverts `ReferralShareAboveCap` above
+`MAX_REFERRAL_SHARE_BPS`. Emits `ReferralShareSet`.
+
 ## function rescueStrayETH
 
 access: collection owner or admin (`onlyCollectionAdmin`, else `NotAuthorized`)
@@ -207,10 +214,15 @@ payout recipient. `createSurface` calls this in the transaction that clones the
 token. The implementation constructor disables initializers, so only a clone is
 initialized, once. Emits `MinterConfigured`.
 
-## function REFERRAL_SHARE_BPS
+## function MAX_REFERRAL_SHARE_BPS
 
-The referral share as a compile-time constant: 1000 bps, 10%. Paid to the
-`referrer` argument, not artist-set.
+Hard ceiling for the referral share: 1000 bps, 10%. `setReferralShareBps`
+rejects anything above it.
+
+## function referralShareBps
+
+The live referral share in bps. Initialized to `MAX_REFERRAL_SHARE_BPS`;
+applied only when a mint's `referrer` is nonzero. Not a protocol fee.
 
 ## function collection
 
@@ -251,6 +263,17 @@ This clone's sale ceiling (0 = unlimited), checked against `totalMinted`.
 ## function totalMinted
 
 Tokens minted through this clone, the counter behind `maxMints`.
+
+## function totalMintedByThisMinter
+
+Alias for `totalMinted`, under a name a client reading across multiple minters
+can use unambiguously: the count minted through this clone, not the
+collection's lifetime count.
+
+## function saleCap
+
+Alias for `maxMints`: this clone's own sale ceiling, distinct from the
+collection's `supplyCap`.
 
 ## function allowlistRoot
 
@@ -321,6 +344,10 @@ Emitted when the allowlist root changes with `setAllowlistRoot`.
 ## event WalletCapSet
 
 Emitted when the per-recipient cap changes with `setWalletCap`.
+
+## event ReferralShareSet
+
+Emitted when the referral share changes with `setReferralShareBps`.
 
 ## event StrayETHRescued
 
@@ -409,6 +436,10 @@ a contract is required (the collection, or a price strategy).
 
 `initialize` or `setPayoutRecipient` was given the zero address. Both write
 points reject zero, so `_settle` never has to resolve a fallback.
+
+## error ReferralShareAboveCap
+
+`setReferralShareBps` was given a share above `MAX_REFERRAL_SHARE_BPS`.
 
 ## error InvalidInitialization
 

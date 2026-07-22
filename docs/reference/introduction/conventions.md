@@ -19,8 +19,8 @@ clone (a collection, an auction house) has no fixed address; examples use
 ## Currency and units
 
 Amounts read from the contracts are wei unless stated otherwise. `bps` means
-basis points out of 10,000; the referral share, `REFERRAL_SHARE_BPS`, is `1000`
-(10%).
+basis points out of 10,000; the referral share (`referralShareBps`) starts at
+its cap, `MAX_REFERRAL_SHARE_BPS = 1000` (10%).
 
 ## Examples
 
@@ -67,7 +67,7 @@ const abi = await fetch('/abis/Surface.json').then((r) => r.json());
 | Slot | A swappable module: the renderer slot on the token, and the price-strategy slot inside the canonical minter |
 | Minter | A contract a collection authorizes to mint (`setMinter`); every mint goes through one, and it owns price, window, payment, referral, and gating |
 | Referrer | The address credited with hosting a mint (a frontend, a self-hosted page, or none) |
-| Referral share | The fixed 10% of the price paid to the referrer by the canonical minter (`REFERRAL_SHARE_BPS`) |
+| Referral share | The slice of the price paid to the referrer by the canonical minter (`referralShareBps`, settable up to the 10% cap) |
 | Provenance | A token's mint order and first/final standing, derived from the id and the live config; the issuing minter and mint index are recorded on the `Minted` event, not in storage |
 | Entropy / seed | The per-token `bytes32` stamped at mint (`tokenSeed`), the source of randomness a generative renderer draws from |
 | Id mode | Whether a collection assigns ids itself (sequential) or takes minter-supplied ids (pooled), fixed at init |

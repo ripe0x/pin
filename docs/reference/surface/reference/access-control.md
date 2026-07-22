@@ -57,6 +57,7 @@ Every state-changing function in the Surface contracts and who may call it. Gene
 | [`setMaxMints`](/docs/surface/contracts/fixed-price-minter#setmaxmints) | collection owner or admin (`onlyCollectionAdmin`, else `NotAuthorized`) |
 | [`setAllowlistRoot`](/docs/surface/contracts/fixed-price-minter#setallowlistroot) | collection owner or admin (`onlyCollectionAdmin`, else `NotAuthorized`) |
 | [`setWalletCap`](/docs/surface/contracts/fixed-price-minter#setwalletcap) | collection owner or admin (`onlyCollectionAdmin`, else `NotAuthorized`) |
+| [`setReferralShareBps`](/docs/surface/contracts/fixed-price-minter#setreferralsharebps) | collection owner or admin (`onlyCollectionOwnerOrAdmin`, else `NotAuthorized`) |
 | [`rescueStrayETH`](/docs/surface/contracts/fixed-price-minter#rescuestrayeth) | collection owner or admin (`onlyCollectionAdmin`, else `NotAuthorized`) |
 | [`initialize`](/docs/surface/contracts/fixed-price-minter#initialize) | deployer one-shot (`initializer`, else `InvalidInitialization`) |
 

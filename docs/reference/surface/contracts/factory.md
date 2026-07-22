@@ -292,7 +292,7 @@ state.
 ### SurfaceCreated
 
 ```solidity
-event SurfaceCreated(address indexed owner, address indexed collection, address primaryMinter, IdMode idMode)
+event SurfaceCreated(address indexed owner, address indexed collection, address primaryMinter, IdMode idMode, string name, string symbol)
 ```
 
 Emitted once per successful create call, with `owner` and `collection` indexed.

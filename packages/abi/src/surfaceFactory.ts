@@ -564,6 +564,18 @@ export const surfaceFactoryAbi = [
         "type": "uint8",
         "indexed": false,
         "internalType": "enum IdMode"
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "symbol",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
       }
     ],
     "anonymous": false

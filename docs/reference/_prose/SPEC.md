@@ -90,12 +90,13 @@ the local specifics.
   entropy, seed, id mode, sequential, pooled, edge, Release Graph, path,
   Token Path, work, work config, freeze metadata, lock work, permanent,
   attribution, roster. Keep contract identifiers verbatim in code and
-  signatures (`REFERRAL_SHARE_BPS`, `mintToId`).
+  signatures (`MAX_REFERRAL_SHARE_BPS`, `mintToId`).
 - Describe current state only. No history ("was Editions", "replaced X"), no
   PR/audit/issue references.
 - Numbers, splits, and addresses come from code, the ABI, or
   `deployments.mainnet.json`, never from memory of other docs. The referral share
-  is 10% (`REFERRAL_SHARE_BPS = 1000`); state it as read from the constant.
+  (`referralShareBps`) starts at its cap, `MAX_REFERRAL_SHARE_BPS = 1000` (10%);
+  state both as read from the contract.
 - No em-dashes and no en-dashes. Hyphens in compound words are fine. Bullets
   don't end with periods. Contractions are fine.
 - Write "onchain" as one word, never hyphenated. The currency label is "ETH",
