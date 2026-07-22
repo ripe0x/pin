@@ -24,18 +24,12 @@ import {SurfaceConfig, IdMode, InitParams} from "./SurfaceTypes.sol";
 ///         permanent one-way locks: lockRenderer, lockSupply, and lockMinter.
 ///
 /// @dev    Deployed as immutable EIP-1167 clones: no proxy admin, no upgrade
-///         path. The OZ upgradeable bases are used only for their initializer
-///         pattern (a clone runs no constructor). New behavior ships as new
-///         implementations behind a new factory, never by changing a
-///         deployed collection.
+///         path (the implementation calls _disableInitializers). The OZ
+///         upgradeable bases are used only for their initializer pattern (a
+///         clone runs no constructor); initialize() sets all state. New
+///         behavior ships as new implementations behind a new factory, never
+///         by changing a deployed collection.
 abstract contract SurfaceCore is
-
-    // The finals deploy as EIP-1167 clones. A clone never runs a constructor,
-    // so the OZ "Upgradeable" bases supply the initializer pattern and
-    // initialize() sets all state. It does NOT mean these
-    // are upgradeable: the clones are immutable, with no proxy admin and no
-    // upgrade path (the implementation calls _disableInitializers). To change
-    // behavior, deploy a new implementation and a new factory.
     ERC721Upgradeable,
     Ownable2StepUpgradeable,
     ReentrancyGuardUpgradeable,
@@ -76,13 +70,11 @@ abstract contract SurfaceCore is
     ///      needs no separate setter.
     address internal _primaryMinter;
 
-    /// @dev Admins, granted by the owner. An admin can call every management
-    ///      function the owner can, except managing the admin set and
-    ///      transferring ownership, which remain owner-only. The owner is the
-    ///      single admin-granting root and the account owner() returns.
-    // account => the owner that granted it (0 = not an admin). A grant is valid only while
-    // _admins[account] == owner(), so an ownership transfer invalidates every inherited
-    // grant; the new owner starts with no admins and re-grants explicitly.
+    /// @dev Admins, granted by the owner only. An admin can call every
+    ///      management function the owner can, except managing the admin set
+    ///      and transferring ownership, which stay owner-only.
+    // account => the owner that granted it (0 = not an admin). Validity rule
+    // in _isAdmin.
     mapping(address => address) internal _admins;
 
     // Source of the renderer, supply-cap, and royalty configuration,
@@ -108,8 +100,8 @@ abstract contract SurfaceCore is
 
     // Attribution is two-sided. The owner lists creators here; each listed
     // creator confirms by claiming this collection in the Catalog from their
-    // own address. isConfirmedCreator is the intersection of the two. Neither
-    // side can forge the other, so credit needs no shared registry.
+    // own address. isConfirmedCreator is the intersection of the two; neither
+    // side alone can create a confirmation.
     address internal _catalog; // Catalog singleton; 0 disables confirmation
     mapping(address => bool) public isListedCreator;
 
@@ -141,14 +133,13 @@ abstract contract SurfaceCore is
             _minterCount += 1;
             emit MinterSet(m, true);
         }
-        // The pooled form allows a single minter: its burn is minter-wide, so
-        // a second minter could retire a token the first one backs. Enforced at
-        // init as well.
+        // The pooled form allows a single minter: any authorized minter can
+        // burn any token, so a second minter could burn a token the first one
+        // backs. Enforced at init as well as in setMinter.
         if (idMode() == IdMode.Pooled && _minterCount > 1) revert TooManyMinters();
         if (p.primaryMinter != address(0)) {
             if (!_minters[p.primaryMinter]) revert PrimaryMinterNotAuthorized();
-            // Pooled holds one minter at a time; the primary can only be that
-            // sole minter, never a second address the pool has no room for.
+            // Pooled: the primary must be the sole granted minter.
             if (idMode() == IdMode.Pooled && _minterCount != 1) revert PrimaryMinterNotAuthorized();
             _primaryMinter = p.primaryMinter;
             emit PrimaryMinterSet(p.primaryMinter);
@@ -193,20 +184,18 @@ abstract contract SurfaceCore is
     function _mintOne(address to, uint256 tokenId, uint256 mintIndex) internal {
         _mint(to, tokenId);
         // Seed: a pure function of public chain state and token identity. It
-        // excludes the recipient address: entropy must not depend on the
-        // minter, and a recipient input would open a wallet-grinding surface.
-        // mintIndex re-rolls the seed on a pooled re-mint of the same id.
-        // Spec: docs/injection-convention.md.
+        // excludes the recipient address: a recipient input would let a minter
+        // grind wallets for a favorable seed. mintIndex re-rolls the seed on a
+        // pooled re-mint of the same id. Spec: docs/injection-convention.md.
         _seed[tokenId] = keccak256(abi.encode(block.prevrandao, address(this), tokenId, mintIndex));
     }
 
     /// @notice Burn a token. Authority is defined by the final: owner-or-
     ///         approved in the sequential form; authorized minters only in the
-    ///         pooled form. The pooled form holds one minter and can freeze it
-    ///         (lockMinter), so a locked backed collection has exactly one
-    ///         address that can retire an id; its backing cannot be stranded
-    ///         from outside. The burned token's seed stays readable until a
-    ///         pooled re-mint overwrites it.
+    ///         pooled form. A pooled collection holds at most one minter and
+    ///         can freeze it (lockMinter), so after the lock only that minter
+    ///         can burn. The burned token's seed stays readable until a pooled
+    ///         re-mint overwrites it.
     function burn(uint256 tokenId) external override nonReentrant {
         address tokenOwner = _requireOwned(tokenId);
         if (!_burnAuthorized(tokenOwner, tokenId)) revert NotAuthorized();
@@ -215,9 +204,9 @@ abstract contract SurfaceCore is
         emit Burned(tokenId);
     }
 
-    /// @dev The cap measures what the final defines in _capUsage. Same check,
-    ///      different meaning per form: a sequential edition of 100 is 100
-    ///      total; a pool of 100 is 100 live at once.
+    /// @dev Reverts when `quantity` would push _capUsage() past the cap
+    ///      (0 = no cap). _capUsage is mints-ever in the sequential form and
+    ///      live supply in the pooled form.
     function _checkCap(uint256 quantity) internal view {
         uint256 cap = _cfg.supplyCap;
         if (cap == 0) return;
@@ -225,9 +214,9 @@ abstract contract SurfaceCore is
         if (attempted > cap) revert ExceedsCap(cap, attempted);
     }
 
-    /// @notice Sweep the ETH balance. The token holds no value of its own, so
-    ///         any balance is force-fed (selfdestruct, pre-funded address);
-    ///         there is nothing owed to leave behind.
+    /// @notice Sweep the ETH balance. No function of this contract receives
+    ///         ETH, so any balance arrived by force (selfdestruct, pre-funded
+    ///         address) and is owed to no one.
     function rescueStrayETH(address to) external override onlyOwnerOrAdmin nonReentrant {
         if (to == address(0)) revert ZeroAccount();
         uint256 stray = address(this).balance;
@@ -257,13 +246,11 @@ abstract contract SurfaceCore is
         return grantedBy != address(0) && grantedBy == owner();
     }
 
-    /// @notice Grant an admin (owner-only). Reverts on the zero address and on
-    ///         a duplicate grant, so each grant is one state change with one
-    ///         event. The owner already counts as an admin (isAdmin reports it),
-    ///         so granting the current owner is rejected. The grant is scoped to
-    ///         this owner: it stores the granting owner and stops being valid
-    ///         once ownership changes, so a new owner does not inherit the old
-    ///         owner's admins.
+    /// @notice Grant an admin (owner-only). Reverts on the zero address, on a
+    ///         duplicate grant, and on the current owner (who already counts
+    ///         as an admin). The grant records the granting owner and stops
+    ///         being valid once ownership changes (see _isAdmin), so a new
+    ///         owner does not inherit the old owner's admins.
     function addAdmin(address account) external override onlyOwner {
         if (account == address(0)) revert ZeroAccount();
         if (account == owner() || _isAdmin(account)) revert AlreadyAdmin();
@@ -282,10 +269,9 @@ abstract contract SurfaceCore is
         emit AdminSet(account, false);
     }
 
-    /// @notice Whether `account` may use the admin-gated setters: the owner, or
-    ///         any address holding a grant. The owner is included because the
-    ///         onlyOwnerOrAdmin modifier also admits the owner; reporting it
-    ///         here keeps external checks that gate on this view accurate.
+    /// @notice Whether `account` may use the admin-gated setters: the owner,
+    ///         or any address holding a valid grant. The owner is included to
+    ///         match what the onlyOwnerOrAdmin modifier admits.
     function isAdmin(address account) external view override returns (bool) {
         return account == owner() || _isAdmin(account);
     }

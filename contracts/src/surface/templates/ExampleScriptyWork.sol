@@ -8,7 +8,7 @@ import {HTMLTag, HTMLTagType} from "./vendor/scripty/core/ScriptyStructs.sol";
 /// @title ExampleScriptyWork
 /// @notice A **worked example** of a bring-your-own generative renderer: it
 ///         subclasses the [ScriptyRenderer](./ScriptyRenderer.sol) template and
-///         shows the two things a real work customizes — a seed-derived onchain
+///         shows the two things a real work customizes: a seed-derived onchain
 ///         trait and a fixed-aspect `<head>`.
 ///
 ///         Fork this contract for a script-based work. You supply the same

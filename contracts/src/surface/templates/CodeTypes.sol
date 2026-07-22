@@ -4,11 +4,11 @@ pragma solidity ^0.8.24;
 // ─────────────────────────────────────────────────────────────────────────────
 // Render-side code-reference types for the ScriptyRenderer template.
 //
-// These describe WHERE a generative work's files live onchain, so the template
+// These describe where a generative work's files live onchain, so the template
 // can assemble them into an HTML document at tokenURI time. They are a template
-// concern, not core protocol surface: the Surface core knows nothing about
-// them — it only knows which renderer address answers tokenURI (the renderer
-// slot) and whether that pointer is locked (lockRenderer).
+// concern, not core protocol surface: the Surface core does not reference
+// them. The core stores only the renderer address that answers tokenURI (the
+// renderer slot) and whether that pointer is locked (lockRenderer).
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// @notice How a stored file must be emitted into the assembled HTML.

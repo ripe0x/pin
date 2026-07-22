@@ -15,9 +15,10 @@ pragma solidity ^0.8.24;
 ///         contract, and idMode() reports which.
 ///         Sequential (Surface): the contract assigns ids 1, 2, 3, ... in mint
 ///         order; ids are never reused after a burn.
-///         Pooled (PooledSurface): an authorized minter chooses each id
-///         (tokenId == sourceId forms). A burned id may be minted again as a
-///         new instance with a new seed.
+///         Pooled (PooledSurface): the authorized minter supplies each id
+///         under its own scheme (mirroring an external collection's ids is
+///         one use). A burned id may be minted again as a new instance with a
+///         new seed.
 enum IdMode {
     Sequential,
     Pooled
@@ -25,9 +26,8 @@ enum IdMode {
 
 /// @notice Live settings in one struct. Setters edit these fields in place, so
 ///         config() always reports what the contract uses. The two locks are
-///         one-way: true never returns to false. Passed true at creation, the
-///         collection is initialized locked, with no second transaction
-///         required.
+///         one-way: true never returns to false. A lock passed as true at
+///         creation applies from initialization.
 struct SurfaceConfig {
     uint256 supplyCap; // 0 = open supply
     uint16 royaltyBps; // EIP-2981, advisory
