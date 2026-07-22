@@ -31,6 +31,9 @@ export function HomageReserve({minter}: {minter: Address}) {
   const wrongNetwork = !!address && chainId !== PREFERRED_CHAIN.id
 
   const [refreshKey, setRefreshKey] = useState(0)
+  const [manualId, setManualId] = useState("")
+  const [manualOpen, setManualOpen] = useState(false)
+  const manualValid = /^\d+$/.test(manualId) && Number(manualId) >= 0 && Number(manualId) <= 9999
   const {punks, status} = useOwnedPunks(minter, address, refreshKey)
   const flows = homageFlows(minter)
 
@@ -137,10 +140,51 @@ export function HomageReserve({minter}: {minter: Address}) {
           )}
 
           {punks.length === 0 && status !== "loading" && (
-            <p className="text-[10px] font-mono text-gray-400 leading-relaxed">
-              No punks found for this wallet{status === "partial" ? " in the recent window" : ""}.
-            </p>
+            <div className="flex items-center gap-2 rounded border border-gray-200 bg-surface-muted/40 px-3 py-2">
+              <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-gray-300 dark:bg-gray-700" />
+              <span className="text-[11px] font-mono text-gray-400">
+                No punks found{status === "partial" ? " in the recent window" : ""}
+              </span>
+            </div>
           )}
+
+          {/* Reserve by id: the fallback for a punk the list above cannot see. Unlike the
+              claim's by-id path, reserveMine checks the caller holds the punk, so this
+              only works from the holding wallet. */}
+          <div className="pt-1">
+            {manualOpen ? (
+              <div className="space-y-2 rounded border border-gray-200 bg-surface-muted/40 p-3">
+                <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">Reserve by id</p>
+                <p className="text-[10px] font-mono text-gray-400 leading-relaxed">
+                  The punk must be held by this wallet: reserving checks ownership onchain.
+                  For a punk held elsewhere, reserve from the wallet that holds it.
+                </p>
+                <div className="flex items-center gap-2">
+                  <input
+                    value={manualId}
+                    onChange={(e) => setManualId(e.target.value.replace(/[^\d]/g, "").slice(0, 4))}
+                    placeholder="Punk id (0–9999)"
+                    inputMode="numeric"
+                    className="w-0 flex-1 rounded border border-gray-200 bg-surface px-3 py-2 text-[11px] font-mono tabular-nums outline-none focus:border-gray-400"
+                  />
+                  <button
+                    onClick={() => manualValid && doReserve(Number(manualId))}
+                    disabled={isPending || !manualValid}
+                    className="text-[10px] font-mono font-medium uppercase tracking-wider px-3 py-2 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Reserve
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setManualOpen(true)}
+                className="text-[10px] font-mono uppercase tracking-wider text-gray-400 underline underline-offset-2 hover:text-fg transition-colors"
+              >
+                Punk not listed? Reserve by id →
+              </button>
+            )}
+          </div>
         </>
       )}
 

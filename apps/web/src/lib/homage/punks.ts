@@ -29,6 +29,11 @@ const FORK_MODE = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
 const SEPOLIA_MODE = process.env.NEXT_PUBLIC_USE_SEPOLIA === "1"
 const SCAN_WINDOW = 9_000n
 const MAX_DELEGATION_VAULTS = 4
+// The /api/owned-punks proxy only knows mainnet punk state (see the route's
+// comment) — the sepolia/fork test instances run a mock punks market the
+// upstream API has never heard of, so raw-punk discovery there stays on the
+// log scan.
+const USE_OWNED_PUNKS_API = !FORK_MODE && !SEPOLIA_MODE
 
 // ── test state ────────────────────────────────────────────────────────────────
 // `?testPunks=1` fills the claim picker with stand-in punks so the holder UI can be
@@ -55,13 +60,35 @@ export type PunkPick = {id: number; wrapped: boolean; vault?: Address; minted: b
 
 type Client = NonNullable<ReturnType<typeof usePublicClient>>
 
-/** Wrapped punks (enumerable, exact) + raw punks (acquisition-event scan confirmed against
- *  live ownership) held by `who`. Returns id -> wrapped. `rawFailed` marks a log-scan error. */
+/** Raw punk candidates for `who` from the /api/owned-punks proxy (mainnet only).
+ *  Returns null on a soft-fail (bad status, `ok: false`, network error, non-mainnet
+ *  mode) so the caller falls back to the log scan. */
+async function fetchApiRawCandidates(who: Address): Promise<Set<bigint> | null> {
+  if (!USE_OWNED_PUNKS_API) return null
+  try {
+    const res = await fetch(`/api/owned-punks/${who}`)
+    if (!res.ok) return null
+    const body = (await res.json()) as {ok?: boolean; punks?: Array<{index: number; wrapped?: boolean}>}
+    if (!body.ok) return null
+    const ids = new Set<bigint>()
+    for (const p of body.punks ?? []) if (!p.wrapped) ids.add(BigInt(p.index))
+    return ids
+  } catch {
+    return null
+  }
+}
+
+/** Wrapped punks (enumerable, exact) + raw punks (held by `who`). Raw candidates come
+ *  from the /api/owned-punks proxy on mainnet, falling back to an acquisition-event log
+ *  scan when the proxy is unavailable or unusable (sepolia/fork). Either source is then
+ *  confirmed against live ownership via punkIndexToAddress before being reported held.
+ *  Returns id -> wrapped. `rawFailed` marks a log-scan error; `usedFallback` marks that
+ *  the log scan (bounded by `getFromBlock`'s window) ran instead of the proxy. */
 async function scanWalletPunks(
   client: Client,
   who: Address,
-  fromBlock: bigint,
-): Promise<{held: Map<number, boolean>; rawFailed: boolean}> {
+  getFromBlock: () => Promise<bigint>,
+): Promise<{held: Map<number, boolean>; rawFailed: boolean; usedFallback: boolean}> {
   // ── wrapped punks: enumerable, exact ── (skipped on sepolia — no deployment, see HAS_WRAPPED_PUNKS)
   const wBal = HAS_WRAPPED_PUNKS
     ? ((await client.readContract({
@@ -84,20 +111,27 @@ async function scanWalletPunks(
     for (const r of idxReads) if (r.status === "success") wIds.push(r.result as bigint)
   }
 
-  // ── raw punks: scan acquisition events to `who`, then confirm against live ownership ──
+  // ── raw punks: /api/owned-punks first (complete, mainnet only), falling back to an
+  // acquisition-event log scan (bounded to SCAN_WINDOW) when the proxy is unavailable ──
   let rawFailed = false
-  const rawCandidates = new Set<bigint>()
-  try {
-    const [assigns, xfers, boughts] = await Promise.all([
-      client.getContractEvents({address: CRYPTOPUNKS_MARKET, abi: punksMarketAbi, eventName: "Assign", args: {to: who}, fromBlock, toBlock: "latest"}),
-      client.getContractEvents({address: CRYPTOPUNKS_MARKET, abi: punksMarketAbi, eventName: "PunkTransfer", args: {to: who}, fromBlock, toBlock: "latest"}),
-      client.getContractEvents({address: CRYPTOPUNKS_MARKET, abi: punksMarketAbi, eventName: "PunkBought", args: {toAddress: who}, fromBlock, toBlock: "latest"}),
-    ])
-    for (const l of assigns) {const v = (l.args as {punkIndex?: bigint}).punkIndex; if (v !== undefined) rawCandidates.add(v)}
-    for (const l of xfers) {const v = (l.args as {punkIndex?: bigint}).punkIndex; if (v !== undefined) rawCandidates.add(v)}
-    for (const l of boughts) {const v = (l.args as {punkIndex?: bigint}).punkIndex; if (v !== undefined) rawCandidates.add(v)}
-  } catch {
-    rawFailed = true // a log failure must not sink the wrapped enumeration
+  let usedFallback = false
+  let rawCandidates = await fetchApiRawCandidates(who)
+  if (!rawCandidates) {
+    usedFallback = true
+    rawCandidates = new Set<bigint>()
+    try {
+      const fromBlock = await getFromBlock()
+      const [assigns, xfers, boughts] = await Promise.all([
+        client.getContractEvents({address: CRYPTOPUNKS_MARKET, abi: punksMarketAbi, eventName: "Assign", args: {to: who}, fromBlock, toBlock: "latest"}),
+        client.getContractEvents({address: CRYPTOPUNKS_MARKET, abi: punksMarketAbi, eventName: "PunkTransfer", args: {to: who}, fromBlock, toBlock: "latest"}),
+        client.getContractEvents({address: CRYPTOPUNKS_MARKET, abi: punksMarketAbi, eventName: "PunkBought", args: {toAddress: who}, fromBlock, toBlock: "latest"}),
+      ])
+      for (const l of assigns) {const v = (l.args as {punkIndex?: bigint}).punkIndex; if (v !== undefined) rawCandidates.add(v)}
+      for (const l of xfers) {const v = (l.args as {punkIndex?: bigint}).punkIndex; if (v !== undefined) rawCandidates.add(v)}
+      for (const l of boughts) {const v = (l.args as {punkIndex?: bigint}).punkIndex; if (v !== undefined) rawCandidates.add(v)}
+    } catch {
+      rawFailed = true // a log failure must not sink the wrapped enumeration
+    }
   }
   const rawIds = Array.from(rawCandidates)
   const rawOwnerReads = rawIds.length
@@ -114,7 +148,7 @@ async function scanWalletPunks(
   const held = new Map<number, boolean>() // id -> wrapped
   for (const id of wIds) held.set(Number(id), true)
   for (const id of confirmedRaw) if (!held.has(Number(id))) held.set(Number(id), false)
-  return {held, rawFailed}
+  return {held, rawFailed, usedFallback}
 }
 
 /** Incoming delegate.xyz delegations relevant to punk claims: vaults that delegated `who`
@@ -154,6 +188,30 @@ async function scanFromBlock(client: Client): Promise<{fromBlock: bigint; partia
   return {fromBlock, partialBase: !FORK_MODE}
 }
 
+/** Memoized fromBlock for the log-scan fallback, computed on first use so a getBlockNumber
+ *  call is only made when the /api/owned-punks proxy actually fails and the fallback runs. */
+function makeFromBlockGetter(client: Client): () => Promise<bigint> {
+  let cached: Promise<bigint> | undefined
+  return () => {
+    if (!cached) {
+      cached = (async () => {
+        const latest = await client.getBlockNumber()
+        let fromBlock = latest > SCAN_WINDOW ? latest - SCAN_WINDOW : 0n
+        if (fromBlock > latest) fromBlock = 0n
+        return fromBlock
+      })()
+    }
+    return cached
+  }
+}
+
+/** Whether a scan that used the log-scan fallback should be reported partial: the
+ *  bounded window misses older acquisitions on a live chain; on the fork the homage
+ *  was just deployed, so the window covers everything relevant. */
+function fallbackIsPartial(): boolean {
+  return !FORK_MODE
+}
+
 /** The connected wallet's claimable punks — held directly or via delegation — filtered to
  *  unminted homages (tokenId == punkId). Mirrors HomageMinter claim eligibility. */
 export function useOwnedPunks(minter: Address, address?: Address, refreshKey?: number): {punks: PunkPick[]; status: OwnedStatus} {
@@ -173,11 +231,11 @@ export function useOwnedPunks(minter: Address, address?: Address, refreshKey?: n
       }
       setState((s) => ({...s, status: "loading"}))
       try {
-        const {fromBlock, partialBase} = await scanFromBlock(client)
-        let partial = partialBase
+        const getFromBlock = makeFromBlockGetter(client)
+        let partial = false
 
-        const own = await scanWalletPunks(client, address, fromBlock)
-        partial = partial || own.rawFailed
+        const own = await scanWalletPunks(client, address, getFromBlock)
+        partial = partial || own.rawFailed || (own.usedFallback && fallbackIsPartial())
         if (cancelled) return
 
         const merged = new Map<number, Omit<PunkPick, "minted">>()
@@ -186,8 +244,8 @@ export function useOwnedPunks(minter: Address, address?: Address, refreshKey?: n
           const {vaults, tokens} = await claimDelegations(client, address)
           for (const vault of vaults) {
             if (cancelled) return
-            const v = await scanWalletPunks(client, vault, fromBlock)
-            partial = partial || v.rawFailed
+            const v = await scanWalletPunks(client, vault, getFromBlock)
+            partial = partial || v.rawFailed || (v.usedFallback && fallbackIsPartial())
             for (const [id, wrapped] of v.held) if (!merged.has(id)) merged.set(id, {id, wrapped, vault})
           }
           const fresh = tokens.filter((t) => !merged.has(Number(t.id)))
