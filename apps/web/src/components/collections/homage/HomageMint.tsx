@@ -46,13 +46,14 @@ import {
   wrappedPunksAbi,
   type MintQuote,
 } from "@/lib/homage/contracts"
-import {type Phase, type Schedule, claimOpen, currentPhase, nextTransition, reservationOpenAt} from "@/lib/homage/phase"
+import {WINDOW_LABEL, type Phase, type Schedule, claimOpen, currentPhase, nextTransition, reservationOpenAt} from "@/lib/homage/phase"
 import {allowlistProofIn, useAllowlist, useAllowlistMembership} from "@/lib/homage/allowlist"
 import {HomageReveal} from "./HomageReveal"
 import {HomageBatchReveal} from "./HomageBatchReveal"
 import {HomageClaim} from "./HomageClaim"
 import {HomageReserve} from "./HomageReserve"
-import {HomageAllowlistLookup} from "./HomageAllowlistLookup"
+import {HomageSchedule} from "./HomageSchedule"
+import {ALLOWLIST_SNAPSHOT_CAPTION, HomageAllowlistLookup} from "./HomageAllowlistLookup"
 
 const SUPPLY = 10_000
 const QUOTE_POLL_MS = 30_000 // paid RPC path in prod — never tighten below this
@@ -77,9 +78,6 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
       {address: minter, abi: homageMinterAbi, functionName: "allowlistStart", chainId: PREFERRED_CHAIN.id},
       {address: minter, abi: homageMinterAbi, functionName: "publicStart", chainId: PREFERRED_CHAIN.id},
       {address: minter, abi: homageMinterAbi, functionName: "baseFee", chainId: PREFERRED_CHAIN.id},
-      {address: minter, abi: homageMinterAbi, functionName: "maxPerAllowlisted", chainId: PREFERRED_CHAIN.id},
-      {address: minter, abi: homageMinterAbi, functionName: "allowlistMinted", args: [address ?? ZERO], chainId: PREFERRED_CHAIN.id},
-      {address: minter, abi: homageMinterAbi, functionName: "exitFee", chainId: PREFERRED_CHAIN.id},
       {address: minter, abi: homageMinterAbi, functionName: "feeGrowthBps", chainId: PREFERRED_CHAIN.id},
       {address: minter, abi: homageMinterAbi, functionName: "mintCount", args: [address ?? ZERO], chainId: PREFERRED_CHAIN.id},
       {address: minter, abi: homageMinterAbi, functionName: "reservedRemaining", chainId: PREFERRED_CHAIN.id},
@@ -93,12 +91,11 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
           publicStart: Number(cfg.data[2].result as bigint),
         }
       : null
+  // Positional, in the order the contracts array above lists them. Keep the two in step.
   const baseFee = cfg.data?.[3]?.status === "success" ? (cfg.data[3].result as bigint) : BASE_FEE
-  const maxPerAllowlisted = cfg.data?.[4]?.status === "success" ? Number(cfg.data[4].result as bigint) : undefined
-  const allowlistUsed = cfg.data?.[5]?.status === "success" ? Number(cfg.data[5].result as bigint) : 0
-  const feeGrowthBps = cfg.data?.[7]?.status === "success" ? (cfg.data[7].result as bigint) : 0n
-  const walletMintCount = cfg.data?.[8]?.status === "success" ? (cfg.data[8].result as bigint) : 0n
-  const reservedRemaining = cfg.data?.[9]?.status === "success" ? Number(cfg.data[9].result as bigint) : undefined
+  const feeGrowthBps = cfg.data?.[4]?.status === "success" ? (cfg.data[4].result as bigint) : 0n
+  const walletMintCount = cfg.data?.[5]?.status === "success" ? (cfg.data[5].result as bigint) : 0n
+  const reservedRemaining = cfg.data?.[6]?.status === "success" ? Number(cfg.data[6].result as bigint) : undefined
 
   const minted = totalMinted.data !== undefined ? Number(totalMinted.data as bigint) : null
   const left = remaining.data !== undefined ? Number(remaining.data as bigint) : null
@@ -124,10 +121,6 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
   const next = schedule ? nextTransition(schedule, nowSec) : null
   const claimIsOpen = schedule ? claimOpen(schedule, nowSec) : false
   const reservationIsOpen = schedule ? reservationOpenAt(schedule, nowSec) : false
-  // The boundary specifically into "public" — used for the claim/allowlist-window
-  // countdown, which always counts toward public open (not the raw `next` boundary,
-  // which could target an unmerged claim window instead).
-  const nextPublic = schedule && schedule.publicStart !== 0 && nowSec < schedule.publicStart ? schedule.publicStart : null
 
   // ── the connected wallet's escalating mint fee (ALL windows now escalate on this counter) ──
   const feeRead = useReadContract({
@@ -148,9 +141,6 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
   // window (i.e. about to mint); the proof itself is what the allowlistMint tx needs.
   const allowlist = useAllowlist(phase === "allowlist" && isAllowlisted)
   const allowlistProof = address && allowlist ? allowlistProofIn(allowlist, address) : null
-  // max >= SUPPLY is the "no per-address cap" configuration — hide cap language entirely.
-  const allowlistUncapped = maxPerAllowlisted !== undefined && maxPerAllowlisted >= SUPPLY
-  const allowlistRemaining = maxPerAllowlisted !== undefined ? Math.max(maxPerAllowlisted - allowlistUsed, 0) : undefined
 
   // ── live quote ───────────────────────────────────────────────────────────────
   const [quote, setQuote] = useState<MintQuote | null>(null)
@@ -174,16 +164,18 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
   const refreshQuote = useCallback(async () => {
     if (!publicClient) return
     try {
-      setQuote(await quoteMint(publicClient, activeFee))
+      setQuote(await quoteMint(publicClient, minter, activeFee))
       setQuoteErr(null)
     } catch (e) {
       setQuoteErr(e instanceof Error ? e.message : "quote failed")
     }
-  }, [publicClient, activeFee])
+  }, [publicClient, minter, activeFee])
 
   useEffect(() => {
-    if (phase === "closed") return
+    // Pre-open: one fetch (no poll) so the price card can show an expected cost
+    // ahead of the window opening. Open phases additionally poll at QUOTE_POLL_MS.
     void refreshQuote()
+    if (phase === "closed") return
     const t = setInterval(() => {
       if (typeof document !== "undefined" && document.visibilityState !== "visible") return
       void refreshQuote()
@@ -233,6 +225,12 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
     }))
   }, [phase, batchQty, quote, baseFee, feeGrowthBps, walletMintCount])
   const batchTotal = batchItems ? batchItems.reduce((s, it) => s + it.cost, 0n) : undefined
+  // What this wallet pays for the mint AFTER the one priced above, in the windows that
+  // mint one at a time. Same feeForCount the batch rows use, one step further along.
+  const nextMintCost =
+    quote && phase !== "public" && phase !== "closed"
+      ? quote.ethForSwap + feeForCount(baseFee, feeGrowthBps, walletMintCount + 1n)
+      : undefined
   const insufficient = !!balance && batchTotal !== undefined && !wrongNetwork && balance.value < batchTotal
   // Headline price: the escalating batch total in public, the flat claim fee otherwise.
   const priceValue = phase === "public" ? batchTotal : claimTotal
@@ -241,7 +239,7 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
     if (!publicClient) return
     let q = quote
     try {
-      q = await quoteMint(publicClient, publicFee)
+      q = await quoteMint(publicClient, minter, publicFee)
       setQuote(q)
     } catch {
       /* fall back to last shown quote */
@@ -270,7 +268,7 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
     if (!publicClient || !allowlistProof) return
     let q = quote
     try {
-      q = await quoteMint(publicClient, publicFee)
+      q = await quoteMint(publicClient, minter, publicFee)
       setQuote(q)
     } catch {
       /* fall back */
@@ -322,7 +320,7 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
         }
       }
       try {
-        const q = await quoteMint(publicClient, fee)
+        const q = await quoteMint(publicClient, minter, fee)
         setQuote(q)
         return q.ethForSwap + fee
       } catch {
@@ -339,7 +337,7 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
     : phase === "public"
       ? "Public mint open"
       : phase === "claim"
-        ? "Punk-owner claim open"
+        ? "Punk mint claim open"
         : phase === "allowlist"
           ? "Allowlist mint open"
           : "Not yet open"
@@ -367,16 +365,16 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
             </p>
           )}
 
-          {/* claim/allowlist window countdown — always counts toward public open, since
-              claim is open-ended (no "closes" of its own) and unclaimed reservations
-              release into the draw pool at public start. */}
-          {(phase === "allowlist" || (claimIsOpen && phase !== "public")) && nextPublic !== null && (
+          {/* Counts to the window that opens next, stepping claim to allowlist to
+              public as each arrives. Unclaimed reservations release at public start,
+              so that note rides only on the public leg. */}
+          {(phase === "allowlist" || (claimIsOpen && phase !== "public")) && next !== null && (
             <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400 tabular-nums">
-              Public opens in{" "}
+              {WINDOW_LABEL[next.to]} opens in{" "}
               <span className="text-fg">
-                <Countdown endTime={BigInt(nextPublic)} nowSec={nowSec} />
-              </span>{" "}
-              · unclaimed reservations release then
+                <Countdown endTime={BigInt(next.at)} nowSec={nowSec} />
+              </span>
+              {next.to === "public" && " · unclaimed reservations release then"}
             </p>
           )}
 
@@ -389,7 +387,7 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                   : "Price"
                 : phase === "closed"
                   ? "Opens"
-                  : "Price · flat claim fee"}
+                  : "Price · mint fee + $111"}
             </p>
             <p className="text-2xl font-mono font-medium tabular-nums tracking-tight leading-none">
               {phase === "closed" ? (
@@ -406,6 +404,27 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                 <span className="text-sm font-mono text-gray-500">quoting…</span>
               )}
             </p>
+            {/* Single-mint windows escalate on the same per-wallet counter as public, but
+                mint one token at a time (the contract has no allowlist or claim batch), so
+                there is no itemized list to carry the climb. Naming the next mint's cost
+                is what shows it. */}
+            {nextMintCost !== undefined && priceValue !== undefined && nextMintCost > priceValue && (
+              <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400 tabular-nums">
+                Your next mint · {fmtEth(nextMintCost)} <span className="text-gray-500">ETH</span>
+              </p>
+            )}
+            {/* Pre-open: base fee + the live $111 swap quote, so a wallet can plan around
+                the expected cost before the window opens (the fee itself may still change
+                per-wallet once minting starts escalating). */}
+            {phase === "closed" && (
+              <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400 tabular-nums">
+                {claimTotal !== undefined
+                  ? <>Expected cost · {fmtEth(claimTotal)} <span className="text-gray-500">ETH</span></>
+                  : quoteErr
+                    ? "Expected cost unavailable"
+                    : "Estimating expected cost…"}
+              </p>
+            )}
           </div>
 
           {/* reveal / success — a grid for a batch, the full reveal for one */}
@@ -446,7 +465,10 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
           {/* action — per phase */}
           {!(isSuccess && txHash) && (
             <div className="pt-1 space-y-3">
-              {!address ? (
+              {/* During the reservation window the reserve panel renders without a
+                  wallet (it carries its own connect CTA), so holders can see the
+                  flow exists before connecting. */}
+              {!address && !(phase === "closed" && reservationIsOpen) ? (
                 <ConnectButton.Custom>
                   {({openConnectModal}) => (
                     <button onClick={openConnectModal} className={btnPrimary}>
@@ -553,32 +575,31 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                   )}
                 </div>
               ) : phase === "allowlist" ? (
-                isAllowlisted && (allowlistUncapped || (allowlistRemaining ?? 0) > 0) ? (
+                // Allowlist mints are uncapped: the contract keeps no per-wallet count
+                // and throttles only through the fee escalator, so membership is the
+                // whole test.
+                isAllowlisted ? (
                   <button
                     onClick={doAllowlistMint}
                     disabled={isPending || soldOut || drawExhausted || claimTotal === undefined}
                     className={btnPrimary}
                   >
-                    {isPending
-                      ? "Minting…"
-                      : drawExhausted
-                        ? "Draw pool empty"
-                        : `Allowlist mint${!allowlistUncapped && allowlistRemaining !== undefined ? ` · ${allowlistRemaining} left` : ""}`}
+                    {isPending ? "Minting…" : drawExhausted ? "Draw pool empty" : "Allowlist mint"}
                   </button>
                 ) : (
                   <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
-                    {isAllowlisted
-                      ? "Your allowlist allocation is used up."
-                      : !allowlist
-                        ? "Checking the allowlist…"
-                        : "This wallet isn’t on the allowlist. The public mint opens next."}
+                    {!allowlist
+                      ? "Checking the allowlist…"
+                      : "This wallet isn’t on the allowlist. The public mint opens next."}
                   </p>
                 )
               ) : phase === "closed" && reservationIsOpen ? (
                 <div className="space-y-3">
                   {next && (
                     <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400 tabular-nums">
-                      Claiming and allowlist open in{" "}
+                      {/* Name the window that actually opens next: claim, allowlist
+                          and public open at their own times. */}
+                      {WINDOW_LABEL[next.to]} opens in{" "}
                       <span className="text-fg">
                         <Countdown endTime={BigInt(next.at)} nowSec={nowSec} />
                       </span>
@@ -586,6 +607,14 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                   )}
                   <HomageReserve minter={minter} />
                 </div>
+              ) : claimIsOpen ? (
+                // The punk mint claim is live but the random draw is not: the claim
+                // overlay below is the way in, so say that rather than reporting the
+                // whole mint shut.
+                <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
+                  The punk mint claim is open. Punk owners mint their own id below. The
+                  random draw opens with the allowlist window.
+                </p>
               ) : (
                 <p className="text-[11px] font-mono text-gray-500">Minting isn’t open yet.</p>
               )}
@@ -597,7 +626,7 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                   sibling to that phase-driven block, not one of its branches. */}
               {address && !wrongNetwork && claimIsOpen && (
                 <div className="border-t border-gray-100 pt-3 space-y-3">
-                  <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">Your punks · claim</p>
+                  <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">Your punks · punk mint claim</p>
                   <HomageClaim
                     minter={minter}
                     collection={collection}
@@ -628,11 +657,16 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
         </div>
       </div>
 
+      {/* The schedule sits between the instrument and the checker: the card's countdown
+          names one window, this names all three and when each opens. */}
+      <HomageSchedule minter={minter} />
+
       {/* Pre-public: anyone can check any address against the allowlist, below the
           instrument (the mint itself proves against the same vendored tree). */}
       {phase !== "public" && !soldOut && (
-        <div className="rounded-lg border border-gray-200 bg-surface p-5">
+        <div className="space-y-3 rounded-lg border border-gray-200 bg-surface p-5">
           <HomageAllowlistLookup />
+          <p className="text-[10px] font-mono leading-relaxed text-gray-500">{ALLOWLIST_SNAPSHOT_CAPTION}</p>
         </div>
       )}
     </section>
@@ -727,7 +761,13 @@ function fmtEth(wei: bigint): string {
 // bigint replica of HomageMinter._feeForCount (baseFee * (1+g/1e4)^n, clamped at
 // MAX_MINT_FEE, exponentiation-by-squaring), so the itemized breakdown matches the chain
 // to the wei without a per-item RPC read.
-const MAX_MINT_FEE = 10n ** 18n // 1 ether
+const MAX_MINT_FEE = 10n ** 18n // 1 ether, the fee ceiling
+// The squaring loop's running multiplier is 1e4 fixed point, not a wei amount, so it
+// clamps against its own ceiling. Clamping it at MAX_MINT_FEE instead caps the
+// multiplier four orders of magnitude below the contract's and diverges from the chain
+// at high mint counts. This mirrors HomageMinter's MAX_FEE_MULTIPLIER, the same
+// magnitude-versus-multiplier distinction audit finding L-01 fixed onchain.
+const MAX_FEE_MULTIPLIER = MAX_MINT_FEE * 10_000n
 function feeForCount(baseFee: bigint, g: bigint, n: bigint): bigint {
   let fee = baseFee
   if (g === 0n || fee === 0n) return fee
@@ -740,7 +780,7 @@ function feeForCount(baseFee: bigint, g: bigint, n: bigint): bigint {
     n >>= 1n
     if (n !== 0n) {
       m = (m * m) / 10_000n
-      if (m > MAX_MINT_FEE) m = MAX_MINT_FEE
+      if (m > MAX_FEE_MULTIPLIER) m = MAX_FEE_MULTIPLIER
     }
   }
   return fee

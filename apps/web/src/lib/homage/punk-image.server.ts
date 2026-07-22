@@ -1,6 +1,6 @@
 import "server-only"
 import {createPublicClient, http, parseAbi, hexToBytes} from "viem"
-import {mainnet} from "viem/chains"
+import {mainnet, sepolia} from "viem/chains"
 import {pgCache} from "../pg-cache"
 
 // The classic CryptoPunk pixel image for a punk id — the SOURCE a homage is
@@ -13,10 +13,18 @@ import {pgCache} from "../pg-cache"
 // mainnet chain object (canonical Multicall3) with the transport pointed at Anvil
 // in fork mode (which forks mainnet, where the punk contracts are deployed).
 
-const PUNKS_DATA = "0x0955B58e38fA8794723AC7B5Ac99d2Df67D55741" as const
+const PUNKS_DATA_MAINNET = "0x0955B58e38fA8794723AC7B5Ac99d2Df67D55741" as const
+// MockPunksData on sepolia — same `punkImage(uint16)` shape, stand-in for the
+// real (unwrapped) PunksData set which has no sepolia deployment.
+const PUNKS_DATA_SEPOLIA = "0xc2fc154b3ffb9c93ac59738d18f40203522b17ca" as const
 const punksDataAbi = parseAbi(["function punkImage(uint16 index) view returns (bytes)"])
 
 const FORK_MODE = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
+// Opt-in sepolia instance (mirrors mint-collections.ts' MINT_CHAIN_ID split).
+const USE_SEPOLIA = process.env.NEXT_PUBLIC_USE_SEPOLIA === "1"
+const SEPOLIA_RPC_URL =
+  process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || "https://ethereum-sepolia-rpc.publicnode.com"
+const PUNKS_DATA = USE_SEPOLIA ? PUNKS_DATA_SEPOLIA : PUNKS_DATA_MAINNET
 const ONE_YEAR = 60 * 60 * 24 * 365
 
 function getClient() {
@@ -24,6 +32,7 @@ function getClient() {
     const url = process.env.NEXT_PUBLIC_ANVIL_RPC_URL || "http://127.0.0.1:8545"
     return createPublicClient({chain: mainnet, transport: http(url)})
   }
+  if (USE_SEPOLIA) return createPublicClient({chain: sepolia, transport: http(SEPOLIA_RPC_URL)})
   const explicit = process.env.ALCHEMY_MAINNET_URL
   if (explicit) return createPublicClient({chain: mainnet, transport: http(explicit)})
   const key = process.env.ALCHEMY_API_KEY

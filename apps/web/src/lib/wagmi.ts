@@ -6,7 +6,7 @@ import {
   rabbyWallet,
   safeWallet,
 } from "@rainbow-me/rainbowkit/wallets"
-import { foundry as foundryBase, mainnet } from "wagmi/chains"
+import { foundry as foundryBase, mainnet, sepolia } from "wagmi/chains"
 import { createConfig, http } from "wagmi"
 import { mock } from "wagmi/connectors"
 import type { Address } from "viem"
@@ -88,6 +88,12 @@ export const forkChain = foundry
 // or unset), so there's nothing in the bundle worth scraping.
 const isLocalRpc = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
 
+// Opt-in sepolia instance for the Homage mint surface (mirrors mint-collections.ts'
+// MINT_CHAIN_ID split). Off by default — production mainnet config is unaffected.
+const useSepolia = process.env.NEXT_PUBLIC_USE_SEPOLIA === "1"
+const sepoliaRpcUrl =
+  process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || "https://ethereum-sepolia-rpc.publicnode.com"
+
 // In production, route browser RPC through our server-side `/api/rpc` proxy
 // so the Alchemy API key never reaches the bundle. The proxy enforces a
 // method allowlist + per-IP rate limit, which keeps anonymous abuse from
@@ -114,7 +120,13 @@ const mainnetTransport = isLocalRpc ? http(anvilUrl) : http(rpcProxyUrl)
 const transports = {
   [mainnet.id]: mainnetTransport,
   [foundry.id]: http(anvilUrl),
+  [sepolia.id]: http(sepoliaRpcUrl),
 }
+
+// Chain list is order-sensitive (wallets default to the first entry). Sepolia
+// only joins the list when explicitly enabled, so the default mainnet+foundry
+// pair is untouched when the flag is off.
+const chains = useSepolia ? ([sepolia, mainnet, foundry] as const) : ([mainnet, foundry] as const)
 
 /**
  * Dev impersonation: when `NEXT_PUBLIC_DEV_IMPERSONATE` is set to a 0x…
@@ -160,12 +172,12 @@ export const config = allowImpersonation
     ? getDefaultConfig({
         appName: "PND",
         projectId,
-        chains: [mainnet, foundry],
+        chains,
         transports,
         ssr: true,
       })
     : createConfig({
-        chains: [mainnet, foundry],
+        chains,
         transports,
         ssr: true,
         connectors: connectorsForWallets(

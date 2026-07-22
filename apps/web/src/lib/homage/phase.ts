@@ -53,6 +53,15 @@ export function currentPhase(s: Schedule, nowSec: number): Phase {
  * there's nothing ahead (already public / open-ended, or fully unscheduled). Collapsed
  * windows (equal bounds) are skipped, so the countdown always targets a real opening.
  */
+/** How each window is named in copy. The claim window mints at the flat fee, so it is
+ *  never called just "claim", which would read as free. */
+export const WINDOW_LABEL: Record<Phase, string> = {
+  closed: "mint",
+  claim: "punk mint claim",
+  allowlist: "allowlist",
+  public: "public mint",
+}
+
 export function nextTransition(s: Schedule, nowSec: number): {to: Phase; at: number} | null {
   const bounds: {to: Phase; at: number}[] = []
   if (s.claimStart !== 0 && s.claimStart < s.allowlistStart) bounds.push({to: "claim", at: s.claimStart})

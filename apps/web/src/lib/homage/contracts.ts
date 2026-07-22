@@ -13,8 +13,16 @@
 
 import {parseAbi, type Address, type PublicClient} from "viem"
 
+// Opt-in sepolia instance (mirrors lib/collection.ts' PND_CHAIN_ID split):
+// swaps the addresses below for the live sepolia deployment's stand-in
+// contracts. A no-op when unset — mainnet addresses are unchanged.
+const USE_SEPOLIA = process.env.NEXT_PUBLIC_USE_SEPOLIA === "1"
+
 // ─── Live $111 coin + the v4 pool the mint swaps through (mainnet; present on the fork) ──
-export const TOKEN_111 = "0x61C9d89fe1212F6b55fF888816A151463287B8ae" as const
+/** Sepolia: Mock111, an open-mint faucet token standing in for the real $111. */
+export const TOKEN_111: Address = USE_SEPOLIA
+  ? "0x27b862985ddcf75c5dba649549a26657332124c4"
+  : "0x61C9d89fe1212F6b55fF888816A151463287B8ae"
 export const POOL_MANAGER = "0x000000000004444c5dc75cB358380D2e3dE08A90" as const
 export const SKIM_HOOK = "0x636c050296B5Cc528D8785169Bf8923716FCa9cc" as const
 export const POOL_ID = "0xf860d8f4896aed6cc1c68d234ba728680902f0ae43a459fbee6f6baa8036f795" as const
@@ -24,6 +32,7 @@ const DYN_FEE = 0x800000 // dynamic-fee flag (matches DeployDevSovereign)
 const TICK_SPACING = 200
 
 // ETH (currency0) → $111 (currency1), dynamic fee, skim hook — hashes to POOL_ID.
+// Mainnet only; sepolia quotes go through MOCK_POOL_MANAGER instead.
 export const POOL_KEY = {
   currency0: "0x0000000000000000000000000000000000000000",
   currency1: TOKEN_111,
@@ -32,23 +41,41 @@ export const POOL_KEY = {
   hooks: SKIM_HOOK,
 } as const
 
-// Canonical CryptoPunks contracts (mainnet) — the ownership source for the
-// holder-priority claim window. Raw ownership is `punkIndexToAddress`; a wrapped
-// punk reports the wrapper as owner, so the true holder is the wrapper's `ownerOf`
-// (mirrors HomageMinter._isPunkHolder).
-export const CRYPTOPUNKS_MARKET = "0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB" as const
+// Sepolia stand-in for the v4 pool: a hookless mock that mints TOKEN_111 to
+// the caller for a flat ETH cost per swap (`weiPerSwap()`), no StateView/
+// Quoter, no price curve — see `quoteMint`'s sepolia branch below.
+export const MOCK_POOL_MANAGER = "0xf99a9c7d61047cd8b6d34e88c803d25a4162b41b" as const
+export const mockPoolManagerAbi = parseAbi(["function weiPerSwap() view returns (uint256)"])
+
+// CryptoPunks contracts — the ownership source for the holder-priority claim
+// window. Raw ownership is `punkIndexToAddress`; a wrapped punk reports the
+// wrapper as owner, so the true holder is the wrapper's `ownerOf` (mirrors
+// HomageMinter._isPunkHolder). Sepolia: MockPunksMarket stands in for the
+// market (settable punkIndexToAddress); neither WrappedPunks contract has a
+// sepolia deployment, so wrapped-punks reads are skipped there (see
+// HAS_WRAPPED_PUNKS below).
+export const CRYPTOPUNKS_MARKET: Address = USE_SEPOLIA
+  ? "0x1034699aa91c9e48765a1212ac1dccfac75a6882"
+  : "0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB"
 export const WRAPPED_PUNKS = "0xb7F7F6C52F2e2fdb1963Eab30438024864c313F6" as const
 // Official CryptoPunks 721 wrapper (tokenId == punkId); holders resolved like WRAPPED_PUNKS.
 export const WRAPPED_PUNKS_721 = "0x000000000000003607fce1aC9e043a86675C5C2F" as const
+/** Neither wrapped-punks contract is deployed on sepolia; every code path
+ *  that would read one is gated on this instead of reading against an empty
+ *  address. */
+export const HAS_WRAPPED_PUNKS = !USE_SEPOLIA
 
-// Delegate.xyz Registry v2 (canonical singleton) — a cold vault delegates a hot
-// wallet, which transacts the holder-priority claim via `claimFor` (mints to the vault).
+// Delegate.xyz Registry v2 (canonical singleton, same address on mainnet and
+// sepolia) — a cold vault delegates a hot wallet, which transacts the
+// holder-priority claim via `claimFor` (mints to the vault).
 export const DELEGATE_REGISTRY = "0x00000000000000447e69651d841bD8D104Bed493" as const
 
-// Economic constants — mirror HomageMinter. THRESHOLD is structural; the fees are
-// deploy defaults and MUST be read live (mintFeeOf / exitFee are owner-tunable).
-export const THRESHOLD = 50_000n * 10n ** 18n // 50k $111 escrowed per homage
-export const BASE_FEE = 5_000_000_000_000_000n // 0.005 ETH — deploy default; real fee is mintFeeOf()
+// Economic constants — mirror HomageMinter deploy defaults; every value is
+// owner-tunable (setThreshold / setFeeSchedule / setExitFee) and MUST be
+// read live before it drives a mint. A prior hardcoded THRESHOLD (50,000)
+// drifted from the deployed default (30,000), sizing every quoted swap
+// ~67% too large — quoteMint below reads threshold() live instead.
+export const BASE_FEE = 4_200_000_000_000_000n // 0.0042 ETH — deploy default; real fee is mintFeeOf()
 export const EXIT_FEE = 3_000_000_000_000_000n // 0.003 ETH — deploy default; read exitFee() live before redeem
 
 // ─── ABIs ───────────────────────────────────────────────────────────────────────
@@ -56,7 +83,7 @@ export const EXIT_FEE = 3_000_000_000_000_000n // 0.003 ETH — deploy default; 
 // HomageMinter — the mint engine. Economics, schedule, allowlist, supply, and the
 // mint/redeem writes. NOT the ERC721: ownership / tokenURI live on the collection.
 export const homageMinterAbi = parseAbi([
-  "function THRESHOLD() view returns (uint256)",
+  "function threshold() view returns (uint256)",
   "function exitFee() view returns (uint256)",
   "function SUPPLY() view returns (uint256)",
   "function remaining() view returns (uint256)",
@@ -77,8 +104,6 @@ export const homageMinterAbi = parseAbi([
   "function setSchedule(uint64 claimStart_, uint64 allowlistStart_, uint64 publicStart_)",
   // allowlist
   "function allowlistRoot() view returns (bytes32)",
-  "function maxPerAllowlisted() view returns (uint256)",
-  "function allowlistMinted(address who) view returns (uint256)",
   // punk-id reservation — a holder withholds their punk id from the random draw
   // pool until claim opens; unclaimed reservations release into the pool then.
   "function reserve(uint256[] ids) external",
@@ -107,20 +132,65 @@ export const homageMinterAbi = parseAbi([
   "event Redeemed(address indexed from, uint256 indexed punkId, uint256 amount111)",
   "event Reserved(uint256 indexed punkId, address indexed by)",
   "event ReservationReleased(uint256 indexed punkId)",
-  // Custom errors — so viem decodes a revert selector to a named reason.
-  "error NotManager()",
-  "error BadValue()",
-  "error SoldOut()",
-  "error Slippage(uint256 received, uint256 needed)",
-  "error ClaimClosed()",
+  "event Activated()",
+  "event AllowlistRootSet(bytes32 root)",
+  "event ExitFeeSet(uint256 exitFee)",
+  "event FeeRecipientSet(address feeRecipient)",
+  "event FeeScheduleSet(uint256 baseFee, uint256 feeGrowthBps)",
+  "event OwnershipTransferred(address indexed previousOwner, address indexed newOwner)",
+  "event RedeemDelaySet(uint64 redeemDelay)",
+  "event ScheduleSet(uint64 claimStart, uint64 allowlistStart, uint64 publicStart)",
+  "event ThresholdSet(uint256 threshold)",
+  // Every error HomageMinter.sol defines, so viem decodes a revert to its name
+  // and arguments (e.g. RedeemLocked(opensAt)) instead of a bare selector.
   "error AllowlistClosed()",
-  "error PublicClosed()",
-  "error NotPunkOwner()",
-  "error NotDelegated()",
+  "error AlreadyActivated()",
   "error AlreadyMinted()",
-  "error NotAllowlisted()",
-  "error AllowlistCapReached()",
+  "error BadPunkId()",
   "error BadSchedule()",
+  "error ClaimClosed()",
+  "error CollectionAlreadyMinted()",
+  "error CollectionNotPooled()",
+  "error CostExceedsBudget(uint256 ethNeeded, uint256 ethBudget)",
+  "error DrawPoolDesync()",
+  "error ExitFeeOutOfBounds()",
+  "error FeeScheduleOutOfBounds()",
+  "error FeeTransferFailed()",
+  "error InsufficientValue(uint256 required, uint256 provided)",
+  "error InvalidBatchQuantity(uint256 qty, uint256 maxBatch)",
+  "error InvalidThreshold()",
+  "error MinterNotGranted()",
+  "error MinterNotLocked()",
+  "error NonexistentToken(uint256 id)",
+  "error NotActivated()",
+  "error NotAllowlisted()",
+  "error NotBacked()",
+  "error NotContract(address dependency)",
+  "error NotDelegated()",
+  "error NotManager()",
+  "error NotPunkOwner()",
+  "error NotTokenOwner()",
+  "error NothingToCollect()",
+  "error NothingToRescue()",
+  "error OwnableInvalidOwner(address owner)",
+  "error OwnableUnauthorizedAccount(address account)",
+  "error PublicClosed()",
+  "error RedeemDelayOutOfBounds()",
+  "error RedeemLocked(uint256 opensAt)",
+  "error ReentrancyGuardReentrantCall()",
+  "error RefundFailed()",
+  "error ReleaseNotOpen()",
+  "error RescueTransferFailed()",
+  "error ReservationClosed()",
+  "error SafeERC20FailedOperation(address token)",
+  "error Slippage(uint256 received, uint256 needed)",
+  "error SoldOut()",
+  "error SupplyCapTooLow()",
+  "error ThresholdLocked()",
+  "error WrongExitFee(uint256 expected, uint256 provided)",
+  "error WrongPoolCurrency()",
+  "error ZeroAddress()",
+  "error ZeroDependency()",
 ])
 
 // Live-market status flag for the renderer: 255 = read the punk's real market state
@@ -218,10 +288,14 @@ export function homageFlows(minter: Address) {
 
 // ─── Quote the mint cost ──────────────────────────────────────────────────────────
 //
-// What ETH should `mint()` swap so it nets >= THRESHOLD $111? Read spot (StateView)
-// to size a probe, run ONE real quote through the live pool (V4Quoter — reflects LP
-// fee, 6% skim, price impact), then scale linearly to clear THRESHOLD with a small
-// safety margin. Exact-input, so any $111 over THRESHOLD is refunded; erring high is safe.
+// What ETH should `mint()` swap so it nets >= the minter's live escrow threshold
+// ($111)? Read spot (StateView) to size a probe, run ONE real quote through the live
+// pool (V4Quoter — reflects LP fee, 6% skim, price impact), then scale linearly to
+// clear the threshold with a small safety margin. Exact-input, so any $111 over the
+// threshold is refunded; erring high is safe. `threshold` is owner-tunable
+// (`HomageMinter.setThreshold`) and is read live in every branch below, never
+// hardcoded — a stale hardcoded 50,000 previously drifted from the deployed 30,000
+// default, sizing every quoted swap ~67% too large.
 
 const Q192 = 1n << 192n
 const WAD = 10n ** 18n
@@ -248,11 +322,44 @@ async function quoteExactInput(client: PublicClient, ethIn: bigint): Promise<big
 }
 
 /**
- * Quote the mint. `fee` is the ETH fee to fold into the tx value (the caller's
- * `mintFeeOf()` for a public mint, or `baseFee()` for a claim / allowlist mint).
- * `safetyBps` is headroom over THRESHOLD (default 5%) to absorb price drift.
+ * Quote the mint. `minter` is read for the live `threshold()` (owner-tunable,
+ * must not be hardcoded). `fee` is the ETH fee to fold into the tx value (the
+ * caller's `mintFeeOf()` for a public mint, or `baseFee()` for a claim /
+ * allowlist mint). `safetyBps` is headroom over the threshold (default 5%) to
+ * absorb price drift.
  */
-export async function quoteMint(client: PublicClient, fee: bigint, safetyBps = 500): Promise<MintQuote> {
+export async function quoteMint(
+  client: PublicClient,
+  minter: Address,
+  fee: bigint,
+  safetyBps = 500,
+): Promise<MintQuote> {
+  const threshold = (await client.readContract({
+    address: minter,
+    abi: homageMinterAbi,
+    functionName: "threshold",
+  })) as bigint
+
+  // Sepolia: MOCK_POOL_MANAGER has no StateView/Quoter — it mints TOKEN_111 to
+  // the caller for a flat ETH cost per swap (`weiPerSwap`, read live rather
+  // than hardcoded). No headroom/refund math applies to a flat price.
+  if (USE_SEPOLIA) {
+    const ethForSwap = (await client.readContract({
+      address: MOCK_POOL_MANAGER,
+      abi: mockPoolManagerAbi,
+      functionName: "weiPerSwap",
+    })) as bigint
+    return {
+      ethForSwap,
+      totalValue: ethForSwap + fee,
+      fee,
+      estReceived: threshold,
+      estRefund: 0n,
+      spotEthForThreshold: ethForSwap,
+      price111PerEth: 0n,
+      safetyBps: 0,
+    }
+  }
   const slot0 = (await client.readContract({
     address: STATE_VIEW,
     abi: stateViewAbi,
@@ -263,16 +370,16 @@ export async function quoteMint(client: PublicClient, fee: bigint, safetyBps = 5
   if (sqrtP === 0n) throw new Error("pool not initialized")
 
   const price111PerEth = (sqrtP * sqrtP * WAD) / Q192
-  const spotEthForThreshold = (THRESHOLD * Q192) / (sqrtP * sqrtP)
+  const spotEthForThreshold = (threshold * Q192) / (sqrtP * sqrtP)
   const probe = spotEthForThreshold > 0n ? spotEthForThreshold : WAD / 1000n
 
   const out = await quoteExactInput(client, probe)
   if (out === 0n) throw new Error("quote returned zero")
 
-  const target = (THRESHOLD * BigInt(10000 + safetyBps)) / 10000n
+  const target = (threshold * BigInt(10000 + safetyBps)) / 10000n
   const ethForSwap = (probe * target) / out + 1n
   const estReceived = (out * ethForSwap) / probe
-  const estRefund = estReceived > THRESHOLD ? estReceived - THRESHOLD : 0n
+  const estRefund = estReceived > threshold ? estReceived - threshold : 0n
 
   return {
     ethForSwap,

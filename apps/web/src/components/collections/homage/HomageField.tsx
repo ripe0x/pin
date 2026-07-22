@@ -1,12 +1,23 @@
 "use client"
 
-// The homage field: the collection's multiplicity, edge to edge. It moves through three
-// states — pre-mint sample outputs, the minted collection as tokens land (real ids lead,
-// samples fill the rest), and the sold-out collection — derived purely from the REAL
-// minted count (no display override: the instrument's fork-only dev control moves the
-// actual chain, and this field follows it like every other surface).
+// The homage field: the collection's multiplicity, edge to edge. It moves through four
+// states — curated samples (deployed, zero mints, mint not open yet), live pre-mint
+// samples (zero mints but the mint IS open), the minted collection as tokens land (real
+// ids lead, samples fill the rest), and the sold-out collection — derived purely from
+// the REAL minted count and the sale window (no display override: the instrument's
+// fork-only dev control moves the actual chain, and this field follows it like every
+// other surface).
 // Every cell renders through the same renderer (renderSVG on any punk id) and, when it's a
 // minted token, links to its detail page.
+//
+// With nothing minted the field shows SampleWall, the curated wall from the pre-deploy
+// landing (HomagePreview.tsx, PR #169): synthetic homages generated locally from the
+// per-trait color table, zero RPC. Rendering unminted ids through the live renderer
+// instead would present art nobody holds as if it were the collection, and on a test
+// network with a mock punk-data source every id resolves to the same fixture, so the
+// field reads as one image repeated. The first real mint replaces the wall with the
+// minted set. The mint being open or closed does not enter into it: what matters is
+// whether any token exists to show.
 
 import {useMemo} from "react"
 import Link from "next/link"
@@ -14,8 +25,8 @@ import {type Address} from "viem"
 import {useReadContract} from "wagmi"
 import {PREFERRED_CHAIN} from "@/components/tx/tx-ui"
 import {STATUS_LIVE, homageRendererViewAbi} from "@/lib/homage/contracts"
+import {SampleWall} from "./HomagePreview"
 
-const GRID_N = 12
 type FieldState = "premint" | "minting" | "soldout"
 
 function svgToSrc(svg: string): string | undefined {
@@ -78,28 +89,27 @@ export function HomageField({
   collection,
   renderer,
   mintedIds,
-  sampleIds,
   supply,
   minted,
 }: {
   collection: Address
   renderer: Address
   mintedIds: number[]
-  sampleIds: number[]
   supply: number
   minted: number
 }) {
   const state: FieldState = minted === 0 ? "premint" : minted >= supply ? "soldout" : "minting"
 
-  const cells = useMemo(() => {
-    // premint: the sample field. minting/soldout: ONLY real mints — never mix
-    // samples in with live outputs (that reads as fake inventory).
-    if (state === "premint") return sampleIds.slice(0, GRID_N).map((id) => ({id, minted: false}))
-    return mintedIds.map((id) => ({id, minted: true}))
-  }, [state, mintedIds, sampleIds])
+  // The field carries only real mints: never mix samples in with live outputs, which
+  // would read as inventory that does not exist.
+  const cells = useMemo(() => mintedIds.map((id) => ({id, minted: true})), [mintedIds])
 
   // The masthead already carries the count/status, so the field bar stays a bare label.
-  const label = state === "premint" ? "Sample outputs" : state === "soldout" ? "The collection" : "The collection"
+  const label = "The collection"
+
+  // Nothing minted: the curated wall (see file header) instead of the live per-id
+  // renderer running over ids nobody holds.
+  if (state === "premint") return <SampleWall />
 
   return (
     <div className="border-y border-gray-200">
@@ -129,7 +139,7 @@ export function HomageField({
           />
         ))}
       </div>
-      {state !== "premint" && mintedIds.length === 0 && (
+      {mintedIds.length === 0 && (
         <p className="px-6 py-3 font-mono text-[10px] uppercase tracking-wider text-gray-400 lg:px-12">
           No mints found yet in the scanned window.
         </p>

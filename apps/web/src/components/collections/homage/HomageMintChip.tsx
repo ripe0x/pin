@@ -18,24 +18,19 @@ import {usePublicClient} from "wagmi"
 import {useReadContracts} from "wagmi"
 import {Countdown, PREFERRED_CHAIN, useChainNowSec} from "@/components/tx/tx-ui"
 import {BASE_FEE, homageMinterAbi, quoteMint} from "@/lib/homage/contracts"
-import {type Phase, type Schedule, currentPhase, nextTransition, reservationOpenAt} from "@/lib/homage/phase"
+import {WINDOW_LABEL, type Phase, type Schedule, currentPhase, nextTransition, reservationOpenAt} from "@/lib/homage/phase"
 
 const QUOTE_POLL_MS = 60_000 // indicative price only — keep this cold (paid RPC in prod)
 
 const PHASE_CHIP_LABEL: Record<Phase, string> = {
   closed: "Mint not open",
-  claim: "Claim open",
+  claim: "Punk mint claim open",
   allowlist: "Allowlist open",
   public: "Mint open",
 }
 
-// How a window is NAMED in the masthead countdown label ("punk owner claim closes in …").
-const WINDOW_NAME: Record<Phase, string> = {
-  closed: "mint",
-  claim: "punk owner claim",
-  allowlist: "allowlist",
-  public: "public mint",
-}
+// How a window is NAMED in the masthead countdown label ("punk mint claim closes in …").
+const WINDOW_NAME = WINDOW_LABEL
 
 function fmtEth(wei: bigint): string {
   const [int, frac = ""] = formatEther(wei).split(".")
@@ -70,12 +65,12 @@ function useChipState(minter: Address) {
   const refresh = useCallback(async () => {
     if (!publicClient) return
     try {
-      const q = await quoteMint(publicClient, BASE_FEE)
+      const q = await quoteMint(publicClient, minter, BASE_FEE)
       setPrice(q.totalValue)
     } catch {
       /* keep last */
     }
-  }, [publicClient])
+  }, [publicClient, minter])
   useEffect(() => {
     if (phase === "closed" || soldOut) return
     void refresh()
@@ -148,7 +143,9 @@ export function HomageMastheadStat({
   const showReservation = !soldOut && phase === "closed" && reservationIsOpen
 
   return (
-    <div className="flex items-center gap-5">
+    // Stacked on phones: side by side, the countdown and the chip each get too little
+    // width and both wrap mid-value.
+    <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:gap-5">
       <p className="font-mono text-xl tabular-nums tracking-tight text-fg sm:text-2xl">
         {timed ? (
           <>

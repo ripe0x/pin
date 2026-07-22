@@ -5,12 +5,12 @@ import { isAddress, type Address } from "viem"
 import { OptimizedImage } from "@/components/OptimizedImage"
 import { MintCollectionCTA } from "@/components/collections/MintCollectionCTA"
 import { HomageMint } from "@/components/collections/homage/HomageMint"
-import { HomageSchedule } from "@/components/collections/homage/HomageSchedule"
 import { FitHeadline } from "@/components/collections/homage/FitHeadline"
 import { HomageMastheadStat, HomageStickyMintBar } from "@/components/collections/homage/HomageMintChip"
 import { ArtistName } from "@/components/collections/homage/ArtistName"
 import { HomageMintLog } from "@/components/collections/homage/HomageMintLog"
 import { HomageField } from "@/components/collections/homage/HomageField"
+import { HomageAbout } from "@/components/collections/homage/HomageAbout"
 import { getHomageMintedIds } from "@/lib/homage/collection.server"
 import { WithdrawPanel } from "@/components/collections/WithdrawPanel"
 import { CollectionMintHistory } from "@/components/collections/CollectionMintHistory"
@@ -23,7 +23,6 @@ import {
   getCollection,
   getCollectionMintHistory,
   getCollectionToken,
-  getContractDescription,
   getRecentTokenMarks,
   getRendererPreviews,
 } from "@/lib/collection-onchain"
@@ -101,13 +100,9 @@ export default async function CollectionPage({
   // Alt arrangement (?layout=mint-first): the About|Mint band sits ABOVE the field so
   // the instrument is the second thing on the page instead of below the full-bleed grid.
   const mintFirst = homageSkin && layout === "mint-first"
-  // "About this work" is fed from the collection's own contractURI description
-  // on the homage skin (no hardcoded meta copy).
-  const contractDescription = homageSkin ? await getContractDescription(addr) : null
-  // Homage field: the minted set (chain-enumerated) + a deterministic sample spread the
-  // pre-mint / fill state draws from.
+  // Homage field: the minted set (chain-enumerated). With none minted the field shows
+  // the curated wall, which generates its own samples.
   const homageMintedIds = homageSkin ? await getHomageMintedIds(addr) : []
-  const homageSampleIds = Array.from({ length: 12 }, (_, i) => Math.floor((i + 0.5) * (10_000 / 12)))
   const [history, attribution, recent] = await Promise.all([
     getCollectionMintHistory(addr, c.minted, c.cfg.idMode),
     getAttribution(addr),
@@ -164,7 +159,6 @@ export default async function CollectionPage({
       collection={addr}
       renderer={c.renderer}
       mintedIds={homageMintedIds}
-      sampleIds={homageSampleIds}
       supply={c.cfg.supplyCap > 0n ? Number(c.cfg.supplyCap) : 10_000}
       minted={Number(c.minted)}
     />
@@ -318,31 +312,28 @@ export default async function CollectionPage({
           // The band is a centered ≤1400px plate (the page's standard content width):
           // full-bleed columns let the About cell's 720px measure drift away from the
           // divider on wide screens, stranding the card in dead space. Right column is
-          // sized TO the instrument (460px + px-12 gutters). With NO About copy
-          // (homage skin, empty contractURI description) it collapses to one centered
-          // column instead of an empty cell beside a stranded card.
+          // sized TO the instrument (460px + px-12 gutters). The homage skin always
+          // has the full editorial About content, so it always runs the two-column
+          // layout (never collapses to a single centered column).
           homageSkin
-            ? contractDescription
-              ? "lg:grid-cols-[1fr_556px] lg:divide-x lg:divide-gray-200"
-              : "justify-items-center"
+            ? "lg:grid-cols-[1fr_556px] lg:divide-x lg:divide-gray-200"
             : "lg:grid-cols-[1fr_460px] lg:divide-x lg:divide-gray-200"
         }`}
       >
-        {(!homageSkin || contractDescription) && (
-        <div className="max-w-[720px] space-y-6 px-6 py-10 lg:px-12 lg:py-12">
-          <h2 className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-            About this work
-          </h2>
+        <div
+          className={`max-w-[720px] px-6 py-10 lg:px-12 lg:py-12 ${
+            // Stacked on phones the instrument leads and the editorial follows, matching
+            // the pre-deploy landing. Side by side, source order applies.
+            homageSkin ? "order-2 lg:order-none" : ""
+          }`}
+        >
           {homageSkin ? (
-            contractDescription && (
-              <>
-                <p className="text-sm leading-relaxed text-fg-muted">{contractDescription}</p>
-                {/* The mint schedule lives with the story — every window, every state. */}
-                {homageMinter && <HomageSchedule minter={homageMinter} />}
-              </>
-            )
+            <HomageAbout headingClassName="text-[10px] font-mono uppercase tracking-wider text-gray-400" />
           ) : (
-            <>
+            <div className="space-y-6">
+              <h2 className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+                About this work
+              </h2>
               {hasWork ? (
                 <p className="text-sm leading-relaxed text-fg-muted">
                   Every token is generated by the collection&apos;s own algorithm from a
@@ -391,23 +382,20 @@ export default async function CollectionPage({
                   </p>
                 </div>
               )}
-            </>
+            </div>
           )}
         </div>
-        )}
 
-        <div className="mx-auto w-full max-w-[556px] px-6 py-10 lg:px-12 lg:py-12">
+        <div
+          className={`mx-auto w-full max-w-[556px] px-6 py-10 lg:px-12 lg:py-12 ${
+            homageSkin ? "order-1 lg:order-none" : ""
+          }`}
+        >
           {homageMinter ? (
             // The cell is capped at the instrument's width (556 = 460 + 2×48 gutters)
             // and centered by the grid when it stands alone, so the card never floats.
             <div className="mx-auto w-full max-w-[460px]">
               <HomageMint collection={addr} minter={homageMinter} />
-              {/* No About cell to host the schedule → it rides under the instrument. */}
-              {!contractDescription && (
-                <div className="pt-6">
-                  <HomageSchedule minter={homageMinter} />
-                </div>
-              )}
             </div>
           ) : (
             <MintCollectionCTA

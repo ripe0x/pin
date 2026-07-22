@@ -137,10 +137,24 @@ export function HomageTokenDetail({
             <Cell label="colors" value={facts.colorCount != null ? String(facts.colorCount) : dash} />
           </div>
           <div className="border-b border-r border-gray-200">
-            <Cell
-              label="accessories"
-              value={facts.accessories.length ? facts.accessories.join(", ") : "None"}
-            />
+            {/* The renderer emits one Punk Accessory trait per accessory. Keep them
+                separate here rather than joining them back into a sentence. */}
+            <div className="px-3 py-2.5">
+              <div className={META}>
+                {facts.accessories.length === 1 ? "accessory" : "accessories"}
+              </div>
+              {facts.accessories.length ? (
+                <ul className="mt-1 space-y-0.5">
+                  {facts.accessories.map((a) => (
+                    <li key={a} className="font-mono text-[13px] text-fg">
+                      {a}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="mt-1 font-mono text-[13px] text-fg">None</div>
+              )}
+            </div>
           </div>
           <div className="border-b border-r border-gray-200">
             <Cell label="status" value={facts.status ?? dash} />

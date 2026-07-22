@@ -9,11 +9,10 @@
  *
  *   - `homageMinterAbi`     — HomageMinter: the three phased mint writes
  *     (`claim` / `claimFor` / `claimTo` / `allowlistMint` / `mint`), `redeem`,
- *     every view the quote / eligibility / schedule / reveal plumbing reads,
- *     the `Minted`/`Claimed`/`Redeemed` events, and — critically — ALL 13
- *     custom `error` definitions, so viem decodes a revert selector to a
- *     named reason (`NotPunkOwner()`) instead of a bare `0x…` on a failed
- *     mint.
+ *     every view the quote / eligibility / schedule plumbing reads, every
+ *     event the contract emits, and every custom `error` it defines, so
+ *     viem decodes a revert selector to a named reason (`NotPunkOwner()`)
+ *     instead of a bare `0x...` on a failed mint.
  *   - `homageCollectionAbi` — the pooled PND Collection (the ERC-721 core
  *     itself): `ownerOf` / `balanceOf` / `tokenURI` / `Transfer` ONLY.
  *     Ownership, transfers, and metadata live here; economics/schedule/
@@ -24,26 +23,22 @@
  * of this sync — see the note there); this one adds the writes for the web
  * `/mint/homage` venue.
  *
- * HAND-SYNCED SNAPSHOT — PENDING AUDIT FREEZE (launch-plan gate G1).
- * Synced from the Homage repo working tree
- * (/Users/dd/CascadeProjects/homage to the punk, sovereign-rebuild branch:
- * `contracts/src/HomageMinter.sol`), cross-checked against
- * `web/lib/homage.ts`'s `homageMinterAbi`/`homageCollectionAbi` (parseAbi
- * form — this file mirrors the same surface as PIN's raw-JSON-array ABI
- * style). Re-derive this file (and the renderer ABI below) from the audited
- * build before the mainnet deploy.
+ * `homageMinterAbi`'s errors and events are generated from the compiled
+ * `HomageMinter.sol` artifact (`out/HomageMinter.sol/HomageMinter.json`),
+ * built from the Homage repo at commit f2d231f (origin/master), confirmed
+ * byte-identical to the deployed sepolia bytecode at
+ * `0xc9f3c81556fcb4cf70a37d1a7248d6ec68256b7c` outside of immutable slots.
+ * Function entries are unchanged from the prior hand-synced set; re-run
+ * `pnpm --filter web check:abi` and diff against a fresh artifact before the
+ * mainnet deploy.
  */
 export const homageMinterAbi = [
   // ── Events ──────────────────────────────────────────────────────────
+  { type: "event", name: "Activated", inputs: [], anonymous: false },
   {
     type: "event",
-    name: "Minted",
-    inputs: [
-      { name: "to", type: "address", indexed: true, internalType: "address" },
-      { name: "punkId", type: "uint256", indexed: true, internalType: "uint256" },
-      { name: "ethSwapped", type: "uint256", indexed: false, internalType: "uint256" },
-      { name: "received111", type: "uint256", indexed: false, internalType: "uint256" },
-    ],
+    name: "AllowlistRootSet",
+    inputs: [{ name: "root", type: "bytes32", indexed: false, internalType: "bytes32" }],
     anonymous: false,
   },
   {
@@ -59,12 +54,90 @@ export const homageMinterAbi = [
   },
   {
     type: "event",
+    name: "ExitFeeSet",
+    inputs: [{ name: "exitFee", type: "uint256", indexed: false, internalType: "uint256" }],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "FeeRecipientSet",
+    inputs: [{ name: "feeRecipient", type: "address", indexed: false, internalType: "address" }],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "FeeScheduleSet",
+    inputs: [
+      { name: "baseFee", type: "uint256", indexed: false, internalType: "uint256" },
+      { name: "feeGrowthBps", type: "uint256", indexed: false, internalType: "uint256" },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "Minted",
+    inputs: [
+      { name: "to", type: "address", indexed: true, internalType: "address" },
+      { name: "punkId", type: "uint256", indexed: true, internalType: "uint256" },
+      { name: "ethSwapped", type: "uint256", indexed: false, internalType: "uint256" },
+      { name: "received111", type: "uint256", indexed: false, internalType: "uint256" },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "OwnershipTransferred",
+    inputs: [
+      { name: "previousOwner", type: "address", indexed: true, internalType: "address" },
+      { name: "newOwner", type: "address", indexed: true, internalType: "address" },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "RedeemDelaySet",
+    inputs: [{ name: "redeemDelay", type: "uint64", indexed: false, internalType: "uint64" }],
+    anonymous: false,
+  },
+  {
+    type: "event",
     name: "Redeemed",
     inputs: [
       { name: "from", type: "address", indexed: true, internalType: "address" },
       { name: "punkId", type: "uint256", indexed: true, internalType: "uint256" },
       { name: "amount111", type: "uint256", indexed: false, internalType: "uint256" },
     ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "ReservationReleased",
+    inputs: [{ name: "punkId", type: "uint256", indexed: true, internalType: "uint256" }],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "Reserved",
+    inputs: [
+      { name: "punkId", type: "uint256", indexed: true, internalType: "uint256" },
+      { name: "by", type: "address", indexed: true, internalType: "address" },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "ScheduleSet",
+    inputs: [
+      { name: "claimStart", type: "uint64", indexed: false, internalType: "uint64" },
+      { name: "allowlistStart", type: "uint64", indexed: false, internalType: "uint64" },
+      { name: "publicStart", type: "uint64", indexed: false, internalType: "uint64" },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "ThresholdSet",
+    inputs: [{ name: "threshold", type: "uint256", indexed: false, internalType: "uint256" }],
     anonymous: false,
   },
 
@@ -118,7 +191,7 @@ export const homageMinterAbi = [
   // ── Economics (views) ───────────────────────────────────────────────
   {
     type: "function",
-    name: "THRESHOLD",
+    name: "threshold",
     inputs: [],
     outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
     stateMutability: "view",
@@ -139,7 +212,7 @@ export const homageMinterAbi = [
   },
   {
     type: "function",
-    name: "publicMints",
+    name: "mintCount",
     inputs: [{ name: "who", type: "address", internalType: "address" }],
     outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
     stateMutability: "view",
@@ -183,25 +256,15 @@ export const homageMinterAbi = [
   },
 
   // ── Allowlist (views) ───────────────────────────────────────────────
+  // Allowlist mints are uncapped: the contract keeps no per-wallet allowance
+  // (no `maxPerAllowlisted`/`allowlistMinted` getter). Membership against
+  // `allowlistRoot` is the whole eligibility test; throttling is the same
+  // per-wallet fee escalator every mint path shares.
   {
     type: "function",
     name: "allowlistRoot",
     inputs: [],
     outputs: [{ name: "", type: "bytes32", internalType: "bytes32" }],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "maxPerAllowlisted",
-    inputs: [],
-    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "allowlistMinted",
-    inputs: [{ name: "who", type: "address", internalType: "address" }],
-    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
     stateMutability: "view",
   },
 
@@ -235,41 +298,95 @@ export const homageMinterAbi = [
     stateMutability: "view",
   },
 
-  // ── Reveal (views) ──────────────────────────────────────────────────
-  // The escalating blank -> revealed curve: each homage is stamped at mint
-  // with how much of it is revealed, keyed by MINT ORDER (not by which punk
-  // was drawn) — the first mint is fully blank, the last fully revealed, and
-  // later mints reveal faster (a staircase of quickening reveal across ten
-  // 1,000-mint bands). Cleared on `redeem` so a re-drawn id starts blank
-  // again under its own future mint order.
-  {
-    type: "function",
-    name: "revealBpsOf",
-    inputs: [{ name: "", type: "uint256", internalType: "uint256" }],
-    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "revealBpsFor",
-    inputs: [{ name: "seq", type: "uint256", internalType: "uint256" }],
-    outputs: [{ name: "bps", type: "uint256", internalType: "uint256" }],
-    stateMutability: "pure",
-  },
-  {
-    type: "function",
-    name: "REVEAL_BPS_DENOM",
-    inputs: [],
-    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
-    stateMutability: "view",
-  },
-
   // ── Custom errors ───────────────────────────────────────────────────
-  // All 13, mirrored from HomageMinter.sol, so viem decodes a revert to its
-  // name (e.g. `NotPunkOwner()`) and formatWriteError can surface it verbatim.
+  // Every error HomageMinter.sol defines, so viem decodes a revert to its
+  // name and arguments (e.g. `RedeemLocked(opensAt)`) instead of a bare
+  // `0x...` selector on a failed mint/redeem/admin call.
+  { type: "error", name: "AllowlistClosed", inputs: [] },
+  { type: "error", name: "AlreadyActivated", inputs: [] },
+  { type: "error", name: "AlreadyMinted", inputs: [] },
+  { type: "error", name: "BadPunkId", inputs: [] },
+  { type: "error", name: "BadSchedule", inputs: [] },
+  { type: "error", name: "ClaimClosed", inputs: [] },
+  { type: "error", name: "CollectionAlreadyMinted", inputs: [] },
+  { type: "error", name: "CollectionNotPooled", inputs: [] },
+  {
+    type: "error",
+    name: "CostExceedsBudget",
+    inputs: [
+      { name: "ethNeeded", type: "uint256", internalType: "uint256" },
+      { name: "ethBudget", type: "uint256", internalType: "uint256" },
+    ],
+  },
+  { type: "error", name: "DrawPoolDesync", inputs: [] },
+  { type: "error", name: "ExitFeeOutOfBounds", inputs: [] },
+  { type: "error", name: "FeeScheduleOutOfBounds", inputs: [] },
+  { type: "error", name: "FeeTransferFailed", inputs: [] },
+  {
+    type: "error",
+    name: "InsufficientValue",
+    inputs: [
+      { name: "required", type: "uint256", internalType: "uint256" },
+      { name: "provided", type: "uint256", internalType: "uint256" },
+    ],
+  },
+  {
+    type: "error",
+    name: "InvalidBatchQuantity",
+    inputs: [
+      { name: "qty", type: "uint256", internalType: "uint256" },
+      { name: "maxBatch", type: "uint256", internalType: "uint256" },
+    ],
+  },
+  { type: "error", name: "InvalidThreshold", inputs: [] },
+  { type: "error", name: "MinterNotGranted", inputs: [] },
+  { type: "error", name: "MinterNotLocked", inputs: [] },
+  {
+    type: "error",
+    name: "NonexistentToken",
+    inputs: [{ name: "id", type: "uint256", internalType: "uint256" }],
+  },
+  { type: "error", name: "NotActivated", inputs: [] },
+  { type: "error", name: "NotAllowlisted", inputs: [] },
+  { type: "error", name: "NotBacked", inputs: [] },
+  {
+    type: "error",
+    name: "NotContract",
+    inputs: [{ name: "dependency", type: "address", internalType: "address" }],
+  },
+  { type: "error", name: "NotDelegated", inputs: [] },
   { type: "error", name: "NotManager", inputs: [] },
-  { type: "error", name: "BadValue", inputs: [] },
-  { type: "error", name: "SoldOut", inputs: [] },
+  { type: "error", name: "NotPunkOwner", inputs: [] },
+  { type: "error", name: "NotTokenOwner", inputs: [] },
+  { type: "error", name: "NothingToCollect", inputs: [] },
+  { type: "error", name: "NothingToRescue", inputs: [] },
+  {
+    type: "error",
+    name: "OwnableInvalidOwner",
+    inputs: [{ name: "owner", type: "address", internalType: "address" }],
+  },
+  {
+    type: "error",
+    name: "OwnableUnauthorizedAccount",
+    inputs: [{ name: "account", type: "address", internalType: "address" }],
+  },
+  { type: "error", name: "PublicClosed", inputs: [] },
+  { type: "error", name: "RedeemDelayOutOfBounds", inputs: [] },
+  {
+    type: "error",
+    name: "RedeemLocked",
+    inputs: [{ name: "opensAt", type: "uint256", internalType: "uint256" }],
+  },
+  { type: "error", name: "ReentrancyGuardReentrantCall", inputs: [] },
+  { type: "error", name: "RefundFailed", inputs: [] },
+  { type: "error", name: "ReleaseNotOpen", inputs: [] },
+  { type: "error", name: "RescueTransferFailed", inputs: [] },
+  { type: "error", name: "ReservationClosed", inputs: [] },
+  {
+    type: "error",
+    name: "SafeERC20FailedOperation",
+    inputs: [{ name: "token", type: "address", internalType: "address" }],
+  },
   {
     type: "error",
     name: "Slippage",
@@ -278,15 +395,20 @@ export const homageMinterAbi = [
       { name: "needed", type: "uint256", internalType: "uint256" },
     ],
   },
-  { type: "error", name: "ClaimClosed", inputs: [] },
-  { type: "error", name: "AllowlistClosed", inputs: [] },
-  { type: "error", name: "PublicClosed", inputs: [] },
-  { type: "error", name: "NotPunkOwner", inputs: [] },
-  { type: "error", name: "NotDelegated", inputs: [] },
-  { type: "error", name: "AlreadyMinted", inputs: [] },
-  { type: "error", name: "NotAllowlisted", inputs: [] },
-  { type: "error", name: "AllowlistCapReached", inputs: [] },
-  { type: "error", name: "BadSchedule", inputs: [] },
+  { type: "error", name: "SoldOut", inputs: [] },
+  { type: "error", name: "SupplyCapTooLow", inputs: [] },
+  { type: "error", name: "ThresholdLocked", inputs: [] },
+  {
+    type: "error",
+    name: "WrongExitFee",
+    inputs: [
+      { name: "expected", type: "uint256", internalType: "uint256" },
+      { name: "provided", type: "uint256", internalType: "uint256" },
+    ],
+  },
+  { type: "error", name: "WrongPoolCurrency", inputs: [] },
+  { type: "error", name: "ZeroAddress", inputs: [] },
+  { type: "error", name: "ZeroDependency", inputs: [] },
 ] as const
 
 /**
@@ -334,26 +456,29 @@ export const homageCollectionAbi = [
  * collection's `tokenURI` (its base, `HomageRenderer`, does the actual Albers
  * art / color distillation / attributes; the Sovereign adapter only maps the
  * PND Collection renderer-slot calling convention onto it — see
- * `contracts/src/HomageRendererSovereign.sol`). Renders ANY punk id 0..9999
+ * `contracts/src/HomageRendererSovereign.sol`). Renders any punk id 0..9999
  * (minted or not) from the onchain punk pixels + live market status, so the
- * collection hero — and a future "explore before you mint" preview — can
- * show a representative homage without a token existing.
+ * collection hero can show a representative homage without a token existing.
  *
  * Two call surfaces, both on this one renderer address:
- *   - the base `HomageRenderer` punk-id surface (`tokenURI(uint256)`,
- *     `renderSVG`, the PFP variants, `previewSVG`/`previewTokenURI`,
- *     `colorCount`, `collectionName`/`collectionDescription`) — what PIN's
- *     hero/sample reads use directly, unchanged in shape from before the
- *     rebuild except `previewSVG`/`previewTokenURI` DROPPED their `holder`
- *     param (now `(id, status)`, not `(id, status, holder)`).
+ *   - the base `HomageRenderer` punk-id surface: `tokenURI(uint256)` (live
+ *     market status, square form), `tokenURI(uint256,uint8,bool)` and
+ *     `renderSVG(uint256,uint8,bool)` (explicit status + form, `circle` for
+ *     the PFP treatment), `pfpSVG(uint256,uint8)`, `colorCount(uint256)`,
+ *     `statusOf(uint256)`, and the owner-settable `collectionName()` /
+ *     `collectionDescription()` getters.
  *   - the `IPreviewRenderer`/`IRenderer` adapter surface the PND Collection
- *     itself calls (`tokenURI(address,uint256)`, `contractURI(address)`,
- *     `previewURI(address,uint256,bytes32)` — a random-punk preview keyed by
- *     seed, ignoring the `collection`/`tokenId` args). Included here for
- *     completeness / a future direct-preview UI; PIN's descriptor hero read
- *     uses the punk-id `tokenURI(uint256)` overload today.
+ *     itself calls: `tokenURI(address,uint256)`, `contractURI(address)`,
+ *     `previewURI(address,uint256,bytes32)` (a random-punk preview keyed by
+ *     seed; `collection`/`tokenId` are ignored on all three).
  *
- * Same hand-synced / pre-audit-freeze caveat as `homageMinterAbi` above.
+ * Reconstructed from `contracts/src/HomageRenderer.sol` and
+ * `HomageRendererSovereign.sol` (sovereign-rebuild branch) after the prior
+ * version of this ABI drifted from a pre-rebuild renderer with a different
+ * function surface (`tokenURIPfp`, `renderSVGPfp`, `previewSVG`,
+ * `previewTokenURI`, `previewSVGPfp`, `previewTokenURIPfp` never existed on
+ * the deployed contract). Same hand-synced / pre-audit-freeze caveat as
+ * `homageMinterAbi` above.
  */
 export const homageRendererAbi = [
   // ── base HomageRenderer punk-id surface ────────────────────────────
@@ -366,65 +491,41 @@ export const homageRendererAbi = [
   },
   {
     type: "function",
-    name: "tokenURIPfp",
-    inputs: [{ name: "id", type: "uint256", internalType: "uint256" }],
+    name: "tokenURI",
+    inputs: [
+      { name: "id", type: "uint256", internalType: "uint256" },
+      { name: "status", type: "uint8", internalType: "uint8" },
+      { name: "circle", type: "bool", internalType: "bool" },
+    ],
     outputs: [{ name: "", type: "string", internalType: "string" }],
     stateMutability: "view",
   },
   {
     type: "function",
     name: "renderSVG",
+    inputs: [
+      { name: "id", type: "uint256", internalType: "uint256" },
+      { name: "status", type: "uint8", internalType: "uint8" },
+      { name: "circle", type: "bool", internalType: "bool" },
+    ],
+    outputs: [{ name: "", type: "string", internalType: "string" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "pfpSVG",
+    inputs: [
+      { name: "id", type: "uint256", internalType: "uint256" },
+      { name: "status", type: "uint8", internalType: "uint8" },
+    ],
+    outputs: [{ name: "", type: "string", internalType: "string" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "statusOf",
     inputs: [{ name: "id", type: "uint256", internalType: "uint256" }],
-    outputs: [{ name: "", type: "string", internalType: "string" }],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "renderSVGPfp",
-    inputs: [{ name: "id", type: "uint256", internalType: "uint256" }],
-    outputs: [{ name: "", type: "string", internalType: "string" }],
-    stateMutability: "view",
-  },
-  {
-    // NOTE: (id, status) only — the pre-rebuild ABI had a third `holder`
-    // param that no longer exists on HomageRenderer.previewSVG.
-    type: "function",
-    name: "previewSVG",
-    inputs: [
-      { name: "id", type: "uint256", internalType: "uint256" },
-      { name: "status", type: "uint8", internalType: "uint8" },
-    ],
-    outputs: [{ name: "", type: "string", internalType: "string" }],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "previewTokenURI",
-    inputs: [
-      { name: "id", type: "uint256", internalType: "uint256" },
-      { name: "status", type: "uint8", internalType: "uint8" },
-    ],
-    outputs: [{ name: "", type: "string", internalType: "string" }],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "previewSVGPfp",
-    inputs: [
-      { name: "id", type: "uint256", internalType: "uint256" },
-      { name: "status", type: "uint8", internalType: "uint8" },
-    ],
-    outputs: [{ name: "", type: "string", internalType: "string" }],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "previewTokenURIPfp",
-    inputs: [
-      { name: "id", type: "uint256", internalType: "uint256" },
-      { name: "status", type: "uint8", internalType: "uint8" },
-    ],
-    outputs: [{ name: "", type: "string", internalType: "string" }],
+    outputs: [{ name: "", type: "uint8", internalType: "uint8" }],
     stateMutability: "view",
   },
   {

@@ -13,6 +13,11 @@ import {resolveEns} from "@/lib/homage/ens"
 
 type Result = {who: string; listed: boolean} | null
 
+// Shared across the predeploy landing (HomagePreview) and the live mint instrument
+// (HomageMint) so the snapshot-date disclaimer stays in sync in both places.
+export const ALLOWLIST_SNAPSHOT_CAPTION =
+  "Eligibility is a fixed snapshot (July 21, 2026). Assets acquired after aren’t reflected."
+
 export function HomageAllowlistLookup() {
   const [input, setInput] = useState("")
   const [busy, setBusy] = useState(false)

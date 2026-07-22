@@ -14,15 +14,16 @@ import {type Address} from "viem"
 import {useReadContracts} from "wagmi"
 import {PREFERRED_CHAIN, useChainNowSec} from "@/components/tx/tx-ui"
 import {homageMinterAbi} from "@/lib/homage/contracts"
-
-const META = "text-[10px] font-mono uppercase tracking-wider text-gray-400"
+import {HomageScheduleCard, type ScheduleRow} from "./HomageScheduleCard"
 
 function fmtTime(ts: number): string {
   return new Date(ts * 1000).toLocaleString(undefined, {
+    weekday: "short",
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    timeZoneName: "short",
   })
 }
 
@@ -44,47 +45,28 @@ export function HomageSchedule({minter}: {minter: Address}) {
 
   const rows: Row[] = []
   if (claimStart !== 0 && claimStart < allowlistStart)
-    rows.push({name: "Punk owner claim", detail: "punk holders mint their own id", start: claimStart, end: allowlistStart})
+    rows.push({name: "Punk mint claim", detail: "punk holders mint their own id", start: claimStart, end: allowlistStart})
   if (allowlistStart !== 0 && allowlistStart < publicStart)
     rows.push({name: "Allowlist", detail: "random draw, flat fee", start: allowlistStart, end: publicStart})
   if (publicStart !== 0)
     rows.push({name: "Public", detail: "anyone, random draw", start: publicStart, end: null})
 
-  return (
-    <div className="space-y-3 border-t border-gray-200 pt-6">
-      <h3 className={META}>Mint schedule</h3>
-      {rows.length === 0 ? (
-        <p className="text-[11px] font-mono text-gray-500">Not yet scheduled.</p>
-      ) : (
-        <ul className="space-y-2">
-          {rows.map((r) => {
-            const live = nowSec >= r.start && (r.end === null || nowSec < r.end)
-            const ended = r.end !== null && nowSec >= r.end
-            return (
-              <li key={r.name} className="flex items-baseline justify-between gap-4 text-[11px] font-mono tabular-nums">
-                <span className="flex items-center gap-2">
-                  <span
-                    className={`inline-block h-1.5 w-1.5 rounded-full ${
-                      live ? "bg-status-available animate-pulse" : ended ? "bg-gray-300 dark:bg-gray-700" : "bg-status-upcoming"
-                    }`}
-                  />
-                  <span className={ended ? "text-gray-400 line-through" : "text-fg"}>{r.name}</span>
-                  <span className="hidden text-gray-500 sm:inline">· {r.detail}</span>
-                </span>
-                <span className="shrink-0 text-gray-400">
-                  {ended
-                    ? "ended"
-                    : live
-                      ? r.end === null
-                        ? "live"
-                        : `live · closes ${fmtTime(r.end)}`
-                      : `opens ${fmtTime(r.start)}`}
-                </span>
-              </li>
-            )
-          })}
-        </ul>
-      )}
-    </div>
-  )
+  const cardRows: ScheduleRow[] = rows.map((r) => {
+    const live = nowSec >= r.start && (r.end === null || nowSec < r.end)
+    const ended = r.end !== null && nowSec >= r.end
+    return {
+      name: r.name,
+      detail: r.detail,
+      state: live ? "live" : ended ? "ended" : "upcoming",
+      time: ended
+        ? "Ended"
+        : live
+          ? r.end === null
+            ? "Live now"
+            : `Live now · closes ${fmtTime(r.end)}`
+          : fmtTime(r.start),
+    }
+  })
+
+  return <HomageScheduleCard rows={cardRows} />
 }

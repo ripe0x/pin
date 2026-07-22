@@ -11,7 +11,7 @@
  * interfaces/ISurface.sol for the source-of-truth shapes.
  */
 import { type Address, formatEther, isAddress } from "viem"
-import { foundry, mainnet } from "wagmi/chains"
+import { foundry, mainnet, sepolia } from "wagmi/chains"
 import {
   RENDER_ASSETS,
   SURFACE_FACTORY,
@@ -29,8 +29,12 @@ export const REFERRAL_SHARE_BPS = 1000 // 10%
 const FORK_MODE = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
 // Must match wagmi.ts `forkChain` (31339) so wallet/link/chain checks agree.
 const FORK_CHAIN_ID = 31339
-export const PND_CHAIN = FORK_MODE ? foundry : mainnet
-export const PND_CHAIN_ID = FORK_MODE ? FORK_CHAIN_ID : mainnet.id
+// Opt-in sepolia instance for running the Homage mint surface against a live
+// testnet deployment. Mutually exclusive with FORK_MODE; a no-op when unset,
+// so mainnet production stays byte-identical.
+const USE_SEPOLIA = process.env.NEXT_PUBLIC_USE_SEPOLIA === "1"
+export const PND_CHAIN = FORK_MODE ? foundry : USE_SEPOLIA ? sepolia : mainnet
+export const PND_CHAIN_ID = FORK_MODE ? FORK_CHAIN_ID : USE_SEPOLIA ? sepolia.id : mainnet.id
 
 /** The CollectionFactory address (env override for local dev wins). */
 export function surfaceFactory(chainId: number = PND_CHAIN_ID): Address | null {
@@ -343,13 +347,22 @@ export function shortAddress(addr: string): string {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`
 }
 
-/** evm.now address URL, chain-aware (per the project's tx-link rule). */
+/**
+ * Explorer address URL, chain-aware. Mainnet uses evm.now (the project's
+ * multi-chain explorer); testnets use the network's own etherscan subdomain
+ * — evm.now has no sepolia support.
+ */
 export function evmNowAddressUrl(addr: string, chainId: number = PND_CHAIN_ID): string {
+  if (chainId === sepolia.id) return `https://sepolia.etherscan.io/address/${addr}`
   return `https://evm.now/address/${addr}?chainId=${chainId}`
 }
 
-/** evm.now tx URL, chain-aware (per the project's tx-link rule). */
+/**
+ * Explorer tx URL, chain-aware. Mainnet uses evm.now; testnets use the
+ * network's own etherscan subdomain.
+ */
 export function evmNowTxUrl(hash: string, chainId: number = PND_CHAIN_ID): string {
+  if (chainId === sepolia.id) return `https://sepolia.etherscan.io/tx/${hash}`
   return `https://evm.now/tx/${hash}?chainId=${chainId}`
 }
 

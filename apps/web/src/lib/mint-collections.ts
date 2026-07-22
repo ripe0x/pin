@@ -34,7 +34,12 @@ export type { RevealSource } from "./mint-reveal"
 const FORK_MODE = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
 // Honors the same NEXT_PUBLIC_FORK_CHAIN_ID override as wagmi.ts (default 31339).
 const FORK_CHAIN_ID = Number(process.env.NEXT_PUBLIC_FORK_CHAIN_ID || "31339")
-export const MINT_CHAIN_ID = FORK_MODE ? FORK_CHAIN_ID : 1
+// Opt-in sepolia instance (chain 11155111) for running the Homage mint surface
+// against a live testnet deployment instead of a local fork. Mutually exclusive
+// with FORK_MODE; a no-op when unset, so mainnet production stays byte-identical.
+const USE_SEPOLIA = process.env.NEXT_PUBLIC_USE_SEPOLIA === "1"
+const SEPOLIA_CHAIN_ID = 11155111
+export const MINT_CHAIN_ID = FORK_MODE ? FORK_CHAIN_ID : USE_SEPOLIA ? SEPOLIA_CHAIN_ID : 1
 
 // ── descriptor shape ────────────────────────────────────────────────────────
 

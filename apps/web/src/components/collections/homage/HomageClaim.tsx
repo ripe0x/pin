@@ -37,6 +37,7 @@ export function HomageClaim({
   const {punks, status} = useOwnedPunks(minter, address, refreshKey)
   const flows = homageFlows(minter)
   const [manualId, setManualId] = useState("")
+  const [manualOpen, setManualOpen] = useState(false)
   const [pendingId, setPendingId] = useState<number | null>(null)
 
   // Reservation tag on each row — one batched read over the listed ids, not per-row.
@@ -86,6 +87,11 @@ export function HomageClaim({
 
   return (
     <div className="space-y-3">
+      <p className="text-[10px] font-mono text-gray-400 leading-relaxed">
+        Punks held by this wallet, or delegated to it through delegate.xyz. Each mints
+        the homage for that punk&apos;s own id.
+      </p>
+
       {status === "loading" && <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">Finding your punks…</p>}
 
       {punks.length > 0 && (
@@ -111,7 +117,7 @@ export function HomageClaim({
                   disabled={disabled || pendingId !== null}
                   className="text-[10px] font-mono font-medium uppercase tracking-wider px-3 py-1.5 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  {pendingId === p.id ? "…" : p.vault ? "Claim to vault" : "Claim"}
+                  {pendingId === p.id ? "…" : p.vault ? "Punk mint claim to vault" : "Punk mint claim"}
                 </button>
               )}
             </li>
@@ -119,45 +125,66 @@ export function HomageClaim({
         </ul>
       )}
 
+      {/* Reads as a state of the wallet's holdings, matching the rows it stands in for,
+          rather than as another line of explanatory copy. */}
       {punks.length === 0 && status !== "loading" && (
-        <p className="text-[10px] font-mono text-gray-400 leading-relaxed">
-          No claimable punks found for this wallet{status === "partial" ? " in the recent window" : ""}. If you hold one, enter its id
-          below — claim verifies ownership (and delegation) on-chain.
-        </p>
+        <div className="flex items-center gap-2 rounded border border-gray-200 bg-surface-muted/40 px-3 py-2">
+          <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-gray-300 dark:bg-gray-700" />
+          <span className="text-[11px] font-mono text-gray-400">
+            No claimable punks{status === "partial" ? " found in the recent window" : ""}
+          </span>
+        </div>
       )}
 
-      {/* manual id: claim your own, or pay for any punk's holder (claimTo) */}
-      <div className="space-y-2 pt-1">
-        <div className="flex items-center gap-2">
-          <input
-            value={manualId}
-            onChange={(e) => setManualId(e.target.value.replace(/[^\d]/g, "").slice(0, 4))}
-            placeholder="Punk id (0–9999)"
-            inputMode="numeric"
-            className="w-0 flex-1 rounded border border-gray-200 bg-surface px-3 py-2 text-[11px] font-mono tabular-nums outline-none focus:border-gray-400"
-          />
-          <button
-            onClick={() => manualValid && claimDirect(Number(manualId))}
-            disabled={disabled || !manualValid || manualIsMinted || pendingId !== null}
-            className="text-[10px] font-mono font-medium uppercase tracking-wider px-3 py-2 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            Claim mine
-          </button>
-        </div>
-        {manualIsMinted ? (
-          <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-            Punk {manualId} is already minted ·{" "}
-            <Link href={`/collections/${collection}/${manualId}`} className="underline hover:text-fg">
-              view →
-            </Link>
-          </p>
+      {/* Mint by id (claimTo): the fallback for a punk the list above cannot see, e.g.
+          held in a wallet that is not connected and not delegated. It mints to whoever
+          holds the punk onchain, so it needs no authorization from the caller, and it
+          covers the "my own punk is missing from the list" case too, since the holder
+          it resolves to is then the connected wallet. Collapsed by default: the listed
+          punks are the path almost everyone takes. */}
+      <div className="pt-1">
+        {manualOpen ? (
+          <div className="space-y-2 rounded border border-gray-200 bg-surface-muted/40 p-3">
+            <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+              Mint to the punk&apos;s holder
+            </p>
+            <p className="text-[10px] font-mono text-gray-400 leading-relaxed">
+              The homage mints to the address holding this punk onchain, which may not be
+              this wallet. Wrapped punks resolve to the wrapper&apos;s owner, so a wrapped
+              punk mints to its owner, not the wrapper contract. You pay; the homage, the
+              escrowed $111 and any refund go to the holder.
+            </p>
+            <div className="flex items-center gap-2">
+              <input
+                value={manualId}
+                onChange={(e) => setManualId(e.target.value.replace(/[^\d]/g, "").slice(0, 4))}
+                placeholder="Punk id (0–9999)"
+                inputMode="numeric"
+                className="w-0 flex-1 rounded border border-gray-200 bg-surface px-3 py-2 text-[11px] font-mono tabular-nums outline-none focus:border-gray-400"
+              />
+              <button
+                onClick={() => manualValid && claimAnyoneFor(Number(manualId))}
+                disabled={disabled || !manualValid || manualIsMinted || pendingId !== null}
+                className="text-[10px] font-mono font-medium uppercase tracking-wider px-3 py-2 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Mint to holder
+              </button>
+            </div>
+            {manualIsMinted && (
+              <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+                Punk {manualId} is already minted ·{" "}
+                <Link href={`/collections/${collection}/${manualId}`} className="underline hover:text-fg">
+                  view →
+                </Link>
+              </p>
+            )}
+          </div>
         ) : (
           <button
-            onClick={() => manualValid && claimAnyoneFor(Number(manualId))}
-            disabled={disabled || !manualValid || pendingId !== null}
-            className="text-[10px] font-mono uppercase tracking-wider text-gray-400 hover:text-fg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            onClick={() => setManualOpen(true)}
+            className="text-[10px] font-mono uppercase tracking-wider text-gray-400 underline underline-offset-2 hover:text-fg transition-colors"
           >
-            Or pay for this punk’s holder →
+            Punk somewhere else? Mint by id →
           </button>
         )}
       </div>
