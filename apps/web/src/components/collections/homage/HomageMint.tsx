@@ -61,6 +61,10 @@ const SUPPLY = 10_000
 const QUOTE_POLL_MS = 30_000 // paid RPC path in prod — never tighten below this
 const FORK_MODE = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
 const ZERO = "0x0000000000000000000000000000000000000000" as const
+// Re-confirm the mint if the live $111 swap leg has moved more than this since the
+// price the collector last saw. Small drift is absorbed by the swap's own headroom +
+// refund, so only a material move interrupts with a second click. In bps of the swap leg.
+const PRICE_RECONFIRM_BPS = 500n // 5%
 
 export function HomageMint({
   collection,
@@ -156,6 +160,10 @@ export function HomageMint({
   // ── live quote ───────────────────────────────────────────────────────────────
   const [quote, setQuote] = useState<MintQuote | null>(null)
   const [quoteErr, setQuoteErr] = useState<string | null>(null)
+  // Set when a click's fresh re-quote moved the swap leg past PRICE_RECONFIRM_BPS from
+  // what was on screen: the fresh price is shown and a second click is required before
+  // sending. Cleared once a send goes through (or when the shown price catches up).
+  const [priceConfirmPending, setPriceConfirmPending] = useState(false)
   // Batch: 1..MAX_BATCH tokens per public OR allowlist mint. Claim stays single.
   // qty is the committed value the math runs on; qtyText is what the input shows, so
   // typing can pass through transient states ("", leading digit of a larger number)
@@ -166,6 +174,9 @@ export function HomageMint({
     const clamped = Math.min(Math.max(n, 1), max)
     setQty(clamped)
     setQtyText(String(clamped))
+    // Changing quantity restarts the price flow: any pending re-confirm no longer
+    // matches what's on screen.
+    setPriceConfirmPending(false)
   }, [])
   const maxBatchRead = useReadContract({
     address: minter, abi: homageMinterAbi, functionName: "MAX_BATCH", chainId: PREFERRED_CHAIN.id,
@@ -248,8 +259,17 @@ export function HomageMint({
   // a surprise price bump.
   const priceIsFloor = !address && phase !== "closed" && priceValue !== undefined
 
+  // True when the fresh swap leg has moved more than PRICE_RECONFIRM_BPS from what the
+  // collector last saw. The caller shows the fresh price and waits for a second click.
+  const priceMovedTooMuch = useCallback((shownSwap: bigint | undefined, freshSwap: bigint): boolean => {
+    if (shownSwap === undefined || shownSwap === 0n) return false
+    const diff = shownSwap > freshSwap ? shownSwap - freshSwap : freshSwap - shownSwap
+    return (diff * 10_000n) / shownSwap > PRICE_RECONFIRM_BPS
+  }, [])
+
   const doMint = useCallback(async () => {
     if (!publicClient) return
+    const shownSwap = quote?.ethForSwap
     let q = quote
     try {
       q = await quoteMint(publicClient, minter, publicFee)
@@ -258,6 +278,14 @@ export function HomageMint({
       /* fall back to last shown quote */
     }
     if (!q) return
+    // Re-confirm on a material price move: the fresh quote is already on screen (setQuote
+    // above), so require a second click at that price. Small drift is absorbed by the
+    // swap headroom + refund and passes straight through.
+    if (!priceConfirmPending && priceMovedTooMuch(shownSwap, q.ethForSwap)) {
+      setPriceConfirmPending(true)
+      return
+    }
+    setPriceConfirmPending(false)
     if (batchQty <= 1) {
       writeContract({...homageFlows(minter).mint(q.totalValue), chainId: PREFERRED_CHAIN.id})
       return
@@ -275,10 +303,11 @@ export function HomageMint({
       ...homageFlows(minter).mintBatch(BigInt(batchQty), batchFee + swapBudget),
       chainId: PREFERRED_CHAIN.id,
     })
-  }, [publicClient, quote, publicFee, minter, writeContract, batchQty, address])
+  }, [publicClient, quote, publicFee, minter, writeContract, batchQty, address, priceConfirmPending, priceMovedTooMuch])
 
   const doAllowlistMint = useCallback(async () => {
     if (!publicClient || !allowlistProof) return
+    const shownSwap = quote?.ethForSwap
     let q = quote
     try {
       q = await quoteMint(publicClient, minter, publicFee)
@@ -287,6 +316,11 @@ export function HomageMint({
       /* fall back */
     }
     if (!q) return
+    if (!priceConfirmPending && priceMovedTooMuch(shownSwap, q.ethForSwap)) {
+      setPriceConfirmPending(true)
+      return
+    }
+    setPriceConfirmPending(false)
     if (batchQty <= 1) {
       writeContract({...homageFlows(minter).allowlistMint(allowlistProof, q.ethForSwap + publicFee), chainId: PREFERRED_CHAIN.id})
       return
@@ -305,7 +339,7 @@ export function HomageMint({
       ...homageFlows(minter).allowlistMintBatch(BigInt(batchQty), allowlistProof, batchFee + swapBudget),
       chainId: PREFERRED_CHAIN.id,
     })
-  }, [publicClient, quote, publicFee, allowlistProof, minter, writeContract, batchQty, address])
+  }, [publicClient, quote, publicFee, allowlistProof, minter, writeContract, batchQty, address, priceConfirmPending, priceMovedTooMuch])
 
   // claim routes are driven from HomageClaim. The escalating fee is keyed on the RECIPIENT
   // (the wallet the homage mints to): the connected wallet for a direct claim, the vault for
@@ -601,10 +635,17 @@ export function HomageMint({
                           ? "Minting…"
                           : insufficient
                             ? "Insufficient balance"
-                            : qty > 1
-                              ? `Mint ${qty} homages`
-                              : "Mint a homage"}
+                            : priceConfirmPending
+                              ? "Price updated · confirm"
+                              : qty > 1
+                                ? `Mint ${qty} homages`
+                                : "Mint a homage"}
                   </button>
+                  {priceConfirmPending && (
+                    <p className="text-[10px] font-mono leading-relaxed text-gray-400">
+                      The $111 price moved since you opened this. Confirm to mint at the updated price above.
+                    </p>
+                  )}
                   {batchBreakdown}
                 </div>
               ) : phase === "allowlist" ? (
@@ -627,10 +668,17 @@ export function HomageMint({
                             ? "Minting…"
                             : insufficient
                               ? "Insufficient balance"
-                              : qty > 1
-                                ? `Allowlist mint ${qty} homages`
-                                : "Allowlist mint"}
+                              : priceConfirmPending
+                                ? "Price updated · confirm"
+                                : qty > 1
+                                  ? `Allowlist mint ${qty} homages`
+                                  : "Allowlist mint"}
                     </button>
+                    {priceConfirmPending && (
+                      <p className="text-[10px] font-mono leading-relaxed text-gray-400">
+                        The $111 price moved since you opened this. Confirm to mint at the updated price above.
+                      </p>
+                    )}
                     {batchBreakdown}
                   </div>
                 ) : (
