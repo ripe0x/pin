@@ -5,7 +5,6 @@ import { isAddress, type Address } from "viem"
 import { OptimizedImage } from "@/components/OptimizedImage"
 import { MintCollectionCTA } from "@/components/collections/MintCollectionCTA"
 import { HomageMint } from "@/components/collections/homage/HomageMint"
-import { HomageSchedule } from "@/components/collections/homage/HomageSchedule"
 import { FitHeadline } from "@/components/collections/homage/FitHeadline"
 import { HomageMastheadStat, HomageStickyMintBar } from "@/components/collections/homage/HomageMintChip"
 import { ArtistName } from "@/components/collections/homage/ArtistName"
@@ -388,11 +387,8 @@ export default async function CollectionPage({
           {homageMinter ? (
             // The cell is capped at the instrument's width (556 = 460 + 2×48 gutters)
             // and centered by the grid when it stands alone, so the card never floats.
-            <div className="mx-auto w-full max-w-[460px] space-y-6">
+            <div className="mx-auto w-full max-w-[460px]">
               <HomageMint collection={addr} minter={homageMinter} />
-              {/* The schedule sits with the instrument: the countdown names one
-                  window, this names all three and when each opens. */}
-              <HomageSchedule minter={homageMinter} />
             </div>
           ) : (
             <MintCollectionCTA

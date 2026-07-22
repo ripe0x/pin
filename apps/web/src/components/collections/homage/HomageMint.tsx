@@ -52,6 +52,7 @@ import {HomageReveal} from "./HomageReveal"
 import {HomageBatchReveal} from "./HomageBatchReveal"
 import {HomageClaim} from "./HomageClaim"
 import {HomageReserve} from "./HomageReserve"
+import {HomageSchedule} from "./HomageSchedule"
 import {ALLOWLIST_SNAPSHOT_CAPTION, HomageAllowlistLookup} from "./HomageAllowlistLookup"
 
 const SUPPLY = 10_000
@@ -650,6 +651,10 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
           )}
         </div>
       </div>
+
+      {/* The schedule sits between the instrument and the checker: the card's countdown
+          names one window, this names all three and when each opens. */}
+      <HomageSchedule minter={minter} />
 
       {/* Pre-public: anyone can check any address against the allowlist, below the
           instrument (the mint itself proves against the same vendored tree). */}
