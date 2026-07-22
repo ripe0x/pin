@@ -12,6 +12,7 @@ import Link from "next/link"
 import {FitHeadline} from "./FitHeadline"
 import {ALLOWLIST_SNAPSHOT_CAPTION, HomageAllowlistLookup} from "./HomageAllowlistLookup"
 import {HomageAbout} from "./HomageAbout"
+import {HomageScheduleCard} from "./HomageScheduleCard"
 import {CrossfadeArt} from "@/components/mint/homage-gallery/CrossfadeArt"
 import {useGeneratedArt, useGeneratedSample} from "./synthetic-punk"
 import {weightedStatus} from "@/components/mint/homage-gallery/gallery-deck"
@@ -153,23 +154,14 @@ export function HomagePreview() {
               </section>
 
               {/* Mint schedule — the three windows, all upcoming until times are announced. */}
-              <div className="space-y-3 rounded-lg border border-gray-200 bg-surface p-5">
-                <h3 className={META}>Mint schedule</h3>
-                <ul className="space-y-2.5">
-                  {WINDOWS.map((w) => (
-                    <li key={w.name} className="space-y-0.5">
-                      <div className="flex items-center gap-2 text-[11px] font-mono">
-                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-status-upcoming" />
-                        <span className="text-fg">{w.name}</span>
-                      </div>
-                      <p className="pl-3.5 text-[11px] font-mono tabular-nums text-fg-muted">
-                        <LocalTime at={w.at} fallback={w.etLabel} />
-                      </p>
-                      <p className="pl-3.5 text-[10px] font-mono text-gray-500">{w.detail}</p>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+              <HomageScheduleCard
+                rows={WINDOWS.map((w) => ({
+                  name: w.name,
+                  detail: w.detail,
+                  state: "upcoming" as const,
+                  time: <LocalTime at={w.at} fallback={w.etLabel} />,
+                }))}
+              />
 
               {/* Allowlist checker: anyone can confirm eligibility before the window opens.
                   Membership only (the ~1MB companion), so no heavy fetch and zero RPC. */}
