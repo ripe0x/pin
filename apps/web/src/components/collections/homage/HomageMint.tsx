@@ -388,7 +388,7 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                   : "Price"
                 : phase === "closed"
                   ? "Opens"
-                  : "Price · flat punk mint claim fee"}
+                  : "Price · mint fee + $111"}
             </p>
             <p className="text-2xl font-mono font-medium tabular-nums tracking-tight leading-none">
               {phase === "closed" ? (
@@ -602,6 +602,14 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                   )}
                   <HomageReserve minter={minter} />
                 </div>
+              ) : claimIsOpen ? (
+                // The punk mint claim is live but the random draw is not: the claim
+                // overlay below is the way in, so say that rather than reporting the
+                // whole mint shut.
+                <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
+                  The punk mint claim is open. Punk owners mint their own id below. The
+                  random draw opens with the allowlist window.
+                </p>
               ) : (
                 <p className="text-[11px] font-mono text-gray-500">Minting isn’t open yet.</p>
               )}
