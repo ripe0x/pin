@@ -35,34 +35,25 @@ export function parseHomage(src: string): {ground: string; rects: Shape[]} | nul
 }
 
 const UNIT = 240
-/** Scaled outer nest square for the PFP (half the 240 field), centred on the canvas. */
-const PFP_OUTER = 120
-/** Gap from the nest's base to the plinth bar (240-space). */
-const PFP_GAP = 30
 
-/** PFP treatment: the exact homage nest scaled down (single affine — geometry preserved) and
- *  centred, with a plinth bar of the dominant (outermost) colour across the base. Reuses the
- *  already-fetched homage SVG (no extra RPC). Returns null if it can't be parsed.
+/** PFP treatment: the classic nest's squares replaced by their inscribed circles — each
+ *  rect (x, y, s) becomes a circle at (x+s/2, y+s/2) with radius s/2. Same ground, colors,
+ *  and stacking order; only the primitive changes. Reuses the already-fetched homage SVG
+ *  (no extra RPC). Returns null if it can't be parsed.
  *
- *  CANONICAL FORM: `HomageRenderer.pfpSVG(id, status)` on-chain renders this same treatment
- *  (constant affine translate(45 37.5) scale(0.625) + plinth at y=210). This client transform
- *  is a zero-RPC mirror of it — if the contract's PFP constants ever change, change these to
- *  match: scale = 120/192, target = 60, plinth y = 210. */
+ *  CANONICAL FORM: `HomageRenderer.renderSVG(id, status, true)` on-chain. The renderer
+ *  forces even side lengths, so the center and radius are exact integers and this mirror
+ *  is byte-shaped like the contract output (circle form drops shape-rendering=crispEdges
+ *  so the curves anti-alias). */
 export function pfpSvg(deployedSvg: string): string | null {
   const parsed = parseHomage(deployedSvg)
   if (!parsed || parsed.rects.length === 0) return null
-  const outer = parsed.rects[0]
-  const s = PFP_OUTER / outer.s
-  const target = (UNIT - PFP_OUTER) / 2
-  const tx = target - outer.x * s
-  const ty = target - outer.y * s
   let inner = ""
   for (const r of parsed.rects) {
-    inner += `<rect x="${r.x * s + tx}" y="${r.y * s + ty}" width="${r.s * s}" height="${r.s * s}" fill="${r.fill}"/>`
+    const radius = r.s / 2
+    inner += `<circle cx="${r.x + radius}" cy="${r.y + radius}" r="${radius}" fill="${r.fill}"/>`
   }
-  const barY = target + PFP_OUTER + PFP_GAP
-  inner += `<rect x="${target}" y="${barY}" width="${PFP_OUTER}" height="${UNIT - barY}" fill="${outer.fill}"/>`
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${UNIT} ${UNIT}" shape-rendering="crispEdges"><rect width="${UNIT}" height="${UNIT}" fill="${parsed.ground}"/>${inner}</svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${UNIT} ${UNIT}"><rect width="${UNIT}" height="${UNIT}" fill="${parsed.ground}"/>${inner}</svg>`
 }
 
 /** `<img>`-ready src for a bare SVG string. */

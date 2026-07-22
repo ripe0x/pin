@@ -6,8 +6,8 @@
 // same SVG with the conveyor script inlined, dormant until clicked, click again to snap
 // home). Rendering it directly means play/pause never reloads or re-fetches anything:
 // the interaction is the document's own. The PFP view prefers the renderer's canonical
-// onchain pfpSVG (passed down server-read); the client transform is only a fallback for
-// a renderer deployed before pfpSVG existed.
+// onchain circle form, renderSVG(id, status, true) (passed down server-read); the client
+// transform is a zero-RPC fallback that derives the same circles from the classic SVG.
 //
 // Quiet meta row: classic/pfp toggle · PNG export (2400px) · Fullscreen (real
 // fullscreen via the Fullscreen API, not a new tab).
@@ -26,7 +26,7 @@ export function HomageArtStage({
   art: string
   animationUrl: string | null
   tokenId: string
-  /** Canonical PFP from the renderer contract (pfpSVG), when the deployment has it. */
+  /** Canonical PFP from the renderer contract (renderSVG circle form), when the read succeeds. */
   onchainPfpSrc: string | null
 }) {
   const [view, setView] = useState<"classic" | "pfp">("classic")
