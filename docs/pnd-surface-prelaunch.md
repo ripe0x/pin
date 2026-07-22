@@ -23,9 +23,9 @@ impls + factory only, nothing unused in the deploy history):
 - `DeploySurfaceSystem.s.sol` — Surface impl, PooledSurface impl,
   FixedPriceMinter impl, SurfaceFactory (reuses the live mainnet Catalog,
   no default renderer), factory lands PAUSED (`setPaused(false)` opens it).
-  Fork-dry-run verified 2026-07-21 (sender
-  `0xCB43078C32423F5348Cab5885911C3B5faE217F9`, ~12.4M gas, ~0.0030 ETH
-  at 0.24 gwei).
+  Fork-dry-run verified 2026-07-21, re-verified 2026-07-22 at `4fbc010`
+  (sender `0xCB43078C32423F5348Cab5885911C3B5faE217F9`, ~12.64M gas,
+  ~0.0034 ETH at 0.27 gwei).
 
 ```
 cd contracts
