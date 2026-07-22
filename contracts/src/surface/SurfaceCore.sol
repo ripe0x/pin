@@ -192,9 +192,9 @@ abstract contract SurfaceCore is
 
     /// @notice Burn a token. Authority is defined by the final: owner-or-
     ///         approved in the sequential form; authorized minters only in the
-    ///         pooled form. A pooled collection holds one minter and can
-    ///         freeze it (lockMinter), so after the lock only that minter can
-    ///         burn. The burned token's seed stays readable until a pooled
+    ///         pooled form. A pooled collection holds at most one minter and
+    ///         can freeze it (lockMinter), so after the lock only that minter
+    ///         can burn. The burned token's seed stays readable until a pooled
     ///         re-mint overwrites it.
     function burn(uint256 tokenId) external override nonReentrant {
         address tokenOwner = _requireOwned(tokenId);

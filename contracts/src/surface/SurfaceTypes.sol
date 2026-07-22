@@ -15,9 +15,10 @@ pragma solidity ^0.8.24;
 ///         contract, and idMode() reports which.
 ///         Sequential (Surface): the contract assigns ids 1, 2, 3, ... in mint
 ///         order; ids are never reused after a burn.
-///         Pooled (PooledSurface): the authorized minter supplies each id,
-///         for collections whose token id mirrors an external source id. A
-///         burned id may be minted again as a new instance with a new seed.
+///         Pooled (PooledSurface): the authorized minter supplies each id
+///         under its own scheme (mirroring an external collection's ids is
+///         one use). A burned id may be minted again as a new instance with a
+///         new seed.
 enum IdMode {
     Sequential,
     Pooled
