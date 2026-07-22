@@ -12,7 +12,6 @@ import Link from "next/link"
 import {type Address} from "viem"
 import {ArtistName} from "./ArtistName"
 import {HomageArtStage} from "./HomageArtStage"
-import {HomageCompare} from "./HomageCompare"
 import {HomageRedeemLink} from "./HomageRedeemLink"
 import {CopyAddressButton} from "@/components/CopyAddressButton"
 import {PND_CHAIN_ID, evmNowAddressUrl, ipfsToHttp, shortAddress} from "@/lib/collection"
@@ -62,7 +61,13 @@ export function HomageTokenDetail({
       {/* The homage — large; click plays the animation, the row below holds the quiet
           classic/pfp toggle + PNG export. */}
       <div className="flex flex-col px-6 pb-8 pt-24 lg:sticky lg:top-0 lg:h-screen lg:justify-center lg:px-12 lg:pb-12 lg:pt-24">
-        <HomageArtStage art={ipfsToHttp(art)} tokenId={id} onchainPfpSrc={onchainPfpSrc} />
+        <HomageArtStage
+          art={ipfsToHttp(art)}
+          tokenId={id}
+          onchainPfpSrc={onchainPfpSrc}
+          punkImageSrc={punkImageSrc}
+          punkGround={punkBg}
+        />
       </div>
 
       {/* The record — lean, homage-specific. */}
@@ -121,8 +126,6 @@ export function HomageTokenDetail({
             <div className="mt-0.5 font-mono text-[13px] text-fg">CryptoPunk {id} ↗</div>
           </div>
         </a>
-
-        <HomageCompare art={ipfsToHttp(art)} punkImageSrc={punkImageSrc} ground={punkBg} tokenId={id} />
 
         {/* Traits — the four things the token actually carries. */}
         <div className="mt-6 grid grid-cols-2 border-l border-t border-gray-200">
