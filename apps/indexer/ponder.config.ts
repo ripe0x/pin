@@ -12,6 +12,8 @@ import { muriProtocolAbi } from "./abis/MURIProtocol"
 import { surfaceAbi } from "./abis/Surface"
 import { surfaceFactoryAbi } from "./abis/SurfaceFactory"
 import { fixedPriceMinterAbi } from "./abis/FixedPriceMinter"
+import { homageCollectionAbi } from "./abis/HomageCollection"
+import { homageMinterAbi } from "./abis/HomageMinter"
 
 /**
  * PND v2 Ponder scope — REDUCED from v1.
@@ -22,9 +24,7 @@ import { fixedPriceMinterAbi } from "./abis/FixedPriceMinter"
  *   - FoundationNFT shared 1/1 contract
  *   - SuperRareNFT shared 1/1 contract
  *   - Catalog
- *   - SurfaceFactory + every clone (PND Surface System —
- *     DEPLOY-GATED, see the sentinel + conditional spread below; absent
- *     from `contracts` entirely until the factory is deployed)
+ *   - SurfaceFactory + every clone (PND Surface System)
  *
  * Discovery-only (one row per artist-deploys-a-clone, NO per-clone events):
  *   - NFTCollectionFactoryV1 + V2 → fnd_collections
@@ -90,30 +90,27 @@ const MURI_PROTOCOL_DEPLOY_BLOCK = 23_754_750
 // for discovery (SurfaceCreated), and `factory()` for full per-clone
 // event indexing of every deployed collection.
 //
-// NOT yet deployed — sentinel zero address. When the sentinel is unset
-// (zero), both SurfaceFactory and Surface are
-// EXCLUDED from `contracts` below so the config stays valid pre-deploy.
-// At mainnet deploy: set SURFACE_FACTORY_ADDRESS to the real
-// factory address and SURFACE_FACTORY_DEPLOY_BLOCK to its
-// actual deploy block (do NOT leave the placeholder below — it is not a
-// safe lower bound, just a marker).
-//
-// Typed as a widened `0x${string}` (NOT `as const`) so the sentinel
-// equality check below stays valid TypeScript both before AND after the
-// real address is substituted in — two different address literals
-// compared with `as const` on both sides is a TS2367 compile error
-// ("no overlap"), which would otherwise break the moment this constant
-// is updated at deploy time.
-const ZERO_ADDRESS_SENTINEL: `0x${string}` =
-  "0x0000000000000000000000000000000000000000"
-const SURFACE_FACTORY_ADDRESS: `0x${string}` =
-  ZERO_ADDRESS_SENTINEL
-const SURFACE_FACTORY_IS_DEPLOYED =
-  SURFACE_FACTORY_ADDRESS !== ZERO_ADDRESS_SENTINEL
-// LOUD PLACEHOLDER — set this to the real deploy block the moment the
-// factory goes live on mainnet. Left wrong, backfill silently starts at
-// block 0 and re-scans the entire chain.
-const SURFACE_FACTORY_DEPLOY_BLOCK = 0
+// Mainnet deploy 2026-07-22 (commit fa5af29); address recorded in
+// @pin/addresses (SURFACE_FACTORY). Deploy block = the block of the
+// factory's CREATE tx
+// 0x2e6e4647e809b40ab2f308e26225f070a583c977e6b60367c102df065453bb81.
+const SURFACE_FACTORY_ADDRESS =
+  "0xdB81d3F33EF3D84685486916E0d372E247558094" as const
+const SURFACE_FACTORY_DEPLOY_BLOCK = 25_590_436
+
+// Homage ("Homage to the Punk") singleton pair — ENV-GATED (see
+// src/Homage.ts): both contracts enter `contracts` only when all four
+// env vars are set, and src/Homage.ts gates its ponder.on registrations
+// on the same vars. Gated atomically: registering handlers for a
+// contract absent from `contracts` is a Ponder build error, so a partial
+// env would either crash the build or silently index one contract
+// without the other.
+export const HOMAGE_WIRED = Boolean(
+  process.env.HOMAGE_MINTER_ADDRESS &&
+    process.env.HOMAGE_MINTER_START_BLOCK &&
+    process.env.HOMAGE_COLLECTION_ADDRESS &&
+    process.env.HOMAGE_COLLECTION_START_BLOCK,
+)
 
 // drpc.org free tier handles multi-address eth_getLogs for the PND
 // factory pattern. See docs/RPC-strategy.md for why publicnode /
@@ -242,76 +239,84 @@ export default createConfig({
       startBlock: MURI_PROTOCOL_DEPLOY_BLOCK,
     },
 
-    // ── PND Surface System (DEPLOY-GATED — see sentinel above) ────────
-    // Both entries are conditionally spread in: while
-    // SURFACE_FACTORY_ADDRESS is the zero-address sentinel,
-    // neither key exists on `contracts` at all (not "disabled", just
-    // absent), so this file stays a valid, runnable Ponder config before
-    // deploy. Fill in the real factory address + deploy block, and both
-    // entries activate together.
-    ...(SURFACE_FACTORY_IS_DEPLOYED
+    // ── PND Surface System ────────────────────────────────────────────
+    // Fixed factory — discovery (one SurfaceCreated per artist
+    // deploy) exactly like SovereignAuctionHouseFactory above.
+    SurfaceFactory: {
+      chain: "mainnet",
+      abi: surfaceFactoryAbi,
+      address: SURFACE_FACTORY_ADDRESS,
+      startBlock: SURFACE_FACTORY_DEPLOY_BLOCK,
+    },
+    // Full per-clone indexing of every deployed collection, via
+    // Ponder's factory() child-address pattern (same mechanism as
+    // SovereignAuctionHouse). This is a PND-owned factory, so full
+    // state-machine indexing here is in-bounds per AGENTS.md — it
+    // is NOT the long-tail per-artist-platform scanning that
+    // belongs in the worker.
+    //
+    // SurfaceCreated's third field is `primaryMinter` (primary-minter
+    // discovery, docs/pnd-surface-thin-token-rearchitecture.md §3.5):
+    // the chosen primary on every creation path, not just the
+    // canonical clone createSurface wires. Not `indexed` — Ponder's
+    // factory() pattern reads it from the log data regardless. The
+    // trailing name/symbol fields carry the collection's ERC721
+    // identity (fixed at initialize; stored on `collections` by the
+    // SurfaceCreated handler). The Surface ABI's own
+    // PrimaryMinterSet event (per-collection, handled in
+    // Collections.ts) is what keeps `collections.primaryMinter`
+    // current after deploy; this factory() binding only seeds it.
+    Surface: {
+      chain: "mainnet",
+      abi: surfaceAbi,
+      address: factory({
+        address: SURFACE_FACTORY_ADDRESS,
+        event: parseAbiItem(
+          "event SurfaceCreated(address indexed owner, address indexed collection, address primaryMinter, uint8 idMode, string name, string symbol)",
+        ),
+        parameter: "collection",
+      }),
+      startBlock: SURFACE_FACTORY_DEPLOY_BLOCK,
+    },
+    // Canonical minter clones, bound the same way as Surface above
+    // but keyed off SurfaceCreated's `primaryMinter` field instead of
+    // `collection`. A collection created via createSurfaceCustom/
+    // createPooledSurface with no primary supplied emits
+    // primaryMinter = address(0), which Ponder will add to its
+    // watched set as a harmless no-op address (it never emits logs).
+    // Sold/ReferralPaid resolve their owning collection via the
+    // `minters` reverse-index table (see Collections.ts), since these
+    // events carry no collection field. This binding is fixed at
+    // SurfaceCreated time — a later primaryMinter repoint does not
+    // change which minter clone's Sold/ReferralPaid events are
+    // indexed here, only `collections.primaryMinter`'s value.
+    FixedPriceMinter: {
+      chain: "mainnet",
+      abi: fixedPriceMinterAbi,
+      address: factory({
+        address: SURFACE_FACTORY_ADDRESS,
+        event: parseAbiItem(
+          "event SurfaceCreated(address indexed owner, address indexed collection, address primaryMinter, uint8 idMode, string name, string symbol)",
+        ),
+        parameter: "primaryMinter",
+      }),
+      startBlock: SURFACE_FACTORY_DEPLOY_BLOCK,
+    },
+
+    // ── Homage singleton pair (ENV-GATED — see HOMAGE_WIRED above) ────
+    ...(HOMAGE_WIRED
       ? {
-          // Fixed factory — discovery (one SurfaceCreated per artist
-          // deploy) exactly like SovereignAuctionHouseFactory above.
-          SurfaceFactory: {
+          HomageMinter: {
             chain: "mainnet",
-            abi: surfaceFactoryAbi,
-            address: SURFACE_FACTORY_ADDRESS,
-            startBlock: SURFACE_FACTORY_DEPLOY_BLOCK,
+            abi: homageMinterAbi,
+            address: process.env.HOMAGE_MINTER_ADDRESS as `0x${string}`,
+            startBlock: Number(process.env.HOMAGE_MINTER_START_BLOCK),
           },
-          // Full per-clone indexing of every deployed collection, via
-          // Ponder's factory() child-address pattern (same mechanism as
-          // SovereignAuctionHouse). This is a PND-owned factory, so full
-          // state-machine indexing here is in-bounds per AGENTS.md — it
-          // is NOT the long-tail per-artist-platform scanning that
-          // belongs in the worker.
-          //
-          // SurfaceCreated's third field is `primaryMinter` (primary-minter
-          // discovery, docs/pnd-surface-thin-token-rearchitecture.md §3.5):
-          // the chosen primary on every creation path, not just the
-          // canonical clone createSurface wires. Not `indexed` — Ponder's
-          // factory() pattern reads it from the log data regardless. The
-          // trailing name/symbol fields carry the collection's ERC721
-          // identity (fixed at initialize; stored on `collections` by the
-          // SurfaceCreated handler). The Surface ABI's own
-          // PrimaryMinterSet event (per-collection, handled in
-          // Collections.ts) is what keeps `collections.primaryMinter`
-          // current after deploy; this factory() binding only seeds it.
-          Surface: {
+          HomageCollection: {
             chain: "mainnet",
-            abi: surfaceAbi,
-            address: factory({
-              address: SURFACE_FACTORY_ADDRESS,
-              event: parseAbiItem(
-                "event SurfaceCreated(address indexed owner, address indexed collection, address primaryMinter, uint8 idMode, string name, string symbol)",
-              ),
-              parameter: "collection",
-            }),
-            startBlock: SURFACE_FACTORY_DEPLOY_BLOCK,
-          },
-          // Canonical minter clones, bound the same way as Surface above
-          // but keyed off SurfaceCreated's `primaryMinter` field instead of
-          // `collection`. A collection created via createSurfaceCustom/
-          // createPooledSurface with no primary supplied emits
-          // primaryMinter = address(0), which Ponder will add to its
-          // watched set as a harmless no-op address (it never emits logs).
-          // Sold/ReferralPaid resolve their owning collection via the
-          // `minters` reverse-index table (see Collections.ts), since these
-          // events carry no collection field. This binding is fixed at
-          // SurfaceCreated time — a later primaryMinter repoint does not
-          // change which minter clone's Sold/ReferralPaid events are
-          // indexed here, only `collections.primaryMinter`'s value.
-          FixedPriceMinter: {
-            chain: "mainnet",
-            abi: fixedPriceMinterAbi,
-            address: factory({
-              address: SURFACE_FACTORY_ADDRESS,
-              event: parseAbiItem(
-                "event SurfaceCreated(address indexed owner, address indexed collection, address primaryMinter, uint8 idMode, string name, string symbol)",
-              ),
-              parameter: "primaryMinter",
-            }),
-            startBlock: SURFACE_FACTORY_DEPLOY_BLOCK,
+            abi: homageCollectionAbi,
+            address: process.env.HOMAGE_COLLECTION_ADDRESS as `0x${string}`,
+            startBlock: Number(process.env.HOMAGE_COLLECTION_START_BLOCK),
           },
         }
       : {}),

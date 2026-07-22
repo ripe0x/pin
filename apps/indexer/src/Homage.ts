@@ -9,13 +9,14 @@ import { homageActivity, homageConfig, homageTokens } from "ponder:schema"
  * `HomageCollection` (the pooled ERC721 token itself — a CollectionFactory
  * clone of the shared PooledCollection/CollectionCore — Transfer only). The
  * old single-contract monolith's `ponder.on("Homage:*")` registrations are
- * now split across `ponder.on("HomageMinter:*")` and
- * `ponder.on("HomageCollection:*")` below. These only fire when both
- * contracts are wired into ponder.config.ts (HOMAGE_MINTER_ADDRESS +
+ * now split across `on("HomageMinter:*")` and
+ * `on("HomageCollection:*")` below. Both the config entries and these
+ * registrations are gated on the same four env vars (HOMAGE_MINTER_ADDRESS +
  * HOMAGE_MINTER_START_BLOCK + HOMAGE_COLLECTION_ADDRESS +
- * HOMAGE_COLLECTION_START_BLOCK all set — gated atomically). Ponder tolerates
- * handlers for a contract that isn't registered — they simply never run — so
- * this file is safe to ship before deploy.
+ * HOMAGE_COLLECTION_START_BLOCK — see HOMAGE_WIRED below and in
+ * ponder.config.ts). The gate is required on BOTH sides: Ponder validates
+ * every registered event name against `contracts` at startup and a
+ * handler for an unregistered contract is a build error, not a no-op.
  *
  * NOT wired in this pass: `HomageMinter:RevealStamped`. It's new in the
  * sovereign rebuild (the old monolith had no progressive-reveal event) and
@@ -64,6 +65,32 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
 
 type Ctx = Parameters<Parameters<typeof ponder.on>[1]>[0]["context"]
 type Hex = `0x${string}`
+
+// Registration gate, matching ponder.config.ts's HOMAGE_WIRED (same four
+// env vars — not imported to keep this file free of config imports).
+// Registering a handler for an event name absent from `contracts` is a
+// Ponder BUILD ERROR (validated at startup, it does not silently no-op),
+// so with the env unset these registrations must not run at all. When the
+// gate is open, `on` is ponder.on bound and widened to a generic
+// signature at this one boundary: the deploy-gated names aren't in the
+// generated registry types until the env is set at codegen time. `.bind`
+// (not a bare alias) because ponder.on reads `this`.
+const HOMAGE_WIRED = Boolean(
+  process.env.HOMAGE_MINTER_ADDRESS &&
+    process.env.HOMAGE_MINTER_START_BLOCK &&
+    process.env.HOMAGE_COLLECTION_ADDRESS &&
+    process.env.HOMAGE_COLLECTION_START_BLOCK,
+)
+type GatedIndexingFunction = (args: {
+  event: any
+  context: any
+}) => Promise<void> | void
+const on: (name: string, fn: GatedIndexingFunction) => void = HOMAGE_WIRED
+  ? (ponder.on.bind(ponder) as unknown as (
+      name: string,
+      fn: GatedIndexingFunction,
+    ) => void)
+  : () => {}
 
 // Because Homage is deploy-gated (omitted from ponder.config.ts until the
 // HOMAGE_MINTER_ADDRESS/HOMAGE_COLLECTION_ADDRESS env vars are set), it isn't
@@ -201,7 +228,7 @@ async function recordMint(
     .onConflictDoNothing()
 }
 
-ponder.on("HomageMinter:Claimed", async ({ event, context }) => {
+on("HomageMinter:Claimed", async ({ event, context }) => {
   await recordMint(
     context,
     event.args as MintArgs,
@@ -210,7 +237,7 @@ ponder.on("HomageMinter:Claimed", async ({ event, context }) => {
   )
 })
 
-ponder.on("HomageMinter:Minted", async ({ event, context }) => {
+on("HomageMinter:Minted", async ({ event, context }) => {
   const config = await loadConfig(context, event.log.address as Hex)
   const phase = mintPhaseFor(event.block.timestamp, config)
   await recordMint(context, event.args as MintArgs, phase, event)
@@ -218,7 +245,7 @@ ponder.on("HomageMinter:Minted", async ({ event, context }) => {
 
 // ─── Redeem (homage burned, punkId returns to the pool) ──────────────────
 
-ponder.on("HomageMinter:Redeemed", async ({ event, context }) => {
+on("HomageMinter:Redeemed", async ({ event, context }) => {
   const { from, punkId, amount111 } = event.args as RedeemArgs
 
   const existing = await context.db.find(homageTokens, { punkId })
@@ -252,7 +279,7 @@ ponder.on("HomageMinter:Redeemed", async ({ event, context }) => {
 
 // ─── Transfer (secondary only — mint/burn skipped) ───────────────────────
 
-ponder.on("HomageCollection:Transfer", async ({ event, context }) => {
+on("HomageCollection:Transfer", async ({ event, context }) => {
   const { from, to, tokenId } = event.args as TransferArgs
   // Skip mint (from=0) and burn (to=0): already captured by Minted/Claimed
   // and Redeemed in the same tx. Only track secondary transfers here.
@@ -285,7 +312,7 @@ ponder.on("HomageCollection:Transfer", async ({ event, context }) => {
 
 // ─── Config (owner-set schedule + fee knobs → homage_config) ─────────────
 
-ponder.on("HomageMinter:ScheduleSet", async ({ event, context }) => {
+on("HomageMinter:ScheduleSet", async ({ event, context }) => {
   const contract = event.log.address as Hex
   const args = event.args as ScheduleArgs
   await ensureConfig(context, contract, event.block.number, event.block.timestamp)
@@ -298,7 +325,7 @@ ponder.on("HomageMinter:ScheduleSet", async ({ event, context }) => {
   })
 })
 
-ponder.on("HomageMinter:AllowlistRootSet", async ({ event, context }) => {
+on("HomageMinter:AllowlistRootSet", async ({ event, context }) => {
   const contract = event.log.address as Hex
   const args = event.args as AllowlistRootArgs
   await ensureConfig(context, contract, event.block.number, event.block.timestamp)
@@ -309,7 +336,7 @@ ponder.on("HomageMinter:AllowlistRootSet", async ({ event, context }) => {
   })
 })
 
-ponder.on("HomageMinter:MaxPerAllowlistedSet", async ({ event, context }) => {
+on("HomageMinter:MaxPerAllowlistedSet", async ({ event, context }) => {
   const contract = event.log.address as Hex
   const args = event.args as MaxPerAllowlistedArgs
   await ensureConfig(context, contract, event.block.number, event.block.timestamp)
@@ -320,7 +347,7 @@ ponder.on("HomageMinter:MaxPerAllowlistedSet", async ({ event, context }) => {
   })
 })
 
-ponder.on("HomageMinter:FeeScheduleSet", async ({ event, context }) => {
+on("HomageMinter:FeeScheduleSet", async ({ event, context }) => {
   const contract = event.log.address as Hex
   const args = event.args as FeeScheduleArgs
   await ensureConfig(context, contract, event.block.number, event.block.timestamp)
@@ -332,7 +359,7 @@ ponder.on("HomageMinter:FeeScheduleSet", async ({ event, context }) => {
   })
 })
 
-ponder.on("HomageMinter:ExitFeeSet", async ({ event, context }) => {
+on("HomageMinter:ExitFeeSet", async ({ event, context }) => {
   const contract = event.log.address as Hex
   const args = event.args as ExitFeeArgs
   await ensureConfig(context, contract, event.block.number, event.block.timestamp)

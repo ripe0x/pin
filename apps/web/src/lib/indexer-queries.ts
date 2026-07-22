@@ -422,6 +422,37 @@ export async function getPndHouses(limit = 24): Promise<PndHouse[] | null> {
   }, 2_000)
 }
 
+/**
+ * Do the Surface tables (`collections`, `collection_mints`, …) exist in
+ * the indexer schema yet? They are created by the indexer deploy that
+ * carries the SurfaceFactory subscription — which can land AFTER a web
+ * deploy that already knows the factory address. Gating the surface SQL
+ * branches on the address constant alone broke the entire unioned
+ * activity-feed query in exactly that window ("relation does not exist"
+ * fails the whole read → the feed rendered "temporarily unavailable"),
+ * so the gate probes the actual table. Sticky once true for the process
+ * lifetime (tables are never dropped); re-probed per read until then,
+ * which is one to_regclass() call behind the same caches as the queries
+ * it gates.
+ */
+let surfaceTablesSeen = false
+async function surfaceTablesExist(
+  db: NonNullable<typeof sql>,
+  schema: string,
+): Promise<boolean> {
+  if (surfaceTablesSeen) return true
+  try {
+    const rows = (await db.unsafe(
+      `SELECT (to_regclass($1) IS NOT NULL AND to_regclass($2) IS NOT NULL) AS ok`,
+      [`${schema}.collections`, `${schema}.collection_mints`],
+    )) as Array<{ ok: boolean }>
+    if (rows[0]?.ok) surfaceTablesSeen = true
+    return surfaceTablesSeen
+  } catch {
+    return false
+  }
+}
+
 export type PlatformStats = {
   housesDeployed: number
   collectionsDeployed: number
@@ -436,9 +467,9 @@ export type PlatformStats = {
  * counters sentence entirely in that case.
  *
  * The Surface aggregates (collections count, mint revenue) only run when
- * the factory address resolves: pre-deploy the `collections` /
- * `collection_sales` tables don't exist in the indexer schema, so an
- * unconditional query would error the whole read.
+ * the factory address resolves AND the tables exist (see
+ * surfaceTablesExist — a web deploy can precede the indexer deploy that
+ * creates them, and an unconditional query would error the whole read).
  */
 export async function getPlatformStats(): Promise<PlatformStats | null> {
   if (INDEXER_DISABLED || !sql) return null
@@ -449,7 +480,8 @@ export async function getPlatformStats(): Promise<PlatformStats | null> {
       /[^a-zA-Z0-9_]/g,
       "",
     )
-    const surfaceLive = surfaceFactory() !== null
+    const surfaceLive =
+      surfaceFactory() !== null && (await surfaceTablesExist(db, schema))
 
     const [houseRows, settledRows, collectionRows, mintNetRows] =
       await Promise.all([
@@ -660,11 +692,13 @@ export async function getActivityFeed(
 
     const PER_SUBQUERY_LIMIT = 100
 
-    // Surface branches only exist once the factory is deployed: the
-    // collections/collection_mints tables aren't created in the indexer
-    // schema before that, and referencing them would error the whole
-    // unioned query.
-    const surfaceLive = surfaceFactory() !== null
+    // Surface branches only join once the factory address resolves AND
+    // the tables exist (see surfaceTablesExist): referencing a missing
+    // collections/collection_mints table errors the whole unioned query,
+    // and the tables are created by the indexer deploy, which can trail
+    // the web deploy that learns the address.
+    const surfaceLive =
+      surfaceFactory() !== null && (await surfaceTablesExist(db, schema))
 
     // Filter listing/cancellation pairs that happened within 15 minutes
     // of each other. Treated as noise (test mints, mistaken listings)
@@ -1460,5 +1494,95 @@ export async function getCollectionPrimaryMinterFromIndexer(
       [addr],
     )) as Array<{ primary_minter: string | null }>
     return rows[0]?.primary_minter ?? null
+  })
+}
+
+const indexerSchema = () =>
+  (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(/[^a-zA-Z0-9_]/g, "")
+
+/**
+ * Newest-first collection addresses from the SurfaceCreated discovery
+ * table — the browse/landing list path (B2 of the prelaunch runbook: the
+ * list is a pure SELECT; per-collection live state stays behind the
+ * cached-read helpers in collection-onchain.ts). Returns null when the
+ * indexer is unavailable / disabled / slow; the caller falls back to the
+ * cached factory-enumeration read.
+ */
+export async function getCollectionAddressesFromIndexer(
+  limit: number,
+): Promise<string[] | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+  return withTimeout(async () => {
+    const rows = (await db.unsafe(
+      `SELECT collection FROM ${indexerSchema()}.collections
+       ORDER BY created_at_block DESC LIMIT $1`,
+      [limit],
+    )) as Array<{ collection: string }>
+    return rows.map((r) => r.collection)
+  })
+}
+
+export type IndexedCollectionRow = {
+  collection: string
+  name: string | null
+  symbol: string | null
+  idMode: number | null
+  primaryMinter: string | null
+}
+
+/**
+ * Collections owned by an address, newest first — the studio
+ * "your collections" list. Owner here is the SurfaceCreated owner (the
+ * value the factory initialized the clone with); a post-deploy ownership
+ * transfer is not tracked by the discovery table.
+ */
+export async function getCollectionsByOwnerFromIndexer(
+  owner: string,
+): Promise<IndexedCollectionRow[] | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+  return withTimeout(async () => {
+    const rows = (await db.unsafe(
+      `SELECT collection, name, symbol, id_mode, primary_minter
+       FROM ${indexerSchema()}.collections
+       WHERE owner = $1 ORDER BY created_at_block DESC LIMIT 100`,
+      [owner.toLowerCase()],
+    )) as Array<{
+      collection: string
+      name: string | null
+      symbol: string | null
+      id_mode: number | null
+      primary_minter: string | null
+    }>
+    return rows.map((r) => ({
+      collection: r.collection,
+      name: r.name,
+      symbol: r.symbol,
+      idMode: r.id_mode,
+      primaryMinter: r.primary_minter,
+    }))
+  })
+}
+
+/**
+ * Membership check against the indexed SurfaceCreated set — the
+ * "is this address a factory-deployed Surface" gate for mint pages.
+ * Tri-state: true (row exists), false (indexer reachable, no row — the
+ * caller should still fall back to one cached isSurface() read to cover
+ * indexing lag on a just-created collection), null (indexer unavailable,
+ * nothing learned).
+ */
+export async function isCollectionInIndexer(
+  collection: string,
+): Promise<boolean | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+  return withTimeout(async () => {
+    const rows = (await db.unsafe(
+      `SELECT 1 AS one FROM ${indexerSchema()}.collections WHERE collection = $1 LIMIT 1`,
+      [collection.toLowerCase()],
+    )) as Array<{ one: number }>
+    return rows.length > 0
   })
 }

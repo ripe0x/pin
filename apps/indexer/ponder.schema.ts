@@ -363,9 +363,7 @@ export const muriTokens = onchainTable(
 )
 
 // ─── PND Surface System (contracts/src/surface/) ─────────────────────────
-// DEPLOY-GATED (see ponder.config.ts): these tables exist regardless, but
-// stay empty until CollectionFactory + Collection are
-// wired into `contracts`. One row per artist collection deployed via the
+// One row per artist collection deployed via the
 // factory (`collections`), one row per live token incl. pooled re-mints
 // (`collection_tokens`), and an append-only mint log (`collection_mints`).
 // Handlers are kept minimal per AGENTS.md — enrichment (metadata, rendered
@@ -403,6 +401,11 @@ export const collections = onchainTable(
     // live by the Surface:PrimaryMinterSet handler — there is no minterOf
     // storage mapping onchain, so this column IS the discovery record.
     primaryMinter: t.hex(),
+    // Structural id mode from SurfaceCreated (0 = Sequential, 1 = Pooled;
+    // mirrors SurfaceTypes.IdMode). Fixed at initialize, no setter.
+    // Nullable only for rows indexed before this column existed; mainnet
+    // deploys always populate it.
+    idMode: t.integer(),
     createdAtBlock: t.bigint().notNull(),
     createdAtTime: t.bigint().notNull(),
     createdTxHash: t.hex().notNull(),
@@ -532,3 +535,74 @@ export const collectionReferrals = onchainTable(
     referrerIdx: index().on(table.referrer),
   }),
 )
+
+// ─── Homage ("Homage to the Punk") singleton pair ────────────────────────
+// ENV-GATED alongside the HomageMinter/HomageCollection contract entries
+// (see HOMAGE_WIRED in ponder.config.ts and src/Homage.ts). Tables exist
+// regardless; they stay empty until the env wires the contracts in.
+//
+//   homage_tokens    — per-punkId current state. Ids CHURN (redeem returns
+//                      an id to the pool); `outstanding` + `holder` carry
+//                      the live state, one row per punkId ever seen.
+//   homage_activity  — append-only mint/claim/redeem/transfer log.
+//   homage_config    — one row per minter contract mirroring the owner-set
+//                      schedule + fee knobs (all null until each setter's
+//                      event is indexed).
+
+export const homageTokens = onchainTable(
+  "homage_tokens",
+  (t) => ({
+    punkId: t.bigint().primaryKey(),
+    holder: t.hex().notNull(),
+    outstanding: t.boolean().notNull(),
+    // Which sale window the CURRENT instance minted in ("claim" /
+    // "allowlist" / "public"); null when the schedule wasn't indexed yet
+    // at mint time.
+    mintPhase: t.text(),
+    ethSwapped: t.bigint(),
+    received111: t.bigint(),
+    firstMintedAtTime: t.bigint(),
+    lastMintedAtTime: t.bigint().notNull(),
+    lastMintedAtBlock: t.bigint().notNull(),
+    redeemCount: t.integer().notNull(),
+  }),
+  (table) => ({
+    holderIdx: index().on(table.holder),
+  }),
+)
+
+export const homageActivity = onchainTable(
+  "homage_activity",
+  (t) => ({
+    id: t.text().primaryKey(), // `${txHash}-${logIndex}`
+    type: t.text().notNull(), // mint | claim | redeem | transfer
+    punkId: t.bigint().notNull(),
+    from: t.hex(),
+    to: t.hex(),
+    ethSwapped: t.bigint(),
+    received111: t.bigint(),
+    amount111: t.bigint(),
+    mintPhase: t.text(),
+    blockNumber: t.bigint().notNull(),
+    blockTime: t.bigint().notNull(),
+    logIndex: t.integer().notNull(),
+    txHash: t.hex().notNull(),
+  }),
+  (table) => ({
+    punkIdx: index().on(table.punkId, table.blockNumber),
+  }),
+)
+
+export const homageConfig = onchainTable("homage_config", (t) => ({
+  contract: t.hex().primaryKey(),
+  claimStart: t.bigint(),
+  allowlistStart: t.bigint(),
+  publicStart: t.bigint(),
+  allowlistRoot: t.hex(),
+  maxPerAllowlisted: t.bigint(),
+  baseFee: t.bigint(),
+  feeGrowthBps: t.bigint(),
+  exitFee: t.bigint(),
+  updatedAtBlock: t.bigint().notNull(),
+  updatedAtTime: t.bigint().notNull(),
+}))
