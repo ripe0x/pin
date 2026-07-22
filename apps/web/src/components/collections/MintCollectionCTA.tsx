@@ -55,7 +55,6 @@ import { MintReveal } from "@/components/collections/MintReveal"
 import {
   SurfaceStatus,
   COLLECTION_STATUS_LABEL,
-  REFERRAL_SHARE_BPS,
   ZERO_ADDRESS,
   evmNowTxUrl,
   formatBps,
@@ -81,6 +80,7 @@ export type MintCollectionSnapshot = {
   walletCap: string
   supplyCap: string
   minted: string
+  referralShareBps: number
 }
 
 const ZERO_ROOT = ("0x" + "0".repeat(64)) as `0x${string}`
@@ -195,7 +195,7 @@ export function MintCollectionCTA({
       ? storedPrice * BigInt(amount)
       : storedPrice
   const perTokenPrice = strategy ? (amountValid && amount > 0 ? total / BigInt(amount) : total) : storedPrice
-  const { referralCut, artistCut } = splitOutOfPrice(total, referrerAddr)
+  const { referralCut, artistCut } = splitOutOfPrice(total, referrerAddr, snapshot.referralShareBps)
   const showSplit = !isGasOnly(total) && referrerAddr !== ZERO_ADDRESS
 
   const { data: balance } = useBalance({
@@ -513,16 +513,16 @@ export function MintCollectionCTA({
                   {showSplit ? (
                     <div className="space-y-1.5">
                       <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
-                        <div className="bg-fg" style={{ width: `${100 - REFERRAL_SHARE_BPS / 100}%` }} />
+                        <div className="bg-fg" style={{ width: `${100 - snapshot.referralShareBps / 100}%` }} />
                         <div
                           className="bg-status-live"
-                          style={{ width: `${REFERRAL_SHARE_BPS / 100}%` }}
+                          style={{ width: `${snapshot.referralShareBps / 100}%` }}
                         />
                       </div>
                       <div className="flex justify-between text-[10px] font-mono text-gray-500 tabular-nums">
                         <span>{formatEther(artistCut)} ETH to artist</span>
                         <span>
-                          {formatEther(referralCut)} ETH to referrer ({formatBps(REFERRAL_SHARE_BPS)})
+                          {formatEther(referralCut)} ETH to referrer ({formatBps(snapshot.referralShareBps)})
                         </span>
                       </div>
                     </div>
@@ -673,11 +673,12 @@ export function MintCollectionCTA({
   )
 }
 
-/** The fixed Referral Share split of `total`, out of the price. */
+/** The Referral Share split of `total`, out of the price, at the minter's live bps. */
 function splitOutOfPrice(
   total: bigint,
   referrer: `0x${string}`,
+  shareBps: number,
 ): { referralCut: bigint; artistCut: bigint } {
-  const referralCut = referrer === ZERO_ADDRESS ? 0n : (total * BigInt(REFERRAL_SHARE_BPS)) / 10_000n
+  const referralCut = referrer === ZERO_ADDRESS ? 0n : (total * BigInt(shareBps)) / 10_000n
   return { referralCut, artistCut: total - referralCut }
 }

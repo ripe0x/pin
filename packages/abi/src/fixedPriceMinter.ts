@@ -8,7 +8,7 @@ export const fixedPriceMinterAbi = [
   },
   {
     "type": "function",
-    "name": "REFERRAL_SHARE_BPS",
+    "name": "MAX_REFERRAL_SHARE_BPS",
     "inputs": [],
     "outputs": [
       {
@@ -293,6 +293,19 @@ export const fixedPriceMinterAbi = [
   },
   {
     "type": "function",
+    "name": "referralShareBps",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "rescueStrayETH",
     "inputs": [
       {
@@ -303,6 +316,19 @@ export const fixedPriceMinterAbi = [
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "saleCap",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -389,6 +415,19 @@ export const fixedPriceMinterAbi = [
   },
   {
     "type": "function",
+    "name": "setReferralShareBps",
+    "inputs": [
+      {
+        "name": "bps",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setWalletCap",
     "inputs": [
       {
@@ -403,6 +442,19 @@ export const fixedPriceMinterAbi = [
   {
     "type": "function",
     "name": "totalMinted",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "totalMintedByThisMinter",
     "inputs": [],
     "outputs": [
       {
@@ -618,6 +670,19 @@ export const fixedPriceMinterAbi = [
   },
   {
     "type": "event",
+    "name": "ReferralShareSet",
+    "inputs": [
+      {
+        "name": "bps",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "Sold",
     "inputs": [
       {
@@ -796,6 +861,22 @@ export const fixedPriceMinterAbi = [
     "type": "error",
     "name": "ReentrancyGuardReentrantCall",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ReferralShareAboveCap",
+    "inputs": [
+      {
+        "name": "requested",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "cap",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ]
   },
   {
     "type": "error",

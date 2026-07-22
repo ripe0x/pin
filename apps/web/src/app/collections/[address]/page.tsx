@@ -387,7 +387,7 @@ export default async function CollectionPage({
                     minted from any interface. From your own page, call{" "}
                     <code className="text-fg">mint(to, qty, yourAddress, 0x)</code> on{" "}
                     <code className="break-all text-fg">{c.primaryMinter}</code> so the{" "}
-                    {formatBps(REFERRAL_SHARE_BPS)} referral share routes to you, not PND.
+                    {formatBps(c.sale?.referralShareBps ?? REFERRAL_SHARE_BPS)} referral share routes to you, not PND.
                   </p>
                 </div>
               )}
@@ -425,6 +425,7 @@ export default async function CollectionPage({
                 walletCap: (c.sale?.walletCap ?? 0n).toString(),
                 supplyCap: c.cfg.supplyCap.toString(),
                 minted: c.minted.toString(),
+                referralShareBps: c.sale?.referralShareBps ?? REFERRAL_SHARE_BPS,
               }}
             />
           )}
@@ -556,7 +557,7 @@ export default async function CollectionPage({
               />
               <Fact
                 label="Referral share"
-                value={`${formatBps(REFERRAL_SHARE_BPS)} (to the referrer)`}
+                value={`${formatBps(c.sale?.referralShareBps ?? REFERRAL_SHARE_BPS)} (to the referrer)`}
               />
               <Fact label="Pricing" value={strategy ? "Live strategy" : "Fixed"} />
               <Fact label="Sale mode" value={pooled ? "Pooled (via minter)" : "Sequential"} />

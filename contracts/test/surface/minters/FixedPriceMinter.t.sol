@@ -32,7 +32,7 @@ contract FixedPriceMinterTest is FixedPriceMinterBase {
         vm.prank(collector);
         m.mint{value: PRICE}(collector, 1, referrer, "");
 
-        uint256 refCut = (PRICE * m.REFERRAL_SHARE_BPS()) / 10_000;
+        uint256 refCut = (PRICE * m.referralShareBps()) / 10_000;
         assertEq(m.pendingWithdrawal(referrer), refCut);
         assertEq(m.pendingWithdrawal(artist), PRICE - refCut);
     }
@@ -494,6 +494,8 @@ contract FixedPriceMinterTest is FixedPriceMinterBase {
         vm.expectRevert(FixedPriceMinter.NotAuthorized.selector);
         m.setWalletCap(1);
         vm.expectRevert(FixedPriceMinter.NotAuthorized.selector);
+        m.setReferralShareBps(500);
+        vm.expectRevert(FixedPriceMinter.NotAuthorized.selector);
         m.rescueStrayETH(stranger);
         vm.stopPrank();
     }
@@ -940,5 +942,48 @@ contract FixedPriceMinterTest is FixedPriceMinterBase {
         (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
         assertEq(m.priceOf(collector, 1, ""), PRICE, "single unit");
         assertEq(m.priceOf(collector, 3, ""), PRICE * 3, "scales with quantity");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Referral share: admin-settable, capped at MAX_REFERRAL_SHARE_BPS
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function test_referralShare_defaultsToMax() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        assertEq(m.referralShareBps(), m.MAX_REFERRAL_SHARE_BPS(), "initialize sets the max share");
+    }
+
+    function test_setReferralShareBps_appliesToSettle() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        vm.prank(artist);
+        vm.expectEmit(false, false, false, true, address(m));
+        emit FixedPriceMinter.ReferralShareSet(250);
+        m.setReferralShareBps(250);
+        assertEq(m.referralShareBps(), 250);
+
+        vm.deal(collector, PRICE);
+        vm.prank(collector);
+        m.mint{value: PRICE}(collector, 1, referrer, "");
+        uint256 refCut = (PRICE * 250) / 10_000;
+        assertEq(m.pendingWithdrawal(referrer), refCut, "referrer accrues the set share");
+        assertEq(m.pendingWithdrawal(artist), PRICE - refCut, "artist accrues the rest");
+    }
+
+    function test_setReferralShareBps_zero_accruesAllToArtist() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        vm.prank(artist);
+        m.setReferralShareBps(0);
+        vm.deal(collector, PRICE);
+        vm.prank(collector);
+        m.mint{value: PRICE}(collector, 1, referrer, "");
+        assertEq(m.pendingWithdrawal(referrer), 0, "no referral cut at 0 bps");
+        assertEq(m.pendingWithdrawal(artist), PRICE, "full amount accrues to the artist");
+    }
+
+    function test_setReferralShareBps_aboveCap_reverts() public {
+        (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
+        vm.prank(artist);
+        vm.expectRevert(abi.encodeWithSelector(FixedPriceMinter.ReferralShareAboveCap.selector, 1001, 1000));
+        m.setReferralShareBps(1001);
     }
 }

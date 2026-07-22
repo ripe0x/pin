@@ -20,9 +20,10 @@ import {
 
 export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
 
-/** Fixed referral share, in bps. Must match FixedPriceMinter.REFERRAL_SHARE_BPS
- *  (moved off the token in the thin-token rearchitecture — the canonical
- *  minter pays it, not the collection). */
+/** Referral-share cap and default, in bps. Must match
+ *  FixedPriceMinter.MAX_REFERRAL_SHARE_BPS; the live per-minter value is
+ *  referralShareBps() (owner/admin settable up to this cap) and is read into
+ *  MinterSaleConfig. Used as the fallback where no live read is available. */
 export const REFERRAL_SHARE_BPS = 1000 // 10%
 
 const FORK_MODE = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
@@ -142,6 +143,7 @@ export type MinterSaleConfig = {
   maxMints: bigint
   allowlistRoot: `0x${string}`
   walletCap: bigint
+  referralShareBps: number
 }
 
 /** The window/cap inputs lifecycleStatus/isMintable derive a status from.

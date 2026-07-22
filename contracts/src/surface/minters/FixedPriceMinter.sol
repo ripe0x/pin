@@ -48,14 +48,20 @@ struct FixedPriceMinterInitParams {
 ///         binding is set once in initialize() with no setter.
 contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter {
     uint16 internal constant BPS = 10_000;
-    /// @notice Fixed referral share: 10%, paid to the referrer that hosts the
-    ///         mint. Not artist-set, not a protocol fee. A mint with no
-    ///         referrer accrues the full share to the artist.
-    uint16 public constant REFERRAL_SHARE_BPS = 1_000;
+    /// @notice Hard ceiling for the referral share (10%). setReferralShareBps
+    ///         reverts above it.
+    uint16 public constant MAX_REFERRAL_SHARE_BPS = 1_000;
 
     /// @notice The collection this clone sells for. Set once at
     ///         initialize(); no setter.
     address public collection;
+
+    /// @notice Referral share paid to the referrer that hosts a mint, in bps.
+    ///         Initialized to MAX_REFERRAL_SHARE_BPS; collection owner/admin
+    ///         settable via setReferralShareBps, capped at
+    ///         MAX_REFERRAL_SHARE_BPS. Not a protocol fee. A mint with no
+    ///         referrer accrues the full share to the artist.
+    uint16 public referralShareBps;
 
     uint256 public price;
     address public priceStrategy;
@@ -108,6 +114,7 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
     error WithdrawFailed();
     error NoStrayETH();
     error RescueFailed();
+    error ReferralShareAboveCap(uint16 requested, uint16 cap);
     /// @dev initialize() and setPayoutRecipient() both reject a zero
     ///      payoutRecipient, so _settle never has to resolve one.
     error PayoutRecipientRequired();
@@ -130,6 +137,7 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
     event MaxMintsSet(uint256 maxMints);
     event AllowlistRootSet(bytes32 root);
     event WalletCapSet(uint256 cap);
+    event ReferralShareSet(uint16 bps);
     event Withdrawn(address indexed account, uint256 amount);
     event StrayETHRescued(address indexed to, uint256 amount);
 
@@ -159,6 +167,7 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
         if (p.payoutRecipient == address(0)) revert PayoutRecipientRequired();
         __ReentrancyGuard_init();
         collection = p.collection;
+        referralShareBps = MAX_REFERRAL_SHARE_BPS;
         price = p.price;
         priceStrategy = p.priceStrategy;
         mintStart = p.mintStart;
@@ -300,7 +309,7 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
     ///      collection keeps paying it.
     function _settle(uint256 total, address referrer) internal {
         if (total == 0) return;
-        uint256 referralCut = referrer == address(0) ? 0 : (total * REFERRAL_SHARE_BPS) / BPS;
+        uint256 referralCut = referrer == address(0) ? 0 : (total * referralShareBps) / BPS;
         uint256 artistCut = total - referralCut;
         _totalPending += total;
         if (referralCut > 0) {
@@ -402,5 +411,12 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
     function setWalletCap(uint256 cap) external onlyCollectionOwnerOrAdmin {
         walletCap = cap;
         emit WalletCapSet(cap);
+    }
+
+    /// @notice Set the referral share, up to MAX_REFERRAL_SHARE_BPS.
+    function setReferralShareBps(uint16 bps) external onlyCollectionOwnerOrAdmin {
+        if (bps > MAX_REFERRAL_SHARE_BPS) revert ReferralShareAboveCap(bps, MAX_REFERRAL_SHARE_BPS);
+        referralShareBps = bps;
+        emit ReferralShareSet(bps);
     }
 }
