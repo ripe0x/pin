@@ -100,10 +100,9 @@ export default async function CollectionPage({
   // Alt arrangement (?layout=mint-first): the About|Mint band sits ABOVE the field so
   // the instrument is the second thing on the page instead of below the full-bleed grid.
   const mintFirst = homageSkin && layout === "mint-first"
-  // Homage field: the minted set (chain-enumerated) + a deterministic sample spread the
-  // pre-mint / fill state draws from.
+  // Homage field: the minted set (chain-enumerated). With none minted the field shows
+  // the curated wall, which generates its own samples.
   const homageMintedIds = homageSkin ? await getHomageMintedIds(addr) : []
-  const homageSampleIds = Array.from({ length: 12 }, (_, i) => Math.floor((i + 0.5) * (10_000 / 12)))
   const [history, attribution, recent] = await Promise.all([
     getCollectionMintHistory(addr, c.minted, c.cfg.idMode),
     getAttribution(addr),
@@ -159,9 +158,7 @@ export default async function CollectionPage({
     <HomageField
       collection={addr}
       renderer={c.renderer}
-      minter={homageMinter ?? undefined}
       mintedIds={homageMintedIds}
-      sampleIds={homageSampleIds}
       supply={c.cfg.supplyCap > 0n ? Number(c.cfg.supplyCap) : 10_000}
       minted={Number(c.minted)}
     />
