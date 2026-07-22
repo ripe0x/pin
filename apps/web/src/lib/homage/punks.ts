@@ -16,6 +16,7 @@ import {
   CRYPTOPUNKS_MARKET,
   DELEGATE_REGISTRY,
   WRAPPED_PUNKS,
+  WRAPPED_PUNKS_721,
   delegateRegistryAbi,
   homageCollectionAbi,
   homageMinterAbi,
@@ -106,7 +107,9 @@ async function claimDelegations(
     args: [who],
   })) as readonly {type_: number; from: Address; rights: `0x${string}`; contract_: Address; tokenId: bigint}[]
   const isPunkSource = (c: string) =>
-    c.toLowerCase() === CRYPTOPUNKS_MARKET.toLowerCase() || c.toLowerCase() === WRAPPED_PUNKS.toLowerCase()
+    c.toLowerCase() === CRYPTOPUNKS_MARKET.toLowerCase() ||
+    c.toLowerCase() === WRAPPED_PUNKS.toLowerCase() ||
+    c.toLowerCase() === WRAPPED_PUNKS_721.toLowerCase()
   const vaults = new Set<Address>()
   const tokens: {id: bigint; vault: Address}[] = []
   for (const d of raw) {
@@ -166,10 +169,16 @@ export function useOwnedPunks(minter: Address, address?: Address, refreshKey?: n
               allowFailure: true,
             })
             const wrappedChecks = fresh.map((t, i) => ({t, raw: owners[i]?.status === "success" ? (owners[i].result as string) : undefined}))
-            const needWrapped = wrappedChecks.filter((c) => c.raw?.toLowerCase() === WRAPPED_PUNKS.toLowerCase())
+            const wrapperOf = (raw?: string) =>
+              raw?.toLowerCase() === WRAPPED_PUNKS.toLowerCase()
+                ? WRAPPED_PUNKS
+                : raw?.toLowerCase() === WRAPPED_PUNKS_721.toLowerCase()
+                  ? WRAPPED_PUNKS_721
+                  : undefined
+            const needWrapped = wrappedChecks.filter((c) => wrapperOf(c.raw) !== undefined)
             const wrappedOwners = needWrapped.length
               ? await client.multicall({
-                  contracts: needWrapped.map((c) => ({address: WRAPPED_PUNKS, abi: wrappedPunksAbi, functionName: "ownerOf", args: [c.t.id]}) as const),
+                  contracts: needWrapped.map((c) => ({address: wrapperOf(c.raw)!, abi: wrappedPunksAbi, functionName: "ownerOf", args: [c.t.id]}) as const),
                   allowFailure: true,
                 })
               : []
@@ -177,7 +186,7 @@ export function useOwnedPunks(minter: Address, address?: Address, refreshKey?: n
               const id = Number(c.t.id)
               if (!c.raw || merged.has(id)) continue
               if (c.raw.toLowerCase() === c.t.vault.toLowerCase()) merged.set(id, {id, wrapped: false, vault: c.t.vault})
-              else if (c.raw.toLowerCase() === WRAPPED_PUNKS.toLowerCase()) {
+              else if (wrapperOf(c.raw) !== undefined) {
                 const wi = needWrapped.findIndex((n) => n.t === c.t)
                 const wo = wrappedOwners[wi]
                 if (wo?.status === "success" && (wo.result as string).toLowerCase() === c.t.vault.toLowerCase()) {
