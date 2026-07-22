@@ -130,10 +130,10 @@ export const STATUS_LIVE = 255
 // HomageRendererSovereign — renders any punk id's homage (minted or not), so one path
 // draws both the collection's minted tokens and the pre-mint sample field.
 export const homageRendererViewAbi = parseAbi([
+  // `circle` picks the form: false = classic squares, true = the PFP (inscribed
+  // circles, same geometry/colors/order). lib/homage/art.ts mirrors the circle
+  // form client-side as the zero-RPC fallback.
   "function renderSVG(uint256 id, uint8 status, bool circle) view returns (string)",
-  // The PFP form (nest re-framed on a plinth) — canonical on-chain treatment; the
-  // client-side transform in lib/homage/art.ts is its zero-RPC mirror/fallback.
-  "function pfpSVG(uint256 id, uint8 status) view returns (string)",
 ])
 
 // The pooled Surface the minter mints into — token reads (ownership / tokenURI).
