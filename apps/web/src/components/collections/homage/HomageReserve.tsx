@@ -82,16 +82,23 @@ export function HomageReserve({minter}: {minter: Address}) {
   return (
     <div className="space-y-3">
       {!address ? (
-        <ConnectButton.Custom>
-          {({openConnectModal}) => (
-            <button
-              onClick={openConnectModal}
-              className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors"
-            >
-              Connect wallet to reserve
-            </button>
-          )}
-        </ConnectButton.Custom>
+        <div className="space-y-3">
+          <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
+            Punk owners can reserve their punk&apos;s homage before the claim opens,
+            withholding it from the random draw pool. Connect to see which of your
+            punks are available to reserve.
+          </p>
+          <ConnectButton.Custom>
+            {({openConnectModal}) => (
+              <button
+                onClick={openConnectModal}
+                className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors"
+              >
+                Connect wallet to reserve
+              </button>
+            )}
+          </ConnectButton.Custom>
+        </div>
       ) : wrongNetwork ? (
         <button
           onClick={() => switchChain({chainId: PREFERRED_CHAIN.id})}

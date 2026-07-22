@@ -460,7 +460,10 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
           {/* action — per phase */}
           {!(isSuccess && txHash) && (
             <div className="pt-1 space-y-3">
-              {!address ? (
+              {/* During the reservation window the reserve panel renders without a
+                  wallet (it carries its own connect CTA), so holders can see the
+                  flow exists before connecting. */}
+              {!address && !(phase === "closed" && reservationIsOpen) ? (
                 <ConnectButton.Custom>
                   {({openConnectModal}) => (
                     <button onClick={openConnectModal} className={btnPrimary}>
