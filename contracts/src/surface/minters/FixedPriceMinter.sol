@@ -36,8 +36,8 @@ struct FixedPriceMinterInitParams {
 ///         sequential-only.
 ///
 ///         Holds proceeds by pull payment (recipients withdraw); config
-///         authority is borrowed from the collection (owner or admin). Every mint through this
-///         contract is paid: price 0 is legal config but not a free-mint
+///         authority is borrowed from the collection (owner or admin). Every
+///         mint through this contract is paid: price 0 is legal config but not a free-mint
 ///         special case, and there is no owner-mint path. A free distribution
 ///         requires granting a separate minter on the collection.
 ///
@@ -243,8 +243,9 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
         }
 
         // Fixed price: require exact match. With a strategy set, the price
-        // can move between quote and inclusion (basefee terms), so accept
-        // >= and accrue the excess to the payer. `required` is read from the
+        // can move between quote and inclusion (for example, a basefee-
+        // denominated strategy), so accept >= and accrue the excess to the
+        // payer. `required` is read from the
         // strategy once and reused for the settle, so a misbehaving
         // strategy cannot split value this contract never received.
         uint256 required;
@@ -355,9 +356,9 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
     // ─────────────────────────────────────────────────────────────────────────
 
     /// @dev Same authority root as the collection's own setters: owner or
-    ///      admin. Borrowed rather than a separate Ownable, so one keyring
-    ///      governs both contracts and an ownership transfer invalidates
-    ///      delegated admins for minter config too.
+    ///      admin. Borrowed rather than a separate Ownable, so the same
+    ///      owner and admin set governs both contracts and an ownership
+    ///      transfer invalidates delegated admins for minter config too.
     modifier onlyCollectionOwnerOrAdmin() {
         address c = collection;
         if (msg.sender != ISurfaceAuth(c).owner() && !ISurfaceAuth(c).isAdmin(msg.sender)) {

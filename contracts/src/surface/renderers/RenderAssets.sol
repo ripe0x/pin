@@ -10,9 +10,9 @@ import {ISurfaceAuth} from "../interfaces/ISurfaceAuth.sol";
 ///         shared cover image, per-token captures (stills of rendered output
 ///         for surfaces that cannot execute the renderer), and a per-collection
 ///         capture template. Immutable, ownerless singleton shared by every
-///         collection. Writes require the same key as the collection's own
-///         setters, except captures, which an admin may delegate to a narrow
-///         capturer key.
+///         collection. Writes require the collection's own owner-or-admin
+///         authority, except capture and template writes, which an admin may
+///         delegate to a separate capturer role.
 ///
 ///         Captures are always refreshable. They are stills of the rendered
 ///         output, not the token's canonical image; the canonical image is
@@ -39,10 +39,10 @@ contract RenderAssets {
     ///         then the cover).
     mapping(address => mapping(uint256 => string)) private _captures;
 
-    /// @notice Admin-granted keys that may write captures and the template for
-    ///         a collection, and nothing else. Allows delegating capture writes
-    ///         to a low-privilege hot key or a mint surface without granting an
-    ///         admin key that could reroute funds.
+    /// @notice Admin-granted accounts that may write captures and the template
+    ///         for a collection, and nothing else. Allows delegating capture
+    ///         writes to a low-privilege hot wallet or a mint surface without
+    ///         an admin grant that could reroute funds.
     mapping(address => mapping(address => bool)) public isCapturer;
 
     error NotSurfaceAdmin();
@@ -80,8 +80,8 @@ contract RenderAssets {
         emit CoverSet(collection, uri);
     }
 
-    /// @notice Grant or revoke a capturer for `collection`. Admin key required;
-    ///         the grant is not capturer-writable.
+    /// @notice Grant or revoke a capturer for `collection`. Owner-or-admin
+    ///         only; a capturer cannot change the capturer roster.
     function setCapturer(address collection, address account, bool allowed)
         external
         onlySurfaceAdmin(collection)

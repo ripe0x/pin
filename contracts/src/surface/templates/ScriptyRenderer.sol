@@ -21,21 +21,20 @@ import {HTMLRequest, HTMLTag, HTMLTagType} from "./vendor/scripty/core/ScriptySt
 ///
 ///         **Immutable by construction.** The work definition (its onchain code
 ///         and dependency files, the injection version) is fixed in the
-///         constructor and never mutated: there is no `setWork`, no owner, no
-///         lock to remember to throw. That makes this renderer's output a pure
-///         function of chain state that any external checker can attest — the
-///         strongest presentation permanence the system offers. Combined with
-///         the collection's `lockRenderer()` (which pins the pointer at this
-///         exact contract forever), an artist gets provable, end-to-end
-///         permanence with zero trusted post-deploy steps.
+///         constructor and never mutated: no `setWork`, no owner, no separate
+///         lock step. The renderer's output is therefore a pure function of
+///         chain state that any external checker can attest. Combined with the
+///         collection's `lockRenderer()`, which pins the renderer pointer at
+///         this contract, presentation permanence holds with no trusted
+///         post-deploy steps.
 ///
 ///         At `tokenURI` time it reads the token's seed through
 ///         `ISurfaceView`, injects the render context
 ///         (`window.tokenData = { hash, tokenId, collection, chainId, version,
-///         context }` — hash/tokenId use the widely-adopted long-form-
+///         context }`; hash/tokenId use the widely-adopted long-form-
 ///         generative shape, so existing sketches run unmodified; `context`
-///         says why the document is being rendered: "token" for canonical
-///         renders, "preview" for previewURI's what-if renders), assembles
+///         states why the document is rendered: "token" for canonical
+///         renders, "preview" for previewURI renders), assembles
 ///         the dependencies + context + artist code into a complete HTML
 ///         document, and returns metadata whose `animation_url` is a
 ///         `data:text/html;base64,...` URI. See
@@ -43,11 +42,11 @@ import {HTMLRequest, HTMLTag, HTMLTagType} from "./vendor/scripty/core/ScriptySt
 ///         offchain preview must match.
 ///
 ///         Implements the OPTIONAL `IPreviewRenderer`: the work is a pure
-///         function of (tokenId, seed), so previews are free — the same
-///         document assembly with a caller-supplied seed. Mint pages explore
-///         the range before a single token exists.
+///         function of (tokenId, seed), so a preview is the same document
+///         assembly with a caller-supplied seed. A mint page can sample
+///         outputs before any token exists.
 ///
-///         **Fork points** (override in a subclass — see ExampleScriptyWork):
+///         **Fork points** (override in a subclass; see ExampleScriptyWork):
 ///         - `_workTraits(seed)` to publish seed-derived onchain traits
 ///         - `_image(collection, tokenId)` to change where the poster/
 ///           thumbnail comes from (default: RenderAssets, when wired)
@@ -119,7 +118,8 @@ contract ScriptyRenderer is IRenderer, IPreviewRenderer {
         }
         // The gunzip helper is consulted only when a gzipped file is present;
         // when one is, its store must hold code (the build would revert
-        // otherwise), so refuse it at the door instead of after a lock.
+        // otherwise), so a missing store is rejected here instead of after a
+        // lock.
         if (needsGunzip && gunzipStore_.code.length == 0) revert GunzipStoreRequired();
     }
 
@@ -164,10 +164,9 @@ contract ScriptyRenderer is IRenderer, IPreviewRenderer {
     /// @inheritdoc IPreviewRenderer
     /// @dev Identical document assembly as tokenURI, with the caller's seed
     ///      in place of tokenSeed and `context:"preview"` injected. No token
-    ///      needs to exist. The metadata is deliberately not token-shaped
-    ///      provenance: the name is marked as a preview, attributes carry the
-    ///      seed only, and no static image is attached (a preview is the live
-    ///      render).
+    ///      needs to exist. The metadata carries no provenance: the name is
+    ///      marked as a preview, attributes carry the seed only, and no
+    ///      static image is attached (a preview is the live render).
     function previewURI(address collection, uint256 tokenId, bytes32 seed)
         external
         view
@@ -190,9 +189,8 @@ contract ScriptyRenderer is IRenderer, IPreviewRenderer {
         return string(abi.encodePacked("data:application/json;base64,", Base64.encode(json)));
     }
 
-    /// @dev Contract-level metadata drives the marketplace collection page;
-    ///      the cover, when the registry is wired and one is set, is what
-    ///      that page shows.
+    /// @dev Contract-level metadata for the marketplace collection page.
+    ///      Includes the cover when renderAssets is wired and a cover is set.
     function contractURI(address collection) external view override returns (string memory) {
         string memory cover =
             address(renderAssets) == address(0) ? "" : renderAssets.coverOf(collection);
@@ -265,7 +263,7 @@ contract ScriptyRenderer is IRenderer, IPreviewRenderer {
 
     /// @dev Render-context convention: `hash` + `tokenId` use the standard
     ///      long-form-generative `tokenData` shape for sketch portability. In
-    ///      Sequential mode the token id IS the mint order. `context`
+    ///      Sequential mode the token id equals the mint order. `context`
     ///      ("token" | "preview" | offchain "capture") is additive within v1:
     ///      work code SHOULD tolerate additions and treat a missing/"token"
     ///      context as the canonical render.
@@ -305,7 +303,7 @@ contract ScriptyRenderer is IRenderer, IPreviewRenderer {
 
     /// @dev Poster/thumbnail for the metadata `image` field. Default: the
     ///      RenderAssets lookup (capture, else template, else cover) when the
-    ///      registry is wired, nothing otherwise — either way,
+    ///      registry is wired, nothing otherwise. In both cases
     ///      `animation_url` remains the artwork. Override for a custom
     ///      source.
     function _image(address collection, uint256 tokenId) internal view virtual returns (string memory) {

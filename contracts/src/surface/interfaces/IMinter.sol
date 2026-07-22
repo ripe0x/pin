@@ -13,8 +13,9 @@ interface IMinter {
     ///         the address any gate evaluates (an allowlist gates the
     ///         collector, not the payer). `referrer` receives the minter's
     ///         referral share when nonzero; with a zero referrer the entire
-    ///         amount accrues to the artist payout. `data` carries caller-supplied input a gate
-    ///         consumes (a Merkle proof); gates that read only chain state
+    ///         amount accrues to the artist payout. `data` carries
+    ///         caller-supplied input a gate consumes (a Merkle proof); gates
+    ///         that read only chain state
     ///         need no data. Overpayment on a strategy-priced mint accrues to
     ///         the payer (`msg.sender`) by pull payment.
     function mint(address to, uint256 quantity, address referrer, bytes calldata data) external payable;

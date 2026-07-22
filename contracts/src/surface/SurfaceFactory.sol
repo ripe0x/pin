@@ -24,10 +24,9 @@ struct SaleConfig {
 
 /// @title SurfaceFactory
 /// @notice Deploys Surface collections as immutable EIP-1167 clones; each
-///         collection's owner controls its authorized minters and renderer
-///         slot and can lock either permanently.
+///         collection's owner controls its renderer, supply cap, and
+///         authorized minters, each lockable permanently.
 ///
-///         Clones a collection as an immutable EIP-1167 proxy per call.
 ///         `createSurface` (sequential, canonical minter) clones the token and
 ///         a `FixedPriceMinter` together and wires them in one transaction.
 ///         `createSurfaceCustom` (sequential, bring-your-own minter) and
@@ -74,9 +73,7 @@ contract SurfaceFactory {
 
     /// @notice Reversible pause on new deploys, distinct from `deprecated`: a
     ///         temporary off switch (incident, maintenance) the deployer can
-    ///         toggle back on. Deprecation is the permanent, one-way
-    ///         end-of-life; this is the reversible circuit breaker. Neither
-    ///         affects deployed collections.
+    ///         toggle back on. Neither flag affects deployed collections.
     bool public paused;
 
     mapping(address => bool) public isSurface;
@@ -102,7 +99,7 @@ contract SurfaceFactory {
     error NotAContract(address account);
     error OwnerRequired();
     /// @dev Distinct from ISurfaceCore.PrimaryMinterNotAuthorized: the core
-    ///      re-checks membership (and, for pooled, sole-minter-ness) at init
+    ///      re-checks membership (and, for pooled, the sole-minter rule) at init
     ///      regardless of what the factory validates here.
     error PrimaryMinterNotAuthorized();
 

@@ -55,11 +55,10 @@ interface ISurfaceCore {
     ///         mints are always quantity 1. firstMintIndex is the global mint
     ///         order of the call's first token (token k's index =
     ///         firstMintIndex + k), included because pooled ids do not encode
-    ///         it. minter is the calling minter (msg.sender), for
-    ///         cross-minter attribution. The mint block is not stored; read
-    ///         it from the event. No per-token
-    ///         data is stored beyond the seed; indexers read the rest from the
-    ///         log.
+    ///         it. minter is the calling minter (msg.sender), for cross-minter
+    ///         attribution. The core stores no per-token data beyond the seed;
+    ///         indexers read the rest (mint block, minter, order) from this
+    ///         event.
     event Minted(
         address indexed minter, address indexed to, uint256 firstTokenId, uint256 quantity, uint256 firstMintIndex
     );
@@ -105,9 +104,10 @@ interface ISurfaceCore {
     function setMinter(address minter, bool allowed) external;
     /// @notice One-way, optional. Freezes the list of authorized minters:
     ///         setMinter always reverts afterward. The lock does not stop
-    ///         minting; granted minters keep minting. A backed pooled
-    ///         collection locks so no one can swap in a later minter to burn
-    ///         another minter's backed tokens.
+    ///         minting: every minter granted before the lock keeps its
+    ///         authority. Locking with no minter granted leaves the collection
+    ///         permanently unable to mint. A backed pooled collection locks so
+    ///         no later minter can burn another minter's backed tokens.
     function lockMinter() external;
     /// @notice Sequential-only: point the frontend-discovery default at
     ///         `minter` (must be a currently granted minter, or the zero
@@ -128,14 +128,15 @@ interface ISurfaceCore {
     ///         to register this collection in the Catalog (isConfirmedCreator).
     function setCreators(address[] calldata list, bool listed) external;
     /// @notice Emits an ERC-4906 refresh for changes the core cannot observe
-    ///         (a chain-live work moving, a reveal, new captures). Callable by
+    ///         (an on-chain-live work whose output changed, a reveal, new
+    ///         captures). Callable by
     ///         the current renderer or owner/admin. Works after lockRenderer,
     ///         which pins the renderer pointer, not its output.
     function notifyMetadataUpdate(uint256 fromTokenId, uint256 toTokenId) external;
     /// @notice One-way, optional: pins the renderer pointer permanently. An
-    ///         immutable renderer behind a locked pointer is full presentation
-    ///         permanence; a mutable renderer behind a locked pointer is an
-    ///         explicit, inspectable choice.
+    ///         immutable renderer behind a locked pointer gives full
+    ///         presentation permanence; a mutable renderer behind a locked
+    ///         pointer remains changeable within that renderer.
     function lockRenderer() external;
 
     // ── burn ─────────────────────────────────────────────────────────────────
@@ -145,9 +146,9 @@ interface ISurfaceCore {
     ///         control the id pool and any per-token backing.
     function burn(uint256 tokenId) external;
 
-    /// @notice Owner-or-admin sweep of the full ETH balance. The token holds
-    ///         no value of its own, so any balance is force-fed (selfdestruct,
-    ///         pre-funded address); there is nothing owed to sweep around.
+    /// @notice Owner-or-admin sweep of the full ETH balance. No function of
+    ///         the collection receives ETH, so any balance arrived by force
+    ///         (selfdestruct, pre-funded address) and is owed to no one.
     function rescueStrayETH(address to) external;
 
     // ── reads ───────────────────────────────────────────────────────────────
