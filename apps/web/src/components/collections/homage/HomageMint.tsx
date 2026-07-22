@@ -38,6 +38,7 @@ import {
   BASE_FEE,
   CRYPTOPUNKS_MARKET,
   WRAPPED_PUNKS,
+  WRAPPED_PUNKS_721,
   homageFlows,
   homageMinterAbi,
   punksMarketAbi,
@@ -46,7 +47,7 @@ import {
   type MintQuote,
 } from "@/lib/homage/contracts"
 import {type Phase, type Schedule, claimOpen, currentPhase, nextTransition, reservationOpenAt} from "@/lib/homage/phase"
-import {allowlistProofIn, useAllowlist} from "@/lib/homage/allowlist"
+import {allowlistProofIn, useAllowlist, useAllowlistMembership} from "@/lib/homage/allowlist"
 import {HomageReveal} from "./HomageReveal"
 import {HomageBatchReveal} from "./HomageBatchReveal"
 import {HomageClaim} from "./HomageClaim"
@@ -138,11 +139,15 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
   // folds in that wallet's live escalating fee (claimFor/claimTo re-resolve the recipient at send).
   const activeFee = publicFee
 
-  // allowlist eligibility — the proof file (~3.6MB with every punk holder on it) loads
-  // lazily once a wallet is connected outside public; null = still loading (UNKNOWN).
-  const allowlist = useAllowlist(!!address && phase !== "public")
+  // allowlist eligibility — resolve from the lightweight ~1MB membership list, not the ~31MB
+  // proof file: a connected wallet outside public loads only the address set. null = still
+  // loading (UNKNOWN — never render a negative from it).
+  const members = useAllowlistMembership(!!address && phase !== "public")
+  const isAllowlisted = !!address && !!members && members.has(address.toLowerCase())
+  // The heavy proof file is fetched only once an eligible wallet is actually in the allowlist
+  // window (i.e. about to mint); the proof itself is what the allowlistMint tx needs.
+  const allowlist = useAllowlist(phase === "allowlist" && isAllowlisted)
   const allowlistProof = address && allowlist ? allowlistProofIn(allowlist, address) : null
-  const isAllowlisted = !!allowlistProof
   // max >= SUPPLY is the "no per-address cap" configuration — hide cap language entirely.
   const allowlistUncapped = maxPerAllowlisted !== undefined && maxPerAllowlisted >= SUPPLY
   const allowlistRemaining = maxPerAllowlisted !== undefined ? Math.max(maxPerAllowlisted - allowlistUsed, 0) : undefined
@@ -288,9 +293,15 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
             address: CRYPTOPUNKS_MARKET, abi: punksMarketAbi,
             functionName: "punkIndexToAddress", args: [punkIdForHolder],
           })) as Address
-          if (h.toLowerCase() === WRAPPED_PUNKS.toLowerCase()) {
+          const wrapper =
+            h.toLowerCase() === WRAPPED_PUNKS.toLowerCase()
+              ? WRAPPED_PUNKS
+              : h.toLowerCase() === WRAPPED_PUNKS_721.toLowerCase()
+                ? WRAPPED_PUNKS_721
+                : undefined
+          if (wrapper) {
             h = (await publicClient.readContract({
-              address: WRAPPED_PUNKS, abi: wrappedPunksAbi, functionName: "ownerOf", args: [punkIdForHolder],
+              address: wrapper, abi: wrappedPunksAbi, functionName: "ownerOf", args: [punkIdForHolder],
             })) as Address
           }
           target = h
