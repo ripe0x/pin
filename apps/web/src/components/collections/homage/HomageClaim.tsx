@@ -121,13 +121,19 @@ export function HomageClaim({
 
       {punks.length === 0 && status !== "loading" && (
         <p className="text-[10px] font-mono text-gray-400 leading-relaxed">
-          No claimable punks found for this wallet{status === "partial" ? " in the recent window" : ""}. If you hold one, enter its id
-          below — claim verifies ownership (and delegation) on-chain.
+          No claimable punks found for this wallet{status === "partial" ? " in the recent window" : ""}.
         </p>
       )}
 
-      {/* manual id: claim your own, or pay for any punk's holder (claimTo) */}
+      {/* manual id: claim your own, or pay for any punk's holder (claimTo). Shown even
+          with no punks listed above, since the ownership lookup scans a bounded window
+          and can miss a punk the contract will still accept a claim for, and since
+          paying for another punk's holder needs no holding at all. */}
       <div className="space-y-2 pt-1">
+        <p className="text-[10px] font-mono text-gray-400 leading-relaxed">
+          Hold a punk that isn&apos;t listed, or want to pay for another punk&apos;s holder?
+          Enter the id: the contract verifies ownership and delegation onchain.
+        </p>
         <div className="flex items-center gap-2">
           <input
             value={manualId}

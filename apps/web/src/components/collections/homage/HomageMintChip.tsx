@@ -18,7 +18,7 @@ import {usePublicClient} from "wagmi"
 import {useReadContracts} from "wagmi"
 import {Countdown, PREFERRED_CHAIN, useChainNowSec} from "@/components/tx/tx-ui"
 import {BASE_FEE, homageMinterAbi, quoteMint} from "@/lib/homage/contracts"
-import {type Phase, type Schedule, currentPhase, nextTransition, reservationOpenAt} from "@/lib/homage/phase"
+import {WINDOW_LABEL, type Phase, type Schedule, currentPhase, nextTransition, reservationOpenAt} from "@/lib/homage/phase"
 
 const QUOTE_POLL_MS = 60_000 // indicative price only — keep this cold (paid RPC in prod)
 
@@ -29,13 +29,8 @@ const PHASE_CHIP_LABEL: Record<Phase, string> = {
   public: "Mint open",
 }
 
-// How a window is NAMED in the masthead countdown label ("punk owner claim closes in …").
-const WINDOW_NAME: Record<Phase, string> = {
-  closed: "mint",
-  claim: "punk mint claim",
-  allowlist: "allowlist",
-  public: "public mint",
-}
+// How a window is NAMED in the masthead countdown label ("punk mint claim closes in …").
+const WINDOW_NAME = WINDOW_LABEL
 
 function fmtEth(wei: bigint): string {
   const [int, frac = ""] = formatEther(wei).split(".")

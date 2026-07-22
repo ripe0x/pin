@@ -46,7 +46,7 @@ import {
   wrappedPunksAbi,
   type MintQuote,
 } from "@/lib/homage/contracts"
-import {type Phase, type Schedule, claimOpen, currentPhase, nextTransition, reservationOpenAt} from "@/lib/homage/phase"
+import {WINDOW_LABEL, type Phase, type Schedule, claimOpen, currentPhase, nextTransition, reservationOpenAt} from "@/lib/homage/phase"
 import {allowlistProofIn, useAllowlist, useAllowlistMembership} from "@/lib/homage/allowlist"
 import {HomageReveal} from "./HomageReveal"
 import {HomageBatchReveal} from "./HomageBatchReveal"
@@ -125,10 +125,6 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
   const next = schedule ? nextTransition(schedule, nowSec) : null
   const claimIsOpen = schedule ? claimOpen(schedule, nowSec) : false
   const reservationIsOpen = schedule ? reservationOpenAt(schedule, nowSec) : false
-  // The boundary specifically into "public" — used for the claim/allowlist-window
-  // countdown, which always counts toward public open (not the raw `next` boundary,
-  // which could target an unmerged claim window instead).
-  const nextPublic = schedule && schedule.publicStart !== 0 && nowSec < schedule.publicStart ? schedule.publicStart : null
 
   // ── the connected wallet's escalating mint fee (ALL windows now escalate on this counter) ──
   const feeRead = useReadContract({
@@ -370,16 +366,16 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
             </p>
           )}
 
-          {/* claim/allowlist window countdown — always counts toward public open, since
-              claim is open-ended (no "closes" of its own) and unclaimed reservations
-              release into the draw pool at public start. */}
-          {(phase === "allowlist" || (claimIsOpen && phase !== "public")) && nextPublic !== null && (
+          {/* Counts to the window that opens next, stepping claim to allowlist to
+              public as each arrives. Unclaimed reservations release at public start,
+              so that note rides only on the public leg. */}
+          {(phase === "allowlist" || (claimIsOpen && phase !== "public")) && next !== null && (
             <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400 tabular-nums">
-              Public opens in{" "}
+              {WINDOW_LABEL[next.to]} opens in{" "}
               <span className="text-fg">
-                <Countdown endTime={BigInt(nextPublic)} nowSec={nowSec} />
-              </span>{" "}
-              · unclaimed reservations release then
+                <Countdown endTime={BigInt(next.at)} nowSec={nowSec} />
+              </span>
+              {next.to === "public" && " · unclaimed reservations release then"}
             </p>
           )}
 
@@ -598,11 +594,7 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                     <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400 tabular-nums">
                       {/* Name the window that actually opens next: claim, allowlist
                           and public open at their own times. */}
-                      {next.to === "claim"
-                        ? "Punk mint claim opens in"
-                        : next.to === "allowlist"
-                          ? "Allowlist opens in"
-                          : "Public mint opens in"}{" "}
+                      {WINDOW_LABEL[next.to]} opens in{" "}
                       <span className="text-fg">
                         <Countdown endTime={BigInt(next.at)} nowSec={nowSec} />
                       </span>
