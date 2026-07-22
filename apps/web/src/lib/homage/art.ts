@@ -100,7 +100,6 @@ export function svgToPngBlob(raw: string, size: number): Promise<Blob> {
 }
 
 const COMPARE_BG = "#e8e8e8" // ripe-bot's light field (see gridComposite.ts / ripeGridOptions)
-const COMPARE_SHADOW_ALPHA = 0.2 // shadow darkness vs the field
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -111,17 +110,10 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   })
 }
 
-function hexToRgb(hex: string): [number, number, number] {
-  const h = hex.replace("#", "")
-  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h
-  const n = parseInt(full, 16)
-  return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff]
-}
-
-/** Side-by-side punk + homage composite PNG at `tile`×`tile` per side, on a light field with
- *  a flat drop shadow under each tile — same look as the permanence repo's offline compare-gif
- *  script (generate-pair-gif.mjs), but a single static pair instead of a cycling animation, so
- *  it's plain Canvas here (no sharp/gifenc, which don't run in a browser). */
+/** Side-by-side punk + homage composite PNG at `tile`×`tile` per side, on a light field — same
+ *  look as the permanence repo's offline compare-gif script (generate-pair-gif.mjs), but a
+ *  single static pair instead of a cycling animation, so it's plain Canvas here (no sharp/gifenc,
+ *  which don't run in a browser). */
 export async function compositePairPngBlob({
   punkSvg,
   homageSvg,
@@ -135,10 +127,6 @@ export async function compositePairPngBlob({
 }): Promise<Blob> {
   const pad = Math.round(tile * 0.14)
   const gap = Math.round(tile * 0.06)
-  const shadowDx = Math.round(tile * 0.015)
-  const shadowDy = Math.round(tile * 0.022)
-  const [bgR, bgG, bgB] = hexToRgb(COMPARE_BG)
-  const shadowColor = `rgb(${Math.round(bgR * (1 - COMPARE_SHADOW_ALPHA))}, ${Math.round(bgG * (1 - COMPARE_SHADOW_ALPHA))}, ${Math.round(bgB * (1 - COMPARE_SHADOW_ALPHA))})`
 
   const [punkImg, homageImg] = await Promise.all([
     loadImage(sizedSvgSrc(punkSvg, tile)),
@@ -158,8 +146,6 @@ export async function compositePairPngBlob({
   ctx.fillRect(0, 0, width, height)
 
   const drawTile = (img: HTMLImageElement, x: number) => {
-    ctx.fillStyle = shadowColor
-    ctx.fillRect(x + shadowDx, pad + shadowDy, tile, tile)
     ctx.fillStyle = ground
     ctx.fillRect(x, pad, tile, tile)
     ctx.drawImage(img, x, pad, tile, tile)

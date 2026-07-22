@@ -141,14 +141,14 @@ export function HomageArtStage({
               src={punkImageSrc}
               alt={`CryptoPunk ${tokenId}`}
               style={{background: groundColor}}
-              className="aspect-square w-1/2 shadow-[3px_5px_0_0_rgba(0,0,0,0.15)] [image-rendering:pixelated]"
+              className="aspect-square w-1/2 [image-rendering:pixelated]"
             />
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={art}
               alt={`Homage to Punk ${tokenId}`}
               style={{background: groundColor}}
-              className="aspect-square w-1/2 object-contain shadow-[3px_5px_0_0_rgba(0,0,0,0.15)]"
+              className="aspect-square w-1/2 object-contain"
             />
           </div>
         ) : engaged && conveyorDoc ? (
