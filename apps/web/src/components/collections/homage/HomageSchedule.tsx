@@ -47,9 +47,9 @@ export function HomageSchedule({minter}: {minter: Address}) {
   if (claimStart !== 0 && claimStart < allowlistStart)
     rows.push({name: "Punk mint claim", detail: "punk holders mint their own id", start: claimStart, end: allowlistStart})
   if (allowlistStart !== 0 && allowlistStart < publicStart)
-    rows.push({name: "Allowlist", detail: "random draw, flat fee", start: allowlistStart, end: publicStart})
+    rows.push({name: "Allowlist", detail: "draw random unminted id", start: allowlistStart, end: publicStart})
   if (publicStart !== 0)
-    rows.push({name: "Public", detail: "anyone, random draw", start: publicStart, end: null})
+    rows.push({name: "Public", detail: "draw random unminted id", start: publicStart, end: null})
 
   const cardRows: ScheduleRow[] = rows.map((r) => {
     const live = nowSec >= r.start && (r.end === null || nowSec < r.end)
