@@ -2,50 +2,52 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { ActivityRow } from "./ActivityRow"
+import { GroupedMintRow } from "./GroupedMintRow"
+import { appendFeedPage } from "@/lib/activity-grouping"
 import {
-  deserializeFromWire,
-  type EnrichedActivityEvent,
-  type SerializedActivityEvent,
+  deserializeFeedItem,
+  type EnrichedFeedItem,
+  type SerializedFeedItem,
 } from "@/lib/v2-activity-types"
 
 const PAGE_SIZE = 50
 
+type Cursor = { blockTime: number; id: string }
+
 type Props = {
-  initial: EnrichedActivityEvent[]
-  /** When the server's first page is shorter than this, there's no more
-   * data; the loader skips the IntersectionObserver wiring entirely. */
+  initial: EnrichedFeedItem[]
+  /** Cursor of the last RAW event behind `initial` — paging walks the
+   * underlying event stream, not the (grouped) display rows. */
+  initialCursor: Cursor | null
+  /** When the server's first raw page was shorter than the page size,
+   * there's no more data; the loader skips the IntersectionObserver
+   * wiring entirely. */
   hasMore: boolean
 }
 
 type FetchState = "idle" | "loading" | "error" | "done"
 
 /**
- * Client-side infinite scroll wrapper around `ActivityRow`. The first
+ * Client-side infinite scroll wrapper around the feed rows. The first
  * page is rendered server-side and passed in via `initial`; subsequent
- * pages come from `/api/activity?before=…&beforeId=…`. The API
- * resolves token metadata + identity server-side (point lookups thanks
- * to the warmer + ENS pgCache), so the client doesn't fan out to RPC
- * directly.
+ * pages come from `/api/activity?before=…&beforeId=…`. The API resolves
+ * identity + media server-side and collapses mint runs, so the client
+ * neither fans out to RPC nor re-groups whole pages — it only re-merges
+ * the boundary where an appended page continues a run
+ * (`appendFeedPage`).
  *
  * `IntersectionObserver` watches a sentinel element below the last
  * row; when it enters the viewport (~400px ahead) we trigger the next
- * fetch. If the API returns fewer rows than `PAGE_SIZE`, we mark the
- * loader done and tear down the observer.
+ * fetch. If the API returns a short raw page, we mark the loader done
+ * and tear down the observer.
  */
-export function ActivityFeedClient({ initial, hasMore }: Props) {
-  const [events, setEvents] = useState<EnrichedActivityEvent[]>(initial)
+export function ActivityFeedClient({ initial, initialCursor, hasMore }: Props) {
+  const [items, setItems] = useState<EnrichedFeedItem[]>(initial)
   const [state, setState] = useState<FetchState>(hasMore ? "idle" : "done")
   const sentinelRef = useRef<HTMLDivElement | null>(null)
   // Latest cursor in a ref so the observer callback (set up once)
   // always reads the freshest value without re-binding on each page.
-  const cursorRef = useRef<{ blockTime: number; id: string } | null>(
-    initial.length > 0
-      ? {
-          blockTime: initial[initial.length - 1].blockTime,
-          id: initial[initial.length - 1].id,
-        }
-      : null,
-  )
+  const cursorRef = useRef<Cursor | null>(initialCursor)
   const stateRef = useRef<FetchState>(state)
   stateRef.current = state
 
@@ -67,16 +69,21 @@ export function ActivityFeedClient({ initial, hasMore }: Props) {
         cache: "no-store",
       })
       if (!res.ok) throw new Error(`status ${res.status}`)
-      const body = (await res.json()) as { events: SerializedActivityEvent[] }
-      const next = body.events.map(deserializeFromWire)
-      setEvents((prev) => [...prev, ...next])
-      if (next.length === 0) {
+      const body = (await res.json()) as {
+        items: SerializedFeedItem[]
+        nextCursor: Cursor | null
+        rawCount: number
+        unavailable?: boolean
+      }
+      if (body.unavailable) throw new Error("unavailable")
+      const next = body.items.map(deserializeFeedItem)
+      setItems((prev) => appendFeedPage(prev, next))
+      if (body.rawCount === 0 || !body.nextCursor) {
         setState("done")
         return
       }
-      const last = next[next.length - 1]
-      cursorRef.current = { blockTime: last.blockTime, id: last.id }
-      setState(next.length < PAGE_SIZE ? "done" : "idle")
+      cursorRef.current = body.nextCursor
+      setState(body.rawCount < PAGE_SIZE ? "done" : "idle")
     } catch {
       // Keep the cursor where it was; user can retry by scrolling
       // again or refreshing.
@@ -105,9 +112,13 @@ export function ActivityFeedClient({ initial, hasMore }: Props) {
   return (
     <>
       <ul className="border-b border-gray-200">
-        {events.map((event) => (
-          <ActivityRow key={event.id} event={event} />
-        ))}
+        {items.map((item) =>
+          item.type === "event" ? (
+            <ActivityRow key={item.event.id} event={item.event} />
+          ) : (
+            <GroupedMintRow key={item.id} group={item} />
+          ),
+        )}
       </ul>
       {state !== "done" ? (
         <div ref={sentinelRef} className="py-8 text-center">
@@ -126,7 +137,7 @@ export function ActivityFeedClient({ initial, hasMore }: Props) {
               onClick={() => void loadMore()}
               className="font-mono text-xs text-gray-500 underline underline-offset-2 hover:text-fg"
             >
-              {state === "error" ? "failed to load — retry" : "load more"}
+              {state === "error" ? "failed to load, retry" : "load more"}
             </button>
           )}
         </div>

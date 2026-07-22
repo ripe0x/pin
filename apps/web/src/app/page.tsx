@@ -67,21 +67,27 @@ function stripTrailingZeros(s: string): string {
 const getCachedPlatformStats = unstable_cache(
   async (): Promise<{
     housesDeployed: number
-    ethSettledWeiStr: string
+    collectionsDeployed: number
+    ethToArtistsWeiStr: string
   }> => {
     const stats = await getPlatformStats()
     if (!stats) throw new IndexerUnavailable()
     return {
       housesDeployed: stats.housesDeployed,
-      ethSettledWeiStr: stats.ethSettledWei.toString(),
+      collectionsDeployed: stats.collectionsDeployed,
+      ethToArtistsWeiStr: stats.ethToArtistsWei.toString(),
     }
   },
-  ["platform-stats-v1"],
+  ["platform-stats-v2"],
   { revalidate: 30, tags: ["activity-feed"] },
 )
 
 async function CountersInline() {
-  let cached: { housesDeployed: number; ethSettledWeiStr: string }
+  let cached: {
+    housesDeployed: number
+    collectionsDeployed: number
+    ethToArtistsWeiStr: string
+  }
   try {
     cached = await getCachedPlatformStats()
   } catch {
@@ -89,7 +95,8 @@ async function CountersInline() {
   }
   const stats = {
     housesDeployed: cached.housesDeployed,
-    ethSettledWei: BigInt(cached.ethSettledWeiStr),
+    collectionsDeployed: cached.collectionsDeployed,
+    ethToArtistsWei: BigInt(cached.ethToArtistsWeiStr),
   }
 
   const clauses: string[] = []
@@ -98,11 +105,18 @@ async function CountersInline() {
       `${stats.housesDeployed} ${stats.housesDeployed === 1 ? "house" : "houses"} deployed`,
     )
   }
-  if (stats.ethSettledWei > 0n) {
-    clauses.push(`${formatEth(stats.ethSettledWei)} ETH settled`)
+  if (stats.collectionsDeployed >= 1) {
+    clauses.push(
+      `${stats.collectionsDeployed} ${stats.collectionsDeployed === 1 ? "collection" : "collections"} deployed`,
+    )
+  }
+  if (stats.ethToArtistsWei > 0n) {
+    clauses.push(`${formatEth(stats.ethToArtistsWei)} ETH to artists`)
   }
   if (clauses.length === 0) return null
-  clauses.push("zero platform fees")
+  // Auction-scoped on purpose: Surface mints through a hosted interface
+  // carry a referral share, so the blanket claim is no longer accurate.
+  clauses.push("zero platform fees on auctions")
 
   return (
     <ul className="font-mono text-xs text-gray-500 flex flex-col gap-y-0.5 sm:flex-row sm:flex-wrap sm:gap-x-2">

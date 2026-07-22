@@ -6,7 +6,7 @@
   },
   {
     "type": "function",
-    "name": "REFERRAL_SHARE_BPS",
+    "name": "MAX_REFERRAL_SHARE_BPS",
     "inputs": [],
     "outputs": [
       {
@@ -291,6 +291,19 @@
   },
   {
     "type": "function",
+    "name": "referralShareBps",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "rescueStrayETH",
     "inputs": [
       {
@@ -301,6 +314,19 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "saleCap",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -387,6 +413,19 @@
   },
   {
     "type": "function",
+    "name": "setReferralShareBps",
+    "inputs": [
+      {
+        "name": "bps",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setWalletCap",
     "inputs": [
       {
@@ -401,6 +440,19 @@
   {
     "type": "function",
     "name": "totalMinted",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "totalMintedByThisMinter",
     "inputs": [],
     "outputs": [
       {
@@ -616,6 +668,19 @@
   },
   {
     "type": "event",
+    "name": "ReferralShareSet",
+    "inputs": [
+      {
+        "name": "bps",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "Sold",
     "inputs": [
       {
@@ -794,6 +859,22 @@
     "type": "error",
     "name": "ReentrancyGuardReentrantCall",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ReferralShareAboveCap",
+    "inputs": [
+      {
+        "name": "requested",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "cap",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ]
   },
   {
     "type": "error",

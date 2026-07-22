@@ -267,13 +267,13 @@ export default createConfig({
           // belongs in the worker.
           //
           // SurfaceCreated's third field is `primaryMinter` (primary-minter
-          // discovery, docs/pnd-surface-thin-token-rearchitecture.md §3.5,
-          // renamed from `minter` name-only — the event topic and the
-          // field's position in the log's non-indexed data are unchanged,
-          // so this positional decode is unaffected): the chosen primary on
-          // every creation path now, not just the canonical clone
-          // createSurface wires. Not `indexed` — Ponder's factory() pattern
-          // reads it from the log data regardless. The Surface ABI's own
+          // discovery, docs/pnd-surface-thin-token-rearchitecture.md §3.5):
+          // the chosen primary on every creation path, not just the
+          // canonical clone createSurface wires. Not `indexed` — Ponder's
+          // factory() pattern reads it from the log data regardless. The
+          // trailing name/symbol fields carry the collection's ERC721
+          // identity (fixed at initialize; stored on `collections` by the
+          // SurfaceCreated handler). The Surface ABI's own
           // PrimaryMinterSet event (per-collection, handled in
           // Collections.ts) is what keeps `collections.primaryMinter`
           // current after deploy; this factory() binding only seeds it.
@@ -283,7 +283,7 @@ export default createConfig({
             address: factory({
               address: SURFACE_FACTORY_ADDRESS,
               event: parseAbiItem(
-                "event SurfaceCreated(address indexed owner, address indexed collection, address primaryMinter, uint8 idMode)",
+                "event SurfaceCreated(address indexed owner, address indexed collection, address primaryMinter, uint8 idMode, string name, string symbol)",
               ),
               parameter: "collection",
             }),
@@ -307,7 +307,7 @@ export default createConfig({
             address: factory({
               address: SURFACE_FACTORY_ADDRESS,
               event: parseAbiItem(
-                "event SurfaceCreated(address indexed owner, address indexed collection, address primaryMinter, uint8 idMode)",
+                "event SurfaceCreated(address indexed owner, address indexed collection, address primaryMinter, uint8 idMode, string name, string symbol)",
               ),
               parameter: "primaryMinter",
             }),

@@ -393,6 +393,11 @@ export const collections = onchainTable(
     // The deployed Collection clone address.
     collection: t.hex().primaryKey(),
     owner: t.hex().notNull(),
+    // ERC721 identity from the SurfaceCreated event (fixed at initialize,
+    // no setter). Nullable only for rows indexed before the event carried
+    // these fields; mainnet deploys always populate them.
+    name: t.text(),
+    symbol: t.text(),
     // Frontend-discovery default: mirrors the collection's own
     // primaryMinter(), null when unset. Seeded from SurfaceCreated and kept
     // live by the Surface:PrimaryMinterSet handler — there is no minterOf

@@ -17,8 +17,7 @@ function stripTrailingZeros(s: string): string {
 /**
  * One-line ambient counters above the footer. Hides any clause whose
  * value isn't yet meaningful, and hides the whole sentence when nothing
- * is. The "Zero platform fees" clause only renders alongside at least
- * one of the other two — its job is to be the rhetorical payoff.
+ * is.
  */
 export async function AmbientCounters() {
   const stats = await getPlatformStats()
@@ -28,13 +27,16 @@ export async function AmbientCounters() {
   if (stats.housesDeployed >= 2) {
     clauses.push(`${stats.housesDeployed} houses deployed.`)
   }
-  if (stats.ethSettledWei > 0n) {
-    clauses.push(`${formatEth(stats.ethSettledWei)} ETH settled.`)
+  if (stats.collectionsDeployed >= 1) {
+    clauses.push(`${stats.collectionsDeployed} collections deployed.`)
+  }
+  if (stats.ethToArtistsWei > 0n) {
+    clauses.push(`${formatEth(stats.ethToArtistsWei)} ETH to artists.`)
   }
 
   if (clauses.length === 0) return null
 
-  clauses.push("Zero platform fees.")
+  clauses.push("Zero platform fees on auctions.")
 
   return (
     <p className="text-xs font-mono text-gray-500 italic text-center pt-8">

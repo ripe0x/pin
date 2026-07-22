@@ -102,10 +102,13 @@ contract SurfaceFactoryTest is FixedPriceMinterBase {
             if (logs[i].topics[0] != SurfaceFactory.SurfaceCreated.selector) continue;
             assertEq(address(uint160(uint256(logs[i].topics[1]))), artist, "owner indexed");
             assertEq(address(uint160(uint256(logs[i].topics[2]))), collection, "collection indexed");
-            (address loggedMinter, IdMode loggedMode) = abi.decode(logs[i].data, (address, IdMode));
+            (address loggedMinter, IdMode loggedMode, string memory loggedName, string memory loggedSymbol) =
+                abi.decode(logs[i].data, (address, IdMode, string, string));
             assertEq(loggedMinter, minter, "minter is the canonical clone, not zero");
             assertTrue(loggedMinter != address(0), "canonical path never emits a zero minter");
             assertEq(uint8(loggedMode), uint8(IdMode.Sequential));
+            assertEq(loggedName, "Event Shape", "event carries the collection name");
+            assertEq(loggedSymbol, "EVT", "event carries the collection symbol");
             found = true;
         }
         assertTrue(found, "SurfaceCreated emitted");
@@ -171,9 +174,12 @@ contract SurfaceFactoryTest is FixedPriceMinterBase {
         for (uint256 i = 0; i < logs.length; i++) {
             if (logs[i].topics[0] != SurfaceFactory.SurfaceCreated.selector) continue;
             assertEq(address(uint160(uint256(logs[i].topics[2]))), collection, "collection indexed");
-            (address loggedMinter, IdMode loggedMode) = abi.decode(logs[i].data, (address, IdMode));
+            (address loggedMinter, IdMode loggedMode, string memory loggedName, string memory loggedSymbol) =
+                abi.decode(logs[i].data, (address, IdMode, string, string));
             assertEq(loggedMinter, address(0), "no primary supplied => zero minter in the event");
             assertEq(uint8(loggedMode), uint8(IdMode.Sequential));
+            assertEq(loggedName, "Zero Minter", "event carries the collection name");
+            assertEq(loggedSymbol, "ZM", "event carries the collection symbol");
             found = true;
         }
         assertTrue(found, "SurfaceCreated emitted");
@@ -197,7 +203,7 @@ contract SurfaceFactoryTest is FixedPriceMinterBase {
         bool found;
         for (uint256 i = 0; i < logs.length; i++) {
             if (logs[i].topics[0] != SurfaceFactory.SurfaceCreated.selector) continue;
-            (address loggedMinter,) = abi.decode(logs[i].data, (address, IdMode));
+            (address loggedMinter,,,) = abi.decode(logs[i].data, (address, IdMode, string, string));
             assertEq(loggedMinter, byoMinter, "event carries the supplied primary");
             found = true;
         }
@@ -238,9 +244,12 @@ contract SurfaceFactoryTest is FixedPriceMinterBase {
         bool found;
         for (uint256 i = 0; i < logs.length; i++) {
             if (logs[i].topics[0] != SurfaceFactory.SurfaceCreated.selector) continue;
-            (address loggedMinter, IdMode loggedMode) = abi.decode(logs[i].data, (address, IdMode));
+            (address loggedMinter, IdMode loggedMode, string memory loggedName, string memory loggedSymbol) =
+                abi.decode(logs[i].data, (address, IdMode, string, string));
             assertEq(loggedMinter, address(0));
             assertEq(uint8(loggedMode), uint8(IdMode.Pooled));
+            assertEq(loggedName, "Pooled", "event carries the collection name");
+            assertEq(loggedSymbol, "PLD", "event carries the collection symbol");
             found = true;
         }
         assertTrue(found);
@@ -263,7 +272,7 @@ contract SurfaceFactoryTest is FixedPriceMinterBase {
         bool found;
         for (uint256 i = 0; i < logs.length; i++) {
             if (logs[i].topics[0] != SurfaceFactory.SurfaceCreated.selector) continue;
-            (address loggedMinter,) = abi.decode(logs[i].data, (address, IdMode));
+            (address loggedMinter,,,) = abi.decode(logs[i].data, (address, IdMode, string, string));
             assertEq(loggedMinter, byoMinter, "event carries the supplied primary");
             found = true;
         }

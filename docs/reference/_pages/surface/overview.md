@@ -97,8 +97,9 @@ init, not changeable after. See
 ## Pricing and the referral share
 
 On the canonical minter, the required payment is the resolved price: the stored
-fixed price, or the price strategy's quote. Out of that price, a fixed 10%
-(`REFERRAL_SHARE_BPS`) goes to the **referrer** passed to `mint`. A mint with no
+fixed price, or the price strategy's quote. Out of that price, the referral
+share (`referralShareBps`, initialized to its 10% cap and settable by the
+collection owner or admin) goes to the **referrer** passed to `mint`. A mint with no
 referrer directs the full price to the payout. There is no protocol fee in the
 token or the canonical minter. A custom minter sets its own terms.
 

@@ -17,9 +17,9 @@ Pooled collections assign ids through their own minter, so this minter is
 sequential only.
 
 `mint` requires exact payment on a fixed price, or `msg.value` at least the
-strategy quote with the excess refunded, and pays a fixed 10% referral share
-(`REFERRAL_SHARE_BPS = 1000`) to the `referrer` argument when nonzero, the rest
-to `payoutRecipient`. Proceeds accrue as pull-payment balances withdrawn through
+strategy quote with the excess refunded, and pays a referral share
+(`referralShareBps`, initialized to the 10% cap) to the `referrer` argument
+when nonzero, the rest to `payoutRecipient`. Proceeds accrue as pull-payment balances withdrawn through
 `withdraw`; no ETH is transferred during a mint, so a reverting recipient does
 not block minting. `price = 0` is valid config; there is no separate free-mint or
 owner-mint entrypoint. An owner mint is done by granting a minter on the
@@ -230,6 +230,17 @@ function setWalletCap(uint256 cap) external
 Sets the per-recipient cap (0 = unlimited), checked against `mintedBy[to]`.
 Counted per recipient on this clone only. Emits `WalletCapSet`.
 
+### setReferralShareBps
+
+```solidity
+function setReferralShareBps(uint16 bps) external
+```
+
+**Access:** collection owner or admin (`onlyCollectionOwnerOrAdmin`, else `NotAuthorized`)
+
+Sets the referral share in bps. Reverts `ReferralShareAboveCap` above
+`MAX_REFERRAL_SHARE_BPS`. Emits `ReferralShareSet`.
+
 ### rescueStrayETH
 
 ```solidity
@@ -276,6 +287,15 @@ function collection() external view returns (address)
 ```
 
 The collection this clone sells for. Set at `initialize`; no setter.
+
+### MAX_REFERRAL_SHARE_BPS
+
+```solidity
+function MAX_REFERRAL_SHARE_BPS() external view returns (uint16)
+```
+
+Hard ceiling for the referral share: 1000 bps, 10%. `setReferralShareBps`
+rejects anything above it.
 
 ### maxMints
 
@@ -354,14 +374,23 @@ function priceStrategy() external view returns (address)
 
 The price strategy contract, or zero when the fixed `price` applies.
 
-### REFERRAL_SHARE_BPS
+### referralShareBps
 
 ```solidity
-function REFERRAL_SHARE_BPS() external view returns (uint16)
+function referralShareBps() external view returns (uint16)
 ```
 
-The referral share as a compile-time constant: 1000 bps, 10%. Paid to the
-`referrer` argument, not artist-set.
+The live referral share in bps. Initialized to `MAX_REFERRAL_SHARE_BPS`;
+applied only when a mint's `referrer` is nonzero. Not a protocol fee.
+
+### saleCap
+
+```solidity
+function saleCap() external view returns (uint256)
+```
+
+Alias for `maxMints`: this clone's own sale ceiling, distinct from the
+collection's `supplyCap`.
 
 ### totalMinted
 
@@ -370,6 +399,16 @@ function totalMinted() external view returns (uint256)
 ```
 
 Tokens minted through this clone, the counter behind `maxMints`.
+
+### totalMintedByThisMinter
+
+```solidity
+function totalMintedByThisMinter() external view returns (uint256)
+```
+
+Alias for `totalMinted`, under a name a client reading across multiple minters
+can use unambiguously: the count minted through this clone, not the
+collection's lifetime count.
 
 ### walletCap
 
@@ -456,6 +495,14 @@ event ReferralPaid(address indexed referrer, uint256 amount)
 
 Emitted when a nonzero referral cut is credited. Indexed by `referrer`, with the
 `amount` in wei.
+
+### ReferralShareSet
+
+```solidity
+event ReferralShareSet(uint16 bps)
+```
+
+Emitted when the referral share changes with `setReferralShareBps`.
 
 ### Sold
 
@@ -559,6 +606,10 @@ points reject zero, so `_settle` never has to resolve a fallback.
 **`ReentrancyGuardReentrantCall()`**
 
 OpenZeppelin ReentrancyGuard error: a `nonReentrant` function was re-entered.
+
+**`ReferralShareAboveCap(uint16 requested, uint16 cap)`**
+
+`setReferralShareBps` was given a share above `MAX_REFERRAL_SHARE_BPS`.
 
 **`RescueFailed()`**
 

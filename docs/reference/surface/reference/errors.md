@@ -172,6 +172,9 @@ OpenZeppelin ReentrancyGuard error: a `nonReentrant` function was re-entered.
 **`ReentrancyGuardReentrantCall`** · [Surface](/docs/surface/contracts/surface#errors)\
 OpenZeppelin ReentrancyGuard error: a `nonReentrant` function was re-entered.
 
+**`ReferralShareAboveCap`** · [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter#errors)\
+`setReferralShareBps` was given a share above `MAX_REFERRAL_SHARE_BPS`.
+
 **`RendererIsLocked`** · [Surface](/docs/surface/contracts/surface#errors)\
 `setRenderer` or `lockRenderer` was called after `lockRenderer`.
 

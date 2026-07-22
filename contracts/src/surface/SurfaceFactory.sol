@@ -87,8 +87,18 @@ contract SurfaceFactory {
     ///         authorization set. A sequential collection may authorize more
     ///         minters later. The full record is the collection's MinterSet
     ///         event log plus the live isMinter/isMinterLocked views. There is
-    ///         no minterOf storage mapping.
-    event SurfaceCreated(address indexed owner, address indexed collection, address primaryMinter, IdMode idMode);
+    ///         no minterOf storage mapping. `name` and `symbol` are the
+    ///         collection's ERC721 identity, fixed at initialize with no
+    ///         setter, so an indexer can record them from log data without a
+    ///         contract read.
+    event SurfaceCreated(
+        address indexed owner,
+        address indexed collection,
+        address primaryMinter,
+        IdMode idMode,
+        string name,
+        string symbol
+    );
     event Deprecated(address indexed successor);
     event PausedSet(bool paused);
 
@@ -186,6 +196,17 @@ contract SurfaceFactory {
         // already known as its sole initial minter.
         collection = Clones.clone(sequentialImplementation);
         minter = Clones.clone(minterImplementation);
+        _initCanonicalMinter(minter, collection, owner, sale);
+        _initCanonicalToken(collection, minter, name, symbol, owner, cfg, creators);
+        _record(collection);
+        emit SurfaceCreated(owner, collection, minter, IdMode.Sequential, name, symbol);
+    }
+
+    /// @dev Split out of createSurface to keep its stack frame within the
+    ///      legacy-codegen limit; no behavior of its own.
+    function _initCanonicalMinter(address minter, address collection, address owner, SaleConfig calldata sale)
+        private
+    {
         // A caller-left-zero payoutRecipient defaults to `owner`: a deploy-time
         // snapshot of that address, not a live read, so it stays renounce-safe.
         FixedPriceMinter(minter).initialize(
@@ -201,6 +222,19 @@ contract SurfaceFactory {
                 walletCap: sale.walletCap
             })
         );
+    }
+
+    /// @dev Split out of createSurface to keep its stack frame within the
+    ///      legacy-codegen limit; no behavior of its own.
+    function _initCanonicalToken(
+        address collection,
+        address minter,
+        string calldata name,
+        string calldata symbol,
+        address owner,
+        SurfaceConfig calldata cfg,
+        address[] calldata creators
+    ) private {
         address[] memory initialMinters = new address[](1);
         initialMinters[0] = minter;
         SurfaceCore(collection).initialize(
@@ -216,8 +250,6 @@ contract SurfaceFactory {
                 creators: creators
             })
         );
-        _record(collection);
-        emit SurfaceCreated(owner, collection, minter, IdMode.Sequential);
     }
 
     /// @notice Deploy and configure a sequential collection owned by `owner`
@@ -242,7 +274,12 @@ contract SurfaceFactory {
         address[] calldata creators
     ) external returns (address collection) {
         collection = _create(sequentialImplementation, name, symbol, owner, cfg, initialMinters, primaryMinter, creators);
-        emit SurfaceCreated(owner, collection, primaryMinter, IdMode.Sequential);
+        // Memory copies keep the emit's string operands at the top of the
+        // stack; reading the calldata slots directly here exceeds the
+        // legacy-codegen stack-depth limit.
+        string memory name_ = name;
+        string memory symbol_ = symbol;
+        emit SurfaceCreated(owner, collection, primaryMinter, IdMode.Sequential, name_, symbol_);
     }
 
     /// @notice Deploy and configure a pooled collection owned by `owner`: the
@@ -265,7 +302,10 @@ contract SurfaceFactory {
         address[] calldata creators
     ) external returns (address collection) {
         collection = _create(pooledImplementation, name, symbol, owner, cfg, initialMinters, primaryMinter, creators);
-        emit SurfaceCreated(owner, collection, primaryMinter, IdMode.Pooled);
+        // Same stack-depth workaround as createSurfaceCustom.
+        string memory name_ = name;
+        string memory symbol_ = symbol;
+        emit SurfaceCreated(owner, collection, primaryMinter, IdMode.Pooled, name_, symbol_);
     }
 
     function _create(

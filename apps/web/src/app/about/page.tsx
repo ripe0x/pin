@@ -4,8 +4,8 @@ export default function AboutPage() {
       <header className="space-y-5">
         <h1 className="text-3xl font-semibold tracking-tight">What PND is</h1>
         <p className="text-base text-fg-muted leading-relaxed">
-          PND helps artists preserve, auction, and operate their work with
-          more control over the systems around it.
+          PND helps artists preserve, publish, auction, and operate their
+          work with more control over the systems around it.
         </p>
         <p className="text-base text-fg-muted leading-relaxed">
           The work, the contract, the auction, and the provenance can all
@@ -66,7 +66,30 @@ export default function AboutPage() {
             Browse, list, and bid through PND. Each artist also gets a
             site that reads their auction contract directly.
           </li>
+          <li>
+            <strong className="text-fg font-medium">Surface.</strong>{" "}
+            Publish editions and generative releases from a collection
+            contract you own. Collectors can mint through PND or through
+            a page the artist hosts themselves, on the same contracts.
+          </li>
         </ul>
+      </section>
+
+      <section className="space-y-4">
+        <h2 className="text-xl sm:text-2xl font-semibold tracking-tight pt-4">
+          Fees
+        </h2>
+        <p className="text-base text-fg-muted leading-relaxed">
+          PND&apos;s contracts take no protocol fee, and auctions have no
+          PND fee at all.
+        </p>
+        <p className="text-base text-fg-muted leading-relaxed">
+          On Surface mints, a referral share of up to 10% of the mint
+          price goes to whichever interface hosts the mint. Minting
+          through PND, that share supports PND. Minting on the
+          artist&apos;s own site, the artist keeps it. Which interface to
+          use, and what the share is, stays the artist&apos;s choice.
+        </p>
       </section>
 
       <section className="space-y-4">

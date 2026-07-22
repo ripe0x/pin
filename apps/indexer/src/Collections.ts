@@ -61,11 +61,13 @@ const tokenRowId = (collection: string, tokenId: bigint) =>
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
 
 on("SurfaceFactory:SurfaceCreated", async ({ event, context }) => {
-  const { owner, collection, primaryMinter } = event.args as {
+  const { owner, collection, primaryMinter, name, symbol } = event.args as {
     owner: `0x${string}`
     collection: `0x${string}`
     primaryMinter: `0x${string}`
     idMode: number
+    name: string
+    symbol: string
   }
   const hasPrimaryMinter = primaryMinter.toLowerCase() !== ZERO_ADDRESS
   await context.db
@@ -73,6 +75,8 @@ on("SurfaceFactory:SurfaceCreated", async ({ event, context }) => {
     .values({
       collection,
       owner,
+      name,
+      symbol,
       primaryMinter: hasPrimaryMinter ? primaryMinter : null,
       createdAtBlock: event.block.number,
       createdAtTime: event.block.timestamp,

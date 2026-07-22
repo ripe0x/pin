@@ -6,9 +6,9 @@ import {
   type ActivityCursor,
 } from "@/lib/indexer-queries"
 import {
-  enrichActivityEvents,
-  serializeForWire,
-  type SerializedActivityEvent,
+  enrichFeedPage,
+  serializeFeedItem,
+  type SerializedFeedItem,
 } from "@/lib/v2-activity"
 
 /**
@@ -44,13 +44,27 @@ const fetchPaginatedFeed = unstable_cache(
   async (
     limit: number,
     cursor: ActivityCursor | null,
-  ): Promise<SerializedActivityEvent[]> => {
+  ): Promise<{
+    items: SerializedFeedItem[]
+    nextCursor: { blockTime: number; id: string } | null
+    rawCount: number
+  }> => {
     const events = await getActivityFeed(limit, cursor)
     if (!events) throw new IndexerUnavailable()
-    const enriched = await enrichActivityEvents(events)
-    return enriched.map(serializeForWire)
+    if (events.length === 0) return { items: [], nextCursor: null, rawCount: 0 }
+    const items = await enrichFeedPage(events)
+    const last = events[events.length - 1]
+    // The cursor is the last RAW event: grouping collapses display rows,
+    // but paging walks the underlying event stream. `rawCount` tells the
+    // client whether the raw page was full (more may exist) — item count
+    // can't, since a grouped page has fewer items than events.
+    return {
+      items: items.map(serializeFeedItem),
+      nextCursor: { blockTime: last.blockTime, id: last.id },
+      rawCount: events.length,
+    }
   },
-  ["activity-feed-page-v1"],
+  ["activity-feed-page-v2"],
   { revalidate: 30, tags: ["activity-feed"] },
 )
 
@@ -77,11 +91,20 @@ export async function GET(req: Request): Promise<NextResponse> {
     }
   }
 
-  let events: SerializedActivityEvent[]
-  try {
-    events = await fetchPaginatedFeed(limit, cursor)
-  } catch {
-    return NextResponse.json({ events: [], unavailable: true })
+  let page: {
+    items: SerializedFeedItem[]
+    nextCursor: { blockTime: number; id: string } | null
+    rawCount: number
   }
-  return NextResponse.json({ events })
+  try {
+    page = await fetchPaginatedFeed(limit, cursor)
+  } catch {
+    return NextResponse.json({
+      items: [],
+      nextCursor: null,
+      rawCount: 0,
+      unavailable: true,
+    })
+  }
+  return NextResponse.json(page)
 }

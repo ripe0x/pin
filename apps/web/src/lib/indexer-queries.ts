@@ -1,6 +1,7 @@
 import "server-only"
 import { NFT_MARKET, MAINNET_CHAIN_ID } from "@pin/addresses"
 import { sql } from "./db"
+import { surfaceFactory } from "./collection"
 
 /** Foundation NFTMarket address — used as the `[house]` segment for FND auctions. */
 const FND_MARKET = NFT_MARKET[MAINNET_CHAIN_ID]
@@ -423,13 +424,21 @@ export async function getPndHouses(limit = 24): Promise<PndHouse[] | null> {
 
 export type PlatformStats = {
   housesDeployed: number
-  ethSettledWei: bigint
+  collectionsDeployed: number
+  /** Auction seller proceeds plus Surface mint revenue net of referral
+   * shares — the ETH that reached artists, not gross volume. */
+  ethToArtistsWei: bigint
 }
 
 /**
  * Aggregate platform totals for the home-page ambient counters.
  * Returns null when the indexer is unavailable; the caller hides the
  * counters sentence entirely in that case.
+ *
+ * The Surface aggregates (collections count, mint revenue) only run when
+ * the factory address resolves: pre-deploy the `collections` /
+ * `collection_sales` tables don't exist in the indexer schema, so an
+ * unconditional query would error the whole read.
  */
 export async function getPlatformStats(): Promise<PlatformStats | null> {
   if (INDEXER_DISABLED || !sql) return null
@@ -440,23 +449,39 @@ export async function getPlatformStats(): Promise<PlatformStats | null> {
       /[^a-zA-Z0-9_]/g,
       "",
     )
+    const surfaceLive = surfaceFactory() !== null
 
-    const [houseRows, settledRows] = await Promise.all([
-      db.unsafe(
-        `SELECT COUNT(*)::text AS count FROM ${schema}.pnd_houses`,
-      ) as Promise<Array<{ count: string }>>,
-      db.unsafe(
-        `SELECT COALESCE(
-            SUM(seller_proceeds + protocol_fee), 0
-          )::text AS total
-         FROM ${schema}.pnd_auctions
-         WHERE status = 'settled'`,
-      ) as Promise<Array<{ total: string }>>,
-    ])
+    const [houseRows, settledRows, collectionRows, mintNetRows] =
+      await Promise.all([
+        db.unsafe(
+          `SELECT COUNT(*)::text AS count FROM ${schema}.pnd_houses`,
+        ) as Promise<Array<{ count: string }>>,
+        db.unsafe(
+          `SELECT COALESCE(SUM(seller_proceeds), 0)::text AS total
+           FROM ${schema}.pnd_auctions
+           WHERE status = 'settled'`,
+        ) as Promise<Array<{ total: string }>>,
+        surfaceLive
+          ? (db.unsafe(
+              `SELECT COUNT(*)::text AS count FROM ${schema}.collections`,
+            ) as Promise<Array<{ count: string }>>)
+          : Promise.resolve([{ count: "0" }]),
+        surfaceLive
+          ? (db.unsafe(
+              `SELECT (
+                 COALESCE((SELECT SUM(paid) FROM ${schema}.collection_sales), 0)
+                 - COALESCE((SELECT SUM(amount) FROM ${schema}.collection_referrals), 0)
+               )::text AS total`,
+            ) as Promise<Array<{ total: string }>>)
+          : Promise.resolve([{ total: "0" }]),
+      ])
 
     return {
       housesDeployed: Number(houseRows[0]?.count ?? 0),
-      ethSettledWei: BigInt(settledRows[0]?.total ?? "0"),
+      collectionsDeployed: Number(collectionRows[0]?.count ?? 0),
+      ethToArtistsWei:
+        BigInt(settledRows[0]?.total ?? "0") +
+        BigInt(mintNetRows[0]?.total ?? "0"),
     }
   }, 2_000)
 }
@@ -568,6 +593,10 @@ export type ActivityEvent = {
    * settlements; `null` for PND settlements / house & collection
    * deployments / mints (those tables don't carry a tx hash today). */
   txHash: string | null
+  /** Tokens issued by this event. Surface `Minted` covers a contiguous
+   * range per call, so one event can carry quantity > 1; every other
+   * source is one token per event (`null`, treated as 1). */
+  quantity: number | null
 }
 
 /**
@@ -626,9 +655,16 @@ export async function getActivityFeed(
       collection: string | null
       collection_name: string | null
       tx_hash: string | null
+      quantity: string | null
     }
 
     const PER_SUBQUERY_LIMIT = 100
+
+    // Surface branches only exist once the factory is deployed: the
+    // collections/collection_mints tables aren't created in the indexer
+    // schema before that, and referencing them would error the whole
+    // unioned query.
+    const surfaceLive = surfaceFactory() !== null
 
     // Filter listing/cancellation pairs that happened within 15 minutes
     // of each other. Treated as noise (test mints, mistaken listings)
@@ -693,7 +729,8 @@ export async function getActivityFeed(
             house::text AS house,
             NULL::text AS collection,
             NULL::text AS collection_name,
-            created_tx_hash::text AS tx_hash
+            created_tx_hash::text AS tx_hash,
+            NULL::text AS quantity
           FROM ${schema}.pnd_houses
           ${where(null, "created_at_time")}
           ORDER BY created_at_time DESC
@@ -715,6 +752,7 @@ export async function getActivityFeed(
             NULL::text,
             collection::text,
             name,
+            NULL::text,
             NULL::text
           FROM ${schema}.fnd_collections
           ${where(null, "created_at_time")}
@@ -737,7 +775,8 @@ export async function getActivityFeed(
             house::text,
             NULL::text,
             NULL::text,
-            created_tx_hash::text
+            created_tx_hash::text,
+            NULL::text
           FROM ${schema}.pnd_auctions
           ${where(PND_NOT_QUICK_CANCEL, "created_at_time")}
           ORDER BY created_at_time DESC
@@ -756,6 +795,7 @@ export async function getActivityFeed(
             NULL::text,
             reserve_price::text,
             NULLIF(end_time, 0)::text,
+            NULL::text,
             NULL::text,
             NULL::text,
             NULL::text,
@@ -781,7 +821,8 @@ export async function getActivityFeed(
             house::text,
             NULL::text,
             NULL::text,
-            lifecycle_tx_hash::text
+            lifecycle_tx_hash::text,
+            NULL::text
           FROM ${schema}.pnd_auctions
           ${where("status = 'settled' AND settled_at_time IS NOT NULL", "settled_at_time")}
           ORDER BY settled_at_time DESC
@@ -803,7 +844,8 @@ export async function getActivityFeed(
             house::text,
             NULL::text,
             NULL::text,
-            lifecycle_tx_hash::text
+            lifecycle_tx_hash::text,
+            NULL::text
           FROM ${schema}.pnd_auctions
           ${where(PND_LONG_LIVED_CANCEL, "settled_at_time")}
           ORDER BY settled_at_time DESC
@@ -827,7 +869,8 @@ export async function getActivityFeed(
             NULL::text,
             NULL::text,
             NULL::text,
-            tx_hash::text
+            tx_hash::text,
+            NULL::text
           FROM ${schema}.fnd_sales
           ${where(null, "block_time")}
           ORDER BY block_time DESC
@@ -843,6 +886,7 @@ export async function getActivityFeed(
             NULL::text,
             t.contract::text,
             t.token_id::text,
+            NULL::text,
             NULL::text,
             NULL::text,
             NULL::text,
@@ -876,6 +920,7 @@ export async function getActivityFeed(
             fm.to_addr::text,
             at.contract::text,
             at.token_id::text,
+            NULL::text,
             NULL::text,
             NULL::text,
             NULL::text,
@@ -916,7 +961,8 @@ export async function getActivityFeed(
             pa.house::text,
             NULL::text,
             NULL::text,
-            pb.tx_hash::text
+            pb.tx_hash::text,
+            NULL::text
           FROM ${schema}.pnd_bids pb
           JOIN ${schema}.pnd_auctions pa ON pa.id = pb.auction_id
           ${where(null, "pb.block_time")}
@@ -940,7 +986,8 @@ export async function getActivityFeed(
             NULL::text,
             NULL::text,
             NULL::text,
-            sub.tx_hash::text
+            sub.tx_hash::text,
+            NULL::text
           FROM (
             SELECT id, auction_id, bidder, amount, end_time, block_time, tx_hash,
                    ROW_NUMBER() OVER (
@@ -952,6 +999,75 @@ export async function getActivityFeed(
           ${where(null, "sub.block_time")}
           ORDER BY sub.block_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})
+${
+  surfaceLive
+    ? `
+         UNION ALL
+
+         -- Surface collection deploys. Name/symbol are on the row (from the
+         -- SurfaceCreated event), so no contract read is needed to render.
+         (SELECT
+            'collection.deployed'::text,
+            ('surf:' || collection)::text,
+            created_at_time::text,
+            owner::text,
+            NULL::text,
+            NULL::text,
+            NULL::text,
+            NULL::text,
+            NULL::text,
+            NULL::text,
+            NULL::text,
+            collection::text,
+            name,
+            created_tx_hash::text,
+            NULL::text
+          FROM ${schema}.collections
+          ${where(null, "created_at_time")}
+          ORDER BY created_at_time DESC
+          LIMIT ${PER_SUBQUERY_LIMIT})
+
+         UNION ALL
+
+         -- Surface mints: one row per Minted call (a call can cover a
+         -- contiguous range, carried in quantity). Indexed for every
+         -- factory-deployed collection regardless of which interface drove
+         -- the mint, so self-hosted activity appears here too. The lateral
+         -- pulls the canonical minter's Sold record from the same tx for
+         -- the paid amount ((collection, block_number) is indexed on
+         -- collection_sales); free mints and custom minters have no Sold
+         -- row and surface with a null amount.
+         (SELECT
+            'mint'::text,
+            ('surfmint:' || cm.id)::text,
+            cm.block_time::text,
+            c.owner::text,
+            cm."to"::text,
+            cm.collection::text,
+            cm.first_token_id::text,
+            cs.paid::text,
+            NULL::text,
+            NULL::text,
+            NULL::text,
+            cm.collection::text,
+            c.name,
+            cm.tx_hash::text,
+            cm.quantity::text
+          FROM ${schema}.collection_mints cm
+          JOIN ${schema}.collections c ON c.collection = cm.collection
+          LEFT JOIN LATERAL (
+            SELECT paid
+            FROM ${schema}.collection_sales s
+            WHERE s.collection = cm.collection
+              AND s.block_number = cm.block_number
+              AND s.first_token_id = cm.first_token_id
+            LIMIT 1
+          ) cs ON true
+          ${where(null, "cm.block_time")}
+          ORDER BY cm.block_time DESC
+          LIMIT ${PER_SUBQUERY_LIMIT})`
+    : ""
+}
        )
        SELECT * FROM events
        ${
@@ -980,6 +1096,7 @@ export async function getActivityFeed(
       collection: r.collection,
       collectionName: r.collection_name,
       txHash: r.tx_hash,
+      quantity: r.quantity === null ? null : Number(r.quantity),
     }))
   }, timeoutMs)
 }
