@@ -761,7 +761,13 @@ function fmtEth(wei: bigint): string {
 // bigint replica of HomageMinter._feeForCount (baseFee * (1+g/1e4)^n, clamped at
 // MAX_MINT_FEE, exponentiation-by-squaring), so the itemized breakdown matches the chain
 // to the wei without a per-item RPC read.
-const MAX_MINT_FEE = 10n ** 18n // 1 ether
+const MAX_MINT_FEE = 10n ** 18n // 1 ether, the fee ceiling
+// The squaring loop's running multiplier is 1e4 fixed point, not a wei amount, so it
+// clamps against its own ceiling. Clamping it at MAX_MINT_FEE instead caps the
+// multiplier four orders of magnitude below the contract's and diverges from the chain
+// at high mint counts. This mirrors HomageMinter's MAX_FEE_MULTIPLIER, the same
+// magnitude-versus-multiplier distinction audit finding L-01 fixed onchain.
+const MAX_FEE_MULTIPLIER = MAX_MINT_FEE * 10_000n
 function feeForCount(baseFee: bigint, g: bigint, n: bigint): bigint {
   let fee = baseFee
   if (g === 0n || fee === 0n) return fee
@@ -774,7 +780,7 @@ function feeForCount(baseFee: bigint, g: bigint, n: bigint): bigint {
     n >>= 1n
     if (n !== 0n) {
       m = (m * m) / 10_000n
-      if (m > MAX_MINT_FEE) m = MAX_MINT_FEE
+      if (m > MAX_FEE_MULTIPLIER) m = MAX_FEE_MULTIPLIER
     }
   }
   return fee
