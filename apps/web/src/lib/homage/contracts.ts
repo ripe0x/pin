@@ -38,6 +38,8 @@ export const POOL_KEY = {
 // (mirrors HomageMinter._isPunkHolder).
 export const CRYPTOPUNKS_MARKET = "0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB" as const
 export const WRAPPED_PUNKS = "0xb7F7F6C52F2e2fdb1963Eab30438024864c313F6" as const
+// Official CryptoPunks 721 wrapper (tokenId == punkId); holders resolved like WRAPPED_PUNKS.
+export const WRAPPED_PUNKS_721 = "0x000000000000003607fce1aC9e043a86675C5C2F" as const
 
 // Delegate.xyz Registry v2 (canonical singleton) — a cold vault delegates a hot
 // wallet, which transacts the holder-priority claim via `claimFor` (mints to the vault).
