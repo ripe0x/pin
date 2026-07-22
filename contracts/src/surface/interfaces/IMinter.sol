@@ -13,17 +13,19 @@ interface IMinter {
     ///         the address any gate evaluates (an allowlist gates the
     ///         collector, not the payer). `referrer` receives the minter's
     ///         referral share when nonzero; with a zero referrer the entire
-    ///         amount accrues to the artist payout. `data` carries
-    ///         caller-supplied input a gate consumes (a Merkle proof); gates
-    ///         that read only chain state
-    ///         need no data. Overpayment on a strategy-priced mint accrues to
-    ///         the payer (`msg.sender`) by pull payment.
+    ///         amount accrues to the artist payout. `data` is the allowlist
+    ///         Merkle proof and nothing else: it is consumed only by the gate
+    ///         and never forwarded to the price strategy. A collection with no
+    ///         allowlist ignores it (pass empty). Overpayment on a
+    ///         strategy-priced mint accrues to the payer (`msg.sender`) by pull
+    ///         payment.
     function mint(address to, uint256 quantity, address referrer, bytes calldata data) external payable;
 
-    /// @notice Price in wei to mint `quantity` tokens to `to` given `data`:
-    ///         the stored fixed price, or the price strategy's quote when one
-    ///         is set. Does not evaluate gates or the mint window.
-    function priceOf(address to, uint256 quantity, bytes calldata data) external view returns (uint256);
+    /// @notice Price in wei to mint `quantity` tokens to `to`: the stored fixed
+    ///         price, or the price strategy's quote when one is set. The quote
+    ///         is a function of `(to, quantity)` and chain state; it takes no
+    ///         caller data. Does not evaluate gates or the mint window.
+    function priceOf(address to, uint256 quantity) external view returns (uint256);
 
     // ── errors: mint()'s own checks ──────────────────────────────────────────
     error ZeroQuantity();

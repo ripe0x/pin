@@ -306,6 +306,35 @@ contract FixedPriceMinterTest is FixedPriceMinterBase {
         m.mint{value: PRICE}(collector, 1, address(0), abi.encode(proof2));
     }
 
+    /// @dev The no-arg mint(quantity) overload passes empty data, so on a gated
+    ///      collection it carries no proof and must revert NotAllowlisted rather
+    ///      than panic on abi.decode of empty bytes.
+    function test_allowlist_noArgOverload_emptyData_revertsNotAllowlisted() public {
+        (bytes32 root,,) = _twoLeafTree(collector, referrer);
+        FixedPriceMinterInitParams memory p = _minterParams(address(0), PRICE);
+        p.allowlistRoot = root;
+        (, FixedPriceMinter m) = _collectionWithConfiguredMinter(p);
+
+        vm.deal(collector, PRICE);
+        vm.prank(collector);
+        vm.expectRevert(IMinter.NotAllowlisted.selector);
+        m.mint{value: PRICE}(1);
+    }
+
+    /// @dev Same clean revert on the 4-arg entrypoint when data is empty on a
+    ///      gated collection (no low-level decode panic).
+    function test_allowlist_emptyData_revertsNotAllowlisted() public {
+        (bytes32 root,,) = _twoLeafTree(collector, referrer);
+        FixedPriceMinterInitParams memory p = _minterParams(address(0), PRICE);
+        p.allowlistRoot = root;
+        (, FixedPriceMinter m) = _collectionWithConfiguredMinter(p);
+
+        vm.deal(collector, PRICE);
+        vm.prank(collector);
+        vm.expectRevert(IMinter.NotAllowlisted.selector);
+        m.mint{value: PRICE}(collector, 1, address(0), "");
+    }
+
     /// @dev The gate evaluates `to`, not the payer: stranger pays, gifting to
     ///      the allowlisted `collector`, and the mint succeeds.
     function test_allowlist_payerNotRecipient_gateEvaluatesRecipient() public {
@@ -940,8 +969,8 @@ contract FixedPriceMinterTest is FixedPriceMinterBase {
 
     function test_priceOf_fixedPriceBranch() public {
         (, FixedPriceMinter m) = _collectionWithMinter(PRICE);
-        assertEq(m.priceOf(collector, 1, ""), PRICE, "single unit");
-        assertEq(m.priceOf(collector, 3, ""), PRICE * 3, "scales with quantity");
+        assertEq(m.priceOf(collector, 1), PRICE, "single unit");
+        assertEq(m.priceOf(collector, 3), PRICE * 3, "scales with quantity");
     }
 
     // ─────────────────────────────────────────────────────────────────────────

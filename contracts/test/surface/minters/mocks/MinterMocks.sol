@@ -16,7 +16,7 @@ contract MockFixedStrategy is IPriceStrategy {
         answer = answer_;
     }
 
-    function priceOf(address, address, uint256, bytes calldata) external view override returns (uint256) {
+    function priceOf(address, address, uint256) external view override returns (uint256) {
         return answer;
     }
 }
@@ -24,7 +24,7 @@ contract MockFixedStrategy is IPriceStrategy {
 /// @dev Always reverts. Proves a misbehaving strategy's revert bubbles out
 ///      of mint() rather than being swallowed.
 contract RevertingStrategy is IPriceStrategy {
-    function priceOf(address, address, uint256, bytes calldata) external pure override returns (uint256) {
+    function priceOf(address, address, uint256) external pure override returns (uint256) {
         revert("RevertingStrategy: always reverts");
     }
 }
@@ -39,7 +39,7 @@ contract RevertingStrategy is IPriceStrategy {
 ///      callable from a view function without violating the interface's
 ///      staticcall contract.
 contract VaryingPriceStrategy is IPriceStrategy {
-    function priceOf(address, address, uint256, bytes calldata) external view override returns (uint256) {
+    function priceOf(address, address, uint256) external view override returns (uint256) {
         return gasleft();
     }
 }
