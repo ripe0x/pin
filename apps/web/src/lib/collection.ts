@@ -358,6 +358,16 @@ export function evmNowAddressUrl(addr: string, chainId: number = PND_CHAIN_ID): 
 }
 
 /**
+ * OpenSea collection URL for a contract, chain-aware. The bare
+ * assets/<chain>/<address> path resolves to the collection page. Testnets use
+ * testnets.opensea.io.
+ */
+export function openSeaAddressUrl(addr: string, chainId: number = PND_CHAIN_ID): string {
+  if (chainId === sepolia.id) return `https://testnets.opensea.io/assets/sepolia/${addr}`
+  return `https://opensea.io/assets/ethereum/${addr}`
+}
+
+/**
  * Explorer tx URL, chain-aware. Mainnet uses evm.now; testnets use the
  * network's own etherscan subdomain.
  */

@@ -39,6 +39,7 @@ import {
   REFERRAL_SHARE_BPS,
   ZERO_ADDRESS,
   evmNowAddressUrl,
+  openSeaAddressUrl,
   formatBps,
   hasPriceStrategy,
   ipfsToHttp,
@@ -508,14 +509,24 @@ export default async function CollectionPage({
                 </dd>
               </dl>
               <div className="flex flex-col gap-2 pt-4">
-                <a
-                  href={evmNowAddressUrl(addr, PND_CHAIN_ID)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[10px] uppercase tracking-wider text-gray-400 underline hover:text-fg"
-                >
-                  View contract ↗
-                </a>
+                <div className="flex items-center gap-4">
+                  <a
+                    href={evmNowAddressUrl(addr, PND_CHAIN_ID)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] uppercase tracking-wider text-gray-400 underline hover:text-fg"
+                  >
+                    View contract ↗
+                  </a>
+                  <a
+                    href={openSeaAddressUrl(addr, PND_CHAIN_ID)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] uppercase tracking-wider text-gray-400 underline hover:text-fg"
+                  >
+                    OpenSea ↗
+                  </a>
+                </div>
                 <Link
                   href={`/collections/${addr}/redeem`}
                   className="text-[10px] uppercase tracking-wider text-gray-400 underline hover:text-fg"
@@ -567,7 +578,7 @@ export default async function CollectionPage({
                     : shortAddress(c.sale.payout)
                 }
               />
-              <div className="pt-1">
+              <div className="flex items-center gap-4 pt-1">
                 <a
                   href={evmNowAddressUrl(addr, PND_CHAIN_ID)}
                   target="_blank"
@@ -575,6 +586,14 @@ export default async function CollectionPage({
                   className="text-[10px] uppercase tracking-wider text-gray-400 underline hover:text-fg"
                 >
                   View contract ↗
+                </a>
+                <a
+                  href={openSeaAddressUrl(addr, PND_CHAIN_ID)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[10px] uppercase tracking-wider text-gray-400 underline hover:text-fg"
+                >
+                  OpenSea ↗
                 </a>
               </div>
             </div>
