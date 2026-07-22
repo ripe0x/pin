@@ -66,11 +66,6 @@ function Cell({
       ) : (
         <div className="h-full w-full animate-pulse bg-gray-100 dark:bg-bg" />
       )}
-      {minted && (
-        <span className="absolute bottom-1.5 left-1.5 font-mono text-[9px] uppercase tracking-wider text-white/70 mix-blend-difference">
-          {id}
-        </span>
-      )}
     </div>
   )
   return minted ? (
@@ -120,24 +115,47 @@ export function HomageField({
           the generic field had. Only feature when there's enough to fill around it. */}
       {/* Container bg = the page ground so trailing empty cells in a sparse (few-mint)
           field vanish rather than showing as blocks; gap-px separates filled tiles.
-          (PND's gray scale inverts under .dark, so a gray bg would render light here.) */}
-      <div
-        className="grid gap-px"
-        style={{
-          gridTemplateColumns: "repeat(auto-fill, minmax(clamp(150px, 22vw, 300px), 1fr))",
-          background: "var(--paper, #0a0a0c)",
-        }}
-      >
-        {cells.map((c, i) => (
-          <Cell
-            key={`${c.id}-${i}`}
-            renderer={renderer}
-            id={c.id}
-            minted={c.minted}
-            collection={collection}
-            featured={i === 0 && cells.length >= 5}
+          (PND's gray scale inverts under .dark, so a gray bg would render light here.)
+          max-height caps the field at roughly two rows so a growing mint count never
+          pushes the mint instrument further down the page; overflow scrolls internally,
+          fade-to-paper gradient signals more below. */}
+      <div className="relative">
+        <div
+          className="grid gap-px overflow-y-auto"
+          style={{
+            gridTemplateColumns: "repeat(auto-fill, minmax(clamp(150px, 22vw, 300px), 1fr))",
+            background: "var(--paper, #0a0a0c)",
+            maxHeight: "clamp(300px, 44vw, 600px)",
+          }}
+        >
+          {cells.map((c, i) => (
+            <Cell
+              key={`${c.id}-${i}`}
+              renderer={renderer}
+              id={c.id}
+              minted={c.minted}
+              collection={collection}
+              featured={i === 0 && cells.length >= 5}
+            />
+          ))}
+        </div>
+        {cells.length > 8 && (
+          <div
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-16"
+            style={{background: "linear-gradient(to bottom, transparent, var(--paper, #0a0a0c))"}}
           />
-        ))}
+        )}
+      </div>
+      <div className="flex items-center justify-between px-6 py-3 lg:px-12">
+        <Link
+          href="#mint-instrument"
+          className="font-mono text-[10px] uppercase tracking-wider text-gray-400 underline decoration-dotted underline-offset-4 hover:text-gray-300"
+        >
+          Mint
+        </Link>
+        <span className="font-mono text-[10px] uppercase tracking-wider text-gray-400">
+          {minted} / {supply} minted
+        </span>
       </div>
       {mintedIds.length === 0 && (
         <p className="px-6 py-3 font-mono text-[10px] uppercase tracking-wider text-gray-400 lg:px-12">
