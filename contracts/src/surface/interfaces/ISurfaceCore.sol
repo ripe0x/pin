@@ -7,8 +7,9 @@ import {SurfaceConfig, IdMode, InitParams} from "../SurfaceTypes.sol";
 /// @notice Shared interface of every collection, regardless of id mode. An
 ///         OpenZeppelin ERC721 deployed as an immutable EIP-1167 clone: it
 ///         holds no value and runs no sale logic, and stores one seed per
-///         token. The two mutable slots are the renderer and the minter set;
-///         there is no upgrade path.
+///         token. The renderer and the minter set are the swappable module
+///         slots; royalty, supply cap, primary minter, creators, and admins
+///         are owner or admin mutable config. There is no upgrade path.
 ///
 ///         The mint entrypoints are not declared here. Each id mode is its own
 ///         contract with its own entrypoints: ISurface (sequential) assigns
@@ -54,9 +55,9 @@ interface ISurfaceCore {
     ///         mints are always quantity 1. firstMintIndex is the global mint
     ///         order of the call's first token (token k's index =
     ///         firstMintIndex + k), included because pooled ids do not encode
-    ///         it. minter is the calling minter (msg.sender), which minted
-    ///         this token; it gives cross-minter attribution without trace
-    ///         lookups. The mint block is the log's own block. No per-token
+    ///         it. minter is the calling minter (msg.sender), for
+    ///         cross-minter attribution. The mint block is not stored; read
+    ///         it from the event. No per-token
     ///         data is stored beyond the seed; indexers read the rest from the
     ///         log.
     event Minted(

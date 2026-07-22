@@ -11,13 +11,11 @@ import {FixedPriceMinter} from "../src/surface/minters/FixedPriceMinter.sol";
 /// @notice Deploy script for the Surface platform core: the two collection
 ///         implementations and the factory that clones them. Nothing else.
 ///
-///         The factory reuses the already-deployed Catalog and ships with NO
-///         default renderer. Every collection brings its own renderer in its
-///         config (cfg.renderer), so RenderAssets and DefaultRenderer are
-///         deliberately not deployed here. Each can be deployed later as a
-///         standalone singleton and opted into per collection (cfg.renderer)
-///         with no change to the factory. This keeps the deploy to only the
-///         contracts the platform actually needs.
+///         The factory reuses the already-deployed Catalog and has no default
+///         renderer: every collection supplies its own via cfg.renderer, so
+///         RenderAssets and DefaultRenderer are not part of this deploy.
+///         Either can be deployed later as a standalone singleton and used
+///         per collection with no factory change.
 ///
 /// @dev    Catalog is a public good already live on mainnet at
 ///         0x467a9c39e03C595EC3075D856f19C7386b6b915d (a CREATE2 deterministic

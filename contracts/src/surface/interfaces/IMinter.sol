@@ -12,8 +12,8 @@ interface IMinter {
     /// @notice Mint `quantity` tokens to `to`. `to` is both the recipient and
     ///         the address any gate evaluates (an allowlist gates the
     ///         collector, not the payer). `referrer` receives the minter's
-    ///         referral share when nonzero; a zero referrer folds the share
-    ///         to the artist. `data` carries caller-supplied input a gate
+    ///         referral share when nonzero; with a zero referrer the entire
+    ///         amount accrues to the artist payout. `data` carries caller-supplied input a gate
     ///         consumes (a Merkle proof); gates that read only chain state
     ///         need no data. Overpayment on a strategy-priced mint accrues to
     ///         the payer (`msg.sender`) by pull payment.

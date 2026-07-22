@@ -32,7 +32,7 @@ struct SurfaceConfig {
     uint256 supplyCap; // 0 = open supply
     uint16 royaltyBps; // EIP-2981, advisory
     address royaltyReceiver; // 0 = owner()
-    address renderer; // provides tokenURI; 0 at init = use the factory default
+    address renderer; // provides tokenURI; 0 at init = the factory default; reverts RendererRequired when that is also 0
     bool rendererLocked; // one-way; see lockRenderer()
     bool supplyLocked; // one-way; see lockSupply()
 }
@@ -45,7 +45,7 @@ struct InitParams {
     string symbol;
     address owner;
     SurfaceConfig cfg;
-    address defaultRenderer; // used when cfg.renderer is 0
+    address defaultRenderer; // used when cfg.renderer is 0; init reverts RendererRequired if both are 0
     address[] initialMinters; // extension minters granted at init
     address primaryMinter; // discovery default; 0 = none. Must be one of initialMinters.
     address catalog; // Catalog singleton read for creator confirmation; 0 = none

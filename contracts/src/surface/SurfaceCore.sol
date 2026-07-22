@@ -159,10 +159,8 @@ abstract contract SurfaceCore is
         }
         // rendererLocked/supplyLocked, passed in p.cfg, apply from
         // initialization; emit their events. The minter set has no
-        // initialize-time lock: it is frozen after deploy by the separate
-        // owner-only lockMinter() call, applied once the intended minter
-        // set is in place (immediately after this transaction, or via the
-        // factory's atomic createSurface ordering for the canonical minter).
+        // initialize-time lock; it is frozen only by a later lockMinter()
+        // call (owner-only on pooled, owner or admin on sequential).
         if (_cfg.rendererLocked) emit RendererLocked();
         if (_cfg.supplyLocked) emit SupplyLocked();
         emit SurfaceConfigured(idMode(), p.cfg.supplyCap);
@@ -196,7 +194,7 @@ abstract contract SurfaceCore is
     function _mintOne(address to, uint256 tokenId, uint256 mintIndex) internal {
         _mint(to, tokenId);
         // Seed: a pure function of public chain state and token identity. The
-        // recipient address is deliberately excluded, to avoid making entropy
+        // recipient address is excluded, to avoid making entropy
         // depend on the minter and to avoid a wallet-grinding surface.
         // mintIndex re-rolls the seed on a pooled re-mint of the same id.
         // Spec: docs/injection-convention.md.
@@ -442,8 +440,9 @@ abstract contract SurfaceCore is
     /// @notice One-way, optional: freeze the minter set permanently. For a
     ///         backed pooled collection this guarantees no minter can be swapped
     ///         in later to retire another minter's backed tokens; call it once
-    ///         the intended minter is set. No effect on a collection with no
-    ///         extension minters.
+    ///         the intended minter is set. Locking freezes the set as it stands:
+    ///         locking an empty set permanently prevents granting any minter,
+    ///         which on a sequential collection permanently prevents minting.
     function lockMinter() external override {
         _requireMinterAuthority();
         if (_minterLocked) revert MinterIsLocked();

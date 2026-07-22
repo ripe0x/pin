@@ -36,11 +36,10 @@ struct FixedPriceMinterInitParams {
 ///         sequential-only.
 ///
 ///         Holds proceeds by pull payment (recipients withdraw); config
-///         authority is borrowed from the collection (owner or admin, the
-///         pattern the deleted HookBase used). Every mint through this
+///         authority is borrowed from the collection (owner or admin). Every mint through this
 ///         contract is paid: price 0 is legal config but not a free-mint
-///         special case, and there is no owner-mint path. Owner airdrops go
-///         around the minter (grant a one-off minter, mint, revoke).
+///         special case, and there is no owner-mint path. A free distribution
+///         requires granting a separate minter on the collection.
 ///
 /// @dev    Deployed as an immutable EIP-1167 clone: no proxy admin, no
 ///         upgrade path. The OZ "Upgradeable" bases are used only for the
@@ -60,7 +59,7 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
     ///         Initialized to MAX_REFERRAL_SHARE_BPS; collection owner/admin
     ///         settable via setReferralShareBps, capped at
     ///         MAX_REFERRAL_SHARE_BPS. Not a protocol fee. A mint with no
-    ///         referrer accrues the full share to the artist.
+    ///         referrer accrues the entire amount to payoutRecipient.
     uint16 public referralShareBps;
 
     uint256 public price;
@@ -92,8 +91,7 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
     ///         integration-facing name.
     uint256 public totalMinted;
     /// @notice Tokens minted to `to` through this clone, for the wallet cap.
-    ///         Counted after a mint succeeds, matching the deleted
-    ///         GateHook's ordering.
+    ///         Counted after the collection mint call succeeds.
     mapping(address => uint256) public mintedBy;
 
     // Pull-payment balances: mints accrue here, recipients claim via
@@ -203,7 +201,7 @@ contract FixedPriceMinter is Initializable, ReentrancyGuardUpgradeable, IMinter 
         _executeMint(msg.sender, to, quantity, referrer, data);
     }
 
-    /// @notice Ergonomic overload for the common case: mint to the caller,
+    /// @notice Overload for the common case: mint to the caller,
     ///         no referrer, no gate data. Same guarded path as the 4-arg
     ///         entrypoint (`_executeMint`), so settlement, gates, and
     ///         reentrancy protection are identical.
