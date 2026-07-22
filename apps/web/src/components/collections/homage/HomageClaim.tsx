@@ -25,6 +25,11 @@ export function HomageClaim({
   disabled,
   getClaimValue,
   onClaim,
+  // In the allowlist / public draw phases a wallet with no claimable punks has
+  // nothing to do in the claim block, so the whole "your punks" chrome (header,
+  // copy, empty state) is hidden and only the mint-by-id fallback link remains.
+  // The claim phase always shows the full chrome (that IS the phase's purpose).
+  hidePunksWhenEmpty = false,
 }: {
   minter: Address
   collection: Address
@@ -33,8 +38,12 @@ export function HomageClaim({
   disabled: boolean
   getClaimValue: (recipient?: Address, punkId?: bigint) => Promise<bigint | null>
   onClaim: (args: Flow) => void
+  hidePunksWhenEmpty?: boolean
 }) {
   const {punks, status} = useOwnedPunks(minter, address, refreshKey)
+  // Only collapse once the scan has resolved to zero — never mid-load, so a slow
+  // scan can't flash the chrome away and back as punks arrive.
+  const hidePunksChrome = hidePunksWhenEmpty && status !== "loading" && punks.length === 0
   const flows = homageFlows(minter)
   const [manualId, setManualId] = useState("")
   const [manualOpen, setManualOpen] = useState(false)
@@ -87,53 +96,63 @@ export function HomageClaim({
 
   return (
     <div className="space-y-3">
-      <p className="text-[10px] font-mono text-gray-400 leading-relaxed">
-        Punks held by this wallet, or delegated to it through delegate.xyz. Each mints
-        the homage for that punk&apos;s own id.
-      </p>
+      {!hidePunksChrome && (
+        <>
+          <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">Your punks · punk mint claim</p>
+          <p className="text-[10px] font-mono text-gray-400 leading-relaxed">
+            Punks held by this wallet, or delegated to it through delegate.xyz. Each mints
+            the homage for that punk&apos;s own id.
+          </p>
 
-      {status === "loading" && <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">Finding your punks…</p>}
+          {status === "loading" && (
+            <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">Finding your punks…</p>
+          )}
 
-      {punks.length > 0 && (
-        <ul className="space-y-2">
-          {punks.map((p) => (
-            <li key={p.id} className="flex items-center justify-between gap-3 rounded border border-gray-200 bg-surface-muted/40 px-3 py-2">
-              <span className="text-[11px] font-mono text-fg">
-                Punk {p.id}
-                {p.wrapped && <span className="text-gray-400"> · wrapped</span>}
-                {p.vault && <span className="text-gray-400"> · via vault {p.vault.slice(0, 6)}…</span>}
-                {!p.minted && reservedById.get(p.id) && <span className="text-gray-400"> · reserved</span>}
+          {punks.length > 0 && (
+            <ul className="space-y-2">
+              {punks.map((p) => (
+                <li
+                  key={p.id}
+                  className="flex items-center justify-between gap-3 rounded border border-gray-200 bg-surface-muted/40 px-3 py-2"
+                >
+                  <span className="text-[11px] font-mono text-fg">
+                    Punk {p.id}
+                    {p.wrapped && <span className="text-gray-400"> · wrapped</span>}
+                    {p.vault && <span className="text-gray-400"> · via vault {p.vault.slice(0, 6)}…</span>}
+                    {!p.minted && reservedById.get(p.id) && <span className="text-gray-400"> · reserved</span>}
+                  </span>
+                  {p.minted ? (
+                    <Link
+                      href={`/collections/${collection}/${p.id}`}
+                      className="text-[10px] font-mono uppercase tracking-wider text-gray-400 hover:text-fg transition-colors"
+                    >
+                      Already minted · view →
+                    </Link>
+                  ) : (
+                    <button
+                      onClick={() => claimDirect(p.id, p.vault)}
+                      disabled={disabled || pendingId !== null}
+                      className="text-[10px] font-mono font-medium uppercase tracking-wider px-3 py-1.5 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {pendingId === p.id ? "…" : p.vault ? "Punk mint claim to vault" : "Punk mint claim"}
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {/* Reads as a state of the wallet's holdings, matching the rows it stands in for,
+              rather than as another line of explanatory copy. */}
+          {punks.length === 0 && status !== "loading" && (
+            <div className="flex items-center gap-2 rounded border border-gray-200 bg-surface-muted/40 px-3 py-2">
+              <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-gray-300 dark:bg-gray-700" />
+              <span className="text-[11px] font-mono text-gray-400">
+                No claimable punks{status === "partial" ? " found in the recent window" : ""}
               </span>
-              {p.minted ? (
-                <Link
-                  href={`/collections/${collection}/${p.id}`}
-                  className="text-[10px] font-mono uppercase tracking-wider text-gray-400 hover:text-fg transition-colors"
-                >
-                  Already minted · view →
-                </Link>
-              ) : (
-                <button
-                  onClick={() => claimDirect(p.id, p.vault)}
-                  disabled={disabled || pendingId !== null}
-                  className="text-[10px] font-mono font-medium uppercase tracking-wider px-3 py-1.5 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {pendingId === p.id ? "…" : p.vault ? "Punk mint claim to vault" : "Punk mint claim"}
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {/* Reads as a state of the wallet's holdings, matching the rows it stands in for,
-          rather than as another line of explanatory copy. */}
-      {punks.length === 0 && status !== "loading" && (
-        <div className="flex items-center gap-2 rounded border border-gray-200 bg-surface-muted/40 px-3 py-2">
-          <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-gray-300 dark:bg-gray-700" />
-          <span className="text-[11px] font-mono text-gray-400">
-            No claimable punks{status === "partial" ? " found in the recent window" : ""}
-          </span>
-        </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* Mint by id (claimTo): the fallback for a punk the list above cannot see, e.g.

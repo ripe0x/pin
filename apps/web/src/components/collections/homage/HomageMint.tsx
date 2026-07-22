@@ -651,13 +651,15 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                   sibling to that phase-driven block, not one of its branches. */}
               {address && !wrongNetwork && claimIsOpen && (
                 <div className="border-t border-gray-100 pt-3 space-y-3">
-                  <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">Your punks · punk mint claim</p>
                   <HomageClaim
                     minter={minter}
                     collection={collection}
                     address={address}
                     refreshKey={refreshKey}
                     disabled={isPending || soldOut}
+                    // In allowlist/public a no-punk wallet collapses the claim chrome to
+                    // just the mint-by-id link (the header lives inside HomageClaim now).
+                    hidePunksWhenEmpty={phase === "allowlist" || phase === "public"}
                     getClaimValue={claimValue}
                     onClaim={(args) =>
                       // The claim routes are a union of payable write configs; wagmi's writeContract
