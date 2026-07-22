@@ -85,6 +85,9 @@ export const EXIT_FEE = 3_000_000_000_000_000n // 0.003 ETH — deploy default; 
 export const homageMinterAbi = parseAbi([
   "function threshold() view returns (uint256)",
   "function exitFee() view returns (uint256)",
+  // publicStart + redeemDelay, frozen at the first mint — redeem() reverts with
+  // RedeemLocked(opensAt) before this timestamp.
+  "function redeemOpensAt() view returns (uint256)",
   "function SUPPLY() view returns (uint256)",
   "function remaining() view returns (uint256)",
   "function totalMinted() view returns (uint256)",

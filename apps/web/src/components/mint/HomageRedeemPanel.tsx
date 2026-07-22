@@ -2,9 +2,10 @@
 
 /**
  * Homage's per-token lifecycle panel: redeem. Burning a homage returns the
- * full 50,000 $111 escrowed inside it and puts its punk id back in the
- * mintable pool; an ETH exit fee (owner-tunable) applies. Registered in
- * mint-slots.tsx under "homage-redeem" (the descriptor's `lifecyclePanel`).
+ * full escrowed $111 (threshold(), owner-tunable — read live) and puts its
+ * punk id back in the mintable pool; an ETH exit fee (owner-tunable) applies.
+ * Registered in mint-slots.tsx under "homage-redeem" (the descriptor's
+ * `lifecyclePanel`).
  *
  * Mirrors the Homage site's redeem UX (web/app/redeem/page.tsx): a two-step
  * confirm whose consequence line spells out exactly what the burn does, the
@@ -18,7 +19,6 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { formatEther } from "viem"
 import {
   useAccount,
   useChainId,
@@ -36,11 +36,8 @@ import {
   formatWriteError,
 } from "@/components/tx/tx-ui"
 import { resolveMintCollection } from "@/lib/mint-collections"
+import { formatLocalTime, formatTokenAmount, useHomageRedeemStatus } from "@/lib/homage/redeem-status"
 import type { LifecyclePanelProps } from "./mint-slots"
-
-function trimEth(s: string): string {
-  return s.includes(".") ? s.replace(/\.?0+$/, "") : s
-}
 
 export function HomageRedeemPanel({ collectionId, tokenId, owner }: LifecyclePanelProps) {
   const desc = resolveMintCollection(collectionId)
@@ -62,6 +59,7 @@ export function HomageRedeemPanel({ collectionId, tokenId, owner }: LifecyclePan
     chainId: PREFERRED_CHAIN.id,
     query: { enabled: !!desc },
   })
+  const { threshold, opensAt, isOpen, loading: statusLoading } = useHomageRedeemStatus(desc?.address)
 
   const {
     writeContract,
@@ -119,20 +117,20 @@ export function HomageRedeemPanel({ collectionId, tokenId, owner }: LifecyclePan
             <div className="flex items-center gap-2">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
               <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500">
-                Backed by 50,000 $111
+                Backed by {threshold !== null ? formatTokenAmount(threshold) : "…"} $111
               </span>
             </div>
             {exitFee !== null && (
               <span className="text-[10px] font-mono uppercase tracking-wider text-gray-400 tabular-nums">
-                Exit fee: {trimEth(formatEther(exitFee))} ETH
+                Exit fee: {formatTokenAmount(exitFee)} ETH
               </span>
             )}
           </div>
 
           <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
-            This homage escrows 50,000 $111. Its holder can redeem at any time: the token is
-            burned, the coins are returned in full, and punk #{tokenId} goes back in the mintable
-            pool. A small ETH exit fee applies.
+            This homage escrows {threshold !== null ? formatTokenAmount(threshold) : "…"} $111. Its
+            holder can redeem once redemption opens: the token is burned, the coins are returned in
+            full, and punk #{tokenId} goes back in the mintable pool. A small ETH exit fee applies.
           </p>
 
           {isSuccess && txHash ? (
@@ -140,7 +138,7 @@ export function HomageRedeemPanel({ collectionId, tokenId, owner }: LifecyclePan
               <TxSuccessBanner
                 txHash={txHash}
                 chainId={PREFERRED_CHAIN.id}
-                message={`Redeemed. 50,000 $111 returned to your wallet; punk #${tokenId} is back in the pool.`}
+                message={`Redeemed. ${threshold !== null ? formatTokenAmount(threshold) : ""} $111 returned to your wallet; punk #${tokenId} is back in the pool.`}
                 onDismiss={() => reset()}
               />
               {/* The token no longer exists — offer the way back, don't refresh
@@ -177,6 +175,11 @@ export function HomageRedeemPanel({ collectionId, tokenId, owner }: LifecyclePan
               Held by {owner ? `${owner.slice(0, 6)}…${owner.slice(-4)}` : "someone else"}. Only
               the holder can redeem.
             </p>
+          ) : !statusLoading && !isOpen ? (
+            <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
+              Redeems open {opensAt !== null ? formatLocalTime(opensAt) : "soon"}, once public mint
+              begins.
+            </p>
           ) : !confirming ? (
             <button
               type="button"
@@ -191,12 +194,13 @@ export function HomageRedeemPanel({ collectionId, tokenId, owner }: LifecyclePan
               {/* Explicit consequence line — spell out exactly what redeeming
                   does before the tx (same copy contract as the Homage site). */}
               <p className="text-[11px] font-mono text-gray-600 leading-relaxed">
-                Burns Homage #{tokenId}, returns 50,000 $111 to your wallet, and puts punk #
-                {tokenId} back in the mintable pool.
+                Burns Homage #{tokenId}, returns{" "}
+                {threshold !== null ? formatTokenAmount(threshold) : "…"} $111 to your
+                wallet, and puts punk #{tokenId} back in the mintable pool.
               </p>
               {exitFee !== null && (
                 <p className="text-[10px] font-mono text-gray-400 tabular-nums">
-                  Exit fee: {trimEth(formatEther(exitFee))} ETH (sent with the transaction)
+                  Exit fee: {formatTokenAmount(exitFee)} ETH (sent with the transaction)
                 </p>
               )}
               <div className="flex gap-2">
