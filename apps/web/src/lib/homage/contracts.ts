@@ -75,7 +75,7 @@ export const DELEGATE_REGISTRY = "0x00000000000000447e69651d841bD8D104Bed493" as
 // read live before it drives a mint. A prior hardcoded THRESHOLD (50,000)
 // drifted from the deployed default (30,000), sizing every quoted swap
 // ~67% too large — quoteMint below reads threshold() live instead.
-export const BASE_FEE = 5_000_000_000_000_000n // 0.005 ETH — deploy default; real fee is mintFeeOf()
+export const BASE_FEE = 4_200_000_000_000_000n // 0.0042 ETH — deploy default; real fee is mintFeeOf()
 export const EXIT_FEE = 3_000_000_000_000_000n // 0.003 ETH — deploy default; read exitFee() live before redeem
 
 // ─── ABIs ───────────────────────────────────────────────────────────────────────

@@ -152,7 +152,7 @@ export const ABOUT: {h: string | null; blocks: Block[]}[] = [
       },
       {t: "p", node: "Because the amount of $111 is fixed, the ETH required to mint changes with the market."},
       {t: "p", node: "Mint price is determined by"},
-      {t: "list", items: ["base mint fee of 0.005 ETH", "market price of $111 at mint time"]},
+      {t: "list", items: ["base mint fee of 0.0042 ETH", "market price of $111 at mint time"]},
       {
         t: "p",
         node: "Each Homage mint market-buys and holds a fixed amount of $111, and the value of those tokens determines the final mint price.",
