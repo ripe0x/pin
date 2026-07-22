@@ -126,12 +126,12 @@ export function HomageField({
       {/* Container bg = the page ground so trailing empty cells in a sparse (few-mint)
           field vanish rather than showing as blocks; gap-px separates filled tiles.
           (PND's gray scale inverts under .dark, so a gray bg would render light here.)
-          max-height caps the field at roughly two rows so a growing mint count never
-          pushes the mint instrument further down the page; overflow scrolls internally,
-          fade-to-paper gradient signals more below. */}
+          max-height caps the field so a growing mint count never pushes the mint
+          instrument further down the page; overflow is clipped (no inner scroll),
+          fade-to-paper gradient + the Expand control reveal the rest. */}
       <div className="relative">
         <div
-          className="grid gap-px overflow-y-auto"
+          className={`grid gap-px ${capped && !expanded ? "overflow-y-clip" : ""}`}
           style={{
             gridTemplateColumns: "repeat(auto-fill, minmax(clamp(150px, 22vw, 300px), 1fr))",
             background: "var(--paper, #0a0a0c)",
