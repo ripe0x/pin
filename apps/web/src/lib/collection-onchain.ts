@@ -63,7 +63,7 @@ async function getMinterSaleConfig(
 ): Promise<MinterSaleConfig | null> {
   const base = { address: minterAddr, abi: fixedPriceMinterAbi } as const
   try {
-    const [price, priceStrategy, mintStart, mintEnd, payout, maxMints, allowlistRoot, walletCap] =
+    const [price, priceStrategy, mintStart, mintEnd, payout, maxMints, allowlistRoot, walletCap, referralShareBps] =
       await client.multicall({
         allowFailure: false,
         contracts: [
@@ -75,6 +75,7 @@ async function getMinterSaleConfig(
           { ...base, functionName: "maxMints" },
           { ...base, functionName: "allowlistRoot" },
           { ...base, functionName: "walletCap" },
+          { ...base, functionName: "referralShareBps" },
         ],
       })
     return {
@@ -86,6 +87,7 @@ async function getMinterSaleConfig(
       maxMints: maxMints as bigint,
       allowlistRoot: allowlistRoot as `0x${string}`,
       walletCap: walletCap as bigint,
+      referralShareBps: Number(referralShareBps as number),
     }
   } catch {
     return null

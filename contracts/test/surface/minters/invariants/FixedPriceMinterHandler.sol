@@ -96,7 +96,7 @@ contract FixedPriceMinterHandler is StdInvariant, Test {
     function _mirrorSettle(uint256 total, address referrer) internal {
         if (total == 0) return;
         ghostTotalPaidIn += total;
-        uint256 referralCut = referrer == address(0) ? 0 : (total * minter.REFERRAL_SHARE_BPS()) / BPS;
+        uint256 referralCut = referrer == address(0) ? 0 : (total * minter.referralShareBps()) / BPS;
         if (referralCut > 0) {
             ghostPending[referrer] += referralCut;
             _trackPayee(referrer);

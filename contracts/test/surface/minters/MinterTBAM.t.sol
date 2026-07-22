@@ -108,7 +108,7 @@ contract MinterTBAMTest is FixedPriceMinterBase {
         vm.prank(collector);
         minter.mint{value: quote}(collector, 1, referrer, "");
 
-        uint256 refCut = (quote * minter.REFERRAL_SHARE_BPS()) / 10_000;
+        uint256 refCut = (quote * minter.referralShareBps()) / 10_000;
         assertEq(minter.pendingWithdrawal(referrer), refCut);
         assertEq(minter.pendingWithdrawal(artist), quote - refCut);
     }
