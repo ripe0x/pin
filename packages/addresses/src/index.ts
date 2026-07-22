@@ -168,12 +168,12 @@ export const MURI_MANIFOLD_EXTENSION: Record<number, Address> = {
 
 // SurfaceFactory — deploys one Surface collection per work as an
 // immutable EIP-1167 clone (no protocol fee; the Referral Share is fixed
-// inside the canonical FixedPriceMinter). NOT yet deployed to mainnet —
-// paste the address here after running DeploySurfaceSystem.s.sol. For local
-// Anvil dev, set the corresponding NEXT_PUBLIC_* env var instead of editing
-// this file.
+// inside the canonical FixedPriceMinter). Deployed to mainnet 2026-07-22
+// from commit fa5af29 (DeploySurfaceSystem.s.sol); lands paused until the
+// deployer opens it. For local Anvil dev, set the corresponding
+// NEXT_PUBLIC_* env var instead of editing this file.
 export const SURFACE_FACTORY: Record<number, Address> = {
-  [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+  [MAINNET_CHAIN_ID]: "0xdB81d3F33EF3D84685486916E0d372E247558094",
 }
 
 // RenderAssets — renderer-land registry of static display assets (cover +

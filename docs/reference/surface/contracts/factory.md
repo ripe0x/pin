@@ -2,7 +2,7 @@
 
 # SurfaceFactory
 
-> Not yet deployed to Ethereum mainnet. The address lands here at launch; until then, examples use an `<SURFACE_FACTORY_ADDRESS>` placeholder.
+`0xdB81d3F33EF3D84685486916E0d372E247558094` · [view on evm.now](https://evm.now/address/0xdB81d3F33EF3D84685486916E0d372E247558094?chainId=1) · Ethereum mainnet
 
 Deploys one [Surface](/docs/surface/contracts/surface) collection per call as
 an EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path.
@@ -175,7 +175,7 @@ confirmation: a collection wired with no Catalog can list creators but confirms
 none.
 
 ```bash
-cast call <SURFACE_FACTORY_ADDRESS> "catalog()(address)" \
+cast call 0xdB81d3F33EF3D84685486916E0d372E247558094 "catalog()(address)" \
   --rpc-url https://ethereum-rpc.publicnode.com
 ```
 

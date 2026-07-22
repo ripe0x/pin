@@ -8,7 +8,7 @@ The shared singletons of each PND onchain protocol on Ethereum mainnet (chain id
 
 | Contract | Address | Docs |
 | --- | --- | --- |
-| SurfaceFactory | _pending deploy_ | [reference](/docs/surface/contracts/factory) |
+| SurfaceFactory | [`0xdB81d3F33EF3D84685486916E0d372E247558094`](https://evm.now/address/0xdB81d3F33EF3D84685486916E0d372E247558094?chainId=1) | [reference](/docs/surface/contracts/factory) |
 | DefaultRenderer | _pending deploy_ | [reference](/docs/surface/contracts/default-renderer) |
 | RenderAssets | _pending deploy_ | [reference](/docs/surface/contracts/render-assets) |
 
