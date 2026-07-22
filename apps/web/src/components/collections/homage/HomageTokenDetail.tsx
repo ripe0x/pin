@@ -33,7 +33,6 @@ export function HomageTokenDetail({
   tokenId,
   owner,
   art,
-  animationUrl,
   punkImageSrc,
   punkBg,
   facts,
@@ -46,7 +45,6 @@ export function HomageTokenDetail({
   tokenId: bigint
   owner: Address | null
   art: string
-  animationUrl: string | null
   punkImageSrc: string | null
   punkBg: string | null
   facts: HomageTokenFacts
@@ -60,15 +58,10 @@ export function HomageTokenDetail({
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_1fr]">
-      {/* The homage — large; click plays the onchain animation, the row below holds
-          the quiet classic/pfp toggle + PNG export. */}
+      {/* The homage — large; click plays the animation, the row below holds the quiet
+          classic/pfp toggle + PNG export. */}
       <div className="flex flex-col px-6 pb-8 pt-24 lg:sticky lg:top-0 lg:h-screen lg:justify-center lg:px-12 lg:pb-12 lg:pt-24">
-        <HomageArtStage
-          art={ipfsToHttp(art)}
-          animationUrl={animationUrl}
-          tokenId={id}
-          onchainPfpSrc={onchainPfpSrc}
-        />
+        <HomageArtStage art={ipfsToHttp(art)} tokenId={id} onchainPfpSrc={onchainPfpSrc} />
       </div>
 
       {/* The record — lean, homage-specific. */}
