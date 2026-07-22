@@ -1,6 +1,6 @@
 import "server-only"
 import {createPublicClient, http, type Address} from "viem"
-import {mainnet} from "viem/chains"
+import {mainnet, sepolia} from "viem/chains"
 import {homageMinterFor} from "./registry"
 import {homageMinterAbi} from "./contracts"
 
@@ -8,12 +8,17 @@ import {homageMinterAbi} from "./contracts"
 // mainnet chain object so viem resolves the canonical Multicall3; in fork mode the
 // transport points at Anvil (which forks mainnet).
 const FORK_MODE = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
+// Opt-in sepolia instance (mirrors mint-collections.ts' MINT_CHAIN_ID split).
+const USE_SEPOLIA = process.env.NEXT_PUBLIC_USE_SEPOLIA === "1"
+const SEPOLIA_RPC_URL =
+  process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || "https://ethereum-sepolia-rpc.publicnode.com"
 
 function getClient() {
   if (FORK_MODE) {
     const url = process.env.NEXT_PUBLIC_ANVIL_RPC_URL || "http://127.0.0.1:8545"
     return createPublicClient({chain: mainnet, transport: http(url)})
   }
+  if (USE_SEPOLIA) return createPublicClient({chain: sepolia, transport: http(SEPOLIA_RPC_URL)})
   const explicit = process.env.ALCHEMY_MAINNET_URL
   if (explicit) return createPublicClient({chain: mainnet, transport: http(explicit)})
   const key = process.env.ALCHEMY_API_KEY

@@ -64,13 +64,21 @@ import {
 import {allowlistProofIn, loadAllowlist} from "@/lib/homage/allowlist"
 
 // ── canonical mainnet addresses (mirrors the Homage repo's web/lib/homage.ts) ─
+// Opt-in sepolia instance (mirrors mint-collections.ts' MINT_CHAIN_ID split):
+// swaps these for the live sepolia deployment's stand-in contracts. A no-op
+// when unset — mainnet addresses are unchanged.
+const USE_SEPOLIA = process.env.NEXT_PUBLIC_USE_SEPOLIA === "1"
 
-/** The $111 coin escrowed inside each homage (mainnet). */
-export const TOKEN_111 = "0x61C9d89fe1212F6b55fF888816A151463287B8ae" as const
-/** The live ETH/$111 v4 pool id Homage mints swap through (read for quoting). */
+/** The $111 coin escrowed inside each homage. Sepolia: Mock111, an open-mint
+ *  faucet token standing in for the real $111. */
+export const TOKEN_111: Address = USE_SEPOLIA
+  ? "0x27b862985ddcf75c5dba649549a26657332124c4"
+  : "0x61C9d89fe1212F6b55fF888816A151463287B8ae"
+/** The live ETH/$111 v4 pool id Homage mints swap through (read for quoting).
+ *  Mainnet only — sepolia has no v4 pool; see MOCK_POOL_MANAGER below. */
 export const HOMAGE_POOL_ID =
   "0xf860d8f4896aed6cc1c68d234ba728680902f0ae43a459fbee6f6baa8036f795" as const
-/** v4 periphery (canonical mainnet deployments). */
+/** v4 periphery (canonical mainnet deployments, mainnet only). */
 export const V4_STATE_VIEW = "0x7fFE42C4a5DEeA5b0feC41C94C136Cf115597227" as const
 export const V4_QUOTER = "0x52F0E24D1c21C8A0cB1e5a5dD6198556BD9E1203" as const
 const SKIM_HOOK = "0x636c050296B5Cc528D8785169Bf8923716FCa9cc" as const
@@ -84,15 +92,30 @@ const POOL_KEY = {
   hooks: SKIM_HOOK,
 } as const
 
-/** Canonical CryptoPunks contracts (mainnet) — the claim window's ownership
- *  sources, mirroring Homage._isPunkHolder: raw ownership is the market's
- *  `punkIndexToAddress`; a wrapped punk reports the wrapper as owner, so the
- *  true holder is the wrapper's `ownerOf`. */
-export const CRYPTOPUNKS_MARKET = "0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB" as const
-export const WRAPPED_PUNKS = "0xb7F7F6C52F2e2fdb1963Eab30438024864c313F6" as const
+/** Sepolia stand-in for the v4 pool: a hookless mock that mints TOKEN_111 to
+ *  the caller for a flat ETH cost per swap (no StateView/Quoter, no price
+ *  curve) — see the `weiPerSwap` read in the homage-quote provider below. */
+const MOCK_POOL_MANAGER = "0xf99a9c7d61047cd8b6d34e88c803d25a4162b41b" as const
+const mockPoolManagerAbi = parseAbi(["function weiPerSwap() view returns (uint256)"])
 
-/** delegate.xyz v2 registry (canonical, all chains) — Homage.claimFor accepts
- *  a delegate of the punk's holder (empty rights), mirroring the Homage site. */
+/** CryptoPunks contracts — the claim window's ownership sources, mirroring
+ *  Homage._isPunkHolder: raw ownership is the market's `punkIndexToAddress`;
+ *  a wrapped punk reports the wrapper as owner, so the true holder is the
+ *  wrapper's `ownerOf`. Sepolia: MockPunksMarket stands in for the market
+ *  (settable punkIndexToAddress); WrappedPunks has no sepolia deployment, so
+ *  the wrapped-punks read is skipped there (see HAS_WRAPPED_PUNKS below). */
+export const CRYPTOPUNKS_MARKET: Address = USE_SEPOLIA
+  ? "0x1034699aa91c9e48765a1212ac1dccfac75a6882"
+  : "0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB"
+export const WRAPPED_PUNKS = "0xb7F7F6C52F2e2fdb1963Eab30438024864c313F6" as const
+/** WrappedPunks isn't deployed on sepolia; every code path that would read it
+ *  (balanceOf/tokenOfOwnerByIndex/ownerOf) is gated on this instead of
+ *  letting the call revert against an empty address. */
+const HAS_WRAPPED_PUNKS = !USE_SEPOLIA
+
+/** delegate.xyz v2 registry (canonical, same address on mainnet and sepolia)
+ *  — Homage.claimFor accepts a delegate of the punk's holder (empty rights),
+ *  mirroring the Homage site. */
 export const DELEGATE_REGISTRY = "0x00000000000000447e69651d841bD8D104Bed493" as const
 const delegateRegistryAbi = parseAbi([
   "struct Delegation { uint8 type_; address to; address from; bytes32 rights; address contract_; uint256 tokenId; uint256 amount; }",
@@ -162,7 +185,35 @@ registerQuoteProvider("homage-quote", async ({ client, wallet, phaseKey }) => {
   if (!HOMAGE_MINTER_ADDRESS || !isAddress(HOMAGE_MINTER_ADDRESS))
     throw new Error("Homage is not configured")
   const minter = HOMAGE_MINTER_ADDRESS as Address
-  const isPublic = phaseKey === "public" || phaseKey === null
+
+  // Sepolia: MOCK_POOL_MANAGER has no StateView/Quoter to probe — it mints
+  // TOKEN_111 to the caller for a flat ETH cost per swap (`weiPerSwap`, read
+  // live rather than hardcoded so a mock redeploy at a different price needs
+  // no frontend change). No headroom/refund math applies to a flat price.
+  if (USE_SEPOLIA) {
+    const [feeRes, weiPerSwapRes] = await client.multicall({
+      allowFailure: true,
+      contracts: [
+        { address: minter, abi: homageMinterAbi as Abi, functionName: "mintFeeOf", args: [wallet ?? zeroAddress] },
+        { address: MOCK_POOL_MANAGER, abi: mockPoolManagerAbi, functionName: "weiPerSwap" },
+      ],
+    })
+    if (feeRes.status !== "success") throw new Error("mint fee unavailable")
+    if (weiPerSwapRes.status !== "success") throw new Error("sepolia mock pool quote unavailable")
+    const fee = feeRes.result as bigint
+    const ethForSwap = weiPerSwapRes.result as bigint
+    const value = ethForSwap + fee
+    return {
+      value,
+      breakdown: [
+        { label: "Buys 50,000 $111 (sepolia mock pool, flat price)", wei: ethForSwap },
+        { label: "Mint fee (this wallet)", wei: fee },
+        { label: "Total", wei: value },
+      ],
+      note: "Sepolia mock pool: flat price, no slippage headroom or refund",
+      ttlMs: 30_000,
+    }
+  }
 
   // Pool spot + the phase's ETH fee in one multicall. Fee reads hit the
   // MINTER — economics live there, not the collection.
@@ -233,8 +284,10 @@ export type HomageClaimData = { punks: HomagePunkPick[] }
 const MAX_DELEGATION_VAULTS = 4
 
 /** The wallet's wrapped punks (ERC721Enumerable — exact, no log scan):
- *  1 read + ≤1 multicall. */
+ *  1 read + ≤1 multicall. Sepolia has no WrappedPunks deployment; skipped via
+ *  HAS_WRAPPED_PUNKS rather than reading against an empty address. */
 async function wrappedPunksOf(client: PublicClient, who: Address): Promise<bigint[]> {
+  if (!HAS_WRAPPED_PUNKS) return []
   const bal = (await client.readContract({
     address: WRAPPED_PUNKS,
     abi: wrappedPunksAbi,

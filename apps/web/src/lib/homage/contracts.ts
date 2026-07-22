@@ -13,8 +13,16 @@
 
 import {parseAbi, type Address, type PublicClient} from "viem"
 
+// Opt-in sepolia instance (mirrors lib/collection.ts' PND_CHAIN_ID split):
+// swaps the addresses below for the live sepolia deployment's stand-in
+// contracts. A no-op when unset — mainnet addresses are unchanged.
+const USE_SEPOLIA = process.env.NEXT_PUBLIC_USE_SEPOLIA === "1"
+
 // ─── Live $111 coin + the v4 pool the mint swaps through (mainnet; present on the fork) ──
-export const TOKEN_111 = "0x61C9d89fe1212F6b55fF888816A151463287B8ae" as const
+/** Sepolia: Mock111, an open-mint faucet token standing in for the real $111. */
+export const TOKEN_111: Address = USE_SEPOLIA
+  ? "0x27b862985ddcf75c5dba649549a26657332124c4"
+  : "0x61C9d89fe1212F6b55fF888816A151463287B8ae"
 export const POOL_MANAGER = "0x000000000004444c5dc75cB358380D2e3dE08A90" as const
 export const SKIM_HOOK = "0x636c050296B5Cc528D8785169Bf8923716FCa9cc" as const
 export const POOL_ID = "0xf860d8f4896aed6cc1c68d234ba728680902f0ae43a459fbee6f6baa8036f795" as const
@@ -24,6 +32,7 @@ const DYN_FEE = 0x800000 // dynamic-fee flag (matches DeployDevSovereign)
 const TICK_SPACING = 200
 
 // ETH (currency0) → $111 (currency1), dynamic fee, skim hook — hashes to POOL_ID.
+// Mainnet only; sepolia quotes go through MOCK_POOL_MANAGER instead.
 export const POOL_KEY = {
   currency0: "0x0000000000000000000000000000000000000000",
   currency1: TOKEN_111,
@@ -32,17 +41,33 @@ export const POOL_KEY = {
   hooks: SKIM_HOOK,
 } as const
 
-// Canonical CryptoPunks contracts (mainnet) — the ownership source for the
-// holder-priority claim window. Raw ownership is `punkIndexToAddress`; a wrapped
-// punk reports the wrapper as owner, so the true holder is the wrapper's `ownerOf`
-// (mirrors HomageMinter._isPunkHolder).
-export const CRYPTOPUNKS_MARKET = "0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB" as const
+// Sepolia stand-in for the v4 pool: a hookless mock that mints TOKEN_111 to
+// the caller for a flat ETH cost per swap (`weiPerSwap()`), no StateView/
+// Quoter, no price curve — see `quoteMint`'s sepolia branch below.
+export const MOCK_POOL_MANAGER = "0xf99a9c7d61047cd8b6d34e88c803d25a4162b41b" as const
+export const mockPoolManagerAbi = parseAbi(["function weiPerSwap() view returns (uint256)"])
+
+// CryptoPunks contracts — the ownership source for the holder-priority claim
+// window. Raw ownership is `punkIndexToAddress`; a wrapped punk reports the
+// wrapper as owner, so the true holder is the wrapper's `ownerOf` (mirrors
+// HomageMinter._isPunkHolder). Sepolia: MockPunksMarket stands in for the
+// market (settable punkIndexToAddress); neither WrappedPunks contract has a
+// sepolia deployment, so wrapped-punks reads are skipped there (see
+// HAS_WRAPPED_PUNKS below).
+export const CRYPTOPUNKS_MARKET: Address = USE_SEPOLIA
+  ? "0x1034699aa91c9e48765a1212ac1dccfac75a6882"
+  : "0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB"
 export const WRAPPED_PUNKS = "0xb7F7F6C52F2e2fdb1963Eab30438024864c313F6" as const
 // Official CryptoPunks 721 wrapper (tokenId == punkId); holders resolved like WRAPPED_PUNKS.
 export const WRAPPED_PUNKS_721 = "0x000000000000003607fce1aC9e043a86675C5C2F" as const
+/** Neither wrapped-punks contract is deployed on sepolia; every code path
+ *  that would read one is gated on this instead of reading against an empty
+ *  address. */
+export const HAS_WRAPPED_PUNKS = !USE_SEPOLIA
 
-// Delegate.xyz Registry v2 (canonical singleton) — a cold vault delegates a hot
-// wallet, which transacts the holder-priority claim via `claimFor` (mints to the vault).
+// Delegate.xyz Registry v2 (canonical singleton, same address on mainnet and
+// sepolia) — a cold vault delegates a hot wallet, which transacts the
+// holder-priority claim via `claimFor` (mints to the vault).
 export const DELEGATE_REGISTRY = "0x00000000000000447e69651d841bD8D104Bed493" as const
 
 // Economic constants — mirror HomageMinter. THRESHOLD is structural; the fees are
@@ -253,6 +278,26 @@ async function quoteExactInput(client: PublicClient, ethIn: bigint): Promise<big
  * `safetyBps` is headroom over THRESHOLD (default 5%) to absorb price drift.
  */
 export async function quoteMint(client: PublicClient, fee: bigint, safetyBps = 500): Promise<MintQuote> {
+  // Sepolia: MOCK_POOL_MANAGER has no StateView/Quoter — it mints TOKEN_111 to
+  // the caller for a flat ETH cost per swap (`weiPerSwap`, read live rather
+  // than hardcoded). No headroom/refund math applies to a flat price.
+  if (USE_SEPOLIA) {
+    const ethForSwap = (await client.readContract({
+      address: MOCK_POOL_MANAGER,
+      abi: mockPoolManagerAbi,
+      functionName: "weiPerSwap",
+    })) as bigint
+    return {
+      ethForSwap,
+      totalValue: ethForSwap + fee,
+      fee,
+      estReceived: THRESHOLD,
+      estRefund: 0n,
+      spotEthForThreshold: ethForSwap,
+      price111PerEth: 0n,
+      safetyBps: 0,
+    }
+  }
   const slot0 = (await client.readContract({
     address: STATE_VIEW,
     abi: stateViewAbi,

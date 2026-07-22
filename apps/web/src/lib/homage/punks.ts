@@ -15,6 +15,7 @@ import {PREFERRED_CHAIN} from "@/components/tx/tx-ui"
 import {
   CRYPTOPUNKS_MARKET,
   DELEGATE_REGISTRY,
+  HAS_WRAPPED_PUNKS,
   WRAPPED_PUNKS,
   WRAPPED_PUNKS_721,
   delegateRegistryAbi,
@@ -40,13 +41,15 @@ async function scanWalletPunks(
   who: Address,
   fromBlock: bigint,
 ): Promise<{held: Map<number, boolean>; rawFailed: boolean}> {
-  // ── wrapped punks: enumerable, exact ──
-  const wBal = (await client.readContract({
-    address: WRAPPED_PUNKS,
-    abi: wrappedPunksAbi,
-    functionName: "balanceOf",
-    args: [who],
-  })) as bigint
+  // ── wrapped punks: enumerable, exact ── (skipped on sepolia — no deployment, see HAS_WRAPPED_PUNKS)
+  const wBal = HAS_WRAPPED_PUNKS
+    ? ((await client.readContract({
+        address: WRAPPED_PUNKS,
+        abi: wrappedPunksAbi,
+        functionName: "balanceOf",
+        args: [who],
+      })) as bigint)
+    : 0n
   const wIds: bigint[] = []
   if (wBal > 0n) {
     const idxReads = await client.multicall({

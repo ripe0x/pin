@@ -11,7 +11,7 @@
 
 import { useEffect, useState } from "react"
 import { usePublicClient } from "wagmi"
-import { mainnet } from "wagmi/chains"
+import { mainnet, sepolia } from "wagmi/chains"
 import { forkChain } from "@/lib/wagmi"
 
 // When the dev server is pointed at a local Anvil fork
@@ -21,16 +21,23 @@ import { forkChain } from "@/lib/wagmi"
 // mainnet. NEXT_PUBLIC_* vars are inlined at build time so this evaluates
 // statically per build.
 export const FORK_MODE = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
+// Opt-in sepolia instance (mirrors lib/collection.ts' PND_CHAIN_ID split).
+export const USE_SEPOLIA = process.env.NEXT_PUBLIC_USE_SEPOLIA === "1"
 // In fork mode the preferred chain is the SAME custom Anvil chain the wagmi
 // config registers (forkChain, id 31339), so wrongNetwork checks and
 // switchChain targets agree with the connected wallet. (Previously this used
 // upstream `foundry` at 31337, which never matched the configured fork chain,
 // leaving tx buttons stuck on "wrong network" in local fork testing.)
-export const PREFERRED_CHAIN = FORK_MODE ? forkChain : mainnet
-export const PREFERRED_CHAIN_LABEL = FORK_MODE ? forkChain.name : "Ethereum"
+export const PREFERRED_CHAIN = FORK_MODE ? forkChain : USE_SEPOLIA ? sepolia : mainnet
+export const PREFERRED_CHAIN_LABEL = FORK_MODE ? forkChain.name : USE_SEPOLIA ? "Sepolia" : "Ethereum"
 
-/** evm.now tx URL, chain-aware via the chainId query param. */
+/**
+ * Tx explorer URL, chain-aware. Mainnet uses evm.now (the project's
+ * multi-chain explorer); testnets use the network's own etherscan subdomain
+ * — evm.now has no sepolia support.
+ */
 export function evmNowTxUrl(txHash: string, chainId: number): string {
+  if (chainId === sepolia.id) return `https://sepolia.etherscan.io/tx/${txHash}`
   return `https://evm.now/tx/${txHash}?chainId=${chainId}`
 }
 

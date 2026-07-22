@@ -17,11 +17,13 @@
 // trusting it, so a stale/misconfigured env can only fail closed, never mint wrong.
 
 import {type Address, getAddress, isAddress} from "viem"
-import {mainnet} from "viem/chains"
+import {mainnet, sepolia} from "viem/chains"
 
 // Local FORK_MODE check (mirrors collection-onchain.ts) so this module stays
 // server-safe — it must not pull in the client-only wagmi config.
 const FORK_MODE = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
+// Opt-in sepolia instance (mirrors mint-collections.ts' MINT_CHAIN_ID split).
+const USE_SEPOLIA = process.env.NEXT_PUBLIC_USE_SEPOLIA === "1"
 
 export type HomagePair = {collection: Address; minter: Address}
 
@@ -37,11 +39,24 @@ function forkHomage(): HomagePair | null {
   return {collection: getAddress(collection), minter: getAddress(minter)}
 }
 
+// Sepolia pair reuses the same env vars mint-modules/homage.ts reads
+// (NEXT_PUBLIC_HOMAGE_COLLECTION_ADDRESS / _MINTER_ADDRESS) — one address pair
+// per running instance, so fork/sepolia/mainnet never need to coexist.
+function sepoliaHomage(): HomagePair | null {
+  const collection = process.env.NEXT_PUBLIC_HOMAGE_COLLECTION_ADDRESS
+  const minter = process.env.NEXT_PUBLIC_HOMAGE_MINTER_ADDRESS
+  if (!collection || !minter || !isAddress(collection) || !isAddress(minter)) return null
+  return {collection: getAddress(collection), minter: getAddress(minter)}
+}
+
 function pairsFor(chainId: number): HomagePair[] {
   const out: HomagePair[] = []
   if (FORK_MODE) {
     const f = forkHomage()
     if (f) out.push(f)
+  } else if (USE_SEPOLIA && chainId === sepolia.id) {
+    const s = sepoliaHomage()
+    if (s) out.push(s)
   } else if (chainId === mainnet.id && MAINNET_HOMAGE) {
     out.push(MAINNET_HOMAGE)
   }
