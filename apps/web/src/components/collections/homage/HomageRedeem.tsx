@@ -12,6 +12,7 @@ import {ConnectButton} from "@rainbow-me/rainbowkit"
 import {PREFERRED_CHAIN, PREFERRED_CHAIN_LABEL, TxSuccessBanner, formatWriteError} from "@/components/tx/tx-ui"
 import {homageFlows, homageMinterAbi} from "@/lib/homage/contracts"
 import {useOwnedHomages} from "@/lib/homage/punks"
+import {formatLocalTime, formatTokenAmount, useHomageRedeemStatus} from "@/lib/homage/redeem-status"
 
 const btn =
   "text-[10px] font-mono font-medium uppercase tracking-wider px-3 py-1.5 border border-gray-300 text-fg hover:bg-surface-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
@@ -26,6 +27,7 @@ export function HomageRedeem({minter, collection}: {minter: Address; collection:
     address: minter, abi: homageMinterAbi, functionName: "exitFee", chainId: PREFERRED_CHAIN.id,
   })
   const exitFee = (exitFeeRead.data as bigint | undefined) ?? 0n
+  const {threshold, opensAt, isOpen, loading: statusLoading} = useHomageRedeemStatus(minter)
 
   const [localKey, setLocalKey] = useState(0)
   const {ids, status} = useOwnedHomages(collection, address, localKey)
@@ -46,8 +48,9 @@ export function HomageRedeem({minter, collection}: {minter: Address; collection:
   return (
     <div className="space-y-4">
       <p className="text-[11px] font-mono text-gray-400 leading-relaxed">
-        Redeeming burns the piece and returns the full 50,000 $111 escrowed inside it, and returns its
-        punk id to the mint pool. Costs the {formatEther(exitFee)} ETH exit fee.
+        Redeeming burns the piece and returns the full{" "}
+        {threshold !== null ? formatTokenAmount(threshold) : "…"} $111 escrowed inside it, and
+        returns its punk id to the mint pool. Costs the {formatEther(exitFee)} ETH exit fee.
       </p>
 
       {!address ? (
@@ -76,6 +79,10 @@ export function HomageRedeem({minter, collection}: {minter: Address; collection:
           message="Redeemed. The escrowed $111 is back in your wallet."
           onDismiss={() => reset()}
         />
+      ) : !statusLoading && !isOpen ? (
+        <p className="text-[11px] font-mono text-gray-400 leading-relaxed">
+          Redeems open {opensAt !== null ? formatLocalTime(opensAt) : "soon"}, once public mint begins.
+        </p>
       ) : status === "loading" ? (
         <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">Finding your homages…</p>
       ) : ids.length === 0 ? (
