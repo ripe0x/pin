@@ -35,9 +35,15 @@ export function ActivityRow({ event }: Props) {
     isVideo,
   } = event
 
+  // Surface tokens live under /collections; everything else under the
+  // generic contract/token route. A mint or deploy row with `collection`
+  // set is a Surface row (the FND collection.deployed rows carry
+  // `collection` too, but no tokenId, so they never build a tokenHref).
   const tokenHref =
     event.tokenContract && event.tokenId
-      ? `/${event.tokenContract}/${event.tokenId}`
+      ? event.collection
+        ? `/collections/${event.collection}/${event.tokenId}`
+        : `/${event.tokenContract}/${event.tokenId}`
       : null
   const artistHref = `/artist/${event.artist}`
 
@@ -171,6 +177,7 @@ export function ActivityRow({ event }: Props) {
                 tokenTitle={tokenTitle}
                 artistHref={artistHref}
                 artistDisplayName={artistDisplayName}
+                quantity={event.quantity}
               />
             ) : (
               <>
@@ -226,7 +233,9 @@ function renderVerb(event: EnrichedActivityEvent): string {
     case "sale.buyNow":
       return "sold"
     case "mint":
-      return "minted"
+      return event.quantity && event.quantity > 1
+        ? `minted ${event.quantity} editions of`
+        : "minted"
   }
 }
 
@@ -300,6 +309,7 @@ function MintHeadline({
   tokenTitle,
   artistHref,
   artistDisplayName,
+  quantity,
 }: {
   minterHref: string
   minterDisplayName: string
@@ -307,6 +317,7 @@ function MintHeadline({
   tokenTitle: string | null
   artistHref: string
   artistDisplayName: string
+  quantity: number | null
 }) {
   return (
     <>
@@ -316,7 +327,10 @@ function MintHeadline({
       >
         {minterDisplayName}
       </Link>
-      <span className="text-gray-500"> minted </span>
+      <span className="text-gray-500">
+        {" "}
+        {quantity && quantity > 1 ? `minted ${quantity} editions of` : "minted"}{" "}
+      </span>
       {tokenTitle ? (
         tokenHref ? (
           <Link
@@ -382,11 +396,28 @@ function Subline({ event }: { event: EnrichedActivityEvent }) {
     )
   }
 
+  // Surface mints carry the canonical minter's sale amount.
+  if (event.kind === "mint" && event.amountWei !== null && event.amountWei > 0n) {
+    parts.push(<>{formatEth(event.amountWei)}</>)
+  }
+
   if (event.kind === "house.deployed" && event.house) {
     parts.push(<EtherscanAddress addr={event.house} />)
   }
 
   if (event.kind === "collection.deployed" && event.collection) {
+    // Surface collections have a live page here; FND clones link out to
+    // the contract itself.
+    if (event.id.startsWith("surf:")) {
+      parts.push(
+        <Link
+          href={`/collections/${event.collection}`}
+          className="hover:text-fg transition-colors"
+        >
+          view collection
+        </Link>,
+      )
+    }
     parts.push(<EtherscanAddress addr={event.collection} />)
   }
 

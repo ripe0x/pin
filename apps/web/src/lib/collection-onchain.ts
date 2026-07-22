@@ -106,6 +106,29 @@ async function getMinterSaleConfig(
  * value at far lower cost — this is one of the few Postgres reads in an
  * otherwise RPC-cached file, not a new RPC call (see AGENTS.md).
  */
+/**
+ * The collection's cover URI from RenderAssets, or "" when none is set.
+ * A single read on a long TTL, sized for the activity feed: one lookup
+ * per distinct collection per window, no tokenURI involved (a generative
+ * tokenURI is a whole HTML document; the feed must never fetch one).
+ */
+export async function getCollectionCover(address: Address): Promise<string> {
+  const assets = renderAssetsAddress()
+  if (!assets) return ""
+  return pgCache(`sc-cover:${lc(address)}`, 300, async () => {
+    const client = getClient()
+    return client
+      .readContract({
+        address: assets,
+        abi: renderAssetsAbi,
+        functionName: "coverOf",
+        args: [address],
+      })
+      .then((uri) => (uri as string) ?? "")
+      .catch(() => "")
+  })
+}
+
 export async function getCollection(address: Address): Promise<Collection | null> {
   return pgCache(`sc-collection:${lc(address)}`, 20, async () => {
     const client = getClient()

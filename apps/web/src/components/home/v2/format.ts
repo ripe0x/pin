@@ -28,3 +28,12 @@ export function formatTimeAgo(unixSec: number): string {
 export function truncateAddress(address: string): string {
   return `${address.slice(0, 6)}…${address.slice(-4)}`
 }
+
+/** Duration between two unix timestamps: "40s", "22m", "3h", "2d". */
+export function formatSpan(fromSec: number, toSec: number): string {
+  const diff = Math.max(0, toSec - fromSec)
+  if (diff < 60) return `${diff}s`
+  if (diff < 60 * 60) return `${Math.round(diff / 60)}m`
+  if (diff < 60 * 60 * 24) return `${Math.round(diff / 3600)}h`
+  return `${Math.round(diff / 86400)}d`
+}

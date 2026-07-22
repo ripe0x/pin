@@ -19,9 +19,12 @@ export default function HomePage() {
     <div className="mx-auto max-w-3xl px-6 py-8 space-y-12">
       <header className="space-y-3 pt-2">
         <h1 className="text-2xl md:text-[28px] font-semibold tracking-tight leading-tight max-w-xl">
-          Independent artists running their own auctions, contracts, and
-          sites on Ethereum.
+          Independent artists publishing directly through Ethereum.
         </h1>
+        <p className="text-sm text-gray-500 max-w-xl">
+          Auctions, editions, and generative releases on contracts each
+          artist owns.
+        </p>
         <Suspense fallback={null}>
           <CountersInline />
         </Suspense>
@@ -67,21 +70,27 @@ function stripTrailingZeros(s: string): string {
 const getCachedPlatformStats = unstable_cache(
   async (): Promise<{
     housesDeployed: number
-    ethSettledWeiStr: string
+    collectionsDeployed: number
+    ethToArtistsWeiStr: string
   }> => {
     const stats = await getPlatformStats()
     if (!stats) throw new IndexerUnavailable()
     return {
       housesDeployed: stats.housesDeployed,
-      ethSettledWeiStr: stats.ethSettledWei.toString(),
+      collectionsDeployed: stats.collectionsDeployed,
+      ethToArtistsWeiStr: stats.ethToArtistsWei.toString(),
     }
   },
-  ["platform-stats-v1"],
+  ["platform-stats-v2"],
   { revalidate: 30, tags: ["activity-feed"] },
 )
 
 async function CountersInline() {
-  let cached: { housesDeployed: number; ethSettledWeiStr: string }
+  let cached: {
+    housesDeployed: number
+    collectionsDeployed: number
+    ethToArtistsWeiStr: string
+  }
   try {
     cached = await getCachedPlatformStats()
   } catch {
@@ -89,7 +98,8 @@ async function CountersInline() {
   }
   const stats = {
     housesDeployed: cached.housesDeployed,
-    ethSettledWei: BigInt(cached.ethSettledWeiStr),
+    collectionsDeployed: cached.collectionsDeployed,
+    ethToArtistsWei: BigInt(cached.ethToArtistsWeiStr),
   }
 
   const clauses: string[] = []
@@ -98,11 +108,15 @@ async function CountersInline() {
       `${stats.housesDeployed} ${stats.housesDeployed === 1 ? "house" : "houses"} deployed`,
     )
   }
-  if (stats.ethSettledWei > 0n) {
-    clauses.push(`${formatEth(stats.ethSettledWei)} ETH settled`)
+  if (stats.collectionsDeployed >= 1) {
+    clauses.push(
+      `${stats.collectionsDeployed} ${stats.collectionsDeployed === 1 ? "collection" : "collections"} deployed`,
+    )
+  }
+  if (stats.ethToArtistsWei > 0n) {
+    clauses.push(`${formatEth(stats.ethToArtistsWei)} ETH to artists`)
   }
   if (clauses.length === 0) return null
-  clauses.push("zero platform fees")
 
   return (
     <ul className="font-mono text-xs text-gray-500 flex flex-col gap-y-0.5 sm:flex-row sm:flex-wrap sm:gap-x-2">
