@@ -86,18 +86,29 @@ Full notes: `docs/muri-integration.md`.
 ## Production database
 
 - **Prod = the `maglev` Railway DB** (`maglev.proxy.rlwy.net`). Schemas:
-  `public` + `ponder_sync` + `ponder_v1`, with **`INDEXER_SCHEMA=ponder_v1`**.
-- `apps/web/.env.local` MUST point at maglev with `INDEXER_SCHEMA=ponder_v1`.
-  (Verified current: it does.)
+  `public` + `ponder_sync` + `ponder_v1` (legacy, frozen) + `ponder_v2`
+  (live), with **`INDEXER_SCHEMA=ponder_v2`**.
+- `apps/web/.env.local` MUST point at maglev with `INDEXER_SCHEMA=ponder_v2`.
+- **2026-07-22 schema migration:** `ponder_v1` is permanently owned by the
+  pre-#164 Ponder app identity — a new Ponder build refuses to adopt it
+  ("Schema was previously used by a different Ponder app") and CANNOT
+  write it. The live indexer writes `ponder_v2` (created by the #201
+  deploy: auction/FND/discovery tables plus `collections`,
+  `collection_mints`, `collection_sales`, `collection_tokens`, `minters`,
+  `muri_*`, `homage_*`). `ponder_v1` is frozen at its 2026-06-23 state and
+  kept only as a rollback target; the shared `ponder_sync` RPC cache made
+  the v2 re-index a mostly-local replay. If a future redeploy hits the
+  same MigrationError, bump to the next `ponder_vN` and flip
+  `INDEXER_SCHEMA` (Railway indexer + Netlify web) after sync.
 - **Dead stack — do not trust:** an OLD `switchback` Railway DB had
   `ponder_v2`/`ponder_v3` schemas and `lazy_*` public tables. That is the
-  pre-rebuild stack. maglev has **no** `lazy_*` tables and no v2/v3
-  schemas. If your local env points anywhere but maglev, you will
-  reconstruct the architecture wrong — this exact mistake cost a prior
-  session hours.
-- `ponder_v2`/`ponder_v3` would only ever be empty Ponder safe-redeploy
-  namespaces if they existed; they don't exist on maglev. The live
-  Ponder data is `ponder_v1`.
+  pre-rebuild stack — unrelated to maglev's `ponder_v2` above. maglev has
+  **no** `lazy_*` tables. If your local env points anywhere but maglev,
+  you will reconstruct the architecture wrong — this exact mistake cost a
+  prior session hours.
+- **Railway indexer does NOT auto-deploy from GitHub.** Deploys are manual:
+  `railway up --service indexer` from repo root (project `pnd-v2`,
+  environment `production`).
 
 ## STALE TRAP: untracked `ponder/` directory
 
