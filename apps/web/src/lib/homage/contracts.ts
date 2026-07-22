@@ -129,6 +129,7 @@ export const homageMinterAbi = parseAbi([
   "function claimFor(uint256 punkId, address vault) payable returns (uint256)",
   "function claimTo(uint256 punkId) payable returns (uint256)",
   "function allowlistMint(bytes32[] proof) payable returns (uint256)",
+  "function allowlistMintBatch(uint256 qty, bytes32[] proof) payable returns (uint256[] ids)",
   "function redeem(uint256 punkId) payable",
   "event Minted(address indexed to, uint256 indexed punkId, uint256 ethSwapped, uint256 received111)",
   "event Claimed(address indexed to, uint256 indexed punkId, uint256 ethSwapped, uint256 received111)",
@@ -280,6 +281,8 @@ export function homageFlows(minter: Address) {
       ({address: minter, abi: homageMinterAbi, functionName: "claimTo", args: [punkId], value}) as const,
     allowlistMint: (proof: readonly `0x${string}`[], value: bigint) =>
       ({address: minter, abi: homageMinterAbi, functionName: "allowlistMint", args: [proof], value}) as const,
+    allowlistMintBatch: (qty: bigint, proof: readonly `0x${string}`[], value: bigint) =>
+      ({address: minter, abi: homageMinterAbi, functionName: "allowlistMintBatch", args: [qty, proof], value}) as const,
     redeem: (punkId: bigint, value: bigint) =>
       ({address: minter, abi: homageMinterAbi, functionName: "redeem", args: [punkId], value}) as const,
     reserveMine: (ids: readonly bigint[]) =>

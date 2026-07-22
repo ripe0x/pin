@@ -7,502 +7,1957 @@
  * (a plain ERC-721 core), and minting/economics/redeem run through a
  * separate `HomageMinter` engine that mints INTO that collection.
  *
- *   - `homageMinterAbi`     — HomageMinter: the phased mint writes
- *     (`claim` / `claimFor` / `claimTo` / `allowlistMint` /
- *     `allowlistMintAsHolder` / `allowlistMintAsHolderFor` / `mint` /
- *     `mintBatch`), `redeem`,
- *     every view the quote / eligibility / schedule plumbing reads, every
- *     event the contract emits, and every custom `error` it defines, so
- *     viem decodes a revert selector to a named reason (`NotPunkOwner()`)
- *     instead of a bare `0x...` on a failed mint.
+ *   - `homageMinterAbi`     — HomageMinter: every write (single + batch mint
+ *     across all phases: `mint` / `mintBatch` / `mintTo` / `mintBatchTo`,
+ *     `allowlistMint` / `allowlistMintBatch` / `allowlistMintFor` /
+ *     `allowlistMintBatchFor`, `claim*`, `redeem`, `reserve*`, admin
+ *     setters), every view, every event, and every custom `error`, so viem
+ *     decodes a revert selector to a named reason (`NotPunkOwner()`) instead
+ *     of a bare `0x...` on a failed mint.
  *   - `homageCollectionAbi` — the pooled PND Collection (the ERC-721 core
  *     itself): `ownerOf` / `balanceOf` / `tokenURI` / `Transfer` ONLY.
  *     Ownership, transfers, and metadata live here; economics/schedule/
  *     supply/redeem do NOT — read those from the minter.
  *
  * The indexer keeps its own events-focused subset in
- * `apps/indexer/abis/Homage.ts` (still targeting the pre-rebuild monolith as
- * of this sync — see the note there); this one adds the writes for the web
- * `/mint/homage` venue.
+ * `apps/indexer/abis/Homage.ts`; this one carries the full write surface for
+ * the web `/mint/homage` venue.
  *
- * `homageMinterAbi`'s errors and events are generated from the compiled
- * `HomageMinter.sol` artifact (`out/HomageMinter.sol/HomageMinter.json`),
- * built from the Homage repo at commit f2d231f (origin/master), confirmed
- * byte-identical to the deployed sepolia bytecode at
- * `0xc9f3c81556fcb4cf70a37d1a7248d6ec68256b7c` outside of immutable slots.
- * Function entries are unchanged from the prior hand-synced set; re-run
- * `pnpm --filter web check:abi` and diff against a fresh artifact before the
- * mainnet deploy.
+ * `homageMinterAbi` is the EXACT verified ABI of the deployed mainnet
+ * HomageMinter at `0xe516668f7CE220d7418eB0e9D24AF89B23Be59F8` (fetched from
+ * Etherscan, chainid 1). It is a full mirror, not a hand-curated subset: the
+ * prior curated snapshot drifted and was missing `allowlistMintBatch` and the
+ * other batch/`*For` entrypoints. Re-fetch and diff against the deployed
+ * address if the minter is ever redeployed.
  */
 export const homageMinterAbi = [
-  // ── Events ──────────────────────────────────────────────────────────
-  { type: "event", name: "Activated", inputs: [], anonymous: false },
   {
-    type: "event",
-    name: "AllowlistRootSet",
-    inputs: [{ name: "root", type: "bytes32", indexed: false, internalType: "bytes32" }],
-    anonymous: false,
-  },
-  {
-    type: "event",
-    name: "Claimed",
-    inputs: [
-      { name: "to", type: "address", indexed: true, internalType: "address" },
-      { name: "punkId", type: "uint256", indexed: true, internalType: "uint256" },
-      { name: "ethSwapped", type: "uint256", indexed: false, internalType: "uint256" },
-      { name: "received111", type: "uint256", indexed: false, internalType: "uint256" },
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "collection_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "token111_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "feeRecipient_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "poolManager_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "currency0_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "currency1_",
+        "type": "address"
+      },
+      {
+        "internalType": "uint24",
+        "name": "fee_",
+        "type": "uint24"
+      },
+      {
+        "internalType": "int24",
+        "name": "tickSpacing_",
+        "type": "int24"
+      },
+      {
+        "internalType": "address",
+        "name": "hooks_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "punksMarket_",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "delegateRegistry_",
+        "type": "address"
+      }
     ],
-    anonymous: false,
+    "stateMutability": "nonpayable",
+    "type": "constructor"
   },
   {
-    type: "event",
-    name: "ExitFeeSet",
-    inputs: [{ name: "exitFee", type: "uint256", indexed: false, internalType: "uint256" }],
-    anonymous: false,
+    "inputs": [],
+    "name": "AllowlistClosed",
+    "type": "error"
   },
   {
-    type: "event",
-    name: "FeeRecipientSet",
-    inputs: [{ name: "feeRecipient", type: "address", indexed: false, internalType: "address" }],
-    anonymous: false,
+    "inputs": [],
+    "name": "AllowlistRootFrozen",
+    "type": "error"
   },
   {
-    type: "event",
-    name: "FeeScheduleSet",
-    inputs: [
-      { name: "baseFee", type: "uint256", indexed: false, internalType: "uint256" },
-      { name: "feeGrowthBps", type: "uint256", indexed: false, internalType: "uint256" },
+    "inputs": [],
+    "name": "AlreadyActivated",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "AlreadyMinted",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "BadPunkId",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "BadSchedule",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ClaimClosed",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "CollectionAlreadyMinted",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "CollectionNotPooled",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "ethNeeded",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "ethBudget",
+        "type": "uint256"
+      }
     ],
-    anonymous: false,
+    "name": "CostExceedsBudget",
+    "type": "error"
   },
   {
-    type: "event",
-    name: "Minted",
-    inputs: [
-      { name: "to", type: "address", indexed: true, internalType: "address" },
-      { name: "punkId", type: "uint256", indexed: true, internalType: "uint256" },
-      { name: "ethSwapped", type: "uint256", indexed: false, internalType: "uint256" },
-      { name: "received111", type: "uint256", indexed: false, internalType: "uint256" },
+    "inputs": [],
+    "name": "DrawPoolDesync",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ExitFeeOutOfBounds",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "FeeGraceOutOfBounds",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "FeeScheduleOutOfBounds",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "FeeTransferFailed",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "required",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "provided",
+        "type": "uint256"
+      }
     ],
-    anonymous: false,
+    "name": "InsufficientValue",
+    "type": "error"
   },
   {
-    type: "event",
-    name: "OwnershipTransferred",
-    inputs: [
-      { name: "previousOwner", type: "address", indexed: true, internalType: "address" },
-      { name: "newOwner", type: "address", indexed: true, internalType: "address" },
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "qty",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "maxBatch",
+        "type": "uint256"
+      }
     ],
-    anonymous: false,
+    "name": "InvalidBatchQuantity",
+    "type": "error"
   },
   {
-    type: "event",
-    name: "RedeemDelaySet",
-    inputs: [{ name: "redeemDelay", type: "uint64", indexed: false, internalType: "uint64" }],
-    anonymous: false,
+    "inputs": [],
+    "name": "InvalidThreshold",
+    "type": "error"
   },
   {
-    type: "event",
-    name: "Redeemed",
-    inputs: [
-      { name: "from", type: "address", indexed: true, internalType: "address" },
-      { name: "punkId", type: "uint256", indexed: true, internalType: "uint256" },
-      { name: "amount111", type: "uint256", indexed: false, internalType: "uint256" },
+    "inputs": [],
+    "name": "MinterNotGranted",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "MinterNotLocked",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      }
     ],
-    anonymous: false,
+    "name": "NonexistentToken",
+    "type": "error"
   },
   {
-    type: "event",
-    name: "ReservationReleased",
-    inputs: [{ name: "punkId", type: "uint256", indexed: true, internalType: "uint256" }],
-    anonymous: false,
+    "inputs": [],
+    "name": "NotActivated",
+    "type": "error"
   },
   {
-    type: "event",
-    name: "Reserved",
-    inputs: [
-      { name: "punkId", type: "uint256", indexed: true, internalType: "uint256" },
-      { name: "by", type: "address", indexed: true, internalType: "address" },
+    "inputs": [],
+    "name": "NotAllowlisted",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NotBacked",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "dependency",
+        "type": "address"
+      }
     ],
-    anonymous: false,
+    "name": "NotContract",
+    "type": "error"
   },
   {
-    type: "event",
-    name: "ScheduleSet",
-    inputs: [
-      { name: "claimStart", type: "uint64", indexed: false, internalType: "uint64" },
-      { name: "allowlistStart", type: "uint64", indexed: false, internalType: "uint64" },
-      { name: "publicStart", type: "uint64", indexed: false, internalType: "uint64" },
+    "inputs": [],
+    "name": "NotDelegated",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NotManager",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NotPunkOwner",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NotTokenOwner",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NothingToCollect",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NothingToRescue",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "owner",
+        "type": "address"
+      }
     ],
-    anonymous: false,
+    "name": "OwnableInvalidOwner",
+    "type": "error"
   },
   {
-    type: "event",
-    name: "ThresholdSet",
-    inputs: [{ name: "threshold", type: "uint256", indexed: false, internalType: "uint256" }],
-    anonymous: false,
-  },
-
-  // ── Mint / redeem (writes) ──────────────────────────────────────────
-  {
-    type: "function",
-    name: "mint",
-    inputs: [],
-    outputs: [{ name: "punkId", type: "uint256", internalType: "uint256" }],
-    stateMutability: "payable",
-  },
-  {
-    type: "function",
-    name: "mintBatch",
-    inputs: [{ name: "qty", type: "uint256", internalType: "uint256" }],
-    outputs: [{ name: "ids", type: "uint256[]", internalType: "uint256[]" }],
-    stateMutability: "payable",
-  },
-  {
-    type: "function",
-    name: "claim",
-    inputs: [{ name: "punkId", type: "uint256", internalType: "uint256" }],
-    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
-    stateMutability: "payable",
-  },
-  {
-    type: "function",
-    name: "claimFor",
-    inputs: [
-      { name: "punkId", type: "uint256", internalType: "uint256" },
-      { name: "vault", type: "address", internalType: "address" },
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
     ],
-    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
-    stateMutability: "payable",
+    "name": "OwnableUnauthorizedAccount",
+    "type": "error"
   },
   {
-    type: "function",
-    name: "claimTo",
-    inputs: [{ name: "punkId", type: "uint256", internalType: "uint256" }],
-    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
-    stateMutability: "payable",
+    "inputs": [],
+    "name": "PublicClosed",
+    "type": "error"
   },
   {
-    type: "function",
-    name: "allowlistMint",
-    inputs: [{ name: "proof", type: "bytes32[]", internalType: "bytes32[]" }],
-    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
-    stateMutability: "payable",
+    "inputs": [],
+    "name": "RedeemDelayOutOfBounds",
+    "type": "error"
   },
   {
-    type: "function",
-    name: "allowlistMintAsHolder",
-    inputs: [{ name: "punkId", type: "uint256", internalType: "uint256" }],
-    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
-    stateMutability: "payable",
-  },
-  {
-    type: "function",
-    name: "allowlistMintAsHolderFor",
-    inputs: [
-      { name: "punkId", type: "uint256", internalType: "uint256" },
-      { name: "vault", type: "address", internalType: "address" },
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "opensAt",
+        "type": "uint256"
+      }
     ],
-    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
-    stateMutability: "payable",
+    "name": "RedeemLocked",
+    "type": "error"
   },
   {
-    type: "function",
-    name: "redeem",
-    inputs: [{ name: "punkId", type: "uint256", internalType: "uint256" }],
-    outputs: [],
-    stateMutability: "payable",
+    "inputs": [],
+    "name": "ReentrancyGuardReentrantCall",
+    "type": "error"
   },
   {
-    type: "function",
-    name: "setSchedule",
-    inputs: [
-      { name: "claimStart_", type: "uint64", internalType: "uint64" },
-      { name: "allowlistStart_", type: "uint64", internalType: "uint64" },
-      { name: "publicStart_", type: "uint64", internalType: "uint64" },
+    "inputs": [],
+    "name": "RefundFailed",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ReleaseNotOpen",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "RescueTransferFailed",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ReservationClosed",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      }
     ],
-    outputs: [],
-    stateMutability: "nonpayable",
-  },
-
-  // ── Economics (views) ───────────────────────────────────────────────
-  {
-    type: "function",
-    name: "threshold",
-    inputs: [],
-    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
-    stateMutability: "view",
+    "name": "SafeERC20FailedOperation",
+    "type": "error"
   },
   {
-    type: "function",
-    name: "baseFee",
-    inputs: [],
-    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "feeGrowthBps",
-    inputs: [],
-    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "mintCount",
-    inputs: [{ name: "who", type: "address", internalType: "address" }],
-    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "mintFeeOf",
-    inputs: [{ name: "who", type: "address", internalType: "address" }],
-    outputs: [{ name: "fee", type: "uint256", internalType: "uint256" }],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "quoteBatchFee",
-    inputs: [
-      { name: "who", type: "address", internalType: "address" },
-      { name: "qty", type: "uint256", internalType: "uint256" },
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "received",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "needed",
+        "type": "uint256"
+      }
     ],
-    outputs: [{ name: "total", type: "uint256", internalType: "uint256" }],
-    stateMutability: "view",
+    "name": "Slippage",
+    "type": "error"
   },
   {
-    type: "function",
-    name: "exitFee",
-    inputs: [],
-    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
-    stateMutability: "view",
-  },
-
-  // ── Schedule (views) ────────────────────────────────────────────────
-  {
-    type: "function",
-    name: "claimStart",
-    inputs: [],
-    outputs: [{ name: "", type: "uint64", internalType: "uint64" }],
-    stateMutability: "view",
+    "inputs": [],
+    "name": "SoldOut",
+    "type": "error"
   },
   {
-    type: "function",
-    name: "allowlistStart",
-    inputs: [],
-    outputs: [{ name: "", type: "uint64", internalType: "uint64" }],
-    stateMutability: "view",
+    "inputs": [],
+    "name": "SupplyCapTooLow",
+    "type": "error"
   },
   {
-    type: "function",
-    name: "publicStart",
-    inputs: [],
-    outputs: [{ name: "", type: "uint64", internalType: "uint64" }],
-    stateMutability: "view",
-  },
-
-  // ── Allowlist (views) ───────────────────────────────────────────────
-  // Allowlist mints are uncapped: the contract keeps no per-wallet allowance
-  // (no `maxPerAllowlisted`/`allowlistMinted` getter). Membership against
-  // `allowlistRoot` is the whole eligibility test; throttling is the same
-  // per-wallet fee escalator every mint path shares.
-  {
-    type: "function",
-    name: "allowlistRoot",
-    inputs: [],
-    outputs: [{ name: "", type: "bytes32", internalType: "bytes32" }],
-    stateMutability: "view",
-  },
-
-  // ── Supply / token state (views) ────────────────────────────────────
-  {
-    type: "function",
-    name: "SUPPLY",
-    inputs: [],
-    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
-    stateMutability: "view",
+    "inputs": [],
+    "name": "ThresholdLocked",
+    "type": "error"
   },
   {
-    type: "function",
-    name: "MAX_BATCH",
-    inputs: [],
-    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "remaining",
-    inputs: [],
-    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "totalMinted",
-    inputs: [],
-    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "isMinted",
-    inputs: [{ name: "punkId", type: "uint256", internalType: "uint256" }],
-    outputs: [{ name: "", type: "bool", internalType: "bool" }],
-    stateMutability: "view",
-  },
-
-  // ── Reserve + redeem window (writes + views) ────────────────────────
-  {
-    type: "function",
-    name: "isReserved",
-    inputs: [{ name: "", type: "uint256", internalType: "uint256" }],
-    outputs: [{ name: "", type: "bool", internalType: "bool" }],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "reserveMine",
-    inputs: [{ name: "ids", type: "uint256[]", internalType: "uint256[]" }],
-    outputs: [],
-    stateMutability: "nonpayable",
-  },
-  {
-    type: "function",
-    name: "reserveVia",
-    inputs: [
-      { name: "ids", type: "uint256[]", internalType: "uint256[]" },
-      { name: "vault", type: "address", internalType: "address" },
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "expected",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "provided",
+        "type": "uint256"
+      }
     ],
-    outputs: [],
-    stateMutability: "nonpayable",
+    "name": "WrongExitFee",
+    "type": "error"
   },
   {
-    type: "function",
-    name: "reservedRemaining",
-    inputs: [],
-    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
-    stateMutability: "view",
+    "inputs": [],
+    "name": "WrongPoolCurrency",
+    "type": "error"
   },
   {
-    type: "function",
-    name: "redeemOpensAt",
-    inputs: [],
-    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
-    stateMutability: "view",
+    "inputs": [],
+    "name": "ZeroAddress",
+    "type": "error"
   },
-
-  // ── Custom errors ───────────────────────────────────────────────────
-  // Every error HomageMinter.sol defines, so viem decodes a revert to its
-  // name and arguments (e.g. `RedeemLocked(opensAt)`) instead of a bare
-  // `0x...` selector on a failed mint/redeem/admin call.
-  { type: "error", name: "AllowlistClosed", inputs: [] },
-  { type: "error", name: "AlreadyActivated", inputs: [] },
-  { type: "error", name: "AlreadyMinted", inputs: [] },
-  { type: "error", name: "BadPunkId", inputs: [] },
-  { type: "error", name: "BadSchedule", inputs: [] },
-  { type: "error", name: "ClaimClosed", inputs: [] },
-  { type: "error", name: "CollectionAlreadyMinted", inputs: [] },
-  { type: "error", name: "CollectionNotPooled", inputs: [] },
   {
-    type: "error",
-    name: "CostExceedsBudget",
-    inputs: [
-      { name: "ethNeeded", type: "uint256", internalType: "uint256" },
-      { name: "ethBudget", type: "uint256", internalType: "uint256" },
+    "inputs": [],
+    "name": "ZeroDependency",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "inputs": [],
+    "name": "Activated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "root",
+        "type": "bytes32"
+      }
     ],
+    "name": "AllowlistRootSet",
+    "type": "event"
   },
-  { type: "error", name: "DrawPoolDesync", inputs: [] },
-  { type: "error", name: "ExitFeeOutOfBounds", inputs: [] },
-  { type: "error", name: "FeeScheduleOutOfBounds", inputs: [] },
-  { type: "error", name: "FeeTransferFailed", inputs: [] },
   {
-    type: "error",
-    name: "InsufficientValue",
-    inputs: [
-      { name: "required", type: "uint256", internalType: "uint256" },
-      { name: "provided", type: "uint256", internalType: "uint256" },
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "to",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "punkId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "ethSwapped",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "received111",
+        "type": "uint256"
+      }
     ],
+    "name": "Claimed",
+    "type": "event"
   },
   {
-    type: "error",
-    name: "InvalidBatchQuantity",
-    inputs: [
-      { name: "qty", type: "uint256", internalType: "uint256" },
-      { name: "maxBatch", type: "uint256", internalType: "uint256" },
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "exitFee",
+        "type": "uint256"
+      }
     ],
-  },
-  { type: "error", name: "InvalidThreshold", inputs: [] },
-  { type: "error", name: "MinterNotGranted", inputs: [] },
-  { type: "error", name: "MinterNotLocked", inputs: [] },
-  {
-    type: "error",
-    name: "NonexistentToken",
-    inputs: [{ name: "id", type: "uint256", internalType: "uint256" }],
-  },
-  { type: "error", name: "NotActivated", inputs: [] },
-  { type: "error", name: "NotAllowlisted", inputs: [] },
-  { type: "error", name: "NotBacked", inputs: [] },
-  {
-    type: "error",
-    name: "NotContract",
-    inputs: [{ name: "dependency", type: "address", internalType: "address" }],
-  },
-  { type: "error", name: "NotDelegated", inputs: [] },
-  { type: "error", name: "NotManager", inputs: [] },
-  { type: "error", name: "NotPunkOwner", inputs: [] },
-  { type: "error", name: "NotTokenOwner", inputs: [] },
-  { type: "error", name: "NothingToCollect", inputs: [] },
-  { type: "error", name: "NothingToRescue", inputs: [] },
-  {
-    type: "error",
-    name: "OwnableInvalidOwner",
-    inputs: [{ name: "owner", type: "address", internalType: "address" }],
+    "name": "ExitFeeSet",
+    "type": "event"
   },
   {
-    type: "error",
-    name: "OwnableUnauthorizedAccount",
-    inputs: [{ name: "account", type: "address", internalType: "address" }],
-  },
-  { type: "error", name: "PublicClosed", inputs: [] },
-  { type: "error", name: "RedeemDelayOutOfBounds", inputs: [] },
-  {
-    type: "error",
-    name: "RedeemLocked",
-    inputs: [{ name: "opensAt", type: "uint256", internalType: "uint256" }],
-  },
-  { type: "error", name: "ReentrancyGuardReentrantCall", inputs: [] },
-  { type: "error", name: "RefundFailed", inputs: [] },
-  { type: "error", name: "ReleaseNotOpen", inputs: [] },
-  { type: "error", name: "RescueTransferFailed", inputs: [] },
-  { type: "error", name: "ReservationClosed", inputs: [] },
-  {
-    type: "error",
-    name: "SafeERC20FailedOperation",
-    inputs: [{ name: "token", type: "address", internalType: "address" }],
-  },
-  {
-    type: "error",
-    name: "Slippage",
-    inputs: [
-      { name: "received", type: "uint256", internalType: "uint256" },
-      { name: "needed", type: "uint256", internalType: "uint256" },
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "feeGraceMints",
+        "type": "uint256"
+      }
     ],
+    "name": "FeeGraceMintsSet",
+    "type": "event"
   },
-  { type: "error", name: "SoldOut", inputs: [] },
-  { type: "error", name: "SupplyCapTooLow", inputs: [] },
-  { type: "error", name: "ThresholdLocked", inputs: [] },
   {
-    type: "error",
-    name: "WrongExitFee",
-    inputs: [
-      { name: "expected", type: "uint256", internalType: "uint256" },
-      { name: "provided", type: "uint256", internalType: "uint256" },
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "feeRecipient",
+        "type": "address"
+      }
     ],
+    "name": "FeeRecipientSet",
+    "type": "event"
   },
-  { type: "error", name: "WrongPoolCurrency", inputs: [] },
-  { type: "error", name: "ZeroAddress", inputs: [] },
-  { type: "error", name: "ZeroDependency", inputs: [] },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "baseFee",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "feeGrowthBps",
+        "type": "uint256"
+      }
+    ],
+    "name": "FeeScheduleSet",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "to",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "punkId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "ethSwapped",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "received111",
+        "type": "uint256"
+      }
+    ],
+    "name": "Minted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "previousOwner",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "newOwner",
+        "type": "address"
+      }
+    ],
+    "name": "OwnershipTransferred",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "redeemDelay",
+        "type": "uint64"
+      }
+    ],
+    "name": "RedeemDelaySet",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "from",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "punkId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount111",
+        "type": "uint256"
+      }
+    ],
+    "name": "Redeemed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "punkId",
+        "type": "uint256"
+      }
+    ],
+    "name": "ReservationReleased",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "punkId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "by",
+        "type": "address"
+      }
+    ],
+    "name": "Reserved",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "claimStart",
+        "type": "uint64"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "allowlistStart",
+        "type": "uint64"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "publicStart",
+        "type": "uint64"
+      }
+    ],
+    "name": "ScheduleSet",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "threshold",
+        "type": "uint256"
+      }
+    ],
+    "name": "ThresholdSet",
+    "type": "event"
+  },
+  {
+    "inputs": [],
+    "name": "MAX_BATCH",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "MAX_EXIT_FEE",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "MAX_FEE_GRACE_MINTS",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "MAX_FEE_GROWTH_BPS",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "MAX_MINT_FEE",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "MAX_REDEEM_DELAY",
+    "outputs": [
+      {
+        "internalType": "uint64",
+        "name": "",
+        "type": "uint64"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "SUPPLY",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "activate",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "activated",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32[]",
+        "name": "proof",
+        "type": "bytes32[]"
+      }
+    ],
+    "name": "allowlistMint",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "qty",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32[]",
+        "name": "proof",
+        "type": "bytes32[]"
+      }
+    ],
+    "name": "allowlistMintBatch",
+    "outputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "ids",
+        "type": "uint256[]"
+      }
+    ],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "vault",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "qty",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32[]",
+        "name": "proof",
+        "type": "bytes32[]"
+      }
+    ],
+    "name": "allowlistMintBatchFor",
+    "outputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "ids",
+        "type": "uint256[]"
+      }
+    ],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "vault",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes32[]",
+        "name": "proof",
+        "type": "bytes32[]"
+      }
+    ],
+    "name": "allowlistMintFor",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "allowlistRoot",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "allowlistRootFrozen",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "allowlistStart",
+    "outputs": [
+      {
+        "internalType": "uint64",
+        "name": "",
+        "type": "uint64"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "baseFee",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "punkId",
+        "type": "uint256"
+      }
+    ],
+    "name": "claim",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "punkId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "vault",
+        "type": "address"
+      }
+    ],
+    "name": "claimFor",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "claimStart",
+    "outputs": [
+      {
+        "internalType": "uint64",
+        "name": "",
+        "type": "uint64"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "punkId",
+        "type": "uint256"
+      }
+    ],
+    "name": "claimTo",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "collectFees",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "collection",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "currency0",
+    "outputs": [
+      {
+        "internalType": "Currency",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "currency1",
+    "outputs": [
+      {
+        "internalType": "Currency",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "delegateRegistry",
+    "outputs": [
+      {
+        "internalType": "contract IDelegateRegistry",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "drawableRemaining",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "exitFee",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "n",
+        "type": "uint256"
+      }
+    ],
+    "name": "feeForCount",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "feeGraceMints",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "feeGrowthBps",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "feeRecipient",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "punkId",
+        "type": "uint256"
+      }
+    ],
+    "name": "isMinted",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "isReserved",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "liveBackedSupply",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "mint",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "punkId",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "qty",
+        "type": "uint256"
+      }
+    ],
+    "name": "mintBatch",
+    "outputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "ids",
+        "type": "uint256[]"
+      }
+    ],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address[]",
+        "name": "tos",
+        "type": "address[]"
+      }
+    ],
+    "name": "mintBatchTo",
+    "outputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "ids",
+        "type": "uint256[]"
+      }
+    ],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "name": "mintCount",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "who",
+        "type": "address"
+      }
+    ],
+    "name": "mintFeeOf",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "to",
+        "type": "address"
+      }
+    ],
+    "name": "mintTo",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "punkId",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "payer",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "to",
+        "type": "address"
+      }
+    ],
+    "name": "mintToFeeOf",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "owner",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "pendingFees",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "poolFee",
+    "outputs": [
+      {
+        "internalType": "uint24",
+        "name": "",
+        "type": "uint24"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "poolHooks",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "poolManager",
+    "outputs": [
+      {
+        "internalType": "contract IPoolManager",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "poolTickSpacing",
+    "outputs": [
+      {
+        "internalType": "int24",
+        "name": "",
+        "type": "int24"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "publicStart",
+    "outputs": [
+      {
+        "internalType": "uint64",
+        "name": "",
+        "type": "uint64"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "punksMarket",
+    "outputs": [
+      {
+        "internalType": "contract ICryptoPunksMarket",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "who",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "qty",
+        "type": "uint256"
+      }
+    ],
+    "name": "quoteBatchFee",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "total",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address[]",
+        "name": "tos",
+        "type": "address[]"
+      }
+    ],
+    "name": "quoteBatchFeeTo",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "total",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "payer",
+        "type": "address"
+      },
+      {
+        "internalType": "address[]",
+        "name": "tos",
+        "type": "address[]"
+      }
+    ],
+    "name": "quoteBatchFeeTo",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "total",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "punkId",
+        "type": "uint256"
+      }
+    ],
+    "name": "redeem",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "redeemDelay",
+    "outputs": [
+      {
+        "internalType": "uint64",
+        "name": "",
+        "type": "uint64"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "redeemOpen",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "redeemOpensAt",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "redeemOpensAtFrozen",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "max",
+        "type": "uint256"
+      }
+    ],
+    "name": "releaseReserved",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "released",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "remaining",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "renounceOwnership",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "to",
+        "type": "address"
+      }
+    ],
+    "name": "rescueETH",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "reservationOpen",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "ids",
+        "type": "uint256[]"
+      }
+    ],
+    "name": "reserve",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "ids",
+        "type": "uint256[]"
+      }
+    ],
+    "name": "reserveMine",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "ids",
+        "type": "uint256[]"
+      },
+      {
+        "internalType": "address",
+        "name": "vault",
+        "type": "address"
+      }
+    ],
+    "name": "reserveVia",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "reservedCount",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "reservedRemaining",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "root",
+        "type": "bytes32"
+      }
+    ],
+    "name": "setAllowlistRoot",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "exitFee_",
+        "type": "uint256"
+      }
+    ],
+    "name": "setExitFee",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "feeGraceMints_",
+        "type": "uint256"
+      }
+    ],
+    "name": "setFeeGraceMints",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "f",
+        "type": "address"
+      }
+    ],
+    "name": "setFeeRecipient",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "baseFee_",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "feeGrowthBps_",
+        "type": "uint256"
+      }
+    ],
+    "name": "setFeeSchedule",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "redeemDelay_",
+        "type": "uint64"
+      }
+    ],
+    "name": "setRedeemDelay",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "claimStart_",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "allowlistStart_",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "publicStart_",
+        "type": "uint64"
+      }
+    ],
+    "name": "setSchedule",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "newThreshold",
+        "type": "uint256"
+      }
+    ],
+    "name": "setThreshold",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      }
+    ],
+    "name": "svg",
+    "outputs": [
+      {
+        "internalType": "string",
+        "name": "",
+        "type": "string"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      }
+    ],
+    "name": "svgPfp",
+    "outputs": [
+      {
+        "internalType": "string",
+        "name": "",
+        "type": "string"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "threshold",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "token111",
+    "outputs": [
+      {
+        "internalType": "contract IERC20",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "totalMinted",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "newOwner",
+        "type": "address"
+      }
+    ],
+    "name": "transferOwnership",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes",
+        "name": "data",
+        "type": "bytes"
+      }
+    ],
+    "name": "unlockCallback",
+    "outputs": [
+      {
+        "internalType": "bytes",
+        "name": "",
+        "type": "bytes"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
 ] as const
 
 /**
