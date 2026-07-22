@@ -381,7 +381,7 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                   : "Price"
                 : phase === "closed"
                   ? "Opens"
-                  : "Price · mint fee + $111"}
+                  : "Price"}
             </p>
             <p className="text-2xl font-mono font-medium tabular-nums tracking-tight leading-none">
               {phase === "closed" ? (
@@ -402,7 +402,7 @@ export function HomageMint({collection, minter}: {collection: Address; minter: A
                 mint escrows, so the price isn't just one opaque ETH figure. */}
             {phase !== "closed" && quote && (
               <p className="text-[10px] font-mono text-gray-400 tabular-nums">
-                {fmtEth(quote.fee)} ETH + {compactTokens(quote.threshold)} $111 (~{fmtEth(quote.ethForSwap)} ETH)
+                {fmtEth(quote.fee)} ETH + {compactTokens(quote.threshold)} $111
               </p>
             )}
             {/* Pre-open: base fee + the live $111 swap quote, so a wallet can plan around
