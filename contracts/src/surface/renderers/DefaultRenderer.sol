@@ -9,9 +9,9 @@ import {RenderAssets} from "./RenderAssets.sol";
 
 /// @title DefaultRenderer
 /// @notice Default tokenURI renderer wired into new collections by the
-///         factory. Immutable, ownerless, and shared across collections: reads
-///         the collection's views (the collection is passed as a parameter,
-///         never msg.sender), fetches the image from RenderAssets, and returns
+///         factory. Immutable, ownerless, and shared across collections. The
+///         collection arrives as a parameter, never as msg.sender. It reads
+///         the collection's views, fetches the image from RenderAssets, and returns
 ///         a base64-encoded JSON data URI with the image and derived
 ///         provenance traits. A collection can point its renderer slot
 ///         elsewhere for per-token or generative output.

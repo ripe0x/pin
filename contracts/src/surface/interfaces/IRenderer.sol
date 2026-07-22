@@ -6,9 +6,9 @@ import {SurfaceConfig, IdMode} from "../SurfaceTypes.sol";
 /// @title IRenderer
 /// @notice Swappable metadata renderer. A collection's tokenURI/contractURI
 ///         delegate here. The collection is an explicit parameter, never
-///         msg.sender, so one renderer instance can serve every collection,
-///         offchain callers can eth_call it directly, and any contract can
-///         adopt it by implementing ISurfaceView.
+///         msg.sender. One renderer instance can therefore serve every
+///         collection, an offchain caller can eth_call it directly, and any
+///         contract can adopt it by implementing ISurfaceView.
 ///
 ///         A renderer is an onchain view with full EVM read access: seeds,
 ///         owners, sibling tokens, foreign contracts, block state.
