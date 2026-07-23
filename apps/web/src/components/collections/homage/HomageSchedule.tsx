@@ -38,7 +38,9 @@ export function HomageSchedule({minter}: {minter: Address}) {
       {address: minter, abi: homageMinterAbi, functionName: "publicStart", chainId: PREFERRED_CHAIN.id},
     ],
   })
-  if (!reads.data || reads.data[0]?.status !== "success") return null
+  // Hold until the schedule AND chain clock resolve — at nowSec 0 every row's state
+  // computes against a zero clock and renders "opens <past date>" for windows already live.
+  if (!reads.data || reads.data[0]?.status !== "success" || nowSec === 0) return null
   const claimStart = Number(reads.data[0].result as bigint)
   const allowlistStart = Number(reads.data[1].result as bigint)
   const publicStart = Number(reads.data[2].result as bigint)

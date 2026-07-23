@@ -480,6 +480,37 @@ export function HomageMint({
       </>
     ) : null
 
+  // Chain time (nowSec) and the schedule load independently of first paint. Until both
+  // resolve, `currentPhase` reads "closed" for any real schedule, which would flash a
+  // "Not yet open" / "Opens in 0s" state. Hold a neutral loading card until the clock is
+  // known, so the instrument never looks closed before it knows the window.
+  const clockReady = nowSec > 0 && schedule !== null
+  if (!clockReady) {
+    return (
+      <section className="py-5 border-b border-gray-100 space-y-3">
+        <div className="rounded-lg border border-gray-200 bg-surface overflow-hidden">
+          <div className="p-5 space-y-4">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-status-upcoming" />
+                <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500">Loading</span>
+              </div>
+              <span className="text-[10px] font-mono uppercase tracking-wider text-gray-400 tabular-nums">
+                {minted !== null ? `${minted} / ${SUPPLY} minted` : "…"}
+              </span>
+            </div>
+            <div className="space-y-1">
+              <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">Price</p>
+              <p className="text-2xl font-mono font-medium tabular-nums tracking-tight leading-none">
+                <span className="text-sm font-mono text-gray-500">quoting…</span>
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+    )
+  }
+
   return (
     <section className="py-5 border-b border-gray-100 space-y-3">
       <div className="rounded-lg border border-gray-200 bg-surface overflow-hidden">
