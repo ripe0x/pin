@@ -752,8 +752,9 @@ export function HomageMint({
       </div>
 
       {/* The schedule sits between the instrument and the checker: the card's countdown
-          names one window, this names all three and when each opens. */}
-      <HomageSchedule minter={minter} />
+          names one window, this names all three and when each opens. Hidden in public
+          mint — the final, open-ended window has no upcoming boundary left to name. */}
+      {phase !== "public" && <HomageSchedule minter={minter} />}
 
       {/* Pre-public: anyone can check any address against the allowlist, below the
           instrument (the mint itself proves against the same vendored tree). */}
