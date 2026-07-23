@@ -522,7 +522,9 @@ export function HomageMint({
                   : "Price"
                 : phase === "closed"
                   ? "Opens"
-                  : "Price"}
+                  : phase === "allowlist"
+                    ? "Allowlist price"
+                    : "Price"}
             </p>
             <p className="text-2xl font-mono font-medium tabular-nums tracking-tight leading-none">
               {phase === "closed" ? (
