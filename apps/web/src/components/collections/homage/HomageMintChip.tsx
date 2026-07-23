@@ -89,7 +89,12 @@ function useChipState(minter: Address) {
   // it's when the CURRENT window closes; while closed it's when minting opens.
   const next = schedule ? nextTransition(schedule, nowSec) : null
 
-  return {phase, soldOut, price, next, nowSec, reservationIsOpen}
+  // Chain time and the schedule resolve after first paint; until both do, `phase` reads
+  // "closed" for any real schedule. Expose readiness so the masthead can hold a neutral
+  // state instead of flashing a closed/ended label.
+  const ready = reads.data?.[0]?.status === "success" && nowSec > 0
+
+  return {phase, soldOut, price, next, nowSec, reservationIsOpen, ready}
 }
 
 /** The chip's countdown fragment: "closes in X" inside a timed window, "opens in X"
@@ -142,9 +147,9 @@ export function HomageMastheadStat({
   /** id for the chip element (the sticky bar watches it to avoid doubling up). */
   chipId?: string
 }) {
-  const {phase, soldOut, price, next, nowSec, reservationIsOpen} = useChipState(minter)
-  const timed = !soldOut && next !== null && phase !== "public"
-  const showReservation = !soldOut && phase === "closed" && reservationIsOpen
+  const {phase, soldOut, price, next, nowSec, reservationIsOpen, ready} = useChipState(minter)
+  const timed = ready && !soldOut && next !== null && phase !== "public"
+  const showReservation = ready && !soldOut && phase === "closed" && reservationIsOpen
 
   return (
     // Stacked on phones: side by side, the countdown and the chip each get too little
@@ -169,7 +174,7 @@ export function HomageMastheadStat({
       <div id={chipId} className="flex items-center gap-4 rounded border border-gray-200 bg-surface px-4 py-3">
         <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-gray-500">
           <Dot phase={phase} soldOut={soldOut} />
-          {soldOut ? "Sold out" : showReservation ? "Reserve your punk" : PHASE_CHIP_LABEL[phase]}
+          {soldOut ? "Sold out" : !ready ? "Loading" : showReservation ? "Reserve your punk" : PHASE_CHIP_LABEL[phase]}
         </span>
         {showReservation && <ChipCountdown phase={phase} next={next} nowSec={nowSec} reservationIsOpen />}
         {/* the small slot mirrors the big one: count while the countdown is big */}
