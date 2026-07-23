@@ -47,6 +47,7 @@ function useChipState(minter: Address) {
       {address: minter, abi: homageMinterAbi, functionName: "allowlistStart", chainId: PREFERRED_CHAIN.id},
       {address: minter, abi: homageMinterAbi, functionName: "publicStart", chainId: PREFERRED_CHAIN.id},
       {address: minter, abi: homageMinterAbi, functionName: "remaining", chainId: PREFERRED_CHAIN.id},
+      {address: minter, abi: homageMinterAbi, functionName: "baseFee", chainId: PREFERRED_CHAIN.id},
     ],
   })
   const schedule: Schedule | null =
@@ -58,6 +59,9 @@ function useChipState(minter: Address) {
         }
       : null
   const soldOut = reads.data?.[3]?.status === "success" && (reads.data[3].result as bigint) === 0n
+  // Floor fee read live from the contract (mintFeeOf at count 0 == baseFee), so the
+  // indicative "from" price tracks a fee retune instead of freezing at the deploy default.
+  const liveBaseFee = reads.data?.[4]?.status === "success" ? (reads.data[4].result as bigint) : BASE_FEE
   const phase: Phase = schedule ? currentPhase(schedule, nowSec) : "closed"
   const reservationIsOpen = schedule ? reservationOpenAt(schedule, nowSec) : false
 
@@ -65,12 +69,12 @@ function useChipState(minter: Address) {
   const refresh = useCallback(async () => {
     if (!publicClient) return
     try {
-      const q = await quoteMint(publicClient, minter, BASE_FEE)
+      const q = await quoteMint(publicClient, minter, liveBaseFee)
       setPrice(q.totalValue)
     } catch {
       /* keep last */
     }
-  }, [publicClient, minter])
+  }, [publicClient, minter, liveBaseFee])
   useEffect(() => {
     if (phase === "closed" || soldOut) return
     void refresh()
