@@ -135,20 +135,20 @@ export function HomageArtStage({
     <div className="flex flex-col gap-2">
       <div>
         {comparing && punkImageSrc ? (
-          <div className="flex aspect-[2/1] w-full gap-[3%] border border-gray-200 p-[7%]" style={{background: "#e8e8e8"}}>
+          <div className="flex w-full items-start gap-[6%] border border-gray-200 p-[7%]" style={{background: "#e8e8e8"}}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={punkImageSrc}
               alt={`CryptoPunk ${tokenId}`}
               style={{background: groundColor}}
-              className="aspect-square w-1/2 [image-rendering:pixelated]"
+              className="aspect-square min-w-0 flex-1 [image-rendering:pixelated]"
             />
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={art}
               alt={`Homage to Punk ${tokenId}`}
               style={{background: groundColor}}
-              className="aspect-square w-1/2 object-contain"
+              className="aspect-square min-w-0 flex-1 object-contain"
             />
           </div>
         ) : engaged && conveyorDoc ? (
