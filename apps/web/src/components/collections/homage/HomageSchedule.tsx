@@ -49,7 +49,7 @@ export function HomageSchedule({minter}: {minter: Address}) {
   if (allowlistStart !== 0 && allowlistStart < publicStart)
     rows.push({name: "Allowlist", detail: "draw random unminted id · 0.0042 eth + 20k $111", start: allowlistStart, end: publicStart})
   if (publicStart !== 0)
-    rows.push({name: "Public", detail: "draw random unminted id · 0.0069 eth + 20k $111", start: publicStart, end: null})
+    rows.push({name: "Public", detail: "draw random unminted id · 0.0055 eth + 20k $111", start: publicStart, end: null})
 
   const cardRows: ScheduleRow[] = rows.map((r) => {
     const live = nowSec >= r.start && (r.end === null || nowSec < r.end)
