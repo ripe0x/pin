@@ -113,6 +113,10 @@ export function HomageMint({
   const walletMintCount = cfg.data?.[5]?.status === "success" ? (cfg.data[5].result as bigint) : 0n
   const reservedRemaining = cfg.data?.[6]?.status === "success" ? Number(cfg.data[6].result as bigint) : undefined
   const feeGraceMints = cfg.data?.[7]?.status === "success" ? (cfg.data[7].result as bigint) : 0n
+  // Copy for the escalating-fee note: the flat grace window (first N mints at one price) and
+  // the per-mint growth, both read from the live schedule so the wording tracks a retune.
+  const graceN = Number(feeGraceMints)
+  const growthPct = Number(feeGrowthBps) / 100
 
   const minted = totalMinted.data !== undefined ? Number(totalMinted.data as bigint) : null
   const left = remaining.data !== undefined ? Number(remaining.data as bigint) : null
@@ -254,12 +258,6 @@ export function HomageMint({
   const insufficient = !!balance && batchTotal !== undefined && !wrongNetwork && balance.value < batchTotal
   // Headline price: the escalating batch total in public/allowlist, the flat claim fee otherwise.
   const priceValue = phase === "public" || phase === "allowlist" ? batchTotal : claimTotal
-  // Before a wallet connects the fee leg defaults to baseFee (the first-mint floor);
-  // once connected it reads the wallet's live mintFeeOf, which is higher for a wallet
-  // that has already minted (the +10%/mint escalator). So the pre-connect figure is a
-  // "from" floor, not a firm quote — label it that way so connecting doesn't look like
-  // a surprise price bump.
-  const priceIsFloor = !address && phase !== "closed" && priceValue !== undefined
 
   // True when the fresh swap leg has moved more than PRICE_RECONFIRM_BPS from what the
   // collector last saw. The caller shows the fresh price and waits for a second click.
@@ -475,7 +473,9 @@ export function HomageMint({
           </li>
         </ul>
         <p className="text-[10px] font-mono leading-relaxed text-gray-400">
-          The mint fee rises 10% with each mint from your wallet, so each is a little more than the last.
+          {graceN > 0
+            ? `The first ${graceN} mints from your wallet are the same price; after that each mint costs ${growthPct}% more than the last.`
+            : `The mint fee rises ${growthPct}% with each mint from your wallet, so each is a little more than the last.`}
         </p>
       </>
     ) : null
@@ -547,11 +547,6 @@ export function HomageMint({
             {phase !== "closed" && quote && (
               <p className="text-[10px] font-mono text-gray-400 tabular-nums">
                 {fmtEth(quote.fee)} ETH + {compactTokens(quote.threshold)} $111
-              </p>
-            )}
-            {priceIsFloor && (
-              <p className="text-[10px] font-mono leading-relaxed text-gray-400">
-                Starting price. The fee rises 10% with each mint from a wallet — connect to see yours.
               </p>
             )}
             {/* Pre-open: base fee + the live $111 swap quote, so a wallet can plan around
