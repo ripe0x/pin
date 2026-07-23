@@ -425,7 +425,7 @@ export default async function CollectionPage({
           )}
           {/* Compact trust strip (§9): the load-bearing facts beside the
               mint action; the record section below carries the rest. */}
-          <p className="pt-2 text-[10px] font-mono uppercase tracking-wider text-gray-400">
+          <p className="flex items-center gap-4 pt-2 text-[10px] font-mono uppercase tracking-wider text-gray-400">
             <a
               href={evmNowAddressUrl(addr, PND_CHAIN_ID)}
               target="_blank"
@@ -434,6 +434,16 @@ export default async function CollectionPage({
             >
               {shortAddress(addr)} ↗
             </a>
+            {homageSkin && (
+              <a
+                href="https://opensea.io/collection/homage-to-the-punk"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-fg"
+              >
+                OpenSea ↗
+              </a>
+            )}
           </p>
         </div>
       </div>{/* /band inner plate */}
