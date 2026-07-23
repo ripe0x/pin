@@ -96,6 +96,7 @@ export function HomageMint({
       {address: minter, abi: homageMinterAbi, functionName: "feeGrowthBps", chainId: PREFERRED_CHAIN.id},
       {address: minter, abi: homageMinterAbi, functionName: "mintCount", args: [address ?? ZERO], chainId: PREFERRED_CHAIN.id},
       {address: minter, abi: homageMinterAbi, functionName: "reservedRemaining", chainId: PREFERRED_CHAIN.id},
+      {address: minter, abi: homageMinterAbi, functionName: "feeGraceMints", chainId: PREFERRED_CHAIN.id},
     ],
   })
   const schedule: Schedule | null =
@@ -111,6 +112,7 @@ export function HomageMint({
   const feeGrowthBps = cfg.data?.[4]?.status === "success" ? (cfg.data[4].result as bigint) : 0n
   const walletMintCount = cfg.data?.[5]?.status === "success" ? (cfg.data[5].result as bigint) : 0n
   const reservedRemaining = cfg.data?.[6]?.status === "success" ? Number(cfg.data[6].result as bigint) : undefined
+  const feeGraceMints = cfg.data?.[7]?.status === "success" ? (cfg.data[7].result as bigint) : 0n
 
   const minted = totalMinted.data !== undefined ? Number(totalMinted.data as bigint) : null
   const left = remaining.data !== undefined ? Number(remaining.data as bigint) : null
@@ -245,9 +247,9 @@ export function HomageMint({
   const batchItems = useMemo(() => {
     if ((phase !== "public" && phase !== "allowlist") || !quote) return null
     return Array.from({length: batchQty}, (_, i) => ({
-      cost: quote.ethForSwap + feeForCount(baseFee, feeGrowthBps, walletMintCount + BigInt(i)),
+      cost: quote.ethForSwap + feeForCount(baseFee, feeGrowthBps, feeGraceMints, walletMintCount + BigInt(i)),
     }))
-  }, [phase, batchQty, quote, baseFee, feeGrowthBps, walletMintCount])
+  }, [phase, batchQty, quote, baseFee, feeGrowthBps, feeGraceMints, walletMintCount])
   const batchTotal = batchItems ? batchItems.reduce((s, it) => s + it.cost, 0n) : undefined
   const insufficient = !!balance && batchTotal !== undefined && !wrongNetwork && balance.value < batchTotal
   // Headline price: the escalating batch total in public/allowlist, the flat claim fee otherwise.
@@ -868,9 +870,10 @@ function compactTokens(wei: bigint): string {
 }
 
 // The public-mint fee for a wallet that has already done `n` public mints — a faithful
-// bigint replica of HomageMinter._feeForCount (baseFee * (1+g/1e4)^n, clamped at
-// MAX_MINT_FEE, exponentiation-by-squaring), so the itemized breakdown matches the chain
-// to the wei without a per-item RPC read.
+// bigint replica of HomageMinter._feeForCount: flat `baseFee` for the first `grace` mints,
+// then `baseFee * (1+g/1e4)^(n-grace+1)` clamped at MAX_MINT_FEE via exponentiation-by-
+// squaring, so the itemized breakdown matches the chain to the wei without a per-item RPC
+// read. `grace == 0` reproduces the pre-grace curve (exponent `n` unshifted).
 const MAX_MINT_FEE = 10n ** 18n // 1 ether, the fee ceiling
 // The squaring loop's running multiplier is 1e4 fixed point, not a wei amount, so it
 // clamps against its own ceiling. Clamping it at MAX_MINT_FEE instead caps the
@@ -878,17 +881,21 @@ const MAX_MINT_FEE = 10n ** 18n // 1 ether, the fee ceiling
 // at high mint counts. This mirrors HomageMinter's MAX_FEE_MULTIPLIER, the same
 // magnitude-versus-multiplier distinction audit finding L-01 fixed onchain.
 const MAX_FEE_MULTIPLIER = MAX_MINT_FEE * 10_000n
-function feeForCount(baseFee: bigint, g: bigint, n: bigint): bigint {
+function feeForCount(baseFee: bigint, g: bigint, grace: bigint, n: bigint): bigint {
+  if (n < grace) return baseFee // inside the flat grace window
+  // Shift so `n == grace` (first post-grace mint) lands on the curve's first step; `grace == 0`
+  // leaves the exponent as `n` unshifted (the `n < grace` check never trips).
+  let e = grace === 0n ? n : n - grace + 1n
   let fee = baseFee
   if (g === 0n || fee === 0n) return fee
   let m = 10_000n + g
-  while (n !== 0n) {
-    if (n & 1n) {
+  while (e !== 0n) {
+    if (e & 1n) {
       fee = (fee * m) / 10_000n
       if (fee >= MAX_MINT_FEE) return MAX_MINT_FEE
     }
-    n >>= 1n
-    if (n !== 0n) {
+    e >>= 1n
+    if (e !== 0n) {
       m = (m * m) / 10_000n
       if (m > MAX_FEE_MULTIPLIER) m = MAX_FEE_MULTIPLIER
     }

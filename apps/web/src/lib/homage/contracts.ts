@@ -95,6 +95,7 @@ export const homageMinterAbi = parseAbi([
   // per-wallet fee escalator (public mint)
   "function baseFee() view returns (uint256)",
   "function feeGrowthBps() view returns (uint256)",
+  "function feeGraceMints() view returns (uint256)",
   "function mintCount(address who) view returns (uint256)",
   "function mintFeeOf(address who) view returns (uint256)",
   // mint schedule (three windows)
