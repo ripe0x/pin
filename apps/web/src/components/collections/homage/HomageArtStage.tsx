@@ -8,7 +8,8 @@
 // browser's tiny default natural size regardless of on-screen display size. Clicking engages the
 // conveyor animation (the static SVG inlined into an iframe + a script that drives it — it has
 // to be inline, scriptable SVG, not an <img>, since the script reorders and reshapes the actual
-// ring elements every frame; click again freezes mid-motion, the next click resumes). That inline
+// ring elements every frame; the iframe autoplays on mount, a click inside freezes mid-motion, the
+// next click resumes). That inline
 // SVG is NOT natively copy-pasteable (browsers don't offer "copy image" on inline vector markup),
 // which is what the Copy/PNG buttons below are for regardless of engagement state.
 //

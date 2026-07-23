@@ -1,9 +1,8 @@
 // The outward conveyor as one vanilla-JS string, ported from the Homage site's
 // lib/homage/conveyorScript.ts. It reads the palette + ground from an inlined static homage SVG
-// and rebuilds it into the conveyor pool. A click is a play/pause button: it starts PAUSED on the
-// canonical art, a click plays, the next click freezes mid-motion at the current phase, the click
-// after resumes from there. Auto-detects the square (classic) vs circle (PFP) form from the
-// inlined shapes, so one script animates both.
+// and rebuilds it into the conveyor pool. It autoplays on init; a click freezes mid-motion at the
+// current phase, the next click resumes from there. Auto-detects the square (classic) vs circle
+// (PFP) form from the inlined shapes, so one script animates both.
 //
 // It's JS, not SMIL: the conveyor reorders ring paint order every frame (largest at the back),
 // which the DOM can do and SMIL can't. A continuous requestAnimationFrame loop re-positions every
@@ -48,7 +47,7 @@ const LINES = [
   "  function pause(){if(!playing)return;playing=false;if(raf){cancelAnimationFrame(raf);raf=null;}pausedP=((now()-t0)/PERIOD)%n;render(pausedP);}",
   "  function toggle(){if(playing){pause();}else{play();}}",
   "  root.addEventListener('click',toggle);",
-  "  render(0);",
+  "  play();",
   "  var api={toggle:toggle,play:play,pause:pause,get playing(){return playing;},destroy:function(){pause();root.removeEventListener('click',toggle);root.__conv=null;}};",
   "  root.__conv=api;return api;",
   "};",
@@ -57,7 +56,7 @@ const LINES = [
 
 const CONVEYOR_JS = LINES.join("\n")
 
-// Dark, centered, click-to-play, no autoplay, NO hint text (viewers discover the click).
+// Dark, centered, autoplay on load, click toggles pause/resume, NO hint text.
 const PREFIX =
   '<!doctype html><html><head><meta charset="utf-8">' +
   '<meta name="viewport" content="width=device-width,initial-scale=1">' +
@@ -67,8 +66,8 @@ const PREFIX =
 const MID = "</div><script>"
 const SUFFIX = "</script></body></html>"
 
-/** Self-contained animation document: the static SVG inlined + the conveyor, dormant until
- *  clicked. Feed a classic (squares) or PFP (circles) SVG — the script detects the form. */
+/** Self-contained animation document: the static SVG inlined + the conveyor, autoplaying on
+ *  load. Feed a classic (squares) or PFP (circles) SVG — the script detects the form. */
 export function buildConveyorHtml(svg: string): string {
   return PREFIX + svg + MID + CONVEYOR_JS + SUFFIX
 }
