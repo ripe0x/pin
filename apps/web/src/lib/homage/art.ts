@@ -99,6 +99,65 @@ export function svgToPngBlob(raw: string, size: number): Promise<Blob> {
   })
 }
 
+const COMPARE_BG = "#e8e8e8" // ripe-bot's light field (see gridComposite.ts / ripeGridOptions)
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = () => reject(new Error("image failed to load"))
+    img.src = src
+  })
+}
+
+/** Side-by-side punk + homage composite PNG at `tile`×`tile` per side, on a light field — same
+ *  look as the permanence repo's offline compare-gif script (generate-pair-gif.mjs), but a
+ *  single static pair instead of a cycling animation, so it's plain Canvas here (no sharp/gifenc,
+ *  which don't run in a browser). */
+export async function compositePairPngBlob({
+  punkSvg,
+  homageSvg,
+  ground,
+  tile = 1000,
+}: {
+  punkSvg: string
+  homageSvg: string
+  ground: string
+  tile?: number
+}): Promise<Blob> {
+  const pad = Math.round(tile * 0.14)
+  const gap = Math.round(tile * 0.06)
+
+  const [punkImg, homageImg] = await Promise.all([
+    loadImage(sizedSvgSrc(punkSvg, tile)),
+    loadImage(sizedSvgSrc(homageSvg, tile)),
+  ])
+
+  const width = pad * 2 + tile * 2 + gap
+  const height = pad * 2 + tile
+  const c = document.createElement("canvas")
+  c.width = width
+  c.height = height
+  const ctx = c.getContext("2d")
+  if (!ctx) throw new Error("no 2d context")
+  ctx.imageSmoothingEnabled = false
+
+  ctx.fillStyle = COMPARE_BG
+  ctx.fillRect(0, 0, width, height)
+
+  const drawTile = (img: HTMLImageElement, x: number) => {
+    ctx.fillStyle = ground
+    ctx.fillRect(x, pad, tile, tile)
+    ctx.drawImage(img, x, pad, tile, tile)
+  }
+  drawTile(punkImg, pad)
+  drawTile(homageImg, pad + tile + gap)
+
+  return new Promise((resolve, reject) => {
+    c.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("toBlob failed"))), "image/png")
+  })
+}
+
 export function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement("a")

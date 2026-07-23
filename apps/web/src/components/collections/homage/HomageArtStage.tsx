@@ -19,27 +19,48 @@
 // transform in lib/homage/art.ts derives the same circles from the classic SVG as a zero-RPC
 // fallback.
 //
-// Quiet meta row: classic/pfp toggle · copy-to-clipboard · PNG export (both 2400px).
+// A third stage, "compare" (punk + homage side by side, the single-pair counterpart to the
+// permanence repo's offline compare-gif script), is opt-in via the Compare button — not shown by
+// default — and Copy/PNG then act on whichever stage is currently on screen.
+//
+// Quiet meta row: classic/pfp toggle · Compare toggle · copy-to-clipboard · PNG export (both
+// 2400px for the single homage, 1000px/tile for the compare pair).
 
 import {useMemo, useState} from "react"
-import {decodeSvg, downloadBlob, pfpSvg, sizedSvgSrc, svgToPngBlob} from "@/lib/homage/art"
+import {
+  compositePairPngBlob,
+  decodeSvg,
+  downloadBlob,
+  pfpSvg,
+  sizedSvgSrc,
+  svgToPngBlob,
+} from "@/lib/homage/art"
 import {buildConveyorHtml} from "@/lib/homage/conveyor"
 
 const META = "text-[10px] font-mono uppercase tracking-wider text-gray-400"
 const EXPORT_SIZE = 2400
+const COMPARE_TILE = 1000
 
 export function HomageArtStage({
   art,
   tokenId,
   onchainPfpSrc,
+  punkImageSrc,
+  punkGround,
 }: {
   art: string
   tokenId: string
   /** Canonical PFP from the renderer contract (renderSVG circle form), when the read succeeds. */
   onchainPfpSrc: string | null
+  /** Source punk image (data URI SVG), for the Compare toggle. Null hides that button. */
+  punkImageSrc: string | null
+  /** Shared background behind both tiles in Compare — the homage's status ground (the punk has
+   *  no ground of its own; mirrors the compare-gif script's choice to share the homage's). */
+  punkGround: string | null
 }) {
   const [view, setView] = useState<"classic" | "pfp">("classic")
   const [engaged, setEngaged] = useState(false) // true once the viewer has clicked to animate
+  const [comparing, setComparing] = useState(false)
   const [busy, setBusy] = useState<"copy" | "download" | null>(null)
   const [copied, setCopied] = useState(false)
 
@@ -50,20 +71,32 @@ export function HomageArtStage({
     () => (onchainPfpSrc ? decodeSvg(onchainPfpSrc) : pfpSvg(art)),
     [onchainPfpSrc, art],
   )
+  const punkSvg = useMemo(() => (punkImageSrc ? decodeSvg(punkImageSrc) : null), [punkImageSrc])
   const showPfp = view === "pfp" && !!pfpRawSvg
   // The active view's animation document — both forms animate on click.
   const activeSvg = showPfp ? pfpRawSvg : classicSvg
   const conveyorDoc = useMemo(() => (activeSvg ? buildConveyorHtml(activeSvg) : null), [activeSvg])
   const stillSrc = useMemo(() => (activeSvg ? sizedSvgSrc(activeSvg, EXPORT_SIZE) : art), [activeSvg, art])
-  const filename = `homage-${tokenId}${showPfp ? "-pfp" : ""}.png`
+  const groundColor = punkGround ?? "#6a8494"
+  const canCompare = !!punkImageSrc && !!punkSvg
+  const filename = comparing
+    ? `homage-${tokenId}-compare.png`
+    : `homage-${tokenId}${showPfp ? "-pfp" : ""}.png`
+
+  const buildBlob = () => {
+    if (comparing) {
+      if (!punkSvg || !activeSvg) throw new Error("missing source SVG")
+      return compositePairPngBlob({punkSvg, homageSvg: activeSvg, ground: groundColor, tile: COMPARE_TILE})
+    }
+    if (!activeSvg) throw new Error("missing source SVG")
+    return svgToPngBlob(activeSvg, EXPORT_SIZE)
+  }
 
   const download = async () => {
     if (busy) return
     setBusy("download")
     try {
-      const raw = activeSvg
-      if (!raw) return
-      downloadBlob(await svgToPngBlob(raw, EXPORT_SIZE), filename)
+      downloadBlob(await buildBlob(), filename)
     } catch {
       // quiet failure — the still is on screen either way
     } finally {
@@ -80,19 +113,16 @@ export function HomageArtStage({
     if (busy) return
     setBusy("copy")
     try {
-      const raw = activeSvg
-      if (!raw) return
       if (typeof ClipboardItem === "undefined" || !navigator.clipboard?.write) {
-        downloadBlob(await svgToPngBlob(raw, EXPORT_SIZE), filename)
+        downloadBlob(await buildBlob(), filename)
         return
       }
-      await navigator.clipboard.write([new ClipboardItem({"image/png": svgToPngBlob(raw, EXPORT_SIZE)})])
+      await navigator.clipboard.write([new ClipboardItem({"image/png": buildBlob()})])
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } catch {
       try {
-        const raw = activeSvg
-        if (raw) downloadBlob(await svgToPngBlob(raw, EXPORT_SIZE), filename)
+        downloadBlob(await buildBlob(), filename)
       } catch {
         // quiet failure — the still is on screen either way
       }
@@ -104,7 +134,24 @@ export function HomageArtStage({
   return (
     <div className="flex flex-col gap-2">
       <div>
-        {engaged && conveyorDoc ? (
+        {comparing && punkImageSrc ? (
+          <div className="flex w-full items-start gap-[6%] border border-gray-200 p-[7%]" style={{background: "#e8e8e8"}}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={punkImageSrc}
+              alt={`CryptoPunk ${tokenId}`}
+              style={{background: groundColor}}
+              className="aspect-square min-w-0 flex-1 [image-rendering:pixelated]"
+            />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={art}
+              alt={`Homage to Punk ${tokenId}`}
+              style={{background: groundColor}}
+              className="aspect-square min-w-0 flex-1 object-contain"
+            />
+          </div>
+        ) : engaged && conveyorDoc ? (
           <iframe
             srcDoc={conveyorDoc}
             sandbox="allow-scripts"
@@ -124,7 +171,7 @@ export function HomageArtStage({
 
       <div className={`flex items-center justify-between gap-4 ${META}`}>
         <span className="flex items-center gap-3">
-          {pfpRawSvg && (
+          {pfpRawSvg && !comparing && (
             <>
               <button
                 type="button"
@@ -144,6 +191,15 @@ export function HomageArtStage({
           )}
         </span>
         <span className="flex items-center gap-3">
+          {canCompare && (
+            <button
+              type="button"
+              onClick={() => setComparing((v) => !v)}
+              className={comparing ? "text-fg" : "hover:text-fg"}
+            >
+              Compare
+            </button>
+          )}
           <button type="button" onClick={copy} disabled={!!busy} className="hover:text-fg disabled:opacity-50">
             {busy === "copy" ? "Copying…" : copied ? "Copied" : "Copy"}
           </button>

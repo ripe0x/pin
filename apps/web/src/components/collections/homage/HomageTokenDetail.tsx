@@ -61,7 +61,13 @@ export function HomageTokenDetail({
       {/* The homage — large; click plays the animation, the row below holds the quiet
           classic/pfp toggle + PNG export. */}
       <div className="flex flex-col px-6 pb-8 pt-24 lg:sticky lg:top-0 lg:h-screen lg:justify-center lg:px-12 lg:pb-12 lg:pt-24">
-        <HomageArtStage art={ipfsToHttp(art)} tokenId={id} onchainPfpSrc={onchainPfpSrc} />
+        <HomageArtStage
+          art={ipfsToHttp(art)}
+          tokenId={id}
+          onchainPfpSrc={onchainPfpSrc}
+          punkImageSrc={punkImageSrc}
+          punkGround={punkBg}
+        />
       </div>
 
       {/* The record — lean, homage-specific. */}
