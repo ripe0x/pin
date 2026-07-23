@@ -509,7 +509,6 @@ export function HomageMint({
               <span className="text-fg">
                 <Countdown endTime={BigInt(next.at)} nowSec={nowSec} />
               </span>
-              {next.to === "public" && " · unclaimed reservations release then"}
             </p>
           )}
 
@@ -533,7 +532,6 @@ export function HomageMint({
                 </span>
               ) : priceValue !== undefined ? (
                 <>
-                  {priceIsFloor && <span className="text-sm font-mono text-gray-500">from </span>}
                   {fmtEth(priceValue)} <span className="text-sm font-mono text-gray-500">ETH</span>
                 </>
               ) : quoteErr ? (
