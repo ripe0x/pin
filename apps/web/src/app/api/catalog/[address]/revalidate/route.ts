@@ -15,7 +15,7 @@ import { revalidateTag } from "next/cache"
  * though we revalidate the whole `catalog` tag — kept so a future per-
  * artist invalidation strategy can slot in without breaking callers.
  *
- * Same pattern as `/api/auction/revalidate`. Safe to call unauthenticated:
+ * Same pattern as `/api/seller-listings/revalidate`. Safe to call unauthenticated:
  * worst case a stranger forces a re-fetch of public data, which is what
  * the route already does on cache miss. No write surface, no rate limit
  * worth tightening here because the cost is bounded by the registry
