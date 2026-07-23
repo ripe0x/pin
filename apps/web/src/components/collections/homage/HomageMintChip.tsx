@@ -150,7 +150,7 @@ export function HomageMastheadStat({
         {timed ? (
           <>
             <span className="mr-3 align-[0.2em] font-mono text-[10px] uppercase tracking-wider text-gray-500">
-              {phase === "closed"
+              {phase === "closed" || phase === "allowlist"
                 ? `${WINDOW_NAME[next!.to]} opens in`
                 : `${WINDOW_NAME[phase]} closes in`}
             </span>
