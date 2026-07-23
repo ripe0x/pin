@@ -135,7 +135,15 @@ export function HomageArtStage({
     <div className="flex flex-col gap-2">
       <div>
         {comparing && punkImageSrc ? (
-          <div className="flex w-full items-start gap-[6%] border border-gray-200 p-[7%]" style={{background: "#e8e8e8"}}>
+          // Field geometry mirrors the permanence compare-gif script
+          // (generate-pair-gif.mjs): outer pad 0.14*tile, gap 0.06*tile, no
+          // shadow. As a fraction of the card width (2*pad + 2*tile + gap =
+          // 2.34*tile) that's 5.98% pad, 2.56% gap. Inline, not Tailwind: a
+          // gap-[6%] arbitrary value compiles to `gap: normal` (no effect).
+          <div
+            className="flex w-full items-start border border-gray-200"
+            style={{background: "#e8e8e8", padding: "5.98%", gap: "2.56%"}}
+          >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={punkImageSrc}
