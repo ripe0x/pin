@@ -121,19 +121,20 @@ export type FactoryStatus = {
   configured: boolean
   paused: boolean
   deprecated: boolean
-  /** False means the factory's own defaultRenderer() is unset (0x0) — a
-   *  collection deployed with cfg.renderer left zero (the Edition preset's
-   *  approach) reverts RendererRequired at init regardless of pause state. */
-  defaultRendererSet: boolean
 }
 
 /**
  * Live factory readiness for the studio create-collection wizard: is a
  * deploy actually possible right now, not just "is a factory address
  * configured". `paused`/`deprecated` gate createSurface itself
- * (SurfaceFactory._checkCreatable); `defaultRendererSet` gates the Edition
- * preset specifically (SurfaceCore.initialize reverts RendererRequired when
- * both cfg.renderer and defaultRenderer are zero).
+ * (SurfaceFactory._checkCreatable).
+ *
+ * Does NOT read the factory's own `defaultRenderer()` — it's `immutable`,
+ * fixed at construction, and the live factory was deployed with it at
+ * address(0) permanently. The Edition preset instead passes a known
+ * DefaultRenderer address explicitly as `cfg.renderer` (see
+ * `defaultRendererAddress` in lib/collection.ts); its availability is a
+ * client-safe address-config check, not a chain read.
  *
  * Fails closed: an unconfigured factory or a failed read both come back as
  * `paused: true` so the wizard blocks rather than offering a deploy path
@@ -142,28 +143,23 @@ export type FactoryStatus = {
  */
 export async function getFactoryStatus(): Promise<FactoryStatus> {
   const factory = surfaceFactory()
-  if (!factory) return { configured: false, paused: true, deprecated: false, defaultRendererSet: false }
+  if (!factory) return { configured: false, paused: true, deprecated: false }
   const read = await pgCache(`sc-factory-status:${lc(factory)}`, 60, async () => {
     const client = getClient()
     try {
-      const [paused, deprecated, defaultRenderer] = await client.multicall({
+      const [paused, deprecated] = await client.multicall({
         allowFailure: false,
         contracts: [
           { address: factory, abi: surfaceFactoryAbi, functionName: "paused" },
           { address: factory, abi: surfaceFactoryAbi, functionName: "deprecated" },
-          { address: factory, abi: surfaceFactoryAbi, functionName: "defaultRenderer" },
         ],
       })
-      return {
-        paused: paused as boolean,
-        deprecated: deprecated as boolean,
-        defaultRendererSet: (defaultRenderer as Address).toLowerCase() !== ZERO_ADDRESS,
-      }
+      return { paused: paused as boolean, deprecated: deprecated as boolean }
     } catch {
       return null
     }
   })
-  if (!read) return { configured: true, paused: true, deprecated: false, defaultRendererSet: false }
+  if (!read) return { configured: true, paused: true, deprecated: false }
   return { configured: true, ...read }
 }
 
