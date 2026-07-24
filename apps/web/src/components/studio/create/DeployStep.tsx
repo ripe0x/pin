@@ -150,13 +150,13 @@ export function DeployStep({
           Collection deployed at {deployedAddress}. Finish publishing its
           presentation data (stored in renderer-land, owned by you):
         </p>
-        {needsCover && !coverDone && (
+        {needsCover && !coverDone && renderAssets && (
           <button
             className={BTN}
-            disabled={coverMining || !renderAssets}
+            disabled={coverMining}
             onClick={() =>
               coverWrite.writeContract({
-                address: renderAssets!,
+                address: renderAssets,
                 abi: renderAssetsAbi,
                 functionName: "setCover",
                 args: [deployedAddress, state.artworkURI.trim()],
@@ -165,6 +165,12 @@ export function DeployStep({
           >
             {coverMining ? "Setting cover…" : "Set cover image"}
           </button>
+        )}
+        {needsCover && !coverDone && !renderAssets && (
+          <p className="text-[11px] font-mono text-gray-500">
+            Cover image publishing isn&rsquo;t live yet. You can set it later once
+            RenderAssets deploys.
+          </p>
         )}
         {coverWrite.error && (
           <p className={ERROR}>{formatWriteError(coverWrite.error, "Publish")}</p>
@@ -180,8 +186,8 @@ export function DeployStep({
       <header className="space-y-1.5">
         <h3 className="text-sm font-medium">Deploy</h3>
         <p className="text-xs text-gray-500 leading-relaxed">
-          One transaction deploys your own immutable contract, configured with
-          everything above. You own it: no proxy admin, no upgrade path.
+          One transaction deploys an immutable contract configured with everything
+          above: no proxy admin, no upgrade path.
         </p>
       </header>
 

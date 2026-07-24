@@ -47,8 +47,7 @@ export const STUDIO_TOOLS: StudioTool[] = [
   {
     id: "create",
     label: "Create a collection",
-    description:
-      "Ship a generative or edition collection with no Solidity: deploy your own onchain contract in one guided flow.",
+    description: "Deploy a collection contract onchain, configured through a step-by-step form.",
     available: () => surfaceFactory(MAINNET_CHAIN_ID) !== null,
   },
   {

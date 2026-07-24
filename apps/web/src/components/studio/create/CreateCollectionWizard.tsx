@@ -19,6 +19,7 @@ import { useAccount, useChainId, useSwitchChain } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { PREFERRED_CHAIN, PREFERRED_CHAIN_LABEL } from "@/components/tx/tx-ui"
 import { useEthAmountInput } from "@/lib/useEthAmountInput"
+import type { FactoryStatus } from "@/lib/collection-onchain"
 import { initialWizardState, stepsForPreset, type StepId, type WizardState } from "./types"
 import { Stepper } from "./Stepper"
 import { PresetStep } from "./PresetStep"
@@ -28,7 +29,27 @@ import { UploadStep } from "./UploadStep"
 import { DeployStep } from "./DeployStep"
 import { BTN } from "./wizard-ui"
 
-export function CreateCollectionWizard({ artistAddress }: { artistAddress: string }) {
+/** Why the wizard can't offer a deploy right now, or null when it can. */
+function blockedReason(status: FactoryStatus): { headline: string; lead: string } | null {
+  if (!status.configured) {
+    return { headline: "Not available", lead: "Deploys aren't live on this network." }
+  }
+  if (status.deprecated) {
+    return { headline: "Retired", lead: "A new factory is coming." }
+  }
+  if (status.paused) {
+    return { headline: "Not open yet", lead: "Interested in deploying a collection?" }
+  }
+  return null
+}
+
+export function CreateCollectionWizard({
+  artistAddress,
+  factoryStatus,
+}: {
+  artistAddress: string
+  factoryStatus: FactoryStatus
+}) {
   const { address } = useAccount()
   const chainId = useChainId()
   const { switchChain, isPending: isSwitchPending } = useSwitchChain()
@@ -61,6 +82,27 @@ export function CreateCollectionWizard({ artistAddress }: { artistAddress: strin
   function stepBefore(current: StepId): StepId {
     const idx = steps.indexOf(current)
     return steps[Math.max(idx - 1, 0)]
+  }
+
+  const blocked = blockedReason(factoryStatus)
+  if (blocked) {
+    return (
+      <div className="rounded-lg border border-amber-200 bg-amber-50 p-5 space-y-1">
+        <p className="text-sm font-medium text-amber-900">{blocked.headline}</p>
+        <p className="text-xs text-amber-800 leading-relaxed">
+          {blocked.lead} Send{" "}
+          <a
+            href="https://x.com/ripe0x"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline hover:no-underline"
+          >
+            ripe
+          </a>{" "}
+          a DM for more info.
+        </p>
+      </div>
+    )
   }
 
   if (!address) {
@@ -98,6 +140,7 @@ export function CreateCollectionWizard({ artistAddress }: { artistAddress: strin
       <div className="rounded-lg border border-gray-200 bg-surface p-5">
         {step === "preset" && (
           <PresetStep
+            editionAvailable={factoryStatus.defaultRendererSet}
             onSelect={(preset) => {
               set("preset", preset)
               goTo("config")
@@ -152,8 +195,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="rounded-lg border border-gray-200 bg-surface p-5 space-y-4">
       <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
-        Deploy your own onchain contract, configured with your artwork or generative
-        script and mint conditions in one guided flow. You own it outright.
+        Deploy an onchain contract configured with your artwork and mint conditions.
       </p>
       {children}
     </div>

@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { CreateCollectionWizard } from "@/components/studio/create/CreateCollectionWizard"
+import { getFactoryStatus } from "@/lib/collection-onchain"
 
 /**
  * The flagship create flow: ship a generative, edition, or renderer-native
@@ -24,9 +25,11 @@ export default async function StudioCreatePage({ params }: { params: Params }) {
   const address = decodeURIComponent(raw).toLowerCase()
   if (!ADDRESS_RE.test(address)) notFound()
 
+  const factoryStatus = await getFactoryStatus()
+
   return (
     <div className="space-y-6">
-      <CreateCollectionWizard artistAddress={address} />
+      <CreateCollectionWizard artistAddress={address} factoryStatus={factoryStatus} />
     </div>
   )
 }
