@@ -23,10 +23,11 @@
 // permanence repo's offline compare-gif script), is opt-in via the Compare button — not shown by
 // default — and Copy/PNG then act on whichever stage is currently on screen.
 //
-// Quiet meta row: classic/pfp toggle · Compare toggle · copy-to-clipboard · PNG export (both
+// Quiet meta row: classic/pfp toggle · GIF/MP4 export of the conveyor (single-homage stage only,
+// see conveyorGif.ts and conveyorMp4.ts) · Compare toggle · copy-to-clipboard · PNG export (both
 // 2400px for the single homage, 1000px/tile for the compare pair).
 
-import {useMemo, useState} from "react"
+import {useEffect, useMemo, useState} from "react"
 import {
   compositePairPngBlob,
   decodeSvg,
@@ -36,6 +37,7 @@ import {
   svgToPngBlob,
 } from "@/lib/homage/art"
 import {buildConveyorHtml} from "@/lib/homage/conveyor"
+import type {ExportProgress} from "@/lib/homage/conveyor-frames"
 
 const META = "text-[10px] font-mono uppercase tracking-wider text-gray-400"
 const EXPORT_SIZE = 2400
@@ -61,8 +63,22 @@ export function HomageArtStage({
   const [view, setView] = useState<"classic" | "pfp">("classic")
   const [engaged, setEngaged] = useState(false) // true once the viewer has clicked to animate
   const [comparing, setComparing] = useState(false)
-  const [busy, setBusy] = useState<"copy" | "download" | null>(null)
+  const [busy, setBusy] = useState<"copy" | "download" | "gif" | "mp4" | null>(null)
   const [copied, setCopied] = useState(false)
+  const [prog, setProg] = useState<ExportProgress | null>(null)
+  // WebCodecs video encoding isn't everywhere; the MP4 entry point only appears where it works.
+  const [mp4Ok, setMp4Ok] = useState(false)
+
+  useEffect(() => {
+    let live = true
+    import("@/lib/homage/conveyorMp4")
+      .then(({canExportMp4}) => canExportMp4())
+      .then((ok) => live && setMp4Ok(ok))
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [])
 
   // Raw SVG per form: classic straight off the token image; PFP from the onchain circle
   // render, else derived client-side from the classic SVG.
@@ -103,6 +119,37 @@ export function HomageArtStage({
       setBusy(null)
     }
   }
+
+  // Animation exports of the conveyor, offered on the single-homage stage only (the compare pair
+  // is two stills). Both redraw the animation from its own math (see conveyor-frames.ts) rather
+  // than capturing the iframe, so the loop is exact and the export doesn't need the stage engaged.
+  // The encoders are dynamically imported to keep them out of the token page's initial bundle.
+  const exportAnimation = async (kind: "gif" | "mp4") => {
+    if (busy) return
+    const raw = activeSvg
+    if (!raw) return
+    setBusy(kind)
+    try {
+      const out =
+        kind === "gif"
+          ? await (
+              await import("@/lib/homage/conveyorGif")
+            ).generateConveyorGif(raw, {onProgress: setProg})
+          : await (
+              await import("@/lib/homage/conveyorMp4")
+            ).generateConveyorMp4(raw, {onProgress: setProg})
+      if (out) downloadBlob(out.blob, `homage-${tokenId}${showPfp ? "-pfp" : ""}.${kind}`)
+    } catch (e) {
+      console.error(`${kind} export failed`, e)
+    } finally {
+      setBusy(null)
+      setProg(null)
+    }
+  }
+
+  // A full loop is hundreds of frames, so the button carries the frame count while it encodes.
+  const exportLabel = (kind: "gif" | "mp4", idle: string) =>
+    busy !== kind ? idle : prog ? `${kind} ${prog.frame}/${prog.frames}` : `${kind} …`
 
   // Clipboard write takes the blob PROMISE directly (not awaited first) — Safari requires
   // the ClipboardItem be constructed synchronously within the click handler's call stack;
@@ -199,6 +246,28 @@ export function HomageArtStage({
           )}
         </span>
         <span className="flex items-center gap-3">
+          {!comparing && conveyorDoc && (
+            <>
+              <button
+                type="button"
+                onClick={() => exportAnimation("gif")}
+                disabled={!!busy}
+                className="hover:text-fg disabled:opacity-50"
+              >
+                {exportLabel("gif", "GIF ↓")}
+              </button>
+              {mp4Ok && (
+                <button
+                  type="button"
+                  onClick={() => exportAnimation("mp4")}
+                  disabled={!!busy}
+                  className="hover:text-fg disabled:opacity-50"
+                >
+                  {exportLabel("mp4", "MP4 ↓")}
+                </button>
+              )}
+            </>
+          )}
           {canCompare && (
             <button
               type="button"
