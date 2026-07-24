@@ -69,7 +69,7 @@ same shape regardless of which minter a collection uses:
 
 ```solidity
 function mint(address to, uint256 quantity, address referrer, bytes calldata data) external payable;
-function priceOf(address to, uint256 quantity, bytes calldata data) external view returns (uint256);
+function priceOf(address to, uint256 quantity) external view returns (uint256);
 ```
 
 `to` is the recipient and the address any gate evaluates; `msg.sender` is the

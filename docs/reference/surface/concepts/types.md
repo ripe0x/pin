@@ -43,7 +43,7 @@ field here: those are sale concerns and live in the minter, not the token.
 | `supplyCap` | `uint256` | `0` means open supply; lockable one-way via `lockSupply` |
 | `royaltyBps` | `uint16` | EIP-2981 royalty, capped at 5000 (50%) by the contract |
 | `royaltyReceiver` | `address` | `0` defers to `owner()` |
-| `renderer` | `address` | Provides `tokenURI`; `0` at init uses the factory `defaultRenderer` |
+| `renderer` | `address` | Provides `tokenURI`; `0` at init falls back to the factory `defaultRenderer`, and init reverts `RendererRequired` when that is also `0` |
 | `rendererLocked` | `bool` | One-way; `true` pins the renderer pointer (see `lockRenderer`) |
 | `supplyLocked` | `bool` | One-way; `true` freezes the supply cap (see `lockSupply`) |
 
@@ -63,12 +63,15 @@ within legacy-codegen stack limits and can grow without signature churn.
 | `cfg` | `SurfaceConfig` | The token configuration |
 | `defaultRenderer` | `address` | The fallback renderer used when `cfg.renderer` is zero |
 | `initialMinters` | `address[]` | Minters granted at init, so a collection deploys fully wired in one transaction |
+| `primaryMinter` | `address` | Frontend-discovery default; `0` means none, otherwise it must be one of `initialMinters` |
 | `catalog` | `address` | The Catalog singleton used for creator confirmation; `0` disables it |
 | `creators` | `address[]` | Initial listed creators (the owner's side of attribution); each confirms via the Catalog |
 
 The factory fills `defaultRenderer` and `catalog` from its own immutables and
-usually fills `initialMinters` with the canonical minter clone it wires;
-`createSurface` does exactly that.
+usually fills `initialMinters` and `primaryMinter` with the canonical minter
+clone it wires; `createSurface` does exactly that. The mainnet factory's
+`defaultRenderer` immutable is the zero address, so a collection deployed
+through it names its own renderer in `cfg`.
 
 See [Seed and provenance](/docs/surface/concepts/mint-marks-and-entropy)
 for per-token provenance: the seed is the only per-token storage, and mint

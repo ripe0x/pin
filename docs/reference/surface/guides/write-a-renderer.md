@@ -2,7 +2,7 @@
 
 # Write a renderer
 
-A renderer builds a collection's `tokenURI` and `contractURI`. It is a slot: the collection delegates both calls to whichever renderer address is currently set, falling back to `defaultRenderer` (wired in at deploy) when the owner hasn't set an override.
+A renderer builds a collection's `tokenURI` and `contractURI`. It is a slot: the collection delegates both calls to whichever renderer address is currently set. The slot is resolved once at init, from the config or the factory's `defaultRenderer`, and is never zero afterward. The mainnet factory carries no `defaultRenderer`, so a collection names its own renderer at deploy.
 
 ```solidity
 interface IRenderer {
@@ -95,7 +95,7 @@ A Solidity SVG work has no JS runtime and no browser dependency, and it renders 
 
 ```solidity
 function setRenderer(address renderer_) external; // owner or admin
-function renderer() external view returns (address); // resolved: override or defaultRenderer
+function renderer() external view returns (address); // the current slot; never zero
 ```
 
 `setRenderer` reverts `RendererIsLocked` once the owner has called `lockRenderer` (optional, off by default). The lock is one-way and pins the pointer: after locking, this renderer contract answers `tokenURI` from then on. The core does not verify what a renderer does internally: an immutable renderer behind a locked pointer fixes presentation, while a mutable renderer behind a locked pointer leaves that renderer's output changeable.

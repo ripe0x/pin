@@ -30,9 +30,9 @@
  * model, and prose blocks naming unknown ABI items fail the build. Signatures
  * can never drift because they are derived, not written.
  *
- * The contracts are pre-deploy: unresolved {{addr:*}} tokens render as a
- * `<SCREAMING_SNAKE_ADDRESS>` placeholder (with a build-time notice) rather
- * than failing the build. Fill contracts/deployments.mainnet.json at launch.
+ * An unresolved {{addr:*}} token (empty value in deployments.mainnet.json)
+ * renders as a `<SCREAMING_SNAKE_ADDRESS>` placeholder, with a build-time
+ * notice, rather than failing the build.
  *
  * Prose format: see docs/reference/_prose/SPEC.md.
  */

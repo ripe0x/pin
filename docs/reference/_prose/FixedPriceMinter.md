@@ -76,7 +76,7 @@ const required = await client.readContract({
   address: minter, // from SurfaceCreated.primaryMinter
   abi: fixedPriceMinterAbi,
   functionName: 'priceOf',
-  args: [collector, 1n, '0x'],
+  args: [collector, 1n],
 });
 
 // Common case: mint to the caller, no referrer, no gate data.
@@ -105,9 +105,10 @@ access: permissionless (payable; window, ceiling, gate, and payment checks apply
 Takes payment and mints `quantity` tokens to `to`. `to` is the recipient and the
 address the gates evaluate; `msg.sender` is the payer, and any strategy
 overpayment refund is credited to the payer. `referrer`, when nonzero, receives
-the 10% referral share; zero directs the full amount to `payoutRecipient`. `data`
-carries the Merkle proof when an allowlist is set and is forwarded to the price
-strategy when one is set.
+the referral share (`referralShareBps`); zero directs the full amount to
+`payoutRecipient`. `data` carries the Merkle proof when an allowlist is set and
+is used for nothing else: it never reaches the price strategy, whose quote is a
+function of `(collection, to, quantity)` and chain state only.
 
 Checks, in order: `ZeroQuantity` for `quantity == 0`, `MintNotStarted` before
 `mintStart`, `MintEnded` at or after a nonzero `mintEnd`, `MaxMintsExceeded` past
@@ -138,28 +139,28 @@ reverts, leaving the balance intact. Emits `Withdrawn`.
 
 ## function setPrice
 
-access: collection owner or admin (`onlyCollectionAdmin`, else `NotAuthorized`)
+access: collection owner or admin (`onlyCollectionOwnerOrAdmin`, else `NotAuthorized`)
 
 Sets the fixed price per token, used when no price strategy is set. Emits
 `PriceSet`.
 
 ## function setPriceStrategy
 
-access: collection owner or admin (`onlyCollectionAdmin`, else `NotAuthorized`)
+access: collection owner or admin (`onlyCollectionOwnerOrAdmin`, else `NotAuthorized`)
 
 Sets the price strategy, or zero to use the fixed `price`. Reverts `NotAContract`
 for a nonzero address with no code. Emits `PriceStrategySet`.
 
 ## function setMintWindow
 
-access: collection owner or admin (`onlyCollectionAdmin`, else `NotAuthorized`)
+access: collection owner or admin (`onlyCollectionOwnerOrAdmin`, else `NotAuthorized`)
 
 Sets the sale window. Reverts `BadMintWindow` unless `end` is 0 (open-ended) or
 strictly after `start`. Emits `MintWindowSet`.
 
 ## function setPayoutRecipient
 
-access: collection owner or admin (`onlyCollectionAdmin`, else `NotAuthorized`)
+access: collection owner or admin (`onlyCollectionOwnerOrAdmin`, else `NotAuthorized`)
 
 Sets the stored payout address for future mints. Reverts `PayoutRecipientRequired`
 for the zero address. Balances already credited stay at the address they were
@@ -167,21 +168,21 @@ credited to. Emits `PayoutRecipientSet`.
 
 ## function setMaxMints
 
-access: collection owner or admin (`onlyCollectionAdmin`, else `NotAuthorized`)
+access: collection owner or admin (`onlyCollectionOwnerOrAdmin`, else `NotAuthorized`)
 
 Sets this clone's sale ceiling (0 = unlimited), checked against `totalMinted`.
 Distinct from the collection's supply cap. Emits `MaxMintsSet`.
 
 ## function setAllowlistRoot
 
-access: collection owner or admin (`onlyCollectionAdmin`, else `NotAuthorized`)
+access: collection owner or admin (`onlyCollectionOwnerOrAdmin`, else `NotAuthorized`)
 
 Sets the Merkle allowlist root, or zero for no allowlist. Emits
 `AllowlistRootSet`.
 
 ## function setWalletCap
 
-access: collection owner or admin (`onlyCollectionAdmin`, else `NotAuthorized`)
+access: collection owner or admin (`onlyCollectionOwnerOrAdmin`, else `NotAuthorized`)
 
 Sets the per-recipient cap (0 = unlimited), checked against `mintedBy[to]`.
 Counted per recipient on this clone only. Emits `WalletCapSet`.
@@ -195,7 +196,7 @@ Sets the referral share in bps. Reverts `ReferralShareAboveCap` above
 
 ## function rescueStrayETH
 
-access: collection owner or admin (`onlyCollectionAdmin`, else `NotAuthorized`)
+access: collection owner or admin (`onlyCollectionOwnerOrAdmin`, else `NotAuthorized`)
 
 Sends `to` the ETH balance above the sum of pull-payment balances. Owed balances
 are not swept. Reverts `ZeroAccount` for the zero address, `NoStrayETH` when the
@@ -238,9 +239,11 @@ The price strategy contract, or zero when the fixed `price` applies.
 
 ## function priceOf
 
-The required payment in wei to mint `quantity` tokens to `to` given `data`:
-`price * quantity`, or the strategy quote when one is set. Does not check the
-gates or the window. A strategy quote can change between this read and inclusion.
+The required payment in wei to mint `quantity` tokens to `to`: `price *
+quantity`, or the strategy quote when one is set. Takes no gate data, since
+pricing is a function of `(collection, to, quantity)` and chain state only. Does
+not check the gates or the window. A strategy quote can change between this read
+and inclusion.
 
 ## function mintStart
 

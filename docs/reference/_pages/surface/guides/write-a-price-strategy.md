@@ -16,20 +16,24 @@ interface IPriceStrategy {
     function priceOf(
         address collection,
         address minter,
-        uint256 quantity,
-        bytes calldata data
+        uint256 quantity
     ) external view returns (uint256);
 }
 ```
 
 - `collection`: the collection being minted, passed explicitly so one strategy
   instance can serve many collections
-- `minter`: the wallet requesting the mint (the recipient the minter passes)
+- `minter`: the mint recipient the quote is for; `FixedPriceMinter` passes the
+  mint's `to` address, the same address its gates evaluate
 - `quantity`: tokens requested in this call
-- `data`: the same blob the mint call carries, forwarded unchanged;
-  strategy-defined (tier selectors, a signed price, whatever the form needs)
 
 The return value is the total price in wei for `quantity` tokens.
+
+A strategy takes no caller-supplied data. The price is a function of
+`(collection, minter, quantity)` and chain state only, so a collector cannot
+steer their own quote. Caller input belongs to the gate path (the allowlist
+proof), which the minter keeps separate. Pricing that needs a caller-chosen
+selector belongs in a dedicated minter.
 
 ## Why it's view-only
 
@@ -92,7 +96,7 @@ contract FixedPriceStrategy is IPriceStrategy {
         emit PriceSet(collection, price);
     }
 
-    function priceOf(address collection, address, uint256 quantity, bytes calldata)
+    function priceOf(address collection, address, uint256 quantity)
         external
         view
         override
@@ -140,7 +144,7 @@ contract BasefeeScaledStrategy is IPriceStrategy {
         emit ConfigSet(collection, floor, multiplier);
     }
 
-    function priceOf(address collection, address, uint256 quantity, bytes calldata)
+    function priceOf(address collection, address, uint256 quantity)
         external
         view
         override
@@ -164,8 +168,8 @@ payment-resolution rule.
 ## Reading the current price
 
 ```bash
-cast call <MINTER_ADDRESS> "priceOf(address,uint256,bytes)(uint256)" \
-  0xRecipientAddress 1 0x \
+cast call <MINTER_ADDRESS> "priceOf(address,uint256)(uint256)" \
+  0xRecipientAddress 1 \
   --rpc-url https://ethereum-rpc.publicnode.com
 ```
 

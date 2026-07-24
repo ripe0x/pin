@@ -37,16 +37,18 @@ function createSurface(
   creator)
 
 The call returns `(collection, minter)` and emits
-`SurfaceCreated(owner, collection, minter, idMode)`, the single event an
-indexer needs to discover the collection and its minter binding. It also
-records the collection in `isSurface` / `allSurfaces`.
+`SurfaceCreated(owner, collection, primaryMinter, idMode, name, symbol)`, the
+single event an indexer needs to discover the collection, its metadata, and its
+minter binding. It also records the collection in `isSurface` / `allSurfaces`.
 
 Two sibling entrypoints skip the canonical minter:
-`createSurfaceCustom(name, symbol, owner, cfg, initialMinters, creators)`
+`createSurfaceCustom(name, symbol, owner, cfg, initialMinters, primaryMinter, creators)`
 deploys a sequential collection wired to minters you supply, and
-`createPooledSurface(...)` deploys a pooled collection (there is no
-canonical-minter form for pooled). Both emit `SurfaceCreated` with `minter`
-set to `address(0)`.
+`createPooledSurface(name, symbol, owner, cfg, initialMinters, primaryMinter, creators)`
+deploys a pooled collection (there is no canonical-minter form for pooled). On
+both, `primaryMinter` must be `address(0)` or an entry of `initialMinters`, else
+the call reverts `PrimaryMinterNotAuthorized`, and `SurfaceCreated` carries
+whatever you passed.
 
 ## SurfaceConfig (the token)
 
@@ -55,7 +57,7 @@ struct SurfaceConfig {
     uint256 supplyCap;       // 0 = open supply
     uint16 royaltyBps;       // EIP-2981, advisory
     address royaltyReceiver; // 0 = owner()
-    address renderer;        // 0 at init = factory defaultRenderer
+    address renderer;        // falls back to factory defaultRenderer; required
     bool rendererLocked;     // one-way; see lockRenderer
     bool supplyLocked;       // one-way; see lockSupply
 }
@@ -66,9 +68,11 @@ struct SurfaceConfig {
   exceed it
 - `royaltyBps` is capped at 5000 (50%); deploy reverts `RoyaltyTooHigh` above
   that
-- `renderer` is the one token slot; `0` at init uses the factory's
-  `defaultRenderer`. It is changeable later with `setRenderer` until
-  `lockRenderer`
+- `renderer` is the one token slot. Passing `0` falls back to the factory's
+  `defaultRenderer`; the resolved address must be a deployed contract or the
+  call reverts `RendererRequired` (zero) or `RendererNotContract`. **On the
+  mainnet factory `defaultRenderer` is the zero address**, so pass your own
+  renderer. It is changeable later with `setRenderer` until `lockRenderer`
 - `rendererLocked` / `supplyLocked` passed `true` initialize the collection
   locked, with no second transaction. Both are one-way
 
@@ -80,7 +84,7 @@ struct SaleConfig {
     address priceStrategy;  // 0 = fixed price
     uint64 mintStart;       // unix seconds; 0 = open immediately
     uint64 mintEnd;         // unix seconds; 0 = open-ended
-    address payout;         // 0 = live owner() of the collection at settle
+    address payoutRecipient;// 0 = the deploy-time owner argument
     uint256 maxMints;       // 0 = unlimited; this minter's own sale ceiling
     bytes32 allowlistRoot;  // 0 = open
     uint256 walletCap;      // 0 = unlimited; per-recipient
@@ -90,9 +94,14 @@ struct SaleConfig {
 The factory fills the minter's `collection` field with the token clone it
 creates in the same call, so `SaleConfig` is `FixedPriceMinterInitParams` minus
 `collection`. Every field here is live config on the minter after deploy
-(`setPrice`, `setPriceStrategy`, `setMintWindow`, `setPayout`, `setMaxMints`,
-`setAllowlistRoot`, `setWalletCap`), authorized by the collection's owner or an
-admin. See [Mint](/docs/surface/guides/mint) for how these drive a mint.
+(`setPrice`, `setPriceStrategy`, `setMintWindow`, `setPayoutRecipient`,
+`setMaxMints`, `setAllowlistRoot`, `setWalletCap`), authorized by the
+collection's owner or an admin. `payoutRecipient` is stored once at init and is
+never re-derived from the collection's live `owner()`, so a renounced or
+transferred collection keeps paying whoever is stored. The referral share is not
+in `SaleConfig`: the minter initializes `referralShareBps` to its cap,
+`MAX_REFERRAL_SHARE_BPS = 1000` (10%), and the owner or an admin changes it with
+`setReferralShareBps`. See [Mint](/docs/surface/guides/mint) for how these drive a mint.
 
 ## Generative works: bring your own renderer
 
@@ -100,9 +109,10 @@ admin. See [Mint](/docs/surface/guides/mint) for how these drive a mint.
 own renderer: deploy a work-specific `IRenderer` that owns its algorithm and
 dependency references (however it chooses to store them), then point the
 collection's `renderer` slot at it, either as `cfg.renderer` at deploy or later
-with `setRenderer`. Edition presets and Solidity-SVG works leave `cfg.renderer`
-at zero (the `DefaultRenderer` fallback) or point it at a self-contained SVG
-renderer, where the renderer contract itself is the work. See
+with `setRenderer`. Edition presets and Solidity-SVG works point `cfg.renderer` at a shared
+metadata renderer or a self-contained SVG renderer, where the renderer contract
+itself is the work. Leaving `cfg.renderer` at zero only works when the factory
+carries a `defaultRenderer`, and the mainnet factory does not. See
 [Write a renderer](/docs/surface/guides/write-a-renderer) and the
 [Injection convention](/docs/surface/reference/injection-convention).
 
@@ -129,7 +139,7 @@ const cfg = {
   supplyCap: 250n,
   royaltyBps: 500,
   royaltyReceiver: ZERO,
-  renderer: ZERO,          // factory default renderer
+  renderer: rendererAddress, // required: the mainnet factory has no default
   rendererLocked: false,
   supplyLocked: false,
 };
@@ -139,7 +149,7 @@ const sale = {
   priceStrategy: ZERO,     // fixed price
   mintStart: 0n,
   mintEnd: 0n,
-  payout: ZERO,            // live owner() at settle
+  payoutRecipient: ZERO,   // defaults to the owner argument above
   maxMints: 0n,
   allowlistRoot: '0x0000000000000000000000000000000000000000000000000000000000000000',
   walletCap: 0n,

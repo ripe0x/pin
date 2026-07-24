@@ -7,10 +7,11 @@ title: DefaultRenderer
 
 # summary
 
-The built-in renderer for [Surface](/docs/surface/contracts/surface). Each
-collection uses it at deploy (`defaultRenderer` in the factory's `InitParams`)
-unless the owner sets the renderer pointer elsewhere. One immutable, ownerless
-instance serves every collection; it stores no per-collection state. `tokenURI`
+The built-in renderer for [Surface](/docs/surface/contracts/surface). A
+collection uses it when the factory it deploys through carries this address as
+its `defaultRenderer` and the collection's config names no renderer of its own.
+One immutable, ownerless instance serves every collection; it stores no
+per-collection state. `tokenURI`
 and `contractURI` take the collection address as an argument and read what they
 need through [ISurfaceView](/docs/surface/contracts/i-surface-view).
 

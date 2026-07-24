@@ -129,8 +129,9 @@ cast call <COLLECTION_ADDRESS> "primaryMinter()(address)" \
   --rpc-url https://ethereum-rpc.publicnode.com
 ```
 
-The Surface System is pre-deploy, so the examples use a `<COLLECTION_ADDRESS>`
-placeholder. Collection addresses come from the factory's `SurfaceCreated` events.
+A collection is a per-artist clone with no canonical address, so the examples use
+a `<COLLECTION_ADDRESS>` placeholder. Collection addresses come from the
+factory's `SurfaceCreated` events.
 
 ## Write functions
 

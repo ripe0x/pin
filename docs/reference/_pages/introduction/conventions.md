@@ -14,8 +14,8 @@ Every address and transaction link in this reference points at
 - Transaction: `https://evm.now/tx/<hash>?chainId=1`
 
 A shared-singleton address is written as a `{{addr:<key>}}` placeholder in the
-source and substituted with the real mainnet address (a deployed singleton
-resolves; a Surface singleton stays a placeholder until launch). A per-owner
+source and substituted with the real mainnet address (a singleton that is not
+deployed yet stays a placeholder). A per-owner
 clone (a collection, an auction house) has no fixed address; examples use
 `<COLLECTION_ADDRESS>` or `<AUCTION_HOUSE_ADDRESS>`.
 
