@@ -32,7 +32,13 @@ protocol charge beyond what each contract's reference documents.
 
 ## Status
 
-Auctions and Catalog are live on Ethereum mainnet; their addresses are in
-[Addresses](/docs/introduction/addresses) and the
-[protocol manifest](/protocol-manifest.json). The Surface System is pre-deploy,
-so its singleton addresses are placeholders until launch.
+The Surface System, Auctions, and Catalog are live on Ethereum mainnet; their
+addresses are in [Addresses](/docs/introduction/addresses) and the
+[protocol manifest](/protocol-manifest.json). Two optional Surface render
+modules, `DefaultRenderer` and `RenderAssets`, are not deployed yet and read
+`_pending deploy_` in those tables; a collection sets its own renderer, so
+neither is required to deploy or mint.
+
+New Surface deploys pass through the factory's reversible pause gate. Read
+`paused()` on [SurfaceFactory](/docs/surface/contracts/factory) for the current
+setting.

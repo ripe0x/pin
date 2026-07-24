@@ -27,8 +27,8 @@ core with different minters and renderers attached. See
 | Contract | Role |
 | --- | --- |
 | `SurfaceFactory` | Clones the token and its canonical minter and wires them in one transaction |
-| `DefaultRenderer` | The default `IRenderer` a freshly deployed collection points at until the artist sets something else |
-| `RenderAssets` | Shared registry of static display assets (covers + captures), written under each collection's own owner/admin authority. Algorithm-driven (Art Blocks-style) works ship as their own bring-your-own renderer, not a shared assembler |
+| `DefaultRenderer` | A stock `IRenderer` serving one static image per token, for collections that want no bespoke renderer. Not deployed yet |
+| `RenderAssets` | Shared registry of static display assets (covers + captures), written under each collection's own owner/admin authority. Algorithm-driven (Art Blocks-style) works ship as their own bring-your-own renderer, not a shared assembler. Not deployed yet |
 
 **Per-collection clones** (deployed per collection):
 
@@ -44,8 +44,9 @@ gating lives in the token; those are the renderer and the minter.
 The token has one swappable slot and a minter set; the canonical minter adds a
 third slot:
 
-- **Renderer** (`IRenderer`) on the token: builds `tokenURI`; falls back to the
-  factory `defaultRenderer` when unset; pinnable one-way with `lockRenderer`
+- **Renderer** (`IRenderer`) on the token: builds `tokenURI`; resolved once at
+  init, from the config or the factory's `defaultRenderer`, and never zero after;
+  pinnable one-way with `lockRenderer`
 - **Minter** on the token: an address the artist authorizes via `setMinter` to
   call the non-payable `mintTo`/`mintToId`. All sale economics live in the
   minter. Freezable one-way with `lockMinter`
@@ -105,9 +106,17 @@ token or the canonical minter. A custom minter sets its own terms.
 
 ## Status
 
-The Surface System is pre-deploy. Contract and interface behavior in this
-reference reflects the code as written; the shared-singleton addresses below
-are placeholders until launch.
+The Surface System is live on Ethereum mainnet. `SurfaceFactory` and the three
+implementations it clones (sequential, pooled, `FixedPriceMinter`) are deployed;
+their addresses are in [Addresses](/docs/introduction/addresses).
+
+`DefaultRenderer` and `RenderAssets` are not deployed yet. They are optional: a
+collection points its renderer slot at whatever contract implements
+[`IRenderer`](/docs/surface/contracts/i-renderer), and nothing in the deploy or
+mint path reads either module.
+
+New deploys pass through the factory's reversible pause gate. Read `paused()` on
+[SurfaceFactory](/docs/surface/contracts/factory) for the current setting.
 
 ## Where to go next
 

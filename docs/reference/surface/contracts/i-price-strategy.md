@@ -29,12 +29,14 @@ worked implementation.
 function priceOf(address collection, address minter, uint256 quantity) external view returns (uint256)
 ```
 
-view; returns the total price in wei for `quantity` tokens minted by
-`minter` on `collection`. The collection address is passed explicitly
-rather than read from `msg.sender`, so a single strategy instance can serve
-many collections. `data` forwards whatever mint data the caller supplied,
-for example a tier selector, and its interpretation is entirely
-strategy-defined. When the minter's `priceStrategy` slot holds this
+view; returns the total price in wei for `quantity` tokens quoted for
+`minter` on `collection`. `minter` is the mint recipient the quote is for:
+`FixedPriceMinter` passes the mint's `to` address, the same address its gates
+evaluate. The collection address is passed explicitly rather than read from
+`msg.sender`, so a single strategy instance can serve many collections. There is
+no caller-supplied data parameter: the price is a function of `(collection,
+minter, quantity)` and chain state only, so caller input cannot steer a quote.
+When the minter's `priceStrategy` slot holds this
 contract's address, the minter calls `priceOf` on every paid mint and treats
 the return value as the total amount owed for the requested quantity, not a
 per-token price.

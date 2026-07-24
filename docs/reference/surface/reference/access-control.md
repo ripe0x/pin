@@ -50,15 +50,15 @@ Every state-changing function in the Surface contracts and who may call it. Gene
 | [`mint(address, uint256, address, bytes)`](/docs/surface/contracts/fixed-price-minter#mintaddress-uint256-address-bytes) | permissionless (payable; window, ceiling, gate, and payment checks apply) |
 | [`mint(uint256)`](/docs/surface/contracts/fixed-price-minter#mintuint256) | permissionless (payable; window, ceiling, gate, and payment checks apply) |
 | [`withdraw`](/docs/surface/contracts/fixed-price-minter#withdraw) | permissionless (funds go only to `account`) |
-| [`setPrice`](/docs/surface/contracts/fixed-price-minter#setprice) | collection owner or admin (`onlyCollectionAdmin`, else `NotAuthorized`) |
-| [`setPriceStrategy`](/docs/surface/contracts/fixed-price-minter#setpricestrategy) | collection owner or admin (`onlyCollectionAdmin`, else `NotAuthorized`) |
-| [`setMintWindow`](/docs/surface/contracts/fixed-price-minter#setmintwindow) | collection owner or admin (`onlyCollectionAdmin`, else `NotAuthorized`) |
-| [`setPayoutRecipient`](/docs/surface/contracts/fixed-price-minter#setpayoutrecipient) | collection owner or admin (`onlyCollectionAdmin`, else `NotAuthorized`) |
-| [`setMaxMints`](/docs/surface/contracts/fixed-price-minter#setmaxmints) | collection owner or admin (`onlyCollectionAdmin`, else `NotAuthorized`) |
-| [`setAllowlistRoot`](/docs/surface/contracts/fixed-price-minter#setallowlistroot) | collection owner or admin (`onlyCollectionAdmin`, else `NotAuthorized`) |
-| [`setWalletCap`](/docs/surface/contracts/fixed-price-minter#setwalletcap) | collection owner or admin (`onlyCollectionAdmin`, else `NotAuthorized`) |
+| [`setPrice`](/docs/surface/contracts/fixed-price-minter#setprice) | collection owner or admin (`onlyCollectionOwnerOrAdmin`, else `NotAuthorized`) |
+| [`setPriceStrategy`](/docs/surface/contracts/fixed-price-minter#setpricestrategy) | collection owner or admin (`onlyCollectionOwnerOrAdmin`, else `NotAuthorized`) |
+| [`setMintWindow`](/docs/surface/contracts/fixed-price-minter#setmintwindow) | collection owner or admin (`onlyCollectionOwnerOrAdmin`, else `NotAuthorized`) |
+| [`setPayoutRecipient`](/docs/surface/contracts/fixed-price-minter#setpayoutrecipient) | collection owner or admin (`onlyCollectionOwnerOrAdmin`, else `NotAuthorized`) |
+| [`setMaxMints`](/docs/surface/contracts/fixed-price-minter#setmaxmints) | collection owner or admin (`onlyCollectionOwnerOrAdmin`, else `NotAuthorized`) |
+| [`setAllowlistRoot`](/docs/surface/contracts/fixed-price-minter#setallowlistroot) | collection owner or admin (`onlyCollectionOwnerOrAdmin`, else `NotAuthorized`) |
+| [`setWalletCap`](/docs/surface/contracts/fixed-price-minter#setwalletcap) | collection owner or admin (`onlyCollectionOwnerOrAdmin`, else `NotAuthorized`) |
 | [`setReferralShareBps`](/docs/surface/contracts/fixed-price-minter#setreferralsharebps) | collection owner or admin (`onlyCollectionOwnerOrAdmin`, else `NotAuthorized`) |
-| [`rescueStrayETH`](/docs/surface/contracts/fixed-price-minter#rescuestrayeth) | collection owner or admin (`onlyCollectionAdmin`, else `NotAuthorized`) |
+| [`rescueStrayETH`](/docs/surface/contracts/fixed-price-minter#rescuestrayeth) | collection owner or admin (`onlyCollectionOwnerOrAdmin`, else `NotAuthorized`) |
 | [`initialize`](/docs/surface/contracts/fixed-price-minter#initialize) | deployer one-shot (`initializer`, else `InvalidInitialization`) |
 
 ## RenderAssets

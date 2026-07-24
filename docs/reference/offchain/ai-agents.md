@@ -25,14 +25,17 @@ Both protocols deploy per owner. Every artist collection is its own `Surface` cl
 The collection factory emits one event per deploy:
 
 ```solidity
-event SurfaceCreated(address indexed owner, address indexed collection, address minter, IdMode idMode);
+event SurfaceCreated(address indexed owner, address indexed collection, address primaryMinter, IdMode idMode, string name, string symbol);
 ```
 
-The `minter` field is the collection-to-minter binding: for a `createSurface`
-deploy it is the canonical [FixedPriceMinter](/docs/surface/contracts/fixed-price-minter)
-clone the factory wired, and it is `address(0)` when the caller supplied its own
-minter (`createSurfaceCustom`, `createPooledSurface`). Read it to know where a
-collection's mint calls go.
+The `primaryMinter` field is the collection-to-minter binding: for a
+`createSurface` deploy it is the canonical
+[FixedPriceMinter](/docs/surface/contracts/fixed-price-minter) clone the factory
+wired; on `createSurfaceCustom` and `createPooledSurface` it is whichever
+primary the caller designated, or `address(0)` for none. Read it to know where a
+collection's mint calls go, then follow the collection's own `PrimaryMinterSet`
+event to stay current after a repoint. `name` and `symbol` come through on the
+event too, so indexing a new collection needs no follow-up call.
 
 ```ts
 import {createPublicClient, webSocket, parseAbiItem} from 'viem';
@@ -42,9 +45,9 @@ const client = createPublicClient({chain: mainnet, transport: webSocket()});
 
 client.watchEvent({
   address: '0xdB81d3F33EF3D84685486916E0d372E247558094',
-  event: parseAbiItem('event SurfaceCreated(address indexed owner, address indexed collection, address minter, uint8 idMode)'),
+  event: parseAbiItem('event SurfaceCreated(address indexed owner, address indexed collection, address primaryMinter, uint8 idMode, string name, string symbol)'),
   onLogs: (logs) => {
-    for (const log of logs) console.log('new collection', log.args.collection, 'by', log.args.owner, 'minter', log.args.minter);
+    for (const log of logs) console.log('new collection', log.args.name, log.args.collection, 'by', log.args.owner, 'minter', log.args.primaryMinter);
   },
 });
 ```
@@ -79,12 +82,12 @@ cast call 0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f "isHouse(address)(bool)" 0x
 
 ```bash
 cast call <COLLECTION_ADDRESS> "totalSupply()(uint256)" --rpc-url https://ethereum-rpc.publicnode.com
-cast call <MINTER_ADDRESS> "priceOf(address,uint256,bytes)(uint256)" 0x0000000000000000000000000000000000000000 1 0x --rpc-url https://ethereum-rpc.publicnode.com
+cast call <MINTER_ADDRESS> "priceOf(address,uint256)(uint256)" 0x0000000000000000000000000000000000000000 1 --rpc-url https://ethereum-rpc.publicnode.com
 cast call <AUCTION_HOUSE_ADDRESS> "getAuctionFor(address,uint256)(bool,uint256)" <COLLECTION_ADDRESS> 1 --rpc-url https://ethereum-rpc.publicnode.com
 ```
 
 The price lives on the minter, not the token; get `<MINTER_ADDRESS>` from the
-collection's `SurfaceCreated.minter`. Or via viem with the typed ABI:
+collection's `SurfaceCreated.primaryMinter`. Or via viem with the typed ABI:
 
 ```ts
 import {createPublicClient, http} from 'viem';
@@ -111,4 +114,4 @@ const [cfg, minted] = await client.readContract({
 
 ## Deployment status
 
-Catalog and the auction house factory are live on Ethereum mainnet, with real addresses in `/protocol-manifest.json`. The Surface System is pre-deploy: its singleton addresses are `null` in the manifest and placeholders in examples until launch.
+Catalog, the auction house factory, and the Surface System are live on Ethereum mainnet, with real addresses in `/protocol-manifest.json`. Two optional Surface render modules, `DefaultRenderer` and `RenderAssets`, are not deployed yet: their addresses are `null` in the manifest and placeholders in examples. Neither is on the deploy or mint path, so an agent never needs them. New Surface deploys pass the factory's reversible pause gate, so check `paused()` on `SurfaceFactory` before submitting a `createSurface` transaction.

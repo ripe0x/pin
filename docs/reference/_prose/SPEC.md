@@ -68,7 +68,7 @@ Keep error prose to one or two sentences.
   `core-only`, `deployer one-shot`, and say what the gate is and which error
   guards it.
 - `{{addr:<key>}}` anywhere in prose is replaced with the mainnet address from
-  `contracts/deployments.mainnet.json`. Pre-deploy (empty value) it renders a
+  `contracts/deployments.mainnet.json`. An empty value renders a
   `<KEY_ADDRESS>` placeholder and the build prints a notice; it never fails.
 
 ## Inherited standard surface
@@ -85,12 +85,12 @@ the local specifics.
 ## Style
 
 - Mechanically precise. Describe what the code does, not how it feels. Approved
-  terms: collection, core, clone, factory, slot, minter, extension minter,
-  price strategy, renderer, mint hook, surface, referral share, mint mark,
-  entropy, seed, id mode, sequential, pooled, edge, Release Graph, path,
-  Token Path, work, work config, freeze metadata, lock work, permanent,
-  attribution, roster. Keep contract identifiers verbatim in code and
-  signatures (`MAX_REFERRAL_SHARE_BPS`, `mintToId`).
+  terms: collection, core, clone, factory, slot, minter, primary minter,
+  price strategy, renderer, render assets, surface, referral share, payout,
+  entropy, seed, mint index, mint order, id mode, sequential, pooled, work,
+  supply cap, lock, permanent, attribution, creator, roster. Keep contract
+  identifiers verbatim in code and signatures (`MAX_REFERRAL_SHARE_BPS`,
+  `mintToId`, `lockRenderer`, `lockSupply`, `lockMinter`).
 - Describe current state only. No history ("was Editions", "replaced X"), no
   PR/audit/issue references.
 - Numbers, splits, and addresses come from code, the ABI, or
@@ -103,12 +103,11 @@ the local specifics.
   never the glyph.
 - Address and transaction links use evm.now:
   `https://evm.now/address/<addr>?chainId=1`, `https://evm.now/tx/<hash>?chainId=1`.
-- The Surface System is pre-deploy. Live-read examples use `cast` against a
-  free public RPC with a placeholder address, and note that the address lands at
-  launch:
+- Live-read examples use `cast` against a free public RPC. A per-owner clone has
+  no canonical address, so use a placeholder:
   `cast call <COLLECTION_ADDRESS> "totalSupply()(uint256)" --rpc-url https://ethereum-rpc.publicnode.com`.
   For a shared singleton, reference it with `{{addr:surfaceFactory}}` so the
-  real address substitutes automatically once deployed.
+  real address substitutes automatically.
 - TypeScript examples use viem and import ABIs from `@pin/abi`
   (`import {surfaceAbi} from '@pin/abi'`) or fetch `/abis/<Name>.json`.
 

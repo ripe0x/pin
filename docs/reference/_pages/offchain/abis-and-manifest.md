@@ -138,6 +138,6 @@ const total = await factory.read.totalSurfaces();
 
 ## Deployment status
 
-Catalog and the auction house factory are deployed on Ethereum mainnet; their addresses are populated in `/protocol-manifest.json` and resolved in every `{{addr:...}}` placeholder. The Surface System is pre-deploy: its singleton addresses are `null` in the manifest and stay placeholders until launch, at which point they populate automatically.
+Catalog, the auction house factory, and the Surface System are deployed on Ethereum mainnet; their addresses are populated in `/protocol-manifest.json` and resolved in every `{{addr:...}}` placeholder. Two optional Surface render modules, `DefaultRenderer` and `RenderAssets`, are not deployed yet: their `address` is `null` in the manifest and they stay placeholders until deploy, at which point they populate automatically. A `null` address never means a missing ABI, every entry carries its ABI either way.
 
 See [AI agents](/docs/offchain/ai-agents) for task-oriented recipes using these surfaces.

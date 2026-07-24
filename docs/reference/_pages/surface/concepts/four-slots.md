@@ -93,7 +93,7 @@ See [Surface](/docs/surface/contracts/surface),
 ## Price strategy (`IPriceStrategy`)
 
 ```solidity
-function priceOf(address collection, address minter, uint256 quantity, bytes calldata data)
+function priceOf(address collection, address minter, uint256 quantity)
     external view returns (uint256);
 ```
 
@@ -104,7 +104,8 @@ function priceOf(address collection, address minter, uint256 quantity, bytes cal
 - **Fallback**: when unset, the minter charges its stored `price` times
   `quantity` and requires an exact match (`WrongPayment` on mismatch)
 - **What it does**: when set, `mint` and the read-only `priceOf` call
-  `priceOf(collection, to, quantity, data)` to get the required payment.
+  `priceOf(collection, to, quantity)` to get the required payment. The strategy
+  sees no caller-supplied data, so a collector cannot steer their own quote.
   Because a strategy's quote can move between when a collector reads it and
   when their transaction lands (for example a basefee-driven price), the
   minter accepts `msg.value >= required` and accrues any excess back to the

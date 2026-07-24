@@ -12,14 +12,14 @@ calling the **minter**, not the collection; the minter takes payment and calls
 the collection's non-payable `mintTo` to issue the tokens.
 
 Find a collection's minter address from the `SurfaceCreated` event the factory
-emitted at deploy (its `minter` field), or from the collection-to-minter
+emitted at deploy (its `primaryMinter` field), or from the collection-to-minter
 binding your indexer recorded. Collections deployed with a custom minter
 (`createSurfaceCustom`, or any pooled collection) expose whatever mint ABI
 that minter defines; the rest of this guide is the canonical minter.
 
 ```solidity
 function mint(address to, uint256 quantity, address referrer, bytes calldata data) external payable;
-function priceOf(address to, uint256 quantity, bytes calldata data) external view returns (uint256);
+function priceOf(address to, uint256 quantity) external view returns (uint256);
 ```
 
 - `to` is the recipient and the address any gate evaluates (an allowlist gates
@@ -38,8 +38,8 @@ If the minter has no price strategy set (`priceStrategy() == address(0)`), the
 price is `price() * quantity` and payment must match exactly: any other
 `msg.value` reverts `WrongPayment`.
 
-If a price strategy is set, the minter calls `priceOf(collection, to, quantity,
-data)` on it once and requires `msg.value >= required`; underpayment reverts
+If a price strategy is set, the minter calls `priceOf(collection, to, quantity)`
+on it once and requires `msg.value >= required`; underpayment reverts
 `Underpayment`. Overpayment does not revert. It accrues to the payer as a pull
 refund, claimable via `withdraw(msg.sender)`, since a strategy's quote can move
 between when a collector reads it and when their transaction lands (for example
@@ -48,8 +48,8 @@ a basefee-denominated price).
 Read the resolved price ahead of a mint with the minter's `priceOf`:
 
 ```bash
-cast call <MINTER_ADDRESS> "priceOf(address,uint256,bytes)(uint256)" \
-  0xYourAddress 1 0x \
+cast call <MINTER_ADDRESS> "priceOf(address,uint256)(uint256)" \
+  0xYourAddress 1 \
   --rpc-url https://ethereum-rpc.publicnode.com
 ```
 
@@ -123,7 +123,7 @@ const price = await publicClient.readContract({
   address: MINTER,
   abi: fixedPriceMinterAbi,
   functionName: 'priceOf',
-  args: [walletClient.account.address, 1n, '0x'],
+  args: [walletClient.account.address, 1n],
 });
 
 const hash = await walletClient.writeContract({
