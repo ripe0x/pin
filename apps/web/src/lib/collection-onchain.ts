@@ -116,6 +116,57 @@ async function getMinterSaleConfig(
  * value at far lower cost — this is one of the few Postgres reads in an
  * otherwise RPC-cached file, not a new RPC call (see AGENTS.md).
  */
+export type FactoryStatus = {
+  /** False when no factory address is configured for this chain at all. */
+  configured: boolean
+  paused: boolean
+  deprecated: boolean
+  /** False means the factory's own defaultRenderer() is unset (0x0) — a
+   *  collection deployed with cfg.renderer left zero (the Edition preset's
+   *  approach) reverts RendererRequired at init regardless of pause state. */
+  defaultRendererSet: boolean
+}
+
+/**
+ * Live factory readiness for the studio create-collection wizard: is a
+ * deploy actually possible right now, not just "is a factory address
+ * configured". `paused`/`deprecated` gate createSurface itself
+ * (SurfaceFactory._checkCreatable); `defaultRendererSet` gates the Edition
+ * preset specifically (SurfaceCore.initialize reverts RendererRequired when
+ * both cfg.renderer and defaultRenderer are zero).
+ *
+ * Fails closed: an unconfigured factory or a failed read both come back as
+ * `paused: true` so the wizard blocks rather than offering a deploy path
+ * built on unconfirmed state. 60s TTL — pause flips are a deliberate,
+ * infrequent deployer action, not something needing sub-30s freshness.
+ */
+export async function getFactoryStatus(): Promise<FactoryStatus> {
+  const factory = surfaceFactory()
+  if (!factory) return { configured: false, paused: true, deprecated: false, defaultRendererSet: false }
+  const read = await pgCache(`sc-factory-status:${lc(factory)}`, 60, async () => {
+    const client = getClient()
+    try {
+      const [paused, deprecated, defaultRenderer] = await client.multicall({
+        allowFailure: false,
+        contracts: [
+          { address: factory, abi: surfaceFactoryAbi, functionName: "paused" },
+          { address: factory, abi: surfaceFactoryAbi, functionName: "deprecated" },
+          { address: factory, abi: surfaceFactoryAbi, functionName: "defaultRenderer" },
+        ],
+      })
+      return {
+        paused: paused as boolean,
+        deprecated: deprecated as boolean,
+        defaultRendererSet: (defaultRenderer as Address).toLowerCase() !== ZERO_ADDRESS,
+      }
+    } catch {
+      return null
+    }
+  })
+  if (!read) return { configured: true, paused: true, deprecated: false, defaultRendererSet: false }
+  return { configured: true, ...read }
+}
+
 /**
  * The collection's cover URI from RenderAssets, or "" when none is set.
  * A single read on a long TTL, sized for the activity feed: one lookup
