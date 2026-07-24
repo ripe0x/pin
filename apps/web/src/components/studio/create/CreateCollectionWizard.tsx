@@ -30,10 +30,16 @@ import { DeployStep } from "./DeployStep"
 import { BTN } from "./wizard-ui"
 
 /** Why the wizard can't offer a deploy right now, or null when it can. */
-function blockedReason(status: FactoryStatus): string | null {
-  if (!status.configured) return "Collection deploys aren't available on this network yet."
-  if (status.deprecated) return "This factory has been retired. Check back for its successor."
-  if (status.paused) return "Collection deploys are paused right now. Check back soon."
+function blockedReason(status: FactoryStatus): { headline: string; lead: string } | null {
+  if (!status.configured) {
+    return { headline: "Not available", lead: "Deploys aren't live on this network." }
+  }
+  if (status.deprecated) {
+    return { headline: "Retired", lead: "A new factory is coming." }
+  }
+  if (status.paused) {
+    return { headline: "Not open yet", lead: "Interested in deploying a collection?" }
+  }
   return null
 }
 
@@ -82,8 +88,19 @@ export function CreateCollectionWizard({
   if (blocked) {
     return (
       <div className="rounded-lg border border-amber-200 bg-amber-50 p-5 space-y-1">
-        <p className="text-sm font-medium text-amber-900">Deploys unavailable</p>
-        <p className="text-xs text-amber-800 leading-relaxed">{blocked}</p>
+        <p className="text-sm font-medium text-amber-900">{blocked.headline}</p>
+        <p className="text-xs text-amber-800 leading-relaxed">
+          {blocked.lead} Send{" "}
+          <a
+            href="https://x.com/ripe0x"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline hover:no-underline"
+          >
+            ripe
+          </a>{" "}
+          a DM for more info.
+        </p>
       </div>
     )
   }
