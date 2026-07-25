@@ -18,6 +18,8 @@ import { AttributionRoster } from "@/components/collections/AttributionRoster"
 import { ParityMosaic, OnchainMosaic } from "@/components/collections/CollectionMosaic"
 import { PlacardStats, StickyMintBar } from "@/components/collections/CollectionPlacard"
 import { CollectionFocusRefresh } from "@/components/collections/CollectionFocusRefresh"
+import { BatchGrid } from "@/components/collections/BatchGrid"
+import { EditionMintLayout } from "@/components/collections/edition/EditionMintLayout"
 import {
   getAttribution,
   getCollection,
@@ -25,8 +27,11 @@ import {
   getCollectionToken,
   getRecentTokenMarks,
   getRendererPreviews,
+  getRouterBatches,
+  isBatchRenderRouter,
 } from "@/lib/collection-onchain"
 import { detectHomageMinter } from "@/lib/homage/detect.server"
+import { getLayoutKindForCollection } from "@/lib/launch-descriptors"
 // Third layout: the generic collection page reskinned with the /mint/homage
 // terminal look (dark palette + Anton condensed display + mono body), applied via
 // ?skin=homage. homage-gallery.css defines the .homage-terminal tokens/fonts/accent
@@ -136,6 +141,108 @@ export default async function CollectionPage({
   // direct buy flow.
   const pooled = sellsViaMinterOnly(c.cfg.idMode) || !c.primaryMinter
   const strategy = hasPriceStrategy(c.sale?.priceStrategy ?? ZERO_ADDRESS)
+
+  // Batch view (docs/pnd-surface-second-launch.md): interface-driven, not a
+  // per-address registry — any collection whose live renderer advertises
+  // IBatchRenderRouter lights this up. One cached supportsInterface read,
+  // then (only when true) the router's batch list plus one cached
+  // getCollectionToken per batch for its shared artwork.
+  const isRouter = !homageSkin ? await isBatchRenderRouter(c.renderer) : false
+  const batches = isRouter ? await getRouterBatches(c.renderer) : []
+  const batchImages: Record<number, string> = {}
+  if (batches.length > 0) {
+    const imgs = await Promise.all(batches.map((b) => getCollectionToken(addr, b.startId)))
+    batches.forEach((b, i) => {
+      batchImages[b.index] = imgs[i]?.image ?? ""
+    })
+  }
+
+  // Layout selection: a data lookup (collection address -> layoutKind),
+  // not a hardcoded per-address component branch (see AGENTS.md's note on
+  // the Homage anti-pattern this deliberately avoids repeating).
+  const layoutKind = getLayoutKindForCollection(addr)
+  if (!homageSkin && layoutKind === "edition") {
+    const editionArtists = attribution.length > 0 ? attribution.map((a) => a.creator) : [c.owner]
+    const editionHero =
+      batches.length > 0 ? (
+        <BatchGrid collection={addr} batches={batches} images={batchImages} />
+      ) : hasCover || firstTokenImage ? (
+        <OptimizedImage
+          src={hasCover ? c.cover : firstTokenImage}
+          alt={c.name}
+          width={1600}
+          loading="eager"
+          className="max-h-[80vh] w-auto max-w-full object-contain"
+        />
+      ) : (
+        <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+          No artwork yet
+        </p>
+      )
+    return (
+      <EditionMintLayout
+        name={c.name}
+        byline={
+          <>
+            by{" "}
+            {editionArtists.map((a, i) => (
+              <span key={a}>
+                {i > 0 && ", "}
+                <a
+                  href={evmNowAddressUrl(a, PND_CHAIN_ID)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline decoration-gray-300 underline-offset-2 hover:text-fg"
+                >
+                  <ArtistName address={a} />
+                </a>
+              </span>
+            ))}
+            {c.cfg.supplyCap > 0n && ` · ${c.cfg.supplyCap.toString()} editions`}
+          </>
+        }
+        hero={editionHero}
+        mintInstrument={
+          <MintCollectionCTA
+            collection={addr}
+            minter={c.primaryMinter}
+            work={hasWork ? c.work : null}
+            snapshot={{
+              price: (c.sale?.price ?? 0n).toString(),
+              priceStrategy: c.sale?.priceStrategy ?? ZERO_ADDRESS,
+              mintStart: (c.sale?.mintStart ?? 0n).toString(),
+              mintEnd: (c.sale?.mintEnd ?? 0n).toString(),
+              payout: c.sale?.payout ?? ZERO_ADDRESS,
+              allowlistRoot: c.sale?.allowlistRoot ?? ("0x" + "0".repeat(64) as `0x${string}`),
+              walletCap: (c.sale?.walletCap ?? 0n).toString(),
+              supplyCap: c.cfg.supplyCap.toString(),
+              minted: c.minted.toString(),
+              referralShareBps: c.sale?.referralShareBps ?? REFERRAL_SHARE_BPS,
+            }}
+          />
+        }
+        about={
+          batches.length > 0 ? (
+            <p>
+              Minted in batches: every token in a batch shares that batch&rsquo;s
+              artwork. See the batch grid for the full release.
+            </p>
+          ) : undefined
+        }
+        facts={[
+          { label: "Contract", value: shortAddress(addr) },
+          { label: "Owner", value: shortAddress(c.owner) },
+          { label: "Renderer", value: permanent ? "Locked" : "Swappable by the artist" },
+          {
+            label: "Royalty",
+            value: c.cfg.royaltyBps > 0 ? formatBps(c.cfg.royaltyBps) : "none",
+          },
+          { label: "Sale mode", value: pooled ? "Pooled (via minter)" : "Sequential" },
+        ]}
+        contractHref={evmNowAddressUrl(addr, PND_CHAIN_ID)}
+      />
+    )
+  }
 
   // Lifecycle status is no longer stored on the token (thin-token
   // rearchitecture, §7.6): derive it here from the minter's sale window

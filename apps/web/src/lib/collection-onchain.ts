@@ -1,7 +1,15 @@
 import "server-only"
 import { createPublicClient, decodeFunctionResult, encodeFunctionData, http, keccak256, stringToBytes, type Address } from "viem"
 import { mainnet, sepolia } from "viem/chains"
-import { catalogAbi, surfaceAbi, surfaceFactoryAbi, fixedPriceMinterAbi, renderAssetsAbi } from "@pin/abi"
+import {
+  catalogAbi,
+  surfaceAbi,
+  surfaceFactoryAbi,
+  fixedPriceMinterAbi,
+  renderAssetsAbi,
+  iBatchRenderRouterAbi,
+  BATCH_RENDER_ROUTER_INTERFACE_ID,
+} from "@pin/abi"
 import { ARTIST_RECORD_REGISTRY, MAINNET_CHAIN_ID, getAddressOrNull } from "@pin/addresses"
 import { fetchMetadataForUri } from "@pin/token-metadata"
 import { pgCache } from "./pg-cache"
@@ -136,6 +144,80 @@ export async function getCollectionCover(address: Address): Promise<string> {
       })
       .then((uri) => (uri as string) ?? "")
       .catch(() => "")
+  })
+}
+
+/**
+ * Batch view detection (docs/pnd-surface-second-launch.md "Architecture"):
+ * is `renderer` an IBatchRenderRouter? A single cached ERC-165
+ * supportsInterface staticcall, generic and interface-driven — no
+ * per-address registry the way detectHomageMinter is. Any future
+ * router-backed launch lights up automatically once its renderer address
+ * is set on the collection, with no frontend change. False on any read
+ * failure (a plain IRenderer with no supportsInterface, or an RPC error) —
+ * detection fails closed to the default grid.
+ */
+export async function isBatchRenderRouter(renderer: Address): Promise<boolean> {
+  if (renderer.toLowerCase() === ZERO_ADDRESS) return false
+  return pgCache(`sc-batchrouter:${lc(renderer)}`, 300, async () => {
+    const client = getClient()
+    try {
+      const ok = (await client.readContract({
+        address: renderer,
+        abi: iBatchRenderRouterAbi,
+        functionName: "supportsInterface",
+        args: [BATCH_RENDER_ROUTER_INTERFACE_ID],
+      })) as boolean
+      return ok
+    } catch {
+      return false
+    }
+  })
+}
+
+export type RenderRouterBatch = {
+  index: number
+  startId: bigint
+  endId: bigint
+  vendor: Address
+  label: string
+}
+
+/**
+ * A batch router's full batch list: one batchCount read plus one
+ * multicalled batchAt per index. Cached — batches change only when the
+ * artist calls addBatch for the next release (see the launch doc's "later
+ * batches" step), so a 5-minute TTL is generous, not tight.
+ */
+export async function getRouterBatches(renderer: Address): Promise<RenderRouterBatch[]> {
+  return pgCache(`sc-batches:${lc(renderer)}`, 300, async () => {
+    const client = getClient()
+    const base = { address: renderer, abi: iBatchRenderRouterAbi } as const
+    try {
+      const count = (await client.readContract({
+        ...base,
+        functionName: "batchCount",
+      })) as bigint
+      const n = Number(count)
+      if (n === 0) return []
+      const results = await client.multicall({
+        allowFailure: true,
+        contracts: Array.from({ length: n }, (_, i) => ({
+          ...base,
+          functionName: "batchAt" as const,
+          args: [BigInt(i)] as const,
+        })),
+      })
+      const batches: RenderRouterBatch[] = []
+      results.forEach((r, i) => {
+        if (r.status !== "success") return
+        const b = r.result as { startId: bigint; endId: bigint; vendor: Address; label: string }
+        batches.push({ index: i, startId: b.startId, endId: b.endId, vendor: b.vendor, label: b.label })
+      })
+      return batches
+    } catch {
+      return []
+    }
   })
 }
 

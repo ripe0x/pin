@@ -38,3 +38,7 @@ export { scriptyStorageAbi } from "./scriptyStorage.ts"
 export { vouchAbi } from "./vouch.ts"
 export { homageMinterAbi, homageCollectionAbi, homageRendererAbi } from "./homage.ts"
 export { cubeRendererAbi } from "./cubeRenderer.ts"
+// Batch editions (second Surface launch): hand-written from the spec in
+// docs/pnd-surface-second-launch.md, no contract source yet — see the
+// file's own header for the reconciliation note.
+export { iBatchRenderRouterAbi, BATCH_RENDER_ROUTER_INTERFACE_ID } from "./iBatchRenderRouter.ts"

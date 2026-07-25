@@ -9,6 +9,11 @@ import { type Address } from "viem"
 
 export const MAINNET_CHAIN_ID = 1 as const
 export const BASE_CHAIN_ID = 8453 as const
+// Sepolia — one-time Surface infra for deploy rehearsals (see
+// docs/pnd-surface-second-launch.md "Sepolia" section): a factory deploy
+// used to dress-rehearse the artist deploy-page flow before a mainnet
+// broadcast. Not used by any other PND subsystem.
+export const SEPOLIA_CHAIN_ID = 11155111 as const
 
 export type SupportedChainId = typeof MAINNET_CHAIN_ID | typeof BASE_CHAIN_ID
 
@@ -174,6 +179,10 @@ export const MURI_MANIFOLD_EXTENSION: Record<number, Address> = {
 // NEXT_PUBLIC_* env var instead of editing this file.
 export const SURFACE_FACTORY: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0xdB81d3F33EF3D84685486916E0d372E247558094",
+  // Sepolia rehearsal deploy: same DeploySurfaceSystem.s.sol script, a
+  // Sepolia RPC, faucet ETH. Placeholder until broadcast; fill after
+  // deploy and verify on sepolia.etherscan.io.
+  [SEPOLIA_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
 }
 
 // RenderAssets — renderer-land registry of static display assets (cover +
