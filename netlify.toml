@@ -22,6 +22,18 @@
   # Netlify may try to use npm and fail on the workspace protocol.
   NPM_FLAGS = "--version"
 
+# Sepolia rehearsal site. A branch deploy of the `surface-sepolia` branch
+# builds the whole app in Sepolia mode: NEXT_PUBLIC_USE_SEPOLIA flips the
+# read client, wagmi, the SURFACE_FACTORY address, the indexer bypass, and
+# the explorer links to Sepolia (see lib/collection.ts, lib/collection-onchain.ts,
+# lib/wagmi.ts). Reads go direct to chain since there is no Sepolia indexer.
+# Requires branch deploys enabled for `surface-sepolia` in the Netlify site
+# settings; the URL is surface-sepolia--art-pin.netlify.app. The default
+# production build and PR deploy previews are unaffected (mainnet).
+[context."surface-sepolia".environment]
+  NEXT_PUBLIC_USE_SEPOLIA = "1"
+  NEXT_PUBLIC_SEPOLIA_RPC_URL = "https://gateway.tenderly.co/public/sepolia"
+
 # Next.js runtime plugin — Netlify auto-installs this for Next.js
 # projects, but we pin it explicitly so build behavior is reproducible.
 [[plugins]]
