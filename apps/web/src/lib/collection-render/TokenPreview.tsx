@@ -66,6 +66,7 @@ export function TokenPreview({ work, tokenData, resolver, gunzip, className, tit
       className={className}
       title={title ?? `preview ${tokenData.tokenId}`}
       sandbox="allow-scripts"
+      allow="autoplay"
       referrerPolicy="no-referrer"
       loading="lazy"
       srcDoc={doc}

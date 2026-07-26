@@ -425,6 +425,7 @@ export function OnchainMosaic({
           <iframe
             title="sample output"
             sandbox="allow-scripts"
+            allow="autoplay"
             referrerPolicy="no-referrer"
             src={p.animationUrl}
             className="aspect-square h-full w-full"
