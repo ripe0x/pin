@@ -60,12 +60,18 @@ export type LaunchDescriptor = {
  */
 export const ESCAPE_BLUE_DESCRIPTOR: LaunchDescriptor = {
   slug: "escape-blue",
-  name: "escape (blue)",
-  symbol: "",
-  supplyCap: "721",
+  // Sepolia rehearsal defaults so the artist sees his work in the real UI
+  // with editable config. Every field stays editable in the page; paste the
+  // deployed SnapshotVendor router into `renderer` after broadcasting
+  // DeployEscapeSnapshotSepolia.s.sol (its address depends on the deployer
+  // nonce). Real mainnet values (final cap, price, royalty, creators) are
+  // set at launch, not here.
+  name: "Escape (blue)",
+  symbol: "ESCAPE",
+  supplyCap: "20",
   royaltyBps: 1000, // 10%, wizard default — confirm with the artist
   royaltyReceiver: "",
-  price: "",
+  price: "0.01",
   mintStart: "",
   mintEnd: "",
   walletCap: "",

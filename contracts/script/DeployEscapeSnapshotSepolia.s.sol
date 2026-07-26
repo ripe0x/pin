@@ -1,0 +1,45 @@
+// SPDX-License-Identifier: GPL-3.0
+pragma solidity ^0.8.24;
+
+import {Script, console2} from "forge-std/Script.sol";
+import {BatchRenderRouter} from "../src/surface/renderers/BatchRenderRouter.sol";
+import {SnapshotVendor} from "./mocks/SnapshotVendor.sol";
+
+/// @notice Sepolia rehearsal: deploy a SnapshotVendor serving the artist's real
+///         captured render (escape (blue)) via URLs hosted on the Sepolia site,
+///         behind a BatchRenderRouter as batch 1 (ids 1..20). Point a
+///         collection's cfg.renderer at the printed router address (via the
+///         deploy page, with the artist's own config) so the artist sees his
+///         work in the real PND UI. Signer comes from the CLI (--account); the
+///         broadcasting EOA owns the router. Never passes --broadcast itself.
+///
+///         Run (Sepolia, keystore):
+///           forge script script/DeployEscapeSnapshotSepolia.s.sol \
+///             --rpc-url $SEPOLIA_RPC_URL \
+///             --account <name> --sender <deployer> --broadcast --verify
+contract DeployEscapeSnapshotSepoliaScript is Script {
+    uint256 internal constant SEPOLIA_CHAIN_ID = 11_155_111;
+
+    string internal constant HTML_URL = "https://surface-sepolia--art-pin.netlify.app/snapshots/escape.html";
+    string internal constant IMAGE_URL = "https://surface-sepolia--art-pin.netlify.app/snapshots/escape.gif";
+
+    function run() external {
+        require(block.chainid == SEPOLIA_CHAIN_ID, "this script targets Sepolia only");
+
+        vm.startBroadcast();
+        SnapshotVendor vendor = new SnapshotVendor("Escape (blue)", "go right ahead", HTML_URL, IMAGE_URL);
+        BatchRenderRouter router = new BatchRenderRouter();
+        router.addBatch(1, 20, address(vendor), "Escape (blue)");
+        vm.stopBroadcast();
+
+        require(router.batchCount() == 1, "expected 1 batch");
+        require(router.batchOf(1).vendor == address(vendor), "batch dispatch mismatch");
+        require(router.owner() == msg.sender, "router owner is not the deployer");
+
+        console2.log("SnapshotVendor:    ", address(vendor));
+        console2.log("BatchRenderRouter: ", address(router));
+        console2.log("");
+        console2.log("Next: deploy a collection with cfg.renderer =", address(router));
+        console2.log("using the artist's config (name/symbol/price/cap), then mint to see his work.");
+    }
+}
