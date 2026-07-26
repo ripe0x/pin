@@ -79,6 +79,9 @@ export const ESCAPE_BLUE_DESCRIPTOR: LaunchDescriptor = {
   renderer: "",
   creators: [],
   layoutKind: "edition",
+  // Sepolia rehearsal collection (deployed via the deploy page). Selects the
+  // edition layout for it — getLayoutKindForCollection matches on this.
+  deployedAddress: "0x9738d574da42c1c699f29bf22b51550c9bea3bce",
 }
 
 export const LAUNCH_DESCRIPTORS: LaunchDescriptor[] = [ESCAPE_BLUE_DESCRIPTOR]
