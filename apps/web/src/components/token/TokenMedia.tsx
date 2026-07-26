@@ -100,12 +100,15 @@ export function TokenMedia({
     // iframe from same-origin access (no parent DOM, no cookies) but lets
     // its own scripts run — the standard pattern OpenSea/Zora use. The
     // viewer has no idea what aspect ratio the art expects, so default to
-    // square scaled to viewport.
+    // square scaled to viewport. allow="autoplay" delegates the autoplay
+    // Permissions Policy so a work with sound can start audio (still subject
+    // to the browser's gesture requirement — most works start on a click).
     return (
       <iframe
         src={media.src}
         title={title}
         sandbox="allow-scripts"
+        allow="autoplay"
         loading="lazy"
         referrerPolicy="no-referrer"
         className="aspect-square h-[80vh] max-h-[80vh] max-w-full bg-black"
