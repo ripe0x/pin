@@ -20,8 +20,10 @@ import {SnapshotVendor} from "./mocks/SnapshotVendor.sol";
 contract DeployEscapeSnapshotSepoliaScript is Script {
     uint256 internal constant SEPOLIA_CHAIN_ID = 11_155_111;
 
-    string internal constant HTML_URL = "https://surface-sepolia--art-pin.netlify.app/snapshots/escape.html";
-    string internal constant IMAGE_URL = "https://surface-sepolia--art-pin.netlify.app/snapshots/escape.gif";
+    // 3-segment paths so the root-level [handle]/[tokenId] catch-all does not
+    // shadow these static files (a 2-segment /snapshots/escape.html matched it).
+    string internal constant HTML_URL = "https://surface-sepolia--art-pin.netlify.app/snapshots/escape/render.html";
+    string internal constant IMAGE_URL = "https://surface-sepolia--art-pin.netlify.app/snapshots/escape/cover.gif";
 
     function run() external {
         require(block.chainid == SEPOLIA_CHAIN_ID, "this script targets Sepolia only");
