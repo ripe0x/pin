@@ -16,6 +16,7 @@ export function EditionMintLayout({
   byline,
   hero,
   mintInstrument,
+  history,
   about,
   facts,
 }: {
@@ -25,6 +26,9 @@ export function EditionMintLayout({
   hero: ReactNode
   /** The mint CTA (MintCollectionCTA or equivalent). */
   mintInstrument: ReactNode
+  /** Mint history (CollectionMintHistory or equivalent); renders its own
+   *  section, or nothing when there are no mints yet. */
+  history?: ReactNode
   about?: ReactNode
   facts: { label: string; value: ReactNode }[]
 }) {
@@ -48,6 +52,8 @@ export function EditionMintLayout({
         </section>
 
         <section className="border-b border-gray-100 py-5">{mintInstrument}</section>
+
+        {history}
 
         {about && <section className="border-b border-gray-100 py-5 text-sm leading-relaxed text-fg-muted">{about}</section>}
 

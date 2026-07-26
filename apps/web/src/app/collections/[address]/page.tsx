@@ -233,6 +233,7 @@ export default async function CollectionPage({
             }}
           />
         }
+        history={<CollectionMintHistory history={history} chainId={PND_CHAIN_ID} />}
         about={
           batches.length > 0 ? (
             <p>
