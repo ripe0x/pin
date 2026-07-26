@@ -267,7 +267,7 @@ export async function getCollection(address: Address): Promise<Collection | null
     const client = getClient()
     const base = { address, abi: surfaceAbi } as const
     try {
-      const [name, symbol, owner, rendererLocked, supplyLocked, renderer, idModeRaw, cfgRes] =
+      const [name, symbol, owner, rendererLocked, supplyLocked, renderer, idModeRaw, primaryMinterRaw, cfgRes] =
         await client.multicall({
           allowFailure: false,
           contracts: [
@@ -280,6 +280,10 @@ export async function getCollection(address: Address): Promise<Collection | null
             // idMode is a structural fact read separately since the Sequential/
             // Pooled split moved it out of the config struct.
             { ...base, functionName: "idMode" },
+            // primaryMinter read live (authoritative, kept current by
+            // PrimaryMinterSet). Folded into this multicall so it costs no
+            // extra round trip.
+            { ...base, functionName: "primaryMinter" },
             { ...base, functionName: "config" },
           ],
         })
@@ -301,9 +305,12 @@ export async function getCollection(address: Address): Promise<Collection | null
             .catch(() => "")
         : ""
 
-      const minterAddr = await getCollectionPrimaryMinterFromIndexer(address)
-      const primaryMinter =
-        minterAddr && minterAddr.toLowerCase() !== ZERO_ADDRESS ? (minterAddr as Address) : null
+      // primaryMinter is read live above (was an indexer-only read, which left
+      // the mint UI blind on chains with no indexer — fork/sepolia — and during
+      // the indexer lag right after a mainnet deploy; both fell through to the
+      // pooled "mints through its minter" notice).
+      const pmChain = primaryMinterRaw as Address
+      const primaryMinter = pmChain && pmChain.toLowerCase() !== ZERO_ADDRESS ? pmChain : null
       const sale = primaryMinter ? await getMinterSaleConfig(client, primaryMinter) : null
 
       return {
