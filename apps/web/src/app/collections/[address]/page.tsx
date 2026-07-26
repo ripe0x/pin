@@ -28,6 +28,7 @@ import {
   getCollectionToken,
   getRecentTokenMarks,
   getRendererPreviews,
+  getRendererTokenPreview,
   getRouterBatches,
   isBatchRenderRouter,
 } from "@/lib/collection-onchain"
@@ -151,11 +152,13 @@ export default async function CollectionPage({
   const isRouter = !homageSkin ? await isBatchRenderRouter(c.renderer) : false
   const batches = isRouter ? await getRouterBatches(c.renderer) : []
   const batchImages: Record<number, string> = {}
-  // The first batch's full render, reused as the edition hero's shared artwork
+  // The first batch's render, reused as the edition hero's shared artwork
   // (every token in a batch renders the same piece) without a second read.
-  let firstBatchArt: Awaited<ReturnType<typeof getCollectionToken>> = null
+  // Read from the renderer directly (not collection.tokenURI, which reverts
+  // for an unminted id) so batch cards and the hero show art before any mint.
+  let firstBatchArt: Awaited<ReturnType<typeof getRendererTokenPreview>> = null
   if (batches.length > 0) {
-    const imgs = await Promise.all(batches.map((b) => getCollectionToken(addr, b.startId)))
+    const imgs = await Promise.all(batches.map((b) => getRendererTokenPreview(addr, c.renderer, b.startId)))
     batches.forEach((b, i) => {
       batchImages[b.index] = imgs[i]?.image ?? ""
     })
@@ -173,7 +176,7 @@ export default async function CollectionPage({
     // shown pre-mint too since the renderer returns art for any id. A batch
     // grid is only for a multi-batch release; a single-artwork edition shows
     // the piece itself, not a one-card grid.
-    const sharedArt = batches.length > 0 ? firstBatchArt : await getCollectionToken(addr, 1n)
+    const sharedArt = batches.length > 0 ? firstBatchArt : await getRendererTokenPreview(addr, c.renderer, 1n)
     const editionHero =
       batches.length > 1 ? (
         <BatchGrid collection={addr} batches={batches} images={batchImages} />

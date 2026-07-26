@@ -762,6 +762,58 @@ export async function getRendererPreviews(
   return [first, ...rest.filter((p): p is OnchainPreview => p !== null)]
 }
 
+const rendererTokenUriAbi = [
+  {
+    type: "function",
+    name: "tokenURI",
+    stateMutability: "view",
+    inputs: [
+      { name: "collection", type: "address" },
+      { name: "tokenId", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "string" }],
+  },
+] as const
+
+/**
+ * A renderer's output for one id, read from the renderer directly
+ * (renderer.tokenURI(collection, id)) instead of the collection's
+ * tokenURI(id). The collection reverts for an unminted id (ERC721), but a
+ * renderer returns art for any id in range — so this serves an edition's
+ * shared artwork (and a batch's card art) before any mint. Same dedicated
+ * high-gas path as tokenURI (scripty-class renderers cost 60-120M gas);
+ * cached.
+ */
+export async function getRendererTokenPreview(
+  collection: Address,
+  renderer: Address,
+  tokenId: bigint,
+): Promise<{ image: string | null; animationUrl: string | null } | null> {
+  return pgCache(`sc-rtok:${lc(collection)}:${lc(renderer)}:${tokenId.toString()}`, 300, async () => {
+    const client = getClient()
+    const uri = await client
+      .call({
+        to: renderer,
+        data: encodeFunctionData({
+          abi: rendererTokenUriAbi,
+          functionName: "tokenURI",
+          args: [collection, tokenId],
+        }),
+        gas: 300_000_000n,
+      })
+      .then(({ data }) =>
+        data
+          ? (decodeFunctionResult({ abi: rendererTokenUriAbi, functionName: "tokenURI", data }) as string)
+          : null,
+      )
+      .catch(() => null)
+    if (!uri) return null
+    const meta = await fetchMetadataForUri(uri, tokenId, 8_000).catch(() => null)
+    if (!meta) return null
+    return { image: meta.image ?? null, animationUrl: meta.animation_url ?? null }
+  })
+}
+
 export type RecentTokenEntry = {
   tokenId: string
   seed: `0x${string}`
