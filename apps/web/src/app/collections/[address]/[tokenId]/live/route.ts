@@ -44,6 +44,10 @@ export async function GET(
       headers: {
         "content-type": "text/html; charset=utf-8",
         "content-security-policy": "sandbox allow-scripts",
+        // Let a work with sound start audio (still gesture-gated); the CSP
+        // sandbox gives this document an opaque origin, so grant autoplay
+        // explicitly rather than relying on the default self-origin allowlist.
+        "permissions-policy": "autoplay=*",
         "cache-control": "public, max-age=60, stale-while-revalidate=600",
       },
     })
