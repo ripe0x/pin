@@ -7,7 +7,19 @@
  * this renders the "not available" notice instead.
  */
 import { type CollectionMintHistoryResult } from "@/lib/collection-onchain"
-import { evmNowAddressUrl, shortAddress } from "@/lib/collection"
+import { evmNowAddressUrl, evmNowTxUrl } from "@/lib/collection"
+import { ArtistName } from "@/components/collections/homage/ArtistName"
+
+/** "3h ago", "2d ago", etc. — coarse, computed at render for a mint feed. */
+function formatRelativeTime(unixSeconds: number, nowSeconds: number): string {
+  const diff = Math.max(0, nowSeconds - unixSeconds)
+  if (diff < 60) return "just now"
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86_400) return `${Math.floor(diff / 3600)}h ago`
+  if (diff < 2_592_000) return `${Math.floor(diff / 86_400)}d ago`
+  if (diff < 31_536_000) return `${Math.floor(diff / 2_592_000)}mo ago`
+  return `${Math.floor(diff / 31_536_000)}y ago`
+}
 
 export function CollectionMintHistory({
   history,
@@ -34,6 +46,7 @@ export function CollectionMintHistory({
 
   const entries = history.entries
   if (entries.length === 0) return null
+  const now = Math.floor(Date.now() / 1000)
 
   return (
     <section className="py-5 border-b border-gray-100">
@@ -45,18 +58,31 @@ export function CollectionMintHistory({
           const last = e.firstTokenId + BigInt(e.count) - 1n
           const range = e.count === 1 ? `#${e.firstTokenId}` : `#${e.firstTokenId}–#${last}`
           return (
-            <li key={i} className="flex items-baseline justify-between text-[11px] font-mono">
+            <li key={i} className="flex items-baseline justify-between gap-3 text-[11px] font-mono">
               <a
                 href={evmNowAddressUrl(e.holder, chainId)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-baseline gap-2 min-w-0 hover:opacity-70 transition-opacity"
+                className="min-w-0 truncate text-fg-muted hover:opacity-70 transition-opacity"
               >
-                <span className="truncate text-fg-muted">{shortAddress(e.holder)}</span>
+                <ArtistName address={e.holder} />
               </a>
-              <span className="tabular-nums text-fg shrink-0 ml-3">
-                {range}
-                {e.count > 1 ? ` · ${e.count}` : ""}
+              <span className="flex items-baseline gap-3 shrink-0">
+                <span className="tabular-nums text-fg">
+                  {range}
+                  {e.count > 1 ? ` · ${e.count}` : ""}
+                </span>
+                {e.timestamp !== null && (
+                  <span className="tabular-nums text-gray-400">{formatRelativeTime(e.timestamp, now)}</span>
+                )}
+                <a
+                  href={evmNowTxUrl(e.txHash, chainId)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-gray-400 underline hover:text-fg"
+                >
+                  tx ↗
+                </a>
               </span>
             </li>
           )
