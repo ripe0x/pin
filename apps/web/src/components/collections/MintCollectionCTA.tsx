@@ -195,7 +195,6 @@ export function MintCollectionCTA({
       ? storedPrice * BigInt(amount)
       : storedPrice
   const perTokenPrice = strategy ? (amountValid && amount > 0 ? total / BigInt(amount) : total) : storedPrice
-  const { referralCut, artistCut } = splitOutOfPrice(total, referrerAddr, snapshot.referralShareBps)
   const showSplit = !isGasOnly(total) && referrerAddr !== ZERO_ADDRESS
 
   const { data: balance } = useBalance({
@@ -398,7 +397,7 @@ export function MintCollectionCTA({
               <TxSuccessBanner
                 txHash={txHash}
                 chainId={PREFERRED_CHAIN.id}
-                message="Minted. Your Mint Mark is recorded onchain."
+                message="Minted."
                 onDismiss={() => {
                   reset()
                   router.refresh()
@@ -484,55 +483,8 @@ export function MintCollectionCTA({
                   >
                     +
                   </button>
-                  <span className="flex items-center px-3 text-[11px] font-mono uppercase tracking-wider text-gray-400 border-l border-gray-200">
-                    {amount === 1 ? "token" : "tokens"}
-                  </span>
                 </div>
               </label>
-
-              <div className="rounded border border-gray-200 bg-surface-muted/40 px-3 py-2.5">
-                <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400 mb-1">
-                  Your Mint Mark
-                </p>
-                <p className="text-[11px] font-mono text-gray-600 leading-relaxed">
-                  {amount === 1
-                    ? `Mint #${mintOrderFrom} of this collection`
-                    : `Mints #${mintOrderFrom}–#${mintOrderTo} of this collection`}
-                  {isFirstEver && <span className="text-fg"> · you would hold the first token</span>}
-                </p>
-              </div>
-
-              {!isGasOnly(total) && (
-                <div className="space-y-2">
-                  <div className="flex items-baseline justify-between">
-                    <span className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-                      You pay
-                    </span>
-                    <span className="text-sm font-mono tabular-nums">{formatEther(total)} ETH</span>
-                  </div>
-                  {showSplit ? (
-                    <div className="space-y-1.5">
-                      <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
-                        <div className="bg-fg" style={{ width: `${100 - snapshot.referralShareBps / 100}%` }} />
-                        <div
-                          className="bg-status-live"
-                          style={{ width: `${snapshot.referralShareBps / 100}%` }}
-                        />
-                      </div>
-                      <div className="flex justify-between text-[10px] font-mono text-gray-500 tabular-nums">
-                        <span>{formatEther(artistCut)} ETH to artist</span>
-                        <span>
-                          {formatEther(referralCut)} ETH to referrer ({formatBps(snapshot.referralShareBps)})
-                        </span>
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="text-[10px] font-mono text-gray-500">
-                      100% to the artist (no referrer).
-                    </p>
-                  )}
-                </div>
-              )}
 
               {balance && (
                 <div className="flex justify-end">
@@ -618,12 +570,6 @@ export function MintCollectionCTA({
                   {formatWriteError(writeError, "Mint")}
                 </p>
               )}
-
-              <p className="text-[10px] font-mono text-gray-400 leading-relaxed">
-                Minting on{" "}
-                {referrerAddr === ZERO_ADDRESS ? "directly" : `via referrer ${shortAddress(referrerAddr)}`}.
-                You receive a distinct ERC721 token with its own onchain Mint Mark.
-              </p>
             </>
           )}
 
@@ -631,17 +577,6 @@ export function MintCollectionCTA({
             <>
               {notStarted ? (
                 <>
-                  <div className="rounded border border-gray-200 bg-surface-muted/40 px-3 py-2.5">
-                    <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400 mb-1">
-                      Your Mint Mark
-                    </p>
-                    <p className="text-[11px] font-mono text-gray-600 leading-relaxed">
-                      {`Mint #${mintOrderFrom} of this collection`}
-                      {isFirstEver && (
-                        <span className="text-fg"> · the first mint is still open</span>
-                      )}
-                    </p>
-                  </div>
                   <div className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 border border-gray-200 text-gray-400 tabular-nums select-none">
                     Opens in <Countdown endTime={mintStart} nowSec={nowSec} />
                   </div>
@@ -669,16 +604,12 @@ export function MintCollectionCTA({
           )}
         </div>
       </div>
+      {showSplit && (
+        <p className="mt-2 text-[10px] font-mono text-gray-400 leading-relaxed">
+          Price includes a {formatBps(snapshot.referralShareBps)} referral fee paid to the referrer.
+        </p>
+      )}
     </section>
   )
 }
 
-/** The Referral Share split of `total`, out of the price, at the minter's live bps. */
-function splitOutOfPrice(
-  total: bigint,
-  referrer: `0x${string}`,
-  shareBps: number,
-): { referralCut: bigint; artistCut: bigint } {
-  const referralCut = referrer === ZERO_ADDRESS ? 0n : (total * BigInt(shareBps)) / 10_000n
-  return { referralCut, artistCut: total - referralCut }
-}
