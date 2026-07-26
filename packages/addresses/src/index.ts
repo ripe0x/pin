@@ -179,10 +179,9 @@ export const MURI_MANIFOLD_EXTENSION: Record<number, Address> = {
 // NEXT_PUBLIC_* env var instead of editing this file.
 export const SURFACE_FACTORY: Record<number, Address> = {
   [MAINNET_CHAIN_ID]: "0xdB81d3F33EF3D84685486916E0d372E247558094",
-  // Sepolia rehearsal deploy: same DeploySurfaceSystem.s.sol script, a
-  // Sepolia RPC, faucet ETH. Placeholder until broadcast; fill after
-  // deploy and verify on sepolia.etherscan.io.
-  [SEPOLIA_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+  // Sepolia rehearsal deploy (DeploySurfaceSystemSepolia.s.sol, deployer
+  // ripe0x.eth, lands paused). Verified on sepolia.etherscan.io.
+  [SEPOLIA_CHAIN_ID]: "0xAB8F7b96e6c8f850B6089447F903dbC4aE6e4ac0",
 }
 
 // RenderAssets — renderer-land registry of static display assets (cover +
