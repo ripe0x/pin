@@ -454,6 +454,10 @@ export type CollectionMintHistoryEntry = {
   holder: Address
   firstTokenId: bigint
   count: number
+  /** Mint block time (unix seconds); null if the block read failed. */
+  timestamp: number | null
+  /** The mint transaction. */
+  txHash: `0x${string}`
 }
 
 export type CollectionMintHistoryResult =
@@ -461,27 +465,18 @@ export type CollectionMintHistoryResult =
   | { unsupported: "pooled"; entries: [] }
 
 /**
- * Recent mint history for a collection, newest first, grouped into batches
- * of contiguous ids per holder. Read per-token via multicall (ownerOf)
- * rather than getLogs, matching the editions history reader — this works
- * identically on a fork and on mainnet without log-range limits. Mint
- * blocks/timestamps are event data and arrive with the indexer.
+ * Recent mint history for a collection, newest first, one row per mint
+ * transaction (a batch mint groups its contiguous ids into one row) carrying
+ * the minter, mint time, and mint tx. Read from Transfer(from=0) logs over a
+ * bounded recent window, one getBlock per unique block for timestamps —
+ * matching the Homage mint-feed chain-scan (lib/homage/collection.server.ts).
+ * Works without an indexer (fork/sepolia); on mainnet the indexer will carry
+ * full history past the window.
  *
- * Sequential-mode only. In Sequential mode token ids are exactly 1..minted
- * (the core assigns `nextId++`, never reused after burn), so "the last N
- * ids" is a correct approximation of "the last N mints" the same way the
- * editions reader relies on it.
- *
- * Pooled mode has no such invariant: an authorized minter supplies
- * arbitrary/reused ids (tokenId == sourceId), and a burned id can be
- * re-minted as a new instance. Reconstructing "which ids exist and in what
- * order they were minted" for Pooled requires walking Minted/Burned events,
- * which this repo's RPC policy forbids from a web request (see AGENTS.md:
- * the worker owns all chain scanning; web never scans). Rather than fake a
- * partial or misleading history, Pooled returns an explicit unsupported
- * marker; real pooled history arrives once the indexer picks up
- * Minted/Burned for collections (tracked alongside the rest of the
- * collection discovery work).
+ * Sequential-mode only. Pooled mode mints arbitrary/reused ids through an
+ * authorized minter; a faithful ordering needs the indexer's Minted/Burned
+ * stream, so Pooled returns an explicit unsupported marker rather than a
+ * partial reconstruction.
  */
 export async function getCollectionMintHistory(
   address: Address,
@@ -492,41 +487,57 @@ export async function getCollectionMintHistory(
   if (idMode === IdMode.Pooled) {
     return { unsupported: "pooled", entries: [] }
   }
-  const total = Number(minted)
-  if (total === 0) return { unsupported: false, entries: [] }
-  return pgCache(`sc-history:${lc(address)}:${total}`, 30, async () => {
-    const client = getClient()
-    const base = { address, abi: surfaceAbi } as const
-    const startTok = Math.max(1, total - limit + 1)
-    const ids: bigint[] = []
-    for (let t = total; t >= startTok; t--) ids.push(BigInt(t)) // newest first
-
-    const calls = ids.map(
-      (id) => ({ ...base, functionName: "ownerOf" as const, args: [id] as const }),
-    )
-    const res = await client.multicall({ allowFailure: true, contracts: calls })
-
-    const grouped: CollectionMintHistoryEntry[] = []
-    for (let i = 0; i < ids.length; i++) {
-      const ownerR = res[i]
-      if (ownerR.status !== "success") continue // burned / unreadable
-      const holder = ownerR.result as Address
-      const tokenId = ids[i]
-      const last = grouped[grouped.length - 1]
-      // Iterating newest-first; extend a batch when the next (lower) token
-      // has the same holder and is contiguous.
-      if (
-        last &&
-        last.holder.toLowerCase() === holder.toLowerCase() &&
-        last.firstTokenId === tokenId + 1n
-      ) {
-        last.firstTokenId = tokenId
-        last.count += 1
-      } else {
-        grouped.push({ holder, firstTokenId: tokenId, count: 1 })
+  if (minted === 0n) return { unsupported: false, entries: [] }
+  return pgCache(`sc-history:${lc(address)}:${minted.toString()}`, 30, async () => {
+    try {
+      const client = getClient()
+      const latest = await client.getBlockNumber()
+      const span = 300_000n
+      const fromBlock = latest > span ? latest - span : 0n
+      const logs = await client.getContractEvents({
+        address,
+        abi: surfaceAbi,
+        eventName: "Transfer",
+        args: { from: ZERO_ADDRESS as Address },
+        fromBlock,
+        toBlock: "latest",
+      })
+      // One row per mint tx (a batch mint shares a tx, holder, and block).
+      type Acc = { holder: Address; ids: bigint[]; blockNumber: bigint; txHash: `0x${string}` }
+      const byTx = new Map<string, Acc>()
+      for (const lg of logs) {
+        const { tokenId, to } = lg.args as { tokenId?: bigint; to?: Address }
+        if (tokenId === undefined || to === undefined || !lg.transactionHash || lg.blockNumber === null) continue
+        const acc = byTx.get(lg.transactionHash)
+        if (acc) acc.ids.push(tokenId)
+        else byTx.set(lg.transactionHash, { holder: to, ids: [tokenId], blockNumber: lg.blockNumber, txHash: lg.transactionHash })
       }
+      // getContractEvents returns ascending; newest tx first.
+      const accs = Array.from(byTx.values()).reverse().slice(0, limit)
+      // Timestamps aren't in the log — one getBlock per unique block.
+      const uniqueBlocks = Array.from(new Set(accs.map((a) => a.blockNumber)))
+      const blocks = await Promise.all(
+        uniqueBlocks.map((bn) => client.getBlock({ blockNumber: bn }).catch(() => null)),
+      )
+      const tsByBlock = new Map<bigint, number>()
+      uniqueBlocks.forEach((bn, i) => {
+        const b = blocks[i]
+        if (b) tsByBlock.set(bn, Number(b.timestamp))
+      })
+      const entries: CollectionMintHistoryEntry[] = accs.map((a) => {
+        const ids = a.ids.sort((x, y) => (x < y ? -1 : x > y ? 1 : 0))
+        return {
+          holder: a.holder,
+          firstTokenId: ids[0],
+          count: ids.length,
+          timestamp: tsByBlock.get(a.blockNumber) ?? null,
+          txHash: a.txHash,
+        }
+      })
+      return { unsupported: false, entries }
+    } catch {
+      return { unsupported: false, entries: [] }
     }
-    return { unsupported: false, entries: grouped }
   })
 }
 
