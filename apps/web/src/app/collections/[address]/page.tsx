@@ -244,7 +244,19 @@ export default async function CollectionPage({
         facts={[
           { label: "Contract", value: shortAddress(addr) },
           { label: "Owner", value: shortAddress(c.owner) },
-          { label: "Renderer", value: permanent ? "Locked" : "Swappable by the artist" },
+          {
+            label: "Renderer",
+            value: (
+              <a
+                href={evmNowAddressUrl(c.renderer, PND_CHAIN_ID)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline decoration-gray-300 underline-offset-2 hover:text-fg"
+              >
+                {shortAddress(c.renderer)}
+              </a>
+            ),
+          },
           {
             label: "Royalty",
             value: c.cfg.royaltyBps > 0 ? formatBps(c.cfg.royaltyBps) : "none",
