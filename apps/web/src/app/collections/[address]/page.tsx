@@ -191,6 +191,16 @@ export default async function CollectionPage({
           No artwork yet
         </p>
       )
+    const addressLink = (a: Address) => (
+      <a
+        href={evmNowAddressUrl(a, PND_CHAIN_ID)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="underline decoration-gray-300 underline-offset-2 hover:text-fg"
+      >
+        {shortAddress(a)}
+      </a>
+    )
     return (
       <EditionMintLayout
         name={c.name}
@@ -243,21 +253,9 @@ export default async function CollectionPage({
           ) : undefined
         }
         facts={[
-          { label: "Contract", value: shortAddress(addr) },
-          { label: "Owner", value: shortAddress(c.owner) },
-          {
-            label: "Renderer",
-            value: (
-              <a
-                href={evmNowAddressUrl(c.renderer, PND_CHAIN_ID)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline decoration-gray-300 underline-offset-2 hover:text-fg"
-              >
-                {shortAddress(c.renderer)}
-              </a>
-            ),
-          },
+          { label: "Contract", value: addressLink(addr) },
+          { label: "Owner", value: addressLink(c.owner) },
+          { label: "Renderer", value: addressLink(c.renderer) },
           {
             label: "Royalty",
             value: c.cfg.royaltyBps > 0 ? formatBps(c.cfg.royaltyBps) : "none",
