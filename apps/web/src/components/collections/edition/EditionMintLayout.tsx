@@ -18,7 +18,6 @@ export function EditionMintLayout({
   mintInstrument,
   about,
   facts,
-  contractHref,
 }: {
   name: string
   byline: ReactNode
@@ -28,7 +27,6 @@ export function EditionMintLayout({
   mintInstrument: ReactNode
   about?: ReactNode
   facts: { label: string; value: ReactNode }[]
-  contractHref: string
 }) {
   return (
     <div className="grid min-h-[calc(100vh-64px)] grid-cols-1 lg:grid-cols-[2fr_1fr]">
@@ -64,14 +62,6 @@ export function EditionMintLayout({
               </div>
             ))}
           </dl>
-          <a
-            href={contractHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-4 inline-block text-[10px] uppercase tracking-wider text-gray-400 underline hover:text-fg"
-          >
-            View contract ↗
-          </a>
         </section>
       </aside>
     </div>

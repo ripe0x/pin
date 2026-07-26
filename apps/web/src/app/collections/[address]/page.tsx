@@ -20,6 +20,7 @@ import { PlacardStats, StickyMintBar } from "@/components/collections/Collection
 import { CollectionFocusRefresh } from "@/components/collections/CollectionFocusRefresh"
 import { BatchGrid } from "@/components/collections/BatchGrid"
 import { EditionMintLayout } from "@/components/collections/edition/EditionMintLayout"
+import { TokenMedia } from "@/components/token/TokenMedia"
 import {
   getAttribution,
   getCollection,
@@ -150,11 +151,15 @@ export default async function CollectionPage({
   const isRouter = !homageSkin ? await isBatchRenderRouter(c.renderer) : false
   const batches = isRouter ? await getRouterBatches(c.renderer) : []
   const batchImages: Record<number, string> = {}
+  // The first batch's full render, reused as the edition hero's shared artwork
+  // (every token in a batch renders the same piece) without a second read.
+  let firstBatchArt: Awaited<ReturnType<typeof getCollectionToken>> = null
   if (batches.length > 0) {
     const imgs = await Promise.all(batches.map((b) => getCollectionToken(addr, b.startId)))
     batches.forEach((b, i) => {
       batchImages[b.index] = imgs[i]?.image ?? ""
     })
+    firstBatchArt = imgs[0] ?? null
   }
 
   // Layout selection: a data lookup (collection address -> layoutKind),
@@ -163,16 +168,20 @@ export default async function CollectionPage({
   const layoutKind = getLayoutKindForCollection(addr)
   if (!homageSkin && layoutKind === "edition") {
     const editionArtists = attribution.length > 0 ? attribution.map((a) => a.creator) : [c.owner]
+    // An edition shows one artwork for every token, so the hero renders the
+    // shared piece (interactive when the renderer gives an animation_url),
+    // shown pre-mint too since the renderer returns art for any id. A batch
+    // grid is only for a multi-batch release; a single-artwork edition shows
+    // the piece itself, not a one-card grid.
+    const sharedArt = batches.length > 0 ? firstBatchArt : await getCollectionToken(addr, 1n)
     const editionHero =
-      batches.length > 0 ? (
+      batches.length > 1 ? (
         <BatchGrid collection={addr} batches={batches} images={batchImages} />
-      ) : hasCover || firstTokenImage ? (
-        <OptimizedImage
-          src={hasCover ? c.cover : firstTokenImage}
-          alt={c.name}
-          width={1600}
-          loading="eager"
-          className="max-h-[80vh] w-auto max-w-full object-contain"
+      ) : sharedArt?.animationUrl || sharedArt?.image || hasCover ? (
+        <TokenMedia
+          imageUrl={hasCover ? c.cover : sharedArt?.image ?? ""}
+          animationUrl={sharedArt?.animationUrl ?? null}
+          title={c.name}
         />
       ) : (
         <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
@@ -239,7 +248,6 @@ export default async function CollectionPage({
           },
           { label: "Sale mode", value: pooled ? "Pooled (via minter)" : "Sequential" },
         ]}
-        contractHref={evmNowAddressUrl(addr, PND_CHAIN_ID)}
       />
     )
   }
