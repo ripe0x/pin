@@ -63,6 +63,10 @@ export function TokenMedia({
   const [escalated, setEscalated] = useState(false)
   const kind: MediaKind = escalated ? "video" : initialKind
 
+  // Sound toggle for the interactive-HTML branch below. Declared here so hook
+  // order stays stable across the video/image/html returns.
+  const [muted, setMuted] = useState(false)
+
   const media = useIpfsGatewayFallback(renderUrl)
   // Fresh gateway cascade for the escalated <video>, since `media` is
   // exhausted by the time we escalate.
@@ -103,16 +107,39 @@ export function TokenMedia({
     // square scaled to viewport. allow="autoplay" delegates the autoplay
     // Permissions Policy so a work with sound can start audio (still subject
     // to the browser's gesture requirement — most works start on a click).
+    //
+    // Mute: the frame is cross-origin and sandboxed, so there is no handle to
+    // silence it from here. Muting withdraws the autoplay permission and
+    // remounts (the key change), which stops sound at the cost of restarting
+    // the work. Sound is on by default, matching the click-to-play works this
+    // renders.
     return (
-      <iframe
-        src={media.src}
-        title={title}
-        sandbox="allow-scripts"
-        allow="autoplay"
-        loading="lazy"
-        referrerPolicy="no-referrer"
-        className="aspect-square h-[80vh] max-h-[80vh] max-w-full bg-black"
-      />
+      <div className="relative">
+        <iframe
+          key={muted ? "muted" : "unmuted"}
+          src={media.src}
+          title={title}
+          sandbox="allow-scripts"
+          allow={muted ? undefined : "autoplay"}
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          className="aspect-square h-[80vh] max-h-[80vh] max-w-full bg-black"
+        />
+        <button
+          type="button"
+          onClick={() => setMuted((m) => !m)}
+          aria-pressed={muted}
+          aria-label={muted ? "Unmute the artwork" : "Mute the artwork"}
+          title={
+            muted
+              ? "Unmute (reloads the work)"
+              : "Mute (reloads the work)"
+          }
+          className="absolute bottom-3 right-3 rounded border border-white/25 bg-black/55 px-2.5 py-1.5 text-[10px] font-mono uppercase tracking-wider text-white/90 backdrop-blur-sm transition-colors hover:bg-black/75 hover:text-white"
+        >
+          {muted ? "Sound off" : "Sound on"}
+        </button>
+      </div>
     )
   }
 
