@@ -141,6 +141,19 @@ export default async function CollectionPage({
       : null
   const firstTokenImage = rendererArt?.image ?? ""
 
+  // The number a collector reads as "the edition": the collection's cap when
+  // it has one, otherwise the minter's ceiling, which is what bounds an
+  // open-supply release run in batches. 0 when nothing bounds it.
+  const minterCap = c.sale?.maxMints ?? 0n
+  const editionSize =
+    c.cfg.supplyCap > 0n && minterCap > 0n
+      ? c.cfg.supplyCap < minterCap
+        ? c.cfg.supplyCap
+        : minterCap
+      : c.cfg.supplyCap > 0n
+        ? c.cfg.supplyCap
+        : minterCap
+
   const permanent = c.isRendererLocked
   // sellsViaMinterOnly(idMode) covers the structural pooled case;
   // `!c.primaryMinter` additionally covers a sequential collection with no
@@ -226,7 +239,7 @@ export default async function CollectionPage({
                 </a>
               </span>
             ))}
-            {c.cfg.supplyCap > 0n && ` · ${c.cfg.supplyCap.toString()} editions`}
+            {editionSize > 0n && ` · ${editionSize.toString()} editions`}
           </>
         }
         hero={editionHero}
@@ -244,6 +257,7 @@ export default async function CollectionPage({
               allowlistRoot: c.sale?.allowlistRoot ?? ("0x" + "0".repeat(64) as `0x${string}`),
               walletCap: (c.sale?.walletCap ?? 0n).toString(),
               supplyCap: c.cfg.supplyCap.toString(),
+              maxMints: (c.sale?.maxMints ?? 0n).toString(),
               minted: c.minted.toString(),
               referralShareBps: c.sale?.referralShareBps ?? REFERRAL_SHARE_BPS,
             }}
@@ -285,6 +299,7 @@ export default async function CollectionPage({
   const placard = {
     price: (c.sale?.price ?? 0n).toString(),
     supplyCap: c.cfg.supplyCap.toString(),
+              maxMints: (c.sale?.maxMints ?? 0n).toString(),
     mintStart: (c.sale?.mintStart ?? 0n).toString(),
     mintEnd: (c.sale?.mintEnd ?? 0n).toString(),
     minted: c.minted.toString(),
@@ -561,6 +576,7 @@ export default async function CollectionPage({
                   c.sale?.allowlistRoot ?? ("0x" + "0".repeat(64) as `0x${string}`),
                 walletCap: (c.sale?.walletCap ?? 0n).toString(),
                 supplyCap: c.cfg.supplyCap.toString(),
+              maxMints: (c.sale?.maxMints ?? 0n).toString(),
                 minted: c.minted.toString(),
                 referralShareBps: c.sale?.referralShareBps ?? REFERRAL_SHARE_BPS,
               }}
