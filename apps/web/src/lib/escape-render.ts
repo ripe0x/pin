@@ -101,6 +101,7 @@ const abi = [
   { type: "function", name: "getTonejs", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
   { type: "function", name: "getImageFoc", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
   { type: "function", name: "getImageHiRes", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
+  { type: "function", name: "getImage", stateMutability: "view", inputs: [{ type: "uint256" }], outputs: [{ type: "string" }] },
   { type: "function", name: "tokenToFOCMode", stateMutability: "view", inputs: [{ type: "uint256" }], outputs: [{ type: "bool" }] },
   { type: "function", name: "bgColor", stateMutability: "view", inputs: [], outputs: [{ type: "bytes" }] },
   { type: "function", name: "panPosFoc", stateMutability: "view", inputs: [{ type: "uint256" }], outputs: [{ type: "int256" }] },
@@ -190,9 +191,12 @@ export async function buildEscapeArtwork(
         ),
       )
 
-      const image = focMode
-        ? await read<string>(client, renderer, abi, "getImageFoc")
-        : await read<string>(client, renderer, abi, "getImageHiRes")
+      // The image the work chooses for this token: getImage resolves the
+      // source itself (onchain still vs hi-res), so this follows the contract
+      // rather than second-guessing it, and survives the artist swapping what
+      // getImage returns (a still replacing the fully-onchain gif is exactly
+      // what broke the old mode-branched read).
+      const image = await read<string>(client, renderer, abi, "getImage", [tokenId])
 
       // Ask the engine for its script with placeholders where the media goes,
       // so the script stays the artist's own rather than a reimplementation.
