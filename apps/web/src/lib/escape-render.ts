@@ -48,7 +48,9 @@ export function getEscapeClient() {
   return createPublicClient({ chain: mainnet, transport: http(ESCAPE_RPC_URL) })
 }
 
-const ESCAPE_RENDERER = (process.env.ESCAPE_RENDERER_ADDRESS ??
+/** The engines the work delegates to. Fixed: only the front contract, the
+ *  one a collection points at, gets redeployed per release. */
+const ESCAPE_RENDERER_HINT = (process.env.ESCAPE_RENDERER_ADDRESS ??
   "0x538ffA56d568Dfb373Baf15d099E610b4a9a00D5") as Address
 
 /** The engine the work delegates its script and hi-res stems to. */
@@ -59,8 +61,29 @@ const ESCAPE_HIRES = (process.env.ESCAPE_HIRES_ADDRESS ??
 const ESCAPE_FOC = (process.env.ESCAPE_FOC_ADDRESS ??
   "0x2232f999C4e9Af03e8369892b5242036A5c48F64") as Address
 
-export function isEscapeRenderer(renderer: string): boolean {
-  return renderer.toLowerCase() === ESCAPE_RENDERER.toLowerCase()
+/**
+ * Whether a renderer is one of these, detected by shape rather than by
+ * address. The artist redeploys the same contract per release (a second
+ * instance is already live), so an address list would need editing every
+ * time and the collection would silently fall back to a tokenURI that
+ * cannot run. `buildHTML(string,string)` answering alongside
+ * `tokenToFOCMode(uint256)` is particular enough to identify it, and both
+ * are cheap. Cached for a day: a given address either is this contract or
+ * never will be.
+ */
+export async function isEscapeRenderer(renderer: string): Promise<boolean> {
+  const addr = renderer as Address
+  if (addr.toLowerCase() === ESCAPE_RENDERER_HINT.toLowerCase()) return true
+  return pgCache(`escape-shape:${renderer.toLowerCase()}`, 86_400, async () => {
+    const client = getEscapeClient()
+    try {
+      await read<string>(client, addr, abi, "buildHTML", ["a", "b"])
+      await read<boolean>(client, addr, abi, "tokenToFOCMode", [1n])
+      return true
+    } catch {
+      return false
+    }
+  })
 }
 
 const abi = [
@@ -126,19 +149,22 @@ export type EscapeArtwork = {
  * mode, since the output only changes when the holder flips that mode (which
  * bumps the key rather than needing invalidation).
  */
-export async function buildEscapeArtwork(tokenId: bigint): Promise<EscapeArtwork | null> {
+export async function buildEscapeArtwork(
+  renderer: Address,
+  tokenId: bigint,
+): Promise<EscapeArtwork | null> {
   const client = getEscapeClient()
-  const focMode = await read<boolean>(client, ESCAPE_RENDERER, abi, "tokenToFOCMode", [tokenId]).catch(
+  const focMode = await read<boolean>(client, renderer, abi, "tokenToFOCMode", [tokenId]).catch(
     () => null,
   )
   if (focMode === null) return null
 
-  return pgCache(`escape-art:${tokenId.toString()}:${focMode ? "foc" : "hires"}`, 86_400, async () => {
+  return pgCache(`escape-art:${renderer.toLowerCase()}:${tokenId.toString()}:${focMode ? "foc" : "hires"}`, 86_400, async () => {
     try {
       const [shellB64, tonejs, bgColor] = await Promise.all([
-        read<string>(client, ESCAPE_RENDERER, abi, "buildHTML", ["__FILE__", "__SCRIPT__"]),
-        read<string>(client, ESCAPE_RENDERER, abi, "getTonejs"),
-        read<`0x${string}`>(client, ESCAPE_RENDERER, abi, "bgColor"),
+        read<string>(client, renderer, abi, "buildHTML", ["__FILE__", "__SCRIPT__"]),
+        read<string>(client, renderer, abi, "getTonejs"),
+        read<`0x${string}`>(client, renderer, abi, "bgColor"),
       ])
 
       // Pan positions and stems come in matching lengths: one entry per stem.
@@ -150,13 +176,13 @@ export async function buildEscapeArtwork(tokenId: bigint): Promise<EscapeArtwork
 
       const pan: bigint[] = await Promise.all(
         stems.map((_, i) =>
-          read<bigint>(client, ESCAPE_RENDERER, abi, focMode ? "panPosFoc" : "panPosHiRes", [BigInt(i)]),
+          read<bigint>(client, renderer, abi, focMode ? "panPosFoc" : "panPosHiRes", [BigInt(i)]),
         ),
       )
 
       const image = focMode
-        ? await read<string>(client, ESCAPE_RENDERER, abi, "getImageFoc")
-        : await read<string>(client, ESCAPE_RENDERER, abi, "getImageHiRes")
+        ? await read<string>(client, renderer, abi, "getImageFoc")
+        : await read<string>(client, renderer, abi, "getImageHiRes")
 
       // Ask the engine for its script with placeholders where the media goes,
       // so the script stays the artist's own rather than a reimplementation.
