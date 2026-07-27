@@ -69,12 +69,12 @@ export default async function BatchPage({ params }: { params: Params }) {
         <p className="text-[11px] font-mono uppercase tracking-wider text-gray-400">
           #{batch.startId.toString()}–{batch.endId.toString()} ·{" "}
           <a
-            href={evmNowAddressUrl(batch.vendor, PND_CHAIN_ID)}
+            href={evmNowAddressUrl(batch.renderer, PND_CHAIN_ID)}
             target="_blank"
             rel="noopener noreferrer"
             className="underline hover:text-fg"
           >
-            renderer {batch.vendor.slice(0, 6)}…{batch.vendor.slice(-4)}
+            renderer {batch.renderer.slice(0, 6)}…{batch.renderer.slice(-4)}
           </a>
         </p>
       </header>

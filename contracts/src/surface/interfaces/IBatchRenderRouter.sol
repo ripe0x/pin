@@ -5,21 +5,21 @@ import {IRenderer} from "./IRenderer.sol";
 
 /// @title IBatchRenderRouter
 /// @notice A renderer that dispatches tokenURI by token id range. A batch is
-///         a contiguous [startId, endId] range assigned to one vendor
-///         renderer; every token in the range shares that vendor's artwork.
+///         a contiguous [startId, endId] range assigned to one renderer
+///         renderer; every token in the range shares that renderer's artwork.
 ///         Advertised via ERC-165 so a generic client can detect a
 ///         batch-backed collection from its renderer address alone.
 interface IBatchRenderRouter is IRenderer {
-    /// @notice One id range and the vendor renderer that serves it.
+    /// @notice One id range and the renderer renderer that serves it.
     /// @dev label is display-only, not consulted for dispatch or validation.
     struct Batch {
         uint256 startId;
         uint256 endId;
-        address vendor;
+        address renderer;
         string label;
     }
 
-    error ZeroVendor();
+    error ZeroRenderer();
     error InvalidRange(uint256 startId, uint256 endId);
     error OverlappingRange(uint256 startId, uint256 endId, uint256 conflictingIndex);
     error NoBatchForToken(uint256 tokenId);
@@ -29,13 +29,13 @@ interface IBatchRenderRouter is IRenderer {
     error CollectionNotSet();
     error ZeroCollection();
 
-    event BatchAdded(uint256 indexed index, uint256 startId, uint256 endId, address indexed vendor, string label);
-    event RefreshRequested(address indexed vendor, uint256 indexed tokenId);
+    event BatchAdded(uint256 indexed index, uint256 startId, uint256 endId, address indexed renderer, string label);
+    event RefreshRequested(address indexed renderer, uint256 indexed tokenId);
     event CollectionSet(address indexed collection);
 
-    /// @notice Append a new batch. Reverts on a zero vendor, startId > endId,
+    /// @notice Append a new batch. Reverts on a zero renderer, startId > endId,
     ///         or a range overlapping any existing batch.
-    function addBatch(uint256 startId, uint256 endId, address vendor, string calldata label) external;
+    function addBatch(uint256 startId, uint256 endId, address renderer, string calldata label) external;
 
     /// @notice Number of batches added so far.
     function batchCount() external view returns (uint256);
@@ -49,7 +49,7 @@ interface IBatchRenderRouter is IRenderer {
     function batchOf(uint256 tokenId) external view returns (Batch memory);
 
     /// @notice Relay an ERC-4906 single-token refresh to the bound
-    ///         collection, on behalf of a batch's vendor. Callable only by
-    ///         an address currently assigned as a vendor on some batch.
+    ///         collection, on behalf of a batch's renderer. Callable only by
+    ///         an address currently assigned as a renderer on some batch.
     function requestRefresh(uint256 tokenId) external;
 }

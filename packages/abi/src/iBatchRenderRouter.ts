@@ -7,12 +7,12 @@
 // copy.
 //
 // Interface: IBatchRenderRouter is IRenderer, IERC165.
-//   struct Batch { uint256 startId; uint256 endId; address vendor; string label; }
-//   addBatch(uint256 startId, uint256 endId, address vendor, string label) — owner/admin
+//   struct Batch { uint256 startId; uint256 endId; address renderer; string label; }
+//   addBatch(uint256 startId, uint256 endId, address renderer, string label) — owner/admin
 //   batchCount() view returns (uint256)
 //   batchAt(uint256 index) view returns (Batch)
 //   batchOf(uint256 tokenId) view returns (Batch)
-//   requestRefresh(uint256 tokenId) — registered vendors only, relays to
+//   requestRefresh(uint256 tokenId) — registered renderers only, relays to
 //     ISurfaceCore(collection).notifyMetadataUpdate(tokenId, tokenId)
 //   tokenURI(address collection, uint256 tokenId) view returns (string) — from IRenderer
 //   supportsInterface(bytes4) view returns (bool) — from IERC165
@@ -24,7 +24,7 @@ export const iBatchRenderRouterAbi = [
     inputs: [
       { name: "startId", type: "uint256" },
       { name: "endId", type: "uint256" },
-      { name: "vendor", type: "address" },
+      { name: "renderer", type: "address" },
       { name: "label", type: "string" },
     ],
     outputs: [],
@@ -48,7 +48,7 @@ export const iBatchRenderRouterAbi = [
         components: [
           { name: "startId", type: "uint256" },
           { name: "endId", type: "uint256" },
-          { name: "vendor", type: "address" },
+          { name: "renderer", type: "address" },
           { name: "label", type: "string" },
         ],
       },
@@ -66,7 +66,7 @@ export const iBatchRenderRouterAbi = [
         components: [
           { name: "startId", type: "uint256" },
           { name: "endId", type: "uint256" },
-          { name: "vendor", type: "address" },
+          { name: "renderer", type: "address" },
           { name: "label", type: "string" },
         ],
       },

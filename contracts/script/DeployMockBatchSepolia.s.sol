@@ -3,10 +3,10 @@ pragma solidity ^0.8.24;
 
 import {Script, console2} from "forge-std/Script.sol";
 import {BatchRenderRouter} from "../src/surface/renderers/BatchRenderRouter.sol";
-import {MockVendor} from "./mocks/MockVendor.sol";
+import {MockRenderer} from "./mocks/MockRenderer.sol";
 
 /// @notice Sepolia integration rehearsal: deploy a BatchRenderRouter and two
-///         MockVendors, then register two batches (ids 1..3 -> A, 4..6 -> B).
+///         MockRenderers, then register two batches (ids 1..3 -> A, 4..6 -> B).
 ///         Point a collection's cfg.renderer at the printed router address (via
 ///         the deploy page) to exercise the deploy -> router dispatch -> mint
 ///         -> frontend batch-view pipeline without the escape renderer's
@@ -32,20 +32,20 @@ contract DeployMockBatchSepoliaScript is Script {
         require(block.chainid == SEPOLIA_CHAIN_ID, "this script targets Sepolia only");
 
         vm.startBroadcast();
-        MockVendor vendorA = new MockVendor("Batch A", "#c0392b");
-        MockVendor vendorB = new MockVendor("Batch B", "#2980b9");
+        MockRenderer rendererA = new MockRenderer("Batch A", "#c0392b");
+        MockRenderer rendererB = new MockRenderer("Batch B", "#2980b9");
         BatchRenderRouter router = new BatchRenderRouter();
-        router.addBatch(1, 3, address(vendorA), "Batch A");
-        router.addBatch(4, 6, address(vendorB), "Batch B");
+        router.addBatch(1, 3, address(rendererA), "Batch A");
+        router.addBatch(4, 6, address(rendererB), "Batch B");
         vm.stopBroadcast();
 
         require(router.batchCount() == 2, "expected 2 batches");
-        require(router.batchOf(2).vendor == address(vendorA), "batch A dispatch mismatch");
-        require(router.batchOf(5).vendor == address(vendorB), "batch B dispatch mismatch");
+        require(router.batchOf(2).renderer == address(rendererA), "batch A dispatch mismatch");
+        require(router.batchOf(5).renderer == address(rendererB), "batch B dispatch mismatch");
         require(router.owner() == msg.sender, "router owner is not the deployer");
 
-        console2.log("MockVendor A (ids 1-3):", address(vendorA));
-        console2.log("MockVendor B (ids 4-6):", address(vendorB));
+        console2.log("MockRenderer A (ids 1-3):", address(rendererA));
+        console2.log("MockRenderer B (ids 4-6):", address(rendererB));
         console2.log("BatchRenderRouter:     ", address(router));
         console2.log("");
         console2.log("Next: deploy a collection with cfg.renderer =", address(router));

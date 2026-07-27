@@ -12,7 +12,7 @@ import {Base64} from "solady/utils/Base64.sol";
 ///         tokenURI decode, the animation_url iframe, and the click-to-play
 ///         audio path without the escape renderer's onchain file dependencies.
 ///         Not a production renderer.
-contract MockVendor is IRenderer {
+contract MockRenderer is IRenderer {
     string public label;
     string public color;
 

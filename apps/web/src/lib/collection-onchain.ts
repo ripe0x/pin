@@ -179,7 +179,7 @@ export type RenderRouterBatch = {
   index: number
   startId: bigint
   endId: bigint
-  vendor: Address
+  renderer: Address
   label: string
 }
 
@@ -211,8 +211,8 @@ export async function getRouterBatches(renderer: Address): Promise<RenderRouterB
       const batches: RenderRouterBatch[] = []
       results.forEach((r, i) => {
         if (r.status !== "success") return
-        const b = r.result as { startId: bigint; endId: bigint; vendor: Address; label: string }
-        batches.push({ index: i, startId: b.startId, endId: b.endId, vendor: b.vendor, label: b.label })
+        const b = r.result as { startId: bigint; endId: bigint; renderer: Address; label: string }
+        batches.push({ index: i, startId: b.startId, endId: b.endId, renderer: b.renderer, label: b.label })
       })
       return batches
     } catch {

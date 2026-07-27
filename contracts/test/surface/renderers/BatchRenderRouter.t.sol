@@ -8,10 +8,10 @@ import {BatchRenderRouter} from "../../../src/surface/renderers/BatchRenderRoute
 import {IBatchRenderRouter} from "../../../src/surface/interfaces/IBatchRenderRouter.sol";
 import {IRenderer} from "../../../src/surface/interfaces/IRenderer.sol";
 
-/// @dev Deterministic vendor renderer: returns a string derived from the
+/// @dev Deterministic renderer renderer: returns a string derived from the
 ///      collection + tokenId, so a test can assert the router dispatched to
-///      the right vendor without depending on a real onchain renderer.
-contract MockVendor is IRenderer {
+///      the right renderer without depending on a real onchain renderer.
+contract MockRenderer is IRenderer {
     string public label;
 
     constructor(string memory label_) {
@@ -19,11 +19,11 @@ contract MockVendor is IRenderer {
     }
 
     function tokenURI(address, uint256 tokenId) external view override returns (string memory) {
-        return string.concat("vendor:", label, ":", _toString(tokenId));
+        return string.concat("renderer:", label, ":", _toString(tokenId));
     }
 
     function contractURI(address) external view override returns (string memory) {
-        return string.concat("vendor-contract:", label);
+        return string.concat("renderer-contract:", label);
     }
 
     function _toString(uint256 v) internal pure returns (string memory) {
@@ -62,8 +62,8 @@ contract MockCollection {
 
 contract BatchRenderRouterTest is Test {
     BatchRenderRouter internal router;
-    MockVendor internal vendorA;
-    MockVendor internal vendorB;
+    MockRenderer internal rendererA;
+    MockRenderer internal rendererB;
     MockCollection internal collection;
 
     address internal deployer = makeAddr("deployer");
@@ -72,8 +72,8 @@ contract BatchRenderRouterTest is Test {
     function setUp() public {
         vm.prank(deployer);
         router = new BatchRenderRouter();
-        vendorA = new MockVendor("A");
-        vendorB = new MockVendor("B");
+        rendererA = new MockRenderer("A");
+        rendererB = new MockRenderer("B");
         collection = new MockCollection();
     }
 
@@ -81,20 +81,20 @@ contract BatchRenderRouterTest is Test {
 
     function test_addBatch_ownerCanAdd() public {
         vm.prank(deployer);
-        router.addBatch(1, 20, address(vendorA), "batch 1");
+        router.addBatch(1, 20, address(rendererA), "batch 1");
         assertEq(router.batchCount(), 1);
     }
 
     function test_addBatch_strangerReverts() public {
         vm.expectRevert(Ownable.Unauthorized.selector);
         vm.prank(stranger);
-        router.addBatch(1, 20, address(vendorA), "batch 1");
+        router.addBatch(1, 20, address(rendererA), "batch 1");
     }
 
     // ── addBatch: validation ─────────────────────────────────────────────────
 
-    function test_addBatch_zeroVendorReverts() public {
-        vm.expectRevert(IBatchRenderRouter.ZeroVendor.selector);
+    function test_addBatch_zeroRendererReverts() public {
+        vm.expectRevert(IBatchRenderRouter.ZeroRenderer.selector);
         vm.prank(deployer);
         router.addBatch(1, 20, address(0), "batch 1");
     }
@@ -102,28 +102,28 @@ contract BatchRenderRouterTest is Test {
     function test_addBatch_invertedRangeReverts() public {
         vm.expectRevert(abi.encodeWithSelector(IBatchRenderRouter.InvalidRange.selector, 20, 1));
         vm.prank(deployer);
-        router.addBatch(20, 1, address(vendorA), "batch 1");
+        router.addBatch(20, 1, address(rendererA), "batch 1");
     }
 
     function test_addBatch_overlapReverts() public {
         vm.startPrank(deployer);
-        router.addBatch(1, 20, address(vendorA), "batch 1");
+        router.addBatch(1, 20, address(rendererA), "batch 1");
         vm.expectRevert(abi.encodeWithSelector(IBatchRenderRouter.OverlappingRange.selector, 15, 30, 0));
-        router.addBatch(15, 30, address(vendorB), "batch 2");
+        router.addBatch(15, 30, address(rendererB), "batch 2");
         vm.stopPrank();
     }
 
     function test_addBatch_adjacentRangesDoNotOverlap() public {
         vm.startPrank(deployer);
-        router.addBatch(1, 20, address(vendorA), "batch 1");
-        router.addBatch(21, 40, address(vendorB), "batch 2"); // does not revert
+        router.addBatch(1, 20, address(rendererA), "batch 1");
+        router.addBatch(21, 40, address(rendererB), "batch 2"); // does not revert
         vm.stopPrank();
         assertEq(router.batchCount(), 2);
     }
 
     function test_addBatch_singleTokenRangeAllowed() public {
         vm.prank(deployer);
-        router.addBatch(5, 5, address(vendorA), "single");
+        router.addBatch(5, 5, address(rendererA), "single");
         IBatchRenderRouter.Batch memory b = router.batchOf(5);
         assertEq(b.startId, 5);
         assertEq(b.endId, 5);
@@ -138,33 +138,33 @@ contract BatchRenderRouterTest is Test {
 
     function test_batchOf_dispatchAcrossBoundaries() public {
         vm.startPrank(deployer);
-        router.addBatch(1, 20, address(vendorA), "batch 1");
-        router.addBatch(21, 40, address(vendorB), "batch 2");
+        router.addBatch(1, 20, address(rendererA), "batch 1");
+        router.addBatch(21, 40, address(rendererB), "batch 2");
         vm.stopPrank();
 
-        assertEq(router.batchOf(1).vendor, address(vendorA));
-        assertEq(router.batchOf(20).vendor, address(vendorA)); // last id of batch 1
-        assertEq(router.batchOf(21).vendor, address(vendorB)); // first id of batch 2
-        assertEq(router.batchOf(40).vendor, address(vendorB));
+        assertEq(router.batchOf(1).renderer, address(rendererA));
+        assertEq(router.batchOf(20).renderer, address(rendererA)); // last id of batch 1
+        assertEq(router.batchOf(21).renderer, address(rendererB)); // first id of batch 2
+        assertEq(router.batchOf(40).renderer, address(rendererB));
     }
 
     function test_batchOf_noBatchReverts() public {
         vm.prank(deployer);
-        router.addBatch(1, 20, address(vendorA), "batch 1");
+        router.addBatch(1, 20, address(rendererA), "batch 1");
         vm.expectRevert(abi.encodeWithSelector(IBatchRenderRouter.NoBatchForToken.selector, 21));
         router.batchOf(21);
     }
 
     // ── tokenURI routing ─────────────────────────────────────────────────────
 
-    function test_tokenURI_routesToCorrectVendor() public {
+    function test_tokenURI_routesToCorrectRenderer() public {
         vm.startPrank(deployer);
-        router.addBatch(1, 20, address(vendorA), "batch 1");
-        router.addBatch(21, 40, address(vendorB), "batch 2");
+        router.addBatch(1, 20, address(rendererA), "batch 1");
+        router.addBatch(21, 40, address(rendererB), "batch 2");
         vm.stopPrank();
 
-        assertEq(router.tokenURI(address(collection), 10), "vendor:A:10");
-        assertEq(router.tokenURI(address(collection), 30), "vendor:B:30");
+        assertEq(router.tokenURI(address(collection), 10), "renderer:A:10");
+        assertEq(router.tokenURI(address(collection), 30), "renderer:B:30");
     }
 
     function test_tokenURI_noBatchReverts() public {
@@ -172,24 +172,24 @@ contract BatchRenderRouterTest is Test {
         router.tokenURI(address(collection), 1);
     }
 
-    function test_contractURI_delegatesToFirstBatchVendor() public {
+    function test_contractURI_delegatesToFirstBatchRenderer() public {
         vm.startPrank(deployer);
-        router.addBatch(1, 20, address(vendorA), "batch 1");
-        router.addBatch(21, 40, address(vendorB), "batch 2");
+        router.addBatch(1, 20, address(rendererA), "batch 1");
+        router.addBatch(21, 40, address(rendererB), "batch 2");
         vm.stopPrank();
 
-        assertEq(router.contractURI(address(collection)), "vendor-contract:A");
+        assertEq(router.contractURI(address(collection)), "renderer-contract:A");
     }
 
     // ── requestRefresh: authority ────────────────────────────────────────────
 
-    function test_requestRefresh_registeredVendorSucceeds() public {
+    function test_requestRefresh_registeredRendererSucceeds() public {
         vm.startPrank(deployer);
-        router.addBatch(1, 20, address(vendorA), "batch 1");
+        router.addBatch(1, 20, address(rendererA), "batch 1");
         router.bindCollection(address(collection));
         vm.stopPrank();
 
-        vm.prank(address(vendorA));
+        vm.prank(address(rendererA));
         router.requestRefresh(7);
 
         assertEq(collection.callCount(), 1);
@@ -199,7 +199,7 @@ contract BatchRenderRouterTest is Test {
 
     function test_requestRefresh_strangerReverts() public {
         vm.startPrank(deployer);
-        router.addBatch(1, 20, address(vendorA), "batch 1");
+        router.addBatch(1, 20, address(rendererA), "batch 1");
         router.bindCollection(address(collection));
         vm.stopPrank();
 
@@ -210,24 +210,24 @@ contract BatchRenderRouterTest is Test {
         assertEq(collection.callCount(), 0);
     }
 
-    function test_requestRefresh_unregisteredVendorReverts() public {
+    function test_requestRefresh_unregisteredRendererReverts() public {
         vm.startPrank(deployer);
-        router.addBatch(1, 20, address(vendorA), "batch 1");
+        router.addBatch(1, 20, address(rendererA), "batch 1");
         router.bindCollection(address(collection));
         vm.stopPrank();
 
-        // vendorB has never been added to a batch, so it is not a registered vendor
+        // rendererB has never been added to a batch, so it is not a registered renderer
         vm.expectRevert(IBatchRenderRouter.NotAuthorized.selector);
-        vm.prank(address(vendorB));
+        vm.prank(address(rendererB));
         router.requestRefresh(7);
     }
 
     function test_requestRefresh_collectionNotSetReverts() public {
         vm.prank(deployer);
-        router.addBatch(1, 20, address(vendorA), "batch 1");
+        router.addBatch(1, 20, address(rendererA), "batch 1");
 
         vm.expectRevert(IBatchRenderRouter.CollectionNotSet.selector);
-        vm.prank(address(vendorA));
+        vm.prank(address(rendererA));
         router.requestRefresh(7);
     }
 
