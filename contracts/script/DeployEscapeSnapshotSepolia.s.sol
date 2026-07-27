@@ -20,10 +20,15 @@ import {SnapshotRenderer} from "./mocks/SnapshotRenderer.sol";
 contract DeployEscapeSnapshotSepoliaScript is Script {
     uint256 internal constant SEPOLIA_CHAIN_ID = 11_155_111;
 
-    // 3-segment paths so the root-level [handle]/[tokenId] catch-all does not
-    // shadow these static files (a 2-segment /snapshots/escape.html matched it).
+    // 3-segment path so the root-level [handle]/[tokenId] catch-all does not
+    // shadow this static file (a 2-segment /snapshots/escape.html matched it).
     string internal constant HTML_URL = "https://surface-sepolia--art-pin.netlify.app/snapshots/escape/render.html";
-    string internal constant IMAGE_URL = "https://surface-sepolia--art-pin.netlify.app/snapshots/escape/cover.gif";
+    // The work's own hi-res still, from the artist's Arweave pin (the same URI
+    // his renderer's getImageHiRes() returns). Used instead of the fully
+    // onchain GIF: it is what the mainnet renderer should serve as `image`,
+    // and it keeps the heavy payload out of every grid and card that renders
+    // a thumbnail.
+    string internal constant IMAGE_URL = "https://arweave.net/Wd2RuKlbUNn3mZgDJO4GAoDCq-_D_RosToXGQrFIxRw";
 
     function run() external {
         require(block.chainid == SEPOLIA_CHAIN_ID, "this script targets Sepolia only");
