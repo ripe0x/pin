@@ -1,7 +1,7 @@
 import "server-only"
 import { createPublicClient, decodeFunctionResult, encodeFunctionData, http, type Address } from "viem"
 import { mainnet } from "viem/chains"
-import { pgCache } from "./pg-cache"
+import { pgCache, pgCacheHas } from "./pg-cache"
 
 /**
  * Offchain assembly of the "escape (blue)" artwork document.
@@ -82,18 +82,27 @@ const ESCAPE_FOC = (process.env.ESCAPE_FOC_ADDRESS ??
 export const ESCAPE_DESCRIPTION = "go right ahead"
 
 export async function isEscapeRenderer(renderer: string): Promise<boolean> {
-  const addr = renderer as Address
-  if (addr.toLowerCase() === ESCAPE_RENDERER_HINT.toLowerCase()) return true
-  return pgCache(`escape-shape:${renderer.toLowerCase()}`, 86_400, async () => {
-    const client = getEscapeClient()
-    try {
-      await read<string>(client, addr, abi, "buildHTML", ["a", "b"])
-      await read<boolean>(client, addr, abi, "tokenToFOCMode", [1n])
-      return true
-    } catch {
-      return false
-    }
-  })
+  const addr = renderer.toLowerCase() as Address
+  if (addr === ESCAPE_RENDERER_HINT.toLowerCase()) return true
+  // A confirmed match is cached for a day (a renderer that is this contract
+  // stays this contract). A miss is cached only briefly, so a transient probe
+  // failure never locks a real escape renderer out of its assembler for a day
+  // (which is exactly what left the page empty after a renderer swap). Split
+  // keys, so this also orphans any stale single-key entry from before.
+  const yes = `escape-shape:${addr}:yes`
+  const no = `escape-shape:${addr}:no`
+  if (await pgCacheHas(yes)) return true
+  if (await pgCacheHas(no)) return false
+  const client = getEscapeClient()
+  try {
+    await read<string>(client, addr, abi, "buildHTML", ["a", "b"])
+    await read<boolean>(client, addr, abi, "tokenToFOCMode", [1n])
+    await pgCache(yes, 86_400, async () => true)
+    return true
+  } catch {
+    await pgCache(no, 300, async () => true)
+    return false
+  }
 }
 
 const abi = [
