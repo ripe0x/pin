@@ -140,6 +140,31 @@ export function SeededDeployWizard({ descriptor }: { descriptor: LaunchDescripto
           price={price}
           disabled={false}
           onNext={() => setStep("review")}
+          supplySlotOk={maxMintsOk}
+          supplySlot={
+            <div className="space-y-2">
+              <label className={LABEL} htmlFor="cc-maxmints">
+                How many can be minted now
+              </label>
+              <input
+                id="cc-maxmints"
+                className={`${INPUT} w-40`}
+                inputMode="numeric"
+                value={maxMintsInput}
+                onChange={(e) => setMaxMintsInput(e.target.value)}
+                placeholder="no limit"
+              />
+              {!maxMintsOk && (
+                <p className={ERROR}>Enter a whole number, or leave empty for no limit.</p>
+              )}
+              <p className={HELP}>
+                The sale ceiling on this collection&apos;s minter, set in the deploy
+                transaction. Raise it later to release the next batch (Studio, Sale
+                settings). Empty means anyone can mint without limit as soon as the
+                collection is live.
+              </p>
+            </div>
+          }
         />
       </Shell>
     )
@@ -223,27 +248,6 @@ export function SeededDeployWizard({ descriptor }: { descriptor: LaunchDescripto
               </p>
             </div>
           )}
-        </div>
-
-        <div className="rounded-lg border border-gray-200 p-4 space-y-2">
-          <label className={LABEL} htmlFor="cc-maxmints">
-            How many can be minted now
-          </label>
-          <input
-            id="cc-maxmints"
-            className={`${INPUT} w-40`}
-            inputMode="numeric"
-            value={maxMintsInput}
-            onChange={(e) => setMaxMintsInput(e.target.value)}
-            placeholder="no limit"
-          />
-          {!maxMintsOk && <p className={ERROR}>Enter a whole number, or leave empty for no limit.</p>}
-          <p className={HELP}>
-            The sale ceiling on this collection&apos;s minter, set in the deploy
-            transaction. Raise it later to open the next batch (Studio, Sale
-            settings). Leaving it empty means anyone can mint without limit as
-            soon as the collection is live.
-          </p>
         </div>
 
         <div className="rounded-lg border border-gray-200 p-4 space-y-2">
