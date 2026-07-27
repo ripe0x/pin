@@ -187,8 +187,8 @@ export function SaleSettingsPanel({ collection }: { collection: `0x${string}` })
       </Field>
 
       <Field
-        title="Max mints"
-        help="This minter's own sale ceiling, separate from the collection's supply cap. Empty = no limit. Raise it to open the next batch."
+        title="Total allowed through this minter"
+        help="A running total, not a per-batch number: it counts every mint this minter has ever made. To open another batch, set this to the number already minted plus the size of the new batch. Empty means no limit. Separate from the collection's supply cap."
       >
         <div className="flex items-stretch gap-2">
           <input
@@ -210,7 +210,15 @@ export function SaleSettingsPanel({ collection }: { collection: `0x${string}` })
         {!maxValid && <p className={ERROR}>Enter a whole number, or leave empty.</p>}
         {sale && (
           <p className={HELP}>
-            Supply cap: {state?.supplyCap === "0" ? "open" : state?.supplyCap} · minted: {state?.minted}
+            {state?.minted ?? "0"} minted so far, currently{" "}
+            {sale.maxMints === "0"
+              ? "uncapped"
+              : `capped at ${sale.maxMints} (${Math.max(
+                  0,
+                  Number(sale.maxMints) - Number(state?.minted ?? "0"),
+                )} still mintable)`}
+            . To release N more, set this to {state?.minted ?? "0"} + N.
+            Collection supply cap: {state?.supplyCap === "0" ? "open" : state?.supplyCap}.
           </p>
         )}
         {maxSetter.error && <p className={ERROR}>{formatWriteError(maxSetter.error, "Set max mints")}</p>}
