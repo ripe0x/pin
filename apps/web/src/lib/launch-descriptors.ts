@@ -89,6 +89,11 @@ export const ESCAPE_BLUE_DESCRIPTOR: LaunchDescriptor = {
   renderer: "",
   creators: [],
   layoutKind: "edition",
+  // The live collection, deployed by the artist through the page above. This
+  // is what selects the edition layout for it, which is also what puts the
+  // work on the page: the default layout only shows a cover or a minted
+  // token's image, so an unminted collection reads as empty.
+  deployedAddress: "0xb741055BD0467a5831B8B5f7DF376cdA93a76af1",
 }
 
 export const LAUNCH_DESCRIPTORS: LaunchDescriptor[] = [ESCAPE_BLUE_DESCRIPTOR]
