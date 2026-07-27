@@ -79,6 +79,10 @@ export type MintCollectionSnapshot = {
   allowlistRoot: `0x${string}`
   walletCap: string
   supplyCap: string
+  /** The minter's own sale ceiling. Bounds availability just as the
+   *  collection's cap does, and on an open-supply release it is the only
+   *  thing that does. */
+  maxMints: string
   minted: string
   referralShareBps: number
 }
@@ -115,6 +119,19 @@ export function MintCollectionCTA({
 
   const storedPrice = BigInt(snapshot.price)
   const supplyCap = BigInt(snapshot.supplyCap)
+  const maxMints = BigInt(snapshot.maxMints ?? "0")
+  // What is actually available: both ceilings apply on every mint, so the
+  // tighter of the two governs. Either may be 0, meaning it sets no limit;
+  // 0 here means neither does. An open-supply release run in batches has no
+  // collection cap at all, so the minter's ceiling is the edition size.
+  const effectiveCap =
+    supplyCap > 0n && maxMints > 0n
+      ? supplyCap < maxMints
+        ? supplyCap
+        : maxMints
+      : supplyCap > 0n
+        ? supplyCap
+        : maxMints
   const minted = BigInt(snapshot.minted)
   const mintEnd = BigInt(snapshot.mintEnd)
   const mintStart = BigInt(snapshot.mintStart)
@@ -175,16 +192,16 @@ export function MintCollectionCTA({
     walletCap > 0n && mintedByWallet !== undefined ? walletCap - (mintedByWallet as bigint) : null
   const walletCapReached = walletRemaining !== null && walletRemaining <= 0n
 
-  const remaining = supplyCap > 0n ? supplyCap - minted : null
+  const remaining = effectiveCap > 0n ? effectiveCap - minted : null
   const capReached = remaining !== null && remaining <= 0n
 
-  const status = lifecycleStatus({ mintStart, mintEnd, supplyCap }, minted, nowSec)
+  const status = lifecycleStatus({ mintStart, mintEnd, supplyCap: effectiveCap }, minted, nowSec)
   const ready = nowSec > 0 || (mintEnd === 0n && mintStart === 0n)
   const notStarted = mintStart > 0n && nowSec > 0 && BigInt(nowSec) < mintStart
   const mintable =
     ready &&
     !notStarted &&
-    isMintable({ mintStart, mintEnd, supplyCap }, minted, nowSec || Number(mintStart))
+    isMintable({ mintStart, mintEnd, supplyCap: effectiveCap }, minted, nowSec || Number(mintStart))
 
   // For a strategy collection, `total` is the live quote for the current
   // quantity (already scaled by quantity by priceOf itself). For a
@@ -324,8 +341,8 @@ export function MintCollectionCTA({
               </span>
             </div>
             <span className="text-[10px] font-mono uppercase tracking-wider text-gray-400 tabular-nums">
-              {supplyCap > 0n
-                ? `${Number(minted)} / ${Number(supplyCap)} minted`
+              {effectiveCap > 0n
+                ? `${Number(minted)} / ${Number(effectiveCap)} minted`
                 : `${Number(minted)} minted · open`}
             </span>
           </div>
@@ -587,7 +604,7 @@ export function MintCollectionCTA({
                 </>
               ) : soldOut ? (
                 <p className="text-[11px] font-mono text-gray-600 leading-relaxed">
-                  All {Number(supplyCap)} pieces are minted.
+                  All {Number(effectiveCap)} are minted.
                   {work && work.code.length > 0
                     ? " The full collection lives on this page, every token rendering live from its onchain seed."
                     : " The full collection lives on this page."}
@@ -595,7 +612,7 @@ export function MintCollectionCTA({
               ) : (
                 <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
                   The mint window has closed with {Number(minted)}
-                  {supplyCap > 0n ? ` of ${Number(supplyCap)}` : ""} minted.
+                  {effectiveCap > 0n ? ` of ${Number(effectiveCap)}` : ""} minted.
                   Sale settings stay live until locked, so the artist can
                   reopen it.
                 </p>
