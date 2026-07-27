@@ -449,6 +449,28 @@ export async function getCollectionToken(
             .catch(() => collection?.cover ?? "")
         : collection?.cover ?? ""
 
+      // "escape (blue)" cannot answer tokenURI at all (5.45B gas, see
+      // lib/escape-render.ts), so assemble its document from the parts and
+      // skip the call that would only burn a 300M-gas attempt and fail. Its
+      // name and traits are string literals inside that same unreadable
+      // function, so nothing is mirrored here: the page labels the token the
+      // way it labels every other one.
+      if (collection && isEscapeRenderer(collection.renderer)) {
+        const art = await buildEscapeArtwork(tokenId)
+        if (art) {
+          return {
+            tokenId,
+            owner: ownerRes.status === "success" ? (ownerRes.result as Address) : null,
+            mintOrder,
+            seed: seedRes.result as `0x${string}`,
+            artwork: artwork || art.image,
+            tokenURI: null,
+            image: art.image,
+            animationUrl: `/api/escape/${tokenId.toString()}`,
+          }
+        }
+      }
+
       // tokenURI gets its own call with an explicit gas ceiling, NEVER the
       // multicall: assembling a full onchain HTML document (GenerativeRenderer
       // over a gzipped p5) measures 60-120M gas, far beyond the ~30M default
