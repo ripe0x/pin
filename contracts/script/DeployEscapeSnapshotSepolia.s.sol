@@ -3,9 +3,9 @@ pragma solidity ^0.8.24;
 
 import {Script, console2} from "forge-std/Script.sol";
 import {BatchRenderRouter} from "../src/surface/renderers/BatchRenderRouter.sol";
-import {SnapshotVendor} from "./mocks/SnapshotVendor.sol";
+import {SnapshotRenderer} from "./mocks/SnapshotRenderer.sol";
 
-/// @notice Sepolia rehearsal: deploy a SnapshotVendor serving the artist's real
+/// @notice Sepolia rehearsal: deploy a SnapshotRenderer serving the artist's real
 ///         captured render (escape (blue)) via URLs hosted on the Sepolia site,
 ///         behind a BatchRenderRouter as batch 1 (ids 1..20). Point a
 ///         collection's cfg.renderer at the printed router address (via the
@@ -29,16 +29,16 @@ contract DeployEscapeSnapshotSepoliaScript is Script {
         require(block.chainid == SEPOLIA_CHAIN_ID, "this script targets Sepolia only");
 
         vm.startBroadcast();
-        SnapshotVendor vendor = new SnapshotVendor("Escape (blue)", "go right ahead", HTML_URL, IMAGE_URL);
+        SnapshotRenderer renderer = new SnapshotRenderer("Escape (blue)", "go right ahead", HTML_URL, IMAGE_URL);
         BatchRenderRouter router = new BatchRenderRouter();
-        router.addBatch(1, 20, address(vendor), "Escape (blue)");
+        router.addBatch(1, 20, address(renderer), "Escape (blue)");
         vm.stopBroadcast();
 
         require(router.batchCount() == 1, "expected 1 batch");
-        require(router.batchOf(1).vendor == address(vendor), "batch dispatch mismatch");
+        require(router.batchOf(1).renderer == address(renderer), "batch dispatch mismatch");
         require(router.owner() == msg.sender, "router owner is not the deployer");
 
-        console2.log("SnapshotVendor:    ", address(vendor));
+        console2.log("SnapshotRenderer:    ", address(renderer));
         console2.log("BatchRenderRouter: ", address(router));
         console2.log("");
         console2.log("Next: deploy a collection with cfg.renderer =", address(router));

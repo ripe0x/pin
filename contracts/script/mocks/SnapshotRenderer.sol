@@ -13,7 +13,7 @@ import {Base64} from "solady/utils/Base64.sol";
 ///         matches the edition model (one work per batch). Not a production
 ///         renderer: mainnet returns self-contained data: URIs from the live
 ///         stack, this returns URLs to a hosted snapshot.
-contract SnapshotVendor is IRenderer {
+contract SnapshotRenderer is IRenderer {
     string public name;
     string public description;
     string public htmlUrl;
