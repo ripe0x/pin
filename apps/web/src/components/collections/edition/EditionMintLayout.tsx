@@ -16,6 +16,7 @@ export function EditionMintLayout({
   byline,
   hero,
   mintInstrument,
+  description,
   history,
   about,
   facts,
@@ -26,6 +27,9 @@ export function EditionMintLayout({
   hero: ReactNode
   /** The mint CTA (MintCollectionCTA or equivalent). */
   mintInstrument: ReactNode
+  /** The work's description, shown above the mint instrument (the auction
+   *  page keeps its blurb high in the sidebar too). Omitted renders nothing. */
+  description?: ReactNode
   /** Mint history (CollectionMintHistory or equivalent); renders its own
    *  section, or nothing when there are no mints yet. */
   history?: ReactNode
@@ -50,6 +54,12 @@ export function EditionMintLayout({
           <h1 className="text-2xl font-medium tracking-tight">{name}</h1>
           <p className="text-[11px] font-mono uppercase tracking-wider text-gray-500">{byline}</p>
         </section>
+
+        {description && (
+          <section className="border-b border-gray-100 py-5 text-sm leading-relaxed text-fg-muted">
+            {description}
+          </section>
+        )}
 
         <section className="border-b border-gray-100 py-5">{mintInstrument}</section>
 
