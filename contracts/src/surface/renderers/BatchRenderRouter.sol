@@ -10,11 +10,11 @@ import {ISurfaceCore} from "../interfaces/ISurfaceCore.sol";
 /// @title BatchRenderRouter
 /// @notice Reference IRenderer that dispatches tokenURI by token id range: an
 ///         ordered list of batches, each a [startId, endId] range assigned to
-///         one vendor renderer. Set as a collection's `cfg.renderer`, so every
+///         one renderer renderer. Set as a collection's `cfg.renderer`, so every
 ///         token's tokenURI resolves through the batch that contains its id.
 ///
 ///         PND authors and reviews this contract; each artist deploys their
-///         own instance and owns it. Vendor renderers stay the artist's own
+///         own instance and owns it. Renderer renderers stay the artist's own
 ///         code.
 ///
 /// @dev    Authority for addBatch/bindCollection is Ownable (the deploying
@@ -70,8 +70,8 @@ contract BatchRenderRouter is IBatchRenderRouter, Ownable {
     // ─────────────────────────────────────────────────────────────────────
 
     /// @inheritdoc IBatchRenderRouter
-    function addBatch(uint256 startId, uint256 endId, address vendor, string calldata label) external onlyOwner {
-        if (vendor == address(0)) revert ZeroVendor();
+    function addBatch(uint256 startId, uint256 endId, address renderer, string calldata label) external onlyOwner {
+        if (renderer == address(0)) revert ZeroRenderer();
         if (startId > endId) revert InvalidRange(startId, endId);
         uint256 len = _batches.length;
         for (uint256 i = 0; i < len; i++) {
@@ -80,8 +80,8 @@ contract BatchRenderRouter is IBatchRenderRouter, Ownable {
                 revert OverlappingRange(startId, endId, i);
             }
         }
-        _batches.push(Batch({startId: startId, endId: endId, vendor: vendor, label: label}));
-        emit BatchAdded(len, startId, endId, vendor, label);
+        _batches.push(Batch({startId: startId, endId: endId, renderer: renderer, label: label}));
+        emit BatchAdded(len, startId, endId, renderer, label);
     }
 
     /// @inheritdoc IBatchRenderRouter
@@ -111,17 +111,17 @@ contract BatchRenderRouter is IBatchRenderRouter, Ownable {
 
     /// @inheritdoc IRenderer
     function tokenURI(address collection_, uint256 tokenId) external view override returns (string memory) {
-        address vendor = batchOf(tokenId).vendor;
-        return IRenderer(vendor).tokenURI(collection_, tokenId);
+        address renderer = batchOf(tokenId).renderer;
+        return IRenderer(renderer).tokenURI(collection_, tokenId);
     }
 
     /// @dev No per-collection contract-level data is stored here; delegates
-    ///      to the first batch's vendor when one exists, so a marketplace
+    ///      to the first batch's renderer when one exists, so a marketplace
     ///      collection page still resolves to real metadata. Reverts
     ///      NoBatchForToken(0) when no batch has been added yet.
     function contractURI(address collection_) external view override returns (string memory) {
         if (_batches.length == 0) revert NoBatchForToken(0);
-        return IRenderer(_batches[0].vendor).contractURI(collection_);
+        return IRenderer(_batches[0].renderer).contractURI(collection_);
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -131,21 +131,21 @@ contract BatchRenderRouter is IBatchRenderRouter, Ownable {
     /// @inheritdoc IBatchRenderRouter
     /// @dev SurfaceCore.notifyMetadataUpdate only accepts calls from its own
     ///      renderer(), owner(), or an admin. Once this router is the
-    ///      collection's renderer, a batch vendor is none of those, so a
-    ///      vendor's own holder-triggered refresh cannot reach the core
-    ///      directly. This relay forwards it on the vendor's behalf, gated on
-    ///      the caller being a currently assigned vendor on some batch.
+    ///      collection's renderer, a batch renderer is none of those, so a
+    ///      renderer's own holder-triggered refresh cannot reach the core
+    ///      directly. This relay forwards it on the renderer's behalf, gated on
+    ///      the caller being a currently assigned renderer on some batch.
     function requestRefresh(uint256 tokenId) external {
         if (collection == address(0)) revert CollectionNotSet();
-        if (!_isVendor(msg.sender)) revert NotAuthorized();
+        if (!_isRegisteredRenderer(msg.sender)) revert NotAuthorized();
         ISurfaceCore(collection).notifyMetadataUpdate(tokenId, tokenId);
         emit RefreshRequested(msg.sender, tokenId);
     }
 
-    function _isVendor(address account) internal view returns (bool) {
+    function _isRegisteredRenderer(address account) internal view returns (bool) {
         uint256 len = _batches.length;
         for (uint256 i = 0; i < len; i++) {
-            if (_batches[i].vendor == account) return true;
+            if (_batches[i].renderer == account) return true;
         }
         return false;
     }

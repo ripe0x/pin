@@ -36,25 +36,25 @@ properties:
   (fully-onchain vs hi-res) behind an `onlyHolder` gate, then calls
   `refreshMetadata` on the token to emit an ERC-4906 refresh.
 - His current contract hardcodes a 1..20 token range. For batches this must
-  become constructor args (`startId`/`endId`) so each batch's vendor is a fresh
+  become constructor args (`startId`/`endId`) so each batch's renderer is a fresh
   deployment with its own range, no source edits per batch.
 
 ## Architecture: batch editions live entirely in renderer-land
 
 The Surface core has no concept of a "batch". A batch is a range of token ids
-that share a vendor (a per-batch renderer). This is consistent with the 2026-07
+that share one renderer. This is consistent with the 2026-07
 surface reduction, which moved all presentation data out of the core into
 renderer-land. Nothing in the core or factory changes for this launch.
 
 The mechanism is a **render router**: one contract set as the collection's
 `cfg.renderer`, holding an ordered list of batches (`startId`, `endId`,
-`vendor`, `label`), dispatching each `tokenURI(collection, tokenId)` call to the
-vendor whose range contains that id.
+`renderer`, `label`), dispatching each `tokenURI(collection, tokenId)` call to the
+renderer whose range contains that id.
 
 ```
 collection.cfg.renderer = BatchRenderRouter
-  batch 0: ids 1..20   -> vendor A (escape blue)
-  batch 1: ids 21..40  -> vendor B (next artwork)
+  batch 0: ids 1..20   -> renderer A (escape blue)
+  batch 1: ids 21..40  -> renderer B (next artwork)
   ...
 ```
 
@@ -63,23 +63,23 @@ collection.cfg.renderer = BatchRenderRouter
 The artist's original instinct was right: define this once so future artists do
 not each invent a different structure. PND authors and reviews one
 `BatchRenderRouter` contract; each artist deploys their own instance and owns
-it. Vendors stay fully the artist's own code (their art).
+it. Renderers stay fully the artist's own code (their art).
 
 Interface the router implements and advertises:
 
 ```solidity
 interface IBatchRenderRouter /* is IRenderer, IERC165 */ {
-    struct Batch { uint256 startId; uint256 endId; address vendor; string label; }
+    struct Batch { uint256 startId; uint256 endId; address renderer; string label; }
 
-    function addBatch(uint256 startId, uint256 endId, address vendor, string calldata label) external; // owner/admin
+    function addBatch(uint256 startId, uint256 endId, address renderer, string calldata label) external; // owner/admin
     function batchCount() external view returns (uint256);
     function batchAt(uint256 index) external view returns (Batch memory);
     function batchOf(uint256 tokenId) external view returns (Batch memory);
 
-    // tokenURI(address,uint256) from IRenderer: dispatch to batchOf(tokenId).vendor
+    // tokenURI(address,uint256) from IRenderer: dispatch to batchOf(tokenId).renderer
 
     // ERC-4906 relay, see gotcha below
-    function requestRefresh(uint256 tokenId) external; // registered vendors only
+    function requestRefresh(uint256 tokenId) external; // registered renderers only
 }
 ```
 
@@ -92,12 +92,12 @@ future batch project lights up automatically.
 
 `SurfaceCore.notifyMetadataUpdate` only accepts calls from `renderer()`,
 `owner()`, or an admin (`contracts/src/surface/SurfaceCore.sol:334`). Once the
-router is the collection's renderer, a per-batch vendor is **not** `renderer()`,
+router is the collection's renderer, a per-batch renderer is **not** `renderer()`,
 so the artist's `holderToggleFocMode -> refreshMetadata` path cannot emit the
 refresh directly. The router must expose a `requestRefresh(tokenId)` relay,
-callable only by its own registered vendors, that forwards to
+callable only by its own registered renderers, that forwards to
 `ISurfaceCore(collection).notifyMetadataUpdate(tokenId, tokenId)`. Bake this
-into the standard router; every batched-vendor project hits the same wall.
+into the standard router; every batched-renderer project hits the same wall.
 
 ## Deploy path: the artist deploys, from a pre-filled site page
 
@@ -192,7 +192,7 @@ separate from batching the artwork:
 
 - Open batch 1 by setting `maxMints` to the batch size (say 20) on the minter.
 - When batch 1 sells out, the artist raises `maxMints` for batch 2, deploys the
-  next vendor, and calls `addBatch` on his router. All owner transactions from
+  next renderer, and calls `addBatch` on his router. All owner transactions from
   his own wallet, from Remix or the site.
 
 ## Sepolia: one-time infra, and the deploy rehearsal
@@ -221,7 +221,7 @@ deploy-preview.
 1. **Mainnet-fork, engineering verification (free, local).** The artist's
    dependency contracts (his `hiRes`/`foc` engines and the EthFS FileStore) are
    already live on mainnet. Run `anvil --fork-url <public mainnet RPC>` and
-   exercise the real router plus vendors plus collection stack against his actual
+   exercise the real router plus renderers plus collection stack against his actual
    live contracts. Zero cost, no real ETH. This is the end-to-end confidence
    check before any real broadcast. Pin a fork block so the RPC cache compounds
    across reruns.
@@ -245,7 +245,7 @@ Fork testing proves the bytes work; Sepolia proves the UI works. Do both.
 
 ## Ownership split
 
-- **Artist (his EOA, Remix or Foundry):** deploys his vendor contracts (his art,
+- **Artist (his EOA, Remix or Foundry):** deploys his renderer contracts (his art,
   real bytecode) and his router instance; signs `createSurface` from the deploy
   page (owner is his wallet); runs all post-deploy wiring and future batches.
 - **PND engineering:** authors and reviews the standard `BatchRenderRouter`;
@@ -260,21 +260,21 @@ Each mainnet broadcast is its own decoded confirmation; nothing is bundled.
 
 1. (Prereq) Factory unpaused and verified on Etherscan.
 2. Artist deploys his router instance (his EOA).
-3. Artist deploys batch-1 vendor with its `startId`/`endId` (his EOA).
+3. Artist deploys batch-1 renderer with its `startId`/`endId` (his EOA).
 4. Artist calls `addBatch` on the router for batch 1.
 5. Artist connects wallet on the deploy page, reviews, and calls `createSurface`
    with `cfg.renderer` = his router. Collection address exists after this,
    owned by him.
-6. Post-deploy wiring: the vendor's `setTokenContract(collection)` so the
+6. Post-deploy wiring: the renderer's `setTokenContract(collection)` so the
    holder-toggle refresh path works (easy to forget, it depends on the
    collection address that only exists after step 5). Optional cover image.
 7. Open the mint (`setMintWindow` or already open) and do one test mint.
-8. Later batches: artist deploys the next vendor, `addBatch` on the router,
+8. Later batches: artist deploys the next renderer, `addBatch` on the router,
    raises `maxMints` on the minter. All his own transactions.
 
 ## Still need from the artist
 
-- Final vendor code and audio payload per batch, and dependency list.
+- Final renderer code and audio payload per batch, and dependency list.
 - Whether flat price plus window plus wallet cap is sufficient, or per-batch
   pricing is needed (the latter would mean a bespoke minter and indexer work;
   avoid if possible).
