@@ -13,6 +13,7 @@ import {
 import { ARTIST_RECORD_REGISTRY, MAINNET_CHAIN_ID, getAddressOrNull } from "@pin/addresses"
 import { fetchMetadataForUri } from "@pin/token-metadata"
 import { pgCache } from "./pg-cache"
+import { buildEscapeArtwork, isEscapeRenderer } from "./escape-render"
 import {
   getCollectionAddressesFromIndexer,
   getCollectionPrimaryMinterFromIndexer,
@@ -46,7 +47,10 @@ const USE_SEPOLIA = process.env.NEXT_PUBLIC_USE_SEPOLIA === "1"
 const SEPOLIA_RPC_URL =
   process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || "https://ethereum-sepolia-rpc.publicnode.com"
 
-function getClient() {
+/** The chain-aware read client (mainnet, sepolia, or a local fork). Exported
+ *  for the few readers that live outside this module, such as the escape
+ *  artwork assembler. */
+export function getClient() {
   if (FORK_MODE) {
     const url = process.env.NEXT_PUBLIC_ANVIL_RPC_URL || "http://127.0.0.1:8545"
     return createPublicClient({ chain: mainnet, transport: http(url) })
@@ -851,6 +855,15 @@ export async function getRendererTokenPreview(
   renderer: Address,
   tokenId: bigint,
 ): Promise<{ image: string | null; animationUrl: string | null } | null> {
+  // "escape (blue)" cannot be read through tokenURI at all: it assembles a
+  // ~7.4MB string onchain, measured at 5.45B gas, past any provider's
+  // eth_call ceiling. Its parts are cheap, so assemble them here and point
+  // the viewer at the route that serves the result.
+  if (isEscapeRenderer(renderer)) {
+    const art = await buildEscapeArtwork(tokenId)
+    if (!art) return null
+    return { image: art.image, animationUrl: `/api/escape/${tokenId.toString()}` }
+  }
   return pgCache(`sc-rtok:${lc(collection)}:${lc(renderer)}:${tokenId.toString()}`, 300, async () => {
     const client = getClient()
     const uri = await client
