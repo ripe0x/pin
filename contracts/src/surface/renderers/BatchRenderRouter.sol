@@ -84,6 +84,23 @@ contract BatchRenderRouter is IBatchRenderRouter, Ownable {
         emit BatchAdded(len, startId, endId, renderer, label);
     }
 
+    /// @notice Point an existing batch at a different renderer, keeping its id
+    ///         range and label. For fixing a renderer before its range mints;
+    ///         after a mint it changes what those tokens render.
+    /// @dev    Not part of IBatchRenderRouter: the advertised interface is the
+    ///         render-dispatch contract the frontend detects by id, and adding
+    ///         a member would change that id and break detection on already
+    ///         deployed routers.
+    function setRenderer(uint256 index, address renderer) external onlyOwner {
+        if (renderer == address(0)) revert ZeroRenderer();
+        if (index >= _batches.length) revert IndexOutOfBounds(index);
+        _batches[index].renderer = renderer;
+        emit BatchRendererSet(index, renderer);
+    }
+
+    /// @notice Emitted when an existing batch is pointed at a new renderer.
+    event BatchRendererSet(uint256 indexed index, address renderer);
+
     /// @inheritdoc IBatchRenderRouter
     function batchCount() external view returns (uint256) {
         return _batches.length;

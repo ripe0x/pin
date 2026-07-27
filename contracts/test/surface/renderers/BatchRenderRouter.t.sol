@@ -267,4 +267,38 @@ contract BatchRenderRouterTest is Test {
         assertEq(type(IBatchRenderRouter).interfaceId, bytes4(0xee4ae0b4));
         assertTrue(router.supportsInterface(0xee4ae0b4));
     }
+
+    // ── setRenderer ──────────────────────────────────────────────────────────
+
+    function test_setRenderer_ownerRepoints() public {
+        vm.startPrank(deployer);
+        router.addBatch(1, 20, address(rendererA), "batch 1");
+        router.setRenderer(0, address(rendererB));
+        vm.stopPrank();
+        assertEq(router.batchOf(5).renderer, address(rendererB));
+        assertEq(router.tokenURI(address(collection), 5), "renderer:B:5");
+        // range and label survive the swap
+        assertEq(router.batchAt(0).startId, 1);
+        assertEq(router.batchAt(0).endId, 20);
+        assertEq(router.batchAt(0).label, "batch 1");
+    }
+
+    function test_setRenderer_strangerReverts() public {
+        vm.prank(deployer);
+        router.addBatch(1, 20, address(rendererA), "batch 1");
+        vm.expectRevert(Ownable.Unauthorized.selector);
+        vm.prank(stranger);
+        router.setRenderer(0, address(rendererB));
+    }
+
+    function test_setRenderer_zeroAndOutOfBoundsRevert() public {
+        vm.startPrank(deployer);
+        router.addBatch(1, 20, address(rendererA), "batch 1");
+        vm.expectRevert(IBatchRenderRouter.ZeroRenderer.selector);
+        router.setRenderer(0, address(0));
+        vm.expectRevert(abi.encodeWithSelector(IBatchRenderRouter.IndexOutOfBounds.selector, 1));
+        router.setRenderer(1, address(rendererB));
+        vm.stopPrank();
+    }
+
 }
