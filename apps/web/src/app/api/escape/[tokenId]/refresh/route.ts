@@ -33,7 +33,9 @@ export async function POST(_req: Request, { params }: Params) {
     )
   }
   await pgCache(cooldownKey, COOLDOWN_SECONDS, async () => "1")
-  await pgCacheInvalidate(`escape-art:${tokenId}:`)
+  // Key is escape-art:v2:<tokenId>:<renderer>:<mode>; this drops every
+  // renderer/mode variant for exactly this token.
+  await pgCacheInvalidate(`escape-art:v2:${tokenId}:`)
 
   return NextResponse.json({ refreshed: true, tokenId })
 }

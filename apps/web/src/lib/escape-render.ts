@@ -170,8 +170,16 @@ export async function buildEscapeArtwork(
   )
   if (focMode === null) return null
 
-  return pgCache(`escape-art:${renderer.toLowerCase()}:${tokenId.toString()}:${focMode ? "foc" : "hires"}`, 86_400, async () => {
-    try {
+  // v2: the key is versioned so a fix to the assembly orphans stale entries
+  // (including any failure cached under an older scheme) rather than serving
+  // them for a day. The fetcher is allowed to throw — pgCache does not write
+  // on a throw, so a transient read failure is retried next request instead
+  // of being cached as "no artwork".
+  try {
+    return await pgCache(
+      `escape-art:v2:${tokenId.toString()}:${renderer.toLowerCase()}:${focMode ? "foc" : "hires"}`,
+      86_400,
+      async () => {
       const [shellB64, tonejs, bgColor] = await Promise.all([
         read<string>(client, renderer, abi, "buildHTML", ["__FILE__", "__SCRIPT__"]),
         read<string>(client, renderer, abi, "getTonejs"),
@@ -216,8 +224,9 @@ export async function buildEscapeArtwork(
       const html = shell.split("__FILE__").join(tonejs).split("__SCRIPT__").join(script)
 
       return { image, html, focMode }
-    } catch {
-      return null
-    }
-  })
+      },
+    )
+  } catch {
+    return null
+  }
 }
