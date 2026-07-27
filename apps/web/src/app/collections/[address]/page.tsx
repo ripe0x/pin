@@ -25,7 +25,6 @@ import {
   getAttribution,
   getCollection,
   getCollectionMintHistory,
-  getCollectionToken,
   getRecentTokenMarks,
   getRendererPreviews,
   getRendererTokenPreview,
@@ -130,10 +129,17 @@ export default async function CollectionPage({
   const onchainPreviews = !hasWork
     ? await getRendererPreviews(addr, c.renderer, c.minted + 1n, 15)
     : null
-  const firstTokenImage =
-    !hasCover && !hasWork && !onchainPreviews && c.minted > 0n
-      ? (await getCollectionToken(addr, 1n))?.image ?? ""
-      : ""
+  // With no cover, no work config and no preview extension, the collection
+  // still has a renderer that can describe its work. Read that directly
+  // rather than a minted token's tokenURI: the renderer answers for any id in
+  // range, so the piece shows before the first mint instead of the page
+  // reading as empty. Cached, and only reached once the cheaper sources are
+  // exhausted.
+  const rendererArt =
+    !hasCover && !hasWork && !onchainPreviews
+      ? await getRendererTokenPreview(addr, c.renderer, 1n)
+      : null
+  const firstTokenImage = rendererArt?.image ?? ""
 
   const permanent = c.isRendererLocked
   // sellsViaMinterOnly(idMode) covers the structural pooled case;
@@ -148,7 +154,7 @@ export default async function CollectionPage({
   // per-address registry — any collection whose live renderer advertises
   // IBatchRenderRouter lights this up. One cached supportsInterface read,
   // then (only when true) the router's batch list plus one cached
-  // getCollectionToken per batch for its shared artwork.
+  // getRendererTokenPreview per batch for its shared artwork.
   const isRouter = !homageSkin ? await isBatchRenderRouter(c.renderer) : false
   const batches = isRouter ? await getRouterBatches(c.renderer) : []
   const batchImages: Record<number, string> = {}
@@ -306,6 +312,14 @@ export default async function CollectionPage({
     />
   ) : onchainPreviews ? (
     <OnchainMosaic collection={addr} previews={onchainPreviews} />
+  ) : !hasCover && rendererArt?.animationUrl ? (
+    <div className="flex justify-center border-y border-gray-200 bg-gray-100 px-6 py-10 dark:bg-bg lg:py-16">
+      <TokenMedia
+        imageUrl={firstTokenImage}
+        animationUrl={rendererArt.animationUrl}
+        title={c.name}
+      />
+    </div>
   ) : hasCover || firstTokenImage ? (
     <div className="flex justify-center border-y border-gray-200 bg-gray-100 px-6 py-10 dark:bg-bg lg:py-16">
       <OptimizedImage
