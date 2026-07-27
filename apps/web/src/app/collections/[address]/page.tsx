@@ -273,18 +273,14 @@ export default async function CollectionPage({
             }}
           />
         }
+        description={editionDescription ? <p>{editionDescription}</p> : undefined}
         history={<CollectionMintHistory history={history} chainId={PND_CHAIN_ID} />}
         about={
-          editionDescription || batches.length > 0 ? (
-            <>
-              {editionDescription && <p>{editionDescription}</p>}
-              {batches.length > 0 && (
-                <p>
-                  Minted in batches: every token in a batch shares that
-                  batch&rsquo;s artwork. See the batch grid for the full release.
-                </p>
-              )}
-            </>
+          batches.length > 0 ? (
+            <p>
+              Minted in batches: every token in a batch shares that batch&rsquo;s
+              artwork. See the batch grid for the full release.
+            </p>
           ) : undefined
         }
         facts={[
