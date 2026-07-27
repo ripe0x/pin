@@ -27,11 +27,13 @@ import {
   getCollectionMintHistory,
   getRecentTokenMarks,
   getRendererPreviews,
+  getContractDescription,
   getRendererTokenPreview,
   getRouterBatches,
   isBatchRenderRouter,
 } from "@/lib/collection-onchain"
 import { detectHomageMinter } from "@/lib/homage/detect.server"
+import { isEscapeRenderer, ESCAPE_DESCRIPTION } from "@/lib/escape-render"
 import { getLayoutKindForCollection } from "@/lib/launch-descriptors"
 // Third layout: the generic collection page reskinned with the /mint/homage
 // terminal look (dark palette + Anton condensed display + mono body), applied via
@@ -154,6 +156,14 @@ export default async function CollectionPage({
         ? c.cfg.supplyCap
         : minterCap
 
+  // Sidebar description: the collection's own contractURI description when it
+  // has one, else the work's mirrored description for the escape special case
+  // (its tokenURI, where the literal lives, cannot be read). Null shows no
+  // blurb rather than inventing one.
+  const contractDescription = await getContractDescription(addr)
+  const editionDescription =
+    contractDescription ?? ((await isEscapeRenderer(c.renderer)) ? ESCAPE_DESCRIPTION : null)
+
   const permanent = c.isRendererLocked
   // sellsViaMinterOnly(idMode) covers the structural pooled case;
   // `!c.primaryMinter` additionally covers a sequential collection with no
@@ -265,11 +275,16 @@ export default async function CollectionPage({
         }
         history={<CollectionMintHistory history={history} chainId={PND_CHAIN_ID} />}
         about={
-          batches.length > 0 ? (
-            <p>
-              Minted in batches: every token in a batch shares that batch&rsquo;s
-              artwork. See the batch grid for the full release.
-            </p>
+          editionDescription || batches.length > 0 ? (
+            <>
+              {editionDescription && <p>{editionDescription}</p>}
+              {batches.length > 0 && (
+                <p>
+                  Minted in batches: every token in a batch shares that
+                  batch&rsquo;s artwork. See the batch grid for the full release.
+                </p>
+              )}
+            </>
           ) : undefined
         }
         facts={[

@@ -71,6 +71,16 @@ const ESCAPE_FOC = (process.env.ESCAPE_FOC_ADDRESS ??
  * are cheap. Cached for a day: a given address either is this contract or
  * never will be.
  */
+/**
+ * The work's description, mirrored from the string literal inside its
+ * tokenURI ('"description":"go right ahead"'). tokenURI cannot be read (it is
+ * the 5.45B gas call) and the string is not exposed by any getter, so this is
+ * the one place its copy lives. If the artist changes the copy he redeploys
+ * the renderer, at which point this is updated alongside. Only this one static
+ * string is mirrored, never the markup, which is assembled from his contracts.
+ */
+export const ESCAPE_DESCRIPTION = "go right ahead"
+
 export async function isEscapeRenderer(renderer: string): Promise<boolean> {
   const addr = renderer as Address
   if (addr.toLowerCase() === ESCAPE_RENDERER_HINT.toLowerCase()) return true
