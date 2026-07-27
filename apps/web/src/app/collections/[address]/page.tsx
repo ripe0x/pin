@@ -18,6 +18,9 @@ import { AttributionRoster } from "@/components/collections/AttributionRoster"
 import { ParityMosaic, OnchainMosaic } from "@/components/collections/CollectionMosaic"
 import { PlacardStats, StickyMintBar } from "@/components/collections/CollectionPlacard"
 import { CollectionFocusRefresh } from "@/components/collections/CollectionFocusRefresh"
+import { BatchGrid } from "@/components/collections/BatchGrid"
+import { EditionMintLayout } from "@/components/collections/edition/EditionMintLayout"
+import { TokenMedia } from "@/components/token/TokenMedia"
 import {
   getAttribution,
   getCollection,
@@ -25,8 +28,12 @@ import {
   getCollectionToken,
   getRecentTokenMarks,
   getRendererPreviews,
+  getRendererTokenPreview,
+  getRouterBatches,
+  isBatchRenderRouter,
 } from "@/lib/collection-onchain"
 import { detectHomageMinter } from "@/lib/homage/detect.server"
+import { getLayoutKindForCollection } from "@/lib/launch-descriptors"
 // Third layout: the generic collection page reskinned with the /mint/homage
 // terminal look (dark palette + Anton condensed display + mono body), applied via
 // ?skin=homage. homage-gallery.css defines the .homage-terminal tokens/fonts/accent
@@ -136,6 +143,128 @@ export default async function CollectionPage({
   // direct buy flow.
   const pooled = sellsViaMinterOnly(c.cfg.idMode) || !c.primaryMinter
   const strategy = hasPriceStrategy(c.sale?.priceStrategy ?? ZERO_ADDRESS)
+
+  // Batch view (docs/pnd-surface-second-launch.md): interface-driven, not a
+  // per-address registry — any collection whose live renderer advertises
+  // IBatchRenderRouter lights this up. One cached supportsInterface read,
+  // then (only when true) the router's batch list plus one cached
+  // getCollectionToken per batch for its shared artwork.
+  const isRouter = !homageSkin ? await isBatchRenderRouter(c.renderer) : false
+  const batches = isRouter ? await getRouterBatches(c.renderer) : []
+  const batchImages: Record<number, string> = {}
+  // The first batch's render, reused as the edition hero's shared artwork
+  // (every token in a batch renders the same piece) without a second read.
+  // Read from the renderer directly (not collection.tokenURI, which reverts
+  // for an unminted id) so batch cards and the hero show art before any mint.
+  let firstBatchArt: Awaited<ReturnType<typeof getRendererTokenPreview>> = null
+  if (batches.length > 0) {
+    const imgs = await Promise.all(batches.map((b) => getRendererTokenPreview(addr, c.renderer, b.startId)))
+    batches.forEach((b, i) => {
+      batchImages[b.index] = imgs[i]?.image ?? ""
+    })
+    firstBatchArt = imgs[0] ?? null
+  }
+
+  // Layout selection: a data lookup (collection address -> layoutKind),
+  // not a hardcoded per-address component branch (see AGENTS.md's note on
+  // the Homage anti-pattern this deliberately avoids repeating).
+  const layoutKind = getLayoutKindForCollection(addr)
+  if (!homageSkin && layoutKind === "edition") {
+    const editionArtists = attribution.length > 0 ? attribution.map((a) => a.creator) : [c.owner]
+    // An edition shows one artwork for every token, so the hero renders the
+    // shared piece (interactive when the renderer gives an animation_url),
+    // shown pre-mint too since the renderer returns art for any id. A batch
+    // grid is only for a multi-batch release; a single-artwork edition shows
+    // the piece itself, not a one-card grid.
+    const sharedArt = batches.length > 0 ? firstBatchArt : await getRendererTokenPreview(addr, c.renderer, 1n)
+    const editionHero =
+      batches.length > 1 ? (
+        <BatchGrid collection={addr} batches={batches} images={batchImages} />
+      ) : sharedArt?.animationUrl || sharedArt?.image || hasCover ? (
+        <TokenMedia
+          imageUrl={hasCover ? c.cover : sharedArt?.image ?? ""}
+          animationUrl={sharedArt?.animationUrl ?? null}
+          title={c.name}
+        />
+      ) : (
+        <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+          No artwork yet
+        </p>
+      )
+    const addressLink = (a: Address) => (
+      <a
+        href={evmNowAddressUrl(a, PND_CHAIN_ID)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="underline decoration-gray-300 underline-offset-2 hover:text-fg"
+      >
+        {shortAddress(a)}
+      </a>
+    )
+    return (
+      <EditionMintLayout
+        name={c.name}
+        byline={
+          <>
+            by{" "}
+            {editionArtists.map((a, i) => (
+              <span key={a}>
+                {i > 0 && ", "}
+                <a
+                  href={evmNowAddressUrl(a, PND_CHAIN_ID)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline decoration-gray-300 underline-offset-2 hover:text-fg"
+                >
+                  <ArtistName address={a} />
+                </a>
+              </span>
+            ))}
+            {c.cfg.supplyCap > 0n && ` · ${c.cfg.supplyCap.toString()} editions`}
+          </>
+        }
+        hero={editionHero}
+        mintInstrument={
+          <MintCollectionCTA
+            collection={addr}
+            minter={c.primaryMinter}
+            work={hasWork ? c.work : null}
+            snapshot={{
+              price: (c.sale?.price ?? 0n).toString(),
+              priceStrategy: c.sale?.priceStrategy ?? ZERO_ADDRESS,
+              mintStart: (c.sale?.mintStart ?? 0n).toString(),
+              mintEnd: (c.sale?.mintEnd ?? 0n).toString(),
+              payout: c.sale?.payout ?? ZERO_ADDRESS,
+              allowlistRoot: c.sale?.allowlistRoot ?? ("0x" + "0".repeat(64) as `0x${string}`),
+              walletCap: (c.sale?.walletCap ?? 0n).toString(),
+              supplyCap: c.cfg.supplyCap.toString(),
+              minted: c.minted.toString(),
+              referralShareBps: c.sale?.referralShareBps ?? REFERRAL_SHARE_BPS,
+            }}
+          />
+        }
+        history={<CollectionMintHistory history={history} chainId={PND_CHAIN_ID} />}
+        about={
+          batches.length > 0 ? (
+            <p>
+              Minted in batches: every token in a batch shares that batch&rsquo;s
+              artwork. See the batch grid for the full release.
+            </p>
+          ) : undefined
+        }
+        facts={[
+          { label: "Contract", value: addressLink(addr) },
+          { label: "Owner", value: addressLink(c.owner) },
+          { label: "Renderer", value: addressLink(c.renderer) },
+          {
+            label: "Royalty",
+            value: c.cfg.royaltyBps > 0 ? formatBps(c.cfg.royaltyBps) : "none",
+          },
+          { label: "Sale mode", value: pooled ? "Pooled (via minter)" : "Sequential" },
+        ]}
+      />
+    )
+  }
 
   // Lifecycle status is no longer stored on the token (thin-token
   // rearchitecture, §7.6): derive it here from the minter's sale window

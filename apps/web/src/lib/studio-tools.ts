@@ -88,6 +88,17 @@ export const STUDIO_TOOLS: StudioTool[] = [
     available: () =>
       surfaceFactory(MAINNET_CHAIN_ID) !== null || process.env.NEXT_PUBLIC_SURFACE_FACTORY !== undefined,
   },
+  {
+    id: "sale",
+    label: "Sale settings",
+    description:
+      "Edit a collection's price, mint window, max mints, payout, and referral share on its canonical minter — reopen a window or raise the cap for the next batch.",
+    // Same gate as the mint-gate/collections surfaces: price/window/etc. live
+    // on the collection's canonical FixedPriceMinter, so this ships dark until
+    // Surface is live on mainnet (or a dev/sepolia factory override is set).
+    available: () =>
+      surfaceFactory(MAINNET_CHAIN_ID) !== null || process.env.NEXT_PUBLIC_SURFACE_FACTORY !== undefined,
+  },
 ]
 
 export function studioTools(): StudioTool[] {

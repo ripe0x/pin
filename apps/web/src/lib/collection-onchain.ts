@@ -1,7 +1,15 @@
 import "server-only"
 import { createPublicClient, decodeFunctionResult, encodeFunctionData, http, keccak256, stringToBytes, type Address } from "viem"
 import { mainnet, sepolia } from "viem/chains"
-import { catalogAbi, surfaceAbi, surfaceFactoryAbi, fixedPriceMinterAbi, renderAssetsAbi } from "@pin/abi"
+import {
+  catalogAbi,
+  surfaceAbi,
+  surfaceFactoryAbi,
+  fixedPriceMinterAbi,
+  renderAssetsAbi,
+  iBatchRenderRouterAbi,
+  BATCH_RENDER_ROUTER_INTERFACE_ID,
+} from "@pin/abi"
 import { ARTIST_RECORD_REGISTRY, MAINNET_CHAIN_ID, getAddressOrNull } from "@pin/addresses"
 import { fetchMetadataForUri } from "@pin/token-metadata"
 import { pgCache } from "./pg-cache"
@@ -191,6 +199,80 @@ export async function getCollectionCover(address: Address): Promise<string> {
 }
 
 /**
+ * Batch view detection (docs/pnd-surface-second-launch.md "Architecture"):
+ * is `renderer` an IBatchRenderRouter? A single cached ERC-165
+ * supportsInterface staticcall, generic and interface-driven — no
+ * per-address registry the way detectHomageMinter is. Any future
+ * router-backed launch lights up automatically once its renderer address
+ * is set on the collection, with no frontend change. False on any read
+ * failure (a plain IRenderer with no supportsInterface, or an RPC error) —
+ * detection fails closed to the default grid.
+ */
+export async function isBatchRenderRouter(renderer: Address): Promise<boolean> {
+  if (renderer.toLowerCase() === ZERO_ADDRESS) return false
+  return pgCache(`sc-batchrouter:${lc(renderer)}`, 300, async () => {
+    const client = getClient()
+    try {
+      const ok = (await client.readContract({
+        address: renderer,
+        abi: iBatchRenderRouterAbi,
+        functionName: "supportsInterface",
+        args: [BATCH_RENDER_ROUTER_INTERFACE_ID],
+      })) as boolean
+      return ok
+    } catch {
+      return false
+    }
+  })
+}
+
+export type RenderRouterBatch = {
+  index: number
+  startId: bigint
+  endId: bigint
+  renderer: Address
+  label: string
+}
+
+/**
+ * A batch router's full batch list: one batchCount read plus one
+ * multicalled batchAt per index. Cached — batches change only when the
+ * artist calls addBatch for the next release (see the launch doc's "later
+ * batches" step), so a 5-minute TTL is generous, not tight.
+ */
+export async function getRouterBatches(renderer: Address): Promise<RenderRouterBatch[]> {
+  return pgCache(`sc-batches:${lc(renderer)}`, 300, async () => {
+    const client = getClient()
+    const base = { address: renderer, abi: iBatchRenderRouterAbi } as const
+    try {
+      const count = (await client.readContract({
+        ...base,
+        functionName: "batchCount",
+      })) as bigint
+      const n = Number(count)
+      if (n === 0) return []
+      const results = await client.multicall({
+        allowFailure: true,
+        contracts: Array.from({ length: n }, (_, i) => ({
+          ...base,
+          functionName: "batchAt" as const,
+          args: [BigInt(i)] as const,
+        })),
+      })
+      const batches: RenderRouterBatch[] = []
+      results.forEach((r, i) => {
+        if (r.status !== "success") return
+        const b = r.result as { startId: bigint; endId: bigint; renderer: Address; label: string }
+        batches.push({ index: i, startId: b.startId, endId: b.endId, renderer: b.renderer, label: b.label })
+      })
+      return batches
+    } catch {
+      return []
+    }
+  })
+}
+
+/**
  * Membership gate: is `address` a Surface deployed by our factory? The
  * indexed SurfaceCreated set answers first (a SELECT, no RPC); one cached
  * factory isSurface() read covers the two cases the table can't — the
@@ -236,7 +318,7 @@ export async function getCollection(address: Address): Promise<Collection | null
     const client = getClient()
     const base = { address, abi: surfaceAbi } as const
     try {
-      const [name, symbol, owner, rendererLocked, supplyLocked, renderer, idModeRaw, cfgRes] =
+      const [name, symbol, owner, rendererLocked, supplyLocked, renderer, idModeRaw, primaryMinterRaw, cfgRes] =
         await client.multicall({
           allowFailure: false,
           contracts: [
@@ -249,6 +331,10 @@ export async function getCollection(address: Address): Promise<Collection | null
             // idMode is a structural fact read separately since the Sequential/
             // Pooled split moved it out of the config struct.
             { ...base, functionName: "idMode" },
+            // primaryMinter read live (authoritative, kept current by
+            // PrimaryMinterSet). Folded into this multicall so it costs no
+            // extra round trip.
+            { ...base, functionName: "primaryMinter" },
             { ...base, functionName: "config" },
           ],
         })
@@ -270,9 +356,12 @@ export async function getCollection(address: Address): Promise<Collection | null
             .catch(() => "")
         : ""
 
-      const minterAddr = await getCollectionPrimaryMinterFromIndexer(address)
-      const primaryMinter =
-        minterAddr && minterAddr.toLowerCase() !== ZERO_ADDRESS ? (minterAddr as Address) : null
+      // primaryMinter is read live above (was an indexer-only read, which left
+      // the mint UI blind on chains with no indexer — fork/sepolia — and during
+      // the indexer lag right after a mainnet deploy; both fell through to the
+      // pooled "mints through its minter" notice).
+      const pmChain = primaryMinterRaw as Address
+      const primaryMinter = pmChain && pmChain.toLowerCase() !== ZERO_ADDRESS ? pmChain : null
       const sale = primaryMinter ? await getMinterSaleConfig(client, primaryMinter) : null
 
       return {
@@ -416,6 +505,10 @@ export type CollectionMintHistoryEntry = {
   holder: Address
   firstTokenId: bigint
   count: number
+  /** Mint block time (unix seconds); null if the block read failed. */
+  timestamp: number | null
+  /** The mint transaction. */
+  txHash: `0x${string}`
 }
 
 export type CollectionMintHistoryResult =
@@ -423,27 +516,18 @@ export type CollectionMintHistoryResult =
   | { unsupported: "pooled"; entries: [] }
 
 /**
- * Recent mint history for a collection, newest first, grouped into batches
- * of contiguous ids per holder. Read per-token via multicall (ownerOf)
- * rather than getLogs, matching the editions history reader — this works
- * identically on a fork and on mainnet without log-range limits. Mint
- * blocks/timestamps are event data and arrive with the indexer.
+ * Recent mint history for a collection, newest first, one row per mint
+ * transaction (a batch mint groups its contiguous ids into one row) carrying
+ * the minter, mint time, and mint tx. Read from Transfer(from=0) logs over a
+ * bounded recent window, one getBlock per unique block for timestamps —
+ * matching the Homage mint-feed chain-scan (lib/homage/collection.server.ts).
+ * Works without an indexer (fork/sepolia); on mainnet the indexer will carry
+ * full history past the window.
  *
- * Sequential-mode only. In Sequential mode token ids are exactly 1..minted
- * (the core assigns `nextId++`, never reused after burn), so "the last N
- * ids" is a correct approximation of "the last N mints" the same way the
- * editions reader relies on it.
- *
- * Pooled mode has no such invariant: an authorized minter supplies
- * arbitrary/reused ids (tokenId == sourceId), and a burned id can be
- * re-minted as a new instance. Reconstructing "which ids exist and in what
- * order they were minted" for Pooled requires walking Minted/Burned events,
- * which this repo's RPC policy forbids from a web request (see AGENTS.md:
- * the worker owns all chain scanning; web never scans). Rather than fake a
- * partial or misleading history, Pooled returns an explicit unsupported
- * marker; real pooled history arrives once the indexer picks up
- * Minted/Burned for collections (tracked alongside the rest of the
- * collection discovery work).
+ * Sequential-mode only. Pooled mode mints arbitrary/reused ids through an
+ * authorized minter; a faithful ordering needs the indexer's Minted/Burned
+ * stream, so Pooled returns an explicit unsupported marker rather than a
+ * partial reconstruction.
  */
 export async function getCollectionMintHistory(
   address: Address,
@@ -454,41 +538,57 @@ export async function getCollectionMintHistory(
   if (idMode === IdMode.Pooled) {
     return { unsupported: "pooled", entries: [] }
   }
-  const total = Number(minted)
-  if (total === 0) return { unsupported: false, entries: [] }
-  return pgCache(`sc-history:${lc(address)}:${total}`, 30, async () => {
-    const client = getClient()
-    const base = { address, abi: surfaceAbi } as const
-    const startTok = Math.max(1, total - limit + 1)
-    const ids: bigint[] = []
-    for (let t = total; t >= startTok; t--) ids.push(BigInt(t)) // newest first
-
-    const calls = ids.map(
-      (id) => ({ ...base, functionName: "ownerOf" as const, args: [id] as const }),
-    )
-    const res = await client.multicall({ allowFailure: true, contracts: calls })
-
-    const grouped: CollectionMintHistoryEntry[] = []
-    for (let i = 0; i < ids.length; i++) {
-      const ownerR = res[i]
-      if (ownerR.status !== "success") continue // burned / unreadable
-      const holder = ownerR.result as Address
-      const tokenId = ids[i]
-      const last = grouped[grouped.length - 1]
-      // Iterating newest-first; extend a batch when the next (lower) token
-      // has the same holder and is contiguous.
-      if (
-        last &&
-        last.holder.toLowerCase() === holder.toLowerCase() &&
-        last.firstTokenId === tokenId + 1n
-      ) {
-        last.firstTokenId = tokenId
-        last.count += 1
-      } else {
-        grouped.push({ holder, firstTokenId: tokenId, count: 1 })
+  if (minted === 0n) return { unsupported: false, entries: [] }
+  return pgCache(`sc-history:${lc(address)}:${minted.toString()}`, 30, async () => {
+    try {
+      const client = getClient()
+      const latest = await client.getBlockNumber()
+      const span = 300_000n
+      const fromBlock = latest > span ? latest - span : 0n
+      const logs = await client.getContractEvents({
+        address,
+        abi: surfaceAbi,
+        eventName: "Transfer",
+        args: { from: ZERO_ADDRESS as Address },
+        fromBlock,
+        toBlock: "latest",
+      })
+      // One row per mint tx (a batch mint shares a tx, holder, and block).
+      type Acc = { holder: Address; ids: bigint[]; blockNumber: bigint; txHash: `0x${string}` }
+      const byTx = new Map<string, Acc>()
+      for (const lg of logs) {
+        const { tokenId, to } = lg.args as { tokenId?: bigint; to?: Address }
+        if (tokenId === undefined || to === undefined || !lg.transactionHash || lg.blockNumber === null) continue
+        const acc = byTx.get(lg.transactionHash)
+        if (acc) acc.ids.push(tokenId)
+        else byTx.set(lg.transactionHash, { holder: to, ids: [tokenId], blockNumber: lg.blockNumber, txHash: lg.transactionHash })
       }
+      // getContractEvents returns ascending; newest tx first.
+      const accs = Array.from(byTx.values()).reverse().slice(0, limit)
+      // Timestamps aren't in the log — one getBlock per unique block.
+      const uniqueBlocks = Array.from(new Set(accs.map((a) => a.blockNumber)))
+      const blocks = await Promise.all(
+        uniqueBlocks.map((bn) => client.getBlock({ blockNumber: bn }).catch(() => null)),
+      )
+      const tsByBlock = new Map<bigint, number>()
+      uniqueBlocks.forEach((bn, i) => {
+        const b = blocks[i]
+        if (b) tsByBlock.set(bn, Number(b.timestamp))
+      })
+      const entries: CollectionMintHistoryEntry[] = accs.map((a) => {
+        const ids = a.ids.sort((x, y) => (x < y ? -1 : x > y ? 1 : 0))
+        return {
+          holder: a.holder,
+          firstTokenId: ids[0],
+          count: ids.length,
+          timestamp: tsByBlock.get(a.blockNumber) ?? null,
+          txHash: a.txHash,
+        }
+      })
+      return { unsupported: false, entries }
+    } catch {
+      return { unsupported: false, entries: [] }
     }
-    return { unsupported: false, entries: grouped }
   })
 }
 
@@ -722,6 +822,58 @@ export async function getRendererPreviews(
     ),
   )
   return [first, ...rest.filter((p): p is OnchainPreview => p !== null)]
+}
+
+const rendererTokenUriAbi = [
+  {
+    type: "function",
+    name: "tokenURI",
+    stateMutability: "view",
+    inputs: [
+      { name: "collection", type: "address" },
+      { name: "tokenId", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "string" }],
+  },
+] as const
+
+/**
+ * A renderer's output for one id, read from the renderer directly
+ * (renderer.tokenURI(collection, id)) instead of the collection's
+ * tokenURI(id). The collection reverts for an unminted id (ERC721), but a
+ * renderer returns art for any id in range — so this serves an edition's
+ * shared artwork (and a batch's card art) before any mint. Same dedicated
+ * high-gas path as tokenURI (scripty-class renderers cost 60-120M gas);
+ * cached.
+ */
+export async function getRendererTokenPreview(
+  collection: Address,
+  renderer: Address,
+  tokenId: bigint,
+): Promise<{ image: string | null; animationUrl: string | null } | null> {
+  return pgCache(`sc-rtok:${lc(collection)}:${lc(renderer)}:${tokenId.toString()}`, 300, async () => {
+    const client = getClient()
+    const uri = await client
+      .call({
+        to: renderer,
+        data: encodeFunctionData({
+          abi: rendererTokenUriAbi,
+          functionName: "tokenURI",
+          args: [collection, tokenId],
+        }),
+        gas: 300_000_000n,
+      })
+      .then(({ data }) =>
+        data
+          ? (decodeFunctionResult({ abi: rendererTokenUriAbi, functionName: "tokenURI", data }) as string)
+          : null,
+      )
+      .catch(() => null)
+    if (!uri) return null
+    const meta = await fetchMetadataForUri(uri, tokenId, 8_000).catch(() => null)
+    if (!meta) return null
+    return { image: meta.image ?? null, animationUrl: meta.animation_url ?? null }
+  })
 }
 
 export type RecentTokenEntry = {

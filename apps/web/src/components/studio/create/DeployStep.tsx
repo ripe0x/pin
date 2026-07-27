@@ -45,11 +45,17 @@ export function DeployStep({
   artistAddress,
   priceWei,
   onBack,
+  ownerOverride,
 }: {
   state: WizardState
   artistAddress: string
   priceWei: bigint
   onBack: () => void
+  /** Advanced override for the collection's owner arg (e.g. a Safe the
+   *  artist wants to own the collection instead of their signing EOA).
+   *  Defaults to the connected wallet — the common case, and the only
+   *  option the studio wizard exposes today. */
+  ownerOverride?: Address
 }) {
   const { address } = useAccount()
   const chainId = useChainId()
@@ -131,11 +137,12 @@ export function DeployStep({
   function submit() {
     if (!canDeploy || !factory || !address) return
     const creators = collabCheck.ok ? collabCheck.parsed : []
+    const owner = ownerOverride ?? address
     deploy.writeContract({
       address: factory,
       abi: surfaceFactoryAbi,
       functionName: "createSurface",
-      args: [state.name.trim(), state.symbol.trim(), address, buildCfg(), buildSale(), creators],
+      args: [state.name.trim(), state.symbol.trim(), owner, buildCfg(), buildSale(), creators],
     })
   }
 
