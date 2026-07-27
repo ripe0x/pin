@@ -6,7 +6,7 @@ hardcoded per-address entries. That got one project out the door but built no
 reusable path.
 
 This is the second launch: an artist ("escape (blue)", working title) shipping
-a **sequential 721-supply collection minted in batches**, each batch a distinct
+a **sequential collection minted in batches**, each batch a distinct
 artwork, every token within a batch sharing that batch's artwork, with a
 holder-controlled per-token toggle. The goal here is two things at once:
 
@@ -187,8 +187,8 @@ cannot express.
 
 ## Batches are a mint-economics axis the artist drives himself
 
-One collection, one `createSurface` call, supply cap 721. Batching the mint is
-separate from batching the artwork:
+One collection, one `createSurface` call. Batching the mint is separate from
+batching the artwork:
 
 - Open batch 1 by setting `maxMints` to the batch size (say 20) on the minter.
 - When batch 1 sells out, the artist raises `maxMints` for batch 2, deploys the
@@ -278,7 +278,8 @@ Each mainnet broadcast is its own decoded confirmation; nothing is bundled.
 - Whether flat price plus window plus wallet cap is sufficient, or per-batch
   pricing is needed (the latter would mean a bespoke minter and indexer work;
   avoid if possible).
-- Collection name and symbol, supply cap confirmation (721), first batch size.
+- Collection name and symbol, supply cap (open, or a fixed total), first batch
+  size. His renderer's current range is ids 1..12.
 - Price, royalty bps, royalty and payout addresses.
 - Owner wallet address (for the deploy) and creator credit addresses.
 - Confirmation the work is gesture-started for audio (his current one is), so no

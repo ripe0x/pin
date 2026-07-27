@@ -54,15 +54,20 @@ export type LaunchDescriptor = {
 /**
  * "escape (blue)" — the second Surface launch (batch editions), working
  * title. Mostly blank/placeholder: Dave fills real values (name, symbol,
- * router address, price, royalty receiver, creators) once the artist's
- * router + batch-1 vendor are deployed. supplyCap is the one confirmed
- * number (docs/pnd-surface-second-launch.md: "supply cap 721").
+ * renderer address, price, royalty receiver, creators) once the artist's
+ * renderer is deployed.
+ *
+ * Open supply: the series ships in batches over time with no announced
+ * total, so the collection carries no cap and each batch's size is set on
+ * the minter (maxMints, raised per batch in the studio Sale Settings tool).
+ * An earlier draft read a cap of 721 out of the artist's "721 editions",
+ * which meant ERC-721, not a quantity.
  */
 export const ESCAPE_BLUE_DESCRIPTOR: LaunchDescriptor = {
   slug: "escape-blue",
   name: "escape (blue)",
   symbol: "",
-  supplyCap: "721",
+  supplyCap: "",
   royaltyBps: 1000, // 10%, wizard default — confirm with the artist
   royaltyReceiver: "",
   price: "",
