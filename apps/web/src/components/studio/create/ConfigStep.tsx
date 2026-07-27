@@ -1,5 +1,6 @@
 "use client"
 
+import type { ReactNode } from "react"
 import { isAddress } from "viem"
 import type { UseEthAmountInputResult } from "@/lib/useEthAmountInput"
 import type { WizardState } from "./types"
@@ -22,12 +23,22 @@ export function ConfigStep({
   price,
   disabled,
   onNext,
+  supplySlot,
+  supplySlotOk = true,
 }: {
   state: WizardState
   set: Setter
   price: UseEthAmountInputResult
   disabled: boolean
   onNext: () => void
+  /** Extra supply-side control rendered directly under the supply and
+   *  window fields, for callers that configure something this form does not
+   *  own (the seeded launch page sets the minter's sale ceiling here).
+   *  Omitted by the studio wizard, which leaves that ceiling unset. */
+  supplySlot?: ReactNode
+  /** Whether `supplySlot`'s own input is valid; gates Continue alongside
+   *  this form's checks. */
+  supplySlotOk?: boolean
 }) {
   if (!state.preset) return null
 
@@ -53,7 +64,7 @@ export function ConfigStep({
   // Every preset sells through the same built-in paid path; renderer-native
   // works differ only in where the artwork comes from, not in economics.
   const canProceed =
-    identityOk && presetOk && priceOk && royaltyOk && capOk && payoutOk && collabCheck.ok
+    identityOk && presetOk && priceOk && royaltyOk && capOk && payoutOk && collabCheck.ok && supplySlotOk
 
   return (
     <div className="space-y-5">
@@ -88,6 +99,8 @@ export function ConfigStep({
       )}
 
       <PriceSupplyWindowFields state={state} set={set} price={price} disabled={disabled} />
+
+      {supplySlot}
       <RoyaltyPayoutFields state={state} set={set} disabled={disabled} />
       <CollaboratorFields state={state} set={set} disabled={disabled} />
 
