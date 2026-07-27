@@ -38,6 +38,13 @@ export type LaunchDescriptor = {
    *  descriptor documents launch intent even though the deploy page
    *  doesn't wire it into the create tx. */
   walletCap: string
+  /** The minter's sale ceiling, set in the deploy transaction. "" = no
+   *  ceiling, which leaves an open-supply collection with no mint window
+   *  unbounded from the moment it deploys; a batched release sets its first
+   *  batch size here and raises it per batch afterwards (studio Sale
+   *  settings). Distinct from supplyCap, which bounds the collection across
+   *  every minter it grants. */
+  maxMints: string
   /** "" = payoutRecipient defaults to the collection owner. */
   payoutRecipient: string
   /** The artist's deployed IBatchRenderRouter (or any IRenderer) address. */
@@ -73,6 +80,10 @@ export const ESCAPE_BLUE_DESCRIPTOR: LaunchDescriptor = {
   price: "",
   mintStart: "",
   mintEnd: "",
+  // First batch. The artist's renderer currently covers ids 1..12, so a
+  // larger ceiling would mint tokens it cannot render. Raised per batch
+  // afterwards in the studio Sale settings tool.
+  maxMints: "12",
   walletCap: "",
   payoutRecipient: "",
   renderer: "",

@@ -46,6 +46,7 @@ export function DeployStep({
   priceWei,
   onBack,
   ownerOverride,
+  maxMints,
 }: {
   state: WizardState
   artistAddress: string
@@ -56,6 +57,14 @@ export function DeployStep({
    *  Defaults to the connected wallet — the common case, and the only
    *  option the studio wizard exposes today. */
   ownerOverride?: Address
+  /** The minter's own sale ceiling, set in the same transaction that wires
+   *  the minter. 0 (the default) is unlimited, which is only safe when the
+   *  collection carries a supply cap or a mint window bounds the sale: an
+   *  open-supply collection with no window and no ceiling is an unbounded
+   *  mint from the moment it deploys. A batched release passes its first
+   *  batch size here and raises it per batch afterwards (studio Sale
+   *  settings -> setMaxMints). */
+  maxMints?: bigint
 }) {
   const { address } = useAccount()
   const chainId = useChainId()
@@ -113,16 +122,18 @@ export function DeployStep({
   function buildSale() {
     // Economics are preset-independent: renderer-native works sell through
     // the same canonical minter; only the artwork source differs. The
-    // wizard doesn't yet offer allowlist/wallet-cap/maxMints/priceStrategy
-    // at deploy time — those are studio follow-up actions (mint gate tool,
-    // ActivationQueue) directly on the minter after deploy.
+    // wizard doesn't yet offer allowlist/wallet-cap/priceStrategy at deploy
+    // time — those are studio follow-up actions (mint gate tool,
+    // ActivationQueue) directly on the minter after deploy. maxMints is the
+    // exception: a sale ceiling set after the fact leaves the mint unbounded
+    // in between, so callers that need one pass it here.
     return {
       price: priceWei,
       priceStrategy: ZERO_ADDRESS as Address,
       mintStart: state.hasWindow ? toUnix(state.startAt) : 0n,
       mintEnd: state.hasWindow ? toUnix(state.endAt) : 0n,
       payoutRecipient: (state.payout !== "" ? state.payout : ZERO_ADDRESS) as Address,
-      maxMints: 0n,
+      maxMints: maxMints ?? 0n,
       allowlistRoot: ZERO_ROOT,
       walletCap: 0n,
     }

@@ -64,6 +64,7 @@ export function SeededDeployWizard({ descriptor }: { descriptor: LaunchDescripto
   const [state, setState] = useState<WizardState>(() => descriptorToState(descriptor))
   const [step, setStep] = useState<Step>("config")
   const [ownerOverrideInput, setOwnerOverrideInput] = useState("")
+  const [maxMintsInput, setMaxMintsInput] = useState(descriptor.maxMints)
   const [showAdvancedOwner, setShowAdvancedOwner] = useState(false)
   const [showAdvancedRenderer, setShowAdvancedRenderer] = useState(false)
   const [codeCheck, setCodeCheck] = useState<"idle" | "checking" | "has-code" | "no-code" | "error">(
@@ -100,6 +101,13 @@ export function SeededDeployWizard({ descriptor }: { descriptor: LaunchDescripto
 
   const ownerOverride =
     showAdvancedOwner && isAddress(ownerOverrideInput) ? (ownerOverrideInput as Address) : undefined
+
+  // Empty is a deliberate "no ceiling"; anything else must be a whole number.
+  const maxMintsTrimmed = maxMintsInput.trim()
+  const maxMintsOk =
+    maxMintsTrimmed === "" ||
+    (Number.isInteger(Number(maxMintsTrimmed)) && Number(maxMintsTrimmed) >= 0)
+  const maxMints = maxMintsTrimmed === "" || !maxMintsOk ? 0n : BigInt(Number(maxMintsTrimmed))
 
   if (!address) {
     return (
@@ -140,7 +148,7 @@ export function SeededDeployWizard({ descriptor }: { descriptor: LaunchDescripto
   // step === "review"
   const collabCheck = validateCollaborators(state.collaborators)
   const rendererOk = isAddress(state.customRenderer)
-  const canDeploy = windowOk && rendererOk && collabCheck.ok
+  const canDeploy = windowOk && rendererOk && collabCheck.ok && maxMintsOk
 
   return (
     <Shell>
@@ -174,6 +182,10 @@ export function SeededDeployWizard({ descriptor }: { descriptor: LaunchDescripto
           <ReviewRow
             label="Owner"
             value={ownerOverride ? `${ownerOverride} (advanced override)` : `${address} (you)`}
+          />
+          <ReviewRow
+            label="Mintable now"
+            value={maxMints === 0n ? "No limit" : `${maxMints.toString()} tokens`}
           />
           <ReviewRow label="Renderer" value={state.customRenderer} />
         </div>
@@ -211,6 +223,27 @@ export function SeededDeployWizard({ descriptor }: { descriptor: LaunchDescripto
               </p>
             </div>
           )}
+        </div>
+
+        <div className="rounded-lg border border-gray-200 p-4 space-y-2">
+          <label className={LABEL} htmlFor="cc-maxmints">
+            How many can be minted now
+          </label>
+          <input
+            id="cc-maxmints"
+            className={`${INPUT} w-40`}
+            inputMode="numeric"
+            value={maxMintsInput}
+            onChange={(e) => setMaxMintsInput(e.target.value)}
+            placeholder="no limit"
+          />
+          {!maxMintsOk && <p className={ERROR}>Enter a whole number, or leave empty for no limit.</p>}
+          <p className={HELP}>
+            The sale ceiling on this collection&apos;s minter, set in the deploy
+            transaction. Raise it later to open the next batch (Studio, Sale
+            settings). Leaving it empty means anyone can mint without limit as
+            soon as the collection is live.
+          </p>
         </div>
 
         <div className="rounded-lg border border-gray-200 p-4 space-y-2">
@@ -259,6 +292,7 @@ export function SeededDeployWizard({ descriptor }: { descriptor: LaunchDescripto
             priceWei={price.wei ?? 0n}
             onBack={() => setStep("config")}
             ownerOverride={ownerOverride}
+            maxMints={maxMints}
           />
         ) : (
           <div className="space-y-3">
