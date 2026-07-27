@@ -455,8 +455,8 @@ export async function getCollectionToken(
       // name and traits are string literals inside that same unreadable
       // function, so nothing is mirrored here: the page labels the token the
       // way it labels every other one.
-      if (collection && isEscapeRenderer(collection.renderer)) {
-        const art = await buildEscapeArtwork(tokenId)
+      if (collection && (await isEscapeRenderer(collection.renderer))) {
+        const art = await buildEscapeArtwork(collection.renderer, tokenId)
         if (art) {
           return {
             tokenId,
@@ -466,7 +466,7 @@ export async function getCollectionToken(
             artwork: artwork || art.image,
             tokenURI: null,
             image: art.image,
-            animationUrl: `/api/escape/${tokenId.toString()}`,
+            animationUrl: `/api/escape/${tokenId.toString()}?renderer=${collection.renderer}`,
           }
         }
       }
@@ -881,10 +881,10 @@ export async function getRendererTokenPreview(
   // ~7.4MB string onchain, measured at 5.45B gas, past any provider's
   // eth_call ceiling. Its parts are cheap, so assemble them here and point
   // the viewer at the route that serves the result.
-  if (isEscapeRenderer(renderer)) {
-    const art = await buildEscapeArtwork(tokenId)
+  if (await isEscapeRenderer(renderer)) {
+    const art = await buildEscapeArtwork(renderer, tokenId)
     if (!art) return null
-    return { image: art.image, animationUrl: `/api/escape/${tokenId.toString()}` }
+    return { image: art.image, animationUrl: `/api/escape/${tokenId.toString()}?renderer=${renderer}` }
   }
   return pgCache(`sc-rtok:${lc(collection)}:${lc(renderer)}:${tokenId.toString()}`, 300, async () => {
     const client = getClient()
