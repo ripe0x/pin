@@ -13,6 +13,7 @@ import Link from "next/link"
  */
 export function EditionMintLayout({
   name,
+  subtitle,
   byline,
   hero,
   mintInstrument,
@@ -22,6 +23,10 @@ export function EditionMintLayout({
   facts,
 }: {
   name: string
+  /** The work's own title, shown under the collection name for a piece whose
+   *  title differs from its collection (e.g. "Escape (blue)" in "abstracts").
+   *  Omitted renders nothing. */
+  subtitle?: ReactNode
   byline: ReactNode
   /** The artwork: a single image, or a BatchGrid for a batch-editions launch. */
   hero: ReactNode
@@ -52,6 +57,7 @@ export function EditionMintLayout({
             </Link>
           </nav>
           <h1 className="text-2xl font-medium tracking-tight">{name}</h1>
+          {subtitle && <p className="text-base font-medium tracking-tight text-fg-muted">{subtitle}</p>}
           <p className="text-[11px] font-mono uppercase tracking-wider text-gray-500">{byline}</p>
         </section>
 

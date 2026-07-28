@@ -81,6 +81,14 @@ const ESCAPE_FOC = (process.env.ESCAPE_FOC_ADDRESS ??
  */
 export const ESCAPE_DESCRIPTION = "go right ahead"
 
+/**
+ * The work's title, mirrored from the name literal inside its tokenURI
+ * ('"name":"Escape (blue) #<id>"'), minus the token number. Same reason as
+ * ESCAPE_DESCRIPTION: tokenURI cannot be read and no getter exposes it. The
+ * collection is titled separately onchain (name()); this is the piece.
+ */
+export const ESCAPE_PIECE_TITLE = "Escape (blue)"
+
 export async function isEscapeRenderer(renderer: string): Promise<boolean> {
   const addr = renderer.toLowerCase() as Address
   if (addr === ESCAPE_RENDERER_HINT.toLowerCase()) return true

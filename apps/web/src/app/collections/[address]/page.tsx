@@ -33,7 +33,7 @@ import {
   isBatchRenderRouter,
 } from "@/lib/collection-onchain"
 import { detectHomageMinter } from "@/lib/homage/detect.server"
-import { isEscapeRenderer, ESCAPE_DESCRIPTION } from "@/lib/escape-render"
+import { isEscapeRenderer, ESCAPE_DESCRIPTION, ESCAPE_PIECE_TITLE } from "@/lib/escape-render"
 import { getLayoutKindForCollection } from "@/lib/launch-descriptors"
 // Third layout: the generic collection page reskinned with the /mint/homage
 // terminal look (dark palette + Anton condensed display + mono body), applied via
@@ -161,8 +161,10 @@ export default async function CollectionPage({
   // (its tokenURI, where the literal lives, cannot be read). Null shows no
   // blurb rather than inventing one.
   const contractDescription = await getContractDescription(addr)
-  const editionDescription =
-    contractDescription ?? ((await isEscapeRenderer(c.renderer)) ? ESCAPE_DESCRIPTION : null)
+  const isEscape = await isEscapeRenderer(c.renderer)
+  const editionDescription = contractDescription ?? (isEscape ? ESCAPE_DESCRIPTION : null)
+  // The piece's own title, shown under the collection name when it differs.
+  const pieceTitle = isEscape ? ESCAPE_PIECE_TITLE : null
 
   const permanent = c.isRendererLocked
   // sellsViaMinterOnly(idMode) covers the structural pooled case;
@@ -273,6 +275,7 @@ export default async function CollectionPage({
             }}
           />
         }
+        subtitle={pieceTitle}
         description={editionDescription ? <p>{editionDescription}</p> : undefined}
         history={<CollectionMintHistory history={history} chainId={PND_CHAIN_ID} />}
         about={
