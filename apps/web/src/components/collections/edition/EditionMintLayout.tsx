@@ -1,5 +1,4 @@
 import type { ReactNode } from "react"
-import Link from "next/link"
 
 /**
  * Generic "edition mint" collection layout: one artwork (or a batch grid),
@@ -23,9 +22,10 @@ export function EditionMintLayout({
   facts,
 }: {
   name: string
-  /** The work's own title, shown under the collection name for a piece whose
-   *  title differs from its collection (e.g. "Escape (blue)" in "abstracts").
-   *  Omitted renders nothing. */
+  /** The work's own title. When present it becomes the main heading and the
+   *  collection name (`name`) moves above it as an eyebrow; when absent the
+   *  collection name is the heading. For a piece titled apart from its
+   *  collection (e.g. "Escape (blue)" in "abstracts"). */
   subtitle?: ReactNode
   byline: ReactNode
   /** The artwork: a single image, or a BatchGrid for a batch-editions launch. */
@@ -51,13 +51,14 @@ export function EditionMintLayout({
       {/* Right: scrolling panel — identity, mint instrument, record. */}
       <aside className="border-gray-200 px-6 py-8 dark:bg-gray-100 lg:border-l lg:px-8 lg:py-10">
         <section className="space-y-2 border-b border-gray-100 pb-5">
-          <nav className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-            <Link href="/collections" className="hover:text-fg">
-              ← Collections
-            </Link>
-          </nav>
-          <h1 className="text-2xl font-medium tracking-tight">{name}</h1>
-          {subtitle && <p className="text-base font-medium tracking-tight text-fg-muted">{subtitle}</p>}
+{subtitle ? (
+            <>
+              <p className="text-[11px] font-mono uppercase tracking-wider text-gray-500">{name}</p>
+              <h1 className="text-2xl font-medium tracking-tight">{subtitle}</h1>
+            </>
+          ) : (
+            <h1 className="text-2xl font-medium tracking-tight">{name}</h1>
+          )}
           <p className="text-[11px] font-mono uppercase tracking-wider text-gray-500">{byline}</p>
         </section>
 
