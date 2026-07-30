@@ -118,7 +118,7 @@ export function logRpcEvent(ev: RpcEvent, opts?: { sample?: number }) {
  * batches plus multicall fan-outs can produce hundreds of upstream
  * calls per API request — full sampling would dominate the table.
  *
- * Lives here (rather than alongside `getAlchemyMainnetUrl` in
+ * Lives here (rather than alongside `getMainnetPrimaryUrl` in
  * alchemy-rpc.ts) so that any module-graph path leading to a client
  * component can keep importing the URL helper without dragging
  * "server-only" into the client bundle.
@@ -185,7 +185,7 @@ export function loggingHttpTransport(
  * rpc_events with its own `upstream` host so we can spot drift between
  * providers in the logs.
  *
- * Prefer this over `loggingHttpTransport(getAlchemyMainnetUrl(), route)`
+ * Prefer this over `loggingHttpTransport(getMainnetPrimaryUrl(), route)`
  * for every server-side mainnet client. The single-URL helper is kept for
  * paths that genuinely want a specific provider (none today).
  */

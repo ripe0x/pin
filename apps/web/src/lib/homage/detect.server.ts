@@ -3,6 +3,7 @@ import {createPublicClient, http, type Address} from "viem"
 import {mainnet, sepolia} from "viem/chains"
 import {homageMinterFor} from "./registry"
 import {homageMinterAbi} from "./contracts"
+import {getMainnetTransport} from "../alchemy-rpc"
 
 // Fork-aware server client (mirrors collection-onchain.ts getClient). Always the
 // mainnet chain object so viem resolves the canonical Multicall3; in fork mode the
@@ -19,14 +20,7 @@ function getClient() {
     return createPublicClient({chain: mainnet, transport: http(url)})
   }
   if (USE_SEPOLIA) return createPublicClient({chain: sepolia, transport: http(SEPOLIA_RPC_URL)})
-  const explicit = process.env.ALCHEMY_MAINNET_URL
-  if (explicit) return createPublicClient({chain: mainnet, transport: http(explicit)})
-  const key = process.env.ALCHEMY_API_KEY
-  const url =
-    key && !key.startsWith("set-")
-      ? `https://eth-mainnet.g.alchemy.com/v2/${key}`
-      : "https://eth.drpc.org"
-  return createPublicClient({chain: mainnet, transport: http(url)})
+  return createPublicClient({chain: mainnet, transport: getMainnetTransport()})
 }
 
 /**

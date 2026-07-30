@@ -13,10 +13,11 @@
  */
 import "server-only"
 import { resolveTokenMetadataWithState } from "@pin/token-metadata"
-import { createPublicClient, http, parseAbi } from "viem"
+import { createPublicClient, parseAbi } from "viem"
 import { mainnet } from "viem/chains"
 import { sql } from "./db"
 import { pgCache } from "./pg-cache"
+import { getMainnetTransport } from "./alchemy-rpc"
 
 export type TokenRef = {
   contract: `0x${string}`
@@ -57,13 +58,7 @@ export type DiscoveredToken = {
 }
 
 function getClient() {
-  const explicit = process.env.ALCHEMY_MAINNET_URL
-  if (explicit) return createPublicClient({ chain: mainnet, transport: http(explicit) })
-  const key = process.env.ALCHEMY_API_KEY
-  const url = key && !key.startsWith("set-")
-    ? `https://eth-mainnet.g.alchemy.com/v2/${key}`
-    : "https://eth.drpc.org"
-  return createPublicClient({ chain: mainnet, transport: http(url) })
+  return createPublicClient({ chain: mainnet, transport: getMainnetTransport() })
 }
 
 const EXISTENCE_ABI = [

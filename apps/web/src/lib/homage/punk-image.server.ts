@@ -2,6 +2,7 @@ import "server-only"
 import {createPublicClient, http, parseAbi, hexToBytes} from "viem"
 import {mainnet, sepolia} from "viem/chains"
 import {pgCache} from "../pg-cache"
+import {getMainnetTransport} from "../alchemy-rpc"
 
 // The classic CryptoPunk pixel image for a punk id — the SOURCE a homage is
 // derived from. Reads `punkImage` (2304-byte RGBA) from PunksRenderer
@@ -33,14 +34,7 @@ function getClient() {
     return createPublicClient({chain: mainnet, transport: http(url)})
   }
   if (USE_SEPOLIA) return createPublicClient({chain: sepolia, transport: http(SEPOLIA_RPC_URL)})
-  const explicit = process.env.ALCHEMY_MAINNET_URL
-  if (explicit) return createPublicClient({chain: mainnet, transport: http(explicit)})
-  const key = process.env.ALCHEMY_API_KEY
-  const url =
-    key && !key.startsWith("set-")
-      ? `https://eth-mainnet.g.alchemy.com/v2/${key}`
-      : "https://eth.drpc.org"
-  return createPublicClient({chain: mainnet, transport: http(url)})
+  return createPublicClient({chain: mainnet, transport: getMainnetTransport()})
 }
 
 // 2304 RGBA bytes -> 24x24 SVG: one rect per horizontal same-color run, transparent

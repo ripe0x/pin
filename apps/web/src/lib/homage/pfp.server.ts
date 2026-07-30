@@ -3,6 +3,7 @@ import {createPublicClient, http, type Address} from "viem"
 import {mainnet, sepolia} from "viem/chains"
 import {homageRendererViewAbi} from "./contracts"
 import {pgCache} from "../pg-cache"
+import {getMainnetTransport} from "../alchemy-rpc"
 
 // The CANONICAL PFP form, read from the renderer contract itself:
 // HomageRenderer.renderSVG(id, status, circle=true) — the nest rendered as inscribed
@@ -26,14 +27,7 @@ function getClient() {
     return createPublicClient({chain: mainnet, transport: http(url)})
   }
   if (USE_SEPOLIA) return createPublicClient({chain: sepolia, transport: http(SEPOLIA_RPC_URL)})
-  const explicit = process.env.ALCHEMY_MAINNET_URL
-  if (explicit) return createPublicClient({chain: mainnet, transport: http(explicit)})
-  const key = process.env.ALCHEMY_API_KEY
-  const url =
-    key && !key.startsWith("set-")
-      ? `https://eth-mainnet.g.alchemy.com/v2/${key}`
-      : "https://eth.drpc.org"
-  return createPublicClient({chain: mainnet, transport: http(url)})
+  return createPublicClient({chain: mainnet, transport: getMainnetTransport()})
 }
 
 /** `<img>`-ready data URI of the on-chain PFP render for `punkId`, or null. */

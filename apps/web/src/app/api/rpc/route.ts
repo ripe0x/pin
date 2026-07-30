@@ -35,11 +35,15 @@ import {
 const ALCHEMY_API_KEY = process.env.ALCHEMY_API_KEY
 const INFURA_API_KEY = process.env.INFURA_API_KEY
 
-// Upstream chain: try Alchemy first, then Infura, then fall through to
-// public RPCs. Each fallback supports the standard JSON-RPC method set
-// including `eth_sendRawTransaction`, so a mint/bid still goes through
-// even when the primary is unhealthy. Order matters — earliest entries
-// are tried first.
+// Upstream chain: Tenderly's public gateway leads, then other anonymous
+// public RPCs, with Alchemy/Infura demoted to last-resort backstops (only
+// present when their key is set). Each upstream supports the standard
+// JSON-RPC method set including `eth_sendRawTransaction`, so a mint/bid
+// still goes through when an earlier one is unhealthy. Order matters —
+// earliest entries are tried first; the fallback rotates on failure, so a
+// capped or rate-limited provider doesn't stall the wallet. Leading with
+// the public tier spares paid Alchemy quota for the case every public
+// provider is failing at once.
 //
 // Infura's free tier intermittently caps `eth_getLogs` to a 10-block range
 // and returns an "Under the Free tier plan..." JSON-RPC error. The body
@@ -47,23 +51,22 @@ const INFURA_API_KEY = process.env.INFURA_API_KEY
 // transient failure so the proxy falls through to the next upstream — that
 // way Infura remains a useful authenticated backup for every other method
 // (eth_call, eth_estimateGas, eth_blockNumber, …) while wide log scans
-// gracefully skip past it to a public RPC without the cap.
+// gracefully skip past it.
 //
 // The publicnode endpoint accepts an optional API key; we use the anonymous
-// tier. drpc/llamarpc/cloudflare are all anonymous public mainnet RPCs.
+// tier. tenderly/drpc/cloudflare/1rpc are all anonymous public mainnet RPCs.
 const UPSTREAMS = [
+  "https://gateway.tenderly.co/public/mainnet",
+  "https://ethereum-rpc.publicnode.com",
+  "https://eth.drpc.org",
+  "https://cloudflare-eth.com",
+  "https://1rpc.io/eth",
   ALCHEMY_API_KEY
     ? `https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`
     : null,
   INFURA_API_KEY
     ? `https://mainnet.infura.io/v3/${INFURA_API_KEY}`
     : null,
-  "https://eth.llamarpc.com",
-  "https://ethereum-rpc.publicnode.com",
-  "https://eth.drpc.org",
-  "https://rpc.ankr.com/eth",
-  "https://cloudflare-eth.com",
-  "https://1rpc.io/eth",
 ].filter((u): u is string => typeof u === "string")
 
 // Per-upstream timeout. Public RPCs occasionally hang; bail fast and try the
