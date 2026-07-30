@@ -1,7 +1,8 @@
 import "server-only"
-import { createPublicClient, http, type Address } from "viem"
+import { createPublicClient, type Address } from "viem"
 import { mainnet } from "viem/chains"
 import { pgCache } from "./pg-cache"
+import { getMainnetTransport } from "./alchemy-rpc"
 import { sql } from "./db"
 
 /**
@@ -17,16 +18,10 @@ import { sql } from "./db"
  */
 
 function getClient() {
-  // Preference: ALCHEMY_MAINNET_URL (full URL — drpc paid / self-hosted)
-  // → ALCHEMY_API_KEY (Alchemy key fragment, legacy) → drpc public
-  // (free, rate-limited; only a courtesy so local dev boots without env).
-  const explicit = process.env.ALCHEMY_MAINNET_URL
-  if (explicit) return createPublicClient({ chain: mainnet, transport: http(explicit) })
-  const key = process.env.ALCHEMY_API_KEY
-  const url = key && !key.startsWith("set-")
-    ? `https://eth-mainnet.g.alchemy.com/v2/${key}`
-    : "https://eth.drpc.org"
-  return createPublicClient({ chain: mainnet, transport: http(url) })
+  // Tenderly-first public ladder, Alchemy only as a configured backstop —
+  // see alchemy-rpc.ts. A single provider's cap/outage rotates to the next
+  // rather than 500-ing these user-facing reads.
+  return createPublicClient({ chain: mainnet, transport: getMainnetTransport() })
 }
 
 /**

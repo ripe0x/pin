@@ -16,6 +16,7 @@ import {
   getHomageOutstandingIds,
 } from "./homage-queries"
 import { overlayPhaseWindows, overallStartFromWindows } from "./mint-snapshot-overlay"
+import { getMainnetTransport } from "./alchemy-rpc"
 
 /**
  * Live, cached onchain reads for the generic ERC-721 mint surface. Modeled on
@@ -38,14 +39,7 @@ function getClient(): PublicClient {
     const url = process.env.NEXT_PUBLIC_ANVIL_RPC_URL || "http://127.0.0.1:8545"
     return createPublicClient({ chain: mainnet, transport: http(url) })
   }
-  const explicit = process.env.ALCHEMY_MAINNET_URL
-  if (explicit) return createPublicClient({ chain: mainnet, transport: http(explicit) })
-  const key = process.env.ALCHEMY_API_KEY
-  const url =
-    key && !key.startsWith("set-")
-      ? `https://eth-mainnet.g.alchemy.com/v2/${key}`
-      : "https://eth.drpc.org"
-  return createPublicClient({ chain: mainnet, transport: http(url) })
+  return createPublicClient({ chain: mainnet, transport: getMainnetTransport() })
 }
 
 const lc = (a: string) => a.toLowerCase()
