@@ -188,7 +188,7 @@ async function tryIndexer<T>(
   }
 }
 
-const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v2").replace(
   /[^a-zA-Z0-9_]/g, "",
 )
 

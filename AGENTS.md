@@ -20,8 +20,10 @@ apps/worker   Node. Owns ALL per-token chain scanning + enrichment.
 apps/indexer  Ponder. DISCOVERY ONLY for the long tail (which artist
               deployed which contract): mint_creators, tl_creators,
               fnd_collections — plus fully-indexed fixed contracts
-              (pnd_*, fnd_*, srv2_artist_tokens, catalog_*). Writes the
-              ponder_v1 schema.
+              (pnd_*, fnd_*, srv2_artist_tokens, catalog_*, and the Surface
+              System's collections/collection_*). Writes the ponder_v2
+              schema (the live one; ponder_v1 is legacy — see Production
+              database below).
 ```
 
 `git log` shows the v2 rebuild that established this split: PR #69
@@ -86,18 +88,28 @@ Full notes: `docs/muri-integration.md`.
 ## Production database
 
 - **Prod = the `maglev` Railway DB** (`maglev.proxy.rlwy.net`). Schemas:
-  `public` + `ponder_sync` + `ponder_v1`, with **`INDEXER_SCHEMA=ponder_v1`**.
-- `apps/web/.env.local` MUST point at maglev with `INDEXER_SCHEMA=ponder_v1`.
-  (Verified current: it does.)
+  `public` + `ponder_sync` + `ponder_v1` + `ponder_v2`, with the live
+  indexer data in **`ponder_v2`** — set **`INDEXER_SCHEMA=ponder_v2`**.
+- **`ponder_v2` is the live schema, `ponder_v1` is legacy.** Ponder
+  namespaces each deploy by version so a redeploy backfills a fresh schema
+  without disturbing the live one, then readers flip over by env. `ponder_v2`
+  carries the Surface System tables (`collections`, `collection_mints`,
+  `collection_sales`, `collection_tokens`, `collection_referrals`) and the
+  homage tables (`homage_activity`/`config`/`tokens`) that `ponder_v1`
+  predates — 54 tables vs v1's 32, and fresher on every shared table. A
+  reader pointed at `ponder_v1` is blind to every Surface collection, so
+  `isCollectionInIndexer` always misses and the collection/mint pages fall
+  back to RPC-only (the 2026-07 surface-page 404 postmortem: web was on
+  `ponder_v1`, so a capped RPC provider took every `/collections/*` page
+  down with nothing to catch it).
+- `apps/web/.env.local` and the Netlify web env MUST set
+  `INDEXER_SCHEMA=ponder_v2`. The code default is `ponder_v2`; an env var
+  set to `ponder_v1` re-breaks Surface reads.
 - **Dead stack — do not trust:** an OLD `switchback` Railway DB had
-  `ponder_v2`/`ponder_v3` schemas and `lazy_*` public tables. That is the
-  pre-rebuild stack. maglev has **no** `lazy_*` tables and no v2/v3
-  schemas. If your local env points anywhere but maglev, you will
+  `lazy_*` public tables. That is the pre-rebuild stack. maglev has **no**
+  `lazy_*` tables. If your local env points anywhere but maglev, you will
   reconstruct the architecture wrong — this exact mistake cost a prior
   session hours.
-- `ponder_v2`/`ponder_v3` would only ever be empty Ponder safe-redeploy
-  namespaces if they existed; they don't exist on maglev. The live
-  Ponder data is `ponder_v1`.
 
 ## STALE TRAP: untracked `ponder/` directory
 

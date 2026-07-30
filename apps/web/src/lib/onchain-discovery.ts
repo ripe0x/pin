@@ -273,7 +273,7 @@ export async function discoverArtistTokenRefs(
 ): Promise<TokenRef[]> {
   if (!sql) return []
   const artist = artistAddress.toLowerCase()
-  const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+  const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v2").replace(
     /[^a-zA-Z0-9_]/g, "",
   )
 
@@ -629,7 +629,7 @@ export async function getTokenOnChainData(
 ): Promise<TokenOnChainData | null> {
   if (!sql) return null
   const c = contract.toLowerCase()
-  const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+  const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v2").replace(
     /[^a-zA-Z0-9_]/g, "",
   )
 
@@ -830,7 +830,7 @@ export async function discoverFoundationPinnedTokens(
 }>> {
   if (!sql) return []
   const lower = artistAddress.toLowerCase()
-  const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+  const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v2").replace(
     /[^a-zA-Z0-9_]/g, "",
   )
 

@@ -7,7 +7,7 @@ import type {
 import { sql } from "../db"
 import { getActiveTlAuctionMap } from "../onchain"
 
-const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v2").replace(
   /[^a-zA-Z0-9_]/g, "",
 )
 

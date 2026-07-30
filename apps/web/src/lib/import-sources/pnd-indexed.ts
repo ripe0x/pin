@@ -26,7 +26,7 @@ import type { ImportSource, RawWork, SkippedWork } from "./types.ts"
  * single and gives the artist an honest "already in catalog" count.
  */
 
-const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v2").replace(
   /[^a-zA-Z0-9_]/g,
   "",
 )

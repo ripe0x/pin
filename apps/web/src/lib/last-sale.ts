@@ -14,7 +14,7 @@ import { sql } from "./db"
  * — those venues aren't indexed in v2.
  */
 
-const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v2").replace(
   /[^a-zA-Z0-9_]/g, "",
 )
 
