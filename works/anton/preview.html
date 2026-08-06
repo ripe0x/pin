@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>anton preview + determinism check</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { margin: 0; font: 13px/1.4 system-ui, sans-serif; }
+      header { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px; border-bottom: 1px solid #8884; }
+      label { display: flex; gap: 4px; align-items: center; }
+      select, input { font: inherit; }
+      #stage { display: block; width: 100vw; height: 70vh; border: 0; }
+      #log { padding: 8px 10px; white-space: pre-wrap; font-family: ui-monospace, monospace; }
+      .ok { color: #2a8; }
+      .bad { color: #c33; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <label>palette
+        <select id="palette"></select>
+      </label>
+      <label>shape
+        <select id="shape"></select>
+      </label>
+      <label>tone
+        <select id="tone"><option>moon</option><option>sun</option></select>
+      </label>
+      <label>owner
+        <input id="owner" size="20" value="0x1111111111111111111111111111111111111111" />
+      </label>
+      <label>context
+        <select id="context"><option>token</option><option>preview</option><option>capture</option></select>
+      </label>
+      <label><input type="checkbox" id="bgOnly" /> bgOnly</label>
+      <button id="apply">apply</button>
+      <button id="test">run determinism test</button>
+    </header>
+    <iframe id="stage" src="frame.html"></iframe>
+    <div id="log"></div>
+
+    <script>
+      var PALETTES = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"];
+      var SHAPES = ["halo","arch","wide","bloom","opal","curved-circle","rounded-trapezoid","arrow","opal-2","droplet","square","opal-3","rounded-triangle","onyx","soft-oval","shard-x","shard-y","needle-veil","beam"];
+      var $ = function (id) { return document.getElementById(id); };
+      PALETTES.forEach(function (p) { var o = document.createElement("option"); o.textContent = p; $("palette").appendChild(o); });
+      SHAPES.forEach(function (s) { var o = document.createElement("option"); o.textContent = s; $("shape").appendChild(o); });
+
+      function query(extra) {
+        var q = new URLSearchParams();
+        q.set("palette", $("palette").value);
+        q.set("shape", $("shape").value);
+        q.set("tone", $("tone").value);
+        q.set("owner", $("owner").value);
+        q.set("context", (extra && extra.context) || $("context").value);
+        if ($("bgOnly").checked) q.set("bgOnly", "1");
+        if (extra && extra.owner) q.set("owner", extra.owner);
+        if (extra && extra.palette) q.set("palette", extra.palette);
+        return q.toString();
+      }
+      function apply() { $("stage").src = "frame.html?" + query(); }
+      $("apply").onclick = apply;
+
+      // Determinism check: render an offscreen capture-context frame twice with
+      // identical params (must match to the byte), then once with a different
+      // palette (must differ). Also confirms owner changes pace, not the still.
+      function renderCapture(q) {
+        return new Promise(function (resolve) {
+          var f = document.createElement("iframe");
+          f.width = 512; f.height = 512;
+          f.style.position = "absolute"; f.style.left = "-9999px";
+          f.src = "frame.html?" + q;
+          f.onload = function () {
+            setTimeout(function () {
+              var c = f.contentDocument.getElementById("gl");
+              var data = c ? c.toDataURL("image/png") : null;
+              document.body.removeChild(f);
+              resolve(data);
+            }, 400);
+          };
+          document.body.appendChild(f);
+        });
+      }
+      async function runTest() {
+        var log = $("log");
+        log.textContent = "running...";
+        var base = query({ context: "capture" });
+        var a = await renderCapture(base);
+        var b = await renderCapture(base);
+        var diffPalette = $("palette").value === "A" ? "B" : "A";
+        var c = await renderCapture(query({ context: "capture", palette: diffPalette }));
+        // owner should not change the canonical still
+        var d = await renderCapture(query({ context: "capture", owner: "0x2222222222222222222222222222222222222222" }));
+        var lines = [];
+        function line(ok, msg) { lines.push((ok ? "PASS " : "FAIL ") + msg); }
+        line(!!a && a === b, "same params + capture -> identical still");
+        line(!!a && !!c && a !== c, "different palette -> different still");
+        line(!!a && !!d && a === d, "different owner -> identical still (pace only, not composition)");
+        log.innerHTML = lines.map(function (l) { return '<span class="' + (l.indexOf("PASS") === 0 ? "ok" : "bad") + '">' + l + "</span>"; }).join("\n");
+      }
+      $("test").onclick = runTest;
+    </script>
+  </body>
+</html>

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>anton work</title>
+    <style>
+      html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #0f1534; }
+      canvas { display: block; }
+    </style>
+    <!--
+      Offchain parity document. Mirrors the onchain assembly order: head style,
+      then the injected window.tokenData context, then the artist code. The
+      onchain renderer builds the byte-equivalent of this; keep them in sync.
+    -->
+    <script>
+      (function () {
+        var q = new URLSearchParams(location.search);
+        window.tokenData = {
+          hash: q.get("hash") || "0x0000000000000000000000000000000000000000000000000000000000000000",
+          tokenId: q.get("tokenId") || "1",
+          collection: q.get("collection") || "0x0000000000000000000000000000000000000000",
+          chainId: 1,
+          version: 1,
+          context: q.get("context") || "token",
+          owner: q.get("owner") || "0x0000000000000000000000000000000000000000",
+          params: {
+            palette: q.get("palette") || "A",
+            shape: q.get("shape") || "halo",
+            tone: q.get("tone") || "moon",
+            bgOnly: q.get("bgOnly") === "1"
+          }
+        };
+      })();
+    </script>
+  </head>
+  <body>
+    <!-- Harness-only cache-bust so edits to anton.js are always picked up in
+         local dev. The onchain assembly inlines the code; there is no cache. -->
+    <script>
+      (function () {
+        var s = document.createElement("script");
+        s.src = "anton.js?v=" + Date.now();
+        document.body.appendChild(s);
+      })();
+    </script>
+  </body>
+</html>
