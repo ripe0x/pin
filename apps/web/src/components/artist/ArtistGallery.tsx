@@ -266,7 +266,11 @@ function GalleryCard({
             src={imgSrc}
             alt={item.title}
             className="block w-full h-auto"
-            loading="lazy"
+            // No loading="lazy": WebKit (iOS Safari) never loads lazy images
+            // inside a CSS multi-column (`columns-*`) container, so this
+            // masonry gallery renders blank on mobile Safari while working on
+            // desktop Chromium. Grid-based tiles elsewhere are unaffected.
+            decoding="async"
             onError={onImgError}
             onLoad={(e) => {
               const img = e.currentTarget
