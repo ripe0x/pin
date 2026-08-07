@@ -44,13 +44,42 @@ async function findCandidates(): Promise<Candidate[]> {
   // hasn't run yet. Falling back to `artist_tokens` alone (which is
   // already gated at the scanner level) lets the worker make progress
   // during the Ponder backfill window.
-  const ponderReady = (await sql`
-    SELECT EXISTS (SELECT 1 FROM information_schema.tables
-      WHERE table_schema = ${INDEXER_SCHEMA} AND table_name = 'fnd_artist_tokens'
-    ) AS ready
-  `) as Array<{ ready: boolean }>
+  const tableExists = async (name: string) =>
+    (
+      (await sql`
+        SELECT EXISTS (SELECT 1 FROM information_schema.tables
+          WHERE table_schema = ${INDEXER_SCHEMA} AND table_name = ${name}
+        ) AS ready
+      `) as Array<{ ready: boolean }>
+    )[0]?.ready ?? false
 
-  const cte = ponderReady[0]?.ready
+  const ponderReady = await tableExists("fnd_artist_tokens")
+  // Surface collections (PND-native onchain works) live in a separate
+  // Ponder deploy that can trail the others; gate the branch on the
+  // table existing so a fresh/older schema doesn't error the query.
+  const surfaceReady = await tableExists("collection_mints")
+
+  // Surface mints carry a contiguous [first_token_id, +quantity) range
+  // per event; expand to one row per token. Gated on the collection
+  // owner (the artist) being in known_artists, the same spend ceiling as
+  // every other branch. Their tokenURI is an onchain document — for an
+  // onchain-SVG work the `image` field is a small self-contained SVG that
+  // the shared resolver stores like any other image, giving the feed a
+  // per-token thumbnail without a render-time chain read.
+  const surfaceBranch = surfaceReady
+    ? `
+         UNION
+         SELECT lower(cm.collection) AS contract, gs.token_id::text
+           FROM ${INDEXER_SCHEMA}.collection_mints cm
+           JOIN ${INDEXER_SCHEMA}.collections c ON c.collection = cm.collection
+           JOIN known_artists k ON k.address = lower(c.owner)
+           CROSS JOIN LATERAL generate_series(
+             cm.first_token_id::bigint,
+             cm.first_token_id::bigint + cm.quantity::bigint - 1
+           ) AS gs(token_id)`
+    : ""
+
+  const cte = ponderReady
     ? `WITH discovered AS (
          -- FND shared-1/1 mints: only for creators in known_artists.
          SELECT lower(t.contract) AS contract, t.token_id::text AS token_id
@@ -66,7 +95,7 @@ async function findCandidates(): Promise<Candidate[]> {
          -- but JOIN defensively in case a row pre-dates a gate change.
          SELECT lower(t.contract), t.token_id
            FROM artist_tokens t
-           JOIN known_artists k ON k.address = t.artist
+           JOIN known_artists k ON k.address = t.artist${surfaceBranch}
        )`
     : `WITH discovered AS (
          SELECT lower(t.contract) AS contract, t.token_id

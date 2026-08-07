@@ -3,7 +3,7 @@ import { ipfsToHttp } from "@pin/shared"
 import { resolveTokenMetadataDirect } from "./onchain-discovery"
 import { getArtistIdentity } from "./artist-queries"
 import { getCollectionCover } from "./collection-onchain"
-import type { ActivityEvent } from "./indexer-queries"
+import { getTokenImagesFromMetadata, type ActivityEvent } from "./indexer-queries"
 import {
   GROUP_MINTER_SAMPLE,
   groupFeedEvents,
@@ -39,10 +39,12 @@ export {
  * not a hundred token reads.
  *
  * Surface rows (kind "mint" or "collection.deployed" with `collection`
- * set) never resolve tokenURI — a generative tokenURI is a full HTML
- * document. Their name comes from the indexed row (SurfaceCreated carries
- * it) and their thumbnail from the collection cover until the capture
- * pipeline provides per-token frames.
+ * set) never resolve tokenURI at render time — a generative tokenURI is a
+ * full HTML document. Their name comes from the indexed row
+ * (SurfaceCreated carries it). Their thumbnail is the worker-warmed
+ * per-token image from token_metadata when present (an onchain-SVG work's
+ * small `image` field), falling back to the collection cover, then the
+ * actor's avatar/zorb — all Postgres reads, no chain call.
  */
 
 const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
@@ -145,16 +147,58 @@ export async function enrichFeedPage(
     ),
   )
 
+  // ── Surface per-token images ──
+  // One Postgres read for the Surface mint tokens on the page. A hit
+  // (the worker warmed the token's onchain image) beats the collection
+  // cover; a miss falls through to the cover. Never a chain read here.
+  const surfacePairs = new Map<string, { contract: string; tokenId: string }>()
+  for (const item of items) {
+    const events = item.type === "event" ? [item.event] : item.events
+    for (const e of events) {
+      if (isSurfaceEvent(e) && e.tokenContract && e.tokenId) {
+        surfacePairs.set(surfaceImageKey(e.tokenContract, e.tokenId), {
+          contract: e.tokenContract,
+          tokenId: e.tokenId,
+        })
+      }
+    }
+  }
+  const surfaceImages = await getTokenImagesFromMetadata(
+    Array.from(surfacePairs.values()),
+  ).catch(() => new Map<string, string>())
+
   return Promise.all(
     items.map(async (item) =>
       item.type === "event"
         ? {
             type: "event" as const,
-            event: await enrichEvent(item.event, identities, covers),
+            event: await enrichEvent(item.event, identities, covers, surfaceImages),
           }
-        : enrichRun(item.events, identities, covers),
+        : enrichRun(item.events, identities, covers, surfaceImages),
     ),
   )
+}
+
+/** Key for the Surface per-token image map: `${contract}:${tokenId}`,
+ * contract lowercased (token ids are decimal strings, case-stable). */
+function surfaceImageKey(contract: string, tokenId: string): string {
+  return `${contract.toLowerCase()}:${tokenId}`
+}
+
+/** The media URI for a Surface event: the warmed per-token image if the
+ * worker has one, else the collection cover (may be ""). */
+function surfaceMediaUri(
+  event: ActivityEvent,
+  covers: Map<string, string>,
+  surfaceImages: Map<string, string>,
+): string | null {
+  if (event.tokenContract && event.tokenId) {
+    const img = surfaceImages.get(
+      surfaceImageKey(event.tokenContract, event.tokenId),
+    )
+    if (img) return img
+  }
+  return covers.get(event.collection!.toLowerCase()) || null
 }
 
 /** First few distinct counterparty addresses of a run, newest-first. */
@@ -176,6 +220,7 @@ async function enrichEvent(
   event: ActivityEvent,
   identities: Map<string, Identity>,
   covers: Map<string, string>,
+  surfaceImages: Map<string, string>,
 ): Promise<EnrichedActivityEvent> {
   const surface = isSurfaceEvent(event)
 
@@ -200,7 +245,7 @@ async function enrichEvent(
         : null
 
   const { mediaUrl, isVideo } = surface
-    ? mediaFromUri(covers.get(event.collection!.toLowerCase()) || null)
+    ? mediaFromUri(surfaceMediaUri(event, covers, surfaceImages))
     : mediaFromUri(meta?.image)
 
   const artistId = identities.get(event.artist.toLowerCase())
@@ -231,6 +276,7 @@ async function enrichRun(
   events: ActivityEvent[],
   identities: Map<string, Identity>,
   covers: Map<string, string>,
+  surfaceImages: Map<string, string>,
 ): Promise<EnrichedMintGroup> {
   const newest = events[0]
   const oldest = events[events.length - 1]
@@ -238,7 +284,20 @@ async function enrichRun(
 
   let media: { mediaUrl: string | null; isVideo: boolean }
   if (isSurfaceEvent(newest)) {
-    media = mediaFromUri(covers.get(newest.collection!.toLowerCase()) || null)
+    // Prefer the first run member with a warmed per-token image; else
+    // the collection cover. Newest-first, so this favors recent art.
+    const withImg = events.find(
+      (e) =>
+        e.tokenContract &&
+        e.tokenId &&
+        surfaceImages.get(surfaceImageKey(e.tokenContract, e.tokenId)),
+    )
+    const uri = withImg
+      ? surfaceImages.get(
+          surfaceImageKey(withImg.tokenContract!, withImg.tokenId!),
+        )!
+      : covers.get(newest.collection!.toLowerCase()) || null
+    media = mediaFromUri(uri)
   } else {
     const meta =
       newest.tokenContract && newest.tokenId

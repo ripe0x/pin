@@ -600,7 +600,6 @@ export type ActivityKind =
   | "auction.firstBid"
   | "auction.bid"
   | "auction.settled"
-  | "auction.cancelled"
   | "sale.buyNow"
   | "mint"
 
@@ -700,14 +699,15 @@ export async function getActivityFeed(
     const surfaceLive =
       surfaceFactory() !== null && (await surfaceTablesExist(db, schema))
 
-    // Filter listing/cancellation pairs that happened within 15 minutes
-    // of each other. Treated as noise (test mints, mistaken listings)
-    // rather than signal. Both events filter together so the feed
-    // doesn't show one half of the pair.
+    // Drop quick list/cancel pairs (listed then cancelled within 15
+    // minutes: test mints, mistaken listings) from the "listed" rows so
+    // the feed doesn't surface a half-second-lived listing. Cancellation
+    // itself is not a feed event — a delist is not a sovereign action
+    // worth a headline, and a bulk delist floods the feed — so there is
+    // no cancelled-listing branch.
     const SHORT_LIFE_SECONDS = 900
     const PND_NOT_QUICK_CANCEL = `NOT (status = 'cancelled' AND settled_at_time IS NOT NULL AND settled_at_time - created_at_time < ${SHORT_LIFE_SECONDS})`
     const FND_NOT_QUICK_CANCEL = `NOT (status = 'canceled' AND finalized_at_time IS NOT NULL AND finalized_at_time - created_at_time < ${SHORT_LIFE_SECONDS})`
-    const PND_LONG_LIVED_CANCEL = `status = 'cancelled' AND settled_at_time IS NOT NULL AND settled_at_time - created_at_time >= ${SHORT_LIFE_SECONDS}`
 
     // Hide "minted" rows whose tokenURI is broken. Three states, keyed on
     // the LEFT-JOINed token_metadata row (alias `m`):
@@ -859,29 +859,6 @@ export async function getActivityFeed(
             NULL::text
           FROM ${schema}.pnd_auctions
           ${where("status = 'settled' AND settled_at_time IS NOT NULL", "settled_at_time")}
-          ORDER BY settled_at_time DESC
-          LIMIT ${PER_SUBQUERY_LIMIT})
-
-         UNION ALL
-
-         (SELECT
-            'auction.cancelled'::text,
-            ('pnd-cancel:' || id)::text,
-            settled_at_time::text,
-            seller::text,
-            NULL::text,
-            token_contract::text,
-            token_id::text,
-            NULL::text,
-            reserve_price::text,
-            NULL::text,
-            house::text,
-            NULL::text,
-            NULL::text,
-            lifecycle_tx_hash::text,
-            NULL::text
-          FROM ${schema}.pnd_auctions
-          ${where(PND_LONG_LIVED_CANCEL, "settled_at_time")}
           ORDER BY settled_at_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})
 
@@ -1133,6 +1110,42 @@ ${
       quantity: r.quantity === null ? null : Number(r.quantity),
     }))
   }, timeoutMs)
+}
+
+/**
+ * Postgres-only per-token images for feed rows, keyed
+ * `${contract}:${tokenId}`. Reads the worker-populated `token_metadata`
+ * cache for the given pairs and returns only non-empty images on
+ * non-burned tokens. Never touches the chain: a miss means no cached
+ * image yet (the caller falls back to the collection cover), so a
+ * generative token's onchain HTML document is never fetched at render
+ * time. Used to give Surface mint rows a per-token thumbnail once the
+ * worker has warmed the token's small onchain `image` (an SVG data URI).
+ */
+export async function getTokenImagesFromMetadata(
+  pairs: Array<{ contract: string; tokenId: string }>,
+): Promise<Map<string, string>> {
+  if (INDEXER_DISABLED || !sql || pairs.length === 0) return new Map()
+  const contracts = pairs.map((p) => p.contract.toLowerCase())
+  const tokenIds = pairs.map((p) => p.tokenId)
+  const rows = (await sql`
+    SELECT contract, token_id, image_url
+      FROM token_metadata
+     WHERE (contract, token_id) IN (
+       SELECT * FROM unnest(${contracts}::text[], ${tokenIds}::text[])
+     )
+       AND image_url IS NOT NULL
+       AND COALESCE(burned, false) = false
+  `.catch(() => [])) as Array<{
+    contract: string
+    token_id: string
+    image_url: string
+  }>
+  const map = new Map<string, string>()
+  for (const r of rows) {
+    map.set(`${r.contract.toLowerCase()}:${r.token_id}`, r.image_url)
+  }
+  return map
 }
 
 // ─── Dependency-check helpers ────────────────────────────────────────────

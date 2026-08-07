@@ -220,8 +220,6 @@ function renderVerb(event: EnrichedActivityEvent): string {
         : "deployed a collection"
     case "auction.opened":
       return "listed"
-    case "auction.cancelled":
-      return "cancelled listing of"
     case "auction.firstBid":
     case "auction.bid":
       // Bid events use the BidHeadline path in the row template — this
@@ -362,10 +360,7 @@ function MintHeadline({
 function Subline({ event }: { event: EnrichedActivityEvent }) {
   const parts: ReactNode[] = []
 
-  if (
-    (event.kind === "auction.opened" || event.kind === "auction.cancelled") &&
-    event.reserveWei !== null
-  ) {
+  if (event.kind === "auction.opened" && event.reserveWei !== null) {
     parts.push(<>{formatEth(event.reserveWei)} reserve</>)
   }
 
