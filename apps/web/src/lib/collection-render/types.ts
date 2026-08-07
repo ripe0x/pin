@@ -3,7 +3,7 @@
  * of docs/injection-convention.md v1.
  *
  * The builder in ./build.ts must produce, byte for byte, the document the
- * onchain GenerativeRenderer emits (before its whole-document base64
+ * onchain ScriptyRenderer emits (before its whole-document base64
  * encoding). Anything that would make the two diverge belongs nowhere in
  * this module.
  */
@@ -39,7 +39,7 @@ export type WorkInput = {
 export type TokenContext = "token" | "preview" | "capture";
 
 /**
- * The injected context object, exactly as GenerativeRenderer emits it.
+ * The injected context object, exactly as ScriptyRenderer emits it.
  * hash and tokenId are Art Blocks compatible; see the convention doc.
  */
 export type TokenData = {

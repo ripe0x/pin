@@ -95,8 +95,9 @@ export function layeredResolver(
 }
 
 /**
- * The canonical gunzip helper (a GenerativeRenderer constructor immutable,
- * not part of WorkConfig). Chain-agnostic singleton: dev chains fork
+ * The canonical gunzip helper (a ScriptyRenderer constructor immutable via
+ * gunzipStore()/gunzipFile(), not per-token seed state). Chain-agnostic
+ * singleton: dev chains fork
  * mainnet, so the mainnet entry is valid there and serves as the fallback
  * for any chain id without its own entry. Overridable per collection by
  * reading the renderer's own gunzipStore()/gunzipFile() when it differs.

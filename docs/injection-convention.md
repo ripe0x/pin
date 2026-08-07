@@ -2,7 +2,7 @@
 
 How a generative work's code receives its token context, onchain and off.
 This is the load-bearing parity contract of the collection system: the
-onchain `GenerativeRenderer`, the studio previewer, the mint surface, and
+onchain `ScriptyRenderer`, the studio previewer, the mint surface, and
 the artist-site embed MUST inject the identical object, so a preview is
 the render.
 
