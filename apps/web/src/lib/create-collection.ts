@@ -39,7 +39,7 @@ export const PRESET_DESCRIPTION: Record<Preset, string> = {
  * offered as checkboxes in the GENERATIVE preset's dependency picker.
  *
  * Both entries are verified against the real mainnet EthFS store:
- * p5 via contracts/test/collection/renderers/GenerativeRendererFork.t.sol,
+ * p5 via contracts/test/surface/templates/ScriptyRendererFork.t.sol,
  * three.js via a direct getContent probe (407KB of content at exactly
  * "three-v0.147.0.min.js.gz", 2026-07-06). Any further library added to
  * this list must pass the same check: a non-empty getContent read at the

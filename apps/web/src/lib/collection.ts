@@ -108,6 +108,12 @@ export type CodeRef = {
   kind: CodeKind
 }
 
+/** Offchain parity shape for the render lib's work input (code + deps +
+ *  injection version). No onchain source in the current architecture: the
+ *  shared work registry was removed with the shared renderer, and a
+ *  bring-your-own ScriptyRenderer fixes its code/deps in the constructor
+ *  (no `workOf` reader). getCollection() returns this as an empty default;
+ *  consumers gate on `code.length` and fall back to the cover. */
 export type WorkConfig = {
   code: CodeRef[]
   deps: CodeRef[]
@@ -183,9 +189,9 @@ export type Collection = {
    *  null, or when it's set but doesn't implement this sale shape (a
    *  bring-your-own minter). */
   sale: MinterSaleConfig | null
-  /** What the work is, executably — read from the GenerativeRenderer's
-   *  work registry (renderer-land), empty for renderer-native works or
-   *  custom renderers. */
+  /** The work's executable code + deps as the offchain parity shape.
+   *  Empty in the current architecture (no shared work registry to read);
+   *  see WorkConfig. */
   work: WorkConfig
   /** Cover image from the RenderAssets registry ("" when unset). */
   cover: string

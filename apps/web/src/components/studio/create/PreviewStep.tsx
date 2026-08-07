@@ -3,7 +3,7 @@
 /**
  * The GENERATIVE preset's preview step: renders the artist's script against
  * 4 synthetic test seeds, byte-identical to what the onchain
- * GenerativeRenderer will produce (docs/injection-convention.md parity
+ * ScriptyRenderer will produce (docs/injection-convention.md parity
  * rule). The artist's script hasn't been uploaded yet, so it's resolved
  * from an in-memory Map (bytesResolver) while dependencies resolve from
  * chain via layeredResolver — this is the exact reason layeredResolver
