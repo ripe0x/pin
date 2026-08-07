@@ -368,6 +368,20 @@ export function openSeaAddressUrl(addr: string, chainId: number = PND_CHAIN_ID):
 }
 
 /**
+ * OpenSea item URL for a single token, chain-aware. Same
+ * assets/<chain>/<address>/<tokenId> path shape as the collection URL with the
+ * id appended; resolves to the token's own trading page.
+ */
+export function openSeaTokenUrl(
+  addr: string,
+  tokenId: string | bigint,
+  chainId: number = PND_CHAIN_ID,
+): string {
+  const base = chainId === sepolia.id ? "https://testnets.opensea.io/assets/sepolia" : "https://opensea.io/assets/ethereum"
+  return `${base}/${addr}/${tokenId.toString()}`
+}
+
+/**
  * Explorer tx URL, chain-aware. Mainnet uses evm.now; testnets use the
  * network's own etherscan subdomain.
  */
