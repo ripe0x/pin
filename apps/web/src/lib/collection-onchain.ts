@@ -15,6 +15,7 @@ import { fetchMetadataForUri } from "@pin/token-metadata"
 import { pgCache } from "./pg-cache"
 import { getMainnetTransport } from "./alchemy-rpc"
 import { buildEscapeArtwork, isEscapeRenderer } from "./escape-render"
+import { assembleTokenAnimationUrl } from "./offchain-assembly"
 import {
   getCollectionAddressesFromIndexer,
   getCollectionPrimaryMinterFromIndexer,
@@ -504,6 +505,23 @@ export async function getCollectionToken(
         const meta = await fetchMetadataForUri(rawTokenUri, tokenId, 8_000).catch(() => null)
         if (meta?.image) image = meta.image
         if (meta?.animation_url) animationUrl = meta.animation_url
+      }
+
+      // Generic offchain-assembly fallback: a ScriptyRenderer-shaped work whose
+      // onchain tokenURI is too large to eth_call (rawTokenUri null) is
+      // reassembled offchain, byte-identical, from its code refs (see
+      // lib/offchain-assembly.ts). Dormant for every renderer whose tokenURI
+      // resolves and for bespoke renderers (the probe returns false); the
+      // escape special-case above already returned. Generalizes that
+      // escape-specific hatch to any oversized ScriptyRenderer work.
+      if (!rawTokenUri && !animationUrl && collection && seedRes.status === "success") {
+        const assembled = await assembleTokenAnimationUrl(
+          address,
+          collection.renderer,
+          tokenId,
+          seedRes.result as `0x${string}`,
+        )
+        if (assembled) animationUrl = assembled
       }
 
       return {
