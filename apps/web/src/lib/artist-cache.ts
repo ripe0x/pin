@@ -18,6 +18,7 @@ import { unstable_cache } from "next/cache"
 import {
   discoverArtistTokenRefs,
   enrichTokens,
+  filterOutBurnedRefs,
   type TokenRef,
   type DiscoveredToken,
 } from "./onchain-discovery"
@@ -48,11 +49,13 @@ export class EnrichmentEmpty extends Error {
 // new tag).
 export const getCachedTokenRefs = unstable_cache(
   async (artistAddress: string): Promise<TokenRef[]> =>
-    discoverArtistTokenRefs(artistAddress),
+    filterOutBurnedRefs(await discoverArtistTokenRefs(artistAddress)),
+  // v7: drop burned/nonexistent tokens from refs so they leave both the
+  // gallery and the "N indexed works" count.
   // v6: seed-backed discovery for unadmitted artists (FND shared mints +
   // on-demand collection enumeration) — clears every cached empty-refs
   // entry written while those artists had no indexed rows.
-  ["artist-token-refs", "v6"],
+  ["artist-token-refs", "v7"],
   { revalidate: 86_400, tags: ["artist-refs"] },
 )
 
