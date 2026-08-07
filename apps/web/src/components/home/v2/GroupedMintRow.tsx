@@ -105,7 +105,7 @@ export function GroupedMintRow({ group }: Props) {
                   href={groupHref}
                   className="font-medium hover:underline underline-offset-2"
                 >
-                  {group.tokenCount} mints
+                  {group.mintCount} mints
                 </Link>
                 <span className="text-gray-500"> of </span>
                 <Link
@@ -171,11 +171,14 @@ export function GroupedMintRow({ group }: Props) {
             ) : null}
             <p className="font-mono text-[11px] text-gray-400 truncate">
               {group.totalWei !== null && group.totalWei > 0n ? (
-                <span>{formatEth(group.totalWei)} · </span>
+                <span>{formatEth(group.totalWei)}</span>
               ) : null}
-              <span>
-                over {formatSpan(group.oldestBlockTime, group.blockTime)}
-              </span>
+              {group.oldestBlockTime < group.blockTime ? (
+                <span>
+                  {group.totalWei !== null && group.totalWei > 0n ? " · " : null}
+                  over {formatSpan(group.oldestBlockTime, group.blockTime)}
+                </span>
+              ) : null}
             </p>
           </div>
         </div>
