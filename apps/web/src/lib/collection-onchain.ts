@@ -196,6 +196,57 @@ export async function getCollectionCover(address: Address): Promise<string> {
   })
 }
 
+// The minimal fragment for the preservation probe: ScriptyRenderer (and any
+// renderer that stores its work onchain) exposes `code()` returning CodeRef[].
+// A bespoke renderer without this getter reverts, which the probe reads as
+// "unknown" (null), never as "no onchain code".
+const rendererCodeAbi = [
+  {
+    type: "function",
+    name: "code",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [
+      {
+        type: "tuple[]",
+        components: [
+          { name: "store", type: "address" },
+          { name: "name", type: "string" },
+          { name: "kind", type: "uint8" },
+        ],
+      },
+    ],
+  },
+] as const
+
+/**
+ * Whether a renderer stores its work code onchain, for the preservation
+ * grade. true = `code()` returns a non-empty CodeRef list; false = it
+ * returns empty (a static-image renderer); null = the renderer has no
+ * `code()` getter (a bespoke renderer), so nothing is claimed either way.
+ *
+ * Long TTL: a renderer's onchain code is fixed for the renderer instance
+ * (ScriptyRenderer sets it in the constructor). One cached read per renderer
+ * per window, never per token render, per the preservation model's zero-
+ * per-render-RPC rule.
+ */
+export async function getRendererCodeOnchain(renderer: Address): Promise<boolean | null> {
+  if (!renderer || renderer.toLowerCase() === ZERO_ADDRESS) return null
+  return pgCache(`sc-code-onchain:${lc(renderer)}`, 3600, async () => {
+    const client = getClient()
+    try {
+      const refs = (await client.readContract({
+        address: renderer,
+        abi: rendererCodeAbi,
+        functionName: "code",
+      })) as readonly unknown[]
+      return refs.length > 0
+    } catch {
+      return null
+    }
+  })
+}
+
 /**
  * Batch view detection (docs/pnd-surface-second-launch.md "Architecture"):
  * is `renderer` an IBatchRenderRouter? A single cached ERC-165
