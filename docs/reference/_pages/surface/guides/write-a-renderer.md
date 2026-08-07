@@ -107,4 +107,14 @@ function renderer() external view returns (address); // the current slot; never 
 
 `lockRenderer` (on the collection) pins *which* renderer answers `tokenURI`; it does not verify what that renderer does internally. A generative renderer makes its *own* permanence promise: deploy it immutable (no setters at all), or give it a one-way lock over its work definition. A locked pointer at an immutable renderer fixes presentation as firmly as the collection contract itself, which is immutable from deploy.
 
+## Document size and the gas budget
+
+A renderer that assembles a full HTML document onchain pays for it at read time: `tokenURI` is an `eth_call`, and public RPCs cap how much gas a call may consume. A ScriptyRenderer work over a gzipped p5 dependency measures roughly 60 to 120 million gas per `tokenURI`, which an elevated-gas `eth_call` still serves. A work that inlines large assets pushes past that: escape blue bakes an mp3 via EthFS and its `tokenURI` costs about 5.45 billion gas, which no RPC will evaluate.
+
+An oversized `tokenURI` does not mean the work stops rendering. For any ScriptyRenderer-shaped renderer (one exposing `code()`, `deps()`, `injectionVersion()`, and the gunzip pointer), the web app reassembles the identical document offchain from the renderer's code refs and the bytes stored in ScriptyStorageV2 / EthFS, byte-for-byte with the onchain output (the parity render library, asserted against the onchain assembly). So a heavy work still shows on its token page and mint surface; the fallback triggers automatically when the `tokenURI` call exceeds the gas budget.
+
+The tradeoff is what a fully-onchain reader gets. A work whose `tokenURI` fits the gas budget can be read start to finish from a single call by anyone. A work that overflows it can only be read by re-assembling from its stored bytes: still fully onchain (the code and dependencies live in onchain storage), but not in one `eth_call`. Keep the assembled document within the budget when a single-call read matters for the work; reach for large inlined assets knowing the read path becomes re-assembly.
+
+For a renderer to be offchain-assemblable it must expose its work publicly: `code()` and `deps()` returning `CodeRef[]`, `injectionVersion()`, and `gunzipStore()` / `gunzipFile()`. ScriptyRenderer does. A bespoke renderer that hides its refs cannot use the generic fallback and needs its own server-side assembler.
+
 See [IRenderer](/docs/surface/contracts/i-renderer) and [ISurfaceView](/docs/surface/contracts/i-surface-view) for the generated interface reference, [DefaultRenderer](/docs/surface/contracts/default-renderer) for the deployed fallback singleton, and [Injection convention](/docs/surface/reference/injection-convention) for the render-context contract every offchain preview (studio, mint surface, artist-site embed) must match byte-for-byte with the onchain assembly.
