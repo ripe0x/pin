@@ -31,6 +31,33 @@ export type TokenRef = {
 }
 
 /**
+ * Drop refs for tokens confirmed burned/nonexistent. `token_metadata.burned`
+ * is set when the resolver sees `tokenURI`/`uri` revert (a permanent verdict,
+ * see resolveTokenMetadataDirect). Filtering here keeps burned tokens out of
+ * both the gallery AND the "N indexed works" count, which are derived from the
+ * same refs. Tokens not yet resolved aren't marked burned, so they pass
+ * through until the metadata worker resolves them, then drop on the next
+ * refs-cache refresh.
+ */
+export async function filterOutBurnedRefs(
+  refs: TokenRef[],
+): Promise<TokenRef[]> {
+  if (!sql || refs.length === 0) return refs
+  const contracts = [...new Set(refs.map((r) => r.contract.toLowerCase()))]
+  const burnedRows = (await sql`
+    SELECT contract, token_id FROM token_metadata
+    WHERE burned = true AND contract = ANY(${contracts})
+  `) as Array<{ contract: string; token_id: string }>
+  if (burnedRows.length === 0) return refs
+  const burned = new Set(
+    burnedRows.map((r) => `${r.contract.toLowerCase()}:${r.token_id}`),
+  )
+  return refs.filter(
+    (r) => !burned.has(`${r.contract.toLowerCase()}:${r.tokenId}`),
+  )
+}
+
+/**
  * Enriched token shape consumed by `<PreserveGrid>`, `<MoreFromContract>`,
  * `<WorkArtistCard>`. Preserves the v1 nested-metadata shape so components
  * don't need code changes — only the data wiring underneath changed.
