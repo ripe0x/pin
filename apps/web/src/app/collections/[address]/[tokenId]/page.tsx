@@ -6,7 +6,9 @@ import { TokenStage } from "@/components/token/TokenStage"
 import { CopyAddressButton } from "@/components/CopyAddressButton"
 import { CollectionMintMarkCard } from "@/components/collections/CollectionMintMarkCard"
 import { HomageTokenDetail } from "@/components/collections/homage/HomageTokenDetail"
-import { getCollection, getCollectionToken } from "@/lib/collection-onchain"
+import { getCollection, getCollectionToken, getRendererCodeOnchain } from "@/lib/collection-onchain"
+import { PreservationCard } from "@/components/collections/PreservationCard"
+import { gradePreservation, runtimeKindOf, preservationOverride } from "@/lib/preservation"
 import { detectHomageMinter } from "@/lib/homage/detect.server"
 import { parseHomageFacts, extractHomageGround } from "@/lib/homage/token-facts"
 import { getPunkImageSvg } from "@/lib/homage/punk-image.server"
@@ -61,6 +63,19 @@ export default async function CollectionTokenPage({ params }: { params: Params }
   // gates whether Image mode has anything distinct from Live to show.
   const hasCapture = !!t.artwork && t.artwork !== c.cover
 
+  // Preservation facts. codeOnchain is one cached probe per renderer (1h TTL,
+  // shared across every token of the collection); everything else is already
+  // in hand from getCollection/getCollectionToken. Zero per-render RPC.
+  const codeOnchain = await getRendererCodeOnchain(c.renderer)
+  const preservation = gradePreservation({
+    rendererLocked: c.isRendererLocked,
+    runtime: runtimeKindOf(t.image, t.animationUrl),
+    codeOnchain,
+    hasCapture,
+    hasCover: !!c.cover,
+    declared: preservationOverride(addr),
+  })
+
   // A homage token gets the bespoke, terminal-skinned detail: the derived work
   // beside the punk it came from. The token id IS the punk id (the minter mints
   // into the punk's own slot), so it drives both the source-punk image and the
@@ -87,6 +102,7 @@ export default async function CollectionTokenPage({ params }: { params: Params }
           renderer={c.renderer}
           isRendererLocked={c.isRendererLocked}
           onchainPfpSrc={onchainPfpSrc}
+          preservation={preservation}
         />
       </div>
     )
@@ -187,6 +203,8 @@ export default async function CollectionTokenPage({ params }: { params: Params }
               </div>
             </div>
           )}
+
+          <PreservationCard grade={preservation} />
 
           <section className="pt-2 space-y-2 text-[11px] font-mono">
             <TokenFact label="Collection" value={c.name} />

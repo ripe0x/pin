@@ -31,7 +31,10 @@ import {
   getRendererTokenPreview,
   getRouterBatches,
   isBatchRenderRouter,
+  getRendererCodeOnchain,
 } from "@/lib/collection-onchain"
+import { PreservationCard } from "@/components/collections/PreservationCard"
+import { gradePreservation, preservationOverride } from "@/lib/preservation"
 import { detectHomageMinter } from "@/lib/homage/detect.server"
 import { isEscapeRenderer, ESCAPE_DESCRIPTION, ESCAPE_PIECE_TITLE } from "@/lib/escape-render"
 import { getLayoutKindForCollection } from "@/lib/launch-descriptors"
@@ -124,6 +127,19 @@ export default async function CollectionPage({
 
   const hasCover = c.cover.length > 0
   const hasWork = c.work.code.length > 0
+
+  // Collection-level preservation grade. runtime is "unknown" here (no token
+  // sampled at the collection level); the token page derives the runtime
+  // shape. codeOnchain is one cached probe per renderer (1h TTL). Zero
+  // per-render RPC.
+  const preservation = gradePreservation({
+    rendererLocked: c.isRendererLocked,
+    runtime: "unknown",
+    codeOnchain: await getRendererCodeOnchain(c.renderer),
+    hasCapture: null,
+    hasCover,
+    declared: preservationOverride(addr),
+  })
   // Renderer-native works (custom or Solidity-SVG renderers with no parity
   // work config): if the renderer implements the OPTIONAL previewURI
   // extension, the wall explores it straight from the chain. One cached
@@ -278,6 +294,7 @@ export default async function CollectionPage({
         subtitle={pieceTitle}
         description={editionDescription ? <p>{editionDescription}</p> : undefined}
         history={<CollectionMintHistory history={history} chainId={PND_CHAIN_ID} />}
+        preservation={<PreservationCard grade={preservation} />}
         about={
           batches.length > 0 ? (
             <p>
@@ -731,6 +748,9 @@ export default async function CollectionPage({
               <CollectionMintHistory history={history} chainId={PND_CHAIN_ID} />
             </div>
             <div className="py-5 space-y-2 text-[11px] font-mono">
+              <div className="not-prose pb-4">
+                <PreservationCard grade={preservation} />
+              </div>
               <Fact label="Contract" value={shortAddress(addr)} />
               <Fact label="Standard" value="ERC721" />
               <Fact label="Owner" value={shortAddress(c.owner)} />

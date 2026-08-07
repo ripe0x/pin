@@ -19,6 +19,7 @@ export function EditionMintLayout({
   description,
   history,
   about,
+  preservation,
   facts,
 }: {
   name: string
@@ -39,6 +40,8 @@ export function EditionMintLayout({
    *  section, or nothing when there are no mints yet. */
   history?: ReactNode
   about?: ReactNode
+  /** The Preservation card (PreservationCard), rendered above the facts. */
+  preservation?: ReactNode
   facts: { label: string; value: ReactNode }[]
 }) {
   return (
@@ -73,6 +76,8 @@ export function EditionMintLayout({
         {history}
 
         {about && <section className="border-b border-gray-100 py-5 text-sm leading-relaxed text-fg-muted">{about}</section>}
+
+        {preservation && <section className="border-b border-gray-100 py-5">{preservation}</section>}
 
         <section className="py-5">
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-[11px] font-mono">
