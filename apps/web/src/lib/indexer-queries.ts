@@ -1611,6 +1611,59 @@ export async function getCollectionMintedIdsFromIndexer(
   })
 }
 
+export type CollectionTokenRow = { tokenId: number; mintedTo: string }
+export type CollectionTokensPage = { tokens: CollectionTokenRow[]; total: number }
+
+/**
+ * One page of a collection's live (non-burned) tokens, newest-minted first,
+ * for the generic token gallery. Pure SELECT over `collection_tokens` plus one
+ * COUNT for pagination. Optional `mintedTo` filters to the tokens a given
+ * address received AT MINT.
+ *
+ * IMPORTANT: `minted_to` is the Minted event's recipient, not the current
+ * owner. Ponder does not index post-mint Transfer for Surface collections
+ * (see the schema comment on collectionTokens.mintedTo), so this is a
+ * "minted by" filter, never a live "owned by". Callers must label it as such.
+ * Returns null when the indexer is unavailable.
+ */
+export async function getCollectionTokensPage(
+  collection: string,
+  limit: number,
+  offset: number,
+  mintedTo?: string | null,
+): Promise<CollectionTokensPage | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+  const owner = mintedTo ? mintedTo.toLowerCase() : null
+  // 2000ms rather than the 500ms hot-path default: the gallery is a dedicated
+  // browse page (not the token render), so a cold Postgres read is acceptable
+  // here, matching the homepage's below-hero reads.
+  return withTimeout(async () => {
+    const where = owner
+      ? `collection = $1 AND NOT burned AND minted_to = $4`
+      : `collection = $1 AND NOT burned`
+    const listParams = owner
+      ? [collection.toLowerCase(), limit, offset, owner]
+      : [collection.toLowerCase(), limit, offset]
+    const rows = (await db.unsafe(
+      `SELECT token_id, minted_to FROM ${indexerSchema()}.collection_tokens
+       WHERE ${where}
+       ORDER BY updated_at_block DESC, token_id DESC LIMIT $2 OFFSET $3`,
+      listParams,
+    )) as Array<{ token_id: string; minted_to: string }>
+    const countRows = (await db.unsafe(
+      `SELECT COUNT(*)::int AS count FROM ${indexerSchema()}.collection_tokens WHERE ${
+        owner ? "collection = $1 AND NOT burned AND minted_to = $2" : "collection = $1 AND NOT burned"
+      }`,
+      owner ? [collection.toLowerCase(), owner] : [collection.toLowerCase()],
+    )) as Array<{ count: number }>
+    return {
+      tokens: rows.map((r) => ({ tokenId: Number(r.token_id), mintedTo: r.minted_to })),
+      total: countRows[0]?.count ?? 0,
+    }
+  }, 2000)
+}
+
 export type IndexedCollectionMint = {
   firstTokenId: number
   quantity: number

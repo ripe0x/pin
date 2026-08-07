@@ -73,6 +73,8 @@ function MosaicShell({
   onRegenerate,
   regenerating,
   onRerollItem,
+  viewAllHref,
+  viewAllLabel,
 }: {
   items: MosaicItem[]
   /** Left-side label for the control bar (null hides the bar entirely). */
@@ -82,6 +84,10 @@ function MosaicShell({
   regenerating?: boolean
   /** Rolls the single sample at `index` in place (the focus "new seed"). */
   onRerollItem?: (index: number) => void | Promise<void>
+  /** When set, a "view all" link renders below the field, into the full
+   *  paginated token gallery. */
+  viewAllHref?: string
+  viewAllLabel?: string
 }) {
   const [focus, setFocus] = useState<number | null>(null)
   const [rerolling, setRerolling] = useState(false)
@@ -157,6 +163,17 @@ function MosaicShell({
           </button>
         ))}
       </div>
+
+      {viewAllHref && (
+        <div className="border-b border-gray-200 px-6 py-3 lg:px-12">
+          <Link
+            href={viewAllHref}
+            className="text-[10px] font-mono uppercase tracking-wider text-gray-500 underline decoration-gray-300 underline-offset-2 hover:text-fg transition-colors"
+          >
+            {viewAllLabel ?? "View all tokens"} →
+          </Link>
+        </div>
+      )}
 
       {/* Focus overlay: one output, large and live. */}
       {active && (
@@ -328,6 +345,10 @@ export function ParityMosaic({
       framing={framing}
       onRegenerate={sampleCount > 0 ? regenerate : undefined}
       onRerollItem={rerollItem}
+      viewAllHref={
+        BigInt(minted) > 0n ? `/collections/${collection.toLowerCase()}/gallery` : undefined
+      }
+      viewAllLabel={BigInt(minted) > 0n ? `View all ${minted} tokens` : undefined}
     />
   )
 }
@@ -448,6 +469,8 @@ export function OnchainMosaic({
       onRegenerate={regenerate}
       regenerating={busy}
       onRerollItem={rerollItem}
+      viewAllHref={`/collections/${collection.toLowerCase()}/gallery`}
+      viewAllLabel="View all tokens"
     />
   )
 }
