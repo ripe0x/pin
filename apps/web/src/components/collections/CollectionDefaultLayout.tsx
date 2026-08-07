@@ -16,11 +16,13 @@ import { AttributionRoster } from "@/components/collections/AttributionRoster"
 import { ParityMosaic, OnchainMosaic } from "@/components/collections/CollectionMosaic"
 import { PlacardStats, StickyMintBar } from "@/components/collections/CollectionPlacard"
 import { CollectionFocusRefresh } from "@/components/collections/CollectionFocusRefresh"
+import { PreservationCard } from "@/components/collections/PreservationCard"
 import { TokenMedia } from "@/components/token/TokenMedia"
 import {
   getAttribution,
   getCollectionMintHistory,
   getRecentTokenMarks,
+  getRendererCodeOnchain,
   getRendererPreviews,
   getRendererTokenPreview,
 } from "@/lib/collection-onchain"
@@ -29,6 +31,7 @@ import {
   previewMediaUrl,
   rendererMediaUrl,
 } from "@/lib/collection-media-url"
+import { gradePreservation, preservationOverride } from "@/lib/preservation"
 import {
   SurfaceStatus,
   PND_CHAIN_ID,
@@ -109,6 +112,14 @@ export async function CollectionDefaultLayout({
     ? rendererMediaUrl(addr, 1n, rendererArt.image)
     : ""
   const coverUrl = hasCover ? collectionMediaUrl(addr, c.cover) : ""
+  const preservation = gradePreservation({
+    rendererLocked: c.isRendererLocked,
+    runtime: "unknown",
+    codeOnchain: await getRendererCodeOnchain(c.renderer),
+    hasCapture: null,
+    hasCover,
+    declared: preservationOverride(addr),
+  })
 
   const permanent = c.isRendererLocked
   // sellsViaMinterOnly(idMode) covers the structural pooled case;
@@ -547,6 +558,9 @@ export async function CollectionDefaultLayout({
               <CollectionMintHistory history={history} chainId={PND_CHAIN_ID} />
             </div>
             <div className="py-5 space-y-2 text-[11px] font-mono">
+              <div className="not-prose pb-4">
+                <PreservationCard grade={preservation} />
+              </div>
               <Fact label="Contract" value={shortAddress(addr)} />
               <Fact label="Standard" value="ERC721" />
               <Fact label="Owner" value={shortAddress(c.owner)} />

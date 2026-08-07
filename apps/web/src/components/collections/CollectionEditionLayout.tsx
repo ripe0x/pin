@@ -4,17 +4,20 @@ import { BatchGrid } from "@/components/collections/BatchGrid"
 import { CollectionMintHistory } from "@/components/collections/CollectionMintHistory"
 import { EditionMintLayout } from "@/components/collections/edition/EditionMintLayout"
 import { MintCollectionCTA } from "@/components/collections/MintCollectionCTA"
+import { PreservationCard } from "@/components/collections/PreservationCard"
 import { TokenMedia } from "@/components/token/TokenMedia"
 import {
   getAttribution,
   getCollectionMintHistory,
   getContractDescription,
+  getRendererCodeOnchain,
   getRendererTokenPreview,
   getRouterBatches,
   isBatchRenderRouter,
 } from "@/lib/collection-onchain"
 import { collectionMediaUrl, rendererMediaUrl } from "@/lib/collection-media-url"
 import { isEscapeRenderer, ESCAPE_DESCRIPTION, ESCAPE_PIECE_TITLE } from "@/lib/escape-render"
+import { gradePreservation, preservationOverride } from "@/lib/preservation"
 import {
   PND_CHAIN_ID,
   REFERRAL_SHARE_BPS,
@@ -96,6 +99,14 @@ export async function CollectionEditionLayout({
     ? rendererMediaUrl(addr, sharedTokenId, sharedArt.image)
     : ""
   const coverUrl = hasCover ? collectionMediaUrl(addr, c.cover) : ""
+  const preservation = gradePreservation({
+    rendererLocked: c.isRendererLocked,
+    runtime: "unknown",
+    codeOnchain: await getRendererCodeOnchain(c.renderer),
+    hasCapture: null,
+    hasCover,
+    declared: preservationOverride(addr),
+  })
   const editionHero =
     batches.length > 1 ? (
       <BatchGrid collection={addr} batches={batches} images={batchImages} />
@@ -167,6 +178,7 @@ export async function CollectionEditionLayout({
       subtitle={pieceTitle}
       description={editionDescription ? <p>{editionDescription}</p> : undefined}
       history={<CollectionMintHistory history={history} chainId={PND_CHAIN_ID} />}
+      preservation={<PreservationCard grade={preservation} />}
       about={
         batches.length > 0 ? (
           <p>

@@ -16,6 +16,7 @@ import {HomageRedeemLink} from "./HomageRedeemLink"
 import {CopyAddressButton} from "@/components/CopyAddressButton"
 import {PND_CHAIN_ID, evmNowAddressUrl, ipfsToHttp, shortAddress} from "@/lib/collection"
 import type {HomageTokenFacts} from "@/lib/homage/token-facts"
+import type {PreservationGrade} from "@/lib/preservation"
 
 const META = "text-[10px] font-mono uppercase tracking-wider text-gray-400"
 
@@ -40,6 +41,7 @@ export function HomageTokenDetail({
   renderer,
   isRendererLocked,
   onchainPfpSrc,
+  preservation,
 }: {
   collection: Address
   tokenId: bigint
@@ -52,6 +54,7 @@ export function HomageTokenDetail({
   renderer: Address
   isRendererLocked: boolean
   onchainPfpSrc: string | null
+  preservation: PreservationGrade | null
 }) {
   const id = tokenId.toString()
   const dash = "—"
@@ -197,6 +200,16 @@ export function HomageTokenDetail({
                 {isRendererLocked ? " · locked" : ""}
               </dd>
             </div>
+            {preservation && (
+              <div className="flex flex-col gap-1.5 pt-2">
+                <span className={META}>Preservation · {preservation.summary}</span>
+                {preservation.facts.map((f, i) => (
+                  <span key={i} className="text-[11px] font-mono text-fg-muted leading-relaxed">
+                    {f.label}
+                  </span>
+                ))}
+              </div>
+            )}
             <div className="flex flex-col gap-2 pt-1">
               <a
                 href={`https://opensea.io/assets/ethereum/${collection}/${id}`}

@@ -31,6 +31,12 @@ const GUIDES: Guide[] = [
     blurb:
       "How the bulk delist tool works across Foundation and SuperRare, which listings it can cancel, what smart wallets can batch in one signature, and what the tool costs (gas only, no fees).",
   },
+  {
+    href: "/guides/preservation",
+    title: "What preservation means",
+    blurb:
+      "How to read a work's preservation grade: the liveness tiers (pure onchain, chain-live, external-live), what code stored onchain and a locked renderer mean, and why the grade is derived rather than declared.",
+  },
 ]
 
 export default function GuidesIndexPage() {

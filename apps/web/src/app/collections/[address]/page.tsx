@@ -15,11 +15,8 @@ import { detectHomageMinter } from "@/lib/homage/detect.server"
 import { getLayoutKindForCollection } from "@/lib/launch-descriptors"
 import { PND_CHAIN_ID } from "@/lib/collection"
 
-/**
- * The Surface collection page is data loading plus a layout switch. Which
- * layout renders is selected by a launch descriptor, interface detection,
- * or the generic default, never by copying the page for one collection.
- */
+/** The route owns shared data loading; layouts own presentation and their
+ * layout-specific reads. Selection is data-driven, never a copied page. */
 type Params = Promise<{ address: string }>
 
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
@@ -52,7 +49,6 @@ export default async function CollectionPage({
   const homageMinter = await detectHomageMinter(addr, PND_CHAIN_ID)
   const homageSkin = !!homageMinter || skin === "homage"
   const mintFirst = homageSkin && layout === "mint-first"
-
   const [homageMintedIds, homageMintFeed] = homageSkin
     ? await Promise.all([getHomageMintedIds(addr), getHomageMintFeed(addr)])
     : [[], []]
