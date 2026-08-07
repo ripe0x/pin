@@ -13,7 +13,7 @@ import { detectHomageMinter } from "@/lib/homage/detect.server"
 import { parseHomageFacts, extractHomageGround } from "@/lib/homage/token-facts"
 import { getPunkImageSvg } from "@/lib/homage/punk-image.server"
 import { getOnchainPfpSrc } from "@/lib/homage/pfp.server"
-import { PND_CHAIN_ID, evmNowAddressUrl, ipfsToHttp, shortAddress } from "@/lib/collection"
+import { PND_CHAIN_ID, evmNowAddressUrl, openSeaTokenUrl, ipfsToHttp, shortAddress } from "@/lib/collection"
 // A homage token detail wears the same terminal skin as the collection + redeem pages.
 import "@/components/mint/homage-gallery/homage-gallery.css"
 import "../homage-skin.css"
@@ -213,7 +213,7 @@ export default async function CollectionTokenPage({ params }: { params: Params }
               label="Renderer"
               value={c.isRendererLocked ? "Locked forever" : "Swappable by the artist"}
             />
-            <div className="pt-1">
+            <div className="flex items-center gap-4 pt-1">
               <a
                 href={evmNowAddressUrl(addr, PND_CHAIN_ID)}
                 target="_blank"
@@ -221,6 +221,17 @@ export default async function CollectionTokenPage({ params }: { params: Params }
                 className="text-[10px] uppercase tracking-wider text-gray-400 underline hover:text-fg"
               >
                 View contract ↗
+              </a>
+              {/* Where this token trades. A neutral deep link, not a CTA: PND
+                  surfaces secondary state without building or intermediating a
+                  marketplace. */}
+              <a
+                href={openSeaTokenUrl(addr, id, PND_CHAIN_ID)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[10px] uppercase tracking-wider text-gray-400 underline hover:text-fg"
+              >
+                View on OpenSea ↗
               </a>
             </div>
             <p className="pt-2 text-[10px] font-mono text-gray-400 leading-relaxed">
