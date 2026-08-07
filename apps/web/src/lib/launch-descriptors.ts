@@ -7,10 +7,17 @@
  * the connected wallet, see SeededDeployWizard).
  *
  * layoutKind selects the live collection page's presentation once
- * deployed (see lib/collection-layout.ts): "edition" for a one-artwork or
- * batch-editions release, "default" for the standard collection page.
- * This is a data lookup, not a hardcoded per-address component branch —
- * see AGENTS.md's note on the Homage anti-pattern.
+ * deployed (getLayoutKindForCollection below, consumed by the collection
+ * page): "edition" for a one-artwork or batch-editions release, "default"
+ * for the standard collection page. This is a data lookup, not a hardcoded
+ * per-address component branch (see AGENTS.md's note on the Homage
+ * anti-pattern).
+ *
+ * The launch playbook: a new launch is one descriptor entry, not a
+ * component-tree edit. Fill the deploy defaults, set layoutKind, and after
+ * the artist's createSurface tx lands, record deployedAddress. That single
+ * entry lights up both the seeded deploy page and the live collection page's
+ * layout; the collection page component tree never changes per launch.
  */
 
 export type LayoutKind = "default" | "edition"
