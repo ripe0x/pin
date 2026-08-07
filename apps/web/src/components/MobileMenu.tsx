@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import Link from "next/link"
 import { ArtistActionLinks } from "@/components/ArtistActionLinks"
 import { GodModePanel } from "@/components/GodModePanel"
 import { WalletButton } from "@/components/WalletButton"
@@ -64,6 +65,17 @@ export function MobileMenu() {
               />
             </div>
           </form>
+
+          {/* Browse */}
+          <div className="border-t border-gray-200 py-2">
+            <Link
+              href="/collections"
+              onClick={() => setOpen(false)}
+              className="block px-4 py-2 text-xs font-mono text-fg transition-colors hover:bg-gray-100"
+            >
+              Collections
+            </Link>
+          </div>
 
           {/* For artists */}
           <div className="border-t border-gray-200 py-2">

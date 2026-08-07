@@ -17,6 +17,7 @@ import { getMainnetTransport } from "./alchemy-rpc"
 import { buildEscapeArtwork, isEscapeRenderer } from "./escape-render"
 import {
   getCollectionAddressesFromIndexer,
+  getCollectionCountFromIndexer,
   getCollectionPrimaryMinterFromIndexer,
   isCollectionInIndexer,
 } from "./indexer-queries"
@@ -663,6 +664,89 @@ export async function getRecentCollections(factory: Address, limit = 8): Promise
       return []
     }
   })
+}
+
+export type CollectionsPage = {
+  collections: Collection[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+/**
+ * One page of collections, newest first, for the paginated browse index.
+ *
+ * List path is a pure SELECT: page addresses from the indexed
+ * SurfaceCreated table (OFFSET/LIMIT) plus one COUNT(*) for the total —
+ * zero chain reads. Per-collection live state still comes from
+ * getCollection()'s cached reads. On a fork/sepolia instance (indexed
+ * table describes mainnet, not the local factory) and when the indexer is
+ * unavailable, falls back to the cached factory-enumeration read
+ * (totalSurfaces is the total; allSurfaces slices the page).
+ */
+export async function getCollectionsPage(
+  factory: Address,
+  page: number,
+  pageSize: number,
+): Promise<CollectionsPage> {
+  const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1
+  const offset = (safePage - 1) * pageSize
+
+  if (!FORK_MODE && !USE_SEPOLIA) {
+    const [addrs, total] = await Promise.all([
+      getCollectionAddressesFromIndexer(pageSize, offset),
+      getCollectionCountFromIndexer(),
+    ])
+    if (addrs !== null && total !== null) {
+      const collections = (
+        await Promise.all(addrs.map((a) => getCollection(a as Address)))
+      ).filter((c): c is Collection => c !== null)
+      return { collections, total, page: safePage, pageSize }
+    }
+  }
+
+  return pgCache(
+    `sc-page:${lc(factory)}:${safePage}:${pageSize}`,
+    60,
+    async () => {
+      const client = getClient()
+      try {
+        const total = Number(
+          (await client.readContract({
+            address: factory,
+            abi: surfaceFactoryAbi,
+            functionName: "totalSurfaces",
+          })) as bigint,
+        )
+        if (total === 0) return { collections: [], total: 0, page: safePage, pageSize }
+        // newest first: index total-1 down to 0
+        const startIdx = total - 1 - offset
+        if (startIdx < 0) return { collections: [], total, page: safePage, pageSize }
+        const idxs = Array.from(
+          { length: Math.min(pageSize, startIdx + 1) },
+          (_, i) => startIdx - i,
+        )
+        const addrResults = await client.multicall({
+          allowFailure: true,
+          contracts: idxs.map((i) => ({
+            address: factory,
+            abi: surfaceFactoryAbi,
+            functionName: "allSurfaces" as const,
+            args: [BigInt(i)] as const,
+          })),
+        })
+        const addrs = addrResults
+          .filter((r) => r.status === "success")
+          .map((r) => r.result as Address)
+        const collections = (
+          await Promise.all(addrs.map((a) => getCollection(a)))
+        ).filter((c): c is Collection => c !== null)
+        return { collections, total, page: safePage, pageSize }
+      } catch {
+        return { collections: [], total: 0, page: safePage, pageSize }
+      }
+    },
+  )
 }
 
 /**
