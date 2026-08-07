@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { getRecentCollections } from "@/lib/collection-onchain"
+import { getCollectionsPage } from "@/lib/collection-onchain"
 import {
   SurfaceStatus,
   ZERO_ADDRESS,
@@ -22,17 +22,25 @@ export const metadata: Metadata = {
 
 export const revalidate = 3600
 
+/** Collections per index page. The list path is a pure SELECT (indexed
+ * SurfaceCreated table, OFFSET/LIMIT) plus one COUNT; live per-collection
+ * state stays behind getCollection()'s cached reads. Search is deferred
+ * until the collection count warrants it; it would slot in as a WHERE
+ * clause on the same discovery query. */
+const PAGE_SIZE = 24
+
 type CollectionGroup = {
   key: "minting" | "upcoming" | "past"
   label: string
   items: Collection[]
 }
 
-/** Buckets recent collections by derived lifecycle status, leading with
- * actively minting work, then scheduled, then past — same three-way split
- * as OpenSea's Live/Upcoming/Past, restrained to a flat list within each
- * bucket (no pagination, no filters). Section labels only render when more
- * than one bucket is non-empty; a single-bucket listing stays a plain list. */
+/** Buckets a page of collections by derived lifecycle status, leading with
+ * actively minting work, then scheduled, then past. Bucketing is applied
+ * within the current page only, so a page can carry fewer than PAGE_SIZE
+ * across three sections; the newest-first order the index paginates on is
+ * preserved inside each bucket. Section labels only render when more than
+ * one bucket is non-empty; a single-bucket listing stays a plain list. */
 function groupByLifecycle(collections: Collection[], nowSec: number): CollectionGroup[] {
   const groups: CollectionGroup[] = [
     { key: "minting", label: "Minting now", items: [] },
@@ -48,11 +56,21 @@ function groupByLifecycle(collections: Collection[], nowSec: number): Collection
   return groups.filter((g) => g.items.length > 0)
 }
 
-export default async function CollectionsHome() {
+export default async function CollectionsHome({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>
+}) {
   const factory = surfaceFactory()
-  const recent = factory ? await getRecentCollections(factory, 8) : []
+  const { page: pageParam } = await searchParams
+  const requestedPage = Math.max(1, Number.parseInt(pageParam ?? "1", 10) || 1)
+  const pageData = factory
+    ? await getCollectionsPage(factory, requestedPage, PAGE_SIZE)
+    : { collections: [], total: 0, page: requestedPage, pageSize: PAGE_SIZE }
+  const totalPages = Math.max(1, Math.ceil(pageData.total / PAGE_SIZE))
+  const currentPage = Math.min(pageData.page, totalPages)
   const nowSec = Math.floor(Date.now() / 1000)
-  const groups = groupByLifecycle(recent, nowSec)
+  const groups = groupByLifecycle(pageData.collections, nowSec)
   const showGroupLabels = groups.length > 1
 
   return (
@@ -136,6 +154,41 @@ export default async function CollectionsHome() {
           ))}
         </section>
       ) : null}
+
+      {totalPages > 1 && (
+        <nav
+          aria-label="Collections pages"
+          className="flex items-center justify-between pt-2 text-[10px] font-mono uppercase tracking-wider text-gray-400"
+        >
+          {currentPage > 1 ? (
+            <Link
+              href={
+                currentPage - 1 === 1
+                  ? "/collections"
+                  : `/collections?page=${currentPage - 1}`
+              }
+              className="hover:text-fg transition-colors"
+            >
+              Newer
+            </Link>
+          ) : (
+            <span className="text-gray-300">Newer</span>
+          )}
+          <span className="tabular-nums text-gray-500">
+            Page {currentPage} of {totalPages}
+          </span>
+          {currentPage < totalPages ? (
+            <Link
+              href={`/collections?page=${currentPage + 1}`}
+              className="hover:text-fg transition-colors"
+            >
+              Older
+            </Link>
+          ) : (
+            <span className="text-gray-300">Older</span>
+          )}
+        </nav>
+      )}
     </div>
   )
 }

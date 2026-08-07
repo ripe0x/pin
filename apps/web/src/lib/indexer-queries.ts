@@ -1510,16 +1510,33 @@ const indexerSchema = () =>
  */
 export async function getCollectionAddressesFromIndexer(
   limit: number,
+  offset = 0,
 ): Promise<string[] | null> {
   if (INDEXER_DISABLED || !sql) return null
   const db = sql
   return withTimeout(async () => {
     const rows = (await db.unsafe(
       `SELECT collection FROM ${indexerSchema()}.collections
-       ORDER BY created_at_block DESC LIMIT $1`,
-      [limit],
+       ORDER BY created_at_block DESC LIMIT $1 OFFSET $2`,
+      [limit, offset],
     )) as Array<{ collection: string }>
     return rows.map((r) => r.collection)
+  })
+}
+
+/**
+ * Total count of discovered collections — the denominator for the paginated
+ * browse index. Pure SELECT against the SurfaceCreated discovery table.
+ * Returns null when the indexer is unavailable / disabled / slow.
+ */
+export async function getCollectionCountFromIndexer(): Promise<number | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+  return withTimeout(async () => {
+    const rows = (await db.unsafe(
+      `SELECT COUNT(*)::int AS count FROM ${indexerSchema()}.collections`,
+    )) as Array<{ count: number }>
+    return rows[0]?.count ?? 0
   })
 }
 
