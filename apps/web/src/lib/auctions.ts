@@ -14,6 +14,7 @@ import { sql } from "./db"
 import { pgCache } from "./pg-cache"
 import { loggingFallbackTransport } from "./rpc-log"
 import { resolveDisplayNames } from "./artist-queries"
+import { toFndAuctionLite } from "./fnd-auction-lite"
 
 /**
  * v2 auctions module. The v1 file (1134 lines) probed both Foundation
@@ -612,6 +613,108 @@ const getArtistSovereignAuctionMapCached = unstable_cache(
   },
   ["artist-sovereign-auction-map-v2"],
   { revalidate: 30, tags: ["artist-sovereign-auction-map"] },
+)
+
+// ─── getArtistFndAuctionMap ──────────────────────────────────────────────
+
+/**
+ * Active Foundation reserve auctions where this artist is the seller,
+ * keyed `${contract}:${tokenId}` — the Foundation counterpart to
+ * getArtistSovereignAuctionMap, so the gallery badges/sorts FND listings
+ * the same way it does Sovereign ones. Two sources, same as the token
+ * page (readFndSeedAuctionForToken): Ponder `fnd_auctions` for auctions
+ * inside the indexer window, and the full-history seed
+ * (`fnd_cancellable_listings`) for older ones, each confirmed live via
+ * getReserveAuction (chain is ground truth; settled/cancelled drop out).
+ */
+export async function getArtistFndAuctionMap(
+  artistAddress: string,
+): Promise<Record<string, SovereignAuctionLite>> {
+  if (!sql) return {}
+  return getArtistFndAuctionMapCached(artistAddress.toLowerCase())
+}
+
+const getArtistFndAuctionMapCached = unstable_cache(
+  async (lower: string): Promise<Record<string, SovereignAuctionLite>> => {
+    return pgCache<Record<string, SovereignAuctionLite>>(
+      `artist-fnd-auction-map:${lower}`,
+      30,
+      async () => {
+        if (!sql) return {}
+        const now = Math.floor(Date.now() / 1000)
+        const map: Record<string, SovereignAuctionLite> = {}
+
+        // 1. Indexer-window auctions (fresh, no chain read needed).
+        const ponderRows = (await sql.unsafe(
+          `SELECT auction_id::text AS auction_id,
+                  lower(nft_contract) AS contract, token_id::text AS token_id,
+                  reserve_price::text AS reserve, highest_bid::text AS bid,
+                  lower(highest_bidder) AS bidder, end_time::text AS end_time
+           FROM ${schema}.fnd_auctions
+           WHERE lower(seller) = $1 AND status = 'active'`,
+          [lower],
+        )) as Array<{
+          auction_id: string; contract: string; token_id: string;
+          reserve: string; bid: string; bidder: string | null; end_time: string
+        }>
+        for (const r of ponderRows) {
+          map[`${r.contract}:${r.token_id}`] = toFndAuctionLite({
+            auctionId: r.auction_id,
+            reserveWei: r.reserve,
+            highestBidWei: r.bid,
+            hasBidder: !!r.bidder && r.bidder !== ZERO_ADDRESS,
+            endTime: Number(r.end_time),
+            nowSec: now,
+          })
+        }
+
+        // 2. Older auctions from the full-history seed, confirmed on-chain.
+        const seedRows = (await sql.unsafe(
+          `SELECT auction_id, lower(contract) AS contract, token_id,
+                  price_wei AS reserve
+           FROM public.fnd_cancellable_listings
+           WHERE kind = 'auction' AND lower(seller) = $1 AND auction_id IS NOT NULL`,
+          [lower],
+        )) as Array<{
+          auction_id: string; contract: string; token_id: string; reserve: string
+        }>
+        const need = seedRows.filter(
+          (r) => !map[`${r.contract}:${r.token_id}`],
+        )
+        if (need.length > 0) {
+          const results = await getClient("artist-fnd-auction-map").multicall({
+            allowFailure: true,
+            contracts: need.map((r) => ({
+              address: FND_MARKET,
+              abi: nftMarketAbi,
+              functionName: "getReserveAuction" as const,
+              args: [BigInt(r.auction_id)] as const,
+            })),
+          })
+          results.forEach((res, i) => {
+            if (res.status !== "success") return
+            const a = res.result as {
+              seller: Address; endTime: bigint; bidder: Address; amount: bigint
+            }
+            if (a.seller.toLowerCase() === ZERO_ADDRESS) return
+            const r = need[i]
+            map[`${r.contract}:${r.token_id}`] = toFndAuctionLite({
+              auctionId: r.auction_id,
+              reserveWei: r.reserve,
+              highestBidWei: a.amount.toString(),
+              hasBidder: a.bidder.toLowerCase() !== ZERO_ADDRESS,
+              endTime: Number(a.endTime),
+              nowSec: now,
+            })
+          })
+        }
+
+        return map
+      },
+    )
+  },
+  ["artist-fnd-auction-map-v1"],
+  { revalidate: 30, tags: ["artist-fnd-auction-map"] },
 )
 
 // ─── Bid history (from Ponder) ───────────────────────────────────────────
