@@ -2,15 +2,16 @@
  * VENDORED, byte-for-byte, from the foundation monorepo's
  * apps/web/src/lib/collection-render/build.ts. Do not edit the logic below
  * independently of upstream — this file must not drift from it. Re-vendor by
- * copying the upstream file over this one verbatim (no import changes are
- * needed here; this file has no `@pin/*` imports).
+ * copying the upstream file over this one verbatim; the only permitted change
+ * is dropping the `.ts` import extension the upstream test runner needs (this
+ * template has no `@pin/*` imports to rewrite).
  *
  * The parity document builder: reproduces, byte for byte, the HTML that
- * GenerativeRenderer.sol emits through ScriptyBuilderV2 (before the
+ * ScriptyRenderer.sol emits through ScriptyBuilderV2 (before the
  * onchain whole-document base64 encoding).
  *
  * Emission facts, verified against scripty.sol ScriptyCore.sol and
- * contracts/src/collection/renderers/GenerativeRenderer.sol:
+ * contracts/src/surface/templates/ScriptyRenderer.sol:
  *   - document: <html><head>[head tags]</head><body>[body tags]</body></html>
  *     (no doctype, no whitespace between tags)
  *   - HTMLTagType.script: <script>CONTENT</script>
@@ -34,12 +35,12 @@ import type {
   WorkInput,
 } from "./types";
 
-/** GenerativeRenderer's single head tag, exact content. */
+/** ScriptyRenderer's single head tag, exact content. */
 export const HEAD_STYLE_CONTENT =
   "html,body{margin:0;padding:0;height:100%;overflow:hidden}canvas{display:block}";
 
 /**
- * The tokenData injection, exactly matching GenerativeRenderer._contextJs:
+ * The tokenData injection, exactly matching ScriptyRenderer._contextJs:
  * field order, string vs number types, lowercase hex, trailing semicolon.
  */
 export function buildContextJs(t: TokenData): string {
@@ -48,17 +49,15 @@ export function buildContextJs(t: TokenData): string {
     t.hash.toLowerCase() +
     '","tokenId":"' +
     t.tokenId +
-    '","mintIndex":' +
-    String(t.mintIndex) +
-    ',"mintBlock":' +
-    String(t.mintBlock) +
-    ',"collection":"' +
+    '","collection":"' +
     t.collection.toLowerCase() +
     '","chainId":' +
     String(t.chainId) +
     ',"version":' +
     String(t.version) +
-    "};"
+    ',"context":"' +
+    t.context +
+    '"};'
   );
 }
 

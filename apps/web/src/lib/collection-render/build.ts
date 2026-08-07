@@ -1,10 +1,10 @@
 /**
  * The parity document builder: reproduces, byte for byte, the HTML that
- * GenerativeRenderer.sol emits through ScriptyBuilderV2 (before the
+ * ScriptyRenderer.sol emits through ScriptyBuilderV2 (before the
  * onchain whole-document base64 encoding).
  *
  * Emission facts, verified against scripty.sol ScriptyCore.sol and
- * contracts/src/collection/renderers/GenerativeRenderer.sol:
+ * contracts/src/surface/templates/ScriptyRenderer.sol:
  *   - document: <html><head>[head tags]</head><body>[body tags]</body></html>
  *     (no doctype, no whitespace between tags)
  *   - HTMLTagType.script: <script>CONTENT</script>
@@ -30,12 +30,12 @@ import type {
   WorkInput,
 } from "./types.ts";
 
-/** GenerativeRenderer's single head tag, exact content. */
+/** ScriptyRenderer's single head tag, exact content. */
 export const HEAD_STYLE_CONTENT =
   "html,body{margin:0;padding:0;height:100%;overflow:hidden}canvas{display:block}";
 
 /**
- * The tokenData injection, exactly matching GenerativeRenderer._contextJs:
+ * The tokenData injection, exactly matching ScriptyRenderer._contextJs:
  * field order, string vs number types, lowercase hex, trailing semicolon.
  */
 export function buildContextJs(t: TokenData): string {

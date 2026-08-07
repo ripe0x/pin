@@ -373,9 +373,10 @@ export async function getCollection(address: Address): Promise<Collection | null
         cfg: decodeCollectionConfig(cfgRaw, Number(idModeRaw) as IdMode),
         primaryMinter,
         sale,
-        // Shared work-config read removed with the shared GenerativeRenderer;
-        // bring-your-own renderers own their config. Kept as an empty default
-        // so consumers that gate on work.code.length fall back to the cover.
+        // No shared work-config read: the removed shared renderer exposed one;
+        // a bring-your-own ScriptyRenderer fixes its code/deps in the
+        // constructor with no reader. Kept as an empty default so consumers
+        // that gate on work.code.length fall back to the cover.
         work: { code: [], deps: [], codeURI: "", codeHash: ("0x" + "0".repeat(64)) as `0x${string}`, injectionVersion: 1, renderParams: "" },
         cover: (cover as string) ?? "",
         minted: minted as bigint,
@@ -399,7 +400,7 @@ export type CollectionTokenView = {
    *  that doesn't emit metadata JSON still has something to show. */
   image: string
   /** Decoded from tokenURI. Present when the active renderer emits an
-   *  animation_url (e.g. GenerativeRenderer's built HTML document); null for
+   *  animation_url (e.g. ScriptyRenderer's built HTML document); null for
    *  a static-image renderer (e.g. DefaultRenderer). */
   animationUrl: string | null
 }
@@ -466,7 +467,7 @@ export async function getCollectionToken(
       }
 
       // tokenURI gets its own call with an explicit gas ceiling, NEVER the
-      // multicall: assembling a full onchain HTML document (GenerativeRenderer
+      // multicall: assembling a full onchain HTML document (ScriptyRenderer
       // over a gzipped p5) measures 60-120M gas, far beyond the ~30M default
       // eth_call cap and any multicall budget. Elevated-gas eth_call is the
       // standard way heavyweight onchain-HTML tokenURIs are served; consumers
@@ -495,7 +496,7 @@ export async function getCollectionToken(
       // Decode the already-fetched tokenURI (no extra RPC call) to recover
       // `image` / `animation_url` the same way every other token page on
       // this site does — see @pin/token-metadata's doc comment. A renderer
-      // that emits an animation_url (GenerativeRenderer) needs this to show
+      // that emits an animation_url (ScriptyRenderer) needs this to show
       // the live/generative work rather than just its poster image.
       let image = artwork
       let animationUrl: string | null = null

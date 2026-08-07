@@ -9,21 +9,21 @@
  * of docs/injection-convention.md v1.
  *
  * The builder in ./build.ts must produce, byte for byte, the document the
- * onchain GenerativeRenderer emits (before its whole-document base64
+ * onchain ScriptyRenderer emits (before its whole-document base64
  * encoding). Anything that would make the two diverge belongs nowhere in
  * this module.
  */
 
 import type { Address } from "viem";
 
-/** Mirrors CollectionTypes.sol CodeKind. */
+/** Mirrors SurfaceTypes.sol CodeKind. */
 export const CODE_KIND = {
   Script: 0,
   ScriptGzip: 1,
 } as const;
 export type CodeKind = (typeof CODE_KIND)[keyof typeof CODE_KIND];
 
-/** Mirrors CollectionTypes.sol CodeRef. */
+/** Mirrors SurfaceTypes.sol CodeRef. */
 export type CodeRefLike = {
   store: Address;
   name: string;
@@ -38,7 +38,14 @@ export type WorkInput = {
 };
 
 /**
- * The injected context object, exactly as GenerativeRenderer emits it.
+ * Why a document is being rendered (injection convention, additive in v1):
+ * "token" = canonical render of a real token; "preview" = exploratory
+ * render from a throwaway seed; "capture" = headless static-image capture.
+ */
+export type TokenContext = "token" | "preview" | "capture";
+
+/**
+ * The injected context object, exactly as ScriptyRenderer emits it.
  * hash and tokenId are Art Blocks compatible; see the convention doc.
  */
 export type TokenData = {
@@ -46,13 +53,13 @@ export type TokenData = {
   hash: string;
   /** Decimal string. */
   tokenId: string;
-  mintIndex: number;
-  mintBlock: number;
   /** 0x + 40 lowercase hex. */
   collection: string;
   chainId: number;
   /** Echoes WorkConfig.injectionVersion. */
   version: number;
+  /** Why this document is rendered; real tokens inject "token". */
+  context: TokenContext;
 };
 
 /**

@@ -75,10 +75,11 @@ const ETHFS_V2_FILE_STORAGE_MAINNET: Address =
   "0x8FAA1AAb9DA8c75917C43Fb24fDdb513edDC3245";
 
 /**
- * The canonical gunzip helper (a GenerativeRenderer constructor immutable,
- * not part of WorkConfig). Overridable per collection by reading the
- * renderer's own gunzipStore()/gunzipFile() when it ever differs — this
- * default matches every collection deployed with the stock GenerativeRenderer.
+ * The canonical gunzip helper (a ScriptyRenderer constructor immutable via
+ * gunzipStore()/gunzipFile(), not per-token seed state). Overridable per
+ * collection by reading the renderer's own gunzipStore()/gunzipFile() when
+ * it ever differs; this default matches every collection deployed with the
+ * stock ScriptyRenderer template.
  */
 export function defaultGunzip(): GunzipRef {
   return {
