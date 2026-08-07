@@ -1112,6 +1112,42 @@ ${
   }, timeoutMs)
 }
 
+/**
+ * Postgres-only per-token images for feed rows, keyed
+ * `${contract}:${tokenId}`. Reads the worker-populated `token_metadata`
+ * cache for the given pairs and returns only non-empty images on
+ * non-burned tokens. Never touches the chain: a miss means no cached
+ * image yet (the caller falls back to the collection cover), so a
+ * generative token's onchain HTML document is never fetched at render
+ * time. Used to give Surface mint rows a per-token thumbnail once the
+ * worker has warmed the token's small onchain `image` (an SVG data URI).
+ */
+export async function getTokenImagesFromMetadata(
+  pairs: Array<{ contract: string; tokenId: string }>,
+): Promise<Map<string, string>> {
+  if (INDEXER_DISABLED || !sql || pairs.length === 0) return new Map()
+  const contracts = pairs.map((p) => p.contract.toLowerCase())
+  const tokenIds = pairs.map((p) => p.tokenId)
+  const rows = (await sql`
+    SELECT contract, token_id, image_url
+      FROM token_metadata
+     WHERE (contract, token_id) IN (
+       SELECT * FROM unnest(${contracts}::text[], ${tokenIds}::text[])
+     )
+       AND image_url IS NOT NULL
+       AND COALESCE(burned, false) = false
+  `.catch(() => [])) as Array<{
+    contract: string
+    token_id: string
+    image_url: string
+  }>
+  const map = new Map<string, string>()
+  for (const r of rows) {
+    map.set(`${r.contract.toLowerCase()}:${r.token_id}`, r.image_url)
+  }
+  return map
+}
+
 // ─── Dependency-check helpers ────────────────────────────────────────────
 //
 // Used by `apps/web/src/lib/dependency-check.ts` to assemble the scan
