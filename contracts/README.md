@@ -9,6 +9,34 @@ Ownership of each house is locked at deploy (transferOwnership /
 renounceOwnership revert). To change the implementation, fee, or recipient,
 deploy a new factory.
 
+## Deployed on Ethereum mainnet
+
+Canonical shared singletons and clone implementations. The machine-readable
+source of truth is [`deployments.mainnet.json`](./deployments.mainnet.json);
+the docs reference tables resolve from it. Deployed 2026-07-22 from commit
+`fa5af29`; source verified against these addresses with `forge verify-bytecode`
+(full creation + runtime match). Per-owner collections and auction houses are
+EIP-1167 clones and are not listed here.
+
+| Contract | Address |
+| --- | --- |
+| SurfaceFactory | [`0xdB81d3F33EF3D84685486916E0d372E247558094`](https://evm.now/address/0xdB81d3F33EF3D84685486916E0d372E247558094?chainId=1) |
+| Surface (sequential implementation) | [`0xd0cC38cB3BD18FbdAD278f14AD1f40E513f846Ef`](https://evm.now/address/0xd0cC38cB3BD18FbdAD278f14AD1f40E513f846Ef?chainId=1) |
+| PooledSurface (pooled implementation) | [`0xd2e3Ac74DbF40c454a4211db5CF137c7355421eA`](https://evm.now/address/0xd2e3Ac74DbF40c454a4211db5CF137c7355421eA?chainId=1) |
+| FixedPriceMinter (minter implementation) | [`0x50941e5fd0B177826AB86419502b221049821Ba3`](https://evm.now/address/0x50941e5fd0B177826AB86419502b221049821Ba3?chainId=1) |
+| Catalog | [`0x467a9c39e03C595EC3075D856f19C7386b6b915d`](https://evm.now/address/0x467a9c39e03C595EC3075D856f19C7386b6b915d?chainId=1) |
+| SovereignAuctionHouseFactory | [`0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f`](https://evm.now/address/0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f?chainId=1) |
+| SovereignAuctionHouse (implementation) | [`0xC70D8a99b915BeDA52C5A952E29FFE152CbfCB34`](https://evm.now/address/0xC70D8a99b915BeDA52C5A952E29FFE152CbfCB34?chainId=1) |
+
+Reproduce the deployed bytecode with the `mainnet` profile (pins the deploy-time
+compiler settings, `cancun` + `via-ir`):
+
+```bash
+FOUNDRY_PROFILE=mainnet forge verify-bytecode \
+  0xdB81d3F33EF3D84685486916E0d372E247558094 SurfaceFactory \
+  --rpc-url "$MAINNET_RPC_URL" --etherscan-api-key "$ETHERSCAN_API_KEY"
+```
+
 ## Setup
 
 ```bash
