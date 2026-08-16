@@ -147,22 +147,25 @@
   var staticShapeParams = new Float32Array([0.52, 0.18, 1.0, 0.4, 0.52, 0.32, 0.5, 0.31]);
   var STATIC_COLS_COUNT = 3;
   var staticCols = new Float32Array(STATIC_COLS_COUNT * 3);
+  var staticBase = [];
   var pickStaticColor = createDeckPicker(activePalette, setupRng, 4);
   for (var si = 0; si < STATIC_COLS_COUNT; si++) {
     var sc = pickStaticColor();
+    staticBase.push([sc[0], sc[1], sc[2]]);
     staticCols[si * 3] = sc[0];
     staticCols[si * 3 + 1] = sc[1];
     staticCols[si * 3 + 2] = sc[2];
   }
 
   // ── canvas + GL ─────────────────────────────────────────────────────────────
+  // The artwork is always 1:1. The canvas is a centered square sized to the
+  // smaller viewport axis; the surrounding area letterboxes in the background.
   var canvas = document.createElement("canvas");
   canvas.id = "gl";
   canvas.style.position = "fixed";
-  canvas.style.top = "0";
-  canvas.style.left = "0";
-  canvas.style.width = "100%";
-  canvas.style.height = "100%";
+  canvas.style.left = "50%";
+  canvas.style.top = "50%";
+  canvas.style.transform = "translate(-50%, -50%)";
   canvas.style.display = "block";
   document.body.appendChild(canvas);
   document.body.style.margin = "0";
@@ -470,6 +473,33 @@
     return activePalette[idx];
   }
 
+  // Static masses slowly recolor so a long session does not stagnate. One mass
+  // shifts at a time, cycling 0,1,2; each shift fades over STATIC_SHIFT_DUR after
+  // a STATIC_SHIFT_DELAY gap. Closed form in the frame so it is seekable and
+  // owner-lockstep, matching everything else. Keyed slot is offset well past the
+  // layer slots so its palette draws are independent.
+  var STATIC_SHIFT_DELAY = 60; // seconds between a mass's shifts finishing and the next starting
+  var STATIC_SHIFT_DUR = 20; // seconds a shift takes
+  var STATIC_SHIFT_STEP = STATIC_SHIFT_DELAY + STATIC_SHIFT_DUR; // between event starts
+  var STATIC_KEY_BASE = 200;
+
+  function staticColorAt(index, frame) {
+    var t = frame * FIXED_DT; // seconds
+    // Global shift events start at STATIC_SHIFT_DELAY + e*STEP, event e recolors
+    // mass e % 3. This mass's j-th shift is event e = index + 3j.
+    var firstStart = STATIC_SHIFT_DELAY + index * STATIC_SHIFT_STEP;
+    if (t < firstStart) return staticBase[index];
+    var j = Math.floor((t - STATIC_SHIFT_DELAY) / STATIC_SHIFT_STEP / 3 - index / 3 + 1e-9);
+    if (j < 0) return staticBase[index];
+    var sStart = STATIC_SHIFT_DELAY + (index + 3 * j) * STATIC_SHIFT_STEP;
+    var to = pickPaletteKeyed(STATIC_KEY_BASE + index, j + 1, 0);
+    var from = j === 0 ? staticBase[index] : pickPaletteKeyed(STATIC_KEY_BASE + index, j, 0);
+    var prog = (t - sStart) / STATIC_SHIFT_DUR;
+    if (prog >= 1) return to;
+    var m = smootherstep01(0, 1, prog);
+    return [from[0] * (1 - m) + to[0] * m, from[1] * (1 - m) + to[1] * m, from[2] * (1 - m) + to[2] * m];
+  }
+
   // ── draw ────────────────────────────────────────────────────────────────────
   var layerData = new Float32Array(MAX_LAYERS * 4);
   var colorData = new Float32Array(MAX_LAYERS * 4);
@@ -478,6 +508,13 @@
   function draw() {
     var frame = currentFrame();
     var uTime = (frame % FRAME_WRAP) * FIXED_DT;
+
+    for (var s = 0; s < STATIC_COLS_COUNT; s++) {
+      var scol = staticColorAt(s, frame);
+      staticCols[s * 3] = scol[0];
+      staticCols[s * 3 + 1] = scol[1];
+      staticCols[s * 3 + 2] = scol[2];
+    }
 
     for (var i = 0; i < MAX_LAYERS; i++) {
       var st = i < DYNAMIC_LAYER_SLOTS ? dynamicLayerAt(i, frame) : persistentLayerAt(frame);
@@ -501,15 +538,19 @@
       }
     }
 
+    // Square 1:1: side = the smaller viewport axis; center it (CSS handles the
+    // translate). The drawing buffer is square, so uv is never stretched.
     var dpr = Math.min(window.devicePixelRatio || 1, 2);
-    var w = Math.floor(canvas.clientWidth * dpr);
-    var h = Math.floor(canvas.clientHeight * dpr);
-    if (canvas.width !== w || canvas.height !== h) {
-      canvas.width = w;
-      canvas.height = h;
+    var side = Math.min(window.innerWidth, window.innerHeight);
+    canvas.style.width = side + "px";
+    canvas.style.height = side + "px";
+    var px = Math.max(1, Math.floor(side * dpr));
+    if (canvas.width !== px || canvas.height !== px) {
+      canvas.width = px;
+      canvas.height = px;
     }
-    gl.viewport(0, 0, w, h);
-    gl.uniform2f(u.res, w, h);
+    gl.viewport(0, 0, px, px);
+    gl.uniform2f(u.res, px, px);
     gl.uniform1f(u.time, uTime);
     gl.uniform1f(u.tau, modeTau);
     gl.uniform1i(u.maxIter, modeMaxIter);

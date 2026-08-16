@@ -115,6 +115,13 @@
         </select>
       </div>
       <div class="field">
+        <label for="ownerMode">owners</label>
+        <select id="ownerMode">
+          <option value="one">one wallet (lockstep)</option>
+          <option value="varied">varied (per output)</option>
+        </select>
+      </div>
+      <div class="field">
         <label for="owner">owner wallet (pace)</label>
         <input id="owner" size="24" value="0x1111111111111111111111111111111111111111" />
       </div>
@@ -150,6 +157,11 @@
       SHAPES.forEach(function (s) { var o = document.createElement("option"); o.textContent = s; $("shape").appendChild(o); });
 
       function randInt(n) { return Math.floor(Math.random() * n); }
+      function randomAddress() {
+        var h = "0123456789abcdef", s = "0x";
+        for (var i = 0; i < 40; i++) s += h[randInt(16)];
+        return s;
+      }
 
       // Build the batch as a list of selections. The generator's own picks use
       // Math.random (a UI convenience); the ART each produces is deterministic
@@ -165,6 +177,8 @@
 
         function toneIdx() { return toneSel === "random" ? randInt(2) : TONES.indexOf(toneSel); }
         function bgVal() { return bgSel === "random" ? Math.random() < 0.5 : bgSel === "on"; }
+        var ownerMode = $("ownerMode").value;
+        var oneOwner = $("owner").value.trim();
 
         var items = [];
         for (var i = 0; i < count; i++) {
@@ -172,7 +186,8 @@
           if (mode === "sweep-shape") { pi = fixedPalette; si = i % SHAPES.length; }
           else if (mode === "sweep-palette") { si = fixedShape; pi = i % PALETTES.length; }
           else { pi = randInt(PALETTES.length); si = randInt(SHAPES.length); }
-          items.push({ mintId: startId + i, palette: pi, shape: si, tone: toneIdx(), bgOnly: bgVal() });
+          var owner = ownerMode === "varied" ? randomAddress() : oneOwner;
+          items.push({ mintId: startId + i, palette: pi, shape: si, tone: toneIdx(), bgOnly: bgVal(), owner: owner });
         }
         return items;
       }
@@ -197,24 +212,25 @@
         };
       }
 
-      function frameSrc(it, owner) {
+      function frameSrc(it) {
         var q = new URLSearchParams();
         q.set("palette", PALETTES[it.palette]);
         q.set("shape", SHAPES[it.shape]);
         q.set("tone", TONES[it.tone]);
-        q.set("owner", owner);
+        q.set("owner", it.owner);
         q.set("tokenId", String(it.mintId));
         q.set("context", "token");
         if (it.bgOnly) q.set("bgOnly", "1");
         return "frame.html?" + q.toString();
       }
+      function shortAddr(a) { return a.slice(0, 6) + "…" + a.slice(-4); }
 
       var lastBatch = [];
 
       function render() {
-        var owner = $("owner").value.trim();
         var items = buildBatch();
         lastBatch = items;
+        var varied = $("ownerMode").value === "varied";
         var grid = $("grid");
         grid.innerHTML = "";
 
@@ -225,7 +241,7 @@
           tile.className = "tile";
           tile.dataset.index = idx;
           tile.innerHTML =
-            '<div class="render"><iframe loading="lazy" src="' + frameSrc(it, owner) + '"></iframe></div>' +
+            '<div class="render"><iframe loading="lazy" src="' + frameSrc(it) + '"></iframe></div>' +
             '<div class="meta">' +
             '<div class="title">untitled #' + it.mintId + '<span class="sub">mint order ' + it.mintId + "</span></div>" +
             '<div class="chips">' +
@@ -233,6 +249,7 @@
             '<span class="chip"><b>shape</b> ' + SHAPES[it.shape] + " (" + it.shape + ")</span>" +
             '<span class="chip"><b>tone</b> ' + TONES[it.tone] + " (" + it.tone + ")</span>" +
             '<span class="chip"><b>bgOnly</b> ' + (it.bgOnly ? "on" : "off") + "</span>" +
+            '<span class="chip"><b>owner</b> ' + shortAddr(it.owner) + "</span>" +
             "</div>" +
             '<details><summary>metadata + mint calldata</summary>' +
             "<pre>" + escapeHtml(JSON.stringify(md, null, 2)) + "</pre>" +
@@ -243,8 +260,9 @@
           grid.appendChild(tile);
         });
 
-        $("summary").textContent =
-          items.length + " mints previewed for owner " + owner + " (all share one animation pace, lockstep).";
+        $("summary").textContent = varied
+          ? items.length + " mints previewed, each with its own owner wallet (each animates at its own pace)."
+          : items.length + " mints previewed for owner " + (items[0] ? items[0].owner : "") + " (all share one animation pace, lockstep).";
       }
 
       function escapeHtml(s) { return s.replace(/[&<>]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]; }); }
@@ -267,10 +285,9 @@
       function openDetail(idx) {
         var it = lastBatch[idx];
         if (!it) return;
-        var owner = $("owner").value.trim();
         var md = metadata(it);
         var data = mintData(it);
-        $("modalFrame").src = frameSrc(it, owner);
+        $("modalFrame").src = frameSrc(it);
         $("modalSide").innerHTML =
           "<h2>untitled #" + it.mintId + "</h2>" +
           '<div class="chips">' +
@@ -279,7 +296,7 @@
           '<span class="chip"><b>tone</b> ' + TONES[it.tone] + " (" + it.tone + ")</span>" +
           '<span class="chip"><b>bgOnly</b> ' + (it.bgOnly ? "on" : "off") + "</span>" +
           "</div>" +
-          '<div class="hint">owner ' + owner + " (pace)</div>" +
+          '<div class="hint">owner ' + it.owner + " (pace)</div>" +
           '<div class="hint">metadata</div><pre>' + escapeHtml(JSON.stringify(md, null, 2)) + "</pre>" +
           '<div class="row"><span class="hint">mint data</span><button class="copy" data-copy="' + data + '">copy</button></div>' +
           "<pre>" + data + "</pre>";
@@ -301,9 +318,8 @@
 
       $("gen").onclick = render;
       $("export").onclick = function () {
-        var owner = $("owner").value.trim();
         var out = lastBatch.map(function (it) {
-          return { mintId: it.mintId, owner: owner, params: { palette: PALETTES[it.palette], shape: SHAPES[it.shape], tone: TONES[it.tone], bgOnly: it.bgOnly }, indices: { palette: it.palette, shape: it.shape, tone: it.tone }, mintData: mintData(it), metadata: metadata(it) };
+          return { mintId: it.mintId, owner: it.owner, params: { palette: PALETTES[it.palette], shape: SHAPES[it.shape], tone: TONES[it.tone], bgOnly: it.bgOnly }, indices: { palette: it.palette, shape: it.shape, tone: it.tone }, mintData: mintData(it), metadata: metadata(it) };
         });
         var blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
         var a = document.createElement("a");
