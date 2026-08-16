@@ -5,26 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>anton batch generator</title>
     <style>
+      /* Palette drawn from the artwork itself: the #0f1534 ground and the light
+         lavender/blue tones of palette A. Single dark theme, matching the piece. */
       :root {
-        color-scheme: light dark;
-        --bg: #ffffff;
-        --fg: #14141a;
-        --muted: #6a6a76;
-        --line: #d8d8e0;
-        --chip: #eef0f6;
-        --card: #fafafc;
-        --accent: #3d6cf0;
-      }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --bg: #0f0f14;
-          --fg: #e9e9f0;
-          --muted: #9a9aa6;
-          --line: #2a2a34;
-          --chip: #1b1b24;
-          --card: #15151c;
-          --accent: #6f97ff;
-        }
+        color-scheme: dark;
+        --bg: #0f1534;
+        --fg: #d7ddf5;
+        --muted: #878cd1;
+        --line: #262d5c;
+        --chip: #1a2150;
+        --card: #151947;
+        --accent: #3d8ffa;
       }
       * { box-sizing: border-box; }
       body { margin: 0; background: var(--bg); color: var(--fg); font: 13px/1.45 system-ui, sans-serif; }
