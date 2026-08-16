@@ -110,7 +110,9 @@
 
   // A fixed frame for the canonical still. Composition at this frame is
   // owner-independent, so captures and thumbnails never churn on transfer.
-  var CAPTURE_FRAME = 900; // 15s at 60fps, past the spawn-in settle
+  // ~47s in: every dynamic slot has spawned and drifted, so the still is a
+  // full, settled composition rather than a sparse early frame.
+  var CAPTURE_FRAME = 2800;
 
   function currentFrame() {
     if (ctx === "capture") return CAPTURE_FRAME;
@@ -373,8 +375,14 @@
   // Each dynamic slot spawns on a fixed cadence; a blob's whole lifecycle is a
   // closed-form function of the frame, so any frame renders without replaying
   // the ones before it. Per-spawn values are keyed by (slot, cycle).
-  var SPAWN_PERIOD = 210; // frames between a slot's respawns
-  var SPAWN_STAGGER = 60; // frame offset per slot so they do not spawn together
+  // A blob drifts slowly (y moves ~speed per second, speed ~0.016-0.031), so
+  // crossing the composition takes ~40-90s. The spawn cadence must be that long
+  // or a blob is recycled before it has travelled, which reads as a highlight
+  // popping near the top on a short interval. SPAWN_END_FADE fades out any blob
+  // still on screen at cycle end so the recycle is never a hard cut.
+  var SPAWN_PERIOD = 3600; // frames (~60s at 60fps): a slot's spawn cadence
+  var SPAWN_STAGGER = SPAWN_PERIOD / DYNAMIC_LAYER_SLOTS; // even temporal spacing
+  var SPAWN_END_FADE = 150; // frames of graceful fade before recycle
 
   function dynamicLayerAt(slot, frame) {
     var base = slot * SPAWN_STAGGER;
@@ -391,7 +399,7 @@
     } else {
       sx = keyedRange(slot, cycle, 0, 0.28, 0.46);
       sy = keyedRange(slot, cycle, 1, 0.16, 0.34);
-      yStart = 1.02 + keyedRange(slot, cycle, 2, -0.03, 0.03) + (slot >= 2 ? keyedRange(slot, cycle, 3, 0.04, 0.24) : 0);
+      yStart = 1.02 + keyedRange(slot, cycle, 2, -0.03, 0.03);
     }
     var x = keyedRange(slot, cycle, 4, 0.26, 0.74);
     var speed = flowMode === "upflow" ? keyedRange(slot, cycle, 5, 0.01, 0.021) : keyedRange(slot, cycle, 5, 0.016, 0.031);
@@ -399,6 +407,10 @@
     var phase = keyed(slot, cycle, 7) * 10.0;
     var baseIntensity = keyedRange(slot, cycle, 8, 0.44, 0.82);
     var color = tintedColor(pickPaletteKeyed(slot, cycle, 9), keyed(slot, cycle, 10), keyed(slot, cycle, 11), keyed(slot, cycle, 12), 0.06);
+
+    // Graceful fade over the last frames of the cycle, so a blob that has not
+    // yet drifted off screen never disappears in a single frame.
+    var endFade = 1.0 - smoothstep01(SPAWN_PERIOD - SPAWN_END_FADE, SPAWN_PERIOD, localFrame);
 
     var y, scale, intensity, active;
     if (flowMode === "upflow") {
@@ -408,14 +420,14 @@
       var fadeOut = 1.0 - smoothstep01(1.08, 1.48, y);
       var shrinkNearTop = 1.0 - smoothstep01(1.04, 1.42, y);
       scale = Math.max(0.0, fadeInTime * shrinkNearTop);
-      intensity = baseIntensity * fadeInPos * fadeInTime * fadeOut;
+      intensity = baseIntensity * fadeInPos * fadeInTime * fadeOut * endFade;
       active = !(y - sy > 1.55);
     } else {
       y = yStart - speed * age;
       scale = 1.0;
       var fadeIn = 1.0 - smoothstep01(0.9, 1.08, y);
       var fadeOut2 = smoothstep01(-0.02, 0.16, y + sy);
-      intensity = baseIntensity * fadeIn * fadeOut2;
+      intensity = baseIntensity * fadeIn * fadeOut2 * endFade;
       active = !(y + sy < -0.1);
     }
     if (!active) return null;

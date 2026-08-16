@@ -57,6 +57,8 @@
       .copy { font-size: 11px; padding: 3px 7px; }
       .hint { color: var(--muted); font-size: 11px; }
       .tile .render { cursor: zoom-in; }
+      /* Clicks must reach the .render div, not get swallowed by the iframe. */
+      .tile .render iframe { pointer-events: none; }
       /* detail modal */
       #modal { position: fixed; inset: 0; z-index: 20; display: none; }
       #modal.open { display: block; }
