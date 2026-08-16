@@ -35,16 +35,6 @@ depth = 50
 runs = 512
 depth = 100
 
-# Reproduces the mainnet-deployed bytecode. The default profile builds under
-# solc 0.8.24's own defaults (shanghai, no via-ir); the 2026-07-22 mainnet
-# deploy (commit fa5af29) used cancun + via-ir, so a byte-exact rebuild needs
-# this profile. Verified with `forge verify-bytecode` (full creation + runtime
-# match) for SurfaceFactory, Surface, and PooledSurface. Build/verify with
-# FOUNDRY_PROFILE=mainnet.
-[profile.mainnet]
-evm_version = "cancun"
-via_ir = true
-
 [rpc_endpoints]
 mainnet = "${MAINNET_RPC_URL}"
 sepolia = "${SEPOLIA_RPC_URL}"
