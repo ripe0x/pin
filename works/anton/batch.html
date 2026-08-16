@@ -56,6 +56,22 @@
       .row { display: flex; gap: 6px; align-items: center; }
       .copy { font-size: 11px; padding: 3px 7px; }
       .hint { color: var(--muted); font-size: 11px; }
+      .tile .render { cursor: zoom-in; }
+      /* detail modal */
+      #modal { position: fixed; inset: 0; z-index: 20; display: none; }
+      #modal.open { display: block; }
+      #modal .backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.62); }
+      #modal .panel {
+        position: absolute; inset: 0; margin: auto; width: min(920px, 94vw); height: min(88vh, 760px);
+        background: var(--bg); border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
+        display: grid; grid-template-columns: 1fr 340px;
+      }
+      #modal .big { position: relative; background: #0f1534; }
+      #modal .big iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+      #modal .side { padding: 16px 18px; overflow: auto; display: flex; flex-direction: column; gap: 12px; }
+      #modal .side h2 { margin: 0; font-size: 18px; }
+      #modal .close { position: absolute; top: 10px; right: 12px; z-index: 2; border-radius: 8px; padding: 4px 10px; }
+      @media (max-width: 720px) { #modal .panel { grid-template-columns: 1fr; grid-template-rows: 1fr auto; } }
     </style>
   </head>
   <body>
@@ -111,6 +127,15 @@
     <div id="summary"></div>
     <div id="grid"></div>
 
+    <div id="modal">
+      <div class="backdrop"></div>
+      <div class="panel">
+        <button class="close">close</button>
+        <div class="big"><iframe id="modalFrame" src="about:blank"></iframe></div>
+        <div class="side" id="modalSide"></div>
+      </div>
+    </div>
+
     <script>
       // Vocabularies. Order is the parity contract with anton.js and
       // AntonRenderer: index -> name here must equal the renderer's arrays.
@@ -159,7 +184,7 @@
       // at mint (block entropy), so it is unknown in a pre-mint preview.
       function metadata(it) {
         return {
-          name: "Anton #" + it.mintId,
+          name: "untitled #" + it.mintId,
           attributes: [
             { trait_type: "Mint Order", value: it.mintId },
             { trait_type: "Seed", value: "assigned at mint" },
@@ -191,15 +216,16 @@
         var grid = $("grid");
         grid.innerHTML = "";
 
-        items.forEach(function (it) {
+        items.forEach(function (it, idx) {
           var md = metadata(it);
           var data = mintData(it);
           var tile = document.createElement("div");
           tile.className = "tile";
+          tile.dataset.index = idx;
           tile.innerHTML =
             '<div class="render"><iframe loading="lazy" src="' + frameSrc(it, owner) + '"></iframe></div>' +
             '<div class="meta">' +
-            '<div class="title">Anton #' + it.mintId + '<span class="sub">mint order ' + it.mintId + "</span></div>" +
+            '<div class="title">untitled #' + it.mintId + '<span class="sub">mint order ' + it.mintId + "</span></div>" +
             '<div class="chips">' +
             '<span class="chip"><b>palette</b> ' + PALETTES[it.palette] + " (" + it.palette + ")</span>" +
             '<span class="chip"><b>shape</b> ' + SHAPES[it.shape] + " (" + it.shape + ")</span>" +
@@ -222,6 +248,49 @@
       function escapeHtml(s) { return s.replace(/[&<>]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]; }); }
 
       $("grid").addEventListener("click", function (e) {
+        var btn = e.target.closest("[data-copy]");
+        if (btn) {
+          navigator.clipboard.writeText(btn.getAttribute("data-copy"));
+          var t = btn.textContent; btn.textContent = "copied"; setTimeout(function () { btn.textContent = t; }, 900);
+          return;
+        }
+        // Ignore the inline disclosure toggle; anything else on a tile opens the
+        // detail view.
+        if (e.target.closest("details")) return;
+        var tile = e.target.closest(".tile");
+        if (tile) openDetail(parseInt(tile.dataset.index, 10));
+      });
+
+      // ── detail modal ──────────────────────────────────────────────────────
+      function openDetail(idx) {
+        var it = lastBatch[idx];
+        if (!it) return;
+        var owner = $("owner").value.trim();
+        var md = metadata(it);
+        var data = mintData(it);
+        $("modalFrame").src = frameSrc(it, owner);
+        $("modalSide").innerHTML =
+          "<h2>untitled #" + it.mintId + "</h2>" +
+          '<div class="chips">' +
+          '<span class="chip"><b>palette</b> ' + PALETTES[it.palette] + " (" + it.palette + ")</span>" +
+          '<span class="chip"><b>shape</b> ' + SHAPES[it.shape] + " (" + it.shape + ")</span>" +
+          '<span class="chip"><b>tone</b> ' + TONES[it.tone] + " (" + it.tone + ")</span>" +
+          '<span class="chip"><b>bgOnly</b> ' + (it.bgOnly ? "on" : "off") + "</span>" +
+          "</div>" +
+          '<div class="hint">owner ' + owner + " (pace)</div>" +
+          '<div class="hint">metadata</div><pre>' + escapeHtml(JSON.stringify(md, null, 2)) + "</pre>" +
+          '<div class="row"><span class="hint">mint data</span><button class="copy" data-copy="' + data + '">copy</button></div>' +
+          "<pre>" + data + "</pre>";
+        $("modal").classList.add("open");
+      }
+      function closeDetail() {
+        $("modal").classList.remove("open");
+        $("modalFrame").src = "about:blank"; // stop the render loop
+      }
+      document.querySelector("#modal .backdrop").onclick = closeDetail;
+      document.querySelector("#modal .close").onclick = closeDetail;
+      document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeDetail(); });
+      $("modalSide").addEventListener("click", function (e) {
         var btn = e.target.closest("[data-copy]");
         if (!btn) return;
         navigator.clipboard.writeText(btn.getAttribute("data-copy"));
