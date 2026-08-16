@@ -15,7 +15,7 @@ interface ISurfaceFactoryDeployed {
 ///         deployments.mainnet.json are live on mainnet and that the factory's
 ///         wiring matches. Catches a deployments file that drifts from chain.
 ///         Source-level drift (repo source != deployed bytecode) is guarded
-///         separately by `FOUNDRY_PROFILE=mainnet forge verify-bytecode`
+///         separately by `forge verify-bytecode` under the default profile
 ///         against these same addresses (see contracts/README.md).
 ///
 ///         Run: MAINNET_RPC_URL=<url> forge test --match-contract SurfaceMainnetDeployment

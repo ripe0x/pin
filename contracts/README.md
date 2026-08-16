@@ -28,14 +28,23 @@ EIP-1167 clones and are not listed here.
 | SovereignAuctionHouseFactory | [`0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f`](https://evm.now/address/0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f?chainId=1) |
 | SovereignAuctionHouse (implementation) | [`0xC70D8a99b915BeDA52C5A952E29FFE152CbfCB34`](https://evm.now/address/0xC70D8a99b915BeDA52C5A952E29FFE152CbfCB34?chainId=1) |
 
-Reproduce the deployed bytecode with the `mainnet` profile (pins the deploy-time
-compiler settings, `cancun` + `via-ir`):
+Reproduce the deployed bytecode with the default profile (solc 0.8.24,
+optimizer runs 200, no via-ir). The 2026-07-22 deploy (commit `fa5af29`) built
+under that profile: its `foundry.toml` set no `evm_version` and no `via_ir`, so
+a plain `forge build` byte-matches mainnet:
 
 ```bash
-FOUNDRY_PROFILE=mainnet forge verify-bytecode \
+forge verify-bytecode \
   0xdB81d3F33EF3D84685486916E0d372E247558094 SurfaceFactory \
   --rpc-url "$MAINNET_RPC_URL" --etherscan-api-key "$ETHERSCAN_API_KEY"
 ```
+
+The runtime bytecode of Surface, PooledSurface, and FixedPriceMinter matches
+exactly under the default profile except the trailing 53-byte CBOR metadata
+hash (`forge verify-bytecode` ignores it); SurfaceFactory additionally differs
+in its baked-in immutable constructor args. Do not enable via-ir to reproduce
+the deploy: the via-ir build is ~1300 bytes smaller per contract and does not
+match.
 
 ## Setup
 
