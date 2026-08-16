@@ -3,82 +3,109 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>anton batch generator</title>
+    <title>untitled batch</title>
     <style>
-      /* Palette drawn from the artwork itself: the #0f1534 ground and the light
-         lavender/blue tones of palette A. Single dark theme, matching the piece. */
+      /* Matches the source app: a warm light-gray ground, frosted-glass panels
+         and pills, rounded tiles with a bold name and muted address beneath. */
       :root {
-        color-scheme: dark;
-        --bg: #0f1534;
-        --fg: #d7ddf5;
-        --muted: #878cd1;
-        --line: #262d5c;
-        --chip: #1a2150;
-        --card: #151947;
-        --accent: #3d8ffa;
+        color-scheme: light;
+        --bg: #d4d2d0;
+        --fg: #26262a;
+        --muted: #8a8a8f;
+        --glass: rgba(255, 255, 255, 0.45);
+        --glass-strong: rgba(255, 255, 255, 0.62);
+        --glass-border: rgba(255, 255, 255, 0.7);
+        --shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+        --tile-shadow: 0 6px 22px rgba(0, 0, 0, 0.14);
       }
       * { box-sizing: border-box; }
-      body { margin: 0; background: var(--bg); color: var(--fg); font: 13px/1.45 system-ui, sans-serif; }
+      body {
+        margin: 0; background: var(--bg); color: var(--fg);
+        font: 14px/1.45 -apple-system, system-ui, "Helvetica Neue", sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      .glass {
+        background: var(--glass);
+        -webkit-backdrop-filter: blur(24px) saturate(1.4);
+        backdrop-filter: blur(24px) saturate(1.4);
+        border: 1px solid var(--glass-border);
+        box-shadow: var(--shadow);
+      }
+      /* header */
       header {
-        position: sticky; top: 0; z-index: 5; background: var(--bg);
-        display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;
-        padding: 12px 16px; border-bottom: 1px solid var(--line);
+        position: sticky; top: 0; z-index: 10;
+        display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end;
+        margin: 18px; padding: 14px 18px; border-radius: 22px;
       }
-      .field { display: flex; flex-direction: column; gap: 3px; }
-      .field label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-      select, input, button { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--fg); }
-      button { cursor: pointer; }
-      button.primary { background: var(--accent); color: #fff; border-color: transparent; font-weight: 600; }
+      .brand { font-weight: 700; font-size: 15px; padding: 6px 4px 6px 6px; margin-right: 4px; }
+      .field { display: flex; flex-direction: column; gap: 4px; }
+      .field label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; padding-left: 4px; }
+      select, input {
+        font: inherit; color: var(--fg); padding: 7px 12px; border-radius: 999px;
+        background: var(--glass-strong); border: 1px solid var(--glass-border);
+        -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+        appearance: none;
+      }
+      input[type="number"] { width: 74px; }
+      button {
+        font: inherit; cursor: pointer; color: var(--fg); padding: 8px 18px; border-radius: 999px;
+        background: var(--glass-strong); border: 1px solid var(--glass-border);
+        -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+        transition: background .15s;
+      }
+      button:hover { background: rgba(255, 255, 255, 0.8); }
+      button.primary { background: rgba(255, 255, 255, 0.82); font-weight: 600; }
       .spacer { flex: 1; }
-      #summary { padding: 8px 16px; color: var(--muted); border-bottom: 1px solid var(--line); }
-      #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; padding: 16px; }
-      .tile { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--card); display: flex; flex-direction: column; }
-      .tile .render { position: relative; aspect-ratio: 1 / 1; background: #0f1534; }
-      .tile iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
-      .tile .meta { padding: 10px 11px; display: flex; flex-direction: column; gap: 8px; }
-      .tile .title { font-weight: 700; display: flex; justify-content: space-between; align-items: baseline; }
-      .tile .title .sub { font-weight: 400; color: var(--muted); font-size: 11px; }
-      .chips { display: flex; flex-wrap: wrap; gap: 5px; }
-      .chip { background: var(--chip); border-radius: 5px; padding: 2px 7px; font-size: 11px; }
-      .chip b { font-weight: 600; }
-      details { border-top: 1px dashed var(--line); padding-top: 7px; }
-      details summary { cursor: pointer; color: var(--muted); font-size: 11px; user-select: none; }
-      pre { margin: 6px 0 0; background: var(--chip); border-radius: 6px; padding: 8px; font: 11px/1.4 ui-monospace, monospace; white-space: pre-wrap; word-break: break-all; }
-      .row { display: flex; gap: 6px; align-items: center; }
-      .copy { font-size: 11px; padding: 3px 7px; }
-      .hint { color: var(--muted); font-size: 11px; }
-      .tile .render { cursor: zoom-in; }
-      /* Clicks must reach the .render div, not get swallowed by the iframe. */
-      .tile .render iframe { pointer-events: none; }
-      /* detail modal */
-      #modal { position: fixed; inset: 0; z-index: 20; display: none; }
-      #modal.open { display: block; }
-      #modal .backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.62); }
-      #modal .panel {
-        position: absolute; inset: 0; margin: auto; width: min(920px, 94vw); height: min(88vh, 760px);
-        background: var(--bg); border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
-        display: grid; grid-template-columns: 1fr 340px;
+      #summary { color: var(--muted); font-size: 12px; margin: 0 30px 6px; }
+      /* grid + tiles */
+      #grid {
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+        gap: 34px 28px; padding: 14px 30px 60px;
       }
-      #modal .big { position: relative; background: #0f1534; }
+      .tile { display: flex; flex-direction: column; }
+      .tile .render {
+        position: relative; aspect-ratio: 1 / 1; border-radius: 18px; overflow: hidden;
+        box-shadow: var(--tile-shadow); cursor: zoom-in; background: #c9c7c5;
+      }
+      .tile .render iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; pointer-events: none; }
+      .tile .name { margin-top: 12px; font-weight: 700; font-size: 15px; color: var(--fg); }
+      .tile .addr { margin-top: 2px; font-size: 12px; color: var(--muted); letter-spacing: .02em; }
+      /* detail modal */
+      #modal { position: fixed; inset: 0; z-index: 30; display: none; }
+      #modal.open { display: block; }
+      #modal .backdrop { position: absolute; inset: 0; background: rgba(120, 118, 116, 0.4); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+      #modal .panel {
+        position: absolute; inset: 0; margin: auto; width: min(940px, 94vw); height: min(86vh, 720px);
+        border-radius: 26px; overflow: hidden; display: grid; grid-template-columns: 1fr 320px;
+      }
+      #modal .big { position: relative; background: #c9c7c5; }
       #modal .big iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
-      #modal .side { padding: 16px 18px; overflow: auto; display: flex; flex-direction: column; gap: 12px; }
-      #modal .side h2 { margin: 0; font-size: 18px; }
-      #modal .close { position: absolute; top: 10px; right: 12px; z-index: 2; border-radius: 8px; padding: 4px 10px; }
+      #modal .side { padding: 22px; overflow: auto; display: flex; flex-direction: column; gap: 14px; }
+      #modal .side h2 { margin: 0; font-size: 20px; font-weight: 700; }
+      #modal .close { position: absolute; top: 14px; right: 16px; z-index: 2; padding: 6px 14px; }
+      .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+      .chip { background: var(--glass-strong); border: 1px solid var(--glass-border); border-radius: 999px; padding: 3px 11px; font-size: 12px; }
+      .chip b { font-weight: 600; }
+      .hint { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+      pre { margin: 4px 0 0; background: rgba(255, 255, 255, 0.5); border: 1px solid var(--glass-border); border-radius: 14px; padding: 10px 12px; font: 11px/1.45 ui-monospace, monospace; white-space: pre-wrap; word-break: break-all; }
+      .row { display: flex; gap: 8px; align-items: center; }
+      .copy { padding: 4px 12px; font-size: 12px; }
       @media (max-width: 720px) { #modal .panel { grid-template-columns: 1fr; grid-template-rows: 1fr auto; } }
     </style>
   </head>
   <body>
-    <header>
+    <header class="glass">
+      <span class="brand">untitled</span>
       <div class="field">
         <label for="count">batch size</label>
-        <input id="count" type="number" min="1" max="60" value="12" style="width: 80px" />
+        <input id="count" type="number" min="1" max="60" value="12" />
       </div>
       <div class="field">
         <label for="mode">selection</label>
         <select id="mode">
           <option value="random">random combos</option>
-          <option value="sweep-shape">sweep shapes (fixed palette)</option>
-          <option value="sweep-palette">sweep palettes (fixed shape)</option>
+          <option value="sweep-shape">sweep shapes</option>
+          <option value="sweep-palette">sweep palettes</option>
         </select>
       </div>
       <div class="field">
@@ -91,45 +118,34 @@
       </div>
       <div class="field">
         <label for="tone">tone</label>
-        <select id="tone">
-          <option value="random">random</option>
-          <option value="sun">sun</option>
-          <option value="moon">moon</option>
-        </select>
+        <select id="tone"><option value="random">random</option><option value="sun">sun</option><option value="moon">moon</option></select>
       </div>
       <div class="field">
         <label for="bgOnly">bgOnly</label>
-        <select id="bgOnly">
-          <option value="off">off</option>
-          <option value="random">random</option>
-          <option value="on">on</option>
-        </select>
+        <select id="bgOnly"><option value="off">off</option><option value="random">random</option><option value="on">on</option></select>
       </div>
       <div class="field">
         <label for="ownerMode">owners</label>
-        <select id="ownerMode">
-          <option value="one">one wallet (lockstep)</option>
-          <option value="varied">varied (per output)</option>
-        </select>
+        <select id="ownerMode"><option value="one">one wallet</option><option value="varied">varied</option></select>
       </div>
       <div class="field">
-        <label for="owner">owner wallet (pace)</label>
-        <input id="owner" size="24" value="0x1111111111111111111111111111111111111111" />
+        <label for="owner">owner wallet</label>
+        <input id="owner" size="20" value="0x1111111111111111111111111111111111111111" style="width: 210px" />
       </div>
       <div class="field">
-        <label for="startId">first mint #</label>
-        <input id="startId" type="number" min="1" value="1" style="width: 80px" />
+        <label for="startId">first #</label>
+        <input id="startId" type="number" min="1" value="1" />
       </div>
       <button id="gen" class="primary">generate</button>
       <div class="spacer"></div>
-      <button id="export">export JSON</button>
+      <button id="export">export</button>
     </header>
     <div id="summary"></div>
     <div id="grid"></div>
 
     <div id="modal">
       <div class="backdrop"></div>
-      <div class="panel">
+      <div class="panel glass">
         <button class="close">close</button>
         <div class="big"><iframe id="modalFrame" src="about:blank"></iframe></div>
         <div class="side" id="modalSide"></div>
@@ -153,10 +169,11 @@
         for (var i = 0; i < 40; i++) s += h[randInt(16)];
         return s;
       }
+      function pad3(n) { return String(n).padStart(3, "0"); }
+      function shortAddr(a) { return "0x" + a.slice(2, 6).toUpperCase() + "..." + a.slice(-4).toUpperCase(); }
 
-      // Build the batch as a list of selections. The generator's own picks use
-      // Math.random (a UI convenience); the ART each produces is deterministic
-      // from the chosen params, so a given selection always renders the same.
+      // The generator's own picks use Math.random (a UI convenience); the ART each
+      // produces is deterministic from the chosen params.
       function buildBatch() {
         var count = Math.max(1, Math.min(60, parseInt($("count").value || "1", 10)));
         var mode = $("mode").value;
@@ -165,7 +182,6 @@
         var fixedPalette = PALETTES.indexOf($("palette").value);
         var fixedShape = SHAPES.indexOf($("shape").value);
         var startId = Math.max(1, parseInt($("startId").value || "1", 10));
-
         function toneIdx() { return toneSel === "random" ? randInt(2) : TONES.indexOf(toneSel); }
         function bgVal() { return bgSel === "random" ? Math.random() < 0.5 : bgSel === "on"; }
         var ownerMode = $("ownerMode").value;
@@ -184,12 +200,12 @@
       }
 
       // abi.encode(uint8 palette, uint8 shape, uint8 tone, bool bgOnly): four
-      // 32-byte words. This is exactly the `data` AntonMinter.mint decodes.
+      // 32-byte words. Exactly the `data` AntonMinter.mint decodes.
       function pad32(n) { return n.toString(16).padStart(64, "0"); }
       function mintData(it) { return "0x" + pad32(it.palette) + pad32(it.shape) + pad32(it.tone) + pad32(it.bgOnly ? 1 : 0); }
 
-      // The metadata AntonRenderer publishes for this selection. Seed is stamped
-      // at mint (block entropy), so it is unknown in a pre-mint preview.
+      // The metadata AntonRenderer publishes. Seed is stamped at mint, so it is
+      // unknown in a pre-mint preview.
       function metadata(it) {
         return {
           name: "untitled #" + it.mintId,
@@ -214,7 +230,8 @@
         if (it.bgOnly) q.set("bgOnly", "1");
         return "frame.html?" + q.toString();
       }
-      function shortAddr(a) { return a.slice(0, 6) + "…" + a.slice(-4); }
+
+      function escapeHtml(s) { return s.replace(/[&<>]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]; }); }
 
       var lastBatch = [];
 
@@ -224,50 +241,22 @@
         var varied = $("ownerMode").value === "varied";
         var grid = $("grid");
         grid.innerHTML = "";
-
         items.forEach(function (it, idx) {
-          var md = metadata(it);
-          var data = mintData(it);
           var tile = document.createElement("div");
           tile.className = "tile";
           tile.dataset.index = idx;
           tile.innerHTML =
             '<div class="render"><iframe loading="lazy" src="' + frameSrc(it) + '"></iframe></div>' +
-            '<div class="meta">' +
-            '<div class="title">untitled #' + it.mintId + '<span class="sub">mint order ' + it.mintId + "</span></div>" +
-            '<div class="chips">' +
-            '<span class="chip"><b>palette</b> ' + PALETTES[it.palette] + " (" + it.palette + ")</span>" +
-            '<span class="chip"><b>shape</b> ' + SHAPES[it.shape] + " (" + it.shape + ")</span>" +
-            '<span class="chip"><b>tone</b> ' + TONES[it.tone] + " (" + it.tone + ")</span>" +
-            '<span class="chip"><b>bgOnly</b> ' + (it.bgOnly ? "on" : "off") + "</span>" +
-            '<span class="chip"><b>owner</b> ' + shortAddr(it.owner) + "</span>" +
-            "</div>" +
-            '<details><summary>metadata + mint calldata</summary>' +
-            "<pre>" + escapeHtml(JSON.stringify(md, null, 2)) + "</pre>" +
-            '<div class="row"><span class="hint">mint data</span><button class="copy" data-copy="' + data + '">copy</button></div>' +
-            "<pre>" + data + "</pre>" +
-            "</details>" +
-            "</div>";
+            '<div class="name">untitled #' + pad3(it.mintId) + "</div>" +
+            '<div class="addr">' + shortAddr(it.owner) + "</div>";
           grid.appendChild(tile);
         });
-
         $("summary").textContent = varied
-          ? items.length + " mints previewed, each with its own owner wallet (each animates at its own pace)."
-          : items.length + " mints previewed for owner " + (items[0] ? items[0].owner : "") + " (all share one animation pace, lockstep).";
+          ? items.length + " outputs, each its own wallet and pace."
+          : items.length + " outputs for " + (items[0] ? shortAddr(items[0].owner) : "") + ", one shared pace (lockstep).";
       }
 
-      function escapeHtml(s) { return s.replace(/[&<>]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]; }); }
-
       $("grid").addEventListener("click", function (e) {
-        var btn = e.target.closest("[data-copy]");
-        if (btn) {
-          navigator.clipboard.writeText(btn.getAttribute("data-copy"));
-          var t = btn.textContent; btn.textContent = "copied"; setTimeout(function () { btn.textContent = t; }, 900);
-          return;
-        }
-        // Ignore the inline disclosure toggle; anything else on a tile opens the
-        // detail view.
-        if (e.target.closest("details")) return;
         var tile = e.target.closest(".tile");
         if (tile) openDetail(parseInt(tile.dataset.index, 10));
       });
@@ -280,14 +269,14 @@
         var data = mintData(it);
         $("modalFrame").src = frameSrc(it);
         $("modalSide").innerHTML =
-          "<h2>untitled #" + it.mintId + "</h2>" +
+          "<h2>untitled #" + pad3(it.mintId) + "</h2>" +
           '<div class="chips">' +
           '<span class="chip"><b>palette</b> ' + PALETTES[it.palette] + " (" + it.palette + ")</span>" +
           '<span class="chip"><b>shape</b> ' + SHAPES[it.shape] + " (" + it.shape + ")</span>" +
           '<span class="chip"><b>tone</b> ' + TONES[it.tone] + " (" + it.tone + ")</span>" +
           '<span class="chip"><b>bgOnly</b> ' + (it.bgOnly ? "on" : "off") + "</span>" +
           "</div>" +
-          '<div class="hint">owner ' + it.owner + " (pace)</div>" +
+          '<div><div class="hint">owner (pace)</div>' + shortAddr(it.owner) + "</div>" +
           '<div class="hint">metadata</div><pre>' + escapeHtml(JSON.stringify(md, null, 2)) + "</pre>" +
           '<div class="row"><span class="hint">mint data</span><button class="copy" data-copy="' + data + '">copy</button></div>' +
           "<pre>" + data + "</pre>";
