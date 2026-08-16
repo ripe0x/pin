@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>anton batch generator</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --fg: #14141a;
+        --muted: #6a6a76;
+        --line: #d8d8e0;
+        --chip: #eef0f6;
+        --card: #fafafc;
+        --accent: #3d6cf0;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0f0f14;
+          --fg: #e9e9f0;
+          --muted: #9a9aa6;
+          --line: #2a2a34;
+          --chip: #1b1b24;
+          --card: #15151c;
+          --accent: #6f97ff;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--fg); font: 13px/1.45 system-ui, sans-serif; }
+      header {
+        position: sticky; top: 0; z-index: 5; background: var(--bg);
+        display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;
+        padding: 12px 16px; border-bottom: 1px solid var(--line);
+      }
+      .field { display: flex; flex-direction: column; gap: 3px; }
+      .field label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+      select, input, button { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--fg); }
+      button { cursor: pointer; }
+      button.primary { background: var(--accent); color: #fff; border-color: transparent; font-weight: 600; }
+      .spacer { flex: 1; }
+      #summary { padding: 8px 16px; color: var(--muted); border-bottom: 1px solid var(--line); }
+      #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; padding: 16px; }
+      .tile { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--card); display: flex; flex-direction: column; }
+      .tile .render { position: relative; aspect-ratio: 1 / 1; background: #0f1534; }
+      .tile iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
+      .tile .meta { padding: 10px 11px; display: flex; flex-direction: column; gap: 8px; }
+      .tile .title { font-weight: 700; display: flex; justify-content: space-between; align-items: baseline; }
+      .tile .title .sub { font-weight: 400; color: var(--muted); font-size: 11px; }
+      .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+      .chip { background: var(--chip); border-radius: 5px; padding: 2px 7px; font-size: 11px; }
+      .chip b { font-weight: 600; }
+      details { border-top: 1px dashed var(--line); padding-top: 7px; }
+      details summary { cursor: pointer; color: var(--muted); font-size: 11px; user-select: none; }
+      pre { margin: 6px 0 0; background: var(--chip); border-radius: 6px; padding: 8px; font: 11px/1.4 ui-monospace, monospace; white-space: pre-wrap; word-break: break-all; }
+      .row { display: flex; gap: 6px; align-items: center; }
+      .copy { font-size: 11px; padding: 3px 7px; }
+      .hint { color: var(--muted); font-size: 11px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="field">
+        <label for="count">batch size</label>
+        <input id="count" type="number" min="1" max="60" value="12" style="width: 80px" />
+      </div>
+      <div class="field">
+        <label for="mode">selection</label>
+        <select id="mode">
+          <option value="random">random combos</option>
+          <option value="sweep-shape">sweep shapes (fixed palette)</option>
+          <option value="sweep-palette">sweep palettes (fixed shape)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="palette">palette</label>
+        <select id="palette"></select>
+      </div>
+      <div class="field">
+        <label for="shape">shape</label>
+        <select id="shape"></select>
+      </div>
+      <div class="field">
+        <label for="tone">tone</label>
+        <select id="tone">
+          <option value="random">random</option>
+          <option value="sun">sun</option>
+          <option value="moon">moon</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="bgOnly">bgOnly</label>
+        <select id="bgOnly">
+          <option value="off">off</option>
+          <option value="random">random</option>
+          <option value="on">on</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="owner">owner wallet (pace)</label>
+        <input id="owner" size="24" value="0x1111111111111111111111111111111111111111" />
+      </div>
+      <div class="field">
+        <label for="startId">first mint #</label>
+        <input id="startId" type="number" min="1" value="1" style="width: 80px" />
+      </div>
+      <button id="gen" class="primary">generate</button>
+      <div class="spacer"></div>
+      <button id="export">export JSON</button>
+    </header>
+    <div id="summary"></div>
+    <div id="grid"></div>
+
+    <script>
+      // Vocabularies. Order is the parity contract with anton.js and
+      // AntonRenderer: index -> name here must equal the renderer's arrays.
+      var PALETTES = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"];
+      var SHAPES = ["halo","arch","wide","bloom","opal","curved-circle","rounded-trapezoid","arrow","opal-2","droplet","square","opal-3","rounded-triangle","onyx","soft-oval","shard-x","shard-y","needle-veil","beam"];
+      var TONES = ["sun", "moon"]; // index 0 = sun, 1 = moon
+
+      var $ = function (id) { return document.getElementById(id); };
+      PALETTES.forEach(function (p) { var o = document.createElement("option"); o.textContent = p; $("palette").appendChild(o); });
+      SHAPES.forEach(function (s) { var o = document.createElement("option"); o.textContent = s; $("shape").appendChild(o); });
+
+      function randInt(n) { return Math.floor(Math.random() * n); }
+
+      // Build the batch as a list of selections. The generator's own picks use
+      // Math.random (a UI convenience); the ART each produces is deterministic
+      // from the chosen params, so a given selection always renders the same.
+      function buildBatch() {
+        var count = Math.max(1, Math.min(60, parseInt($("count").value || "1", 10)));
+        var mode = $("mode").value;
+        var toneSel = $("tone").value;
+        var bgSel = $("bgOnly").value;
+        var fixedPalette = PALETTES.indexOf($("palette").value);
+        var fixedShape = SHAPES.indexOf($("shape").value);
+        var startId = Math.max(1, parseInt($("startId").value || "1", 10));
+
+        function toneIdx() { return toneSel === "random" ? randInt(2) : TONES.indexOf(toneSel); }
+        function bgVal() { return bgSel === "random" ? Math.random() < 0.5 : bgSel === "on"; }
+
+        var items = [];
+        for (var i = 0; i < count; i++) {
+          var pi, si;
+          if (mode === "sweep-shape") { pi = fixedPalette; si = i % SHAPES.length; }
+          else if (mode === "sweep-palette") { si = fixedShape; pi = i % PALETTES.length; }
+          else { pi = randInt(PALETTES.length); si = randInt(SHAPES.length); }
+          items.push({ mintId: startId + i, palette: pi, shape: si, tone: toneIdx(), bgOnly: bgVal() });
+        }
+        return items;
+      }
+
+      // abi.encode(uint8 palette, uint8 shape, uint8 tone, bool bgOnly): four
+      // 32-byte words. This is exactly the `data` AntonMinter.mint decodes.
+      function pad32(n) { return n.toString(16).padStart(64, "0"); }
+      function mintData(it) { return "0x" + pad32(it.palette) + pad32(it.shape) + pad32(it.tone) + pad32(it.bgOnly ? 1 : 0); }
+
+      // The metadata AntonRenderer publishes for this selection. Seed is stamped
+      // at mint (block entropy), so it is unknown in a pre-mint preview.
+      function metadata(it) {
+        return {
+          name: "Anton #" + it.mintId,
+          attributes: [
+            { trait_type: "Mint Order", value: it.mintId },
+            { trait_type: "Seed", value: "assigned at mint" },
+            { trait_type: "Palette", value: PALETTES[it.palette] },
+            { trait_type: "Shape", value: SHAPES[it.shape] },
+            { trait_type: "Tone", value: TONES[it.tone] }
+          ]
+        };
+      }
+
+      function frameSrc(it, owner) {
+        var q = new URLSearchParams();
+        q.set("palette", PALETTES[it.palette]);
+        q.set("shape", SHAPES[it.shape]);
+        q.set("tone", TONES[it.tone]);
+        q.set("owner", owner);
+        q.set("tokenId", String(it.mintId));
+        q.set("context", "token");
+        if (it.bgOnly) q.set("bgOnly", "1");
+        return "frame.html?" + q.toString();
+      }
+
+      var lastBatch = [];
+
+      function render() {
+        var owner = $("owner").value.trim();
+        var items = buildBatch();
+        lastBatch = items;
+        var grid = $("grid");
+        grid.innerHTML = "";
+
+        items.forEach(function (it) {
+          var md = metadata(it);
+          var data = mintData(it);
+          var tile = document.createElement("div");
+          tile.className = "tile";
+          tile.innerHTML =
+            '<div class="render"><iframe loading="lazy" src="' + frameSrc(it, owner) + '"></iframe></div>' +
+            '<div class="meta">' +
+            '<div class="title">Anton #' + it.mintId + '<span class="sub">mint order ' + it.mintId + "</span></div>" +
+            '<div class="chips">' +
+            '<span class="chip"><b>palette</b> ' + PALETTES[it.palette] + " (" + it.palette + ")</span>" +
+            '<span class="chip"><b>shape</b> ' + SHAPES[it.shape] + " (" + it.shape + ")</span>" +
+            '<span class="chip"><b>tone</b> ' + TONES[it.tone] + " (" + it.tone + ")</span>" +
+            '<span class="chip"><b>bgOnly</b> ' + (it.bgOnly ? "on" : "off") + "</span>" +
+            "</div>" +
+            '<details><summary>metadata + mint calldata</summary>' +
+            "<pre>" + escapeHtml(JSON.stringify(md, null, 2)) + "</pre>" +
+            '<div class="row"><span class="hint">mint data</span><button class="copy" data-copy="' + data + '">copy</button></div>' +
+            "<pre>" + data + "</pre>" +
+            "</details>" +
+            "</div>";
+          grid.appendChild(tile);
+        });
+
+        $("summary").textContent =
+          items.length + " mints previewed for owner " + owner + " (all share one animation pace, lockstep).";
+      }
+
+      function escapeHtml(s) { return s.replace(/[&<>]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]; }); }
+
+      $("grid").addEventListener("click", function (e) {
+        var btn = e.target.closest("[data-copy]");
+        if (!btn) return;
+        navigator.clipboard.writeText(btn.getAttribute("data-copy"));
+        var t = btn.textContent; btn.textContent = "copied"; setTimeout(function () { btn.textContent = t; }, 900);
+      });
+
+      $("gen").onclick = render;
+      $("export").onclick = function () {
+        var owner = $("owner").value.trim();
+        var out = lastBatch.map(function (it) {
+          return { mintId: it.mintId, owner: owner, params: { palette: PALETTES[it.palette], shape: SHAPES[it.shape], tone: TONES[it.tone], bgOnly: it.bgOnly }, indices: { palette: it.palette, shape: it.shape, tone: it.tone }, mintData: mintData(it), metadata: metadata(it) };
+        });
+        var blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "anton-batch.json";
+        a.click();
+      };
+
+      render();
+    </script>
+  </body>
+</html>
