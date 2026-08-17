@@ -106,8 +106,7 @@
       <div class="field">
         <label for="mode">selection</label>
         <select id="mode">
-          <option value="random">random combos</option>
-          <option value="sweep-shape">sweep shapes</option>
+          <option value="random">random</option>
           <option value="sweep-palette">sweep palettes</option>
         </select>
       </div>
@@ -116,16 +115,8 @@
         <select id="palette"></select>
       </div>
       <div class="field">
-        <label for="shape">shape</label>
-        <select id="shape"></select>
-      </div>
-      <div class="field">
         <label for="tone">tone</label>
         <select id="tone"><option value="random">random</option><option value="sun">sun</option><option value="moon">moon</option></select>
-      </div>
-      <div class="field">
-        <label for="bgOnly">bgOnly</label>
-        <select id="bgOnly"><option value="off">off</option><option value="random">random</option><option value="on">on</option></select>
       </div>
       <div class="field">
         <label for="ownerMode">owners</label>
@@ -158,65 +149,58 @@
     <script>
       // Vocabularies. Order is the parity contract with anton.js and
       // AntonRenderer: index -> name here must equal the renderer's arrays.
+      // Shape and background are not minted: they morph over time in the work,
+      // synced to the owner. Per-output variety comes from the seed.
       var PALETTES = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"];
-      var SHAPES = ["halo","arch","wide","bloom","opal","curved-circle","rounded-trapezoid","arrow","opal-2","droplet","square","opal-3","rounded-triangle","onyx","soft-oval","shard-x","shard-y","needle-veil","beam"];
       var TONES = ["sun", "moon"]; // index 0 = sun, 1 = moon
 
       var $ = function (id) { return document.getElementById(id); };
       PALETTES.forEach(function (p) { var o = document.createElement("option"); o.textContent = p; $("palette").appendChild(o); });
-      SHAPES.forEach(function (s) { var o = document.createElement("option"); o.textContent = s; $("shape").appendChild(o); });
 
       function randInt(n) { return Math.floor(Math.random() * n); }
-      function randomAddress() {
-        var h = "0123456789abcdef", s = "0x";
-        for (var i = 0; i < 40; i++) s += h[randInt(16)];
-        return s;
-      }
+      function randHex(len) { var h = "0123456789abcdef", s = ""; for (var i = 0; i < len; i++) s += h[randInt(16)]; return s; }
+      function randomAddress() { return "0x" + randHex(40); }
+      function randomSeed() { return "0x" + randHex(64); }
       function pad3(n) { return String(n).padStart(3, "0"); }
       function shortAddr(a) { return "0x" + a.slice(2, 6).toUpperCase() + "..." + a.slice(-4).toUpperCase(); }
+      function shortSeed(s) { return s.slice(0, 10) + "…" + s.slice(-6); }
 
-      // The generator's own picks use Math.random (a UI convenience); the ART each
-      // produces is deterministic from the chosen params.
+      // The generator's own picks use Math.random (a UI convenience). Each output
+      // gets a sample seed standing in for the token seed assigned at mint, which
+      // drives that token's variety.
       function buildBatch() {
         var count = Math.max(1, Math.min(60, parseInt($("count").value || "1", 10)));
         var mode = $("mode").value;
         var toneSel = $("tone").value;
-        var bgSel = $("bgOnly").value;
         var fixedPalette = PALETTES.indexOf($("palette").value);
-        var fixedShape = SHAPES.indexOf($("shape").value);
         var startId = Math.max(1, parseInt($("startId").value || "1", 10));
         function toneIdx() { return toneSel === "random" ? randInt(2) : TONES.indexOf(toneSel); }
-        function bgVal() { return bgSel === "random" ? Math.random() < 0.5 : bgSel === "on"; }
         var ownerMode = $("ownerMode").value;
         var oneOwner = $("owner").value.trim();
 
         var items = [];
         for (var i = 0; i < count; i++) {
-          var pi, si;
-          if (mode === "sweep-shape") { pi = fixedPalette; si = i % SHAPES.length; }
-          else if (mode === "sweep-palette") { si = fixedShape; pi = i % PALETTES.length; }
-          else { pi = randInt(PALETTES.length); si = randInt(SHAPES.length); }
+          var pi = mode === "sweep-palette" ? i % PALETTES.length : randInt(PALETTES.length);
           var owner = ownerMode === "varied" ? randomAddress() : oneOwner;
-          items.push({ mintId: startId + i, palette: pi, shape: si, tone: toneIdx(), bgOnly: bgVal(), owner: owner });
+          items.push({ mintId: startId + i, palette: pi, tone: toneIdx(), owner: owner, seed: randomSeed() });
         }
         return items;
       }
 
-      // abi.encode(uint8 palette, uint8 shape, uint8 tone, bool bgOnly): four
-      // 32-byte words. Exactly the `data` AntonMinter.mint decodes.
+      // abi.encode(uint8 palette, uint8 tone): two 32-byte words. Exactly the
+      // `data` AntonMinter.mint decodes.
       function pad32(n) { return n.toString(16).padStart(64, "0"); }
-      function mintData(it) { return "0x" + pad32(it.palette) + pad32(it.shape) + pad32(it.tone) + pad32(it.bgOnly ? 1 : 0); }
+      function mintData(it) { return "0x" + pad32(it.palette) + pad32(it.tone); }
 
-      // The metadata AntonRenderer publishes. Seed is stamped at mint, so it is
-      // unknown in a pre-mint preview.
+      // The metadata AntonRenderer publishes. The real seed is stamped at mint;
+      // this sample seed stands in for the preview.
       function metadata(it) {
         return {
           name: "untitled #" + it.mintId,
           attributes: [
             { trait_type: "Mint Order", value: it.mintId },
-            { trait_type: "Seed", value: "assigned at mint" },
+            { trait_type: "Seed", value: it.seed + " (sample)" },
             { trait_type: "Palette", value: PALETTES[it.palette] },
-            { trait_type: "Shape", value: SHAPES[it.shape] },
             { trait_type: "Tone", value: TONES[it.tone] }
           ]
         };
@@ -225,12 +209,11 @@
       function frameSrc(it) {
         var q = new URLSearchParams();
         q.set("palette", PALETTES[it.palette]);
-        q.set("shape", SHAPES[it.shape]);
         q.set("tone", TONES[it.tone]);
         q.set("owner", it.owner);
+        q.set("hash", it.seed);
         q.set("tokenId", String(it.mintId));
         q.set("context", "token");
-        if (it.bgOnly) q.set("bgOnly", "1");
         return "frame.html?" + q.toString();
       }
 
@@ -275,11 +258,10 @@
           "<h2>untitled #" + pad3(it.mintId) + "</h2>" +
           '<div class="chips">' +
           '<span class="chip"><b>palette</b> ' + PALETTES[it.palette] + " (" + it.palette + ")</span>" +
-          '<span class="chip"><b>shape</b> ' + SHAPES[it.shape] + " (" + it.shape + ")</span>" +
           '<span class="chip"><b>tone</b> ' + TONES[it.tone] + " (" + it.tone + ")</span>" +
-          '<span class="chip"><b>bgOnly</b> ' + (it.bgOnly ? "on" : "off") + "</span>" +
           "</div>" +
-          '<div><div class="hint">owner (pace)</div>' + shortAddr(it.owner) + "</div>" +
+          '<div><div class="hint">owner (shape + bg sync)</div>' + shortAddr(it.owner) + "</div>" +
+          '<div><div class="hint">seed (sample)</div>' + shortSeed(it.seed) + "</div>" +
           '<div class="hint">metadata</div><pre>' + escapeHtml(JSON.stringify(md, null, 2)) + "</pre>" +
           '<div class="row"><span class="hint">mint data</span><button class="copy" data-copy="' + data + '">copy</button></div>' +
           "<pre>" + data + "</pre>";
@@ -302,7 +284,7 @@
       $("gen").onclick = render;
       $("export").onclick = function () {
         var out = lastBatch.map(function (it) {
-          return { mintId: it.mintId, owner: it.owner, params: { palette: PALETTES[it.palette], shape: SHAPES[it.shape], tone: TONES[it.tone], bgOnly: it.bgOnly }, indices: { palette: it.palette, shape: it.shape, tone: it.tone }, mintData: mintData(it), metadata: metadata(it) };
+          return { mintId: it.mintId, owner: it.owner, seed: it.seed, params: { palette: PALETTES[it.palette], tone: TONES[it.tone] }, indices: { palette: it.palette, tone: it.tone }, mintData: mintData(it), metadata: metadata(it) };
         });
         var blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
         var a = document.createElement("a");

@@ -21,14 +21,14 @@
       <label>palette
         <select id="palette"></select>
       </label>
-      <label>shape
-        <select id="shape"></select>
-      </label>
       <label>tone
         <select id="tone"><option>moon</option><option>sun</option></select>
       </label>
       <label>owner
-        <input id="owner" size="20" value="0x1111111111111111111111111111111111111111" />
+        <input id="owner" size="16" value="0x1111111111111111111111111111111111111111" />
+      </label>
+      <label>seed
+        <input id="seed" size="18" value="0x00000000000000000000000000000000000000000000000000000000000000a1" />
       </label>
       <label>context
         <select id="context"><option>token</option><option>preview</option><option>capture</option></select>
@@ -42,29 +42,28 @@
 
     <script>
       var PALETTES = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"];
-      var SHAPES = ["halo","arch","wide","bloom","opal","curved-circle","rounded-trapezoid","arrow","opal-2","droplet","square","opal-3","rounded-triangle","onyx","soft-oval","shard-x","shard-y","needle-veil","beam"];
       var $ = function (id) { return document.getElementById(id); };
       PALETTES.forEach(function (p) { var o = document.createElement("option"); o.textContent = p; $("palette").appendChild(o); });
-      SHAPES.forEach(function (s) { var o = document.createElement("option"); o.textContent = s; $("shape").appendChild(o); });
 
       function query(extra) {
         var q = new URLSearchParams();
-        q.set("palette", $("palette").value);
-        q.set("shape", $("shape").value);
+        q.set("palette", (extra && extra.palette) || $("palette").value);
         q.set("tone", $("tone").value);
-        q.set("owner", $("owner").value);
+        q.set("owner", (extra && extra.owner) || $("owner").value);
+        q.set("hash", (extra && extra.seed) || $("seed").value);
         q.set("context", (extra && extra.context) || $("context").value);
         if ($("bgOnly").checked) q.set("bgOnly", "1");
-        if (extra && extra.owner) q.set("owner", extra.owner);
-        if (extra && extra.palette) q.set("palette", extra.palette);
         return q.toString();
       }
       function apply() { $("stage").src = "frame.html?" + query(); }
       $("apply").onclick = apply;
 
-      // Determinism check: render an offscreen capture-context frame twice with
-      // identical params (must match to the byte), then once with a different
-      // palette (must differ). Also confirms owner changes pace, not the still.
+      // Determinism check on the canonical still (capture context):
+      //  - same inputs render byte-identical
+      //  - a different palette differs (identity honored)
+      //  - a different seed differs (per-token variety)
+      //  - a different owner does NOT differ (the still is owner-independent, so
+      //    thumbnails stay stable; shape/bg sync only affect the live render)
       function renderCapture(q) {
         return new Promise(function (resolve) {
           var f = document.createElement("iframe");
@@ -77,7 +76,7 @@
               var data = c ? c.toDataURL("image/png") : null;
               document.body.removeChild(f);
               resolve(data);
-            }, 400);
+            }, 500);
           };
           document.body.appendChild(f);
         });
@@ -90,13 +89,14 @@
         var b = await renderCapture(base);
         var diffPalette = $("palette").value === "A" ? "B" : "A";
         var c = await renderCapture(query({ context: "capture", palette: diffPalette }));
-        // owner should not change the canonical still
         var d = await renderCapture(query({ context: "capture", owner: "0x2222222222222222222222222222222222222222" }));
+        var e = await renderCapture(query({ context: "capture", seed: "0x00000000000000000000000000000000000000000000000000000000000000b2" }));
         var lines = [];
         function line(ok, msg) { lines.push((ok ? "PASS " : "FAIL ") + msg); }
-        line(!!a && a === b, "same params + capture -> identical still");
+        line(!!a && a === b, "same inputs + capture -> identical still");
         line(!!a && !!c && a !== c, "different palette -> different still");
-        line(!!a && !!d && a === d, "different owner -> identical still (pace only, not composition)");
+        line(!!a && !!e && a !== e, "different seed -> different still (per-token variety)");
+        line(!!a && !!d && a === d, "different owner -> identical still (owner-independent thumbnail)");
         log.innerHTML = lines.map(function (l) { return '<span class="' + (l.indexOf("PASS") === 0 ? "ok" : "bad") + '">' + l + "</span>"; }).join("\n");
       }
       $("test").onclick = runTest;
