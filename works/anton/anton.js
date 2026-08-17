@@ -439,16 +439,38 @@
   }
 
   // ── wallet-synced shape morph ───────────────────────────────────────────────
-  function warpAt(k) { return xmur3(owner + "|warp|" + k)() % RXY_WARP_MODE_COUNT; }
+  // A precomputed owner-specific ring of warp modes with NO equal-adjacent
+  // members (including the wrap seam), so every cycle morphs to a different
+  // shape, matching the source's do/while "never the same twice in a row",
+  // while staying O(1) per frame and jump-free over unbounded wall-clock time.
+  var WARP_SEQ_LEN = 512;
+  var warpSeq = (function () {
+    var seq = new Array(WARP_SEQ_LEN);
+    seq[0] = seedWarpMode;
+    for (var i = 1; i < WARP_SEQ_LEN; i++) {
+      var step = 1 + (xmur3(owner + "|warp|" + i)() % (RXY_WARP_MODE_COUNT - 1));
+      seq[i] = (seq[i - 1] + step) % RXY_WARP_MODE_COUNT; // step >= 1 => != previous
+    }
+    // Close the ring: the last element must differ from both its neighbour and
+    // the first, so index (k % LEN) never repeats across the wrap.
+    var last = seq[WARP_SEQ_LEN - 1];
+    if (last === seq[0] || last === seq[WARP_SEQ_LEN - 2]) {
+      for (var v = 0; v < RXY_WARP_MODE_COUNT; v++) {
+        if (v !== seq[0] && v !== seq[WARP_SEQ_LEN - 2]) { seq[WARP_SEQ_LEN - 1] = v; break; }
+      }
+    }
+    return seq;
+  })();
+
   // Returns { a, b, mix } for the current owner-synced shape at sync time ts.
   function shapeAt(ts) {
-    if (ts < WARP_INTERVAL) return { a: seedWarpMode, b: seedWarpMode, mix: 0 };
+    if (ts < WARP_INTERVAL) return { a: warpSeq[0], b: warpSeq[0], mix: 0 };
     var k = Math.floor((ts - WARP_INTERVAL) / WARP_PERIOD);
     var local = (ts - WARP_INTERVAL) - k * WARP_PERIOD;
-    var prev = k === 0 ? seedWarpMode : warpAt(k - 1);
-    var cur = warpAt(k);
-    if (local < WARP_DURATION) return { a: prev, b: cur, mix: smootherstep01(0, 1, local / WARP_DURATION) };
-    return { a: cur, b: cur, mix: 0 };
+    var from = warpSeq[k % WARP_SEQ_LEN];
+    var to = warpSeq[(k + 1) % WARP_SEQ_LEN]; // always != from (ring property)
+    if (local < WARP_DURATION) return { a: from, b: to, mix: smootherstep01(0, 1, local / WARP_DURATION) };
+    return { a: to, b: to, mix: 0 };
   }
 
   // ── wallet-synced background colour drift ───────────────────────────────────
