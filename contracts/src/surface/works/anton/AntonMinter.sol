@@ -87,18 +87,18 @@ contract AntonMinter is IMinter, ReentrancyGuard {
 
     // ── mint ────────────────────────────────────────────────────────────────
 
-    /// @notice Mint one token to the caller with the chosen params. The typed
+    /// @notice Mint one token to the caller with the chosen identity. The typed
     ///         entrypoint the mint UI calls directly.
-    function mint(uint8 palette, uint8 shape, uint8 tone, bool bgOnly) external payable nonReentrant {
-        _mintWithParams(msg.sender, msg.sender, palette, shape, tone, bgOnly, address(0));
+    function mint(uint8 palette, uint8 tone) external payable nonReentrant {
+        _mintWithParams(msg.sender, msg.sender, palette, tone, address(0));
     }
 
     /// @inheritdoc IMinter
     /// @dev Standard integration entrypoint. `quantity` must be 1; `data` is the
-    ///      abi-encoded params `(uint8 palette, uint8 shape, uint8 tone, bool
-    ///      bgOnly)`. `to` is the recipient (paid gift-mint when it differs from
-    ///      the caller); `referrer` is accepted for interface parity and folded
-    ///      into the artist payout (no referral split in this work).
+    ///      abi-encoded identity `(uint8 palette, uint8 tone)`. `to` is the
+    ///      recipient (paid gift-mint when it differs from the caller);
+    ///      `referrer` is accepted for interface parity and folded into the
+    ///      artist payout (no referral split in this work).
     function mint(address to, uint256 quantity, address referrer, bytes calldata data)
         external
         payable
@@ -106,17 +106,15 @@ contract AntonMinter is IMinter, ReentrancyGuard {
         nonReentrant
     {
         if (quantity != 1) revert QuantityMustBeOne(quantity);
-        (uint8 palette, uint8 shape, uint8 tone, bool bgOnly) = abi.decode(data, (uint8, uint8, uint8, bool));
-        _mintWithParams(msg.sender, to, palette, shape, tone, bgOnly, referrer);
+        (uint8 palette, uint8 tone) = abi.decode(data, (uint8, uint8));
+        _mintWithParams(msg.sender, to, palette, tone, referrer);
     }
 
     function _mintWithParams(
         address payer,
         address to,
         uint8 palette,
-        uint8 shape,
         uint8 tone,
-        bool bgOnly,
         address // referrer, folded into payout in this work
     ) private {
         if (mintStart != 0 && block.timestamp < mintStart) revert MintNotStarted();
@@ -128,9 +126,9 @@ contract AntonMinter is IMinter, ReentrancyGuard {
         uint256 firstTokenId = ISurface(collection).mintTo(to, 1);
         totalMinted += 1;
 
-        // Record the selection for the new token id. AntonParams validates the
+        // Record the identity for the new token id. AntonParams validates the
         // indices; an out-of-range value reverts the whole mint.
-        params.initParams(collection, firstTokenId, palette, shape, tone, bgOnly);
+        params.initParams(collection, firstTokenId, palette, tone);
 
         if (required > 0) {
             _pending[payoutRecipient] += required;

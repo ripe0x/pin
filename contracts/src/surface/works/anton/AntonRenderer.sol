@@ -11,33 +11,32 @@ import {CodeRef} from "../../templates/CodeTypes.sol";
 import {AntonParams} from "./AntonParams.sol";
 
 /// @title AntonRenderer
-/// @notice The anton work's renderer. A chain-live ScriptyRenderer: the image
-///         is a function of owner-mutable params (read from AntonParams) and
-///         the current owner (read for the animation pace), not the token seed.
-///         It injects those two beyond the standard render context, and
-///         publishes the chosen params as onchain traits.
+/// @notice The anton work's renderer. A chain-live ScriptyRenderer: the minted
+///         identity (palette, tone) is read from AntonParams and the current
+///         owner is read for the wallet-synced shape morph and background drift.
+///         All three are injected beyond the standard render context; the
+///         palette and tone are published as onchain traits. (Shape and
+///         background are not per-token state — they morph over time in the JS,
+///         synced to the owner — so they are not traits.)
 ///
 ///         Because the render depends on state a pre-mint preview cannot fake
-///         (the chosen params, the owner), this work has no faithful onchain
+///         (the chosen identity, the owner), this work has no faithful onchain
 ///         preview; the offchain mint surface builds the byte-equivalent
-///         document from the selection being previewed. The inherited
-///         `previewURI` still assembles a document (owner defaulted when a
-///         token does not exist), so the try/catch preview probe resolves
-///         cleanly rather than reverting.
+///         document. The inherited `previewURI` still assembles a document
+///         (owner defaulted when a token does not exist), so the try/catch
+///         preview probe resolves cleanly rather than reverting.
 ///
-///         The name vocabularies below MUST match the work's JS exactly (same
-///         order, same strings): the minter stores an index, this renderer maps
-///         it to a name, and the JS looks the name up. A mismatch renders the
-///         wrong variant.
+///         The palette/tone name vocabularies below MUST match the work's JS
+///         exactly (same order, same strings): the minter stores an index, this
+///         renderer maps it to a name, and the JS looks the name up.
 contract AntonRenderer is ScriptyRenderer {
     using LibString for uint256;
     using LibString for address;
 
-    /// @notice The params registry read for each token's selection.
+    /// @notice The params registry read for each token's identity.
     AntonParams public immutable params;
 
     string[] private _paletteNames;
-    string[] private _shapeNames;
     string[] private _toneNames;
 
     constructor(
@@ -52,33 +51,13 @@ contract AntonRenderer is ScriptyRenderer {
     ) ScriptyRenderer(scriptyBuilder_, gunzipStore_, gunzipFile_, code_, deps_, injectionVersion_, renderAssets_) {
         params = AntonParams(params_);
         _paletteNames = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"];
-        _shapeNames = [
-            "halo",
-            "arch",
-            "wide",
-            "bloom",
-            "opal",
-            "curved-circle",
-            "rounded-trapezoid",
-            "arrow",
-            "opal-2",
-            "droplet",
-            "square",
-            "opal-3",
-            "rounded-triangle",
-            "onyx",
-            "soft-oval",
-            "shard-x",
-            "shard-y",
-            "needle-veil",
-            "beam"
-        ];
         _toneNames = ["sun", "moon"];
     }
 
     /// @dev Extended render context: the standard fields plus `owner` (drives
-    ///      animation pace) and `params` (drives the composition). Owner is read
-    ///      live; on a nonexistent token (a preview probe) it defaults to zero.
+    ///      the synced shape morph + background drift) and `params` (palette +
+    ///      tone). Owner is read live; on a nonexistent token (a preview probe)
+    ///      it defaults to zero.
     function _contextJs(address collection, uint256 tokenId, bytes32 seed, string memory context)
         internal
         view
@@ -112,30 +91,18 @@ contract AntonRenderer is ScriptyRenderer {
 
     /// @dev The `"params":{...}` fragment of the render context.
     function _paramsJson(address collection, uint256 tokenId) private view returns (bytes memory) {
-        (string memory palette, string memory shape, string memory tone, bool bgOnly) =
-            _resolveParams(collection, tokenId);
-        return abi.encodePacked(
-            '"params":{"palette":"',
-            palette,
-            '","shape":"',
-            shape,
-            '","tone":"',
-            tone,
-            '","bgOnly":',
-            bgOnly ? "true" : "false",
-            "}"
-        );
+        (string memory palette, string memory tone) = _resolveParams(collection, tokenId);
+        return abi.encodePacked('"params":{"palette":"', palette, '","tone":"', tone, '"}');
     }
 
-    /// @dev Params-based traits, not seed-based: Mint Order (Sequential), Seed,
-    ///      then the chosen Palette / Shape / Tone.
+    /// @dev Identity traits: Mint Order (Sequential), Seed, Palette, Tone.
     function _attributes(ISurfaceView c, uint256 tokenId, bytes32 seed)
         internal
         view
         override
         returns (bytes memory)
     {
-        (string memory palette, string memory shape, string memory tone,) = _resolveParams(address(c), tokenId);
+        (string memory palette, string memory tone) = _resolveParams(address(c), tokenId);
         bytes memory order = c.idMode() == IdMode.Sequential
             ? abi.encodePacked('{"trait_type":"Mint Order","value":', tokenId.toString(), "},")
             : bytes("");
@@ -146,8 +113,6 @@ contract AntonRenderer is ScriptyRenderer {
             uint256(seed).toHexString(32),
             '"},{"trait_type":"Palette","value":"',
             palette,
-            '"},{"trait_type":"Shape","value":"',
-            shape,
             '"},{"trait_type":"Tone","value":"',
             tone,
             '"}]'
@@ -159,11 +124,11 @@ contract AntonRenderer is ScriptyRenderer {
     function _resolveParams(address collection, uint256 tokenId)
         private
         view
-        returns (string memory palette, string memory shape, string memory tone, bool bgOnly)
+        returns (string memory palette, string memory tone)
     {
-        (bool set, uint8 p, uint8 s, uint8 t, bool bg) = params.paramsOf(collection, tokenId);
-        if (!set) return (_paletteNames[0], _shapeNames[0], _toneNames[0], false);
-        return (_paletteNames[p], _shapeNames[s], _toneNames[t], bg);
+        (bool set, uint8 p, uint8 t) = params.paramsOf(collection, tokenId);
+        if (!set) return (_paletteNames[0], _toneNames[0]);
+        return (_paletteNames[p], _toneNames[t]);
     }
 
     function _ownerOrZero(address collection, uint256 tokenId) private view returns (address) {

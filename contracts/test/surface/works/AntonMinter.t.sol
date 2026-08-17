@@ -48,7 +48,7 @@ contract AntonMinterTest is Test {
 
     function setUp() public {
         col = new MockSurface(artist);
-        params = new AntonParams(10, 19, 2);
+        params = new AntonParams(10, 2);
         minter = new AntonMinter(address(col), address(params), PRICE, 0, 0, artist);
         col.setMinter(address(minter), true);
     }
@@ -56,15 +56,13 @@ contract AntonMinterTest is Test {
     function test_typedMint_mints_writesParams_accruesPayout() public {
         vm.deal(buyer, 1 ether);
         vm.prank(buyer);
-        minter.mint{value: PRICE}(3, 5, 1, true);
+        minter.mint{value: PRICE}(3, 1);
 
         assertEq(col.ownerOf(1), buyer);
-        (bool set, uint8 p, uint8 s, uint8 t, bool bg) = params.paramsOf(address(col), 1);
+        (bool set, uint8 p, uint8 t) = params.paramsOf(address(col), 1);
         assertTrue(set);
         assertEq(p, 3);
-        assertEq(s, 5);
         assertEq(t, 1);
-        assertTrue(bg);
         assertEq(minter.pendingWithdrawal(artist), PRICE);
         assertEq(minter.totalMinted(), 1);
     }
@@ -73,24 +71,24 @@ contract AntonMinterTest is Test {
         vm.deal(buyer, 1 ether);
         vm.prank(buyer);
         vm.expectRevert(abi.encodeWithSelector(IMinter.WrongPayment.selector, PRICE, PRICE - 1));
-        minter.mint{value: PRICE - 1}(0, 0, 0, false);
+        minter.mint{value: PRICE - 1}(0, 0);
     }
 
     function test_dataMint_decodesParams_giftTo() public {
         vm.deal(buyer, 1 ether);
-        bytes memory data = abi.encode(uint8(9), uint8(18), uint8(0), false);
+        bytes memory data = abi.encode(uint8(9), uint8(0));
         vm.prank(buyer);
         minter.mint{value: PRICE}(gift, 1, address(0), data);
 
         assertEq(col.ownerOf(1), gift);
-        (, uint8 p, uint8 s,,) = params.paramsOf(address(col), 1);
+        (, uint8 p, uint8 t) = params.paramsOf(address(col), 1);
         assertEq(p, 9);
-        assertEq(s, 18);
+        assertEq(t, 0);
     }
 
     function test_dataMint_quantityNotOne_reverts() public {
         vm.deal(buyer, 1 ether);
-        bytes memory data = abi.encode(uint8(0), uint8(0), uint8(0), false);
+        bytes memory data = abi.encode(uint8(0), uint8(0));
         vm.prank(buyer);
         vm.expectRevert(abi.encodeWithSelector(AntonMinter.QuantityMustBeOne.selector, 2));
         minter.mint{value: PRICE}(buyer, 2, address(0), data);
@@ -100,8 +98,7 @@ contract AntonMinterTest is Test {
         vm.deal(buyer, 1 ether);
         vm.prank(buyer);
         vm.expectRevert(abi.encodeWithSelector(AntonParams.PaletteOutOfRange.selector, 10, 10));
-        minter.mint{value: PRICE}(10, 0, 0, false);
-        // nothing minted
+        minter.mint{value: PRICE}(10, 0);
         vm.expectRevert();
         col.ownerOf(1);
     }
@@ -112,13 +109,13 @@ contract AntonMinterTest is Test {
         vm.deal(buyer, 1 ether);
         vm.prank(buyer);
         vm.expectRevert(IMinter.MintNotStarted.selector);
-        minter.mint{value: PRICE}(0, 0, 0, false);
+        minter.mint{value: PRICE}(0, 0);
     }
 
     function test_withdraw_paysArtist() public {
         vm.deal(buyer, 1 ether);
         vm.prank(buyer);
-        minter.mint{value: PRICE}(0, 0, 0, false);
+        minter.mint{value: PRICE}(0, 0);
         uint256 before = artist.balance;
         minter.withdraw(artist);
         assertEq(artist.balance, before + PRICE);
@@ -137,11 +134,11 @@ contract AntonMinterTest is Test {
     function test_ownerCanRepickAfterMint() public {
         vm.deal(buyer, 1 ether);
         vm.prank(buyer);
-        minter.mint{value: PRICE}(1, 1, 0, false);
+        minter.mint{value: PRICE}(1, 0);
 
         vm.prank(buyer);
-        params.setParams(address(col), 1, 7, 2, 1, true);
-        (, uint8 p,,,) = params.paramsOf(address(col), 1);
+        params.setParams(address(col), 1, 7, 1);
+        (, uint8 p,) = params.paramsOf(address(col), 1);
         assertEq(p, 7);
     }
 }

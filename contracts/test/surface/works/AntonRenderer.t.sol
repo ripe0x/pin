@@ -13,8 +13,7 @@ import {HTMLRequest, HTMLTag} from "../../../src/surface/templates/vendor/script
 import {IdMode} from "../../../src/surface/SurfaceTypes.sol";
 
 /// @dev Echoes the assembled body tag contents so the injected render context
-///      is inspectable. Document assembly against the real builder is proven by
-///      the ScriptyRenderer fork test; here only the context bytes matter.
+///      is inspectable.
 contract EchoBuilder {
     function getEncodedHTMLString(HTMLRequest memory req) external pure returns (string memory out) {
         for (uint256 i = 0; i < req.bodyTags.length; i++) {
@@ -63,7 +62,7 @@ contract AntonRendererTest is Test {
     address next = makeAddr("next");
 
     function setUp() public {
-        params = new AntonParams(10, 19, 2);
+        params = new AntonParams(10, 2);
         col = new MockCollection();
         col.setMinter(address(this), true);
 
@@ -86,29 +85,27 @@ contract AntonRendererTest is Test {
 
     function test_context_carriesOwnerAndParams() public {
         uint256 id = col.mint(collector, bytes32(uint256(0xABCD)));
-        params.initParams(address(col), id, 3, 5, 1, true); // D, curved-circle, moon, bgOnly
+        params.initParams(address(col), id, 3, 1); // D, moon
 
         string memory json = _json(address(col), id);
-        // animation_url (echoed context) carries owner + params
         assertTrue(_has(json, string(abi.encodePacked('"owner":"', LibString.toHexString(collector), '"'))), "owner");
-        assertTrue(_has(json, '"params":{"palette":"D","shape":"curved-circle","tone":"moon","bgOnly":true}'), "params");
+        assertTrue(_has(json, '"params":{"palette":"D","tone":"moon"}'), "params");
         assertTrue(_has(json, '"context":"token"'), "context token");
     }
 
-    function test_attributes_areParamBased() public {
+    function test_attributes_areIdentityBased() public {
         uint256 id = col.mint(collector, bytes32(uint256(1)));
-        params.initParams(address(col), id, 0, 0, 0, false); // A, halo, sun
+        params.initParams(address(col), id, 0, 0); // A, sun
 
         string memory json = _json(address(col), id);
         assertTrue(_has(json, '"trait_type":"Palette","value":"A"'), "palette trait");
-        assertTrue(_has(json, '"trait_type":"Shape","value":"halo"'), "shape trait");
         assertTrue(_has(json, '"trait_type":"Tone","value":"sun"'), "tone trait");
         assertTrue(_has(json, '"trait_type":"Mint Order","value":1'), "mint order");
     }
 
     function test_owner_followsTransfer() public {
         uint256 id = col.mint(collector, bytes32(uint256(2)));
-        params.initParams(address(col), id, 1, 1, 0, false);
+        params.initParams(address(col), id, 1, 0);
 
         vm.prank(collector);
         col.transferFrom(collector, next, id);
@@ -118,8 +115,6 @@ contract AntonRendererTest is Test {
     }
 
     function test_preview_unmintedToken_doesNotRevert() public view {
-        // No token, no params: owner defaults to zero, params to the first of
-        // each vocabulary; the assembly does not revert.
         string memory uri = renderer.previewURI(address(col), 999, bytes32(uint256(7)));
         assertTrue(bytes(uri).length > 0);
     }

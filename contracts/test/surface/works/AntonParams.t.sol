@@ -26,7 +26,6 @@ contract AntonParamsTest is Test {
     MockCollection col;
 
     uint8 constant PALETTES = 10;
-    uint8 constant SHAPES = 19;
     uint8 constant TONES = 2;
 
     address minter = makeAddr("minter");
@@ -35,7 +34,7 @@ contract AntonParamsTest is Test {
     address stranger = makeAddr("stranger");
 
     function setUp() public {
-        params = new AntonParams(PALETTES, SHAPES, TONES);
+        params = new AntonParams(PALETTES, TONES);
         col = new MockCollection();
         col.setMinter(minter, true);
         col.mint(owner1, 1);
@@ -43,81 +42,72 @@ contract AntonParamsTest is Test {
 
     function test_initParams_byMinter_setsAndReads() public {
         vm.prank(minter);
-        params.initParams(address(col), 1, 3, 5, 1, true);
+        params.initParams(address(col), 1, 3, 1);
 
-        (bool set, uint8 p, uint8 s, uint8 t, bool bg) = params.paramsOf(address(col), 1);
+        (bool set, uint8 p, uint8 t) = params.paramsOf(address(col), 1);
         assertTrue(set);
         assertEq(p, 3);
-        assertEq(s, 5);
         assertEq(t, 1);
-        assertTrue(bg);
     }
 
     function test_initParams_byNonMinter_reverts() public {
         vm.prank(stranger);
         vm.expectRevert(abi.encodeWithSelector(AntonParams.NotMinter.selector, stranger));
-        params.initParams(address(col), 1, 0, 0, 0, false);
+        params.initParams(address(col), 1, 0, 0);
     }
 
     function test_initParams_twice_reverts() public {
         vm.prank(minter);
-        params.initParams(address(col), 1, 0, 0, 0, false);
+        params.initParams(address(col), 1, 0, 0);
         vm.prank(minter);
         vm.expectRevert(abi.encodeWithSelector(AntonParams.AlreadyInitialized.selector, address(col), 1));
-        params.initParams(address(col), 1, 1, 1, 1, false);
+        params.initParams(address(col), 1, 1, 1);
     }
 
     function test_setParams_byOwner_overwrites() public {
         vm.prank(minter);
-        params.initParams(address(col), 1, 0, 0, 0, false);
+        params.initParams(address(col), 1, 0, 0);
 
         vm.prank(owner1);
-        params.setParams(address(col), 1, 9, 18, 1, true);
+        params.setParams(address(col), 1, 9, 1);
 
-        (, uint8 p, uint8 s, uint8 t, bool bg) = params.paramsOf(address(col), 1);
+        (, uint8 p, uint8 t) = params.paramsOf(address(col), 1);
         assertEq(p, 9);
-        assertEq(s, 18);
         assertEq(t, 1);
-        assertTrue(bg);
     }
 
     function test_setParams_byNonOwner_reverts() public {
         vm.prank(stranger);
         vm.expectRevert(abi.encodeWithSelector(AntonParams.NotTokenOwner.selector, stranger, owner1));
-        params.setParams(address(col), 1, 0, 0, 0, false);
+        params.setParams(address(col), 1, 0, 0);
     }
 
     function test_setParams_followsCurrentOwner_afterTransfer() public {
         vm.prank(owner1);
         col.transferFrom(owner1, owner2, 1);
 
-        // old owner can no longer write
         vm.prank(owner1);
         vm.expectRevert(abi.encodeWithSelector(AntonParams.NotTokenOwner.selector, owner1, owner2));
-        params.setParams(address(col), 1, 0, 0, 0, false);
+        params.setParams(address(col), 1, 0, 0);
 
-        // new owner can
         vm.prank(owner2);
-        params.setParams(address(col), 1, 2, 2, 0, false);
-        (bool set,,,,) = params.paramsOf(address(col), 1);
+        params.setParams(address(col), 1, 2, 0);
+        (bool set,,) = params.paramsOf(address(col), 1);
         assertTrue(set);
     }
 
     function test_write_outOfRange_reverts() public {
         vm.startPrank(minter);
         vm.expectRevert(abi.encodeWithSelector(AntonParams.PaletteOutOfRange.selector, PALETTES, PALETTES));
-        params.initParams(address(col), 1, PALETTES, 0, 0, false);
-
-        vm.expectRevert(abi.encodeWithSelector(AntonParams.ShapeOutOfRange.selector, SHAPES, SHAPES));
-        params.initParams(address(col), 1, 0, SHAPES, 0, false);
+        params.initParams(address(col), 1, PALETTES, 0);
 
         vm.expectRevert(abi.encodeWithSelector(AntonParams.ToneOutOfRange.selector, TONES, TONES));
-        params.initParams(address(col), 1, 0, 0, TONES, false);
+        params.initParams(address(col), 1, 0, TONES);
         vm.stopPrank();
     }
 
     function test_paramsOf_unset_returnsFalse() public view {
-        (bool set,,,,) = params.paramsOf(address(col), 999);
+        (bool set,,) = params.paramsOf(address(col), 999);
         assertFalse(set);
     }
 }
