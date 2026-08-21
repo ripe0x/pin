@@ -69,15 +69,21 @@ contract DeployAntonWork is Script {
         d.params = address(new AntonParams(PALETTE_COUNT, TONE_COUNT));
         d.store = address(new AntonScriptStore(scriptB64));
         d.renderer = _deployRenderer(d.store, d.params);
-        d.factory = address(
-            new SurfaceFactory(
-                address(new Surface()),
-                address(new PooledSurface()),
-                address(new FixedPriceMinter()),
-                address(0),
-                address(0)
-            )
-        );
+        // Use the canonical factory when set (its SurfaceCreated is what the PND
+        // indexer watches, so the collection is auto-discovered); otherwise a
+        // fresh factory for an isolated dry-run.
+        address canonical = vm.envOr("ANTON_FACTORY", address(0));
+        d.factory = canonical != address(0)
+            ? canonical
+            : address(
+                new SurfaceFactory(
+                    address(new Surface()),
+                    address(new PooledSurface()),
+                    address(new FixedPriceMinter()),
+                    address(0),
+                    address(0)
+                )
+            );
         d.collection = _createCollection(d.factory, owner, d.renderer);
         d.minter = address(
             new AntonMinter(
