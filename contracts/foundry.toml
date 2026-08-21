@@ -12,6 +12,8 @@ remappings = [
     "forge-std/=lib/forge-std/src/",
     "solady/=lib/solady/src/",
 ]
+# The anton deploy script reads the gzipped work script from ./script.
+fs_permissions = [{ access = "read", path = "./script" }]
 
 # Default-profile invariant settings: kept small so `forge test` (which picks
 # up any invariant/*.t.sol in the default run) stays fast. forge-std's own
