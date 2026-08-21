@@ -22,5 +22,6 @@ Shared onchain deps (deterministic, same address every chain):
 ScriptyBuilderV2 `0xD7587F110E08F4D120A231bA97d3B577A81Df022`,
 EthFS `0x8FAA1AAb9DA8c75917C43Fb24fDdb513edDC3245`.
 
-Token 1: palette G, tone sun, seed stamped at mint. Contracts NOT yet
-verified on Etherscan (follow-up).
+Token 1: palette G, tone sun, seed stamped at mint. AntonParams / AntonMinter /
+AntonRenderer / AntonScriptStore + the Surface impl are verified on Etherscan
+(the collection clone reads as a proxy to the verified Surface impl).
