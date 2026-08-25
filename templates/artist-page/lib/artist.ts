@@ -15,8 +15,7 @@ import "server-only"
 import { getConfig } from "./config"
 import { getEnsName, getEnsText } from "./ens"
 import { formatAddress } from "./format"
-
-const IPFS_GATEWAY = "https://nftstorage.link/ipfs/"
+import { resolveMediaUrl } from "./media-fallback"
 
 export async function getArtistDisplayName(): Promise<string> {
   const cfg = getConfig()
@@ -96,7 +95,7 @@ export async function getArtistLinks(): Promise<string[]> {
  */
 function resolveAvatarUri(raw: string): string | null {
   if (raw.startsWith("ipfs://")) {
-    return IPFS_GATEWAY + raw.slice("ipfs://".length).replace(/^ipfs\//, "")
+    return resolveMediaUrl(raw)
   }
   if (raw.startsWith("http://") || raw.startsWith("https://")) {
     return raw

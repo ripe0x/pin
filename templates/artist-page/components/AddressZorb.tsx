@@ -7,8 +7,8 @@ type Props = {
 }
 
 export function AddressZorb({ address, className, alt = "" }: Props) {
-  // eslint-disable-next-line @next/next/no-img-element
   return (
+    // eslint-disable-next-line @next/next/no-img-element
     <img
       src={zorbDataURI(address)}
       alt={alt}

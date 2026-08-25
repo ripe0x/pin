@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { useRouter } from "next/navigation"
 import { type Address, formatEther, parseEther } from "viem"
 import {
   useAccount,
@@ -37,6 +38,8 @@ type Props = {
  */
 export function BidForm({ houseAddress, auctionId, initial, ensMap }: Props) {
   const { address: connected, isConnected } = useAccount()
+  const router = useRouter()
+  const refreshedFinalState = useRef(false)
 
   // No `initialData` here on purpose: seeding the query with the
   // server-rendered tuple makes react-query treat it as already-fetched and
@@ -79,8 +82,13 @@ export function BidForm({ houseAddress, auctionId, initial, ensMap }: Props) {
   const minBidWei =
     (minBidRead.data as readonly [boolean, bigint] | undefined)?.[1] ??
     (amount === 0n ? reservePrice : amount)
+  const refetchAuction = auctionRead.refetch
+  const refetchMinBid = minBidRead.refetch
 
-  const isCancelled = tokenOwner === ZERO_ADDRESS
+  // Both settlement and cancellation delete the auction storage. A zero
+  // owner therefore means only "finalized"; lifecycle events on the server
+  // are the source of truth for which final state it reached.
+  const isFinalized = tokenOwner === ZERO_ADDRESS
   const awaitingFirstBid = firstBidTime === 0n || bidder === ZERO_ADDRESS
   const nowSec = useNowSec()
   const ended = !awaitingFirstBid && endTime > 0n && BigInt(nowSec) >= endTime
@@ -92,16 +100,23 @@ export function BidForm({ houseAddress, auctionId, initial, ensMap }: Props) {
 
   useEffect(() => {
     if (confirmed) {
-      auctionRead.refetch()
-      minBidRead.refetch()
+      refetchAuction()
+      refetchMinBid()
+      router.refresh()
     }
-  }, [confirmed]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [confirmed, refetchAuction, refetchMinBid, router])
 
-  if (isCancelled) {
+  useEffect(() => {
+    if (!isFinalized || refreshedFinalState.current) return
+    refreshedFinalState.current = true
+    router.refresh()
+  }, [isFinalized, router])
+
+  if (isFinalized) {
     return (
-      <Panel statusDot="bg-gray-400" statusLabel="Cancelled">
+      <Panel statusDot="bg-status-upcoming" statusLabel="Auction complete">
         <p className="text-[11px] font-mono text-gray-500">
-          This auction was cancelled.
+          Refreshing the final on-chain result…
         </p>
       </Panel>
     )

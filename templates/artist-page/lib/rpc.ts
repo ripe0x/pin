@@ -215,13 +215,14 @@ export async function getLogsChunked(
           attempt++
           continue
         }
-        // Any other failure: swallow and skip the window. Returning a
-        // partial list is preferable to crashing the page render — the
-        // user sees what we have, retries on next ISR regen.
+        // Never return a partial history. Callers cache these results, so
+        // skipping one failed window can hide auctions until the cache TTL
+        // expires. Throwing keeps unstable_cache from persisting the gap;
+        // public wrappers apply their own short deadline/fallback instead.
         if (process.env.NODE_ENV !== "production") {
           console.warn("[rpc] getLogs window failed", { cursor, end, err })
         }
-        succeeded = true
+        throw err
       }
     }
     cursor = end + 1n

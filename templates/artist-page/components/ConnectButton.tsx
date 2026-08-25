@@ -69,6 +69,7 @@ export function ConnectButton() {
                   className={baseBtn}
                 >
                   {account.ensAvatar && (
+                    // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={account.ensAvatar}
                       alt=""

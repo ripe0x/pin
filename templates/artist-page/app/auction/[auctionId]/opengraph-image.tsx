@@ -95,7 +95,6 @@ export default async function Image({
           }}
         >
           {image ? (
-            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={image}
               width={630}
@@ -129,7 +128,6 @@ export default async function Image({
         >
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             {avatarUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={avatarUrl}
                 width={40}
@@ -138,7 +136,6 @@ export default async function Image({
                 alt=""
               />
             ) : (
-              // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={zorbDataURI(cfg.artistAddress)}
                 width={40}
@@ -215,4 +212,3 @@ export default async function Image({
     { ...size },
   )
 }
-

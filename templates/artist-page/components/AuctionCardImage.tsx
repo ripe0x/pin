@@ -44,28 +44,31 @@ export function AuctionCardImage({
   // escalated to <video>.
   const [escalated, setEscalated] = useState(false)
   const imageRef = useRef<HTMLImageElement>(null)
-  const recoveredMissedError = useRef(false)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const loadFinished = useRef(false)
   // Rotate IPFS/Arweave gateways on load error before escalating.
   const media = useMediaFallback(src)
-  // A fast gateway failure can happen before React hydrates, so its native
-  // error event never reaches onError. Detect that already-failed image once
-  // hydration completes and start the normal gateway rotation ourselves.
-  useEffect(() => {
-    if (recoveredMissedError.current) return
-    recoveredMissedError.current = true
-    const img = imageRef.current
-    if (img?.complete && img.naturalWidth === 0) media.onError()
-    // This is specifically the one-time hydration check. Later failures are
-    // handled by the element's onError callback below.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  const ext = src ? extOf(src) : ""
+  const ambiguous = !VIDEO_EXTENSIONS.includes(ext) && !IMAGE_EXTENSIONS.includes(ext)
+  const video = VIDEO_EXTENSIONS.includes(ext) || escalated
 
-  // A gateway can also hang without firing an error. Once this lazy image is
-  // near the viewport, give each candidate seven seconds to produce usable
-  // dimensions before advancing to the next gateway.
+  // A gateway can fail before hydration or hang without firing an error.
+  // Once the card is near the viewport, give images and videos the same
+  // seven-second recovery window.
   useEffect(() => {
+    loadFinished.current = false
     const img = imageRef.current
-    if (!img || typeof IntersectionObserver === "undefined") return
+    const videoElement = videoRef.current
+    if (img?.complete) {
+      if (img.naturalWidth > 0) loadFinished.current = true
+      else media.onError()
+    }
+    if (videoElement) {
+      if (videoElement.readyState >= 1) loadFinished.current = true
+      else if (videoElement.error) media.onError()
+    }
+    const element = img ?? videoElement
+    if (!element || typeof IntersectionObserver === "undefined") return
 
     let fallbackTimer: ReturnType<typeof setTimeout> | null = null
     const observer = new IntersectionObserver(
@@ -73,19 +76,19 @@ export function AuctionCardImage({
         if (!entries.some((entry) => entry.isIntersecting)) return
         observer.disconnect()
         fallbackTimer = setTimeout(() => {
-          if (!img.complete || img.naturalWidth === 0) media.onError()
+          if (!loadFinished.current) media.onError()
         }, 7_000)
       },
       { rootMargin: "400px" },
     )
-    observer.observe(img)
+    observer.observe(element)
     return () => {
       observer.disconnect()
       if (fallbackTimer) clearTimeout(fallbackTimer)
     }
     // Restart the timeout for each rotated gateway URL.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [media.src])
+  }, [media.src, video])
   if (!src) {
     return (
       <div
@@ -96,9 +99,6 @@ export function AuctionCardImage({
       </div>
     )
   }
-  const ext = extOf(src)
-  const ambiguous = !VIDEO_EXTENSIONS.includes(ext) && !IMAGE_EXTENSIONS.includes(ext)
-  const video = VIDEO_EXTENSIONS.includes(ext) || escalated
   const url = media.src ?? src
   return (
     <div
@@ -106,8 +106,8 @@ export function AuctionCardImage({
       style={{ aspectRatio: ratio ?? 1 }}
     >
       {video ? (
-        // eslint-disable-next-line jsx-a11y/media-has-caption
         <video
+          ref={videoRef}
           src={url}
           className="block w-full h-auto"
           muted
@@ -115,6 +115,7 @@ export function AuctionCardImage({
           preload="metadata"
           onLoadedMetadata={(e) => {
             const v = e.currentTarget
+            loadFinished.current = true
             if (v.videoWidth && v.videoHeight) {
               setRatio(v.videoWidth / v.videoHeight)
             }
@@ -133,6 +134,7 @@ export function AuctionCardImage({
           loading="lazy"
           onLoad={(e) => {
             const img = e.currentTarget
+            loadFinished.current = true
             if (img.naturalWidth && img.naturalHeight) {
               setRatio(img.naturalWidth / img.naturalHeight)
             }

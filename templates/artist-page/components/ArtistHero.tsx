@@ -17,6 +17,7 @@ import { formatAddress } from "@/lib/format"
 import { getEnsName } from "@/lib/ens"
 import { AddressZorb } from "@/components/AddressZorb"
 import { CopyAddressButton } from "@/components/CopyAddressButton"
+import { ArtistAvatarImage } from "@/components/ArtistAvatarImage"
 
 type Props = {
   totalAuctions: number
@@ -39,8 +40,7 @@ export async function ArtistHero({ totalAuctions, activeAuctions }: Props) {
   return (
     <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
       {avatarUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
+        <ArtistAvatarImage
           src={avatarUrl}
           alt={displayName}
           className="h-20 w-20 shrink-0 rounded-full object-cover"
@@ -140,4 +140,3 @@ function prettyLinkLabel(url: string): string {
     return url
   }
 }
-

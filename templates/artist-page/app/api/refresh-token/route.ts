@@ -57,7 +57,7 @@ export async function POST(request: Request) {
       ? null
       : String(body.auctionId)
 
-  if (!isAddress(contract) || tokenId === "") {
+  if (!isAddress(contract) || !/^\d+$/.test(tokenId)) {
     return NextResponse.json(
       { ok: false, error: "invalid token" },
       { status: 400 },

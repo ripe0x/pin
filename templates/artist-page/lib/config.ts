@@ -1,8 +1,8 @@
 /**
  * Typed config sourced from `NEXT_PUBLIC_*` env vars.
  *
- * Two values are required (artist address + name); everything else is
- * optional and the page falls back to sensible defaults.
+ * Only the artist address is required; everything else is optional and the
+ * page falls back to ENS or sensible defaults.
  *
  * This module is import-safe in both server and client code — no fs, no
  * server-only deps. The artist's wallet address is used to derive their

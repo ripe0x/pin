@@ -26,6 +26,7 @@ import { type Address } from "viem"
 import { getClient } from "./rpc"
 import { erc721Abi } from "./abi"
 import { gatewayCandidates, resolveMediaUrl } from "./media-fallback"
+import { MAX_METADATA_BYTES, safeFetchText } from "./safe-fetch"
 
 // IPFS + Arweave gateway lists and expansion live in ./media-fallback so the
 // client image components share the same fallback. Metadata JSON is fetched by
@@ -204,22 +205,31 @@ async function loadMetadataJson(
 async function raceForJson(
   urls: string[],
 ): Promise<Record<string, unknown> | null> {
+  const controllers = urls.map(() => new AbortController())
   try {
-    return await Promise.any(urls.map(fetchJson))
+    return await Promise.any(
+      urls.map((url, index) => fetchJson(url, controllers[index].signal)),
+    )
   } catch {
     return null
+  } finally {
+    for (const controller of controllers) controller.abort()
   }
 }
 
-async function fetchJson(url: string): Promise<Record<string, unknown>> {
-  const res = await fetch(url, {
-    headers: { Accept: "application/json" },
-    signal: AbortSignal.timeout(8000),
-  })
-  if (!res.ok) throw new Error(`fetch ${url} -> ${res.status}`)
-  // JSON.parse throwing on a non-JSON body counts as a rejection, so
-  // Promise.any falls through to another candidate.
-  return JSON.parse(await res.text()) as Record<string, unknown>
+async function fetchJson(
+  url: string,
+  cancellationSignal: AbortSignal,
+): Promise<Record<string, unknown>> {
+  const signal = AbortSignal.any([
+    cancellationSignal,
+    AbortSignal.timeout(8_000),
+  ])
+  const parsed: unknown = JSON.parse(await safeFetchText(url, signal))
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("metadata response is not a JSON object")
+  }
+  return parsed as Record<string, unknown>
 }
 
 /**
@@ -235,6 +245,7 @@ async function fetchJson(url: string): Promise<Record<string, unknown>> {
  * Returns null if the URL isn't JSON or the body fails to parse.
  */
 function parseDataUrlJson(url: string): Record<string, unknown> | null {
+  if (url.length > MAX_METADATA_BYTES) return null
   const comma = url.indexOf(",")
   if (comma === -1) return null
   const header = url.slice(5, comma) // strip "data:"

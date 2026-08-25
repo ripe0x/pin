@@ -11,6 +11,7 @@ import {
 } from "wagmi"
 import { ConnectButton as RKConnectButton } from "@rainbow-me/rainbowkit"
 import { surfaceAbi } from "@/lib/abi"
+import { buildMintWithRewardsRequest } from "@/lib/mint-transaction"
 import { CollectionStatus, isMintable } from "@/lib/surface"
 import type { CollectionConfig } from "@/lib/surface"
 
@@ -170,6 +171,7 @@ export function CollectionMintCard({ collectionAddress, artistAddress, initial }
         <MintButton
           collectionAddress={collectionAddress}
           artistAddress={artistAddress}
+          priceWei={priceWei}
           mintable={mintable}
           isConnected={isConnected}
           isPending={isPending}
@@ -215,6 +217,7 @@ type WriteContractFn = ReturnType<typeof useWriteContract>["writeContract"]
 function MintButton({
   collectionAddress,
   artistAddress,
+  priceWei,
   mintable,
   isConnected,
   isPending,
@@ -225,6 +228,7 @@ function MintButton({
 }: {
   collectionAddress: Address
   artistAddress: Address
+  priceWei: bigint
   mintable: boolean
   isConnected: boolean
   isPending: boolean
@@ -256,12 +260,13 @@ function MintButton({
     // their own address here means the surface-share cut lands back with
     // the artist instead of anyone else. That's the whole point of a
     // self-hosted mint card.
-    writeContract({
-      address: collectionAddress,
-      abi: surfaceAbi,
-      functionName: "mintWithRewards",
-      args: [1n, artistAddress, "0x"],
-    })
+    writeContract(
+      buildMintWithRewardsRequest({
+        collectionAddress,
+        artistAddress,
+        priceWei,
+      }),
+    )
   }
 
   const disabled = !mintable || isPending || confirming || insufficient

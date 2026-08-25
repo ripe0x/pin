@@ -57,28 +57,42 @@ export function TokenMedia({
   title: string
 }) {
   const [escalated, setEscalated] = useState(false)
+  const [hydrated, setHydrated] = useState(false)
   const imageRef = useRef<HTMLImageElement>(null)
-  const recoveredMissedError = useRef(false)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const frameRef = useRef<HTMLIFrameElement>(null)
+  const loadFinished = useRef(false)
 
   const useAnimation = !!animationUrl
   const renderUrl = useAnimation ? animationUrl! : image
   // Rotate IPFS/Arweave gateways on load error before giving up. A fresh
   // arweave.net bundle can 404 while another gateway already serves it.
   const media = useMediaFallback(renderUrl)
+  const classification = renderUrl
+    ? classify(renderUrl, useAnimation)
+    : { kind: "image" as MediaKind, ambiguous: false }
+  const kind: MediaKind = escalated ? "video" : classification.kind
 
-  // Recover an image error that fired before this client component hydrated.
-  useEffect(() => {
-    if (recoveredMissedError.current) return
-    recoveredMissedError.current = true
-    const img = imageRef.current
-    if (img?.complete && img.naturalWidth === 0) media.onError()
-    // Later failures use the element's onError callback.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  useEffect(() => setHydrated(true), [])
 
+  // Recover image/video failures that fired before this component hydrated,
+  // then apply the same hang timeout to every media kind.
   useEffect(() => {
+    loadFinished.current = false
     const img = imageRef.current
-    if (!img || typeof IntersectionObserver === "undefined") return
+    const video = videoRef.current
+    const frame = frameRef.current
+    if (img?.complete) {
+      if (img.naturalWidth > 0) loadFinished.current = true
+      else media.onError()
+    }
+    if (video) {
+      if (video.readyState >= 1) loadFinished.current = true
+      else if (video.error) media.onError()
+    }
+
+    const element = img ?? video ?? frame
+    if (!element || typeof IntersectionObserver === "undefined") return
 
     let fallbackTimer: ReturnType<typeof setTimeout> | null = null
     const observer = new IntersectionObserver(
@@ -86,19 +100,19 @@ export function TokenMedia({
         if (!entries.some((entry) => entry.isIntersecting)) return
         observer.disconnect()
         fallbackTimer = setTimeout(() => {
-          if (!img.complete || img.naturalWidth === 0) media.onError()
+          if (!loadFinished.current) media.onError()
         }, 7_000)
       },
       { rootMargin: "400px" },
     )
-    observer.observe(img)
+    observer.observe(element)
     return () => {
       observer.disconnect()
       if (fallbackTimer) clearTimeout(fallbackTimer)
     }
-    // Restart the timeout for each rotated gateway URL.
+    // Restart the timeout for each rotated gateway URL / media kind.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [media.src])
+  }, [hydrated, kind, media.src])
 
   if (!renderUrl) {
     return (
@@ -108,14 +122,13 @@ export function TokenMedia({
     )
   }
 
-  const { kind: initialKind, ambiguous } = classify(renderUrl, useAnimation)
-  const kind: MediaKind = escalated ? "video" : initialKind
+  const { ambiguous } = classification
   const src = media.src ?? renderUrl
 
   if (kind === "video") {
     return (
-      // eslint-disable-next-line jsx-a11y/media-has-caption
       <video
+        ref={videoRef}
         src={src}
         poster={useAnimation && image ? image : undefined}
         className="max-h-[80vh] w-auto object-contain"
@@ -124,6 +137,9 @@ export function TokenMedia({
         muted
         playsInline
         controls
+        onLoadedMetadata={() => {
+          loadFinished.current = true
+        }}
         onError={() => {
           media.onError()
         }}
@@ -135,14 +151,21 @@ export function TokenMedia({
     // Sandbox blocks same-origin access (no parent DOM, no cookies) but lets
     // the art's own scripts run — the standard OpenSea/Zora pattern. The
     // viewer can't know the intended aspect ratio, so default to square.
+    if (!hydrated) {
+      return <div className="aspect-square h-[80vh] max-h-[80vh] max-w-full bg-black" />
+    }
     return (
       <iframe
+        ref={frameRef}
         src={src}
         title={title}
         sandbox="allow-scripts"
         loading="lazy"
         referrerPolicy="no-referrer"
         className="aspect-square h-[80vh] max-h-[80vh] max-w-full bg-black"
+        onLoad={() => {
+          loadFinished.current = true
+        }}
       />
     )
   }
@@ -154,6 +177,9 @@ export function TokenMedia({
       src={src}
       alt={title}
       className="max-h-[80vh] w-auto object-contain"
+      onLoad={() => {
+        loadFinished.current = true
+      }}
       onError={() => {
         // Rotate gateways first; only once they're exhausted treat an
         // extension-less image as a misclassified video.

@@ -244,11 +244,12 @@ const _getHouseEventDataCached = unstable_cache(
   async (
     artistAddress: Address,
     house: Address,
-    pastCount: number,
+    _pastCount: number,
   ): Promise<HouseEventData> => {
+    void artistAddress
+    void _pastCount
     const client = getClient()
-    const latest = await client.getBlockNumber().catch(() => null)
-    if (latest === null) return { created: {}, settled: {}, cancelled: [] }
+    const latest = await client.getBlockNumber()
     // Tightest valid lower bound — no house event predates its creation.
     const fromBlock = await getHouseCreationBlock(house)
 
@@ -324,22 +325,23 @@ async function fetchAllAuctionsForHouse(
 
   for (let i = 0; i < ids.length; i += BATCH) {
     const batch = ids.slice(i, i + BATCH)
-    const results = await client
-      .multicall({
-        contracts: batch.map((id) => ({
-          address: house,
-          abi: sovereignAuctionHouseAbi,
-          functionName: "auctions" as const,
-          args: [id] as const,
-        })),
-        allowFailure: true,
-      })
-      .catch(() => [])
+    const results = await client.multicall({
+      contracts: batch.map((id) => ({
+        address: house,
+        abi: sovereignAuctionHouseAbi,
+        functionName: "auctions" as const,
+        args: [id] as const,
+      })),
+      allowFailure: true,
+    })
 
     batch.forEach((id, idx) => {
       const idStr = id.toString()
       const r = results[idx]
-      if (r && r.status === "success" && r.result) {
+      if (!r || r.status !== "success") {
+        throw new Error(`auction storage read failed for id ${idStr}`)
+      }
+      if (r.result) {
         const tuple = r.result as readonly [
           bigint, Address, bigint, bigint, bigint, Address, bigint, Address, bigint,
         ]
@@ -487,7 +489,11 @@ export async function getAuctionById(
   auctionId: string,
 ): Promise<AuctionSummary | null> {
   const { artistAddress } = getConfig()
-  return _getAuctionByIdCached(artistAddress, auctionId)
+  return withDeadline(
+    _getAuctionByIdCached(artistAddress, auctionId),
+    ALL_AUCTIONS_DEADLINE_MS,
+    null,
+  )
 }
 
 /**
@@ -499,8 +505,7 @@ const _getBidHistoryCached = unstable_cache(
     const house = await _getArtistHouseCached(artistAddress)
     if (!house) return []
     const client = getClient()
-    const latest = await client.getBlockNumber().catch(() => null)
-    if (latest === null) return []
+    const latest = await client.getBlockNumber()
     const fromBlock = await getHouseCreationBlock(house)
 
     const logs = await getLogsChunked({
@@ -548,5 +553,9 @@ const _getBidHistoryCached = unstable_cache(
 
 export async function getBidHistory(auctionId: string): Promise<BidEntry[]> {
   const { artistAddress } = getConfig()
-  return _getBidHistoryCached(artistAddress, auctionId)
+  return withDeadline(
+    _getBidHistoryCached(artistAddress, auctionId),
+    ALL_AUCTIONS_DEADLINE_MS,
+    [],
+  )
 }

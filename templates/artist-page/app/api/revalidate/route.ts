@@ -14,8 +14,8 @@
  *   curl -X POST "https://yoursite.com/api/revalidate" \
  *     -H "x-revalidate-secret: $REVALIDATE_SECRET"
  *
- * The secret may also be passed as `?secret=…`. Protect this with a real
- * secret: an open trigger could be spammed to hammer the RPC / IPFS gateways.
+ * Send the secret only in the request header. Query-string secrets leak into
+ * hosting access logs and browser history, so they are intentionally rejected.
  * If `REVALIDATE_SECRET` is unset the endpoint refuses all requests.
  */
 import { NextResponse } from "next/server"
@@ -39,8 +39,7 @@ export async function POST(request: Request) {
   }
 
   const url = new URL(request.url)
-  const provided =
-    request.headers.get("x-revalidate-secret") ?? url.searchParams.get("secret")
+  const provided = request.headers.get("x-revalidate-secret")
   if (provided !== secret) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 })
   }
@@ -48,7 +47,7 @@ export async function POST(request: Request) {
   const token = url.searchParams.get("token")
   if (token) {
     const [contract, tokenId] = token.split(/[:/]/)
-    if (!contract || !isAddress(contract) || !tokenId) {
+    if (!contract || !isAddress(contract) || !tokenId || !/^\d+$/.test(tokenId)) {
       return NextResponse.json(
         {
           ok: false,
