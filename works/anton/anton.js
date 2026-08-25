@@ -5,10 +5,12 @@
 // token is its own piece. The persistent and generative layers move
 // organically at their natural speed, per token, exactly as in the source.
 //
-// Wallet-synced over time: the object's SHAPE morph and the BACKGROUND colour
-// drift are functions of the current owner + wall-clock, so every token a wallet
-// holds changes shape and recolours in unison, and a transfer inherits the new
-// owner's rhythm on the next load. The blobs are deliberately NOT synced.
+// Wallet-synced TIMING: the shape-morph and background-shift CADENCE is a
+// function of the owner + a shared wall-clock, so every token a wallet holds
+// changes on the same beat (even if each started at a different time), and a
+// transfer inherits the new owner's rhythm. The shape SEQUENCE and the colours
+// themselves are per-token (from the seed) — synced in when they change, not in
+// what they change to. The blobs are deliberately not synced at all.
 //
 // The canonical still (context "capture") is an owner-independent representative
 // frame — deterministic from the seed + palette + tone — so marketplace
@@ -448,7 +450,10 @@
     var seq = new Array(WARP_SEQ_LEN);
     seq[0] = seedWarpMode;
     for (var i = 1; i < WARP_SEQ_LEN; i++) {
-      var step = 1 + (xmur3(owner + "|warp|" + i)() % (RXY_WARP_MODE_COUNT - 1));
+      // Sequence is per-token (from the seed): a wallet's tokens morph on the
+      // same TIMING (shared clock + owner phase, in shapeAt) but to DIFFERENT
+      // shapes.
+      var step = 1 + (xmur3(seedHash + "|warp|" + i)() % (RXY_WARP_MODE_COUNT - 1));
       seq[i] = (seq[i - 1] + step) % RXY_WARP_MODE_COUNT; // step >= 1 => != previous
     }
     // Close the ring: the last element must differ from both its neighbour and
@@ -462,7 +467,8 @@
     return seq;
   })();
 
-  // Returns { a, b, mix } for the current owner-synced shape at sync time ts.
+  // Returns { a, b, mix } at sync time ts: TIMING is wallet-synced (ts carries the
+  // owner phase), the shape SEQUENCE is per-token (warpSeq from the seed).
   function shapeAt(ts) {
     if (ts < WARP_INTERVAL) return { a: warpSeq[0], b: warpSeq[0], mix: 0 };
     var k = Math.floor((ts - WARP_INTERVAL) / WARP_PERIOD);
@@ -473,19 +479,19 @@
     return { a: to, b: to, mix: 0 };
   }
 
-  // ── wallet-synced background colour drift ───────────────────────────────────
-  function ownerPaletteColor(index, j) {
-    return activePalette[xmur3(owner + "|bg|" + index + "|" + j)() % activePalette.length];
+  // ── background colour drift: wallet-synced TIMING, per-token colours ─────────
+  function seedPaletteColor(index, j) {
+    return activePalette[xmur3(seedHash + "|bg|" + index + "|" + j)() % activePalette.length];
   }
   function bgColorAt(index, ts) {
     var first = BG_SHIFT_DELAY + index * BG_SHIFT_STEP;
-    var base = ownerPaletteColor(index, 0);
+    var base = seedPaletteColor(index, 0);
     if (ts < first) return base;
     var j = Math.floor((ts - BG_SHIFT_DELAY) / BG_SHIFT_STEP / 3 - index / 3 + 1e-9);
     if (j < 0) return base;
     var s = BG_SHIFT_DELAY + (index + 3 * j) * BG_SHIFT_STEP;
-    var to = ownerPaletteColor(index, j + 1);
-    var from = j === 0 ? base : ownerPaletteColor(index, j);
+    var to = seedPaletteColor(index, j + 1);
+    var from = j === 0 ? base : seedPaletteColor(index, j);
     var prog = (ts - s) / BG_SHIFT_DUR;
     if (prog >= 1) return to;
     var m = smootherstep01(0, 1, prog);
