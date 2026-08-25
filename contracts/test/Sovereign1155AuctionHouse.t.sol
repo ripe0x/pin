@@ -145,6 +145,25 @@ contract Sovereign1155AuctionHouseTest is Test {
         assertEq(uint8(standard721), 0);
     }
 
+    function test_PostBidCodeCannotForce1155Refund() public {
+        vm.prank(artist);
+        uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE);
+        vm.prank(alice, alice);
+        house.createBid{value: RESERVE}(auctionId);
+
+        // Models a bidder adding delegated EIP-7702 code after it bid.
+        vm.etch(alice, hex"00");
+        vm.warp(block.timestamp + DURATION + 1);
+        vm.expectRevert(SovereignAuctionHouseV2.ContractBidderNotSupported.selector);
+        house.endAuction(auctionId);
+
+        assertEq(house.pendingRefunds(alice), 0);
+        assertEq(token.balanceOf(address(house), TOKEN_ID), QUANTITY);
+        (bool active,) = house.getAuctionFor(address(token), TOKEN_ID);
+        assertTrue(active);
+    }
+
+
     function test_BrokenDeliveryRefundsWinnerAndCanReturnLot() public {
         MutableERC1155 bad = new MutableERC1155();
         bad.mint(artist, TOKEN_ID, QUANTITY);
