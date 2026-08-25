@@ -177,7 +177,7 @@ const _getAllAuctionsCached = unstable_cache(
     if (!house) return []
     return fetchAllAuctionsForHouse(house)
   },
-  ["all-auctions-v2"],
+  ["all-auctions-v3"],
   { revalidate: 60, tags: ["all-auctions"] },
 )
 
@@ -252,40 +252,47 @@ const _getHouseEventDataCached = unstable_cache(
     // Tightest valid lower bound — no house event predates its creation.
     const fromBlock = await getHouseCreationBlock(house)
 
-    const [created, ended, cancelled] = await Promise.all([
-      getLogsChunked({ address: house, event: auctionCreatedEvent, fromBlock, toBlock: latest }),
-      getLogsChunked({ address: house, event: auctionEndedEvent, fromBlock, toBlock: latest }),
-      getLogsChunked({ address: house, event: auctionCanceledEvent, fromBlock, toBlock: latest }),
-    ])
+    // One OR-filtered RPC scan for all lifecycle events. Three parallel scans
+    // look harmless, but the bundled archive gateway permits only a small
+    // request burst: one succeeds while the others rotate to providers whose
+    // free tiers reject wide historical ranges. On a cold serverless render
+    // that delay can hit the page deadline and hide otherwise-readable live
+    // auctions. A single scan is both faster and kinder to every provider.
+    const history = await getLogsChunked({
+      address: house,
+      events: [auctionCreatedEvent, auctionEndedEvent, auctionCanceledEvent] as const,
+      fromBlock,
+      toBlock: latest,
+    })
 
     const data: HouseEventData = { created: {}, settled: {}, cancelled: [] }
-    for (const log of created) {
-      const id = log.args.auctionId
-      if (id === undefined) continue
-      data.created[id.toString()] = {
-        tokenContract: (log.args.tokenContract ?? ZERO_ADDRESS) as Address,
-        tokenId: (log.args.tokenId ?? 0n).toString(),
-        reservePrice: (log.args.reservePrice ?? 0n).toString(),
-        duration: (log.args.duration ?? 0n).toString(),
-        tokenOwner: (log.args.tokenOwner ?? ZERO_ADDRESS) as Address,
+    for (const log of history) {
+      if (log.eventName === "AuctionCreated") {
+        const id = log.args.auctionId
+        if (id === undefined) continue
+        data.created[id.toString()] = {
+          tokenContract: (log.args.tokenContract ?? ZERO_ADDRESS) as Address,
+          tokenId: (log.args.tokenId ?? 0n).toString(),
+          reservePrice: (log.args.reservePrice ?? 0n).toString(),
+          duration: (log.args.duration ?? 0n).toString(),
+          tokenOwner: (log.args.tokenOwner ?? ZERO_ADDRESS) as Address,
+        }
+      } else if (log.eventName === "AuctionEnded") {
+        const id = log.args.auctionId
+        if (id === undefined) continue
+        data.settled[id.toString()] = {
+          winner: (log.args.winner ?? ZERO_ADDRESS) as Address,
+          sellerProceeds: ((log.args.sellerProceeds ?? 0n) as bigint).toString(),
+          protocolFee: ((log.args.protocolFee ?? 0n) as bigint).toString(),
+        }
+      } else if (log.eventName === "AuctionCanceled") {
+        const id = log.args.auctionId
+        if (id !== undefined) data.cancelled.push(id.toString())
       }
-    }
-    for (const log of ended) {
-      const id = log.args.auctionId
-      if (id === undefined) continue
-      data.settled[id.toString()] = {
-        winner: (log.args.winner ?? ZERO_ADDRESS) as Address,
-        sellerProceeds: ((log.args.sellerProceeds ?? 0n) as bigint).toString(),
-        protocolFee: ((log.args.protocolFee ?? 0n) as bigint).toString(),
-      }
-    }
-    for (const log of cancelled) {
-      const id = log.args.auctionId
-      if (id !== undefined) data.cancelled.push(id.toString())
     }
     return data
   },
-  ["house-event-data-v2"],
+  ["house-event-data-v3"],
   { revalidate: 60 * 60 * 24, tags: ["all-auctions"] },
 )
 

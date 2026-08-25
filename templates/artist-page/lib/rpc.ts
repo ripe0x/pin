@@ -97,12 +97,13 @@ export function getClient() {
 }
 
 // Initial chunk size for `getLogs`. The primary provider (Tenderly gateway)
-// accepts very wide ranges — it answered a ~390k-block window in one call —
-// so we start high to minimize round-trips on the happy path. If a
+// accepts very wide sparse ranges, so we start at 1M blocks to keep a cold
+// artist-site load to one factory lookup plus one house-history request. This
+// also avoids tripping the public gateway's short-burst request limit. If a
 // smaller-capped fallback answers instead (drpc 10k, Cloudflare 800), the
 // shrink-on-error logic below narrows the window to fit. Observed caps:
 // PublicNode 50k, drpc free tier 10k, Cloudflare ~800.
-const INITIAL_CHUNK = 100_000n
+const INITIAL_CHUNK = 1_000_000n
 // The smallest chunk we'll bother with before giving up. Kept below
 // Cloudflare's ~800-block cap so even the stingiest provider can answer.
 const MIN_CHUNK = 500n
@@ -143,21 +144,38 @@ export type GetLogsChunkedArgs<TEvent extends AbiEvent> = {
   toBlock: bigint
 }
 
+export type GetLogsChunkedEventsArgs<
+  TEvents extends readonly AbiEvent[],
+> = {
+  address: Address
+  events: TEvents
+  fromBlock: bigint
+  toBlock: bigint
+}
+
 /**
  * `eth_getLogs` against a single contract, chunking the block range to
  * fit whatever the active RPC accepts. Adapts on the fly: starts at a
  * generous chunk, shrinks when the RPC complains, and remembers the
  * working size for the rest of this scan.
  */
-export async function getLogsChunked<TEvent extends AbiEvent>(
+export function getLogsChunked<TEvent extends AbiEvent>(
   argsIn: GetLogsChunkedArgs<TEvent>,
-): Promise<GetLogsReturnType<TEvent>> {
+): Promise<GetLogsReturnType<TEvent>>
+export function getLogsChunked<TEvents extends readonly AbiEvent[]>(
+  argsIn: GetLogsChunkedEventsArgs<TEvents>,
+): Promise<GetLogsReturnType<undefined, TEvents>>
+export async function getLogsChunked(
+  argsIn:
+    | GetLogsChunkedArgs<AbiEvent>
+    | GetLogsChunkedEventsArgs<readonly AbiEvent[]>,
+): Promise<GetLogsReturnType> {
   const client = getClient()
-  const { address, event, args, fromBlock, toBlock } = argsIn
+  const { address, fromBlock, toBlock } = argsIn
 
-  if (toBlock < fromBlock) return [] as unknown as GetLogsReturnType<TEvent>
+  if (toBlock < fromBlock) return []
 
-  const all: GetLogsReturnType<TEvent> = [] as unknown as GetLogsReturnType<TEvent>
+  const all: GetLogsReturnType = []
   let cursor = fromBlock
   let chunk = INITIAL_CHUNK
 
@@ -173,13 +191,15 @@ export async function getLogsChunked<TEvent extends AbiEvent>(
         // viem types `getLogs` with a complex generic; the runtime accepts
         // these args fine but the type narrowing across our generic event
         // doesn't compose perfectly. Cast at the call boundary only.
+        const filter = "event" in argsIn
+          ? { event: argsIn.event, args: argsIn.args as never }
+          : { events: argsIn.events }
         const logs = (await client.getLogs({
           address,
-          event,
-          args: args as never,
+          ...filter,
           fromBlock: cursor,
           toBlock: end,
-        })) as GetLogsReturnType<TEvent>
+        } as never)) as GetLogsReturnType
         ;(all as unknown as unknown[]).push(...(logs as unknown as unknown[]))
         succeeded = true
       } catch (err) {
