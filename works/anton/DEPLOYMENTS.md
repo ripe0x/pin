@@ -11,17 +11,15 @@ https://sepolia.etherscan.io/address/<addr>
 
 | Contract | Address |
 | --- | --- |
-| AntonParams | `0x9cbbc6c7a4ec5aa6e195bc12c6f323e1473f9a58` |
-| AntonScriptStore | `0x732015148c8b93c30969a6f0286ac9f8b0e79599` |
-| AntonRenderer | `0x1cd4a08ef39751906d54283a83443f65a49a8702` |
-| collection (untitled) | `0xa857d27bf423bd932022cc5f98264bf32e491a11` |
-| AntonMinter | `0x1f425666e0f440448162b2298af2a506fefc147d` |
+| AntonParams | `0x9b11c5eda909c92336e1936d62fe05741f6e21f5` |
+| AntonScriptStore | `0x3c76b7bf6167027d7d6e3e3dbf1c715bbbfd3295` |
+| AntonRenderer | `0x4219d5d09d95ffa3f7d58fc322be42ed15577444` |
+| collection (untitled) | `0xab2ed7da970f4b2fc34033da4fd77e5b2150484e` |
+| AntonMinter | `0x09706e33777105079363cb1aefb1e1164bf1a230` |
 | SurfaceFactory (fresh) | `0xc8a969b2be8dae4b84bf7d74c1c907f978c24b3b` |
 
 Shared onchain deps (deterministic, same address every chain):
 ScriptyBuilderV2 `0xD7587F110E08F4D120A231bA97d3B577A81Df022`,
 EthFS `0x8FAA1AAb9DA8c75917C43Fb24fDdb513edDC3245`.
 
-Token 1: palette G, tone sun, seed stamped at mint. AntonParams / AntonMinter /
-AntonRenderer / AntonScriptStore + the Surface impl are verified on Etherscan
-(the collection clone reads as a proxy to the verified Surface impl).
+Redeployed 2026-08 (timing-only wallet sync + random mint). Token 1 drew palette B / tone moon from its seed. Contracts verified on Etherscan.
