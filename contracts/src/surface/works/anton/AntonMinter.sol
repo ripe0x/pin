@@ -11,8 +11,8 @@ import {AntonParams} from "./AntonParams.sol";
 
 /// @title AntonMinter
 /// @notice Fixed-price minter for the anton work. Palette and tone are not
-///         chosen: the minter mints one token through the collection core, then
-///         draws (palette, tone) from that token's seed (prevrandao-based,
+///         chosen: the minter mints the tokens through the collection core, then
+///         draws each one's (palette, tone) from its own seed (prevrandao-based,
 ///         stamped in mintTo) and writes them to AntonParams. Random at mint,
 ///         not caller-supplied. The token owner can re-pick later through
 ///         AntonParams directly.
@@ -21,8 +21,8 @@ import {AntonParams} from "./AntonParams.sol";
 ///         sets the collection, params registry, and payout address once.
 ///         Proceeds are held by pull payment; config authority (price, window)
 ///         is borrowed from the collection owner/admin, the same root that
-///         gates the collection's own setters. Quantity is fixed at one per
-///         mint: each token draws its own identity from its own seed.
+///         gates the collection's own setters. Up to MAX_PER_MINT per call;
+///         each token draws its own identity from its own seed.
 contract AntonMinter is IMinter, ReentrancyGuard {
     /// @notice The collection this minter sells for.
     address public immutable collection;
@@ -52,7 +52,7 @@ contract AntonMinter is IMinter, ReentrancyGuard {
     error PayoutRecipientRequired();
     error NotAuthorized();
     error BadMintWindow();
-    error QuantityMustBeOne(uint256 quantity);
+    error TooManyPerMint(uint256 max, uint256 attempted);
     error ZeroAccount();
     error NothingToWithdraw();
     error WithdrawFailed();
@@ -86,58 +86,64 @@ contract AntonMinter is IMinter, ReentrancyGuard {
 
     // ── mint ────────────────────────────────────────────────────────────────
 
-    /// @notice Mint one token to the caller. Palette and tone are not chosen:
-    ///         they are drawn from the token's seed at mint (see `_mint`).
-    function mint() external payable nonReentrant {
-        _mint(msg.sender, msg.sender, address(0));
+    /// @notice Max tokens per mint call. ponytail: fixed cap that keeps a batch
+    ///         mint well under the block gas limit (each token writes params);
+    ///         raise it if a larger batch is ever wanted.
+    uint256 public constant MAX_PER_MINT = 20;
+
+    /// @notice Mint `quantity` tokens to the caller. Palette and tone are not
+    ///         chosen: each token draws its own from its own seed (see `_mint`).
+    function mint(uint256 quantity) external payable nonReentrant {
+        _mint(msg.sender, msg.sender, quantity, address(0));
     }
 
     /// @inheritdoc IMinter
-    /// @dev Standard integration entrypoint. `quantity` must be 1; `data` is
-    ///      unused (identity is random from the seed, not caller-supplied). `to`
-    ///      is the recipient (paid gift-mint when it differs from the caller);
-    ///      `referrer` is accepted for interface parity and folded into the
-    ///      artist payout (no referral split in this work).
+    /// @dev Standard integration entrypoint. `data` is unused (identity is random
+    ///      from each token's seed). `to` is the recipient (paid gift-mint when
+    ///      it differs from the caller); `referrer` is accepted for interface
+    ///      parity and folded into the artist payout (no referral split).
     function mint(address to, uint256 quantity, address referrer, bytes calldata)
         external
         payable
         override
         nonReentrant
     {
-        if (quantity != 1) revert QuantityMustBeOne(quantity);
-        _mint(msg.sender, to, referrer);
+        _mint(msg.sender, to, quantity, referrer);
     }
 
     function _mint(
         address payer,
         address to,
+        uint256 quantity,
         address // referrer, folded into payout in this work
     ) private {
+        if (quantity == 0) revert ZeroQuantity();
+        if (quantity > MAX_PER_MINT) revert TooManyPerMint(MAX_PER_MINT, quantity);
         if (mintStart != 0 && block.timestamp < mintStart) revert MintNotStarted();
         if (mintEnd != 0 && block.timestamp >= mintEnd) revert MintEnded();
 
-        uint256 required = price;
+        uint256 required = price * quantity;
         if (msg.value != required) revert WrongPayment(required, msg.value);
 
-        uint256 firstTokenId = ISurface(collection).mintTo(to, 1);
-        totalMinted += 1;
+        uint256 firstTokenId = ISurface(collection).mintTo(to, quantity);
+        totalMinted += quantity;
 
-        // Draw palette + tone from the token's seed (prevrandao-based, stamped in
-        // mintTo): random at mint, not chosen. Two independent bytes of the seed.
-        uint256 seed = uint256(ISurfaceView(collection).tokenSeed(firstTokenId));
-        uint8 palette = uint8(seed % params.paletteCount());
-        uint8 tone = uint8((seed >> 8) % params.toneCount());
-
-        // Record the identity for the new token id. AntonParams validates the
-        // indices; an out-of-range value reverts the whole mint.
-        params.initParams(collection, firstTokenId, palette, tone);
+        uint8 pc = params.paletteCount();
+        uint8 tc = params.toneCount();
+        for (uint256 i = 0; i < quantity; i++) {
+            uint256 tokenId = firstTokenId + i;
+            // Each token draws palette + tone from its own seed (prevrandao-based,
+            // stamped in mintTo): random at mint, not chosen.
+            uint256 seed = uint256(ISurfaceView(collection).tokenSeed(tokenId));
+            params.initParams(collection, tokenId, uint8(seed % pc), uint8((seed >> 8) % tc));
+        }
 
         if (required > 0) {
             _pending[payoutRecipient] += required;
             _totalPending += required;
         }
 
-        emit Sold(payer, to, address(0), 1, required, firstTokenId);
+        emit Sold(payer, to, address(0), quantity, required, firstTokenId);
     }
 
     /// @inheritdoc IMinter

@@ -59,7 +59,7 @@ contract AntonMinterTest is Test {
     function test_mint_drawsRandomParamsFromSeed_inRange() public {
         vm.deal(buyer, 1 ether);
         vm.prank(buyer);
-        minter.mint{value: PRICE}();
+        minter.mint{value: PRICE}(1);
 
         assertEq(col.ownerOf(1), buyer);
         (bool set, uint8 p, uint8 t) = params.paramsOf(address(col), 1);
@@ -74,7 +74,7 @@ contract AntonMinterTest is Test {
         vm.deal(buyer, 1 ether);
         vm.prank(buyer);
         vm.expectRevert(abi.encodeWithSelector(IMinter.WrongPayment.selector, PRICE, PRICE - 1));
-        minter.mint{value: PRICE - 1}();
+        minter.mint{value: PRICE - 1}(1);
     }
 
     function test_dataMint_giftTo() public {
@@ -87,11 +87,40 @@ contract AntonMinterTest is Test {
         assertTrue(set);
     }
 
-    function test_dataMint_quantityNotOne_reverts() public {
+    function test_batchMint_perTokenParams_payment() public {
         vm.deal(buyer, 1 ether);
         vm.prank(buyer);
-        vm.expectRevert(abi.encodeWithSelector(AntonMinter.QuantityMustBeOne.selector, 2));
-        minter.mint{value: PRICE}(buyer, 2, address(0), "");
+        minter.mint{value: PRICE * 3}(3);
+
+        assertEq(minter.totalMinted(), 3);
+        assertEq(minter.pendingWithdrawal(artist), PRICE * 3);
+        for (uint256 id = 1; id <= 3; id++) {
+            assertEq(col.ownerOf(id), buyer);
+            (bool set, uint8 p, uint8 t) = params.paramsOf(address(col), id);
+            assertTrue(set);
+            assertLt(p, 10);
+            assertLt(t, 2);
+        }
+    }
+
+    function test_batchMint_wrongPayment_reverts() public {
+        vm.deal(buyer, 1 ether);
+        vm.prank(buyer);
+        vm.expectRevert(abi.encodeWithSelector(IMinter.WrongPayment.selector, PRICE * 3, PRICE * 2));
+        minter.mint{value: PRICE * 2}(3);
+    }
+
+    function test_tooManyPerMint_reverts() public {
+        vm.deal(buyer, 10 ether);
+        vm.prank(buyer);
+        vm.expectRevert(abi.encodeWithSelector(AntonMinter.TooManyPerMint.selector, 20, 21));
+        minter.mint{value: PRICE * 21}(21);
+    }
+
+    function test_zeroQuantity_reverts() public {
+        vm.prank(buyer);
+        vm.expectRevert(IMinter.ZeroQuantity.selector);
+        minter.mint(0);
     }
 
     function test_mintWindow_enforced() public {
@@ -100,13 +129,13 @@ contract AntonMinterTest is Test {
         vm.deal(buyer, 1 ether);
         vm.prank(buyer);
         vm.expectRevert(IMinter.MintNotStarted.selector);
-        minter.mint{value: PRICE}();
+        minter.mint{value: PRICE}(1);
     }
 
     function test_withdraw_paysArtist() public {
         vm.deal(buyer, 1 ether);
         vm.prank(buyer);
-        minter.mint{value: PRICE}();
+        minter.mint{value: PRICE}(1);
         uint256 before = artist.balance;
         minter.withdraw(artist);
         assertEq(artist.balance, before + PRICE);
@@ -125,7 +154,7 @@ contract AntonMinterTest is Test {
     function test_ownerCanRepickAfterMint() public {
         vm.deal(buyer, 1 ether);
         vm.prank(buyer);
-        minter.mint{value: PRICE}();
+        minter.mint{value: PRICE}(1);
 
         vm.prank(buyer);
         params.setParams(address(col), 1, 7, 1);
