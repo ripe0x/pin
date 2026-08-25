@@ -5,25 +5,24 @@ import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/Reentrancy
 
 import {IMinter} from "../../interfaces/IMinter.sol";
 import {ISurface} from "../../interfaces/ISurface.sol";
+import {ISurfaceView} from "../../interfaces/IRenderer.sol";
 import {ISurfaceAuth} from "../../interfaces/ISurfaceAuth.sol";
 import {AntonParams} from "./AntonParams.sol";
 
 /// @title AntonMinter
-/// @notice Fixed-price minter for the anton work that records the minter's
-///         chosen render params at mint. Each mint carries a (palette, shape,
-///         tone, bgOnly) selection; the minter mints one token through the
-///         collection core and writes that selection to AntonParams for the
-///         new token id, so the minted image matches what the mint UI
-///         previewed. The token owner can re-pick later through AntonParams
-///         directly.
+/// @notice Fixed-price minter for the anton work. Palette and tone are not
+///         chosen: the minter mints one token through the collection core, then
+///         draws (palette, tone) from that token's seed (prevrandao-based,
+///         stamped in mintTo) and writes them to AntonParams. Random at mint,
+///         not caller-supplied. The token owner can re-pick later through
+///         AntonParams directly.
 ///
 ///         Bespoke single deploy, not a factory clone: a normal constructor
 ///         sets the collection, params registry, and payout address once.
 ///         Proceeds are held by pull payment; config authority (price, window)
 ///         is borrowed from the collection owner/admin, the same root that
 ///         gates the collection's own setters. Quantity is fixed at one per
-///         mint: a mint is one param selection, so batching would make the
-///         per-token params ambiguous.
+///         mint: each token draws its own identity from its own seed.
 contract AntonMinter is IMinter, ReentrancyGuard {
     /// @notice The collection this minter sells for.
     address public immutable collection;
@@ -87,34 +86,31 @@ contract AntonMinter is IMinter, ReentrancyGuard {
 
     // ── mint ────────────────────────────────────────────────────────────────
 
-    /// @notice Mint one token to the caller with the chosen identity. The typed
-    ///         entrypoint the mint UI calls directly.
-    function mint(uint8 palette, uint8 tone) external payable nonReentrant {
-        _mintWithParams(msg.sender, msg.sender, palette, tone, address(0));
+    /// @notice Mint one token to the caller. Palette and tone are not chosen:
+    ///         they are drawn from the token's seed at mint (see `_mint`).
+    function mint() external payable nonReentrant {
+        _mint(msg.sender, msg.sender, address(0));
     }
 
     /// @inheritdoc IMinter
-    /// @dev Standard integration entrypoint. `quantity` must be 1; `data` is the
-    ///      abi-encoded identity `(uint8 palette, uint8 tone)`. `to` is the
-    ///      recipient (paid gift-mint when it differs from the caller);
+    /// @dev Standard integration entrypoint. `quantity` must be 1; `data` is
+    ///      unused (identity is random from the seed, not caller-supplied). `to`
+    ///      is the recipient (paid gift-mint when it differs from the caller);
     ///      `referrer` is accepted for interface parity and folded into the
     ///      artist payout (no referral split in this work).
-    function mint(address to, uint256 quantity, address referrer, bytes calldata data)
+    function mint(address to, uint256 quantity, address referrer, bytes calldata)
         external
         payable
         override
         nonReentrant
     {
         if (quantity != 1) revert QuantityMustBeOne(quantity);
-        (uint8 palette, uint8 tone) = abi.decode(data, (uint8, uint8));
-        _mintWithParams(msg.sender, to, palette, tone, referrer);
+        _mint(msg.sender, to, referrer);
     }
 
-    function _mintWithParams(
+    function _mint(
         address payer,
         address to,
-        uint8 palette,
-        uint8 tone,
         address // referrer, folded into payout in this work
     ) private {
         if (mintStart != 0 && block.timestamp < mintStart) revert MintNotStarted();
@@ -125,6 +121,12 @@ contract AntonMinter is IMinter, ReentrancyGuard {
 
         uint256 firstTokenId = ISurface(collection).mintTo(to, 1);
         totalMinted += 1;
+
+        // Draw palette + tone from the token's seed (prevrandao-based, stamped in
+        // mintTo): random at mint, not chosen. Two independent bytes of the seed.
+        uint256 seed = uint256(ISurfaceView(collection).tokenSeed(firstTokenId));
+        uint8 palette = uint8(seed % params.paletteCount());
+        uint8 tone = uint8((seed >> 8) % params.toneCount());
 
         // Record the identity for the new token id. AntonParams validates the
         // indices; an out-of-range value reverts the whole mint.

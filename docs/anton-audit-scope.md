@@ -14,7 +14,7 @@ external scripty/EthFS infrastructure are out of scope (audited / external).
 | Contract | Role | Surface |
 | --- | --- | --- |
 | `AntonParams.sol` | owner-mutable per-token identity (palette, tone) | writes: `initParams` (minter, once), `setParams` (token owner); read: `paramsOf` |
-| `AntonMinter.sol` | fixed-price minter, records the pick at mint | payable `mint`, pull-payment `withdraw`, owner-gated config |
+| `AntonMinter.sol` | fixed-price minter; draws random (palette,tone) from the seed at mint | payable `mint`, pull-payment `withdraw`, owner-gated config |
 | `AntonRenderer.sol` | chain-live `ScriptyRenderer` fork | view-only `tokenURI` / `previewURI` |
 | `AntonScriptStore.sol` | SSTORE2 store serving `base64(gzip(anton.js))` | immutable, `getContent` |
 
