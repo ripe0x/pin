@@ -34,3 +34,13 @@ emit({
   exportName: "sovereignAuctionHouseFactoryAbi",
   outFile: "sovereignAuctionHouseFactory.ts",
 });
+emit({
+  artifact: "SovereignAuctionHouseV2.sol/SovereignAuctionHouseV2.json",
+  exportName: "sovereignAuctionHouseV2Abi",
+  outFile: "sovereignAuctionHouseV2.ts",
+});
+emit({
+  artifact: "SovereignAuctionHouseV2Factory.sol/SovereignAuctionHouseV2Factory.json",
+  exportName: "sovereignAuctionHouseV2FactoryAbi",
+  outFile: "sovereignAuctionHouseV2Factory.ts",
+});
