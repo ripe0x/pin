@@ -1,8 +1,8 @@
 // Onchain generative work.
 //
-// Minted identity: palette + tone. Per-token variety (blob layout, flow,
-// proportions) derives from the token seed (window.tokenData.hash), so every
-// token is its own piece. The persistent and generative layers move
+// Fully generative: everything (palette, tone, blob layout, flow, proportions)
+// derives from the token seed (window.tokenData.hash), so every token is its own
+// piece. Nothing is chosen or stored. The persistent and generative layers move
 // organically at their natural speed, per token, exactly as in the source.
 //
 // Wallet-synced TIMING: the shape-morph and background-shift CADENCE is a
@@ -59,14 +59,19 @@
   var ctx = typeof td.context === "string" ? td.context : "token";
   var owner = (typeof td.owner === "string" ? td.owner : "0x0000000000000000000000000000000000000000").toLowerCase();
   var params = td.params || {};
-  var paletteMode = normalizePalette(params.palette);
-  var toneMode = normalizeTone(params.tone);
   var backgroundOnly = params.bgOnly === true || params.bgOnly === 1 || params.bgOnly === "1";
 
   // ── seeds ─────────────────────────────────────────────────────────────────
-  // Per-token variety comes from the token seed; the owner drives the synced
-  // shape morph and background drift.
+  // Everything about a token comes from its seed. Palette + tone are derived
+  // from the seed the SAME way the renderer derives them for onchain traits:
+  // palette = seed % 10, tone = (seed >> 8) % 2. Keep this in lockstep with
+  // AntonRenderer.
   var seedHash = typeof td.hash === "string" ? td.hash : "0x0";
+  var seedBig;
+  try { seedBig = BigInt(seedHash); } catch (e) { seedBig = 0n; }
+  var TONE_KEYS = ["sun", "moon"];
+  var paletteMode = PALETTE_KEYS[Number(seedBig % BigInt(PALETTE_KEYS.length))];
+  var toneMode = TONE_KEYS[Number((seedBig >> 8n) % 2n)];
   var rng = mulberry32(xmur3(seedHash)());
   function rand(min, max) { return min + rng() * (max - min); }
   function pickStepped(min, max, step) {
@@ -632,13 +637,5 @@
       deck.splice(idx, 1);
       return c;
     };
-  }
-  function normalizePalette(v) {
-    var s = typeof v === "string" ? v.toUpperCase() : "";
-    return PALETTES[s] ? s : "A";
-  }
-  function normalizeTone(v) {
-    var s = typeof v === "string" ? v.toLowerCase() : "";
-    return TONE_BASE[s] ? s : "moon";
   }
 })();
