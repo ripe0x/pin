@@ -9,6 +9,8 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "**.ipfs.w3s.link" },
       { protocol: "https", hostname: "cloudflare-ipfs.com" },
       { protocol: "https", hostname: "ipfs.io" },
+      { protocol: "https", hostname: "ipfs.filebase.io" },
+      { protocol: "https", hostname: "gateway.pinata.cloud" },
       { protocol: "https", hostname: "dweb.link" },
       { protocol: "https", hostname: "nftstorage.link" },
       { protocol: "https", hostname: "**.nftstorage.link" },

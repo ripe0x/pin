@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useMediaFallback } from "@/lib/use-media-fallback"
 
 const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
@@ -43,8 +43,49 @@ export function AuctionCardImage({
   // real image to show, so an extension-less <img> that fails to load is
   // escalated to <video>.
   const [escalated, setEscalated] = useState(false)
+  const imageRef = useRef<HTMLImageElement>(null)
+  const recoveredMissedError = useRef(false)
   // Rotate IPFS/Arweave gateways on load error before escalating.
   const media = useMediaFallback(src)
+  // A fast gateway failure can happen before React hydrates, so its native
+  // error event never reaches onError. Detect that already-failed image once
+  // hydration completes and start the normal gateway rotation ourselves.
+  useEffect(() => {
+    if (recoveredMissedError.current) return
+    recoveredMissedError.current = true
+    const img = imageRef.current
+    if (img?.complete && img.naturalWidth === 0) media.onError()
+    // This is specifically the one-time hydration check. Later failures are
+    // handled by the element's onError callback below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // A gateway can also hang without firing an error. Once this lazy image is
+  // near the viewport, give each candidate seven seconds to produce usable
+  // dimensions before advancing to the next gateway.
+  useEffect(() => {
+    const img = imageRef.current
+    if (!img || typeof IntersectionObserver === "undefined") return
+
+    let fallbackTimer: ReturnType<typeof setTimeout> | null = null
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return
+        observer.disconnect()
+        fallbackTimer = setTimeout(() => {
+          if (!img.complete || img.naturalWidth === 0) media.onError()
+        }, 7_000)
+      },
+      { rootMargin: "400px" },
+    )
+    observer.observe(img)
+    return () => {
+      observer.disconnect()
+      if (fallbackTimer) clearTimeout(fallbackTimer)
+    }
+    // Restart the timeout for each rotated gateway URL.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [media.src])
   if (!src) {
     return (
       <div
@@ -85,6 +126,7 @@ export function AuctionCardImage({
       ) : (
         // eslint-disable-next-line @next/next/no-img-element
         <img
+          ref={imageRef}
           src={url}
           alt={alt}
           className="block w-full h-auto"

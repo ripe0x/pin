@@ -107,7 +107,7 @@ export async function getTokenMetadata(
   // still share one entry. See `app/api/revalidate` for the trigger.
   const cached = unstable_cache(
     fetchTokenMetadataOrThrow,
-    ["token-metadata-v3", tokenContract.toLowerCase(), tokenId],
+    ["token-metadata-v4", tokenContract.toLowerCase(), tokenId],
     {
       revalidate: 60 * 60 * 24,
       tags: [TOKEN_METADATA_TAG, tokenMetadataTag(tokenContract, tokenId)],
@@ -276,4 +276,3 @@ function parseDataUrlJson(url: string): Record<string, unknown> | null {
     return null
   }
 }
-

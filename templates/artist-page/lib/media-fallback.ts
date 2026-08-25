@@ -13,10 +13,20 @@
 // Path-form gateways so a resolved URL is `${gateway}${cidPath}`. Keep the
 // first entry an image host allowed in next.config.ts.
 export const IPFS_GATEWAYS = [
-  "https://nftstorage.link/ipfs/",
-  "https://ipfs.io/ipfs/",
-  "https://dweb.link/ipfs/",
+  "https://ipfs.filebase.io/ipfs/",
+  "https://gateway.pinata.cloud/ipfs/",
 ]
+
+// Gateway URLs embedded in old metadata should move onto the current primary
+// too. dweb.link is intentionally legacy-only: its browser challenge returns
+// HTML in place of media, even while server-side requests still get the file.
+const IPFS_GATEWAY_HOSTS = new Set([
+  ...IPFS_GATEWAYS.map((g) => new URL(g).host),
+  "dweb.link",
+  "w3s.link",
+  "ipfs.io",
+  "nftstorage.link",
+])
 
 // Arweave / ar.io gateways, arweave.net first (canonical, fastest once a
 // bundle is seeded). The rest serve bundles that arweave.net hasn't indexed
@@ -105,10 +115,15 @@ export function gatewayCandidates(uri: string): string[] {
  */
 export function resolveMediaUrl(uri: string): string {
   const ipfs = extractIpfsPath(uri)
-  if (ipfs && (uri.startsWith("ipfs://") || uri.startsWith("http"))) {
-    // Only rewrite ipfs:// scheme; leave existing gateway URLs as-is so we
-    // don't bounce a working custom gateway to ours.
+  if (ipfs) {
     if (uri.startsWith("ipfs://")) return IPFS_GATEWAYS[0] + ipfs
+    try {
+      if (IPFS_GATEWAY_HOSTS.has(new URL(uri).host)) {
+        return IPFS_GATEWAYS[0] + ipfs
+      }
+    } catch {
+      // Non-URL input falls through unchanged below.
+    }
   }
   const ar = extractArweavePath(uri)
   if (ar && uri.startsWith("ar://")) return `${ARWEAVE_GATEWAYS[0]}/${ar}`

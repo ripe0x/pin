@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useMediaFallback } from "@/lib/use-media-fallback"
 
 const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
@@ -57,12 +57,48 @@ export function TokenMedia({
   title: string
 }) {
   const [escalated, setEscalated] = useState(false)
+  const imageRef = useRef<HTMLImageElement>(null)
+  const recoveredMissedError = useRef(false)
 
   const useAnimation = !!animationUrl
   const renderUrl = useAnimation ? animationUrl! : image
   // Rotate IPFS/Arweave gateways on load error before giving up. A fresh
   // arweave.net bundle can 404 while another gateway already serves it.
   const media = useMediaFallback(renderUrl)
+
+  // Recover an image error that fired before this client component hydrated.
+  useEffect(() => {
+    if (recoveredMissedError.current) return
+    recoveredMissedError.current = true
+    const img = imageRef.current
+    if (img?.complete && img.naturalWidth === 0) media.onError()
+    // Later failures use the element's onError callback.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    const img = imageRef.current
+    if (!img || typeof IntersectionObserver === "undefined") return
+
+    let fallbackTimer: ReturnType<typeof setTimeout> | null = null
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return
+        observer.disconnect()
+        fallbackTimer = setTimeout(() => {
+          if (!img.complete || img.naturalWidth === 0) media.onError()
+        }, 7_000)
+      },
+      { rootMargin: "400px" },
+    )
+    observer.observe(img)
+    return () => {
+      observer.disconnect()
+      if (fallbackTimer) clearTimeout(fallbackTimer)
+    }
+    // Restart the timeout for each rotated gateway URL.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [media.src])
 
   if (!renderUrl) {
     return (
@@ -114,6 +150,7 @@ export function TokenMedia({
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
+      ref={imageRef}
       src={src}
       alt={title}
       className="max-h-[80vh] w-auto object-contain"
