@@ -23,8 +23,8 @@
  * gated alongside `HomageMinter` (see ponder.config.ts's homageContracts
  * block) — both addresses + start blocks must be set together.
  *
- * HAND-SYNCED SNAPSHOT — mirrors /Users/dd/CascadeProjects/homage to the punk
- * (branch sovereign-rebuild) web/lib/homage.ts's `homageCollectionAbi`
+ * HAND-SYNCED SNAPSHOT — mirrors `ripe0x/permanence`'s sovereign-rebuild
+ * branch, `web/lib/homage.ts`'s `homageCollectionAbi`
  * (a minimal hand-rolled ABI: ownerOf/balanceOf/tokenURI/Transfer — not the
  * full `ICollectionCore` event surface). Re-derive from the audited build
  * before mainnet deploy + Ponder redeploy.

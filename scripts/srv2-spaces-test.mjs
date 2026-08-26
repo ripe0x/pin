@@ -1,7 +1,7 @@
 import { createPublicClient, createWalletClient, http, parseEther, formatEther } from "viem"
 import { foundry } from "viem/chains"
 import { privateKeyToAccount } from "viem/accounts"
-import { superrareBazaarAbi } from "/Users/dd/foundation/packages/abi/src/superrareBazaar.ts"
+import { superrareBazaarAbi } from "../packages/abi/src/superrareBazaar.ts"
 
 const RPC = "http://127.0.0.1:8545"
 const BAZAAR = "0x6d7c44773c52d396f43c2d511b81aa168e9a7a42"
