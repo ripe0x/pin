@@ -6,9 +6,10 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start -p ${PORT:-3000}",
-    "lint": "next lint",
+    "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "check:abi": "node --experimental-strip-types scripts/check-abi-vs-bytecode.mjs",
+    "test": "tsx --test \"src/**/*.test.ts\"",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install chromium"
   },
@@ -24,7 +25,7 @@
     "@wagmi/core": "^2.13.0",
     "gifenc": "^1.0.3",
     "mediabunny": "^1.51.0",
-    "next": "^15.1.0",
+    "next": "^15.5.21",
     "next-themes": "^0.4.6",
     "postgres": "^3.4.9",
     "react": "^19.0.0",
@@ -42,6 +43,7 @@
     "@types/react-dom": "^19.0.0",
     "postcss": "^8.4.0",
     "tailwindcss": "^4.0.0",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.0"
   }
 }

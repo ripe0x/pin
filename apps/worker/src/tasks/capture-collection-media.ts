@@ -2,20 +2,17 @@
  * Capture static media for PND Surface System tokens
  * (contracts/src/surface/), v1 scope = SVG only.
  *
- * Deploy-gated: no-op (zero counts) until SOVEREIGN_COLLECTION_FACTORY
- * resolves to a real address. `@pin/addresses` carries a zero-address
- * sentinel for it until mainnet deploy (same sentinel the indexer's
- * ponder.config.ts and the web app's collection-onchain.ts gate on via
- * `getAddressOrNull`) — this task uses the identical helper so all three
- * consumers flip on together at deploy, from one edit.
+ * Deploy-gated: no-op (zero counts) if SURFACE_FACTORY is not configured for
+ * the active mainnet deployment. This uses the same `getAddressOrNull` gate as
+ * the indexer and web app.
  *
  * Indexer-readiness gated, separately: the source of "which tokens need
  * a capture" is `${INDEXER_SCHEMA}.collection_tokens` (+ `.collections`),
- * written by a concurrent Ponder task for the CollectionFactory
+ * written by the current Ponder SurfaceFactory
  * discovery indexing (see docs/pnd-surface-web-plan.md D7). Those
- * tables don't exist yet on this branch — probed via information_schema,
- * same pattern as warm-metadata's ponderReady probe — so until they
- * land this task is *also* a no-op even once the factory address is set.
+ * tables are probed via information_schema, same pattern as
+ * warm-metadata's ponderReady probe, so a fresh worker/indexer deploy stays
+ * a no-op until the schema is available.
  *
  * Work loop (once both gates pass):
  *   1. Select tokens without a `collection_media` row (or a stale
@@ -38,8 +35,8 @@ import sharp from "sharp"
 import { sql } from "../db.ts"
 import { client } from "../rpc.ts"
 import { throttleRpc } from "../throttle.ts"
-import { collectionAbi } from "@pin/abi"
-import { SOVEREIGN_COLLECTION_FACTORY, MAINNET_CHAIN_ID, getAddressOrNull } from "@pin/addresses"
+import { surfaceAbi } from "@pin/abi"
+import { SURFACE_FACTORY, MAINNET_CHAIN_ID, getAddressOrNull } from "@pin/addresses"
 import { decodeFunctionResult, encodeFunctionData } from "viem"
 import type { Address } from "viem"
 import type { TaskResult } from "../scheduler.ts"
@@ -55,16 +52,12 @@ const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
 )
 
 // Deploy-gated sentinel, identical helper to ponder.config.ts and
-// apps/web/src/lib/collection-onchain.ts — flips on together at deploy.
-const FACTORY = getAddressOrNull(SOVEREIGN_COLLECTION_FACTORY, MAINNET_CHAIN_ID)
+// apps/web/src/lib/collection.ts — flips on together at deploy.
+const FACTORY = getAddressOrNull(SURFACE_FACTORY, MAINNET_CHAIN_ID)
 
 type Candidate = { collection: string; tokenId: string }
 
-/** `collection_tokens` (+ `collections`) exist only once the concurrent
- * Ponder discovery task has landed and run its migration. Probe rather
- * than assume, same as warm-metadata's ponderReady check — lets this
- * task come alive automatically the moment the tables appear, with no
- * follow-up deploy step of its own. */
+/** Probe the current Ponder Surface table rather than assume it exists. */
 async function collectionTablesReady(): Promise<boolean> {
   try {
     const rows = (await sql`
@@ -168,7 +161,7 @@ async function captureOne(c: Candidate): Promise<{ rpc: number; wrote: boolean }
     const uriCall = await client.call({
       to: c.collection as Address,
       data: encodeFunctionData({
-        abi: collectionAbi,
+        abi: surfaceAbi,
         functionName: "tokenURI",
         args: [BigInt(c.tokenId)],
       }),
@@ -176,7 +169,7 @@ async function captureOne(c: Candidate): Promise<{ rpc: number; wrote: boolean }
     })
     if (!uriCall.data) throw new Error("empty tokenURI return")
     tokenUri = decodeFunctionResult({
-      abi: collectionAbi,
+      abi: surfaceAbi,
       functionName: "tokenURI",
       data: uriCall.data,
     }) as string
@@ -248,11 +241,10 @@ async function captureOne(c: Candidate): Promise<{ rpc: number; wrote: boolean }
 }
 
 export async function captureCollectionMedia(): Promise<TaskResult> {
-  // Gate 1: contracts not deployed yet (zero-address sentinel).
+  // Gate 1: the factory is not configured for this deployment.
   if (!FACTORY) return { scopeCount: 0, rpcCalls: 0, rowsWritten: 0 }
 
-  // Gate 2: discovery indexing (concurrent Ponder work) hasn't landed /
-  // hasn't backfilled yet.
+  // Gate 2: discovery indexing has not created/backfilled its tables yet.
   if (!(await collectionTablesReady())) {
     return { scopeCount: 0, rpcCalls: 0, rowsWritten: 0 }
   }

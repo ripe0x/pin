@@ -1,5 +1,6 @@
 import { revalidateTag } from "next/cache"
 import { NextRequest, NextResponse } from "next/server"
+import { timingSafeEqual } from "node:crypto"
 import { sql } from "@/lib/db"
 import { pgCacheInvalidate } from "@/lib/pg-cache"
 
@@ -10,10 +11,11 @@ import { pgCacheInvalidate } from "@/lib/pg-cache"
  *
  * Two access modes:
  *
- *  1. Authenticated (secret matches `REVALIDATE_SECRET` env var) — no rate
- *     limit. Use this from CLI/automation:
+ *  1. Authenticated POST (bearer token matches `REVALIDATE_SECRET`) — no rate
+ *     limit. Use this from CLI/automation without putting secrets in URLs:
  *
- *       curl 'https://pnd.ripe.wtf/api/revalidate?secret=$REVALIDATE_SECRET'
+ *       curl -X POST 'https://pnd.ripe.wtf/api/revalidate' \
+ *         -H "Authorization: Bearer $REVALIDATE_SECRET"
  *
  *  2. Public (no secret) — rate-limited to 1 successful flush per IP per
  *     60 s. Used by the in-page Refresh pill so artists can flush without
@@ -30,7 +32,8 @@ import { pgCacheInvalidate } from "@/lib/pg-cache"
  * next page view re-resolves via RPC + IPFS. Use when a token got cached
  * as the all-null sentinel from a transient gateway failure on first view.
  *
- *   curl 'https://pnd.ripe.wtf/api/revalidate?secret=…&contract=0x…&tokenId=88'
+ *   curl -X POST 'https://pnd.ripe.wtf/api/revalidate?contract=0x…&tokenId=88' \
+ *     -H "Authorization: Bearer $REVALIDATE_SECRET"
  */
 
 const RATE_LIMIT_WINDOW_MS = 60_000
@@ -74,27 +77,37 @@ function checkRateLimit(
 }
 
 export async function GET(req: NextRequest) {
-  const secret = req.nextUrl.searchParams.get("secret")
+  return handleRevalidation(req, false)
+}
+
+export async function POST(req: NextRequest) {
   const expected = process.env.REVALIDATE_SECRET
+  if (!expected) {
+    return NextResponse.json(
+      { ok: false, error: "REVALIDATE_SECRET env var not set on server" },
+      { status: 500 },
+    )
+  }
+  const authorization = req.headers.get("authorization")
+  const provided = authorization?.startsWith("Bearer ")
+    ? authorization.slice("Bearer ".length)
+    : ""
+  if (!secretMatches(provided, expected)) {
+    return NextResponse.json(
+      { ok: false, error: "unauthorized" },
+      { status: 401 },
+    )
+  }
+  return handleRevalidation(req, true)
+}
+
+async function handleRevalidation(req: NextRequest, authenticated: boolean) {
   const artist = req.nextUrl.searchParams.get("artist")
   const contract = req.nextUrl.searchParams.get("contract")
   const tokenId = req.nextUrl.searchParams.get("tokenId")
 
-  // Authenticated path: skips the rate limit entirely.
-  if (secret) {
-    if (!expected) {
-      return NextResponse.json(
-        { ok: false, error: "REVALIDATE_SECRET env var not set on server" },
-        { status: 500 },
-      )
-    }
-    if (secret !== expected) {
-      return NextResponse.json(
-        { ok: false, error: "unauthorized" },
-        { status: 401 },
-      )
-    }
-  } else {
+  // Authenticated POSTs skip the public rate limit.
+  if (!authenticated) {
     // Public path: rate-limit by IP.
     const ip = getClientIp(req)
     const limit = checkRateLimit(ip)
@@ -116,7 +129,7 @@ export async function GET(req: NextRequest) {
   // next page view re-resolves via RPC + IPFS. Tag invalidation alone is
   // not enough — the L1 unstable_cache reads from the DB row.
   let tokenMetadataDeleted = false
-  if (secret && contract && tokenId) {
+  if (authenticated && contract && tokenId) {
     if (!/^0x[0-9a-fA-F]{40}$/.test(contract)) {
       return NextResponse.json(
         { ok: false, error: "invalid contract address" },
@@ -164,9 +177,18 @@ export async function GET(req: NextRequest) {
     pgCacheCleared: true,
     requested_for: artist ?? null,
     tokenMetadataDeleted:
-      secret && contract && tokenId
+      authenticated && contract && tokenId
         ? { contract: contract.toLowerCase(), tokenId, deleted: tokenMetadataDeleted }
         : null,
     note: "All-artist flush; per-artist tagging requires dynamic tags (not supported by unstable_cache).",
   })
+}
+
+function secretMatches(provided: string, expected: string): boolean {
+  const providedBytes = Buffer.from(provided)
+  const expectedBytes = Buffer.from(expected)
+  return (
+    providedBytes.length === expectedBytes.length &&
+    timingSafeEqual(providedBytes, expectedBytes)
+  )
 }

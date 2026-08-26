@@ -76,6 +76,7 @@
  */
 
 import { readFileSync } from "node:fs"
+import { fileURLToPath } from "node:url"
 
 import { createPublicClient, http, toFunctionSelector, toEventSelector } from "viem"
 
@@ -89,7 +90,7 @@ import {
   homageCollectionAbi as pkgHomageCollectionAbi,
   homageRendererAbi as pkgHomageRendererAbi,
 } from "@pin/abi"
-import { ARTIST_RECORD_REGISTRY, SURFACE_FACTORY, MAINNET_CHAIN_ID } from "@pin/addresses"
+import { MAINNET_CHAIN_ID } from "@pin/addresses"
 
 import {
   homageMinterAbi as webHomageMinterAbi,
@@ -106,6 +107,28 @@ const SEPOLIA_RPC = "https://ethereum-sepolia-rpc.publicnode.com"
 const MAINNET_RPC = "https://ethereum-rpc.publicnode.com"
 const SEPOLIA_CHAIN_ID = 11155111
 
+const DEPLOYMENT_MANIFESTS = {
+  sepolia: fileURLToPath(new URL("../../../contracts/deployments.sepolia.json", import.meta.url)),
+  mainnet: fileURLToPath(new URL("../../../contracts/deployments.mainnet.json", import.meta.url)),
+}
+
+function loadDeploymentManifest(network, expectedChainId) {
+  const path = DEPLOYMENT_MANIFESTS[network]
+  const manifest = JSON.parse(readFileSync(path, "utf8"))
+  if (manifest.chainId !== expectedChainId) {
+    throw new Error(`${path} declares chainId ${manifest.chainId}, expected ${expectedChainId}`)
+  }
+  for (const key of ["surfaceFactory", "sequentialImplementation", "pooledImplementation", "minterImplementation", "catalog"]) {
+    if (!/^0x[0-9a-fA-F]{40}$/.test(manifest[key] ?? "")) {
+      throw new Error(`${path} has no valid ${key} address`)
+    }
+  }
+  return manifest
+}
+
+const sepoliaDeployment = loadDeploymentManifest("sepolia", SEPOLIA_CHAIN_ID)
+const mainnetDeployment = loadDeploymentManifest("mainnet", MAINNET_CHAIN_ID)
+
 const sepoliaClient = createPublicClient({ transport: http(SEPOLIA_RPC) })
 const mainnetClient = createPublicClient({ transport: http(MAINNET_RPC) })
 
@@ -114,51 +137,66 @@ const GREP_ROOTS = ["../src"]
 
 // ── target list ──────────────────────────────────────────────────────────
 // Each target: one contract address, the chain it lives on, and every ABI
-// the web app declares and actually reads against it. Map narrowly — an
-// ABI is only checked against the addresses it is used for, not every
-// address in the list.
+// the web app declares and actually reads against it. Surface addresses are
+// read from the deployment manifests so this check follows the current
+// deployment instead of silently checking a retired rehearsal.
 
-const sepoliaTargets = [
+function surfaceTargets(network, chainId, client, deployment) {
+  return [
+    {
+      label: `SurfaceFactory (${network})`,
+      chainId,
+      client,
+      address: deployment.surfaceFactory,
+      abis: [{ source: "@pin/abi surfaceFactoryAbi", abi: surfaceFactoryAbi }],
+    },
+    {
+      label: `Catalog (${network})`,
+      chainId,
+      client,
+      address: deployment.catalog,
+      abis: [{ source: "@pin/abi catalogAbi", abi: catalogAbi }],
+    },
+    {
+      label: `Surface (sequential) implementation (${network})`,
+      chainId,
+      client,
+      address: deployment.sequentialImplementation,
+      abis: [{ source: "@pin/abi surfaceAbi", abi: surfaceAbi }],
+    },
+    {
+      label: `PooledSurface implementation (${network})`,
+      chainId,
+      client,
+      address: deployment.pooledImplementation,
+      abis: [{ source: "@pin/abi pooledSurfaceAbi", abi: pooledSurfaceAbi }],
+    },
+    {
+      label: `FixedPriceMinter implementation (${network})`,
+      chainId,
+      client,
+      address: deployment.minterImplementation,
+      abis: [{ source: "@pin/abi fixedPriceMinterAbi", abi: fixedPriceMinterAbi }],
+    },
+  ]
+}
+
+const sepoliaTargets = surfaceTargets(
+  "sepolia",
+  SEPOLIA_CHAIN_ID,
+  sepoliaClient,
+  sepoliaDeployment,
+)
+
+// Canonical production Homage deployment. The previous checker pointed at an
+// old Sepolia rehearsal while comparing it with the exact mainnet ABI, making
+// a healthy production ABI fail against the wrong bytecode.
+const homageMainnetTargets = [
   {
-    label: "SurfaceFactory (sepolia)",
-    chainId: SEPOLIA_CHAIN_ID,
-    client: sepoliaClient,
-    address: "0x0CEF49b9852546Ace7F4DbF22032b4e76A3908d2",
-    abis: [{ source: "@pin/abi surfaceFactoryAbi", abi: surfaceFactoryAbi }],
-  },
-  {
-    label: "Catalog (sepolia)",
-    chainId: SEPOLIA_CHAIN_ID,
-    client: sepoliaClient,
-    address: "0x77E0B8d90b48b0976F7f6f0AFaEd0dc4b4c38130",
-    abis: [{ source: "@pin/abi catalogAbi", abi: catalogAbi }],
-  },
-  {
-    label: "Surface (sequential) implementation (sepolia)",
-    chainId: SEPOLIA_CHAIN_ID,
-    client: sepoliaClient,
-    address: "0x912Ea34E54Ae65ca46D1bACfF294A104Eea78475",
-    abis: [{ source: "@pin/abi surfaceAbi", abi: surfaceAbi }],
-  },
-  {
-    label: "PooledSurface implementation (sepolia)",
-    chainId: SEPOLIA_CHAIN_ID,
-    client: sepoliaClient,
-    address: "0x45306a18f0eAC100107c428A4Da87EcACabE5D0D",
-    abis: [{ source: "@pin/abi pooledSurfaceAbi", abi: pooledSurfaceAbi }],
-  },
-  {
-    label: "FixedPriceMinter implementation (sepolia)",
-    chainId: SEPOLIA_CHAIN_ID,
-    client: sepoliaClient,
-    address: "0xa49E9e0B806519E65d0BC7A52C5DbC7f2f458763",
-    abis: [{ source: "@pin/abi fixedPriceMinterAbi", abi: fixedPriceMinterAbi }],
-  },
-  {
-    label: "Homage collection (sepolia, EIP-1167 clone of PooledSurface)",
-    chainId: SEPOLIA_CHAIN_ID,
-    client: sepoliaClient,
-    address: "0x2A7D93ed950D3F2381E167926463C6A341939e82",
+    label: "Homage collection (mainnet, EIP-1167 clone of PooledSurface)",
+    chainId: MAINNET_CHAIN_ID,
+    client: mainnetClient,
+    address: "0xd938fF57d2c7111880A4ea5c8e6A92796C72a76e",
     resolveClone: true,
     abis: [
       { source: "@pin/abi pooledSurfaceAbi", abi: pooledSurfaceAbi },
@@ -169,10 +207,10 @@ const sepoliaTargets = [
     artifactEnvVar: "HOMAGE_COLLECTION_ARTIFACT_PATH",
   },
   {
-    label: "HomageMinter (sepolia)",
-    chainId: SEPOLIA_CHAIN_ID,
-    client: sepoliaClient,
-    address: "0xc9f3c81556fcb4cf70a37d1a7248d6ec68256b7c",
+    label: "HomageMinter (mainnet)",
+    chainId: MAINNET_CHAIN_ID,
+    client: mainnetClient,
+    address: "0xe516668f7CE220d7418eB0e9D24AF89B23Be59F8",
     abis: [
       { source: "@pin/abi homageMinterAbi", abi: pkgHomageMinterAbi },
       { source: "apps/web/src/lib/homage/contracts.ts homageMinterAbi", abi: webHomageMinterAbi },
@@ -181,10 +219,10 @@ const sepoliaTargets = [
     artifactEnvVar: "HOMAGE_MINTER_ARTIFACT_PATH",
   },
   {
-    label: "HomageRendererSovereign (sepolia)",
-    chainId: SEPOLIA_CHAIN_ID,
-    client: sepoliaClient,
-    address: "0xb842131d085bcf6caa1d51157897030fc92a04b1",
+    label: "HomageRendererSovereign (mainnet)",
+    chainId: MAINNET_CHAIN_ID,
+    client: mainnetClient,
+    address: "0x60F23ed37C2dbE47A9d37a9ecD220F7F333044f1",
     abis: [
       { source: "@pin/abi homageRendererAbi", abi: pkgHomageRendererAbi },
       { source: "apps/web/src/lib/homage/contracts.ts homageRendererViewAbi", abi: webHomageRendererViewAbi },
@@ -192,24 +230,11 @@ const sepoliaTargets = [
     artifactPath: process.env.HOMAGE_RENDERER_ARTIFACT_PATH,
     artifactEnvVar: "HOMAGE_RENDERER_ARTIFACT_PATH",
   },
-  {
-    label: "HomageFeeSplitter (sepolia)",
-    chainId: SEPOLIA_CHAIN_ID,
-    client: sepoliaClient,
-    address: "0xc737453ac09c8c9812ecce1595afd2884992072e",
-    abis: [],
-    note: "No ABI declared against this address anywhere in apps/web/src — nothing to check.",
-  },
 ]
 
 const mainnetTargets = [
-  {
-    label: "Catalog (mainnet)",
-    chainId: MAINNET_CHAIN_ID,
-    client: mainnetClient,
-    address: ARTIST_RECORD_REGISTRY[MAINNET_CHAIN_ID],
-    abis: [{ source: "@pin/abi catalogAbi", abi: catalogAbi }],
-  },
+  ...surfaceTargets("mainnet", MAINNET_CHAIN_ID, mainnetClient, mainnetDeployment),
+  ...homageMainnetTargets,
   {
     label: "CryptoPunksMarket (mainnet)",
     chainId: MAINNET_CHAIN_ID,
@@ -246,14 +271,6 @@ const mainnetTargets = [
     abis: [{ source: "apps/web/src/lib/homage/contracts.ts v4QuoterAbi", abi: webV4QuoterAbi }],
   },
 ]
-
-// $111 token and Surface system contracts are skipped on mainnet: $111 is
-// checked only via a plain ERC-20 `parseAbi` ad hoc in a couple of call
-// sites (no drift risk worth automating here), and the Surface system is
-// NOT deployed to mainnet yet (SURFACE_FACTORY is still the zero address).
-const surfaceFactoryMainnet = SURFACE_FACTORY[MAINNET_CHAIN_ID]
-const surfaceSystemSkippedOnMainnet =
-  !surfaceFactoryMainnet || surfaceFactoryMainnet === "0x0000000000000000000000000000000000000000"
 
 // ── EIP-1167 minimal-proxy detection ────────────────────────────────────
 
@@ -493,11 +510,7 @@ async function main() {
   console.log("ABI vs onchain bytecode check")
   console.log(`sepolia RPC: ${SEPOLIA_RPC}`)
   console.log(`mainnet RPC: ${MAINNET_RPC}`)
-  console.log(
-    `Surface system on mainnet: ${
-      surfaceSystemSkippedOnMainnet ? "not deployed (SURFACE_FACTORY is zero) — skipped" : "deployed, checked"
-    }`,
-  )
+  console.log("Surface targets: loaded from contracts/deployments.{sepolia,mainnet}.json")
   console.log("")
 
   let anyAbsent = false

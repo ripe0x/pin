@@ -87,14 +87,12 @@ const tasks: Task[] = [
   // CID is probed it stays probed for RETRY_AFTER_DAYS).
   { name: "probe-cid-availability",    intervalMs: 10 * MIN, fn: probeCidAvailability },
   { name: "ponder-drift-check",        intervalMs: 60 * MIN, fn: ponderDriftCheck },
-  // PND Surface System media capture (SVG rasterize only, v1). Inert
-  // today: SOVEREIGN_COLLECTION_FACTORY is still the zero-address
-  // sentinel (no mainnet deploy) AND the concurrent Ponder discovery
-  // tables (collections/collection_tokens) don't exist yet — both gates
-  // checked inside the task, same shape as the other dependsOnPonder
-  // tasks. Generous interval: capture is not time-sensitive, and each
+  // PND Surface System media capture (SVG rasterize only, v1). The task
+  // reads Ponder's collections/collection_tokens tables and keeps its own
+  // schema/deploy gates; scheduler gating avoids starting it before Ponder
+  // is ready. Generous interval: capture is not time-sensitive, and each
   // run is bounded by CAPTURE_BATCH_SIZE.
-  { name: "capture-collection-media", intervalMs: 10 * MIN, fn: captureCollectionMedia },
+  { name: "capture-collection-media", intervalMs: 10 * MIN, fn: captureCollectionMedia, dependsOnPonder: true },
 ]
 
 const runState = new Map<TaskName, { running: boolean; lastRun: Date | null }>()

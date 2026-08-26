@@ -325,6 +325,12 @@ contract SovereignAuctionHouseV2 is
         Auction memory a = auctions[auctionId];
         if (a.firstBidTime == 0) revert AuctionHasNoBids();
         if (block.timestamp < a.endTime) revert AuctionNotEnded();
+        // EIP-7702 can add code after an EOA placed its bid. A receiver that
+        // appears after bidding must not gain a free refund option. Leave the
+        // auction live until the bidder restores an EOA account state.
+        if (a.standard == TokenStandard.ERC1155 && a.bidder.code.length != 0) {
+            revert ContractBidderNotSupported();
+        }
 
         if (a.standard == TokenStandard.ERC721) {
             try this.deliverERC721(a.tokenContract, a.tokenId, a.bidder) {
