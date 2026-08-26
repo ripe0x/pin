@@ -65,6 +65,13 @@ jobs:
       - name: Set up Foundry
         uses: foundry-rs/foundry-toolchain@v1
 
+      - name: Install contract dependencies
+        run: |
+          forge install OpenZeppelin/openzeppelin-contracts@v5.1.0 --no-git
+          forge install OpenZeppelin/openzeppelin-contracts-upgradeable@v5.1.0 --no-git
+          forge install foundry-rs/forge-std@v1.16.1 --no-git
+          forge install Vectorized/solady@v0.1.26 --no-git
+
       - name: Run contract tests
         run: forge test
 
@@ -89,6 +96,14 @@ jobs:
 
       - name: Set up Foundry
         uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install contract dependencies
+        working-directory: contracts
+        run: |
+          forge install OpenZeppelin/openzeppelin-contracts@v5.1.0 --no-git
+          forge install OpenZeppelin/openzeppelin-contracts-upgradeable@v5.1.0 --no-git
+          forge install foundry-rs/forge-std@v1.16.1 --no-git
+          forge install Vectorized/solady@v0.1.26 --no-git
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
