@@ -25,8 +25,7 @@
  * this descriptor pre-rebuild (a sample/preview render, not the collection's
  * own tokenURI) and is unaffected by the split.
  *
- * Ported (not reinvented) from the Homage repo working tree
- * (/Users/dd/CascadeProjects/homage to the punk, sovereign-rebuild branch):
+ * Ported (not reinvented) from `ripe0x/permanence`'s sovereign-rebuild branch:
  * quote math from `web/lib/homage.ts` (the pure scaling lives in
  * ../homage-quote-math.ts), ownership checks from `web/lib/useHomageMint.ts`,
  * proofs from `web/lib/allowlist.ts`. The merkle artifact is vendored

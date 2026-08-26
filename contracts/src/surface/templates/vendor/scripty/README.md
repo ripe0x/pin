@@ -2,7 +2,6 @@
 
 These files are vendored (copied, not a Foundry lib dependency) from:
 
-- Source repo (local path used for copy): `/Users/dd/Sites/scripty.sol`
 - Upstream: https://github.com/intartnft/scripty.sol
 - Commit hash: `83b850dff16ff6c82a02df601db5021a5688cc43`
 
