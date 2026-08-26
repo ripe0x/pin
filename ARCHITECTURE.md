@@ -45,7 +45,7 @@ the **`public` schema** — different tables, never touched by Ponder.
 - Runs on an internal scheduler (`setInterval`), one task per scan type.
 - Every per-artist task is gated on `known_artists` — the spend ceiling.
 - RPC: multi-provider fallback (`apps/worker/src/rpc.ts`):
-  publicnode → llamarpc → ankr → drpc → Alchemy (last-resort backstop).
+  publicnode → tenderly → llamarpc → drpc → Alchemy (last-resort backstop).
 
 ### `known_artists` — bridges both
 
@@ -121,7 +121,7 @@ deliberately:
 | Program | Primary | Fallbacks | Notes |
 |---|---|---|---|
 | Ponder | drpc free | (Ponder's own retry) | Backfill of high-volume contracts is the cost driver |
-| Worker | publicnode | llamarpc → ankr → drpc → Alchemy | Alchemy only hit when free providers fail; bounded by known_artists × cadence |
+| Worker | publicnode | tenderly → llamarpc → drpc → Alchemy | Alchemy only hit when free providers fail; bounded by known_artists × cadence |
 | Web | n/a | — | **Never reads chain for storable data.** Only `lib/onchain.ts` (6 fns) for genuinely-live state (active bids, current owner), 30–60s pgCache |
 
 Backfills are the expensive part. Steady-state (head-following +

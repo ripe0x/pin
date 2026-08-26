@@ -5,7 +5,7 @@
 > docs/pnd-surface-system.md and docs/pnd-surface-contracts-plan.md.
 > This document describes the pre-rework ERC721A design; payment-split,
 > hook, and graph concepts carry over, token-layer specifics do not.
-> Contracts now live in contracts/src/collection/ (src/editions/ was
+> Contracts now live in contracts/src/surface/ (src/editions/ was
 > removed).
 
 > Entry point for the PND Editions feature. Start here, then follow the
@@ -65,8 +65,9 @@ payments: they accrue per-address and are claimed via `withdraw(account)`.
 | Contracts + tests | Done + hardened. 67 Foundry tests pass (core, fuzz, hooks, upgrade, security regressions, continuity). |
 | Web create + mint UI | Done. Typechecks, production build green, **e2e passes in a real browser**. |
 | Local dev + e2e harness | Done. `pnpm dev:editions` and `pnpm --filter @pin/web test:e2e`. |
-| Mainnet deploy | Not done. No factory address yet. |
-| Indexer/worker discovery | Deploy-gated. ABI is ready; wiring documented in the runbook. |
+| Surface core mainnet deploy | Done. `SurfaceFactory` is `0xdB81d3F33EF3D84685486916E0d372E247558094`; check its `paused()` gate before creating a collection. |
+| DefaultRenderer / RenderAssets | Not deployed. They are optional modules; collections bring their own renderer until those singletons are deployed. |
+| Indexer/worker discovery | Still deploy-gated for Surface collection rows; wiring is documented in the Surface runbook. |
 
 ## Documentation index
 
@@ -90,7 +91,7 @@ payments: they accrue per-address and are claimed via `withdraw(account)`.
 ### Contracts (`contracts/`)
 
 ```
-src/editions/
+src/surface/
   PNDEditionsTypes.sol        Shared enums + structs (Ref, EditionConfig,
                               MintBatch, MintMark, Edge, Path).
   PNDEditions.sol             The edition: ERC721A, mint + fixed Surface Share,
@@ -105,7 +106,7 @@ src/editions/
                               Allowlist (Merkle), HoldsEdition (continuity gate).
   interfaces/                 IPNDEditions, IPNDRenderer (+IPNDEditionsView),
                               IPNDMintHook.
-script/DeployEditions.s.sol   Deploy renderer + impl + factory + hooks, asserts wiring.
+script/DeploySurfaceSystem.s.sol  Deploy the Surface implementations + factory.
 test/editions/                67 tests (core, fuzz, hooks, upgrade, security, continuity).
 ```
 
@@ -181,16 +182,11 @@ node scripts/emit-editions-abi.mjs       # after a contract change
 
 ## Deploy
 
-```bash
-cd contracts
-forge script script/DeployEditions.s.sol \
-  --rpc-url $MAINNET_RPC_URL --private-key $DEPLOYER_PK \
-  --broadcast --verify --etherscan-api-key $ETHERSCAN_API_KEY
-```
-
-Then paste the factory address into `packages/addresses/src/index.ts`
-(and set `NEXT_PUBLIC_PND_SURFACE_ADDRESS` to PND's treasury so PND collects
-the surface share on PND-hosted mints). Postgres-backed discovery is the
+The pre-rework Editions deployment script is retired. The Surface core is
+already deployed to Ethereum mainnet; use
+[`docs/pnd-surface-prelaunch.md`](./pnd-surface-prelaunch.md) and the current
+[Surface deployment guide](./reference/surface/guides/deploy-a-collection.md)
+for deployment and collection creation. Postgres-backed discovery remains the
 deploy-gated work in the [integration runbook](./pnd-editions-integration.md).
 
 ## Verification status

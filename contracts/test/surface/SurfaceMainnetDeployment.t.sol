@@ -28,7 +28,16 @@ contract SurfaceMainnetDeploymentTest is Test {
     address constant CATALOG = 0x467a9c39e03C595EC3075D856f19C7386b6b915d;
 
     function setUp() public {
-        string memory rpc = vm.envOr("MAINNET_RPC_URL", string("https://ethereum-rpc.publicnode.com"));
+        if (!vm.envOr("RUN_MAINNET_FORK_TESTS", false)) {
+            emit log("skipping mainnet deployment drift test: set RUN_MAINNET_FORK_TESTS=true to run");
+            vm.skip(true);
+            return;
+        }
+        string memory rpc = vm.envOr("MAINNET_RPC_URL", string(""));
+        if (bytes(rpc).length == 0) {
+            revert("MAINNET_RPC_URL required when RUN_MAINNET_FORK_TESTS=true");
+        }
+        // A configured but unavailable endpoint is a real drift-check failure.
         vm.createSelectFork(rpc);
     }
 

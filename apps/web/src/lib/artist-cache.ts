@@ -4,7 +4,7 @@
  * Both layers use a 24h TTL — long enough to absorb repeat traffic, short
  * enough that fresh work shows up "by the next day" without intervention.
  * For artists who want their new mint to appear immediately, hit the manual
- * flush endpoint at `/api/revalidate?secret=…` after minting (the tags
+ * authenticated `POST /api/revalidate` endpoint after minting (the tags
  * below are what that endpoint targets).
  *
  * Cache key shape:
