@@ -79,7 +79,7 @@ slot architecture. Each is a small singleton + tests + a studio surface.
 
 ## Housekeeping
 
-- [ ] Remove the temporary `/Users/dd/foundation-collection` worktree
+- [ ] Remove the temporary `foundation-collection` worktree
   once PR #134 (`collection-web-v1` → `main`) merges.
 - [ ] After #134 merges, sweep the collection docs' status banners
   (system doc, this file) — several say "pre-deploy" and should say
