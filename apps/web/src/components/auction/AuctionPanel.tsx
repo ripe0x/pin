@@ -105,46 +105,23 @@ function formatUsd(wei: bigint, ethPriceUsd: number): string {
 }
 
 /**
- * On successful write tx: invalidate the cached `getAuctionForToken`
- * server-side (so the next read fetches fresh chain state instead of
- * waiting out the 30s TTL), then call `router.refresh()` to re-fetch
- * the server-rendered auction state in place — the panel re-renders
- * with the new bid / settled / cancelled state automatically. No manual
- * page reload needed.
+ * On a confirmed write tx, call `router.refresh()` to re-fetch the
+ * server-rendered auction state in place — the panel re-renders with
+ * the new high-bid state automatically; the 30s auction-state cache
+ * TTL covers freshness for other viewers. (This used to also POST
+ * /api/auction/revalidate, but that route was removed in the v2
+ * rebuild — the calls 404'd silently.)
  *
- * Network failures on the revalidate POST are swallowed: the
- * `router.refresh()` will still fire and the next read will hit a
- * still-warm cache (worst case: 30s of stale state until natural TTL).
+ * Only the bid path uses this: settle / cancel write paths skip the
+ * auto-refresh because it would unmount the panel — including the
+ * success banner — before the user can read it. They call
+ * `router.refresh()` when the user dismisses the banner instead.
  */
-function useRevalidateAuctionOnSuccess(
-  isSuccess: boolean,
-  auction: AuctionState,
-  options?: {
-    /**
-     * Whether to call `router.refresh()` immediately after the cache
-     * flush. Default true (the bid path wants the panel to re-render
-     * with the new high-bid state in place). Pass `false` for settle /
-     * cancel write paths where a refresh would unmount the panel —
-     * including the success banner — before the user can read it.
-     * In that case the caller is responsible for calling `router.refresh()`
-     * (or a window reload) when the user dismisses the banner.
-     */
-    autoRefresh?: boolean
-  },
-) {
+function useRefreshAuctionOnSuccess(isSuccess: boolean) {
   const router = useRouter()
-  const autoRefresh = options?.autoRefresh ?? true
   useEffect(() => {
-    if (!isSuccess) return
-    const url = `/api/auction/revalidate?contract=${encodeURIComponent(
-      auction.nftContract,
-    )}&tokenId=${encodeURIComponent(auction.tokenId)}`
-    fetch(url, { method: "POST" })
-      .catch(() => {})
-      .finally(() => {
-        if (autoRefresh) router.refresh()
-      })
-  }, [isSuccess, auction.nftContract, auction.tokenId, router, autoRefresh])
+    if (isSuccess) router.refresh()
+  }, [isSuccess, router])
 }
 
 function truncateAddress(addr: string): string {
@@ -539,7 +516,7 @@ function BidSection({
     hash: txHash,
   })
 
-  useRevalidateAuctionOnSuccess(isSuccess, auction)
+  useRefreshAuctionOnSuccess(isSuccess)
   // After a confirmed bid, clear the input so it doesn't render the
   // user's now-stale bid amount alongside an "already highest bidder"
   // disabled button (the new minimum bid is current + BID_INCREASE,
@@ -741,12 +718,11 @@ function SettleSection({
     hash: txHash,
   })
 
-  // Settle removes the auction entirely; an auto-refresh would unmount
-  // the panel (and the success banner) before the user can read it.
-  // Skip auto-refresh and let the banner's dismiss button trigger the
-  // reload manually.
+  // Settle removes the auction entirely; refreshing on success would
+  // unmount the panel (and the success banner) before the user can
+  // read it. The banner's dismiss button triggers router.refresh()
+  // instead.
   const router = useRouter()
-  useRevalidateAuctionOnSuccess(isSuccess, auction, { autoRefresh: false })
   // Notify the parent so the panel header flips to "settled" state.
   useEffect(() => {
     if (isSuccess) onSettled?.()
@@ -898,14 +874,11 @@ function SellerActions({
   const { isLoading: updateMining, isSuccess: updateSuccess } =
     useWaitForTransactionReceipt({ hash: updateHash })
 
-  // Both seller actions invalidate the cached auction state. Cancel
-  // deletes the auction (panel will unmount on refresh — defer); update
-  // changes the surfaced "Reserve" number (panel survives so safe to
-  // auto-refresh, but for consistency we treat both as user-dismissed).
+  // Cancel deletes the auction (panel would unmount on a refresh);
+  // update changes the surfaced "Reserve" number. Both defer
+  // router.refresh() to the success banner's dismiss button so the
+  // user can read the confirmation first.
   const sellerRouter = useRouter()
-  useRevalidateAuctionOnSuccess(cancelSuccess || updateSuccess, auction, {
-    autoRefresh: false,
-  })
   // Tell the parent panel to flip its header to "Auction cancelled"
   // while the success banner is still visible. (Update doesn't
   // affect the lifecycle phase — the auction is still live with a
