@@ -32,10 +32,17 @@ export const pndAuctions = onchainTable(
     bidder: t.hex().notNull(),
     firstBidTime: t.bigint().notNull(),
     endTime: t.bigint().notNull(),
+    // "active" | "settled" | "cancelled", plus V2-only: "escrowed"
+    // (AuctionEndedToEscrow; flips to "settled" on EscrowedLotDelivered)
+    // and "failed" (AuctionDeliveryFailed via mutual-consent unwind).
     status: t.text().notNull(),
     winner: t.hex(),
     sellerProceeds: t.bigint(),
     protocolFee: t.bigint(),
+    // House generation: 1 = SovereignAuctionHouse, 2 = SovereignAuctionHouseV2.
+    version: t.integer().notNull(),
+    // ERC1155 lot size (V2 only). 1 for ERC721 auctions.
+    quantity: t.bigint().notNull(),
     createdAtBlock: t.bigint().notNull(),
     createdAtTime: t.bigint().notNull(),
     settledAtBlock: t.bigint(),
@@ -56,6 +63,8 @@ export const pndHouses = onchainTable(
     owner: t.hex().notNull(),
     feeRecipient: t.hex().notNull(),
     protocolFeeBps: t.integer().notNull(),
+    // House generation: 1 = SovereignAuctionHouse, 2 = SovereignAuctionHouseV2.
+    version: t.integer().notNull(),
     createdAtBlock: t.bigint().notNull(),
     createdAtTime: t.bigint().notNull(),
     createdTxHash: t.hex(),

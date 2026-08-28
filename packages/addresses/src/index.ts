@@ -98,6 +98,15 @@ export const SOVEREIGN_AUCTION_HOUSE_FACTORY: Record<number, Address> = {
   [BASE_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
 }
 
+// SovereignAuctionHouseV2Factory (V2 houses: verified delivery with
+// retryable failure, ERC1155 lots, escrowed-delivery settlement,
+// mutual-consent unwind). NOT DEPLOYED YET — zero address keeps every
+// V2-gated feature (upgrade flow, V2 house resolution) folded off via
+// getAddressOrNull until the mainnet deploy lands here.
+export const SOVEREIGN_AUCTION_HOUSE_V2_FACTORY: Record<number, Address> = {
+  [MAINNET_CHAIN_ID]: "0x0000000000000000000000000000000000000000",
+}
+
 // SUPERSEDED — PND Editions (PNDEditionsFactory + reference mint hooks) is
 // retired in favor of the Collection system (see
 // SURFACE_FACTORY + ATTRIBUTION below). The editions contracts

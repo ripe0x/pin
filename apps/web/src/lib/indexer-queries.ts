@@ -70,6 +70,66 @@ async function withTimeout<T>(
   }
 }
 
+export type HouseUpgradeListing = {
+  auctionId: string
+  tokenContract: string
+  tokenId: string
+  reservePrice: string
+  duration: string
+  hasBid: boolean
+}
+
+/**
+ * Active listings on one sovereign house, for the V1 to V2 upgrade flow.
+ * `hasBid: false` rows are movable (cancel on V1, relist on V2);
+ * `hasBid: true` rows must settle on the V1 house first. bigint columns
+ * come back as decimal strings so the API route can JSON them untouched.
+ * 2s timeout: this backs an explicit user action on the upgrade page,
+ * not a primary render.
+ */
+export async function getHouseUpgradeListings(
+  house: string,
+): Promise<HouseUpgradeListing[] | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+
+  return withTimeout(async () => {
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+      /[^a-zA-Z0-9_]/g,
+      "",
+    )
+    const rows = (await db.unsafe(
+      `SELECT auction_id::text AS auction_id,
+              lower(token_contract) AS token_contract,
+              token_id::text AS token_id,
+              reserve_price::text AS reserve_price,
+              duration::text AS duration,
+              first_bid_time::text AS first_bid_time
+       FROM ${schema}.pnd_auctions
+       WHERE lower(house) = $1
+         AND status = 'active'
+       ORDER BY auction_id ASC`,
+      [house.toLowerCase()],
+    )) as Array<{
+      auction_id: string
+      token_contract: string
+      token_id: string
+      reserve_price: string
+      duration: string
+      first_bid_time: string
+    }>
+
+    return rows.map((r) => ({
+      auctionId: r.auction_id,
+      tokenContract: r.token_contract,
+      tokenId: r.token_id,
+      reservePrice: r.reserve_price,
+      duration: r.duration,
+      hasBid: r.first_bid_time !== "0",
+    }))
+  }, 2_000)
+}
+
 /**
  * Number of active PND auctions (status = 'active') for a given seller.
  * Maps directly to `getActiveAuctionCount` in `apps/web/src/lib/auctions.ts`.

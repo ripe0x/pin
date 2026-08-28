@@ -30,10 +30,15 @@ export async function ponderDriftCheck(): Promise<TaskResult> {
   if (!exists[0]?.ready) return { scopeCount: 0, rpcCalls: 0, rowsWritten: 0 }
 
   // Detect PND houses present in pnd_houses but not in factory_addresses.
+  // version = 1 only: PND_FACTORY_ID is the V1 factory's watch set, and
+  // forwarding a V2 house into it would subscribe the wrong ABI. When the
+  // V2 factory ships, add a second pass keyed on its own factory_id
+  // (observable in ponder_sync.factory_addresses after first sync).
   const missing = (await sql.unsafe(
     `SELECT lower(p.house) AS address
      FROM ${INDEXER_SCHEMA}.pnd_houses p
-     WHERE NOT EXISTS (
+     WHERE p.version = 1
+       AND NOT EXISTS (
        SELECT 1 FROM ponder_sync.factory_addresses fa
        WHERE fa.chain_id = $1 AND fa.factory_id = $2
          AND lower(fa.address) = lower(p.house)
