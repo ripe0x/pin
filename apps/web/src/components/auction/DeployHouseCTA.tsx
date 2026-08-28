@@ -1,17 +1,16 @@
 "use client"
 
-import { useEffect } from "react"
 import Link from "next/link"
-import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi"
+import { useAccount } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
-import { sovereignAuctionHouseFactoryAbi } from "@pin/abi"
-import { useArtistHouse } from "./useArtistHouse"
+import { useDeployHouse } from "./useDeployHouse"
 import { AddressLink, TxLink } from "./tx"
 
 /**
  * One-time per-artist CTA: deploys the artist's auction house clone via the
- * factory. Renders nothing if the connected wallet is not the artist or
- * if the factory isn't deployed yet. After a successful deploy it shows a
+ * factory (V2 when its address is live, V1 until then — useDeployHouse owns
+ * that pick). Renders nothing if the connected wallet is not the artist or
+ * if no factory is deployed yet. After a successful deploy it shows a
  * confirmation card with the new contract address + tx link until the user
  * acknowledges it.
  */
@@ -20,18 +19,16 @@ export function DeployHouseCTA({ artistAddress }: { artistAddress: string }) {
   const isArtist =
     !!connected && connected.toLowerCase() === artistAddress.toLowerCase()
 
-  const { factoryAddress, houseAddress, refetch } = useArtistHouse(artistAddress)
-
-  const { writeContract, data: txHash, isPending, error } = useWriteContract()
-  const { isLoading: isMining, isSuccess } = useWaitForTransactionReceipt({
-    hash: txHash,
-  })
-
-  // Refetch the house address as soon as the deploy tx confirms so the success
-  // card can show the new contract address.
-  useEffect(() => {
-    if (isSuccess) refetch()
-  }, [isSuccess, refetch])
+  const {
+    factoryAddress,
+    houseAddress,
+    deploy,
+    txHash,
+    isPending,
+    isMining,
+    isSuccess,
+    error,
+  } = useDeployHouse(artistAddress)
 
   if (!isArtist) return null
   if (!factoryAddress) return null
@@ -71,15 +68,10 @@ export function DeployHouseCTA({ artistAddress }: { artistAddress: string }) {
   if (houseAddress) return null
 
   function handleDeploy() {
-    if (!factoryAddress || !connected) return
+    if (!connected) return
     // createAuctionHouse takes no args — the factory uses msg.sender as the
     // artist, so a stranger can't squat someone else's slot.
-    writeContract({
-      address: factoryAddress,
-      abi: sovereignAuctionHouseFactoryAbi,
-      functionName: "createAuctionHouse",
-      args: [],
-    })
+    deploy()
   }
 
   if (!connected) {

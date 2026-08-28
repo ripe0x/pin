@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { formatEther } from "viem"
+import { formatEther, type Abi } from "viem"
 import {
   useAccount,
   useBalance,
@@ -14,7 +14,13 @@ import {
   useWaitForTransactionReceipt,
 } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
-import { nftMarketAbi, sovereignAuctionHouseAbi, superrareBazaarAbi, transientAuctionHouseAbi } from "@pin/abi"
+import {
+  nftMarketAbi,
+  sovereignAuctionHouseAbi,
+  sovereignAuctionHouseV2Abi,
+  superrareBazaarAbi,
+  transientAuctionHouseAbi,
+} from "@pin/abi"
 import {
   PREFERRED_CHAIN,
   PREFERRED_CHAIN_LABEL,
@@ -32,6 +38,16 @@ import type {
 } from "@/lib/auctions"
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
+
+// V2 houses share every V1 write signature used here (createBid,
+// endAuction, cancelAuction, setAuctionReservePrice); passing the
+// generation's own ABI makes V2 custom errors (ContractBidderNotSupported
+// etc.) decode in formatWriteError.
+function sovereignAbiFor(auction: AuctionState): Abi {
+  return (
+    auction.houseVersion === 2 ? sovereignAuctionHouseV2Abi : sovereignAuctionHouseAbi
+  ) as Abi
+}
 
 // SuperRare Bazaar's MarketplaceSettings.getMarketplaceFeePercentage()
 // has returned 3 (i.e. 3%) for years. The fee is a buyer's premium —
@@ -609,7 +625,7 @@ function BidSection({
     } else {
       writeContract({
         address: auction.marketAddress,
-        abi: sovereignAuctionHouseAbi,
+        abi: sovereignAbiFor(auction),
         functionName: "createBid",
         args: [BigInt(auction.auctionId)],
         value: bid.wei,
@@ -685,6 +701,14 @@ function BidSection({
           </span>
         )}
       </div>
+
+      {auction.tokenStandard === "erc1155" && (
+        <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+          {auction.quantity > 1n ? `Lot of ${auction.quantity.toString()}. ` : ""}
+          Bids only from regular wallet addresses. Smart contract wallets can't
+          bid on this lot.
+        </p>
+      )}
 
       <button
         onClick={handleBid}
@@ -779,7 +803,7 @@ function SettleSection({
     } else {
       writeContract({
         address: auction.marketAddress,
-        abi: sovereignAuctionHouseAbi,
+        abi: sovereignAbiFor(auction),
         functionName: "endAuction",
         args: [BigInt(auction.auctionId)],
       })
@@ -975,7 +999,7 @@ function SellerActions({
     } else {
       writeCancel({
         address: auction.marketAddress,
-        abi: sovereignAuctionHouseAbi,
+        abi: sovereignAbiFor(auction),
         functionName: "cancelAuction",
         args: [BigInt(auction.auctionId)],
       })
@@ -994,7 +1018,7 @@ function SellerActions({
     } else {
       writeUpdate({
         address: auction.marketAddress,
-        abi: sovereignAuctionHouseAbi,
+        abi: sovereignAbiFor(auction),
         functionName: "setAuctionReservePrice",
         args: [BigInt(auction.auctionId), reserve.wei],
       })

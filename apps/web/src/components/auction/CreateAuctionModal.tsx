@@ -19,15 +19,21 @@ import { TxLink } from "./tx"
  */
 export function CreateAuctionModal({
   houseAddress,
+  houseVersion = 1,
   nftContract,
   tokenId,
+  tokenStandard = "erc721",
+  maxQuantity,
   tokenTitle,
   onClose,
   onSuccess,
 }: {
   houseAddress: `0x${string}`
+  houseVersion?: 1 | 2
   nftContract: `0x${string}`
   tokenId: string
+  tokenStandard?: "erc721" | "erc1155"
+  maxQuantity?: bigint
   tokenTitle?: string
   onClose: () => void
   onSuccess?: () => void
@@ -82,8 +88,11 @@ export function CreateAuctionModal({
           <div className="px-5 py-5">
             <AuctionTermsForm
               houseAddress={houseAddress}
+              houseVersion={houseVersion}
               nftContract={nftContract}
               tokenId={tokenId}
+              tokenStandard={tokenStandard}
+              maxQuantity={maxQuantity}
               onSuccess={handleSuccess}
             />
           </div>

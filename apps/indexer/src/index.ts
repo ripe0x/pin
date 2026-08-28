@@ -71,6 +71,7 @@ ponder.on("SovereignAuctionHouse:AuctionCreated", async ({ event, context }) => 
     endTime: 0n,
     status: "active",
     version: 1,
+    standard: "erc721",
     quantity: 1n,
     createdAtBlock: event.block.number,
     createdAtTime: event.block.timestamp,

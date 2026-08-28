@@ -74,6 +74,27 @@ const HOOK_REVERT_COPY: Record<string, string> = {
 }
 
 /**
+ * Sovereign auction house custom errors (V1 + V2). Matched the same way
+ * as the maps above. ContractBidderNotSupported is V2's ERC1155 bid gate:
+ * only code-free EOAs may bid on 1155 lots.
+ */
+const SOVEREIGN_ERROR_COPY: Record<string, string> = {
+  ContractBidderNotSupported:
+    "This lot only accepts bids from regular wallet addresses. Smart contract and delegated wallets can't bid here.",
+  BidBelowReserve: "Bid is below the reserve price.",
+  BidBelowMinimum: "Bid is below the minimum raise over the current bid.",
+  BidMustBePositive: "Bid amount must be greater than zero.",
+  AuctionExpired: "This auction has already ended.",
+  AuctionNotEnded: "The auction timer has not run out yet.",
+  AuctionHasNoBids: "No bids landed, so there is nothing to settle.",
+  AuctionAlreadyStarted:
+    "A bid has landed, so this listing can no longer be changed or cancelled.",
+  DeliveryFailed:
+    "Token delivery failed, so nothing changed. The auction stays open; try again with more gas.",
+  EscrowedDeliveryDoesNotExist: "Nothing is held in escrow for this auction.",
+}
+
+/**
  * Format a wagmi/viem write error for display. viem attaches the actual revert
  * reason on the error's `cause.cause...` chain (and a friendlier `shortMessage`
  * on the top-level error). The default Error.message is a multi-line block
@@ -115,7 +136,11 @@ export function formatWriteError(err: unknown, action: string): string {
     if (Array.isArray(n.metaMessages)) seen.push(...n.metaMessages)
     node = n.cause
   }
-  for (const [name, copy] of Object.entries({ ...COLLECTION_ERROR_COPY, ...HOOK_REVERT_COPY })) {
+  for (const [name, copy] of Object.entries({
+    ...COLLECTION_ERROR_COPY,
+    ...HOOK_REVERT_COPY,
+    ...SOVEREIGN_ERROR_COPY,
+  })) {
     const nameBoundary = new RegExp(`\\b${name}\\b`)
     if (seen.some((s) => s === name || nameBoundary.test(s))) return copy
   }

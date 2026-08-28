@@ -41,6 +41,9 @@ export const pndAuctions = onchainTable(
     protocolFee: t.bigint(),
     // House generation: 1 = SovereignAuctionHouse, 2 = SovereignAuctionHouseV2.
     version: t.integer().notNull(),
+    // "erc721" | "erc1155". A quantity-1 ERC1155 lot is otherwise
+    // indistinguishable from an ERC721 auction.
+    standard: t.text().notNull(),
     // ERC1155 lot size (V2 only). 1 for ERC721 auctions.
     quantity: t.bigint().notNull(),
     createdAtBlock: t.bigint().notNull(),

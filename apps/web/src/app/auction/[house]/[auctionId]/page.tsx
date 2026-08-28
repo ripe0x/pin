@@ -4,6 +4,7 @@ import { cache } from "react"
 import Link from "next/link"
 import { ipfsToHttp } from "@pin/shared"
 import { AuctionPanel } from "@/components/auction/AuctionPanel"
+import { EscrowedLotCard } from "@/components/auction/EscrowedLotCard"
 import { SettledAuctionSummary } from "@/components/auction/SettledAuctionSummary"
 import { TokenMedia } from "@/components/token/TokenMedia"
 import { getAuctionDetail } from "@/lib/auctions"
@@ -33,6 +34,12 @@ function shortDescription(
 ): string {
   if (detail.status === "settled" && detail.finalPriceWei != null) {
     return `Sold for ${formatEthAmount(detail.finalPriceWei)} ETH`
+  }
+  if (detail.status === "escrowed" && detail.finalPriceWei != null) {
+    return `Sold for ${formatEthAmount(detail.finalPriceWei)} ETH, delivery pending`
+  }
+  if (detail.status === "failed") {
+    return "Auction unwound, winning bid refunded."
   }
   if (detail.status === "active" && detail.live) {
     return detail.live.awaitingFirstBid
@@ -144,6 +151,26 @@ export default async function AuctionPage({ params }: { params: Params }) {
                   bids: detail.bids,
                 }}
               />
+            ) : detail.status === "escrowed" ? (
+              <EscrowedLotCard
+                houseAddress={detail.marketAddress}
+                auctionId={detail.auctionId}
+                winnerDisplay={detail.winnerDisplay || "the winner"}
+              />
+            ) : detail.status === "failed" ? (
+              <div className="rounded-lg border border-gray-200 bg-surface p-5 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-gray-400" />
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500">
+                    Auction unwound
+                  </span>
+                </div>
+                <p className="text-xs font-mono text-gray-500">
+                  Delivery could not complete, and both sides agreed to
+                  unwind. The winning bid was refunded and the lot is
+                  reserved for return to the seller.
+                </p>
+              </div>
             ) : (
               <div className="rounded-lg border border-gray-200 bg-surface p-5 space-y-2">
                 <div className="flex items-center gap-2">

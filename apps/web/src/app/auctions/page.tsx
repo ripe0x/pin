@@ -43,7 +43,8 @@ export default function AuctionsGuidePage() {
         </p>
         <p className="text-base text-fg-muted leading-relaxed">
           One contract per owner. One auction per token at a time.
-          ETH-only. ERC-721 only.
+          ETH-only. ERC-721 and, on V2 houses, whole-lot ERC-1155
+          auctions.
         </p>
       </section>
 

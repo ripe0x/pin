@@ -83,6 +83,12 @@ export type AuctionState = {
   awaitingSettlement: boolean
   fees: AuctionFees | null
   bidHistory: BidHistoryEntry[]
+  // Sovereign house generation behind marketAddress; selects the write ABI
+  // (V2 decodes its own custom errors). Always 1 for non-sovereign sources.
+  houseVersion: 1 | 2
+  tokenStandard: "erc721" | "erc1155"
+  // ERC1155 lot size; 1 for ERC721.
+  quantity: bigint
 }
 
 export type FoundationAuctionState = AuctionState & { source: "foundation" }
@@ -98,6 +104,43 @@ export type SovereignAuctionLite = {
 
 export function auctionTokenTag(nftContract: string, tokenId: string): string {
   return `auction:${nftContract.toLowerCase()}:${tokenId}`
+}
+
+// pnd_auctions gained version/standard/quantity with the V2 indexer
+// schema. Until that schema bump reaches prod, selecting them errors the
+// whole query, so probe once per process and degrade to V1 defaults.
+let v2ColumnsPromise: Promise<boolean> | null = null
+function hasV2AuctionColumns(): Promise<boolean> {
+  if (!sql) return Promise.resolve(false)
+  const db = sql
+  if (!v2ColumnsPromise) {
+    v2ColumnsPromise = db
+      .unsafe(
+        `SELECT 1 FROM information_schema.columns
+         WHERE table_schema = $1 AND table_name = 'pnd_auctions'
+           AND column_name = 'version'`,
+        [schema],
+      )
+      .then((rows) => (rows as unknown[]).length > 0)
+      .catch(() => {
+        v2ColumnsPromise = null
+        return false
+      })
+  }
+  return v2ColumnsPromise
+}
+
+type V2Cols = { version?: number; standard?: string; quantity?: string }
+function v2ColFields(r: V2Cols): {
+  houseVersion: 1 | 2
+  tokenStandard: "erc721" | "erc1155"
+  quantity: bigint
+} {
+  return {
+    houseVersion: r.version === 2 ? 2 : 1,
+    tokenStandard: r.standard === "erc1155" ? "erc1155" : "erc721",
+    quantity: BigInt(r.quantity ?? "1"),
+  }
 }
 
 // ─── getAuctionForToken: lookup-by-token ─────────────────────────────────
@@ -125,12 +168,14 @@ async function readPndAuctionForToken(
   contract: string, tokenId: string,
 ): Promise<AuctionState | null> {
   if (!sql) return null
+  const v2Cols = await hasV2AuctionColumns()
   const rows = (await sql.unsafe(
     `SELECT id, lower(house) AS house, auction_id::text AS auction_id,
             lower(seller) AS seller, lower(bidder) AS bidder,
             amount::text AS amount, reserve_price::text AS reserve,
             duration::text AS duration, end_time::text AS end_time,
             first_bid_time::text AS first_bid_time, status
+            ${v2Cols ? ", version, standard, quantity::text AS quantity" : ""}
      FROM ${schema}.pnd_auctions
      WHERE lower(token_contract) = $1 AND token_id::text = $2
        AND status = 'active'
@@ -141,7 +186,7 @@ async function readPndAuctionForToken(
     seller: string; bidder: string;
     amount: string; reserve: string; duration: string;
     end_time: string; first_bid_time: string; status: string
-  }>
+  } & V2Cols>
   if (rows.length === 0) return null
   const r = rows[0]
   const awaitingFirstBid = r.first_bid_time === "0"
@@ -172,6 +217,7 @@ async function readPndAuctionForToken(
     awaitingSettlement,
     fees: { platformLabel: "PND", protocolFeeBps: 0, creatorRoyaltyBps: 0, sellerBps: 10000 },
     bidHistory,
+    ...v2ColFields(r),
   }
 }
 
@@ -227,6 +273,9 @@ async function readFndAuctionForToken(
     awaitingSettlement,
     fees,
     bidHistory,
+    houseVersion: 1 as const,
+    tokenStandard: "erc721" as const,
+    quantity: 1n,
   }
 }
 
@@ -303,6 +352,9 @@ async function readFndSeedAuctionForToken(
     awaitingSettlement,
     fees,
     bidHistory: [],
+    houseVersion: 1 as const,
+    tokenStandard: "erc721" as const,
+    quantity: 1n,
   }
 }
 
@@ -337,7 +389,14 @@ export async function getSovereignAuctionByHouse(
 
 // ─── AuctionDetail: status-agnostic by-id lookup (per-auction page) ──────
 
-export type AuctionDetailStatus = "active" | "settled" | "cancelled"
+// "escrowed": V2 settlement paid out with the lot held for the winner
+// (claimEscrowedLot delivers it). "failed": V2 mutual-consent unwind.
+export type AuctionDetailStatus =
+  | "active"
+  | "settled"
+  | "cancelled"
+  | "escrowed"
+  | "failed"
 
 /**
  * Full state of ONE auction, looked up by its on-chain identity (house +
@@ -368,10 +427,15 @@ export type AuctionDetail = {
   status: AuctionDetailStatus
   bids: BidHistoryEntry[]
   live: AuctionState | null
+  houseVersion: 1 | 2
+  tokenStandard: "erc721" | "erc1155"
+  quantity: bigint
 }
 
 function mapPndStatus(s: string): AuctionDetailStatus {
-  return s === "settled" ? "settled" : s === "cancelled" ? "cancelled" : "active"
+  return s === "settled" || s === "cancelled" || s === "escrowed" || s === "failed"
+    ? s
+    : "active"
 }
 function mapFndStatus(s: string): AuctionDetailStatus {
   return s === "finalized"
@@ -407,6 +471,7 @@ async function getPndAuctionDetailById(
   auctionId: string,
 ): Promise<AuctionDetail | null> {
   if (!sql) return null
+  const v2Cols = await hasV2AuctionColumns()
   const rows = (await sql.unsafe(
     `SELECT id, lower(house) AS house, auction_id::text AS auction_id,
             lower(token_contract) AS contract, token_id::text AS token_id,
@@ -416,6 +481,7 @@ async function getPndAuctionDetailById(
             protocol_fee::text AS protocol_fee,
             settled_at_time::text AS settled_at_time,
             lifecycle_tx_hash, status
+            ${v2Cols ? ", version, standard, quantity::text AS quantity" : ""}
      FROM ${schema}.pnd_auctions
      WHERE lower(house) = $1 AND auction_id::text = $2 LIMIT 1`,
     [house.toLowerCase(), auctionId],
@@ -424,7 +490,7 @@ async function getPndAuctionDetailById(
     token_id: string; seller: string; winner: string | null;
     amount: string; seller_proceeds: string | null; protocol_fee: string | null;
     settled_at_time: string | null; lifecycle_tx_hash: string | null; status: string
-  }>
+  } & V2Cols>
   if (rows.length === 0) return null
   const r = rows[0]
   const status = mapPndStatus(r.status)
@@ -464,6 +530,7 @@ async function getPndAuctionDetailById(
     status,
     bids,
     live,
+    ...v2ColFields(r),
   }
 }
 
@@ -526,6 +593,9 @@ async function getFndAuctionDetailById(
     status,
     bids,
     live,
+    houseVersion: 1 as const,
+    tokenStandard: "erc721" as const,
+    quantity: 1n,
   }
 }
 

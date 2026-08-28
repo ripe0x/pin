@@ -7,7 +7,11 @@ import {
   useWriteContract,
   useWaitForTransactionReceipt,
 } from "wagmi"
-import { erc721Abi, sovereignAuctionHouseAbi } from "@pin/abi"
+import {
+  erc721Abi,
+  sovereignAuctionHouseAbi,
+  sovereignAuctionHouseV2Abi,
+} from "@pin/abi"
 import { useEthAmountInput } from "@/lib/useEthAmountInput"
 import { TxLink } from "./tx"
 
@@ -19,26 +23,46 @@ const DURATION_OPTIONS = [
 
 /**
  * Shared "approve + create" auction form body. Two-step flow:
- *   1. setApprovalForAll(houseAddress, true) on the NFT contract (skipped if already approved).
- *   2. createAuction(tokenId, contract, duration, reserve) on the artist's house.
+ *   1. setApprovalForAll(houseAddress, true) on the token contract (skipped
+ *      if already approved). ERC721 and ERC1155 share the
+ *      setApprovalForAll/isApprovedForAll selectors, so the ERC721 ABI
+ *      fragments serve both.
+ *   2. createAuction(tokenId, contract, duration, reserve) on the artist's
+ *      house, or create1155Auction(tokenId, contract, quantity, duration,
+ *      reserve) for an ERC1155 lot. 1155 lots need a V2 house.
  *
  * Renders just the form fields + step buttons + tx feedback — no chrome. Used
  * inline on /auction/new and inside the modal wrapper on token detail pages.
  */
 export function AuctionTermsForm({
   houseAddress,
+  houseVersion = 1,
   nftContract,
   tokenId,
+  tokenStandard = "erc721",
+  maxQuantity,
   onSuccess,
 }: {
   houseAddress: `0x${string}`
+  houseVersion?: 1 | 2
   nftContract: `0x${string}`
   tokenId: string
+  tokenStandard?: "erc721" | "erc1155"
+  /** Owner's ERC1155 balance for this id; caps the lot size input. */
+  maxQuantity?: bigint
   onSuccess?: (createTxHash: `0x${string}`) => void
 }) {
   const { address } = useAccount()
   const reserve = useEthAmountInput()
   const [durationSec, setDurationSec] = useState<number>(DURATION_OPTIONS[0].seconds)
+  const [quantityInput, setQuantityInput] = useState("1")
+  const is1155 = tokenStandard === "erc1155"
+  const quantity = /^[0-9]+$/.test(quantityInput) ? BigInt(quantityInput) : null
+  const quantityValid =
+    !is1155 ||
+    (quantity !== null &&
+      quantity > 0n &&
+      (maxQuantity === undefined || quantity <= maxQuantity))
 
   const { data: isApprovedForAll, refetch: refetchApproval } = useReadContract({
     address: nftContract,
@@ -93,10 +117,27 @@ export function AuctionTermsForm({
   }
 
   function handleCreate() {
-    if (!reserveValid || reserve.wei == null) return
+    if (!reserveValid || reserve.wei == null || !quantityValid) return
+    if (is1155) {
+      if (quantity === null) return
+      writeCreate({
+        address: houseAddress,
+        abi: sovereignAuctionHouseV2Abi,
+        functionName: "create1155Auction",
+        args: [
+          BigInt(tokenId),
+          nftContract,
+          quantity,
+          BigInt(durationSec),
+          reserve.wei,
+        ],
+      })
+      return
+    }
     writeCreate({
       address: houseAddress,
-      abi: sovereignAuctionHouseAbi,
+      abi:
+        houseVersion === 2 ? sovereignAuctionHouseV2Abi : sovereignAuctionHouseAbi,
       functionName: "createAuction",
       args: [
         BigInt(tokenId),
@@ -110,6 +151,16 @@ export function AuctionTermsForm({
   const needsApproval = !isApprovedForAll
   const approveBusy = isApprovePending || isApproveMining
   const createBusy = isCreatePending || isCreateMining
+
+  // create1155Auction only exists on V2 houses.
+  if (is1155 && houseVersion !== 2) {
+    return (
+      <p className="text-sm text-gray-600">
+        ERC-1155 lots need a V2 auction house. Upgrade your house from the
+        studio migrate page, then list this token.
+      </p>
+    )
+  }
 
   if (isCreateSuccess && createHash) {
     return (
@@ -153,6 +204,42 @@ export function AuctionTermsForm({
           </p>
         )}
       </div>
+
+      {is1155 && (
+        <div className="space-y-2">
+          <label className="block">
+            <span className="text-xs uppercase tracking-wider text-gray-500">
+              Lot size
+            </span>
+            <div className="mt-1 flex items-stretch border border-gray-200 focus-within:border-gray-400 transition-colors rounded">
+              <input
+                value={quantityInput}
+                onChange={(e) => setQuantityInput(e.target.value.trim())}
+                inputMode="numeric"
+                disabled={createBusy}
+                className="flex-1 px-3 py-2.5 text-base font-medium outline-none disabled:opacity-40 bg-transparent"
+              />
+              <span className="flex items-center px-3 text-sm text-gray-400 border-l border-gray-200">
+                editions
+              </span>
+            </div>
+          </label>
+          {!quantityValid ? (
+            <p className="text-xs text-red-500">
+              Enter a whole number
+              {maxQuantity !== undefined
+                ? ` between 1 and ${maxQuantity.toString()} (your balance)`
+                : " of 1 or more"}
+              .
+            </p>
+          ) : (
+            <p className="text-xs text-gray-400">
+              The whole lot sells to one winner. The winner must bid from a
+              regular wallet address, not a smart contract wallet.
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="space-y-2">
         <span className="text-xs uppercase tracking-wider text-gray-500 block">
@@ -224,7 +311,7 @@ export function AuctionTermsForm({
           )}
           <button
             onClick={handleCreate}
-            disabled={createBusy || !reserveValid}
+            disabled={createBusy || !reserveValid || !quantityValid}
             className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {isCreatePending
