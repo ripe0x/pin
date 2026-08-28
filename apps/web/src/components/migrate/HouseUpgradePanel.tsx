@@ -19,22 +19,37 @@ import {
 import type { HouseUpgradeListing } from "@/lib/indexer-queries"
 
 /**
- * V1 to V2 house upgrade. Composes one ordered run:
+ * V1 to V2 house upgrade, two phases:
  *
- *   1. createAuctionHouse() on the V2 factory (skipped when already deployed)
- *   2. cancelAuction() on the V1 house for every listing without a bid
- *   3. setApprovalForAll(v2House) per collection (skipped when already set)
- *   4. bulkCreateAuctionsWithSettings() per collection, replaying each
- *      listing's reserve and duration
+ *   Phase 1: createAuctionHouse() on the V2 factory (skipped when already
+ *            deployed), cancelAuction() on the V1 house per bidless
+ *            listing, setApprovalForAll(v2House) per collection.
+ *   Phase 2: bulkCreateAuctionsWithSettings() per collection, replaying
+ *            reserve and duration for exactly the listings whose cancel
+ *            completed in phase 1. Gating on phase 1 outcomes keeps a
+ *            token that never returned to the wallet out of the relist
+ *            call, which would revert the whole batch.
  *
- * The V2 clone address is deterministic (predictHouseAddress), so steps
- * 3 and 4 can target the house before step 1 mines — the whole run works
- * as one EIP-5792 bundle on smart wallets, with a sequential per-tx
- * fallback for everything else. Listings that already have a bid cannot
- * move: they settle on the V1 house under V1 rules.
+ * The indexer supplies candidate listings; the V1 house's own auctions()
+ * getter is then read for every row, and its values are the source of
+ * truth for existence, bid state, reserve, and duration. The V2 clone
+ * address is deterministic (predictHouseAddress), so approvals can
+ * target the house before the deploy mines and phase 1 stays a single
+ * EIP-5792 bundle on smart wallets, with a sequential per-tx fallback.
+ * Listings that already have a bid cannot move: they settle on the V1
+ * house under V1 rules.
  */
 
 type Props = { artistAddress: string }
+
+type VerifiedListing = {
+  auctionId: string
+  tokenContract: string
+  tokenId: string
+  reservePrice: bigint
+  duration: bigint
+  hasBid: boolean
+}
 
 const STATUS_LABEL: Record<ItemStatus["state"], string> = {
   idle: "Queued",
@@ -82,10 +97,11 @@ function Panel({ artistAddress }: Props) {
   const publicClient = usePublicClient()
   const v1 = useArtistHouse(artistAddress)
   const v2 = useArtistHouseV2(artistAddress)
-  const { run, reset, status, perItemStatus, mode, walletLabel } =
-    useBatchedCalls()
+  const phase1 = useBatchedCalls()
+  const phase2 = useBatchedCalls()
 
-  const [listings, setListings] = useState<HouseUpgradeListing[] | null>(null)
+  const [listings, setListings] = useState<VerifiedListing[] | null>(null)
+  const [staleCount, setStaleCount] = useState(0)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [approvedContracts, setApprovedContracts] = useState<Set<string>>(
     new Set(),
@@ -96,17 +112,57 @@ function Panel({ artistAddress }: Props) {
   const targetHouse: Address | null = v2.houseAddress ?? v2.predictedAddress
 
   const loadListings = useCallback(async () => {
-    if (!v1.houseAddress) return
+    if (!v1.houseAddress || !publicClient) return
     setLoadError(null)
     try {
       const res = await fetch(`/api/house-upgrade/${v1.houseAddress}`)
       if (!res.ok) throw new Error(`listings unavailable (${res.status})`)
       const data = (await res.json()) as { listings: HouseUpgradeListing[] }
-      setListings(data.listings)
+
+      // The indexer only nominates candidates. The house's own auctions()
+      // getter is the source of truth: rows it no longer knows (settled or
+      // cancelled since the indexer's last write) are dropped, and reserve,
+      // duration, and bid state come from the chain.
+      const reads = await publicClient.multicall({
+        contracts: data.listings.map((l) => ({
+          address: v1.houseAddress as Address,
+          abi: sovereignAuctionHouseAbi,
+          functionName: "auctions" as const,
+          args: [BigInt(l.auctionId)] as const,
+        })),
+        allowFailure: true,
+      })
+      const verified: VerifiedListing[] = []
+      let stale = 0
+      data.listings.forEach((l, i) => {
+        const r = reads[i]
+        if (r.status !== "success") {
+          stale += 1
+          return
+        }
+        const [tokenId, tokenContract, firstBidTime, , reservePrice, tokenOwner, , , duration] =
+          r.result as readonly [
+            bigint, Address, bigint, bigint, bigint, Address, bigint, Address, bigint,
+          ]
+        if (tokenOwner === "0x0000000000000000000000000000000000000000") {
+          stale += 1
+          return
+        }
+        verified.push({
+          auctionId: l.auctionId,
+          tokenContract: tokenContract.toLowerCase(),
+          tokenId: tokenId.toString(),
+          reservePrice,
+          duration,
+          hasBid: BigInt(firstBidTime) !== 0n,
+        })
+      })
+      setListings(verified)
+      setStaleCount(stale)
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : "listings unavailable")
     }
-  }, [v1.houseAddress])
+  }, [v1.houseAddress, publicClient])
 
   useEffect(() => {
     void loadListings()
@@ -158,7 +214,7 @@ function Panel({ artistAddress }: Props) {
     }
   }, [publicClient, targetHouse, collections, connected])
 
-  const calls = useMemo((): PreparedCall[] => {
+  const phase1Calls = useMemo((): PreparedCall[] => {
     if (!v1.houseAddress || !targetHouse || !v2.factoryAddress) return []
     const out: PreparedCall[] = []
 
@@ -218,38 +274,6 @@ function Panel({ artistAddress }: Props) {
       })
     }
 
-    for (const contract of collections) {
-      const lots = movable
-        .filter((l) => l.tokenContract === contract)
-        .map((l) => ({
-          tokenId: BigInt(l.tokenId),
-          reservePrice: BigInt(l.reservePrice),
-          duration: BigInt(l.duration),
-          fundsRecipient:
-            "0x0000000000000000000000000000000000000000" as Address,
-          listingExpiry: 0n,
-        }))
-      out.push({
-        id: `relist-${contract}`,
-        to: targetHouse,
-        data: encodeFunctionData({
-          abi: sovereignAuctionHouseV2Abi,
-          functionName: "bulkCreateAuctionsWithSettings",
-          args: [contract as Address, lots],
-        }),
-        write: {
-          address: targetHouse,
-          abi: sovereignAuctionHouseV2Abi,
-          functionName: "bulkCreateAuctionsWithSettings",
-          args: [contract as Address, lots],
-        },
-        // Valid only after the cancels (and deploy) in this same run, so
-        // the estimateGas preflight against current state would always
-        // condemn it.
-        skipPreflight: true,
-      })
-    }
-
     return out
   }, [
     v1.houseAddress,
@@ -261,13 +285,54 @@ function Panel({ artistAddress }: Props) {
     approvedContracts,
   ])
 
-  const done = status === "done"
+  const running = phase1.status === "running" || phase2.status === "running"
+  const done = phase1.status === "done" && phase2.status !== "running"
 
   const onRun = useCallback(async () => {
-    await run(calls)
+    if (!targetHouse) return
+    const outcomes = await phase1.run(phase1Calls)
+
+    // Relist exactly what came back to the wallet: the listings whose
+    // cancel completed in phase 1. Anything skipped or failed stays out,
+    // so one dead row can't revert a whole relist batch.
+    const returned = movable.filter(
+      (l) => outcomes.get(`cancel-${l.auctionId}`)?.state === "done",
+    )
+    if (returned.length > 0) {
+      const contracts = [...new Set(returned.map((l) => l.tokenContract))]
+      const relistCalls: PreparedCall[] = contracts.map((contract) => {
+        const lots = returned
+          .filter((l) => l.tokenContract === contract)
+          .map((l) => ({
+            tokenId: BigInt(l.tokenId),
+            reservePrice: l.reservePrice,
+            duration: l.duration,
+            fundsRecipient:
+              "0x0000000000000000000000000000000000000000" as Address,
+            listingExpiry: 0n,
+          }))
+        return {
+          id: `relist-${contract}`,
+          to: targetHouse,
+          data: encodeFunctionData({
+            abi: sovereignAuctionHouseV2Abi,
+            functionName: "bulkCreateAuctionsWithSettings",
+            args: [contract as Address, lots],
+          }),
+          write: {
+            address: targetHouse,
+            abi: sovereignAuctionHouseV2Abi,
+            functionName: "bulkCreateAuctionsWithSettings",
+            args: [contract as Address, lots],
+          },
+        }
+      })
+      await phase2.run(relistCalls)
+    }
+
     await Promise.all([loadListings(), v2.refetch()])
     router.refresh()
-  }, [run, calls, loadListings, v2, router])
+  }, [phase1, phase2, phase1Calls, movable, targetHouse, loadListings, v2, router])
 
   // Fold away entirely before the V2 factory ships, and for artists with
   // no V1 house (nothing to upgrade). The panel is mounted on the shared
@@ -315,7 +380,7 @@ function Panel({ artistAddress }: Props) {
           {!v2.houseAddress && (
             <li className="text-xs text-gray-700 flex items-center gap-2">
               Deploy V2 house
-              <StatusChip status={perItemStatus.get("deploy")} />
+              <StatusChip status={phase1.perItemStatus.get("deploy")} />
             </li>
           )}
           {movable.map((l) => (
@@ -323,9 +388,9 @@ function Panel({ artistAddress }: Props) {
               key={`c${l.auctionId}`}
               className="text-xs text-gray-700 flex items-center gap-2"
             >
-              Cancel listing #{l.auctionId} ({formatEther(BigInt(l.reservePrice))}{" "}
-              ETH reserve)
-              <StatusChip status={perItemStatus.get(`cancel-${l.auctionId}`)} />
+              Cancel listing #{l.auctionId} ({formatEther(l.reservePrice)} ETH
+              reserve)
+              <StatusChip status={phase1.perItemStatus.get(`cancel-${l.auctionId}`)} />
             </li>
           ))}
           {collections
@@ -336,7 +401,7 @@ function Panel({ artistAddress }: Props) {
                 className="text-xs text-gray-700 flex items-center gap-2"
               >
                 Approve {c.slice(0, 8)}… for the V2 house
-                <StatusChip status={perItemStatus.get(`approve-${c}`)} />
+                <StatusChip status={phase1.perItemStatus.get(`approve-${c}`)} />
               </li>
             ))}
           {collections.map((c) => (
@@ -344,12 +409,18 @@ function Panel({ artistAddress }: Props) {
               key={`r${c}`}
               className="text-xs text-gray-700 flex items-center gap-2"
             >
-              Relist {movable.filter((l) => l.tokenContract === c).length}{" "}
+              Relist up to {movable.filter((l) => l.tokenContract === c).length}{" "}
               listing(s) from {c.slice(0, 8)}… on V2
-              <StatusChip status={perItemStatus.get(`relist-${c}`)} />
+              <StatusChip status={phase2.perItemStatus.get(`relist-${c}`)} />
             </li>
           ))}
         </ul>
+        {staleCount > 0 && (
+          <p className="text-xs text-gray-500 mt-1">
+            {staleCount} indexed listing(s) already ended on-chain and are
+            ignored.
+          </p>
+        )}
       </div>
 
       {inFlight.length > 0 && (
@@ -382,31 +453,32 @@ function Panel({ artistAddress }: Props) {
       <div className="flex items-center gap-3">
         <button
           className="text-sm px-3 py-1.5 rounded bg-gray-900 text-white disabled:opacity-40"
-          disabled={!isOwner || calls.length === 0 || status === "running"}
+          disabled={!isOwner || phase1Calls.length === 0 || running}
           onClick={() => void onRun()}
         >
-          {status === "running"
+          {running
             ? "Upgrading…"
             : done
               ? "Run again"
-              : mode === "batched"
-                ? `Upgrade (${calls.length} calls, batched)`
-                : `Upgrade (${calls.length} transactions)`}
+              : phase1.mode === "batched"
+                ? `Upgrade (${phase1Calls.length + collections.length} calls, batched)`
+                : `Upgrade (${phase1Calls.length + collections.length} transactions)`}
         </button>
         {done && (
           <button
             className="text-xs text-gray-500 underline"
             onClick={() => {
-              reset()
+              phase1.reset()
+              phase2.reset()
               void loadListings()
             }}
           >
             Refresh
           </button>
         )}
-        {mode === "sequential" && walletLabel && calls.length > 1 && (
+        {phase1.mode === "sequential" && phase1.walletLabel && phase1Calls.length > 1 && (
           <span className="text-xs text-gray-500">
-            {walletLabel} signs each step separately.
+            {phase1.walletLabel} signs each step separately.
           </span>
         )}
       </div>

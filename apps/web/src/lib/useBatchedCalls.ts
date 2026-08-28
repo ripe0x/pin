@@ -198,7 +198,8 @@ export function useBatchedCalls() {
   )
 
   const runSequential = useCallback(
-    async (items: PreparedCall[]) => {
+    async (items: PreparedCall[], record: (id: string, next: ItemStatus) => void) => {
+      const updateItem = record
       for (const item of items) {
         if (stopRef.current) break
         updateItem(item.id, { state: "confirming" })
@@ -243,11 +244,12 @@ export function useBatchedCalls() {
         }
       }
     },
-    [config, preflight, updateItem],
+    [config, preflight],
   )
 
   const runBatched = useCallback(
-    async (items: PreparedCall[]) => {
+    async (items: PreparedCall[], record: (id: string, next: ItemStatus) => void) => {
+      const updateItem = record
       // For N > BATCH_CHUNK_SIZE we chunk into multiple signed bundles —
       // the user signs ⌈N/10⌉ times instead of the wallet rejecting the
       // oversized bundle outright. Order is preserved across chunks.
@@ -349,25 +351,39 @@ export function useBatchedCalls() {
         }
       }
     },
-    [config, preflight, updateItem],
+    [config, preflight],
   )
 
+  /**
+   * Executes the calls and resolves to the final per-item outcomes, so
+   * callers composing dependent phases (relist only what cancelled) can
+   * branch on results without racing React state.
+   */
   const run = useCallback(
-    async (items: PreparedCall[]) => {
-      if (status === "running" || items.length === 0) return
+    async (items: PreparedCall[]): Promise<Map<string, ItemStatus>> => {
+      const outcomes = new Map<string, ItemStatus>(
+        items.map((i) => [i.id, { state: "idle" } as ItemStatus]),
+      )
+      if (status === "running" || items.length === 0) return outcomes
       stopRef.current = false
       setStatus("running")
-      setPerItemStatus(new Map(items.map((i) => [i.id, { state: "idle" }])))
+      setPerItemStatus(new Map(outcomes))
+
+      const record = (id: string, next: ItemStatus) => {
+        outcomes.set(id, next)
+        updateItem(id, next)
+      }
 
       if (mode === "batched") {
-        await runBatched(items)
+        await runBatched(items, record)
       } else {
-        await runSequential(items)
+        await runSequential(items, record)
       }
 
       setStatus("done")
+      return outcomes
     },
-    [mode, runBatched, runSequential, status],
+    [mode, runBatched, runSequential, status, updateItem],
   )
 
   return { run, stop, reset, status, perItemStatus, mode, walletLabel }
