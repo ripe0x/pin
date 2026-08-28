@@ -8,7 +8,6 @@ import {
   createPublicClient,
   formatEther,
   http,
-  parseAbiItem,
   type Address,
 } from "viem"
 import { mainnet } from "viem/chains"
@@ -34,10 +33,6 @@ const DURATION_OPTIONS = [
 ] as const
 
 const PAGE_SIZE = 100
-
-const auctionCreatedEvent = parseAbiItem(
-  "event AuctionCreated(uint256 indexed auctionId, uint256 indexed tokenId, address indexed tokenContract, uint256 duration, uint256 reservePrice, address tokenOwner)",
-)
 
 function getClient() {
   // Use the server-side `/api/rpc` proxy to avoid bundling the Alchemy API
@@ -629,9 +624,9 @@ function BulkCancelSection({
 
 /**
  * Walk every page of the artist's gallery, then filter to tokens the connected
- * wallet still owns AND that don't already have an auction on the house. Single
- * multicall per check type would be cheaper but `mapWithConcurrency` keeps the
- * code simple and the parallelism bounded.
+ * wallet still owns AND that don't already have an auction on the house. One
+ * multicall per check type: per-token reads tripped /api/rpc's per-IP rate
+ * limit on large galleries.
  */
 async function loadListableItems(
   artistAddress: string,
@@ -657,94 +652,93 @@ async function loadListableItems(
 
   const client = getClient()
 
-  // Per-token ownership + auction-existence check in parallel, capped.
-  const results = await mapWithConcurrency(all, 8, async (item) => {
-    const contract = item.contract as Address
-    let owner: Address | null = null
-    try {
-      owner = (await client.readContract({
-        address: contract,
-        abi: erc721Abi,
-        functionName: "ownerOf",
-        args: [BigInt(item.tokenId)],
-      })) as Address
-    } catch {
-      return null
-    }
-    if (!owner || owner.toLowerCase() !== connectedAddress.toLowerCase()) {
-      return null
-    }
+  // Ownership + auction-existence checks as two multicalls instead of two
+  // RPC reads per token. The per-token version tripped /api/rpc's per-IP
+  // rate limit (429s) on large galleries.
+  const ownerReads = await client.multicall({
+    contracts: all.map((item) => ({
+      address: item.contract as Address,
+      abi: erc721Abi,
+      functionName: "ownerOf" as const,
+      args: [BigInt(item.tokenId)] as const,
+    })),
+    allowFailure: true,
+  })
+  const owned = all.filter((_, i) => {
+    const r = ownerReads[i]
+    return (
+      r.status === "success" &&
+      typeof r.result === "string" &&
+      r.result.toLowerCase() === connectedAddress.toLowerCase()
+    )
+  })
+  if (owned.length === 0) return []
 
-    let hasAuction = false
-    try {
-      hasAuction = (await client.readContract({
-        address: houseAddress,
-        abi: sovereignAuctionHouseAbi,
-        functionName: "hasAuctionFor",
-        args: [contract, BigInt(item.tokenId)],
-      })) as boolean
-    } catch {
-      hasAuction = false
-    }
-    if (hasAuction) return null
-
-    return {
-      contract,
-      tokenId: item.tokenId,
-      displayName: item.title,
-      imageUrl: item.imageUrl,
-    } satisfies ListableItem
+  const auctionReads = await client.multicall({
+    contracts: owned.map((item) => ({
+      address: houseAddress,
+      abi: sovereignAuctionHouseAbi,
+      functionName: "hasAuctionFor" as const,
+      args: [item.contract as Address, BigInt(item.tokenId)] as const,
+    })),
+    allowFailure: true,
+  })
+  const listable = owned.filter((_, i) => {
+    const r = auctionReads[i]
+    // A failed read is treated as "no auction"; worst case the create tx
+    // reverts on a token that already has one.
+    return !(r.status === "success" && r.result === true)
   })
 
-  return results.filter((r): r is ListableItem => r !== null)
+  return listable.map((item) => ({
+    contract: item.contract as Address,
+    tokenId: item.tokenId,
+    displayName: item.title,
+    imageUrl: item.imageUrl,
+  }))
 }
 
 /**
- * Enumerate every AuctionCreated event on the artist's house, then read the
- * current auction storage for each. Keep only those that:
+ * Load the house's cancellable auctions: indexer-nominated candidate ids
+ * (one API read; the old eth_getLogs house scan exceeded the /api/rpc
+ * proxy's numeric-bounds and 10k-block-span rules and could never
+ * succeed), then one multicall of the house's auctions() storage as the
+ * source of truth. Keep only those that:
  *   - are still in storage (`tokenOwner != 0`) — i.e. not settled or cancelled
  *   - have no bids (`firstBidTime == 0`) — the contract's only cancellable state
  */
 async function loadCancellableAuctions(
   houseAddress: Address,
 ): Promise<CancellableAuction[]> {
-  const client = getClient()
+  const res = await fetch(`/api/house-upgrade/${houseAddress}`)
+  if (!res.ok) throw new Error(`Failed to load house listings (${res.status})`)
+  const { listings } = (await res.json()) as {
+    listings: Array<{ auctionId: string }>
+  }
+  if (listings.length === 0) return []
 
-  const logs = await client.getLogs({
-    address: houseAddress,
-    event: auctionCreatedEvent,
-    // Houses can't pre-date the factory; scanning from 0 was a 24M-block
-    // null scan per panel open. Hardcoded to avoid a cross-package import
-    // for a single number — also used in lib/auctions.ts and lib/last-sale.ts.
-    fromBlock: 24_973_294n,
-    toBlock: "latest",
+  const client = getClient()
+  const reads = await client.multicall({
+    contracts: listings.map((l) => ({
+      address: houseAddress,
+      abi: sovereignAuctionHouseAbi,
+      functionName: "auctions" as const,
+      args: [BigInt(l.auctionId)] as const,
+    })),
+    allowFailure: true,
   })
 
-  if (logs.length === 0) return []
-
-  // Some auctions may have been recreated for the same auctionId — but the
-  // contract uses a monotonic counter, so each id appears once. Still: dedupe
-  // defensively.
-  const seen = new Set<string>()
-  const ids: bigint[] = []
-  for (const log of logs) {
-    const id = log.args.auctionId
-    if (id === undefined) continue
-    const key = id.toString()
-    if (seen.has(key)) continue
-    seen.add(key)
-    ids.push(id)
-  }
-
-  // Parallel: read current auction state for each id.
-  const states = await mapWithConcurrency(ids, 8, async (id) => {
-    try {
-      const result = (await client.readContract({
-        address: houseAddress,
-        abi: sovereignAuctionHouseAbi,
-        functionName: "auctions",
-        args: [id],
-      })) as readonly [
+  const cancellable: Array<{
+    id: bigint
+    tokenId: bigint
+    tokenContract: Address
+    reservePrice: bigint
+  }> = []
+  listings.forEach((l, i) => {
+    const r = reads[i]
+    if (r.status !== "success") return
+    const [tokenId, tokenContract, firstBidTime, , reservePrice, tokenOwner] =
+      r.result as readonly [
         bigint, // tokenId
         Address, // tokenContract
         bigint, // firstBidTime
@@ -755,27 +749,15 @@ async function loadCancellableAuctions(
         Address, // bidder
         bigint, // duration
       ]
-      const [
-        tokenId,
-        tokenContract,
-        firstBidTime,
-        ,
-        reservePrice,
-        tokenOwner,
-      ] = result
-      // Filter: must still exist (tokenOwner != 0) AND be pre-bid.
-      if (tokenOwner === "0x0000000000000000000000000000000000000000") return null
-      if (firstBidTime !== 0n) return null
-      return { id, tokenId, tokenContract, reservePrice }
-    } catch {
-      return null
-    }
+    if (tokenOwner === "0x0000000000000000000000000000000000000000") return
+    if (firstBidTime !== 0n) return
+    cancellable.push({
+      id: BigInt(l.auctionId),
+      tokenId,
+      tokenContract,
+      reservePrice,
+    })
   })
-
-  const cancellable = states.filter(
-    (s): s is { id: bigint; tokenId: bigint; tokenContract: Address; reservePrice: bigint } =>
-      s !== null,
-  )
 
   // Resolve metadata via the public `/api/meta` route. We previously called
   // the server lib `resolveTokenMetadataDirect` directly from this client
