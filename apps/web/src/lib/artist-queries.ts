@@ -1,8 +1,9 @@
 /**
  * Artist portfolio data layer.
  *
- * Fetches all artist data from on-chain sources via RPC — no indexer dependency.
- * Used by both the artist micro-site page and the preserve flow.
+ * Artist portfolio data comes from Postgres-indexed discovery, ownership,
+ * metadata, and availability. Live RPC is reserved for cold metadata and ENS
+ * fallbacks outside the gallery availability path.
  */
 import { unstable_cache } from "next/cache"
 import { createPublicClient, type Address } from "viem"
@@ -10,8 +11,6 @@ import { mainnet } from "viem/chains"
 import { normalize } from "viem/ens"
 import { pgCache } from "./pg-cache"
 import { loggingFallbackTransport } from "./rpc-log"
-import { nftMarketAbi } from "@pin/abi"
-import { NFT_MARKET, MAINNET_CHAIN_ID } from "@pin/addresses"
 import {
   discoverArtistTokens,
   resolveTokenMetadataDirect,
@@ -27,19 +26,18 @@ import {
   getCachedEnrichedPage,
   EnrichmentEmpty,
 } from "./artist-cache"
+import type { SovereignAuctionLite } from "./auctions"
 import {
-  getArtistSovereignAuctionMap,
-  getArtistFndAuctionMap,
-  type SovereignAuctionLite,
-} from "./auctions"
+  rankArtistTokenRefs,
+  type AvailabilityCoverage,
+  type WorkAvailability,
+} from "./artist-availability"
 import { getMuriUriCounts } from "./reads"
+import { getMediaDeliveries, type MediaDelivery } from "./media-delivery"
 import { extractCid, ipfsToHttp } from "@pin/shared"
 
-// Module-level singleton used for ENS lookups + a multicall in
-// `enrichWithBuyPrices`. Route is unattributed (passed as undefined)
-// because this client is shared across many call paths; if a specific
-// fanout becomes a hot spot in `rpc_events`, refactor that call site
-// to use its own per-route client.
+// Module-level singleton used for ENS lookups. Route is unattributed (passed
+// as undefined) because this client is shared across many call paths.
 const client = createPublicClient({
   chain: mainnet,
   transport: loggingFallbackTransport(undefined),
@@ -305,6 +303,26 @@ export async function getArtistIdentity(
 }
 
 /**
+ * Profile identity from the indexed store only. Collector-only addresses can
+ * be far outside the known-artist scan set, so a public profile request must
+ * not turn an identity cache miss into an ENS RPC. Until the worker or another
+ * bounded path materializes the row, the checksummed-looking address label is
+ * the stable and honest fallback.
+ */
+export async function getIndexedArtistIdentity(
+  address: string,
+): Promise<ArtistIdentity> {
+  const addr = address as Address
+  const stored = await readEnsIdentity(address.toLowerCase())
+  return {
+    address: addr,
+    ensName: stored?.ensName ?? null,
+    displayName: stored?.ensName ?? truncateAddress(address),
+    avatarUrl: stored?.avatarUrl ?? null,
+  }
+}
+
+/**
  * Live ENS resolution for the cold path (row missing from
  * `ens_identities`); the resolved value is then persisted so subsequent
  * reads stay on the pg point-lookup path.
@@ -475,7 +493,7 @@ export function tokenToDisplayData(token: DiscoveredToken) {
   const imageUrl =
     token.mediaHttpUrl ??
     (token.metadata?.image ? ipfsToHttp(token.metadata.image) : null) ??
-    "https://placehold.co/800x1000/F2F2F2/999999?text=NFT"
+    ""
 
   return {
     contract: token.contract,
@@ -504,15 +522,16 @@ function normalizePlatform(p: string): import("./platforms/types").PlatformId | 
 
 // ── Paginated artist gallery ────────────────────────────────────────────────
 
-const MARKET_ADDRESS = NFT_MARKET[MAINNET_CHAIN_ID]
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
-
 export type GalleryItem = ReturnType<typeof tokenToDisplayData> & {
+  /** Durable worker-produced delivery derivative and its explicit state. */
+  mediaDelivery?: MediaDelivery | null
   /**
    * Active buy-now listing on `NFTMarket`, or null. Price serialized as a
    * decimal string because JSON can't carry bigint.
    */
   buyPrice: { seller: string; price: string } | null
+  /** Normalized, Postgres-only sale state used by gallery copy and ranking. */
+  availability: WorkAvailability | null
   /**
    * Active Sovereign auction on the artist's house, or null. Wei amounts
    * and timestamps as decimal strings (JSON can't carry bigint).
@@ -531,12 +550,15 @@ export type GalleryPage = {
   page: number
   pageSize: number
   hasMore: boolean
+  availableTotal: number
+  coverage: AvailabilityCoverage
 }
 
 /**
- * Fetch one page of an artist's gallery: refs (cached), enriched metadata
- * (cached per page), and buy-prices (one multicall per request). Used by
- * both SSR (initial paint) and the paginated API route.
+ * Fetch one page of an artist's gallery. Availability is joined and ranked
+ * across the complete ref set in Postgres before pagination; metadata is then
+ * enriched only for the selected page. This keeps old listed tokens visible on
+ * page one without a request-time market multicall.
  */
 export async function getArtistGalleryPage(
   artistAddress: string,
@@ -544,110 +566,85 @@ export async function getArtistGalleryPage(
   pageSize: number,
 ): Promise<GalleryPage> {
   const refs = await getCachedTokenRefs(artistAddress)
-  const total = refs.length
   const start = page * pageSize
-  const slice = refs.slice(start, start + pageSize)
+  const ranked = await rankArtistTokenRefs(artistAddress, refs, page, pageSize)
+  const slice = ranked.refs
 
   if (slice.length === 0) {
-    return { tokens: [], total, page, pageSize, hasMore: false }
+    return {
+      tokens: [],
+      total: ranked.total,
+      page,
+      pageSize,
+      hasMore: false,
+      availableTotal: ranked.availableTotal,
+      coverage: ranked.coverage,
+    }
   }
 
-  const [enriched, prices, auctionMap, fndAuctionMap, muriCounts] = await Promise.all([
+  const [enriched, muriCounts, mediaDeliveries] = await Promise.all([
     // `getCachedEnrichedPage` throws `EnrichmentEmpty` when every token
     // in the slice enriches to null (transient RPC/IPFS hiccup, not a
     // real empty gallery) — the throw stops `unstable_cache` from
     // persisting `[]` for the full 24h TTL. Render the page empty for
     // this request; the next visitor's render retries from cold.
-    getCachedEnrichedPage(slice).catch((err) => {
+    getCachedEnrichedPage(slice, artistAddress).catch((err) => {
       if (err instanceof EnrichmentEmpty) return [] as DiscoveredToken[]
       throw err
     }),
-    fetchBuyPrices(slice),
-    getArtistSovereignAuctionMap(artistAddress).catch(
-      (): Record<string, SovereignAuctionLite> => ({}),
-    ),
-    getArtistFndAuctionMap(artistAddress).catch(
-      (): Record<string, SovereignAuctionLite> => ({}),
-    ),
     // Postgres-only MURI preservation counts for this page (no RPC).
     getMuriUriCounts(slice.map((r) => ({ contract: r.contract, tokenId: r.tokenId }))).catch(
       (): Map<string, number> => new Map(),
     ),
+    getMediaDeliveries(slice),
   ])
 
   const tokens: GalleryItem[] = enriched.map((token) => {
     const display = tokenToDisplayData(token)
     const key = `${token.contract.toLowerCase()}:${token.tokenId}`
+    const availability = ranked.availability.get(key) ?? null
     return {
       ...display,
-      buyPrice: prices.get(key) ?? null,
-      // Sovereign (PND's own house) takes precedence; a token is escrowed
-      // in at most one auction contract, so both maps won't hold the same
-      // key. FND fills in Foundation listings the gallery previously
-      // ignored.
-      auction: auctionMap[key] ?? fndAuctionMap[key] ?? null,
+      mediaDelivery: mediaDeliveries.get(key) ?? null,
+      availability,
+      buyPrice:
+        availability?.kind === "buy-now"
+          ? { seller: availability.seller, price: availability.price }
+          : null,
+      // Compatibility for auction-management consumers of GalleryItem. The
+      // public gallery renders the richer availability object directly.
+      auction: availability?.kind === "auction"
+        ? availabilityToAuctionLite(availability)
+        : null,
       muriUriCount: muriCounts.get(key) ?? null,
     }
   })
 
   return {
     tokens,
-    total,
+    total: ranked.total,
     page,
     pageSize,
-    hasMore: start + slice.length < total,
+    hasMore: start + slice.length < ranked.total,
+    availableTotal: ranked.availableTotal,
+    coverage: ranked.coverage,
   }
 }
 
-/**
- * Batched on-chain read of `NFTMarket.getBuyPrice` for a page of tokens.
- * Returns a map keyed by `${contract.toLowerCase()}:${tokenId}` so callers
- * can look up by the same key regardless of result ordering.
- */
-async function fetchBuyPrices(
-  refs: readonly { contract: Address; tokenId: string }[],
-): Promise<Map<string, { seller: string; price: string } | null>> {
-  const out = new Map<string, { seller: string; price: string } | null>()
-
-  const calls = refs.map((r) => ({
-    address: MARKET_ADDRESS,
-    abi: nftMarketAbi,
-    functionName: "getBuyPrice" as const,
-    args: [r.contract, BigInt(r.tokenId)] as const,
-  }))
-
-  type MulticallEntry =
-    | { status: "success"; result: unknown }
-    | { status: "failure"; error: unknown }
-
-  let results: MulticallEntry[]
-  try {
-    results = (await client.multicall({
-      contracts: calls,
-      allowFailure: true,
-    })) as MulticallEntry[]
-  } catch {
-    // If the whole multicall failed, return all-null; the gallery still renders.
-    for (const r of refs) {
-      out.set(`${r.contract.toLowerCase()}:${r.tokenId}`, null)
-    }
-    return out
+function availabilityToAuctionLite(
+  availability: WorkAvailability,
+): SovereignAuctionLite {
+  return {
+    auctionId: availability.auctionId ?? "0",
+    amount: availability.currentBid ?? availability.price,
+    reservePrice: availability.reservePrice ?? availability.price,
+    endTime: availability.endTime ?? "0",
+    firstBidTime: availability.status === "listed" ? "0" : "1",
+    bucket:
+      availability.status === "listed"
+        ? "listed"
+        : availability.status === "settling"
+          ? "ending"
+          : "active",
   }
-
-  refs.forEach((r, i) => {
-    const key = `${r.contract.toLowerCase()}:${r.tokenId}`
-    const result = results[i]
-    if (result.status !== "success") {
-      out.set(key, null)
-      return
-    }
-    const { seller, price } = result.result as { seller: string; price: bigint }
-    if (seller === ZERO_ADDRESS || price === 0n) {
-      out.set(key, null)
-      return
-    }
-    out.set(key, { seller, price: price.toString() })
-  })
-
-  return out
 }

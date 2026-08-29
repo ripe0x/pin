@@ -27,6 +27,7 @@ import { getArtistIdentity, resolveDisplayNames } from "@/lib/artist-queries"
 import { getMuriToken } from "@/lib/reads"
 import { MuriPreservationSection } from "@/components/token/MuriBadge"
 import { isCrawler } from "@/lib/crawler"
+import { getMediaDeliveries } from "@/lib/media-delivery"
 import Link from "next/link"
 
 type Params = Promise<{ handle: string; tokenId: string }>
@@ -106,7 +107,7 @@ const getTokenPageData = cache(async (handle: string, tokenId: string) => {
   // Fetch metadata, ERC721 on-chain data, and ERC1155 stats in parallel.
   // ERC1155 returns null on ERC721 contracts (and vice-versa for the ERC721
   // path), so we naturally end up with whichever standard the token uses.
-  const [meta, onChainData, erc1155, mintInfo, auctionSales, muri] =
+  const [meta, onChainData, erc1155, mintInfo, auctionSales, muri, mediaDeliveries] =
     await Promise.all([
       resolveTokenMetadataDirect(contract, tokenId),
       getTokenOnChainData(contract, tokenId).catch(() => null),
@@ -119,11 +120,12 @@ const getTokenPageData = cache(async (handle: string, tokenId: string) => {
       getTokenAuctionSales(contract, tokenId).catch(() => [] as TokenAuctionSale[]),
       // Postgres-only preservation overlay (muri_tokens) — no live RPC.
       getMuriToken(contract, tokenId).catch(() => null),
+      getMediaDeliveries([{ contract, tokenId }]),
     ])
 
   const imageUrl = meta?.image
     ? ipfsToHttp(meta.image)
-    : "https://placehold.co/1200x1500/F2F2F2/999999?text=Artwork"
+    : ""
   const animationUrl = meta?.animation_url
     ? ipfsToHttp(meta.animation_url)
     : null
@@ -214,6 +216,7 @@ const getTokenPageData = cache(async (handle: string, tokenId: string) => {
     tokenId,
     imageUrl,
     animationUrl,
+    mediaDelivery: mediaDeliveries.get(`${contract.toLowerCase()}:${tokenId}`) ?? null,
     metadataSourceUrl,
     artworkSourceUrl,
     muri,
@@ -399,6 +402,7 @@ export default async function TokenPage({
           <TokenMedia
             imageUrl={data.imageUrl}
             animationUrl={data.animationUrl}
+            posterUrl={data.mediaDelivery?.posterUrl ?? data.mediaDelivery?.thumbnailUrl}
             title={data.title}
           />
         </div>
@@ -662,4 +666,3 @@ function escrowPlatformLabel(auction: AuctionState): string {
       return "this"
   }
 }
-

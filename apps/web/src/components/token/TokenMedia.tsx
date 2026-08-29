@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useIpfsGatewayFallback } from "@/lib/use-ipfs-fallback"
 
 const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
@@ -40,10 +40,12 @@ function classify(
 export function TokenMedia({
   imageUrl,
   animationUrl,
+  posterUrl,
   title,
 }: {
   imageUrl: string
   animationUrl?: string | null
+  posterUrl?: string | null
   title: string
 }) {
   // Prefer animation_url when present — it's the dynamic version of the
@@ -70,6 +72,33 @@ export function TokenMedia({
   // Poster is only used by the (non-escalated) video branch; computing it
   // unconditionally keeps hook order stable.
   const poster = useIpfsGatewayFallback(imageUrl).src
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const [videoVisible, setVideoVisible] = useState(false)
+  const [videoLoaded, setVideoLoaded] = useState(false)
+  const [videoFailed, setVideoFailed] = useState(false)
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || kind !== "video") return
+    const observer = new IntersectionObserver(
+      ([entry]) => setVideoVisible(entry?.isIntersecting === true),
+      { rootMargin: "200px 0px", threshold: 0.05 },
+    )
+    observer.observe(video)
+    return () => observer.disconnect()
+  }, [kind])
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || kind !== "video" || videoFailed) return
+    if (videoVisible) {
+      void video.play().catch(() => {
+        // Autoplay policy may require a gesture; controls remain available.
+      })
+    } else {
+      video.pause()
+    }
+  }, [kind, videoVisible, videoFailed])
 
   function handleImageError() {
     // Rotate to the next gateway first; only once every gateway has failed
@@ -78,20 +107,70 @@ export function TokenMedia({
     if (ambiguous && !escalated) setEscalated(true)
   }
 
+  if (!imageUrl && !animationUrl) {
+    return (
+      <div className="flex aspect-square min-h-48 min-w-48 items-center justify-center border border-gray-300 px-6 text-center text-xs font-mono text-fg-muted">
+        Media is not indexed for this token yet.
+      </div>
+    )
+  }
+
   if (kind === "video") {
     const v = escalated ? escalatedVideo : media
+    const resolvedPoster =
+      posterUrl ?? (useAnimation && imageUrl !== renderUrl ? poster : undefined)
+    function handleVideoError() {
+      setVideoLoaded(false)
+      if (!v.onError()) setVideoFailed(true)
+    }
     return (
-      <video
-        src={v.src}
-        poster={useAnimation ? poster : undefined}
-        className="max-h-[80vh] w-auto object-contain"
-        autoPlay
-        loop
-        muted
-        playsInline
-        controls
-        onError={v.onError}
-      />
+      <div className="relative flex min-h-48 max-h-[80vh] min-w-48 items-center justify-center bg-black text-white">
+        <video
+          ref={videoRef}
+          src={videoVisible && !videoFailed ? v.src : undefined}
+          poster={resolvedPoster}
+          className={`max-h-[80vh] w-auto object-contain ${videoLoaded || resolvedPoster ? "opacity-100" : "opacity-0"}`}
+          preload={videoVisible ? "metadata" : "none"}
+          loop
+          muted
+          playsInline
+          controls
+          onLoadedData={() => setVideoLoaded(true)}
+          onError={handleVideoError}
+        />
+        {!videoLoaded ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/40 px-6 text-center text-xs font-mono">
+            <span>
+              {videoFailed
+                ? "Video could not be loaded. The original source is still available."
+                : resolvedPoster
+                  ? "Loading video metadata…"
+                  : "Video preview has no poster. Loading starts when visible."}
+            </span>
+            {videoFailed ? (
+              <button
+                type="button"
+                className="border border-white/60 px-2 py-1 hover:border-white"
+                onClick={() => {
+                  setVideoFailed(false)
+                  setVideoLoaded(false)
+                  videoRef.current?.load()
+                }}
+              >
+                Retry
+              </button>
+            ) : null}
+            <a
+              href={v.src}
+              target="_blank"
+              rel="noreferrer"
+              className="underline underline-offset-2"
+            >
+              Open original media ↗
+            </a>
+          </div>
+        ) : null}
+      </div>
     )
   }
 

@@ -13,6 +13,8 @@
     "test": "pnpm -r --if-present test",
     "typecheck": "pnpm -r typecheck",
     "db:migrate": "node --env-file=.env db/migrate.mjs",
+    "indexer:switch": "node --env-file=.env scripts/switch-indexer-schema.mjs",
+    "worker:cost": "node --env-file=.env scripts/check-worker-cost.mjs",
     "worker:refresh": "node --env-file=.env scripts/worker-refresh.mjs",
     "emit:surface-abi": "node scripts/emit-surface-abi.mjs",
     "generate:docs": "tsx scripts/generate-docs.ts"

@@ -17,10 +17,10 @@
  *
  * Writes to `public.artist_tokens` with platform='fnd-shared'. The web's
  * discoverArtistTokenRefs already UNIONs artist_tokens, so these surface
- * on artist pages with no further wiring. Owner is resolved inline;
- * transfer history is intentionally skipped (scan-token-transfers
- * excludes shared platforms — scanning every transfer on the shared
- * contract would be the exact unbounded scan we're avoiding).
+ * on artist pages with no further wiring. Current ownership comes from
+ * the fixed-contract Ponder subscription and its Postgres mirror. Transfer
+ * history is intentionally skipped here: scanning every transfer on the
+ * shared contract would be the exact unbounded scan we're avoiding.
  *
  * The Minted event's `creator` is an indexed topic, but we fetch all
  * Minted events per block-chunk (one getLogs call) and filter by
@@ -30,8 +30,8 @@
  */
 import { sql } from "../db.ts"
 import { client } from "../rpc.ts"
+import { getFinalizedBoundary } from "../finality.ts"
 import { throttleRpc } from "../throttle.ts"
-import { resolveNewTokenOwner } from "../scanners/resolve-owner.ts"
 import { parseAbiItem, type Address } from "viem"
 import type { TaskResult } from "../scheduler.ts"
 
@@ -64,29 +64,23 @@ export async function scanFndShared(): Promise<TaskResult> {
   // an artist admitted after the cursor passed their mint blocks would
   // never get their historical shared 1/1s. This pure-SQL copy (zero
   // RPC, idempotent per tick) heals that for every admission path.
-  let seededRows = 0
-  try {
-    const seeded = await sql`
-      INSERT INTO artist_tokens
-        (artist, contract, token_id, platform, mint_block, mint_log_index, first_seen_at)
-      SELECT s.creator, ${FOUNDATION_NFT}, s.token_id, 'fnd-shared',
-             s.mint_block, s.mint_log_index, NOW()
-      FROM fnd_shared_mints_seed s
-      JOIN known_artists k ON k.address = s.creator
-      ON CONFLICT (contract, token_id) DO NOTHING
-    `
-    seededRows = seeded.count ?? 0
-    if (seededRows > 0) {
-      console.log(`[${TASK}] seeded ${seededRows} historical shared mints`)
-    }
-  } catch (err) {
-    // Seed table may not exist yet on an un-migrated environment —
-    // the live sweep still runs.
-    console.error(`[${TASK}] seed copy failed:`, err)
+  const seeded = await sql`
+    INSERT INTO artist_tokens
+      (artist, contract, token_id, platform, mint_block, mint_log_index, first_seen_at)
+    SELECT s.creator, ${FOUNDATION_NFT}, s.token_id, 'fnd-shared',
+           s.mint_block, s.mint_log_index, NOW()
+    FROM fnd_shared_mints_seed s
+    JOIN known_artists k ON k.address = s.creator
+    ON CONFLICT (contract, token_id) DO NOTHING
+  `
+  const seededRows = seeded.count ?? 0
+  if (seededRows > 0) {
+    console.log(`[${TASK}] seeded ${seededRows} historical shared mints`)
   }
 
-  const head = await client.getBlockNumber()
-  let rpcCalls = 1
+  const boundary = await getFinalizedBoundary(client)
+  const head = boundary.blockNumber
+  let rpcCalls = boundary.rpcCalls
 
   const cursorRow = (await sql`
     SELECT last_block::text AS last_block FROM worker_cursors
@@ -103,50 +97,45 @@ export async function scanFndShared(): Promise<TaskResult> {
       cursor + CHUNK_SIZE - 1n > head ? head : cursor + CHUNK_SIZE - 1n
 
     await throttleRpc()
-    let logs: Awaited<
-      ReturnType<typeof client.getLogs<typeof mintedEvent>>
-    > = []
-    try {
-      logs = await client.getLogs({
-        address: FOUNDATION_NFT as Address,
-        event: mintedEvent,
-        fromBlock: cursor,
-        toBlock,
-      })
-    } catch (err) {
-      console.error(`[${TASK}] getLogs ${cursor}-${toBlock}:`, err)
-    }
+    const logs = await client.getLogs({
+      address: FOUNDATION_NFT as Address,
+      event: mintedEvent,
+      fromBlock: cursor,
+      toBlock,
+    })
     rpcCalls += 1
 
-    for (const log of logs) {
-      const creator = log.args.creator?.toLowerCase()
-      if (!creator || !knownArtists.has(creator)) continue
-      if (log.args.tokenId === undefined) continue
-      const tokenId = log.args.tokenId.toString()
-      await sql`
-        INSERT INTO artist_tokens
-          (artist, contract, token_id, platform, mint_block, mint_log_index, first_seen_at)
-        VALUES
-          (${creator}, ${FOUNDATION_NFT}, ${tokenId}, 'fnd-shared',
-           ${log.blockNumber!.toString()}::bigint, ${log.logIndex!}, NOW())
-        ON CONFLICT (contract, token_id) DO NOTHING
+    let insertedInRange = 0
+    await sql.begin(async (tx) => {
+      for (const log of logs) {
+        const creator = log.args.creator?.toLowerCase()
+        if (!creator || !knownArtists.has(creator)) continue
+        if (log.args.tokenId === undefined) continue
+        const tokenId = log.args.tokenId.toString()
+        const inserted = await tx`
+          INSERT INTO artist_tokens
+            (artist, contract, token_id, platform, mint_block, mint_log_index, first_seen_at)
+          VALUES
+            (${creator}, ${FOUNDATION_NFT}, ${tokenId}, 'fnd-shared',
+             ${log.blockNumber!.toString()}::bigint, ${log.logIndex!}, NOW())
+          ON CONFLICT (contract, token_id) DO NOTHING
+          RETURNING token_id
+        `
+        insertedInRange += inserted.count
+      }
+
+      await tx`
+        INSERT INTO worker_cursors (task, scope, last_block, last_run_at)
+        VALUES (${TASK}, ${SCOPE}, ${toBlock.toString()}::bigint, NOW())
+        ON CONFLICT (task, scope) DO UPDATE SET
+          last_block = GREATEST(worker_cursors.last_block, EXCLUDED.last_block),
+          last_run_at = NOW()
       `
-      rowsWritten += 1
-      await resolveNewTokenOwner({
-        sql,
-        client,
-        contract: FOUNDATION_NFT,
-        tokenId,
-      }).catch(() => undefined)
-    }
+    })
+
+    rowsWritten += insertedInRange
 
     cursor = toBlock + 1n
-    await sql`
-      INSERT INTO worker_cursors (task, scope, last_block, last_run_at)
-      VALUES (${TASK}, ${SCOPE}, ${(cursor - 1n).toString()}::bigint, NOW())
-      ON CONFLICT (task, scope) DO UPDATE SET
-        last_block = EXCLUDED.last_block, last_run_at = NOW()
-    `
     chunks += 1n
   }
 

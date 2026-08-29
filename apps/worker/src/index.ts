@@ -15,6 +15,7 @@
 import { startHealthServer } from "./health.ts"
 import { startScheduler } from "./scheduler.ts"
 import { sql } from "./db.ts"
+import { validateIndexerBinding } from "./indexer-state.ts"
 
 const PORT = Number(process.env.PORT ?? "8080")
 
@@ -25,6 +26,8 @@ async function main(): Promise<void> {
     console.error("[worker] DATABASE_URL is unset — refusing to start")
     process.exit(1)
   }
+
+  await validateIndexerBinding()
 
   await startHealthServer(PORT)
   await startScheduler()

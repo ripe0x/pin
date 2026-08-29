@@ -1,7 +1,7 @@
 /**
  * v2 thin shim. The orchestration in v1's external-indexer (refresh
- * loops, batch processing, per-artist cooldowns) moves to the worker
- * (apps/worker/src/scheduler.ts + tasks/refresh-artist.ts).
+ * loops and batch processing) moves to the worker. Durable queue state and
+ * the per-artist cooldown live in the shared `refresh_jobs` table.
  *
  * This module exists so the existing /api/refresh-artist route can keep
  * the same import shape; the implementation now POSTs to the worker.
@@ -12,7 +12,9 @@ import { isKnownArtist } from "./known-artists"
 export { isKnownArtist }
 
 export type RefreshReport = {
-  caughtUp: boolean
+  ok: boolean
+  enqueued: boolean
+  status: "queued" | "running"
 }
 
 /**
@@ -20,24 +22,38 @@ export type RefreshReport = {
  * app does NOT execute the scan itself — the worker is the only place
  * scanners live in v2.
  */
-export async function refreshArtist(address: string): Promise<RefreshReport> {
+export async function refreshArtist(
+  address: string,
+  jobId: string,
+): Promise<RefreshReport> {
   const workerUrl = process.env.WORKER_URL
   const secret = process.env.WORKER_SECRET ?? process.env.REVALIDATE_SECRET
   if (!workerUrl || !secret) {
     console.error("[refresh-artist] WORKER_URL / WORKER_SECRET unset")
-    return { caughtUp: false }
+    return { ok: false, enqueued: false, status: "queued" }
   }
   try {
     const res = await fetch(
-      `${workerUrl}/jobs/refresh-artist/${address.toLowerCase()}`,
+      `${workerUrl}/jobs/refresh-artist/${address.toLowerCase()}?jobId=${encodeURIComponent(jobId)}`,
       {
         method: "POST",
-        headers: { Authorization: `Bearer ${secret}` },
+        headers: {
+          Authorization: `Bearer ${secret}`,
+          "X-PND-Refresh-Job": jobId,
+        },
       },
     )
-    return { caughtUp: res.ok }
+    if (!res.ok) return { ok: false, enqueued: false, status: "queued" }
+    const body = (await res.json().catch(() => null)) as
+      | { enqueued?: boolean; status?: "queued" | "running" }
+      | null
+    return {
+      ok: true,
+      enqueued: body?.enqueued !== false,
+      status: body?.status === "running" ? "running" : "queued",
+    }
   } catch {
-    return { caughtUp: false }
+    return { ok: false, enqueued: false, status: "queued" }
   }
 }
 

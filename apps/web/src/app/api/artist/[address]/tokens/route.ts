@@ -25,15 +25,26 @@ export async function GET(
   // bot UA is here to scrape. Reject cheap. Real users go through.
   if (isCrawlerUserAgent(req.headers.get("user-agent"))) {
     return NextResponse.json(
-      { address, tokens: [], total: 0, page: 0, pageSize: 0, hasMore: false },
+      {
+        address,
+        tokens: [],
+        total: 0,
+        page: 0,
+        pageSize: 0,
+        hasMore: false,
+        availableTotal: 0,
+        coverage: {
+          indexedSources: [],
+          hiddenStaleSources: [],
+          note: "Gallery data is not served to crawlers through this API.",
+        },
+      },
       { status: 200, headers: { "Cache-Control": "public, max-age=300" } },
     )
   }
 
-  // Per-IP token bucket. Each successful request can fan out to 50+
-  // RPC calls (token discovery + multicall buyPrice + metadata
-  // enrichment). 30/min/IP keeps a single bot from generating
-  // thousands of underlying RPC calls.
+  // Per-IP token bucket protects database and metadata-delivery work even
+  // though the route performs no live-chain reads.
   const ip = getClientIp(req)
   const rl = checkRateLimit("artist-tokens", ip, 60_000, 30)
   if (!rl.ok) {

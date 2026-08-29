@@ -25,7 +25,7 @@ const QUERY_TIMEOUT_MS = 500
 
 /** Sanitized indexer schema name for safe interpolation into unsafe() SQL. */
 function indexerSchema(): string {
-  return (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(/[^a-zA-Z0-9_]/g, "")
+  return (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(/[^a-zA-Z0-9_]/g, "")
 }
 
 /**

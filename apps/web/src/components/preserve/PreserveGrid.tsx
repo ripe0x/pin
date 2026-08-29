@@ -2,7 +2,8 @@
 
 import type { DiscoveredToken } from "@/lib/onchain-discovery"
 import type { PinStatus } from "@/lib/pinning"
-import { useThumbnailMedia } from "@/lib/use-thumbnail-media"
+import { useOptimizedImage } from "@/lib/use-optimized-image"
+import { isVideoUrl } from "@/lib/media-url"
 import { TokenPinStatus } from "./TokenPinStatus"
 
 type TokenWithPinState = {
@@ -31,38 +32,35 @@ export function PreserveGrid({ tokens }: { tokens: TokenWithPinState[] }) {
 
 function PreserveCard({ item }: { item: TokenWithPinState }) {
   const { token, metadataStatus, mediaStatus } = item
-  const imageUrl =
-    token.mediaHttpUrl ??
-    "https://placehold.co/400x500/F2F2F2/999999?text=NFT"
+  const imageUrl = token.mediaHttpUrl ?? ""
   const title = token.metadata?.name ?? `#${token.tokenId}`
 
   // Combined status: worst of the two
   const combinedStatus = worstStatus(metadataStatus, mediaStatus)
 
-  const { kind, imgSrc, imgRef, onImgError, videoSrc, onVideoError } =
-    useThumbnailMedia(imageUrl, 600)
+  const image = useOptimizedImage(imageUrl, 600, { allowRawFallback: false })
+  const video = isVideoUrl(imageUrl)
 
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden">
       <div className="relative bg-gray-100 aspect-square">
-        {kind === "failed" ? null : kind === "video" ? (
-          <video
-            src={videoSrc}
-            className="w-full h-full object-cover"
-            muted
-            playsInline
-            preload="metadata"
-            onError={onVideoError}
-          />
-        ) : (
+        {imageUrl && !video && !image.failed ? (
           <img
-            ref={imgRef}
-            src={imgSrc}
+            ref={image.ref}
+            src={image.src}
             alt={title}
             className="w-full h-full object-cover"
             loading="lazy"
-            onError={onImgError}
+            onError={image.onError}
           />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center px-4 text-center text-[11px] font-mono text-fg-muted">
+            {video
+              ? "Video media, open the token source to view"
+              : imageUrl
+                ? "Preview unavailable"
+                : "No indexed media source"}
+          </div>
         )}
         {/* Pin status overlay */}
         <div className="absolute top-2 right-2">

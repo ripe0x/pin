@@ -20,7 +20,10 @@ export const metadata: Metadata = {
     "Release onchain art as sovereign collections you own. Every token keeps its own identity and onchain Mint Mark. Mainnet only. Honest pricing.",
 }
 
-export const revalidate = 3600
+// The mainnet list must validate the live indexer binding at request time.
+// Static prerendering would either bake a deployment-time outage into the
+// build or fail builds that intentionally have no production DB access.
+export const dynamic = "force-dynamic"
 
 type CollectionGroup = {
   key: "minting" | "upcoming" | "past"

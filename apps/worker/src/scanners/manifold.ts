@@ -28,12 +28,12 @@
  * re-walked, which is cheap.
  */
 import { sql as workerSql } from "../db.ts"
+import { getFinalizedBoundary } from "../finality.ts"
 import { client as viemClient, traceClient } from "../rpc.ts"
 import { throttleRpc } from "../throttle.ts"
 import {
   getAddress, parseAbiItem, type Address, type PublicClient,
 } from "viem"
-import { resolveNewTokenOwner } from "./resolve-owner.ts"
 
 /**
  * Alchemy returns a "#<tokenId>" placeholder name when it can't resolve a
@@ -109,6 +109,7 @@ export type ManifoldScanResult = {
 
 export async function scanManifoldArtistTokens(
   artistAddress: string,
+  finalizedBlock?: bigint,
 ): Promise<ManifoldScanResult> {
   if (!workerSql) return { rpcCalls: 0, rowsWritten: 0 }
   const artist = artistAddress.toLowerCase() as Address
@@ -120,11 +121,17 @@ export async function scanManifoldArtistTokens(
 
   let rpcCalls = 0
   let rowsWritten = 0
+  const boundary = finalizedBlock === undefined
+    ? await getFinalizedBoundary(viemClient)
+    : { blockNumber: finalizedBlock, rpcCalls: 0 }
+  rpcCalls += boundary.rpcCalls
 
   // Discovery path A: find contracts the artist deployed via trace_filter.
   // Catches own Creator Core deployments. Runs scheduled every tick — it's
   // cheap (drpc-free, cursored, only walks new blocks).
-  const discoverResult = await discoverDeployedContracts(artist, traceClient)
+  const discoverResult = await discoverDeployedContracts(
+    artist, traceClient, boundary.blockNumber,
+  )
   rpcCalls += discoverResult.rpcCalls
   const deployed = discoverResult.contracts
 
@@ -206,8 +213,7 @@ export async function scanManifoldArtistTokens(
       ? BigInt(cursorRow[0].last_block) + 1n
       : MANIFOLD_FIRST_BLOCK
 
-    const head = await viemClient.getBlockNumber()
-    rpcCalls += 1
+    const head = boundary.blockNumber
     if (fromBlock > head) continue
 
     // Backfill mode: if the cursor is more than 100K blocks behind head,
@@ -221,7 +227,7 @@ export async function scanManifoldArtistTokens(
 
     if (isBackfill) {
       result = await tryAlchemyFastBackfill({
-        artist, contract: c.contract as Address, head,
+        artist, contract: c.contract as Address, fromBlock, head,
       })
     }
 
@@ -237,7 +243,8 @@ export async function scanManifoldArtistTokens(
       INSERT INTO worker_cursors (task, scope, last_block, last_run_at)
       VALUES (${TASK_NAME}, ${scope}, ${result.scannedTo.toString()}::bigint, NOW())
       ON CONFLICT (task, scope) DO UPDATE SET
-        last_block = EXCLUDED.last_block, last_run_at = NOW()
+        last_block = GREATEST(worker_cursors.last_block, EXCLUDED.last_block),
+        last_run_at = NOW()
     `
   }
 
@@ -247,7 +254,7 @@ export async function scanManifoldArtistTokens(
 // ─── Phase 1: contract discovery via trace_filter ─────────────────────────
 
 async function discoverDeployedContracts(
-  artist: Address, client: PublicClient,
+  artist: Address, client: PublicClient, head: bigint,
 ): Promise<{ contracts: Address[]; rpcCalls: number }> {
   if (!workerSql) return { contracts: [], rpcCalls: 0 }
 
@@ -260,8 +267,7 @@ async function discoverDeployedContracts(
     ? BigInt(cursorRow[0].last_block) + 1n
     : MANIFOLD_FIRST_BLOCK
 
-  const head = await client.getBlockNumber()
-  let rpcCalls = 1
+  let rpcCalls = 0
   if (cursor > head) {
     return { contracts: [], rpcCalls }
   }
@@ -275,19 +281,14 @@ async function discoverDeployedContracts(
       result?: { address?: string }
       type: string
     }
-    let rows: TraceRow[] = []
-    try {
-      rows = (await client.request({
-        method: "trace_filter" as never,
-        params: [{
-          fromBlock: `0x${cursor.toString(16)}`,
-          toBlock: `0x${toBlock.toString(16)}`,
-          fromAddress: [artist],
-        }] as never,
-      })) as TraceRow[]
-    } catch (err) {
-      console.error(`[${TASK_NAME}.trace] ${artist} ${cursor}-${toBlock}:`, err)
-    }
+    const rows = (await client.request({
+      method: "trace_filter" as never,
+      params: [{
+        fromBlock: `0x${cursor.toString(16)}`,
+        toBlock: `0x${toBlock.toString(16)}`,
+        fromAddress: [artist],
+      }] as never,
+    })) as TraceRow[]
     rpcCalls += 1
 
     for (const r of rows) {
@@ -422,7 +423,7 @@ async function scanMintsForContract(
         args: { from: ZERO_ADDRESS as `0x${string}` },
         fromBlock: cursor,
         toBlock,
-      }).catch(() => [])
+      })
       rpcCalls += 1
       for (const log of logs) {
         if (log.args.tokenId === undefined) continue
@@ -440,7 +441,7 @@ async function scanMintsForContract(
         args: { from: ZERO_ADDRESS as `0x${string}` },
         fromBlock: cursor,
         toBlock,
-      }).catch(() => [])
+      })
       rpcCalls += 1
       for (const log of singles) {
         if (log.args.id === undefined) continue
@@ -456,7 +457,7 @@ async function scanMintsForContract(
         args: { from: ZERO_ADDRESS as `0x${string}` },
         fromBlock: cursor,
         toBlock,
-      }).catch(() => [])
+      })
       rpcCalls += 1
       for (const log of batches) {
         const ids = (log.args.ids ?? []) as readonly bigint[]
@@ -503,14 +504,22 @@ type AlchemyNftPage = {
 }
 
 async function tryAlchemyFastBackfill(args: {
-  artist: Address; contract: Address; head: bigint
+  artist: Address; contract: Address; fromBlock: bigint; head: bigint
 }): Promise<{ rpcCalls: number; rowsWritten: number; scannedTo: bigint } | null> {
   if (!workerSql) return null
   const key = process.env.ALCHEMY_API_KEY
   if (!key || key.startsWith("set-")) return null
 
-  const { artist, contract, head } = args
-  let pageKey: string | undefined
+  const { artist, contract, fromBlock, head } = args
+  const paginationScope = `${artist}:${contract}:alchemy-contract`
+  const pagination = (await workerSql`
+    SELECT page_key, to_block::text AS to_block
+    FROM worker_pagination
+    WHERE task = ${TASK_NAME} AND scope = ${paginationScope}
+    LIMIT 1
+  `) as Array<{ page_key: string; to_block: string }>
+  let pageKey: string | undefined = pagination[0]?.page_key
+  const targetBlock = pagination[0] ? BigInt(pagination[0].to_block) : head
   let rpcCalls = 0
   let rowsWritten = 0
   let pages = 0
@@ -599,15 +608,39 @@ async function tryAlchemyFastBackfill(args: {
 
     pageKey = data.pageKey
     pages++
+    if (pageKey) {
+      await workerSql`
+        INSERT INTO worker_pagination
+          (task, scope, page_key, from_block, to_block, updated_at)
+        VALUES
+          (${TASK_NAME}, ${paginationScope}, ${pageKey},
+           ${fromBlock.toString()}::bigint, ${targetBlock.toString()}::bigint, NOW())
+        ON CONFLICT (task, scope) DO UPDATE SET
+          page_key = EXCLUDED.page_key,
+          to_block = EXCLUDED.to_block,
+          updated_at = NOW()
+      `
+    }
     if (pages >= ALCHEMY_NFT_MAX_PAGES) {
-      console.warn(`[manifold-fast] ${contract}: hit ${ALCHEMY_NFT_MAX_PAGES}-page cap`)
+      console.warn(
+        `[manifold-fast] ${contract}: paused after ${ALCHEMY_NFT_MAX_PAGES} pages`,
+      )
       break
     }
   } while (pageKey)
 
-  // Cursor jumps to head: future ticks go straight to incremental getLogs
-  // for any new mints after this point.
-  return { rpcCalls, rowsWritten, scannedTo: head }
+  if (pageKey) {
+    // The durable page key resumes next tick. Keeping the block cursor in
+    // place prevents an arbitrary provider page cap from creating a gap.
+    return { rpcCalls, rowsWritten, scannedTo: fromBlock - 1n }
+  }
+
+  await workerSql`
+    DELETE FROM worker_pagination
+    WHERE task = ${TASK_NAME} AND scope = ${paginationScope}
+  `
+  // Cursor advances only after the provider confirms there is no next page.
+  return { rpcCalls, rowsWritten, scannedTo: targetBlock }
 }
 
 // Multicall `owner()` for a list of contracts. Returns a Map of
@@ -630,18 +663,14 @@ async function fetchContractOwners(
     const calls = batch.map((addr) => ({
       address: addr as Address, abi: ownerAbi, functionName: "owner" as const,
     }))
-    try {
-      const results = (await viemClient.multicall({
-        contracts: calls, allowFailure: true,
-      })) as Array<{ status: "success"; result: string } | { status: "failure" }>
-      for (let j = 0; j < batch.length; j++) {
-        const r = results[j]
-        if (r.status === "success" && typeof r.result === "string") {
-          out.set(batch[j], r.result.toLowerCase())
-        }
+    const results = (await viemClient.multicall({
+      contracts: calls, allowFailure: true,
+    })) as Array<{ status: "success"; result: string } | { status: "failure" }>
+    for (let j = 0; j < batch.length; j++) {
+      const r = results[j]
+      if (r.status === "success" && typeof r.result === "string") {
+        out.set(batch[j], r.result.toLowerCase())
       }
-    } catch (err) {
-      console.warn(`[manifold-mints-to] owner() multicall error: ${err}`)
     }
   }
   return out
@@ -690,6 +719,7 @@ const MINTS_TO_CURSOR_SCOPE_SUFFIX = "mints-to"
  */
 export async function discoverMintsToArtist(args: {
   artist: Address
+  finalizedBlock?: bigint
 }): Promise<{ rpcCalls: number; rowsWritten: number } | null> {
   if (!workerSql) return null
   const key = process.env.ALCHEMY_API_KEY
@@ -708,14 +738,30 @@ export async function discoverMintsToArtist(args: {
     SELECT last_block::text AS last_block FROM worker_cursors
     WHERE task = ${TASK_NAME} AND scope = ${cursorScope} LIMIT 1
   `) as Array<{ last_block: string }>
-  const fromBlock = cursorRow[0] ? BigInt(cursorRow[0].last_block) + 1n : 0n
+  const pagination = (await workerSql`
+    SELECT page_key, from_block::text AS from_block, to_block::text AS to_block
+    FROM worker_pagination
+    WHERE task = ${TASK_NAME} AND scope = ${cursorScope}
+    LIMIT 1
+  `) as Array<{ page_key: string; from_block: string; to_block: string }>
+  const boundary = args.finalizedBlock === undefined
+    ? await getFinalizedBoundary(viemClient)
+    : { blockNumber: args.finalizedBlock, rpcCalls: 0 }
+  const fromBlock = pagination[0]
+    ? BigInt(pagination[0].from_block)
+    : cursorRow[0] ? BigInt(cursorRow[0].last_block) + 1n : 0n
+  const toBlock = pagination[0]
+    ? BigInt(pagination[0].to_block)
+    : boundary.blockNumber
+  if (fromBlock > toBlock) return { rpcCalls: boundary.rpcCalls, rowsWritten: 0 }
   const fromBlockHex = "0x" + fromBlock.toString(16)
+  const toBlockHex = "0x" + toBlock.toString(16)
 
   // Page through new NFT mints to the artist since the cursor.
   type MintRef = { contract: string; tokenId: string; blockNum: bigint }
   const mints: MintRef[] = []
-  let pageKey: string | undefined
-  let rpcCalls = 0
+  let pageKey: string | undefined = pagination[0]?.page_key
+  let rpcCalls = boundary.rpcCalls
   let maxBlockSeen = fromBlock
   const MAX_PAGES = 50 // ~50K mints max — way beyond any realistic artist
 
@@ -732,6 +778,7 @@ export async function discoverMintsToArtist(args: {
         withMetadata: false,
         order: "asc",
         fromBlock: fromBlockHex,
+        toBlock: toBlockHex,
         ...(pageKey ? { pageKey } : {}),
       }],
     }
@@ -772,23 +819,40 @@ export async function discoverMintsToArtist(args: {
     }
 
     pageKey = data.result?.pageKey
+    if (pageKey) {
+      await workerSql`
+        INSERT INTO worker_pagination
+          (task, scope, page_key, from_block, to_block, updated_at)
+        VALUES
+          (${TASK_NAME}, ${cursorScope}, ${pageKey},
+           ${fromBlock.toString()}::bigint, ${toBlock.toString()}::bigint, NOW())
+        ON CONFLICT (task, scope) DO UPDATE SET
+          page_key = EXCLUDED.page_key,
+          updated_at = NOW()
+      `
+    }
     if (!pageKey) break
   }
 
-  // Empty incremental tick — write cursor forward to head so we don't keep
-  // re-querying the same idle range. Use viemClient.getBlockNumber() since
-  // we already paid for trace_filter; this is in cache.
+  const paginationComplete = !pageKey
+
+  // Empty pages still prove coverage, but only the terminal page may advance
+  // the finalized block cursor.
   if (mints.length === 0) {
-    try {
-      const head = await viemClient.getBlockNumber()
-      await workerSql`
-        INSERT INTO worker_cursors (task, scope, last_block, last_run_at)
-        VALUES (${TASK_NAME}, ${cursorScope}, ${head.toString()}::bigint, NOW())
-        ON CONFLICT (task, scope) DO UPDATE SET
-          last_block = EXCLUDED.last_block, last_run_at = NOW()
-      `
-    } catch (err) {
-      console.warn(`[manifold-mints-to] ${artist}: cursor update failed ${err}`)
+    if (paginationComplete) {
+      await workerSql.begin(async (tx) => {
+        await tx`
+          DELETE FROM worker_pagination
+          WHERE task = ${TASK_NAME} AND scope = ${cursorScope}
+        `
+        await tx`
+          INSERT INTO worker_cursors (task, scope, last_block, last_run_at)
+          VALUES (${TASK_NAME}, ${cursorScope}, ${toBlock.toString()}::bigint, NOW())
+          ON CONFLICT (task, scope) DO UPDATE SET
+            last_block = GREATEST(worker_cursors.last_block, EXCLUDED.last_block),
+            last_run_at = NOW()
+        `
+      })
     }
     return { rpcCalls, rowsWritten: 0 }
   }
@@ -817,7 +881,24 @@ export async function discoverMintsToArtist(args: {
     `(${ownedContracts.size}/${uniqueContracts.length} contracts pass owner() check)`,
   )
 
-  if (filtered.length === 0) return { rpcCalls, rowsWritten: 0 }
+  if (filtered.length === 0) {
+    if (paginationComplete) {
+      await workerSql.begin(async (tx) => {
+        await tx`
+          DELETE FROM worker_pagination
+          WHERE task = ${TASK_NAME} AND scope = ${cursorScope}
+        `
+        await tx`
+          INSERT INTO worker_cursors (task, scope, last_block, last_run_at)
+          VALUES (${TASK_NAME}, ${cursorScope}, ${toBlock.toString()}::bigint, NOW())
+          ON CONFLICT (task, scope) DO UPDATE SET
+            last_block = GREATEST(worker_cursors.last_block, EXCLUDED.last_block),
+            last_run_at = NOW()
+        `
+      })
+    }
+    return { rpcCalls, rowsWritten: 0 }
+  }
   // Use filtered set from here on.
   mints.length = 0
   mints.push(...filtered)
@@ -869,20 +950,19 @@ export async function discoverMintsToArtist(args: {
   let rowsWritten = 0
   for (const m of mints) {
     const meta = metadataByKey.get(`${m.contract}:${m.tokenId}`)
-    try {
-      await workerSql.begin(async (tx) => {
-        await tx`
+    await workerSql.begin(async (tx) => {
+      await tx`
           INSERT INTO artist_tokens
             (artist, contract, token_id, platform, mint_block, mint_log_index, first_seen_at)
           VALUES
             (${artist}, ${m.contract}, ${m.tokenId}, 'manifold',
              ${m.blockNum.toString()}::bigint, 0, NOW())
           ON CONFLICT (contract, token_id) DO NOTHING
-        `
-        if (meta) {
-          const imageUrl = meta.image?.cachedUrl ?? meta.image?.originalUrl ?? null
-          const animationUrl = meta.animation?.cachedUrl ?? meta.animation?.originalUrl ?? null
-          await tx`
+      `
+      if (meta) {
+        const imageUrl = meta.image?.cachedUrl ?? meta.image?.originalUrl ?? null
+        const animationUrl = meta.animation?.cachedUrl ?? meta.animation?.originalUrl ?? null
+        await tx`
             INSERT INTO token_metadata
               (contract, token_id, name, description, image_url, animation_url, raw_uri, fetched_at)
             VALUES
@@ -896,29 +976,26 @@ export async function discoverMintsToArtist(args: {
               animation_url = COALESCE(EXCLUDED.animation_url, token_metadata.animation_url),
               raw_uri = COALESCE(EXCLUDED.raw_uri, token_metadata.raw_uri),
               fetched_at = NOW()
-          `
-        }
-      })
-      rowsWritten++
-    } catch (err) {
-      console.warn(`[manifold-mints-to] ${m.contract}/${m.tokenId}: ${err}`)
-    }
+        `
+      }
+    })
+    rowsWritten++
   }
 
-  // Advance the cursor to head so the next tick starts at the right place.
-  // Using head (not maxBlockSeen) so that we don't re-query the entire
-  // chain even if the most-recent mint we found was historical — the
-  // important thing is that we've now SEEN every mint up to head.
-  try {
-    const head = await viemClient.getBlockNumber()
-    await workerSql`
-      INSERT INTO worker_cursors (task, scope, last_block, last_run_at)
-      VALUES (${TASK_NAME}, ${cursorScope}, ${head.toString()}::bigint, NOW())
-      ON CONFLICT (task, scope) DO UPDATE SET
-        last_block = EXCLUDED.last_block, last_run_at = NOW()
-    `
-  } catch (err) {
-    console.warn(`[manifold-mints-to] ${artist}: cursor update failed ${err}`)
+  if (paginationComplete) {
+    await workerSql.begin(async (tx) => {
+      await tx`
+        DELETE FROM worker_pagination
+        WHERE task = ${TASK_NAME} AND scope = ${cursorScope}
+      `
+      await tx`
+        INSERT INTO worker_cursors (task, scope, last_block, last_run_at)
+        VALUES (${TASK_NAME}, ${cursorScope}, ${toBlock.toString()}::bigint, NOW())
+        ON CONFLICT (task, scope) DO UPDATE SET
+          last_block = GREATEST(worker_cursors.last_block, EXCLUDED.last_block),
+          last_run_at = NOW()
+      `
+    })
   }
 
   return { rpcCalls, rowsWritten }
@@ -937,8 +1014,4 @@ async function insertToken(
        ${blockNumber.toString()}::bigint, ${logIndex}, NOW())
     ON CONFLICT (contract, token_id) DO NOTHING
   `
-  await resolveNewTokenOwner({
-    sql: workerSql, client: viemClient,
-    contract: contract.toLowerCase(), tokenId,
-  }).catch(() => undefined)
 }

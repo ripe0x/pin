@@ -93,7 +93,7 @@ export default async function AuctionPage({ params }: { params: Params }) {
   const { detail, meta } = data
   const imageUrl = meta?.image
     ? ipfsToHttp(meta.image)
-    : "https://placehold.co/1200x1500/F2F2F2/999999?text=Artwork"
+    : ""
   const animationUrl = meta?.animation_url ? ipfsToHttp(meta.animation_url) : null
   const title = meta?.name ?? `#${detail.tokenId}`
   const tokenHref = `/${detail.nftContract}/${detail.tokenId}`

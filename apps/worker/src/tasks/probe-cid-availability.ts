@@ -36,7 +36,7 @@ import { sql } from "../db.ts"
 import { extractArweaveId, extractBareCid } from "@pin/shared"
 import type { TaskResult } from "../scheduler.ts"
 
-const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
   /[^a-zA-Z0-9_]/g, "",
 )
 

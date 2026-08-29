@@ -31,7 +31,7 @@ const erc165SupportsInterfaceAbi = [
 const ERC721_INTERFACE_ID = "0x80ac58cd"
 const ERC1155_INTERFACE_ID = "0xd9b67a26"
 const BATCH_SIZE = 30
-const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
   /[^a-zA-Z0-9_]/g, "",
 )
 

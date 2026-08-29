@@ -67,7 +67,7 @@ import { scanArtistTokensViaTransferFromZero } from "../scanners/transfer-from-z
 import type { TaskResult } from "../scheduler.ts"
 
 const PLATFORM = "<platform>"
-const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1")
+const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "indexer_live")
   .replace(/[^a-zA-Z0-9_]/g, "")
 
 export async function scan<Platform>Clones(): Promise<TaskResult> {

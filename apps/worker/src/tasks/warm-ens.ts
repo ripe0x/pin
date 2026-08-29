@@ -13,7 +13,7 @@ import { getAddress, type Address } from "viem"
 import { normalize } from "viem/ens"
 
 const BATCH_SIZE = 20
-const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
   /[^a-zA-Z0-9_]/g, "",
 )
 

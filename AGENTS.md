@@ -21,7 +21,8 @@ apps/indexer  Ponder. DISCOVERY ONLY for the long tail (which artist
               deployed which contract): mint_creators, tl_creators,
               fnd_collections — plus fully-indexed fixed contracts
               (pnd_*, fnd_*, srv2_artist_tokens, catalog_*). Writes the
-              ponder_v1 schema.
+              versioned schema selected by DATABASE_SCHEMA. App readers use
+              the stable indexer_live alias after a guarded cutover.
 ```
 
 `git log` shows the v2 rebuild that established this split: PR #69
@@ -83,21 +84,28 @@ worker. It is deliberately NOT in `indexed-platforms.ts` — it's a
 preservation overlay on top of other platforms' tokens, not a mint source.
 Full notes: `docs/muri-integration.md`.
 
-## Production database
+## Production database and Ponder cutover
 
-- **Prod = the `maglev` Railway DB** (`maglev.proxy.rlwy.net`). Schemas:
-  `public` + `ponder_sync` + `ponder_v1`, with **`INDEXER_SCHEMA=ponder_v1`**.
-- `apps/web/.env.local` MUST point at maglev with `INDEXER_SCHEMA=ponder_v1`.
-  (Verified current: it does.)
-- **Dead stack — do not trust:** an OLD `switchback` Railway DB had
-  `ponder_v2`/`ponder_v3` schemas and `lazy_*` public tables. That is the
-  pre-rebuild stack. maglev has **no** `lazy_*` tables and no v2/v3
-  schemas. If your local env points anywhere but maglev, you will
-  reconstruct the architecture wrong — this exact mistake cost a prior
-  session hours.
-- `ponder_v2`/`ponder_v3` would only ever be empty Ponder safe-redeploy
-  namespaces if they existed; they don't exist on maglev. The live
-  Ponder data is `ponder_v1`.
+- **Prod = the `maglev` Railway DB** (`maglev.proxy.rlwy.net`). The old
+  `switchback` Railway database is dead and must not be used.
+- Ponder writes a versioned schema such as `ponder_v3`. Web and worker read
+  **`INDEXER_SCHEMA=indexer_live`**, a database-owned schema of views switched
+  atomically by `scripts/switch-indexer-schema.mjs`. Never independently point
+  an app reader at `ponder_vN` outside an explicit recovery.
+- **Confirmed 2026-08-29 production split-brain:** Railway indexer/worker use
+  ready `ponder_v2`, while Netlify web still uses stale, unready `ponder_v1`.
+  Migration 027 and `docs/indexer-cutover.md` are the recovery path. Do not
+  point `indexer_live` at drifted v2; backfill a fresh schema with Ponder 0.17.3
+  or newer and pass factory/auction parity first.
+- Ponder owns `ponder_sync`. Worker drift checks are read-only. Missing factory
+  children require a fresh versioned backfill, never hand-written sync rows.
+- Surface open-release state comes from the fixed Ponder event stream:
+  `surface_collections`, `collection_supply_configs`, and
+  `minter_sale_configs`. Do not add request-time minter RPC calls for profile
+  availability.
+- Local app environments should point at maglev only when production access is
+  intended, and should use `INDEXER_SCHEMA=indexer_live` after the initial
+  guarded alias cutover.
 
 ## STALE TRAP: untracked `ponder/` directory
 

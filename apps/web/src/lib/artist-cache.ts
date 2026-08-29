@@ -3,9 +3,8 @@
  *
  * Both layers use a 24h TTL — long enough to absorb repeat traffic, short
  * enough that fresh work shows up "by the next day" without intervention.
- * For artists who want their new mint to appear immediately, hit the manual
- * authenticated `POST /api/revalidate` endpoint after minting (the tags
- * below are what that endpoint targets).
+ * A completed durable artist refresh invalidates the address-specific tags;
+ * the authenticated global revalidation route can still flush all artists.
  *
  * Cache key shape:
  *  - refs: `["artist-token-refs", "vN", artistAddress]` — one entry per
@@ -22,6 +21,7 @@ import {
   type TokenRef,
   type DiscoveredToken,
 } from "./onchain-discovery"
+import { artistEnrichedTag, artistRefsTag } from "./refresh-jobs"
 
 /**
  * Thrown by `getCachedEnrichedPage` when enrichment returns zero usable
@@ -47,37 +47,53 @@ export class EnrichmentEmpty extends Error {
 // has already minted and the existing pre-tag cache entries can't be
 // flushed via revalidateTag (which only matches entries written with the
 // new tag).
-export const getCachedTokenRefs = unstable_cache(
-  async (artistAddress: string): Promise<TokenRef[]> =>
-    filterOutBurnedRefs(await discoverArtistTokenRefs(artistAddress)),
-  // v7: drop burned/nonexistent tokens from refs so they leave both the
-  // gallery and the "N indexed works" count.
-  // v6: seed-backed discovery for unadmitted artists (FND shared mints +
-  // on-demand collection enumeration) — clears every cached empty-refs
-  // entry written while those artists had no indexed rows.
-  ["artist-token-refs", "v7"],
-  { revalidate: 86_400, tags: ["artist-refs"] },
-)
+export async function getCachedTokenRefs(
+  artistAddress: string,
+  indexedOnly = false,
+): Promise<TokenRef[]> {
+  const lower = artistAddress.toLowerCase()
+  return unstable_cache(
+    async (): Promise<TokenRef[]> =>
+      filterOutBurnedRefs(await discoverArtistTokenRefs(lower, {
+        includeCourtesyChainReads: !indexedOnly,
+      })),
+    // The address is both an explicit key part and an invalidation tag. A
+    // completed durable refresh can evict only this artist instead of forcing
+    // every gallery cold.
+    ["artist-token-refs", "v9", indexedOnly ? "indexed" : "courtesy", lower],
+    { revalidate: 86_400, tags: ["artist-refs", artistRefsTag(lower)] },
+  )()
+}
 
-export const getCachedEnrichedPage = unstable_cache(
-  async (refs: TokenRef[]): Promise<DiscoveredToken[]> => {
-    const enriched = await enrichTokens(refs)
-    // Don't poison the 24h cache with an empty result when there were
-    // refs to enrich — that's the symptom of a transient RPC/IPFS
-    // hiccup during cold fill (multicall timeout + metadata gateway
-    // miss), not a real "this artist has no tokens" signal. We hit
-    // this in production: an artist with 24 Manifold tokens cached as
-    // `[]` and stayed empty for 24h until someone hit /api/revalidate.
-    // Bumping the cache key (v5→v6) below clears existing poisoned
-    // entries on deploy.
-    if (refs.length > 0 && enriched.length === 0) {
-      throw new EnrichmentEmpty()
-    }
-    return enriched
-  },
-  // v7: enrichTokens now courtesy-resolves missing metadata (unclaimed
-  // artists' seed works rendered as bare "NFT #id" placeholders and the
-  // placeholder pages were cached for 24h — bump clears them on deploy).
-  ["artist-enriched-page", "v7"],
-  { revalidate: 86_400, tags: ["artist-enriched"] },
-)
+export async function getCachedEnrichedPage(
+  refs: TokenRef[],
+  artistAddress?: string,
+): Promise<DiscoveredToken[]> {
+  const lower = artistAddress?.toLowerCase()
+  return unstable_cache(
+    async (): Promise<DiscoveredToken[]> => {
+      // Public profile requests are database reads only. Missing metadata is
+      // an explicit indexed state for the worker to resolve, never permission
+      // for a page render to fan out tokenURI/uri RPC calls.
+      const enriched = await enrichTokens(refs, { resolveMissing: false })
+      // Don't poison the 24h cache with an empty result when there were
+      // refs to enrich. That is the symptom of a transient metadata miss,
+      // not a real "this artist has no tokens" signal.
+      if (refs.length > 0 && enriched.length === 0) {
+        throw new EnrichmentEmpty()
+      }
+      return enriched
+    },
+    // refs are part of the key so different pages cannot collide. The optional
+    // artist tag lets a successful refresh evict every enriched page for that
+    // artist while non-gallery callers retain the shared global tag.
+    ["artist-enriched-page", "v8", lower ?? "shared", JSON.stringify(refs)],
+    {
+      revalidate: 86_400,
+      tags: [
+        "artist-enriched",
+        ...(lower ? [artistEnrichedTag(lower)] : []),
+      ],
+    },
+  )()
+}

@@ -18,12 +18,14 @@ import {
   enqueueRefreshArtist,
   enqueueRefreshToken,
   getLastTickAt,
+  getQueueStats,
   getTaskStats,
 } from "./scheduler.ts"
 import { sql } from "./db.ts"
 
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/
 const TOKEN_ID_RE = /^[0-9]+$/
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const SECRET = process.env.WORKER_SECRET ?? process.env.REVALIDATE_SECRET ?? ""
 
 export async function startHealthServer(port: number): Promise<void> {
@@ -58,11 +60,21 @@ export async function startHealthServer(port: number): Promise<void> {
 function health(res: ServerResponse): void {
   const last = getLastTickAt()
   const since = last ? Date.now() - last.getTime() : Infinity
-  // 30 min cap is generous; the slowest task is `scan-manifold` at 30m.
-  const ok = since < 30 * 60 * 1000
+  const tasks = getTaskStats()
+  const overdueTasks = Object.entries(tasks)
+    .filter(([, task]) => task.overdue)
+    .map(([name]) => name)
+  const ok = since < 30 * 60 * 1000 && overdueTasks.length === 0
   res.statusCode = ok ? 200 : 503
   res.setHeader("content-type", "application/json")
-  res.end(JSON.stringify({ ok, lastTickAt: last?.toISOString() ?? null }))
+  res.end(JSON.stringify({
+    ok,
+    lastTickAt: last?.toISOString() ?? null,
+    buildSha: process.env.RAILWAY_GIT_COMMIT_SHA ?? process.env.COMMIT_REF ?? null,
+    indexerSchema: process.env.INDEXER_SCHEMA ?? "indexer_live",
+    overdueTasks,
+    queues: getQueueStats(),
+  }))
 }
 
 async function metrics(res: ServerResponse): Promise<void> {
@@ -81,7 +93,13 @@ async function metrics(res: ServerResponse): Promise<void> {
   const stats = getTaskStats()
   res.statusCode = 200
   res.setHeader("content-type", "application/json")
-  res.end(JSON.stringify({ last24h: rows, runtime: stats }))
+  res.end(JSON.stringify({
+    buildSha: process.env.RAILWAY_GIT_COMMIT_SHA ?? process.env.COMMIT_REF ?? null,
+    indexerSchema: process.env.INDEXER_SCHEMA ?? "indexer_live",
+    last24h: rows,
+    runtime: stats,
+    queues: getQueueStats(),
+  }))
 }
 
 async function jobsRefreshArtist(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -92,18 +110,21 @@ async function jobsRefreshArtist(req: IncomingMessage, res: ServerResponse): Pro
     return
   }
 
-  const address = req.url!.split("/").pop()!.split("?")[0].toLowerCase()
-  if (!ADDRESS_RE.test(address)) {
+  const url = new URL(req.url ?? "", "http://localhost")
+  const address = url.pathname.split("/").pop()!.toLowerCase()
+  const jobId = url.searchParams.get("jobId") ?? req.headers["x-pnd-refresh-job"]
+  const normalizedJobId = Array.isArray(jobId) ? jobId[0] : jobId
+  if (!ADDRESS_RE.test(address) || (normalizedJobId != null && !UUID_RE.test(normalizedJobId))) {
     res.statusCode = 400
     res.setHeader("content-type", "application/json")
-    res.end(JSON.stringify({ ok: false, error: "invalid address" }))
+    res.end(JSON.stringify({ ok: false, error: "invalid address or job id" }))
     return
   }
 
-  const enqueued = enqueueRefreshArtist(address)
+  const enqueued = enqueueRefreshArtist(address, normalizedJobId ?? null)
   res.statusCode = 202
   res.setHeader("content-type", "application/json")
-  res.end(JSON.stringify({ ok: true, enqueued }))
+  res.end(JSON.stringify({ ok: true, enqueued, status: "queued" }))
 }
 
 async function jobsRefreshToken(req: IncomingMessage, res: ServerResponse): Promise<void> {

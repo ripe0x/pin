@@ -617,21 +617,20 @@ export async function getCollectionMintHistory(
  *
  * The address list comes from the indexed SurfaceCreated table (a pure
  * SELECT — zero chain reads in the list path, per AGENTS.md); the
- * factory-enumeration read (totalSurfaces + allSurfaces multicall) is the
- * fallback for when the indexer is unavailable, and the primary path on a
- * fork/sepolia instance, where the indexed table describes mainnet, not
- * the local factory. Per-collection live state still comes from
- * getCollection()'s cached reads either way.
+ * Fork/sepolia enumerate the local factory directly. Mainnet does not fall
+ * back to chain discovery: doing so previously made a stale schema look
+ * healthy while hiding missing indexed rows.
  */
 export async function getRecentCollections(factory: Address, limit = 8): Promise<Collection[]> {
   if (!FORK_MODE && !USE_SEPOLIA) {
     const indexed = await getCollectionAddressesFromIndexer(limit)
-    if (indexed !== null) {
-      const collections = await Promise.all(
-        indexed.map((a) => getCollection(a as Address)),
-      )
-      return collections.filter((c): c is Collection => c !== null)
+    if (indexed === null) {
+      throw new Error("Mainnet collection index is unavailable")
     }
+    const collections = await Promise.all(
+      indexed.map((a) => getCollection(a as Address)),
+    )
+    return collections.filter((c): c is Collection => c !== null)
   }
   return pgCache(`sc-recent:${lc(factory)}:${limit}`, 60, async () => {
     const client = getClient()

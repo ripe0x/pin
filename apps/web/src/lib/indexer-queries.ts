@@ -104,7 +104,7 @@ export async function getSettledAuctionForToken(
 
   return withTimeout(async () => {
     const contract = tokenContract.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+    const schema = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
       /[^a-zA-Z0-9_]/g,
       "",
     )
@@ -196,7 +196,7 @@ export async function getTokenAuctionSales(
 
   const result = await withTimeout(async () => {
     const contract = tokenContract.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+    const schema = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
       /[^a-zA-Z0-9_]/g,
       "",
     )
@@ -272,7 +272,7 @@ export async function getActivePndAuctions(
   // in a Suspense boundary below the hero, so paying ~700ms-1s on the
   // first uncached load is fine. The hero still streams immediately.
   return withTimeout(async () => {
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+    const schema = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
       /[^a-zA-Z0-9_]/g,
       "",
     )
@@ -351,7 +351,7 @@ export async function getSrv2TokensFromIndexer(
   const db = sql
 
   return withTimeout(async () => {
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+    const schema = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
       /[^a-zA-Z0-9_]/g,
       "",
     )
@@ -401,7 +401,7 @@ export async function getPndHouses(limit = 24): Promise<PndHouse[] | null> {
   const db = sql
 
   return withTimeout(async () => {
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+    const schema = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
       /[^a-zA-Z0-9_]/g,
       "",
     )
@@ -476,7 +476,7 @@ export async function getPlatformStats(): Promise<PlatformStats | null> {
   const db = sql
 
   return withTimeout(async () => {
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+    const schema = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
       /[^a-zA-Z0-9_]/g,
       "",
     )
@@ -558,7 +558,7 @@ export async function getFoundationTokensFromIndexer(
   const db = sql
 
   return withTimeout(async () => {
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+    const schema = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
       /[^a-zA-Z0-9_]/g,
       "",
     )
@@ -666,7 +666,7 @@ export async function getActivityFeed(
   const db = sql
 
   return withTimeout(async () => {
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+    const schema = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
       /[^a-zA-Z0-9_]/g,
       "",
     )
@@ -1163,7 +1163,7 @@ export async function getActiveFndAuctionCount(
   const db = sql
   return withTimeout(async () => {
     const seller = sellerAddress.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+    const schema = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
       /[^a-zA-Z0-9_]/g,
       "",
     )
@@ -1184,7 +1184,7 @@ export async function getActiveFndBuyNowCount(
   const db = sql
   return withTimeout(async () => {
     const seller = sellerAddress.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+    const schema = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
       /[^a-zA-Z0-9_]/g,
       "",
     )
@@ -1216,7 +1216,7 @@ export async function getFoundationCreatorSummary(
   const db = sql
   return withTimeout(async () => {
     const creator = artistAddress.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+    const schema = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
       /[^a-zA-Z0-9_]/g,
       "",
     )
@@ -1260,7 +1260,7 @@ export async function getFoundationSalesSummary(
   const db = sql
   return withTimeout(async () => {
     const seller = sellerAddress.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+    const schema = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
       /[^a-zA-Z0-9_]/g,
       "",
     )
@@ -1304,7 +1304,7 @@ export async function getArtistContractMap(
   const db = sql
   return withTimeout(async () => {
     const creator = artistAddress.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+    const schema = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
       /[^a-zA-Z0-9_]/g,
       "",
     )
@@ -1389,7 +1389,7 @@ export async function getCatalogFromIndexer(
 
   return withTimeout(async () => {
     const artist = artistAddress.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+    const schema = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
       /[^a-zA-Z0-9_]/g,
       "",
     )
@@ -1461,7 +1461,7 @@ export async function getActiveAuctionCountFromIndexer(
     // release so the indexer can run zero-downtime cutovers; see
     // ponder/README.md for the full upgrade flow. Override the default
     // here via INDEXER_SCHEMA when the indexer's schema name changes.
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+    const schema = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
       /[^a-zA-Z0-9_]/g,
       "",
     )
@@ -1498,7 +1498,7 @@ export async function getCollectionPrimaryMinterFromIndexer(
   const db = sql
   return withTimeout(async () => {
     const addr = collection.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+    const schema = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
       /[^a-zA-Z0-9_]/g,
       "",
     )
@@ -1511,7 +1511,7 @@ export async function getCollectionPrimaryMinterFromIndexer(
 }
 
 const indexerSchema = () =>
-  (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(/[^a-zA-Z0-9_]/g, "")
+  (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(/[^a-zA-Z0-9_]/g, "")
 
 /**
  * Newest-first collection addresses from the SurfaceCreated discovery

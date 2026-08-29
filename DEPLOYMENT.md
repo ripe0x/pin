@@ -109,30 +109,25 @@ specific bug if it ever resurfaces.
 
 ## Ponder
 
-The indexer is opt-in. If `DATABASE_URL` is set on the web app but
-Ponder isn't running, the indexer-first wrappers fall through to the
-RPC-cached path — site works, just without the point-query speed-up
-for `getActiveAuctionCount`.
+Ponder is a required long-running Railway service. Public profile and
+collection reads fail visibly if its canonical database target is unavailable;
+they do not hide a broken deploy behind request-time chain scans.
 
-Setup is in [`ponder/README.md`](./ponder/README.md). The summary:
+Setup is in `apps/indexer/`. The summary:
 
-1. Deploy `ponder/` as a long-running Node service (Railway, Render,
-   Fly, your own VM). Don't try to run it in a Function — it's a
-   continuously-syncing process.
+1. Deploy `apps/indexer/` as a continuously-running Node service.
 2. Point its `DATABASE_URL` at the same Postgres the web app uses.
-3. Set `DATABASE_SCHEMA=ponder_v1` on the indexer service so its
-   tables live in their own namespace. The `_v1` suffix is the
-   versioned-deploy convention; bump it on every schema-changing
-   release. See [Versioned schema upgrades](./ponder/README.md#versioned-schema-upgrades).
+3. Set a fresh versioned `DATABASE_SCHEMA=ponder_vN`. Never make web or worker
+   follow that value directly.
 4. Set `PONDER_RPC_URL_1=https://eth.drpc.org` (drpc.org's free tier
    handles Ponder's factory-pattern multi-address `eth_getLogs` calls
-   correctly; publicnode / llamarpc / ankr do not — see
-   [`ponder/README.md`](./ponder/README.md#rpc-strategy) for the full
-   failure mode). Cost is controlled via `pollingInterval` in
-   `ponder.config.ts`, currently 300s.
-5. Set `INDEXER_SCHEMA=ponder_v1` on the web app so it knows where
-   Ponder writes. Must match the indexer's `DATABASE_SCHEMA`
-   exactly; bump in lockstep on schema upgrades.
+   correctly. Cost is controlled via `pollingInterval` in
+   `apps/indexer/ponder.config.ts`.
+5. Run `pnpm db:migrate`, complete the parity gates in
+   `docs/indexer-cutover.md`, and switch `indexer_live` atomically with
+   `scripts/switch-indexer-schema.mjs`.
+6. Set `INDEXER_SCHEMA=indexer_live` on both Netlify web and Railway worker.
+   Only Ponder keeps the versioned schema value.
 
 Ongoing cost is small (Ponder polls for new blocks, the events on a
 factory + clones are sparse).
@@ -360,7 +355,7 @@ PR / branch previews:
 
 ### Environment variable scoping
 
-Set `DATABASE_URL` and `INDEXER_SCHEMA` with **all** contexts selected
+Set `DATABASE_URL` and `INDEXER_SCHEMA=indexer_live` with **all** contexts selected
 (production + deploy-preview + branch-deploy). If you only set them on
 production, your preview deploys behave like the cache layer doesn't
 exist (which is the kill-switch behavior — but probably not what you

@@ -43,7 +43,11 @@ const THUMBNAIL_WIDTH_THRESHOLD = 200
  * attach too late and miss it. On mount we inspect `complete +
  * naturalWidth` and synthesize the fallback if the IMG is broken.
  */
-export function useOptimizedImage(initialUrl: string, width = 800) {
+export function useOptimizedImage(
+  initialUrl: string,
+  width = 800,
+  options: { allowRawFallback?: boolean } = {},
+) {
   const { src: rawSrc, onError: onRawError } =
     useIpfsGatewayFallback(initialUrl)
   const [useProxy, setUseProxy] = useState(true)
@@ -66,10 +70,11 @@ export function useOptimizedImage(initialUrl: string, width = 800) {
   const displaySrc = useProxy ? optimized : rawSrc
 
   const isThumbnail = width < THUMBNAIL_WIDTH_THRESHOLD
+  const allowRawFallback = options.allowRawFallback ?? true
 
   const onError = useCallback(() => {
     if (proxyApplied) {
-      if (isThumbnail) {
+      if (isThumbnail || !allowRawFallback) {
         // Skip raw — see THUMBNAIL_WIDTH_THRESHOLD docstring. Try the
         // next IPFS gateway via proxy; if no rotation available, give
         // up and let the caller render a placeholder.
@@ -85,7 +90,7 @@ export function useOptimizedImage(initialUrl: string, width = 800) {
     // exhausted — flip `failed` so the caller renders a placeholder.
     const rotated = onRawError()
     if (!rotated) setFailed(true)
-  }, [proxyApplied, onRawError, isThumbnail])
+  }, [proxyApplied, onRawError, isThumbnail, allowRawFallback])
 
   // Catch SSR-rendered images that already failed before hydration —
   // their native error event has come and gone, so the React handler
