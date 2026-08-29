@@ -72,7 +72,20 @@ export async function scanSrv2ActiveAuctions(): Promise<TaskResult> {
   let cursor = cursorRows[0]
     ? BigInt(cursorRows[0].last_block) + 1n
     : SR_BAZAAR_DEPLOY_BLOCK
-  if (cursor > head) return { scopeCount: 1, rpcCalls, rowsWritten: 0 }
+  if (cursor > head) {
+    await sql`
+      INSERT INTO srv2_listing_coverage
+        (scope, indexed_through_block, finalized_target_block, complete, last_success_at)
+      VALUES (${SCOPE}, ${(cursor - 1n).toString()}::bigint,
+              ${head.toString()}::bigint, TRUE, NOW())
+      ON CONFLICT (scope) DO UPDATE SET
+        indexed_through_block = EXCLUDED.indexed_through_block,
+        finalized_target_block = EXCLUDED.finalized_target_block,
+        complete = TRUE,
+        last_success_at = NOW()
+    `
+    return { scopeCount: 1, rpcCalls, rowsWritten: 0 }
+  }
 
   const candidates = new Map<string, Candidate>()
   let chunks = 0
@@ -164,28 +177,33 @@ export async function scanSrv2ActiveAuctions(): Promise<TaskResult> {
       const changed = await tx`
         INSERT INTO srv2_active_auctions
           (contract, token_id, seller, reserve_wei, current_bid_wei,
-           current_bidder, end_time, status, last_observed_block, updated_at)
+           current_bidder, end_time, duration_seconds, status,
+           last_observed_block, updated_at)
         VALUES
           (${candidate.contract.toLowerCase()}, ${candidate.tokenId.toString()}, ${seller},
            ${(active ? minimumBid : candidate.reserveWei).toString()}, ${bidAmount.toString()},
            ${bidder.toLowerCase() === ZERO_ADDRESS ? null : bidder.toLowerCase()},
            ${Number(startingTime > 0n ? startingTime + duration : 0n)},
-           ${active ? "active" : "settled"}, ${head.toString()}::bigint, NOW())
+           ${duration.toString()}::bigint, ${active ? "active" : "settled"},
+           ${head.toString()}::bigint, NOW())
         ON CONFLICT (contract, token_id) DO UPDATE SET
           seller = EXCLUDED.seller,
           reserve_wei = EXCLUDED.reserve_wei,
           current_bid_wei = EXCLUDED.current_bid_wei,
           current_bidder = EXCLUDED.current_bidder,
           end_time = EXCLUDED.end_time,
+          duration_seconds = EXCLUDED.duration_seconds,
           status = EXCLUDED.status,
           last_observed_block = EXCLUDED.last_observed_block,
           updated_at = NOW()
         WHERE (srv2_active_auctions.seller, srv2_active_auctions.reserve_wei,
                srv2_active_auctions.current_bid_wei, srv2_active_auctions.current_bidder,
-               srv2_active_auctions.end_time, srv2_active_auctions.status)
+               srv2_active_auctions.end_time, srv2_active_auctions.duration_seconds,
+               srv2_active_auctions.status)
           IS DISTINCT FROM
               (EXCLUDED.seller, EXCLUDED.reserve_wei, EXCLUDED.current_bid_wei,
-               EXCLUDED.current_bidder, EXCLUDED.end_time, EXCLUDED.status)
+               EXCLUDED.current_bidder, EXCLUDED.end_time,
+               EXCLUDED.duration_seconds, EXCLUDED.status)
         RETURNING 1
       `
       rowsWritten += changed.count
@@ -196,6 +214,18 @@ export async function scanSrv2ActiveAuctions(): Promise<TaskResult> {
       VALUES (${TASK}, ${SCOPE}, ${scannedThrough.toString()}::bigint, NOW())
       ON CONFLICT (task, scope) DO UPDATE SET
         last_block = EXCLUDED.last_block, last_run_at = NOW()
+    `
+
+    await tx`
+      INSERT INTO srv2_listing_coverage
+        (scope, indexed_through_block, finalized_target_block, complete, last_success_at)
+      VALUES (${SCOPE}, ${scannedThrough.toString()}::bigint,
+              ${head.toString()}::bigint, ${scannedThrough >= head}, NOW())
+      ON CONFLICT (scope) DO UPDATE SET
+        indexed_through_block = EXCLUDED.indexed_through_block,
+        finalized_target_block = EXCLUDED.finalized_target_block,
+        complete = EXCLUDED.complete,
+        last_success_at = NOW()
     `
   })
 

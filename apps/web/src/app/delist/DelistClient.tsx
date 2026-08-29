@@ -211,9 +211,8 @@ function ReadOnlyPreview({
 
   const total = state.auctions.length + state.buyNows.length
 
-  // Partial result with no rows: the scan couldn't complete on one or
-  // both platforms (upstream RPC failure or per-adapter timeout). We
-  // can't honestly say "nothing here" — be explicit and offer a retry.
+  // Partial result with no rows: an indexed source is stale/ineligible or an
+  // adapter failed. We can't honestly say "nothing here" — be explicit.
   if (total === 0 && state.partial) {
     return (
       <Section>
@@ -226,8 +225,8 @@ function ReadOnlyPreview({
             <p className="mt-1 text-sm text-gray-500">
               The marketplace scan for{" "}
               <span className="font-mono">{short(address)}</span> didn&rsquo;t
-              complete. This usually means an upstream RPC is rate-limited or
-              down for a few minutes.
+              complete. Its index may still be catching up, or a source may be
+              temporarily unavailable.
             </p>
             <button
               onClick={refresh}

@@ -25,9 +25,21 @@ export async function pruneWorkerIterations(): Promise<TaskResult> {
       updated_at = NOW()
   `
 
-  const deleted = await sql`
+  const deletedIterations = await sql`
     DELETE FROM worker_iterations
     WHERE started_at < NOW() - INTERVAL '30 days'
   `
-  return { scopeCount: 1, rpcCalls: 0, rowsWritten: deleted.count }
+  // pgCache replaces values by key but does not otherwise revisit expired
+  // keys. Production had accumulated tens of thousands of dead cache rows,
+  // including large renderer payloads, so fold safe expiry cleanup into the
+  // existing daily maintenance task.
+  const deletedCacheEntries = await sql`
+    DELETE FROM cache_entries
+    WHERE expires_at < NOW()
+  `
+  return {
+    scopeCount: 2,
+    rpcCalls: 0,
+    rowsWritten: deletedIterations.count + deletedCacheEntries.count,
+  }
 }

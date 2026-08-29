@@ -1,7 +1,7 @@
 import type { ArtistIdentity } from "@/lib/artist-queries"
 import type { ProfileSummary } from "@/lib/profile-queries"
-import { AddressZorb } from "@/components/AddressZorb"
 import { CopyAddressButton } from "@/components/CopyAddressButton"
+import { IdentityAvatar } from "@/components/IdentityAvatar"
 
 export function ProfileHeader({
   identity,
@@ -16,15 +16,11 @@ export function ProfileHeader({
   return (
     <header className="space-y-6">
       <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
-        {identity.avatarUrl ? (
-          <img
-            src={identity.avatarUrl}
-            alt=""
-            className="h-20 w-20 shrink-0 rounded-full object-cover"
-          />
-        ) : (
-          <AddressZorb address={identity.address} className="h-20 w-20 shrink-0 rounded-full" />
-        )}
+        <IdentityAvatar
+          address={identity.address}
+          avatarUrl={identity.avatarUrl}
+          className="h-20 w-20 shrink-0 rounded-full object-cover"
+        />
 
         <div className="min-w-0 space-y-2">
           <h1 className="truncate font-mono text-base font-medium tracking-tight">

@@ -18,6 +18,10 @@ import { mainnet } from "viem/chains"
 import { sql } from "./db"
 import { pgCache } from "./pg-cache"
 import { getMainnetTransport } from "./alchemy-rpc"
+import {
+  toPreserveDiscoveredToken,
+  type IndexedPreserveTokenRow,
+} from "./preserve-token"
 
 export type TokenRef = {
   contract: `0x${string}`
@@ -687,6 +691,47 @@ async function readTokenCreatorOnchain(
   })
 }
 
+async function getIndexedCreator(
+  contract: string,
+  tokenId: string,
+  indexerSchema: string,
+): Promise<string | null> {
+  if (!sql) return null
+  let artistRows: Array<{ artist: string }>
+  try {
+    artistRows = (await sql.unsafe(
+      `SELECT artist FROM work_attributions
+         WHERE contract = $1 AND token_id = $2
+         ORDER BY
+           CASE WHEN evidence_status = 'indexed-mint' THEN 0 ELSE 1 END,
+           artist, source
+         LIMIT 1`,
+      [contract, tokenId],
+    )) as Array<{ artist: string }>
+  } catch {
+    artistRows = (await sql`
+      SELECT artist FROM artist_tokens
+      WHERE contract = ${contract} AND token_id = ${tokenId}
+      ORDER BY artist LIMIT 1
+    `) as Array<{ artist: string }>
+  }
+  if (artistRows[0]) return artistRows[0].artist
+
+  const fnd = (await sql.unsafe(
+    `SELECT lower(creator) AS creator FROM ${indexerSchema}.fnd_artist_tokens
+       WHERE lower(contract) = $1 AND token_id::text = $2 LIMIT 1`,
+    [contract, tokenId],
+  )) as Array<{ creator: string }>
+  if (fnd[0]) return fnd[0].creator
+
+  const sr = (await sql.unsafe(
+    `SELECT lower(creator) AS creator FROM ${indexerSchema}.srv2_artist_tokens
+       WHERE lower(contract) = $1 AND token_id::text = $2 LIMIT 1`,
+    [contract, tokenId],
+  )) as Array<{ creator: string }>
+  return sr[0]?.creator ?? null
+}
+
 export async function getTokenOnChainData(
   contract: string,
   tokenId: string,
@@ -716,36 +761,10 @@ export async function getTokenOnChainData(
     }>>,
   ])
 
-  // Creator: prefer canonical many-to-many attribution, then Ponder's shared
-  // tables during rollout. Missing evidence stays missing; a token-page render
-  // never performs tokenCreator/owner or historical getLogs courtesy reads.
-  let creator: string | null = null
-  const artistRow = (await sql.unsafe(
-    `SELECT artist FROM work_attributions
-       WHERE contract = $1 AND token_id = $2
-       ORDER BY
-         CASE WHEN evidence_status = 'indexed-mint' THEN 0 ELSE 1 END,
-         artist, source
-       LIMIT 1`,
-    [c, tokenId],
-  )) as Array<{ artist: string }>
-  if (artistRow[0]) creator = artistRow[0].artist
-  else {
-    const fnd = (await sql.unsafe(
-      `SELECT lower(creator) AS creator FROM ${INDEXER_SCHEMA}.fnd_artist_tokens
-         WHERE lower(contract) = $1 AND token_id::text = $2 LIMIT 1`,
-      [c, tokenId],
-    )) as Array<{ creator: string }>
-    if (fnd[0]) creator = fnd[0].creator
-    else {
-      const sr = (await sql.unsafe(
-        `SELECT lower(creator) AS creator FROM ${INDEXER_SCHEMA}.srv2_artist_tokens
-           WHERE lower(contract) = $1 AND token_id::text = $2 LIMIT 1`,
-        [c, tokenId],
-      )) as Array<{ creator: string }>
-      if (sr[0]) creator = sr[0].creator
-    }
-  }
+  // Creator comes only from durable indexed evidence. Keep the legacy table
+  // readable while migration 034 rolls out, otherwise one missing additive
+  // table would discard the already-loaded owner and transfer history too.
+  const creator = await getIndexedCreator(c, tokenId, INDEXER_SCHEMA)
   if (
     owners.length === 0 &&
     transfers.length === 0 &&
@@ -801,15 +820,17 @@ export async function getErc1155TokenStats(
   if (!sql) return null
   const lowerContract = contract.toLowerCase()
   const rows = (await sql`
-    SELECT s.total_supply, s.owner_count,
-           (SELECT a.artist FROM work_attributions a
-             WHERE a.contract = s.contract AND a.token_id = s.token_id
-             ORDER BY a.artist, a.source LIMIT 1) AS creator
+    SELECT s.total_supply, s.owner_count
     FROM token_1155_stats s
     WHERE s.contract = ${lowerContract} AND s.token_id = ${tokenId}
     LIMIT 1
-  `) as Array<{ total_supply: string; owner_count: number; creator: string | null }>
+  `) as Array<{ total_supply: string; owner_count: number }>
   if (rows.length === 0) return null
+  const indexerSchema = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
+    /[^a-zA-Z0-9_]/g,
+    "",
+  )
+  const creator = await getIndexedCreator(lowerContract, tokenId, indexerSchema)
 
   // Mint history — one row per mint event, recorded by the worker's
   // mint-clone scanner. from is always the zero address (these are mints),
@@ -843,7 +864,7 @@ export async function getErc1155TokenStats(
       txHash: m.tx_hash,
       amount: BigInt(m.amount),
     })),
-    creator: rows[0].creator,
+    creator,
   }
 }
 
@@ -858,14 +879,7 @@ export async function getErc1155TokenStats(
  */
 export async function discoverFoundationPinnedTokens(
   artistAddress: string,
-): Promise<Array<{
-  contract: string
-  tokenId: string
-  name: string | null
-  imageUrl: string | null
-  animationUrl: string | null
-  rawUri: string | null
-}>> {
+): Promise<DiscoveredToken[]> {
   if (!sql) return []
   const lower = artistAddress.toLowerCase()
   const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
@@ -883,28 +897,14 @@ export async function discoverFoundationPinnedTokens(
        WHERE artist = $1 AND platform = 'fnd-collection'
      )
      SELECT r.contract, r.token_id,
-            m.name, m.image_url, m.animation_url, m.raw_uri
+            m.name, m.description, m.image_url, m.animation_url, m.raw_uri
      FROM refs r
      LEFT JOIN token_metadata m
        ON m.contract = r.contract AND m.token_id = r.token_id`,
     [lower],
-  )) as Array<{
-    contract: string
-    token_id: string
-    name: string | null
-    image_url: string | null
-    animation_url: string | null
-    raw_uri: string | null
-  }>
+  )) as IndexedPreserveTokenRow[]
 
-  return rows.map((r) => ({
-    contract: r.contract,
-    tokenId: r.token_id,
-    name: r.name,
-    imageUrl: r.image_url,
-    animationUrl: r.animation_url,
-    rawUri: r.raw_uri,
-  }))
+  return rows.map((row) => toPreserveDiscoveredToken(row, lower))
 }
 
 /**

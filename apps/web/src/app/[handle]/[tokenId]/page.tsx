@@ -403,6 +403,7 @@ export default async function TokenPage({
             imageUrl={data.imageUrl}
             animationUrl={data.animationUrl}
             posterUrl={data.mediaDelivery?.posterUrl ?? data.mediaDelivery?.thumbnailUrl}
+            mediaKind={data.mediaDelivery?.kind}
             title={data.title}
           />
         </div>

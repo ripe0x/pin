@@ -8,6 +8,11 @@ import {
 import { ActivityFeed } from "@/components/home/v2/ActivityFeed"
 import { HomeEntryPoints } from "@/components/home/HomeEntryPoints"
 
+// The feed data itself is cached for 30 seconds. Keep the shell dynamic so a
+// congested build-time database read cannot bake an empty feed into a fresh
+// deploy until the first ISR cycle.
+export const dynamic = "force-dynamic"
+
 /**
  * Landing page — a reverse-chronological stream of sovereign actions
  * (deploy, list, mint, settle), with the artist as the subject of every

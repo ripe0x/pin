@@ -1658,7 +1658,7 @@ export async function isCollectionInIndexer(
       [collection.toLowerCase()],
     )) as Array<{ one: number }>
     return rows.length > 0
-  })
+  }, 2_000)
 }
 
 /**

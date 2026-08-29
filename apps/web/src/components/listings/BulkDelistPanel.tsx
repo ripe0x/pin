@@ -165,8 +165,8 @@ export function BulkDelistPanel({
     return (
       <Section>
         <p className="text-sm text-gray-700">
-          Marketplace scan didn&rsquo;t complete. Upstream RPC may be rate-
-          limited or down.
+          PND couldn&rsquo;t check every marketplace. An index may still be
+          catching up, or a source may be temporarily unavailable.
         </p>
         <button
           onClick={handleRefresh}

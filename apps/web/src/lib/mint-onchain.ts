@@ -151,6 +151,12 @@ function artFromJson(json: Record<string, unknown> | null): TokenArt {
 // ── snapshot (price / supply / window) ───────────────────────────────────────
 
 export type MintSnapshot = {
+  /**
+   * `unavailable` means at least one descriptor-required live read failed.
+   * The numeric strings remain present for RSC/backwards-compatible consumers,
+   * but mint clients must not interpret their placeholders as onchain values.
+   */
+  readStatus: "available" | "unavailable"
   /** All fields are decimal strings (bigint-safe across the RSC boundary). */
   priceWei: string // "0" for quote-priced collections (resolved client-side)
   minted: string
@@ -272,6 +278,10 @@ async function getMintSnapshotRpc(desc: MintCollection): Promise<MintSnapshot> {
     }
 
     const res = await multicallResilient(client, calls)
+    // Every call assembled above is required by this descriptor. A revert or
+    // transport outage must stay unknown: treating a failed price/window read
+    // as zero can otherwise turn an unreadable mint into a gas-only open mint.
+    const readStatus = res.every((r) => r.status === "success") ? "available" : "unavailable"
     const val = (i: number): bigint =>
       i >= 0 && res[i]?.status === "success" ? BigInt(res[i].result as bigint) : 0n
 
@@ -290,8 +300,9 @@ async function getMintSnapshotRpc(desc: MintCollection): Promise<MintSnapshot> {
           : val(capIdx)
 
     if (desc.phases) {
-      // A failed/absent getter reads as 0n via val(), i.e. "unscheduled" —
-      // exactly the closed-window semantics mint-phases.ts documents.
+      // Keep the numeric shape serializable even when a getter failed. The
+      // snapshot-level readStatus prevents these placeholders from reaching
+      // phase, price, or mintability semantics in the client.
       const g = (fn: string | undefined): bigint =>
         fn !== undefined ? val(phaseGetterIdx.get(fn) ?? -1) : 0n
       const phases: PhaseWindow[] = desc.phases.map((p) => ({
@@ -305,6 +316,7 @@ async function getMintSnapshotRpc(desc: MintCollection): Promise<MintSnapshot> {
       const starts = phases.map((p) => BigInt(p.start)).filter((s) => s > 0n)
       const overallStart = starts.length > 0 ? starts.reduce((a, b) => (b < a ? b : a)) : 0n
       return {
+        readStatus,
         priceWei: priceWei.toString(),
         minted: minted.toString(),
         cap: cap.toString(),
@@ -321,6 +333,7 @@ async function getMintSnapshotRpc(desc: MintCollection): Promise<MintSnapshot> {
     else if (desc.window.kind === "start-end") end = val(endIdx)
 
     return {
+      readStatus,
       priceWei: priceWei.toString(),
       minted: minted.toString(),
       cap: cap.toString(),

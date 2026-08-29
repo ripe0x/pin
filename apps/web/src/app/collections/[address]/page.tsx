@@ -72,12 +72,33 @@ import {
 
 type Params = Promise<{ address: string }>
 
+function collectionMediaUrl(address: string, uri: string): string {
+  // Inline renderer covers can be hundreds of kilobytes. Sending one through
+  // a Server Component serializes the entire asset into the page payload.
+  // The media route serves the same indexed cover as a cacheable image.
+  return uri.trim().toLowerCase().startsWith("data:")
+    ? `/api/media/collection/${encodeURIComponent(address)}`
+    : ipfsToHttp(uri)
+}
+
+function rendererMediaUrl(address: string, tokenId: bigint, uri: string): string {
+  return uri.trim().toLowerCase().startsWith("data:")
+    ? `/api/media/renderer/${encodeURIComponent(address)}/${tokenId.toString()}`
+    : ipfsToHttp(uri)
+}
+
+function previewMediaUrl(address: string, seedIndex: number, uri: string): string {
+  return uri.trim().toLowerCase().startsWith("data:")
+    ? `/api/media/preview/${encodeURIComponent(address)}/${seedIndex}`
+    : ipfsToHttp(uri)
+}
+
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
   const { address } = await params
   if (!isAddress(address)) return { title: "Collection" }
   const c = await getCollection(address as Address)
   if (!c) return { title: "Collection" }
-  const image = ipfsToHttp(c.cover)
+  const image = c.cover ? collectionMediaUrl(address, c.cover) : ""
   return {
     title: c.name,
     openGraph: image ? { title: c.name, images: [{ url: image }] } : { title: c.name },
@@ -123,6 +144,7 @@ export default async function CollectionPage({
   ])
 
   const hasCover = c.cover.length > 0
+  const coverUrl = hasCover ? collectionMediaUrl(addr, c.cover) : ""
   const hasWork = c.work.code.length > 0
   // Renderer-native works (custom or Solidity-SVG renderers with no parity
   // work config): if the renderer implements the OPTIONAL previewURI
@@ -131,6 +153,12 @@ export default async function CollectionPage({
   const onchainPreviews = !hasWork
     ? await getRendererPreviews(addr, c.renderer, c.minted + 1n, 15)
     : null
+  const displayPreviews = onchainPreviews?.map((preview) => ({
+    ...preview,
+    image: preview.image
+      ? previewMediaUrl(addr, preview.seedIndex, preview.image)
+      : null,
+  })) ?? null
   // With no cover, no work config and no preview extension, the collection
   // still has a renderer that can describe its work. Read that directly
   // rather than a minted token's tokenURI: the renderer answers for any id in
@@ -141,7 +169,9 @@ export default async function CollectionPage({
     !hasCover && !hasWork && !onchainPreviews
       ? await getRendererTokenPreview(addr, c.renderer, 1n)
       : null
-  const firstTokenImage = rendererArt?.image ?? ""
+  const firstTokenImage = rendererArt?.image
+    ? rendererMediaUrl(addr, 1n, rendererArt.image)
+    : ""
 
   // The number a collector reads as "the edition": the collection's cap when
   // it has one, otherwise the minter's ceiling, which is what bounds an
@@ -191,7 +221,9 @@ export default async function CollectionPage({
   if (batches.length > 0) {
     const imgs = await Promise.all(batches.map((b) => getRendererTokenPreview(addr, c.renderer, b.startId)))
     batches.forEach((b, i) => {
-      batchImages[b.index] = imgs[i]?.image ?? ""
+      batchImages[b.index] = imgs[i]?.image
+        ? rendererMediaUrl(addr, b.startId, imgs[i]!.image!)
+        : ""
     })
     firstBatchArt = imgs[0] ?? null
   }
@@ -208,12 +240,16 @@ export default async function CollectionPage({
     // grid is only for a multi-batch release; a single-artwork edition shows
     // the piece itself, not a one-card grid.
     const sharedArt = batches.length > 0 ? firstBatchArt : await getRendererTokenPreview(addr, c.renderer, 1n)
+    const sharedTokenId = batches[0]?.startId ?? 1n
+    const sharedImage = sharedArt?.image
+      ? rendererMediaUrl(addr, sharedTokenId, sharedArt.image)
+      : ""
     const editionHero =
       batches.length > 1 ? (
         <BatchGrid collection={addr} batches={batches} images={batchImages} />
       ) : sharedArt?.animationUrl || sharedArt?.image || hasCover ? (
         <TokenMedia
-          imageUrl={hasCover ? c.cover : sharedArt?.image ?? ""}
+          imageUrl={hasCover ? coverUrl : sharedImage}
           animationUrl={sharedArt?.animationUrl ?? null}
           title={c.name}
         />
@@ -339,8 +375,8 @@ export default async function CollectionPage({
       entries={recent}
       minted={c.minted.toString()}
     />
-  ) : onchainPreviews ? (
-    <OnchainMosaic collection={addr} previews={onchainPreviews} />
+  ) : displayPreviews ? (
+    <OnchainMosaic collection={addr} previews={displayPreviews} />
   ) : !hasCover && rendererArt?.animationUrl ? (
     <div className="flex justify-center border-y border-gray-200 bg-gray-100 px-6 py-10 dark:bg-bg lg:py-16">
       <TokenMedia
@@ -352,7 +388,7 @@ export default async function CollectionPage({
   ) : hasCover || firstTokenImage ? (
     <div className="flex justify-center border-y border-gray-200 bg-gray-100 px-6 py-10 dark:bg-bg lg:py-16">
       <OptimizedImage
-        src={hasCover ? c.cover : firstTokenImage}
+        src={hasCover ? coverUrl : firstTokenImage}
         alt={c.name}
         width={1600}
         loading="eager"

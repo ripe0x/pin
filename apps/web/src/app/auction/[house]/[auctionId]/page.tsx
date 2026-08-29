@@ -10,6 +10,7 @@ import { getAuctionDetail } from "@/lib/auctions"
 import { resolveTokenMetadataDirect } from "@/lib/onchain-discovery"
 import { formatEthAmount } from "@/lib/format-eth"
 import { isCrawler } from "@/lib/crawler"
+import { getMediaDeliveries } from "@/lib/media-delivery"
 
 export const revalidate = 60
 
@@ -21,11 +22,15 @@ type Params = Promise<{ house: string; auctionId: string }>
 const getAuctionPageData = cache(async (house: string, auctionId: string) => {
   const detail = await getAuctionDetail(house, auctionId).catch(() => null)
   if (!detail) return null
-  const meta = await resolveTokenMetadataDirect(
-    detail.nftContract,
-    detail.tokenId,
-  ).catch(() => null)
-  return { detail, meta }
+  const [meta, deliveries] = await Promise.all([
+    resolveTokenMetadataDirect(detail.nftContract, detail.tokenId).catch(() => null),
+    getMediaDeliveries([
+      { contract: detail.nftContract, tokenId: detail.tokenId },
+    ]),
+  ])
+  const mediaDelivery =
+    deliveries.get(`${detail.nftContract.toLowerCase()}:${detail.tokenId}`) ?? null
+  return { detail, meta, mediaDelivery }
 })
 
 function shortDescription(
@@ -54,7 +59,14 @@ export async function generateMetadata({
   const tokenName = data.meta?.name ?? `#${data.detail.tokenId}`
   const ogTitle = `${tokenName} · ${shortDescription(data.detail)}`
   const description = shortDescription(data.detail)
-  const image = data.meta?.image ? ipfsToHttp(data.meta.image) : undefined
+  const image =
+    data.mediaDelivery?.posterUrl ??
+    data.mediaDelivery?.thumbnailUrl ??
+    (data.mediaDelivery?.kind === "video"
+      ? undefined
+      : data.meta?.image
+        ? ipfsToHttp(data.meta.image)
+        : undefined)
   return {
     // Bare token name — the root layout's `%s | PND` template adds the suffix.
     title: tokenName,
@@ -90,7 +102,7 @@ export default async function AuctionPage({ params }: { params: Params }) {
   const data = await getAuctionPageData(house, auctionId)
   if (!data) notFound()
 
-  const { detail, meta } = data
+  const { detail, meta, mediaDelivery } = data
   const imageUrl = meta?.image
     ? ipfsToHttp(meta.image)
     : ""
@@ -107,7 +119,13 @@ export default async function AuctionPage({ params }: { params: Params }) {
       <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] min-h-[calc(100vh-64px)]">
         {/* Left: sticky artwork */}
         <div className="lg:sticky lg:top-16 lg:h-[calc(100vh-64px)] flex items-center justify-center bg-gray-100 dark:bg-bg p-8 lg:p-12">
-          <TokenMedia imageUrl={imageUrl} animationUrl={animationUrl} title={title} />
+          <TokenMedia
+            imageUrl={imageUrl}
+            animationUrl={animationUrl}
+            posterUrl={mediaDelivery?.posterUrl ?? mediaDelivery?.thumbnailUrl}
+            mediaKind={mediaDelivery?.kind}
+            title={title}
+          />
         </div>
 
         {/* Right: scrolling sidebar */}

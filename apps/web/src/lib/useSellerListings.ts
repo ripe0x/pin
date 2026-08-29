@@ -18,8 +18,8 @@ export type SellerListingsState =
       auctions: AuctionListing[]
       buyNows: BuyNowListing[]
       meta: Map<string, SellerListingMeta>
-      /** True when at least one platform adapter timed out or upstream
-       * RPC failed mid-scan. Surfaces in the UI so a 0-listing result
+      /** True when at least one source is stale/incomplete or an adapter
+       * failed. Surfaces in the UI so a 0-listing result
        * during a scan failure doesn't read as a confident "nothing
        * here." Partial results are NOT persisted in pg by the route,
        * so a refresh re-runs the scan fresh. */

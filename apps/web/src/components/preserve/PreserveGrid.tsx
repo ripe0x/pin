@@ -24,7 +24,10 @@ export function PreserveGrid({ tokens }: { tokens: TokenWithPinState[] }) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
       {tokens.map((item) => (
-        <PreserveCard key={item.token.tokenId} item={item} />
+        <PreserveCard
+          key={`${item.token.contract.toLowerCase()}:${item.token.tokenId}`}
+          item={item}
+        />
       ))}
     </div>
   )

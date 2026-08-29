@@ -28,6 +28,8 @@ import {STATUS_LIVE, homageRendererViewAbi} from "@/lib/homage/contracts"
 import {SampleWall} from "./HomagePreview"
 
 type FieldState = "premint" | "minting" | "soldout"
+const INITIAL_FIELD_CELLS = 12
+const GALLERY_PAGE_SIZE = 40
 
 function svgToSrc(svg: string): string | undefined {
   if (!svg) return undefined
@@ -62,7 +64,13 @@ function Cell({
     <div className={`group relative aspect-square overflow-hidden bg-gray-100 dark:bg-bg ${span}`}>
       {src ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt={`Homage to Punk ${id}`} className="h-full w-full object-cover" />
+        <img
+          src={src}
+          alt={`Homage to Punk ${id}`}
+          loading="lazy"
+          decoding="async"
+          className="h-full w-full object-cover"
+        />
       ) : (
         <div className="h-full w-full animate-pulse bg-gray-100 dark:bg-bg" />
       )}
@@ -103,11 +111,19 @@ export function HomageField({
   capped?: boolean
 }) {
   const [expanded, setExpanded] = useState(false)
+  const [visibleCount, setVisibleCount] = useState(GALLERY_PAGE_SIZE)
   const state: FieldState = minted === 0 ? "premint" : minted >= supply ? "soldout" : "minting"
 
   // The field carries only real mints: never mix samples in with live outputs, which
   // would read as inventory that does not exist.
   const cells = useMemo(() => mintedIds.map((id) => ({id, minted: true})), [mintedIds])
+  // Each mounted cell performs a renderer read. A CSS height cap used to hide
+  // most of the wall while still mounting every token, creating hundreds of
+  // RPC calls and DOM nodes on popular collections. Mount only what is visible
+  // and grow deliberately when the visitor asks for more.
+  const mountedCells = capped
+    ? cells.slice(0, expanded ? visibleCount : INITIAL_FIELD_CELLS)
+    : cells.slice(0, visibleCount)
 
   // The masthead already carries the count/status, so the field bar stays a bare label.
   const label = "The collection"
@@ -138,7 +154,7 @@ export function HomageField({
             maxHeight: capped && !expanded ? "clamp(630px, 93vw, 1200px)" : "none",
           }}
         >
-          {cells.map((c, i) => (
+          {mountedCells.map((c, i) => (
             <Cell
               key={`${c.id}-${i}`}
               renderer={renderer}
@@ -180,6 +196,16 @@ export function HomageField({
             >
               View full collection
             </Link>
+          )}
+          {((!capped && mountedCells.length < cells.length) ||
+            (capped && expanded && mountedCells.length < cells.length)) && (
+            <button
+              type="button"
+              onClick={() => setVisibleCount((count) => count + GALLERY_PAGE_SIZE)}
+              className="font-mono text-[10px] uppercase tracking-wider text-gray-400 underline decoration-dotted underline-offset-4 hover:text-gray-300"
+            >
+              Load more
+            </button>
           )}
         </div>
         <span className="font-mono text-[10px] uppercase tracking-wider text-gray-400">

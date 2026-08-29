@@ -36,6 +36,7 @@ export {
   type CollectorTokenRef,
   type AdapterLastSale,
   type SellerListings,
+  type SellerListingsResult,
   type SellerCancellableAuction,
   type SellerCancellableBuyNow,
   type ActiveAuctionSummary,

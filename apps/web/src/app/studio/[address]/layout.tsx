@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { redirect } from "next/navigation"
 import { getArtistIdentity, resolveEnsAddress } from "@/lib/artist-queries"
-import { AddressZorb } from "@/components/AddressZorb"
+import { IdentityAvatar } from "@/components/IdentityAvatar"
 import { CopyAddressButton } from "@/components/CopyAddressButton"
 import { StudioNav } from "@/components/studio/StudioNav"
 import { OwnerGate } from "@/components/studio/OwnerGate"
@@ -65,19 +65,12 @@ export default async function StudioLayout({
     <div className="mx-auto max-w-5xl px-6 py-12 space-y-8">
       <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex items-center gap-4 min-w-0">
-          {identity.avatarUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={identity.avatarUrl}
-              alt={identity.displayName}
-              className="h-12 w-12 shrink-0 rounded-full object-cover"
-            />
-          ) : (
-            <AddressZorb
-              address={address}
-              className="h-12 w-12 shrink-0 rounded-full"
-            />
-          )}
+          <IdentityAvatar
+            address={address}
+            avatarUrl={identity.avatarUrl}
+            alt={identity.displayName}
+            className="h-12 w-12 shrink-0 rounded-full object-cover"
+          />
           <div className="min-w-0 space-y-0.5">
             <p className="text-[11px] font-mono font-medium uppercase tracking-wider text-gray-500">
               Studio

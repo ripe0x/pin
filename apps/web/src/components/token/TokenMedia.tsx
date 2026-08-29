@@ -41,11 +41,13 @@ export function TokenMedia({
   imageUrl,
   animationUrl,
   posterUrl,
+  mediaKind,
   title,
 }: {
   imageUrl: string
   animationUrl?: string | null
   posterUrl?: string | null
+  mediaKind?: "image" | "video" | "animation" | "unknown" | null
   title: string
 }) {
   // Prefer animation_url when present — it's the dynamic version of the
@@ -54,7 +56,11 @@ export function TokenMedia({
   // accidentally end up in an iframe.
   const useAnimation = !!animationUrl
   const renderUrl = useAnimation ? animationUrl! : imageUrl
-  const { kind: initialKind, ambiguous } = classify(renderUrl, useAnimation)
+  const classified = classify(renderUrl, useAnimation)
+  const initialKind: MediaKind = mediaKind === "video" ? "video" : classified.kind
+  const ambiguous = mediaKind == null || mediaKind === "unknown"
+    ? classified.ambiguous
+    : false
 
   // Some tokens stuff a video into the `image` field with no animation_url
   // and no file extension — e.g. uri() => {"image":"ipfs://<mp4 cid>"}. That
@@ -73,6 +79,7 @@ export function TokenMedia({
   // unconditionally keeps hook order stable.
   const poster = useIpfsGatewayFallback(imageUrl).src
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  const imageRef = useRef<HTMLImageElement | null>(null)
   const [videoVisible, setVideoVisible] = useState(false)
   const [videoLoaded, setVideoLoaded] = useState(false)
   const [videoFailed, setVideoFailed] = useState(false)
@@ -87,6 +94,19 @@ export function TokenMedia({
     observer.observe(video)
     return () => observer.disconnect()
   }, [kind])
+
+  useEffect(() => {
+    if (kind !== "image" || !ambiguous || escalated) return
+    // A few metadata providers return extension-less MP4 URLs in `image`.
+    // Safari can leave those as a permanently broken image without reliably
+    // firing onError. Check the decoded state after the request settles and
+    // switch to the video renderer when no image was produced.
+    const timer = window.setTimeout(() => {
+      const image = imageRef.current
+      if (image?.complete && image.naturalWidth === 0) setEscalated(true)
+    }, 2500)
+    return () => window.clearTimeout(timer)
+  }, [ambiguous, escalated, kind, media.src])
 
   useEffect(() => {
     const video = videoRef.current
@@ -200,6 +220,7 @@ export function TokenMedia({
 
   return (
     <img
+      ref={imageRef}
       src={media.src}
       alt={title}
       className="max-h-[80vh] w-auto object-contain"

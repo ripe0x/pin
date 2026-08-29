@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useRef } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { useAccount, useSignMessage } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import type { DiscoveredToken } from "@/lib/onchain-discovery"
@@ -457,10 +457,11 @@ export default function PreservePage() {
     }
   }
 
-  // Update step when wallet connects/disconnects
-  if (isConnected && step === "connect") {
-    setStep("discover")
-  }
+  // Reconnection happens after hydration. Move the transition out of render so
+  // React never has to restart this component because it set state mid-render.
+  useEffect(() => {
+    if (isConnected) setStep((current) => current === "connect" ? "discover" : current)
+  }, [isConnected])
 
   // How many CIDs still need pinning
   const unpinnedCount = tokens.reduce((n, ts) => {
@@ -533,9 +534,9 @@ export default function PreservePage() {
           <div className="space-y-2">
             <h3 className="text-lg font-medium">Discover your works</h3>
             <p className="text-sm text-gray-500">
-              We&apos;ll scan the Foundation contract to find all the works
-              minted from this address. This reads directly from the Ethereum
-              blockchain — no indexer or database needed.
+              PND will load Foundation works already discovered by its indexer
+              and enriched by the worker. This is a Postgres read, not a
+              request-time blockchain scan.
             </p>
           </div>
 
@@ -549,8 +550,8 @@ export default function PreservePage() {
             className="w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40"
           >
             {discovering
-              ? "Scanning the blockchain..."
-              : "Find My Foundation Works"}
+              ? "Loading indexed works..."
+              : "Load My Foundation Works"}
           </button>
 
           {/* Custom address option — hidden by default */}
@@ -592,7 +593,8 @@ export default function PreservePage() {
 
           {discovering && (
             <p className="text-xs text-gray-400 text-center animate-pulse">
-              This may take a moment — scanning on-chain history.
+              Loading PND&apos;s indexed Foundation record. Very recent mints may
+              appear after the worker catches up.
             </p>
           )}
         </div>

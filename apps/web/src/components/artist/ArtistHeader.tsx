@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react"
 import type { ArtistIdentity } from "@/lib/artist-queries"
 import { useArtistHouse } from "@/components/auction/useArtistHouse"
-import { AddressZorb } from "@/components/AddressZorb"
 import { CopyAddressButton } from "@/components/CopyAddressButton"
+import { IdentityAvatar } from "@/components/IdentityAvatar"
 
 export function ArtistHeader({
   identity,
@@ -30,18 +30,12 @@ export function ArtistHeader({
   return (
     <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
       {/* Avatar */}
-      {identity.avatarUrl ? (
-        <img
-          src={identity.avatarUrl}
-          alt={identity.displayName}
-          className="h-20 w-20 shrink-0 rounded-full object-cover"
-        />
-      ) : (
-        <AddressZorb
-          address={identity.address}
-          className="h-20 w-20 shrink-0 rounded-full"
-        />
-      )}
+      <IdentityAvatar
+        address={identity.address}
+        avatarUrl={identity.avatarUrl}
+        alt={identity.displayName}
+        className="h-20 w-20 shrink-0 rounded-full object-cover"
+      />
 
       {/* Info */}
       <div className="space-y-3 min-w-0">

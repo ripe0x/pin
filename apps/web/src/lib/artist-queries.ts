@@ -490,10 +490,17 @@ async function enrichMissingMetadata(
  * Convert a DiscoveredToken to the shape needed for ArtworkCard display.
  */
 export function tokenToDisplayData(token: DiscoveredToken) {
-  const imageUrl =
+  const originalImageUrl =
     token.mediaHttpUrl ??
     (token.metadata?.image ? ipfsToHttp(token.metadata.image) : null) ??
     ""
+  // Inline onchain images can be hundreds of kilobytes each. Shipping them
+  // inside the RSC payload duplicates the bytes and makes profile pages grow
+  // with every tile. The media endpoint serves the same indexed bytes as a
+  // cacheable image response and never performs request-time token RPC.
+  const imageUrl = /^data:image\//i.test(originalImageUrl) && /^\d+$/.test(token.tokenId)
+    ? `/api/media/token/${token.contract}/${token.tokenId}`
+    : originalImageUrl
 
   return {
     contract: token.contract,

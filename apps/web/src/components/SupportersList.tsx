@@ -26,9 +26,7 @@ export async function SupportersList() {
         {supporters.map((s) => (
           <li key={s.address} className="break-inside-avoid">
             <a
-              href={`https://evm.now/address/${s.address}`}
-              target="_blank"
-              rel="noopener noreferrer"
+              href={`/profile/${s.address}`}
               title={s.address}
               className={`block truncate transition-colors hover:underline ${
                 s.ensName ? "text-gray-600" : "text-gray-500"

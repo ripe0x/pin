@@ -138,7 +138,7 @@ type Row = {
 type LoadState =
   | { kind: "idle" }
   | { kind: "loading" }
-  | { kind: "loaded"; rows: Row[] }
+  | { kind: "loaded"; rows: Row[]; partial: boolean }
   | { kind: "error"; message: string }
 
 export function MigratePanel({ artistAddress }: { artistAddress: string }) {
@@ -224,7 +224,7 @@ function Inner({
     setLoad({ kind: "loading" })
     setMetaProgress(null)
     try {
-      const { auctions, buyNows } =
+      const { auctions, buyNows, partial } =
         await fetchSellerCancellableListings(artistAddress)
       if (loadGenRef.current !== gen) return
       const all: SellerListing[] = [...auctions, ...buyNows]
@@ -245,7 +245,7 @@ function Inner({
           durationSec: snapDuration(sourceDuration),
         }
       })
-      setLoad({ kind: "loaded", rows })
+      setLoad({ kind: "loaded", rows, partial })
       setSelected(new Set(rows.map((r) => r.id)))
       setRowState(new Map())
       if (all.length === 0) return
@@ -503,6 +503,23 @@ function Inner({
     )
   }
 
+  if (load.rows.length === 0 && load.partial) {
+    return (
+      <Section>
+        <Heading
+          title="Couldn’t check every marketplace"
+          subtitle="The listing index is incomplete or stale, so PND can’t confirm that there is nothing to migrate."
+        />
+        <button
+          onClick={refresh}
+          className="text-xs font-medium underline text-gray-700 hover:text-fg"
+        >
+          Try again
+        </button>
+      </Section>
+    )
+  }
+
   const pendingRows = load.rows.filter(
     (r) => rowState.get(r.id)?.step !== "done",
   )
@@ -562,6 +579,19 @@ function Inner({
               : `${pendingRows.length} active ${pendingRows.length === 1 ? "listing" : "listings"} found across third-party marketplaces. Your first migration will also deploy your Sovereign auction house (one extra signature, one-time only).`
         }
       />
+
+      {load.partial && (
+        <div className="mb-4 border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          One marketplace source is incomplete or stale. The listings below
+          are cancellable, but more may be missing.{" "}
+          <button
+            onClick={refresh}
+            className="font-medium underline hover:text-amber-700"
+          >
+            Refresh
+          </button>
+        </div>
+      )}
 
       {wrongNetwork && (
         <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 flex items-center justify-between gap-3">

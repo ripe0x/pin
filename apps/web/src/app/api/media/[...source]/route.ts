@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server"
 import { isAddress } from "viem"
-import { getCollectionCover } from "@/lib/collection-onchain"
+import {
+  getCollection,
+  getCollectionCover,
+  getRendererPreview,
+  getRendererTokenPreview,
+} from "@/lib/collection-onchain"
 import { decodeInlineMedia } from "@/lib/inline-media"
 import {
   getTokenImagesFromMetadata,
@@ -40,6 +45,32 @@ export async function GET(
       return notFound()
     }
     uri = (await getCollectionCover(address).catch(() => "")) || null
+  } else if (
+    (kind === "renderer" || kind === "preview") &&
+    tokenId &&
+    /^\d+$/.test(tokenId)
+  ) {
+    if ((await isCollectionInIndexer(address).catch(() => null)) !== true) {
+      return notFound()
+    }
+    const collection = await getCollection(address).catch(() => null)
+    if (!collection) return notFound()
+    if (kind === "renderer") {
+      const rendered = await getRendererTokenPreview(
+        address,
+        collection.renderer,
+        BigInt(tokenId),
+      ).catch(() => null)
+      uri = rendered?.image ?? null
+    } else {
+      const preview = await getRendererPreview(
+        address,
+        collection.renderer,
+        collection.minted + 1n,
+        Number(tokenId),
+      ).catch(() => null)
+      uri = preview?.image ?? null
+    }
   } else {
     return notFound()
   }

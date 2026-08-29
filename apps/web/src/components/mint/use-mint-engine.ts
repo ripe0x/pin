@@ -49,6 +49,7 @@ export type MintEngine = {
   activePhase: MintPhase | null
   activeWindow: PhaseWindow | null
   // pricing
+  snapshotAvailable: boolean
   quoted: boolean
   quoteState: QuoteState
   quoteBlocked: boolean
@@ -97,6 +98,49 @@ export type MintEngine = {
   reset: () => void
 }
 
+/**
+ * Keep an unreadable server snapshot out of price semantics. In particular,
+ * its compatibility placeholders must never be presented as a real zero-price
+ * mint, even when a dynamic quote is also absent.
+ */
+export function deriveMintPricing(
+  snapshot: MintSnapshot,
+  quoted: boolean,
+  quoteValue: bigint | null,
+): { snapshotAvailable: boolean; price: bigint; gasOnly: boolean } {
+  const snapshotAvailable = snapshot.readStatus === "available"
+  const price = quoted && quoteValue !== null
+    ? quoteValue
+    : snapshotAvailable
+      ? BigInt(snapshot.priceWei)
+      : 0n
+  return {
+    snapshotAvailable,
+    price,
+    gasOnly: snapshotAvailable && !quoted && price === 0n,
+  }
+}
+
+export function canMintSnapshot(args: {
+  snapshotAvailable: boolean
+  ready: boolean
+  notStarted: boolean
+  windowClosed: boolean
+  soldOut: boolean
+  alreadyMinted: boolean
+  phaseResolved: boolean
+}): boolean {
+  return (
+    args.snapshotAvailable &&
+    args.ready &&
+    !args.notStarted &&
+    !args.windowClosed &&
+    !args.soldOut &&
+    !args.alreadyMinted &&
+    args.phaseResolved
+  )
+}
+
 export function useMintEngine(
   collectionId: string,
   snapshot: MintSnapshot,
@@ -116,7 +160,8 @@ export function useMintEngine(
   const [buildError, setBuildError] = useState<string | null>(null)
 
   // ── phase resolution (2.1) — pure math over the snapshot, no RPC ──────────
-  const phaseWindows = desc?.phases && snapshot.phases ? snapshot.phases : null
+  const snapshotAvailable = snapshot.readStatus === "available"
+  const phaseWindows = snapshotAvailable && desc?.phases && snapshot.phases ? snapshot.phases : null
   const phaseState = phaseWindows ? resolvePhaseState(phaseWindows, nowSec) : null
   const activePhase =
     desc?.phases && phaseState && phaseState.activeIndex >= 0
@@ -202,12 +247,13 @@ export function useMintEngine(
   }, [desc?.reveal, tokenAddress, tokenAbi, isSuccess, receipt, address])
 
   const quoted = quoteKey !== null
-  const price = quoted && quoteState.quote ? quoteState.quote.value : BigInt(snapshot.priceWei)
+  const pricing = deriveMintPricing(snapshot, quoted, quoteState.quote?.value ?? null)
+  const price = pricing.price
   const minted = BigInt(snapshot.minted)
   const cap = BigInt(snapshot.cap)
   const mintStart = BigInt(snapshot.mintStart)
   const mintEnd = BigInt(snapshot.mintEnd)
-  const gasOnly = !quoted && price === 0n
+  const gasOnly = pricing.gasOnly
 
   const qty = desc?.quantity ? amount : 1
   const amountValid = !desc?.quantity || (Number.isInteger(amount) && amount >= 1)
@@ -218,7 +264,11 @@ export function useMintEngine(
   let ready: boolean
   let notStarted: boolean
   let windowClosed: boolean
-  if (phaseState) {
+  if (!snapshotAvailable) {
+    ready = false
+    notStarted = false
+    windowClosed = false
+  } else if (phaseState) {
     ready = nowSec > 0
     notStarted = ready && !activePhase && phaseState.nextIndex >= 0
     windowClosed = ready && !activePhase && phaseState.nextIndex === -1
@@ -232,13 +282,23 @@ export function useMintEngine(
   const alreadyMinted = !!desc?.alreadyMintedFn && alreadyMintedRaw === true
   const ineligible =
     eligibilityState.status === "ready" && eligibilityState.result?.eligible === false
-  const mintable =
-    ready && !notStarted && !windowClosed && !soldOut && !alreadyMinted && (!phaseState || !!activePhase)
+  const mintable = canMintSnapshot({
+    snapshotAvailable,
+    ready,
+    notStarted,
+    windowClosed,
+    soldOut,
+    alreadyMinted,
+    phaseResolved: !phaseState || !!activePhase,
+  })
 
   const noun = activePhase?.noun ?? desc?.tokenNoun ?? "token"
-  const pct = cap > 0n ? Math.min(100, Math.round((Number(minted) / Number(cap)) * 100)) : null
-  const supplyText =
-    cap > 0n
+  const pct = snapshotAvailable && cap > 0n
+    ? Math.min(100, Math.round((Number(minted) / Number(cap)) * 100))
+    : null
+  const supplyText = !snapshotAvailable
+    ? "Supply unavailable"
+    : cap > 0n
       ? desc?.supplyLabel === "outstanding"
         ? `${Number(minted)} of ${Number(cap)} outstanding`
         : `${Number(minted)} / ${Number(cap)} minted`
@@ -266,7 +326,8 @@ export function useMintEngine(
         : "Closes in"
 
   // The quote's failure/staleness gates the button; a fixed price never does.
-  const quoteBlocked = quoted && (quoteState.status !== "ready" || !quoteState.quote)
+  const quoteBlocked =
+    !snapshotAvailable || (quoted && (quoteState.status !== "ready" || !quoteState.quote))
   // A declared selector means the mint needs a choice (Vouch: which seat).
   const needsSelection = !!selectorKey && selection == null
 
@@ -329,6 +390,7 @@ export function useMintEngine(
     phaseState,
     activePhase,
     activeWindow,
+    snapshotAvailable,
     quoted,
     quoteState,
     quoteBlocked,
