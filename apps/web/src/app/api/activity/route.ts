@@ -64,7 +64,7 @@ const fetchPaginatedFeed = unstable_cache(
       rawCount: events.length,
     }
   },
-  ["activity-feed-page-v2"],
+  ["activity-feed-page-v3"],
   { revalidate: 30, tags: ["activity-feed"] },
 )
 

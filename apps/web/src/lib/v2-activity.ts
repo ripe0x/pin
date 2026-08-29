@@ -1,9 +1,9 @@
 import "server-only"
-import { ipfsToHttp } from "@pin/shared"
 import { resolveTokenMetadataDirect } from "./onchain-discovery"
 import { getArtistIdentity } from "./artist-queries"
 import { getCollectionCover } from "./collection-onchain"
 import { getTokenImagesFromMetadata, type ActivityEvent } from "./indexer-queries"
+import { mediaForActivityFeed } from "./activity-media"
 import {
   GROUP_MINTER_SAMPLE,
   groupFeedEvents,
@@ -47,8 +47,6 @@ export {
  * actor's avatar/zorb — all Postgres reads, no chain call.
  */
 
-const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
-
 function truncateAddress(address: string): string {
   return `${address.slice(0, 6)}...${address.slice(-4)}`
 }
@@ -74,19 +72,6 @@ function isSurfaceEvent(event: ActivityEvent): boolean {
     event.collection !== null &&
     (event.kind === "mint" || event.kind === "collection.deployed")
   )
-}
-
-function mediaFromUri(uri: string | null | undefined): {
-  mediaUrl: string | null
-  isVideo: boolean
-} {
-  const mediaUrl = uri ? ipfsToHttp(uri) : null
-  const isVideo = mediaUrl
-    ? VIDEO_EXTENSIONS.some((ext) =>
-        mediaUrl.split("?")[0].toLowerCase().endsWith(ext),
-      )
-    : false
-  return { mediaUrl, isVideo }
 }
 
 type Identity = { displayName: string; avatarUrl: string | null } | null
@@ -187,18 +172,34 @@ function surfaceImageKey(contract: string, tokenId: string): string {
 
 /** The media URI for a Surface event: the warmed per-token image if the
  * worker has one, else the collection cover (may be ""). */
-function surfaceMediaUri(
+function surfaceMedia(
   event: ActivityEvent,
   covers: Map<string, string>,
   surfaceImages: Map<string, string>,
-): string | null {
+): { uri: string | null; inlineUrl: string | null } {
   if (event.tokenContract && event.tokenId) {
     const img = surfaceImages.get(
       surfaceImageKey(event.tokenContract, event.tokenId),
     )
-    if (img) return img
+    if (img) {
+      return {
+        uri: img,
+        inlineUrl: tokenMediaUrl(event.tokenContract, event.tokenId),
+      }
+    }
   }
-  return covers.get(event.collection!.toLowerCase()) || null
+  return {
+    uri: covers.get(event.collection!.toLowerCase()) || null,
+    inlineUrl: collectionMediaUrl(event.collection!),
+  }
+}
+
+function tokenMediaUrl(contract: string, tokenId: string): string {
+  return `/api/media/token/${encodeURIComponent(contract)}/${encodeURIComponent(tokenId)}`
+}
+
+function collectionMediaUrl(collection: string): string {
+  return `/api/media/collection/${encodeURIComponent(collection)}`
 }
 
 /** First few distinct counterparty addresses of a run, newest-first. */
@@ -244,9 +245,17 @@ async function enrichEvent(
         ? `#${event.tokenId}`
         : null
 
-  const { mediaUrl, isVideo } = surface
-    ? mediaFromUri(surfaceMediaUri(event, covers, surfaceImages))
-    : mediaFromUri(meta?.image)
+  const surfaceSource = surface
+    ? surfaceMedia(event, covers, surfaceImages)
+    : null
+  const { mediaUrl, isVideo } = surfaceSource
+    ? mediaForActivityFeed(surfaceSource.uri, surfaceSource.inlineUrl)
+    : mediaForActivityFeed(
+        meta?.image,
+        event.tokenContract && event.tokenId
+          ? tokenMediaUrl(event.tokenContract, event.tokenId)
+          : null,
+      )
 
   const artistId = identities.get(event.artist.toLowerCase())
 
@@ -292,12 +301,18 @@ async function enrichRun(
         e.tokenId &&
         surfaceImages.get(surfaceImageKey(e.tokenContract, e.tokenId)),
     )
-    const uri = withImg
-      ? surfaceImages.get(
-          surfaceImageKey(withImg.tokenContract!, withImg.tokenId!),
-        )!
-      : covers.get(newest.collection!.toLowerCase()) || null
-    media = mediaFromUri(uri)
+    if (withImg) {
+      const uri = surfaceImages.get(
+        surfaceImageKey(withImg.tokenContract!, withImg.tokenId!),
+      )!
+      media = mediaForActivityFeed(
+        uri,
+        tokenMediaUrl(withImg.tokenContract!, withImg.tokenId!),
+      )
+    } else {
+      const uri = covers.get(newest.collection!.toLowerCase()) || null
+      media = mediaForActivityFeed(uri, collectionMediaUrl(newest.collection!))
+    }
   } else {
     const meta =
       newest.tokenContract && newest.tokenId
@@ -306,7 +321,12 @@ async function enrichRun(
             newest.tokenId,
           ).catch(() => null)
         : null
-    media = mediaFromUri(meta?.image)
+    media = mediaForActivityFeed(
+      meta?.image,
+      newest.tokenContract && newest.tokenId
+        ? tokenMediaUrl(newest.tokenContract, newest.tokenId)
+        : null,
+    )
   }
 
   const minters: MinterRef[] = sampleMinters(events).map((addr) => {
