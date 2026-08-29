@@ -1,7 +1,8 @@
 "use client"
 import { useState } from "react"
-import { useAccount } from "wagmi"
+import { useAccount, useSignMessage } from "wagmi"
 import { useIsGodMode } from "@/lib/useGodMode"
+import { buildTokenRefreshMessage } from "@/lib/refresh-auth"
 
 /**
  * "Refresh metadata" button on the token page. Shown to the token's owner or
@@ -10,9 +11,9 @@ import { useIsGodMode } from "@/lib/useGodMode"
  * when its metadata has changed (reveal, correction) or got stuck on a failed
  * fetch, without waiting for the background sweep.
  *
- * Client-side match is purely UX — it hides the button from collectors and
- * crawlers. The server route enforces the real protection: a once-per-hour-
- * per-token rate limit. The refresh runs in the worker, so the change isn't
+ * Client-side match is purely UX. The server verifies the connected wallet's
+ * signature and indexed owner/creator role, then applies the once-per-hour
+ * per-token limit. The refresh runs in the worker, so the change isn't
  * instant — we tell the user it lands within a minute and to reload, and lock
  * the button afterward so it isn't mashed.
  */
@@ -35,6 +36,7 @@ export function RefreshMetadataButton({
   creator: string
 }) {
   const { address: connected } = useAccount()
+  const { signMessageAsync } = useSignMessage()
   const isAdmin = useIsGodMode()
   const [state, setState] = useState<State>({ kind: "idle" })
 
@@ -47,8 +49,15 @@ export function RefreshMetadataButton({
   async function onClick() {
     setState({ kind: "loading" })
     try {
+      if (!connected) throw new Error("Connect the authorized wallet first.")
+      const nonce = Math.floor(Date.now() / 1000)
+      const signature = await signMessageAsync({
+        message: buildTokenRefreshMessage(connected, contract, tokenId, nonce),
+      })
       const res = await fetch(`/api/refresh-token/${contract}/${tokenId}`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ signer: connected, nonce, signature }),
       })
       const json = (await res.json().catch(() => null)) as
         | { ok: true; message: string }

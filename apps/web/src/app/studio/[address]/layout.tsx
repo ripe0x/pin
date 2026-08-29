@@ -91,7 +91,7 @@ export default async function StudioLayout({
           </div>
         </div>
         <Link
-          href={`/artist/${address.toLowerCase()}`}
+          href={`/profile/${address.toLowerCase()}`}
           className="shrink-0 text-xs border border-gray-200 px-3 py-1.5 rounded-full hover:border-gray-400 transition-colors"
         >
           View public page →

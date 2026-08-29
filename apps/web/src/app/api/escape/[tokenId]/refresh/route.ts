@@ -12,14 +12,27 @@
  * costs a ~65M gas read, so this cannot be a free button to mash.
  */
 
-import { NextResponse } from "next/server"
+import { timingSafeEqual } from "node:crypto"
+import { NextRequest, NextResponse } from "next/server"
 import { pgCache, pgCacheHas, pgCacheInvalidate } from "@/lib/pg-cache"
 
 type Params = { params: Promise<{ tokenId: string }> }
 
 const COOLDOWN_SECONDS = 300
 
-export async function POST(_req: Request, { params }: Params) {
+export async function POST(req: NextRequest, { params }: Params) {
+  const expected = process.env.REVALIDATE_SECRET
+  if (!expected) {
+    return NextResponse.json({ error: "Refresh is unavailable." }, { status: 503 })
+  }
+  const authorization = req.headers.get("authorization")
+  const provided = authorization?.startsWith("Bearer ")
+    ? authorization.slice("Bearer ".length)
+    : ""
+  if (!secretMatches(provided, expected)) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+  }
+
   const { tokenId } = await params
   if (!/^\d+$/.test(tokenId)) {
     return NextResponse.json({ error: "Bad token id." }, { status: 400 })
@@ -38,4 +51,13 @@ export async function POST(_req: Request, { params }: Params) {
   await pgCacheInvalidate(`escape-art:v2:${tokenId}:`)
 
   return NextResponse.json({ refreshed: true, tokenId })
+}
+
+function secretMatches(provided: string, expected: string): boolean {
+  const providedBytes = Buffer.from(provided)
+  const expectedBytes = Buffer.from(expected)
+  return (
+    providedBytes.length === expectedBytes.length &&
+    timingSafeEqual(providedBytes, expectedBytes)
+  )
 }

@@ -109,7 +109,7 @@ export function IndexedWorkSection({
       <ImportPlanner
         artistAddress={artist}
         sourceName="Your indexed work"
-        sourceUrl={`/artist/${artist.toLowerCase()}`}
+        sourceUrl={`/profile/${artist.toLowerCase()}`}
         plan={plan}
         fetchError={fetchError}
         embedded

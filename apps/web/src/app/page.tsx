@@ -6,6 +6,7 @@ import {
   IndexerUnavailable,
 } from "@/lib/indexer-queries"
 import { ActivityFeed } from "@/components/home/v2/ActivityFeed"
+import { HomeEntryPoints } from "@/components/home/HomeEntryPoints"
 
 /**
  * Landing page — a reverse-chronological stream of sovereign actions
@@ -25,6 +26,7 @@ export default function HomePage() {
         <Suspense fallback={null}>
           <CountersInline />
         </Suspense>
+        <HomeEntryPoints />
       </header>
 
       <section>

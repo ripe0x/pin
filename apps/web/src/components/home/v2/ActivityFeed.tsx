@@ -88,7 +88,7 @@ export async function ActivityFeed() {
     result = await getInitialFeedPage()
   } catch {
     return (
-      <p className="font-mono text-xs text-gray-400 italic py-12 text-center">
+      <p className="font-mono text-xs text-gray-400 italic py-6 text-center">
         feed temporarily unavailable
       </p>
     )
@@ -96,7 +96,7 @@ export async function ActivityFeed() {
 
   if (result.items.length === 0) {
     return (
-      <p className="font-mono text-xs text-gray-400 italic py-12 text-center">
+      <p className="font-mono text-xs text-gray-400 italic py-6 text-center">
         no activity yet
       </p>
     )

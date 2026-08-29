@@ -2,9 +2,9 @@ import type { Metadata } from "next"
 import { CatalogLanding } from "@/components/catalog/CatalogLanding"
 
 export const metadata: Metadata = {
-  title: "Artist catalog",
+  title: "Onchain artist catalog",
   description:
-    "Public on-chain catalog where an artist can publish the contracts, tokens, and token ranges that belong in their catalog.",
+    "Public onchain catalog where artists publish the contracts, tokens, and token ranges that belong in their body of work.",
 }
 
 export default function RecordHomePage() {
@@ -12,15 +12,14 @@ export default function RecordHomePage() {
     <div className="mx-auto max-w-3xl px-6 py-10 space-y-8">
       <header className="space-y-2">
         <div className="text-xs uppercase tracking-wide text-gray-500">
-          Artist catalog
+          Public good
         </div>
         <h1 className="text-3xl font-semibold tracking-tight">
-          Your on-chain artist catalog
+          The onchain artist catalog
         </h1>
         <p className="text-sm text-gray-600">
-          A public catalog of the contracts, tokens, and token ranges
-          you want associated with your work. It is generic public
-          infrastructure: anyone can index it, no platform owns it.
+          A public record of the contracts, tokens, and token ranges artists
+          associate with their work. Anyone can index it, no platform owns it.
         </p>
       </header>
 

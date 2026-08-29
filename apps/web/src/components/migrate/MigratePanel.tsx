@@ -175,7 +175,7 @@ export function MigratePanel({ artistAddress }: { artistAddress: string }) {
           subtitle={`This page can only be used by ${shortAddr(artistAddress)}. You are connected as ${shortAddr(connected!)}.`}
         />
         <Link
-          href={`/artist/${artistAddress}`}
+          href={`/profile/${artistAddress}`}
           className="text-xs font-medium underline text-gray-700 hover:text-fg"
         >
           Back to artist page
@@ -662,7 +662,7 @@ function Inner({
       {allDone ? (
         <div className="mt-5 flex items-center gap-3">
           <Link
-            href={`/artist/${artistAddress}`}
+            href={`/profile/${artistAddress}`}
             className="text-[11px] font-mono font-medium uppercase tracking-wider px-4 py-2 bg-fg text-bg hover:opacity-80 transition-colors"
           >
             Back to your artist page

@@ -45,7 +45,7 @@ export function ActivityRow({ event }: Props) {
         ? `/collections/${event.collection}/${event.tokenId}`
         : `/${event.tokenContract}/${event.tokenId}`
       : null
-  const artistHref = `/artist/${event.artist}`
+  const artistHref = `/profile/${event.artist}`
 
   // Some events render the token title inline (listed, sold, etc.); a
   // few render only the verb (collection deploy embeds the name; house
@@ -85,7 +85,7 @@ export function ActivityRow({ event }: Props) {
   const actorName = counterpartyIsActor
     ? counterpartyDisplayName ?? truncateAddress(event.counterparty!)
     : artistDisplayName
-  const actorHref = `/artist/${actorAddress}`
+  const actorHref = `/profile/${actorAddress}`
 
   return (
     <li className="border-t border-gray-200 py-4 px-1">
@@ -158,7 +158,7 @@ export function ActivityRow({ event }: Props) {
             {isBidEvent && event.counterparty ? (
               <BidHeadline
                 event={event}
-                bidderHref={`/artist/${event.counterparty}`}
+                bidderHref={`/profile/${event.counterparty}`}
                 bidderDisplayName={
                   counterpartyDisplayName ?? truncateAddress(event.counterparty)
                 }
@@ -169,7 +169,7 @@ export function ActivityRow({ event }: Props) {
               />
             ) : isMinterEvent && event.counterparty ? (
               <MintHeadline
-                minterHref={`/artist/${event.counterparty}`}
+                minterHref={`/profile/${event.counterparty}`}
                 minterDisplayName={
                   counterpartyDisplayName ?? truncateAddress(event.counterparty)
                 }
@@ -441,7 +441,7 @@ function Subline({ event }: { event: EnrichedActivityEvent }) {
 function AddressLink({ addr }: { addr: string }) {
   return (
     <Link
-      href={`/artist/${addr}`}
+      href={`/profile/${addr}`}
       className="hover:text-fg transition-colors"
     >
       {truncateAddress(addr)}

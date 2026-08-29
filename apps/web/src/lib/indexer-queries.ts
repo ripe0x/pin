@@ -247,6 +247,7 @@ export async function getTokenAuctionSales(
 
 export type ActivePndAuction = {
   house: string
+  auctionId: string
   tokenContract: string
   tokenId: string
   seller: string
@@ -255,6 +256,11 @@ export type ActivePndAuction = {
   endTime: number
   firstBidTime: number
   createdAtTime: number
+  title: string | null
+  imageUrl: string | null
+  previewUrl: string | null
+  previewStatus: string | null
+  mediaKind: string | null
 }
 
 /**
@@ -278,20 +284,33 @@ export async function getActivePndAuctions(
     )
 
     const rows = (await db.unsafe(
-      `SELECT house, token_contract, token_id::text AS token_id, seller,
-              amount::text AS amount, reserve_price::text AS reserve_price,
-              end_time::text AS end_time,
-              first_bid_time::text AS first_bid_time,
-              created_at_time::text AS created_at_time
-       FROM ${schema}.pnd_auctions
-       WHERE status = 'active'
+      `SELECT a.house, a.auction_id::text AS auction_id,
+              a.token_contract, a.token_id::text AS token_id, a.seller,
+              a.amount::text AS amount, a.reserve_price::text AS reserve_price,
+              a.end_time::text AS end_time,
+              a.first_bid_time::text AS first_bid_time,
+              a.created_at_time::text AS created_at_time,
+              m.name AS title, m.image_url,
+              CASE WHEN d.status = 'ready'
+                   THEN coalesce(d.poster_url, d.thumbnail_url)
+                   ELSE NULL END AS preview_url,
+              d.status AS preview_status, d.media_kind
+       FROM ${schema}.pnd_auctions a
+       LEFT JOIN token_metadata m
+              ON m.contract = lower(a.token_contract)
+             AND m.token_id = a.token_id::text
+       LEFT JOIN token_media_delivery d
+              ON d.contract = lower(a.token_contract)
+             AND d.token_id = a.token_id::text
+       WHERE a.status = 'active'
        ORDER BY
-         CASE WHEN end_time = 0 THEN 1 ELSE 0 END,
-         end_time ASC
+         CASE WHEN a.end_time = 0 THEN 1 ELSE 0 END,
+         a.end_time ASC
        LIMIT $1`,
       [limit],
     )) as Array<{
       house: string
+      auction_id: string
       token_contract: string
       token_id: string
       seller: string
@@ -300,10 +319,16 @@ export async function getActivePndAuctions(
       end_time: string
       first_bid_time: string
       created_at_time: string
+      title: string | null
+      image_url: string | null
+      preview_url: string | null
+      preview_status: string | null
+      media_kind: string | null
     }>
 
     return rows.map((r) => ({
       house: r.house,
+      auctionId: r.auction_id,
       tokenContract: r.token_contract,
       tokenId: r.token_id,
       seller: r.seller,
@@ -312,6 +337,11 @@ export async function getActivePndAuctions(
       endTime: Number(r.end_time),
       firstBidTime: Number(r.first_bid_time),
       createdAtTime: Number(r.created_at_time),
+      title: r.title,
+      imageUrl: r.image_url,
+      previewUrl: r.preview_url,
+      previewStatus: r.preview_status,
+      mediaKind: r.media_kind,
     }))
   }, 2_000)
 }

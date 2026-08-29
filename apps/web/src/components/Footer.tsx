@@ -21,7 +21,7 @@
  * wrapper at `max-w-7xl` (1280px) for readable line lengths.
  */
 import { Suspense } from "react"
-import { SupportersList } from "./SupportersList"
+import { SupportersSummary } from "./SupportersList"
 import { ThemeToggle } from "./ThemeToggle"
 
 export function Footer() {
@@ -49,7 +49,7 @@ export function Footer() {
               <p className="text-[10px] font-mono text-gray-400">
                 PND logo by{" "}
                 <a
-                  href="/artist/0xc83e83677dd95618686ac9af2cd48972f1b72c22"
+                  href="/profile/0xc83e83677dd95618686ac9af2cd48972f1b72c22"
                   className="hover:text-fg transition-colors"
                 >
                   djkero
@@ -82,7 +82,7 @@ export function Footer() {
           </div>
         </div>
         <Suspense fallback={null}>
-          <SupportersList />
+          <SupportersSummary />
         </Suspense>
       </div>
     </footer>

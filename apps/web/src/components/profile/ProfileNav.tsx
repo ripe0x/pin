@@ -11,7 +11,10 @@ export function ProfileNav({ summary }: { summary: ProfileSummary }) {
   ].filter(Boolean) as string[][]
 
   return (
-    <nav aria-label="Profile sections" className="flex gap-4 overflow-x-auto border-b border-gray-200 py-3">
+    <nav
+      aria-label="Profile sections"
+      className="flex flex-wrap gap-x-4 gap-y-2 border-b border-gray-200 py-3 sm:flex-nowrap sm:overflow-x-auto"
+    >
       {links.map(([id, label]) => (
         <a
           key={id}

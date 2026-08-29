@@ -58,7 +58,7 @@ export function ProfileHeader({
         </div>
       </div>
 
-      <div className="grid gap-px overflow-hidden border border-gray-200 bg-gray-200 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-px overflow-hidden border border-gray-200 bg-gray-200 sm:grid-cols-4">
         <ProfileStat label="created" value={summary.createdTotal} />
         <ProfileStat
           label={summary.openReleaseTotal > 0 ? "open releases + listings" : "available"}

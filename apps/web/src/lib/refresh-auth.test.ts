@@ -4,6 +4,7 @@ import { privateKeyToAccount } from "viem/accounts"
 import { verifyMessage } from "viem"
 import {
   buildArtistRefreshMessage,
+  buildTokenRefreshMessage,
   isFreshRefreshNonce,
 } from "./refresh-auth"
 
@@ -36,4 +37,25 @@ test("artist refresh nonce accepts one minute of future skew and expires at five
   assert.equal(isFreshRefreshNonce(now - 300, now), true)
   assert.equal(isFreshRefreshNonce(now - 301, now), false)
   assert.equal(isFreshRefreshNonce(Number.NaN, now), false)
+})
+
+test("token refresh proof binds the signer and exact token", async () => {
+  const nonce = 1_787_900_000
+  const contract = "0xdef0000000000000000000000000000000000000"
+  const message = buildTokenRefreshMessage(account.address, contract, "42", nonce)
+  const signature = await account.signMessage({ message })
+
+  assert.equal(
+    message,
+    `PND token metadata refresh v1\nsigner=${account.address.toLowerCase()}\ncontract=${contract}\ntokenId=42\nnonce=${nonce}`,
+  )
+  assert.equal(await verifyMessage({ address: account.address, message, signature }), true)
+  assert.equal(
+    await verifyMessage({
+      address: account.address,
+      message: buildTokenRefreshMessage(account.address, contract, "43", nonce),
+      signature,
+    }),
+    false,
+  )
 })

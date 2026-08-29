@@ -1,19 +1,15 @@
 /**
- * Provenance display for a token's Mint Mark — fully DERIVED, matching the
- * onchain renderers: sequential token id IS the mint order; First/Final
- * derive from the id against the live minted count and supply cap alone
- * (thin-token rearchitecture §7.6: the token no longer carries a lifecycle
- * status to derive Final from — a reopened window can no longer retract
- * it). Framed as provenance, never as rarity: no rank, no score, no floor.
+ * Derived token provenance. Sequential token id is the mint order; First and
+ * Final derive from the id against the live minted count and supply cap. These
+ * are useful facts, not a separate protocol object or rarity score.
  */
-
-export function CollectionMintMarkCard({
+export function CollectionProvenanceCard({
   mintOrder,
   seed,
   supplyCap,
   minted,
 }: {
-  /** Sequential: the token id (== mint order). Null for pooled ids. */
+  /** Sequential: the token id (equal to mint order). Null for pooled ids. */
   mintOrder: number | null
   seed: `0x${string}` | null
   supplyCap: bigint
@@ -26,9 +22,9 @@ export function CollectionMintMarkCard({
     <div className="rounded-lg border border-gray-200 bg-surface overflow-hidden">
       <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-2">
         <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500">
-          Mint Mark
+          Token record
         </span>
-        <span className="text-[10px] font-mono text-gray-400">· onchain provenance</span>
+        <span className="text-[10px] font-mono text-gray-400">· derived onchain</span>
       </div>
       <dl className="divide-y divide-gray-100">
         {mintOrder !== null && (

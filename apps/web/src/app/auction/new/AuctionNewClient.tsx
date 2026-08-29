@@ -84,7 +84,7 @@ function Inner() {
             token. It&apos;s a one-time deploy.
           </p>
           <Link
-            href={`/artist/${address}`}
+            href={`/profile/${address}`}
             className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors"
           >
             Go to your profile to deploy →

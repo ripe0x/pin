@@ -57,7 +57,7 @@ export function OwnerGate({
           {shortAddr(address)} to manage this work.
         </p>
         <Link
-          href={`/artist/${address.toLowerCase()}`}
+          href={`/profile/${address.toLowerCase()}`}
           className="inline-block text-xs font-medium underline text-gray-700 hover:text-fg"
         >
           View the public page instead

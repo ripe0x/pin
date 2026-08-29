@@ -24,8 +24,8 @@ type Props = {
 export function GroupedMintRow({ group }: Props) {
   const groupHref = group.collection
     ? `/collections/${group.collection}`
-    : `/artist/${group.artist}`
-  const artistHref = `/artist/${group.artist}`
+    : `/profile/${group.artist}`
+  const artistHref = `/profile/${group.artist}`
 
   return (
     <li className="border-t border-gray-200 py-4 px-1">
@@ -146,7 +146,7 @@ export function GroupedMintRow({ group }: Props) {
                 {group.minters.map((minter) => (
                   <Link
                     key={minter.address}
-                    href={`/artist/${minter.address}`}
+                    href={`/profile/${minter.address}`}
                     aria-label={
                       minter.displayName ?? truncateAddress(minter.address)
                     }

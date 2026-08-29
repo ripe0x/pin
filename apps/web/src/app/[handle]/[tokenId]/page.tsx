@@ -414,7 +414,7 @@ export default async function TokenPage({
             <div className="space-y-0.5">
               {data.creator && (
                 <Link
-                  href={`/artist/${data.creator}`}
+                  href={`/profile/${data.creator}`}
                   className="inline-flex items-center gap-2 text-[11px] font-mono uppercase tracking-wider text-gray-600 hover:text-fg transition-colors"
                 >
                   {data.creatorAvatarUrl && (
@@ -643,7 +643,7 @@ function OwnerOrEscrowSection({
         Owner
       </p>
       <Link
-        href={`/artist/${owner}`}
+        href={`/profile/${owner}`}
         className="text-xs font-mono hover:underline"
       >
         {ownerHandle}

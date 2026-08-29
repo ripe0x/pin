@@ -86,7 +86,7 @@ export async function WorkArtistCard({
     : `${formatEth(reservePrice)} reserve`
 
   const tokenHref = `/${contract}/${tokenId}`
-  const artistHref = `/artist/${artistAddress}`
+  const artistHref = `/profile/${artistAddress}`
 
   return (
     <div className="relative border border-gray-200 transition-colors hover:border-gray-400 flex flex-col h-full overflow-hidden">

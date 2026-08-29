@@ -3,7 +3,7 @@
 // Server component. Renders inside the terminal skin (`.dark .homage-terminal
 // .collection-homage-skin`, applied by the page) so it matches /mint/homage, the
 // collection page, and the redeem page. It deliberately drops the generic PND
-// token chrome (Mint Mark, a top-level seed card, "Standard: ERC721", the "pure
+// token chrome (derived provenance, a top-level seed card, "Standard: ERC721", the "pure
 // function of chain state" copy) and surfaces what a homage actually carries: the
 // source punk, its traits, and the homage's own derived color count. The seed and
 // contract plumbing collapse into one "Onchain details" disclosure at the bottom.

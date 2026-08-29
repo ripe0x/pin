@@ -257,7 +257,7 @@ function ReadOnlyPreview({
             <p className="mt-3 text-xs text-gray-400">
               View this wallet&rsquo;s work on{" "}
               <Link
-                href={`/artist/${address}`}
+                href={`/profile/${address}`}
                 className="underline hover:text-fg"
               >
                 their artist page

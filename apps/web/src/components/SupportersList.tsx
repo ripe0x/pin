@@ -43,3 +43,19 @@ export async function SupportersList() {
     </div>
   )
 }
+
+/** Compact global-footer summary. The complete roster has its own page. */
+export async function SupportersSummary() {
+  const { supporters, totalSupporters, totalMints } =
+    await getFundingWorksSupporters()
+  if (supporters.length === 0) return null
+
+  return (
+    <p className="text-[11px] font-mono text-gray-500">
+      {totalSupporters} supporters. {totalMints} mints. Thank you.{" "}
+      <a href="/supporters" className="underline hover:text-fg">
+        See everyone →
+      </a>
+    </p>
+  )
+}

@@ -404,7 +404,7 @@ export type CollectionTokenView = {
   animationUrl: string | null
 }
 
-/** Everything a token page needs: owner, seed, Mint Mark, art, tokenURI. */
+/** Everything a token page needs: owner, seed, derived provenance, art, tokenURI. */
 export async function getCollectionToken(
   address: Address,
   tokenId: bigint,

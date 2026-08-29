@@ -643,7 +643,7 @@ export default function PreservePage() {
                     All your art is already pinned. Share your artist page:
                   </p>
                   <Link
-                    href={`/artist/${discoveredAddress}`}
+                    href={`/profile/${discoveredAddress}`}
                     className="inline-flex items-center text-[11px] font-mono font-medium uppercase tracking-wider px-6 py-3 bg-fg text-bg hover:opacity-80 transition-colors"
                   >
                     View Your Artist Page
@@ -741,7 +741,7 @@ export default function PreservePage() {
                 Your art is preserved. Share your artist page:
               </p>
               <Link
-                href={`/artist/${discoveredAddress}`}
+                href={`/profile/${discoveredAddress}`}
                 className="inline-flex items-center text-[11px] font-mono font-medium uppercase tracking-wider px-6 py-3 bg-fg text-bg hover:opacity-80 transition-colors"
               >
                 View Your Artist Page

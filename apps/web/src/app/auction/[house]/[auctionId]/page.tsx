@@ -115,7 +115,7 @@ export default async function AuctionPage({ params }: { params: Params }) {
           {/* Title + seller + back-to-token */}
           <section className="pb-5 border-b border-gray-100 space-y-2">
             <Link
-              href={`/artist/${detail.seller}`}
+              href={`/profile/${detail.seller}`}
               className="inline-block text-[11px] font-mono uppercase tracking-wider text-gray-600 hover:text-fg transition-colors"
             >
               Auctioned by {detail.sellerDisplay}

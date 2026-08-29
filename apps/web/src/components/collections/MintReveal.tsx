@@ -9,7 +9,7 @@
  * trip, no delayed reveal: the seed exists, so the artwork exists.
  *
  * For collections without a generative work (edition presets), there is no
- * live render to show; the reveal is the numbered Mint Mark plus the link.
+ * live render to show; the reveal is the numbered token record plus the link.
  */
 
 import Link from "next/link"
@@ -123,8 +123,8 @@ export function MintReveal({
       ) : (
         <p className="text-[11px] font-mono text-gray-600 leading-relaxed">
           {ids.length === 1
-            ? `Token #${ids[0]} is yours. Its Mint Mark is recorded onchain.`
-            : `Tokens #${ids[0]} to #${ids[ids.length - 1]} are yours. Their Mint Marks are recorded onchain.`}{" "}
+            ? `Token #${ids[0]} is yours. Its token id and provenance are onchain.`
+            : `Tokens #${ids[0]} to #${ids[ids.length - 1]} are yours. Their token ids and provenance are onchain.`}{" "}
           <Link
             href={`/collections/${collection.toLowerCase()}/${ids[0]}`}
             className="underline hover:text-fg"

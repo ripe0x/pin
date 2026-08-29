@@ -4,7 +4,7 @@ import { notFound } from "next/navigation"
 import { isAddress, type Address } from "viem"
 import { TokenStage } from "@/components/token/TokenStage"
 import { CopyAddressButton } from "@/components/CopyAddressButton"
-import { CollectionMintMarkCard } from "@/components/collections/CollectionMintMarkCard"
+import { CollectionProvenanceCard } from "@/components/collections/CollectionProvenanceCard"
 import { HomageTokenDetail } from "@/components/collections/homage/HomageTokenDetail"
 import { getCollection, getCollectionToken } from "@/lib/collection-onchain"
 import { detectHomageMinter } from "@/lib/homage/detect.server"
@@ -167,7 +167,7 @@ export default async function CollectionTokenPage({ params }: { params: Params }
             </p>
           </header>
 
-          <CollectionMintMarkCard
+          <CollectionProvenanceCard
             mintOrder={t.mintOrder}
             seed={null /* the dedicated Seed card below shows it in full */}
             supplyCap={c.cfg.supplyCap}

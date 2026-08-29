@@ -64,7 +64,7 @@ export function pndIndexedSource(artist: Address): ImportSource {
     id: "pnd-indexed",
     artistAddress: lower,
     displayName: "Indexed by pnd",
-    sourceUrl: `/artist/${lower}`,
+    sourceUrl: `/profile/${lower}`,
     fetchWorks: () => fetchPndIndexedWorks(lower),
   }
 }

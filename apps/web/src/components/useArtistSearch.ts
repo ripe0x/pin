@@ -4,8 +4,8 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 
 /**
- * Shared artist-search submit. Both the desktop collapsible pill
- * (HeaderSearch) and the mobile menu field route to /artist/<input>, so the
+ * Shared profile-search submit. Both the desktop collapsible pill
+ * (HeaderSearch) and the mobile menu field route to /profile/<input>, so the
  * query state + navigation live here once instead of being copied per surface.
  *
  * `onAfterSubmit` lets the caller close its own UI (collapse the pill, close
@@ -19,7 +19,7 @@ export function useArtistSearch(onAfterSubmit?: () => void) {
     e.preventDefault()
     const input = query.trim()
     if (!input) return
-    router.push(`/artist/${encodeURIComponent(input)}`)
+    router.push(`/profile/${encodeURIComponent(input)}`)
     setQuery("")
     onAfterSubmit?.()
   }

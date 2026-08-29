@@ -122,7 +122,7 @@ async function RecordBody({ address }: { address: Address }) {
     record.tokens.length === 0 &&
     record.tokenRanges.length === 0
 
-  const galleryUrl = `/artist/${address.toLowerCase()}`
+  const galleryUrl = `/profile/${address.toLowerCase()}`
   const truncatedAddress = `${address.slice(0, 6)}…${address.slice(-4)}`
 
   return (

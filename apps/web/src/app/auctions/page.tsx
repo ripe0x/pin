@@ -1,6 +1,10 @@
 import type { Metadata } from "next"
+import Link from "next/link"
+import { formatEther } from "viem"
+import { getActivePndAuctions } from "@/lib/indexer-queries"
+import { OptimizedImage } from "@/components/OptimizedImage"
 
-const TITLE = "Artist-owned auction contracts"
+const TITLE = "Auctions"
 const DESCRIPTION =
   "How PND's artist-owned auction contracts work: who deploys them, who owns them, how listing, bidding, and settlement work, and what happens if PND disappears."
 
@@ -11,21 +15,136 @@ export const metadata: Metadata = {
   twitter: { card: "summary_large_image", title: TITLE, description: DESCRIPTION },
 }
 
-export default function AuctionsGuidePage() {
+// Availability is an indexed Postgres view. Never turn this browse page into
+// a request-time scan across every artist-owned house.
+export const dynamic = "force-dynamic"
+
+export default async function AuctionsGuidePage() {
+  const active = await getActivePndAuctions(12).catch(() => null)
+  const now = Math.floor(Date.now() / 1000)
+
   return (
-    <div className="mx-auto max-w-2xl px-6 py-12 space-y-8">
+    <div className="mx-auto max-w-3xl px-6 py-12 space-y-12">
       <header className="space-y-5">
         <h1 className="text-3xl font-semibold tracking-tight">
-          Artist-owned auction contracts
+          Auctions
         </h1>
         <p className="text-base text-fg-muted leading-relaxed">
-          PND lets an artist deploy and run their own onchain auction
-          contract. This is a plain-language guide to how that works.
+          Work offered from artist-owned auction houses. PND indexes the live
+          state, but every bid and settlement goes directly to the artist&apos;s
+          contract.
         </p>
+      </header>
+
+      <section aria-labelledby="available-auctions" className="space-y-4">
+        <div className="flex items-baseline justify-between gap-4">
+          <h2 id="available-auctions" className="text-xl font-semibold tracking-tight">
+            Available now
+          </h2>
+          <span className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+            Indexed contract state
+          </span>
+        </div>
+        {active === null ? (
+          <div className="rounded-lg border border-gray-200 p-5">
+            <p className="text-sm text-fg-muted">
+              The auction index is temporarily unavailable. No chain-wide scan
+              will run from this page. Try again shortly.
+            </p>
+          </div>
+        ) : active.length === 0 ? (
+          <div className="rounded-lg border border-gray-200 p-5">
+            <p className="text-sm text-fg-muted">No active auctions are indexed right now.</p>
+          </div>
+        ) : (
+          <ul className="grid gap-3 sm:grid-cols-2">
+            {active.map((auction) => {
+              const hasBid = auction.firstBidTime > 0
+              const price = hasBid ? auction.amount : auction.reservePrice
+              const rawPreview =
+                auction.mediaKind === "video" || auction.mediaKind === "animation"
+                  ? null
+                  : auction.imageUrl
+              const previewUrl = auction.previewUrl ?? rawPreview
+              const previewState = previewUrl
+                ? null
+                : auction.previewStatus === "pending"
+                  ? "Preview is being prepared"
+                  : auction.previewStatus === "failed"
+                    ? "Preview unavailable, original is intact"
+                    : auction.mediaKind === "video" || auction.mediaKind === "animation"
+                      ? "Interactive work, open to view"
+                      : "Media is not indexed yet"
+              const status =
+                auction.endTime === 0
+                  ? "Waiting for first bid"
+                  : auction.endTime <= now
+                    ? "Ready to settle"
+                    : `Ends ${new Date(auction.endTime * 1000).toLocaleString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit",
+                        timeZoneName: "short",
+                      })}`
+              return (
+                <li key={`${auction.house}:${auction.tokenContract}:${auction.tokenId}`}>
+                  <Link
+                    href={`/auction/${auction.house}/${auction.auctionId}`}
+                    className="block rounded-lg border border-gray-200 bg-surface p-4 transition-colors hover:border-gray-400"
+                  >
+                    <div className="flex gap-4">
+                      <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden bg-gray-100">
+                        {previewUrl ? (
+                          <OptimizedImage
+                            src={previewUrl}
+                            alt={auction.title ?? `Token #${auction.tokenId}`}
+                            width={192}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <span className="px-2 text-center text-[9px] font-mono leading-relaxed text-gray-400">
+                            {previewState}
+                          </span>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">
+                          {auction.title ?? `Token #${auction.tokenId}`}
+                        </p>
+                        <p className="mt-1 truncate text-[10px] font-mono text-gray-400">
+                          {shortAddress(auction.tokenContract)} · by {shortAddress(auction.seller)}
+                        </p>
+                        <div className="mt-3 flex items-end justify-between gap-4">
+                          <div>
+                            <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+                              {hasBid ? "Current bid" : "Reserve"}
+                            </p>
+                            <p className="mt-0.5 text-sm font-mono tabular-nums">
+                              {formatEth(price)} ETH
+                            </p>
+                          </div>
+                          <p className="text-right text-[10px] font-mono text-gray-500">
+                            {status}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </Link>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </section>
+
+      <header className="space-y-5 border-t border-gray-200 pt-12">
+        <h2 className="text-2xl font-semibold tracking-tight">
+          How artist-owned auctions work
+        </h2>
         <p className="text-base text-fg-muted leading-relaxed">
-          The mechanics here are not exotic. They are an ERC-721 reserve
-          auction with anti-snipe protection. The difference is who owns
-          the contract.
+          The mechanics are a familiar ERC-721 reserve auction with anti-snipe
+          protection. The important difference is who owns the contract.
         </p>
       </header>
 
@@ -258,4 +377,14 @@ export default function AuctionsGuidePage() {
       </section>
     </div>
   )
+}
+
+function shortAddress(address: string): string {
+  return `${address.slice(0, 6)}…${address.slice(-4)}`
+}
+
+function formatEth(wei: bigint): string {
+  const value = Number(formatEther(wei))
+  if (value >= 1) return value.toFixed(2).replace(/\.00$/, "")
+  return value.toFixed(4).replace(/0+$/, "").replace(/\.$/, "")
 }
