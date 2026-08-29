@@ -78,14 +78,41 @@ export default async function ProfilePage({
     ? requestedPage - 1
     : 0
 
-  const [identity, gallery, catalog, holdings, transferred, openReleases] = await Promise.all([
-    getIndexedArtistIdentity(address),
-    getProfileGalleryPage(address, createdPage, PAGE_SIZE),
-    getProfileCatalogEvidence(address),
-    getProfileHoldingsPage(address, null, PAGE_SIZE),
-    getProfileTransferredPage(address, null, PAGE_SIZE),
-    getProfileOpenReleases(address),
-  ])
+  const identity = await getIndexedArtistIdentity(address)
+  let profileData: Awaited<ReturnType<typeof loadProfileData>>
+  try {
+    profileData = await loadProfileData(address, createdPage)
+  } catch {
+    // A deploy can briefly run before its additive profile migrations or
+    // indexer alias cutover. Keep the public identity reachable and state the
+    // missing evidence plainly instead of turning schema drift into a 500.
+    return (
+      <main className="mx-auto max-w-[1200px] px-6 py-12">
+        <header className="space-y-2">
+          <h1 className="font-mono text-base font-medium tracking-tight">
+            {identity.displayName}
+          </h1>
+          <a
+            href={`https://evm.now/address/${address}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-mono text-[11px] text-gray-500 hover:text-fg"
+          >
+            {address.slice(0, 6)}…{address.slice(-4)}
+          </a>
+        </header>
+        <section className="mt-8 rounded-lg border border-gray-200 p-6">
+          <h2 className="text-sm font-medium">Profile index temporarily unavailable</h2>
+          <p className="mt-2 max-w-xl text-sm leading-relaxed text-gray-500">
+            PND cannot verify this address&apos;s created work, holdings, Catalog
+            declarations, or availability right now. No chain scan will run
+            from this page. Try again after the index catches up.
+          </p>
+        </section>
+      </main>
+    )
+  }
+  const { gallery, catalog, holdings, transferred, openReleases } = profileData
   const declaredTotal = catalog.contracts.length + catalog.tokens.length + catalog.ranges.length
   const summary = await getProfileSummary({
     address,
@@ -130,4 +157,15 @@ export default async function ProfilePage({
       <div className="mt-16"><ProfileCuration /></div>
     </main>
   )
+}
+
+async function loadProfileData(address: string, createdPage: number) {
+  const [gallery, catalog, holdings, transferred, openReleases] = await Promise.all([
+    getProfileGalleryPage(address, createdPage, PAGE_SIZE),
+    getProfileCatalogEvidence(address),
+    getProfileHoldingsPage(address, null, PAGE_SIZE),
+    getProfileTransferredPage(address, null, PAGE_SIZE),
+    getProfileOpenReleases(address),
+  ])
+  return { gallery, catalog, holdings, transferred, openReleases }
 }
