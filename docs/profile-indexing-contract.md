@@ -72,6 +72,11 @@ artist-specific refs and enrichment cache tags, then records
 `cache_invalidated_at`. A worker restart cannot lose an accepted job, and a
 browser reload can poll the same job id.
 
+Queue creation requires a human-readable wallet signature bound to the artist
+address and a nonce valid for 5 minutes, with 1 minute of future clock skew.
+Status polling uses the unguessable job id. The connected-wallet check in the
+button is presentation only; the API signature is the cost-control boundary.
+
 ## Cost and release evidence
 
 Run the deterministic tests before release:

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { verifyMessage } from "viem"
 import { isKnownArtist } from "@/lib/known-artists"
 import { refreshArtist } from "@/lib/external-indexer"
 import {
@@ -6,6 +7,10 @@ import {
   failRefreshJob,
   getRefreshJob,
 } from "@/lib/refresh-jobs"
+import {
+  buildArtistRefreshMessage,
+  isFreshRefreshNonce,
+} from "@/lib/refresh-auth"
 
 /**
  * "Refresh my work" button endpoint. In v2 this is a thin proxy — the
@@ -26,7 +31,7 @@ import {
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   context: { params: Promise<{ address: string }> },
 ) {
   const { address: raw } = await context.params
@@ -38,6 +43,37 @@ export async function POST(
     )
   }
   const address = decoded.toLowerCase()
+
+  const body = await req.json().catch(() => null) as {
+    nonce?: unknown
+    signature?: unknown
+  } | null
+  const nonce = typeof body?.nonce === "number" ? body.nonce : NaN
+  const signature = typeof body?.signature === "string" ? body.signature : ""
+  if (!isFreshRefreshNonce(nonce, Math.floor(Date.now() / 1000))) {
+    return NextResponse.json(
+      { ok: false, error: "stale refresh proof" },
+      { status: 400 },
+    )
+  }
+  if (!/^0x[0-9a-fA-F]+$/.test(signature)) {
+    return NextResponse.json(
+      { ok: false, error: "invalid signature" },
+      { status: 400 },
+    )
+  }
+  const message = buildArtistRefreshMessage(address, nonce)
+  const authenticated = await verifyMessage({
+    address: address as `0x${string}`,
+    message,
+    signature: signature as `0x${string}`,
+  }).catch(() => false)
+  if (!authenticated) {
+    return NextResponse.json(
+      { ok: false, error: "refresh proof does not match artist" },
+      { status: 401 },
+    )
+  }
 
   if (!(await isKnownArtist(address))) {
     return NextResponse.json(

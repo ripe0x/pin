@@ -17,7 +17,7 @@ import { CollectionStatusChip } from "@/components/collections/CollectionStatusC
 export const metadata: Metadata = {
   title: "Collections",
   description:
-    "Release onchain art as sovereign collections you own. Every token keeps its own identity and onchain Mint Mark. Mainnet only. Honest pricing.",
+    "Release onchain art as sovereign collections you own. Every token keeps its own identity. Mainnet only. Honest pricing.",
 }
 
 // The mainnet list must validate the live indexer binding at request time.
@@ -53,7 +53,15 @@ function groupByLifecycle(collections: Collection[], nowSec: number): Collection
 
 export default async function CollectionsHome() {
   const factory = surfaceFactory()
-  const recent = factory ? await getRecentCollections(factory, 8) : []
+  let indexUnavailable = false
+  let recent: Collection[] = []
+  if (factory) {
+    try {
+      recent = await getRecentCollections(factory, 8)
+    } catch {
+      indexUnavailable = true
+    }
+  }
   const nowSec = Math.floor(Date.now() / 1000)
   const groups = groupByLifecycle(recent, nowSec)
   const showGroupLabels = groups.length > 1
@@ -70,7 +78,7 @@ export default async function CollectionsHome() {
         </p>
         <ul className="flex flex-wrap gap-x-5 gap-y-1 pt-2 text-[10px] font-mono uppercase tracking-wider text-gray-400">
           <li>Artist owned contracts</li>
-          <li>Mint Marks, not rarity</li>
+          <li>Per-token identity</li>
           <li>Attribution roster</li>
           <li>Self hostable</li>
         </ul>
@@ -80,6 +88,13 @@ export default async function CollectionsHome() {
         <section className="rounded-lg border border-gray-200 bg-surface p-6">
           <p className="text-sm text-fg-muted leading-relaxed">
             Collections are not yet live on this network. Check back soon.
+          </p>
+        </section>
+      ) : indexUnavailable ? (
+        <section className="rounded-lg border border-gray-200 bg-surface p-6 space-y-2">
+          <h2 className="text-sm font-medium">Collection index temporarily unavailable</h2>
+          <p className="text-sm text-fg-muted leading-relaxed">
+            PND cannot verify the indexed collection list right now. Try again shortly.
           </p>
         </section>
       ) : groups.length > 0 ? (
@@ -138,7 +153,13 @@ export default async function CollectionsHome() {
             </div>
           ))}
         </section>
-      ) : null}
+      ) : (
+        <section className="rounded-lg border border-gray-200 bg-surface p-6">
+          <p className="text-sm text-fg-muted leading-relaxed">
+            No collections have been indexed yet.
+          </p>
+        </section>
+      )}
     </div>
   )
 }

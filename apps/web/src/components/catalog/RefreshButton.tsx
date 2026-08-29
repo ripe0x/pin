@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useQueryClient } from "@tanstack/react-query"
-import { useAccount } from "wagmi"
+import { useAccount, useSignMessage } from "wagmi"
+import { buildArtistRefreshMessage } from "@/lib/refresh-auth"
 
 type SourceState = {
   status: "pending" | "partial" | "complete" | "failed"
@@ -33,6 +34,7 @@ const DEFAULT_SOURCES = ["Foundation", "Manifold", "Mint", "Transient Labs"]
 /** Owner-only control for the durable worker refresh queue. */
 export function RefreshButton({ artistAddress }: { artistAddress: string }) {
   const { address: connected } = useAccount()
+  const { signMessageAsync } = useSignMessage()
   const [state, setState] = useState<State>({ kind: "idle" })
   const pollGeneration = useRef(0)
   const router = useRouter()
@@ -93,8 +95,14 @@ export function RefreshButton({ artistAddress }: { artistAddress: string }) {
     const generation = pollGeneration.current
     setState({ kind: "working", job: { id: "", status: "queued" } })
     try {
+      const nonce = Math.floor(Date.now() / 1000)
+      const signature = await signMessageAsync({
+        message: buildArtistRefreshMessage(artistAddress, nonce),
+      })
       const res = await fetch(`/api/refresh-artist/${artistAddress}`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nonce, signature }),
       })
       const json = (await res.json()) as
         | { ok: true; job: RefreshJob }
