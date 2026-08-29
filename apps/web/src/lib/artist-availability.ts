@@ -115,8 +115,10 @@ export async function rankArtistTokenRefs(
   const mintBlocks = refs.map((r) => r.mintBlock ?? "0")
   const offset = page * pageSize
 
-  const rows = (await sql.unsafe(
-    `WITH refs AS (
+  let rows: RankedRow[]
+  try {
+    rows = (await sql.unsafe(
+      `WITH refs AS (
        SELECT contract, token_id, creator, collection_name, platform,
               mint_block::bigint AS mint_block, ordinality
        FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[])
@@ -242,9 +244,16 @@ export async function rankArtistTokenRefs(
                 r.ordinality, r.contract, r.token_id
        LIMIT $8 OFFSET $9
      )
-     SELECT *, mint_block::text AS mint_block FROM ranked`,
-    [contracts, tokenIds, creators, collectionNames, platforms, mintBlocks, artist.toLowerCase(), pageSize, offset],
-  )) as RankedRow[]
+       SELECT *, mint_block::text AS mint_block FROM ranked`,
+      [contracts, tokenIds, creators, collectionNames, platforms, mintBlocks, artist.toLowerCase(), pageSize, offset],
+    )) as RankedRow[]
+  } catch (error) {
+    // Rolling deploys can briefly pair new web code with the previous
+    // indexer schema. Keep the indexed work visible in its durable mint order
+    // and state plainly that availability could not be verified.
+    console.warn("[artist-availability] ranked availability unavailable:", error)
+    return fallback
+  }
 
   const availability = new Map<string, WorkAvailability>()
   const pageRefs = rows.map((row) => {
@@ -275,20 +284,27 @@ export async function rankArtistTokenRefs(
     }
   })
 
-  const staleRows = (await sql`
-    SELECT source
-    FROM (
-      SELECT 'SuperRare'::text AS source, MAX(updated_at) AS last_seen
-      FROM srv2_active_auctions
-      WHERE lower(seller) = ${artist.toLowerCase()} AND status = 'active'
-      UNION ALL
-      SELECT 'Transient Labs', MAX(updated_at)
-      FROM tl_active_auctions
-      WHERE lower(seller) = ${artist.toLowerCase()} AND status = 'active'
-    ) s
-    WHERE last_seen IS NOT NULL
-      AND last_seen < NOW() - (${OBSERVED_SOURCE_FRESHNESS_MINUTES}::text || ' minutes')::interval
-  `) as Array<{ source: string }>
+  let staleRows: Array<{ source: string }> = []
+  try {
+    staleRows = (await sql`
+      SELECT source
+      FROM (
+        SELECT 'SuperRare'::text AS source, MAX(updated_at) AS last_seen
+        FROM srv2_active_auctions
+        WHERE lower(seller) = ${artist.toLowerCase()} AND status = 'active'
+        UNION ALL
+        SELECT 'Transient Labs', MAX(updated_at)
+        FROM tl_active_auctions
+        WHERE lower(seller) = ${artist.toLowerCase()} AND status = 'active'
+      ) s
+      WHERE last_seen IS NOT NULL
+        AND last_seen < NOW() - (${OBSERVED_SOURCE_FRESHNESS_MINUTES}::text || ' minutes')::interval
+    `) as Array<{ source: string }>
+  } catch (error) {
+    // Freshness is supplementary coverage metadata. It must not hide a
+    // successfully ranked gallery when telemetry tables are rolling out.
+    console.warn("[artist-availability] freshness coverage unavailable:", error)
+  }
 
   const total = rows[0]?.total_count ?? refs.length
   return {

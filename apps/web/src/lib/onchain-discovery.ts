@@ -311,26 +311,51 @@ export async function discoverArtistTokenRefs(
   // Each source contributes (contract, tokenId, platform). The reader
   // attaches creator = artist (the address whose page is being viewed)
   // — same convention v1 used.
-  const rows = (await sql.unsafe(
-    `SELECT lower(contract) AS contract, token_id, platform, mint_block, mint_log_index
-     FROM work_attributions WHERE artist = $1
-     UNION ALL
-     SELECT lower(contract), token_id::text, 'fnd-shared' AS platform,
-            block_number AS mint_block, log_index AS mint_log_index
-     FROM ${INDEXER_SCHEMA}.fnd_artist_tokens WHERE lower(creator) = $1
-     UNION ALL
-     SELECT lower(contract), token_id::text, 'srv2-shared' AS platform,
-            block_number AS mint_block, log_index AS mint_log_index
-     FROM ${INDEXER_SCHEMA}.srv2_artist_tokens WHERE lower(creator) = $1
-     ORDER BY mint_block DESC, mint_log_index DESC`,
-    [artist],
-  )) as Array<{
+  type IndexedRow = {
     contract: string
     token_id: string
     platform: string
     mint_block: string
     mint_log_index: number
-  }>
+  }
+
+  let rows: IndexedRow[]
+  try {
+    rows = (await sql.unsafe(
+      `SELECT lower(contract) AS contract, token_id, platform, mint_block, mint_log_index
+       FROM work_attributions WHERE artist = $1
+       UNION ALL
+       SELECT lower(contract), token_id::text, 'fnd-shared' AS platform,
+              block_number AS mint_block, log_index AS mint_log_index
+       FROM ${INDEXER_SCHEMA}.fnd_artist_tokens WHERE lower(creator) = $1
+       UNION ALL
+       SELECT lower(contract), token_id::text, 'srv2-shared' AS platform,
+              block_number AS mint_block, log_index AS mint_log_index
+       FROM ${INDEXER_SCHEMA}.srv2_artist_tokens WHERE lower(creator) = $1
+       ORDER BY mint_block DESC, mint_log_index DESC`,
+      [artist],
+    )) as IndexedRow[]
+  } catch (error) {
+    // Migration 034 changes the canonical source from the one-artist
+    // artist_tokens table to many-to-many work_attributions. During a rolling
+    // deploy, keep serving the last durable model until that additive table
+    // exists instead of blanking the profile.
+    console.warn("[artist-discovery] attribution model unavailable; using legacy rows:", error)
+    rows = (await sql.unsafe(
+      `SELECT lower(contract) AS contract, token_id, platform, mint_block, mint_log_index
+       FROM artist_tokens WHERE artist = $1
+       UNION ALL
+       SELECT lower(contract), token_id::text, 'fnd-shared' AS platform,
+              block_number AS mint_block, log_index AS mint_log_index
+       FROM ${INDEXER_SCHEMA}.fnd_artist_tokens WHERE lower(creator) = $1
+       UNION ALL
+       SELECT lower(contract), token_id::text, 'srv2-shared' AS platform,
+              block_number AS mint_block, log_index AS mint_log_index
+       FROM ${INDEXER_SCHEMA}.srv2_artist_tokens WHERE lower(creator) = $1
+       ORDER BY mint_block DESC, mint_log_index DESC`,
+      [artist],
+    )) as IndexedRow[]
+  }
 
   const indexed = rows.map((r) => ({
     contract: r.contract as `0x${string}`,

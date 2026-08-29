@@ -283,8 +283,28 @@ export async function getActivePndAuctions(
       "",
     )
 
-    const rows = (await db.unsafe(
-      `SELECT a.house, a.auction_id::text AS auction_id,
+    type ActivePndAuctionRow = {
+      house: string
+      auction_id: string
+      token_contract: string
+      token_id: string
+      seller: string
+      amount: string
+      reserve_price: string
+      end_time: string
+      first_bid_time: string
+      created_at_time: string
+      title: string | null
+      image_url: string | null
+      preview_url: string | null
+      preview_status: string | null
+      media_kind: string | null
+    }
+
+    let rows: ActivePndAuctionRow[]
+    try {
+      rows = (await db.unsafe(
+        `SELECT a.house, a.auction_id::text AS auction_id,
               a.token_contract, a.token_id::text AS token_id, a.seller,
               a.amount::text AS amount, a.reserve_price::text AS reserve_price,
               a.end_time::text AS end_time,
@@ -306,25 +326,36 @@ export async function getActivePndAuctions(
        ORDER BY
          CASE WHEN a.end_time = 0 THEN 1 ELSE 0 END,
          a.end_time ASC
-       LIMIT $1`,
-      [limit],
-    )) as Array<{
-      house: string
-      auction_id: string
-      token_contract: string
-      token_id: string
-      seller: string
-      amount: string
-      reserve_price: string
-      end_time: string
-      first_bid_time: string
-      created_at_time: string
-      title: string | null
-      image_url: string | null
-      preview_url: string | null
-      preview_status: string | null
-      media_kind: string | null
-    }>
+         LIMIT $1`,
+        [limit],
+      )) as ActivePndAuctionRow[]
+    } catch (error) {
+      // Media delivery is additive. During migration 032 rollout, keep real
+      // auctions and canonical token images visible instead of treating the
+      // entire auction index as unavailable.
+      console.warn("[auctions] media delivery unavailable; using canonical media:", error)
+      rows = (await db.unsafe(
+        `SELECT a.house, a.auction_id::text AS auction_id,
+                a.token_contract, a.token_id::text AS token_id, a.seller,
+                a.amount::text AS amount, a.reserve_price::text AS reserve_price,
+                a.end_time::text AS end_time,
+                a.first_bid_time::text AS first_bid_time,
+                a.created_at_time::text AS created_at_time,
+                m.name AS title, m.image_url,
+                NULL::text AS preview_url, NULL::text AS preview_status,
+                NULL::text AS media_kind
+         FROM ${schema}.pnd_auctions a
+         LEFT JOIN token_metadata m
+                ON m.contract = lower(a.token_contract)
+               AND m.token_id = a.token_id::text
+         WHERE a.status = 'active'
+         ORDER BY
+           CASE WHEN a.end_time = 0 THEN 1 ELSE 0 END,
+           a.end_time ASC
+         LIMIT $1`,
+        [limit],
+      )) as ActivePndAuctionRow[]
+    }
 
     return rows.map((r) => ({
       house: r.house,

@@ -140,17 +140,46 @@ export async function getProfileSummary(args: SummaryArgs): Promise<ProfileSumma
   let auctionHouseCount = 0
   let ownershipCoverage: ProfileCoverageSource[] = []
 
-  if (sql) {
+  const db = sql
+  if (db) {
+    const legacyCounts = () => db`
+      SELECT
+        (SELECT COUNT(*)::int FROM token_owners
+           WHERE lower(owner) = ${address} AND owner <> ${ZERO_ADDRESS}) AS held_total,
+        (SELECT COUNT(*)::int
+           FROM artist_tokens at
+           JOIN token_owners o
+             ON lower(o.contract) = lower(at.contract) AND o.token_id = at.token_id
+          WHERE lower(at.artist) = ${address}
+            AND lower(o.owner) <> ${address}) AS transferred_total,
+        (SELECT COUNT(*)::int
+           FROM artist_tokens at
+           JOIN token_owners o
+             ON lower(o.contract) = lower(at.contract) AND o.token_id = at.token_id
+          WHERE lower(at.artist) = ${address}
+            AND lower(o.owner) = ${address}) AS creator_held_total
+    `.catch(() => [])
+    const legacyCoverage = () => db`
+      SELECT 'legacy-token-owners'::text AS source,
+             'snapshot'::text AS coverage_status,
+             false AS finalized,
+             MAX(to_timestamp(NULLIF(transferred_at_time, 0))) AS observed_at,
+             COUNT(*)::int AS item_count
+      FROM token_owners
+      WHERE lower(owner) = ${address} AND owner <> ${ZERO_ADDRESS}
+      HAVING COUNT(*) > 0
+    `.catch(() => [])
+
     const [counts, coverage, infrastructure] = await Promise.all([
-      sql`
+      db`
         SELECT
           (SELECT COUNT(*)::int FROM profile_collected_works WHERE holder = ${address}) AS held_total,
           (SELECT COUNT(*)::int FROM profile_created_works
              WHERE artist = ${address} AND lifecycle_evidence IN ('transferred', 'burned')) AS transferred_total,
           (SELECT COUNT(*)::int FROM profile_created_works
              WHERE artist = ${address} AND lifecycle_evidence = 'creator-held') AS creator_held_total
-      `.catch(() => []),
-      sql`
+      `.catch(legacyCounts),
+      db`
         SELECT ownership_source AS source,
                coverage_status,
                BOOL_AND(finalized) AS finalized,
@@ -160,13 +189,21 @@ export async function getProfileSummary(args: SummaryArgs): Promise<ProfileSumma
         WHERE holder = ${address}
         GROUP BY ownership_source, coverage_status
         ORDER BY ownership_source, coverage_status
-      `.catch(() => []),
-      sql.unsafe(
+      `.catch(legacyCoverage),
+      db.unsafe(
         `SELECT
            (SELECT COUNT(*)::int FROM ${INDEXER_SCHEMA}.collections WHERE lower(owner) = $1) AS surface_count,
            (SELECT COUNT(*)::int FROM ${INDEXER_SCHEMA}.pnd_houses WHERE lower(owner) = $1) AS house_count`,
         [address],
-      ).catch(() => []),
+      ).catch(() =>
+        db.unsafe(
+          `SELECT 0::int AS surface_count,
+                  COUNT(*)::int AS house_count
+             FROM ${INDEXER_SCHEMA}.pnd_houses
+            WHERE lower(owner) = $1`,
+          [address],
+        ).catch(() => []),
+      ),
     ])
 
     const countRow = counts[0] as Record<string, number> | undefined
@@ -439,24 +476,55 @@ export async function getProfileHoldingsPage(
   const address = addressInput.toLowerCase()
   const cursor = decodeProfileCursor(cursorInput)
   const pageSize = safePageSize(pageSizeInput)
-  const rows = (await sql`
-    SELECT p.contract, p.token_id, p.token_standard, p.balance::text,
-           p.attributed_creator, p.platform, m.name,
-           p.ownership_source, p.last_block::text, p.log_index::text,
-           p.observed_at, p.finalized, p.coverage_status
-    FROM profile_collected_works p
-    LEFT JOIN token_metadata m
-      ON lower(m.contract) = p.contract AND m.token_id = p.token_id
-    WHERE p.holder = ${address}
-      AND (
-        ${cursor?.block ?? null}::bigint IS NULL OR
-        (p.last_block, p.log_index, p.contract, p.token_id)
-          < (${cursor?.block ?? null}::bigint, ${cursor?.logIndex ?? null}::bigint,
-             ${cursor?.contract ?? null}::text, ${cursor?.tokenId ?? null}::text)
-      )
-    ORDER BY p.last_block DESC, p.log_index DESC, p.contract DESC, p.token_id DESC
-    LIMIT ${pageSize + 1}
-  `.catch(() => [])) as HoldingRow[]
+  let rows: HoldingRow[]
+  try {
+    rows = (await sql`
+      SELECT p.contract, p.token_id, p.token_standard, p.balance::text,
+             p.attributed_creator, p.platform, m.name,
+             p.ownership_source, p.last_block::text, p.log_index::text,
+             p.observed_at, p.finalized, p.coverage_status
+      FROM profile_collected_works p
+      LEFT JOIN token_metadata m
+        ON lower(m.contract) = p.contract AND m.token_id = p.token_id
+      WHERE p.holder = ${address}
+        AND (
+          ${cursor?.block ?? null}::bigint IS NULL OR
+          (p.last_block, p.log_index, p.contract, p.token_id)
+            < (${cursor?.block ?? null}::bigint, ${cursor?.logIndex ?? null}::bigint,
+               ${cursor?.contract ?? null}::text, ${cursor?.tokenId ?? null}::text)
+        )
+      ORDER BY p.last_block DESC, p.log_index DESC, p.contract DESC, p.token_id DESC
+      LIMIT ${pageSize + 1}
+    `) as HoldingRow[]
+  } catch (error) {
+    // Migration 028 adds current ERC-1155 balances and richer evidence. Until
+    // it lands, the existing ERC-721 owner snapshot is still real indexed
+    // content and should remain visible with its lower-confidence label.
+    console.warn("[profile] ownership read model unavailable; using ERC-721 snapshot:", error)
+    rows = (await sql`
+      SELECT lower(o.contract) AS contract, o.token_id,
+             'erc721'::text AS token_standard, '1'::text AS balance,
+             lower(at.artist) AS attributed_creator, at.platform, m.name,
+             'legacy-token-owners'::text AS ownership_source,
+             o.transferred_at_block::text AS last_block, '-1'::text AS log_index,
+             to_timestamp(NULLIF(o.transferred_at_time, 0)) AS observed_at,
+             false AS finalized, 'snapshot'::text AS coverage_status
+      FROM token_owners o
+      LEFT JOIN artist_tokens at
+        ON lower(at.contract) = lower(o.contract) AND at.token_id = o.token_id
+      LEFT JOIN token_metadata m
+        ON lower(m.contract) = lower(o.contract) AND m.token_id = o.token_id
+      WHERE lower(o.owner) = ${address} AND o.owner <> ${ZERO_ADDRESS}
+        AND (
+          ${cursor?.block ?? null}::bigint IS NULL OR
+          (o.transferred_at_block, -1::bigint, lower(o.contract), o.token_id)
+            < (${cursor?.block ?? null}::bigint, ${cursor?.logIndex ?? null}::bigint,
+               ${cursor?.contract ?? null}::text, ${cursor?.tokenId ?? null}::text)
+        )
+      ORDER BY o.transferred_at_block DESC, lower(o.contract) DESC, o.token_id DESC
+      LIMIT ${pageSize + 1}
+    `.catch(() => [])) as HoldingRow[]
+  }
 
   const hasMore = rows.length > pageSize
   const visible = rows.slice(0, pageSize)
@@ -517,8 +585,18 @@ export async function getProfileTransferredPage(
   const address = addressInput.toLowerCase()
   const cursor = decodeProfileCursor(cursorInput)
   const pageSize = safePageSize(pageSizeInput)
-  const rows = (await sql.unsafe(
-    `WITH all_sales AS (
+  const params = [
+    address,
+    cursor?.block ?? null,
+    cursor?.logIndex ?? null,
+    cursor?.contract ?? null,
+    cursor?.tokenId ?? null,
+    pageSize + 1,
+  ]
+  let rows: TransferredRow[]
+  try {
+    rows = (await sql.unsafe(
+      `WITH all_sales AS (
        SELECT lower(nft_contract) AS contract, token_id::text AS token_id,
               'foundation'::text AS sale_source, price_wei::text AS sale_price,
               lower(buyer) AS sale_buyer, block_time::text AS sale_time,
@@ -555,16 +633,64 @@ export async function getProfileTransferredPage(
            < ($2::bigint, $3::bigint, $4::text, $5::text)
        )
      ORDER BY p.mint_block DESC, p.mint_log_index DESC, p.contract DESC, p.token_id DESC
-     LIMIT $6`,
-    [
-      address,
-      cursor?.block ?? null,
-      cursor?.logIndex ?? null,
-      cursor?.contract ?? null,
-      cursor?.tokenId ?? null,
-      pageSize + 1,
-    ],
-  ).catch(() => [])) as TransferredRow[]
+       LIMIT $6`,
+      params,
+    )) as TransferredRow[]
+  } catch (error) {
+    console.warn("[profile] created-work lifecycle view unavailable; using owner snapshot:", error)
+    rows = (await sql.unsafe(
+      `WITH all_sales AS (
+         SELECT lower(nft_contract) AS contract, token_id::text AS token_id,
+                'foundation'::text AS sale_source, price_wei::text AS sale_price,
+                lower(buyer) AS sale_buyer, block_time::text AS sale_time,
+                tx_hash::text AS sale_tx_hash
+         FROM ${INDEXER_SCHEMA}.fnd_sales
+         WHERE lower(seller) = $1
+         UNION ALL
+         SELECT lower(token_contract), token_id::text, 'pnd'::text,
+                amount::text, lower(winner), settled_at_time::text,
+                lifecycle_tx_hash::text
+         FROM ${INDEXER_SCHEMA}.pnd_auctions
+         WHERE status = 'settled' AND lower(seller) = $1
+       ), latest_sale AS (
+         SELECT DISTINCT ON (contract, token_id)
+                contract, token_id, sale_source, sale_price, sale_buyer,
+                sale_time, sale_tx_hash
+         FROM all_sales
+         ORDER BY contract, token_id, sale_time::numeric DESC
+       ), legacy_created AS (
+         SELECT lower(at.contract) AS contract, at.token_id, at.platform,
+                lower(o.owner) AS current_owner,
+                CASE WHEN o.owner = '${ZERO_ADDRESS}'
+                     THEN 'burned' ELSE 'transferred' END AS lifecycle_evidence,
+                at.mint_block, at.mint_log_index,
+                to_timestamp(NULLIF(o.transferred_at_time, 0)) AS ownership_observed_at,
+                false AS ownership_finalized,
+                'snapshot'::text AS ownership_coverage
+         FROM artist_tokens at
+         JOIN token_owners o
+           ON lower(o.contract) = lower(at.contract) AND o.token_id = at.token_id
+         WHERE lower(at.artist) = $1 AND lower(o.owner) <> $1
+       )
+       SELECT p.contract, p.token_id, p.platform, m.name, p.current_owner,
+              p.lifecycle_evidence, p.mint_block::text, p.mint_log_index::text,
+              p.ownership_observed_at, p.ownership_finalized, p.ownership_coverage,
+              s.sale_source, s.sale_price, s.sale_buyer, s.sale_time, s.sale_tx_hash
+       FROM legacy_created p
+       LEFT JOIN token_metadata m
+         ON lower(m.contract) = p.contract AND m.token_id = p.token_id
+       LEFT JOIN latest_sale s
+         ON s.contract = p.contract AND s.token_id = p.token_id
+       WHERE (
+         $2::bigint IS NULL OR
+         (p.mint_block, p.mint_log_index, p.contract, p.token_id)
+           < ($2::bigint, $3::bigint, $4::text, $5::text)
+       )
+       ORDER BY p.mint_block DESC, p.mint_log_index DESC, p.contract DESC, p.token_id DESC
+       LIMIT $6`,
+      params,
+    ).catch(() => [])) as TransferredRow[]
+  }
 
   const hasMore = rows.length > pageSize
   const visible = rows.slice(0, pageSize)
