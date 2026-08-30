@@ -83,6 +83,11 @@ export function TokenMedia({
   const [videoVisible, setVideoVisible] = useState(false)
   const [videoLoaded, setVideoLoaded] = useState(false)
   const [videoFailed, setVideoFailed] = useState(false)
+  const [imageFailed, setImageFailed] = useState(false)
+
+  useEffect(() => {
+    setImageFailed(false)
+  }, [renderUrl])
 
   useEffect(() => {
     const video = videoRef.current
@@ -125,7 +130,17 @@ export function TokenMedia({
     // do we conclude this isn't a loadable image and try it as a video.
     if (media.onError()) return
     if (ambiguous && !escalated) setEscalated(true)
+    else setImageFailed(true)
   }
+
+  useEffect(() => {
+    if (kind !== "image" || imageFailed) return
+    const image = imageRef.current
+    // The request can fail before React hydrates and attaches onError. Catch
+    // that state explicitly so a dead source never remains a broken-image
+    // icon on the detail page.
+    if (image?.complete && image.naturalWidth === 0) handleImageError()
+  }, [imageFailed, kind, media.src])
 
   if (!imageUrl && !animationUrl) {
     return (
@@ -215,6 +230,26 @@ export function TokenMedia({
         referrerPolicy="no-referrer"
         className="aspect-square h-[80vh] max-h-[80vh] max-w-full bg-black"
       />
+    )
+  }
+
+  if (imageFailed) {
+    return (
+      <div
+        role="img"
+        aria-label={`${title} artwork unavailable`}
+        className="flex aspect-square min-h-48 min-w-48 flex-col items-center justify-center gap-3 border border-gray-300 px-6 text-center text-xs font-mono text-fg-muted"
+      >
+        <span>Artwork could not be loaded from its original source.</span>
+        <a
+          href={media.src}
+          target="_blank"
+          rel="noreferrer"
+          className="underline underline-offset-2"
+        >
+          Open original media ↗
+        </a>
+      </div>
     )
   }
 
