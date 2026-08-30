@@ -140,9 +140,7 @@ function AuctionCard({ auction, now }: { auction: ActivePndAuction; now: number 
   const price = hasBid ? auction.amount : auction.reservePrice
   const previewUrl =
     auction.previewUrl ??
-    (auction.mediaKind === "video" || auction.mediaKind === "animation"
-      ? null
-      : auction.imageUrl)
+    auction.imageUrl
   const status =
     auction.endTime === 0
       ? "Waiting for first bid"
@@ -159,6 +157,7 @@ function AuctionCard({ auction, now }: { auction: ActivePndAuction; now: number 
             src={previewUrl}
             alt={auction.title ?? `Token #${auction.tokenId}`}
             fallbackAddress={auction.seller}
+            mediaKind={auction.previewUrl ? "image" : auction.mediaKind}
           />
         </div>
         <div className="space-y-3 p-4">

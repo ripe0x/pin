@@ -1,16 +1,17 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { getRecentCollections } from "@/lib/collection-onchain"
+import {
+  getSurfaceCollectionSummaries,
+  type SurfaceCollectionSummary,
+} from "@/lib/indexer-queries"
 import {
   SurfaceStatus,
   ZERO_ADDRESS,
   formatPriceLabel,
   hasPriceStrategy,
   lifecycleStatus,
-  saleWindowOf,
   shortAddress,
   surfaceFactory,
-  type Collection,
 } from "@/lib/collection"
 import { CollectionStatusChip } from "@/components/collections/CollectionStatusChip"
 
@@ -28,7 +29,30 @@ export const dynamic = "force-dynamic"
 type CollectionGroup = {
   key: "minting" | "upcoming" | "past"
   label: string
-  items: Collection[]
+  items: SurfaceCollectionSummary[]
+}
+
+function collectionStatus(
+  collection: SurfaceCollectionSummary,
+  nowSec: number,
+): SurfaceStatus {
+  if (!collection.primaryMinter || collection.mintStart === null || collection.mintEnd === null) {
+    return SurfaceStatus.Closed
+  }
+  const exhaustedMinter =
+    collection.maxMints !== null &&
+    collection.maxMints > 0n &&
+    collection.soldThroughMinter >= collection.maxMints
+  if (exhaustedMinter) return SurfaceStatus.Closed
+  return lifecycleStatus(
+    {
+      mintStart: BigInt(collection.mintStart),
+      mintEnd: BigInt(collection.mintEnd),
+      supplyCap: collection.supplyCap,
+    },
+    collection.mintedEver,
+    nowSec,
+  )
 }
 
 /** Buckets recent collections by derived lifecycle status, leading with
@@ -36,14 +60,17 @@ type CollectionGroup = {
  * as OpenSea's Live/Upcoming/Past, restrained to a flat list within each
  * bucket (no pagination, no filters). Section labels only render when more
  * than one bucket is non-empty; a single-bucket listing stays a plain list. */
-function groupByLifecycle(collections: Collection[], nowSec: number): CollectionGroup[] {
+function groupByLifecycle(
+  collections: SurfaceCollectionSummary[],
+  nowSec: number,
+): CollectionGroup[] {
   const groups: CollectionGroup[] = [
     { key: "minting", label: "Minting now", items: [] },
     { key: "upcoming", label: "Upcoming", items: [] },
     { key: "past", label: "Past", items: [] },
   ]
   for (const c of collections) {
-    const status = lifecycleStatus(saleWindowOf(c), c.minted, nowSec)
+    const status = collectionStatus(c, nowSec)
     if (status === SurfaceStatus.Open) groups[0].items.push(c)
     else if (status === SurfaceStatus.Scheduled) groups[1].items.push(c)
     else groups[2].items.push(c)
@@ -54,12 +81,13 @@ function groupByLifecycle(collections: Collection[], nowSec: number): Collection
 export default async function CollectionsHome() {
   const factory = surfaceFactory()
   let indexUnavailable = false
-  let recent: Collection[] = []
+  let recent: SurfaceCollectionSummary[] = []
   if (factory) {
-    try {
-      recent = await getRecentCollections(factory, 8)
-    } catch {
+    const indexed = await getSurfaceCollectionSummaries(8)
+    if (indexed === null) {
       indexUnavailable = true
+    } else {
+      recent = indexed
     }
   }
   const nowSec = Math.floor(Date.now() / 1000)
@@ -108,28 +136,31 @@ export default async function CollectionsHome() {
               )}
               <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {g.items.map((c) => {
-                  const window = saleWindowOf(c)
-                  const status = lifecycleStatus(window, c.minted, nowSec)
+                  const status = collectionStatus(c, nowSec)
                   const soldOut =
                     status === SurfaceStatus.Closed &&
-                    c.cfg.supplyCap > 0n &&
-                    c.minted >= c.cfg.supplyCap
-                  const priceLabel = hasPriceStrategy(c.sale?.priceStrategy ?? ZERO_ADDRESS)
-                    ? "Live price"
-                    : formatPriceLabel(c.sale?.price ?? 0n)
+                    ((c.supplyCap > 0n && c.mintedEver >= c.supplyCap) ||
+                      (c.maxMints !== null &&
+                        c.maxMints > 0n &&
+                        c.soldThroughMinter >= c.maxMints))
+                  const priceLabel = c.price === null
+                    ? "Not currently for sale"
+                    : hasPriceStrategy((c.priceStrategy ?? ZERO_ADDRESS) as `0x${string}`)
+                      ? "Live price"
+                      : formatPriceLabel(c.price)
                   const mintedLabel =
-                    c.cfg.supplyCap > 0n
-                      ? `${Number(c.minted)} / ${Number(c.cfg.supplyCap)} minted`
-                      : `${Number(c.minted)} minted · open`
+                    c.supplyCap > 0n
+                      ? `${Number(c.mintedEver)} / ${Number(c.supplyCap)} minted`
+                      : `${Number(c.mintedEver)} minted · open`
                   return (
-                    <li key={c.address}>
+                    <li key={c.collection}>
                       <Link
-                        href={`/collections/${c.address}`}
+                        href={`/collections/${c.collection}`}
                         className="block rounded-lg border border-gray-200 bg-surface p-4 hover:border-gray-300 transition-colors"
                       >
                         <p className="text-sm font-medium tracking-tight truncate">{c.name}</p>
                         <p className="mt-1 text-[10px] font-mono uppercase tracking-wider text-gray-400">
-                          {c.symbol} · {shortAddress(c.address)}
+                          {c.symbol} · {shortAddress(c.collection as `0x${string}`)}
                         </p>
                         <div className="mt-2">
                           <CollectionStatusChip
@@ -137,7 +168,7 @@ export default async function CollectionsHome() {
                             soldOut={soldOut}
                             opensInSec={
                               status === SurfaceStatus.Scheduled
-                                ? Number(window.mintStart) - nowSec
+                                ? (c.mintStart ?? 0) - nowSec
                                 : null
                             }
                           />

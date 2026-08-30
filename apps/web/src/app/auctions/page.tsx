@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { formatEther } from "viem"
 import { getActivePndAuctions } from "@/lib/indexer-queries"
-import { OptimizedImage } from "@/components/OptimizedImage"
+import { AvailableArtwork } from "@/components/home/landing-v2/AvailableArtwork"
 
 const TITLE = "Auctions"
 const DESCRIPTION =
@@ -61,20 +61,14 @@ export default async function AuctionsGuidePage() {
             {active.map((auction) => {
               const hasBid = auction.firstBidTime > 0
               const price = hasBid ? auction.amount : auction.reservePrice
-              const rawPreview =
-                auction.mediaKind === "video" || auction.mediaKind === "animation"
-                  ? null
-                  : auction.imageUrl
-              const previewUrl = auction.previewUrl ?? rawPreview
+              const previewUrl = auction.previewUrl ?? auction.imageUrl
               const previewState = previewUrl
                 ? null
                 : auction.previewStatus === "pending"
                   ? "Preview is being prepared"
                   : auction.previewStatus === "failed"
                     ? "Preview unavailable, original is intact"
-                    : auction.mediaKind === "video" || auction.mediaKind === "animation"
-                      ? "Interactive work, open to view"
-                      : "Preview is not available yet"
+                    : "Preview is not available yet"
               const status =
                 auction.endTime === 0
                   ? "Waiting for first bid"
@@ -96,11 +90,11 @@ export default async function AuctionsGuidePage() {
                     <div className="flex gap-4">
                       <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden bg-gray-100">
                         {previewUrl ? (
-                          <OptimizedImage
+                          <AvailableArtwork
                             src={previewUrl}
                             alt={auction.title ?? `Token #${auction.tokenId}`}
-                            width={192}
-                            className="h-full w-full object-cover"
+                            fallbackAddress={auction.seller}
+                            mediaKind={auction.previewUrl ? "image" : auction.mediaKind}
                           />
                         ) : (
                           <span className="px-2 text-center text-[9px] font-mono leading-relaxed text-gray-400">

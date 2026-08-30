@@ -6,8 +6,7 @@ import { formatEther } from "viem"
 import type { GalleryItem, GalleryPage } from "@/lib/artist-queries"
 import type { WorkAvailability } from "@/lib/artist-availability"
 import { createProvider, type PinStatus } from "@/lib/pinning"
-import { useOptimizedImage } from "@/lib/use-optimized-image"
-import { isVideoUrl } from "@/lib/media-url"
+import { useThumbnailMedia } from "@/lib/use-thumbnail-media"
 import { TokenPinStatus } from "@/components/preserve/TokenPinStatus"
 import { PlatformChip } from "@/components/PlatformChip"
 import { TokenCard } from "@/components/TokenCard"
@@ -233,9 +232,8 @@ function GalleryCard({
     delivery?.status === "ready"
       ? delivery.posterUrl ?? delivery.thumbnailUrl
       : null
-  const fallbackIsVideo = isVideoUrl(item.imageUrl)
   const sourceUrl = derivativeUrl ?? item.imageUrl
-  const image = useOptimizedImage(sourceUrl, 800)
+  const media = useThumbnailMedia(sourceUrl, 800, delivery?.kind)
   const [loaded, setLoaded] = useState(false)
   const [measuredRatio, setMeasuredRatio] = useState<number | null>(null)
   const storedRatio =
@@ -243,18 +241,15 @@ function GalleryCard({
   const ratio = storedRatio ?? measuredRatio ?? 1
   const explicitState = !sourceUrl
     ? "No preview available"
-    : delivery?.status === "pending"
-      ? "Preview is being prepared"
-      : delivery?.status === "unsupported"
+    : delivery?.status === "unsupported"
         ? "Interactive media, open the work to view"
-        : delivery?.status === "failed"
-          ? delivery.nextAttemptAt
-            ? "Preview failed, retry scheduled"
-            : "Preview unavailable, original remains on the work page"
-          : fallbackIsVideo
-            ? "Video preview available on the work page"
-            : null
-  const showImage = !explicitState && !image.failed
+        : null
+  const showMedia = !explicitState && media.kind !== "failed"
+
+  useEffect(() => {
+    setLoaded(false)
+    setMeasuredRatio(null)
+  }, [sourceUrl])
 
   const isActive = item.availability?.status === "active"
 
@@ -286,17 +281,34 @@ function GalleryCard({
             <MuriTileBadge uriCount={item.muriUriCount} />
           </div>
         )}
-        {showImage ? (
+        {showMedia && media.kind === "video" ? (
+          <video
+            src={media.videoSrc}
+            aria-label={item.title}
+            className={`block h-auto w-full transition-opacity ${loaded ? "opacity-100" : "opacity-0"}`}
+            muted
+            playsInline
+            preload="metadata"
+            onError={media.onVideoError}
+            onLoadedData={(event) => {
+              const video = event.currentTarget
+              setLoaded(true)
+              if (video.videoWidth && video.videoHeight) {
+                setMeasuredRatio(video.videoWidth / video.videoHeight)
+              }
+            }}
+          />
+        ) : showMedia ? (
           <img
-            ref={image.ref}
-            src={image.src}
+            ref={media.imgRef}
+            src={media.imgSrc}
             alt={item.title}
             width={delivery?.width ?? undefined}
             height={delivery?.height ?? undefined}
             className={`block h-auto w-full transition-opacity ${loaded ? "opacity-100" : "opacity-0"}`}
             loading="lazy"
             decoding="async"
-            onError={image.onError}
+            onError={media.onImgError}
             onLoad={(e) => {
               const img = e.currentTarget
               setLoaded(true)
@@ -306,10 +318,10 @@ function GalleryCard({
             }}
           />
         ) : null}
-        {!showImage || !loaded ? (
+        {!showMedia || !loaded ? (
           <div className="absolute inset-0 flex items-center justify-center px-5 text-center text-[11px] font-mono leading-relaxed text-fg-muted">
             {explicitState ??
-              (image.failed
+              (media.kind === "failed"
                 ? "Preview unavailable, open the work for the original"
                 : "Loading preview…")}
           </div>

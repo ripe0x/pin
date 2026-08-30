@@ -280,6 +280,103 @@ export type ActiveSurfaceRelease = {
   updatedAtTime: number
 }
 
+export type SurfaceCollectionSummary = {
+  collection: string
+  owner: string
+  name: string
+  symbol: string
+  primaryMinter: string | null
+  price: bigint | null
+  priceStrategy: string | null
+  mintStart: number | null
+  mintEnd: number | null
+  maxMints: bigint | null
+  supplyCap: bigint
+  mintedEver: bigint
+  soldThroughMinter: bigint
+}
+
+/**
+ * Recent Surface collections for the public directory. Every field comes
+ * from Ponder's current-state tables, so browsing collections never fans out
+ * into one live RPC multicall per collection. A collection without a primary
+ * sale minter remains visible as a record, with nullable sale fields.
+ */
+export async function getSurfaceCollectionSummaries(
+  limit = 8,
+): Promise<SurfaceCollectionSummary[] | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+
+  return withTimeout(async () => {
+    const schema = indexerSchema()
+    if (!(await surfaceTablesExist(db, schema))) return []
+
+    type Row = {
+      collection: string
+      owner: string
+      name: string | null
+      symbol: string | null
+      primary_minter: string | null
+      price: string | null
+      price_strategy: string | null
+      mint_start: string | null
+      mint_end: string | null
+      max_mints: string | null
+      supply_cap: string
+      minted_ever: string
+      sold_through_minter: string
+    }
+
+    const rows = (await db.unsafe(
+      `WITH mint_totals AS (
+         SELECT collection, COALESCE(SUM(quantity), 0) AS minted_ever
+           FROM ${schema}.collection_mints
+          GROUP BY collection
+       ), sale_totals AS (
+         SELECT minter, COALESCE(SUM(quantity), 0) AS sold_through_minter
+           FROM ${schema}.collection_sales
+          GROUP BY minter
+       )
+       SELECT c.collection, c.owner, c.name, c.symbol, c.primary_minter,
+              s.price::text AS price, s.price_strategy,
+              s.mint_start::text AS mint_start,
+              s.mint_end::text AS mint_end,
+              s.max_mints::text AS max_mints,
+              COALESCE(sc.supply_cap, 0)::text AS supply_cap,
+              COALESCE(mt.minted_ever, 0)::text AS minted_ever,
+              COALESCE(st.sold_through_minter, 0)::text AS sold_through_minter
+         FROM ${schema}.collections c
+         LEFT JOIN ${schema}.minter_sale_configs s
+           ON s.collection = c.collection
+          AND s.minter = c.primary_minter
+         LEFT JOIN ${schema}.collection_supply_configs sc
+           ON sc.collection = c.collection
+         LEFT JOIN mint_totals mt ON mt.collection = c.collection
+         LEFT JOIN sale_totals st ON st.minter = s.minter
+        ORDER BY c.created_at_block DESC
+        LIMIT $1`,
+      [limit],
+    )) as Row[]
+
+    return rows.map((row) => ({
+      collection: row.collection,
+      owner: row.owner,
+      name: row.name ?? "Untitled collection",
+      symbol: row.symbol ?? "",
+      primaryMinter: row.primary_minter,
+      price: row.price === null ? null : BigInt(row.price),
+      priceStrategy: row.price_strategy,
+      mintStart: row.mint_start === null ? null : Number(row.mint_start),
+      mintEnd: row.mint_end === null ? null : Number(row.mint_end),
+      maxMints: row.max_mints === null ? null : BigInt(row.max_mints),
+      supplyCap: BigInt(row.supply_cap),
+      mintedEver: BigInt(row.minted_ever),
+      soldThroughMinter: BigInt(row.sold_through_minter),
+    }))
+  }, 4_000)
+}
+
 /**
  * Currently-active PND auctions across every Sovereign Auction House,
  * ordered ending-soonest-first with pre-bid auctions (endTime = 0) at the
