@@ -1,7 +1,6 @@
 import Link from "next/link"
 import { formatEther } from "viem"
-import { AddressZorb } from "@/components/AddressZorb"
-import { OptimizedImage } from "@/components/OptimizedImage"
+import { AvailableArtwork } from "./AvailableArtwork"
 import {
   getActivePndAuctions,
   getActiveSurfaceReleases,
@@ -101,16 +100,11 @@ function ReleaseCard({ release }: { release: ActiveSurfaceRelease }) {
         className="group block h-full overflow-hidden rounded-md border border-gray-200 bg-surface transition-colors hover:border-gray-400"
       >
         <div className="aspect-[4/3] overflow-hidden bg-gray-100">
-          {release.imageUrl ? (
-            <OptimizedImage
-              src={release.imageUrl}
-              alt={release.name}
-              width={720}
-              className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.015]"
-            />
-          ) : (
-            <AddressZorb address={release.owner} className="h-full w-full" />
-          )}
+          <AvailableArtwork
+            src={release.imageUrl}
+            alt={release.name}
+            fallbackAddress={release.owner}
+          />
         </div>
         <div className="space-y-3 p-4">
           <div className="flex items-center justify-between gap-3">
@@ -161,16 +155,11 @@ function AuctionCard({ auction, now }: { auction: ActivePndAuction; now: number 
         className="group block h-full overflow-hidden rounded-md border border-gray-200 bg-surface transition-colors hover:border-gray-400"
       >
         <div className="aspect-[4/3] overflow-hidden bg-gray-100">
-          {previewUrl ? (
-            <OptimizedImage
-              src={previewUrl}
-              alt={auction.title ?? `Token #${auction.tokenId}`}
-              width={720}
-              className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.015]"
-            />
-          ) : (
-            <AddressZorb address={auction.seller} className="h-full w-full" />
-          )}
+          <AvailableArtwork
+            src={previewUrl}
+            alt={auction.title ?? `Token #${auction.tokenId}`}
+            fallbackAddress={auction.seller}
+          />
         </div>
         <div className="space-y-3 p-4">
           <div className="flex items-center justify-between gap-3">
