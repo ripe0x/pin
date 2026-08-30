@@ -1,30 +1,30 @@
 "use client"
 
-import { AddressZorb } from "@/components/AddressZorb"
 import { useThumbnailMedia } from "@/lib/use-thumbnail-media"
 
 type Props = {
   src: string | null
   alt: string
-  fallbackAddress: string
   mediaKind?: string | null
 }
 
 /**
  * Availability cards must never turn failed delivery media into an empty gray
- * billboard. Exhaust the normal optimized/raw/gateway cascade, then retain a
- * real identity signal by rendering the seller or collection owner's zorb.
+ * billboard. Exhaust the normal optimized/raw/gateway cascade, then label the
+ * missing preview explicitly so an identity graphic is never mistaken for art.
  */
-export function AvailableArtwork({ src, alt, fallbackAddress, mediaKind }: Props) {
+export function AvailableArtwork({ src, alt, mediaKind }: Props) {
   const media = useThumbnailMedia(src ?? "", 720, mediaKind)
 
   if (!src || media.kind === "failed") {
     return (
-      <AddressZorb
-        address={fallbackAddress}
-        alt={`${alt} preview unavailable; artist identity shown`}
-        className="h-full w-full"
-      />
+      <div
+        role="img"
+        aria-label={`${alt} preview unavailable`}
+        className="flex h-full w-full items-center justify-center px-4 text-center text-[10px] font-mono leading-relaxed text-fg-muted"
+      >
+        Artwork preview unavailable
+      </div>
     )
   }
 

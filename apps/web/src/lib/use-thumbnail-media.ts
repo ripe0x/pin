@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { ipfsToHttp } from "@pin/shared"
 import { useIpfsGatewayFallback } from "./use-ipfs-fallback"
 import { useOptimizedImage } from "./use-optimized-image"
 import { isAmbiguousMediaUrl, isVideoUrl } from "./media-url"
@@ -22,23 +23,24 @@ export function useThumbnailMedia(
   width = 800,
   mediaKind?: string | null,
 ) {
-  const img = useOptimizedImage(url, width)
+  const resolvedUrl = ipfsToHttp(url)
+  const img = useOptimizedImage(resolvedUrl, width)
   // Fresh gateway cascade for the escalated <video> — the `img` cascade is
   // exhausted by the time we escalate.
-  const escalatedVideo = useIpfsGatewayFallback(url)
+  const escalatedVideo = useIpfsGatewayFallback(resolvedUrl)
   const [escalated, setEscalated] = useState(false)
   const [videoFailed, setVideoFailed] = useState(false)
 
-  const knownVideo = mediaKind === "video" || isVideoUrl(url)
+  const knownVideo = mediaKind === "video" || isVideoUrl(resolvedUrl)
   const ambiguous =
     mediaKind == null || mediaKind === "unknown"
-      ? isAmbiguousMediaUrl(url)
+      ? isAmbiguousMediaUrl(resolvedUrl)
       : false
 
   useEffect(() => {
     setEscalated(false)
     setVideoFailed(false)
-  }, [url, mediaKind])
+  }, [resolvedUrl, mediaKind])
 
   // Escalate once the image cascade is exhausted on an ambiguous URL.
   // Setting state during render (React-supported) re-renders immediately,

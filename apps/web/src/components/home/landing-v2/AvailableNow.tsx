@@ -103,7 +103,6 @@ function ReleaseCard({ release }: { release: ActiveSurfaceRelease }) {
           <AvailableArtwork
             src={release.imageUrl}
             alt={release.name}
-            fallbackAddress={release.owner}
           />
         </div>
         <div className="space-y-3 p-4">
@@ -156,7 +155,6 @@ function AuctionCard({ auction, now }: { auction: ActivePndAuction; now: number 
           <AvailableArtwork
             src={previewUrl}
             alt={auction.title ?? `Token #${auction.tokenId}`}
-            fallbackAddress={auction.seller}
             mediaKind={auction.previewUrl ? "image" : auction.mediaKind}
           />
         </div>

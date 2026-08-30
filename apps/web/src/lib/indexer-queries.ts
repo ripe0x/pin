@@ -424,7 +424,8 @@ export async function getActivePndAuctions(
               a.end_time::text AS end_time,
               a.first_bid_time::text AS first_bid_time,
               a.created_at_time::text AS created_at_time,
-              m.name AS title, m.image_url,
+              m.name AS title,
+              COALESCE(NULLIF(m.image_url, ''), NULLIF(m.animation_url, '')) AS image_url,
               CASE WHEN d.status = 'ready'
                    THEN coalesce(d.poster_url, d.thumbnail_url)
                    ELSE NULL END AS preview_url,
@@ -455,7 +456,8 @@ export async function getActivePndAuctions(
                 a.end_time::text AS end_time,
                 a.first_bid_time::text AS first_bid_time,
                 a.created_at_time::text AS created_at_time,
-                m.name AS title, m.image_url,
+                m.name AS title,
+                COALESCE(NULLIF(m.image_url, ''), NULLIF(m.animation_url, '')) AS image_url,
                 NULL::text AS preview_url, NULL::text AS preview_status,
                 NULL::text AS media_kind
          FROM ${schema}.pnd_auctions a
@@ -488,7 +490,7 @@ export async function getActivePndAuctions(
       previewStatus: r.preview_status,
       mediaKind: r.media_kind,
     }))
-  }, 2_000)
+  }, 4_000)
 }
 
 /**
@@ -591,7 +593,7 @@ export async function getActiveSurfaceReleases(
       imageUrl: row.image_url,
       updatedAtTime: Number(row.updated_at_time),
     }))
-  }, 2_000)
+  }, 4_000)
 }
 
 // REMOVED in v2: getActiveSrV2Auctions, getActiveTlAuctions,

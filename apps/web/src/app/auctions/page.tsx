@@ -93,7 +93,6 @@ export default async function AuctionsGuidePage() {
                           <AvailableArtwork
                             src={previewUrl}
                             alt={auction.title ?? `Token #${auction.tokenId}`}
-                            fallbackAddress={auction.seller}
                             mediaKind={auction.previewUrl ? "image" : auction.mediaKind}
                           />
                         ) : (
