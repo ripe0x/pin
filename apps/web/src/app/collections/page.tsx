@@ -208,10 +208,25 @@ function collectionToSummary(collection: Collection): SurfaceCollectionSummary {
     name: collection.name,
     symbol: collection.symbol,
     primaryMinter: collection.primaryMinter,
-    price: collection.sale?.price ?? null,
-    priceStrategy: collection.sale?.priceStrategy ?? null,
-    mintStart: collection.sale ? Number(collection.sale.mintStart) : null,
-    mintEnd: collection.sale ? Number(collection.sale.mintEnd) : null,
+    // A registered primary minter that does not implement the canonical
+    // FixedPriceMinter getters is a custom sale surface, not proof that the
+    // collection is closed. Preserve the pre-snapshot directory behavior for
+    // that bounded compatibility path; the collection page performs its own
+    // minter-specific live check before offering a transaction.
+    price: collection.sale?.price ?? (collection.primaryMinter ? 0n : null),
+    priceStrategy:
+      collection.sale?.priceStrategy ??
+      (collection.primaryMinter ? ZERO_ADDRESS : null),
+    mintStart: collection.sale
+      ? Number(collection.sale.mintStart)
+      : collection.primaryMinter
+        ? 0
+        : null,
+    mintEnd: collection.sale
+      ? Number(collection.sale.mintEnd)
+      : collection.primaryMinter
+        ? 0
+        : null,
     maxMints: collection.sale?.maxMints ?? null,
     supplyCap: collection.cfg.supplyCap,
     mintedEver: collection.minted,
