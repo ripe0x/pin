@@ -47,7 +47,7 @@ export function ProfileHeader({
               </span>
             )) : (
               <span className="font-mono text-[10px] text-gray-500">
-                No role inferred from indexed evidence yet
+                No artist or collector activity found yet
               </span>
             )}
           </div>

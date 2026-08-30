@@ -4,7 +4,7 @@ export function ProfileCoverage({ summary }: { summary: ProfileSummary }) {
   if (summary.ownershipCoverage.length === 0) return null
   return (
     <details className="border border-gray-200 px-3 py-2 text-xs text-gray-600">
-      <summary className="cursor-pointer font-medium text-fg">Indexed ownership coverage</summary>
+      <summary className="cursor-pointer font-medium text-fg">What this profile covers</summary>
       <div className="mt-3 space-y-2">
         {summary.ownershipCoverage.map((row) => (
           <div key={`${row.source}:${row.status}`} className="flex flex-col justify-between gap-1 sm:flex-row">

@@ -43,7 +43,7 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   const identity = await getIndexedArtistIdentity(address)
   return {
     title: identity.displayName,
-    description: `${identity.displayName}'s indexed created work, current holdings, Catalog declarations, and artist-owned infrastructure on PND.`,
+    description: `${identity.displayName}'s created work, current holdings, Catalog declarations, and artist-owned infrastructure on PND.`,
     alternates: { canonical: `/profile/${address}` },
     openGraph: { title: identity.displayName, type: "profile" },
   }
@@ -102,11 +102,11 @@ export default async function ProfilePage({
           </a>
         </header>
         <section className="mt-8 rounded-lg border border-gray-200 p-6">
-          <h2 className="text-sm font-medium">Profile index temporarily unavailable</h2>
+          <h2 className="text-sm font-medium">Profile details temporarily unavailable</h2>
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-gray-500">
             PND cannot verify this address&apos;s created work, holdings, Catalog
             declarations, or availability right now. No chain scan will run
-            from this page. Try again after the index catches up.
+            from this page. Try again shortly.
           </p>
         </section>
       </main>
@@ -134,7 +134,7 @@ export default async function ProfilePage({
 
       {empty ? (
         <div className="py-16 text-center text-gray-500">
-          <p className="text-lg">No indexed profile evidence yet</p>
+          <p className="text-lg">No profile activity found yet</p>
           <p className="mx-auto mt-2 max-w-xl text-xs leading-relaxed">
             PND has not observed created work, current holdings, Catalog declarations, or PND-owned infrastructure for this address. This does not mean none exists elsewhere.
           </p>

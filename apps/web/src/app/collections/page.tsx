@@ -92,9 +92,9 @@ export default async function CollectionsHome() {
         </section>
       ) : indexUnavailable ? (
         <section className="rounded-lg border border-gray-200 bg-surface p-6 space-y-2">
-          <h2 className="text-sm font-medium">Collection index temporarily unavailable</h2>
+          <h2 className="text-sm font-medium">Collections temporarily unavailable</h2>
           <p className="text-sm text-fg-muted leading-relaxed">
-            PND cannot verify the indexed collection list right now. Try again shortly.
+            PND cannot load the collection list right now. Try again shortly.
           </p>
         </section>
       ) : groups.length > 0 ? (
@@ -156,7 +156,7 @@ export default async function CollectionsHome() {
       ) : (
         <section className="rounded-lg border border-gray-200 bg-surface p-6">
           <p className="text-sm text-fg-muted leading-relaxed">
-            No collections have been indexed yet.
+            No collections have been published yet.
           </p>
         </section>
       )}

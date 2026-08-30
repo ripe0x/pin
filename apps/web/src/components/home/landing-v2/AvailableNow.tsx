@@ -42,7 +42,7 @@ export async function AvailableNow() {
           </h2>
         </div>
         <p className="text-xs font-mono text-gray-500">
-          Indexed contract state, checked before you transact
+          Current contract state, checked before you transact
         </p>
       </div>
 
@@ -63,8 +63,8 @@ export async function AvailableNow() {
       ) : releases === null && indexedAuctions === null ? (
         <div className="rounded-md border border-gray-200 p-5">
           <p className="text-sm text-fg-muted">
-            Live availability is temporarily unavailable. Browse the indexed
-            artist record or try again shortly.
+            Live availability is temporarily unavailable. Browse artist
+            profiles or try again shortly.
           </p>
         </div>
       ) : (

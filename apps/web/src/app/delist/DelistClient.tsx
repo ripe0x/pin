@@ -225,7 +225,7 @@ function ReadOnlyPreview({
             <p className="mt-1 text-sm text-gray-500">
               The marketplace scan for{" "}
               <span className="font-mono">{short(address)}</span> didn&rsquo;t
-              complete. Its index may still be catching up, or a source may be
+              complete. Listing data may still be catching up, or a source may be
               temporarily unavailable.
             </p>
             <button

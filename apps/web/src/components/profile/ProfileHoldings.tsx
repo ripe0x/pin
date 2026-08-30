@@ -45,7 +45,7 @@ export function ProfileHoldings({
     <section id="collected" className="scroll-mt-20 space-y-4">
       <SectionHeading
         title="Collected"
-        detail="Current ERC-721 and ERC-1155 holdings among work PND indexes. This is an evidence view, not a complete wallet inventory."
+        detail="Current ERC-721 and ERC-1155 holdings PND can verify from supported sources. This may not be a complete wallet inventory."
       />
       <div className="divide-y divide-gray-200 border-y border-gray-200">
         {page.items.map((item) => (
@@ -128,7 +128,7 @@ export function ProfileTransferredArchive({
     <section id="archive" className="scroll-mt-20 space-y-4">
       <SectionHeading
         title="Sold and transferred archive"
-        detail="Created work no longer held by the attributed creator, or burned. Sold means PND indexed a completed sale by this creator; a transfer alone is never presented as a sale. Evidence may be partial until creator, ownership, and market sources have materialized."
+        detail="Created work no longer held by the attributed creator, or burned. Sold means PND found a completed sale by this creator; a transfer alone is never presented as a sale. Evidence may be partial while creator, ownership, and market records catch up."
       />
       <div className="divide-y divide-gray-200 border-y border-gray-200">
         {page.items.map((item) => (

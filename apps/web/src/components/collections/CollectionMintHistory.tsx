@@ -37,7 +37,7 @@ export function CollectionMintHistory({
         <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
           Pooled collections mint through an authorized minter with arbitrary
           token ids, so mint history is not reconstructable from a direct
-          onchain read. It will appear here once the indexer picks up this
+          onchain read. It will appear here once PND catches up with this
           collection.
         </p>
       </section>

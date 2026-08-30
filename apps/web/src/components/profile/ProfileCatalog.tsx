@@ -41,7 +41,7 @@ export function ProfileCatalog({
             className="flex justify-between gap-3 border-b border-gray-100 pb-2 hover:text-gray-500"
           >
             <span>{short(entry.contract)} / {entry.tokenId}</span>
-            <span>declared · indexed</span>
+            <span>declared · available on PND</span>
           </Link>
         ) : (
           <div
@@ -49,7 +49,7 @@ export function ProfileCatalog({
             className="flex justify-between gap-3 border-b border-gray-100 pb-2 text-gray-500"
           >
             <span>{short(entry.contract)} / {entry.tokenId}</span>
-            <span>declared · not in PND work index</span>
+            <span>declared · not yet available on PND</span>
           </div>
         ))}
         {catalog.ranges.map((entry) => (

@@ -134,12 +134,12 @@ export function ArtistGallery({
         <div className="text-center py-16 text-gray-400">
           <p className="text-lg">No works found</p>
           <p className="text-sm mt-1">
-            No indexed works were found for this address across Foundation,
+            No works were found for this address across Foundation,
             Manifold, Mint, PND, SuperRare, or Transient Labs.
           </p>
           <p className="text-xs mt-3 text-gray-500">
             This does not mean the artist has never created work. It means PND
-            has not indexed a work from its supported sources yet.
+            has not found work from its supported sources yet.
           </p>
         </div>
       </div>
@@ -184,7 +184,7 @@ export function ArtistGallery({
           className="py-8 text-center text-sm text-gray-500 space-y-2"
         >
           <p>
-            Showing {loadedCount} of {firstPage.total} indexed works
+            Showing {loadedCount} of {firstPage.total} works
           </p>
           <button
             type="button"
@@ -242,7 +242,7 @@ function GalleryCard({
     delivery?.width && delivery.height ? delivery.width / delivery.height : null
   const ratio = storedRatio ?? measuredRatio ?? 1
   const explicitState = !sourceUrl
-    ? "No indexed media source"
+    ? "No preview available"
     : delivery?.status === "pending"
       ? "Preview is being prepared"
       : delivery?.status === "unsupported"
@@ -269,7 +269,7 @@ function GalleryCard({
             <AvailabilityCaption availability={item.availability} />
           ) : (
             <p className="text-[10px] font-mono text-fg-subtle">
-              Created via {platformLabel(item.platform)} · no indexed listing
+              Created via {platformLabel(item.platform)} · not currently listed
             </p>
           )}
           {pinStatus ? <TokenPinStatus status={pinStatus} /> : null}
@@ -387,10 +387,10 @@ function GalleryCoverage({
       <p className="text-sm text-fg">
         <span className="font-medium">{availableTotal} listed now</span>
         <span className="text-gray-400"> · </span>
-        <span>{total} indexed {total === 1 ? "work" : "works"}</span>
+        <span>{total} {total === 1 ? "work" : "works"}</span>
       </p>
       <p className="text-xs text-gray-500">
-        Indexed sources: {coverage.indexedSources.join(", ")}.
+        Sources checked: {coverage.indexedSources.join(", ")}.
       </p>
       <p className="text-xs text-gray-500">{coverage.note}</p>
       {coverage.hiddenStaleSources.length > 0 ? (
@@ -415,7 +415,7 @@ function freshnessLabel(availability: WorkAvailability): string {
   if (availability.freshness === "fresh") {
     return "observed within 15 minutes"
   }
-  return "indexed event state"
+  return "onchain event state"
 }
 
 function platformLabel(platform: GalleryItem["platform"]): string {
@@ -425,7 +425,7 @@ function platformLabel(platform: GalleryItem["platform"]): string {
   if (platform === "manifold") return "Manifold"
   if (platform === "mint") return "Mint"
   if (platform === "sovereign") return "PND"
-  return "an indexed source"
+  return "another supported source"
 }
 
 function LiveCountdown({ endTimeSec }: { endTimeSec: number }) {

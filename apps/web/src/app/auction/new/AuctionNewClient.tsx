@@ -254,11 +254,11 @@ function Picker({
     <section className="space-y-4">
       <div>
         <h2 className="text-base font-semibold tracking-tight">
-          Or pick from your indexed works
+          Or pick from work PND found
         </h2>
         <p className="text-xs text-gray-500 mt-1">
-          We only index works on Foundation, Manifold, SuperRare, Sovereign, and
-          Transient. To list anything else, paste the contract above.
+          PND can currently find work from Foundation, Manifold, SuperRare,
+          Sovereign, and Transient. To list anything else, paste the contract above.
         </p>
       </div>
 
@@ -268,7 +268,7 @@ function Picker({
         <p className="text-sm text-red-500">Couldn&apos;t load your works.</p>
       ) : !page || page.tokens.length === 0 ? (
         <p className="text-sm text-gray-400">
-          No indexed works found for your wallet.
+          No supported works found for your wallet.
         </p>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">

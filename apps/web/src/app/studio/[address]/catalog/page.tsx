@@ -87,7 +87,7 @@ async function CatalogManageBody({ address }: { address: Address }) {
     )
   } catch (e) {
     indexedPlanError =
-      e instanceof Error ? e.message : "Failed to load indexed work."
+      e instanceof Error ? e.message : "Failed to load work."
   }
 
   const empty =
@@ -127,7 +127,7 @@ async function CatalogManageBody({ address }: { address: Address }) {
       {empty && (
         <div className="border border-dashed border-gray-200 rounded-md p-6 text-sm text-gray-500">
           Your catalog is empty. Add entries below, or pre-fill from the
-          work PND has already indexed.
+          work PND has already found.
         </div>
       )}
 

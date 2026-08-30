@@ -22,7 +22,7 @@ export function ProfileCreatedRecord({
     <section id="created" className="scroll-mt-20 space-y-5">
       <SectionHeading
         title="Created record"
-        detail="Works attributed to this address by indexed platform mint evidence. Catalog declarations are shown separately; current ownership does not change creator attribution."
+        detail="Works attributed to this address through supported platform mint records. Catalog declarations are shown separately; current ownership does not change creator attribution."
       />
       <ArtistGallery artistAddress={address} initialPage={closedPage} />
       {pageCount > 1 && (

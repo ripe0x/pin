@@ -38,7 +38,7 @@ export function ProfileAvailable({
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium">{release.name}</p>
                   <p className="font-mono text-[10px] text-gray-500">
-                    PND Surface · primary release · indexed
+                    PND Surface · primary release
                     {release.supplyCap !== "0"
                       ? ` · ${release.minted}/${release.supplyCap} minted`
                       : ` · ${release.minted} minted`}
@@ -84,7 +84,7 @@ export function ProfileAvailable({
       )}
       {available.length < listingTotal && (
         <p className="text-xs text-amber-700">
-          Showing {available.length} of {listingTotal} listed works in the initial indexed page. The Created record below remains availability-ranked while more results load.
+          Showing {available.length} of {listingTotal} listed works while more results load. The Created record below remains availability-ranked.
         </p>
       )}
     </section>

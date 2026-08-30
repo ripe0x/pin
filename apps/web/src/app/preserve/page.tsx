@@ -534,9 +534,8 @@ export default function PreservePage() {
           <div className="space-y-2">
             <h3 className="text-lg font-medium">Discover your works</h3>
             <p className="text-sm text-gray-500">
-              PND will load Foundation works already discovered by its indexer
-              and enriched by the worker. This is a Postgres read, not a
-              request-time blockchain scan.
+              PND will load the Foundation works it already knows about. This
+              does not scan Ethereum when you open the page.
             </p>
           </div>
 
@@ -550,7 +549,7 @@ export default function PreservePage() {
             className="w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40"
           >
             {discovering
-              ? "Loading indexed works..."
+              ? "Loading Foundation works..."
               : "Load My Foundation Works"}
           </button>
 
@@ -593,8 +592,8 @@ export default function PreservePage() {
 
           {discovering && (
             <p className="text-xs text-gray-400 text-center animate-pulse">
-              Loading PND&apos;s indexed Foundation record. Very recent mints may
-              appear after the worker catches up.
+              Loading your Foundation works. Very recent mints may take a
+              little longer to appear.
             </p>
           )}
         </div>

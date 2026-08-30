@@ -251,7 +251,7 @@ export async function getProfileSummary(args: SummaryArgs): Promise<ProfileSumma
     auctionHouseCount,
     ownershipCoverage,
     coverageNote:
-      "This profile covers work and ownership observed by PND's indexed sources. It is not a complete wallet inventory or career record.",
+      "This profile shows work and ownership PND can currently verify from supported sources. It may not include every wallet holding or every work this person has created.",
   }
 }
 

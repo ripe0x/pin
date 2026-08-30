@@ -165,7 +165,7 @@ export function BulkDelistPanel({
     return (
       <Section>
         <p className="text-sm text-gray-700">
-          PND couldn&rsquo;t check every marketplace. An index may still be
+          PND couldn&rsquo;t check every marketplace. Listing data may still be
           catching up, or a source may be temporarily unavailable.
         </p>
         <button

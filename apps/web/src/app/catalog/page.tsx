@@ -19,7 +19,7 @@ export default function RecordHomePage() {
         </h1>
         <p className="text-sm text-gray-600">
           A public record of the contracts, tokens, and token ranges artists
-          associate with their work. Anyone can index it, no platform owns it.
+          associate with their work. Anyone can read it, no platform owns it.
         </p>
       </header>
 

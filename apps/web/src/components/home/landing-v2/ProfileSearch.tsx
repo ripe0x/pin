@@ -11,7 +11,7 @@ export function LandingProfileSearch() {
         htmlFor="landing-profile-search"
         className="block text-[11px] font-mono font-medium uppercase tracking-wider text-gray-600"
       >
-        Search the indexed record
+        Find a profile
       </label>
       <div className="flex rounded-md border border-gray-300 bg-surface p-1 transition-colors focus-within:border-gray-600">
         <input

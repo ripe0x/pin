@@ -130,7 +130,7 @@ export function TokenMedia({
   if (!imageUrl && !animationUrl) {
     return (
       <div className="flex aspect-square min-h-48 min-w-48 items-center justify-center border border-gray-300 px-6 text-center text-xs font-mono text-fg-muted">
-        Media is not indexed for this token yet.
+        No media is available for this token yet.
       </div>
     )
   }

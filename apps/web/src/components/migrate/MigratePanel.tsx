@@ -508,7 +508,7 @@ function Inner({
       <Section>
         <Heading
           title="Couldn’t check every marketplace"
-          subtitle="The listing index is incomplete or stale, so PND can’t confirm that there is nothing to migrate."
+          subtitle="Listing data is incomplete or stale, so PND can’t confirm that there is nothing to migrate."
         />
         <button
           onClick={refresh}

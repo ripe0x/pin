@@ -123,7 +123,7 @@ export function ActivationQueue({
       <p className={ERROR}>
         No canonical minter is on record for this collection yet. The mint
         gate lives on the minter FixedPriceMinter wired at deploy — a
-        bring-your-own minter, or a collection not yet indexed, has no gate
+        bring-your-own minter, or a collection PND has not found yet, has no gate
         to activate here.
       </p>
     )

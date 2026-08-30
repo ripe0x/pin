@@ -30,7 +30,7 @@ export default async function AuctionsGuidePage() {
           Auctions
         </h1>
         <p className="text-base text-fg-muted leading-relaxed">
-          Work offered from artist-owned auction houses. PND indexes the live
+          Work offered from artist-owned auction houses. PND shows the current
           state, but every bid and settlement goes directly to the artist&apos;s
           contract.
         </p>
@@ -42,19 +42,19 @@ export default async function AuctionsGuidePage() {
             Available now
           </h2>
           <span className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-            Indexed contract state
+            Current contract state
           </span>
         </div>
         {active === null ? (
           <div className="rounded-lg border border-gray-200 p-5">
             <p className="text-sm text-fg-muted">
-              The auction index is temporarily unavailable. No chain-wide scan
+              Auction data is temporarily unavailable. No chain-wide scan
               will run from this page. Try again shortly.
             </p>
           </div>
         ) : active.length === 0 ? (
           <div className="rounded-lg border border-gray-200 p-5">
-            <p className="text-sm text-fg-muted">No active auctions are indexed right now.</p>
+            <p className="text-sm text-fg-muted">No auctions are open right now.</p>
           </div>
         ) : (
           <ul className="grid gap-3 sm:grid-cols-2">
@@ -74,7 +74,7 @@ export default async function AuctionsGuidePage() {
                     ? "Preview unavailable, original is intact"
                     : auction.mediaKind === "video" || auction.mediaKind === "animation"
                       ? "Interactive work, open to view"
-                      : "Media is not indexed yet"
+                      : "Preview is not available yet"
               const status =
                 auction.endTime === 0
                   ? "Waiting for first bid"

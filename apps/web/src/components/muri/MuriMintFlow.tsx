@@ -83,7 +83,7 @@ function MuriMintFlowInner() {
     <Panel>
       <h2 className="mb-1 text-sm font-medium">Choose a collection</h2>
       <p className="mb-4 text-xs text-gray-500">
-        Your indexed Manifold Creator Core contracts. MURI mints a new
+        Your Manifold Creator Core contracts found by PND. MURI mints a new
         onchain-preserved token on the one you pick. Existing tokens can&rsquo;t
         be converted.
       </p>

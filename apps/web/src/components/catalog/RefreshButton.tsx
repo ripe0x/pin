@@ -178,7 +178,7 @@ function RefreshIcon({ spinning }: { spinning: boolean }) {
 function RefreshStatus({ state }: { state: State }) {
   if (state.kind === "idle") return null
   if (state.kind === "working") {
-    const label = state.job.status === "running" ? "Scanning indexed sources" : "Refresh queued"
+    const label = state.job.status === "running" ? "Checking supported sources" : "Refresh queued"
     const reported = Object.entries(state.job.result?.sources ?? {})
     const sources =
       reported.length > 0

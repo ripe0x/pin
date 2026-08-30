@@ -9,7 +9,7 @@ export default function ProfileLoading() {
         </div>
       </div>
       <div className="h-16 rounded skeleton" />
-      <p className="text-sm text-gray-500">Loading indexed profile evidence…</p>
+      <p className="text-sm text-gray-500">Loading profile…</p>
     </div>
   )
 }

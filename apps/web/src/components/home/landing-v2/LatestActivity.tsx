@@ -25,7 +25,7 @@ export async function LatestActivity() {
         <ActivityHeading />
         <div className="rounded-md border border-gray-200 p-5">
           <p className="text-sm text-fg-muted">
-            Latest indexed activity is temporarily unavailable. Collections,
+            Latest activity is temporarily unavailable. Collections,
             auctions, and artist records remain available.
           </p>
         </div>
@@ -53,7 +53,7 @@ export async function LatestActivity() {
         </ul>
       ) : (
         <p className="rounded-md border border-gray-200 p-5 text-sm text-fg-muted">
-          No indexed activity yet.
+          No activity yet.
         </p>
       )}
       <Link href="/?activity=all" className="inline-block text-xs font-mono underline underline-offset-4">
@@ -71,7 +71,7 @@ function ActivityHeading() {
           Historical evidence
         </p>
         <h2 id="latest-activity" className="mt-1 text-2xl font-semibold tracking-tight">
-          Latest indexed activity
+          Latest activity
         </h2>
       </div>
       <p className="text-xs font-mono text-gray-500">Observed on Ethereum</p>
@@ -155,7 +155,7 @@ function ListingGroupRow({ events }: { events: EnrichedActivityEvent[] }) {
             <span className="text-gray-600">listed {events.length} works</span>
           </p>
           <p className="mt-1 text-[11px] font-mono text-gray-500">
-            One indexed listing run · individual prices remain on each work
+            One listing run · individual prices remain on each work
           </p>
         </div>
       </div>

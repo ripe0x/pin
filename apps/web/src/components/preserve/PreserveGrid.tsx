@@ -62,7 +62,7 @@ function PreserveCard({ item }: { item: TokenWithPinState }) {
               ? "Video media, open the token source to view"
               : imageUrl
                 ? "Preview unavailable"
-                : "No indexed media source"}
+                : "No media source available"}
           </div>
         )}
         {/* Pin status overlay */}

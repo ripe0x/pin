@@ -79,7 +79,7 @@ export function ArtistHeader({
         <div className="flex items-center gap-3 text-[11px] font-mono text-gray-500">
           <span>
             <strong className="font-medium text-fg">{totalWorks}</strong>{" "}
-            {totalWorks === 1 ? "indexed work" : "indexed works"}
+            {totalWorks === 1 ? "work" : "works"}
           </span>
           {activeAuctions !== null && (
             <>

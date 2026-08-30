@@ -6,7 +6,6 @@ import { AvailableNow } from "@/components/home/landing-v2/AvailableNow"
 import { LatestActivity } from "@/components/home/landing-v2/LatestActivity"
 import { LandingProfileSearch } from "@/components/home/landing-v2/ProfileSearch"
 import { getPlatformStats } from "@/lib/indexer-queries"
-import { INDEXED_PLATFORM_NAMES } from "@/lib/indexed-platforms"
 
 export const metadata: Metadata = {
   title: "Landing v2",
@@ -65,9 +64,9 @@ export default function LandingV2Page() {
           <LandingProfileSearch />
           <div className="mt-6 border-t border-gray-200 pt-5">
             <p className="text-xs leading-relaxed text-gray-600">
-              A PND profile is an evidence-backed view of the work, ownership,
-              and sale activity PND has indexed. It is transparent about its
-              coverage and does not pretend to be a complete wallet history.
+              A PND profile brings together created work, current ownership,
+              and sale activity without forcing artists and collectors into
+              separate identities.
             </p>
           </div>
         </aside>
@@ -94,7 +93,7 @@ export default function LandingV2Page() {
           />
           <Proof
             number="02"
-            title="One indexed creative record"
+            title="One creative record"
             body="Created work, collected work, releases, sales, and attribution can coexist on one address without forcing a single role."
           />
           <Proof
@@ -118,17 +117,13 @@ export default function LandingV2Page() {
         <aside className="space-y-8 lg:sticky lg:top-24">
           <div className="space-y-3">
             <p className="text-[11px] font-mono font-medium uppercase tracking-wider text-gray-500">
-              Index coverage
+              Start with the work
             </p>
-            <h2 className="text-xl font-semibold tracking-tight">What PND sees</h2>
+            <h2 className="text-xl font-semibold tracking-tight">Available comes first</h2>
             <p className="text-sm leading-relaxed text-fg-muted">
-              PND indexes creation evidence from {joinNames(INDEXED_PLATFORM_NAMES)},
-              alongside PND auctions, Surface releases, Catalog declarations,
-              and supported ownership records.
-            </p>
-            <p className="text-xs leading-relaxed text-gray-500">
-              Indexed means PND has durable evidence for the record. Missing work
-              is labeled as a coverage boundary, not silently treated as nonexistent.
+              Explore open releases and auctions first, then move into an
+              artist&apos;s profile to understand the larger body of work,
+              including what has sold and what they collect.
             </p>
           </div>
           <div className="space-y-3 border-t border-gray-200 pt-7">
@@ -197,14 +192,9 @@ function AvailableSkeleton() {
 
 function ActivitySkeleton() {
   return (
-    <section className="space-y-4" aria-label="Loading indexed activity">
+    <section className="space-y-4" aria-label="Loading activity">
       <div className="h-8 w-56 skeleton rounded-sm" />
       <div className="h-72 skeleton rounded-md" />
     </section>
   )
-}
-
-function joinNames(names: readonly string[]): string {
-  if (names.length < 2) return names[0] ?? "supported sources"
-  return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`
 }
