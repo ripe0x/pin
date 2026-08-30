@@ -21,7 +21,7 @@ export async function LatestActivity() {
   const events = await getActivityFeed(RAW_LIMIT, null, 6_000).catch(() => null)
   if (events === null) {
     return (
-      <section aria-labelledby="latest-activity" className="space-y-4">
+      <section aria-labelledby="latest-activity" className="min-w-0 space-y-4">
         <ActivityHeading />
         <div className="rounded-md border border-gray-200 p-5">
           <p className="text-sm text-fg-muted">
@@ -37,7 +37,7 @@ export async function LatestActivity() {
   const items = groupListingRuns(enriched).slice(0, DISPLAY_LIMIT)
 
   return (
-    <section aria-labelledby="latest-activity" className="space-y-4">
+    <section aria-labelledby="latest-activity" className="min-w-0 space-y-4">
       <ActivityHeading />
       {items.length > 0 ? (
         <ul className="border-b border-gray-200">
