@@ -630,7 +630,11 @@ export async function getRecentCollections(factory: Address, limit = 8): Promise
     const collections = await Promise.all(
       indexed.map((a) => getCollection(a as Address)),
     )
-    return collections.filter((c): c is Collection => c !== null)
+    const resolved = collections.filter((c): c is Collection => c !== null)
+    if (indexed.length > 0 && resolved.length === 0) {
+      throw new Error("Indexed collections could not be read from chain")
+    }
+    return resolved
   }
   return pgCache(`sc-recent:${lc(factory)}:${limit}`, 60, async () => {
     const client = getClient()

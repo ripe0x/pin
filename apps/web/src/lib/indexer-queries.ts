@@ -310,7 +310,7 @@ export async function getSurfaceCollectionSummaries(
 
   return withTimeout(async () => {
     const schema = indexerSchema()
-    if (!(await surfaceTablesExist(db, schema))) return []
+    if (!(await surfaceReleaseTablesExist(db, schema))) return null
 
     type Row = {
       collection: string
@@ -510,7 +510,7 @@ export async function getActiveSurfaceReleases(
       /[^a-zA-Z0-9_]/g,
       "",
     )
-    if (!(await surfaceTablesExist(db, schema))) return []
+    if (!(await surfaceReleaseTablesExist(db, schema))) return null
 
     type Row = {
       collection: string
@@ -728,6 +728,32 @@ async function surfaceTablesExist(
     )) as Array<{ ok: boolean }>
     if (rows[0]?.ok) surfaceTablesSeen = true
     return surfaceTablesSeen
+  } catch {
+    return false
+  }
+}
+
+let surfaceReleaseTablesSeen = false
+async function surfaceReleaseTablesExist(
+  db: NonNullable<typeof sql>,
+  schema: string,
+): Promise<boolean> {
+  if (surfaceReleaseTablesSeen) return true
+  try {
+    const names = [
+      "collections",
+      "collection_mints",
+      "collection_sales",
+      "collection_supply_configs",
+      "minter_sale_configs",
+    ]
+    const rows = (await db.unsafe(
+      `SELECT bool_and(to_regclass(name) IS NOT NULL) AS ok
+         FROM unnest($1::text[]) AS names(name)`,
+      [names.map((name) => `${schema}.${name}`)],
+    )) as Array<{ ok: boolean }>
+    if (rows[0]?.ok) surfaceReleaseTablesSeen = true
+    return surfaceReleaseTablesSeen
   } catch {
     return false
   }
@@ -1813,7 +1839,7 @@ export async function getCollectionAddressesFromIndexer(
       [limit],
     )) as Array<{ collection: string }>
     return rows.map((r) => r.collection)
-  })
+  }, 4_000)
 }
 
 export type IndexedCollectionRow = {

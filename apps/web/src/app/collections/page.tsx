@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
+import { getRecentCollections } from "@/lib/collection-onchain"
 import {
   getSurfaceCollectionSummaries,
   type SurfaceCollectionSummary,
@@ -12,6 +13,7 @@ import {
   lifecycleStatus,
   shortAddress,
   surfaceFactory,
+  type Collection,
 } from "@/lib/collection"
 import { CollectionStatusChip } from "@/components/collections/CollectionStatusChip"
 
@@ -85,7 +87,11 @@ export default async function CollectionsHome() {
   if (factory) {
     const indexed = await getSurfaceCollectionSummaries(8)
     if (indexed === null) {
-      indexUnavailable = true
+      try {
+        recent = (await getRecentCollections(factory, 8)).map(collectionToSummary)
+      } catch {
+        indexUnavailable = true
+      }
     } else {
       recent = indexed
     }
@@ -193,4 +199,22 @@ export default async function CollectionsHome() {
       )}
     </div>
   )
+}
+
+function collectionToSummary(collection: Collection): SurfaceCollectionSummary {
+  return {
+    collection: collection.address,
+    owner: collection.owner,
+    name: collection.name,
+    symbol: collection.symbol,
+    primaryMinter: collection.primaryMinter,
+    price: collection.sale?.price ?? null,
+    priceStrategy: collection.sale?.priceStrategy ?? null,
+    mintStart: collection.sale ? Number(collection.sale.mintStart) : null,
+    mintEnd: collection.sale ? Number(collection.sale.mintEnd) : null,
+    maxMints: collection.sale?.maxMints ?? null,
+    supplyCap: collection.cfg.supplyCap,
+    mintedEver: collection.minted,
+    soldThroughMinter: collection.minted,
+  }
 }
