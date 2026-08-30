@@ -316,7 +316,7 @@ export async function rankArtistTokenRefs(
       indexedSources: ["Foundation", "Manifold", "Mint", "PND", "SuperRare", "Transient Labs"],
       hiddenStaleSources: staleRows.map((r) => r.source),
       note:
-        "Availability comes from indexed PND and Foundation events plus recent SuperRare and Transient observations. Stale observed listings are hidden.",
+        "Availability comes from PND and Foundation events plus recent SuperRare and Transient observations. Listings are hidden when PND can no longer confirm that they are current.",
     },
   }
 }
