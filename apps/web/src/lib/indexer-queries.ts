@@ -263,6 +263,23 @@ export type ActivePndAuction = {
   mediaKind: string | null
 }
 
+export type ActiveSurfaceRelease = {
+  collection: string
+  owner: string
+  name: string
+  symbol: string
+  price: bigint
+  priceStrategy: string
+  mintStart: number
+  mintEnd: number
+  maxMints: bigint
+  supplyCap: bigint
+  mintedEver: bigint
+  soldThroughMinter: bigint
+  imageUrl: string | null
+  updatedAtTime: number
+}
+
 /**
  * Currently-active PND auctions across every Sovereign Auction House,
  * ordered ending-soonest-first with pre-bid auctions (endTime = 0) at the
@@ -373,6 +390,109 @@ export async function getActivePndAuctions(
       previewUrl: r.preview_url,
       previewStatus: r.preview_status,
       mediaKind: r.media_kind,
+    }))
+  }, 2_000)
+}
+
+/**
+ * Currently-open PND Surface releases, derived entirely from Ponder's
+ * current-state tables. This is the landing-page browse path, so it must not
+ * fan out into per-collection RPC reads. The collection page still performs
+ * its normal final live checks before a collector mints.
+ */
+export async function getActiveSurfaceReleases(
+  limit = 6,
+): Promise<ActiveSurfaceRelease[] | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+
+  return withTimeout(async () => {
+    const schema = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
+      /[^a-zA-Z0-9_]/g,
+      "",
+    )
+    if (!(await surfaceTablesExist(db, schema))) return []
+
+    type Row = {
+      collection: string
+      owner: string
+      name: string | null
+      symbol: string | null
+      price: string
+      price_strategy: string
+      mint_start: string
+      mint_end: string
+      max_mints: string
+      supply_cap: string
+      minted_ever: string
+      sold_through_minter: string
+      image_url: string | null
+      updated_at_time: string
+    }
+
+    const now = Math.floor(Date.now() / 1000)
+    const rows = (await db.unsafe(
+      `WITH mint_totals AS (
+         SELECT collection, COALESCE(SUM(quantity), 0) AS minted_ever
+           FROM ${schema}.collection_mints
+          GROUP BY collection
+       ), sale_totals AS (
+         SELECT minter, COALESCE(SUM(quantity), 0) AS sold_through_minter
+           FROM ${schema}.collection_sales
+          GROUP BY minter
+       )
+       SELECT c.collection, c.owner, c.name, c.symbol,
+              s.price::text AS price, s.price_strategy,
+              s.mint_start::text AS mint_start,
+              s.mint_end::text AS mint_end,
+              s.max_mints::text AS max_mints,
+              sc.supply_cap::text AS supply_cap,
+              COALESCE(mt.minted_ever, 0)::text AS minted_ever,
+              COALESCE(st.sold_through_minter, 0)::text AS sold_through_minter,
+              tm.image_url,
+              s.updated_at_time::text AS updated_at_time
+         FROM ${schema}.collections c
+         JOIN ${schema}.minter_sale_configs s
+           ON s.collection = c.collection
+          AND s.minter = c.primary_minter
+         JOIN ${schema}.collection_supply_configs sc
+           ON sc.collection = c.collection
+         LEFT JOIN mint_totals mt ON mt.collection = c.collection
+         LEFT JOIN sale_totals st ON st.minter = s.minter
+         LEFT JOIN LATERAL (
+           SELECT ct.token_id
+             FROM ${schema}.collection_tokens ct
+            WHERE ct.collection = c.collection AND ct.burned = false
+            ORDER BY ct.updated_at_time DESC, ct.token_id DESC
+            LIMIT 1
+         ) latest_token ON true
+         LEFT JOIN token_metadata tm
+           ON tm.contract = lower(c.collection)
+          AND tm.token_id = latest_token.token_id::text
+        WHERE (s.mint_start = 0 OR s.mint_start <= $1)
+          AND (s.mint_end = 0 OR s.mint_end > $1)
+          AND (sc.supply_cap = 0 OR COALESCE(mt.minted_ever, 0) < sc.supply_cap)
+          AND (s.max_mints = 0 OR COALESCE(st.sold_through_minter, 0) < s.max_mints)
+        ORDER BY c.created_at_block DESC
+        LIMIT $2`,
+      [now, limit],
+    )) as Row[]
+
+    return rows.map((row) => ({
+      collection: row.collection,
+      owner: row.owner,
+      name: row.name ?? "Untitled collection",
+      symbol: row.symbol ?? "",
+      price: BigInt(row.price),
+      priceStrategy: row.price_strategy,
+      mintStart: Number(row.mint_start),
+      mintEnd: Number(row.mint_end),
+      maxMints: BigInt(row.max_mints),
+      supplyCap: BigInt(row.supply_cap),
+      mintedEver: BigInt(row.minted_ever),
+      soldThroughMinter: BigInt(row.sold_through_minter),
+      imageUrl: row.image_url,
+      updatedAtTime: Number(row.updated_at_time),
     }))
   }, 2_000)
 }
