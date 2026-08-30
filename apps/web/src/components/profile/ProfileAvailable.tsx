@@ -69,7 +69,7 @@ export function ProfileAvailable({
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">{item.title}</p>
                     <p className="font-mono text-[10px] text-gray-500">
-                      {state.source} · {state.kind} · {state.freshness}
+                      {availabilitySource(state.source)} · {availabilityKind(state.kind)}
                       {state.observedAt ? ` · observed ${formatObserved(state.observedAt)}` : ""}
                     </p>
                   </div>
@@ -104,6 +104,19 @@ export function SectionHeading({ title, detail }: { title: string; detail: strin
       <p className="text-xs leading-relaxed text-gray-500">{detail}</p>
     </div>
   )
+}
+
+function availabilitySource(source: string): string {
+  if (source === "pnd") return "PND"
+  if (source === "foundation") return "Foundation"
+  if (source === "superrare") return "SuperRare"
+  if (source === "transient") return "Transient Labs"
+  return source
+}
+
+function availabilityKind(kind: string): string {
+  if (kind === "buy-now") return "buy now"
+  return kind
 }
 
 function formatObserved(value: string): string {
