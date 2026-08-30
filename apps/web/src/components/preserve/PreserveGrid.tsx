@@ -2,8 +2,7 @@
 
 import type { DiscoveredToken } from "@/lib/onchain-discovery"
 import type { PinStatus } from "@/lib/pinning"
-import { useOptimizedImage } from "@/lib/use-optimized-image"
-import { isVideoUrl } from "@/lib/media-url"
+import { useThumbnailMedia } from "@/lib/use-thumbnail-media"
 import { TokenPinStatus } from "./TokenPinStatus"
 
 type TokenWithPinState = {
@@ -41,28 +40,33 @@ function PreserveCard({ item }: { item: TokenWithPinState }) {
   // Combined status: worst of the two
   const combinedStatus = worstStatus(metadataStatus, mediaStatus)
 
-  const image = useOptimizedImage(imageUrl, 600)
-  const video = isVideoUrl(imageUrl)
+  const media = useThumbnailMedia(imageUrl, 600)
 
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden">
       <div className="relative bg-gray-100 aspect-square">
-        {imageUrl && !video && !image.failed ? (
+        {imageUrl && media.kind === "video" ? (
+          <video
+            src={media.videoSrc}
+            aria-label={title}
+            className="h-full w-full object-cover"
+            muted
+            playsInline
+            preload="metadata"
+            onError={media.onVideoError}
+          />
+        ) : imageUrl && media.kind === "image" ? (
           <img
-            ref={image.ref}
-            src={image.src}
+            ref={media.imgRef}
+            src={media.imgSrc}
             alt={title}
             className="w-full h-full object-cover"
             loading="lazy"
-            onError={image.onError}
+            onError={media.onImgError}
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center px-4 text-center text-[11px] font-mono text-fg-muted">
-            {video
-              ? "Video media, open the token source to view"
-              : imageUrl
-                ? "Preview unavailable"
-                : "No media source available"}
+            {imageUrl ? "Preview unavailable" : "No media source available"}
           </div>
         )}
         {/* Pin status overlay */}

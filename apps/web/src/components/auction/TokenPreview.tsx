@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { useReadContract } from "wagmi"
 import { erc721Abi } from "@pin/abi"
 import { ipfsToHttp } from "@pin/shared"
+import { useThumbnailMedia } from "@/lib/use-thumbnail-media"
 
 type Metadata = {
   name?: string
@@ -87,6 +88,7 @@ export function TokenPreview({
   const loading = uriLoading || ownerLoading
   const readError = uriError || ownerError
   const imageUrl = meta?.image ? ipfsToHttp(meta.image) : null
+  const media = useThumbnailMedia(imageUrl ?? "", 240)
   const name = meta?.name ?? `#${tokenId}`
 
   if (readError) {
@@ -106,12 +108,24 @@ export function TokenPreview({
   return (
     <div className="rounded border border-gray-200 bg-surface p-4 flex gap-4 items-start">
       <div className="w-24 h-24 flex-shrink-0 bg-gray-100 rounded overflow-hidden">
-        {imageUrl ? (
+        {imageUrl && media.kind === "video" ? (
+          <video
+            src={media.videoSrc}
+            aria-label={name}
+            className="h-full w-full object-cover"
+            muted
+            playsInline
+            preload="metadata"
+            onError={media.onVideoError}
+          />
+        ) : imageUrl && media.kind === "image" ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={imageUrl}
+            ref={media.imgRef}
+            src={media.imgSrc}
             alt={name}
             className="w-full h-full object-cover"
+            onError={media.onImgError}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-xs text-gray-400">
