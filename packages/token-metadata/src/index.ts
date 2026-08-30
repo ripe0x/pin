@@ -239,7 +239,7 @@ export async function fetchMetadataForUri(
     try {
       const res = await fetchFromIpns(ipnsPath, { headers, cache: "no-store" })
       const contentType = res.headers.get("content-type") ?? ""
-      if (!contentType.includes("json") && !contentType.includes("text/plain")) {
+      if (!isJsonLikeContentType(contentType)) {
         return null
       }
       return metadataOrNull(await readJsonWithinLimit(res), resolvedUri)
@@ -264,7 +264,7 @@ export async function fetchMetadataForUri(
         timeoutMs: fetchTimeoutMs,
       })
       const contentType = res.headers.get("content-type") ?? ""
-      if (!contentType.includes("json") && !contentType.includes("text/plain")) {
+      if (!isJsonLikeContentType(contentType)) {
         return null
       }
       return metadataOrNull(await readJsonWithinLimit(res), resolvedUri)
@@ -279,7 +279,7 @@ export async function fetchMetadataForUri(
       const res = await fetchSafeHttpUrl(resolvedUri, fetchTimeoutMs, headers)
       if (!res.ok) return null
       const contentType = res.headers.get("content-type") ?? ""
-      if (!contentType.includes("json") && !contentType.includes("text/plain")) {
+      if (!isJsonLikeContentType(contentType)) {
         return null
       }
       return metadataOrNull(await readJsonWithinLimit(res), resolvedUri)
@@ -293,13 +293,30 @@ export async function fetchMetadataForUri(
   try {
     const res = await fetchFromIpfs(cid, { headers, cache: "no-store" })
     const contentType = res.headers.get("content-type") ?? ""
-    if (!contentType.includes("json") && !contentType.includes("text/plain")) {
+    if (!isJsonLikeContentType(contentType)) {
       return null
     }
     return metadataOrNull(await readJsonWithinLimit(res), resolvedUri)
   } catch {
     return null
   }
+}
+
+/**
+ * Several onchain HTTP gateways return valid metadata bytes with an empty or
+ * generic binary Content-Type. We can safely attempt those because the body is
+ * size-capped, JSON-parsed, and then required to contain a metadata field.
+ * Explicitly non-JSON types such as HTML remain rejected.
+ */
+function isJsonLikeContentType(contentType: string): boolean {
+  const normalized = contentType.toLowerCase().split(";", 1)[0].trim()
+  return (
+    normalized === "" ||
+    normalized === "application/json" ||
+    normalized.endsWith("+json") ||
+    normalized === "text/plain" ||
+    normalized === "application/octet-stream"
+  )
 }
 
 async function fetchSafeHttpUrl(

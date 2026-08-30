@@ -120,6 +120,7 @@ async function findCandidates(): Promise<Candidate[]> {
           AND NOT m.burned
           AND m.fetched_at < NOW() - INTERVAL '${RETRY_AFTER.replace(/'/g, "''")}'
         )
+     ORDER BY m.fetched_at ASC NULLS FIRST, d.contract, d.token_id
      LIMIT ${BATCH_SIZE}`,
   )) as Array<Candidate>
   return rows

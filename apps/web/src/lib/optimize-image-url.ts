@@ -18,6 +18,10 @@ const PROXYABLE_HOST_SUFFIXES = [
   "cloudflare-ipfs.com",
   "arweave.net",
   "euc.li",
+  // TBAM's renderer is correct but cold starts can take 15–25 seconds.
+  // Weserv gives profiles a cached, resized copy instead of making every
+  // visitor wait on the renderer independently.
+  "tbam-api.fly.dev",
 ]
 
 export function optimizeImageUrl(src: string, width = 800): string {
@@ -29,7 +33,10 @@ export function optimizeImageUrl(src: string, width = 800): string {
   } catch {
     return src
   }
-  const proxyable = PROXYABLE_HOST_SUFFIXES.some((h) => u.hostname.endsWith(h))
+  const hostname = u.hostname.toLowerCase()
+  const proxyable = PROXYABLE_HOST_SUFFIXES.some(
+    (h) => hostname === h || hostname.endsWith(`.${h}`),
+  )
   if (!proxyable) return src
   const target = `${u.hostname}${u.pathname}${u.search}`
   return `https://images.weserv.nl/?url=${encodeURIComponent(target)}&w=${width}&output=webp&q=80&we=1`

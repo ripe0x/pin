@@ -15,6 +15,18 @@ import { optimizeImageUrl } from "./optimize-image-url"
  * picture even if it's heavy.
  */
 const THUMBNAIL_WIDTH_THRESHOLD = 200
+const RAW_RETRY_DELAYS_MS = [500, 1_500] as const
+
+function withRetryParam(src: string, retryAttempt: number): string {
+  if (retryAttempt === 0 || !/^https?:\/\//i.test(src)) return src
+  try {
+    const url = new URL(src)
+    url.searchParams.set("pnd_retry", String(retryAttempt))
+    return url.toString()
+  } catch {
+    return src
+  }
+}
 
 /**
  * Image source hook for grid tiles. Layers fallbacks differently
@@ -52,8 +64,26 @@ export function useOptimizedImage(
     useIpfsGatewayFallback(initialUrl)
   const [useProxy, setUseProxy] = useState(true)
   const [failed, setFailed] = useState(false)
+  const [rawRetryAttempt, setRawRetryAttempt] = useState(0)
   const lastRawRef = useRef<string>(rawSrc)
   const imgRef = useRef<HTMLImageElement | null>(null)
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hydrationCheckedRef = useRef(false)
+
+  useEffect(() => {
+    setUseProxy(true)
+    setFailed(false)
+    setRawRetryAttempt(0)
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
+    retryTimerRef.current = null
+  }, [initialUrl])
+
+  useEffect(
+    () => () => {
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
+    },
+    [],
+  )
 
   // When the underlying gateway rotates (rawSrc changes), give the new
   // URL a fresh shot at the proxy and clear the failed state.
@@ -62,12 +92,15 @@ export function useOptimizedImage(
       lastRawRef.current = rawSrc
       setUseProxy(true)
       setFailed(false)
+      setRawRetryAttempt(0)
     }
   }, [rawSrc])
 
   const optimized = optimizeImageUrl(rawSrc, width)
   const proxyApplied = useProxy && optimized !== rawSrc
-  const displaySrc = useProxy ? optimized : rawSrc
+  const displaySrc = proxyApplied
+    ? optimized
+    : withRetryParam(rawSrc, rawRetryAttempt)
 
   const isThumbnail = width < THUMBNAIL_WIDTH_THRESHOLD
   const allowRawFallback = options.allowRawFallback ?? true
@@ -89,18 +122,44 @@ export function useOptimizedImage(
     // to try the next gateway. If it can't rotate, the cascade is
     // exhausted — flip `failed` so the caller renders a placeholder.
     const rotated = onRawError()
-    if (!rotated) setFailed(true)
-  }, [proxyApplied, onRawError, isThumbnail, allowRawFallback])
+    if (rotated) return
+
+    // Centralized renderers can cold-start or fail transiently. A bounded
+    // cache-busted retry avoids permanently replacing valid work with a
+    // placeholder after one network error.
+    if (
+      /^https?:\/\//i.test(rawSrc) &&
+      rawRetryAttempt < RAW_RETRY_DELAYS_MS.length &&
+      !retryTimerRef.current
+    ) {
+      const delay = RAW_RETRY_DELAYS_MS[rawRetryAttempt]
+      retryTimerRef.current = setTimeout(() => {
+        retryTimerRef.current = null
+        setRawRetryAttempt((attempt) => attempt + 1)
+      }, delay)
+      return
+    }
+    setFailed(true)
+  }, [
+    proxyApplied,
+    onRawError,
+    isThumbnail,
+    allowRawFallback,
+    rawSrc,
+    rawRetryAttempt,
+  ])
 
   // Catch SSR-rendered images that already failed before hydration —
   // their native error event has come and gone, so the React handler
   // never fires.
   useEffect(() => {
+    if (hydrationCheckedRef.current) return
+    hydrationCheckedRef.current = true
     const img = imgRef.current
     if (img && img.complete && img.naturalWidth === 0) {
       onError()
     }
-  }, [displaySrc, onError])
+  }, [onError])
 
   return { src: displaySrc, onError, ref: imgRef, failed }
 }

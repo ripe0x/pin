@@ -235,7 +235,7 @@ function GalleryCard({
       : null
   const fallbackIsVideo = isVideoUrl(item.imageUrl)
   const sourceUrl = derivativeUrl ?? item.imageUrl
-  const image = useOptimizedImage(sourceUrl, 800, { allowRawFallback: false })
+  const image = useOptimizedImage(sourceUrl, 800)
   const [loaded, setLoaded] = useState(false)
   const [measuredRatio, setMeasuredRatio] = useState<number | null>(null)
   const storedRatio =

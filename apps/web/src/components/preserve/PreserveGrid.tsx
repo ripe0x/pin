@@ -41,7 +41,7 @@ function PreserveCard({ item }: { item: TokenWithPinState }) {
   // Combined status: worst of the two
   const combinedStatus = worstStatus(metadataStatus, mediaStatus)
 
-  const image = useOptimizedImage(imageUrl, 600, { allowRawFallback: false })
+  const image = useOptimizedImage(imageUrl, 600)
   const video = isVideoUrl(imageUrl)
 
   return (

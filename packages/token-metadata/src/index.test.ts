@@ -71,6 +71,34 @@ test("valid public HTTPS metadata still resolves", async () => {
   }
 })
 
+test("valid metadata resolves when an onchain gateway omits Content-Type", async () => {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async () =>
+    new Response('{"name":"Onchain work","image":"data:image/svg+xml,ok"}')
+  try {
+    assert.deepEqual(await fetchMetadataForUri("https://8.8.8.8/meta", 1n), {
+      name: "Onchain work",
+      image: "data:image/svg+xml,ok",
+      uri: "https://8.8.8.8/meta",
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test("explicit HTML responses are not parsed as metadata", async () => {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async () =>
+    new Response('{"name":"error page"}', {
+      headers: { "content-type": "text/html" },
+    })
+  try {
+    assert.equal(await fetchMetadataForUri("https://8.8.8.8/meta", 1n), null)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
 test("oversized inline metadata is rejected", async () => {
   const uri = `data:application/json,{"name":"${"x".repeat(2 * 1024 * 1024)}"}`
   assert.equal(await fetchMetadataForUri(uri, 1n), null)
