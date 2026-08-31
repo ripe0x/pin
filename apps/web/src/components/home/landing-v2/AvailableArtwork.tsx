@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useThumbnailMedia } from "@/lib/use-thumbnail-media"
 
 type Props = {
@@ -13,9 +13,22 @@ type Props = {
 export function AvailableArtwork({ src, alt, mediaKind }: Props) {
   const media = useThumbnailMedia(src ?? "", 720, mediaKind)
   const [loaded, setLoaded] = useState(false)
+  const videoRef = useRef<HTMLVideoElement | null>(null)
 
   useEffect(() => {
     setLoaded(false)
+    // Cached media can finish before React hydrates and attaches onLoad.
+    // Recover that success state so a real image never sits behind the
+    // loading skeleton forever.
+    if (
+      media.kind === "image" &&
+      media.imgRef.current?.complete &&
+      media.imgRef.current.naturalWidth > 0
+    ) {
+      setLoaded(true)
+    } else if (media.kind === "video" && (videoRef.current?.readyState ?? 0) >= 2) {
+      setLoaded(true)
+    }
   }, [src, media.kind, media.imgSrc, media.videoSrc])
 
   if (!src || media.kind === "failed") {
@@ -32,6 +45,7 @@ export function AvailableArtwork({ src, alt, mediaKind }: Props) {
     <div className="relative h-full w-full overflow-hidden bg-gray-100">
       {media.kind === "video" ? (
         <video
+          ref={videoRef}
           src={media.videoSrc}
           aria-label={alt}
           muted
