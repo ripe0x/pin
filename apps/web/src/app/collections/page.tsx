@@ -17,6 +17,7 @@ import {
 import { CollectionStatusChip } from "@/components/collections/CollectionStatusChip"
 import { AvailableArtwork } from "@/components/home/landing-v2/AvailableArtwork"
 import { readEnsIdentities } from "@/lib/ens-identity-store"
+import { featuredReleaseEditorial } from "@/lib/release-editorial"
 
 export const metadata: Metadata = {
   title: "Releases",
@@ -115,6 +116,14 @@ export default async function CollectionsHome({
   const groups = groupByLifecycle(recent, nowSec)
   const showGroupLabels = groups.length > 1
   const identities = await readEnsIdentities(recent.map((item) => item.owner))
+  const programmedFeature = featuredReleaseEditorial()
+    .map((editorial) => ({
+      editorial,
+      release: recent.find(
+        (candidate) => candidate.collection.toLowerCase() === editorial.collection,
+      ),
+    }))
+    .find((candidate) => candidate.release !== undefined)
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-10 md:py-16 space-y-12">
@@ -130,6 +139,49 @@ export default async function CollectionsHome({
         </p>
       </header>
 
+      {programmedFeature?.release ? (
+        <section aria-labelledby="featured-by-pnd" className="space-y-5">
+          <div>
+            <p className="text-[11px] font-mono font-medium uppercase tracking-wider text-gray-500">
+              PND editorial selection
+            </p>
+            <h2 id="featured-by-pnd" className="mt-1 text-2xl font-semibold tracking-tight">
+              Featured release
+            </h2>
+          </div>
+          <Link
+            href={`/collections/${programmedFeature.release.collection}`}
+            className="group grid overflow-hidden rounded-md border border-gray-200 bg-surface transition-colors hover:border-gray-400 md:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.7fr)]"
+          >
+            <div className="aspect-[4/3] overflow-hidden bg-gray-100 md:aspect-auto md:min-h-[360px]">
+              <AvailableArtwork
+                src={programmedFeature.release.imageUrl}
+                alt={programmedFeature.release.name}
+              />
+            </div>
+            <div className="flex flex-col justify-center gap-5 p-6 sm:p-8">
+              <div>
+                <h3 className="text-2xl font-semibold tracking-tight">
+                  {programmedFeature.release.name}
+                </h3>
+                <p className="mt-2 text-xs font-mono text-gray-500">
+                  by {identities.get(programmedFeature.release.owner.toLowerCase())?.ensName ??
+                    shortAddress(programmedFeature.release.owner as `0x${string}`)}
+                </p>
+              </div>
+              {programmedFeature.editorial.editorialSummary ? (
+                <p className="text-sm leading-relaxed text-fg-muted">
+                  {programmedFeature.editorial.editorialSummary}
+                </p>
+              ) : null}
+              <span className="text-xs font-mono underline underline-offset-4">
+                Open release
+              </span>
+            </div>
+          </Link>
+        </section>
+      ) : null}
+
       {factory === null ? (
         <section className="rounded-lg border border-gray-200 bg-surface p-6">
           <p className="text-sm text-fg-muted leading-relaxed">
@@ -144,7 +196,15 @@ export default async function CollectionsHome({
           </p>
         </section>
       ) : groups.length > 0 ? (
-        <section className="space-y-12">
+        <section aria-labelledby="all-surface-releases" className="space-y-12">
+          <div>
+            <p className="text-[11px] font-mono font-medium uppercase tracking-wider text-gray-500">
+              Permissionless record
+            </p>
+            <h2 id="all-surface-releases" className="mt-1 text-2xl font-semibold tracking-tight">
+              All Surface releases
+            </h2>
+          </div>
           {groups.map((g) => (
             <div key={g.key} className="space-y-4">
               {(showGroupLabels || groups.length === 1) && (

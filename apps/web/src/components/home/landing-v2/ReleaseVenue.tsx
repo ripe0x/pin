@@ -12,6 +12,11 @@ import {
   type SurfaceCollectionSummary,
 } from "@/lib/indexer-queries"
 import { readEnsIdentities, type StoredEnsIdentity } from "@/lib/ens-identity-store"
+import {
+  featuredReleaseEditorial,
+  getReleaseEditorial,
+  type ReleaseEditorial,
+} from "@/lib/release-editorial"
 
 export async function ReleaseVenue() {
   const releases = await getSurfaceCollectionSummaries(18).catch(() => null)
@@ -26,7 +31,15 @@ export async function ReleaseVenue() {
     release,
     status: releaseStatus(release, now),
   }))
-  const featured =
+  const programmedFeature = featuredReleaseEditorial()
+    .map((editorial) => ({
+      editorial,
+      item: withStatus.find(
+        ({ release }) => release.collection.toLowerCase() === editorial.collection,
+      ),
+    }))
+    .find((candidate) => candidate.item !== undefined)
+  const featured = programmedFeature?.item ??
     withStatus.find((item) => item.status === SurfaceStatus.Open && item.release.imageUrl) ??
     withStatus.find((item) => item.status === SurfaceStatus.Scheduled && item.release.imageUrl) ??
     withStatus.find((item) => item.release.imageUrl) ??
@@ -52,6 +65,8 @@ export async function ReleaseVenue() {
         release={featured.release}
         status={featured.status}
         identity={identities.get(featured.release.owner.toLowerCase())}
+        editorial={programmedFeature?.editorial ?? getReleaseEditorial(featured.release.collection)}
+        isProgrammedFeature={programmedFeature !== undefined}
         now={now}
       />
 
@@ -86,11 +101,15 @@ function FeaturedRelease({
   release,
   status,
   identity,
+  editorial,
+  isProgrammedFeature,
   now,
 }: {
   release: SurfaceCollectionSummary
   status: SurfaceStatus | null
   identity?: StoredEnsIdentity
+  editorial: ReleaseEditorial | null
+  isProgrammedFeature: boolean
   now: number
 }) {
   return (
@@ -98,7 +117,7 @@ function FeaturedRelease({
       <div className="flex items-end justify-between gap-4">
         <div>
           <p className="text-[11px] font-mono font-medium uppercase tracking-wider text-gray-500">
-            Featured release
+            {isProgrammedFeature ? "Featured release" : "Latest release"}
           </p>
           <h2 id="featured-release" className="mt-1 text-2xl font-semibold tracking-tight">
             {release.name}
@@ -126,8 +145,8 @@ function FeaturedRelease({
               </p>
             </div>
             <p className="text-sm leading-relaxed text-fg-muted">
-              A release on an artist-owned Surface contract. Open the release
-              page for the artwork, schedule, mint terms, and permanent contract record.
+              {editorial?.editorialSummary ??
+                "A release on an artist-owned Surface contract. Open the release page for the artwork, schedule, mint terms, and permanent contract record."}
             </p>
           </div>
           <ReleaseFacts release={release} />
