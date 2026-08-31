@@ -294,6 +294,8 @@ export type SurfaceCollectionSummary = {
   supplyCap: bigint
   mintedEver: bigint
   soldThroughMinter: bigint
+  imageUrl: string | null
+  createdAtTime: number
 }
 
 /**
@@ -326,6 +328,8 @@ export async function getSurfaceCollectionSummaries(
       supply_cap: string
       minted_ever: string
       sold_through_minter: string
+      image_url: string | null
+      created_at_time: string
     }
 
     const rows = (await db.unsafe(
@@ -345,7 +349,9 @@ export async function getSurfaceCollectionSummaries(
               s.max_mints::text AS max_mints,
               COALESCE(sc.supply_cap, 0)::text AS supply_cap,
               COALESCE(mt.minted_ever, 0)::text AS minted_ever,
-              COALESCE(st.sold_through_minter, 0)::text AS sold_through_minter
+              COALESCE(st.sold_through_minter, 0)::text AS sold_through_minter,
+              tm.image_url,
+              c.created_at_time::text AS created_at_time
          FROM ${schema}.collections c
          LEFT JOIN ${schema}.minter_sale_configs s
            ON s.collection = c.collection
@@ -354,6 +360,16 @@ export async function getSurfaceCollectionSummaries(
            ON sc.collection = c.collection
          LEFT JOIN mint_totals mt ON mt.collection = c.collection
          LEFT JOIN sale_totals st ON st.minter = s.minter
+         LEFT JOIN LATERAL (
+           SELECT ct.token_id
+             FROM ${schema}.collection_tokens ct
+            WHERE ct.collection = c.collection AND ct.burned = false
+            ORDER BY ct.updated_at_time DESC, ct.token_id DESC
+            LIMIT 1
+         ) latest_token ON true
+         LEFT JOIN token_metadata tm
+           ON tm.contract = lower(c.collection)
+          AND tm.token_id = latest_token.token_id::text
         ORDER BY c.created_at_block DESC
         LIMIT $1`,
       [limit],
@@ -373,6 +389,8 @@ export async function getSurfaceCollectionSummaries(
       supplyCap: BigInt(row.supply_cap),
       mintedEver: BigInt(row.minted_ever),
       soldThroughMinter: BigInt(row.sold_through_minter),
+      imageUrl: row.image_url,
+      createdAtTime: Number(row.created_at_time),
     }))
   }, 4_000)
 }

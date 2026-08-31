@@ -72,8 +72,9 @@ export function MobileMenu() {
             </p>
             <div role="menu" aria-label="Explore">
               {[
-                ["Collections", "/collections"],
+                ["Releases", "/collections"],
                 ["Auctions", "/auctions"],
+                ["Activity", "/activity"],
                 ["Catalog", "/catalog"],
               ].map(([label, href]) => (
                 <Link

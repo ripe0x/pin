@@ -77,7 +77,7 @@ export async function AvailableNow() {
 
       <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs font-mono">
         <Link href="/collections" className="underline underline-offset-4 hover:text-gray-600">
-          All collections
+          All releases
         </Link>
         <Link href="/auctions" className="underline underline-offset-4 hover:text-gray-600">
           All auctions

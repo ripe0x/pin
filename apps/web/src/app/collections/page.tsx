@@ -16,11 +16,13 @@ import {
   type Collection,
 } from "@/lib/collection"
 import { CollectionStatusChip } from "@/components/collections/CollectionStatusChip"
+import { AvailableArtwork } from "@/components/home/landing-v2/AvailableArtwork"
+import { readEnsIdentities } from "@/lib/ens-identity-store"
 
 export const metadata: Metadata = {
-  title: "Collections",
+  title: "Releases",
   description:
-    "Release onchain art as sovereign collections you own. Every token keeps its own identity. Mainnet only. Honest pricing.",
+    "Discover artist-owned releases on PND, then browse the complete permissionless Surface record.",
 }
 
 // The mainnet list must validate the live indexer binding at request time.
@@ -99,23 +101,20 @@ export default async function CollectionsHome() {
   const nowSec = Math.floor(Date.now() / 1000)
   const groups = groupByLifecycle(recent, nowSec)
   const showGroupLabels = groups.length > 1
+  const identities = await readEnsIdentities(recent.map((item) => item.owner))
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-10 md:py-16 space-y-12">
+    <div className="mx-auto max-w-6xl px-6 py-10 md:py-16 space-y-12">
       <header className="space-y-5">
-        <h1 className="text-2xl md:text-3xl font-medium tracking-tight">Collections</h1>
-        <p className="text-sm text-fg-muted leading-relaxed max-w-xl">
-          Release onchain art as sovereign collections you own outright. Shared
-          artwork and shared mint conditions, but every token keeps its own
-          identity, so it can carry provenance now and point somewhere later.
-          Mainnet only. The price you set is the price collectors pay.
+        <p className="text-[11px] font-mono font-medium uppercase tracking-wider text-gray-500">
+          Artist-owned releases
         </p>
-        <ul className="flex flex-wrap gap-x-5 gap-y-1 pt-2 text-[10px] font-mono uppercase tracking-wider text-gray-400">
-          <li>Artist owned contracts</li>
-          <li>Per-token identity</li>
-          <li>Attribution roster</li>
-          <li>Self hostable</li>
-        </ul>
+        <h1 className="text-3xl md:text-5xl font-semibold tracking-tight">Releases</h1>
+        <p className="max-w-2xl text-base text-fg-muted leading-relaxed">
+          Art published through Surface contracts owned and operated by artists.
+          Browse what is open, what is coming next, and the permanent record of
+          releases created with PND.
+        </p>
       </header>
 
       {factory === null ? (
@@ -132,15 +131,15 @@ export default async function CollectionsHome() {
           </p>
         </section>
       ) : groups.length > 0 ? (
-        <section className="space-y-8">
+        <section className="space-y-12">
           {groups.map((g) => (
             <div key={g.key} className="space-y-4">
-              {showGroupLabels && (
-                <h2 className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+              {(showGroupLabels || groups.length === 1) && (
+                <h2 className="text-xl font-semibold tracking-tight">
                   {g.label}
                 </h2>
               )}
-              <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <ul className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
                 {g.items.map((c) => {
                   const status = collectionStatus(c, nowSec)
                   const soldOut =
@@ -158,30 +157,52 @@ export default async function CollectionsHome() {
                     c.supplyCap > 0n
                       ? `${Number(c.mintedEver)} / ${Number(c.supplyCap)} minted`
                       : `${Number(c.mintedEver)} minted · open`
+                  const identity = identities.get(c.owner.toLowerCase())
+                  const artist = identity?.ensName ?? shortAddress(c.owner as `0x${string}`)
+                  const date = c.mintStart && c.mintStart > 0
+                    ? new Date(c.mintStart * 1000)
+                    : new Date(c.createdAtTime * 1000)
                   return (
                     <li key={c.collection}>
                       <Link
                         href={`/collections/${c.collection}`}
-                        className="block rounded-lg border border-gray-200 bg-surface p-4 hover:border-gray-300 transition-colors"
+                        className="group block h-full overflow-hidden rounded-md border border-gray-200 bg-surface hover:border-gray-400 transition-colors"
                       >
-                        <p className="text-sm font-medium tracking-tight truncate">{c.name}</p>
-                        <p className="mt-1 text-[10px] font-mono uppercase tracking-wider text-gray-400">
-                          {c.symbol} · {shortAddress(c.collection as `0x${string}`)}
-                        </p>
-                        <div className="mt-2">
-                          <CollectionStatusChip
-                            status={status}
-                            soldOut={soldOut}
-                            opensInSec={
-                              status === SurfaceStatus.Scheduled
-                                ? (c.mintStart ?? 0) - nowSec
-                                : null
-                            }
-                          />
+                        <div className="aspect-[4/3] overflow-hidden bg-gray-100">
+                          <AvailableArtwork src={c.imageUrl} alt={c.name} />
                         </div>
-                        <p className="mt-2 text-[10px] font-mono text-gray-500 tabular-nums">
-                          {priceLabel} · {mintedLabel}
-                        </p>
+                        <div className="space-y-4 p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <CollectionStatusChip
+                              status={status}
+                              soldOut={soldOut}
+                              opensInSec={
+                                status === SurfaceStatus.Scheduled
+                                  ? (c.mintStart ?? 0) - nowSec
+                                  : null
+                              }
+                            />
+                            <time
+                              dateTime={date.toISOString()}
+                              className="text-[10px] font-mono text-gray-500"
+                            >
+                              {date.toLocaleDateString("en-US", {
+                                month: "short",
+                                day: "numeric",
+                                year: "numeric",
+                                timeZone: "UTC",
+                              })}
+                            </time>
+                          </div>
+                          <div>
+                            <h3 className="truncate text-base font-medium tracking-tight">{c.name}</h3>
+                            <p className="mt-1 truncate text-xs font-mono text-gray-500">by {artist}</p>
+                          </div>
+                          <div className="flex items-end justify-between gap-3 border-t border-gray-200 pt-3 text-[11px] font-mono text-gray-500">
+                            <span>{priceLabel}</span>
+                            <span className="text-right">{mintedLabel}</span>
+                          </div>
+                        </div>
                       </Link>
                     </li>
                   )
@@ -197,6 +218,16 @@ export default async function CollectionsHome() {
           </p>
         </section>
       )}
+
+      <section className="border-t border-gray-200 pt-8">
+        <h2 className="text-sm font-medium">The complete Surface record</h2>
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-fg-muted">
+          This directory includes every collection observed from the Surface
+          factory. Editorial presentation will be clearly marked and will never
+          replace this permissionless record. Contract state determines the
+          availability labels shown above.
+        </p>
+      </section>
     </div>
   )
 }
@@ -231,5 +262,7 @@ function collectionToSummary(collection: Collection): SurfaceCollectionSummary {
     supplyCap: collection.cfg.supplyCap,
     mintedEver: collection.minted,
     soldThroughMinter: collection.minted,
+    imageUrl: null,
+    createdAtTime: 0,
   }
 }
