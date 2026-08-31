@@ -56,6 +56,7 @@ function makeClient(): ReturnType<typeof postgres> | null {
     // and can pin a serverless invocation until Netlify's 60s ceiling.
     connect_timeout: 3,
     connection: {
+      application_name: IS_SERVERLESS ? "pnd-web-netlify" : "pnd-web",
       statement_timeout: 8000,
     },
     // Prepared statements would be a net win for a long-running process,
