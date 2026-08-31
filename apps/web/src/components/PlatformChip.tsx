@@ -5,10 +5,8 @@
  * on a card. Visible only when the god-mode "platformChips" debug flag
  * is on; everyone else gets a no-op.
  *
- * Lives as a client component so it can read localStorage without
- * forcing its parent to be one — drop it inside server-rendered cards
- * (HomeSquare's `WorkArtistCard`, the artist gallery card) without
- * any further plumbing.
+ * Lives as a client component so it can read localStorage without forcing
+ * its parent card to become a client component.
  */
 
 import { useDebugFlag } from "@/lib/useGodMode"

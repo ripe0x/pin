@@ -104,7 +104,7 @@ test("runs of 3+ same-key mints collapse; below threshold stays singles", () => 
   )
 })
 
-test("an interleaved non-mint event splits the run", () => {
+test("interleaved activity does not split a same-key mint bucket", () => {
   const events = [
     mint("a", T0 + 40),
     mint("b", T0 + 30),
@@ -113,11 +113,15 @@ test("an interleaved non-mint event splits the run", () => {
     mint("d", T0),
   ]
   const items = groupFeedEvents(events)
-  // 2 mints + bid + 2 mints → all singles (each fragment is below 3)
   assert.deepEqual(
     items.map((i) => i.type),
-    ["event", "event", "event", "event", "event"],
+    ["run", "event"],
   )
+  assert.deepEqual(
+    items[0].type === "run" ? items[0].events.map((event) => event.id) : [],
+    ["a", "b", "c", "d"],
+  )
+  assert.equal(items[1].type === "event" ? items[1].event.id : null, "x")
 })
 
 test("different collections never group; key includes the artist", () => {

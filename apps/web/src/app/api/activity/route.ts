@@ -18,11 +18,10 @@ import {
  * (the last event's `id` for keyset tiebreak), `limit` (1–100, default
  * 50). Without `before`/`beforeId` returns the first page.
  *
- * The endpoint resolves token metadata + artist identity server-side
- * before responding so the client renders without follow-up requests.
- * Both reads are point-lookups in steady state (token_metadata is
- * pre-warmed by `worker warm-metadata task`, ENS/EFP is pgCache + EFP HTTPS
- * with 24h TTL) — no per-request RPC fan-out.
+ * The endpoint reads prewarmed token metadata, media delivery, and identity
+ * rows from Postgres before responding. Missing enrichment stays missing;
+ * the worker catches up asynchronously and this request never fans out to
+ * RPC, ENS services, tokenURI, or media gateways.
  *
  * Caching: 30s revalidate keyed on `(limit, cursor)`. Matches the home
  * page's first-page cache window so the SSR'd page and any client-side

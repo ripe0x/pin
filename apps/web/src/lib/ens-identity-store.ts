@@ -82,6 +82,44 @@ export async function readEnsIdentity(
   }
 }
 
+/**
+ * Batch form used by browse surfaces. Missing addresses deliberately stay
+ * missing: public page rendering must not turn a cache miss into ENS HTTP or
+ * RPC fan-out. The worker materializes those identities asynchronously.
+ */
+export async function readEnsIdentities(
+  addresses: readonly string[],
+): Promise<Map<string, StoredEnsIdentity>> {
+  if (!sql || addresses.length === 0) return new Map()
+  const unique = Array.from(new Set(addresses.map((address) => address.toLowerCase())))
+  try {
+    const rows = await sql<
+      Array<{
+        address: string
+        ens_name: string | null
+        avatar_url: string | null
+        resolved_at: Date
+      }>
+    >`
+      SELECT address, ens_name, avatar_url, resolved_at
+      FROM ens_identities
+      WHERE address = ANY(${unique}::text[])
+    `
+    return new Map(
+      rows.map((row) => [
+        row.address.toLowerCase(),
+        {
+          ensName: row.ens_name,
+          avatarUrl: row.avatar_url,
+          resolvedAt: row.resolved_at,
+        },
+      ]),
+    )
+  } catch {
+    return new Map()
+  }
+}
+
 export type WriteEnsIdentityInput = {
   ensName: string | null
   avatarUrl: string | null

@@ -1,6 +1,7 @@
 /**
- * Resolve ENS reverse + avatar for known artists + auction
- * counterparties that don't yet have an `ens_identities` row.
+ * Resolve ENS reverse + avatar for known artists + feed counterparties that
+ * don't yet have an `ens_identities` row. Public rendering never resolves a
+ * miss synchronously; this bounded task owns that enrichment.
  *
  * Cheap per-address (one RPC call). Bounded by known_artists count +
  * winner/buyer counts (rough order: hundreds to low thousands of total
@@ -22,7 +23,10 @@ export async function warmEns(): Promise<TaskResult> {
     `WITH all_addresses AS (
       SELECT lower(address) AS address FROM known_artists
       UNION SELECT lower(winner) FROM ${INDEXER_SCHEMA}.pnd_auctions WHERE winner IS NOT NULL
+      UNION SELECT lower(bidder) FROM ${INDEXER_SCHEMA}.pnd_bids WHERE bidder IS NOT NULL
       UNION SELECT lower(buyer)  FROM ${INDEXER_SCHEMA}.fnd_sales   WHERE buyer  IS NOT NULL
+      UNION SELECT lower(bidder) FROM ${INDEXER_SCHEMA}.fnd_bids WHERE bidder IS NOT NULL
+      UNION SELECT lower(to_addr) FROM token_1155_mints WHERE to_addr IS NOT NULL
     )
     SELECT a.address
     FROM all_addresses a

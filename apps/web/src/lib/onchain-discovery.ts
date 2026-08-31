@@ -63,7 +63,7 @@ export async function filterOutBurnedRefs(
 
 /**
  * Enriched token shape consumed by `<PreserveGrid>`, `<MoreFromContract>`,
- * `<WorkArtistCard>`. Preserves the v1 nested-metadata shape so components
+ * gallery cards. Preserves the v1 nested-metadata shape so components
  * don't need code changes — only the data wiring underneath changed.
  */
 export type DiscoveredToken = {

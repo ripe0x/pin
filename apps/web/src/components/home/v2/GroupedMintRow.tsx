@@ -105,7 +105,7 @@ export function GroupedMintRow({ group }: Props) {
                   href={groupHref}
                   className="font-medium hover:underline underline-offset-2"
                 >
-                  {group.mintCount} mints
+                  {group.tokenCount} mints
                 </Link>
                 <span className="text-gray-500"> of </span>
                 <Link

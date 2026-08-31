@@ -26,7 +26,7 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ contract: string; tokenId: string }> },
 ) {
-  // This route is consumed by client-side JS (LazyAuctionCard) — not by
+  // This route is consumed by client-side token previews, not by
   // OG-image scrapers, which read the meta tag URL directly. Bots that
   // hit this JSON endpoint are scraping for an NFT database; they don't
   // need to be served. Skip the (potentially RPC-firing) cache miss

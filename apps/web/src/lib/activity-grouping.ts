@@ -3,12 +3,12 @@
  *
  * A successful generative drop lands many near-identical mint events in a
  * short window; ungrouped they fill whole pages and bury everything else.
- * Runs of mints are collapsed by purely mechanical criteria — same
- * contract, same artist, close in time — applied identically to every
- * collection. No ranking, no curation: the feed stays strictly
- * chronological (a group sorts at its newest member) and any non-mint
- * event that lands mid-drop splits the run rather than being reordered
- * around it.
+ * Mints are collapsed by purely mechanical criteria — same contract,
+ * same artist, close in time — applied identically to every collection.
+ * Bucketing happens across the complete fetched page, so an unrelated bid
+ * or listing cannot split a busy drop into dozens of duplicate rows. The
+ * group occupies its newest member's position; unrelated events keep their
+ * relative order.
  *
  * Client-safe: pure functions over plain shapes, shared by the server
  * (grouping a raw page before enrichment, which bounds enrichment to
@@ -28,8 +28,8 @@ import type {
  * individual human acts; three or more within the gap read as a drop. */
 export const MINT_GROUP_MIN_RUN = 3
 
-/** Maximum seconds between ADJACENT mints of the same run. A slow drip
- * (gaps above this) stays individual rows even from one collection. */
+/** Maximum seconds between adjacent same-key mints, ignoring unrelated
+ * interleaved events. A slow drip stays as individual rows. */
 export const MINT_GROUP_MAX_GAP_SECONDS = 1800
 
 /** The fields grouping decisions read. Satisfied by both the raw
@@ -71,50 +71,54 @@ export function tokenCountOf(events: GroupableEvent[]): number {
 }
 
 /**
- * Collapse consecutive mint runs in a newest-first event page. Only
- * STRICTLY consecutive events form a run — an interleaved bid or deploy
- * ends it, which keeps the feed honest about ordering. Runs below
+ * Collapse mint buckets in a newest-first event page. Same-key mints may
+ * have unrelated events between them; those events keep their order while
+ * the mint group is emitted where its newest member appeared. Runs below
  * MINT_GROUP_MIN_RUN events are emitted as singles.
  */
 export function groupFeedEvents<E extends GroupableEvent>(
   events: E[],
 ): FeedItem<E>[] {
-  const items: FeedItem<E>[] = []
-  let run: E[] = []
-  let runKey: string | null = null
+  type Bucket = { key: string; events: E[] }
+  const buckets: Bucket[] = []
+  const activeByKey = new Map<string, Bucket>()
+  const bucketByEvent = new Map<E, Bucket>()
 
-  const flush = () => {
-    if (runKey !== null && run.length >= MINT_GROUP_MIN_RUN) {
-      items.push({ type: "run", key: runKey, events: run })
-    } else {
-      for (const e of run) items.push({ type: "event", event: e })
-    }
-    run = []
-    runKey = null
-  }
-
+  // Build same-key time clusters across the whole page. Since input is
+  // newest-first, the last member is always the oldest member seen so far.
   for (const e of events) {
     const key = mintGroupKey(e)
+    if (key === null) continue
+    const active = activeByKey.get(key)
     if (
-      key !== null &&
-      key === runKey &&
-      run.length > 0 &&
-      // newest-first: the previous member is newer than this one
-      run[run.length - 1].blockTime - e.blockTime <=
+      active &&
+      active.events[active.events.length - 1].blockTime - e.blockTime <=
         MINT_GROUP_MAX_GAP_SECONDS
     ) {
-      run.push(e)
-      continue
-    }
-    flush()
-    if (key !== null) {
-      runKey = key
-      run = [e]
+      active.events.push(e)
+      bucketByEvent.set(e, active)
     } else {
-      items.push({ type: "event", event: e })
+      const bucket = { key, events: [e] }
+      buckets.push(bucket)
+      activeByKey.set(key, bucket)
+      bucketByEvent.set(e, bucket)
     }
   }
-  flush()
+
+  const grouped = new Set(
+    buckets.filter((bucket) => bucket.events.length >= MINT_GROUP_MIN_RUN),
+  )
+  const emitted = new Set<Bucket>()
+  const items: FeedItem<E>[] = []
+  for (const event of events) {
+    const bucket = bucketByEvent.get(event)
+    if (!bucket || !grouped.has(bucket)) {
+      items.push({ type: "event", event })
+    } else if (!emitted.has(bucket)) {
+      emitted.add(bucket)
+      items.push({ type: "run", key: bucket.key, events: bucket.events })
+    }
+  }
   return items
 }
 

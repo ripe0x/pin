@@ -934,6 +934,9 @@ export type ActivityEvent = {
    * range per call, so one event can carry quantity > 1; every other
    * source is one token per event (`null`, treated as 1). */
   quantity: number | null
+  /** Stable auction identity for collapsing repeated bids. Null for
+   * non-auction events. */
+  auctionKey: string | null
 }
 
 /**
@@ -993,6 +996,7 @@ export async function getActivityFeed(
       collection_name: string | null
       tx_hash: string | null
       quantity: string | null
+      auction_key: string | null
     }
 
     const PER_SUBQUERY_LIMIT = 100
@@ -1005,22 +1009,15 @@ export async function getActivityFeed(
     const surfaceLive =
       surfaceFactory() !== null && (await surfaceTablesExist(db, schema))
 
-    // Drop quick list/cancel pairs (listed then cancelled within 15
-    // minutes: test mints, mistaken listings) from the "listed" rows so
-    // the feed doesn't surface a half-second-lived listing. Cancellation
-    // itself is not a feed event — a delist is not a sovereign action
-    // worth a headline, and a bulk delist floods the feed — so there is
-    // no cancelled-listing branch.
-    const SHORT_LIFE_SECONDS = 900
-    const PND_NOT_QUICK_CANCEL = `NOT (status = 'cancelled' AND settled_at_time IS NOT NULL AND settled_at_time - created_at_time < ${SHORT_LIFE_SECONDS})`
-    const FND_NOT_QUICK_CANCEL = `NOT (status = 'canceled' AND finalized_at_time IS NOT NULL AND finalized_at_time - created_at_time < ${SHORT_LIFE_SECONDS})`
+    // Cancellation is operational cleanup, not collector-facing activity.
+    // Suppress every listing later cancelled rather than leaving old opens in
+    // the feed or allowing a bulk delist to dominate it.
+    const PND_VISIBLE_OPEN = `status <> 'cancelled'`
+    const FND_VISIBLE_OPEN = `status <> 'canceled'`
 
     // Hide "minted" rows whose tokenURI is broken. Three states, keyed on
     // the LEFT-JOINed token_metadata row (alias `m`):
-    //   - no row yet            → SHOW. Resolution hasn't been attempted;
-    //     rendering the row is what triggers the enrichment attempt +
-    //     write-through, so hiding it would leave the token unresolved
-    //     forever (chicken-and-egg).
+    //   - no row yet            → SHOW without media while the worker warms it.
     //   - row with any content  → SHOW.
     //   - all-null row + mint older than the grace window → HIDE. The
     //     fetch was attempted and failed; past the window that's a broken
@@ -1070,7 +1067,8 @@ export async function getActivityFeed(
             NULL::text AS collection,
             NULL::text AS collection_name,
             created_tx_hash::text AS tx_hash,
-            NULL::text AS quantity
+            NULL::text AS quantity,
+            NULL::text AS auction_key
           FROM ${schema}.pnd_houses
           ${where(null, "created_at_time")}
           ORDER BY created_at_time DESC
@@ -1093,8 +1091,10 @@ export async function getActivityFeed(
             collection::text,
             name,
             NULL::text,
+            NULL::text,
             NULL::text
           FROM ${schema}.fnd_collections
+          JOIN known_artists ka ON ka.address = lower(creator)
           ${where(null, "created_at_time")}
           ORDER BY created_at_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})
@@ -1116,9 +1116,10 @@ export async function getActivityFeed(
             NULL::text,
             NULL::text,
             created_tx_hash::text,
-            NULL::text
+            NULL::text,
+            ('pnd:' || house || ':' || id)::text
           FROM ${schema}.pnd_auctions
-          ${where(PND_NOT_QUICK_CANCEL, "created_at_time")}
+          ${where(PND_VISIBLE_OPEN, "created_at_time")}
           ORDER BY created_at_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})
 
@@ -1139,9 +1140,11 @@ export async function getActivityFeed(
             NULL::text,
             NULL::text,
             NULL::text,
-            NULL::text
+            NULL::text,
+            ('fnd:' || auction_id)::text
           FROM ${schema}.fnd_auctions
-          ${where(FND_NOT_QUICK_CANCEL, "created_at_time")}
+          JOIN known_artists ka ON ka.address = lower(seller)
+          ${where(FND_VISIBLE_OPEN, "created_at_time")}
           ORDER BY created_at_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})
 
@@ -1162,7 +1165,8 @@ export async function getActivityFeed(
             NULL::text,
             NULL::text,
             lifecycle_tx_hash::text,
-            NULL::text
+            NULL::text,
+            ('pnd:' || house || ':' || id)::text
           FROM ${schema}.pnd_auctions
           ${where("status = 'settled' AND settled_at_time IS NOT NULL", "settled_at_time")}
           ORDER BY settled_at_time DESC
@@ -1187,8 +1191,10 @@ export async function getActivityFeed(
             NULL::text,
             NULL::text,
             tx_hash::text,
+            NULL::text,
             NULL::text
           FROM ${schema}.fnd_sales
+          JOIN known_artists ka ON ka.address = lower(seller)
           ${where(null, "block_time")}
           ORDER BY block_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})
@@ -1210,8 +1216,10 @@ export async function getActivityFeed(
             NULL::text,
             NULL::text,
             NULL::text,
+            NULL::text,
             NULL::text
           FROM ${schema}.fnd_artist_tokens t
+          JOIN known_artists ka ON ka.address = lower(t.creator)
           LEFT JOIN token_metadata m
             ON m.contract = lower(t.contract) AND m.token_id = t.token_id::text
           ${where(mintNotBroken("t.block_time"), "t.block_time")}
@@ -1237,6 +1245,7 @@ export async function getActivityFeed(
             fm.to_addr::text,
             at.contract::text,
             at.token_id::text,
+            NULL::text,
             NULL::text,
             NULL::text,
             NULL::text,
@@ -1279,7 +1288,8 @@ export async function getActivityFeed(
             NULL::text,
             NULL::text,
             pb.tx_hash::text,
-            NULL::text
+            NULL::text,
+            ('pnd:' || pa.house || ':' || pa.id)::text
           FROM ${schema}.pnd_bids pb
           JOIN ${schema}.pnd_auctions pa ON pa.id = pb.auction_id
           ${where(null, "pb.block_time")}
@@ -1289,7 +1299,18 @@ export async function getActivityFeed(
          UNION ALL
 
          (SELECT
-            (CASE WHEN sub.rn = 1 THEN 'auction.firstBid'
+            (CASE WHEN NOT EXISTS (
+                    SELECT 1
+                    FROM ${schema}.fnd_bids earlier
+                    WHERE earlier.auction_id = sub.auction_id
+                      AND (
+                        earlier.block_number < sub.block_number
+                        OR (
+                          earlier.block_number = sub.block_number
+                          AND earlier.id < sub.id
+                        )
+                      )
+                  ) THEN 'auction.firstBid'
                   ELSE 'auction.bid' END)::text,
             ('fnd-bid:' || sub.id)::text,
             sub.block_time::text,
@@ -1304,16 +1325,18 @@ export async function getActivityFeed(
             NULL::text,
             NULL::text,
             sub.tx_hash::text,
-            NULL::text
+            NULL::text,
+            ('fnd:' || sub.auction_id)::text
           FROM (
-            SELECT id, auction_id, bidder, amount, end_time, block_time, tx_hash,
-                   ROW_NUMBER() OVER (
-                     PARTITION BY auction_id ORDER BY block_number
-                   ) AS rn
+            SELECT id, auction_id, bidder, amount, end_time, block_number,
+                   block_time, tx_hash
             FROM ${schema}.fnd_bids
+            ${where(null, "block_time")}
+            ORDER BY block_time DESC
+            LIMIT ${PER_SUBQUERY_LIMIT}
           ) sub
           JOIN ${schema}.fnd_auctions fa ON fa.auction_id = sub.auction_id
-          ${where(null, "sub.block_time")}
+          JOIN known_artists ka ON ka.address = lower(fa.seller)
           ORDER BY sub.block_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})
 ${
@@ -1338,6 +1361,7 @@ ${
             collection::text,
             name,
             created_tx_hash::text,
+            NULL::text,
             NULL::text
           FROM ${schema}.collections
           ${where(null, "created_at_time")}
@@ -1369,7 +1393,8 @@ ${
             cm.collection::text,
             c.name,
             cm.tx_hash::text,
-            cm.quantity::text
+            cm.quantity::text,
+            NULL::text
           FROM ${schema}.collection_mints cm
           JOIN ${schema}.collections c ON c.collection = cm.collection
           LEFT JOIN LATERAL (
@@ -1387,10 +1412,26 @@ ${
 }
        )
        SELECT * FROM events
+       WHERE (
+         token_contract IS NULL OR token_id IS NULL OR (
+           NOT EXISTS (
+             SELECT 1 FROM token_metadata burned_meta
+             WHERE burned_meta.contract = lower(events.token_contract)
+               AND burned_meta.token_id = events.token_id
+               AND burned_meta.burned
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM token_owners burned_owner
+             WHERE burned_owner.contract = lower(events.token_contract)
+               AND burned_owner.token_id = events.token_id
+               AND burned_owner.owner = '0x0000000000000000000000000000000000000000'
+           )
+         )
+       )
        ${
          cursor
-           ? `WHERE (block_time::numeric < $2::numeric
-                     OR (block_time::numeric = $2::numeric AND id < $3))`
+           ? `AND (block_time::numeric < $2::numeric
+                   OR (block_time::numeric = $2::numeric AND id < $3))`
            : ""
        }
        ORDER BY block_time::numeric DESC, id DESC
@@ -1414,6 +1455,7 @@ ${
       collectionName: r.collection_name,
       txHash: r.tx_hash,
       quantity: r.quantity === null ? null : Number(r.quantity),
+      auctionKey: r.auction_key,
     }))
   }, timeoutMs)
 }
@@ -1428,30 +1470,57 @@ ${
  * time. Used to give Surface mint rows a per-token thumbnail once the
  * worker has warmed the token's small onchain `image` (an SVG data URI).
  */
-export async function getTokenImagesFromMetadata(
+export type ActivityTokenMetadata = {
+  name: string | null
+  imageUrl: string | null
+  animationUrl: string | null
+}
+
+/**
+ * Batch metadata read for activity pages. This is intentionally a cache-only
+ * contract: a miss renders without token media while warm-metadata catches up.
+ * It never invokes tokenURI or an external gateway from the request path.
+ */
+export async function getActivityTokenMetadata(
   pairs: Array<{ contract: string; tokenId: string }>,
-): Promise<Map<string, string>> {
+): Promise<Map<string, ActivityTokenMetadata>> {
   if (INDEXER_DISABLED || !sql || pairs.length === 0) return new Map()
   const contracts = pairs.map((p) => p.contract.toLowerCase())
   const tokenIds = pairs.map((p) => p.tokenId)
   const rows = (await sql`
-    SELECT contract, token_id, image_url
+    SELECT contract, token_id, name, image_url, animation_url
       FROM token_metadata
      WHERE (contract, token_id) IN (
        SELECT * FROM unnest(${contracts}::text[], ${tokenIds}::text[])
      )
-       AND image_url IS NOT NULL
        AND COALESCE(burned, false) = false
   `.catch(() => [])) as Array<{
     contract: string
     token_id: string
-    image_url: string
+    name: string | null
+    image_url: string | null
+    animation_url: string | null
   }>
-  const map = new Map<string, string>()
+  const map = new Map<string, ActivityTokenMetadata>()
   for (const r of rows) {
-    map.set(`${r.contract.toLowerCase()}:${r.token_id}`, r.image_url)
+    map.set(`${r.contract.toLowerCase()}:${r.token_id}`, {
+      name: r.name,
+      imageUrl: r.image_url,
+      animationUrl: r.animation_url,
+    })
   }
   return map
+}
+
+export async function getTokenImagesFromMetadata(
+  pairs: Array<{ contract: string; tokenId: string }>,
+): Promise<Map<string, string>> {
+  const metadata = await getActivityTokenMetadata(pairs)
+  return new Map(
+    Array.from(metadata.entries()).flatMap(([key, value]) =>
+      value.imageUrl ? [[key, value.imageUrl] as const] : [],
+    ),
+  )
 }
 
 // ─── Dependency-check helpers ────────────────────────────────────────────

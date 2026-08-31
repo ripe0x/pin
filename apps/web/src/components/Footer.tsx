@@ -1,11 +1,7 @@
 /**
  * Global site footer. Renders on every route.
  *
- * Top row carries the tagline + About / Sites / GitHub / Created-by
- * links. These previously lived inline on the home page (`app/page.tsx`)
- * and the archived index-prev landing; promoting them here gives every
- * route the same chrome and removes the link drift between the two
- * homes.
+ * Top row carries the tagline + About / Sites / GitHub / Created-by links.
  *
  * Below that, a small "Thank you. Supported by:" block lists every
  * unique address that has ever minted from the FundingWorksRipe
@@ -17,7 +13,7 @@
  *
  * Width: the outer <footer> is full-bleed so the top border spans the
  * page on wide token-detail routes (`max-w-[2000px]`) as well as the
- * narrower home (`max-w-3xl`). Content is centered inside an inner
+ * narrower content routes. Content is centered inside an inner
  * wrapper at `max-w-7xl` (1280px) for readable line lengths.
  */
 import { Suspense } from "react"
