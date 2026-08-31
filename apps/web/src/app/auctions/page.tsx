@@ -62,13 +62,6 @@ export default async function AuctionsGuidePage() {
               const hasBid = auction.firstBidTime > 0
               const price = hasBid ? auction.amount : auction.reservePrice
               const previewUrl = auction.previewUrl ?? auction.imageUrl
-              const previewState = previewUrl
-                ? null
-                : auction.previewStatus === "pending"
-                  ? "Preview is being prepared"
-                  : auction.previewStatus === "failed"
-                    ? "Preview unavailable, original is intact"
-                    : "Preview is not available yet"
               const status =
                 auction.endTime === 0
                   ? "Waiting for first bid"
@@ -89,17 +82,11 @@ export default async function AuctionsGuidePage() {
                   >
                     <div className="flex gap-4">
                       <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden bg-gray-100">
-                        {previewUrl ? (
-                          <AvailableArtwork
-                            src={previewUrl}
-                            alt={auction.title ?? `Token #${auction.tokenId}`}
-                            mediaKind={auction.previewUrl ? "image" : auction.mediaKind}
-                          />
-                        ) : (
-                          <span className="px-2 text-center text-[9px] font-mono leading-relaxed text-gray-400">
-                            {previewState}
-                          </span>
-                        )}
+                        <AvailableArtwork
+                          src={previewUrl}
+                          alt={auction.title ?? `Token #${auction.tokenId}`}
+                          mediaKind={auction.previewUrl ? "image" : auction.mediaKind}
+                        />
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium">

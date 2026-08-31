@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { useThumbnailMedia } from "@/lib/use-thumbnail-media"
 
 type Props = {
@@ -8,49 +9,62 @@ type Props = {
   mediaKind?: string | null
 }
 
-/**
- * Availability cards must never turn failed delivery media into an empty gray
- * billboard. Exhaust the normal optimized/raw/gateway cascade, then label the
- * missing preview explicitly so an identity graphic is never mistaken for art.
- */
+/** Exhaust every media fallback without flashing native broken-image chrome. */
 export function AvailableArtwork({ src, alt, mediaKind }: Props) {
   const media = useThumbnailMedia(src ?? "", 720, mediaKind)
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    setLoaded(false)
+  }, [src, media.kind, media.imgSrc, media.videoSrc])
 
   if (!src || media.kind === "failed") {
     return (
       <div
         role="img"
         aria-label={`${alt} preview unavailable`}
-        className="flex h-full w-full items-center justify-center px-4 text-center text-[10px] font-mono leading-relaxed text-fg-muted"
-      >
-        Artwork preview unavailable
-      </div>
-    )
-  }
-
-  if (media.kind === "video") {
-    return (
-      <video
-        src={media.videoSrc}
-        aria-label={alt}
-        muted
-        playsInline
-        preload="metadata"
-        onError={media.onVideoError}
-        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.015]"
+        className="h-full w-full bg-gray-100"
       />
     )
   }
 
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      ref={media.imgRef}
-      src={media.imgSrc}
-      alt={alt}
-      loading="lazy"
-      onError={media.onImgError}
-      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.015]"
-    />
+    <div className="relative h-full w-full overflow-hidden bg-gray-100">
+      {media.kind === "video" ? (
+        <video
+          src={media.videoSrc}
+          aria-label={alt}
+          muted
+          playsInline
+          preload="metadata"
+          onError={() => {
+            setLoaded(false)
+            media.onVideoError()
+          }}
+          onLoadedData={() => setLoaded(true)}
+          className={`h-full w-full object-cover transition-[opacity,transform] duration-500 group-hover:scale-[1.015] ${
+            loaded ? "opacity-100" : "opacity-0"
+          }`}
+        />
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          ref={media.imgRef}
+          src={media.imgSrc}
+          alt={alt}
+          loading="lazy"
+          decoding="async"
+          onError={() => {
+            setLoaded(false)
+            media.onImgError()
+          }}
+          onLoad={() => setLoaded(true)}
+          className={`h-full w-full object-cover transition-[opacity,transform] duration-500 group-hover:scale-[1.015] ${
+            loaded ? "opacity-100" : "opacity-0"
+          }`}
+        />
+      )}
+      {!loaded ? <div aria-hidden className="skeleton absolute inset-0" /> : null}
+    </div>
   )
 }

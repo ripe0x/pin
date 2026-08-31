@@ -319,17 +319,16 @@ function GalleryCard({
           />
         ) : null}
         {!showMedia || !loaded ? (
-          <div className="absolute inset-0 flex items-center justify-center px-5 text-center text-[11px] font-mono leading-relaxed text-fg-muted">
-            {explicitState ??
+          <div
+            role="img"
+            aria-label={
+              explicitState ??
               (media.kind === "failed"
-                ? "Preview unavailable, open the work for the original"
-                : "Loading preview…")}
-          </div>
-        ) : null}
-        {delivery?.status === "failed" && delivery.attempts > 0 ? (
-          <span className="absolute bottom-1.5 right-1.5 bg-white/90 px-1.5 py-0.5 text-[9px] font-mono text-fg-subtle">
-            attempt {delivery.attempts}
-          </span>
+                ? `${item.title} preview unavailable`
+                : `${item.title} preview loading`)
+            }
+            className={`absolute inset-0 ${showMedia ? "skeleton" : "bg-gray-100"}`}
+          />
         ) : null}
       </div>
     </TokenCard>
