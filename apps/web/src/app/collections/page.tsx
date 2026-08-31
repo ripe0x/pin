@@ -32,7 +32,7 @@ export const dynamic = "force-dynamic"
 const PAGE_SIZE = 24
 
 type CollectionGroup = {
-  key: "minting" | "upcoming" | "past"
+  key: "minting" | "upcoming" | "past" | "record"
   label: string
   items: SurfaceCollectionSummary[]
 }
@@ -40,7 +40,8 @@ type CollectionGroup = {
 function collectionStatus(
   collection: SurfaceCollectionSummary,
   nowSec: number,
-): SurfaceStatus {
+): SurfaceStatus | null {
+  if (!collection.saleStateAvailable) return null
   if (!collection.primaryMinter || collection.mintStart === null || collection.mintEnd === null) {
     return SurfaceStatus.Closed
   }
@@ -73,12 +74,14 @@ function groupByLifecycle(
     { key: "minting", label: "Minting now", items: [] },
     { key: "upcoming", label: "Upcoming", items: [] },
     { key: "past", label: "Past", items: [] },
+    { key: "record", label: "Release record", items: [] },
   ]
   for (const c of collections) {
     const status = collectionStatus(c, nowSec)
     if (status === SurfaceStatus.Open) groups[0].items.push(c)
     else if (status === SurfaceStatus.Scheduled) groups[1].items.push(c)
-    else groups[2].items.push(c)
+    else if (status === SurfaceStatus.Closed) groups[2].items.push(c)
+    else groups[3].items.push(c)
   }
   return groups.filter((g) => g.items.length > 0)
 }
@@ -159,14 +162,16 @@ export default async function CollectionsHome({
                         c.maxMints > 0n &&
                         c.soldThroughMinter >= c.maxMints))
                   const priceLabel = c.price === null
-                    ? "Not currently for sale"
+                    ? c.saleStateAvailable
+                      ? "Not currently for sale"
+                      : "Sale state unavailable"
                     : hasPriceStrategy((c.priceStrategy ?? ZERO_ADDRESS) as `0x${string}`)
                       ? "Live price"
                       : formatPriceLabel(c.price)
                   const mintedLabel =
                     c.supplyCap > 0n
                       ? `${Number(c.mintedEver)} / ${Number(c.supplyCap)} minted`
-                      : `${Number(c.mintedEver)} minted · open`
+                      : `${Number(c.mintedEver)} minted`
                   const identity = identities.get(c.owner.toLowerCase())
                   const artist = identity?.ensName ?? shortAddress(c.owner as `0x${string}`)
                   const dateSec = c.mintStart && c.mintStart > 0
@@ -184,15 +189,22 @@ export default async function CollectionsHome({
                         </div>
                         <div className="space-y-4 p-4">
                           <div className="flex items-center justify-between gap-3">
-                            <CollectionStatusChip
-                              status={status}
-                              soldOut={soldOut}
-                              opensInSec={
-                                status === SurfaceStatus.Scheduled
-                                  ? (c.mintStart ?? 0) - nowSec
-                                  : null
-                              }
-                            />
+                            {status === null ? (
+                              <span className="inline-flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-gray-500">
+                                <span className="inline-block h-1.5 w-1.5 rounded-full bg-gray-300" />
+                                Release record
+                              </span>
+                            ) : (
+                              <CollectionStatusChip
+                                status={status}
+                                soldOut={soldOut}
+                                opensInSec={
+                                  status === SurfaceStatus.Scheduled
+                                    ? (c.mintStart ?? 0) - nowSec
+                                    : null
+                                }
+                              />
+                            )}
                             {date ? (
                               <time
                                 dateTime={date.toISOString()}

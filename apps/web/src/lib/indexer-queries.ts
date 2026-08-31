@@ -299,6 +299,9 @@ export type SurfaceCollectionSummary = {
   soldThroughMinter: bigint
   imageUrl: string | null
   createdAtTime: number
+  /** Whether the selected indexer schema contains the current sale-state
+   * tables. False means the record is real but availability is unknown. */
+  saleStateAvailable: boolean
 }
 
 /**
@@ -335,6 +338,7 @@ export async function getSurfaceCollectionSummaries(
       sold_through_minter: string
       image_url: string | null
       created_at_time: string
+      sale_state_available: boolean
     }
 
     const hasReleaseState = await surfaceReleaseTablesExist(db, schema)
@@ -355,7 +359,8 @@ export async function getSurfaceCollectionSummaries(
               COALESCE(mt.minted_ever, 0)::text AS minted_ever,
               COALESCE(st.sold_through_minter, 0)::text AS sold_through_minter,
               tm.image_url,
-              c.created_at_time::text AS created_at_time
+              c.created_at_time::text AS created_at_time,
+              true AS sale_state_available
          FROM recent_collections c
          LEFT JOIN ${schema}.minter_sale_configs s
            ON s.collection = c.collection
@@ -398,7 +403,8 @@ export async function getSurfaceCollectionSummaries(
               COALESCE(mt.minted_ever, 0)::text AS minted_ever,
               COALESCE(st.sold_through_minter, 0)::text AS sold_through_minter,
               tm.image_url,
-              c.created_at_time::text AS created_at_time
+              c.created_at_time::text AS created_at_time,
+              false AS sale_state_available
          FROM recent_collections c
          LEFT JOIN LATERAL (
            SELECT COALESCE(SUM(quantity), 0) AS minted_ever
@@ -440,6 +446,7 @@ export async function getSurfaceCollectionSummaries(
       soldThroughMinter: BigInt(row.sold_through_minter),
       imageUrl: row.image_url,
       createdAtTime: Number(row.created_at_time),
+      saleStateAvailable: row.sale_state_available,
     }))
   }, 6_000, "surface collection summaries")
 }

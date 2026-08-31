@@ -89,7 +89,7 @@ function FeaturedRelease({
   now,
 }: {
   release: SurfaceCollectionSummary
-  status: SurfaceStatus
+  status: SurfaceStatus | null
   identity?: StoredEnsIdentity
   now: number
 }) {
@@ -148,7 +148,7 @@ function ReleaseShelf({
   id: string
   eyebrow: string
   title: string
-  items: Array<{ release: SurfaceCollectionSummary; status: SurfaceStatus }>
+  items: Array<{ release: SurfaceCollectionSummary; status: SurfaceStatus | null }>
   identities: Map<string, StoredEnsIdentity>
   now: number
 }) {
@@ -193,7 +193,7 @@ function ReleaseState({
   release,
   now,
 }: {
-  status: SurfaceStatus
+  status: SurfaceStatus | null
   release: SurfaceCollectionSummary
   now: number
 }) {
@@ -202,7 +202,9 @@ function ReleaseState({
       ? "Available now"
       : status === SurfaceStatus.Scheduled
         ? `Opens ${formatRelative((release.mintStart ?? now) - now)}`
-        : "Released"
+        : status === SurfaceStatus.Closed
+          ? "Released"
+          : "Release record"
   const dateSec = release.mintStart && release.mintStart > 0
     ? release.mintStart
     : release.createdAtTime
@@ -231,7 +233,9 @@ function ReleaseFacts({ release }: { release: SurfaceCollectionSummary }) {
     release.priceStrategy !== null &&
     hasPriceStrategy(release.priceStrategy as `0x${string}`)
   const price =
-    release.price === null
+    !release.saleStateAvailable
+      ? "Sale state unavailable"
+      : release.price === null
       ? "Not for sale"
       : dynamicPrice
         ? "Live price"
@@ -250,7 +254,11 @@ function ReleaseFacts({ release }: { release: SurfaceCollectionSummary }) {
   )
 }
 
-function releaseStatus(release: SurfaceCollectionSummary, now: number): SurfaceStatus {
+function releaseStatus(
+  release: SurfaceCollectionSummary,
+  now: number,
+): SurfaceStatus | null {
+  if (!release.saleStateAvailable) return null
   if (!release.primaryMinter || release.mintStart === null || release.mintEnd === null) {
     return SurfaceStatus.Closed
   }
