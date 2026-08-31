@@ -5,6 +5,37 @@ people who reconstructed the architecture from stale docs or a stale
 local env. `ARCHITECTURE.md` is the accurate deep-dive; this is the
 skimmable map + the traps.
 
+## Agent operating protocol
+
+PND has a committed control plane so product decisions, architecture, active
+work, evidence, and operations do not collapse into one stale plan.
+
+Before planning or editing:
+
+1. Run `pnpm agent:context`.
+2. Read `docs/program-state.json` for the active dependency graph and exact
+   next actions.
+3. Read the active program spec named there.
+4. Read only the architecture and subsystem docs relevant to the work packet.
+5. Run `pnpm agent:context -- --online` before touching paths owned by open
+   issues, PRs, or another worktree.
+6. Run `pnpm agent:overlap` before opening or restacking a program PR. It
+   compares the current branch with referenced open PRs and reports exact
+   shared files.
+
+The full operating model is `docs/agent-control-plane.md`. New work should use
+`docs/work-packet-template.md`, and changes to the program graph must pass
+`pnpm agent:check`.
+
+Truth precedence is: deployed contracts and current source for present
+behavior; `AGENTS.md` and `ARCHITECTURE.md` for system boundaries; active
+program specs and accepted decisions for intended behavior; GitHub for live
+coordination; explicitly historical docs for rationale only. Repair conflicts
+instead of silently choosing the convenient source.
+
+Every task must leave durable evidence and an exact next action. Important
+facts may not exist only in chat, a PR description, or one agent's memory.
+
 ## Monorepo layout
 
 ```
@@ -224,6 +255,11 @@ describing graph/path as core fields predate this and are historical.
 
 ## See also
 
+- `docs/README.md` — authoritative documentation map and status classes.
+- `docs/agent-control-plane.md` — planning, work-packet, evidence, integration,
+  and handoff rules.
+- `docs/program-state.json` — machine-readable active program graph.
+- `docs/artist-independence-program.md` — current product and system program.
 - `docs/pnd-surface-prelaunch.md` — the post-deploy → launch runbook:
   ordered checklist (addresses, source verification, discovery indexing,
   launch collection, mint surfaces, pre-announce audit) with a

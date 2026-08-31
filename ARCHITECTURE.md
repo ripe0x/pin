@@ -4,6 +4,30 @@ This doc exists because the single most confusing thing about v2 is that
 **two separate programs both read the blockchain and both write to the
 same Postgres database.** If you remember nothing else, remember that.
 
+This file owns current runtime and data-boundary truth. Product direction and
+delivery dependencies live in `docs/artist-independence-program.md` and
+`docs/program-state.json`. The contribution and evidence loop lives in
+`docs/agent-control-plane.md`.
+
+## Position in the product system
+
+The runtime is the observed-truth layer beneath the portable release and
+experience layers:
+
+```text
+contracts and events
+        ↓
+Ponder + worker + Postgres
+        ↓
+portable release specification + shared release kernel
+        ↓
+PND venue + Studio + artist template + future embeds
+```
+
+The lower layers may serve many interfaces. No upper interface may bypass the
+writer ownership and cost boundaries below merely to obtain fresher or more
+convenient data.
+
 ---
 
 ## The two indexing programs
