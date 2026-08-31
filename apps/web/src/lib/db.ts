@@ -11,8 +11,10 @@ import postgres from "postgres"
  *     OWN pool, and there can be many concurrent instances. A high
  *     per-instance `max` multiplies across the fleet and exhausts
  *     Postgres `max_connections` (we hit "too many clients" this way).
- *     On serverless we keep `max` tiny (3) + a short `idle_timeout`
- *     (20s) so idle instances release connections quickly.
+ *     On serverless we keep `max` tiny (3) + short client- and server-side
+ *     idle timeouts. The server-side timeout is load-bearing: a frozen
+ *     function cannot run postgres.js's cleanup timer, but Postgres can still
+ *     reclaim the idle session.
  *
  *   - Railway (long-running): one process, reused across all requests.
  *     A real pool (max 10) is the right shape.
@@ -58,6 +60,10 @@ function makeClient(): ReturnType<typeof postgres> | null {
     connection: {
       application_name: IS_SERVERLESS ? "pnd-web-netlify" : "pnd-web",
       statement_timeout: 8000,
+      // Netlify freezes warm instances, which can pause postgres.js's
+      // `idle_timeout` callback while the TCP session remains open. Let the
+      // database reclaim those serverless sessions after one idle minute.
+      idle_session_timeout: IS_SERVERLESS ? 60_000 : 0,
     },
     // Prepared statements would be a net win for a long-running process,
     // but postgres.js has subtle TS-ergonomics issues with `prepare: true`
