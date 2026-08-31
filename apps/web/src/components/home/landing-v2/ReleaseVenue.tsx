@@ -253,7 +253,7 @@ function ReleaseFacts({ release }: { release: SurfaceCollectionSummary }) {
     hasPriceStrategy(release.priceStrategy as `0x${string}`)
   const price =
     !release.saleStateAvailable
-      ? "Sale state unavailable"
+      ? null
       : release.price === null
       ? "Not for sale"
       : dynamicPrice
@@ -267,8 +267,8 @@ function ReleaseFacts({ release }: { release: SurfaceCollectionSummary }) {
 
   return (
     <div className="flex items-end justify-between gap-4 border-t border-gray-200 pt-4 text-[11px] font-mono text-gray-500">
-      <span>{price}</span>
-      <span className="text-right">{supply}</span>
+      {price ? <span>{price}</span> : null}
+      <span className="ml-auto text-right">{supply}</span>
     </div>
   )
 }

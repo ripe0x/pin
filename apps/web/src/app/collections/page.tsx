@@ -221,10 +221,10 @@ export default async function CollectionsHome({
                       (c.maxMints !== null &&
                         c.maxMints > 0n &&
                         c.soldThroughMinter >= c.maxMints))
-                  const priceLabel = c.price === null
-                    ? c.saleStateAvailable
+                  const priceLabel = !c.saleStateAvailable
+                    ? null
+                    : c.price === null
                       ? "Not currently for sale"
-                      : "Sale state unavailable"
                     : hasPriceStrategy((c.priceStrategy ?? ZERO_ADDRESS) as `0x${string}`)
                       ? "Live price"
                       : formatPriceLabel(c.price)
@@ -284,8 +284,8 @@ export default async function CollectionsHome({
                             <p className="mt-1 truncate text-xs font-mono text-gray-500">by {artist}</p>
                           </div>
                           <div className="flex items-end justify-between gap-3 border-t border-gray-200 pt-3 text-[11px] font-mono text-gray-500">
-                            <span>{priceLabel}</span>
-                            <span className="text-right">{mintedLabel}</span>
+                            {priceLabel ? <span>{priceLabel}</span> : null}
+                            <span className="ml-auto text-right">{mintedLabel}</span>
                           </div>
                         </div>
                       </Link>
