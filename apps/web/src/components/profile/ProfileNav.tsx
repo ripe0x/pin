@@ -7,7 +7,6 @@ export function ProfileNav({ summary }: { summary: ProfileSummary }) {
     summary.transferredTotal > 0 && ["archive", "Sold / transferred"],
     summary.heldTotal > 0 && ["collected", "Collected"],
     summary.declaredTotal > 0 && ["catalog", "Catalog"],
-    ["curation", "Curation"],
   ].filter(Boolean) as string[][]
 
   return (
