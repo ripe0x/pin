@@ -306,6 +306,7 @@ export type SurfaceCollectionSummary = {
  */
 export async function getSurfaceCollectionSummaries(
   limit = 8,
+  offset = 0,
 ): Promise<SurfaceCollectionSummary[] | null> {
   if (INDEXER_DISABLED || !sql) return null
   const db = sql
@@ -335,9 +336,9 @@ export async function getSurfaceCollectionSummaries(
     const rows = (await db.unsafe(
       `WITH recent_collections AS (
          SELECT *
-           FROM ${schema}.collections
+          FROM ${schema}.collections
           ORDER BY created_at_block DESC
-          LIMIT $1
+          LIMIT $1 OFFSET $2
        )
        SELECT c.collection, c.owner, c.name, c.symbol, c.primary_minter,
               s.price::text AS price, s.price_strategy,
@@ -377,7 +378,7 @@ export async function getSurfaceCollectionSummaries(
          ) tm ON true
         ORDER BY c.created_at_block DESC
         `,
-      [limit],
+      [limit, offset],
     )) as Row[]
 
     return rows.map((row) => ({
@@ -398,6 +399,21 @@ export async function getSurfaceCollectionSummaries(
       createdAtTime: Number(row.created_at_time),
     }))
   }, 4_000)
+}
+
+/** Pure Postgres denominator for the permissionless Surface directory. */
+export async function getSurfaceCollectionCount(): Promise<number | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+
+  return withTimeout(async () => {
+    const schema = indexerSchema()
+    if (!(await surfaceReleaseTablesExist(db, schema))) return null
+    const rows = (await db.unsafe(
+      `SELECT COUNT(*)::int AS count FROM ${schema}.collections`,
+    )) as Array<{ count: number }>
+    return rows[0]?.count ?? 0
+  }, 2_000)
 }
 
 /**

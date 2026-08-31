@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { getRecentCollections } from "@/lib/collection-onchain"
 import {
+  getSurfaceCollectionCount,
   getSurfaceCollectionSummaries,
   type SurfaceCollectionSummary,
 } from "@/lib/indexer-queries"
@@ -13,7 +13,6 @@ import {
   lifecycleStatus,
   shortAddress,
   surfaceFactory,
-  type Collection,
 } from "@/lib/collection"
 import { CollectionStatusChip } from "@/components/collections/CollectionStatusChip"
 import { AvailableArtwork } from "@/components/home/landing-v2/AvailableArtwork"
@@ -29,6 +28,8 @@ export const metadata: Metadata = {
 // Static prerendering would either bake a deployment-time outage into the
 // build or fail builds that intentionally have no production DB access.
 export const dynamic = "force-dynamic"
+
+const PAGE_SIZE = 24
 
 type CollectionGroup = {
   key: "minting" | "upcoming" | "past"
@@ -82,22 +83,31 @@ function groupByLifecycle(
   return groups.filter((g) => g.items.length > 0)
 }
 
-export default async function CollectionsHome() {
+export default async function CollectionsHome({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>
+}) {
   const factory = surfaceFactory()
+  const { page: pageParam } = await searchParams
+  const requestedPage = Math.max(1, Number.parseInt(pageParam ?? "1", 10) || 1)
   let indexUnavailable = false
   let recent: SurfaceCollectionSummary[] = []
+  let total = 0
   if (factory) {
-    const indexed = await getSurfaceCollectionSummaries(8)
-    if (indexed === null) {
-      try {
-        recent = (await getRecentCollections(factory, 8)).map(collectionToSummary)
-      } catch {
-        indexUnavailable = true
-      }
+    const [indexed, indexedTotal] = await Promise.all([
+      getSurfaceCollectionSummaries(PAGE_SIZE, (requestedPage - 1) * PAGE_SIZE),
+      getSurfaceCollectionCount(),
+    ])
+    if (indexed === null || indexedTotal === null) {
+      indexUnavailable = true
     } else {
       recent = indexed
+      total = indexedTotal
     }
   }
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const currentPage = Math.min(requestedPage, totalPages)
   const nowSec = Math.floor(Date.now() / 1000)
   const groups = groupByLifecycle(recent, nowSec)
   const showGroupLabels = groups.length > 1
@@ -222,6 +232,37 @@ export default async function CollectionsHome() {
         </section>
       )}
 
+      {!indexUnavailable && totalPages > 1 ? (
+        <nav
+          aria-label="Release pages"
+          className="flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-gray-400"
+        >
+          {currentPage > 1 ? (
+            <Link
+              href={currentPage - 1 === 1 ? "/collections" : `/collections?page=${currentPage - 1}`}
+              className="transition-colors hover:text-fg"
+            >
+              Newer
+            </Link>
+          ) : (
+            <span className="text-gray-300">Newer</span>
+          )}
+          <span className="tabular-nums text-gray-500">
+            Page {currentPage} of {totalPages}
+          </span>
+          {currentPage < totalPages ? (
+            <Link
+              href={`/collections?page=${currentPage + 1}`}
+              className="transition-colors hover:text-fg"
+            >
+              Older
+            </Link>
+          ) : (
+            <span className="text-gray-300">Older</span>
+          )}
+        </nav>
+      ) : null}
+
       <section className="border-t border-gray-200 pt-8">
         <h2 className="text-sm font-medium">The complete Surface record</h2>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-fg-muted">
@@ -233,39 +274,4 @@ export default async function CollectionsHome() {
       </section>
     </div>
   )
-}
-
-function collectionToSummary(collection: Collection): SurfaceCollectionSummary {
-  return {
-    collection: collection.address,
-    owner: collection.owner,
-    name: collection.name,
-    symbol: collection.symbol,
-    primaryMinter: collection.primaryMinter,
-    // A registered primary minter that does not implement the canonical
-    // FixedPriceMinter getters is a custom sale surface, not proof that the
-    // collection is closed. Preserve the pre-snapshot directory behavior for
-    // that bounded compatibility path; the collection page performs its own
-    // minter-specific live check before offering a transaction.
-    price: collection.sale?.price ?? (collection.primaryMinter ? 0n : null),
-    priceStrategy:
-      collection.sale?.priceStrategy ??
-      (collection.primaryMinter ? ZERO_ADDRESS : null),
-    mintStart: collection.sale
-      ? Number(collection.sale.mintStart)
-      : collection.primaryMinter
-        ? 0
-        : null,
-    mintEnd: collection.sale
-      ? Number(collection.sale.mintEnd)
-      : collection.primaryMinter
-        ? 0
-        : null,
-    maxMints: collection.sale?.maxMints ?? null,
-    supplyCap: collection.cfg.supplyCap,
-    mintedEver: collection.minted,
-    soldThroughMinter: collection.minted,
-    imageUrl: null,
-    createdAtTime: 0,
-  }
 }
