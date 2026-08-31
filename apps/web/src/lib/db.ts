@@ -51,7 +51,13 @@ function makeClient(): ReturnType<typeof postgres> | null {
     // pool on long-running.
     max: IS_SERVERLESS ? 3 : 10,
     idle_timeout: IS_SERVERLESS ? 20 : 30,
-    connect_timeout: 10,
+    // Hard transport/server caps. Request-level reads must await or cancel
+    // their work; abandoning a postgres.js promise leaves the query running
+    // and can pin a serverless invocation until Netlify's 60s ceiling.
+    connect_timeout: 3,
+    connection: {
+      statement_timeout: 8000,
+    },
     // Prepared statements would be a net win for a long-running process,
     // but postgres.js has subtle TS-ergonomics issues with `prepare: true`
     // when using the template-tag interface heavily. Leave off until we

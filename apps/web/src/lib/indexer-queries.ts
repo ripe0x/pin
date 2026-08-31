@@ -11,7 +11,8 @@ const FND_MARKET = NFT_MARKET[MAINNET_CHAIN_ID]
  * `pnd_bids`). Lives next to `pgCache` because both share the same
  * Postgres connection — we don't need a separate GraphQL client.
  *
- * Every export has a hard timeout and returns `null` on miss / failure.
+ * Every export is bounded by the shared Postgres client and returns `null`
+ * on miss / failure.
  * Callers fall through to the cached RPC path on null. That makes the
  * indexer additive: when Ponder hasn't synced yet, when the database is
  * unreachable, when we explicitly disable it, the app behaves exactly as
@@ -20,14 +21,14 @@ const FND_MARKET = NFT_MARKET[MAINNET_CHAIN_ID]
  * **Kill switch.** Three layers:
  *   1. `DATABASE_URL` unset → `sql` is null → these all return null.
  *   2. `INDEXER_DISABLED=1` → these all return null even when DB is up.
- *   3. Per-query timeout (500ms) → slow indexer reads bail to RPC fallback.
+ *   3. Shared connect/statement deadlines → slow reads fail to fallback.
  */
 
 const INDEXER_DISABLED = process.env.INDEXER_DISABLED === "1"
 
 /**
  * Thrown by callers wrapping an indexer read in `unstable_cache` when
- * the read is unavailable (timeout, DB down, kill switch). Throwing
+ * the read is unavailable (deadline, DB down, kill switch). Throwing
  * — rather than returning `null` from the cached function — keeps
  * `unstable_cache` from persisting the failure, so the next request
  * retries fresh instead of serving the bad value for the full TTL.
@@ -39,34 +40,31 @@ export class IndexerUnavailable extends Error {
   }
 }
 
-// Per-query default; overridable via the `withTimeout` second arg. Home-
-// page reads (square + counters) pass 2_000 because they're below the hero
-// behind Suspense, where a cold-Postgres-read of ~1s is acceptable; per-
-// token reads use this default so a slow indexer can't add latency to the
-// primary render.
-const QUERY_TIMEOUT_MS = 500
+// Per-query latency target. This is observational, not a client-side kill
+// switch: postgres.js queries must be awaited or explicitly cancelled.
+// Returning from Promise.race left the database work alive and accumulated
+// orphan reads until Netlify killed 60-second invocations. The hard bounds
+// now live on the shared client (3s connect, 8s PostgreSQL statement timeout).
+const QUERY_TARGET_MS = 500
 
 /**
- * Race a query against a timeout. Returns `null` if the query exceeds
- * `timeoutMs` so we don't add latency to renders when the indexer is
- * slow / unreachable / not yet synced.
+ * Await a database read through completion so no work escapes the request.
+ * The shared client enforces the actual transport and SQL deadlines. The
+ * optional target remains documentation for the latency budget at each call.
  */
 async function withTimeout<T>(
   fn: () => Promise<T>,
-  timeoutMs = QUERY_TIMEOUT_MS,
+  targetMs = QUERY_TARGET_MS,
 ): Promise<T | null> {
-  let timer: NodeJS.Timeout | undefined
+  const started = Date.now()
   try {
-    return await Promise.race([
-      fn(),
-      new Promise<null>((resolve) => {
-        timer = setTimeout(() => resolve(null), timeoutMs)
-      }),
-    ])
+    return await fn()
   } catch {
     return null
   } finally {
-    if (timer) clearTimeout(timer)
+    if (process.env.NODE_ENV !== "production" && Date.now() - started > targetMs) {
+      console.warn(`[indexer-query] exceeded ${targetMs}ms target`)
+    }
   }
 }
 
