@@ -55,11 +55,16 @@ const QUERY_TARGET_MS = 500
 async function withTimeout<T>(
   fn: () => Promise<T>,
   targetMs = QUERY_TARGET_MS,
+  label?: string,
 ): Promise<T | null> {
   const started = Date.now()
   try {
     return await fn()
-  } catch {
+  } catch (error) {
+    if (label) {
+      const message = error instanceof Error ? error.message : "unknown database error"
+      console.error(`[indexer-query] ${label} failed: ${message}`)
+    }
     return null
   } finally {
     if (process.env.NODE_ENV !== "production" && Date.now() - started > targetMs) {
@@ -312,6 +317,8 @@ export async function getSurfaceCollectionSummaries(
   return withTimeout(async () => {
     const schema = indexerSchema()
 
+    if (!(await surfaceTablesExist(db, schema))) return null
+
     type Row = {
       collection: string
       owner: string
@@ -330,8 +337,10 @@ export async function getSurfaceCollectionSummaries(
       created_at_time: string
     }
 
+    const hasReleaseState = await surfaceReleaseTablesExist(db, schema)
     const rows = (await db.unsafe(
-      `WITH recent_collections AS (
+      hasReleaseState
+        ? `WITH recent_collections AS (
          SELECT *
           FROM ${schema}.collections
           ORDER BY created_at_block DESC
@@ -374,7 +383,44 @@ export async function getSurfaceCollectionSummaries(
             LIMIT 1
          ) tm ON true
         ORDER BY c.created_at_block DESC
-        `,
+        `
+        : `WITH recent_collections AS (
+         SELECT *
+           FROM ${schema}.collections
+          ORDER BY created_at_block DESC
+          LIMIT $1 OFFSET $2
+       )
+       SELECT c.collection, c.owner, c.name, c.symbol, c.primary_minter,
+              NULL::text AS price, NULL::text AS price_strategy,
+              NULL::text AS mint_start, NULL::text AS mint_end,
+              NULL::text AS max_mints,
+              0::text AS supply_cap,
+              COALESCE(mt.minted_ever, 0)::text AS minted_ever,
+              COALESCE(st.sold_through_minter, 0)::text AS sold_through_minter,
+              tm.image_url,
+              c.created_at_time::text AS created_at_time
+         FROM recent_collections c
+         LEFT JOIN LATERAL (
+           SELECT COALESCE(SUM(quantity), 0) AS minted_ever
+             FROM ${schema}.collection_mints cm
+            WHERE cm.collection = c.collection
+         ) mt ON true
+         LEFT JOIN LATERAL (
+           SELECT COALESCE(SUM(quantity), 0) AS sold_through_minter
+             FROM ${schema}.collection_sales cs
+            WHERE cs.collection = c.collection
+         ) st ON true
+         LEFT JOIN LATERAL (
+           SELECT metadata.image_url
+             FROM token_metadata metadata
+            WHERE metadata.contract = lower(c.collection)
+              AND metadata.image_url IS NOT NULL
+              AND metadata.image_url <> ''
+              AND COALESCE(metadata.burned, false) = false
+            ORDER BY metadata.fetched_at DESC
+            LIMIT 1
+         ) tm ON true
+        ORDER BY c.created_at_block DESC`,
       [limit, offset],
     )) as Row[]
 
@@ -395,7 +441,7 @@ export async function getSurfaceCollectionSummaries(
       imageUrl: row.image_url,
       createdAtTime: Number(row.created_at_time),
     }))
-  }, 6_000)
+  }, 6_000, "surface collection summaries")
 }
 
 /** Pure Postgres denominator for the permissionless Surface directory. */
@@ -409,7 +455,7 @@ export async function getSurfaceCollectionCount(): Promise<number | null> {
       `SELECT COUNT(*)::int AS count FROM ${schema}.collections`,
     )) as Array<{ count: number }>
     return rows[0]?.count ?? 0
-  }, 3_000)
+  }, 3_000, "surface collection count")
 }
 
 /**
