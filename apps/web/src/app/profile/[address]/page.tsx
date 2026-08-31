@@ -16,7 +16,7 @@ import {
 import { StudioBar } from "@/components/artist/StudioBar"
 import { ProfileAvailable } from "@/components/profile/ProfileAvailable"
 import { ProfileCatalog } from "@/components/profile/ProfileCatalog"
-import { ProfileCoverage, ProfileCuration } from "@/components/profile/ProfileCoverage"
+import { ProfileCoverage } from "@/components/profile/ProfileCoverage"
 import { ProfileCreatedRecord } from "@/components/profile/ProfileCreatedRecord"
 import { ProfileHeader } from "@/components/profile/ProfileHeader"
 import {
@@ -154,7 +154,6 @@ export default async function ProfilePage({
           <ProfileCatalog address={address} catalog={catalog} />
         </div>
       )}
-      <div className="mt-16"><ProfileCuration /></div>
     </main>
   )
 }

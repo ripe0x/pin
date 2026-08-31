@@ -19,14 +19,3 @@ export function ProfileCoverage({ summary }: { summary: ProfileSummary }) {
     </details>
   )
 }
-
-export function ProfileCuration() {
-  return (
-    <section id="curation" className="scroll-mt-20 space-y-2 border-t border-gray-200 pt-8">
-      <h2 className="text-lg font-semibold">Curation</h2>
-      <p className="max-w-3xl text-xs leading-relaxed text-gray-500">
-        PND does not infer curation from ownership, favorites, or an artist&apos;s Catalog declarations. A curator role will appear only when PND supports portable authored exhibitions or lists with canonical token references, ordering, context, a signature, and a preservation snapshot.
-      </p>
-    </section>
-  )
-}
