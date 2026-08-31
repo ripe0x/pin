@@ -313,7 +313,6 @@ export async function getSurfaceCollectionSummaries(
 
   return withTimeout(async () => {
     const schema = indexerSchema()
-    if (!(await surfaceReleaseTablesExist(db, schema))) return null
 
     type Row = {
       collection: string
@@ -398,7 +397,7 @@ export async function getSurfaceCollectionSummaries(
       imageUrl: row.image_url,
       createdAtTime: Number(row.created_at_time),
     }))
-  }, 4_000)
+  }, 6_000)
 }
 
 /** Pure Postgres denominator for the permissionless Surface directory. */
@@ -408,12 +407,11 @@ export async function getSurfaceCollectionCount(): Promise<number | null> {
 
   return withTimeout(async () => {
     const schema = indexerSchema()
-    if (!(await surfaceReleaseTablesExist(db, schema))) return null
     const rows = (await db.unsafe(
       `SELECT COUNT(*)::int AS count FROM ${schema}.collections`,
     )) as Array<{ count: number }>
     return rows[0]?.count ?? 0
-  }, 2_000)
+  }, 3_000)
 }
 
 /**
