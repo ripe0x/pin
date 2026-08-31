@@ -1437,7 +1437,10 @@ ${
        ORDER BY block_time::numeric DESC, id DESC
        LIMIT $1`,
       cursor ? [limit, cursorTime, cursorId] : [limit],
-    )) as Row[]
+    ).catch((error) => {
+      console.error("[activity-feed] query failed:", error)
+      throw error
+    })) as Row[]
 
     return rows.map((r) => ({
       id: r.id,
