@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pnd.ripe.wtf/schemas/artist-site-declaration-v1.schema.json",
+  "title": "PND artist-provided site declaration v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "spec",
+    "version",
+    "chain",
+    "artist",
+    "url",
+    "issuedAt",
+    "nonce",
+    "signature"
+  ],
+  "properties": {
+    "spec": { "const": "pnd.artist-site" },
+    "version": { "const": 1 },
+    "chain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["namespace", "reference"],
+      "properties": {
+        "namespace": { "const": "eip155" },
+        "reference": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        }
+      }
+    },
+    "artist": { "$ref": "#/$defs/address" },
+    "url": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://",
+      "maxLength": 4096
+    },
+    "collections": {
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 1000,
+      "items": { "$ref": "#/$defs/address" }
+    },
+    "kit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "version": { "type": "string", "minLength": 1, "maxLength": 100 }
+      }
+    },
+    "issuedAt": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "nonce": { "$ref": "#/$defs/hash32" },
+    "signature": {
+      "type": "string",
+      "pattern": "^0x[0-9a-f]{130}$"
+    }
+  },
+  "$defs": {
+    "address": {
+      "type": "string",
+      "pattern": "^0x[0-9a-f]{40}$"
+    },
+    "hash32": {
+      "type": "string",
+      "pattern": "^0x[0-9a-f]{64}$"
+    }
+  }
+}

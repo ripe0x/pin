@@ -1,0 +1,221 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pnd.ripe.wtf/schemas/release-manifest-v1.schema.json",
+  "title": "PND portable release manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["spec", "version", "release", "declaration", "capabilities"],
+  "properties": {
+    "spec": { "const": "pnd.release" },
+    "version": { "const": 1 },
+    "release": { "$ref": "#/$defs/release" },
+    "declaration": { "$ref": "#/$defs/declaration" },
+    "presentation": { "$ref": "#/$defs/presentation" },
+    "capabilities": { "$ref": "#/$defs/capabilities" },
+    "extensions": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)+$"
+      },
+      "additionalProperties": true
+    },
+    "authorship": { "$ref": "#/$defs/authorship" }
+  },
+  "$defs": {
+    "address": {
+      "type": "string",
+      "pattern": "^0x[0-9a-f]{40}$"
+    },
+    "hash32": {
+      "type": "string",
+      "pattern": "^0x[0-9a-f]{64}$"
+    },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "chain", "collection", "protocol"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^pnd:[1-9][0-9]*:0x[0-9a-f]{40}:c$"
+        },
+        "chain": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["namespace", "reference"],
+          "properties": {
+            "namespace": { "const": "eip155" },
+            "reference": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            }
+          }
+        },
+        "collection": { "$ref": "#/$defs/address" },
+        "protocol": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["family", "abi"],
+          "properties": {
+            "family": { "const": "surface" },
+            "abi": {
+              "type": "string",
+              "pattern": "^[a-z0-9.-]+@[1-9][0-9]*$"
+            },
+            "factory": { "$ref": "#/$defs/address" }
+          }
+        }
+      }
+    },
+    "declaration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artist", "title"],
+      "properties": {
+        "artist": { "$ref": "#/$defs/address" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "summary": { "type": "string", "maxLength": 1000 },
+        "statement": { "type": "string", "maxLength": 50000 },
+        "process": { "type": "string", "maxLength": 50000 },
+        "announcedSchedule": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "opensAt": { "type": "string", "format": "date-time" },
+            "closesAt": { "type": "string", "format": "date-time" },
+            "note": { "type": "string", "maxLength": 1000 }
+          }
+        },
+        "media": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cover": { "$ref": "#/$defs/mediaRef" },
+            "hero": { "$ref": "#/$defs/mediaRef" },
+            "process": {
+              "type": "array",
+              "maxItems": 100,
+              "items": { "$ref": "#/$defs/mediaRef" }
+            },
+            "social": {
+              "type": "array",
+              "maxItems": 20,
+              "items": { "$ref": "#/$defs/mediaRef" }
+            }
+          }
+        },
+        "links": {
+          "type": "array",
+          "maxItems": 30,
+          "items": { "$ref": "#/$defs/artistLink" }
+        }
+      }
+    },
+    "mediaRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uri"],
+      "properties": {
+        "uri": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "mediaType": { "type": "string", "maxLength": 200 },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "alt": { "type": "string", "maxLength": 1000 }
+      }
+    },
+    "artistLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "url"],
+      "properties": {
+        "label": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "url": { "type": "string", "format": "uri", "maxLength": 4096 }
+      }
+    },
+    "presentation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "layout": {
+          "enum": ["default", "edition", "generative", "custom"]
+        },
+        "theme": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "accent": { "type": "string", "maxLength": 100 },
+            "background": { "type": "string", "maxLength": 100 },
+            "foreground": { "type": "string", "maxLength": 100 },
+            "font": { "type": "string", "maxLength": 200 }
+          }
+        },
+        "aspectRatio": { "type": "string", "maxLength": 100 }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "adapters"],
+      "properties": {
+        "required": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/capabilityId" }
+        },
+        "optional": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/capabilityId" }
+        },
+        "adapters": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/adapter" }
+        }
+      }
+    },
+    "capabilityId": {
+      "type": "string",
+      "pattern": "^[a-z0-9.-]+@[1-9][0-9]*$"
+    },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capability", "adapter", "target"],
+      "properties": {
+        "capability": { "$ref": "#/$defs/capabilityId" },
+        "adapter": { "$ref": "#/$defs/capabilityId" },
+        "target": {
+          "oneOf": [
+            { "enum": ["collection", "primary-minter", "collection-renderer"] },
+            { "$ref": "#/$defs/address" }
+          ]
+        },
+        "config": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "authorship": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scheme", "signer", "issuedAt", "digest", "signature"],
+      "properties": {
+        "scheme": { "const": "eip712" },
+        "signer": { "$ref": "#/$defs/address" },
+        "issuedAt": { "type": "string", "format": "date-time" },
+        "digest": { "$ref": "#/$defs/hash32" },
+        "signature": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{130}$"
+        }
+      }
+    }
+  }
+}

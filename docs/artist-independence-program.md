@@ -95,6 +95,8 @@ The planned `@pin/release-spec` package should contain:
 - serialization and signature payloads.
 
 It contains no React, database client, RPC client, or PND route.
+The accepted manifest v1 and provider boundary is
+`docs/portable-release-boundary.md`.
 
 ### Layer 3: shared release kernel
 
@@ -309,6 +311,10 @@ Deliverables:
 - shared interaction primitives;
 - parity tests across PND and artist template;
 - a CI mode that blocks PND endpoints.
+
+The W1.1 design boundary is complete in
+`docs/portable-release-boundary.md`. Implementation extraction remains gated
+on W0.1 resolving the overlapping Surface UI work once.
 
 ### W2: venue and editorial release system
 

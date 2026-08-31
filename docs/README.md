@@ -25,6 +25,8 @@ These describe current rules or current system shape:
 - `ARCHITECTURE.md`
 - `docs/agent-control-plane.md`
 - `docs/artist-independence-program.md`
+- `docs/portable-release-boundary.md`
+- `docs/schemas/`
 - `docs/program-state.json`
 - `docs/work-packet-template.md`
 - `docs/decisions/`

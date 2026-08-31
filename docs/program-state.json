@@ -210,7 +210,7 @@
     {
       "id": "W1",
       "title": "Release specification and shared kernel",
-      "status": "ready",
+      "status": "in_progress",
       "deliveryDependsOn": ["W0"],
       "outcome": "PND and independent interfaces consume one versioned release model and one behavioral implementation.",
       "issues": [263, 264, 270, 274, 284],
@@ -235,10 +235,10 @@
         {
           "id": "W1.1",
           "title": "Specify the portable release and provider boundary",
-          "status": "ready",
+          "status": "complete",
           "dependsOn": [],
           "workPacket": "docs/work-packets/W1.1-release-boundary.md",
-          "nextAction": "Write the manifest v1, truth-class, capability, provider, and PND-optional contracts without extracting implementation code."
+          "nextAction": "Use docs/portable-release-boundary.md as the accepted source for W1.2 extraction."
         },
         {
           "id": "W1.2",
@@ -255,7 +255,7 @@
           "nextAction": "Make both assemblies consume the kernel and add parity plus PND-endpoint-blocked CI coverage."
         }
       ],
-      "nextAction": "Complete milestone W1.1 from its work packet in parallel with W0.1."
+      "nextAction": "Wait for W0.1, then create the W1.2 extraction work packet from docs/portable-release-boundary.md."
     },
     {
       "id": "W2",
@@ -290,7 +290,7 @@
           "title": "Specify editorial release metadata and venue hierarchy",
           "status": "proposed",
           "dependsOn": ["W1.1"],
-          "nextAction": "Define PND editorial declarations, route hierarchy, and the separation between featured programming and the permissionless record."
+          "nextAction": "Create the W2.1 work packet from the completed release boundary, then define PND editorial declarations and venue hierarchy."
         },
         {
           "id": "W2.2",
@@ -300,7 +300,7 @@
           "nextAction": "Implement homepage, Releases, launch pages, profiles, About, and journal against shared release contracts."
         }
       ],
-      "nextAction": "Wait for W1.1, then make W2.1 executable with a work packet."
+      "nextAction": "Create the W2.1 editorial and venue specification work packet."
     },
     {
       "id": "W3",
@@ -332,7 +332,7 @@
           "title": "Specify independence checks, export, and declarations",
           "status": "proposed",
           "dependsOn": ["W1.1"],
-          "nextAction": "Define private check results, export bundle contents, deployment inputs, and the optional signed site declaration."
+          "nextAction": "Create the W3.1 work packet from the completed release boundary, then define private checks, export, deployment inputs, and site declarations."
         },
         {
           "id": "W3.2",
@@ -342,7 +342,7 @@
           "nextAction": "Implement the Studio workflow and Surface-capable artist template with PND-optional providers."
         }
       ],
-      "nextAction": "Wait for W1.1, then make W3.1 executable with a work packet."
+      "nextAction": "Create the W3.1 independence-tools specification work packet."
     },
     {
       "id": "W4",
