@@ -1094,7 +1094,6 @@ export async function getActivityFeed(
             NULL::text,
             NULL::text
           FROM ${schema}.fnd_collections
-          JOIN known_artists ka ON ka.address = lower(creator)
           ${where(null, "created_at_time")}
           ORDER BY created_at_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})
@@ -1143,7 +1142,6 @@ export async function getActivityFeed(
             NULL::text,
             ('fnd:' || auction_id)::text
           FROM ${schema}.fnd_auctions
-          JOIN known_artists ka ON ka.address = lower(seller)
           ${where(FND_VISIBLE_OPEN, "created_at_time")}
           ORDER BY created_at_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})
@@ -1194,7 +1192,6 @@ export async function getActivityFeed(
             NULL::text,
             NULL::text
           FROM ${schema}.fnd_sales
-          JOIN known_artists ka ON ka.address = lower(seller)
           ${where(null, "block_time")}
           ORDER BY block_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})
@@ -1219,7 +1216,6 @@ export async function getActivityFeed(
             NULL::text,
             NULL::text
           FROM ${schema}.fnd_artist_tokens t
-          JOIN known_artists ka ON ka.address = lower(t.creator)
           LEFT JOIN token_metadata m
             ON m.contract = lower(t.contract) AND m.token_id = t.token_id::text
           ${where(mintNotBroken("t.block_time"), "t.block_time")}
@@ -1336,7 +1332,6 @@ export async function getActivityFeed(
             LIMIT ${PER_SUBQUERY_LIMIT}
           ) sub
           JOIN ${schema}.fnd_auctions fa ON fa.auction_id = sub.auction_id
-          JOIN known_artists ka ON ka.address = lower(fa.seller)
           ORDER BY sub.block_time DESC
           LIMIT ${PER_SUBQUERY_LIMIT})
 ${
@@ -1440,7 +1435,7 @@ ${
     ).catch((error) => {
       console.error("[activity-feed] query failed:", error)
       throw error
-    })) as Row[]
+    })) as unknown as Row[]
 
     return rows.map((r) => ({
       id: r.id,
