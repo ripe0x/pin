@@ -159,9 +159,10 @@ export default async function CollectionsHome() {
                       : `${Number(c.mintedEver)} minted · open`
                   const identity = identities.get(c.owner.toLowerCase())
                   const artist = identity?.ensName ?? shortAddress(c.owner as `0x${string}`)
-                  const date = c.mintStart && c.mintStart > 0
-                    ? new Date(c.mintStart * 1000)
-                    : new Date(c.createdAtTime * 1000)
+                  const dateSec = c.mintStart && c.mintStart > 0
+                    ? c.mintStart
+                    : c.createdAtTime
+                  const date = dateSec > 0 ? new Date(dateSec * 1000) : null
                   return (
                     <li key={c.collection}>
                       <Link
@@ -182,17 +183,19 @@ export default async function CollectionsHome() {
                                   : null
                               }
                             />
-                            <time
-                              dateTime={date.toISOString()}
-                              className="text-[10px] font-mono text-gray-500"
-                            >
-                              {date.toLocaleDateString("en-US", {
-                                month: "short",
-                                day: "numeric",
-                                year: "numeric",
-                                timeZone: "UTC",
-                              })}
-                            </time>
+                            {date ? (
+                              <time
+                                dateTime={date.toISOString()}
+                                className="text-[10px] font-mono text-gray-500"
+                              >
+                                {date.toLocaleDateString("en-US", {
+                                  month: "short",
+                                  day: "numeric",
+                                  year: "numeric",
+                                  timeZone: "UTC",
+                                })}
+                              </time>
+                            ) : null}
                           </div>
                           <div>
                             <h3 className="truncate text-base font-medium tracking-tight">{c.name}</h3>

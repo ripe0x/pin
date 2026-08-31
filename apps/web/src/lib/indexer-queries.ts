@@ -333,14 +333,11 @@ export async function getSurfaceCollectionSummaries(
     }
 
     const rows = (await db.unsafe(
-      `WITH mint_totals AS (
-         SELECT collection, COALESCE(SUM(quantity), 0) AS minted_ever
-           FROM ${schema}.collection_mints
-          GROUP BY collection
-       ), sale_totals AS (
-         SELECT minter, COALESCE(SUM(quantity), 0) AS sold_through_minter
-           FROM ${schema}.collection_sales
-          GROUP BY minter
+      `WITH recent_collections AS (
+         SELECT *
+           FROM ${schema}.collections
+          ORDER BY created_at_block DESC
+          LIMIT $1
        )
        SELECT c.collection, c.owner, c.name, c.symbol, c.primary_minter,
               s.price::text AS price, s.price_strategy,
@@ -352,26 +349,34 @@ export async function getSurfaceCollectionSummaries(
               COALESCE(st.sold_through_minter, 0)::text AS sold_through_minter,
               tm.image_url,
               c.created_at_time::text AS created_at_time
-         FROM ${schema}.collections c
+         FROM recent_collections c
          LEFT JOIN ${schema}.minter_sale_configs s
            ON s.collection = c.collection
           AND s.minter = c.primary_minter
          LEFT JOIN ${schema}.collection_supply_configs sc
            ON sc.collection = c.collection
-         LEFT JOIN mint_totals mt ON mt.collection = c.collection
-         LEFT JOIN sale_totals st ON st.minter = s.minter
          LEFT JOIN LATERAL (
-           SELECT ct.token_id
-             FROM ${schema}.collection_tokens ct
-            WHERE ct.collection = c.collection AND ct.burned = false
-            ORDER BY ct.updated_at_time DESC, ct.token_id DESC
+           SELECT COALESCE(SUM(quantity), 0) AS minted_ever
+             FROM ${schema}.collection_mints cm
+            WHERE cm.collection = c.collection
+         ) mt ON true
+         LEFT JOIN LATERAL (
+           SELECT COALESCE(SUM(quantity), 0) AS sold_through_minter
+             FROM ${schema}.collection_sales cs
+            WHERE cs.collection = c.collection
+         ) st ON true
+         LEFT JOIN LATERAL (
+           SELECT metadata.image_url
+             FROM token_metadata metadata
+            WHERE metadata.contract = lower(c.collection)
+              AND metadata.image_url IS NOT NULL
+              AND metadata.image_url <> ''
+              AND COALESCE(metadata.burned, false) = false
+            ORDER BY metadata.fetched_at DESC
             LIMIT 1
-         ) latest_token ON true
-         LEFT JOIN token_metadata tm
-           ON tm.contract = lower(c.collection)
-          AND tm.token_id = latest_token.token_id::text
+         ) tm ON true
         ORDER BY c.created_at_block DESC
-        LIMIT $1`,
+        `,
       [limit],
     )) as Row[]
 
