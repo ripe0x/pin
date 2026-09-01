@@ -12,9 +12,13 @@ import {OwnableUpgradeable} from "openzeppelin-contracts-upgradeable/contracts/a
 import {ISovereignAuctionHouseV2} from "./ISovereignAuctionHouseV2.sol";
 
 /// @title Sovereign Auction House V2
-/// @notice ERC721 reserve auctions with a terminal bidder-refund outcome when
-///         delivery cannot be verified. V1 clones are immutable and remain
-///         governed by their original implementation.
+/// @notice ERC721 and ERC1155 reserve auctions. Settlement pays the seller
+///         unconditionally; delivery is attempted with a fixed gas stipend
+///         through a try/catch self-call so the outcome cannot depend on
+///         caller-supplied gas. A failed delivery defers the lot to a
+///         winner-only, retryable, redirectable claim. No sale ever unwinds.
+///         V1 clones are immutable and remain governed by their original
+///         implementation.
 contract SovereignAuctionHouseV2 is
     ISovereignAuctionHouseV2,
     IERC1155Receiver,
@@ -38,22 +42,31 @@ contract SovereignAuctionHouseV2 is
     error BidBelowReserve();
     error BidBelowMinimum();
     error BidMustBePositive();
-    error ContractBidderNotSupported();
     error EscrowFailed();
     error DeliveryFailed();
-    error FailedDeliveryDoesNotExist();
     error FundsRecipientRequired();
     error OnlySelf();
     error OwnershipLocked();
+    error AuctionAlreadySettled();
+    error NoPendingDelivery();
+    error NotWinner();
+    error InsufficientGas();
+
+    uint256 internal constant DELIVER_GAS_LIMIT = 500_000;
 
     mapping(uint256 => Auction) public auctions;
-    mapping(uint256 => FailedDelivery) public failedDeliveries;
     mapping(uint256 => uint64) public listingExpiry;
 
-    // Active and failed lots deliberately have separate indexes. A failed lot
-    // cannot be recovered through the owner-controlled stuck-token escape hatch.
+    /// @notice True for an auction whose settlement payout ran but whose
+    ///         token delivery failed. The auction record, and its
+    ///         `_auctionIdByToken` entry, stay in storage until claimLot
+    ///         delivers the lot.
+    mapping(uint256 => bool) public pendingDelivery;
+
+    // A settled-but-undelivered lot keeps its entry here, which blocks a
+    // duplicate listing and stuck-token recovery for the same token until
+    // claimLot clears it.
     mapping(address => mapping(uint256 => uint256)) private _auctionIdByToken;
-    mapping(address => mapping(uint256 => uint256)) private _failedAuctionIdByToken;
     mapping(address => uint256) public pendingRefunds;
 
     uint16 public protocolFeeBps;
@@ -128,9 +141,7 @@ contract SovereignAuctionHouseV2 is
     ) internal returns (uint256 auctionId) {
         require(IERC165(tokenContract).supportsInterface(ERC721_INTERFACE_ID), "tokenContract is not ERC721");
         _validateDuration(duration);
-        if (_auctionIdByToken[tokenContract][tokenId] != 0 || _failedAuctionIdByToken[tokenContract][tokenId] != 0) {
-            revert AuctionAlreadyExistsForToken();
-        }
+        if (_auctionIdByToken[tokenContract][tokenId] != 0) revert AuctionAlreadyExistsForToken();
 
         address tokenOwner = IERC721(tokenContract).ownerOf(tokenId);
         require(
@@ -183,9 +194,7 @@ contract SovereignAuctionHouseV2 is
         require(IERC165(tokenContract).supportsInterface(ERC1155_INTERFACE_ID), "tokenContract is not ERC1155");
         require(quantity != 0, "quantity zero");
         _validateDuration(duration);
-        if (_auctionIdByToken[tokenContract][tokenId] != 0 || _failedAuctionIdByToken[tokenContract][tokenId] != 0) {
-            revert AuctionAlreadyExistsForToken();
-        }
+        if (_auctionIdByToken[tokenContract][tokenId] != 0) revert AuctionAlreadyExistsForToken();
         require(IERC1155(tokenContract).balanceOf(msg.sender, tokenId) >= quantity, "insufficient balance");
         require(IERC1155(tokenContract).isApprovedForAll(msg.sender, address(this)), "house not approved");
 
@@ -276,12 +285,6 @@ contract SovereignAuctionHouseV2 is
         Auction storage a = auctions[auctionId];
         uint64 expiry = listingExpiry[auctionId];
         if (a.firstBidTime == 0 && expiry != 0 && block.timestamp >= expiry) revert AuctionExpired();
-        // An ERC1155 safe transfer gives a contract winner control over
-        // receipt. Exclude contract wallets only for those lots, otherwise a
-        // winner could reject delivery and deliberately choose a refund.
-        if (a.standard == TokenStandard.ERC1155 && (msg.sender != tx.origin || msg.sender.code.length != 0)) {
-            revert ContractBidderNotSupported();
-        }
         uint256 amount = msg.value;
         if (amount == 0) revert BidMustBePositive();
         if (a.firstBidTime != 0 && block.timestamp >= a.endTime) revert AuctionExpired();
@@ -312,10 +315,13 @@ contract SovereignAuctionHouseV2 is
         if (extended) emit AuctionEndTimeUpdated(auctionId, a.endTime);
     }
 
-    /// @notice Resolves every ended auction. A successful result proves the
-    ///         winner owns the token before any seller or protocol payout.
-    ///         A failed result credits the full gross bid to the winner and
-    ///         retains the lot solely for return to its original owner.
+    /// @notice Resolves every ended auction. Pays the protocol fee and
+    ///         seller unconditionally, then attempts delivery through a
+    ///         try/catch self-call capped at DELIVER_GAS_LIMIT gas, so the
+    ///         delivery outcome cannot depend on how much gas the caller of
+    ///         endAuction supplied. A delivery failure defers the lot to
+    ///         claimLot; it never affects the payout, and the sale never
+    ///         unwinds.
     function endAuction(uint256 auctionId)
         external
         override
@@ -325,30 +331,47 @@ contract SovereignAuctionHouseV2 is
         Auction memory a = auctions[auctionId];
         if (a.firstBidTime == 0) revert AuctionHasNoBids();
         if (block.timestamp < a.endTime) revert AuctionNotEnded();
-        // EIP-7702 can add code after an EOA placed its bid. A receiver that
-        // appears after bidding must not gain a free refund option. Leave the
-        // auction live until the bidder restores an EOA account state.
-        if (a.standard == TokenStandard.ERC1155 && a.bidder.code.length != 0) {
-            revert ContractBidderNotSupported();
+        if (pendingDelivery[auctionId]) revert AuctionAlreadySettled();
+        // EIP-150 forwards at most 63/64 of remaining gas, so a gas-starved
+        // call could hand delivery less than DELIVER_GAS_LIMIT and defer a
+        // transfer that would have succeeded. Require enough headroom that
+        // the stipend is always honored in full.
+        if (gasleft() < DELIVER_GAS_LIMIT + 80_000) revert InsufficientGas();
+
+        bool delivered;
+        if (a.standard == TokenStandard.ERC721) {
+            try this.deliverERC721{gas: DELIVER_GAS_LIMIT}(a.tokenContract, a.tokenId, a.bidder) {
+                delivered = true;
+            } catch {}
+        } else {
+            try this.deliverERC1155{gas: DELIVER_GAS_LIMIT}(a.tokenContract, a.tokenId, a.quantity, a.bidder) {
+                delivered = true;
+            } catch {}
         }
 
-        if (a.standard == TokenStandard.ERC721) {
-            try this.deliverERC721(a.tokenContract, a.tokenId, a.bidder) {
-                _settleVerifiedDelivery(auctionId, a);
-            } catch {
-                _recordFailedDelivery(auctionId, a);
-            }
+        uint256 protocolFee;
+        if (protocolFeeBps != 0) {
+            protocolFee = (a.amount * protocolFeeBps) / 10_000;
+            _sendOrCredit(feeRecipient, protocolFee);
+        }
+        uint256 sellerProceeds = a.amount - protocolFee;
+        _sendOrCredit(a.fundsRecipient, sellerProceeds);
+        emit AuctionEnded(auctionId, a.tokenOwner, a.bidder, sellerProceeds, protocolFee);
+
+        if (delivered) {
+            delete _auctionIdByToken[a.tokenContract][a.tokenId];
+            delete auctions[auctionId];
+            delete listingExpiry[auctionId];
         } else {
-            try this.deliverERC1155(a.tokenContract, a.tokenId, a.quantity, a.bidder) {
-                _settleVerifiedDelivery(auctionId, a);
-            } catch {
-                _recordFailedDelivery(auctionId, a);
-            }
+            pendingDelivery[auctionId] = true;
+            emit DeliveryDeferred(auctionId, a.bidder);
         }
     }
 
-    /// @dev Must be a separate external call so both transfer and ownerOf
-    ///      verification are rolled back before the outer refund commits.
+    /// @dev Delivery target for both endAuction's gas-capped try/catch and,
+    ///      indirectly, claimLot's full-gas retry (called directly there,
+    ///      not through this self-call). Reverting here rolls back the
+    ///      transfer and its ownerOf verification together.
     function deliverERC721(address tokenContract, uint256 tokenId, address winner) external {
         if (msg.sender != address(this)) revert OnlySelf();
         IERC721(tokenContract).transferFrom(address(this), winner, tokenId);
@@ -362,57 +385,34 @@ contract SovereignAuctionHouseV2 is
         if (IERC1155(tokenContract).balanceOf(winner, tokenId) < beforeBalance + quantity) revert DeliveryFailed();
     }
 
-    function _settleVerifiedDelivery(uint256 auctionId, Auction memory a) internal {
-        uint256 protocolFee;
-        if (protocolFeeBps != 0) {
-            protocolFee = (a.amount * protocolFeeBps) / 10_000;
-            _sendOrCredit(feeRecipient, protocolFee);
-        }
-        uint256 sellerProceeds = a.amount - protocolFee;
-        _sendOrCredit(a.fundsRecipient, sellerProceeds);
-        emit AuctionEnded(auctionId, a.tokenOwner, a.bidder, sellerProceeds, protocolFee);
+    /// @notice Winner-only delivery of a lot deferred by endAuction. Runs
+    ///         with full gas and no try/catch, so a revert rolls back the
+    ///         whole call and leaves the claim retryable. `to == address(0)`
+    ///         delivers to msg.sender.
+    function claimLot(uint256 auctionId, address to) external override nonReentrant {
+        if (!pendingDelivery[auctionId]) revert NoPendingDelivery();
+        Auction memory a = auctions[auctionId];
+        if (msg.sender != a.bidder) revert NotWinner();
+
+        address recipient = to == address(0) ? msg.sender : to;
+
+        delete pendingDelivery[auctionId];
         delete _auctionIdByToken[a.tokenContract][a.tokenId];
         delete auctions[auctionId];
         delete listingExpiry[auctionId];
-    }
 
-    function _recordFailedDelivery(uint256 auctionId, Auction memory a) internal {
-        pendingRefunds[a.bidder] += a.amount;
-        failedDeliveries[auctionId] = FailedDelivery({
-            tokenContract: a.tokenContract,
-            tokenId: a.tokenId,
-            tokenOwner: a.tokenOwner,
-            quantity: a.quantity,
-            standard: a.standard
-        });
-        delete _auctionIdByToken[a.tokenContract][a.tokenId];
-        _failedAuctionIdByToken[a.tokenContract][a.tokenId] = auctionId + 1;
-        delete auctions[auctionId];
-        delete listingExpiry[auctionId];
-        emit RefundCredited(a.bidder, a.amount);
-        emit AuctionDeliveryFailed(auctionId, a.bidder, a.amount);
-    }
+        emit LotClaimed(auctionId, a.bidder, recipient);
 
-    /// @notice Permissionless retry of a failed lot, but it can only ever go
-    ///         to the original token owner and has no effect on bidder funds.
-    function claimFailedLot(uint256 auctionId) external override nonReentrant {
-        FailedDelivery memory failed = failedDeliveries[auctionId];
-        if (failed.tokenOwner == address(0)) revert FailedDeliveryDoesNotExist();
-        if (failed.standard == TokenStandard.ERC721) {
-            IERC721(failed.tokenContract).transferFrom(address(this), failed.tokenOwner, failed.tokenId);
-            if (IERC721(failed.tokenContract).ownerOf(failed.tokenId) != failed.tokenOwner) revert DeliveryFailed();
+        if (a.standard == TokenStandard.ERC721) {
+            IERC721(a.tokenContract).transferFrom(address(this), recipient, a.tokenId);
+            if (IERC721(a.tokenContract).ownerOf(a.tokenId) != recipient) revert DeliveryFailed();
         } else {
-            uint256 beforeBalance = IERC1155(failed.tokenContract).balanceOf(failed.tokenOwner, failed.tokenId);
-            IERC1155(failed.tokenContract).safeTransferFrom(
-                address(this), failed.tokenOwner, failed.tokenId, failed.quantity, ""
-            );
-            if (IERC1155(failed.tokenContract).balanceOf(failed.tokenOwner, failed.tokenId) < beforeBalance + failed.quantity) {
+            uint256 beforeBalance = IERC1155(a.tokenContract).balanceOf(recipient, a.tokenId);
+            IERC1155(a.tokenContract).safeTransferFrom(address(this), recipient, a.tokenId, a.quantity, "");
+            if (IERC1155(a.tokenContract).balanceOf(recipient, a.tokenId) < beforeBalance + a.quantity) {
                 revert DeliveryFailed();
             }
         }
-        delete _failedAuctionIdByToken[failed.tokenContract][failed.tokenId];
-        delete failedDeliveries[auctionId];
-        emit FailedLotReturned(auctionId, failed.tokenOwner);
     }
 
     function cancelAuction(uint256 auctionId)
@@ -486,9 +486,7 @@ contract SovereignAuctionHouseV2 is
         nonReentrant
     {
         require(to != address(0), "to required");
-        if (_auctionIdByToken[tokenContract][tokenId] != 0 || _failedAuctionIdByToken[tokenContract][tokenId] != 0) {
-            revert AuctionAlreadyExistsForToken();
-        }
+        if (_auctionIdByToken[tokenContract][tokenId] != 0) revert AuctionAlreadyExistsForToken();
         IERC721(tokenContract).transferFrom(address(this), to, tokenId);
         emit StuckERC721Recovered(tokenContract, tokenId, to);
     }
@@ -499,19 +497,12 @@ contract SovereignAuctionHouseV2 is
         nonReentrant
     {
         require(to != address(0), "to required");
-        if (_auctionIdByToken[tokenContract][tokenId] != 0 || _failedAuctionIdByToken[tokenContract][tokenId] != 0) {
-            revert AuctionAlreadyExistsForToken();
-        }
+        if (_auctionIdByToken[tokenContract][tokenId] != 0) revert AuctionAlreadyExistsForToken();
         IERC1155(tokenContract).safeTransferFrom(address(this), to, tokenId, quantity, "");
     }
 
     function getAuctionFor(address tokenContract, uint256 tokenId) external view returns (bool exists, uint256 auctionId) {
         uint256 stored = _auctionIdByToken[tokenContract][tokenId];
-        return stored == 0 ? (false, 0) : (true, stored - 1);
-    }
-
-    function getFailedAuctionFor(address tokenContract, uint256 tokenId) external view returns (bool exists, uint256 auctionId) {
-        uint256 stored = _failedAuctionIdByToken[tokenContract][tokenId];
         return stored == 0 ? (false, 0) : (true, stored - 1);
     }
 

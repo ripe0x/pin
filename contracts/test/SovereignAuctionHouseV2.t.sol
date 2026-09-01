@@ -4,7 +4,9 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 import {SovereignAuctionHouseV2} from "../src/SovereignAuctionHouseV2.sol";
 import {SovereignAuctionHouseV2Factory} from "../src/SovereignAuctionHouseV2Factory.sol";
+import {ISovereignAuctionHouseV2} from "../src/ISovereignAuctionHouseV2.sol";
 import {MockERC721} from "./MockERC721.sol";
+import {PausableNFT} from "./PausableNFT.sol";
 
 /// @dev Behaves normally for escrow, then can fail or no-op only on delivery.
 contract MutableERC721 {
@@ -54,17 +56,48 @@ contract MutableERC721 {
     }
 }
 
-contract RefundProxy {
-    function bid(address house, uint256 auctionId) external payable {
-        SovereignAuctionHouseV2(payable(house)).createBid{value: msg.value}(auctionId);
+/// @dev Escrow works normally. Delivery consumes a moderate, configurable
+///      amount of gas (well under DELIVER_GAS_LIMIT) but always succeeds,
+///      to show endAuction's outcome does not depend on caller-supplied gas.
+contract GasHungryERC721 {
+    mapping(uint256 => address) internal _ownerOf;
+    mapping(address => mapping(address => bool)) internal _approvedForAll;
+    mapping(uint256 => uint256) internal _burnStorage;
+    uint256 public burnIterations = 10;
+
+    function mint(address to, uint256 tokenId) external {
+        _ownerOf[tokenId] = to;
     }
 
-    function withdrawTo(address house, address payable recipient) external {
-        SovereignAuctionHouseV2(payable(house)).withdrawRefundTo(recipient);
+    function setApprovalForAll(address operator, bool approved) external {
+        _approvedForAll[msg.sender][operator] = approved;
     }
 
-    receive() external payable {
-        revert("reject ETH");
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == 0x01ffc9a7 || interfaceId == 0x80ac58cd;
+    }
+
+    function ownerOf(uint256 tokenId) external view returns (address) {
+        return _ownerOf[tokenId];
+    }
+
+    function getApproved(uint256) external pure returns (address) {
+        return address(0);
+    }
+
+    function isApprovedForAll(address owner, address operator) external view returns (bool) {
+        return _approvedForAll[owner][operator];
+    }
+
+    function transferFrom(address from, address to, uint256 tokenId) external {
+        require(_ownerOf[tokenId] == from, "wrong owner");
+        require(msg.sender == from || _approvedForAll[from][msg.sender], "not approved");
+        if (msg.sender == from) {
+            for (uint256 i = 0; i < burnIterations; i++) {
+                _burnStorage[i] = i + 1;
+            }
+        }
+        _ownerOf[tokenId] = to;
     }
 }
 
@@ -122,6 +155,7 @@ contract SovereignAuctionHouseV2Test is Test {
         assertEq(carol.balance - carolBefore, RESERVE - fee);
         (bool exists,) = house.getAuctionFor(address(nft), TOKEN_ID);
         assertFalse(exists);
+        assertFalse(house.pendingDelivery(auctionId));
     }
 
     function test_FundsRecipientCanOnlyChangeByTokenOwnerBeforeBid() public {
@@ -169,7 +203,17 @@ contract SovereignAuctionHouseV2Test is Test {
         assertFalse(exists);
     }
 
-    function test_RevertingDeliveryRefundsWinnerAndProtectsLot() public {
+    function test_StandardContractBidderStillReceivesPlainTransfer() public {
+        uint256 auctionId = _create();
+        _bidAndEnd(auctionId, alice, RESERVE);
+        house.endAuction(auctionId);
+        assertEq(nft.ownerOf(TOKEN_ID), alice);
+    }
+
+    /// @dev A collection that reverts delivery pays the seller in full at
+    ///      endAuction and defers the lot; the winner claims once delivery
+    ///      is possible again.
+    function test_RevertingDeliveryDefersLotButSellerIsPaidInFull() public {
         MutableERC721 bad = new MutableERC721();
         bad.mint(artist, TOKEN_ID);
         vm.prank(artist);
@@ -182,24 +226,54 @@ contract SovereignAuctionHouseV2Test is Test {
         vm.warp(block.timestamp + DURATION + 1);
 
         uint256 sellerBefore = artist.balance;
+        uint256 fee = (RESERVE * 250) / 10_000;
+
+        vm.expectEmit(true, true, false, false, address(house));
+        emit ISovereignAuctionHouseV2.DeliveryDeferred(auctionId, alice);
         house.endAuction(auctionId);
 
-        assertEq(house.pendingRefunds(alice), RESERVE);
-        assertEq(artist.balance, sellerBefore);
+        assertEq(artist.balance - sellerBefore, RESERVE - fee);
+        assertTrue(house.pendingDelivery(auctionId));
+        assertEq(bad.ownerOf(TOKEN_ID), address(house));
+
+        // The lot still blocks a duplicate listing and stuck-token recovery.
         (bool active,) = house.getAuctionFor(address(bad), TOKEN_ID);
-        (bool failed,) = house.getFailedAuctionFor(address(bad), TOKEN_ID);
-        assertFalse(active);
-        assertTrue(failed);
+        assertTrue(active);
         vm.expectRevert(SovereignAuctionHouseV2.AuctionAlreadyExistsForToken.selector);
         vm.prank(artist);
         house.recoverStuckERC721(address(bad), TOKEN_ID, artist);
 
+        // Re-entering endAuction on a deferred auction is rejected.
+        vm.expectRevert(SovereignAuctionHouseV2.AuctionAlreadySettled.selector);
+        house.endAuction(auctionId);
+
+        // claimLot while still broken reverts (no ETH movement, retryable).
+        bad.setTransferMode(true, false);
+        vm.expectRevert("delivery blocked");
+        vm.prank(alice);
+        house.claimLot(auctionId, address(0));
+
+        // Only the winner may claim.
         bad.setTransferMode(false, false);
-        house.claimFailedLot(auctionId);
-        assertEq(bad.ownerOf(TOKEN_ID), artist);
+        vm.expectRevert(SovereignAuctionHouseV2.NotWinner.selector);
+        vm.prank(bob);
+        house.claimLot(auctionId, address(0));
+
+        // Winner claims once delivery works again.
+        vm.prank(alice);
+        house.claimLot(auctionId, address(0));
+        assertEq(bad.ownerOf(TOKEN_ID), alice);
+        assertFalse(house.pendingDelivery(auctionId));
+        (bool activeAfter,) = house.getAuctionFor(address(bad), TOKEN_ID);
+        assertFalse(activeAfter);
+
+        // Double claim reverts.
+        vm.expectRevert(SovereignAuctionHouseV2.NoPendingDelivery.selector);
+        vm.prank(alice);
+        house.claimLot(auctionId, address(0));
     }
 
-    function test_SilentOutboundNoopUsesSameRefundPath() public {
+    function test_SilentOutboundNoopDefersDeliveryAndPaysSeller() public {
         MutableERC721 bad = new MutableERC721();
         bad.mint(artist, TOKEN_ID);
         vm.prank(artist);
@@ -211,35 +285,135 @@ contract SovereignAuctionHouseV2Test is Test {
         bad.setTransferMode(false, true);
         vm.warp(block.timestamp + DURATION + 1);
 
+        uint256 sellerBefore = artist.balance;
+        uint256 fee = (RESERVE * 250) / 10_000;
         house.endAuction(auctionId);
-        assertEq(house.pendingRefunds(alice), RESERVE);
+        assertEq(artist.balance - sellerBefore, RESERVE - fee);
+        assertTrue(house.pendingDelivery(auctionId));
         assertEq(bad.ownerOf(TOKEN_ID), address(house));
+
+        bad.setTransferMode(false, false);
+        vm.prank(alice);
+        house.claimLot(auctionId, address(0));
+        assertEq(bad.ownerOf(TOKEN_ID), alice);
     }
 
-    function test_FailedWinnerCanWithdrawToWorkingRecipient() public {
-        MutableERC721 bad = new MutableERC721();
-        bad.mint(artist, TOKEN_ID);
+    /// @dev claimLot's `to` argument redirects delivery away from the
+    ///      winner's own address; only the recorded winner may call it.
+    function test_ClaimLotRedirectsDeliveryToChosenAddress() public {
+        PausableNFT paused = new PausableNFT();
+        paused.mint(artist, TOKEN_ID);
         vm.prank(artist);
-        bad.setApprovalForAll(address(house), true);
+        paused.setApprovalForAll(address(house), true);
         vm.prank(artist);
-        uint256 auctionId = house.createAuction(TOKEN_ID, address(bad), DURATION, RESERVE);
-        RefundProxy bidder = new RefundProxy();
-        vm.deal(address(bidder), RESERVE);
-        bidder.bid{value: RESERVE}(address(house), auctionId);
-        bad.setTransferMode(true, false);
+        uint256 auctionId = house.createAuction(TOKEN_ID, address(paused), DURATION, RESERVE);
+        vm.prank(alice);
+        house.createBid{value: RESERVE}(auctionId);
+        paused.pause();
         vm.warp(block.timestamp + DURATION + 1);
-        house.endAuction(auctionId);
 
-        uint256 bobBefore = bob.balance;
-        bidder.withdrawTo(address(house), payable(bob));
-        assertEq(house.pendingRefunds(address(bidder)), 0);
-        assertEq(bob.balance - bobBefore, RESERVE);
+        uint256 sellerBefore = artist.balance;
+        uint256 fee = (RESERVE * 250) / 10_000;
+        house.endAuction(auctionId);
+        assertEq(artist.balance - sellerBefore, RESERVE - fee);
+        assertTrue(house.pendingDelivery(auctionId));
+
+        // Claim reverts while the collection is still paused.
+        vm.expectRevert();
+        vm.prank(alice);
+        house.claimLot(auctionId, address(0));
+
+        paused.unpause();
+        vm.prank(alice);
+        house.claimLot(auctionId, carol);
+        assertEq(paused.ownerOf(TOKEN_ID), carol);
     }
 
-    function test_StandardContractBidderStillReceivesPlainTransfer() public {
-        uint256 auctionId = _create();
-        _bidAndEnd(auctionId, alice, RESERVE);
+    /// @dev A burned escrowed token can never be delivered. The seller is
+    ///      still paid in full at endAuction and no ETH is stranded in the
+    ///      house; claimLot always reverts thereafter.
+    function test_BurnedEscrowedTokenStillPaysSellerAndNeverStrandsEth() public {
+        PausableNFT burnable = new PausableNFT();
+        burnable.mint(artist, TOKEN_ID);
+        vm.prank(artist);
+        burnable.setApprovalForAll(address(house), true);
+        vm.prank(artist);
+        uint256 auctionId = house.createAuction(TOKEN_ID, address(burnable), DURATION, RESERVE);
+        vm.prank(alice);
+        house.createBid{value: RESERVE}(auctionId);
+        vm.warp(block.timestamp + DURATION + 1);
+
+        burnable.burn(TOKEN_ID);
+
+        uint256 sellerBefore = artist.balance;
+        uint256 fee = (RESERVE * 250) / 10_000;
         house.endAuction(auctionId);
-        assertEq(nft.ownerOf(TOKEN_ID), alice);
+        assertEq(artist.balance - sellerBefore, RESERVE - fee);
+        assertTrue(house.pendingDelivery(auctionId));
+        assertEq(address(house).balance, 0);
+
+        vm.expectRevert();
+        vm.prank(alice);
+        house.claimLot(auctionId, address(0));
+    }
+
+    /// @dev The fixed DELIVER_GAS_LIMIT stipend means delivery either always
+    ///      succeeds or always fails for a given collection's transfer cost,
+    ///      regardless of how much extra gas the endAuction caller supplies.
+    function test_DeliveryOutcomeDoesNotDependOnCallerSuppliedGas() public {
+        GasHungryERC721 tokenA = new GasHungryERC721();
+        tokenA.mint(artist, TOKEN_ID);
+        vm.prank(artist);
+        tokenA.setApprovalForAll(address(house), true);
+        vm.prank(artist);
+        uint256 auctionIdGenerous = house.createAuction(TOKEN_ID, address(tokenA), DURATION, RESERVE);
+        vm.prank(alice);
+        house.createBid{value: RESERVE}(auctionIdGenerous);
+        vm.warp(block.timestamp + DURATION + 1);
+
+        (bool okGenerous,) =
+            address(house).call{gas: 5_000_000}(abi.encodeWithSelector(house.endAuction.selector, auctionIdGenerous));
+        assertTrue(okGenerous);
+        assertFalse(house.pendingDelivery(auctionIdGenerous));
+        assertEq(tokenA.ownerOf(TOKEN_ID), alice);
+
+        GasHungryERC721 tokenB = new GasHungryERC721();
+        tokenB.mint(artist, TOKEN_ID + 1);
+        vm.prank(artist);
+        tokenB.setApprovalForAll(address(house), true);
+        vm.prank(artist);
+        uint256 auctionIdTight = house.createAuction(TOKEN_ID + 1, address(tokenB), DURATION, RESERVE);
+        vm.prank(alice);
+        house.createBid{value: RESERVE}(auctionIdTight);
+        vm.warp(block.timestamp + DURATION + 1);
+
+        (bool okTight,) =
+            address(house).call{gas: 700_000}(abi.encodeWithSelector(house.endAuction.selector, auctionIdTight));
+        assertTrue(okTight);
+        assertFalse(house.pendingDelivery(auctionIdTight));
+        assertEq(tokenB.ownerOf(TOKEN_ID + 1), alice);
+    }
+
+    /// @dev Below the headroom guard, endAuction must revert InsufficientGas
+    ///      rather than misclassify a good delivery as deferred.
+    function test_EndAuctionRevertsWhenGasBelowDeliveryHeadroom() public {
+        GasHungryERC721 token = new GasHungryERC721();
+        token.mint(artist, TOKEN_ID);
+        vm.prank(artist);
+        token.setApprovalForAll(address(house), true);
+        vm.prank(artist);
+        uint256 auctionId = house.createAuction(TOKEN_ID, address(token), DURATION, RESERVE);
+        vm.prank(alice);
+        house.createBid{value: RESERVE}(auctionId);
+        vm.warp(block.timestamp + DURATION + 1);
+
+        (bool ok,) =
+            address(house).call{gas: 520_000}(abi.encodeWithSelector(house.endAuction.selector, auctionId));
+        assertFalse(ok, "starved call must revert, not defer");
+        assertFalse(house.pendingDelivery(auctionId), "no deferral recorded");
+        assertEq(token.ownerOf(TOKEN_ID), address(house), "lot still escrowed");
+
+        house.endAuction(auctionId);
+        assertEq(token.ownerOf(TOKEN_ID), alice, "settles normally with full gas");
     }
 }

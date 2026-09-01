@@ -8,6 +8,7 @@ import {SovereignAuctionHouseV2} from "../src/SovereignAuctionHouseV2.sol";
 import {SovereignAuctionHouseV2Factory} from "../src/SovereignAuctionHouseV2Factory.sol";
 import {ISovereignAuctionHouseV2} from "../src/ISovereignAuctionHouseV2.sol";
 import {MockERC721} from "./MockERC721.sol";
+import {PausableERC1155} from "./PausableERC1155.sol";
 
 contract MockAuctionERC1155 is ERC1155 {
     constructor() ERC1155("") {}
@@ -63,24 +64,34 @@ contract MutableERC1155 {
     }
 }
 
-contract ERC1155BidProxy {
+/// @dev Contract wallet that bids and correctly accepts ERC1155 delivery.
+contract AcceptingERC1155Bidder {
     function bid(address house, uint256 auctionId) external payable {
         SovereignAuctionHouseV2(payable(house)).createBid{value: msg.value}(auctionId);
     }
+
+    function claim(address house, uint256 auctionId, address to) external {
+        SovereignAuctionHouseV2(payable(house)).claimLot(auctionId, to);
+    }
+
+    function onERC1155Received(address, address, uint256, uint256, bytes calldata) external pure returns (bytes4) {
+        return IERC1155Receiver.onERC1155Received.selector;
+    }
 }
 
-/// @dev `code.length == 0` during this constructor. The house must still
-///      reject its bid, because the deployed contract could reject delivery.
-contract ConstructorERC1155Bidder {
-    constructor(address house, uint256 auctionId) payable {
+/// @dev Contract wallet that bids but rejects ERC1155 delivery, forcing a
+///      deferral. Its own rejection cannot force a refund: the seller is
+///      already paid, and it can still redirect the eventual claim.
+contract RejectingERC1155Bidder {
+    function bid(address house, uint256 auctionId) external payable {
         SovereignAuctionHouseV2(payable(house)).createBid{value: msg.value}(auctionId);
     }
 
-    function onERC1155Received(address, address, uint256, uint256, bytes calldata)
-        external
-        pure
-        returns (bytes4)
-    {
+    function claim(address house, uint256 auctionId, address to) external {
+        SovereignAuctionHouseV2(payable(house)).claimLot(auctionId, to);
+    }
+
+    function onERC1155Received(address, address, uint256, uint256, bytes calldata) external pure returns (bytes4) {
         revert("reject delivery");
     }
 }
@@ -124,6 +135,7 @@ contract Sovereign1155AuctionHouseTest is Test {
         assertEq(token.balanceOf(alice, TOKEN_ID), QUANTITY);
         assertEq(token.balanceOf(artist, TOKEN_ID), 10 - QUANTITY);
         assertEq(carol.balance - carolBefore, RESERVE - fee);
+        assertFalse(house.pendingDelivery(auctionId));
     }
 
     function test_SameHouseCanCreate721And1155Lots() public {
@@ -145,7 +157,11 @@ contract Sovereign1155AuctionHouseTest is Test {
         assertEq(uint8(standard721), 0);
     }
 
-    function test_PostBidCodeCannotForce1155Refund() public {
+    /// @dev EIP-7702 code appearing on a bidder after it bid, or any other
+    ///      contract-code bidder, is no longer special-cased: the seller is
+    ///      always paid at endAuction, so a winner opting out of delivery
+    ///      gains nothing and only its own claim is affected.
+    function test_ContractCodeOnBidderNoLongerBlocksSettlement() public {
         vm.prank(artist);
         uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE);
         vm.prank(alice, alice);
@@ -154,17 +170,15 @@ contract Sovereign1155AuctionHouseTest is Test {
         // Models a bidder adding delegated EIP-7702 code after it bid.
         vm.etch(alice, hex"00");
         vm.warp(block.timestamp + DURATION + 1);
-        vm.expectRevert(SovereignAuctionHouseV2.ContractBidderNotSupported.selector);
-        house.endAuction(auctionId);
 
-        assertEq(house.pendingRefunds(alice), 0);
-        assertEq(token.balanceOf(address(house), TOKEN_ID), QUANTITY);
-        (bool active,) = house.getAuctionFor(address(token), TOKEN_ID);
-        assertTrue(active);
+        uint256 sellerBefore = artist.balance;
+        uint256 fee = (RESERVE * 250) / 10_000;
+        house.endAuction(auctionId);
+        assertEq(artist.balance - sellerBefore, RESERVE - fee);
+        assertTrue(house.pendingDelivery(auctionId));
     }
 
-
-    function test_BrokenDeliveryRefundsWinnerAndCanReturnLot() public {
+    function test_BrokenDeliveryDefersLotButSellerIsPaidInFull() public {
         MutableERC1155 bad = new MutableERC1155();
         bad.mint(artist, TOKEN_ID, QUANTITY);
         vm.prank(artist);
@@ -176,26 +190,80 @@ contract Sovereign1155AuctionHouseTest is Test {
         bad.setBreakOutbound(true);
         vm.warp(block.timestamp + DURATION + 1);
 
+        uint256 sellerBefore = artist.balance;
+        uint256 fee = (RESERVE * 250) / 10_000;
         house.endAuction(auctionId);
-        assertEq(house.pendingRefunds(alice), RESERVE);
+        assertEq(artist.balance - sellerBefore, RESERVE - fee);
         assertEq(bad.balanceOf(address(house), TOKEN_ID), QUANTITY);
+        assertTrue(house.pendingDelivery(auctionId));
         (bool active,) = house.getAuctionFor(address(bad), TOKEN_ID);
-        (bool failed,) = house.getFailedAuctionFor(address(bad), TOKEN_ID);
-        assertFalse(active);
-        assertTrue(failed);
+        assertTrue(active);
+        vm.expectRevert(SovereignAuctionHouseV2.AuctionAlreadyExistsForToken.selector);
+        vm.prank(artist);
+        house.recoverStuckERC1155(address(bad), TOKEN_ID, QUANTITY, artist);
 
         bad.setBreakOutbound(false);
-        house.claimFailedLot(auctionId);
-        assertEq(bad.balanceOf(artist, TOKEN_ID), QUANTITY);
+        vm.prank(alice);
+        house.claimLot(auctionId, address(0));
+        assertEq(bad.balanceOf(alice, TOKEN_ID), QUANTITY);
     }
 
-    function test_ContractWalletBidsAreRejectedToPreventReceiverOptOut() public {
+    /// @dev claimLot without a pending delivery reverts.
+    function test_ClaimLotWithoutPendingDeliveryReverts() public {
         vm.prank(artist);
         uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE);
-        ERC1155BidProxy proxy = new ERC1155BidProxy();
-        vm.deal(address(proxy), RESERVE);
-        vm.expectRevert(SovereignAuctionHouseV2.ContractBidderNotSupported.selector);
-        proxy.bid{value: RESERVE}(address(house), auctionId);
+        vm.prank(alice, alice);
+        house.createBid{value: RESERVE}(auctionId);
+        vm.warp(block.timestamp + DURATION + 1);
+
+        vm.expectRevert(SovereignAuctionHouseV2.NoPendingDelivery.selector);
+        vm.prank(alice);
+        house.claimLot(auctionId, address(0));
+
+        house.endAuction(auctionId);
+        assertFalse(house.pendingDelivery(auctionId));
+        vm.expectRevert(SovereignAuctionHouseV2.NoPendingDelivery.selector);
+        vm.prank(alice);
+        house.claimLot(auctionId, address(0));
+    }
+
+    /// @dev Contract wallets are no longer banned from bidding on ERC1155
+    ///      lots. One that correctly implements the receiver hook wins and
+    ///      is delivered to directly, with no deferral.
+    function test_ContractWalletCanBidAndWinDirectly() public {
+        vm.prank(artist);
+        uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE);
+        AcceptingERC1155Bidder bidder = new AcceptingERC1155Bidder();
+        vm.deal(address(bidder), RESERVE);
+        bidder.bid{value: RESERVE}(address(house), auctionId);
+        vm.warp(block.timestamp + DURATION + 1);
+
+        house.endAuction(auctionId);
+        assertFalse(house.pendingDelivery(auctionId));
+        assertEq(token.balanceOf(address(bidder), TOKEN_ID), QUANTITY);
+    }
+
+    /// @dev A winner whose onERC1155Received reverts is deferred, not
+    ///      refunded; the seller keeps being paid at endAuction, and the
+    ///      winner can redirect its own claim to a working EOA.
+    function test_RejectingContractWinnerIsDeferredThenClaimsToRedirect() public {
+        vm.prank(artist);
+        uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE);
+        RejectingERC1155Bidder bidder = new RejectingERC1155Bidder();
+        vm.deal(address(bidder), RESERVE);
+        bidder.bid{value: RESERVE}(address(house), auctionId);
+        vm.warp(block.timestamp + DURATION + 1);
+
+        uint256 sellerBefore = artist.balance;
+        uint256 fee = (RESERVE * 250) / 10_000;
+        house.endAuction(auctionId);
+        assertEq(artist.balance - sellerBefore, RESERVE - fee);
+        assertTrue(house.pendingDelivery(auctionId));
+        assertEq(token.balanceOf(address(house), TOKEN_ID), QUANTITY);
+
+        bidder.claim(address(house), auctionId, carol);
+        assertEq(token.balanceOf(carol, TOKEN_ID), QUANTITY);
+        assertFalse(house.pendingDelivery(auctionId));
     }
 
     function test_UnsolicitedSafeTransferIsRejected() public {
@@ -204,13 +272,32 @@ contract Sovereign1155AuctionHouseTest is Test {
         token.safeTransferFrom(artist, address(house), TOKEN_ID, 1, "");
     }
 
-    function test_ConstructorBidIsRejectedToPreventReceiverOptOut() public {
+    /// @dev Paused delivery defers the lot; the winner claims once unpaused.
+    function test_PausedCollectionDefersDeliveryThenClaimSucceedsAfterUnpause() public {
+        PausableERC1155 paused = new PausableERC1155();
+        paused.mint(artist, TOKEN_ID, QUANTITY);
         vm.prank(artist);
-        uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE);
-        vm.deal(alice, RESERVE);
-        vm.expectRevert(SovereignAuctionHouseV2.ContractBidderNotSupported.selector);
-        vm.startPrank(alice, alice);
-        new ConstructorERC1155Bidder{value: RESERVE}(address(house), auctionId);
-        vm.stopPrank();
+        paused.setApprovalForAll(address(house), true);
+        vm.prank(artist);
+        uint256 auctionId = house.create1155Auction(TOKEN_ID, address(paused), QUANTITY, DURATION, RESERVE);
+        vm.prank(alice, alice);
+        house.createBid{value: RESERVE}(auctionId);
+        paused.pause();
+        vm.warp(block.timestamp + DURATION + 1);
+
+        uint256 sellerBefore = artist.balance;
+        uint256 fee = (RESERVE * 250) / 10_000;
+        house.endAuction(auctionId);
+        assertEq(artist.balance - sellerBefore, RESERVE - fee);
+        assertTrue(house.pendingDelivery(auctionId));
+
+        vm.expectRevert();
+        vm.prank(alice);
+        house.claimLot(auctionId, address(0));
+
+        paused.unpause();
+        vm.prank(alice);
+        house.claimLot(auctionId, address(0));
+        assertEq(paused.balanceOf(alice, TOKEN_ID), QUANTITY);
     }
 }

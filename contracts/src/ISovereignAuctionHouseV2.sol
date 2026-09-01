@@ -2,7 +2,10 @@
 pragma solidity ^0.8.20;
 
 /// @title Sovereign Auction House V2 interface
-/// @notice ETH reserve auctions for ERC721 tokens with verified delivery.
+/// @notice ETH reserve auctions for ERC721 and ERC1155 tokens. Settlement
+///         pays the seller unconditionally; token delivery is attempted with
+///         a fixed gas stipend and, on failure, deferred to a winner-only
+///         claim. No sale ever unwinds.
 interface ISovereignAuctionHouseV2 {
     enum TokenStandard {
         ERC721,
@@ -20,14 +23,6 @@ interface ISovereignAuctionHouseV2 {
         uint64 endTime;
         address payable bidder;
         uint64 duration;
-        uint256 quantity;
-        TokenStandard standard;
-    }
-
-    struct FailedDelivery {
-        address tokenContract;
-        uint256 tokenId;
-        address tokenOwner;
         uint256 quantity;
         TokenStandard standard;
     }
@@ -70,12 +65,13 @@ interface ISovereignAuctionHouseV2 {
         uint256 sellerProceeds,
         uint256 protocolFee
     );
-    event AuctionDeliveryFailed(
-        uint256 indexed auctionId,
-        address indexed winner,
-        uint256 refundAmount
-    );
-    event FailedLotReturned(uint256 indexed auctionId, address indexed tokenOwner);
+    /// @notice Emitted instead of, or in addition to, immediate delivery
+    ///         when the token transfer attempted during endAuction fails.
+    ///         The seller and protocol are already paid; the lot is claimable
+    ///         by the winner via claimLot.
+    event DeliveryDeferred(uint256 indexed auctionId, address indexed winner);
+    /// @notice Emitted when claimLot delivers a deferred lot.
+    event LotClaimed(uint256 indexed auctionId, address indexed winner, address recipient);
     event AuctionCanceled(uint256 indexed auctionId);
     event RefundCredited(address indexed to, uint256 amount);
     event RefundWithdrawn(address indexed account, address indexed recipient, uint256 amount);
@@ -97,6 +93,14 @@ interface ISovereignAuctionHouseV2 {
     ) external returns (uint256 auctionId);
 
     function createBid(uint256 auctionId) external payable;
+
+    /// @notice Settle a finished auction. Pays the protocol fee and seller
+    ///         unconditionally, then attempts token delivery to the winner
+    ///         with a fixed gas stipend so the outcome cannot depend on
+    ///         caller-supplied gas. On delivery failure the payout still
+    ///         happens; the lot is deferred to claimLot instead. Reverts if
+    ///         the auction is already settled, or with InsufficientGas when
+    ///         called without enough gas to honor the delivery stipend.
     function endAuction(uint256 auctionId) external;
     function cancelAuction(uint256 auctionId) external;
     function setAuctionReservePrice(uint256 auctionId, uint256 reservePrice) external;
@@ -106,5 +110,11 @@ interface ISovereignAuctionHouseV2 {
     function expireAuction(uint256 auctionId) external;
     function withdrawRefund() external;
     function withdrawRefundTo(address payable recipient) external;
-    function claimFailedLot(uint256 auctionId) external;
+
+    /// @notice Winner-only claim for a lot whose delivery was deferred at
+    ///         settlement. Delivers to msg.sender, or to `to` if nonzero.
+    ///         Reverts if the auction has no deferred delivery or the caller
+    ///         is not the recorded winner. A revert during delivery reverts
+    ///         the whole call, leaving the claim retryable.
+    function claimLot(uint256 auctionId, address to) external;
 }
