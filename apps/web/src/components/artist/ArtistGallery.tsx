@@ -236,6 +236,7 @@ function GalleryCard({
   const media = useThumbnailMedia(sourceUrl, 800, delivery?.kind)
   const [loaded, setLoaded] = useState(false)
   const [measuredRatio, setMeasuredRatio] = useState<number | null>(null)
+  const videoRef = useRef<HTMLVideoElement | null>(null)
   const storedRatio =
     delivery?.width && delivery.height ? delivery.width / delivery.height : null
   const ratio = storedRatio ?? measuredRatio ?? 1
@@ -249,7 +250,23 @@ function GalleryCard({
   useEffect(() => {
     setLoaded(false)
     setMeasuredRatio(null)
-  }, [sourceUrl])
+    // SSR and the browser cache can complete media before React attaches the
+    // event handlers. Recover the real dimensions instead of leaving valid
+    // work permanently hidden behind its loading state.
+    const image = media.imgRef.current
+    if (media.kind === "image" && image?.complete && image.naturalWidth > 0) {
+      setLoaded(true)
+      if (image.naturalHeight > 0) {
+        setMeasuredRatio(image.naturalWidth / image.naturalHeight)
+      }
+    } else if (media.kind === "video" && (videoRef.current?.readyState ?? 0) >= 2) {
+      const video = videoRef.current
+      setLoaded(true)
+      if (video?.videoWidth && video.videoHeight) {
+        setMeasuredRatio(video.videoWidth / video.videoHeight)
+      }
+    }
+  }, [sourceUrl, media.kind, media.imgSrc, media.videoSrc, media.imgRef])
 
   const isActive = item.availability?.status === "active"
 
@@ -283,13 +300,17 @@ function GalleryCard({
         )}
         {showMedia && media.kind === "video" ? (
           <video
+            ref={videoRef}
             src={media.videoSrc}
             aria-label={item.title}
             className={`block h-auto w-full transition-opacity ${loaded ? "opacity-100" : "opacity-0"}`}
             muted
             playsInline
             preload="metadata"
-            onError={media.onVideoError}
+            onError={() => {
+              setLoaded(false)
+              media.onVideoError()
+            }}
             onLoadedData={(event) => {
               const video = event.currentTarget
               setLoaded(true)
@@ -308,7 +329,10 @@ function GalleryCard({
             className={`block h-auto w-full transition-opacity ${loaded ? "opacity-100" : "opacity-0"}`}
             loading="lazy"
             decoding="async"
-            onError={media.onImgError}
+            onError={() => {
+              setLoaded(false)
+              media.onImgError()
+            }}
             onLoad={(e) => {
               const img = e.currentTarget
               setLoaded(true)
