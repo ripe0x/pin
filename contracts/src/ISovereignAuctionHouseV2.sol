@@ -25,7 +25,6 @@ interface ISovereignAuctionHouseV2 {
         uint64 duration;
         uint256 quantity;
         TokenStandard standard;
-        uint16 curatorFeeBps;
     }
 
     event AuctionCreated(
@@ -36,7 +35,6 @@ interface ISovereignAuctionHouseV2 {
         uint256 reservePrice,
         address tokenOwner,
         address fundsRecipient,
-        uint16 curatorFeeBps,
         uint64 listingExpiry
     );
     event Auction1155Created(
@@ -48,7 +46,6 @@ interface ISovereignAuctionHouseV2 {
         uint256 reservePrice,
         address tokenOwner,
         address fundsRecipient,
-        uint16 curatorFeeBps,
         uint64 listingExpiry
     );
     event AuctionReservePriceUpdated(uint256 indexed auctionId, uint256 reservePrice);
@@ -68,8 +65,7 @@ interface ISovereignAuctionHouseV2 {
         address tokenOwner,
         address winner,
         uint256 sellerProceeds,
-        uint256 protocolFee,
-        uint256 curatorFee
+        uint256 protocolFee
     );
     /// @notice Emitted instead of, or in addition to, immediate delivery
     ///         when the token transfer attempted during endAuction fails.
@@ -86,23 +82,20 @@ interface ISovereignAuctionHouseV2 {
     /// @notice Lists an ERC721 for auction. The house owner may list a
     ///         third party's token (consignment): `tokenOwner` is read from
     ///         the token itself and proceeds go to that owner's
-    ///         `fundsRecipient`, not the house owner. `curatorFeeBps` is the
-    ///         house owner's cut of the hammer price, fixed for the life of
-    ///         the listing so the token owner can inspect it and cancel
-    ///         pre-bid via `cancelAuction` if the terms are unacceptable.
-    ///         `listingExpiry_` sets the no-bid close date for the listing:
-    ///         0 means no expiry, a nonzero value must be strictly in the
-    ///         future and is stored in `listingExpiry`. A bid placed before
-    ///         the expiry starts the normal auction clock and the expiry no
-    ///         longer applies; `createBid` only checks it while
-    ///         `firstBidTime` is unset. The token owner can still change or
-    ///         clear it pre-bid via `setAuctionListingExpiry`.
+    ///         `fundsRecipient`, not the house owner. `listingExpiry_` sets
+    ///         the no-bid close date for the listing: 0 means no expiry, a
+    ///         nonzero value must be strictly in the future and is stored
+    ///         in `listingExpiry`. A bid placed before the expiry starts the
+    ///         normal auction clock and the expiry no longer applies;
+    ///         `createBid` only checks it while `firstBidTime` is unset. The
+    ///         token owner can still change or clear it pre-bid via
+    ///         `setAuctionListingExpiry`, or cancel entirely via
+    ///         `cancelAuction`.
     function createAuction(
         uint256 tokenId,
         address tokenContract,
         uint256 duration,
         uint256 reservePrice,
-        uint16 curatorFeeBps,
         uint64 listingExpiry_
     ) external returns (uint256 auctionId);
 
@@ -112,7 +105,6 @@ interface ISovereignAuctionHouseV2 {
         uint256 quantity,
         uint256 duration,
         uint256 reservePrice,
-        uint16 curatorFeeBps,
         uint64 listingExpiry_
     ) external returns (uint256 auctionId);
 
@@ -124,12 +116,10 @@ interface ISovereignAuctionHouseV2 {
 
     function createBid(uint256 auctionId) external payable;
 
-    /// @notice Settle a finished auction. Splits the hammer price into the
-    ///         protocol fee, the curator fee (`owner()` at settlement time,
-    ///         fixed at listing), and the seller proceeds, and pays all
-    ///         three unconditionally. Then attempts token delivery to the
-    ///         winner with a fixed gas stipend so the outcome cannot depend
-    ///         on caller-supplied gas. On delivery failure the payout still
+    /// @notice Settle a finished auction. Pays the protocol fee and seller
+    ///         unconditionally, then attempts token delivery to the winner
+    ///         with a fixed gas stipend so the outcome cannot depend on
+    ///         caller-supplied gas. On delivery failure the payout still
     ///         happens; the lot is deferred to claimLot instead. Reverts if
     ///         the auction is already settled, or with InsufficientGas when
     ///         called without enough gas to honor the delivery stipend.

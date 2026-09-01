@@ -32,7 +32,6 @@ contract SovereignAuctionHouseV2 is
     uint256 public constant TIME_BUFFER = 15 minutes;
     uint16 public constant MIN_BID_INCREMENT_BPS = 500;
     uint256 public constant MAX_DURATION = 365 days * 100;
-    uint16 public constant MAX_COMBINED_FEE_BPS = 5_000;
 
     error AuctionDoesNotExist();
     error AuctionAlreadyStarted();
@@ -52,7 +51,6 @@ contract SovereignAuctionHouseV2 is
     error NoPendingDelivery();
     error NotWinner();
     error InsufficientGas();
-    error CuratorFeeTooHigh();
 
     uint256 internal constant DELIVER_GAS_LIMIT = 500_000;
 
@@ -119,26 +117,22 @@ contract SovereignAuctionHouseV2 is
         address tokenContract,
         uint256 duration,
         uint256 reservePrice,
-        uint16 curatorFeeBps,
         uint64 listingExpiry_
     ) external override nonReentrant onlyOwner returns (uint256) {
-        return _createAuction(tokenId, tokenContract, duration, reservePrice, curatorFeeBps, listingExpiry_);
+        return _createAuction(tokenId, tokenContract, duration, reservePrice, listingExpiry_);
     }
 
-    /// @notice One curatorFeeBps and one listingExpiry_ apply to every
-    ///         auction created in the batch.
+    /// @notice One listingExpiry_ applies to every auction created in the batch.
     function bulkCreateAuctions(
         address tokenContract,
         uint256[] calldata tokenIds,
         uint256 reservePrice,
         uint256 duration,
-        uint16 curatorFeeBps,
         uint64 listingExpiry_
     ) external nonReentrant onlyOwner returns (uint256[] memory auctionIds) {
         auctionIds = new uint256[](tokenIds.length);
         for (uint256 i; i < tokenIds.length; ++i) {
-            auctionIds[i] =
-                _createAuction(tokenIds[i], tokenContract, duration, reservePrice, curatorFeeBps, listingExpiry_);
+            auctionIds[i] = _createAuction(tokenIds[i], tokenContract, duration, reservePrice, listingExpiry_);
         }
     }
 
@@ -147,13 +141,11 @@ contract SovereignAuctionHouseV2 is
         address tokenContract,
         uint256 duration,
         uint256 reservePrice,
-        uint16 curatorFeeBps,
         uint64 listingExpiry_
     ) internal returns (uint256 auctionId) {
         require(IERC165(tokenContract).supportsInterface(ERC721_INTERFACE_ID), "tokenContract is not ERC721");
         _validateDuration(duration);
         require(listingExpiry_ == 0 || listingExpiry_ > block.timestamp, "expiry must be future");
-        if (protocolFeeBps + curatorFeeBps > MAX_COMBINED_FEE_BPS) revert CuratorFeeTooHigh();
         if (_auctionIdByToken[tokenContract][tokenId] != 0) revert AuctionAlreadyExistsForToken();
 
         address tokenOwner = IERC721(tokenContract).ownerOf(tokenId);
@@ -177,8 +169,7 @@ contract SovereignAuctionHouseV2 is
             bidder: payable(address(0)),
             duration: uint64(duration),
             quantity: 1,
-            standard: TokenStandard.ERC721,
-            curatorFeeBps: curatorFeeBps
+            standard: TokenStandard.ERC721
         });
         _auctionIdByToken[tokenContract][tokenId] = auctionId + 1;
         if (listingExpiry_ != 0) listingExpiry[auctionId] = listingExpiry_;
@@ -194,7 +185,6 @@ contract SovereignAuctionHouseV2 is
             reservePrice,
             tokenOwner,
             tokenOwner,
-            curatorFeeBps,
             listingExpiry_
         );
     }
@@ -207,14 +197,12 @@ contract SovereignAuctionHouseV2 is
         uint256 quantity,
         uint256 duration,
         uint256 reservePrice,
-        uint16 curatorFeeBps,
         uint64 listingExpiry_
     ) external override onlyOwner nonReentrant returns (uint256 auctionId) {
         require(IERC165(tokenContract).supportsInterface(ERC1155_INTERFACE_ID), "tokenContract is not ERC1155");
         require(quantity != 0, "quantity zero");
         _validateDuration(duration);
         require(listingExpiry_ == 0 || listingExpiry_ > block.timestamp, "expiry must be future");
-        if (protocolFeeBps + curatorFeeBps > MAX_COMBINED_FEE_BPS) revert CuratorFeeTooHigh();
         if (_auctionIdByToken[tokenContract][tokenId] != 0) revert AuctionAlreadyExistsForToken();
         require(IERC1155(tokenContract).balanceOf(msg.sender, tokenId) >= quantity, "insufficient balance");
         require(IERC1155(tokenContract).isApprovedForAll(msg.sender, address(this)), "house not approved");
@@ -232,14 +220,13 @@ contract SovereignAuctionHouseV2 is
             bidder: payable(address(0)),
             duration: uint64(duration),
             quantity: quantity,
-            standard: TokenStandard.ERC1155,
-            curatorFeeBps: curatorFeeBps
+            standard: TokenStandard.ERC1155
         });
         _auctionIdByToken[tokenContract][tokenId] = auctionId + 1;
         if (listingExpiry_ != 0) listingExpiry[auctionId] = listingExpiry_;
         _pull1155(tokenContract, tokenId, quantity, msg.sender);
         emit Auction1155Created(
-            auctionId, tokenId, tokenContract, quantity, duration, reservePrice, msg.sender, msg.sender, curatorFeeBps, listingExpiry_
+            auctionId, tokenId, tokenContract, quantity, duration, reservePrice, msg.sender, msg.sender, listingExpiry_
         );
     }
 
@@ -340,15 +327,13 @@ contract SovereignAuctionHouseV2 is
         if (extended) emit AuctionEndTimeUpdated(auctionId, a.endTime);
     }
 
-    /// @notice Resolves every ended auction. Splits the hammer price into
-    ///         the protocol fee, the curator fee (paid to owner() at the
-    ///         rate fixed on the auction at creation), and the seller
-    ///         proceeds, and pays all three unconditionally. Then attempts
-    ///         delivery through a try/catch self-call capped at
-    ///         DELIVER_GAS_LIMIT gas, so the delivery outcome cannot depend
-    ///         on how much gas the caller of endAuction supplied. A delivery
-    ///         failure defers the lot to claimLot; it never affects the
-    ///         payout, and the sale never unwinds.
+    /// @notice Resolves every ended auction. Pays the protocol fee and
+    ///         seller unconditionally, then attempts delivery through a
+    ///         try/catch self-call capped at DELIVER_GAS_LIMIT gas, so the
+    ///         delivery outcome cannot depend on how much gas the caller of
+    ///         endAuction supplied. A delivery failure defers the lot to
+    ///         claimLot; it never affects the payout, and the sale never
+    ///         unwinds.
     function endAuction(uint256 auctionId)
         external
         override
@@ -388,24 +373,18 @@ contract SovereignAuctionHouseV2 is
         }
     }
 
-    /// @dev Splits the hammer price into the protocol fee, the curator fee,
-    ///      and seller proceeds, and pays all three. Split out of endAuction
-    ///      to keep that function's stack shallow enough for the legacy
-    ///      codegen path.
+    /// @dev Splits the hammer price into the protocol fee and seller
+    ///      proceeds, and pays both. Split out of endAuction to keep that
+    ///      function's stack shallow enough for the legacy codegen path.
     function _settleFunds(uint256 auctionId, Auction memory a) internal {
         uint256 protocolFee;
         if (protocolFeeBps != 0) {
             protocolFee = (a.amount * protocolFeeBps) / 10_000;
             _sendOrCredit(feeRecipient, protocolFee);
         }
-        uint256 curatorFee;
-        if (a.curatorFeeBps != 0) {
-            curatorFee = (a.amount * a.curatorFeeBps) / 10_000;
-            _sendOrCredit(payable(owner()), curatorFee);
-        }
-        uint256 sellerProceeds = a.amount - protocolFee - curatorFee;
+        uint256 sellerProceeds = a.amount - protocolFee;
         _sendOrCredit(a.fundsRecipient, sellerProceeds);
-        emit AuctionEnded(auctionId, a.tokenOwner, a.bidder, sellerProceeds, protocolFee, curatorFee);
+        emit AuctionEnded(auctionId, a.tokenOwner, a.bidder, sellerProceeds, protocolFee);
     }
 
     /// @dev Delivery target for both endAuction's gas-capped try/catch and,

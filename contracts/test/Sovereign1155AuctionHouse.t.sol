@@ -120,36 +120,9 @@ contract Sovereign1155AuctionHouseTest is Test {
         vm.deal(alice, 10 ether);
     }
 
-    /// @dev The curator fee splits the hammer price the same way on an 1155
-    ///      settle as it does for ERC721: protocol fee to feeRecipient,
-    ///      curator fee to owner(), remainder to fundsRecipient.
-    function test_CuratorFeeAppliesIdenticallyOn1155Settle() public {
-        vm.prank(artist);
-        uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, 1000, 0);
-        vm.prank(artist);
-        house.setAuctionFundsRecipient(auctionId, payable(carol));
-        vm.prank(alice, alice);
-        house.createBid{value: RESERVE}(auctionId);
-        vm.warp(block.timestamp + DURATION + 1);
-
-        uint256 treasuryBefore = treasury.balance;
-        uint256 curatorBefore = artist.balance;
-        uint256 carolBefore = carol.balance;
-        house.endAuction(auctionId);
-
-        uint256 protocolFee = (RESERVE * 250) / 10_000;
-        uint256 curatorFee = (RESERVE * 1000) / 10_000;
-        uint256 sellerProceeds = RESERVE - protocolFee - curatorFee;
-
-        assertEq(treasury.balance - treasuryBefore, protocolFee);
-        assertEq(artist.balance - curatorBefore, curatorFee);
-        assertEq(carol.balance - carolBefore, sellerProceeds);
-        assertEq(token.balanceOf(alice, TOKEN_ID), QUANTITY);
-    }
-
     function test_WholeLotSettlesToEoaWinnerAndPaysFundsRecipient() public {
         vm.prank(artist);
-        uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, 0, 0);
+        uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, 0);
         vm.prank(artist);
         house.setAuctionFundsRecipient(auctionId, payable(carol));
         vm.prank(alice, alice);
@@ -167,14 +140,14 @@ contract Sovereign1155AuctionHouseTest is Test {
 
     function test_SameHouseCanCreate721And1155Lots() public {
         vm.prank(artist);
-        uint256 erc1155AuctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, 0, 0);
+        uint256 erc1155AuctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, 0);
 
         MockERC721 nft = new MockERC721();
         nft.mint(artist, 2);
         vm.prank(artist);
         nft.setApprovalForAll(address(house), true);
         vm.prank(artist);
-        uint256 erc721AuctionId = house.createAuction(2, address(nft), DURATION, RESERVE, 0, 0);
+        uint256 erc721AuctionId = house.createAuction(2, address(nft), DURATION, RESERVE, 0);
 
         ISovereignAuctionHouseV2.Auction memory a1155 = house.getAuction(erc1155AuctionId);
         ISovereignAuctionHouseV2.Auction memory a721 = house.getAuction(erc721AuctionId);
@@ -190,7 +163,7 @@ contract Sovereign1155AuctionHouseTest is Test {
     ///      gains nothing and only its own claim is affected.
     function test_ContractCodeOnBidderNoLongerBlocksSettlement() public {
         vm.prank(artist);
-        uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, 0, 0);
+        uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, 0);
         vm.prank(alice, alice);
         house.createBid{value: RESERVE}(auctionId);
 
@@ -211,7 +184,7 @@ contract Sovereign1155AuctionHouseTest is Test {
         vm.prank(artist);
         bad.setApprovalForAll(address(house), true);
         vm.prank(artist);
-        uint256 auctionId = house.create1155Auction(TOKEN_ID, address(bad), QUANTITY, DURATION, RESERVE, 0, 0);
+        uint256 auctionId = house.create1155Auction(TOKEN_ID, address(bad), QUANTITY, DURATION, RESERVE, 0);
         vm.prank(alice, alice);
         house.createBid{value: RESERVE}(auctionId);
         bad.setBreakOutbound(true);
@@ -238,7 +211,7 @@ contract Sovereign1155AuctionHouseTest is Test {
     /// @dev claimLot without a pending delivery reverts.
     function test_ClaimLotWithoutPendingDeliveryReverts() public {
         vm.prank(artist);
-        uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, 0, 0);
+        uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, 0);
         vm.prank(alice, alice);
         house.createBid{value: RESERVE}(auctionId);
         vm.warp(block.timestamp + DURATION + 1);
@@ -259,7 +232,7 @@ contract Sovereign1155AuctionHouseTest is Test {
     ///      is delivered to directly, with no deferral.
     function test_ContractWalletCanBidAndWinDirectly() public {
         vm.prank(artist);
-        uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, 0, 0);
+        uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, 0);
         AcceptingERC1155Bidder bidder = new AcceptingERC1155Bidder();
         vm.deal(address(bidder), RESERVE);
         bidder.bid{value: RESERVE}(address(house), auctionId);
@@ -275,7 +248,7 @@ contract Sovereign1155AuctionHouseTest is Test {
     ///      winner can redirect its own claim to a working EOA.
     function test_RejectingContractWinnerIsDeferredThenClaimsToRedirect() public {
         vm.prank(artist);
-        uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, 0, 0);
+        uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, 0);
         RejectingERC1155Bidder bidder = new RejectingERC1155Bidder();
         vm.deal(address(bidder), RESERVE);
         bidder.bid{value: RESERVE}(address(house), auctionId);
@@ -306,7 +279,7 @@ contract Sovereign1155AuctionHouseTest is Test {
         vm.prank(artist);
         paused.setApprovalForAll(address(house), true);
         vm.prank(artist);
-        uint256 auctionId = house.create1155Auction(TOKEN_ID, address(paused), QUANTITY, DURATION, RESERVE, 0, 0);
+        uint256 auctionId = house.create1155Auction(TOKEN_ID, address(paused), QUANTITY, DURATION, RESERVE, 0);
         vm.prank(alice, alice);
         house.createBid{value: RESERVE}(auctionId);
         paused.pause();
@@ -333,7 +306,7 @@ contract Sovereign1155AuctionHouseTest is Test {
     function test_Create1155AuctionSetsListingExpiryAndExpires() public {
         uint64 expiry = uint64(block.timestamp + 1 hours);
         vm.prank(artist);
-        uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, 0, expiry);
+        uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, expiry);
         assertEq(house.listingExpiry(auctionId), expiry);
 
         vm.warp(expiry);

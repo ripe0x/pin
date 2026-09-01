@@ -12,19 +12,6 @@ export const sovereignAuctionHouseV2Abi = [
   },
   {
     "type": "function",
-    "name": "MAX_COMBINED_FEE_BPS",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "MAX_DURATION",
     "inputs": [],
     "outputs": [
@@ -145,11 +132,6 @@ export const sovereignAuctionHouseV2Abi = [
         "name": "standard",
         "type": "uint8",
         "internalType": "enum ISovereignAuctionHouseV2.TokenStandard"
-      },
-      {
-        "name": "curatorFeeBps",
-        "type": "uint16",
-        "internalType": "uint16"
       }
     ],
     "stateMutability": "view"
@@ -177,11 +159,6 @@ export const sovereignAuctionHouseV2Abi = [
         "name": "duration",
         "type": "uint256",
         "internalType": "uint256"
-      },
-      {
-        "name": "curatorFeeBps",
-        "type": "uint16",
-        "internalType": "uint16"
       },
       {
         "name": "listingExpiry_",
@@ -259,11 +236,6 @@ export const sovereignAuctionHouseV2Abi = [
         "internalType": "uint256"
       },
       {
-        "name": "curatorFeeBps",
-        "type": "uint16",
-        "internalType": "uint16"
-      },
-      {
         "name": "listingExpiry_",
         "type": "uint64",
         "internalType": "uint64"
@@ -301,11 +273,6 @@ export const sovereignAuctionHouseV2Abi = [
         "name": "reservePrice",
         "type": "uint256",
         "internalType": "uint256"
-      },
-      {
-        "name": "curatorFeeBps",
-        "type": "uint16",
-        "internalType": "uint16"
       },
       {
         "name": "listingExpiry_",
@@ -500,11 +467,6 @@ export const sovereignAuctionHouseV2Abi = [
             "name": "standard",
             "type": "uint8",
             "internalType": "enum ISovereignAuctionHouseV2.TokenStandard"
-          },
-          {
-            "name": "curatorFeeBps",
-            "type": "uint16",
-            "internalType": "uint16"
           }
         ]
       }
@@ -972,12 +934,6 @@ export const sovereignAuctionHouseV2Abi = [
         "internalType": "address"
       },
       {
-        "name": "curatorFeeBps",
-        "type": "uint16",
-        "indexed": false,
-        "internalType": "uint16"
-      },
-      {
         "name": "listingExpiry",
         "type": "uint64",
         "indexed": false,
@@ -1083,12 +1039,6 @@ export const sovereignAuctionHouseV2Abi = [
         "internalType": "address"
       },
       {
-        "name": "curatorFeeBps",
-        "type": "uint16",
-        "indexed": false,
-        "internalType": "uint16"
-      },
-      {
         "name": "listingExpiry",
         "type": "uint64",
         "indexed": false,
@@ -1165,12 +1115,6 @@ export const sovereignAuctionHouseV2Abi = [
       },
       {
         "name": "protocolFee",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "curatorFee",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -1428,11 +1372,6 @@ export const sovereignAuctionHouseV2Abi = [
   {
     "type": "error",
     "name": "BidMustBePositive",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "CuratorFeeTooHigh",
     "inputs": []
   },
   {
