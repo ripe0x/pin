@@ -36,7 +36,8 @@ interface ISovereignAuctionHouseV2 {
         uint256 reservePrice,
         address tokenOwner,
         address fundsRecipient,
-        uint16 curatorFeeBps
+        uint16 curatorFeeBps,
+        uint64 listingExpiry
     );
     event Auction1155Created(
         uint256 indexed auctionId,
@@ -47,7 +48,8 @@ interface ISovereignAuctionHouseV2 {
         uint256 reservePrice,
         address tokenOwner,
         address fundsRecipient,
-        uint16 curatorFeeBps
+        uint16 curatorFeeBps,
+        uint64 listingExpiry
     );
     event AuctionReservePriceUpdated(uint256 indexed auctionId, uint256 reservePrice);
     event AuctionDurationUpdated(uint256 indexed auctionId, uint256 duration);
@@ -88,12 +90,20 @@ interface ISovereignAuctionHouseV2 {
     ///         house owner's cut of the hammer price, fixed for the life of
     ///         the listing so the token owner can inspect it and cancel
     ///         pre-bid via `cancelAuction` if the terms are unacceptable.
+    ///         `listingExpiry_` sets the no-bid close date for the listing:
+    ///         0 means no expiry, a nonzero value must be strictly in the
+    ///         future and is stored in `listingExpiry`. A bid placed before
+    ///         the expiry starts the normal auction clock and the expiry no
+    ///         longer applies; `createBid` only checks it while
+    ///         `firstBidTime` is unset. The token owner can still change or
+    ///         clear it pre-bid via `setAuctionListingExpiry`.
     function createAuction(
         uint256 tokenId,
         address tokenContract,
         uint256 duration,
         uint256 reservePrice,
-        uint16 curatorFeeBps
+        uint16 curatorFeeBps,
+        uint64 listingExpiry_
     ) external returns (uint256 auctionId);
 
     function create1155Auction(
@@ -102,7 +112,8 @@ interface ISovereignAuctionHouseV2 {
         uint256 quantity,
         uint256 duration,
         uint256 reservePrice,
-        uint16 curatorFeeBps
+        uint16 curatorFeeBps,
+        uint64 listingExpiry_
     ) external returns (uint256 auctionId);
 
     /// @notice Returns the full auction record as a struct. The mapping's

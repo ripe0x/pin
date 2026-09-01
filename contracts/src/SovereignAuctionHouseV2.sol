@@ -119,22 +119,26 @@ contract SovereignAuctionHouseV2 is
         address tokenContract,
         uint256 duration,
         uint256 reservePrice,
-        uint16 curatorFeeBps
+        uint16 curatorFeeBps,
+        uint64 listingExpiry_
     ) external override nonReentrant onlyOwner returns (uint256) {
-        return _createAuction(tokenId, tokenContract, duration, reservePrice, curatorFeeBps);
+        return _createAuction(tokenId, tokenContract, duration, reservePrice, curatorFeeBps, listingExpiry_);
     }
 
-    /// @notice One curatorFeeBps applies to every auction created in the batch.
+    /// @notice One curatorFeeBps and one listingExpiry_ apply to every
+    ///         auction created in the batch.
     function bulkCreateAuctions(
         address tokenContract,
         uint256[] calldata tokenIds,
         uint256 reservePrice,
         uint256 duration,
-        uint16 curatorFeeBps
+        uint16 curatorFeeBps,
+        uint64 listingExpiry_
     ) external nonReentrant onlyOwner returns (uint256[] memory auctionIds) {
         auctionIds = new uint256[](tokenIds.length);
         for (uint256 i; i < tokenIds.length; ++i) {
-            auctionIds[i] = _createAuction(tokenIds[i], tokenContract, duration, reservePrice, curatorFeeBps);
+            auctionIds[i] =
+                _createAuction(tokenIds[i], tokenContract, duration, reservePrice, curatorFeeBps, listingExpiry_);
         }
     }
 
@@ -143,10 +147,12 @@ contract SovereignAuctionHouseV2 is
         address tokenContract,
         uint256 duration,
         uint256 reservePrice,
-        uint16 curatorFeeBps
+        uint16 curatorFeeBps,
+        uint64 listingExpiry_
     ) internal returns (uint256 auctionId) {
         require(IERC165(tokenContract).supportsInterface(ERC721_INTERFACE_ID), "tokenContract is not ERC721");
         _validateDuration(duration);
+        require(listingExpiry_ == 0 || listingExpiry_ > block.timestamp, "expiry must be future");
         if (protocolFeeBps + curatorFeeBps > MAX_COMBINED_FEE_BPS) revert CuratorFeeTooHigh();
         if (_auctionIdByToken[tokenContract][tokenId] != 0) revert AuctionAlreadyExistsForToken();
 
@@ -175,6 +181,7 @@ contract SovereignAuctionHouseV2 is
             curatorFeeBps: curatorFeeBps
         });
         _auctionIdByToken[tokenContract][tokenId] = auctionId + 1;
+        if (listingExpiry_ != 0) listingExpiry[auctionId] = listingExpiry_;
 
         IERC721(tokenContract).transferFrom(tokenOwner, address(this), tokenId);
         if (IERC721(tokenContract).ownerOf(tokenId) != address(this)) revert EscrowFailed();
@@ -187,7 +194,8 @@ contract SovereignAuctionHouseV2 is
             reservePrice,
             tokenOwner,
             tokenOwner,
-            curatorFeeBps
+            curatorFeeBps,
+            listingExpiry_
         );
     }
 
@@ -199,11 +207,13 @@ contract SovereignAuctionHouseV2 is
         uint256 quantity,
         uint256 duration,
         uint256 reservePrice,
-        uint16 curatorFeeBps
+        uint16 curatorFeeBps,
+        uint64 listingExpiry_
     ) external override onlyOwner nonReentrant returns (uint256 auctionId) {
         require(IERC165(tokenContract).supportsInterface(ERC1155_INTERFACE_ID), "tokenContract is not ERC1155");
         require(quantity != 0, "quantity zero");
         _validateDuration(duration);
+        require(listingExpiry_ == 0 || listingExpiry_ > block.timestamp, "expiry must be future");
         if (protocolFeeBps + curatorFeeBps > MAX_COMBINED_FEE_BPS) revert CuratorFeeTooHigh();
         if (_auctionIdByToken[tokenContract][tokenId] != 0) revert AuctionAlreadyExistsForToken();
         require(IERC1155(tokenContract).balanceOf(msg.sender, tokenId) >= quantity, "insufficient balance");
@@ -226,8 +236,11 @@ contract SovereignAuctionHouseV2 is
             curatorFeeBps: curatorFeeBps
         });
         _auctionIdByToken[tokenContract][tokenId] = auctionId + 1;
+        if (listingExpiry_ != 0) listingExpiry[auctionId] = listingExpiry_;
         _pull1155(tokenContract, tokenId, quantity, msg.sender);
-        emit Auction1155Created(auctionId, tokenId, tokenContract, quantity, duration, reservePrice, msg.sender, msg.sender, curatorFeeBps);
+        emit Auction1155Created(
+            auctionId, tokenId, tokenContract, quantity, duration, reservePrice, msg.sender, msg.sender, curatorFeeBps, listingExpiry_
+        );
     }
 
     function setAuctionReservePrice(uint256 auctionId, uint256 reservePrice)

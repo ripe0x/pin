@@ -182,6 +182,11 @@ export const sovereignAuctionHouseV2Abi = [
         "name": "curatorFeeBps",
         "type": "uint16",
         "internalType": "uint16"
+      },
+      {
+        "name": "listingExpiry_",
+        "type": "uint64",
+        "internalType": "uint64"
       }
     ],
     "outputs": [
@@ -257,6 +262,11 @@ export const sovereignAuctionHouseV2Abi = [
         "name": "curatorFeeBps",
         "type": "uint16",
         "internalType": "uint16"
+      },
+      {
+        "name": "listingExpiry_",
+        "type": "uint64",
+        "internalType": "uint64"
       }
     ],
     "outputs": [
@@ -296,6 +306,11 @@ export const sovereignAuctionHouseV2Abi = [
         "name": "curatorFeeBps",
         "type": "uint16",
         "internalType": "uint16"
+      },
+      {
+        "name": "listingExpiry_",
+        "type": "uint64",
+        "internalType": "uint64"
       }
     ],
     "outputs": [
@@ -961,6 +976,12 @@ export const sovereignAuctionHouseV2Abi = [
         "type": "uint16",
         "indexed": false,
         "internalType": "uint16"
+      },
+      {
+        "name": "listingExpiry",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
       }
     ],
     "anonymous": false
@@ -1066,6 +1087,12 @@ export const sovereignAuctionHouseV2Abi = [
         "type": "uint16",
         "indexed": false,
         "internalType": "uint16"
+      },
+      {
+        "name": "listingExpiry",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
       }
     ],
     "anonymous": false

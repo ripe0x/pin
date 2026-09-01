@@ -114,9 +114,10 @@ contract RejectingHouseOwner {
         address tokenContract,
         uint256 duration,
         uint256 reservePrice,
-        uint16 curatorFeeBps
+        uint16 curatorFeeBps,
+        uint64 listingExpiry_
     ) external returns (uint256) {
-        return house.createAuction(tokenId, tokenContract, duration, reservePrice, curatorFeeBps);
+        return house.createAuction(tokenId, tokenContract, duration, reservePrice, curatorFeeBps, listingExpiry_);
     }
 }
 
@@ -150,7 +151,7 @@ contract SovereignAuctionHouseV2Test is Test {
 
     function _create() internal returns (uint256) {
         vm.prank(artist);
-        return house.createAuction(TOKEN_ID, address(nft), DURATION, RESERVE, 0);
+        return house.createAuction(TOKEN_ID, address(nft), DURATION, RESERVE, 0, 0);
     }
 
     function _bidAndEnd(uint256 auctionId, address bidder, uint256 amount) internal {
@@ -239,7 +240,7 @@ contract SovereignAuctionHouseV2Test is Test {
         vm.prank(artist);
         bad.setApprovalForAll(address(house), true);
         vm.prank(artist);
-        uint256 auctionId = house.createAuction(TOKEN_ID, address(bad), DURATION, RESERVE, 0);
+        uint256 auctionId = house.createAuction(TOKEN_ID, address(bad), DURATION, RESERVE, 0, 0);
         vm.prank(alice);
         house.createBid{value: RESERVE}(auctionId);
         bad.setTransferMode(true, false);
@@ -299,7 +300,7 @@ contract SovereignAuctionHouseV2Test is Test {
         vm.prank(artist);
         bad.setApprovalForAll(address(house), true);
         vm.prank(artist);
-        uint256 auctionId = house.createAuction(TOKEN_ID, address(bad), DURATION, RESERVE, 0);
+        uint256 auctionId = house.createAuction(TOKEN_ID, address(bad), DURATION, RESERVE, 0, 0);
         vm.prank(alice);
         house.createBid{value: RESERVE}(auctionId);
         bad.setTransferMode(false, true);
@@ -326,7 +327,7 @@ contract SovereignAuctionHouseV2Test is Test {
         vm.prank(artist);
         paused.setApprovalForAll(address(house), true);
         vm.prank(artist);
-        uint256 auctionId = house.createAuction(TOKEN_ID, address(paused), DURATION, RESERVE, 0);
+        uint256 auctionId = house.createAuction(TOKEN_ID, address(paused), DURATION, RESERVE, 0, 0);
         vm.prank(alice);
         house.createBid{value: RESERVE}(auctionId);
         paused.pause();
@@ -358,7 +359,7 @@ contract SovereignAuctionHouseV2Test is Test {
         vm.prank(artist);
         burnable.setApprovalForAll(address(house), true);
         vm.prank(artist);
-        uint256 auctionId = house.createAuction(TOKEN_ID, address(burnable), DURATION, RESERVE, 0);
+        uint256 auctionId = house.createAuction(TOKEN_ID, address(burnable), DURATION, RESERVE, 0, 0);
         vm.prank(alice);
         house.createBid{value: RESERVE}(auctionId);
         vm.warp(block.timestamp + DURATION + 1);
@@ -386,7 +387,7 @@ contract SovereignAuctionHouseV2Test is Test {
         vm.prank(artist);
         tokenA.setApprovalForAll(address(house), true);
         vm.prank(artist);
-        uint256 auctionIdGenerous = house.createAuction(TOKEN_ID, address(tokenA), DURATION, RESERVE, 0);
+        uint256 auctionIdGenerous = house.createAuction(TOKEN_ID, address(tokenA), DURATION, RESERVE, 0, 0);
         vm.prank(alice);
         house.createBid{value: RESERVE}(auctionIdGenerous);
         vm.warp(block.timestamp + DURATION + 1);
@@ -402,7 +403,7 @@ contract SovereignAuctionHouseV2Test is Test {
         vm.prank(artist);
         tokenB.setApprovalForAll(address(house), true);
         vm.prank(artist);
-        uint256 auctionIdTight = house.createAuction(TOKEN_ID + 1, address(tokenB), DURATION, RESERVE, 0);
+        uint256 auctionIdTight = house.createAuction(TOKEN_ID + 1, address(tokenB), DURATION, RESERVE, 0, 0);
         vm.prank(alice);
         house.createBid{value: RESERVE}(auctionIdTight);
         vm.warp(block.timestamp + DURATION + 1);
@@ -422,7 +423,7 @@ contract SovereignAuctionHouseV2Test is Test {
         vm.prank(artist);
         token.setApprovalForAll(address(house), true);
         vm.prank(artist);
-        uint256 auctionId = house.createAuction(TOKEN_ID, address(token), DURATION, RESERVE, 0);
+        uint256 auctionId = house.createAuction(TOKEN_ID, address(token), DURATION, RESERVE, 0, 0);
         vm.prank(alice);
         house.createBid{value: RESERVE}(auctionId);
         vm.warp(block.timestamp + DURATION + 1);
@@ -450,7 +451,7 @@ contract SovereignAuctionHouseV2Test is Test {
         nft.setApprovalForAll(address(house), true);
 
         vm.prank(artist);
-        uint256 auctionId = house.createAuction(tokenId, address(nft), DURATION, RESERVE, 1000);
+        uint256 auctionId = house.createAuction(tokenId, address(nft), DURATION, RESERVE, 1000, 0);
         _bidAndEnd(auctionId, alice, RESERVE);
 
         uint256 treasuryBefore = treasury.balance;
@@ -476,12 +477,12 @@ contract SovereignAuctionHouseV2Test is Test {
         nft.mint(artist, overCapTokenId);
         vm.prank(artist);
         vm.expectRevert(SovereignAuctionHouseV2.CuratorFeeTooHigh.selector);
-        house.createAuction(overCapTokenId, address(nft), DURATION, RESERVE, 4751);
+        house.createAuction(overCapTokenId, address(nft), DURATION, RESERVE, 4751, 0);
 
         uint256 atCapTokenId = TOKEN_ID + 201;
         nft.mint(artist, atCapTokenId);
         vm.prank(artist);
-        uint256 auctionId = house.createAuction(atCapTokenId, address(nft), DURATION, RESERVE, 4750);
+        uint256 auctionId = house.createAuction(atCapTokenId, address(nft), DURATION, RESERVE, 4750, 0);
         ISovereignAuctionHouseV2.Auction memory a = house.getAuction(auctionId);
         assertEq(a.curatorFeeBps, 4750);
     }
@@ -498,7 +499,7 @@ contract SovereignAuctionHouseV2Test is Test {
         nft.setApprovalForAll(address(house), true);
 
         vm.prank(artist);
-        uint256 auctionId = house.createAuction(tokenId, address(nft), DURATION, RESERVE, 1000);
+        uint256 auctionId = house.createAuction(tokenId, address(nft), DURATION, RESERVE, 1000, 0);
 
         vm.prank(creator);
         house.cancelAuction(auctionId);
@@ -517,7 +518,7 @@ contract SovereignAuctionHouseV2Test is Test {
         paused.setApprovalForAll(address(house), true);
 
         vm.prank(artist);
-        uint256 auctionId = house.createAuction(tokenId, address(paused), DURATION, RESERVE, 1000);
+        uint256 auctionId = house.createAuction(tokenId, address(paused), DURATION, RESERVE, 1000, 0);
         vm.prank(alice);
         house.createBid{value: RESERVE}(auctionId);
         paused.pause();
@@ -555,7 +556,7 @@ contract SovereignAuctionHouseV2Test is Test {
         nft2.setApprovalForAll(address(rejectHouse), true);
 
         uint256 auctionId =
-            rejectingOwner.createAuction(rejectHouse, TOKEN_ID, address(nft2), DURATION, RESERVE, 1000);
+            rejectingOwner.createAuction(rejectHouse, TOKEN_ID, address(nft2), DURATION, RESERVE, 1000, 0);
         vm.prank(alice);
         rejectHouse.createBid{value: RESERVE}(auctionId);
         vm.warp(block.timestamp + DURATION + 1);
@@ -592,11 +593,132 @@ contract SovereignAuctionHouseV2Test is Test {
         }
 
         vm.prank(artist);
-        uint256[] memory auctionIds = house.bulkCreateAuctions(address(nft), ids, RESERVE, DURATION, 750);
+        uint256[] memory auctionIds = house.bulkCreateAuctions(address(nft), ids, RESERVE, DURATION, 750, 0);
 
         for (uint256 i; i < auctionIds.length; ++i) {
             ISovereignAuctionHouseV2.Auction memory a = house.getAuction(auctionIds[i]);
             assertEq(a.curatorFeeBps, 750);
+        }
+    }
+
+    function _consign(uint256 tokenId, uint16 curatorFeeBps, uint64 listingExpiry_) internal returns (uint256) {
+        nft.mint(creator, tokenId);
+        vm.prank(creator);
+        nft.setApprovalForAll(artist, true);
+        vm.prank(creator);
+        nft.setApprovalForAll(address(house), true);
+        vm.prank(artist);
+        return house.createAuction(tokenId, address(nft), DURATION, RESERVE, curatorFeeBps, listingExpiry_);
+    }
+
+    /// @dev A creator-set listing expiry is stored, appears in AuctionCreated,
+    ///      rejects bids once passed, and lets anyone clear the listing back
+    ///      to the consigned token owner.
+    function test_CreateWithFutureListingExpiryStoresEmitsAndExpires() public {
+        uint256 tokenId = TOKEN_ID + 600;
+        uint64 expiry = uint64(block.timestamp + 1 hours);
+        uint256 expectedId = house.nextAuctionId();
+
+        nft.mint(creator, tokenId);
+        vm.prank(creator);
+        nft.setApprovalForAll(artist, true);
+        vm.prank(creator);
+        nft.setApprovalForAll(address(house), true);
+
+        vm.expectEmit(true, true, true, true, address(house));
+        emit ISovereignAuctionHouseV2.AuctionCreated(
+            expectedId, tokenId, address(nft), DURATION, RESERVE, creator, creator, 1000, expiry
+        );
+        vm.prank(artist);
+        uint256 auctionId = house.createAuction(tokenId, address(nft), DURATION, RESERVE, 1000, expiry);
+
+        assertEq(house.listingExpiry(auctionId), expiry);
+
+        vm.warp(expiry);
+        vm.expectRevert(SovereignAuctionHouseV2.AuctionExpired.selector);
+        vm.prank(alice);
+        house.createBid{value: RESERVE}(auctionId);
+
+        vm.prank(bob);
+        house.expireAuction(auctionId);
+        assertEq(nft.ownerOf(tokenId), creator);
+        (bool exists,) = house.getAuctionFor(address(nft), tokenId);
+        assertFalse(exists);
+    }
+
+    /// @dev A non-future listing expiry reverts at create; zero is accepted
+    ///      and leaves the listing open.
+    function test_CreateListingExpiryPastRevertsZeroAccepted() public {
+        uint256 tokenIdPast = TOKEN_ID + 601;
+        nft.mint(artist, tokenIdPast);
+        vm.expectRevert("expiry must be future");
+        vm.prank(artist);
+        house.createAuction(tokenIdPast, address(nft), DURATION, RESERVE, 0, uint64(block.timestamp));
+
+        uint256 tokenIdZero = TOKEN_ID + 602;
+        nft.mint(artist, tokenIdZero);
+        vm.prank(artist);
+        uint256 auctionId = house.createAuction(tokenIdZero, address(nft), DURATION, RESERVE, 0, 0);
+        assertEq(house.listingExpiry(auctionId), 0);
+    }
+
+    /// @dev A bid placed before the listing expiry starts the normal auction
+    ///      clock; the expiry stops applying and expireAuction reverts once
+    ///      firstBidTime is set, regardless of the wall clock.
+    function test_BidBeforeDeadlineIgnoresExpiryAndBlocksLateExpire() public {
+        uint64 expiry = uint64(block.timestamp + 1 hours);
+        vm.prank(artist);
+        uint256 auctionId = house.createAuction(TOKEN_ID, address(nft), DURATION, RESERVE, 0, expiry);
+
+        vm.prank(alice);
+        house.createBid{value: RESERVE}(auctionId);
+
+        vm.warp(block.timestamp + DURATION + 1);
+        vm.expectRevert(SovereignAuctionHouseV2.AuctionNotEnded.selector);
+        house.expireAuction(auctionId);
+
+        house.endAuction(auctionId);
+        assertEq(nft.ownerOf(TOKEN_ID), alice);
+    }
+
+    /// @dev The consigned token owner can change or clear the creator-set
+    ///      expiry pre-bid; the house owner (curator) cannot.
+    function test_TokenOwnerOverridesCreatorSetExpiryHouseOwnerCannot() public {
+        uint256 tokenId = TOKEN_ID + 603;
+        uint64 expiry = uint64(block.timestamp + 1 hours);
+        uint256 auctionId = _consign(tokenId, 1000, expiry);
+        assertEq(house.listingExpiry(auctionId), expiry);
+
+        vm.expectRevert("Not token owner");
+        vm.prank(artist);
+        house.setAuctionListingExpiry(auctionId, uint64(block.timestamp + 2 hours));
+
+        uint64 newExpiry = uint64(block.timestamp + 3 hours);
+        vm.prank(creator);
+        house.setAuctionListingExpiry(auctionId, newExpiry);
+        assertEq(house.listingExpiry(auctionId), newExpiry);
+
+        vm.prank(creator);
+        house.setAuctionListingExpiry(auctionId, 0);
+        assertEq(house.listingExpiry(auctionId), 0);
+    }
+
+    /// @dev bulkCreateAuctions applies the same listingExpiry_ to every lot
+    ///      in the batch.
+    function test_BulkCreateAuctionsAppliesListingExpiryToEveryLot() public {
+        uint256[] memory ids = new uint256[](2);
+        ids[0] = TOKEN_ID + 700;
+        ids[1] = TOKEN_ID + 701;
+        for (uint256 i; i < ids.length; ++i) {
+            nft.mint(artist, ids[i]);
+        }
+        uint64 expiry = uint64(block.timestamp + 1 hours);
+
+        vm.prank(artist);
+        uint256[] memory auctionIds = house.bulkCreateAuctions(address(nft), ids, RESERVE, DURATION, 750, expiry);
+
+        for (uint256 i; i < auctionIds.length; ++i) {
+            assertEq(house.listingExpiry(auctionIds[i]), expiry);
         }
     }
 }
