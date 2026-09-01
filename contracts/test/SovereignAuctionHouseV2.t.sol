@@ -101,6 +101,25 @@ contract GasHungryERC721 {
     }
 }
 
+/// @dev Acts as a house owner with no receive/fallback, to exercise the
+///      curator-fee credit-on-reject path at settlement.
+contract RejectingHouseOwner {
+    function deployHouse(SovereignAuctionHouseV2Factory factory) external returns (SovereignAuctionHouseV2) {
+        return SovereignAuctionHouseV2(payable(factory.createAuctionHouse()));
+    }
+
+    function createAuction(
+        SovereignAuctionHouseV2 house,
+        uint256 tokenId,
+        address tokenContract,
+        uint256 duration,
+        uint256 reservePrice,
+        uint16 curatorFeeBps
+    ) external returns (uint256) {
+        return house.createAuction(tokenId, tokenContract, duration, reservePrice, curatorFeeBps);
+    }
+}
+
 contract SovereignAuctionHouseV2Test is Test {
     SovereignAuctionHouseV2 internal house;
     MockERC721 internal nft;
@@ -109,6 +128,7 @@ contract SovereignAuctionHouseV2Test is Test {
     address internal alice = address(0xA1);
     address internal bob = address(0xB0B);
     address internal carol = address(0xCA01);
+    address internal creator = address(0xC0FFEE);
     address payable internal treasury = payable(address(0xFEE));
 
     uint256 internal constant TOKEN_ID = 1;
@@ -130,7 +150,7 @@ contract SovereignAuctionHouseV2Test is Test {
 
     function _create() internal returns (uint256) {
         vm.prank(artist);
-        return house.createAuction(TOKEN_ID, address(nft), DURATION, RESERVE);
+        return house.createAuction(TOKEN_ID, address(nft), DURATION, RESERVE, 0);
     }
 
     function _bidAndEnd(uint256 auctionId, address bidder, uint256 amount) internal {
@@ -179,8 +199,8 @@ contract SovereignAuctionHouseV2Test is Test {
         house.setAuctionDuration(auctionId, 2 hours);
         vm.prank(alice);
         house.createBid{value: RESERVE}(auctionId);
-        (,,,,,,,,, uint64 duration,,) = house.auctions(auctionId);
-        assertEq(duration, 2 hours);
+        ISovereignAuctionHouseV2.Auction memory a = house.getAuction(auctionId);
+        assertEq(a.duration, 2 hours);
         vm.expectRevert(SovereignAuctionHouseV2.AuctionAlreadyStarted.selector);
         vm.prank(artist);
         house.setAuctionDuration(auctionId, 3 hours);
@@ -219,7 +239,7 @@ contract SovereignAuctionHouseV2Test is Test {
         vm.prank(artist);
         bad.setApprovalForAll(address(house), true);
         vm.prank(artist);
-        uint256 auctionId = house.createAuction(TOKEN_ID, address(bad), DURATION, RESERVE);
+        uint256 auctionId = house.createAuction(TOKEN_ID, address(bad), DURATION, RESERVE, 0);
         vm.prank(alice);
         house.createBid{value: RESERVE}(auctionId);
         bad.setTransferMode(true, false);
@@ -279,7 +299,7 @@ contract SovereignAuctionHouseV2Test is Test {
         vm.prank(artist);
         bad.setApprovalForAll(address(house), true);
         vm.prank(artist);
-        uint256 auctionId = house.createAuction(TOKEN_ID, address(bad), DURATION, RESERVE);
+        uint256 auctionId = house.createAuction(TOKEN_ID, address(bad), DURATION, RESERVE, 0);
         vm.prank(alice);
         house.createBid{value: RESERVE}(auctionId);
         bad.setTransferMode(false, true);
@@ -306,7 +326,7 @@ contract SovereignAuctionHouseV2Test is Test {
         vm.prank(artist);
         paused.setApprovalForAll(address(house), true);
         vm.prank(artist);
-        uint256 auctionId = house.createAuction(TOKEN_ID, address(paused), DURATION, RESERVE);
+        uint256 auctionId = house.createAuction(TOKEN_ID, address(paused), DURATION, RESERVE, 0);
         vm.prank(alice);
         house.createBid{value: RESERVE}(auctionId);
         paused.pause();
@@ -338,7 +358,7 @@ contract SovereignAuctionHouseV2Test is Test {
         vm.prank(artist);
         burnable.setApprovalForAll(address(house), true);
         vm.prank(artist);
-        uint256 auctionId = house.createAuction(TOKEN_ID, address(burnable), DURATION, RESERVE);
+        uint256 auctionId = house.createAuction(TOKEN_ID, address(burnable), DURATION, RESERVE, 0);
         vm.prank(alice);
         house.createBid{value: RESERVE}(auctionId);
         vm.warp(block.timestamp + DURATION + 1);
@@ -366,7 +386,7 @@ contract SovereignAuctionHouseV2Test is Test {
         vm.prank(artist);
         tokenA.setApprovalForAll(address(house), true);
         vm.prank(artist);
-        uint256 auctionIdGenerous = house.createAuction(TOKEN_ID, address(tokenA), DURATION, RESERVE);
+        uint256 auctionIdGenerous = house.createAuction(TOKEN_ID, address(tokenA), DURATION, RESERVE, 0);
         vm.prank(alice);
         house.createBid{value: RESERVE}(auctionIdGenerous);
         vm.warp(block.timestamp + DURATION + 1);
@@ -382,7 +402,7 @@ contract SovereignAuctionHouseV2Test is Test {
         vm.prank(artist);
         tokenB.setApprovalForAll(address(house), true);
         vm.prank(artist);
-        uint256 auctionIdTight = house.createAuction(TOKEN_ID + 1, address(tokenB), DURATION, RESERVE);
+        uint256 auctionIdTight = house.createAuction(TOKEN_ID + 1, address(tokenB), DURATION, RESERVE, 0);
         vm.prank(alice);
         house.createBid{value: RESERVE}(auctionIdTight);
         vm.warp(block.timestamp + DURATION + 1);
@@ -402,7 +422,7 @@ contract SovereignAuctionHouseV2Test is Test {
         vm.prank(artist);
         token.setApprovalForAll(address(house), true);
         vm.prank(artist);
-        uint256 auctionId = house.createAuction(TOKEN_ID, address(token), DURATION, RESERVE);
+        uint256 auctionId = house.createAuction(TOKEN_ID, address(token), DURATION, RESERVE, 0);
         vm.prank(alice);
         house.createBid{value: RESERVE}(auctionId);
         vm.warp(block.timestamp + DURATION + 1);
@@ -415,5 +435,168 @@ contract SovereignAuctionHouseV2Test is Test {
 
         house.endAuction(auctionId);
         assertEq(token.ownerOf(TOKEN_ID), alice, "settles normally with full gas");
+    }
+
+    /// @dev A consigned lot (house owner lists a third party's token) with a
+    ///      nonzero protocol fee and curator fee splits the hammer price
+    ///      three ways: protocol fee to feeRecipient, curator fee to
+    ///      owner(), remainder to the artist's fundsRecipient.
+    function test_CuratorFeeSplitsThreeWaysOnConsignedAuction() public {
+        uint256 tokenId = TOKEN_ID + 100;
+        nft.mint(creator, tokenId);
+        vm.prank(creator);
+        nft.setApprovalForAll(artist, true);
+        vm.prank(creator);
+        nft.setApprovalForAll(address(house), true);
+
+        vm.prank(artist);
+        uint256 auctionId = house.createAuction(tokenId, address(nft), DURATION, RESERVE, 1000);
+        _bidAndEnd(auctionId, alice, RESERVE);
+
+        uint256 treasuryBefore = treasury.balance;
+        uint256 curatorBefore = artist.balance;
+        uint256 creatorBefore = creator.balance;
+        house.endAuction(auctionId);
+
+        uint256 protocolFee = (RESERVE * 250) / 10_000;
+        uint256 curatorFee = (RESERVE * 1000) / 10_000;
+        uint256 sellerProceeds = RESERVE - protocolFee - curatorFee;
+
+        assertEq(treasury.balance - treasuryBefore, protocolFee);
+        assertEq(artist.balance - curatorBefore, curatorFee);
+        assertEq(creator.balance - creatorBefore, sellerProceeds);
+        assertEq(nft.ownerOf(tokenId), alice);
+    }
+
+    /// @dev protocolFeeBps + curatorFeeBps above the 5000bps combined cap
+    ///      reverts at create; exactly the cap is accepted and the stored
+    ///      curatorFeeBps is readable back via getAuction.
+    function test_CuratorFeeCapEnforcedAtCreateAndStoredImmutably() public {
+        uint256 overCapTokenId = TOKEN_ID + 200;
+        nft.mint(artist, overCapTokenId);
+        vm.prank(artist);
+        vm.expectRevert(SovereignAuctionHouseV2.CuratorFeeTooHigh.selector);
+        house.createAuction(overCapTokenId, address(nft), DURATION, RESERVE, 4751);
+
+        uint256 atCapTokenId = TOKEN_ID + 201;
+        nft.mint(artist, atCapTokenId);
+        vm.prank(artist);
+        uint256 auctionId = house.createAuction(atCapTokenId, address(nft), DURATION, RESERVE, 4750);
+        ISovereignAuctionHouseV2.Auction memory a = house.getAuction(auctionId);
+        assertEq(a.curatorFeeBps, 4750);
+    }
+
+    /// @dev The consigned artist (tokenOwner, not the house owner) can still
+    ///      cancel pre-bid and get the token back regardless of the curator
+    ///      fee set on the listing.
+    function test_ConsignedArtistCancelsPreBidAndRegainsToken() public {
+        uint256 tokenId = TOKEN_ID + 300;
+        nft.mint(creator, tokenId);
+        vm.prank(creator);
+        nft.setApprovalForAll(artist, true);
+        vm.prank(creator);
+        nft.setApprovalForAll(address(house), true);
+
+        vm.prank(artist);
+        uint256 auctionId = house.createAuction(tokenId, address(nft), DURATION, RESERVE, 1000);
+
+        vm.prank(creator);
+        house.cancelAuction(auctionId);
+        assertEq(nft.ownerOf(tokenId), creator);
+    }
+
+    /// @dev A deferred delivery still pays the curator fee at endAuction; a
+    ///      later claimLot only moves the token, no funds.
+    function test_DeferredDeliveryStillPaysCuratorFeeAndClaimMovesNoFunds() public {
+        PausableNFT paused = new PausableNFT();
+        uint256 tokenId = TOKEN_ID + 400;
+        paused.mint(creator, tokenId);
+        vm.prank(creator);
+        paused.setApprovalForAll(artist, true);
+        vm.prank(creator);
+        paused.setApprovalForAll(address(house), true);
+
+        vm.prank(artist);
+        uint256 auctionId = house.createAuction(tokenId, address(paused), DURATION, RESERVE, 1000);
+        vm.prank(alice);
+        house.createBid{value: RESERVE}(auctionId);
+        paused.pause();
+        vm.warp(block.timestamp + DURATION + 1);
+
+        uint256 curatorBefore = artist.balance;
+        house.endAuction(auctionId);
+        uint256 curatorFee = (RESERVE * 1000) / 10_000;
+        assertEq(artist.balance - curatorBefore, curatorFee);
+        assertTrue(house.pendingDelivery(auctionId));
+
+        paused.unpause();
+        uint256 curatorBeforeClaim = artist.balance;
+        uint256 creatorBeforeClaim = creator.balance;
+        vm.prank(alice);
+        house.claimLot(auctionId, address(0));
+        assertEq(artist.balance, curatorBeforeClaim);
+        assertEq(creator.balance, creatorBeforeClaim);
+        assertEq(paused.ownerOf(tokenId), alice);
+    }
+
+    /// @dev A curator (owner()) with no receive/fallback is credited its fee
+    ///      through pendingRefunds instead of blocking settlement.
+    function test_RejectingCuratorGetsCreditedNotBlocked() public {
+        SovereignAuctionHouseV2 impl2 = new SovereignAuctionHouseV2();
+        SovereignAuctionHouseV2Factory factory2 = new SovereignAuctionHouseV2Factory(address(impl2), treasury, 250);
+        RejectingHouseOwner rejectingOwner = new RejectingHouseOwner();
+        SovereignAuctionHouseV2 rejectHouse = rejectingOwner.deployHouse(factory2);
+
+        MockERC721 nft2 = new MockERC721();
+        nft2.mint(creator, TOKEN_ID);
+        vm.prank(creator);
+        nft2.setApprovalForAll(address(rejectingOwner), true);
+        vm.prank(creator);
+        nft2.setApprovalForAll(address(rejectHouse), true);
+
+        uint256 auctionId =
+            rejectingOwner.createAuction(rejectHouse, TOKEN_ID, address(nft2), DURATION, RESERVE, 1000);
+        vm.prank(alice);
+        rejectHouse.createBid{value: RESERVE}(auctionId);
+        vm.warp(block.timestamp + DURATION + 1);
+
+        uint256 curatorFee = (RESERVE * 1000) / 10_000;
+        rejectHouse.endAuction(auctionId);
+
+        assertEq(rejectHouse.pendingRefunds(address(rejectingOwner)), curatorFee);
+        assertEq(nft2.ownerOf(TOKEN_ID), alice);
+    }
+
+    /// @dev curatorFeeBps == 0 reproduces pre-curator-fee behavior exactly:
+    ///      AuctionEnded reports a zero curator fee and the seller receives
+    ///      gross minus the protocol fee, with no extra external call.
+    function test_ZeroCuratorFeeMatchesPreExistingBehavior() public {
+        uint256 auctionId = _create();
+        _bidAndEnd(auctionId, alice, RESERVE);
+
+        uint256 protocolFee = (RESERVE * 250) / 10_000;
+        vm.expectEmit(true, false, false, true, address(house));
+        emit ISovereignAuctionHouseV2.AuctionEnded(auctionId, artist, alice, RESERVE - protocolFee, protocolFee, 0);
+        house.endAuction(auctionId);
+    }
+
+    /// @dev bulkCreateAuctions applies the same curatorFeeBps to every lot
+    ///      in the batch.
+    function test_BulkCreateAuctionsAppliesCuratorFeeToEveryLot() public {
+        uint256[] memory ids = new uint256[](3);
+        ids[0] = TOKEN_ID + 500;
+        ids[1] = TOKEN_ID + 501;
+        ids[2] = TOKEN_ID + 502;
+        for (uint256 i; i < ids.length; ++i) {
+            nft.mint(artist, ids[i]);
+        }
+
+        vm.prank(artist);
+        uint256[] memory auctionIds = house.bulkCreateAuctions(address(nft), ids, RESERVE, DURATION, 750);
+
+        for (uint256 i; i < auctionIds.length; ++i) {
+            ISovereignAuctionHouseV2.Auction memory a = house.getAuction(auctionIds[i]);
+            assertEq(a.curatorFeeBps, 750);
+        }
     }
 }

@@ -25,6 +25,7 @@ interface ISovereignAuctionHouseV2 {
         uint64 duration;
         uint256 quantity;
         TokenStandard standard;
+        uint16 curatorFeeBps;
     }
 
     event AuctionCreated(
@@ -34,7 +35,8 @@ interface ISovereignAuctionHouseV2 {
         uint256 duration,
         uint256 reservePrice,
         address tokenOwner,
-        address fundsRecipient
+        address fundsRecipient,
+        uint16 curatorFeeBps
     );
     event Auction1155Created(
         uint256 indexed auctionId,
@@ -44,7 +46,8 @@ interface ISovereignAuctionHouseV2 {
         uint256 duration,
         uint256 reservePrice,
         address tokenOwner,
-        address fundsRecipient
+        address fundsRecipient,
+        uint16 curatorFeeBps
     );
     event AuctionReservePriceUpdated(uint256 indexed auctionId, uint256 reservePrice);
     event AuctionDurationUpdated(uint256 indexed auctionId, uint256 duration);
@@ -63,7 +66,8 @@ interface ISovereignAuctionHouseV2 {
         address tokenOwner,
         address winner,
         uint256 sellerProceeds,
-        uint256 protocolFee
+        uint256 protocolFee,
+        uint256 curatorFee
     );
     /// @notice Emitted instead of, or in addition to, immediate delivery
     ///         when the token transfer attempted during endAuction fails.
@@ -77,11 +81,19 @@ interface ISovereignAuctionHouseV2 {
     event RefundWithdrawn(address indexed account, address indexed recipient, uint256 amount);
     event StuckERC721Recovered(address indexed tokenContract, uint256 indexed tokenId, address to);
 
+    /// @notice Lists an ERC721 for auction. The house owner may list a
+    ///         third party's token (consignment): `tokenOwner` is read from
+    ///         the token itself and proceeds go to that owner's
+    ///         `fundsRecipient`, not the house owner. `curatorFeeBps` is the
+    ///         house owner's cut of the hammer price, fixed for the life of
+    ///         the listing so the token owner can inspect it and cancel
+    ///         pre-bid via `cancelAuction` if the terms are unacceptable.
     function createAuction(
         uint256 tokenId,
         address tokenContract,
         uint256 duration,
-        uint256 reservePrice
+        uint256 reservePrice,
+        uint16 curatorFeeBps
     ) external returns (uint256 auctionId);
 
     function create1155Auction(
@@ -89,15 +101,24 @@ interface ISovereignAuctionHouseV2 {
         address tokenContract,
         uint256 quantity,
         uint256 duration,
-        uint256 reservePrice
+        uint256 reservePrice,
+        uint16 curatorFeeBps
     ) external returns (uint256 auctionId);
+
+    /// @notice Returns the full auction record as a struct. The mapping's
+    ///         auto-generated getter returns the same data as a flat tuple;
+    ///         this exists so callers that need the whole record can decode
+    ///         one struct instead of the full field list.
+    function getAuction(uint256 auctionId) external view returns (Auction memory);
 
     function createBid(uint256 auctionId) external payable;
 
-    /// @notice Settle a finished auction. Pays the protocol fee and seller
-    ///         unconditionally, then attempts token delivery to the winner
-    ///         with a fixed gas stipend so the outcome cannot depend on
-    ///         caller-supplied gas. On delivery failure the payout still
+    /// @notice Settle a finished auction. Splits the hammer price into the
+    ///         protocol fee, the curator fee (`owner()` at settlement time,
+    ///         fixed at listing), and the seller proceeds, and pays all
+    ///         three unconditionally. Then attempts token delivery to the
+    ///         winner with a fixed gas stipend so the outcome cannot depend
+    ///         on caller-supplied gas. On delivery failure the payout still
     ///         happens; the lot is deferred to claimLot instead. Reverts if
     ///         the auction is already settled, or with InsufficientGas when
     ///         called without enough gas to honor the delivery stipend.

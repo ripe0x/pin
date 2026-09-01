@@ -12,6 +12,19 @@ export const sovereignAuctionHouseV2Abi = [
   },
   {
     "type": "function",
+    "name": "MAX_COMBINED_FEE_BPS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "MAX_DURATION",
     "inputs": [],
     "outputs": [
@@ -132,6 +145,11 @@ export const sovereignAuctionHouseV2Abi = [
         "name": "standard",
         "type": "uint8",
         "internalType": "enum ISovereignAuctionHouseV2.TokenStandard"
+      },
+      {
+        "name": "curatorFeeBps",
+        "type": "uint16",
+        "internalType": "uint16"
       }
     ],
     "stateMutability": "view"
@@ -159,6 +177,11 @@ export const sovereignAuctionHouseV2Abi = [
         "name": "duration",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "curatorFeeBps",
+        "type": "uint16",
+        "internalType": "uint16"
       }
     ],
     "outputs": [
@@ -229,6 +252,11 @@ export const sovereignAuctionHouseV2Abi = [
         "name": "reservePrice",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "curatorFeeBps",
+        "type": "uint16",
+        "internalType": "uint16"
       }
     ],
     "outputs": [
@@ -263,6 +291,11 @@ export const sovereignAuctionHouseV2Abi = [
         "name": "reservePrice",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "curatorFeeBps",
+        "type": "uint16",
+        "internalType": "uint16"
       }
     ],
     "outputs": [
@@ -373,6 +406,92 @@ export const sovereignAuctionHouseV2Abi = [
         "name": "",
         "type": "address",
         "internalType": "address payable"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getAuction",
+    "inputs": [
+      {
+        "name": "auctionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct ISovereignAuctionHouseV2.Auction",
+        "components": [
+          {
+            "name": "tokenId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "tokenContract",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "firstBidTime",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "amount",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "reservePrice",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "tokenOwner",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "fundsRecipient",
+            "type": "address",
+            "internalType": "address payable"
+          },
+          {
+            "name": "endTime",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "bidder",
+            "type": "address",
+            "internalType": "address payable"
+          },
+          {
+            "name": "duration",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "quantity",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "standard",
+            "type": "uint8",
+            "internalType": "enum ISovereignAuctionHouseV2.TokenStandard"
+          },
+          {
+            "name": "curatorFeeBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          }
+        ]
       }
     ],
     "stateMutability": "view"
@@ -836,6 +955,12 @@ export const sovereignAuctionHouseV2Abi = [
         "type": "address",
         "indexed": false,
         "internalType": "address"
+      },
+      {
+        "name": "curatorFeeBps",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
       }
     ],
     "anonymous": false
@@ -935,6 +1060,12 @@ export const sovereignAuctionHouseV2Abi = [
         "type": "address",
         "indexed": false,
         "internalType": "address"
+      },
+      {
+        "name": "curatorFeeBps",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
       }
     ],
     "anonymous": false
@@ -1007,6 +1138,12 @@ export const sovereignAuctionHouseV2Abi = [
       },
       {
         "name": "protocolFee",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "curatorFee",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -1264,6 +1401,11 @@ export const sovereignAuctionHouseV2Abi = [
   {
     "type": "error",
     "name": "BidMustBePositive",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "CuratorFeeTooHigh",
     "inputs": []
   },
   {
