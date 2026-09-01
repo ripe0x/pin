@@ -188,7 +188,7 @@
           "status": "in_progress",
           "dependsOn": [],
           "workPacket": "docs/work-packets/W0.1-foundation-integration.md",
-          "nextAction": "Select the Surface UI PRs that will ship, then rebase PR #300 and resolve the exact overlaps reported by pnpm agent:overlap once."
+          "nextAction": "Review the integrated PR #277/#282/#280/#278/#279/#281 candidate on the exact live-data Netlify preview, close superseded source PRs, and complete the W0.1 receipt."
         },
         {
           "id": "W0.2",
@@ -205,7 +205,7 @@
           "nextAction": "Run the 24-hour and 7-day health, ownership, refresh, media, and cost checks before marking the foundation complete."
         }
       ],
-      "nextAction": "Complete milestone W0.1 from its work packet."
+      "nextAction": "Complete the integrated live-data preview matrix and W0.1 receipt."
     },
     {
       "id": "W1",
