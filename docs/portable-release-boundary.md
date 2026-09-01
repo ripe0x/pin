@@ -276,6 +276,13 @@ site**. A compatibility probe may report only current observations such as
 “resolved on 2026-08-31” and “referenced collection 0x…”. It must not say PND
 verified ownership, independence, permanence, or continued control.
 
+For v1, `urlHash` is `keccak256(utf8(url))`. `collectionsHash` is the keccak256
+of the RFC 8785 canonical JSON array after lowercase address normalization,
+deduplication, and sorting. `kitHash` is the keccak256 of the canonical JSON
+kit object, or canonical JSON `null` when omitted. `expiresAt` is zero when
+omitted; timestamps enter the typed payload as Unix seconds while their full
+normalized RFC 3339 values remain in the signed declaration input.
+
 ## 5. Capability negotiation
 
 Capability identifiers are lowercase, versioned strings. Initial core IDs are:

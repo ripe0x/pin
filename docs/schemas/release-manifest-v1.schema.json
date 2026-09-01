@@ -164,17 +164,14 @@
       "properties": {
         "required": {
           "type": "array",
-          "uniqueItems": true,
           "items": { "$ref": "#/$defs/capabilityId" }
         },
         "optional": {
           "type": "array",
-          "uniqueItems": true,
           "items": { "$ref": "#/$defs/capabilityId" }
         },
         "adapters": {
           "type": "array",
-          "uniqueItems": true,
           "items": { "$ref": "#/$defs/adapter" }
         }
       }
