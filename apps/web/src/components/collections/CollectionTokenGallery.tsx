@@ -2,7 +2,7 @@ import Link from "next/link"
 import type { Address } from "viem"
 import { OptimizedImage } from "@/components/OptimizedImage"
 import { GalleryOwnerFilter } from "@/components/collections/GalleryOwnerFilter"
-import { ipfsToHttp, shortAddress } from "@/lib/collection"
+import { shortAddress } from "@/lib/collection"
 import type { CollectionTokenRow } from "@/lib/indexer-queries"
 
 /**
@@ -26,6 +26,7 @@ export function CollectionTokenGallery({
   page,
   totalPages,
   ownerLabel,
+  unavailable,
 }: {
   collection: Address
   name: string
@@ -36,6 +37,7 @@ export function CollectionTokenGallery({
   totalPages: number
   /** The resolved minted-by filter address, or null when unfiltered. */
   ownerLabel: Address | null
+  unavailable: boolean
 }) {
   const basePath = `/collections/${collection}/gallery`
   const pageHref = (p: number) => {
@@ -45,7 +47,7 @@ export function CollectionTokenGallery({
     const qs = params.toString()
     return qs ? `${basePath}?${qs}` : basePath
   }
-  const cover = coverImage ? ipfsToHttp(coverImage) : ""
+  const cover = coverImage
 
   return (
     <div className="mx-auto max-w-[1400px] px-6 py-10 lg:px-12 lg:py-14 space-y-8">
@@ -72,7 +74,12 @@ export function CollectionTokenGallery({
         )}
       </header>
 
-      {tokens.length === 0 ? (
+      {unavailable ? (
+        <div className="rounded-lg border border-gray-200 bg-surface p-6 space-y-2">
+          <h2 className="text-sm font-medium">Tokens temporarily unavailable</h2>
+          <p className="text-sm text-fg-muted">Try again shortly.</p>
+        </div>
+      ) : tokens.length === 0 ? (
         <p className="text-sm text-fg-muted">
           {ownerLabel ? "No tokens minted by this address." : "No tokens yet."}
         </p>

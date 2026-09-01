@@ -6,6 +6,7 @@ import { HomageField } from "@/components/collections/homage/HomageField"
 import { CollectionTokenGallery } from "@/components/collections/CollectionTokenGallery"
 import { getHomageMintedIds } from "@/lib/homage/collection.server"
 import { getCollection } from "@/lib/collection-onchain"
+import { collectionMediaUrl } from "@/lib/collection-media-url"
 import { getCollectionTokensPage } from "@/lib/indexer-queries"
 import { resolveEnsAddress } from "@/lib/artist-queries"
 import { detectHomageMinter } from "@/lib/homage/detect.server"
@@ -67,11 +68,12 @@ export default async function CollectionGalleryPage({
         collection={addr}
         name={c.name}
         tokens={tokens}
-        coverImage={c.cover}
+        coverImage={c.cover ? collectionMediaUrl(addr, c.cover) : ""}
         total={total}
         page={Math.min(page, totalPages)}
         totalPages={totalPages}
         ownerLabel={ownerLabel}
+        unavailable={result === null}
       />
     )
   }

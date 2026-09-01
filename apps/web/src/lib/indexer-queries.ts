@@ -2224,27 +2224,30 @@ export async function getCollectionTokensPage(
   // browse page (not the token render), so a cold Postgres read is acceptable
   // here, matching the homepage's below-hero reads.
   return withTimeout(async () => {
-    const where = owner
-      ? `collection = $1 AND NOT burned AND minted_to = $4`
-      : `collection = $1 AND NOT burned`
-    const listParams = owner
-      ? [collection.toLowerCase(), limit, offset, owner]
-      : [collection.toLowerCase(), limit, offset]
-    const rows = (await db.unsafe(
-      `SELECT token_id, minted_to FROM ${indexerSchema()}.collection_tokens
-       WHERE ${where}
-       ORDER BY updated_at_block DESC, token_id DESC LIMIT $2 OFFSET $3`,
-      listParams,
-    )) as Array<{ token_id: string; minted_to: string }>
     const countRows = (await db.unsafe(
       `SELECT COUNT(*)::int AS count FROM ${indexerSchema()}.collection_tokens WHERE ${
         owner ? "collection = $1 AND NOT burned AND minted_to = $2" : "collection = $1 AND NOT burned"
       }`,
       owner ? [collection.toLowerCase(), owner] : [collection.toLowerCase()],
     )) as Array<{ count: number }>
+    const total = countRows[0]?.count ?? 0
+    const lastOffset = total > 0 ? Math.floor((total - 1) / limit) * limit : 0
+    const clampedOffset = Math.min(offset, lastOffset)
+    const where = owner
+      ? `collection = $1 AND NOT burned AND minted_to = $4`
+      : `collection = $1 AND NOT burned`
+    const listParams = owner
+      ? [collection.toLowerCase(), limit, clampedOffset, owner]
+      : [collection.toLowerCase(), limit, clampedOffset]
+    const rows = (await db.unsafe(
+      `SELECT token_id, minted_to FROM ${indexerSchema()}.collection_tokens
+       WHERE ${where}
+       ORDER BY updated_at_block DESC, token_id DESC LIMIT $2 OFFSET $3`,
+      listParams,
+    )) as Array<{ token_id: string; minted_to: string }>
     return {
       tokens: rows.map((r) => ({ tokenId: Number(r.token_id), mintedTo: r.minted_to })),
-      total: countRows[0]?.count ?? 0,
+      total,
     }
   }, 2000)
 }
