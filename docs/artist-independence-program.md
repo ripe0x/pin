@@ -85,7 +85,7 @@ valid state. It must not be rewritten as absent.
 A versioned, network-independent release manifest describes everything that
 can be declared or derived without binding an interface to PND.
 
-The planned `@pin/release-spec` package should contain:
+The implemented `@pin/release-spec` package contains:
 
 - schema and TypeScript types;
 - artist-authored release copy and media references;
@@ -100,7 +100,7 @@ The accepted manifest v1 and provider boundary is
 
 ### Layer 3: shared release kernel
 
-The planned `@pin/surface-kit` package turns protocol truth and provider inputs
+The implemented `@pin/surface-kit` package turns protocol truth and provider inputs
 into deterministic application behavior:
 
 - lifecycle and availability derivation;
@@ -117,7 +117,7 @@ provider, but it cannot be mandatory for independent minting and rendering.
 
 ### Layer 4: shared interaction layer
 
-The planned `@pin/surface-react` layer owns headless hooks and accessible,
+The implemented `@pin/surface-react` layer owns headless hooks and accessible,
 themeable interaction primitives for:
 
 - wallet connection;

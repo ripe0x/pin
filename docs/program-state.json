@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "programId": "artist-independence-portable-venue",
   "title": "Artist independence and portable venue",
-  "updatedAt": "2026-08-31",
+  "updatedAt": "2026-09-01",
   "canonicalDocs": {
     "controlPlane": "docs/agent-control-plane.md",
     "programSpec": "docs/artist-independence-program.md",
@@ -210,7 +210,7 @@
     {
       "id": "W1",
       "title": "Release specification and shared kernel",
-      "status": "in_progress",
+      "status": "complete",
       "deliveryDependsOn": ["W0"],
       "outcome": "PND and independent interfaces consume one versioned release model and one behavioral implementation.",
       "issues": [263, 264, 270, 274, 284],
@@ -251,13 +251,13 @@
         {
           "id": "W1.3",
           "title": "Enforce PND and artist-interface parity",
-          "status": "ready",
+          "status": "complete",
           "dependsOn": ["W1.2"],
           "workPacket": "docs/work-packets/W1.3-release-parity.md",
-          "nextAction": "Move the PND fixed-price assembly onto @pin/surface-react, finish renderer-backed template token views, and enforce cross-assembly parity in CI."
+          "nextAction": "Use the completed shared provider, availability, quote, transaction, token-state, renderer-preview, parity, and PND-offline gates as the W2.2 and W3.2 foundation."
         }
       ],
-      "nextAction": "Execute W1.3 so PND and the artist template consume the same provider and state boundary before package publication or template synchronization."
+      "nextAction": "Keep the shared parity and PND-offline gates required while W2.2 and W3.2 build their assemblies."
     },
     {
       "id": "W2",
@@ -298,12 +298,13 @@
         {
           "id": "W2.2",
           "title": "Build the connected venue assemblies",
-          "status": "proposed",
+          "status": "ready",
           "dependsOn": ["W0.1", "W1.3", "W2.1"],
-          "nextAction": "Implement homepage, Releases, launch pages, profiles, About, and journal against shared release contracts."
+          "workPacket": "docs/work-packets/W2.2-connected-venue-assemblies.md",
+          "nextAction": "Implement the connected homepage and Releases assemblies first, then release pages, profiles, About, and journal against the same truth and media contracts."
         }
       ],
-      "nextAction": "Wait for W1.3 parity, then create W2.2 from the accepted venue boundary."
+      "nextAction": "Execute W2.2 from docs/work-packets/W2.2-connected-venue-assemblies.md without coupling it to W0.2's guarded production cutover."
     },
     {
       "id": "W3",
