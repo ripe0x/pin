@@ -4,8 +4,10 @@ pragma solidity ^0.8.20;
 /// @title Sovereign Auction House V2 interface
 /// @notice ETH reserve auctions for ERC721 and ERC1155 tokens. Settlement
 ///         pays the seller unconditionally; token delivery is attempted with
-///         a fixed gas stipend and, on failure, deferred to a winner-only
-///         claim. No sale ever unwinds.
+///         a fixed gas stipend and, on failure, deferred to a claim anyone
+///         may trigger for the winner, or the winner may redirect. If the
+///         winner never claims, the seller may reclaim the lot after a
+///         timeout. No sale ever unwinds.
 interface ISovereignAuctionHouseV2 {
     enum TokenStandard {
         ERC721,
@@ -74,6 +76,9 @@ interface ISovereignAuctionHouseV2 {
     event DeliveryDeferred(uint256 indexed auctionId, address indexed winner);
     /// @notice Emitted when claimLot delivers a deferred lot.
     event LotClaimed(uint256 indexed auctionId, address indexed winner, address recipient);
+    /// @notice Emitted when reclaimStuckLot returns a deferred lot to the
+    ///         seller after PENDING_DELIVERY_TIMEOUT has passed unclaimed.
+    event LotReclaimed(uint256 indexed auctionId, address indexed tokenOwner);
     event AuctionCanceled(uint256 indexed auctionId);
     event RefundCredited(address indexed to, uint256 amount);
     event RefundWithdrawn(address indexed account, address indexed recipient, uint256 amount);
@@ -133,10 +138,18 @@ interface ISovereignAuctionHouseV2 {
     function withdrawRefund() external;
     function withdrawRefundTo(address payable recipient) external;
 
-    /// @notice Winner-only claim for a lot whose delivery was deferred at
-    ///         settlement. Delivers to msg.sender, or to `to` if nonzero.
-    ///         Reverts if the auction has no deferred delivery or the caller
-    ///         is not the recorded winner. A revert during delivery reverts
-    ///         the whole call, leaving the claim retryable.
+    /// @notice Claims a lot whose delivery was deferred at settlement.
+    ///         Anyone may call this with `to == address(0)` to trigger
+    ///         delivery to the recorded winner; only that winner may redirect
+    ///         delivery elsewhere via a nonzero `to`. Reverts if the auction
+    ///         has no deferred delivery, or if a non-winner passes a nonzero
+    ///         `to`. A revert during delivery reverts the whole call, leaving
+    ///         the claim retryable.
     function claimLot(uint256 auctionId, address to) external;
+
+    /// @notice Lets the seller reclaim a deferred lot once
+    ///         PENDING_DELIVERY_TIMEOUT has passed since deferral. The seller
+    ///         was already paid at settlement; this only bounds how long an
+    ///         undeliverable lot can stay escrowed waiting on the winner.
+    function reclaimStuckLot(uint256 auctionId) external;
 }

@@ -38,6 +38,19 @@ export const sovereignAuctionHouseV2Abi = [
   },
   {
     "type": "function",
+    "name": "PENDING_DELIVERY_TIMEOUT",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "TIME_BUFFER",
     "inputs": [],
     "outputs": [
@@ -352,6 +365,25 @@ export const sovereignAuctionHouseV2Abi = [
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "deliveryDeferredAt",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -698,6 +730,19 @@ export const sovereignAuctionHouseV2Abi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "reclaimStuckLot",
+    "inputs": [
+      {
+        "name": "auctionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -1238,6 +1283,25 @@ export const sovereignAuctionHouseV2Abi = [
   },
   {
     "type": "event",
+    "name": "LotReclaimed",
+    "inputs": [
+      {
+        "name": "auctionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "tokenOwner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "OwnershipTransferred",
     "inputs": [
       {
@@ -1444,6 +1508,11 @@ export const sovereignAuctionHouseV2Abi = [
   {
     "type": "error",
     "name": "OwnershipLocked",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ReclaimTooEarly",
     "inputs": []
   },
   {

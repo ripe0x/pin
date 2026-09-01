@@ -335,14 +335,15 @@ contract SovereignAuctionHouseV2Test is Test {
         vm.prank(alice);
         house.claimLot(auctionId, address(0));
 
-        // Only the winner may claim.
+        // A third party may not redirect delivery away from the winner.
         bad.setTransferMode(false, false);
         vm.expectRevert(SovereignAuctionHouseV2.NotWinner.selector);
         vm.prank(bob);
-        house.claimLot(auctionId, address(0));
+        house.claimLot(auctionId, carol);
 
-        // Winner claims once delivery works again.
-        vm.prank(alice);
+        // But a third party may permissionlessly trigger delivery to the
+        // recorded winner once delivery works again.
+        vm.prank(bob);
         house.claimLot(auctionId, address(0));
         assertEq(bad.ownerOf(TOKEN_ID), alice);
         assertFalse(house.pendingDelivery(auctionId));
@@ -353,6 +354,149 @@ contract SovereignAuctionHouseV2Test is Test {
         vm.expectRevert(SovereignAuctionHouseV2.NoPendingDelivery.selector);
         vm.prank(alice);
         house.claimLot(auctionId, address(0));
+    }
+
+    /// @dev Anyone may trigger delivery to the recorded winner once delivery
+    ///      is possible again; only the winner may redirect it elsewhere.
+    function test_ThirdPartyCanTriggerClaimToWinnerButNotRedirect() public {
+        MutableERC721 bad = new MutableERC721();
+        bad.mint(artist, TOKEN_ID);
+        vm.prank(artist);
+        bad.setApprovalForAll(address(house), true);
+        vm.prank(artist);
+        uint256 auctionId = house.createAuction(TOKEN_ID, address(bad), DURATION, RESERVE, 0);
+        vm.prank(alice);
+        house.createBid{value: RESERVE}(auctionId);
+        bad.setTransferMode(true, false);
+        vm.warp(block.timestamp + DURATION + 1);
+        house.endAuction(auctionId);
+        assertTrue(house.pendingDelivery(auctionId));
+        bad.setTransferMode(false, false);
+
+        // A third party redirecting to itself reverts.
+        vm.expectRevert(SovereignAuctionHouseV2.NotWinner.selector);
+        vm.prank(bob);
+        house.claimLot(auctionId, bob);
+
+        // A third party triggering delivery to the winner succeeds; the
+        // token lands with the winner, not the caller.
+        vm.prank(bob);
+        house.claimLot(auctionId, address(0));
+        assertEq(bad.ownerOf(TOKEN_ID), alice);
+        assertFalse(house.pendingDelivery(auctionId));
+    }
+
+    /// @dev The winner's own redirect via a nonzero `to` is unaffected by the
+    ///      permissionless-to-winner change.
+    function test_WinnerCanStillRedirectOwnClaim() public {
+        MutableERC721 bad = new MutableERC721();
+        bad.mint(artist, TOKEN_ID);
+        vm.prank(artist);
+        bad.setApprovalForAll(address(house), true);
+        vm.prank(artist);
+        uint256 auctionId = house.createAuction(TOKEN_ID, address(bad), DURATION, RESERVE, 0);
+        vm.prank(alice);
+        house.createBid{value: RESERVE}(auctionId);
+        bad.setTransferMode(true, false);
+        vm.warp(block.timestamp + DURATION + 1);
+        house.endAuction(auctionId);
+        bad.setTransferMode(false, false);
+
+        vm.prank(alice);
+        house.claimLot(auctionId, carol);
+        assertEq(bad.ownerOf(TOKEN_ID), carol);
+    }
+
+    /// @dev A deferred lot is frozen only until PENDING_DELIVERY_TIMEOUT: the
+    ///      seller (tokenOwner) can then reclaim it. Reclaiming is blocked
+    ///      before the timeout, for a non-tokenOwner caller, for a live
+    ///      (non-deferred) auction, and after the lot is already gone.
+    function test_ReclaimStuckLotAfterTimeoutReturnsLotToSeller() public {
+        MutableERC721 bad = new MutableERC721();
+        bad.mint(artist, TOKEN_ID);
+        vm.prank(artist);
+        bad.setApprovalForAll(address(house), true);
+        vm.prank(artist);
+        uint256 auctionId = house.createAuction(TOKEN_ID, address(bad), DURATION, RESERVE, 0);
+
+        // A live, non-deferred auction cannot be reclaimed.
+        vm.expectRevert(SovereignAuctionHouseV2.NoPendingDelivery.selector);
+        house.reclaimStuckLot(auctionId);
+
+        vm.prank(alice);
+        house.createBid{value: RESERVE}(auctionId);
+        bad.setTransferMode(true, false);
+        vm.warp(block.timestamp + DURATION + 1);
+        house.endAuction(auctionId);
+        assertTrue(house.pendingDelivery(auctionId));
+        assertEq(house.deliveryDeferredAt(auctionId), uint64(block.timestamp));
+
+        // Too early.
+        vm.expectRevert(SovereignAuctionHouseV2.ReclaimTooEarly.selector);
+        vm.prank(artist);
+        house.reclaimStuckLot(auctionId);
+
+        vm.warp(block.timestamp + house.PENDING_DELIVERY_TIMEOUT() + 1);
+
+        // Not the tokenOwner.
+        vm.expectRevert("Not token owner");
+        vm.prank(bob);
+        house.reclaimStuckLot(auctionId);
+
+        // The seller reclaims the lot. Delivery to the seller does not
+        // depend on whether delivery to the winner would have worked.
+        bad.setTransferMode(false, false);
+        vm.prank(artist);
+        house.reclaimStuckLot(auctionId);
+        assertEq(bad.ownerOf(TOKEN_ID), artist);
+        assertFalse(house.pendingDelivery(auctionId));
+        assertEq(house.deliveryDeferredAt(auctionId), 0);
+        (bool exists,) = house.getAuctionFor(address(bad), TOKEN_ID);
+        assertFalse(exists, "tokenId must be relistable");
+
+        // Double reclaim reverts: the auction no longer exists.
+        vm.expectRevert(SovereignAuctionHouseV2.AuctionDoesNotExist.selector);
+        vm.prank(artist);
+        house.reclaimStuckLot(auctionId);
+
+        // Relisting the same tokenId now works.
+        vm.prank(artist);
+        house.createAuction(TOKEN_ID, address(bad), DURATION, RESERVE, 0);
+    }
+
+    /// @dev Once claimLot delivers a deferred lot, reclaimStuckLot can no
+    ///      longer act on it: the auction record is gone.
+    function test_ReclaimStuckLotAfterClaimLotRevertsAuctionGone() public {
+        MutableERC721 bad = new MutableERC721();
+        bad.mint(artist, TOKEN_ID);
+        vm.prank(artist);
+        bad.setApprovalForAll(address(house), true);
+        vm.prank(artist);
+        uint256 auctionId = house.createAuction(TOKEN_ID, address(bad), DURATION, RESERVE, 0);
+        vm.prank(alice);
+        house.createBid{value: RESERVE}(auctionId);
+        bad.setTransferMode(true, false);
+        vm.warp(block.timestamp + DURATION + 1);
+        house.endAuction(auctionId);
+        bad.setTransferMode(false, false);
+
+        vm.prank(alice);
+        house.claimLot(auctionId, address(0));
+
+        vm.warp(block.timestamp + house.PENDING_DELIVERY_TIMEOUT() + 1);
+        vm.expectRevert(SovereignAuctionHouseV2.AuctionDoesNotExist.selector);
+        vm.prank(artist);
+        house.reclaimStuckLot(auctionId);
+    }
+
+    /// @dev A normal, immediately-delivered settlement never sets
+    ///      deliveryDeferredAt, so a later reclaim attempt is impossible.
+    function test_HappyPathSettlementLeavesNoDeferralTimestamp() public {
+        uint256 auctionId = _create();
+        _bidAndEnd(auctionId, alice, RESERVE);
+        house.endAuction(auctionId);
+        assertEq(house.deliveryDeferredAt(auctionId), 0);
+        assertFalse(house.pendingDelivery(auctionId));
     }
 
     function test_SilentOutboundNoopDefersDeliveryAndPaysSeller() public {

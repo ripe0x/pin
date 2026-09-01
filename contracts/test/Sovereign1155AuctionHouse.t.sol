@@ -154,6 +154,17 @@ contract ClawbackERC1155 {
     }
 }
 
+/// @dev Griefing vector from the audit: a bare contract that can bid, so it
+///      becomes the recorded winner, but has no onERC1155Received hook and
+///      no function through which anyone could invoke claimLot on its
+///      behalf. Delivery to this contract can never succeed, by anyone,
+///      which is exactly the case reclaimStuckLot exists to resolve.
+contract BareERC1155Bidder {
+    function bid(address house, uint256 auctionId) external payable {
+        SovereignAuctionHouseV2(payable(house)).createBid{value: msg.value}(auctionId);
+    }
+}
+
 /// @dev fundsRecipient for the seller running the clawback in
 ///      ClawbackERC1155: its receive() callback fires during the settlement
 ///      payout and attempts to force the quantity from the winner back to
@@ -458,5 +469,60 @@ contract Sovereign1155AuctionHouseTest is Test {
         vm.expectRevert();
         vm.prank(artist);
         house.recoverStuckERC1155(address(bad), TOKEN_ID, QUANTITY, artist);
+    }
+
+    /// @dev Audit finding: an unprivileged attacker could bid on an ERC1155
+    ///      lot with a bare contract that has no onERC1155Received and no
+    ///      way to call claimLot, permanently freezing the seller's token for
+    ///      the cost of the reserve, since claimLot was gated to the
+    ///      recorded winner and recoverStuck* is blocked while the token's
+    ///      _auctionIdByToken entry is set. Delivery to that contract can
+    ///      never succeed, permissionlessly or otherwise, so the seller's
+    ///      timeout reclaim is the escape hatch: after PENDING_DELIVERY_TIMEOUT
+    ///      the seller gets the lot back and the tokenId is relistable.
+    function test_BareContractGriefingResolvedBySellerReclaim() public {
+        vm.prank(artist);
+        uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, 0);
+        BareERC1155Bidder griefer = new BareERC1155Bidder();
+        vm.deal(address(griefer), RESERVE);
+        griefer.bid{value: RESERVE}(address(house), auctionId);
+        vm.warp(block.timestamp + DURATION + 1);
+
+        uint256 sellerBefore = artist.balance;
+        uint256 fee = (RESERVE * 250) / 10_000;
+        house.endAuction(auctionId);
+        assertEq(artist.balance - sellerBefore, RESERVE - fee);
+        assertTrue(house.pendingDelivery(auctionId));
+        assertEq(house.deliveryDeferredAt(auctionId), uint64(block.timestamp));
+
+        // The winner cannot claim (no way to call claimLot), and a
+        // permissionless claim-to-winner also cannot succeed: the griefer
+        // contract has no onERC1155Received hook.
+        vm.expectRevert();
+        house.claimLot(auctionId, address(0));
+
+        // Reclaim is blocked before the timeout.
+        vm.expectRevert(SovereignAuctionHouseV2.ReclaimTooEarly.selector);
+        vm.prank(artist);
+        house.reclaimStuckLot(auctionId);
+
+        vm.warp(block.timestamp + house.PENDING_DELIVERY_TIMEOUT() + 1);
+
+        // Only the tokenOwner (artist, the seller) may reclaim.
+        vm.expectRevert("Not token owner");
+        vm.prank(alice);
+        house.reclaimStuckLot(auctionId);
+
+        vm.prank(artist);
+        house.reclaimStuckLot(auctionId);
+        assertEq(token.balanceOf(artist, TOKEN_ID), 10);
+        assertFalse(house.pendingDelivery(auctionId));
+        assertEq(house.deliveryDeferredAt(auctionId), 0);
+
+        // _auctionIdByToken is cleared, so the tokenId can be relisted.
+        (bool exists,) = house.getAuctionFor(address(token), TOKEN_ID);
+        assertFalse(exists, "tokenId must be relistable");
+        vm.prank(artist);
+        house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, 0);
     }
 }

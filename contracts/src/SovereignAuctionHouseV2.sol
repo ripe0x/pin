@@ -16,9 +16,11 @@ import {ISovereignAuctionHouseV2} from "./ISovereignAuctionHouseV2.sol";
 ///         unconditionally; delivery is attempted with a fixed gas stipend
 ///         through a try/catch self-call so the outcome cannot depend on
 ///         caller-supplied gas. A failed delivery defers the lot to a
-///         winner-only, retryable, redirectable claim. No sale ever unwinds.
-///         V1 clones are immutable and remain governed by their original
-///         implementation.
+///         retryable, redirectable claim: anyone may trigger delivery to the
+///         recorded winner, and only that winner may redirect it elsewhere.
+///         If the winner never claims within PENDING_DELIVERY_TIMEOUT, the
+///         seller may reclaim the lot. No sale ever unwinds. V1 clones are
+///         immutable and remain governed by their original implementation.
 contract SovereignAuctionHouseV2 is
     ISovereignAuctionHouseV2,
     IERC1155Receiver,
@@ -51,17 +53,30 @@ contract SovereignAuctionHouseV2 is
     error NoPendingDelivery();
     error NotWinner();
     error InsufficientGas();
+    error ReclaimTooEarly();
 
     uint256 internal constant DELIVER_GAS_LIMIT = 500_000;
+
+    /// @notice A deferred lot the winner never claims can be reclaimed by the
+    ///         seller after this timeout, so an undeliverable lot cannot be
+    ///         frozen permanently. The seller was already paid at
+    ///         settlement; the timeout only bounds how long the lot itself
+    ///         stays escrowed waiting on the winner.
+    uint64 public constant PENDING_DELIVERY_TIMEOUT = 30 days;
 
     mapping(uint256 => Auction) public auctions;
     mapping(uint256 => uint64) public listingExpiry;
 
     /// @notice True for an auction whose settlement payout ran but whose
     ///         token delivery failed. The auction record, and its
-    ///         `_auctionIdByToken` entry, stay in storage until claimLot
-    ///         delivers the lot.
+    ///         `_auctionIdByToken` entry, stay in storage until claimLot or
+    ///         reclaimStuckLot delivers the lot.
     mapping(uint256 => bool) public pendingDelivery;
+
+    /// @notice Timestamp a lot entered pendingDelivery, keyed by auctionId.
+    ///         Set in endAuction's deferral branch; read by reclaimStuckLot
+    ///         to enforce PENDING_DELIVERY_TIMEOUT.
+    mapping(uint256 => uint64) public deliveryDeferredAt;
 
     // A settled-but-undelivered lot keeps its entry here, which blocks a
     // duplicate listing and stuck-token recovery for the same token until
@@ -375,6 +390,7 @@ contract SovereignAuctionHouseV2 is
             delete listingExpiry[auctionId];
         } else {
             pendingDelivery[auctionId] = true;
+            deliveryDeferredAt[auctionId] = uint64(block.timestamp);
             emit DeliveryDeferred(auctionId, a.bidder);
         }
     }
@@ -415,18 +431,22 @@ contract SovereignAuctionHouseV2 is
         if (IERC1155(tokenContract).balanceOf(winner, tokenId) < beforeBalance + quantity) revert DeliveryFailed();
     }
 
-    /// @notice Winner-only delivery of a lot deferred by endAuction. Runs
-    ///         with full gas and no try/catch, so a revert rolls back the
-    ///         whole call and leaves the claim retryable. `to == address(0)`
-    ///         delivers to msg.sender.
+    /// @notice Delivery of a lot deferred by endAuction. Anyone may call this
+    ///         to trigger delivery to the recorded winner (`to` must be
+    ///         address(0) in that case), which lets a keeper rescue a winner
+    ///         that has no way to call this itself. Only the recorded winner
+    ///         may redirect delivery elsewhere via a nonzero `to`. Runs with
+    ///         full gas and no try/catch, so a revert rolls back the whole
+    ///         call and leaves the claim retryable.
     function claimLot(uint256 auctionId, address to) external override nonReentrant {
         if (!pendingDelivery[auctionId]) revert NoPendingDelivery();
         Auction memory a = auctions[auctionId];
-        if (msg.sender != a.bidder) revert NotWinner();
+        if (msg.sender != a.bidder && to != address(0)) revert NotWinner();
 
-        address recipient = to == address(0) ? msg.sender : to;
+        address recipient = to == address(0) ? a.bidder : to;
 
         delete pendingDelivery[auctionId];
+        delete deliveryDeferredAt[auctionId];
         delete _auctionIdByToken[a.tokenContract][a.tokenId];
         delete auctions[auctionId];
         delete listingExpiry[auctionId];
@@ -440,6 +460,39 @@ contract SovereignAuctionHouseV2 is
             uint256 beforeBalance = IERC1155(a.tokenContract).balanceOf(recipient, a.tokenId);
             IERC1155(a.tokenContract).safeTransferFrom(address(this), recipient, a.tokenId, a.quantity, "");
             if (IERC1155(a.tokenContract).balanceOf(recipient, a.tokenId) < beforeBalance + a.quantity) {
+                revert DeliveryFailed();
+            }
+        }
+    }
+
+    /// @notice Lets the seller reclaim a deferred lot once
+    ///         PENDING_DELIVERY_TIMEOUT has passed since deferral. The seller
+    ///         was already paid at settlement; if the winner never takes
+    ///         delivery within the timeout, the seller reclaims the lot so an
+    ///         undeliverable lot cannot be frozen permanently. Anyone can
+    ///         deliver to the winner before the timeout via claimLot, so a
+    ///         legitimate winner is not at risk from a keeper-assisted claim.
+    function reclaimStuckLot(uint256 auctionId) external nonReentrant auctionExists(auctionId) {
+        if (!pendingDelivery[auctionId]) revert NoPendingDelivery();
+        Auction memory a = auctions[auctionId];
+        require(msg.sender == a.tokenOwner, "Not token owner");
+        if (block.timestamp <= deliveryDeferredAt[auctionId] + PENDING_DELIVERY_TIMEOUT) revert ReclaimTooEarly();
+
+        delete pendingDelivery[auctionId];
+        delete deliveryDeferredAt[auctionId];
+        delete _auctionIdByToken[a.tokenContract][a.tokenId];
+        delete auctions[auctionId];
+        delete listingExpiry[auctionId];
+
+        emit LotReclaimed(auctionId, a.tokenOwner);
+
+        if (a.standard == TokenStandard.ERC721) {
+            IERC721(a.tokenContract).transferFrom(address(this), a.tokenOwner, a.tokenId);
+            if (IERC721(a.tokenContract).ownerOf(a.tokenId) != a.tokenOwner) revert DeliveryFailed();
+        } else {
+            uint256 beforeBalance = IERC1155(a.tokenContract).balanceOf(a.tokenOwner, a.tokenId);
+            IERC1155(a.tokenContract).safeTransferFrom(address(this), a.tokenOwner, a.tokenId, a.quantity, "");
+            if (IERC1155(a.tokenContract).balanceOf(a.tokenOwner, a.tokenId) < beforeBalance + a.quantity) {
                 revert DeliveryFailed();
             }
         }
