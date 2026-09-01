@@ -185,15 +185,15 @@
         {
           "id": "W0.1",
           "title": "Integrate the trustworthy foundation",
-          "status": "in_progress",
+          "status": "complete",
           "dependsOn": [],
           "workPacket": "docs/work-packets/W0.1-foundation-integration.md",
-          "nextAction": "Review the integrated PR #277/#282/#280/#278/#279/#281 candidate on the exact live-data Netlify preview, close superseded source PRs, and complete the W0.1 receipt."
+          "nextAction": "Use the completed live-data receipt in docs/work-packets/W0.1-foundation-integration.md as the input to W0.2 and W1.2."
         },
         {
           "id": "W0.2",
           "title": "Cut over the indexed production foundation",
-          "status": "proposed",
+          "status": "ready",
           "dependsOn": ["W0.1"],
           "nextAction": "Execute migrations, fresh Ponder backfill, guarded indexer_live switch, worker deploy, and web deploy in the documented order."
         },
@@ -205,7 +205,7 @@
           "nextAction": "Run the 24-hour and 7-day health, ownership, refresh, media, and cost checks before marking the foundation complete."
         }
       ],
-      "nextAction": "Complete the integrated live-data preview matrix and W0.1 receipt."
+      "nextAction": "Execute W0.2 through a fresh versioned Ponder backfill, guarded indexer_live switch, worker deploy, and web deploy without bypassing issue #295."
     },
     {
       "id": "W1",
@@ -214,7 +214,7 @@
       "deliveryDependsOn": ["W0"],
       "outcome": "PND and independent interfaces consume one versioned release model and one behavioral implementation.",
       "issues": [263, 264, 270, 274, 284],
-      "pullRequests": [277, 280, 282],
+      "pullRequests": [300],
       "ownedPaths": [
         "packages/abi/**",
         "packages/addresses/**",
@@ -255,7 +255,7 @@
           "nextAction": "Make both assemblies consume the kernel and add parity plus PND-endpoint-blocked CI coverage."
         }
       ],
-      "nextAction": "Wait for W0.1, then create the W1.2 extraction work packet from docs/portable-release-boundary.md."
+      "nextAction": "Create the W1.2 extraction work packet from docs/portable-release-boundary.md, then move the deterministic release behavior behind the approved provider interfaces."
     },
     {
       "id": "W2",
@@ -264,7 +264,7 @@
       "deliveryDependsOn": ["W0", "W1"],
       "outcome": "PND visibly operates a selective art-led venue while retaining a complete permissionless Surface record.",
       "issues": [261, 262, 265, 268, 269, 270, 275, 284],
-      "pullRequests": [276, 278, 279, 280, 281],
+      "pullRequests": [300],
       "ownedPaths": [
         "apps/web/src/app/page.tsx",
         "apps/web/src/app/landing-v2/**",
