@@ -9,6 +9,7 @@ import {
 } from "@/lib/collection"
 import {
   getSurfaceCollectionSummaries,
+  getSurfaceCollectionSummariesByAddresses,
   type SurfaceCollectionSummary,
 } from "@/lib/indexer-queries"
 import { readEnsIdentities, type StoredEnsIdentity } from "@/lib/ens-identity-store"
@@ -19,7 +20,18 @@ import {
 } from "@/lib/release-editorial"
 
 export async function ReleaseVenue() {
-  const releases = await getSurfaceCollectionSummaries(18).catch(() => null)
+  const programmedEditorial = featuredReleaseEditorial()
+  const [recentReleases, programmedReleases] = await Promise.all([
+    getSurfaceCollectionSummaries(18).catch(() => null),
+    getSurfaceCollectionSummariesByAddresses(
+      programmedEditorial.map((entry) => entry.collection),
+    ).catch(() => null),
+  ])
+  const releasesByCollection = new Map<string, SurfaceCollectionSummary>()
+  for (const release of [...(recentReleases ?? []), ...(programmedReleases ?? [])]) {
+    releasesByCollection.set(release.collection.toLowerCase(), release)
+  }
+  const releases = Array.from(releasesByCollection.values())
 
   if (!releases?.length) {
     return <AvailableNow />
@@ -31,7 +43,11 @@ export async function ReleaseVenue() {
     release,
     status: releaseStatus(release, now),
   }))
-  const programmedFeature = featuredReleaseEditorial()
+  const recentWithStatus = (recentReleases ?? []).map((release) => ({
+    release,
+    status: releaseStatus(release, now),
+  }))
+  const programmedFeature = programmedEditorial
     .map((editorial) => ({
       editorial,
       item: withStatus.find(
@@ -40,18 +56,20 @@ export async function ReleaseVenue() {
     }))
     .find((candidate) => candidate.item !== undefined)
   const featured = programmedFeature?.item ??
-    withStatus.find((item) => item.status === SurfaceStatus.Open && item.release.imageUrl) ??
-    withStatus.find((item) => item.status === SurfaceStatus.Scheduled && item.release.imageUrl) ??
-    withStatus.find((item) => item.release.imageUrl) ??
+    recentWithStatus.find((item) => item.status === SurfaceStatus.Open && item.release.imageUrl) ??
+    recentWithStatus.find(
+      (item) => item.status === SurfaceStatus.Scheduled && item.release.imageUrl,
+    ) ??
+    recentWithStatus.find((item) => item.release.imageUrl) ??
     withStatus[0]
-  const upcoming = withStatus
+  const upcoming = recentWithStatus
     .filter(
       (item) =>
         item.release.collection !== featured.release.collection &&
         item.status === SurfaceStatus.Scheduled,
     )
     .slice(0, 3)
-  const recent = withStatus
+  const recent = recentWithStatus
     .filter(
       (item) =>
         item.release.collection !== featured.release.collection &&

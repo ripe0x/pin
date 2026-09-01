@@ -192,6 +192,9 @@ compact reliable activity stream.
 Infrastructure, profile search, Catalog, and preservation remain accessible
 but secondary to the work.
 
+The accepted editorial truth, failure, route, and performance contract is
+`docs/editorial-venue-boundary.md`.
+
 ### Releases directory
 
 The existing `/collections` route may remain technically stable while its

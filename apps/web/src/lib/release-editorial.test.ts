@@ -8,8 +8,19 @@ import {
 
 test("editorial releases are unique lowercase collection records", () => {
   const collections = releaseEditorial.map((entry) => entry.collection)
+  assert.ok(releaseEditorial.length <= 12)
   assert.equal(new Set(collections).size, collections.length)
   assert.ok(collections.every((collection) => /^0x[a-f0-9]{40}$/.test(collection)))
+  assert.ok(
+    releaseEditorial.every(
+      (entry) => entry.slug === null || /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(entry.slug),
+    ),
+  )
+  assert.ok(
+    releaseEditorial.every(
+      (entry) => entry.editorialSummary === null || entry.editorialSummary.length <= 500,
+    ),
+  )
 })
 
 test("featured releases have a deterministic order", () => {

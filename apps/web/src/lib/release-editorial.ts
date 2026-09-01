@@ -17,10 +17,15 @@ type RawReleaseEditorial = {
 }
 
 const ADDRESS = /^0x[a-f0-9]{40}$/
+const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+const MAX_EDITORIAL_RELEASES = 12
 
 function parseEditorial(): ReleaseEditorial[] {
   if (rawEditorial.version !== 1 || !Array.isArray(rawEditorial.releases)) {
     throw new Error("release editorial content must use schema version 1")
+  }
+  if (rawEditorial.releases.length > MAX_EDITORIAL_RELEASES) {
+    throw new Error(`release editorial content exceeds ${MAX_EDITORIAL_RELEASES} entries`)
   }
 
   const collections = new Set<string>()
@@ -54,10 +59,16 @@ function parseEditorial(): ReleaseEditorial[] {
     }
 
     const slug = typeof entry.slug === "string" && entry.slug.trim() ? entry.slug.trim() : null
+    if (slug !== null && (slug.length > 80 || !SLUG.test(slug))) {
+      throw new Error(`release editorial entry ${index} has an invalid slug`)
+    }
     const editorialSummary =
       typeof entry.editorialSummary === "string" && entry.editorialSummary.trim()
         ? entry.editorialSummary.trim()
         : null
+    if (editorialSummary !== null && editorialSummary.length > 500) {
+      throw new Error(`release editorial entry ${index} has an overlong editorialSummary`)
+    }
 
     return {
       collection: entry.collection,

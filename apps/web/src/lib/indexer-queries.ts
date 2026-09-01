@@ -304,6 +304,46 @@ export type SurfaceCollectionSummary = {
   saleStateAvailable: boolean
 }
 
+type SurfaceCollectionRow = {
+  collection: string
+  owner: string
+  name: string | null
+  symbol: string | null
+  primary_minter: string | null
+  price: string | null
+  price_strategy: string | null
+  mint_start: string | null
+  mint_end: string | null
+  max_mints: string | null
+  supply_cap: string
+  minted_ever: string
+  sold_through_minter: string
+  image_url: string | null
+  created_at_time: string
+  sale_state_available: boolean
+}
+
+function surfaceCollectionSummary(row: SurfaceCollectionRow): SurfaceCollectionSummary {
+  return {
+    collection: row.collection,
+    owner: row.owner,
+    name: row.name ?? "Untitled collection",
+    symbol: row.symbol ?? "",
+    primaryMinter: row.primary_minter,
+    price: row.price === null ? null : BigInt(row.price),
+    priceStrategy: row.price_strategy,
+    mintStart: row.mint_start === null ? null : Number(row.mint_start),
+    mintEnd: row.mint_end === null ? null : Number(row.mint_end),
+    maxMints: row.max_mints === null ? null : BigInt(row.max_mints),
+    supplyCap: BigInt(row.supply_cap),
+    mintedEver: BigInt(row.minted_ever),
+    soldThroughMinter: BigInt(row.sold_through_minter),
+    imageUrl: row.image_url,
+    createdAtTime: Number(row.created_at_time),
+    saleStateAvailable: row.sale_state_available,
+  }
+}
+
 /**
  * Recent Surface collections for the public directory. Every field comes
  * from Ponder's current-state tables, so browsing collections never fans out
@@ -321,25 +361,6 @@ export async function getSurfaceCollectionSummaries(
     const schema = indexerSchema()
 
     if (!(await surfaceTablesExist(db, schema))) return null
-
-    type Row = {
-      collection: string
-      owner: string
-      name: string | null
-      symbol: string | null
-      primary_minter: string | null
-      price: string | null
-      price_strategy: string | null
-      mint_start: string | null
-      mint_end: string | null
-      max_mints: string | null
-      supply_cap: string
-      minted_ever: string
-      sold_through_minter: string
-      image_url: string | null
-      created_at_time: string
-      sale_state_available: boolean
-    }
 
     const hasReleaseState = await surfaceReleaseTablesExist(db, schema)
     const rows = (await db.unsafe(
@@ -428,27 +449,117 @@ export async function getSurfaceCollectionSummaries(
          ) tm ON true
         ORDER BY c.created_at_block DESC`,
       [limit, offset],
-    )) as Row[]
+    )) as SurfaceCollectionRow[]
 
-    return rows.map((row) => ({
-      collection: row.collection,
-      owner: row.owner,
-      name: row.name ?? "Untitled collection",
-      symbol: row.symbol ?? "",
-      primaryMinter: row.primary_minter,
-      price: row.price === null ? null : BigInt(row.price),
-      priceStrategy: row.price_strategy,
-      mintStart: row.mint_start === null ? null : Number(row.mint_start),
-      mintEnd: row.mint_end === null ? null : Number(row.mint_end),
-      maxMints: row.max_mints === null ? null : BigInt(row.max_mints),
-      supplyCap: BigInt(row.supply_cap),
-      mintedEver: BigInt(row.minted_ever),
-      soldThroughMinter: BigInt(row.sold_through_minter),
-      imageUrl: row.image_url,
-      createdAtTime: Number(row.created_at_time),
-      saleStateAvailable: row.sale_state_available,
-    }))
+    return rows.map(surfaceCollectionSummary)
   }, 6_000, "surface collection summaries")
+}
+
+/**
+ * Resolve specifically programmed Surface releases independently of the
+ * newest-first directory window. The address set is validated, deduplicated,
+ * and capped because editorial data must never turn a render into an
+ * unbounded query. Missing addresses remain missing rather than becoming
+ * dummy release records.
+ */
+export async function getSurfaceCollectionSummariesByAddresses(
+  collections: string[],
+): Promise<SurfaceCollectionSummary[] | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const addresses = Array.from(
+    new Set(
+      collections
+        .map((collection) => collection.toLowerCase())
+        .filter((collection) => /^0x[a-f0-9]{40}$/.test(collection)),
+    ),
+  ).slice(0, 12)
+  if (addresses.length === 0) return []
+
+  const db = sql
+  return withTimeout(async () => {
+    const schema = indexerSchema()
+    if (!(await surfaceTablesExist(db, schema))) return null
+
+    const hasReleaseState = await surfaceReleaseTablesExist(db, schema)
+    const rows = (await db.unsafe(
+      hasReleaseState
+        ? `SELECT c.collection, c.owner, c.name, c.symbol, c.primary_minter,
+              s.price::text AS price, s.price_strategy,
+              s.mint_start::text AS mint_start,
+              s.mint_end::text AS mint_end,
+              s.max_mints::text AS max_mints,
+              COALESCE(sc.supply_cap, 0)::text AS supply_cap,
+              COALESCE(mt.minted_ever, 0)::text AS minted_ever,
+              COALESCE(st.sold_through_minter, 0)::text AS sold_through_minter,
+              tm.image_url,
+              c.created_at_time::text AS created_at_time,
+              true AS sale_state_available
+         FROM ${schema}.collections c
+         LEFT JOIN ${schema}.minter_sale_configs s
+           ON s.collection = c.collection
+          AND s.minter = c.primary_minter
+         LEFT JOIN ${schema}.collection_supply_configs sc
+           ON sc.collection = c.collection
+         LEFT JOIN LATERAL (
+           SELECT COALESCE(SUM(quantity), 0) AS minted_ever
+             FROM ${schema}.collection_mints cm
+            WHERE cm.collection = c.collection
+         ) mt ON true
+         LEFT JOIN LATERAL (
+           SELECT COALESCE(SUM(quantity), 0) AS sold_through_minter
+             FROM ${schema}.collection_sales cs
+            WHERE cs.collection = c.collection
+         ) st ON true
+         LEFT JOIN LATERAL (
+           SELECT metadata.image_url
+             FROM token_metadata metadata
+            WHERE metadata.contract = lower(c.collection)
+              AND metadata.image_url IS NOT NULL
+              AND metadata.image_url <> ''
+              AND COALESCE(metadata.burned, false) = false
+            ORDER BY metadata.fetched_at DESC
+            LIMIT 1
+         ) tm ON true
+        WHERE lower(c.collection) = ANY($1::text[])
+        ORDER BY c.created_at_block DESC`
+        : `SELECT c.collection, c.owner, c.name, c.symbol, c.primary_minter,
+              NULL::text AS price, NULL::text AS price_strategy,
+              NULL::text AS mint_start, NULL::text AS mint_end,
+              NULL::text AS max_mints,
+              0::text AS supply_cap,
+              COALESCE(mt.minted_ever, 0)::text AS minted_ever,
+              COALESCE(st.sold_through_minter, 0)::text AS sold_through_minter,
+              tm.image_url,
+              c.created_at_time::text AS created_at_time,
+              false AS sale_state_available
+         FROM ${schema}.collections c
+         LEFT JOIN LATERAL (
+           SELECT COALESCE(SUM(quantity), 0) AS minted_ever
+             FROM ${schema}.collection_mints cm
+            WHERE cm.collection = c.collection
+         ) mt ON true
+         LEFT JOIN LATERAL (
+           SELECT COALESCE(SUM(quantity), 0) AS sold_through_minter
+             FROM ${schema}.collection_sales cs
+            WHERE cs.collection = c.collection
+         ) st ON true
+         LEFT JOIN LATERAL (
+           SELECT metadata.image_url
+             FROM token_metadata metadata
+            WHERE metadata.contract = lower(c.collection)
+              AND metadata.image_url IS NOT NULL
+              AND metadata.image_url <> ''
+              AND COALESCE(metadata.burned, false) = false
+            ORDER BY metadata.fetched_at DESC
+            LIMIT 1
+         ) tm ON true
+        WHERE lower(c.collection) = ANY($1::text[])
+        ORDER BY c.created_at_block DESC`,
+      [addresses],
+    )) as SurfaceCollectionRow[]
+
+    return rows.map(surfaceCollectionSummary)
+  }, 6_000, "programmed surface releases")
 }
 
 /** Pure Postgres denominator for the permissionless Surface directory. */

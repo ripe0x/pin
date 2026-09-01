@@ -260,7 +260,7 @@
     {
       "id": "W2",
       "title": "Venue and editorial release system",
-      "status": "proposed",
+      "status": "in_progress",
       "deliveryDependsOn": ["W0", "W1"],
       "outcome": "PND visibly operates a selective art-led venue while retaining a complete permissionless Surface record.",
       "issues": [261, 262, 265, 268, 269, 270, 275, 284],
@@ -288,9 +288,10 @@
         {
           "id": "W2.1",
           "title": "Specify editorial release metadata and venue hierarchy",
-          "status": "proposed",
+          "status": "complete",
           "dependsOn": ["W1.1"],
-          "nextAction": "Create the W2.1 work packet from the completed release boundary, then define PND editorial declarations and venue hierarchy."
+          "workPacket": "docs/work-packets/W2.1-editorial-venue.md",
+          "nextAction": "Use docs/editorial-venue-boundary.md as the accepted source for W2.2 and W4.1."
         },
         {
           "id": "W2.2",
@@ -300,7 +301,7 @@
           "nextAction": "Implement homepage, Releases, launch pages, profiles, About, and journal against shared release contracts."
         }
       ],
-      "nextAction": "Create the W2.1 editorial and venue specification work packet."
+      "nextAction": "Wait for W0.1 and W1.2, then create W2.2 from the accepted venue boundary."
     },
     {
       "id": "W3",
@@ -382,7 +383,7 @@
           "nextAction": "Implement launch packs, feeds, embeds, and artist-controlled communication adapters."
         }
       ],
-      "nextAction": "Wait for W1.1 and W2.1 before selecting distribution formats."
+      "nextAction": "Create the W4.1 portable feeds, assets, and embeds work packet from the accepted release and venue boundaries."
     },
     {
       "id": "W5",

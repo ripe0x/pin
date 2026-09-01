@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pnd.ripe.wtf/schemas/pnd-editorial-release-v1.schema.json",
+  "title": "PND editorial release declarations v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "releases"],
+  "properties": {
+    "version": { "const": 1 },
+    "releases": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["collection", "featured"],
+        "properties": {
+          "collection": {
+            "type": "string",
+            "pattern": "^0x[a-f0-9]{40}$"
+          },
+          "slug": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "featured": { "type": "boolean" },
+          "featureOrder": { "type": "integer", "minimum": 1 },
+          "editorialSummary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": { "featured": { "const": true } },
+              "required": ["featured"]
+            },
+            "then": { "required": ["featureOrder"] },
+            "else": { "not": { "required": ["featureOrder"] } }
+          }
+        ]
+      }
+    }
+  }
+}

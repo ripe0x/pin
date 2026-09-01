@@ -3,6 +3,7 @@ import Link from "next/link"
 import {
   getSurfaceCollectionCount,
   getSurfaceCollectionSummaries,
+  getSurfaceCollectionSummariesByAddresses,
   type SurfaceCollectionSummary,
 } from "@/lib/indexer-queries"
 import {
@@ -98,30 +99,51 @@ export default async function CollectionsHome({
   let indexUnavailable = false
   let recent: SurfaceCollectionSummary[] = []
   let total = 0
+  let programmedReleases: SurfaceCollectionSummary[] = []
+  const programmedEditorial = featuredReleaseEditorial()
   if (factory) {
-    const [indexed, indexedTotal] = await Promise.all([
-      getSurfaceCollectionSummaries(PAGE_SIZE, (requestedPage - 1) * PAGE_SIZE),
+    const [indexedTotal, programmed] = await Promise.all([
       getSurfaceCollectionCount(),
+      getSurfaceCollectionSummariesByAddresses(
+        programmedEditorial.map((entry) => entry.collection),
+      ),
     ])
-    if (indexed === null || indexedTotal === null) {
+    if (indexedTotal === null) {
       indexUnavailable = true
     } else {
-      recent = indexed
       total = indexedTotal
+      const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+      const currentPage = Math.min(requestedPage, totalPages)
+      const indexed = await getSurfaceCollectionSummaries(
+        PAGE_SIZE,
+        (currentPage - 1) * PAGE_SIZE,
+      )
+      if (indexed === null) {
+        indexUnavailable = true
+      } else {
+        recent = indexed
+      }
     }
+    programmedReleases = programmed ?? []
   }
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const currentPage = Math.min(requestedPage, totalPages)
   const nowSec = Math.floor(Date.now() / 1000)
   const groups = groupByLifecycle(recent, nowSec)
   const showGroupLabels = groups.length > 1
-  const identities = await readEnsIdentities(recent.map((item) => item.owner))
-  const programmedFeature = featuredReleaseEditorial()
+  const identities = await readEnsIdentities(
+    [...recent, ...programmedReleases].map((item) => item.owner),
+  )
+  const programmedFeature = programmedEditorial
     .map((editorial) => ({
       editorial,
-      release: recent.find(
-        (candidate) => candidate.collection.toLowerCase() === editorial.collection,
-      ),
+      release:
+        programmedReleases.find(
+          (candidate) => candidate.collection.toLowerCase() === editorial.collection,
+        ) ??
+        recent.find(
+          (candidate) => candidate.collection.toLowerCase() === editorial.collection,
+        ),
     }))
     .find((candidate) => candidate.release !== undefined)
 
