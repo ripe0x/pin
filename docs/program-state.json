@@ -243,20 +243,21 @@
         {
           "id": "W1.2",
           "title": "Extract the shared release kernel",
-          "status": "in_progress",
+          "status": "complete",
           "dependsOn": ["W0.1", "W1.1"],
           "workPacket": "docs/work-packets/W1.2-shared-release-kernel.md",
-          "nextAction": "Implement the bounded injected direct-chain provider and minimal @pin/surface-react state boundary, then add sequential and Homage parity fixtures plus the PND-hostname-blocked template gate."
+          "nextAction": "Use the completed provider, React state boundary, fixtures, and offline gate as the input to W1.3."
         },
         {
           "id": "W1.3",
           "title": "Enforce PND and artist-interface parity",
-          "status": "proposed",
+          "status": "ready",
           "dependsOn": ["W1.2"],
-          "nextAction": "Make both assemblies consume the kernel and add parity plus PND-endpoint-blocked CI coverage."
+          "workPacket": "docs/work-packets/W1.3-release-parity.md",
+          "nextAction": "Move the PND fixed-price assembly onto @pin/surface-react, finish renderer-backed template token views, and enforce cross-assembly parity in CI."
         }
       ],
-      "nextAction": "Continue W1.2 with the bounded direct-chain provider, shared React state boundary, and automated parity/offline gates."
+      "nextAction": "Execute W1.3 so PND and the artist template consume the same provider and state boundary before package publication or template synchronization."
     },
     {
       "id": "W2",
@@ -298,11 +299,11 @@
           "id": "W2.2",
           "title": "Build the connected venue assemblies",
           "status": "proposed",
-          "dependsOn": ["W0.1", "W1.2", "W2.1"],
+          "dependsOn": ["W0.1", "W1.3", "W2.1"],
           "nextAction": "Implement homepage, Releases, launch pages, profiles, About, and journal against shared release contracts."
         }
       ],
-      "nextAction": "Wait for W0.1 and W1.2, then create W2.2 from the accepted venue boundary."
+      "nextAction": "Wait for W1.3 parity, then create W2.2 from the accepted venue boundary."
     },
     {
       "id": "W3",
