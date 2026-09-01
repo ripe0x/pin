@@ -96,6 +96,95 @@ contract RejectingERC1155Bidder {
     }
 }
 
+/// @dev Models a seller-controlled ERC1155 collection with a backdoor: any
+///      account the seller designates as `admin` can force-move a quantity
+///      regardless of approval. Mirrors ClawbackERC721 in
+///      SovereignAuctionHouseV2.t.sol, for the ERC1155 delivery path.
+contract ClawbackERC1155 {
+    mapping(address => mapping(uint256 => uint256)) internal _balanceOf;
+    mapping(address => mapping(address => bool)) internal _approved;
+    address public admin;
+
+    function mint(address to, uint256 id, uint256 amount) external {
+        _balanceOf[to][id] += amount;
+    }
+
+    function setAdmin(address admin_) external {
+        admin = admin_;
+    }
+
+    function setApprovalForAll(address operator, bool approved) external {
+        _approved[msg.sender][operator] = approved;
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == 0x01ffc9a7 || interfaceId == 0xd9b67a26;
+    }
+
+    function balanceOf(address account, uint256 id) external view returns (uint256) {
+        return _balanceOf[account][id];
+    }
+
+    function isApprovedForAll(address account, address operator) external view returns (bool) {
+        return _approved[account][operator];
+    }
+
+    function safeTransferFrom(address from, address to, uint256 id, uint256 amount, bytes calldata data) external {
+        require(msg.sender == from || _approved[from][msg.sender], "not approved");
+        require(_balanceOf[from][id] >= amount, "insufficient balance");
+        _balanceOf[from][id] -= amount;
+        _balanceOf[to][id] += amount;
+        if (to.code.length != 0) {
+            require(
+                IERC1155Receiver(to).onERC1155Received(msg.sender, from, id, amount, data)
+                    == IERC1155Receiver.onERC1155Received.selector,
+                "receiver rejected"
+            );
+        }
+    }
+
+    /// @dev The backdoor: admin-only, bypasses approval. Still requires
+    ///      `from` to currently hold the quantity, so it can only claw the
+    ///      lot back once delivery has actually moved it to the winner.
+    function forceTransfer(address from, address to, uint256 id, uint256 amount) external {
+        require(msg.sender == admin, "not admin");
+        require(_balanceOf[from][id] >= amount, "insufficient balance");
+        _balanceOf[from][id] -= amount;
+        _balanceOf[to][id] += amount;
+    }
+}
+
+/// @dev fundsRecipient for the seller running the clawback in
+///      ClawbackERC1155: its receive() callback fires during the settlement
+///      payout and attempts to force the quantity from the winner back to
+///      the auction house.
+contract ClawbackRecipient1155 {
+    ClawbackERC1155 public token;
+    address public house;
+    uint256 public tokenId;
+    uint256 public quantity;
+    address public winner;
+    bool public attempted;
+    bool public succeeded;
+
+    function configure(ClawbackERC1155 token_, address house_, uint256 tokenId_, uint256 quantity_, address winner_)
+        external
+    {
+        token = token_;
+        house = house_;
+        tokenId = tokenId_;
+        quantity = quantity_;
+        winner = winner_;
+    }
+
+    receive() external payable {
+        attempted = true;
+        try token.forceTransfer(winner, house, tokenId, quantity) {
+            succeeded = true;
+        } catch {}
+    }
+}
+
 contract Sovereign1155AuctionHouseTest is Test {
     SovereignAuctionHouseV2 internal house;
     MockAuctionERC1155 internal token;
@@ -316,5 +405,58 @@ contract Sovereign1155AuctionHouseTest is Test {
 
         house.expireAuction(auctionId);
         assertEq(token.balanceOf(artist, TOKEN_ID), 10);
+    }
+
+    /// @dev Audit High (CWE-367), ERC1155 path: a seller-controlled
+    ///      collection could use its fundsRecipient's payout-receive
+    ///      callback to claw the winning quantity back after delivery but
+    ///      before cleanup, leaving the house holding an unlocked balance
+    ///      the owner could then drain via recoverStuckERC1155 while the
+    ///      seller kept the proceeds. endAuction now settles funds before
+    ///      attempting delivery, so the callback fires while the quantity is
+    ///      still escrowed and the backdoor's `from == winner` balance check
+    ///      fails.
+    function test_FundsBeforeDeliveryClosesPayoutCallbackClawback() public {
+        ClawbackERC1155 bad = new ClawbackERC1155();
+        bad.mint(artist, TOKEN_ID, QUANTITY);
+        vm.prank(artist);
+        bad.setApprovalForAll(address(house), true);
+        vm.prank(artist);
+        uint256 auctionId = house.create1155Auction(TOKEN_ID, address(bad), QUANTITY, DURATION, RESERVE, 0);
+
+        ClawbackRecipient1155 recipient = new ClawbackRecipient1155();
+        bad.setAdmin(address(recipient));
+        recipient.configure(bad, address(house), TOKEN_ID, QUANTITY, alice);
+        vm.prank(artist);
+        house.setAuctionFundsRecipient(auctionId, payable(address(recipient)));
+
+        vm.prank(alice, alice);
+        house.createBid{value: RESERVE}(auctionId);
+        vm.warp(block.timestamp + DURATION + 1);
+
+        house.endAuction(auctionId);
+
+        // The payout callback ran, but the clawback attempt failed: the
+        // quantity had not moved to the winner yet at that point.
+        assertTrue(recipient.attempted());
+        assertFalse(recipient.succeeded());
+
+        // Delivery completed normally as the last step, and cleanup is
+        // consistent with that outcome.
+        assertEq(bad.balanceOf(alice, TOKEN_ID), QUANTITY);
+        (bool exists,) = house.getAuctionFor(address(bad), TOKEN_ID);
+        assertFalse(exists);
+
+        // The must-hold invariant: there is no reachable state where the
+        // house holds the lot's balance while the reverse index is cleared.
+        bool houseHoldsLot = bad.balanceOf(address(house), TOKEN_ID) != 0;
+        assertFalse(houseHoldsLot && !exists, "house holds an unlocked lot");
+
+        // The owner cannot pull anything out through stuck-token recovery:
+        // the house's balance for this id is zero, so any attempted amount
+        // reverts.
+        vm.expectRevert();
+        vm.prank(artist);
+        house.recoverStuckERC1155(address(bad), TOKEN_ID, QUANTITY, artist);
     }
 }

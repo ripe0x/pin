@@ -101,6 +101,87 @@ contract GasHungryERC721 {
     }
 }
 
+/// @dev Models a seller-controlled ERC721 collection with a backdoor: any
+///      account the seller designates as `admin` can force a transfer
+///      regardless of approval. A normal collection has no such function;
+///      this exists to prove the funds-before-delivery reorder in endAuction
+///      closes the payout-callback clawback (CWE-367) found in the audit.
+contract ClawbackERC721 {
+    mapping(uint256 => address) internal _ownerOf;
+    mapping(address => mapping(address => bool)) internal _approvedForAll;
+    address public admin;
+
+    function mint(address to, uint256 tokenId) external {
+        _ownerOf[tokenId] = to;
+    }
+
+    function setAdmin(address admin_) external {
+        admin = admin_;
+    }
+
+    function setApprovalForAll(address operator, bool approved) external {
+        _approvedForAll[msg.sender][operator] = approved;
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == 0x01ffc9a7 || interfaceId == 0x80ac58cd;
+    }
+
+    function ownerOf(uint256 tokenId) external view returns (address) {
+        return _ownerOf[tokenId];
+    }
+
+    function getApproved(uint256) external pure returns (address) {
+        return address(0);
+    }
+
+    function isApprovedForAll(address owner, address operator) external view returns (bool) {
+        return _approvedForAll[owner][operator];
+    }
+
+    function transferFrom(address from, address to, uint256 tokenId) external {
+        require(_ownerOf[tokenId] == from, "wrong owner");
+        require(msg.sender == from || _approvedForAll[from][msg.sender], "not approved");
+        _ownerOf[tokenId] = to;
+    }
+
+    /// @dev The backdoor: admin-only, bypasses approval. Still requires
+    ///      `from` to currently hold the token, so it can only claw the lot
+    ///      back once delivery has actually moved it to the winner.
+    function forceTransfer(address from, address to, uint256 tokenId) external {
+        require(msg.sender == admin, "not admin");
+        require(_ownerOf[tokenId] == from, "wrong owner");
+        _ownerOf[tokenId] = to;
+    }
+}
+
+/// @dev fundsRecipient for the seller running the clawback in
+///      ClawbackERC721: its receive() callback fires during the settlement
+///      payout and attempts to force the lot from the winner back to the
+///      auction house.
+contract ClawbackRecipient {
+    ClawbackERC721 public nft;
+    address public house;
+    uint256 public tokenId;
+    address public winner;
+    bool public attempted;
+    bool public succeeded;
+
+    function configure(ClawbackERC721 nft_, address house_, uint256 tokenId_, address winner_) external {
+        nft = nft_;
+        house = house_;
+        tokenId = tokenId_;
+        winner = winner_;
+    }
+
+    receive() external payable {
+        attempted = true;
+        try nft.forceTransfer(winner, house, tokenId) {
+            succeeded = true;
+        } catch {}
+    }
+}
+
 contract SovereignAuctionHouseV2Test is Test {
     SovereignAuctionHouseV2 internal house;
     MockERC721 internal nft;
@@ -555,5 +636,58 @@ contract SovereignAuctionHouseV2Test is Test {
         for (uint256 i; i < auctionIds.length; ++i) {
             assertEq(house.listingExpiry(auctionIds[i]), expiry);
         }
+    }
+
+    /// @dev Audit High (CWE-367): a seller-controlled collection could use
+    ///      its fundsRecipient's payout-receive callback to claw the lot
+    ///      back from the winner after delivery but before cleanup, leaving
+    ///      the house holding an unlocked token the owner could then drain
+    ///      via recoverStuckERC721 while the seller kept the proceeds.
+    ///      endAuction now settles funds before attempting delivery, so the
+    ///      callback fires while the token is still escrowed: the backdoor's
+    ///      `from == winner` check fails and the clawback cannot succeed,
+    ///      and delivery runs afterward with no further external call able
+    ///      to reverse it.
+    function test_FundsBeforeDeliveryClosesPayoutCallbackClawback() public {
+        ClawbackERC721 bad = new ClawbackERC721();
+        bad.mint(artist, TOKEN_ID);
+        vm.prank(artist);
+        bad.setApprovalForAll(address(house), true);
+        vm.prank(artist);
+        uint256 auctionId = house.createAuction(TOKEN_ID, address(bad), DURATION, RESERVE, 0);
+
+        ClawbackRecipient recipient = new ClawbackRecipient();
+        bad.setAdmin(address(recipient));
+        recipient.configure(bad, address(house), TOKEN_ID, alice);
+        vm.prank(artist);
+        house.setAuctionFundsRecipient(auctionId, payable(address(recipient)));
+
+        vm.prank(alice);
+        house.createBid{value: RESERVE}(auctionId);
+        vm.warp(block.timestamp + DURATION + 1);
+
+        house.endAuction(auctionId);
+
+        // The payout callback ran, but the clawback attempt failed: the
+        // token had not moved to the winner yet at that point.
+        assertTrue(recipient.attempted());
+        assertFalse(recipient.succeeded());
+
+        // Delivery completed normally as the last step, and cleanup is
+        // consistent with that outcome.
+        assertEq(bad.ownerOf(TOKEN_ID), alice);
+        (bool exists,) = house.getAuctionFor(address(bad), TOKEN_ID);
+        assertFalse(exists);
+
+        // The must-hold invariant: there is no reachable state where the
+        // house holds the lot while the reverse index is cleared for it.
+        bool houseHoldsLot = bad.ownerOf(TOKEN_ID) == address(house);
+        assertFalse(houseHoldsLot && !exists, "house holds an unlocked lot");
+
+        // The owner cannot pull the lot out through stuck-token recovery
+        // (the winner already owns it, so there is nothing to recover).
+        vm.expectRevert();
+        vm.prank(artist);
+        house.recoverStuckERC721(address(bad), TOKEN_ID, artist);
     }
 }

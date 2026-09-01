@@ -328,12 +328,16 @@ contract SovereignAuctionHouseV2 is
     }
 
     /// @notice Resolves every ended auction. Pays the protocol fee and
-    ///         seller unconditionally, then attempts delivery through a
+    ///         seller unconditionally FIRST, then attempts delivery through a
     ///         try/catch self-call capped at DELIVER_GAS_LIMIT gas, so the
     ///         delivery outcome cannot depend on how much gas the caller of
-    ///         endAuction supplied. A delivery failure defers the lot to
-    ///         claimLot; it never affects the payout, and the sale never
-    ///         unwinds.
+    ///         endAuction supplied. Funds settle before delivery so the token
+    ///         transfer is the last external interaction in this function: a
+    ///         seller-controlled fundsRecipient cannot use its ETH-receive
+    ///         callback to claw the lot back after `delivered` is captured,
+    ///         because no such callback runs after delivery. A delivery
+    ///         failure defers the lot to claimLot; it never affects the
+    ///         payout, and the sale never unwinds.
     function endAuction(uint256 auctionId)
         external
         override
@@ -344,10 +348,14 @@ contract SovereignAuctionHouseV2 is
         if (a.firstBidTime == 0) revert AuctionHasNoBids();
         if (block.timestamp < a.endTime) revert AuctionNotEnded();
         if (pendingDelivery[auctionId]) revert AuctionAlreadySettled();
+
+        _settleFunds(auctionId, a);
+
         // EIP-150 forwards at most 63/64 of remaining gas, so a gas-starved
         // call could hand delivery less than DELIVER_GAS_LIMIT and defer a
         // transfer that would have succeeded. Require enough headroom that
-        // the stipend is always honored in full.
+        // the stipend is always honored in full. Checked after _settleFunds
+        // so it accounts for the gas the payout already consumed.
         if (gasleft() < DELIVER_GAS_LIMIT + 80_000) revert InsufficientGas();
 
         bool delivered;
@@ -361,8 +369,6 @@ contract SovereignAuctionHouseV2 is
             } catch {}
         }
 
-        _settleFunds(auctionId, a);
-
         if (delivered) {
             delete _auctionIdByToken[a.tokenContract][a.tokenId];
             delete auctions[auctionId];
@@ -374,8 +380,13 @@ contract SovereignAuctionHouseV2 is
     }
 
     /// @dev Splits the hammer price into the protocol fee and seller
-    ///      proceeds, and pays both. Split out of endAuction to keep that
-    ///      function's stack shallow enough for the legacy codegen path.
+    ///      proceeds, and pays both. Runs before delivery in endAuction: this
+    ///      is the only external call in that function that can reach
+    ///      attacker-controlled code (the fee recipient or fundsRecipient's
+    ///      receive callback), so running it before the token transfer means
+    ///      no callback can execute after the lot leaves escrow. Split out
+    ///      of endAuction to keep that function's stack shallow enough for
+    ///      the legacy codegen path.
     function _settleFunds(uint256 auctionId, Auction memory a) internal {
         uint256 protocolFee;
         if (protocolFeeBps != 0) {
