@@ -202,6 +202,10 @@ async function CollectionSection({
           <CollectionTokenGrid
             collectionAddress={collectionAddress}
             minted={collection.minted}
+            owner={collection.owner}
+            renderer={collection.cfg.renderer}
+            primaryMinter={collection.primaryMinter}
+            validatedAtBlock={collection.validatedAtBlock}
           />
         ) : null}
       </div>

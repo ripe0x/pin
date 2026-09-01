@@ -408,6 +408,10 @@ export async function CollectionDefaultLayout({
               minter={c.primaryMinter}
               work={hasWork ? c.work : null}
               snapshot={{
+                owner: c.owner,
+                renderer: c.renderer,
+                idMode: c.cfg.idMode,
+                observedAtBlock: c.observedAtBlock.toString(),
                 price: (c.sale?.price ?? 0n).toString(),
                 priceStrategy: c.sale?.priceStrategy ?? ZERO_ADDRESS,
                 mintStart: (c.sale?.mintStart ?? 0n).toString(),
@@ -418,6 +422,7 @@ export async function CollectionDefaultLayout({
                 walletCap: (c.sale?.walletCap ?? 0n).toString(),
                 supplyCap: c.cfg.supplyCap.toString(),
               maxMints: (c.sale?.maxMints ?? 0n).toString(),
+                saleMinted: (c.sale?.totalMinted ?? 0n).toString(),
                 minted: c.minted.toString(),
                 referralShareBps: c.sale?.referralShareBps ?? REFERRAL_SHARE_BPS,
               }}

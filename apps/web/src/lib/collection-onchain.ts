@@ -77,12 +77,14 @@ type RawConfigReturn = readonly [Parameters<typeof decodeCollectionConfig>[0], b
 async function getMinterSaleConfig(
   client: ReturnType<typeof getClient>,
   minterAddr: Address,
+  blockNumber?: bigint,
 ): Promise<MinterSaleConfig | null> {
   const base = { address: minterAddr, abi: fixedPriceMinterAbi } as const
   try {
-    const [price, priceStrategy, mintStart, mintEnd, payout, maxMints, allowlistRoot, walletCap, referralShareBps] =
+    const [price, priceStrategy, mintStart, mintEnd, payout, maxMints, totalMinted, allowlistRoot, walletCap, referralShareBps] =
       await client.multicall({
         allowFailure: false,
+        blockNumber,
         contracts: [
           { ...base, functionName: "price" },
           { ...base, functionName: "priceStrategy" },
@@ -90,6 +92,7 @@ async function getMinterSaleConfig(
           { ...base, functionName: "mintEnd" },
           { ...base, functionName: "payoutRecipient" },
           { ...base, functionName: "maxMints" },
+          { ...base, functionName: "totalMinted" },
           { ...base, functionName: "allowlistRoot" },
           { ...base, functionName: "walletCap" },
           { ...base, functionName: "referralShareBps" },
@@ -102,6 +105,7 @@ async function getMinterSaleConfig(
       mintEnd: mintEnd as bigint,
       payout: payout as Address,
       maxMints: maxMints as bigint,
+      totalMinted: totalMinted as bigint,
       allowlistRoot: allowlistRoot as `0x${string}`,
       walletCap: walletCap as bigint,
       referralShareBps: Number(referralShareBps as number),
@@ -368,9 +372,11 @@ export async function getCollection(address: Address): Promise<Collection | null
     const client = getClient()
     const base = { address, abi: surfaceAbi } as const
     try {
+      const blockNumber = await client.getBlockNumber()
       const [name, symbol, owner, rendererLocked, supplyLocked, renderer, idModeRaw, primaryMinterRaw, cfgRes] =
         await client.multicall({
           allowFailure: false,
+          blockNumber,
           contracts: [
             { ...base, functionName: "name" },
             { ...base, functionName: "symbol" },
@@ -402,6 +408,7 @@ export async function getCollection(address: Address): Promise<Collection | null
               abi: renderAssetsAbi,
               functionName: "coverOf",
               args: [address],
+              blockNumber,
             })
             .catch(() => "")
         : ""
@@ -412,7 +419,7 @@ export async function getCollection(address: Address): Promise<Collection | null
       // pooled "mints through its minter" notice).
       const pmChain = primaryMinterRaw as Address
       const primaryMinter = pmChain && pmChain.toLowerCase() !== ZERO_ADDRESS ? pmChain : null
-      const sale = primaryMinter ? await getMinterSaleConfig(client, primaryMinter) : null
+      const sale = primaryMinter ? await getMinterSaleConfig(client, primaryMinter, blockNumber) : null
 
       return {
         address,
@@ -432,6 +439,7 @@ export async function getCollection(address: Address): Promise<Collection | null
         work: { code: [], deps: [], codeURI: "", codeHash: ("0x" + "0".repeat(64)) as `0x${string}`, injectionVersion: 1, renderParams: "" },
         cover: (cover as string) ?? "",
         minted: minted as bigint,
+        observedAtBlock: blockNumber,
       }
     } catch {
       return null

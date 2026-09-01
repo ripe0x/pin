@@ -15,17 +15,13 @@ import {
   createDirectChainSurfaceProvider,
   formatWriteError,
   lifecycleStatus,
+  releaseAvailability,
   SurfaceStatus,
   type IdMode,
   type ReleaseState,
   type ValidatedRelease,
 } from "@pin/surface-kit"
-import {
-  isMintable,
-  saleWindowOf,
-  type CollectionConfig,
-  type MinterSaleConfig,
-} from "@/lib/surface"
+import { type CollectionConfig, type MinterSaleConfig } from "@/lib/surface"
 
 const ZERO_ROOT = `0x${"0".repeat(64)}`
 
@@ -178,30 +174,22 @@ export function CollectionMintCard({ collectionAddress, artistAddress, initial }
       : null
   const priceWei = state?.price ?? (initial.price !== null ? BigInt(initial.price) : sale?.price ?? 0n)
   const priceAvailable = state !== null || initial.price !== null
-  const mintedByRecipient = state?.mintedByAccount ?? 0n
-
   const nowSec = useNowSec()
-  const window = saleWindowOf(cfg, sale)
-  const collectionRemaining = cfg.supplyCap > 0n ? cfg.supplyCap - minted : null
-  const saleRemaining = sale?.maxMints && sale.maxMints > 0n
-    ? sale.maxMints - sale.totalMinted
-    : null
-  const soldOut = (collectionRemaining !== null && collectionRemaining <= 0n)
-    || (saleRemaining !== null && saleRemaining <= 0n)
-  const status = soldOut ? SurfaceStatus.Closed : lifecycleStatus(window, minted, nowSec)
   const gated = Boolean(sale && sale.allowlistRoot.toLowerCase() !== ZERO_ROOT)
-  const walletCapped = Boolean(sale && sale.walletCap > 0n && mintedByRecipient >= sale.walletCap)
+  const availability = state && stateMatchesRelease && stateMatchesAccount
+    ? releaseAvailability(state, nowSec, { allowlistProofAvailable: !gated })
+    : null
+  const soldOut = availability?.soldOut ?? false
+  const status = availability?.lifecycle ?? SurfaceStatus.Closed
+  const walletCapped = availability?.walletCapped ?? false
   const mintable = Boolean(
     sale
       && priceAvailable
-      && !gated
-      && !walletCapped
-      && !soldOut
       && validation.phase !== "blocked"
       && liveState.phase !== "blocked"
       && stateMatchesRelease
       && stateMatchesAccount
-      && isMintable(window, minted, nowSec),
+      && availability?.mintable,
   )
 
   const { writeContract, data: txHash, isPending, error: writeError } = useWriteContract()

@@ -155,6 +155,9 @@ export type MinterSaleConfig = {
   mintEnd: bigint
   payout: Address
   maxMints: bigint
+  /** Number minted through this minter. Distinct from collection-wide
+   * minted when an artist changes primary minters. */
+  totalMinted: bigint
   allowlistRoot: `0x${string}`
   walletCap: bigint
   referralShareBps: number
@@ -200,6 +203,11 @@ export type Collection = {
   /** Cover image from the RenderAssets registry ("" when unset). */
   cover: string
   minted: bigint
+  /** Block shared by the live collection, minter, and presentation reads
+   * used to assemble this snapshot. Client consumers may use it as an
+   * honest first-paint boundary before refreshing through the direct
+   * provider. */
+  observedAtBlock: bigint
 }
 
 /** The sale window a collection currently offers, folding in the "no

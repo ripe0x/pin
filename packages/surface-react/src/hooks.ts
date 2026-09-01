@@ -7,6 +7,8 @@ import type {
   MintQuoteInput,
   ReleaseRef,
   ReleaseState,
+  TokenReadInput,
+  TokenState,
   ValidatedRelease,
 } from "@pin/surface-kit"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -34,6 +36,11 @@ type ValidatedReleaseOptions = SharedOptions<ValidatedRelease> & {
   provider: CoreReleaseProvider | null
   release: ReleaseRef
   refreshMs?: number
+}
+
+type TokenStateOptions = SharedOptions<TokenState> & {
+  provider: CoreReleaseProvider | null
+  input: TokenReadInput | null
 }
 
 type ProviderHookState<T> = ProviderViewState<T> & {
@@ -132,6 +139,29 @@ export function useMintQuote(options: MintQuoteOptions): ProviderHookState<MintQ
         return Promise.resolve({ status: "unsupported", reason: "Mint quote is not ready" } as const)
       }
       return options.provider.quoteMint(input, signal)
+    },
+    [options.provider, input],
+  )
+  return useProviderResult(load, {
+    ...options,
+    enabled: (options.enabled ?? true) && Boolean(options.provider && input),
+    refreshMs: 0,
+  })
+}
+
+/** Read one token on demand. Deliberately has no refresh interval: callers
+ * use this for bounded, visible-only galleries. */
+export function useTokenState(options: TokenStateOptions): ProviderHookState<TokenState> {
+  const inputKey = options.input
+    ? `${options.input.release.chainId}:${options.input.release.collection.toLowerCase()}:${options.input.tokenId.toString()}`
+    : ""
+  const input = useMemo(() => options.input, [inputKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  const load = useCallback(
+    (signal: AbortSignal) => {
+      if (!options.provider || !input) {
+        return Promise.resolve({ status: "unsupported", reason: "Token provider is not ready" } as const)
+      }
+      return options.provider.readToken(input, signal)
     },
     [options.provider, input],
   )

@@ -4,7 +4,7 @@ import type { Address, Hex } from "viem"
 import { buildTokenHTML } from "./render/build.ts"
 import { extractRevealTokenId } from "./reveal.ts"
 import { prepareFixedPriceMint } from "./fixed-price.ts"
-import { lifecycleStatus, ZERO_ADDRESS } from "./lifecycle.ts"
+import { releaseAvailability, ZERO_ADDRESS } from "./lifecycle.ts"
 import {
   IdMode,
   SurfaceStatus,
@@ -150,8 +150,6 @@ export const fixedPriceMintAdapter: SurfaceMintAdapter = {
       }
       const [cfg, minted] = configValue
       const nowSec = Math.floor(Date.now() / 1000)
-      let lifecycle = lifecycleStatus({ mintStart: starts, mintEnd: ends, supplyCap: cfg.supplyCap }, minted, nowSec)
-      if (saleCap > 0n && saleMinted >= saleCap) lifecycle = SurfaceStatus.Closed
       const value: ReleaseState = {
         release,
         account,
@@ -167,9 +165,10 @@ export const fixedPriceMintAdapter: SurfaceMintAdapter = {
         walletCap: successful<bigint>(walletCap) ?? 0n,
         mintedByAccount: successful<bigint>(mintedBy) ?? 0n,
         referralShareBps: Number(successful<number>(referralShareBps) ?? 0),
-        lifecycle,
+        lifecycle: SurfaceStatus.Closed,
         blockNumber,
       }
+      value.lifecycle = releaseAvailability(value, nowSec).lifecycle
       const missing = [allowlistRoot, walletCap, referralShareBps, mintedBy]
         .map((item, index) => item.status === "success" ? null : ["allowlistRoot", "walletCap", "referralShareBps", "mintedByAccount"][index])
         .filter((item): item is string => item !== null)
