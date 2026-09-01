@@ -97,5 +97,7 @@ describe("standalone Surface release path", () => {
     ]
     const source = (await Promise.all(files.map((file) => readFile(resolve(root, file), "utf8")))).join("\n")
     expect(source).not.toMatch(/pnd\.ripe\.wtf|art-pin\.netlify\.app/i)
+    expect(await readFile(resolve(root, "components/CollectionTokenGrid.tsx"), "utf8"))
+      .not.toMatch(/from ["']@\/lib\/metadata|<TokenMedia|readToken\s*\(/)
   })
 })
