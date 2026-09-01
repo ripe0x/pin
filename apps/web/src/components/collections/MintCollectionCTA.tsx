@@ -26,7 +26,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { encodeAbiParameters, formatEther, parseEventLogs } from "viem"
+import { formatEther, parseEventLogs } from "viem"
 import {
   useAccount,
   useBalance,
@@ -38,6 +38,7 @@ import {
 } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { surfaceAbi, fixedPriceMinterAbi } from "@pin/abi"
+import { prepareFixedPriceMint } from "@pin/surface-kit"
 import {
   AllowlistChecker,
   EligibilityVerdict,
@@ -280,16 +281,21 @@ export function MintCollectionCTA({
       sendValue = fresh ?? total
     }
     setPriceConfirmPending(false)
-    const data =
-      allowlisted && proof
-        ? encodeAbiParameters([{ type: "bytes32[]" }], [proof])
-        : "0x"
+    const request = prepareFixedPriceMint({
+      chainId: PREFERRED_CHAIN.id,
+      minter,
+      recipient: address,
+      quantity: BigInt(amount),
+      referrer: referrerAddr,
+      totalValue: sendValue,
+      allowlistProof: allowlisted && proof ? proof : undefined,
+    })
     writeContract({
-      address: minter,
-      abi: fixedPriceMinterAbi,
-      functionName: "mint",
-      args: [address, BigInt(amount), referrerAddr, data],
-      value: sendValue,
+      address: request.target,
+      abi: request.abi,
+      functionName: request.functionName,
+      args: request.args,
+      value: request.value,
     })
   }
 
@@ -629,4 +635,3 @@ export function MintCollectionCTA({
     </section>
   )
 }
-

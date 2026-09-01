@@ -151,11 +151,11 @@ async function CollectionSection({
   >
   artistAddress: Awaited<ReturnType<typeof getConfig>>["artistAddress"]
 }) {
-  const [collection, price] = await Promise.all([
-    getCollection(),
-    getCurrentPrice(),
-  ])
+  const collection = await getCollection()
   if (!collection) return null
+  const price = collection.sale
+    ? await getCurrentPrice(collection.sale.minter, artistAddress)
+    : null
 
   return (
     <div className="space-y-6">
@@ -175,18 +175,26 @@ async function CollectionSection({
               // CollectionMintCard.tsx).
               cfg: {
                 ...collection.cfg,
-                price: collection.cfg.price.toString(),
                 supplyCap: collection.cfg.supplyCap.toString(),
-                mintStart: collection.cfg.mintStart.toString(),
-                mintEnd: collection.cfg.mintEnd.toString(),
               },
-              status: collection.status,
+              primaryMinter: collection.primaryMinter,
+              sale: collection.sale
+                ? {
+                    ...collection.sale,
+                    price: collection.sale.price.toString(),
+                    mintStart: collection.sale.mintStart.toString(),
+                    mintEnd: collection.sale.mintEnd.toString(),
+                    maxMints: collection.sale.maxMints.toString(),
+                    totalMinted: collection.sale.totalMinted.toString(),
+                    walletCap: collection.sale.walletCap.toString(),
+                  }
+                : null,
               minted: collection.minted.toString(),
               price: price !== null ? price.toString() : null,
             }}
           />
         </div>
-        {collection.cfg.idMode === IdMode.Sequential ? (
+        {collection.idMode === IdMode.Sequential ? (
           <CollectionTokenGrid
             collectionAddress={collectionAddress}
             minted={collection.minted}
