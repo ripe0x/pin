@@ -1,4 +1,5 @@
 export * from "./errors.ts"
+export * from "./direct-provider.ts"
 export * from "./fixed-price.ts"
 export * from "./lifecycle.ts"
 export * from "./phases.ts"

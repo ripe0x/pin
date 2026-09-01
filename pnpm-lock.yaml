@@ -238,6 +238,31 @@ importers:
         specifier: ^5.7.0
         version: 5.9.3
 
+  packages/surface-react:
+    dependencies:
+      '@pin/release-spec':
+        specifier: workspace:*
+        version: link:../release-spec
+      '@pin/surface-kit':
+        specifier: workspace:*
+        version: link:../surface-kit
+      viem:
+        specifier: ^2.21.0
+        version: 2.55.19(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.4.3)
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.1
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.18
+      react:
+        specifier: ^19.0.0
+        version: 19.2.8
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+
   packages/token-metadata:
     dependencies:
       '@pin/abi':
@@ -268,6 +293,9 @@ importers:
       '@pin/surface-kit':
         specifier: workspace:*
         version: link:../../packages/surface-kit
+      '@pin/surface-react':
+        specifier: workspace:*
+        version: link:../../packages/surface-react
       '@rainbow-me/rainbowkit':
         specifier: 2.2.11
         version: 2.2.11(@tanstack/react-query@5.102.3(react@19.2.8))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@5.9.3)(viem@2.55.19(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@3.25.76))(wagmi@2.19.5(@tanstack/query-core@5.102.3)(@tanstack/react-query@5.102.3(react@19.2.8))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.8)(typescript@5.9.3)(utf-8-validate@5.0.10)(viem@2.55.19(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@3.25.76))(zod@3.25.76))

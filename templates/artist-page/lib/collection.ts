@@ -31,11 +31,13 @@ type SerializedCollectionSummary = {
   address: Address
   name: string
   symbol: string
+  owner: Address
   cfg: Omit<CollectionConfig, "supplyCap"> & { supplyCap: string }
   idMode: number
   primaryMinter: Address | null
   sale: SerializedSale | null
   minted: string
+  validatedAtBlock: string
 }
 
 async function readSale(minter: Address): Promise<MinterSaleConfig | null> {
@@ -79,11 +81,14 @@ const _getCollectionCached = unstable_cache(
     const client = getClient()
     const base = { address, abi: surfaceAbi } as const
     try {
-      const [name, symbol, idMode, primaryMinterRaw, cfgRes] = await client.multicall({
+      const validatedAtBlock = await client.getBlockNumber()
+      const [name, symbol, owner, idMode, primaryMinterRaw, cfgRes] = await client.multicall({
         allowFailure: false,
+        blockNumber: validatedAtBlock,
         contracts: [
           { ...base, functionName: "name" },
           { ...base, functionName: "symbol" },
+          { ...base, functionName: "owner" },
           { ...base, functionName: "idMode" },
           { ...base, functionName: "primaryMinter" },
           { ...base, functionName: "config" },
@@ -98,6 +103,7 @@ const _getCollectionCached = unstable_cache(
         address,
         name: name as string,
         symbol: symbol as string,
+        owner: owner as Address,
         cfg: { ...cfg, supplyCap: cfg.supplyCap.toString() },
         idMode: Number(idMode),
         primaryMinter,
@@ -113,6 +119,7 @@ const _getCollectionCached = unstable_cache(
             }
           : null,
         minted: (minted as bigint).toString(),
+        validatedAtBlock: validatedAtBlock.toString(),
       }
     } catch {
       return null
@@ -143,6 +150,7 @@ export async function getCollection(): Promise<CollectionSummary | null> {
         }
       : null,
     minted: BigInt(raw.minted),
+    validatedAtBlock: BigInt(raw.validatedAtBlock),
   }
 }
 

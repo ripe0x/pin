@@ -1,29 +1,32 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { formatEther, type Address, type Hex } from "viem"
+import { useEffect, useMemo, useState } from "react"
+import { formatEther, type Address } from "viem"
 import {
   useAccount,
   useBalance,
-  useReadContract,
-  useReadContracts,
+  usePublicClient,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi"
 import { ConnectButton as RKConnectButton } from "@rainbow-me/rainbowkit"
-import { formatWriteError, prepareFixedPriceMint, SurfaceStatus } from "@pin/surface-kit"
-import { fixedPriceMinterAbi, surfaceAbi } from "@/lib/abi"
+import { useReleaseState, useValidatedRelease } from "@pin/surface-react"
 import {
-  decodeCollectionConfig,
-  isMintable,
+  createDirectChainSurfaceProvider,
+  formatWriteError,
   lifecycleStatus,
+  SurfaceStatus,
+  type IdMode,
+  type ReleaseState,
+  type ValidatedRelease,
+} from "@pin/surface-kit"
+import {
+  isMintable,
   saleWindowOf,
   type CollectionConfig,
   type MinterSaleConfig,
-  type RawCollectionConfig,
 } from "@/lib/surface"
 
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
 const ZERO_ROOT = `0x${"0".repeat(64)}`
 
 export type SerializedCollectionConfig = Omit<CollectionConfig, "supplyCap"> & {
@@ -47,6 +50,10 @@ type Props = {
   artistAddress: Address
   initial: {
     name: string
+    owner: Address
+    idMode: IdMode
+    renderer: Address
+    validatedAtBlock: string
     cfg: SerializedCollectionConfig
     primaryMinter: Address | null
     sale: SerializedMinterSale | null
@@ -76,88 +83,112 @@ export function CollectionMintCard({ collectionAddress, artistAddress, initial }
   const recipient = connected ?? artistAddress
   const [localError, setLocalError] = useState<string | null>(null)
   const [priceConfirmPending, setPriceConfirmPending] = useState(false)
-
-  const configRead = useReadContract({
-    address: collectionAddress,
-    abi: surfaceAbi,
-    functionName: "config",
-    query: { refetchInterval: 12_000, refetchIntervalInBackground: true },
+  const initialSale = useMemo(
+    () => initial.sale ? deserializeSale(initial.sale) : null,
+    [initial.sale],
+  )
+  const initialRelease = useMemo<ValidatedRelease>(() => ({
+    chainId: 1,
+    collection: collectionAddress,
+    protocol: "surface@1",
+    owner: initial.owner,
+    renderer: initial.renderer,
+    idMode: initial.idMode,
+    primaryMinter: initial.primaryMinter,
+    validatedAtBlock: BigInt(initial.validatedAtBlock),
+  }), [collectionAddress, initial.idMode, initial.owner, initial.primaryMinter, initial.renderer, initial.validatedAtBlock])
+  const initialState = useMemo<ReleaseState | null>(() => {
+    if (!initialSale) return null
+    const cfg = deserializeCfg(initial.cfg)
+    const minted = BigInt(initial.minted)
+    return {
+      release: initialRelease,
+      account: recipient,
+      minted,
+      supplyCap: cfg.supplyCap,
+      saleMinted: initialSale.totalMinted,
+      saleSupplyCap: initialSale.maxMints,
+      mintStart: initialSale.mintStart,
+      mintEnd: initialSale.mintEnd,
+      price: initial.price !== null ? BigInt(initial.price) : initialSale.price,
+      priceStrategy: initialSale.priceStrategy,
+      allowlistRoot: initialSale.allowlistRoot,
+      walletCap: initialSale.walletCap,
+      mintedByAccount: 0n,
+      referralShareBps: initialSale.referralShareBps,
+      lifecycle: lifecycleStatus({
+        mintStart: initialSale.mintStart,
+        mintEnd: initialSale.mintEnd,
+        supplyCap: cfg.supplyCap,
+      }, minted, Math.floor(Date.now() / 1000)),
+      blockNumber: BigInt(initial.validatedAtBlock),
+    }
+  }, [initial.cfg, initial.minted, initial.price, initial.validatedAtBlock, initialRelease, initialSale, recipient])
+  const publicClient = usePublicClient({ chainId: 1 })
+  const provider = useMemo(
+    () => publicClient ? createDirectChainSurfaceProvider({ client: publicClient }) : null,
+    [publicClient],
+  )
+  const releaseRef = useMemo(
+    () => ({ chainId: 1, collection: collectionAddress, protocol: "surface@1" as const }),
+    [collectionAddress],
+  )
+  const validation = useValidatedRelease({
+    provider,
+    release: releaseRef,
+    initialResult: { status: "available", value: initialRelease, evidence: { truth: "protocol", source: "server-first-paint", blockNumber: initial.validatedAtBlock } },
+    refreshMs: 30_000,
   })
-  const primaryMinterRead = useReadContract({
-    address: collectionAddress,
-    abi: surfaceAbi,
-    functionName: "primaryMinter",
-    query: { refetchInterval: 30_000, refetchIntervalInBackground: false },
+  const release = validation.value ?? initialRelease
+  const liveState = useReleaseState({
+    provider,
+    release,
+    account: recipient,
+    initialResult: initialState
+      ? { status: "available", value: initialState, evidence: { truth: "protocol", source: "server-first-paint", blockNumber: initial.validatedAtBlock } }
+      : null,
+    refreshMs: 12_000,
   })
-
-  const liveTuple = configRead.data as readonly [RawCollectionConfig, bigint] | undefined
-  const cfg = liveTuple ? decodeCollectionConfig(liveTuple[0]) : deserializeCfg(initial.cfg)
-  const minted = liveTuple?.[1] ?? BigInt(initial.minted)
-  const livePrimary = primaryMinterRead.data as Address | undefined
-  const minter = livePrimary === undefined
-    ? initial.primaryMinter
-    : livePrimary.toLowerCase() === ZERO_ADDRESS
-      ? null
-      : livePrimary
-  const initialSale = initial.sale ? deserializeSale(initial.sale) : null
-  const fallbackSale = minter && initial.primaryMinter
-    && minter.toLowerCase() === initial.primaryMinter.toLowerCase()
-      ? initialSale
-      : null
-
-  const saleRead = useReadContracts({
-    contracts: minter
-      ? [
-          { address: minter, abi: fixedPriceMinterAbi, functionName: "priceOf", args: [recipient, 1n] },
-          { address: minter, abi: fixedPriceMinterAbi, functionName: "price" },
-          { address: minter, abi: fixedPriceMinterAbi, functionName: "priceStrategy" },
-          { address: minter, abi: fixedPriceMinterAbi, functionName: "mintStart" },
-          { address: minter, abi: fixedPriceMinterAbi, functionName: "mintEnd" },
-          { address: minter, abi: fixedPriceMinterAbi, functionName: "maxMints" },
-          { address: minter, abi: fixedPriceMinterAbi, functionName: "totalMinted" },
-          { address: minter, abi: fixedPriceMinterAbi, functionName: "allowlistRoot" },
-          { address: minter, abi: fixedPriceMinterAbi, functionName: "walletCap" },
-          { address: minter, abi: fixedPriceMinterAbi, functionName: "referralShareBps" },
-          { address: minter, abi: fixedPriceMinterAbi, functionName: "mintedBy", args: [recipient] },
-        ]
-      : [],
-    allowFailure: true,
-    query: { enabled: Boolean(minter), refetchInterval: 12_000, refetchIntervalInBackground: true },
-  })
-
-  const live = saleRead.data
-  const result = <T,>(index: number): T | undefined => live?.[index]?.status === "success"
-    ? live[index].result as T
-    : undefined
-  const sale: MinterSaleConfig | null = minter
+  const state = liveState.value
+  const initialCfg = deserializeCfg(initial.cfg)
+  const cfg = state ? { ...initialCfg, supplyCap: state.supplyCap } : initialCfg
+  const minted = state?.minted ?? BigInt(initial.minted)
+  const minter = release.primaryMinter
+  const stateMatchesRelease = Boolean(
+    state
+      && state.release.collection.toLowerCase() === release.collection.toLowerCase()
+      && state.release.primaryMinter?.toLowerCase() === release.primaryMinter?.toLowerCase(),
+  )
+  const stateMatchesAccount = state?.account?.toLowerCase() === recipient.toLowerCase()
+  const sale: MinterSaleConfig | null = state && minter && stateMatchesRelease
     ? {
         minter,
-        price: result<bigint>(1) ?? fallbackSale?.price ?? 0n,
-        priceStrategy: result<Address>(2) ?? fallbackSale?.priceStrategy ?? ZERO_ADDRESS,
-        mintStart: result<bigint>(3) ?? fallbackSale?.mintStart ?? 0n,
-        mintEnd: result<bigint>(4) ?? fallbackSale?.mintEnd ?? 0n,
-        maxMints: result<bigint>(5) ?? fallbackSale?.maxMints ?? 0n,
-        totalMinted: result<bigint>(6) ?? fallbackSale?.totalMinted ?? 0n,
-        allowlistRoot: result<Hex>(7) ?? fallbackSale?.allowlistRoot ?? (ZERO_ROOT as Hex),
-        walletCap: result<bigint>(8) ?? fallbackSale?.walletCap ?? 0n,
-        referralShareBps: Number(result<number>(9) ?? fallbackSale?.referralShareBps ?? 0),
+        price: state.price,
+        priceStrategy: state.priceStrategy,
+        mintStart: state.mintStart,
+        mintEnd: state.mintEnd,
+        maxMints: state.saleSupplyCap ?? 0n,
+        totalMinted: state.saleMinted ?? 0n,
+        allowlistRoot: state.allowlistRoot ?? ZERO_ROOT as `0x${string}`,
+        walletCap: state.walletCap ?? 0n,
+        referralShareBps: state.referralShareBps ?? 0,
       }
-    : null
-  const livePrice = result<bigint>(0)
-  const fallbackPrice = fallbackSale && initial.price !== null ? BigInt(initial.price) : null
-  const priceWei = livePrice ?? fallbackPrice ?? sale?.price ?? 0n
-  const priceAvailable = livePrice !== undefined || fallbackPrice !== null
-  const mintedByRecipient = result<bigint>(10) ?? 0n
+    : minter && initial.primaryMinter && minter.toLowerCase() === initial.primaryMinter.toLowerCase()
+      ? initialSale
+      : null
+  const priceWei = state?.price ?? (initial.price !== null ? BigInt(initial.price) : sale?.price ?? 0n)
+  const priceAvailable = state !== null || initial.price !== null
+  const mintedByRecipient = state?.mintedByAccount ?? 0n
 
   const nowSec = useNowSec()
   const window = saleWindowOf(cfg, sale)
-  const status = lifecycleStatus(window, minted, nowSec)
   const collectionRemaining = cfg.supplyCap > 0n ? cfg.supplyCap - minted : null
   const saleRemaining = sale?.maxMints && sale.maxMints > 0n
     ? sale.maxMints - sale.totalMinted
     : null
   const soldOut = (collectionRemaining !== null && collectionRemaining <= 0n)
     || (saleRemaining !== null && saleRemaining <= 0n)
+  const status = soldOut ? SurfaceStatus.Closed : lifecycleStatus(window, minted, nowSec)
   const gated = Boolean(sale && sale.allowlistRoot.toLowerCase() !== ZERO_ROOT)
   const walletCapped = Boolean(sale && sale.walletCap > 0n && mintedByRecipient >= sale.walletCap)
   const mintable = Boolean(
@@ -166,6 +197,10 @@ export function CollectionMintCard({ collectionAddress, artistAddress, initial }
       && !gated
       && !walletCapped
       && !soldOut
+      && validation.phase !== "blocked"
+      && liveState.phase !== "blocked"
+      && stateMatchesRelease
+      && stateMatchesAccount
       && isMintable(window, minted, nowSec),
   )
 
@@ -174,8 +209,8 @@ export function CollectionMintCard({ collectionAddress, artistAddress, initial }
 
   useEffect(() => {
     if (receipt.isSuccess) {
-      configRead.refetch()
-      saleRead.refetch()
+      void validation.refresh()
+      void liveState.refresh()
     }
   }, [receipt.isSuccess]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -201,29 +236,37 @@ export function CollectionMintCard({ collectionAddress, artistAddress, initial }
               : "Price unavailable"
 
   async function submit() {
-    if (!connected || !minter || !mintable) return
+    if (!connected || !minter || !mintable || !provider) return
     setLocalError(null)
-    const refreshed = await saleRead.refetch()
-    const quoted = refreshed.data?.[0]?.status === "success"
-      ? refreshed.data[0].result as bigint
-      : undefined
-    if (quoted === undefined) {
+    const quoteResult = await provider.quoteMint({
+      release,
+      account: connected,
+      quantity: 1n,
+      referrer: artistAddress,
+    })
+    if (quoteResult.status !== "available" && quoteResult.status !== "partial") {
       setLocalError("Could not confirm the current price. Try again.")
       return
     }
+    const quoted = quoteResult.value.totalValue
     if (quoted !== priceWei) {
       setPriceConfirmPending(true)
+      await liveState.refresh()
       return
     }
     setPriceConfirmPending(false)
-    const request = prepareFixedPriceMint({
-      chainId: 1,
-      minter,
-      recipient: connected,
+    const prepared = await provider.prepareMint({
+      release,
+      account: connected,
       quantity: 1n,
       referrer: artistAddress,
-      totalValue: quoted,
+      quote: quoteResult.value,
     })
+    if (prepared.status !== "available" && prepared.status !== "partial") {
+      setLocalError(prepared.reason)
+      return
+    }
+    const request = prepared.value
     writeContract({
       address: request.target,
       abi: request.abi,

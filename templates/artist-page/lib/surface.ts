@@ -37,11 +37,13 @@ export type CollectionSummary = {
   address: Address
   name: string
   symbol: string
+  owner: Address
   cfg: CollectionConfig
   idMode: IdMode
   primaryMinter: Address | null
   sale: MinterSaleConfig | null
   minted: bigint
+  validatedAtBlock: bigint
 }
 
 export type RawCollectionConfig = {

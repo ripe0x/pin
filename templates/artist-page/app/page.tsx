@@ -169,6 +169,10 @@ async function CollectionSection({
             artistAddress={artistAddress}
             initial={{
               name: collection.name,
+              owner: collection.owner,
+              idMode: collection.idMode,
+              renderer: collection.cfg.renderer,
+              validatedAtBlock: collection.validatedAtBlock.toString(),
               // Bigint fields must cross the server/client boundary as
               // strings — Next.js can't serialize a raw bigint in the RSC
               // payload (see SerializedCollectionConfig's doc comment in

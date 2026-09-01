@@ -31,12 +31,19 @@ export type SaleWindow = {
 
 export type ReleaseState = {
   release: ValidatedRelease
+  account?: Address
   minted: bigint
   supplyCap: bigint
+  saleMinted?: bigint
+  saleSupplyCap?: bigint
   mintStart: bigint
   mintEnd: bigint
   price: bigint
   priceStrategy: Address
+  allowlistRoot?: Hex
+  walletCap?: bigint
+  mintedByAccount?: bigint
+  referralShareBps?: number
   lifecycle: SurfaceStatus
   blockNumber: bigint
 }
