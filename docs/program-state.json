@@ -246,7 +246,7 @@
           "status": "in_progress",
           "dependsOn": ["W0.1", "W1.1"],
           "workPacket": "docs/work-packets/W1.2-shared-release-kernel.md",
-          "nextAction": "Implement @pin/release-spec, then create the typed provider and adapter contracts in @pin/surface-kit."
+          "nextAction": "Implement the bounded injected direct-chain provider and minimal @pin/surface-react state boundary, then add sequential and Homage parity fixtures plus the PND-hostname-blocked template gate."
         },
         {
           "id": "W1.3",
@@ -256,7 +256,7 @@
           "nextAction": "Make both assemblies consume the kernel and add parity plus PND-endpoint-blocked CI coverage."
         }
       ],
-      "nextAction": "Execute W1.2 from docs/work-packets/W1.2-shared-release-kernel.md, beginning with @pin/release-spec and typed provider contracts."
+      "nextAction": "Continue W1.2 with the bounded direct-chain provider, shared React state boundary, and automated parity/offline gates."
     },
     {
       "id": "W2",
