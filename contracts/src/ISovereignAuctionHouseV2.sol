@@ -77,7 +77,9 @@ interface ISovereignAuctionHouseV2 {
     /// @notice Emitted when claimLot delivers a deferred lot.
     event LotClaimed(uint256 indexed auctionId, address indexed winner, address recipient);
     /// @notice Emitted when reclaimStuckLot returns a deferred lot to the
-    ///         seller after PENDING_DELIVERY_TIMEOUT has passed unclaimed.
+    ///         seller after PENDING_DELIVERY_TIMEOUT has passed unclaimed and
+    ///         a delivery retry to the recorded winner still fails. If that
+    ///         retry succeeds instead, LotClaimed is emitted in its place.
     event LotReclaimed(uint256 indexed auctionId, address indexed tokenOwner);
     event AuctionCanceled(uint256 indexed auctionId);
     event RefundCredited(address indexed to, uint256 amount);
@@ -144,12 +146,19 @@ interface ISovereignAuctionHouseV2 {
     ///         delivery elsewhere via a nonzero `to`. Reverts if the auction
     ///         has no deferred delivery, or if a non-winner passes a nonzero
     ///         `to`. A revert during delivery reverts the whole call, leaving
-    ///         the claim retryable.
+    ///         the claim retryable. The redirect is best-effort: the pending
+    ///         state is consumed by whichever call succeeds first, so a third
+    ///         party triggering delivery to the winner with `to == address(0)`
+    ///         before the winner redirects permanently forecloses that
+    ///         redirect. The token always still reaches the winner's own bid
+    ///         address in that case.
     function claimLot(uint256 auctionId, address to) external;
 
     /// @notice Lets the seller reclaim a deferred lot once
     ///         PENDING_DELIVERY_TIMEOUT has passed since deferral. The seller
-    ///         was already paid at settlement; this only bounds how long an
+    ///         was already paid at settlement. This first retries delivery to
+    ///         the recorded winner and falls back to the seller only if that
+    ///         retry also fails, so this only bounds how long an
     ///         undeliverable lot can stay escrowed waiting on the winner.
     function reclaimStuckLot(uint256 auctionId) external;
 }

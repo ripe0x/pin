@@ -18,9 +18,11 @@ import {ISovereignAuctionHouseV2} from "./ISovereignAuctionHouseV2.sol";
 ///         caller-supplied gas. A failed delivery defers the lot to a
 ///         retryable, redirectable claim: anyone may trigger delivery to the
 ///         recorded winner, and only that winner may redirect it elsewhere.
-///         If the winner never claims within PENDING_DELIVERY_TIMEOUT, the
-///         seller may reclaim the lot. No sale ever unwinds. V1 clones are
-///         immutable and remain governed by their original implementation.
+///         If the winner never claims within PENDING_DELIVERY_TIMEOUT,
+///         reclaimStuckLot retries delivery to the winner and falls back to
+///         the seller only if that retry also fails. No sale ever unwinds.
+///         V1 clones are immutable and remain governed by their original
+///         implementation.
 contract SovereignAuctionHouseV2 is
     ISovereignAuctionHouseV2,
     IERC1155Receiver,
@@ -414,10 +416,10 @@ contract SovereignAuctionHouseV2 is
         emit AuctionEnded(auctionId, a.tokenOwner, a.bidder, sellerProceeds, protocolFee);
     }
 
-    /// @dev Delivery target for both endAuction's gas-capped try/catch and,
-    ///      indirectly, claimLot's full-gas retry (called directly there,
-    ///      not through this self-call). Reverting here rolls back the
-    ///      transfer and its ownerOf verification together.
+    /// @dev Delivery target for endAuction's and reclaimStuckLot's gas-capped
+    ///      try/catch, and, indirectly, claimLot's full-gas retry (called
+    ///      directly there, not through this self-call). Reverting here
+    ///      rolls back the transfer and its ownerOf verification together.
     function deliverERC721(address tokenContract, uint256 tokenId, address winner) external {
         if (msg.sender != address(this)) revert OnlySelf();
         IERC721(tokenContract).transferFrom(address(this), winner, tokenId);
@@ -437,7 +439,12 @@ contract SovereignAuctionHouseV2 is
     ///         that has no way to call this itself. Only the recorded winner
     ///         may redirect delivery elsewhere via a nonzero `to`. Runs with
     ///         full gas and no try/catch, so a revert rolls back the whole
-    ///         call and leaves the claim retryable.
+    ///         call and leaves the claim retryable. The redirect is
+    ///         best-effort: the pending state is consumed by whichever call
+    ///         succeeds first, so a third party triggering delivery to the
+    ///         winner with `to == address(0)` before the winner redirects
+    ///         permanently forecloses that redirect. The token always still
+    ///         reaches the winner's own bid address in that case.
     function claimLot(uint256 auctionId, address to) external override nonReentrant {
         if (!pendingDelivery[auctionId]) revert NoPendingDelivery();
         Auction memory a = auctions[auctionId];
@@ -467,22 +474,56 @@ contract SovereignAuctionHouseV2 is
 
     /// @notice Lets the seller reclaim a deferred lot once
     ///         PENDING_DELIVERY_TIMEOUT has passed since deferral. The seller
-    ///         was already paid at settlement; if the winner never takes
-    ///         delivery within the timeout, the seller reclaims the lot so an
-    ///         undeliverable lot cannot be frozen permanently. Anyone can
-    ///         deliver to the winner before the timeout via claimLot, so a
-    ///         legitimate winner is not at risk from a keeper-assisted claim.
+    ///         was already paid at settlement. A delivery failure can be
+    ///         temporary (a paused collection unpauses, a receiver later
+    ///         becomes compatible), so this first retries delivery to the
+    ///         recorded winner through the same gas-capped try/catch
+    ///         self-call endAuction uses. The lot goes to the seller only if
+    ///         that retry also fails, so an undeliverable lot cannot be
+    ///         frozen permanently. Anyone can deliver to the winner before
+    ///         the timeout via claimLot, so a legitimate winner is not at
+    ///         risk from a keeper-assisted claim.
+    /// @dev State is deleted before both the gas-capped retry and the
+    ///      seller-fallback transfer. A revert inside the capped self-call is
+    ///      caught, so the deletes stand and the seller-fallback path runs
+    ///      next; a revert in the full-gas seller-fallback transfer reverts
+    ///      this whole call, rolling the deletes back and leaving the reclaim
+    ///      retryable. Delivery to the winner and the seller-fallback
+    ///      transfer are mutually exclusive: the winner branch returns
+    ///      immediately on success and never reaches the fallback transfer.
     function reclaimStuckLot(uint256 auctionId) external nonReentrant auctionExists(auctionId) {
         if (!pendingDelivery[auctionId]) revert NoPendingDelivery();
         Auction memory a = auctions[auctionId];
         require(msg.sender == a.tokenOwner, "Not token owner");
         if (block.timestamp <= deliveryDeferredAt[auctionId] + PENDING_DELIVERY_TIMEOUT) revert ReclaimTooEarly();
 
+        // Same rationale as endAuction: cap the caller's ability to force the
+        // seller-fallback path by starving the gas-capped retry. msg.sender
+        // here is the seller, who benefits from the retry failing, so this
+        // check is load-bearing, not defensive filler.
+        if (gasleft() < DELIVER_GAS_LIMIT + 80_000) revert InsufficientGas();
+
         delete pendingDelivery[auctionId];
         delete deliveryDeferredAt[auctionId];
         delete _auctionIdByToken[a.tokenContract][a.tokenId];
         delete auctions[auctionId];
         delete listingExpiry[auctionId];
+
+        bool delivered;
+        if (a.standard == TokenStandard.ERC721) {
+            try this.deliverERC721{gas: DELIVER_GAS_LIMIT}(a.tokenContract, a.tokenId, a.bidder) {
+                delivered = true;
+            } catch {}
+        } else {
+            try this.deliverERC1155{gas: DELIVER_GAS_LIMIT}(a.tokenContract, a.tokenId, a.quantity, a.bidder) {
+                delivered = true;
+            } catch {}
+        }
+
+        if (delivered) {
+            emit LotClaimed(auctionId, a.bidder, a.bidder);
+            return;
+        }
 
         emit LotReclaimed(auctionId, a.tokenOwner);
 

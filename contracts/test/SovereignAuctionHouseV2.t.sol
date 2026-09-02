@@ -14,6 +14,7 @@ contract MutableERC721 {
     mapping(address => mapping(address => bool)) internal _approvedForAll;
     bool public revertOutbound;
     bool public noopOutbound;
+    address public blockedRecipient;
 
     function mint(address to, uint256 tokenId) external {
         _ownerOf[tokenId] = to;
@@ -26,6 +27,13 @@ contract MutableERC721 {
     function setTransferMode(bool shouldRevert, bool shouldNoop) external {
         revertOutbound = shouldRevert;
         noopOutbound = shouldNoop;
+    }
+
+    /// @dev Blocks outbound delivery to one address only, so a genuinely
+    ///      undeliverable-to-winner case can still deliver to a different
+    ///      recipient (the seller fallback in reclaimStuckLot).
+    function setBlockedRecipient(address recipient) external {
+        blockedRecipient = recipient;
     }
 
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
@@ -51,6 +59,9 @@ contract MutableERC721 {
         // moving its own balance, which lets this mock change behavior only
         // after a valid listing.
         if (revertOutbound && msg.sender == from) revert("delivery blocked");
+        if (blockedRecipient != address(0) && to == blockedRecipient && msg.sender == from) {
+            revert("recipient blocked");
+        }
         if (noopOutbound && msg.sender == from) return;
         _ownerOf[tokenId] = to;
     }
@@ -356,8 +367,13 @@ contract SovereignAuctionHouseV2Test is Test {
         house.claimLot(auctionId, address(0));
     }
 
-    /// @dev Anyone may trigger delivery to the recorded winner once delivery
-    ///      is possible again; only the winner may redirect it elsewhere.
+    /// @dev CWE-362 (documented best-effort, no logic change): anyone may
+    ///      trigger delivery to the recorded winner once delivery is possible
+    ///      again; only the winner may redirect it elsewhere. A third party
+    ///      claiming to the winner first permanently forecloses the winner's
+    ///      own redirect, since the pending state is consumed by whichever
+    ///      call succeeds first. The token still always reaches the winner's
+    ///      own bid address.
     function test_ThirdPartyCanTriggerClaimToWinnerButNotRedirect() public {
         MutableERC721 bad = new MutableERC721();
         bad.mint(artist, TOKEN_ID);
@@ -407,11 +423,14 @@ contract SovereignAuctionHouseV2Test is Test {
         assertEq(bad.ownerOf(TOKEN_ID), carol);
     }
 
-    /// @dev A deferred lot is frozen only until PENDING_DELIVERY_TIMEOUT: the
-    ///      seller (tokenOwner) can then reclaim it. Reclaiming is blocked
+    /// @dev CWE-841 fix: a deferred lot's delivery failure can be temporary
+    ///      (here, the collection un-breaks before the timeout). reclaimStuckLot
+    ///      retries delivery to the recorded winner first, so a since-fixed
+    ///      collection sends the lot to the winner, not the seller, even
+    ///      after PENDING_DELIVERY_TIMEOUT has passed. Reclaiming is blocked
     ///      before the timeout, for a non-tokenOwner caller, for a live
     ///      (non-deferred) auction, and after the lot is already gone.
-    function test_ReclaimStuckLotAfterTimeoutReturnsLotToSeller() public {
+    function test_ReclaimStuckLotRetriesWinnerDeliveryBeforeSellerFallback() public {
         MutableERC721 bad = new MutableERC721();
         bad.mint(artist, TOKEN_ID);
         vm.prank(artist);
@@ -436,6 +455,9 @@ contract SovereignAuctionHouseV2Test is Test {
         vm.prank(artist);
         house.reclaimStuckLot(auctionId);
 
+        // The collection un-breaks before the timeout elapses, but no one
+        // claims within the window.
+        bad.setTransferMode(false, false);
         vm.warp(block.timestamp + house.PENDING_DELIVERY_TIMEOUT() + 1);
 
         // Not the tokenOwner.
@@ -443,12 +465,13 @@ contract SovereignAuctionHouseV2Test is Test {
         vm.prank(bob);
         house.reclaimStuckLot(auctionId);
 
-        // The seller reclaims the lot. Delivery to the seller does not
-        // depend on whether delivery to the winner would have worked.
-        bad.setTransferMode(false, false);
+        vm.expectEmit(true, true, true, false, address(house));
+        emit ISovereignAuctionHouseV2.LotClaimed(auctionId, alice, alice);
         vm.prank(artist);
         house.reclaimStuckLot(auctionId);
-        assertEq(bad.ownerOf(TOKEN_ID), artist);
+
+        // The winner received the lot, not the seller.
+        assertEq(bad.ownerOf(TOKEN_ID), alice);
         assertFalse(house.pendingDelivery(auctionId));
         assertEq(house.deliveryDeferredAt(auctionId), 0);
         (bool exists,) = house.getAuctionFor(address(bad), TOKEN_ID);
@@ -459,9 +482,50 @@ contract SovereignAuctionHouseV2Test is Test {
         vm.prank(artist);
         house.reclaimStuckLot(auctionId);
 
-        // Relisting the same tokenId now works.
+        // Relisting the same tokenId now works. The house owner (artist) is
+        // the only account that can call createAuction; its new owner
+        // (alice) authorizes the listing by approving artist as consignor
+        // and the house to pull the escrow transfer.
+        vm.prank(alice);
+        bad.setApprovalForAll(artist, true);
+        vm.prank(alice);
+        bad.setApprovalForAll(address(house), true);
         vm.prank(artist);
         house.createAuction(TOKEN_ID, address(bad), DURATION, RESERVE, 0);
+    }
+
+    /// @dev When delivery to the winner still genuinely fails at reclaim
+    ///      time (here, the collection blocks that specific recipient),
+    ///      reclaimStuckLot falls back to the seller exactly as before the
+    ///      CWE-841 fix.
+    function test_ReclaimStuckLotFallsBackToSellerWhenWinnerDeliveryStillFails() public {
+        MutableERC721 bad = new MutableERC721();
+        bad.mint(artist, TOKEN_ID);
+        vm.prank(artist);
+        bad.setApprovalForAll(address(house), true);
+        vm.prank(artist);
+        uint256 auctionId = house.createAuction(TOKEN_ID, address(bad), DURATION, RESERVE, 0);
+        vm.prank(alice);
+        house.createBid{value: RESERVE}(auctionId);
+        bad.setBlockedRecipient(alice);
+        vm.warp(block.timestamp + DURATION + 1);
+        house.endAuction(auctionId);
+        assertTrue(house.pendingDelivery(auctionId));
+
+        vm.warp(block.timestamp + house.PENDING_DELIVERY_TIMEOUT() + 1);
+
+        vm.expectEmit(true, true, false, false, address(house));
+        emit ISovereignAuctionHouseV2.LotReclaimed(auctionId, artist);
+        vm.prank(artist);
+        house.reclaimStuckLot(auctionId);
+
+        // The seller got the lot; the winner (still blocked) never did, so
+        // there is no state where both hold it.
+        assertEq(bad.ownerOf(TOKEN_ID), artist);
+        assertFalse(house.pendingDelivery(auctionId));
+        assertEq(house.deliveryDeferredAt(auctionId), 0);
+        (bool exists,) = house.getAuctionFor(address(bad), TOKEN_ID);
+        assertFalse(exists, "tokenId must be relistable");
     }
 
     /// @dev Once claimLot delivers a deferred lot, reclaimStuckLot can no

@@ -401,6 +401,42 @@ contract Sovereign1155AuctionHouseTest is Test {
         assertEq(paused.balanceOf(alice, TOKEN_ID), QUANTITY);
     }
 
+    /// @dev CWE-841 fix: a deferred lot's delivery failure can be temporary.
+    ///      If the collection unpauses before PENDING_DELIVERY_TIMEOUT but no
+    ///      one claims within the window, reclaimStuckLot retries delivery to
+    ///      the recorded winner first and sends the lot there, not to the
+    ///      seller.
+    function test_ReclaimStuckLotRetriesWinnerDeliveryBeforeSellerFallback() public {
+        PausableERC1155 paused = new PausableERC1155();
+        paused.mint(artist, TOKEN_ID, QUANTITY);
+        vm.prank(artist);
+        paused.setApprovalForAll(address(house), true);
+        vm.prank(artist);
+        uint256 auctionId = house.create1155Auction(TOKEN_ID, address(paused), QUANTITY, DURATION, RESERVE, 0);
+        vm.prank(alice, alice);
+        house.createBid{value: RESERVE}(auctionId);
+        paused.pause();
+        vm.warp(block.timestamp + DURATION + 1);
+        house.endAuction(auctionId);
+        assertTrue(house.pendingDelivery(auctionId));
+
+        // Unpaused before the timeout, but no one claims within the window.
+        paused.unpause();
+        vm.warp(block.timestamp + house.PENDING_DELIVERY_TIMEOUT() + 1);
+
+        vm.expectEmit(true, true, true, false, address(house));
+        emit ISovereignAuctionHouseV2.LotClaimed(auctionId, alice, alice);
+        vm.prank(artist);
+        house.reclaimStuckLot(auctionId);
+
+        // The winner received the lot, not the seller.
+        assertEq(paused.balanceOf(alice, TOKEN_ID), QUANTITY);
+        assertEq(paused.balanceOf(artist, TOKEN_ID), 0);
+        assertFalse(house.pendingDelivery(auctionId));
+        (bool exists,) = house.getAuctionFor(address(paused), TOKEN_ID);
+        assertFalse(exists, "tokenId must be relistable");
+    }
+
     /// @dev create1155Auction's listing expiry is stored, rejects bids once
     ///      passed, and expireAuction returns the lot to the tokenOwner.
     function test_Create1155AuctionSetsListingExpiryAndExpires() public {
@@ -479,7 +515,10 @@ contract Sovereign1155AuctionHouseTest is Test {
     ///      _auctionIdByToken entry is set. Delivery to that contract can
     ///      never succeed, permissionlessly or otherwise, so the seller's
     ///      timeout reclaim is the escape hatch: after PENDING_DELIVERY_TIMEOUT
-    ///      the seller gets the lot back and the tokenId is relistable.
+    ///      the seller gets the lot back and the tokenId is relistable. This
+    ///      is the genuinely-undeliverable case for the CWE-841 fix:
+    ///      reclaimStuckLot's retry to the winner fails the same way claimLot
+    ///      does, so it falls through to the seller exactly as before.
     function test_BareContractGriefingResolvedBySellerReclaim() public {
         vm.prank(artist);
         uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, 0);
