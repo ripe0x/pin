@@ -36,22 +36,31 @@ Consequences:
 
 ### Contracts (done on PR #303, head `e15c75a8`)
 
-- `SovereignAuctionHouseV2`: `endAuction` pays protocol fee + seller
-  unconditionally, then attempts delivery through a try/catch self-call
-  with a fixed 500k gas stipend behind a `gasleft()` headroom guard. On
-  failure the lot is deferred: `pendingDelivery[auctionId]` is set,
-  `deliveryDeferredAt` recorded, the auction record and reverse-index lock
-  are kept, and `DeliveryDeferred` is emitted. `claimLot(auctionId, to)`
-  delivers a deferred lot: anyone may call with `to == 0` (delivers to the
-  recorded winner), only the winner may redirect via a nonzero `to`
-  (best-effort). `reclaimStuckLot(auctionId)` lets the seller reclaim
-  after `PENDING_DELIVERY_TIMEOUT` (30 days), but retries winner delivery
-  first and falls back to the seller only if that attempt still fails.
-  Also new in V2: ERC1155 lots (`create1155Auction`), per-auction
-  `fundsRecipient`, `setAuctionDuration`, creator-set `listingExpiry` at
-  create plus `expireAuction`, `withdrawRefundTo`, and a `getAuction()`
-  struct getter. Audit trail: two Codex passes and one 12-agent
-  solidity-auditor pass; every finding closed on the branch.
+- `SovereignAuctionHouseV2`: escrow-and-wait settlement. `endAuction`
+  attempts delivery through a try/catch self-call with a fixed 500k gas
+  stipend behind a `gasleft()` headroom guard; the protocol fee and seller
+  are paid only if that delivery succeeds (state cleared first, then
+  `_payout`: push to plain wallets, credit contract wallets to
+  `pendingRefunds` so no external code runs after the lot moves). On
+  failure nobody is paid: the winning bid and the lot both stay escrowed,
+  `pendingDelivery` and `deliveryDeferredAt` are set, `DeliveryDeferred`
+  is emitted. `claimLot(auctionId, to)` retries delivery for
+  `PENDING_DELIVERY_TIMEOUT` (30 days): anyone may call with `to == 0`
+  (delivers to the winner), only the winner may redirect (best-effort);
+  the seller is paid the moment it lands. After the timeout, permissionless
+  `unwindStuckLot` retries the winner once more and otherwise unwinds the
+  sale: the winner's full bid is credited to `pendingRefunds` and the lot
+  is returned to the seller (`LotUnwound`); if that return fails the lot
+  stays locked under `pendingReturn` until `returnUnwoundLot` succeeds.
+  Product rule: nobody can lose what they put in. Also in V2: ERC1155 lots
+  (`create1155Auction`), per-auction `fundsRecipient`,
+  `setAuctionDuration`, creator-set `listingExpiry` plus `expireAuction`,
+  `withdrawRefundTo`, a `getAuction()` struct getter, and defense-in-depth
+  hardening (setter reentrancy guards, 1155 recovery verification,
+  `createBid` checks-effects-interactions). Audit trail: two Codex passes
+  and one 12-agent solidity-auditor pass covered the earlier
+  pay-seller-always ordering; the escrow-and-wait rework requires a fresh
+  audit of the settlement path before deploy.
 - `SovereignAuctionHouseV2Factory`: a new instance pointing at the V2
   implementation. Same owner gets a different CREATE2 house address (salt
   is the owner, but the implementation address changes the clone bytecode
@@ -88,9 +97,10 @@ Consequences:
 - `DeployHouseCTA` / `useDeployHouse`: deploy from the v2 factory only.
 - `useArtistHouse` / `sovereign-house.ts`: resolve v2 house first, fall
   back to v1 for display of existing auctions.
-- New claim surface: a deferred v2 lot shows a claim action (anyone may
-  trigger delivery to the winner; the winner additionally gets a redirect
-  field), and after 30 days the seller sees a reclaim action.
+- New claim surface: a deferred v2 lot shows a retry-delivery action
+  (anyone may trigger it; the winner additionally gets a redirect field)
+  and shows that nobody has been paid yet; after 30 days anyone sees an
+  unwind action, and a return-deferred lot shows a return action.
 - Migration flow for the 34 owners with active listings, built on the
   existing `MigratePanel` pattern: (1) `bulkCancelAuctions` on the old
   house (NFTs return to the owner), (2) `createAuctionHouse` on the v2
@@ -118,9 +128,9 @@ Consequences:
 Phase 0, gates (before any deploy):
 
 1. Merge PR #303.
-2. Review gate: satisfied on the branch (Codex audit + re-audit, plus a
-   12-agent solidity-auditor pass; all findings closed). Any further
-   contract change reopens it for the changed function.
+2. Review gate: OPEN. The escrow-and-wait settlement rework (commit
+   `ae11e8f0`) reordered the money path after the last audit; run a fresh
+   Codex audit of the settlement functions before deploy.
 3. Pre-flight reads on the v1 factory: `defaultProtocolFeeBps` and
    `defaultFeeRecipient`, carried into the v2 factory constructor
    unchanged unless Dave says otherwise.
@@ -159,8 +169,9 @@ docs mark v1 as superseded, v1 indexing continues indefinitely.
 - Carry v1 fee terms into the v2 factory, or change them (phase 0.3).
 - Whether the web should suppress bidding on not-yet-migrated v1 listings
   (default: no, owner-facing notice only).
-- Whether anything should auto-call `claimLot` for deferred lots (a keeper
-  would need a funded tx path PND does not currently run; default:
-  UI-only, anyone-can-claim plus the seller reclaim cover stuck cases).
+- Whether anything should auto-call `claimLot` / `unwindStuckLot` for
+  deferred lots (a keeper would need a funded tx path PND does not
+  currently run; default: UI-only, permissionless retry and unwind cover
+  stuck cases).
 - Curator economics (native fee, propose/accept consignment) were removed
   from V2 pending a proper consignment design; not part of this cut.
