@@ -59,8 +59,8 @@ Consequences:
   hardening (setter reentrancy guards, 1155 recovery verification,
   `createBid` checks-effects-interactions). Audit trail: two Codex passes
   and one 12-agent solidity-auditor pass covered the earlier
-  pay-seller-always ordering; the escrow-and-wait rework requires a fresh
-  audit of the settlement path before deploy.
+  pay-seller-always ordering; a fourth Codex pass audited the
+  escrow-and-wait settlement at `ae11e8f0` with zero findings.
 - `SovereignAuctionHouseV2Factory`: a new instance pointing at the V2
   implementation. Same owner gets a different CREATE2 house address (salt
   is the owner, but the implementation address changes the clone bytecode
@@ -133,9 +133,11 @@ Consequences:
 Phase 0, gates (before any deploy):
 
 1. Merge PR #303.
-2. Review gate: OPEN. The escrow-and-wait settlement rework (commit
-   `ae11e8f0`) reordered the money path after the last audit; run a fresh
-   Codex audit of the settlement functions before deploy.
+2. Review gate: satisfied. Codex audited the escrow-and-wait settlement
+   (range `e363e4a0..d40b3afc`, contracts at `ae11e8f0`) with zero
+   findings and an explicit verdict that every payout path follows a
+   custody-verified delivery. Any further contract change reopens the gate
+   for the changed function.
 3. Pre-flight reads on the v1 factory: `defaultProtocolFeeBps` and
    `defaultFeeRecipient`, carried into the v2 factory constructor
    unchanged unless Dave says otherwise.
