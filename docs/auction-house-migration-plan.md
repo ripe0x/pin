@@ -34,7 +34,7 @@ Consequences:
 
 ## What changes per component
 
-### Contracts (done on PR #303, head `e15c75a8`)
+### Contracts (done on PR #303, settlement rework at `ae11e8f0`)
 
 - `SovereignAuctionHouseV2`: escrow-and-wait settlement. `endAuction`
   attempts delivery through a try/catch self-call with a fixed 500k gas
@@ -73,19 +73,24 @@ Consequences:
   with its own `startBlock`, and a second `factory()`-pattern clone
   subscription for v2 houses. The v1 pair stays forever (history plus any
   straggler still using an old house).
-- Handle the new lifecycle. On V2 houses `AuctionEnded` means the payout
-  ran; delivery in the same tx is the normal case. If `DeliveryDeferred`
-  follows in the same tx, the lot is still house-held: status `deferred`
-  until `LotClaimed` (winner delivery, status `claimed`) or `LotReclaimed`
-  (seller fallback after timeout, status `reclaimed`). Add handlers for
-  `DeliveryDeferred`, `LotClaimed`, `LotReclaimed`, `Auction1155Created`,
+- Handle the new lifecycle. On V2 houses `endAuction` emits exactly one
+  of two events: `AuctionEnded` (delivery verified and payout ran; status
+  `settled`, terminal) or `DeliveryDeferred` (delivery failed, nobody
+  paid, bid and lot still escrowed; status `deferred`). A deferred lot
+  then ends in exactly one of: `LotClaimed` + `AuctionEnded` in the same
+  tx (retry delivered; status `settled`), or `LotUnwound` (sale unwound,
+  winner's bid credited for withdrawal; status `unwound`), optionally
+  with `LotReturnDeferred` in the same tx (lot still house-held; status
+  `unwound_return_pending`) followed later by `LotReturned` (status
+  `unwound`). Add handlers for `DeliveryDeferred`, `LotClaimed`,
+  `LotUnwound`, `LotReturnDeferred`, `LotReturned`, `Auction1155Created`,
   `AuctionDurationUpdated`, `AuctionFundsRecipientUpdated`,
-  `AuctionListingExpiryUpdated`; `expireAuction` emits `AuctionCanceled`.
-  Schema additions on `pnd_auctions`: `standard` (721/1155), `quantity`,
-  `fundsRecipient`, `listingExpiry`, `deferredAtTime`, `claimedAtBlock`,
-  `claimedAtTime`, `claimTxHash`, `claimRecipient`, plus the new status
-  values. v1 rows keep their existing semantics (settle and delivery were
-  one event).
+  `AuctionListingExpiryUpdated`, `StuckERC1155Recovered`; `expireAuction`
+  emits `AuctionCanceled`. Schema additions on `pnd_auctions`: `standard`
+  (721/1155), `quantity`, `fundsRecipient`, `listingExpiry`,
+  `deferredAtTime`, `claimedAtBlock`, `claimedAtTime`, `claimTxHash`,
+  `claimRecipient`, `refundAmount`, plus the new status values. v1 rows
+  keep their existing semantics (settle and delivery were one event).
 - `pnd_houses` gains a `factory` (or `version`) column so the web app can
   distinguish v1 from v2 houses in one query.
 
