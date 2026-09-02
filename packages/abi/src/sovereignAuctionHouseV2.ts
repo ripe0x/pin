@@ -38,6 +38,19 @@ export const sovereignAuctionHouseV2Abi = [
   },
   {
     "type": "function",
+    "name": "PENDING_DELIVERY_TIMEOUT",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "TIME_BUFFER",
     "inputs": [],
     "outputs": [
@@ -159,6 +172,11 @@ export const sovereignAuctionHouseV2Abi = [
         "name": "duration",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "listingExpiry_",
+        "type": "uint64",
+        "internalType": "uint64"
       }
     ],
     "outputs": [
@@ -185,12 +203,17 @@ export const sovereignAuctionHouseV2Abi = [
   },
   {
     "type": "function",
-    "name": "claimFailedLot",
+    "name": "claimLot",
     "inputs": [
       {
         "name": "auctionId",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "to",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -224,6 +247,11 @@ export const sovereignAuctionHouseV2Abi = [
         "name": "reservePrice",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "listingExpiry_",
+        "type": "uint64",
+        "internalType": "uint64"
       }
     ],
     "outputs": [
@@ -258,6 +286,11 @@ export const sovereignAuctionHouseV2Abi = [
         "name": "reservePrice",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "listingExpiry_",
+        "type": "uint64",
+        "internalType": "uint64"
       }
     ],
     "outputs": [
@@ -302,7 +335,7 @@ export const sovereignAuctionHouseV2Abi = [
         "internalType": "uint256"
       },
       {
-        "name": "winner",
+        "name": "to",
         "type": "address",
         "internalType": "address"
       }
@@ -325,13 +358,32 @@ export const sovereignAuctionHouseV2Abi = [
         "internalType": "uint256"
       },
       {
-        "name": "winner",
+        "name": "to",
         "type": "address",
         "internalType": "address"
       }
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "deliveryDeferredAt",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -361,45 +413,6 @@ export const sovereignAuctionHouseV2Abi = [
   },
   {
     "type": "function",
-    "name": "failedDeliveries",
-    "inputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "tokenContract",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "tokenId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "tokenOwner",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "quantity",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "standard",
-        "type": "uint8",
-        "internalType": "enum ISovereignAuctionHouseV2.TokenStandard"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "feeRecipient",
     "inputs": [],
     "outputs": [
@@ -413,36 +426,88 @@ export const sovereignAuctionHouseV2Abi = [
   },
   {
     "type": "function",
-    "name": "getAuctionFor",
+    "name": "getAuction",
     "inputs": [
-      {
-        "name": "tokenContract",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "tokenId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "exists",
-        "type": "bool",
-        "internalType": "bool"
-      },
       {
         "name": "auctionId",
         "type": "uint256",
         "internalType": "uint256"
       }
     ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct ISovereignAuctionHouseV2.Auction",
+        "components": [
+          {
+            "name": "tokenId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "tokenContract",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "firstBidTime",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "amount",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "reservePrice",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "tokenOwner",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "fundsRecipient",
+            "type": "address",
+            "internalType": "address payable"
+          },
+          {
+            "name": "endTime",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "bidder",
+            "type": "address",
+            "internalType": "address payable"
+          },
+          {
+            "name": "duration",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "quantity",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "standard",
+            "type": "uint8",
+            "internalType": "enum ISovereignAuctionHouseV2.TokenStandard"
+          }
+        ]
+      }
+    ],
     "stateMutability": "view"
   },
   {
     "type": "function",
-    "name": "getFailedAuctionFor",
+    "name": "getAuctionFor",
     "inputs": [
       {
         "name": "tokenContract",
@@ -617,6 +682,25 @@ export const sovereignAuctionHouseV2Abi = [
   },
   {
     "type": "function",
+    "name": "pendingDelivery",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "pendingRefunds",
     "inputs": [
       {
@@ -630,6 +714,25 @@ export const sovereignAuctionHouseV2Abi = [
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "pendingReturn",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -704,6 +807,19 @@ export const sovereignAuctionHouseV2Abi = [
     "inputs": [],
     "outputs": [],
     "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "returnUnwoundLot",
+    "inputs": [
+      {
+        "name": "auctionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -811,6 +927,19 @@ export const sovereignAuctionHouseV2Abi = [
   },
   {
     "type": "function",
+    "name": "unwindStuckLot",
+    "inputs": [
+      {
+        "name": "auctionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "withdrawRefund",
     "inputs": [],
     "outputs": [],
@@ -880,6 +1009,12 @@ export const sovereignAuctionHouseV2Abi = [
         "type": "address",
         "indexed": false,
         "internalType": "address"
+      },
+      {
+        "name": "listingExpiry",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
       }
     ],
     "anonymous": false
@@ -979,31 +1114,12 @@ export const sovereignAuctionHouseV2Abi = [
         "type": "address",
         "indexed": false,
         "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "AuctionDeliveryFailed",
-    "inputs": [
-      {
-        "name": "auctionId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
       },
       {
-        "name": "winner",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "refundAmount",
-        "type": "uint256",
+        "name": "listingExpiry",
+        "type": "uint64",
         "indexed": false,
-        "internalType": "uint256"
+        "internalType": "uint64"
       }
     ],
     "anonymous": false
@@ -1142,7 +1258,64 @@ export const sovereignAuctionHouseV2Abi = [
   },
   {
     "type": "event",
-    "name": "FailedLotReturned",
+    "name": "DeliveryDeferred",
+    "inputs": [
+      {
+        "name": "auctionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "winner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Initialized",
+    "inputs": [
+      {
+        "name": "version",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "LotClaimed",
+    "inputs": [
+      {
+        "name": "auctionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "winner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "recipient",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "LotReturnDeferred",
     "inputs": [
       {
         "name": "auctionId",
@@ -1161,13 +1334,50 @@ export const sovereignAuctionHouseV2Abi = [
   },
   {
     "type": "event",
-    "name": "Initialized",
+    "name": "LotReturned",
     "inputs": [
       {
-        "name": "version",
-        "type": "uint64",
+        "name": "auctionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "tokenOwner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "LotUnwound",
+    "inputs": [
+      {
+        "name": "auctionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "winner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "refundAmount",
+        "type": "uint256",
         "indexed": false,
-        "internalType": "uint64"
+        "internalType": "uint256"
+      },
+      {
+        "name": "tokenOwner",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
       }
     ],
     "anonymous": false
@@ -1237,6 +1447,37 @@ export const sovereignAuctionHouseV2Abi = [
   },
   {
     "type": "event",
+    "name": "StuckERC1155Recovered",
+    "inputs": [
+      {
+        "name": "tokenContract",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "tokenId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "quantity",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "to",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "StuckERC721Recovered",
     "inputs": [
       {
@@ -1263,6 +1504,11 @@ export const sovereignAuctionHouseV2Abi = [
   {
     "type": "error",
     "name": "AuctionAlreadyExistsForToken",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AuctionAlreadySettled",
     "inputs": []
   },
   {
@@ -1307,11 +1553,6 @@ export const sovereignAuctionHouseV2Abi = [
   },
   {
     "type": "error",
-    "name": "ContractBidderNotSupported",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "DeliveryFailed",
     "inputs": []
   },
@@ -1322,12 +1563,12 @@ export const sovereignAuctionHouseV2Abi = [
   },
   {
     "type": "error",
-    "name": "FailedDeliveryDoesNotExist",
+    "name": "FundsRecipientRequired",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "FundsRecipientRequired",
+    "name": "InsufficientGas",
     "inputs": []
   },
   {
@@ -1337,7 +1578,22 @@ export const sovereignAuctionHouseV2Abi = [
   },
   {
     "type": "error",
+    "name": "NoPendingDelivery",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NoPendingReturn",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "NotInitializing",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotWinner",
     "inputs": []
   },
   {
@@ -1375,6 +1631,11 @@ export const sovereignAuctionHouseV2Abi = [
   {
     "type": "error",
     "name": "ReentrancyGuardReentrantCall",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UnwindTooEarly",
     "inputs": []
   }
 ] as const;
