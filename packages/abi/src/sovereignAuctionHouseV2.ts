@@ -335,7 +335,7 @@ export const sovereignAuctionHouseV2Abi = [
         "internalType": "uint256"
       },
       {
-        "name": "winner",
+        "name": "to",
         "type": "address",
         "internalType": "address"
       }
@@ -358,7 +358,7 @@ export const sovereignAuctionHouseV2Abi = [
         "internalType": "uint256"
       },
       {
-        "name": "winner",
+        "name": "to",
         "type": "address",
         "internalType": "address"
       }
@@ -720,6 +720,25 @@ export const sovereignAuctionHouseV2Abi = [
   },
   {
     "type": "function",
+    "name": "pendingReturn",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "protocolFeeBps",
     "inputs": [],
     "outputs": [
@@ -730,19 +749,6 @@ export const sovereignAuctionHouseV2Abi = [
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "reclaimStuckLot",
-    "inputs": [
-      {
-        "name": "auctionId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -801,6 +807,19 @@ export const sovereignAuctionHouseV2Abi = [
     "inputs": [],
     "outputs": [],
     "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "returnUnwoundLot",
+    "inputs": [
+      {
+        "name": "auctionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -905,6 +924,19 @@ export const sovereignAuctionHouseV2Abi = [
     ],
     "outputs": [],
     "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "unwindStuckLot",
+    "inputs": [
+      {
+        "name": "auctionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -1283,7 +1315,7 @@ export const sovereignAuctionHouseV2Abi = [
   },
   {
     "type": "event",
-    "name": "LotReclaimed",
+    "name": "LotReturnDeferred",
     "inputs": [
       {
         "name": "auctionId",
@@ -1295,6 +1327,56 @@ export const sovereignAuctionHouseV2Abi = [
         "name": "tokenOwner",
         "type": "address",
         "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "LotReturned",
+    "inputs": [
+      {
+        "name": "auctionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "tokenOwner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "LotUnwound",
+    "inputs": [
+      {
+        "name": "auctionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "winner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "refundAmount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "tokenOwner",
+        "type": "address",
+        "indexed": false,
         "internalType": "address"
       }
     ],
@@ -1501,6 +1583,11 @@ export const sovereignAuctionHouseV2Abi = [
   },
   {
     "type": "error",
+    "name": "NoPendingReturn",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "NotInitializing",
     "inputs": []
   },
@@ -1543,12 +1630,12 @@ export const sovereignAuctionHouseV2Abi = [
   },
   {
     "type": "error",
-    "name": "ReclaimTooEarly",
+    "name": "ReentrancyGuardReentrantCall",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "ReentrancyGuardReentrantCall",
+    "name": "UnwindTooEarly",
     "inputs": []
   }
 ] as const;

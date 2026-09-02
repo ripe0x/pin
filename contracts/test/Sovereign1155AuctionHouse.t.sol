@@ -87,9 +87,10 @@ contract AcceptingERC1155Bidder {
     }
 }
 
-/// @dev Contract wallet that bids but rejects ERC1155 delivery, forcing a
-///      deferral. Its own rejection cannot force a refund: the seller is
-///      already paid, and it can still redirect the eventual claim.
+/// @dev Contract wallet that bids but always rejects ERC1155 delivery,
+///      forcing a deferral that never resolves in the winner's favor. Its
+///      own rejection cannot force a refund by itself: only unwindStuckLot,
+///      after the retry to it also fails, credits its bid back.
 contract RejectingERC1155Bidder {
     function bid(address house, uint256 auctionId) external payable {
         SovereignAuctionHouseV2(payable(house)).createBid{value: msg.value}(auctionId);
@@ -166,7 +167,7 @@ contract ClawbackERC1155 {
 ///      becomes the recorded winner, but has no onERC1155Received hook and
 ///      no function through which anyone could invoke claimLot on its
 ///      behalf. Delivery to this contract can never succeed, by anyone,
-///      which is exactly the case reclaimStuckLot exists to resolve.
+///      which is exactly the case unwindStuckLot exists to resolve.
 contract BareERC1155Bidder {
     function bid(address house, uint256 auctionId) external payable {
         SovereignAuctionHouseV2(payable(house)).createBid{value: msg.value}(auctionId);
@@ -174,9 +175,11 @@ contract BareERC1155Bidder {
 }
 
 /// @dev fundsRecipient for the seller running the clawback in
-///      ClawbackERC1155: its receive() callback fires during the settlement
-///      payout and attempts to force the quantity from the winner back to
-///      the auction house.
+///      ClawbackERC1155. Its receive() attempts to force the quantity from
+///      the winner back to the auction house. Because it is a contract, the
+///      new payout rule never calls it: settlement credits it to
+///      pendingRefunds instead of pushing, so this callback is unreachable
+///      from settlement regardless of timing.
 contract ClawbackRecipient1155 {
     ClawbackERC1155 public token;
     address public house;
@@ -228,6 +231,16 @@ contract Sovereign1155AuctionHouseTest is Test {
         vm.deal(alice, 10 ether);
     }
 
+    /// @dev No ETH is ever stranded: whatever the house holds must equal the
+    ///      sum of pendingRefunds for every account a test touched.
+    function _assertConserved(address[] memory touched) internal view {
+        uint256 sum;
+        for (uint256 i; i < touched.length; ++i) {
+            sum += house.pendingRefunds(touched[i]);
+        }
+        assertEq(address(house).balance, sum, "ETH conservation invariant violated");
+    }
+
     function test_WholeLotSettlesToEoaWinnerAndPaysFundsRecipient() public {
         vm.prank(artist);
         uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, 0);
@@ -244,6 +257,7 @@ contract Sovereign1155AuctionHouseTest is Test {
         assertEq(token.balanceOf(artist, TOKEN_ID), 10 - QUANTITY);
         assertEq(carol.balance - carolBefore, RESERVE - fee);
         assertFalse(house.pendingDelivery(auctionId));
+        assertEq(address(house).balance, 0);
     }
 
     function test_SameHouseCanCreate721And1155Lots() public {
@@ -266,9 +280,10 @@ contract Sovereign1155AuctionHouseTest is Test {
     }
 
     /// @dev EIP-7702 code appearing on a bidder after it bid, or any other
-    ///      contract-code bidder, is no longer special-cased: the seller is
-    ///      always paid at endAuction, so a winner opting out of delivery
-    ///      gains nothing and only its own claim is affected.
+    ///      contract-code bidder, is no longer special-cased: delivery is
+    ///      attempted the same way regardless, and a bidder that cannot
+    ///      accept the transfer only defers its own delivery. The seller is
+    ///      not paid until delivery actually succeeds.
     function test_ContractCodeOnBidderNoLongerBlocksSettlement() public {
         vm.prank(artist);
         uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, 0);
@@ -280,13 +295,12 @@ contract Sovereign1155AuctionHouseTest is Test {
         vm.warp(block.timestamp + DURATION + 1);
 
         uint256 sellerBefore = artist.balance;
-        uint256 fee = (RESERVE * 250) / 10_000;
         house.endAuction(auctionId);
-        assertEq(artist.balance - sellerBefore, RESERVE - fee);
+        assertEq(artist.balance, sellerBefore, "the seller is not paid while delivery is deferred");
         assertTrue(house.pendingDelivery(auctionId));
     }
 
-    function test_BrokenDeliveryDefersLotButSellerIsPaidInFull() public {
+    function test_BrokenDeliveryDefersLotAndPaysNobodyUntilClaim() public {
         MutableERC1155 bad = new MutableERC1155();
         bad.mint(artist, TOKEN_ID, QUANTITY);
         vm.prank(artist);
@@ -299,9 +313,8 @@ contract Sovereign1155AuctionHouseTest is Test {
         vm.warp(block.timestamp + DURATION + 1);
 
         uint256 sellerBefore = artist.balance;
-        uint256 fee = (RESERVE * 250) / 10_000;
         house.endAuction(auctionId);
-        assertEq(artist.balance - sellerBefore, RESERVE - fee);
+        assertEq(artist.balance, sellerBefore, "the seller is not paid on a deferred delivery");
         assertEq(bad.balanceOf(address(house), TOKEN_ID), QUANTITY);
         assertTrue(house.pendingDelivery(auctionId));
         (bool active,) = house.getAuctionFor(address(bad), TOKEN_ID);
@@ -311,9 +324,11 @@ contract Sovereign1155AuctionHouseTest is Test {
         house.recoverStuckERC1155(address(bad), TOKEN_ID, QUANTITY, artist);
 
         bad.setBreakOutbound(false);
+        uint256 fee = (RESERVE * 250) / 10_000;
         vm.prank(alice);
         house.claimLot(auctionId, address(0));
         assertEq(bad.balanceOf(alice, TOKEN_ID), QUANTITY);
+        assertEq(artist.balance - sellerBefore, RESERVE - fee, "the seller is paid once claimLot succeeds");
     }
 
     /// @dev claimLot without a pending delivery reverts.
@@ -352,8 +367,8 @@ contract Sovereign1155AuctionHouseTest is Test {
     }
 
     /// @dev A winner whose onERC1155Received reverts is deferred, not
-    ///      refunded; the seller keeps being paid at endAuction, and the
-    ///      winner can redirect its own claim to a working EOA.
+    ///      refunded; the seller is paid only once the winner redirects its
+    ///      own claim to a working EOA.
     function test_RejectingContractWinnerIsDeferredThenClaimsToRedirect() public {
         vm.prank(artist);
         uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, 0);
@@ -363,15 +378,16 @@ contract Sovereign1155AuctionHouseTest is Test {
         vm.warp(block.timestamp + DURATION + 1);
 
         uint256 sellerBefore = artist.balance;
-        uint256 fee = (RESERVE * 250) / 10_000;
         house.endAuction(auctionId);
-        assertEq(artist.balance - sellerBefore, RESERVE - fee);
+        assertEq(artist.balance, sellerBefore, "the seller is not paid on a deferred delivery");
         assertTrue(house.pendingDelivery(auctionId));
         assertEq(token.balanceOf(address(house), TOKEN_ID), QUANTITY);
 
+        uint256 fee = (RESERVE * 250) / 10_000;
         bidder.claim(address(house), auctionId, carol);
         assertEq(token.balanceOf(carol, TOKEN_ID), QUANTITY);
         assertFalse(house.pendingDelivery(auctionId));
+        assertEq(artist.balance - sellerBefore, RESERVE - fee, "the seller is paid once the redirect succeeds");
     }
 
     function test_UnsolicitedSafeTransferIsRejected() public {
@@ -380,7 +396,8 @@ contract Sovereign1155AuctionHouseTest is Test {
         token.safeTransferFrom(artist, address(house), TOKEN_ID, 1, "");
     }
 
-    /// @dev Paused delivery defers the lot; the winner claims once unpaused.
+    /// @dev Paused delivery defers the lot and pays nobody; the seller is
+    ///      paid once the winner claims after unpausing.
     function test_PausedCollectionDefersDeliveryThenClaimSucceedsAfterUnpause() public {
         PausableERC1155 paused = new PausableERC1155();
         paused.mint(artist, TOKEN_ID, QUANTITY);
@@ -394,9 +411,8 @@ contract Sovereign1155AuctionHouseTest is Test {
         vm.warp(block.timestamp + DURATION + 1);
 
         uint256 sellerBefore = artist.balance;
-        uint256 fee = (RESERVE * 250) / 10_000;
         house.endAuction(auctionId);
-        assertEq(artist.balance - sellerBefore, RESERVE - fee);
+        assertEq(artist.balance, sellerBefore, "the seller is not paid on a deferred delivery");
         assertTrue(house.pendingDelivery(auctionId));
 
         vm.expectRevert();
@@ -404,17 +420,19 @@ contract Sovereign1155AuctionHouseTest is Test {
         house.claimLot(auctionId, address(0));
 
         paused.unpause();
+        uint256 fee = (RESERVE * 250) / 10_000;
         vm.prank(alice);
         house.claimLot(auctionId, address(0));
         assertEq(paused.balanceOf(alice, TOKEN_ID), QUANTITY);
+        assertEq(artist.balance - sellerBefore, RESERVE - fee, "the seller is paid once claimLot succeeds");
     }
 
-    /// @dev CWE-841 fix: a deferred lot's delivery failure can be temporary.
-    ///      If the collection unpauses before PENDING_DELIVERY_TIMEOUT but no
-    ///      one claims within the window, reclaimStuckLot retries delivery to
-    ///      the recorded winner first and sends the lot there, not to the
-    ///      seller.
-    function test_ReclaimStuckLotRetriesWinnerDeliveryBeforeSellerFallback() public {
+    /// @dev If the collection unpauses before PENDING_DELIVERY_TIMEOUT but no
+    ///      one claims within the window, unwindStuckLot's retry to the
+    ///      recorded winner succeeds and finalizes the sale normally
+    ///      (LotClaimed, not LotUnwound): the lot goes to the winner and the
+    ///      seller is paid at that moment.
+    function test_UnwindStuckLotRetriesWinnerDeliveryBeforeUnwinding() public {
         PausableERC1155 paused = new PausableERC1155();
         paused.mint(artist, TOKEN_ID, QUANTITY);
         vm.prank(artist);
@@ -432,17 +450,57 @@ contract Sovereign1155AuctionHouseTest is Test {
         paused.unpause();
         vm.warp(block.timestamp + house.PENDING_DELIVERY_TIMEOUT() + 1);
 
+        uint256 sellerBefore = artist.balance;
+        uint256 fee = (RESERVE * 250) / 10_000;
+
         vm.expectEmit(true, true, true, false, address(house));
         emit ISovereignAuctionHouseV2.LotClaimed(auctionId, alice, alice);
-        vm.prank(artist);
-        house.reclaimStuckLot(auctionId);
+        house.unwindStuckLot(auctionId);
 
-        // The winner received the lot, not the seller.
-        assertEq(paused.balanceOf(alice, TOKEN_ID), QUANTITY);
+        assertEq(paused.balanceOf(alice, TOKEN_ID), QUANTITY, "the winner received the lot, not the seller");
         assertEq(paused.balanceOf(artist, TOKEN_ID), 0);
+        assertEq(artist.balance - sellerBefore, RESERVE - fee, "the seller is paid now that delivery succeeded");
         assertFalse(house.pendingDelivery(auctionId));
         (bool exists,) = house.getAuctionFor(address(paused), TOKEN_ID);
         assertFalse(exists, "tokenId must be relistable");
+    }
+
+    /// @dev A winner that always rejects delivery (RejectingERC1155Bidder)
+    ///      is still failing after PENDING_DELIVERY_TIMEOUT: unwindStuckLot's
+    ///      retry fails the same way claimLot did, so the sale unwinds. The
+    ///      winner's full bid is credited for withdrawal and the seller
+    ///      (an ordinary EOA) gets the lot back; the seller is never paid.
+    function test_UnwindStuckLotRefundsWinnerAndReturnsLotToSeller() public {
+        vm.prank(artist);
+        uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, 0);
+        RejectingERC1155Bidder bidder = new RejectingERC1155Bidder();
+        vm.deal(address(bidder), RESERVE);
+        bidder.bid{value: RESERVE}(address(house), auctionId);
+        vm.warp(block.timestamp + DURATION + 1);
+        house.endAuction(auctionId);
+        assertTrue(house.pendingDelivery(auctionId));
+
+        vm.warp(block.timestamp + house.PENDING_DELIVERY_TIMEOUT() + 1);
+
+        uint256 sellerBefore = artist.balance;
+        uint256 treasuryBefore = treasury.balance;
+
+        vm.expectEmit(true, true, false, true, address(house));
+        emit ISovereignAuctionHouseV2.LotUnwound(auctionId, address(bidder), RESERVE, artist);
+        house.unwindStuckLot(auctionId);
+
+        assertEq(token.balanceOf(artist, TOKEN_ID), 10, "the lot returns to the seller in full");
+        assertEq(artist.balance, sellerBefore, "the seller is never paid ETH for this auction");
+        assertEq(treasury.balance, treasuryBefore, "the protocol is never paid for this auction");
+        assertEq(house.pendingRefunds(address(bidder)), RESERVE, "the winner's full bid is credited");
+        assertFalse(house.pendingDelivery(auctionId));
+        assertFalse(house.pendingReturn(auctionId));
+        (bool exists,) = house.getAuctionFor(address(token), TOKEN_ID);
+        assertFalse(exists, "tokenId must be relistable");
+
+        address[] memory touched = new address[](1);
+        touched[0] = address(bidder);
+        _assertConserved(touched);
     }
 
     /// @dev create1155Auction's listing expiry is stored, rejects bids once
@@ -462,16 +520,12 @@ contract Sovereign1155AuctionHouseTest is Test {
         assertEq(token.balanceOf(artist, TOKEN_ID), 10);
     }
 
-    /// @dev Audit High (CWE-367), ERC1155 path: a seller-controlled
-    ///      collection could use its fundsRecipient's payout-receive
-    ///      callback to claw the winning quantity back after delivery but
-    ///      before cleanup, leaving the house holding an unlocked balance
-    ///      the owner could then drain via recoverStuckERC1155 while the
-    ///      seller kept the proceeds. endAuction now settles funds before
-    ///      attempting delivery, so the callback fires while the quantity is
-    ///      still escrowed and the backdoor's `from == winner` balance check
-    ///      fails.
-    function test_FundsBeforeDeliveryClosesPayoutCallbackClawback() public {
+    /// @dev Audit High (CWE-367) regression, ERC1155 path, closed by the
+    ///      deliver-first, credit-not-push payout rule: a seller-controlled
+    ///      collection's admin backdoor can only claw the quantity back
+    ///      through its fundsRecipient's payout callback, and since that
+    ///      recipient is a contract, settlement never calls it at all.
+    function test_ClawbackNeverRunsBecauseContractRecipientIsCreditedNotPushed() public {
         ClawbackERC1155 bad = new ClawbackERC1155();
         bad.mint(artist, TOKEN_ID, QUANTITY);
         vm.prank(artist);
@@ -491,21 +545,17 @@ contract Sovereign1155AuctionHouseTest is Test {
 
         house.endAuction(auctionId);
 
-        // The payout callback ran, but the clawback attempt failed: the
-        // quantity had not moved to the winner yet at that point.
-        assertTrue(recipient.attempted());
+        // The payout callback never fired: the recipient is a contract, so
+        // settlement credited it instead of calling it.
+        assertFalse(recipient.attempted());
         assertFalse(recipient.succeeded());
 
-        // Delivery completed normally as the last step, and cleanup is
-        // consistent with that outcome.
         assertEq(bad.balanceOf(alice, TOKEN_ID), QUANTITY);
         (bool exists,) = house.getAuctionFor(address(bad), TOKEN_ID);
         assertFalse(exists);
 
-        // The must-hold invariant: there is no reachable state where the
-        // house holds the lot's balance while the reverse index is cleared.
-        bool houseHoldsLot = bad.balanceOf(address(house), TOKEN_ID) != 0;
-        assertFalse(houseHoldsLot && !exists, "house holds an unlocked lot");
+        uint256 fee = (RESERVE * 250) / 10_000;
+        assertEq(house.pendingRefunds(address(recipient)), RESERVE - fee);
 
         // The owner cannot pull anything out through stuck-token recovery:
         // the house's balance for this id is zero, so any attempted amount
@@ -513,21 +563,22 @@ contract Sovereign1155AuctionHouseTest is Test {
         vm.expectRevert();
         vm.prank(artist);
         house.recoverStuckERC1155(address(bad), TOKEN_ID, QUANTITY, artist);
+
+        address[] memory touched = new address[](2);
+        touched[0] = treasury;
+        touched[1] = address(recipient);
+        _assertConserved(touched);
     }
 
     /// @dev Audit finding: an unprivileged attacker could bid on an ERC1155
     ///      lot with a bare contract that has no onERC1155Received and no
-    ///      way to call claimLot, permanently freezing the seller's token for
-    ///      the cost of the reserve, since claimLot was gated to the
-    ///      recorded winner and recoverStuck* is blocked while the token's
-    ///      _auctionIdByToken entry is set. Delivery to that contract can
-    ///      never succeed, permissionlessly or otherwise, so the seller's
-    ///      timeout reclaim is the escape hatch: after PENDING_DELIVERY_TIMEOUT
-    ///      the seller gets the lot back and the tokenId is relistable. This
-    ///      is the genuinely-undeliverable case for the CWE-841 fix:
-    ///      reclaimStuckLot's retry to the winner fails the same way claimLot
-    ///      does, so it falls through to the seller exactly as before.
-    function test_BareContractGriefingResolvedBySellerReclaim() public {
+    ///      way to call claimLot. Delivery to that contract can never
+    ///      succeed, permissionlessly or otherwise, so it is exactly the
+    ///      genuinely-undeliverable case unwindStuckLot exists to resolve:
+    ///      after PENDING_DELIVERY_TIMEOUT the griefer's own bid is credited
+    ///      back to it (nobody needs to ban it or single it out) and the
+    ///      seller's tokenId is relistable. The seller is never paid.
+    function test_BareContractGriefingResolvedByUnwind() public {
         vm.prank(artist);
         uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, 0);
         BareERC1155Bidder griefer = new BareERC1155Bidder();
@@ -536,9 +587,8 @@ contract Sovereign1155AuctionHouseTest is Test {
         vm.warp(block.timestamp + DURATION + 1);
 
         uint256 sellerBefore = artist.balance;
-        uint256 fee = (RESERVE * 250) / 10_000;
         house.endAuction(auctionId);
-        assertEq(artist.balance - sellerBefore, RESERVE - fee);
+        assertEq(artist.balance, sellerBefore, "the seller is not paid on a deferred delivery");
         assertTrue(house.pendingDelivery(auctionId));
         assertEq(house.deliveryDeferredAt(auctionId), uint64(block.timestamp));
 
@@ -548,21 +598,17 @@ contract Sovereign1155AuctionHouseTest is Test {
         vm.expectRevert();
         house.claimLot(auctionId, address(0));
 
-        // Reclaim is blocked before the timeout.
-        vm.expectRevert(SovereignAuctionHouseV2.ReclaimTooEarly.selector);
-        vm.prank(artist);
-        house.reclaimStuckLot(auctionId);
+        // Unwind is blocked before the timeout.
+        vm.expectRevert(SovereignAuctionHouseV2.UnwindTooEarly.selector);
+        house.unwindStuckLot(auctionId);
 
         vm.warp(block.timestamp + house.PENDING_DELIVERY_TIMEOUT() + 1);
 
-        // Only the tokenOwner (artist, the seller) may reclaim.
-        vm.expectRevert("Not token owner");
-        vm.prank(alice);
-        house.reclaimStuckLot(auctionId);
-
-        vm.prank(artist);
-        house.reclaimStuckLot(auctionId);
+        // Anyone may trigger the unwind; no special role is required.
+        house.unwindStuckLot(auctionId);
         assertEq(token.balanceOf(artist, TOKEN_ID), 10);
+        assertEq(artist.balance, sellerBefore, "the seller is never paid ETH for this auction");
+        assertEq(house.pendingRefunds(address(griefer)), RESERVE, "the griefer's own bid is credited back to it");
         assertFalse(house.pendingDelivery(auctionId));
         assertEq(house.deliveryDeferredAt(auctionId), 0);
 
@@ -571,6 +617,29 @@ contract Sovereign1155AuctionHouseTest is Test {
         assertFalse(exists, "tokenId must be relistable");
         vm.prank(artist);
         house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, 0);
+    }
+
+    /// @dev Below the doubled headroom guard, unwindStuckLot must revert
+    ///      InsufficientGas rather than let a gas-starved retry or return
+    ///      attempt run under-stipend and be misclassified as a genuine
+    ///      delivery failure.
+    function test_UnwindStuckLotRevertsWhenGasBelowDoubleDeliveryHeadroom() public {
+        vm.prank(artist);
+        uint256 auctionId = house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, 0);
+        BareERC1155Bidder griefer = new BareERC1155Bidder();
+        vm.deal(address(griefer), RESERVE);
+        griefer.bid{value: RESERVE}(address(house), auctionId);
+        vm.warp(block.timestamp + DURATION + 1);
+        house.endAuction(auctionId);
+        vm.warp(block.timestamp + house.PENDING_DELIVERY_TIMEOUT() + 1);
+
+        (bool ok,) =
+            address(house).call{gas: 900_000}(abi.encodeWithSelector(house.unwindStuckLot.selector, auctionId));
+        assertFalse(ok, "starved call must revert, not misclassify delivery");
+        assertTrue(house.pendingDelivery(auctionId), "no state change from the starved attempt");
+
+        house.unwindStuckLot(auctionId);
+        assertFalse(house.pendingDelivery(auctionId));
     }
 
     /// @dev recoverStuckERC1155 on a genuinely stuck balance (no auction

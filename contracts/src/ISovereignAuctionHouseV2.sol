@@ -3,11 +3,16 @@ pragma solidity ^0.8.20;
 
 /// @title Sovereign Auction House V2 interface
 /// @notice ETH reserve auctions for ERC721 and ERC1155 tokens. Settlement
-///         pays the seller unconditionally; token delivery is attempted with
-///         a fixed gas stipend and, on failure, deferred to a claim anyone
-///         may trigger for the winner, or the winner may redirect. If the
-///         winner never claims, the seller may reclaim the lot after a
-///         timeout. No sale ever unwinds.
+///         pays the seller only after the winner's delivery is verified.
+///         Delivery is attempted with a fixed gas stipend; on failure,
+///         neither the seller nor the protocol fee is paid, and both the
+///         winning bid and the lot stay escrowed for a permissionless retry
+///         via claimLot. If the lot is still undelivered
+///         PENDING_DELIVERY_TIMEOUT after deferral, unwindStuckLot retries
+///         delivery once more and, on a second failure, unwinds the sale:
+///         the winner's bid is credited to pendingRefunds for withdrawal and
+///         the lot is returned to the seller. If that return also fails, the
+///         lot stays locked until returnUnwoundLot succeeds.
 interface ISovereignAuctionHouseV2 {
     enum TokenStandard {
         ERC721,
@@ -69,18 +74,31 @@ interface ISovereignAuctionHouseV2 {
         uint256 sellerProceeds,
         uint256 protocolFee
     );
-    /// @notice Emitted instead of, or in addition to, immediate delivery
-    ///         when the token transfer attempted during endAuction fails.
-    ///         The seller and protocol are already paid; the lot is claimable
-    ///         by the winner via claimLot.
+    /// @notice Emitted when the token transfer attempted during endAuction
+    ///         fails. Neither the seller nor the protocol fee has been paid;
+    ///         the winning bid stays escrowed. The lot is retryable by
+    ///         anyone via claimLot.
     event DeliveryDeferred(uint256 indexed auctionId, address indexed winner);
-    /// @notice Emitted when claimLot delivers a deferred lot.
+    /// @notice Emitted when claimLot or unwindStuckLot delivers a deferred
+    ///         lot to the winner. Settlement (state cleanup and the seller
+    ///         and protocol fee payout) happens in the same call.
     event LotClaimed(uint256 indexed auctionId, address indexed winner, address recipient);
-    /// @notice Emitted when reclaimStuckLot returns a deferred lot to the
-    ///         seller after PENDING_DELIVERY_TIMEOUT has passed unclaimed and
-    ///         a delivery retry to the recorded winner still fails. If that
-    ///         retry succeeds instead, LotClaimed is emitted in its place.
-    event LotReclaimed(uint256 indexed auctionId, address indexed tokenOwner);
+    /// @notice Emitted when unwindStuckLot's retry to the winner still fails
+    ///         PENDING_DELIVERY_TIMEOUT after deferral and the sale unwinds:
+    ///         `refundAmount`, the winner's full bid, is credited to
+    ///         pendingRefunds for withdrawal. Neither the seller nor the
+    ///         protocol was ever paid on this auction. If the same call also
+    ///         succeeds at returning the lot to `tokenOwner`, no further
+    ///         event follows; if that return fails, LotReturnDeferred is
+    ///         emitted alongside this one.
+    event LotUnwound(uint256 indexed auctionId, address indexed winner, uint256 refundAmount, address tokenOwner);
+    /// @notice Emitted alongside LotUnwound when the attempt to return the
+    ///         lot to `tokenOwner` fails. The lot stays locked until
+    ///         returnUnwoundLot succeeds.
+    event LotReturnDeferred(uint256 indexed auctionId, address indexed tokenOwner);
+    /// @notice Emitted when returnUnwoundLot delivers a previously deferred
+    ///         return to `tokenOwner`.
+    event LotReturned(uint256 indexed auctionId, address indexed tokenOwner);
     event AuctionCanceled(uint256 indexed auctionId);
     event RefundCredited(address indexed to, uint256 amount);
     event RefundWithdrawn(address indexed account, address indexed recipient, uint256 amount);
@@ -124,13 +142,14 @@ interface ISovereignAuctionHouseV2 {
 
     function createBid(uint256 auctionId) external payable;
 
-    /// @notice Settle a finished auction. Pays the protocol fee and seller
-    ///         unconditionally, then attempts token delivery to the winner
-    ///         with a fixed gas stipend so the outcome cannot depend on
-    ///         caller-supplied gas. On delivery failure the payout still
-    ///         happens; the lot is deferred to claimLot instead. Reverts if
-    ///         the auction is already settled, or with InsufficientGas when
-    ///         called without enough gas to honor the delivery stipend.
+    /// @notice Settle a finished auction. Attempts token delivery to the
+    ///         winner with a fixed gas stipend so the outcome cannot depend
+    ///         on caller-supplied gas. The protocol fee and seller are paid
+    ///         only if that delivery succeeds. On delivery failure nobody is
+    ///         paid; the lot is deferred to claimLot instead. Reverts if the
+    ///         auction is already settled or unwound, or with
+    ///         InsufficientGas when called without enough gas to honor the
+    ///         delivery stipend.
     function endAuction(uint256 auctionId) external;
     function cancelAuction(uint256 auctionId) external;
     function setAuctionReservePrice(uint256 auctionId, uint256 reservePrice) external;
@@ -147,19 +166,29 @@ interface ISovereignAuctionHouseV2 {
     ///         delivery elsewhere via a nonzero `to`. Reverts if the auction
     ///         has no deferred delivery, or if a non-winner passes a nonzero
     ///         `to`. A revert during delivery reverts the whole call, leaving
-    ///         the claim retryable. The redirect is best-effort: the pending
-    ///         state is consumed by whichever call succeeds first, so a third
-    ///         party triggering delivery to the winner with `to == address(0)`
+    ///         the claim retryable. Settlement (state cleanup and the seller
+    ///         and protocol fee payout) happens in this call, after delivery
+    ///         succeeds. The redirect is best-effort: the pending state is
+    ///         consumed by whichever call succeeds first, so a third party
+    ///         triggering delivery to the winner with `to == address(0)`
     ///         before the winner redirects permanently forecloses that
     ///         redirect. The token always still reaches the winner's own bid
     ///         address in that case.
     function claimLot(uint256 auctionId, address to) external;
 
-    /// @notice Lets the seller reclaim a deferred lot once
-    ///         PENDING_DELIVERY_TIMEOUT has passed since deferral. The seller
-    ///         was already paid at settlement. This first retries delivery to
-    ///         the recorded winner and falls back to the seller only if that
-    ///         retry also fails, so this only bounds how long an
-    ///         undeliverable lot can stay escrowed waiting on the winner.
-    function reclaimStuckLot(uint256 auctionId) external;
+    /// @notice Resolves a lot still pending delivery PENDING_DELIVERY_TIMEOUT
+    ///         after deferral. Anyone may call this. It first retries
+    ///         delivery to the recorded winner; if that succeeds, the sale
+    ///         finalizes normally and the seller is paid. If it fails again,
+    ///         the sale unwinds: the winner's full bid is credited to
+    ///         pendingRefunds and the lot is returned to the seller. If that
+    ///         return also fails, the lot stays locked until
+    ///         returnUnwoundLot succeeds.
+    function unwindStuckLot(uint256 auctionId) external;
+
+    /// @notice Delivers a lot whose return to the seller failed during
+    ///         unwindStuckLot. Anyone may call this; it only ever delivers to
+    ///         the auction's recorded tokenOwner. Reverts if the auction has
+    ///         no deferred return.
+    function returnUnwoundLot(uint256 auctionId) external;
 }

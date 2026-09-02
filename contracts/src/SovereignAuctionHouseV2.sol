@@ -13,15 +13,21 @@ import {ISovereignAuctionHouseV2} from "./ISovereignAuctionHouseV2.sol";
 
 /// @title Sovereign Auction House V2
 /// @notice ERC721 and ERC1155 reserve auctions. Settlement pays the seller
-///         unconditionally; delivery is attempted with a fixed gas stipend
-///         through a try/catch self-call so the outcome cannot depend on
-///         caller-supplied gas. A failed delivery defers the lot to a
-///         retryable, redirectable claim: anyone may trigger delivery to the
-///         recorded winner, and only that winner may redirect it elsewhere.
-///         If the winner never claims within PENDING_DELIVERY_TIMEOUT,
-///         reclaimStuckLot retries delivery to the winner and falls back to
-///         the seller only if that retry also fails. No sale ever unwinds.
-///         V1 clones are immutable and remain governed by their original
+///         only after the winner provably holds the lot: endAuction attempts
+///         delivery through a try/catch self-call capped at a fixed gas
+///         stipend, and pays the protocol fee and seller only if that
+///         delivery succeeds. A failed delivery pays nobody; both the ETH and
+///         the lot stay escrowed and the delivery is retryable by anyone
+///         through claimLot. If the lot is still undelivered
+///         PENDING_DELIVERY_TIMEOUT after deferral, unwindStuckLot retries
+///         delivery once more and, on a second failure, unwinds the sale:
+///         the winner's bid is credited to pendingRefunds for withdrawal and
+///         the lot is returned to the seller. If that return also fails, the
+///         lot stays locked until returnUnwoundLot succeeds. The token
+///         transfer is always the last external interaction before any
+///         payout takes effect, so no seller-controlled callback can run
+///         after the lot has moved and before the seller is paid. V1 clones
+///         are immutable and remain governed by their original
 ///         implementation.
 contract SovereignAuctionHouseV2 is
     ISovereignAuctionHouseV2,
@@ -53,36 +59,42 @@ contract SovereignAuctionHouseV2 is
     error OwnershipLocked();
     error AuctionAlreadySettled();
     error NoPendingDelivery();
+    error NoPendingReturn();
     error NotWinner();
     error InsufficientGas();
-    error ReclaimTooEarly();
+    error UnwindTooEarly();
 
     uint256 internal constant DELIVER_GAS_LIMIT = 500_000;
 
-    /// @notice A deferred lot the winner never claims can be reclaimed by the
-    ///         seller after this timeout, so an undeliverable lot cannot be
-    ///         frozen permanently. The seller was already paid at
-    ///         settlement; the timeout only bounds how long the lot itself
-    ///         stays escrowed waiting on the winner.
+    /// @notice A deferred lot still undelivered after this timeout becomes
+    ///         eligible for unwindStuckLot, which retries delivery once more
+    ///         and, if that also fails, unwinds the sale.
     uint64 public constant PENDING_DELIVERY_TIMEOUT = 30 days;
 
     mapping(uint256 => Auction) public auctions;
     mapping(uint256 => uint64) public listingExpiry;
 
-    /// @notice True for an auction whose settlement payout ran but whose
-    ///         token delivery failed. The auction record, and its
-    ///         `_auctionIdByToken` entry, stay in storage until claimLot or
-    ///         reclaimStuckLot delivers the lot.
+    /// @notice True for an auction whose delivery attempt at endAuction
+    ///         failed. Neither the seller nor the protocol fee has been
+    ///         paid. The auction record, and its `_auctionIdByToken` entry,
+    ///         stay in storage until claimLot or unwindStuckLot resolves it.
     mapping(uint256 => bool) public pendingDelivery;
 
     /// @notice Timestamp a lot entered pendingDelivery, keyed by auctionId.
-    ///         Set in endAuction's deferral branch; read by reclaimStuckLot
-    ///         to enforce PENDING_DELIVERY_TIMEOUT.
+    ///         Set in endAuction's deferral branch; read by unwindStuckLot to
+    ///         enforce PENDING_DELIVERY_TIMEOUT.
     mapping(uint256 => uint64) public deliveryDeferredAt;
+
+    /// @notice True for an auction that unwindStuckLot unwound but whose lot
+    ///         return to the seller failed. The winner's bid is already
+    ///         credited to pendingRefunds; the auction record and its
+    ///         `_auctionIdByToken` entry stay in storage, locking the lot,
+    ///         until returnUnwoundLot delivers it to the seller.
+    mapping(uint256 => bool) public pendingReturn;
 
     // A settled-but-undelivered lot keeps its entry here, which blocks a
     // duplicate listing and stuck-token recovery for the same token until
-    // claimLot clears it.
+    // claimLot, unwindStuckLot, or returnUnwoundLot clears it.
     mapping(address => mapping(uint256 => uint256)) private _auctionIdByToken;
     mapping(address => uint256) public pendingRefunds;
 
@@ -350,17 +362,16 @@ contract SovereignAuctionHouseV2 is
         if (extended) emit AuctionEndTimeUpdated(auctionId, a.endTime);
     }
 
-    /// @notice Resolves every ended auction. Pays the protocol fee and
-    ///         seller unconditionally FIRST, then attempts delivery through a
-    ///         try/catch self-call capped at DELIVER_GAS_LIMIT gas, so the
-    ///         delivery outcome cannot depend on how much gas the caller of
-    ///         endAuction supplied. Funds settle before delivery so the token
-    ///         transfer is the last external interaction in this function: a
-    ///         seller-controlled fundsRecipient cannot use its ETH-receive
-    ///         callback to claw the lot back after `delivered` is captured,
-    ///         because no such callback runs after delivery. A delivery
-    ///         failure defers the lot to claimLot; it never affects the
-    ///         payout, and the sale never unwinds.
+    /// @notice Resolves every ended auction. Attempts token delivery through
+    ///         a try/catch self-call capped at DELIVER_GAS_LIMIT gas, so the
+    ///         outcome cannot depend on how much gas the caller of endAuction
+    ///         supplied. The protocol fee and seller are paid only if that
+    ///         delivery succeeds, through _finalizeSale. A failed delivery
+    ///         pays nobody: the auction is marked pendingDelivery for a
+    ///         permissionless retry via claimLot, and the winning bid stays
+    ///         in the contract. Because delivery is attempted before any
+    ///         payout, no seller-controlled callback can run between the lot
+    ///         leaving escrow and the seller being paid.
     function endAuction(uint256 auctionId)
         external
         override
@@ -371,14 +382,12 @@ contract SovereignAuctionHouseV2 is
         if (a.firstBidTime == 0) revert AuctionHasNoBids();
         if (block.timestamp < a.endTime) revert AuctionNotEnded();
         if (pendingDelivery[auctionId]) revert AuctionAlreadySettled();
-
-        _settleFunds(auctionId, a);
+        if (pendingReturn[auctionId]) revert AuctionAlreadySettled();
 
         // EIP-150 forwards at most 63/64 of remaining gas, so a gas-starved
         // call could hand delivery less than DELIVER_GAS_LIMIT and defer a
         // transfer that would have succeeded. Require enough headroom that
-        // the stipend is always honored in full. Checked after _settleFunds
-        // so it accounts for the gas the payout already consumed.
+        // the stipend is always honored in full.
         if (gasleft() < DELIVER_GAS_LIMIT + 80_000) revert InsufficientGas();
 
         bool delivered;
@@ -393,9 +402,7 @@ contract SovereignAuctionHouseV2 is
         }
 
         if (delivered) {
-            delete _auctionIdByToken[a.tokenContract][a.tokenId];
-            delete auctions[auctionId];
-            delete listingExpiry[auctionId];
+            _finalizeSale(auctionId, a);
         } else {
             pendingDelivery[auctionId] = true;
             deliveryDeferredAt[auctionId] = uint64(block.timestamp);
@@ -403,40 +410,46 @@ contract SovereignAuctionHouseV2 is
         }
     }
 
-    /// @dev Splits the hammer price into the protocol fee and seller
-    ///      proceeds, and pays both. Runs before delivery in endAuction: this
-    ///      is the only external call in that function that can reach
-    ///      attacker-controlled code (the fee recipient or fundsRecipient's
-    ///      receive callback), so running it before the token transfer means
-    ///      no callback can execute after the lot leaves escrow. Split out
-    ///      of endAuction to keep that function's stack shallow enough for
-    ///      the legacy codegen path.
-    function _settleFunds(uint256 auctionId, Auction memory a) internal {
+    /// @dev Runs only once delivery has been verified. Deletes all per-lot
+    ///      storage first, then pays the protocol fee and seller through
+    ///      _payout. Deleting state before paying means a reentrant call
+    ///      during the payout sees a cleared auction record, not a settled
+    ///      one it could act on again.
+    function _finalizeSale(uint256 auctionId, Auction memory a) internal {
+        delete auctions[auctionId];
+        delete _auctionIdByToken[a.tokenContract][a.tokenId];
+        delete listingExpiry[auctionId];
+        delete pendingDelivery[auctionId];
+        delete deliveryDeferredAt[auctionId];
+        delete pendingReturn[auctionId];
+
         uint256 protocolFee;
         if (protocolFeeBps != 0) {
             protocolFee = (a.amount * protocolFeeBps) / 10_000;
-            _sendOrCredit(feeRecipient, protocolFee);
+            _payout(feeRecipient, protocolFee);
         }
         uint256 sellerProceeds = a.amount - protocolFee;
-        _sendOrCredit(a.fundsRecipient, sellerProceeds);
+        _payout(a.fundsRecipient, sellerProceeds);
         emit AuctionEnded(auctionId, a.tokenOwner, a.bidder, sellerProceeds, protocolFee);
     }
 
-    /// @dev Delivery target for endAuction's and reclaimStuckLot's gas-capped
-    ///      try/catch, and, indirectly, claimLot's full-gas retry (called
-    ///      directly there, not through this self-call). Reverting here
-    ///      rolls back the transfer and its ownerOf verification together.
-    function deliverERC721(address tokenContract, uint256 tokenId, address winner) external {
+    /// @dev Delivery target for endAuction's and unwindStuckLot's gas-capped
+    ///      try/catch self-calls. Used both to deliver to the winner and,
+    ///      from unwindStuckLot, to return the lot to the seller: `to` is
+    ///      whichever recipient the caller supplies, not necessarily the
+    ///      auction's recorded winner. Reverting here rolls back the
+    ///      transfer and its ownerOf verification together.
+    function deliverERC721(address tokenContract, uint256 tokenId, address to) external {
         if (msg.sender != address(this)) revert OnlySelf();
-        IERC721(tokenContract).transferFrom(address(this), winner, tokenId);
-        if (IERC721(tokenContract).ownerOf(tokenId) != winner) revert DeliveryFailed();
+        IERC721(tokenContract).transferFrom(address(this), to, tokenId);
+        if (IERC721(tokenContract).ownerOf(tokenId) != to) revert DeliveryFailed();
     }
 
-    function deliverERC1155(address tokenContract, uint256 tokenId, uint256 quantity, address winner) external {
+    function deliverERC1155(address tokenContract, uint256 tokenId, uint256 quantity, address to) external {
         if (msg.sender != address(this)) revert OnlySelf();
-        uint256 beforeBalance = IERC1155(tokenContract).balanceOf(winner, tokenId);
-        IERC1155(tokenContract).safeTransferFrom(address(this), winner, tokenId, quantity, "");
-        if (IERC1155(tokenContract).balanceOf(winner, tokenId) < beforeBalance + quantity) revert DeliveryFailed();
+        uint256 beforeBalance = IERC1155(tokenContract).balanceOf(to, tokenId);
+        IERC1155(tokenContract).safeTransferFrom(address(this), to, tokenId, quantity, "");
+        if (IERC1155(tokenContract).balanceOf(to, tokenId) < beforeBalance + quantity) revert DeliveryFailed();
     }
 
     /// @notice Delivery of a lot deferred by endAuction. Anyone may call this
@@ -445,7 +458,10 @@ contract SovereignAuctionHouseV2 is
     ///         that has no way to call this itself. Only the recorded winner
     ///         may redirect delivery elsewhere via a nonzero `to`. Runs with
     ///         full gas and no try/catch, so a revert rolls back the whole
-    ///         call and leaves the claim retryable. The redirect is
+    ///         call and leaves the claim retryable. Delivery happens before
+    ///         the auction record is cleared and the seller is paid, so no
+    ///         external code runs between the lot moving and the seller's
+    ///         payout except the payout call itself. The redirect is
     ///         best-effort: the pending state is consumed by whichever call
     ///         succeeds first, so a third party triggering delivery to the
     ///         winner with `to == address(0)` before the winner redirects
@@ -458,14 +474,6 @@ contract SovereignAuctionHouseV2 is
 
         address recipient = to == address(0) ? a.bidder : to;
 
-        delete pendingDelivery[auctionId];
-        delete deliveryDeferredAt[auctionId];
-        delete _auctionIdByToken[a.tokenContract][a.tokenId];
-        delete auctions[auctionId];
-        delete listingExpiry[auctionId];
-
-        emit LotClaimed(auctionId, a.bidder, recipient);
-
         if (a.standard == TokenStandard.ERC721) {
             IERC721(a.tokenContract).transferFrom(address(this), recipient, a.tokenId);
             if (IERC721(a.tokenContract).ownerOf(a.tokenId) != recipient) revert DeliveryFailed();
@@ -476,44 +484,34 @@ contract SovereignAuctionHouseV2 is
                 revert DeliveryFailed();
             }
         }
+
+        _finalizeSale(auctionId, a);
+        emit LotClaimed(auctionId, a.bidder, recipient);
     }
 
-    /// @notice Lets the seller reclaim a deferred lot once
-    ///         PENDING_DELIVERY_TIMEOUT has passed since deferral. The seller
-    ///         was already paid at settlement. A delivery failure can be
-    ///         temporary (a paused collection unpauses, a receiver later
-    ///         becomes compatible), so this first retries delivery to the
-    ///         recorded winner through the same gas-capped try/catch
-    ///         self-call endAuction uses. The lot goes to the seller only if
-    ///         that retry also fails, so an undeliverable lot cannot be
-    ///         frozen permanently. Anyone can deliver to the winner before
-    ///         the timeout via claimLot, so a legitimate winner is not at
-    ///         risk from a keeper-assisted claim.
-    /// @dev State is deleted before both the gas-capped retry and the
-    ///      seller-fallback transfer. A revert inside the capped self-call is
-    ///      caught, so the deletes stand and the seller-fallback path runs
-    ///      next; a revert in the full-gas seller-fallback transfer reverts
-    ///      this whole call, rolling the deletes back and leaving the reclaim
-    ///      retryable. Delivery to the winner and the seller-fallback
-    ///      transfer are mutually exclusive: the winner branch returns
-    ///      immediately on success and never reaches the fallback transfer.
-    function reclaimStuckLot(uint256 auctionId) external nonReentrant auctionExists(auctionId) {
+    /// @notice Resolves a lot still pendingDelivery PENDING_DELIVERY_TIMEOUT
+    ///         after deferral. Anyone may call this. It first retries capped
+    ///         delivery to the recorded winner, exactly as endAuction did: a
+    ///         delivery failure can be temporary (a paused collection
+    ///         unpauses, a receiver later becomes compatible), so this is not
+    ///         a straight unwind. If that retry succeeds, the sale finalizes
+    ///         normally and the seller is paid. If it fails again, the sale
+    ///         unwinds: the winner's full bid is credited to pendingRefunds
+    ///         for withdrawal, unconditionally, before any token movement is
+    ///         attempted, and a capped attempt returns the lot to the seller.
+    ///         If that return also fails, the lot stays locked, escrowed and
+    ///         un-relistable, until returnUnwoundLot succeeds. Nobody is paid
+    ///         from this function unless the winner ends up holding the lot.
+    /// @dev Sized for two capped self-calls (retry-to-winner, then
+    ///      return-to-seller) so a gas-starved caller cannot force either
+    ///      attempt to run under-stipend and be misclassified as a genuine
+    ///      delivery failure.
+    function unwindStuckLot(uint256 auctionId) external nonReentrant auctionExists(auctionId) {
         if (!pendingDelivery[auctionId]) revert NoPendingDelivery();
+        if (block.timestamp <= deliveryDeferredAt[auctionId] + PENDING_DELIVERY_TIMEOUT) revert UnwindTooEarly();
         Auction memory a = auctions[auctionId];
-        require(msg.sender == a.tokenOwner, "Not token owner");
-        if (block.timestamp <= deliveryDeferredAt[auctionId] + PENDING_DELIVERY_TIMEOUT) revert ReclaimTooEarly();
 
-        // Same rationale as endAuction: cap the caller's ability to force the
-        // seller-fallback path by starving the gas-capped retry. msg.sender
-        // here is the seller, who benefits from the retry failing, so this
-        // check is load-bearing, not defensive filler.
-        if (gasleft() < DELIVER_GAS_LIMIT + 80_000) revert InsufficientGas();
-
-        delete pendingDelivery[auctionId];
-        delete deliveryDeferredAt[auctionId];
-        delete _auctionIdByToken[a.tokenContract][a.tokenId];
-        delete auctions[auctionId];
-        delete listingExpiry[auctionId];
+        if (gasleft() < 2 * DELIVER_GAS_LIMIT + 100_000) revert InsufficientGas();
 
         bool delivered;
         if (a.standard == TokenStandard.ERC721) {
@@ -527,11 +525,50 @@ contract SovereignAuctionHouseV2 is
         }
 
         if (delivered) {
+            _finalizeSale(auctionId, a);
             emit LotClaimed(auctionId, a.bidder, a.bidder);
             return;
         }
 
-        emit LotReclaimed(auctionId, a.tokenOwner);
+        delete pendingDelivery[auctionId];
+        delete deliveryDeferredAt[auctionId];
+
+        // Credited before any token movement is attempted: the winner's
+        // refund never depends on whether the lot can be returned.
+        pendingRefunds[a.bidder] += a.amount;
+        emit RefundCredited(a.bidder, a.amount);
+
+        bool returned;
+        if (a.standard == TokenStandard.ERC721) {
+            try this.deliverERC721{gas: DELIVER_GAS_LIMIT}(a.tokenContract, a.tokenId, a.tokenOwner) {
+                returned = true;
+            } catch {}
+        } else {
+            try this.deliverERC1155{gas: DELIVER_GAS_LIMIT}(a.tokenContract, a.tokenId, a.quantity, a.tokenOwner) {
+                returned = true;
+            } catch {}
+        }
+
+        if (returned) {
+            delete auctions[auctionId];
+            delete _auctionIdByToken[a.tokenContract][a.tokenId];
+            delete listingExpiry[auctionId];
+        } else {
+            pendingReturn[auctionId] = true;
+            emit LotReturnDeferred(auctionId, a.tokenOwner);
+        }
+
+        emit LotUnwound(auctionId, a.bidder, a.amount, a.tokenOwner);
+    }
+
+    /// @notice Delivers a lot whose return to the seller failed during
+    ///         unwindStuckLot. Anyone may call this; it only ever delivers to
+    ///         the auction's recorded tokenOwner. Runs with full gas and no
+    ///         try/catch, so a revert rolls back the whole call and leaves
+    ///         the return retryable.
+    function returnUnwoundLot(uint256 auctionId) external nonReentrant auctionExists(auctionId) {
+        if (!pendingReturn[auctionId]) revert NoPendingReturn();
+        Auction memory a = auctions[auctionId];
 
         if (a.standard == TokenStandard.ERC721) {
             IERC721(a.tokenContract).transferFrom(address(this), a.tokenOwner, a.tokenId);
@@ -543,6 +580,12 @@ contract SovereignAuctionHouseV2 is
                 revert DeliveryFailed();
             }
         }
+
+        delete pendingReturn[auctionId];
+        delete auctions[auctionId];
+        delete _auctionIdByToken[a.tokenContract][a.tokenId];
+        delete listingExpiry[auctionId];
+        emit LotReturned(auctionId, a.tokenOwner);
     }
 
     function cancelAuction(uint256 auctionId)
@@ -676,6 +719,10 @@ contract SovereignAuctionHouseV2 is
         revert EscrowFailed();
     }
 
+    /// @dev Outbid-refund path in createBid only. Runs before any delivery
+    ///      has been attempted, so the recipient's code, if any, cannot use
+    ///      this callback to affect the lot. Pushes with a 30_000 gas
+    ///      stipend and credits pendingRefunds on failure.
     function _sendOrCredit(address to, uint256 amount) internal {
         if (amount == 0) return;
         (bool sent,) = to.call{value: amount, gas: 30_000}("");
@@ -683,6 +730,26 @@ contract SovereignAuctionHouseV2 is
             pendingRefunds[to] += amount;
             emit RefundCredited(to, amount);
         }
+    }
+
+    /// @dev Seller-proceeds and protocol-fee payout leg of settlement, used
+    ///      only after delivery has been verified. An EOA recipient (no
+    ///      code) is pushed a 30_000 gas call; a contract recipient
+    ///      (including an EIP-7702-delegated account, which has code) is
+    ///      never called at all and is instead credited to pendingRefunds
+    ///      for a pull withdrawal. Settlement runs after delivery, so no
+    ///      external code may execute after the lot has moved: routing every
+    ///      contract recipient through a pull, rather than a push callback
+    ///      that could run at this point, closes that off without needing to
+    ///      pay before delivery.
+    function _payout(address to, uint256 amount) internal {
+        if (amount == 0) return;
+        if (to.code.length == 0) {
+            (bool sent,) = to.call{value: amount, gas: 30_000}("");
+            if (sent) return;
+        }
+        pendingRefunds[to] += amount;
+        emit RefundCredited(to, amount);
     }
 
     function _pull1155(address tokenContract, uint256 tokenId, uint256 quantity, address from) internal {
