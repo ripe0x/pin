@@ -23,6 +23,7 @@ contract MutableERC1155 {
     mapping(address => mapping(uint256 => uint256)) internal _balanceOf;
     mapping(address => mapping(address => bool)) internal _approved;
     bool public breakOutbound;
+    bool public noopOutbound;
 
     function mint(address to, uint256 id, uint256 amount) external {
         _balanceOf[to][id] += amount;
@@ -34,6 +35,12 @@ contract MutableERC1155 {
 
     function setBreakOutbound(bool value) external {
         breakOutbound = value;
+    }
+
+    /// @dev Silently skips the balance move instead of reverting, so a
+    ///      caller checking only the revert reason would see a false success.
+    function setNoopOutbound(bool value) external {
+        noopOutbound = value;
     }
 
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
@@ -52,6 +59,7 @@ contract MutableERC1155 {
         require(msg.sender == from || _approved[from][msg.sender], "not approved");
         require(_balanceOf[from][id] >= amount, "insufficient balance");
         if (breakOutbound && msg.sender == from) revert("delivery blocked");
+        if (noopOutbound && msg.sender == from) return;
         _balanceOf[from][id] -= amount;
         _balanceOf[to][id] += amount;
         if (to.code.length != 0) {
@@ -563,5 +571,38 @@ contract Sovereign1155AuctionHouseTest is Test {
         assertFalse(exists, "tokenId must be relistable");
         vm.prank(artist);
         house.create1155Auction(TOKEN_ID, address(token), QUANTITY, DURATION, RESERVE, 0);
+    }
+
+    /// @dev recoverStuckERC1155 on a genuinely stuck balance (no auction
+    ///      record for the id) succeeds and emits StuckERC1155Recovered.
+    ///      Balance is seeded via a mock whose mint() sets state directly, the
+    ///      1155 equivalent of a plain, hook-free transfer landing on the
+    ///      house with no auction record.
+    function test_RecoverStuckERC1155_EmitsEventOnSuccess() public {
+        MutableERC1155 stray = new MutableERC1155();
+        stray.mint(address(house), TOKEN_ID, QUANTITY);
+        assertEq(stray.balanceOf(address(house), TOKEN_ID), QUANTITY);
+
+        vm.expectEmit(true, true, false, true, address(house));
+        emit ISovereignAuctionHouseV2.StuckERC1155Recovered(address(stray), TOKEN_ID, QUANTITY, alice);
+        vm.prank(artist);
+        house.recoverStuckERC1155(address(stray), TOKEN_ID, QUANTITY, alice);
+
+        assertEq(stray.balanceOf(alice, TOKEN_ID), QUANTITY);
+        assertEq(stray.balanceOf(address(house), TOKEN_ID), 0);
+    }
+
+    /// @dev A collection whose safeTransferFrom silently no-ops (no revert,
+    ///      balance unchanged) must not be mistaken for a successful
+    ///      recovery: recoverStuckERC1155 verifies the recipient's balance
+    ///      actually increased and reverts DeliveryFailed otherwise.
+    function test_RecoverStuckERC1155_RevertsDeliveryFailedOnSilentNoop() public {
+        MutableERC1155 bad = new MutableERC1155();
+        bad.mint(address(house), TOKEN_ID, QUANTITY);
+        bad.setNoopOutbound(true);
+
+        vm.expectRevert(SovereignAuctionHouseV2.DeliveryFailed.selector);
+        vm.prank(artist);
+        house.recoverStuckERC1155(address(bad), TOKEN_ID, QUANTITY, alice);
     }
 }

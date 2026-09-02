@@ -85,6 +85,7 @@ interface ISovereignAuctionHouseV2 {
     event RefundCredited(address indexed to, uint256 amount);
     event RefundWithdrawn(address indexed account, address indexed recipient, uint256 amount);
     event StuckERC721Recovered(address indexed tokenContract, uint256 indexed tokenId, address to);
+    event StuckERC1155Recovered(address indexed tokenContract, uint256 indexed tokenId, uint256 quantity, address to);
 
     /// @notice Lists an ERC721 for auction. The house owner may list a
     ///         third party's token (consignment): `tokenOwner` is read from

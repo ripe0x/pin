@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
+import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 import {SovereignAuctionHouseV2} from "../src/SovereignAuctionHouseV2.sol";
 import {SovereignAuctionHouseV2Factory} from "../src/SovereignAuctionHouseV2Factory.sol";
 import {ISovereignAuctionHouseV2} from "../src/ISovereignAuctionHouseV2.sol";
@@ -194,6 +195,46 @@ contract ClawbackRecipient {
         try nft.forceTransfer(winner, house, tokenId) {
             succeeded = true;
         } catch {}
+    }
+}
+
+/// @dev Outbid-refund recipient that re-enters a pre-bid setter on a
+///      different auction it owns as tokenOwner. Used to prove nonReentrant
+///      on the listing setters blocks reentrancy reached through the
+///      createBid outbid refund callback. _sendOrCredit forwards only 30_000
+///      gas to receive(), so the outcome is packed into a single bytes4
+///      storage write: two cold SSTOREs (a bool plus a bytes revert-data
+///      copy) do not fit that stipend alongside the reentrant call itself.
+contract ReentrantSetterBidder {
+    bytes4 internal constant SUCCESS_MARKER = 0xffffffff;
+
+    SovereignAuctionHouseV2 public house;
+    uint256 public otherAuctionId;
+    bytes4 public outcome;
+
+    function configure(SovereignAuctionHouseV2 house_, uint256 otherAuctionId_) external {
+        house = house_;
+        otherAuctionId = otherAuctionId_;
+    }
+
+    function bid(uint256 auctionId) external payable {
+        house.createBid{value: msg.value}(auctionId);
+    }
+
+    function attempted() external view returns (bool) {
+        return outcome != bytes4(0);
+    }
+
+    function succeeded() external view returns (bool) {
+        return outcome == SUCCESS_MARKER;
+    }
+
+    receive() external payable {
+        try house.setAuctionFundsRecipient(otherAuctionId, payable(address(this))) {
+            outcome = SUCCESS_MARKER;
+        } catch (bytes memory reason) {
+            outcome = reason.length >= 4 ? bytes4(reason) : bytes4(0x11111111);
+        }
     }
 }
 
@@ -932,5 +973,98 @@ contract SovereignAuctionHouseV2Test is Test {
         vm.expectRevert();
         vm.prank(artist);
         house.recoverStuckERC721(address(bad), TOKEN_ID, artist);
+    }
+
+    /// @dev setAuctionReservePrice was untested on V2 (only on V1). Confirms
+    ///      it still works normally, pre-bid, called directly by the token
+    ///      owner, now that it carries nonReentrant.
+    function test_ReservePriceCanChangeByTokenOwnerBeforeBid() public {
+        uint256 auctionId = _create();
+        vm.prank(artist);
+        house.setAuctionReservePrice(auctionId, 2 ether);
+        ISovereignAuctionHouseV2.Auction memory a = house.getAuction(auctionId);
+        assertEq(a.reservePrice, 2 ether);
+
+        vm.prank(alice);
+        house.createBid{value: 2 ether}(auctionId);
+        vm.expectRevert(SovereignAuctionHouseV2.AuctionAlreadyStarted.selector);
+        vm.prank(artist);
+        house.setAuctionReservePrice(auctionId, 3 ether);
+    }
+
+    /// @dev Defense-in-depth: setAuctionReservePrice, setAuctionDuration,
+    ///      setAuctionFundsRecipient and setAuctionListingExpiry are gated on
+    ///      firstBidTime == 0, so none is reachable from any external call
+    ///      that only fires once an auction has a bid today. nonReentrant is
+    ///      added to all four anyway as a structural guard. This proves the
+    ///      guard is live: a bidder that gets outbid re-enters
+    ///      setAuctionFundsRecipient on a different pre-bid auction it owns
+    ///      from its refund-receive callback, and the reentrant call reverts.
+    function test_ListingSetterGuardedAgainstReentrancyThroughOutbidRefund() public {
+        ReentrantSetterBidder attacker = new ReentrantSetterBidder();
+
+        // Auction B: pre-bid, owned (tokenOwner) by the attacker contract.
+        uint256 tokenIdB = TOKEN_ID + 800;
+        nft.mint(address(attacker), tokenIdB);
+        vm.prank(address(attacker));
+        nft.setApprovalForAll(artist, true);
+        vm.prank(address(attacker));
+        nft.setApprovalForAll(address(house), true);
+        vm.prank(artist);
+        uint256 auctionIdB = house.createAuction(tokenIdB, address(nft), DURATION, RESERVE, 0);
+        attacker.configure(house, auctionIdB);
+
+        // Auction A: the attacker is the current high bidder.
+        uint256 auctionIdA = _create();
+        attacker.bid{value: RESERVE}(auctionIdA);
+
+        // Bob outbids the attacker, triggering the refund callback.
+        uint256 higherBid = RESERVE + (RESERVE * 500) / 10_000;
+        vm.prank(bob);
+        house.createBid{value: higherBid}(auctionIdA);
+
+        // The reentrant setter call fired and reverted; the attacker still
+        // received its refund because createBid only catches the call's
+        // outer success flag, not what happened inside.
+        assertTrue(attacker.attempted());
+        assertFalse(attacker.succeeded());
+        assertEq(address(attacker).balance, RESERVE);
+        assertEq(attacker.outcome(), ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+
+        // Auction A recorded Bob's higher bid, not the attacker's.
+        ISovereignAuctionHouseV2.Auction memory a = house.getAuction(auctionIdA);
+        assertEq(a.bidder, bob);
+        assertEq(a.amount, higherBid);
+
+        // Auction B's fundsRecipient is unchanged: the reentrant setter call
+        // never took effect.
+        ISovereignAuctionHouseV2.Auction memory b = house.getAuction(auctionIdB);
+        assertEq(b.fundsRecipient, address(attacker));
+
+        // The setter still works normally when called directly, outside the
+        // reentrant window.
+        vm.prank(address(attacker));
+        house.setAuctionFundsRecipient(auctionIdB, payable(carol));
+        assertEq(house.getAuction(auctionIdB).fundsRecipient, carol);
+    }
+
+    /// @dev CEI order in createBid: the outbid refund amount is the previous
+    ///      bid, not the new one, and storage reflects the new bid before the
+    ///      refund call fires. A reentrant createBid attempt from the refund
+    ///      callback still reverts under the global nonReentrant lock.
+    function test_OutbidRefundPaysExactPreviousAmountAndBlocksReentrantBid() public {
+        uint256 auctionId = _create();
+        vm.prank(alice);
+        house.createBid{value: RESERVE}(auctionId);
+
+        uint256 higherBid = RESERVE + (RESERVE * 500) / 10_000;
+        uint256 aliceBefore = alice.balance;
+        vm.prank(bob);
+        house.createBid{value: higherBid}(auctionId);
+
+        assertEq(alice.balance - aliceBefore, RESERVE, "refund must equal the previous bid, not the new one");
+        ISovereignAuctionHouseV2.Auction memory a = house.getAuction(auctionId);
+        assertEq(a.bidder, bob);
+        assertEq(a.amount, higherBid);
     }
 }

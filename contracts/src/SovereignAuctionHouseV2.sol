@@ -250,6 +250,7 @@ contract SovereignAuctionHouseV2 is
     function setAuctionReservePrice(uint256 auctionId, uint256 reservePrice)
         external
         override
+        nonReentrant
         auctionExists(auctionId)
     {
         Auction storage a = auctions[auctionId];
@@ -264,6 +265,7 @@ contract SovereignAuctionHouseV2 is
     function setAuctionDuration(uint256 auctionId, uint256 duration)
         external
         override
+        nonReentrant
         auctionExists(auctionId)
     {
         Auction storage a = auctions[auctionId];
@@ -279,6 +281,7 @@ contract SovereignAuctionHouseV2 is
     function setAuctionFundsRecipient(uint256 auctionId, address payable fundsRecipient)
         external
         override
+        nonReentrant
         auctionExists(auctionId)
     {
         Auction storage a = auctions[auctionId];
@@ -294,6 +297,7 @@ contract SovereignAuctionHouseV2 is
     function setAuctionListingExpiry(uint256 auctionId, uint64 expiry)
         external
         override
+        nonReentrant
         auctionExists(auctionId)
     {
         Auction storage a = auctions[auctionId];
@@ -326,14 +330,16 @@ contract SovereignAuctionHouseV2 is
 
         bool firstBid = a.firstBidTime == 0;
         address payable lastBidder = a.bidder;
+        uint256 previousAmount = a.amount;
         if (firstBid) {
             a.firstBidTime = uint64(block.timestamp);
             a.endTime = uint64(block.timestamp + a.duration);
-        } else {
-            _sendOrCredit(lastBidder, a.amount);
         }
         a.amount = amount;
         a.bidder = payable(msg.sender);
+        if (!firstBid) {
+            _sendOrCredit(lastBidder, previousAmount);
+        }
 
         bool extended;
         if (a.endTime - block.timestamp < TIME_BUFFER) {
@@ -622,7 +628,10 @@ contract SovereignAuctionHouseV2 is
     {
         require(to != address(0), "to required");
         if (_auctionIdByToken[tokenContract][tokenId] != 0) revert AuctionAlreadyExistsForToken();
+        uint256 beforeBalance = IERC1155(tokenContract).balanceOf(to, tokenId);
         IERC1155(tokenContract).safeTransferFrom(address(this), to, tokenId, quantity, "");
+        if (IERC1155(tokenContract).balanceOf(to, tokenId) < beforeBalance + quantity) revert DeliveryFailed();
+        emit StuckERC1155Recovered(tokenContract, tokenId, quantity, to);
     }
 
     /// @inheritdoc ISovereignAuctionHouseV2
