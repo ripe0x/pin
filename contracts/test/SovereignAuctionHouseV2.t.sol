@@ -80,6 +80,10 @@ contract GasHungryERC721 {
         _ownerOf[tokenId] = to;
     }
 
+    function setBurnIterations(uint256 n) external {
+        burnIterations = n;
+    }
+
     function setApprovalForAll(address operator, bool approved) external {
         _approvedForAll[msg.sender][operator] = approved;
     }
@@ -682,6 +686,37 @@ contract SovereignAuctionHouseV2Test is Test {
         assertTrue(okTight);
         assertFalse(house.pendingDelivery(auctionIdTight));
         assertEq(tokenB.ownerOf(TOKEN_ID + 1), alice);
+    }
+
+    /// @dev A delivery that costs more than DELIVER_GAS_LIMIT is deferred no
+    ///      matter how much gas the endAuction caller supplies, and claimLot,
+    ///      which runs with full gas, then completes it.
+    function test_DeliveryAboveStipendIsDeferredThenClaimLotSucceedsWithFullGas() public {
+        GasHungryERC721 token = new GasHungryERC721();
+        token.mint(artist, TOKEN_ID);
+        vm.prank(artist);
+        token.setApprovalForAll(address(house), true);
+        vm.prank(artist);
+        uint256 auctionId = house.createAuction(TOKEN_ID, address(token), DURATION, RESERVE, 0);
+        vm.prank(alice);
+        house.createBid{value: RESERVE}(auctionId);
+        // 40 fresh SSTOREs at ~22k each is well over the 500k stipend.
+        token.setBurnIterations(40);
+        vm.warp(block.timestamp + DURATION + 1);
+
+        uint256 sellerBefore = artist.balance;
+        uint256 fee = (RESERVE * 250) / 10_000;
+        (bool ok,) =
+            address(house).call{gas: 5_000_000}(abi.encodeWithSelector(house.endAuction.selector, auctionId));
+        assertTrue(ok, "endAuction itself must not revert");
+        assertEq(artist.balance - sellerBefore, RESERVE - fee);
+        assertTrue(house.pendingDelivery(auctionId), "over-stipend delivery is deferred");
+        assertEq(token.ownerOf(TOKEN_ID), address(house));
+
+        vm.prank(bob);
+        house.claimLot(auctionId, address(0));
+        assertEq(token.ownerOf(TOKEN_ID), alice);
+        assertFalse(house.pendingDelivery(auctionId));
     }
 
     /// @dev Below the headroom guard, endAuction must revert InsufficientGas
