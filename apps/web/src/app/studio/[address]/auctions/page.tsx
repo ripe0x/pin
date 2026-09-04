@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation"
 import { DeployHouseCTA } from "@/components/auction/DeployHouseCTA"
 import { StartSingleAuctionCard } from "@/components/auction/StartSingleAuctionCard"
+import { StudioPendingRefunds } from "@/components/auction/StudioPendingRefunds"
 import { UpgradeHouseBanner } from "@/components/auction/UpgradeHouseBanner"
 import { SovereignBulkPanel } from "@/components/listings/SovereignBulkPanel"
 
@@ -38,6 +39,9 @@ export default async function StudioAuctionsPage({
 
       {/* Renders only when the V2 factory is live and a V1 house exists. */}
       <UpgradeHouseBanner artistAddress={address} />
+
+      {/* Any refund owed to the connected wallet on either house generation. */}
+      <StudioPendingRefunds artistAddress={address} />
 
       {/* Renders only when no house is deployed yet. */}
       <DeployHouseCTA artistAddress={address} />

@@ -5,6 +5,7 @@ import Link from "next/link"
 import { ipfsToHttp } from "@pin/shared"
 import { AuctionPanel } from "@/components/auction/AuctionPanel"
 import { DeferredLotCard } from "@/components/auction/DeferredLotCard"
+import { PendingRefundCard } from "@/components/auction/PendingRefundCard"
 import { SettledAuctionSummary } from "@/components/auction/SettledAuctionSummary"
 import { TokenMedia } from "@/components/token/TokenMedia"
 import { getAuctionDetail } from "@/lib/auctions"
@@ -149,6 +150,8 @@ export default async function AuctionPage({ params }: { params: Params }) {
                   amount: detail.finalPriceWei ?? 0n,
                   settledAtTime: detail.settledAtTime ?? 0,
                   bids: detail.bids,
+                  tokenStandard: detail.tokenStandard,
+                  quantity: detail.quantity,
                 }}
               />
             ) : detail.status === "deferred" ||
@@ -178,6 +181,18 @@ export default async function AuctionPage({ params }: { params: Params }) {
               </div>
             )}
           </section>
+
+          {/* Any refund owed to the connected wallet on this house. Renders
+              nothing when disconnected or the balance is zero, so no wrapping
+              section/border here — avoids an empty bordered gap. */}
+          {detail.source === "sovereign" && (
+            <div className="pt-5">
+              <PendingRefundCard
+                houseAddress={detail.marketAddress}
+                houseVersion={detail.houseVersion}
+              />
+            </div>
+          )}
 
           {/* Link back to the token's full history */}
           <section className="py-5 border-b border-gray-100">

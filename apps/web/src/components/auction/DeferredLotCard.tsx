@@ -73,6 +73,7 @@ export function DeferredLotCard({
           Nobody was paid: the winning bid was refunded
           {refundAmount != null ? ` (${formatEthAmount(refundAmount)} ETH)` : ""} and
           the lot was returned to {sellerDisplay}.
+          {isWinner && " The refund is available to withdraw below."}
         </p>
       </div>
     )
