@@ -41,8 +41,19 @@ export function useDeployHouse(artistAddress: string | undefined) {
   })
 
   useEffect(() => {
-    if (isSuccess) resolved.refetch()
-  }, [isSuccess, resolved])
+    if (!isSuccess) return
+    resolved.refetch()
+    // Bust the server-side sov-house cache so the artist page's active-
+    // auction gate (getSovereignHouseOf) doesn't keep reporting no house
+    // for up to its 1h TTL. Best-effort, never blocks the UI.
+    if (artistAddress) {
+      void fetch("/api/sovereign-house/revalidate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ owner: artistAddress }),
+      }).catch(() => {})
+    }
+  }, [isSuccess, resolved, artistAddress])
 
   function deploy() {
     if (!factoryAddress) return

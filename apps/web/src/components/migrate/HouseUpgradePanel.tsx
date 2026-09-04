@@ -292,6 +292,18 @@ function Panel({ artistAddress }: Props) {
     if (!targetHouse) return
     const outcomes = await phase1.run(phase1Calls)
 
+    // The V2 house now exists (it already did, or "deploy" just landed).
+    // Bust the server-side sov-house cache so the artist page's active-
+    // auction gate doesn't keep pointing at the V1 house for up to its
+    // 1h TTL. Best-effort, never blocks the upgrade.
+    if (v2.houseAddress || outcomes.get("deploy")?.state === "done") {
+      void fetch("/api/sovereign-house/revalidate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ owner: artistAddress }),
+      }).catch(() => {})
+    }
+
     // Relist exactly what came back to the wallet: the listings whose
     // cancel completed in phase 1. Anything skipped or failed stays out,
     // so one dead row can't revert a whole relist batch.
