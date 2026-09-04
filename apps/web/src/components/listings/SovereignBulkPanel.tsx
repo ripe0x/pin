@@ -17,13 +17,16 @@ import {
   useWriteContract,
 } from "wagmi"
 import { writeContract as writeContractAction, waitForTransactionReceipt } from "wagmi/actions"
-import { erc721Abi, sovereignAuctionHouseAbi } from "@pin/abi"
+import { erc721Abi, sovereignAuctionHouseAbi, sovereignAuctionHouseV2Abi } from "@pin/abi"
 import { config as wagmiConfig } from "@/lib/wagmi"
 import type { GalleryItem, GalleryPage } from "@/lib/artist-queries"
 import { mapWithConcurrency } from "@/lib/concurrency"
 import { ipfsToHttp } from "@pin/shared"
 import { useArtistHouse } from "@/components/auction/useArtistHouse"
+import { useArtistHouseV2 } from "@/components/auction/useArtistHouseV2"
 import { useEthAmountInput } from "@/lib/useEthAmountInput"
+import { useChainNowSec } from "@/components/tx/tx-ui"
+import { parseListingExpiry } from "@/lib/listing-expiry"
 import { TxLink } from "@/components/auction/tx"
 
 const DURATION_OPTIONS = [
@@ -65,15 +68,23 @@ export function SovereignBulkPanel({ artistAddress }: { artistAddress: string })
     !!connectedAddress &&
     connectedAddress.toLowerCase() === artistAddress.toLowerCase()
 
-  const { houseAddress } = useArtistHouse(isOwner ? artistAddress : undefined)
+  const v1 = useArtistHouse(isOwner ? artistAddress : undefined)
+  const v2 = useArtistHouseV2(isOwner ? artistAddress : undefined)
 
-  if (!isOwner || !houseAddress || !connectedAddress) return null
+  if (!isOwner || !connectedAddress) return null
+  if (!v1.houseAddress && !v2.houseAddress) return null
 
   return (
     <PanelInner
       artistAddress={artistAddress}
       connectedAddress={connectedAddress as Address}
-      houseAddress={houseAddress as Address}
+      // Bulk listing targets the newest house generation (V2 when live).
+      listHouseAddress={(v2.houseAddress ?? v1.houseAddress) as Address}
+      listHouseVersion={v2.houseAddress ? 2 : 1}
+      // Bulk cancel is pinned to the V1 house specifically: V2 dropped
+      // bulkCancelAuctions (its listings cancel one at a time from the
+      // auction page instead).
+      v1HouseAddress={v1.houseAddress}
     />
   )
 }
@@ -81,23 +92,30 @@ export function SovereignBulkPanel({ artistAddress }: { artistAddress: string })
 function PanelInner({
   artistAddress,
   connectedAddress,
-  houseAddress,
+  listHouseAddress,
+  listHouseVersion,
+  v1HouseAddress,
 }: {
   artistAddress: string
   connectedAddress: Address
-  houseAddress: Address
+  listHouseAddress: Address
+  listHouseVersion: 1 | 2
+  v1HouseAddress: Address | null
 }) {
   return (
     <div className="space-y-4">
       <BulkListSection
         artistAddress={artistAddress}
         connectedAddress={connectedAddress}
-        houseAddress={houseAddress}
+        houseAddress={listHouseAddress}
+        houseVersion={listHouseVersion}
       />
-      <BulkCancelSection
-        connectedAddress={connectedAddress}
-        houseAddress={houseAddress}
-      />
+      {v1HouseAddress && (
+        <BulkCancelSection
+          connectedAddress={connectedAddress}
+          houseAddress={v1HouseAddress}
+        />
+      )}
     </div>
   )
 }
@@ -113,10 +131,12 @@ function BulkListSection({
   artistAddress,
   connectedAddress,
   houseAddress,
+  houseVersion,
 }: {
   artistAddress: string
   connectedAddress: Address
   houseAddress: Address
+  houseVersion: 1 | 2
 }) {
   const router = useRouter()
   const [load, setLoad] = useState<ListLoadState>({ kind: "loading" })
@@ -125,6 +145,13 @@ function BulkListSection({
   const [durationSec, setDurationSec] = useState<number>(
     DURATION_OPTIONS[0].seconds,
   )
+  // V2-only: one listing expiry applies to the whole batch. Funds recipient
+  // has no bulk-create parameter (it's per-auction, set only via
+  // setAuctionFundsRecipient) — omitted here rather than following up with
+  // N setter calls; edit it per auction from its detail page afterward.
+  const nowSec = useChainNowSec()
+  const [listingExpiryInput, setListingExpiryInput] = useState("")
+  const listingExpiry = parseListingExpiry(listingExpiryInput, nowSec)
 
   const refresh = useCallback(async () => {
     setLoad({ kind: "loading" })
@@ -133,6 +160,7 @@ function BulkListSection({
         artistAddress,
         connectedAddress,
         houseAddress,
+        houseVersion,
       )
       setLoad({ kind: "loaded", items })
       setSelected(new Set())
@@ -142,7 +170,7 @@ function BulkListSection({
         message: err instanceof Error ? err.message : "Failed to load tokens",
       })
     }
-  }, [artistAddress, connectedAddress, houseAddress])
+  }, [artistAddress, connectedAddress, houseAddress, houseVersion])
 
   useEffect(() => {
     refresh()
@@ -163,6 +191,7 @@ function BulkListSection({
   // Reserve = 0 is valid (no-reserve auction). The hook reports invalid for
   // empty/non-numeric/locale-mismatched input and surfaces the reason.
   const reserveValid = reserve.isValid && reserve.wei !== null
+  const listingTermsValid = houseVersion !== 2 || listingExpiry.error === null
 
   // Listing tx state
   const [running, setRunning] = useState<{
@@ -220,9 +249,11 @@ function BulkListSection({
 
   async function handleList() {
     if (load.kind !== "loaded") return
-    if (!reserveValid || reserve.wei == null) return
+    if (!reserveValid || reserve.wei == null || !listingTermsValid) return
     const selectedItems = load.items.filter((i) => selected.has(itemKey(i)))
     if (selectedItems.length === 0) return
+    const listingExpirySeconds =
+      houseVersion === 2 ? listingExpiry.seconds ?? 0n : 0n
 
     // Group by collection (bulkCreateAuctions takes one collection per call).
     const byContract = new Map<Address, ListableItem[]>()
@@ -295,12 +326,20 @@ function BulkListSection({
         })
 
         const tokenIds = items.map((i) => BigInt(i.tokenId))
-        const createHash = await writeContractAction(wagmiConfig, {
-          address: houseAddress,
-          abi: sovereignAuctionHouseAbi,
-          functionName: "bulkCreateAuctions",
-          args: [contract, tokenIds, reserveWei, BigInt(durationSec)],
-        })
+        const createHash =
+          houseVersion === 2
+            ? await writeContractAction(wagmiConfig, {
+                address: houseAddress,
+                abi: sovereignAuctionHouseV2Abi,
+                functionName: "bulkCreateAuctions",
+                args: [contract, tokenIds, reserveWei, BigInt(durationSec), listingExpirySeconds],
+              })
+            : await writeContractAction(wagmiConfig, {
+                address: houseAddress,
+                abi: sovereignAuctionHouseAbi,
+                functionName: "bulkCreateAuctions",
+                args: [contract, tokenIds, reserveWei, BigInt(durationSec)],
+              })
         await waitForTransactionReceipt(wagmiConfig, { hash: createHash })
       }
 
@@ -394,6 +433,33 @@ function BulkListSection({
         </div>
       </div>
 
+      {houseVersion === 2 && (
+        <div className="mt-3">
+          <label className="block">
+            <span className="text-[11px] uppercase tracking-[0.08em] text-gray-400">
+              Listing expiry (optional)
+            </span>
+            <input
+              type="datetime-local"
+              value={listingExpiryInput}
+              onChange={(e) => setListingExpiryInput(e.target.value)}
+              disabled={isRunning}
+              className="mt-1 w-full border border-gray-200 focus-within:border-gray-400 transition-colors rounded px-3 py-2 text-sm outline-none disabled:opacity-40 bg-transparent"
+            />
+          </label>
+          {listingExpiry.error ? (
+            <p className="mt-1 text-[11px] text-red-500">{listingExpiry.error}</p>
+          ) : (
+            <p className="mt-1 text-[11px] text-gray-400">
+              Applies to the whole batch. No bids by this time and a listing
+              can be expired by anyone. Leave blank for no expiry. Funds
+              recipient defaults to you for every auction in this batch —
+              edit it per auction from its detail page afterward.
+            </p>
+          )}
+        </div>
+      )}
+
       <footer className="mt-5 flex items-center justify-between gap-3 border-t border-gray-100 pt-4">
         <p className="text-xs text-gray-500">
           {selected.size} selected
@@ -406,7 +472,7 @@ function BulkListSection({
         </p>
         <button
           onClick={handleList}
-          disabled={isRunning || selected.size === 0 || !reserveValid}
+          disabled={isRunning || selected.size === 0 || !reserveValid || !listingTermsValid}
           className="text-[11px] font-mono font-medium uppercase tracking-wider px-4 py-2 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {isRunning
@@ -632,6 +698,7 @@ async function loadListableItems(
   artistAddress: string,
   connectedAddress: Address,
   houseAddress: Address,
+  houseVersion: 1 | 2,
 ): Promise<ListableItem[]> {
   // Page through /api/artist/[address]/tokens (mirrors what ArtistGallery does).
   const all: GalleryItem[] = []
@@ -674,20 +741,36 @@ async function loadListableItems(
   })
   if (owned.length === 0) return []
 
+  // V2 dropped `hasAuctionFor`; `getAuctionFor` returns (exists, auctionId)
+  // instead of a plain bool.
   const auctionReads = await client.multicall({
-    contracts: owned.map((item) => ({
-      address: houseAddress,
-      abi: sovereignAuctionHouseAbi,
-      functionName: "hasAuctionFor" as const,
-      args: [item.contract as Address, BigInt(item.tokenId)] as const,
-    })),
+    contracts: owned.map((item) =>
+      houseVersion === 2
+        ? {
+            address: houseAddress,
+            abi: sovereignAuctionHouseV2Abi,
+            functionName: "getAuctionFor" as const,
+            args: [item.contract as Address, BigInt(item.tokenId)] as const,
+          }
+        : {
+            address: houseAddress,
+            abi: sovereignAuctionHouseAbi,
+            functionName: "hasAuctionFor" as const,
+            args: [item.contract as Address, BigInt(item.tokenId)] as const,
+          },
+    ),
     allowFailure: true,
   })
   const listable = owned.filter((_, i) => {
     const r = auctionReads[i]
     // A failed read is treated as "no auction"; worst case the create tx
     // reverts on a token that already has one.
-    return !(r.status === "success" && r.result === true)
+    if (r.status !== "success") return true
+    if (houseVersion === 2) {
+      const [exists] = r.result as readonly [boolean, bigint]
+      return !exists
+    }
+    return r.result !== true
   })
 
   return listable.map((item) => ({

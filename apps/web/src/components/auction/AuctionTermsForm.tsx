@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { decodeEventLog, isAddress } from "viem"
 import {
   useAccount,
   useReadContract,
@@ -13,6 +14,8 @@ import {
   sovereignAuctionHouseV2Abi,
 } from "@pin/abi"
 import { useEthAmountInput } from "@/lib/useEthAmountInput"
+import { parseListingExpiry } from "@/lib/listing-expiry"
+import { useChainNowSec } from "@/components/tx/tx-ui"
 import { TxLink } from "./tx"
 
 const DURATION_OPTIONS = [
@@ -30,8 +33,8 @@ const DURATION_OPTIONS = [
  *   2. createAuction(tokenId, contract, duration, reserve, listingExpiry) on
  *      the artist's house, or create1155Auction(tokenId, contract, quantity,
  *      duration, reserve, listingExpiry) for an ERC1155 lot. 1155 lots need
- *      a V2 house. listingExpiry is always 0 (no expiry) here — there is no
- *      UI for it yet.
+ *      a V2 house. Listing expiry and funds recipient are V2-only optional
+ *      fields; a V1 house always gets listingExpiry 0 and no recipient call.
  *
  * Renders just the form fields + step buttons + tx feedback — no chrome. Used
  * inline on /auction/new and inside the modal wrapper on token detail pages.
@@ -65,6 +68,16 @@ export function AuctionTermsForm({
     (quantity !== null &&
       quantity > 0n &&
       (maxQuantity === undefined || quantity <= maxQuantity))
+
+  // V2-only optional listing terms. A blank expiry means none (0n); a blank
+  // recipient means the seller stays the funds recipient (the contract
+  // default) and no follow-up call is made.
+  const nowSec = useChainNowSec()
+  const [listingExpiryInput, setListingExpiryInput] = useState("")
+  const listingExpiry = parseListingExpiry(listingExpiryInput, nowSec)
+  const [fundsRecipientInput, setFundsRecipientInput] = useState("")
+  const trimmedRecipient = fundsRecipientInput.trim()
+  const fundsRecipientValid = trimmedRecipient === "" || isAddress(trimmedRecipient)
 
   const { data: isApprovedForAll, refetch: refetchApproval } = useReadContract({
     address: nftContract,
@@ -106,8 +119,50 @@ export function AuctionTermsForm({
     if (isCreateSuccess && createHash && onSuccess) onSuccess(createHash)
   }, [isCreateSuccess, createHash, onSuccess])
 
+  // If a non-default funds recipient was entered, fire it as a follow-up
+  // setAuctionFundsRecipient call once the create tx confirms — neither
+  // createAuction nor create1155Auction takes a recipient argument. The
+  // auction id comes from decoding the confirmed receipt's own
+  // AuctionCreated/Auction1155Created log rather than an extra chain read.
+  const {
+    writeContract: writeRecipient,
+    data: recipientHash,
+    isPending: isRecipientPending,
+    error: recipientError,
+  } = useWriteContract()
+  const { isLoading: isRecipientMining, isSuccess: isRecipientSuccess } =
+    useWaitForTransactionReceipt({ hash: recipientHash })
+  useEffect(() => {
+    if (!isCreateSuccess || !createReceipt || trimmedRecipient === "" || recipientHash) return
+    if (!isAddress(trimmedRecipient)) return
+    const log = createReceipt.logs
+      .map((l) => {
+        try {
+          return decodeEventLog({
+            abi: sovereignAuctionHouseV2Abi,
+            data: l.data,
+            topics: l.topics,
+          })
+        } catch {
+          return null
+        }
+      })
+      .find((e) => e?.eventName === "AuctionCreated" || e?.eventName === "Auction1155Created")
+    const auctionId = (log?.args as { auctionId?: bigint } | undefined)?.auctionId
+    if (auctionId === undefined) return
+    writeRecipient({
+      address: houseAddress,
+      abi: sovereignAuctionHouseV2Abi,
+      functionName: "setAuctionFundsRecipient",
+      args: [auctionId, trimmedRecipient as `0x${string}`],
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCreateSuccess, createReceipt, recipientHash])
+
   const reserveValid = reserve.isValid && reserve.wei !== null
   const isNoReserve = reserve.wei === 0n
+  const listingTermsValid =
+    houseVersion !== 2 || (listingExpiry.error === null && fundsRecipientValid)
 
   function handleApprove() {
     writeApprove({
@@ -118,12 +173,9 @@ export function AuctionTermsForm({
     })
   }
 
-  // listingExpiry: 0n (no expiry) — there is no UI for it yet. V2-only arg;
-  // V1's createAuction has no fifth parameter.
-  const NO_LISTING_EXPIRY = 0n
-
   function handleCreate() {
-    if (!reserveValid || reserve.wei == null || !quantityValid) return
+    if (!reserveValid || reserve.wei == null || !quantityValid || !listingTermsValid) return
+    const listingExpirySeconds = houseVersion === 2 ? listingExpiry.seconds ?? 0n : 0n
     if (is1155) {
       if (quantity === null) return
       writeCreate({
@@ -136,7 +188,7 @@ export function AuctionTermsForm({
           quantity,
           BigInt(durationSec),
           reserve.wei,
-          NO_LISTING_EXPIRY,
+          listingExpirySeconds,
         ],
       })
       return
@@ -151,7 +203,7 @@ export function AuctionTermsForm({
           nftContract,
           BigInt(durationSec),
           reserve.wei,
-          NO_LISTING_EXPIRY,
+          listingExpirySeconds,
         ],
       })
       return
@@ -184,6 +236,7 @@ export function AuctionTermsForm({
   }
 
   if (isCreateSuccess && createHash) {
+    const wantsRecipient = trimmedRecipient !== "" && isAddress(trimmedRecipient)
     return (
       <div className="space-y-4">
         <div className="rounded border border-emerald-200 bg-emerald-50 p-3 space-y-2">
@@ -192,6 +245,27 @@ export function AuctionTermsForm({
           </p>
           <TxLink hash={createHash} label="Create tx:" />
         </div>
+        {wantsRecipient && (
+          <div className="rounded border border-gray-200 bg-surface p-3 space-y-1">
+            <p className="text-xs text-gray-600">
+              {isRecipientSuccess
+                ? "Funds recipient set ✓"
+                : isRecipientPending
+                  ? "Confirm the funds recipient in your wallet…"
+                  : isRecipientMining
+                    ? "Setting funds recipient…"
+                    : "Setting funds recipient…"}
+            </p>
+            {recipientHash && <TxLink hash={recipientHash} label="Recipient tx:" />}
+            {recipientError && (
+              <p className="text-xs text-red-500 break-words">
+                {recipientError.message.includes("User rejected")
+                  ? "Transaction rejected"
+                  : recipientError.message.split("\n")[0]}
+              </p>
+            )}
+          </div>
+        )}
       </div>
     )
   }
@@ -284,6 +358,57 @@ export function AuctionTermsForm({
         </div>
       </div>
 
+      {houseVersion === 2 && (
+        <div className="space-y-2">
+          <label className="block">
+            <span className="text-xs uppercase tracking-wider text-gray-500">
+              Listing expiry (optional)
+            </span>
+            <input
+              type="datetime-local"
+              value={listingExpiryInput}
+              onChange={(e) => setListingExpiryInput(e.target.value)}
+              disabled={createBusy}
+              className="mt-1 w-full border border-gray-200 focus-within:border-gray-400 transition-colors rounded px-3 py-2 text-sm outline-none disabled:opacity-40 bg-transparent"
+            />
+          </label>
+          {listingExpiry.error ? (
+            <p className="text-xs text-red-500">{listingExpiry.error}</p>
+          ) : (
+            <p className="text-xs text-gray-400">
+              No bids by this time and the listing can be expired by anyone.
+              Leave blank for no expiry.
+            </p>
+          )}
+        </div>
+      )}
+
+      {houseVersion === 2 && (
+        <div className="space-y-2">
+          <label className="block">
+            <span className="text-xs uppercase tracking-wider text-gray-500">
+              Funds recipient (optional)
+            </span>
+            <input
+              type="text"
+              value={fundsRecipientInput}
+              onChange={(e) => setFundsRecipientInput(e.target.value)}
+              placeholder="0x… — defaults to you"
+              disabled={createBusy}
+              className="mt-1 w-full border border-gray-200 focus-within:border-gray-400 transition-colors rounded px-3 py-2 text-sm font-mono outline-none disabled:opacity-40 bg-transparent"
+            />
+          </label>
+          {!fundsRecipientValid ? (
+            <p className="text-xs text-red-500">Enter a valid address.</p>
+          ) : (
+            <p className="text-xs text-gray-400">
+              Where sale proceeds land. Defaults to you. Set as a follow-up
+              transaction right after the auction is created.
+            </p>
+          )}
+        </div>
+      )}
+
       {needsApproval ? (
         <div className="space-y-2">
           <p className="text-xs text-gray-500">
@@ -332,7 +457,7 @@ export function AuctionTermsForm({
           )}
           <button
             onClick={handleCreate}
-            disabled={createBusy || !reserveValid || !quantityValid}
+            disabled={createBusy || !reserveValid || !quantityValid || !listingTermsValid}
             className="block w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {isCreatePending
