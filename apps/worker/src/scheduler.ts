@@ -13,6 +13,7 @@
  * task's own interval.
  */
 import { sql } from "./db.ts"
+import { INDEXER_SCHEMA } from "./indexer-schema.ts"
 import { seedKnownArtists } from "./tasks/seed-known-artists.ts"
 import { warmContractIdentity } from "./tasks/warm-contract-identity.ts"
 import { warmEns } from "./tasks/warm-ens.ts"
@@ -136,12 +137,9 @@ async function isPonderReady(): Promise<boolean> {
   // Ponder writes is_ready=1 into _ponder_meta once backfill across all
   // chains is complete and it has flipped to head-following mode.
   // Querying this directly avoids a separate indexer-side sentinel.
-  const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-    /[^a-zA-Z0-9_]/g, "",
-  )
   try {
     const rows = (await sql.unsafe(
-      `SELECT value FROM ${schema}._ponder_meta WHERE key = 'app' LIMIT 1`,
+      `SELECT value FROM ${INDEXER_SCHEMA}._ponder_meta WHERE key = 'app' LIMIT 1`,
     )) as Array<{ value: { is_ready?: number } }>
     return rows[0]?.value?.is_ready === 1
   } catch {

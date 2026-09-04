@@ -15,14 +15,11 @@ import { sql } from "../db.ts"
 import { client } from "../rpc.ts"
 import { resolveTokenMetadataWithState } from "@pin/token-metadata"
 import type { TaskResult } from "../scheduler.ts"
+import { INDEXER_SCHEMA } from "../indexer-schema.ts"
 
 const BATCH_SIZE = Number(process.env.WARMER_BATCH_SIZE ?? "50")
 const CONCURRENCY = Number(process.env.WARMER_CONCURRENCY ?? "4")
 const RETRY_AFTER = process.env.WARMER_RETRY_AFTER ?? "5 minutes"
-
-const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-  /[^a-zA-Z0-9_]/g, "",
-)
 
 type Candidate = { contract: string; tokenId: string }
 

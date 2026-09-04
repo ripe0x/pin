@@ -16,6 +16,7 @@ import { sql } from "../db.ts"
 import { client } from "../rpc.ts"
 import type { TaskResult } from "../scheduler.ts"
 import { erc721Abi, getAddress, type Address } from "viem"
+import { INDEXER_SCHEMA } from "../indexer-schema.ts"
 
 // Minimal ERC-165 ABI inline — viem doesn't export an erc165Abi constant.
 const erc165SupportsInterfaceAbi = [
@@ -31,9 +32,6 @@ const erc165SupportsInterfaceAbi = [
 const ERC721_INTERFACE_ID = "0x80ac58cd"
 const ERC1155_INTERFACE_ID = "0xd9b67a26"
 const BATCH_SIZE = 30
-const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-  /[^a-zA-Z0-9_]/g, "",
-)
 
 export async function warmContractIdentity(): Promise<TaskResult> {
   const candidates = (await sql.unsafe(

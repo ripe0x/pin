@@ -40,16 +40,13 @@ import { SURFACE_FACTORY, MAINNET_CHAIN_ID, getAddressOrNull } from "@pin/addres
 import { decodeFunctionResult, encodeFunctionData } from "viem"
 import type { Address } from "viem"
 import type { TaskResult } from "../scheduler.ts"
+import { INDEXER_SCHEMA } from "../indexer-schema.ts"
 
 const TASK = "capture-collection-media"
 const RASTER_WIDTH = 1200
 const BATCH_SIZE = Number(process.env.CAPTURE_BATCH_SIZE ?? "20")
 const RETRY_AFTER = process.env.CAPTURE_RETRY_AFTER ?? "1 day"
 const CAPTURE_HTML = process.env.CAPTURE_HTML === "1"
-
-const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-  /[^a-zA-Z0-9_]/g, "",
-)
 
 // Deploy-gated sentinel, identical helper to ponder.config.ts and
 // apps/web/src/lib/collection.ts — flips on together at deploy.
