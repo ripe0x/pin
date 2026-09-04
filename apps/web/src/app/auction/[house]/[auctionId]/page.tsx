@@ -19,7 +19,7 @@ type Params = Promise<{ house: string; auctionId: string }>
 
 // Request-scoped memo: `generateMetadata` and the page body both call this, so
 // one request resolves the auction + metadata once. `cache()` is React's
-// built-in per-request dedup — no cross-request leakage.
+// built-in per-request dedup, no cross-request leakage.
 const getAuctionPageData = cache(async (house: string, auctionId: string) => {
   const detail = await getAuctionDetail(house, auctionId).catch(() => null)
   if (!detail) return null
@@ -44,8 +44,8 @@ function shortDescription(
   }
   if (detail.status === "active" && detail.live) {
     return detail.live.awaitingFirstBid
-      ? `Reserve ${formatEthAmount(detail.live.amount)} ETH — bid live.`
-      : `Currently ${formatEthAmount(detail.live.amount)} ETH — bid live.`
+      ? `Reserve ${formatEthAmount(detail.live.amount)} ETH. Bid live.`
+      : `Currently ${formatEthAmount(detail.live.amount)} ETH. Bid live.`
   }
   return "Auction cancelled."
 }
@@ -64,7 +64,7 @@ export async function generateMetadata({
   const description = shortDescription(data.detail)
   const image = data.meta?.image ? ipfsToHttp(data.meta.image) : undefined
   return {
-    // Bare token name — the root layout's `%s | PND` template adds the suffix.
+    // Bare token name; the root layout's `%s | PND` template adds the suffix.
     title: tokenName,
     description,
     openGraph: {
@@ -184,7 +184,7 @@ export default async function AuctionPage({ params }: { params: Params }) {
 
           {/* Any refund owed to the connected wallet on this house. Renders
               nothing when disconnected or the balance is zero, so no wrapping
-              section/border here — avoids an empty bordered gap. */}
+              section/border here, avoids an empty bordered gap. */}
           {detail.source === "sovereign" && (
             <div className="pt-5">
               <PendingRefundCard

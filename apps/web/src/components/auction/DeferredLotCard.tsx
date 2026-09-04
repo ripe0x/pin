@@ -20,7 +20,7 @@ const PENDING_DELIVERY_TIMEOUT_SEC = 30 * 24 * 60 * 60
  * statuses: a failed delivery still awaiting a retry ("deferred"), an
  * unwound sale ("unwound"), and an unwound sale whose lot return to the
  * seller itself failed ("unwound_return_pending"). In all three, delivery
- * to the winner failed at settlement — nobody has been paid.
+ * to the winner failed at settlement: nobody has been paid.
  */
 export function DeferredLotCard({
   houseAddress,
@@ -102,7 +102,7 @@ export function DeferredLotCard({
       ) : (
         <p className="text-xs font-mono text-gray-500">
           Delivery to {winnerDisplay || "the winner"} failed at settlement.
-          Nobody has been paid yet — the bid and the lot both stay locked
+          Nobody has been paid yet; the bid and the lot both stay locked
           here. Anyone can retry delivery. If it keeps failing, unwinding
           refunds {winnerDisplay || "the winner"}&rsquo;s bid in full and
           returns the lot to {sellerDisplay}.
