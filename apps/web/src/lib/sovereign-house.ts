@@ -112,5 +112,8 @@ export const getSovereignHouseOf = unstable_cache(
     return readHouseOnChain(artistAddress)
   },
   ["sov-house-v2"],
-  { revalidate: 60 * 60 * 24, tags: ["sov-house"] },
+  // 1h TTL, tag-busted by POST /api/sovereign-house/revalidate right
+  // after a house deploy or upgrade confirms (useDeployHouse,
+  // HouseUpgradePanel), so the CTA/count don't wait out the TTL.
+  { revalidate: 60 * 60, tags: ["sov-house"] },
 )
