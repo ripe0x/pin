@@ -2,6 +2,7 @@ import "server-only"
 import { NFT_MARKET, MAINNET_CHAIN_ID } from "@pin/addresses"
 import { sql } from "./db"
 import { surfaceFactory } from "./collection"
+import { INDEXER_SCHEMA } from "./indexer-schema"
 
 /** Foundation NFTMarket address — used as the `[house]` segment for FND auctions. */
 const FND_MARKET = NFT_MARKET[MAINNET_CHAIN_ID]
@@ -49,9 +50,10 @@ const QUERY_TIMEOUT_MS = 500
 /**
  * Race a query against a timeout. Returns `null` if the query exceeds
  * `timeoutMs` so we don't add latency to renders when the indexer is
- * slow / unreachable / not yet synced.
+ * slow / unreachable / not yet synced. Exported for reuse by
+ * `indexer-health.ts`, which needs the same fail-soft behavior.
  */
-async function withTimeout<T>(
+export async function withTimeout<T>(
   fn: () => Promise<T>,
   timeoutMs = QUERY_TIMEOUT_MS,
 ): Promise<T | null> {
@@ -94,10 +96,7 @@ export async function getHouseUpgradeListings(
   const db = sql
 
   return withTimeout(async () => {
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
     const rows = (await db.unsafe(
       `SELECT auction_id::text AS auction_id,
               lower(token_contract) AS token_contract,
@@ -193,10 +192,7 @@ export async function getSettledAuctionForToken(
 
   return withTimeout(async () => {
     const contract = tokenContract.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
     const v2Cols = await hasV2AuctionColumns(schema)
 
     const rows = (await db.unsafe(
@@ -291,10 +287,7 @@ export async function getTokenAuctionSales(
 
   const result = await withTimeout(async () => {
     const contract = tokenContract.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
 
     // settled_at stays a bigint (NOT cast to text) so the UNION's final
     // ORDER BY sorts numerically, not lexicographically.
@@ -367,10 +360,7 @@ export async function getActivePndAuctions(
   // in a Suspense boundary below the hero, so paying ~700ms-1s on the
   // first uncached load is fine. The hero still streams immediately.
   return withTimeout(async () => {
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
 
     const rows = (await db.unsafe(
       `SELECT house, token_contract, token_id::text AS token_id, seller,
@@ -446,10 +436,7 @@ export async function getSrv2TokensFromIndexer(
   const db = sql
 
   return withTimeout(async () => {
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
     const rows = (await db.unsafe(
       `SELECT contract,
               token_id::text AS token_id,
@@ -496,10 +483,7 @@ export async function getPndHouses(limit = 24): Promise<PndHouse[] | null> {
   const db = sql
 
   return withTimeout(async () => {
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
 
     const rows = (await db.unsafe(
       `SELECT house, owner, created_at_time::text AS created_at_time
@@ -571,10 +555,7 @@ export async function getPlatformStats(): Promise<PlatformStats | null> {
   const db = sql
 
   return withTimeout(async () => {
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
     const surfaceLive =
       surfaceFactory() !== null && (await surfaceTablesExist(db, schema))
 
@@ -653,10 +634,7 @@ export async function getFoundationTokensFromIndexer(
   const db = sql
 
   return withTimeout(async () => {
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
     const rows = (await db.unsafe(
       `SELECT contract,
               token_id::text AS token_id,
@@ -761,10 +739,7 @@ export async function getActivityFeed(
   const db = sql
 
   return withTimeout(async () => {
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
 
     type Row = {
       kind: ActivityKind
@@ -1258,10 +1233,7 @@ export async function getActiveFndAuctionCount(
   const db = sql
   return withTimeout(async () => {
     const seller = sellerAddress.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
     const rows = (await db.unsafe(
       `SELECT COUNT(*)::text AS count
          FROM ${schema}.fnd_auctions
@@ -1279,10 +1251,7 @@ export async function getActiveFndBuyNowCount(
   const db = sql
   return withTimeout(async () => {
     const seller = sellerAddress.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
     const rows = (await db.unsafe(
       `SELECT COUNT(*)::text AS count
          FROM ${schema}.fnd_buy_nows
@@ -1311,10 +1280,7 @@ export async function getFoundationCreatorSummary(
   const db = sql
   return withTimeout(async () => {
     const creator = artistAddress.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
     const [tokenRows, collectionRows] = await Promise.all([
       db.unsafe(
         `SELECT COUNT(*)::text AS count
@@ -1355,10 +1321,7 @@ export async function getFoundationSalesSummary(
   const db = sql
   return withTimeout(async () => {
     const seller = sellerAddress.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
     const rows = (await db.unsafe(
       `SELECT COUNT(*)::text AS count
          FROM ${schema}.fnd_sales
@@ -1399,10 +1362,7 @@ export async function getArtistContractMap(
   const db = sql
   return withTimeout(async () => {
     const creator = artistAddress.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
     const rows = (await db.unsafe(
       `SELECT
          t.contract,
@@ -1484,10 +1444,7 @@ export async function getCatalogFromIndexer(
 
   return withTimeout(async () => {
     const artist = artistAddress.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
 
     const [contractRows, tokenRows, rangeRows] = await Promise.all([
       db.unsafe(
@@ -1556,13 +1513,10 @@ export async function getActiveAuctionCountFromIndexer(
     // release so the indexer can run zero-downtime cutovers; see
     // ponder/README.md for the full upgrade flow. Override the default
     // here via INDEXER_SCHEMA when the indexer's schema name changes.
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
-    // Schema name comes from a controlled env var and is sanitized above
-    // (postgres.js can't parameterize identifiers, only values), so the
-    // unsafe-template usage is fine here.
+    const schema = INDEXER_SCHEMA
+    // Schema name comes from a controlled env var and is sanitized in
+    // indexer-schema.ts (postgres.js can't parameterize identifiers, only
+    // values), so the unsafe-template usage is fine here.
     const rows = (await db.unsafe(
       `SELECT COUNT(*)::text AS count
        FROM ${schema}.pnd_auctions
@@ -1593,10 +1547,7 @@ export async function getCollectionPrimaryMinterFromIndexer(
   const db = sql
   return withTimeout(async () => {
     const addr = collection.toLowerCase()
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
     const rows = (await db.unsafe(
       `SELECT primary_minter FROM ${schema}.collections WHERE collection = $1 LIMIT 1`,
       [addr],
@@ -1605,8 +1556,7 @@ export async function getCollectionPrimaryMinterFromIndexer(
   })
 }
 
-const indexerSchema = () =>
-  (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(/[^a-zA-Z0-9_]/g, "")
+const indexerSchema = () => INDEXER_SCHEMA
 
 /**
  * Newest-first collection addresses from the SurfaceCreated discovery

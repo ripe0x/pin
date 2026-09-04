@@ -1,5 +1,6 @@
 import "server-only"
 import { sql } from "./db"
+import { INDEXER_SCHEMA as schema } from "./indexer-schema"
 
 /**
  * Last-sale price lookup for a single token. v2 reads from Ponder
@@ -13,10 +14,6 @@ import { sql } from "./db"
  * Sales on other marketplaces (OpenSea/Blur/SR/TL/etc.) aren't surfaced
  * — those venues aren't indexed in v2.
  */
-
-const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-  /[^a-zA-Z0-9_]/g, "",
-)
 
 export type LastSale = {
   priceWei: bigint

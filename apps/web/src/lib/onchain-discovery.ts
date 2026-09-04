@@ -18,6 +18,7 @@ import { mainnet } from "viem/chains"
 import { sql } from "./db"
 import { pgCache } from "./pg-cache"
 import { getMainnetTransport } from "./alchemy-rpc"
+import { INDEXER_SCHEMA } from "./indexer-schema"
 
 export type TokenRef = {
   contract: `0x${string}`
@@ -300,9 +301,6 @@ export async function discoverArtistTokenRefs(
 ): Promise<TokenRef[]> {
   if (!sql) return []
   const artist = artistAddress.toLowerCase()
-  const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-    /[^a-zA-Z0-9_]/g, "",
-  )
 
   // UNION across worker-owned + Ponder-owned per-artist token sources.
   // Each source contributes (contract, tokenId, platform). The reader
@@ -656,9 +654,6 @@ export async function getTokenOnChainData(
 ): Promise<TokenOnChainData | null> {
   if (!sql) return null
   const c = contract.toLowerCase()
-  const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-    /[^a-zA-Z0-9_]/g, "",
-  )
 
   const [owners, transfers] = await Promise.all([
     sql`
@@ -857,9 +852,6 @@ export async function discoverFoundationPinnedTokens(
 }>> {
   if (!sql) return []
   const lower = artistAddress.toLowerCase()
-  const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-    /[^a-zA-Z0-9_]/g, "",
-  )
 
   const rows = (await sql.unsafe(
     `WITH refs AS (

@@ -6,10 +6,7 @@ import type {
 } from "./types"
 import { sql } from "../db"
 import { getActiveTlAuctionMap } from "../onchain"
-
-const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-  /[^a-zA-Z0-9_]/g, "",
-)
+import { INDEXER_SCHEMA as schema } from "../indexer-schema"
 
 export const transientAdapter: PlatformAdapter & {
   getActiveAuctionMap: (artist: Address) => Promise<Record<string, { reserveWei: bigint; currentBidWei: bigint }>>

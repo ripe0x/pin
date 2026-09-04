@@ -2,7 +2,7 @@
  * Resolver for an artist's sovereign auction house address.
  *
  * Source of truth: the Ponder indexer's `pnd_houses` table (under the
- * schema named by `INDEXER_SCHEMA`, currently `ponder_v1`). Ponder
+ * schema named by `INDEXER_SCHEMA`, see lib/indexer-schema.ts). Ponder
  * subscribes to the factory's `AuctionHouseCreated` events in real time
  * and maintains a row per house indexed by `owner`. Reading from there
  * costs one Postgres point query and is free of on-chain RPC traffic.
@@ -32,6 +32,7 @@ import {
 } from "@pin/addresses"
 import { sql } from "./db"
 import { getMainnetTransport } from "./alchemy-rpc"
+import { INDEXER_SCHEMA } from "./indexer-schema"
 
 const SOVEREIGN_FACTORY = getAddressOrNull(
   SOVEREIGN_AUCTION_HOUSE_FACTORY,
@@ -55,10 +56,7 @@ async function readHouseFromPonder(
 ): Promise<Address | null | undefined> {
   if (!sql) return undefined
   try {
-    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-      /[^a-zA-Z0-9_]/g,
-      "",
-    )
+    const schema = INDEXER_SCHEMA
     // An artist can hold one house per factory generation. Prefer the
     // newest: display reads should point at the V2 house once it exists.
     // Against a pre-version-column schema this query errors and falls
