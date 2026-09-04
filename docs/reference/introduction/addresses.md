@@ -17,6 +17,7 @@ The shared singletons of each PND onchain protocol on Ethereum mainnet (chain id
 | Contract | Address | Docs |
 | --- | --- | --- |
 | SovereignAuctionHouseFactory | [`0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f`](https://evm.now/address/0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f?chainId=1) | [reference](/docs/auctions/contracts/auction-house-factory) |
+| SovereignAuctionHouseV2Factory | [`0x77aB853543286C9Cdd7dd6c01222A7cC4Ac93d63`](https://evm.now/address/0x77aB853543286C9Cdd7dd6c01222A7cC4Ac93d63?chainId=1) | [reference](/docs/auctions/contracts/auction-house-v2-factory) |
 
 ## Catalog
 

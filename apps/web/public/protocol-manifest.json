@@ -98,6 +98,20 @@
           "abi": "/abis/SovereignAuctionHouseFactory.json",
           "docs": "/docs/auctions/contracts/auction-house-factory",
           "role": "SovereignAuctionHouseFactory deploys one [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house) per owner as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs."
+        },
+        "SovereignAuctionHouseV2": {
+          "address": null,
+          "kind": "clone",
+          "abi": "/abis/SovereignAuctionHouseV2.json",
+          "docs": "/docs/auctions/contracts/sovereign-auction-house-v2",
+          "role": "An onchain English auction house for ERC721 and ERC1155 tokens, denominated in ETH."
+        },
+        "SovereignAuctionHouseV2Factory": {
+          "address": "0x77aB853543286C9Cdd7dd6c01222A7cC4Ac93d63",
+          "kind": "singleton",
+          "abi": "/abis/SovereignAuctionHouseV2Factory.json",
+          "docs": "/docs/auctions/contracts/auction-house-v2-factory",
+          "role": "SovereignAuctionHouseV2Factory deploys one [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2) per owner as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs."
         }
       }
     },

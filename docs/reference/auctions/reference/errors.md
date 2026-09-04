@@ -7,53 +7,134 @@ Every custom error the Auctions contracts can revert with, its contract, and the
 **`AuctionAlreadyExistsForToken`** · [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house#errors)\
 A second auction was attempted for a `(tokenContract, tokenId)` that already has a live one on this house, or `recoverStuckERC721` targeted a token that is currently in an auction.
 
+**`AuctionAlreadyExistsForToken`** · [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2#errors)\
+A second auction was attempted for a `(tokenContract, tokenId)` that already has a live one on this house, or a recovery function targeted a token that is currently registered to an auction.
+
+**`AuctionAlreadySettled`** · [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2#errors)\
+`endAuction` was called on an auction already marked `pendingDelivery` or `pendingReturn`.
+
 **`AuctionAlreadyStarted`** · [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house#errors)\
 An action that requires a pre-bid auction (`cancelAuction`, `bulkCancelAuctions`, or `setAuctionReservePrice`) was attempted after the first bid landed.
+
+**`AuctionAlreadyStarted`** · [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2#errors)\
+An action that requires a pre-bid auction (`cancelAuction`, `setAuctionReservePrice`, `setAuctionDuration`, `setAuctionFundsRecipient`, or `setAuctionListingExpiry`) was attempted after the first bid landed.
 
 **`AuctionDoesNotExist`** · [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house#errors)\
 The given `auctionId` has no live auction in storage (never created, or already settled or cancelled).
 
+**`AuctionDoesNotExist`** · [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2#errors)\
+The given `auctionId` has no live auction in storage: never created, or already fully resolved.
+
 **`AuctionExpired`** · [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house#errors)\
 A bid landed after the auction's end time.
 
+**`AuctionExpired`** · [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2#errors)\
+Either a bid landed after the auction's end time, or a pre-bid auction's `listingExpiry` has already passed.
+
 **`AuctionHasNoBids`** · [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house#errors)\
+`endAuction` was called on an auction that never received a bid.
+
+**`AuctionHasNoBids`** · [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2#errors)\
 `endAuction` was called on an auction that never received a bid.
 
 **`AuctionNotEnded`** · [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house#errors)\
 `endAuction` was called before the timer ran out.
 
+**`AuctionNotEnded`** · [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2#errors)\
+Either `endAuction` was called before the timer ran out, or `expireAuction` was called on an auction that has already received a bid, has no `listingExpiry` set, or whose expiry has not yet passed.
+
 **`BidBelowMinimum`** · [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house#errors)\
 A bid did not exceed the current high bid by at least `MIN_BID_INCREMENT_BPS` (with the 1-wei floor).
 
+**`BidBelowMinimum`** · [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2#errors)\
+A bid did not exceed the current high bid by at least `MIN_BID_INCREMENT_BPS`.
+
 **`BidBelowReserve`** · [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house#errors)\
+The first bid was below the auction's `reservePrice`.
+
+**`BidBelowReserve`** · [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2#errors)\
 The first bid was below the auction's `reservePrice`.
 
 **`BidMustBePositive`** · [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house#errors)\
 `createBid` was called with a zero `msg.value`.
 
+**`BidMustBePositive`** · [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2#errors)\
+`createBid` was called with a zero `msg.value`.
+
+**`DeliveryFailed`** · [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2#errors)\
+A token transfer's post-transfer balance check disagreed with the expected result, indicating a malicious or non-standard token contract.
+
 **`EscrowFailed`** · [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house#errors)\
 The post-transfer `ownerOf` check after escrowing an NFT into the house disagreed with the expected owner, indicating a malicious or non-standard ERC721.
+
+**`EscrowFailed`** · [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2#errors)\
+Either an ERC721 escrow's post-transfer `ownerOf` check disagreed with the expected owner, or an ERC1155 deposit's `onERC1155Received` hook received a transfer that did not match the pull currently in progress, or an `onERC1155BatchReceived` call was attempted at all.
 
 **`FailedDeployment`** · [SovereignAuctionHouseFactory](/docs/auctions/contracts/auction-house-factory#errors)\
 Inherited from OpenZeppelin `Clones`.
 
+**`FailedDeployment`** · [SovereignAuctionHouseV2Factory](/docs/auctions/contracts/auction-house-v2-factory#errors)\
+Inherited from OpenZeppelin `Clones`.
+
+**`FundsRecipientRequired`** · [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2#errors)\
+`setAuctionFundsRecipient` or `withdrawRefundTo` was called with a zero address.
+
 **`InsufficientBalance`** · [SovereignAuctionHouseFactory](/docs/auctions/contracts/auction-house-factory#errors)\
 Inherited from OpenZeppelin `Clones`.
+
+**`InsufficientBalance`** · [SovereignAuctionHouseV2Factory](/docs/auctions/contracts/auction-house-v2-factory#errors)\
+Inherited from OpenZeppelin `Clones`.
+
+**`InsufficientGas`** · [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2#errors)\
+`endAuction` or `unwindStuckLot` was called without enough gas headroom to guarantee the delivery stipend is honored in full.
 
 **`InvalidInitialization`** · [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house#errors)\
 Standard OpenZeppelin Initializable error: `initialize` was called more than once, or called on the implementation whose initializers are disabled.
 
+**`InvalidInitialization`** · [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2#errors)\
+Standard OpenZeppelin Initializable error: `initialize` was called more than once, or called on the implementation whose initializers are disabled.
+
+**`NoPendingDelivery`** · [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2#errors)\
+`claimLot` or `unwindStuckLot` was called on an auction that is not currently `pendingDelivery`.
+
+**`NoPendingReturn`** · [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2#errors)\
+`returnUnwoundLot` was called on an auction that is not currently `pendingReturn`.
+
 **`NotInitializing`** · [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house#errors)\
 Standard OpenZeppelin Initializable error: an `onlyInitializing` step ran outside an active initialization.
 
+**`NotInitializing`** · [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2#errors)\
+Standard OpenZeppelin Initializable error: an `onlyInitializing` step ran outside an active initialization.
+
+**`NotWinner`** · [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2#errors)\
+`claimLot` was called with a nonzero `to` by an address other than the auction's recorded winner.
+
+**`OnlySelf`** · [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2#errors)\
+`deliverERC721` or `deliverERC1155` was called by anything other than this contract itself.
+
 **`OwnableInvalidOwner`** · [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house#errors)\
+Standard OpenZeppelin Ownable error: an invalid owner address (for example the zero address) was supplied.
+
+**`OwnableInvalidOwner`** · [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2#errors)\
 Standard OpenZeppelin Ownable error: an invalid owner address (for example the zero address) was supplied.
 
 **`OwnableUnauthorizedAccount`** · [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house#errors)\
 Standard OpenZeppelin Ownable error: an owner-gated function was called by a non-owner.
 
+**`OwnableUnauthorizedAccount`** · [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2#errors)\
+Standard OpenZeppelin Ownable error: an owner-gated function was called by a non-owner.
+
 **`OwnershipLocked`** · [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house#errors)\
+`transferOwnership` or `renounceOwnership` was called.
+
+**`OwnershipLocked`** · [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2#errors)\
 `transferOwnership` or `renounceOwnership` was called.
 
 **`ReentrancyGuardReentrantCall`** · [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house#errors)\
 Standard OpenZeppelin ReentrancyGuard error: a `nonReentrant` function was re-entered.
+
+**`ReentrancyGuardReentrantCall`** · [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2#errors)\
+Standard OpenZeppelin ReentrancyGuard error: a `nonReentrant` function was re-entered.
+
+**`UnwindTooEarly`** · [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2#errors)\
+`unwindStuckLot` was called before `PENDING_DELIVERY_TIMEOUT` had elapsed since the auction entered `pendingDelivery`.
