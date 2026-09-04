@@ -146,9 +146,9 @@ export async function ponderDriftCheck(): Promise<TaskResult> {
   const houseRows = (await sql.unsafe(
     hasVersionColumn
       ? `SELECT lower(house) AS address, created_at_block AS block_number, version
-         FROM ${INDEXER_SCHEMA}.pnd_houses`
+         FROM ${INDEXER_SCHEMA}.pnd_houses WHERE created_at_block IS NOT NULL`
       : `SELECT lower(house) AS address, created_at_block AS block_number, 1 AS version
-         FROM ${INDEXER_SCHEMA}.pnd_houses`,
+         FROM ${INDEXER_SCHEMA}.pnd_houses WHERE created_at_block IS NOT NULL`,
   )) as Array<{ address: string; block_number: string; version: number }>
 
   rowsWritten += await repairFactory(
@@ -167,7 +167,7 @@ export async function ponderDriftCheck(): Promise<TaskResult> {
   if (await tableExists("collections")) {
     const collectionRows = (await sql.unsafe(
       `SELECT lower(collection) AS address, created_at_block AS block_number
-       FROM ${INDEXER_SCHEMA}.collections`,
+       FROM ${INDEXER_SCHEMA}.collections WHERE created_at_block IS NOT NULL`,
     )) as Array<{ address: string; block_number: string }>
     rowsWritten += await repairFactory(
       surfaceCollectionId,
@@ -179,7 +179,9 @@ export async function ponderDriftCheck(): Promise<TaskResult> {
       const minterRows = (await sql.unsafe(
         `SELECT lower(m.minter) AS address, c.created_at_block AS block_number
          FROM ${INDEXER_SCHEMA}.minters m
-         JOIN ${INDEXER_SCHEMA}.collections c ON c.collection = m.collection`,
+         JOIN ${INDEXER_SCHEMA}.collections c ON c.collection = m.collection
+         WHERE c.created_at_block IS NOT NULL
+           AND lower(m.minter) <> '0x0000000000000000000000000000000000000000'`,
       )) as Array<{ address: string; block_number: string }>
       rowsWritten += await repairFactory(
         surfaceMinterId,

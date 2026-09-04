@@ -9,7 +9,12 @@
  */
 export const DEFAULT_INDEXER_SCHEMA = "ponder_v3"
 
-/** Strip everything but identifier characters so this is safe to inline into raw SQL. */
+/**
+ * Allowlist sanitizer: keeps only [A-Za-z0-9_], so the result is always a
+ * plain identifier and safe to inline into raw SQL. Anything else in the
+ * env value is dropped rather than escaped, so a malformed value yields a
+ * schema name that does not exist and every query fails loudly.
+ */
 export function sanitizeSchemaName(raw: string): string {
   return raw.replace(/[^a-zA-Z0-9_]/g, "")
 }
