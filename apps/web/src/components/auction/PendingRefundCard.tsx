@@ -109,7 +109,7 @@ function Card({
       <div>
         <h3 className="text-sm font-semibold">Refund available</h3>
         <p className="text-[11px] font-mono text-gray-500 mt-0.5">
-          {formatEthAmount(amount)} ETH — from an outbid refund, an unwound
+          {formatEthAmount(amount)} ETH, from an outbid refund, an unwound
           sale, or a payout credited here because the recipient is a
           contract.
         </p>

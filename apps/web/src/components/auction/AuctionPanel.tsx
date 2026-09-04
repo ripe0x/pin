@@ -357,7 +357,7 @@ export function AuctionPanel({
           />
         )}
 
-        {/* Anyone may expire a past-expiry, unbid V2 listing — not gated to
+        {/* Anyone may expire a past-expiry, unbid V2 listing, not gated to
             the seller like SellerActions above. */}
         {auction.awaitingFirstBid && phase !== "settled" && (
           <ExpireListingAction
@@ -893,7 +893,7 @@ function SettleSection({
 
 /**
  * `expireAuction` on a V2 listing whose optional listing expiry has passed
- * with no bids — callable by anyone, not just the seller. Returns the token
+ * with no bids, callable by anyone, not just the seller. Returns the token
  * to the seller. Renders nothing outside that state.
  */
 function ExpireListingAction({
@@ -1199,7 +1199,7 @@ const V2_DURATION_OPTIONS = [
   { label: "7 days", seconds: 7 * 24 * 60 * 60 },
 ] as const
 
-/** Inverse of the `<input type="datetime-local">` value — local wall clock,
+/** Inverse of the `<input type="datetime-local">` value, local wall clock,
  *  minute precision, empty string for "no expiry" (0n). */
 function toDatetimeLocalValue(sec: bigint): string {
   if (sec === 0n) return ""

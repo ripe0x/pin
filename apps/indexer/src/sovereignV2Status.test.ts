@@ -1,7 +1,7 @@
 /**
  * Run with: node --experimental-strip-types --test src/sovereignV2Status.test.ts
  * (from apps/indexer). Node 22's native TypeScript support handles this file
- * directly — no ponder:registry/ponder:schema imports here, so it needs no
+ * directly, no ponder:registry/ponder:schema imports here, so it needs no
  * live indexer environment, unlike SovereignV2.ts itself.
  */
 import { strict as assert } from "node:assert"

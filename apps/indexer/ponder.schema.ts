@@ -33,7 +33,7 @@ export const pndAuctions = onchainTable(
     firstBidTime: t.bigint().notNull(),
     endTime: t.bigint().notNull(),
     // "active" | "settled" | "cancelled" (v1 + v2), plus V2-only:
-    // "deferred" (DeliveryDeferred — delivery failed, nobody paid, retry
+    // "deferred" (DeliveryDeferred, delivery failed, nobody paid, retry
     // via claimLot), "unwound" (unwindStuckLot unwound the sale and the
     // lot is back with the seller), and "unwound_return_pending" (unwound
     // but the lot return to the seller itself failed, awaiting
@@ -69,7 +69,7 @@ export const pndAuctions = onchainTable(
     claimedAtTime: t.bigint(),
     claimTxHash: t.hex(),
     claimRecipient: t.hex(),
-    // V2 only: set by LotUnwound — the winner's bid amount credited to
+    // V2 only: set by LotUnwound, the winner's bid amount credited to
     // pendingRefunds when the sale unwinds.
     refundAmount: t.bigint(),
   }),

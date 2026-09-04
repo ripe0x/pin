@@ -5,6 +5,8 @@
  */
 
 import type { ItemStatus } from "@/lib/useBatchedCalls"
+import { PREFERRED_CHAIN, evmNowTxUrl } from "../tx/tx-ui"
+import { evmNowAddressUrl } from "@/lib/collection"
 
 const STATUS_LABEL: Record<ItemStatus["state"], string> = {
   idle: "Queued",
@@ -57,7 +59,7 @@ export function TxLink({
 }) {
   return (
     <a
-      href={`https://evm.now/tx/${hash}?chainId=1`}
+      href={evmNowTxUrl(hash, PREFERRED_CHAIN.id)}
       target="_blank"
       rel="noopener noreferrer"
       className="inline-flex items-baseline gap-1 text-xs text-gray-600 hover:text-fg underline-offset-2 hover:underline"
@@ -78,7 +80,7 @@ export function AddressLink({
 }) {
   return (
     <a
-      href={`https://evm.now/address/${address}?chainId=1`}
+      href={evmNowAddressUrl(address, PREFERRED_CHAIN.id)}
       target="_blank"
       rel="noopener noreferrer"
       className="inline-flex items-baseline gap-1 text-xs text-gray-600 hover:text-fg underline-offset-2 hover:underline"

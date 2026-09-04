@@ -16,7 +16,7 @@ import { resolveLotUnwoundStatus } from "./sovereignV2Status"
  * delivery pays nobody and moves the row to "deferred"; claimLot or
  * unwindStuckLot's retry can still settle it later, which is why
  * AuctionEnded (not a separate "delivered" event) is the one handler that
- * always finalizes a row to "settled" — it fires from every successful
+ * always finalizes a row to "settled", it fires from every successful
  * delivery path, immediate or deferred.
  *
  * Status state machine (see the `status` column comment on pndAuctions
@@ -270,7 +270,7 @@ on("SovereignAuctionHouseV2:AuctionListingExpiryUpdated", async ({ event, contex
 
 // Always fires on a successful delivery, whether that happens immediately
 // (endAuction) or later via a deferred retry (claimLot,
-// unwindStuckLot's retry-to-winner) — _finalizeSale emits this from every
+// unwindStuckLot's retry-to-winner), _finalizeSale emits this from every
 // success path, so this handler is the single place a row becomes
 // "settled".
 on("SovereignAuctionHouseV2:AuctionEnded", async ({ event, context }) => {
@@ -314,7 +314,7 @@ on("SovereignAuctionHouseV2:DeliveryDeferred", async ({ event, context }) => {
 
 // Fires alongside AuctionEnded in the same tx (claimLot or
 // unwindStuckLot's retry-to-winner both call _finalizeSale, which emits
-// AuctionEnded, before emitting this). Only records claim metadata — the
+// AuctionEnded, before emitting this). Only records claim metadata, the
 // AuctionEnded handler above already moved status to "settled".
 on("SovereignAuctionHouseV2:LotClaimed", async ({ event, context }) => {
   const { auctionId, recipient } = event.args as {

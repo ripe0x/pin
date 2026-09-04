@@ -120,7 +120,7 @@ export function AuctionTermsForm({
   }, [isCreateSuccess, createHash, onSuccess])
 
   // If a non-default funds recipient was entered, fire it as a follow-up
-  // setAuctionFundsRecipient call once the create tx confirms — neither
+  // setAuctionFundsRecipient call once the create tx confirms, neither
   // createAuction nor create1155Auction takes a recipient argument. The
   // auction id comes from decoding the confirmed receipt's own
   // AuctionCreated/Auction1155Created log rather than an extra chain read.
@@ -393,7 +393,7 @@ export function AuctionTermsForm({
               type="text"
               value={fundsRecipientInput}
               onChange={(e) => setFundsRecipientInput(e.target.value)}
-              placeholder="0x… — defaults to you"
+              placeholder="0x…, defaults to you"
               disabled={createBusy}
               className="mt-1 w-full border border-gray-200 focus-within:border-gray-400 transition-colors rounded px-3 py-2 text-sm font-mono outline-none disabled:opacity-40 bg-transparent"
             />

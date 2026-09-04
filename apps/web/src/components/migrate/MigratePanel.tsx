@@ -432,7 +432,7 @@ function Inner({
       // 4. Create auction on Sovereign.
       updateRowState(row.id, { step: "listing" })
       const tokenIds = [BigInt(row.source.tokenId)]
-      // listingExpiry: 0n (no expiry) — there is no UI for it yet. V2-only
+      // listingExpiry: 0n (no expiry), there is no UI for it yet. V2-only
       // arg; V1's bulkCreateAuctions has no fifth parameter.
       const createHash = await writeContractAction(config, {
         address: house,

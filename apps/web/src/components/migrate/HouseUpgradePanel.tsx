@@ -53,7 +53,7 @@ type VerifiedListing = {
 
 // bulkCreateAuctions(tokenContract, tokenIds[], reservePrice, duration,
 // listingExpiry) applies ONE terms set to every id in the call. Group
-// listings so each group shares (contract, reserve, duration) exactly —
+// listings so each group shares (contract, reserve, duration) exactly , 
 // listingExpiry is always 0 here, there is no UI for it yet.
 type RelistGroup = {
   key: string

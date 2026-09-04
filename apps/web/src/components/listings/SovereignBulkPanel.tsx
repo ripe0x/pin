@@ -160,7 +160,7 @@ function BulkListSection({
   )
   // V2-only: one listing expiry applies to the whole batch. Funds recipient
   // has no bulk-create parameter (it's per-auction, set only via
-  // setAuctionFundsRecipient) — omitted here rather than following up with
+  // setAuctionFundsRecipient), omitted here rather than following up with
   // N setter calls; edit it per auction from its detail page afterward.
   const nowSec = useChainNowSec()
   const [listingExpiryInput, setListingExpiryInput] = useState("")
@@ -466,7 +466,7 @@ function BulkListSection({
             <p className="mt-1 text-[11px] text-gray-400">
               Applies to the whole batch. No bids by this time and a listing
               can be expired by anyone. Leave blank for no expiry. Funds
-              recipient defaults to you for every auction in this batch —
+              recipient defaults to you for every auction in this batch , 
               edit it per auction from its detail page afterward.
             </p>
           )}
@@ -622,7 +622,7 @@ function BulkCancelSection({
     const targets = load.auctions.filter((a) => selected.has(a.auctionId))
     if (targets.length === 0) return
     // Capture (contract, tokenId) pairs now so the post-confirm revalidation
-    // can target them — `selected` may change while the cancel(s) are mining.
+    // can target them, `selected` may change while the cancel(s) are mining.
     setPendingCancels(
       targets.map((a) => ({ contract: a.contract, tokenId: a.tokenId })),
     )
@@ -712,9 +712,9 @@ function BulkCancelSection({
         <p className="text-xs text-gray-500">
           {selected.size} selected
           {houseVersion === 2 && isRunning && v2Cancel.mode === "sequential" && (
-            <> — {v2Cancel.walletLabel ?? "your wallet"} signs each cancel separately</>
+            <>, {v2Cancel.walletLabel ?? "your wallet"} signs each cancel separately</>
           )}
-          {houseVersion === 1 && isRunning && " — sign the cancel in your wallet"}
+          {houseVersion === 1 && isRunning && ", sign the cancel in your wallet"}
         </p>
         <button
           onClick={() => void handleCancel()}

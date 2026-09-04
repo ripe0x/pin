@@ -435,11 +435,11 @@ export async function getSovereignAuctionByHouse(
 // ─── AuctionDetail: status-agnostic by-id lookup (per-auction page) ──────
 
 // V2-only statuses beyond the v1 set (active/settled/cancelled):
-// "deferred" — delivery to the winner failed at settlement; nobody is
+// "deferred", delivery to the winner failed at settlement; nobody is
 //   paid yet, and the lot is retryable via claimLot.
-// "unwound" — unwindStuckLot unwound the sale (winner refunded, lot back
+// "unwound", unwindStuckLot unwound the sale (winner refunded, lot back
 //   with the seller); terminal.
-// "unwound_return_pending" — unwound, but the lot's return to the seller
+// "unwound_return_pending", unwound, but the lot's return to the seller
 //   also failed; awaiting returnUnwoundLot.
 export type AuctionDetailStatus =
   | "active"

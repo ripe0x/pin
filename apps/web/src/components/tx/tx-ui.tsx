@@ -74,7 +74,7 @@ const HOOK_REVERT_COPY: Record<string, string> = {
 }
 
 /**
- * Sovereign auction house custom errors (V1 + V2's full error set — see
+ * Sovereign auction house custom errors (V1 + V2's full error set, see
  * ISovereignAuctionHouseV2.sol). Matched the same way as the maps above.
  */
 const SOVEREIGN_ERROR_COPY: Record<string, string> = {

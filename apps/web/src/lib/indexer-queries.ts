@@ -160,7 +160,7 @@ export type SettledAuction = {
 
 // pnd_auctions gained version/standard/quantity/funds_recipient/
 // listing_expiry with the V2 indexer schema. Mirrors the same probe in
-// lib/auctions.ts (kept separate — that module's promise cache is private)
+// lib/auctions.ts (kept separate, that module's promise cache is private)
 // so a database not yet migrated to those columns degrades to V1 defaults
 // instead of erroring the whole query.
 let v2ColumnsPromise: Promise<boolean> | null = null
