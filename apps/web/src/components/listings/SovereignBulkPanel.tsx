@@ -6,6 +6,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
   createPublicClient,
+  encodeFunctionData,
   formatEther,
   http,
   type Address,
@@ -27,7 +28,8 @@ import { useArtistHouseV2 } from "@/components/auction/useArtistHouseV2"
 import { useEthAmountInput } from "@/lib/useEthAmountInput"
 import { useChainNowSec } from "@/components/tx/tx-ui"
 import { parseListingExpiry } from "@/lib/listing-expiry"
-import { TxLink } from "@/components/auction/tx"
+import { TxLink, StatusChip } from "@/components/auction/tx"
+import { useBatchedCalls, type PreparedCall } from "@/lib/useBatchedCalls"
 
 const DURATION_OPTIONS = [
   { label: "24 hours", seconds: 24 * 60 * 60 },
@@ -81,10 +83,11 @@ export function SovereignBulkPanel({ artistAddress }: { artistAddress: string })
       // Bulk listing targets the newest house generation (V2 when live).
       listHouseAddress={(v2.houseAddress ?? v1.houseAddress) as Address}
       listHouseVersion={v2.houseAddress ? 2 : 1}
-      // Bulk cancel is pinned to the V1 house specifically: V2 dropped
-      // bulkCancelAuctions (its listings cancel one at a time from the
-      // auction page instead).
+      // Bulk cancel runs per house generation the artist actually has: V1
+      // via bulkCancelAuctions (one tx), V2 via N cancelAuction calls (V2
+      // dropped bulkCancelAuctions) through the batched-calls runner.
       v1HouseAddress={v1.houseAddress}
+      v2HouseAddress={v2.houseAddress}
     />
   )
 }
@@ -95,12 +98,14 @@ function PanelInner({
   listHouseAddress,
   listHouseVersion,
   v1HouseAddress,
+  v2HouseAddress,
 }: {
   artistAddress: string
   connectedAddress: Address
   listHouseAddress: Address
   listHouseVersion: 1 | 2
   v1HouseAddress: Address | null
+  v2HouseAddress: Address | null
 }) {
   return (
     <div className="space-y-4">
@@ -114,6 +119,14 @@ function PanelInner({
         <BulkCancelSection
           connectedAddress={connectedAddress}
           houseAddress={v1HouseAddress}
+          houseVersion={1}
+        />
+      )}
+      {v2HouseAddress && (
+        <BulkCancelSection
+          connectedAddress={connectedAddress}
+          houseAddress={v2HouseAddress}
+          houseVersion={2}
         />
       )}
     </div>
@@ -498,9 +511,11 @@ type CancelLoadState =
 function BulkCancelSection({
   connectedAddress,
   houseAddress,
+  houseVersion,
 }: {
   connectedAddress: Address
   houseAddress: Address
+  houseVersion: 1 | 2
 }) {
   const router = useRouter()
   const [load, setLoad] = useState<CancelLoadState>({ kind: "loading" })
@@ -512,6 +527,7 @@ function BulkCancelSection({
     Array<{ contract: string; tokenId: string }>
   >([])
 
+  // V1: one bulkCancelAuctions tx for every selected id.
   const {
     writeContract,
     data: txHash,
@@ -524,10 +540,15 @@ function BulkCancelSection({
     isSuccess,
   } = useWaitForTransactionReceipt({ hash: txHash })
 
+  // V2: no bulkCancelAuctions, so N cancelAuction(id) calls through the
+  // same EIP-5792-aware runner the V1-to-V2 upgrade flow uses (batched on
+  // smart wallets, sequential otherwise), one per selected auction.
+  const v2Cancel = useBatchedCalls()
+
   const refresh = useCallback(async () => {
     setLoad({ kind: "loading" })
     try {
-      const auctions = await loadCancellableAuctions(houseAddress)
+      const auctions = await loadCancellableAuctions(houseAddress, houseVersion)
       setLoad({ kind: "loaded", auctions })
       setSelected(new Set())
     } catch (err) {
@@ -536,7 +557,7 @@ function BulkCancelSection({
         message: err instanceof Error ? err.message : "Failed to load auctions",
       })
     }
-  }, [houseAddress])
+  }, [houseAddress, houseVersion])
 
   useEffect(() => {
     refresh()
@@ -578,7 +599,8 @@ function BulkCancelSection({
 
   const total = load.auctions.length
   const allSelected = selected.size === total
-  const isRunning = isWritePending || isMining
+  const v2Running = v2Cancel.status === "running"
+  const isRunning = houseVersion === 2 ? v2Running : isWritePending || isMining
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -595,15 +617,39 @@ function BulkCancelSection({
     else setSelected(new Set(load.auctions.map((a) => a.auctionId)))
   }
 
-  function handleCancel() {
+  async function handleCancel() {
     if (load.kind !== "loaded") return
     const targets = load.auctions.filter((a) => selected.has(a.auctionId))
     if (targets.length === 0) return
-    // Capture (contract, tokenId) pairs now so the post-confirm effect can
-    // revalidate them — `selected` may change while the tx is mining.
+    // Capture (contract, tokenId) pairs now so the post-confirm revalidation
+    // can target them — `selected` may change while the cancel(s) are mining.
     setPendingCancels(
       targets.map((a) => ({ contract: a.contract, tokenId: a.tokenId })),
     )
+
+    if (houseVersion === 2) {
+      const calls: PreparedCall[] = targets.map((a) => ({
+        id: a.auctionId,
+        to: houseAddress,
+        data: encodeFunctionData({
+          abi: sovereignAuctionHouseV2Abi,
+          functionName: "cancelAuction",
+          args: [BigInt(a.auctionId)],
+        }),
+        write: {
+          address: houseAddress,
+          abi: sovereignAuctionHouseV2Abi,
+          functionName: "cancelAuction",
+          args: [BigInt(a.auctionId)],
+        },
+      }))
+      await v2Cancel.run(calls)
+      setPendingCancels([])
+      router.refresh()
+      await refresh()
+      return
+    }
+
     writeContract({
       address: houseAddress,
       abi: sovereignAuctionHouseAbi,
@@ -624,7 +670,8 @@ function BulkCancelSection({
             Cancel pending auctions
           </h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            {total} pre-bid {total === 1 ? "auction" : "auctions"} on your house
+            {total} pre-bid {total === 1 ? "auction" : "auctions"} on your V
+            {houseVersion} house
           </p>
         </div>
         <button
@@ -648,9 +695,14 @@ function BulkCancelSection({
             disabled={isRunning}
             onToggle={() => toggle(a.auctionId)}
             right={
-              <p className="text-xs text-gray-400 tabular-nums shrink-0">
-                Reserve {formatEther(a.reserveWei)} ETH
-              </p>
+              <div className="flex items-center gap-2 shrink-0">
+                <p className="text-xs text-gray-400 tabular-nums">
+                  Reserve {formatEther(a.reserveWei)} ETH
+                </p>
+                {houseVersion === 2 && v2Cancel.perItemStatus.has(a.auctionId) && (
+                  <StatusChip status={v2Cancel.perItemStatus.get(a.auctionId)} />
+                )}
+              </div>
             }
           />
         ))}
@@ -659,23 +711,30 @@ function BulkCancelSection({
       <footer className="mt-5 flex items-center justify-between gap-3 border-t border-gray-100 pt-4">
         <p className="text-xs text-gray-500">
           {selected.size} selected
-          {isRunning && " — sign the cancel in your wallet"}
+          {houseVersion === 2 && isRunning && v2Cancel.mode === "sequential" && (
+            <> — {v2Cancel.walletLabel ?? "your wallet"} signs each cancel separately</>
+          )}
+          {houseVersion === 1 && isRunning && " — sign the cancel in your wallet"}
         </p>
         <button
-          onClick={handleCancel}
+          onClick={() => void handleCancel()}
           disabled={isRunning || selected.size === 0}
           className="text-[11px] font-mono font-medium uppercase tracking-wider px-4 py-2 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          {isWritePending
-            ? "Confirm in wallet…"
-            : isMining
+          {houseVersion === 2
+            ? v2Running
               ? "Cancelling…"
-              : `Cancel ${selected.size || ""} ${selected.size === 1 ? "auction" : "auctions"}`.replace(/\s+/g, " ").trim()}
+              : `Cancel ${selected.size || ""} ${selected.size === 1 ? "auction" : "auctions"}`.replace(/\s+/g, " ").trim()
+            : isWritePending
+              ? "Confirm in wallet…"
+              : isMining
+                ? "Cancelling…"
+                : `Cancel ${selected.size || ""} ${selected.size === 1 ? "auction" : "auctions"}`.replace(/\s+/g, " ").trim()}
         </button>
       </footer>
 
-      {txHash && isMining && <TxLink hash={txHash} label="Pending tx:" />}
-      {writeError && (
+      {houseVersion === 1 && txHash && isMining && <TxLink hash={txHash} label="Pending tx:" />}
+      {houseVersion === 1 && writeError && (
         <p className="mt-2 text-xs text-red-500 break-words">
           {writeError.message.includes("User rejected")
             ? "Transaction rejected"
@@ -792,6 +851,7 @@ async function loadListableItems(
  */
 async function loadCancellableAuctions(
   houseAddress: Address,
+  houseVersion: 1 | 2,
 ): Promise<CancellableAuction[]> {
   const res = await fetch(`/api/house-upgrade/${houseAddress}`)
   if (!res.ok) throw new Error(`Failed to load house listings (${res.status})`)
@@ -804,7 +864,7 @@ async function loadCancellableAuctions(
   const reads = await client.multicall({
     contracts: listings.map((l) => ({
       address: houseAddress,
-      abi: sovereignAuctionHouseAbi,
+      abi: houseVersion === 2 ? sovereignAuctionHouseV2Abi : sovereignAuctionHouseAbi,
       functionName: "auctions" as const,
       args: [BigInt(l.auctionId)] as const,
     })),
@@ -820,6 +880,10 @@ async function loadCancellableAuctions(
   listings.forEach((l, i) => {
     const r = reads[i]
     if (r.status !== "success") return
+    // V1's and V2's auctions() tuples agree on the first six fields
+    // (tokenId, tokenContract, firstBidTime, amount, reservePrice,
+    // tokenOwner); V2 adds fundsRecipient/quantity/standard after that,
+    // which this read doesn't need.
     const [tokenId, tokenContract, firstBidTime, , reservePrice, tokenOwner] =
       r.result as readonly [
         bigint, // tokenId
@@ -828,9 +892,7 @@ async function loadCancellableAuctions(
         bigint, // amount
         bigint, // reservePrice
         Address, // tokenOwner
-        bigint, // endTime
-        Address, // bidder
-        bigint, // duration
+        ...unknown[],
       ]
     if (tokenOwner === "0x0000000000000000000000000000000000000000") return
     if (firstBidTime !== 0n) return

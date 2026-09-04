@@ -11,11 +11,8 @@ import {
 } from "@pin/abi"
 import { useArtistHouse } from "@/components/auction/useArtistHouse"
 import { useArtistHouseV2 } from "@/components/auction/useArtistHouseV2"
-import {
-  useBatchedCalls,
-  type ItemStatus,
-  type PreparedCall,
-} from "@/lib/useBatchedCalls"
+import { StatusChip } from "@/components/auction/tx"
+import { useBatchedCalls, type PreparedCall } from "@/lib/useBatchedCalls"
 import type { HouseUpgradeListing } from "@/lib/indexer-queries"
 
 /**
@@ -84,39 +81,6 @@ function groupForRelist(listings: VerifiedListing[]): RelistGroup[] {
     }
   }
   return [...groups.values()]
-}
-
-const STATUS_LABEL: Record<ItemStatus["state"], string> = {
-  idle: "Queued",
-  confirming: "Awaiting signature",
-  mining: "Confirming",
-  done: "Done",
-  failed: "Failed",
-  skipped: "Skipped",
-}
-
-function StatusChip({ status }: { status: ItemStatus | undefined }) {
-  const state = status?.state ?? "idle"
-  const tone =
-    state === "done"
-      ? "text-green-700 bg-green-50"
-      : state === "failed"
-        ? "text-red-700 bg-red-50"
-        : state === "skipped"
-          ? "text-gray-500 bg-gray-100"
-          : "text-gray-700 bg-gray-100"
-  const detail =
-    status?.state === "failed"
-      ? `: ${status.error}`
-      : status?.state === "skipped"
-        ? `: ${status.reason}`
-        : ""
-  return (
-    <span className={`text-[11px] px-1.5 py-0.5 rounded ${tone}`}>
-      {STATUS_LABEL[state]}
-      {detail}
-    </span>
-  )
 }
 
 export function HouseUpgradePanel({ artistAddress }: Props) {
