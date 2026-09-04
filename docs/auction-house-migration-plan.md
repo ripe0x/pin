@@ -142,16 +142,21 @@ Phase 0, gates (before any deploy):
    `defaultFeeRecipient`, carried into the v2 factory constructor
    unchanged unless Dave says otherwise.
 
-Phase 1, mainnet deploy (per-broadcast confirm protocol applies):
+Phase 1, mainnet deploy: DONE 2026-09-02 from commit `49a5a696`.
 
-1. Deploy the `SovereignAuctionHouseV2` implementation, then
-   `SovereignAuctionHouseV2Factory` pointing at it
-   (`contracts/script/DeployAuctionV2.s.sol`). Deploy-time check: confirm
-   the implementation address carries real bytecode, not an EIP-7702
-   delegation indicator.
-2. Verify both sources on Etherscan under the default profile (the
-   profile that byte-matches, per #287).
-3. Update `deployments.mainnet.json`, regen docs and ABIs, commit.
+1. Implementation `0x88b48793f38EF7370F2e7BC12E2f73DC565C117F` (block
+   25901755), factory `0x77aB853543286C9Cdd7dd6c01222A7cC4Ac93d63` (block
+   25901772). Fee terms 0 bps, zero recipient, matching v1. The deployer is
+   an EIP-7702 delegated account, so the two-tx broadcast needed
+   `--resume --slow` after the first attempt landed only the
+   implementation; every broadcast from that signer takes `--slow`.
+2. Both sources verified on Etherscan under the default profile (solc
+   0.8.24, optimizer 200). Implementation code confirmed to be contract
+   bytecode, not a delegation indicator.
+3. Recorded in `deployments.mainnet.json` (`auctionHouseV2Factory`,
+   `auctionHouseV2Implementation`; v1 keys untouched) with the drift guard
+   `contracts/test/AuctionV2MainnetDeployment.t.sol`. Indexer start block
+   for the V2 factory: 25901772.
 
 Phase 2, indexer: config + schema + handlers as above, deploy to Railway.
 Backfill for the v2 factory is tiny (starts at its deploy block).
