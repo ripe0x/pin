@@ -35,11 +35,7 @@ import { throttleRpc } from "../throttle.ts"
 import { resolveNewTokenOwner } from "../scanners/resolve-owner.ts"
 import { parseAbiItem, type Address } from "viem"
 import type { TaskResult } from "../scheduler.ts"
-
-const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-  /[^a-zA-Z0-9_]/g,
-  "",
-)
+import { INDEXER_SCHEMA } from "../indexer-schema.ts"
 
 const ZERO = "0x0000000000000000000000000000000000000000"
 // Shared 1/1 contracts are excluded: they're high-volume and their creators

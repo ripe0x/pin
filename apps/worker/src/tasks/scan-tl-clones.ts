@@ -13,11 +13,9 @@ import { sql } from "../db.ts"
 import { client } from "../rpc.ts"
 import { scanArtistTokensViaTransferFromZero } from "../scanners/transfer-from-zero.ts"
 import type { TaskResult } from "../scheduler.ts"
+import { INDEXER_SCHEMA } from "../indexer-schema.ts"
 
 const PLATFORM = "tl"
-const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-  /[^a-zA-Z0-9_]/g, "",
-)
 
 export async function scanTlClones(): Promise<TaskResult> {
   const targets = (await sql.unsafe(
