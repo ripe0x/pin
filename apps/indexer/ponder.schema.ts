@@ -32,16 +32,46 @@ export const pndAuctions = onchainTable(
     bidder: t.hex().notNull(),
     firstBidTime: t.bigint().notNull(),
     endTime: t.bigint().notNull(),
+    // "active" | "settled" | "cancelled" (v1 + v2), plus V2-only:
+    // "deferred" (DeliveryDeferred, delivery failed, nobody paid, retry
+    // via claimLot), "unwound" (unwindStuckLot unwound the sale and the
+    // lot is back with the seller), and "unwound_return_pending" (unwound
+    // but the lot return to the seller itself failed, awaiting
+    // returnUnwoundLot).
     status: t.text().notNull(),
     winner: t.hex(),
     sellerProceeds: t.bigint(),
     protocolFee: t.bigint(),
+    // House generation: 1 = SovereignAuctionHouse, 2 = SovereignAuctionHouseV2.
+    version: t.integer().notNull(),
+    // "erc721" | "erc1155". A quantity-1 ERC1155 lot is otherwise
+    // indistinguishable from an ERC721 auction.
+    standard: t.text().notNull(),
+    // ERC1155 lot size (V2 only). 1 for ERC721 auctions.
+    quantity: t.bigint().notNull(),
+    // V2 only: proceeds recipient recorded at listing time.
+    fundsRecipient: t.hex(),
+    // V2 only: no-bid listing close date from AuctionCreated/
+    // Auction1155Created, or a later AuctionListingExpiryUpdated. 0 means
+    // no expiry.
+    listingExpiry: t.bigint(),
     createdAtBlock: t.bigint().notNull(),
     createdAtTime: t.bigint().notNull(),
     settledAtBlock: t.bigint(),
     settledAtTime: t.bigint(),
     createdTxHash: t.hex(),
     lifecycleTxHash: t.hex(),
+    // V2 only: set by DeliveryDeferred when the row moves to "deferred".
+    deferredAtTime: t.bigint(),
+    // V2 only: set by LotClaimed, when a deferred lot is delivered via
+    // claimLot or unwindStuckLot's retry-to-winner.
+    claimedAtBlock: t.bigint(),
+    claimedAtTime: t.bigint(),
+    claimTxHash: t.hex(),
+    claimRecipient: t.hex(),
+    // V2 only: set by LotUnwound, the winner's bid amount credited to
+    // pendingRefunds when the sale unwinds.
+    refundAmount: t.bigint(),
   }),
   (table) => ({
     sellerStatusIdx: index().on(table.seller, table.status),
@@ -56,6 +86,8 @@ export const pndHouses = onchainTable(
     owner: t.hex().notNull(),
     feeRecipient: t.hex().notNull(),
     protocolFeeBps: t.integer().notNull(),
+    // House generation: 1 = SovereignAuctionHouse, 2 = SovereignAuctionHouseV2.
+    version: t.integer().notNull(),
     createdAtBlock: t.bigint().notNull(),
     createdAtTime: t.bigint().notNull(),
     createdTxHash: t.hex(),

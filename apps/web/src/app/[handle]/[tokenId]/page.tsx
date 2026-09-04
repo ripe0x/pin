@@ -444,8 +444,7 @@ export default async function TokenPage({
           )}
 
           {/* Live auction (Foundation NFTMarket or a sovereign auction
-              house). Our houses are ERC721-only so we suppress the start CTA
-              for ERC1155 tokens. */}
+              house). */}
           {auction && (
             <section className="py-5 border-b border-gray-100">
               <AuctionPanel auction={auction} creator={data.creator || undefined} />
@@ -463,11 +462,12 @@ export default async function TokenPage({
               viewer is the current owner with a deployed house — otherwise it
               returns null, so we don't wrap it in a section here (that left an
               empty bordered band for every non-owner viewer). */}
-          {!auction && !data.isErc1155 && (
+          {!auction && (
             <StartAuctionCTA
               nftContract={data.contract as `0x${string}`}
               tokenId={tokenId}
               tokenTitle={data.title}
+              tokenStandard={data.isErc1155 ? "erc1155" : "erc721"}
             />
           )}
 

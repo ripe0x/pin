@@ -21,6 +21,8 @@ import {
   erc721Abi,
   sovereignAuctionHouseAbi,
   sovereignAuctionHouseFactoryAbi,
+  sovereignAuctionHouseV2Abi,
+  sovereignAuctionHouseV2FactoryAbi,
 } from "@pin/abi"
 import {
   fetchSellerCancellableListings,
@@ -34,7 +36,12 @@ import {
   netReceived,
 } from "@/lib/platforms/migration-savings"
 import type { PlatformId } from "@/lib/platforms/types"
-import { useArtistHouse } from "@/components/auction/useArtistHouse"
+import { useResolvedArtistHouse } from "@/components/auction/useResolvedArtistHouse"
+import {
+  SOVEREIGN_AUCTION_HOUSE_V2_FACTORY,
+  MAINNET_CHAIN_ID,
+  getAddressOrNull,
+} from "@pin/addresses"
 import { useThumbnailMedia } from "@/lib/use-thumbnail-media"
 
 // Display names for the platform-section headers. New platforms slot in
@@ -199,8 +206,13 @@ function Inner({
   const { switchChain, isPending: switchPending } = useSwitchChain()
   const wrongNetwork = chainId !== PREFERRED_CHAIN.id
 
-  const { factoryAddress, houseAddress, refetch: refetchHouse } =
-    useArtistHouse(artistAddress)
+  const { factoryAddress, houseAddress, version: houseVersion } =
+    useResolvedArtistHouse(artistAddress)
+  // New deploys go to the V2 factory once its address is live.
+  const v2FactoryLive =
+    getAddressOrNull(SOVEREIGN_AUCTION_HOUSE_V2_FACTORY, MAINNET_CHAIN_ID) !==
+    null
+  const targetVersion: 1 | 2 = houseVersion ?? (v2FactoryLive ? 2 : 1)
 
   const [load, setLoad] = useState<LoadState>({ kind: "idle" })
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -341,13 +353,20 @@ function Inner({
     }
     const txHash = await writeContractAction(config, {
       address: factoryAddress,
-      abi: sovereignAuctionHouseFactoryAbi,
+      abi: v2FactoryLive
+        ? sovereignAuctionHouseV2FactoryAbi
+        : sovereignAuctionHouseFactoryAbi,
       functionName: "createAuctionHouse",
       args: [],
     })
     await waitForTransactionReceipt(config, { hash: txHash })
-    const result = await refetchHouse()
-    const newAddress = (result.data ?? null) as Address | null
+    // houseOf shares its signature across both factory generations.
+    const newAddress = (await readContract(config, {
+      address: factoryAddress,
+      abi: sovereignAuctionHouseFactoryAbi,
+      functionName: "houseOf",
+      args: [connected],
+    })) as Address
     if (
       !newAddress ||
       newAddress === "0x0000000000000000000000000000000000000000"
@@ -413,16 +432,19 @@ function Inner({
       // 4. Create auction on Sovereign.
       updateRowState(row.id, { step: "listing" })
       const tokenIds = [BigInt(row.source.tokenId)]
+      // listingExpiry: 0n (no expiry), there is no UI for it yet. V2-only
+      // arg; V1's bulkCreateAuctions has no fifth parameter.
       const createHash = await writeContractAction(config, {
         address: house,
-        abi: sovereignAuctionHouseAbi,
+        abi:
+          targetVersion === 2
+            ? sovereignAuctionHouseV2Abi
+            : sovereignAuctionHouseAbi,
         functionName: "bulkCreateAuctions",
-        args: [
-          row.source.nftContract,
-          tokenIds,
-          reserveWei,
-          BigInt(row.durationSec),
-        ],
+        args:
+          targetVersion === 2
+            ? [row.source.nftContract, tokenIds, reserveWei, BigInt(row.durationSec), 0n]
+            : [row.source.nftContract, tokenIds, reserveWei, BigInt(row.durationSec)],
       })
       updateRowState(row.id, { step: "listing", txHash: createHash })
       await waitForTransactionReceipt(config, { hash: createHash })

@@ -74,6 +74,35 @@ const HOOK_REVERT_COPY: Record<string, string> = {
 }
 
 /**
+ * Sovereign auction house custom errors (V1 + V2's full error set, see
+ * ISovereignAuctionHouseV2.sol). Matched the same way as the maps above.
+ */
+const SOVEREIGN_ERROR_COPY: Record<string, string> = {
+  AuctionAlreadyExistsForToken: "This token already has an active auction.",
+  AuctionAlreadySettled: "This auction has already settled.",
+  AuctionAlreadyStarted:
+    "A bid has landed, so this listing can no longer be changed or cancelled.",
+  AuctionDoesNotExist: "This auction does not exist.",
+  AuctionExpired: "This auction has already ended.",
+  AuctionHasNoBids: "No bids landed, so there is nothing to settle.",
+  AuctionNotEnded: "The auction timer has not run out yet.",
+  BidBelowMinimum: "Bid is below the minimum raise over the current bid.",
+  BidBelowReserve: "Bid is below the reserve price.",
+  BidMustBePositive: "Bid amount must be greater than zero.",
+  DeliveryFailed: "Token delivery failed, so nothing changed. This is retryable.",
+  EscrowFailed: "The token could not be moved into escrow.",
+  FundsRecipientRequired: "A payout recipient is required and cannot be the zero address.",
+  InsufficientGas:
+    "Not enough gas was provided to attempt delivery; retry with a higher gas limit.",
+  NoPendingDelivery: "There is no deferred delivery to claim for this lot.",
+  NoPendingReturn: "There is no pending lot return to deliver.",
+  NotWinner: "Only the winning bidder can redirect delivery.",
+  OnlySelf: "This action can only be triggered by the contract itself.",
+  OwnershipLocked: "House ownership cannot be transferred or renounced.",
+  UnwindTooEarly: "The 30-day delivery window has not passed yet.",
+}
+
+/**
  * Format a wagmi/viem write error for display. viem attaches the actual revert
  * reason on the error's `cause.cause...` chain (and a friendlier `shortMessage`
  * on the top-level error). The default Error.message is a multi-line block
@@ -115,7 +144,11 @@ export function formatWriteError(err: unknown, action: string): string {
     if (Array.isArray(n.metaMessages)) seen.push(...n.metaMessages)
     node = n.cause
   }
-  for (const [name, copy] of Object.entries({ ...COLLECTION_ERROR_COPY, ...HOOK_REVERT_COPY })) {
+  for (const [name, copy] of Object.entries({
+    ...COLLECTION_ERROR_COPY,
+    ...HOOK_REVERT_COPY,
+    ...SOVEREIGN_ERROR_COPY,
+  })) {
     const nameBoundary = new RegExp(`\\b${name}\\b`)
     if (seen.some((s) => s === name || nameBoundary.test(s))) return copy
   }

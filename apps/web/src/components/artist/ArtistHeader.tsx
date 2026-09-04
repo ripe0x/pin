@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import type { ArtistIdentity } from "@/lib/artist-queries"
-import { useArtistHouse } from "@/components/auction/useArtistHouse"
+import { useResolvedArtistHouse } from "@/components/auction/useResolvedArtistHouse"
 import { AddressZorb } from "@/components/AddressZorb"
 import { CopyAddressButton } from "@/components/CopyAddressButton"
 
@@ -108,7 +108,7 @@ export function ArtistHeader({
 
 /** Subcomponent so the wagmi hook only runs on the client (parent gates render). */
 function HouseLinkPill({ artistAddress }: { artistAddress: string }) {
-  const { houseAddress } = useArtistHouse(artistAddress)
+  const { houseAddress } = useResolvedArtistHouse(artistAddress)
   if (!houseAddress) return null
   return (
     <a
