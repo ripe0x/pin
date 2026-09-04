@@ -1,5 +1,6 @@
 import { ponder } from "ponder:registry"
 import { pndAuctions, pndBids, pndHouses } from "ponder:schema"
+import { resolveLotUnwoundStatus } from "./sovereignV2Status"
 
 /**
  * Sovereign Auction House V2 handlers — DEPLOY-GATED.
@@ -7,19 +8,37 @@ import { pndAuctions, pndBids, pndHouses } from "ponder:schema"
  * V2 houses write into the same pnd_houses / pnd_auctions / pnd_bids
  * tables as V1, distinguished by `version: 2`. The V1 lifecycle events
  * (AuctionCreated/Bid/EndTimeUpdated/ReservePriceUpdated/Ended/Canceled)
- * are handled identically. V2 adds:
+ * are handled the same way, plus the V2-only fields (fundsRecipient,
+ * listingExpiry) each event now carries.
  *
- *   Auction1155Created   — ERC1155 lot (row carries `quantity`)
- *   AuctionEndedToEscrow — settlement paid out with the lot held for the
- *                          winner; status "escrowed"
- *   EscrowedLotDelivered — escrowed lot delivered; status "settled"
- *   AuctionDeliveryFailed — mutual-consent unwind; status "failed"
- *   AuctionDurationUpdated — pre-bid duration change
+ * V2 settlement is escrow-and-wait, not escrow-and-hold: endAuction pays
+ * the seller only after delivery to the winner is verified. A failed
+ * delivery pays nobody and moves the row to "deferred"; claimLot or
+ * unwindStuckLot's retry can still settle it later, which is why
+ * AuctionEnded (not a separate "delivered" event) is the one handler that
+ * always finalizes a row to "settled" — it fires from every successful
+ * delivery path, immediate or deferred.
  *
- * Not indexed (no read path needs them yet): AuctionFundsRecipientUpdated,
- * AuctionListingExpiryUpdated, UnwindConsentRecorded, FailedLotReturned,
- * RefundCredited/RefundWithdrawn. The migrate flow reads listing settings
- * on-chain at click time, not from these rows.
+ * Status state machine (see the `status` column comment on pndAuctions
+ * in ponder.schema.ts for the full value list):
+ *   AuctionCreated / Auction1155Created -> active
+ *   AuctionEnded                        -> settled (terminal)
+ *   DeliveryDeferred                    -> deferred
+ *   LotClaimed                          -> claim metadata only; the
+ *                                          AuctionEnded emitted in the
+ *                                          same call already set settled
+ *   LotUnwound                          -> unwound, unless a
+ *                                          LotReturnDeferred in the same
+ *                                          call already set
+ *                                          unwound_return_pending
+ *   LotReturnDeferred                   -> unwound_return_pending
+ *   LotReturned                         -> unwound (terminal)
+ *   AuctionCanceled                     -> cancelled (terminal)
+ *
+ * Not indexed (no read path needs them; RefundCredited/RefundWithdrawn
+ * have no dedicated table and LotUnwound already carries refundAmount):
+ * RefundCredited, RefundWithdrawn, StuckERC721Recovered,
+ * StuckERC1155Recovered.
  */
 
 const compositeId = (house: string, auctionId: bigint) =>
@@ -71,7 +90,7 @@ on("SovereignAuctionHouseV2Factory:AuctionHouseCreated", async ({ event, context
 })
 
 on("SovereignAuctionHouseV2:AuctionCreated", async ({ event, context }) => {
-  const { auctionId, tokenId, tokenContract, duration, reservePrice, tokenOwner } =
+  const { auctionId, tokenId, tokenContract, duration, reservePrice, tokenOwner, fundsRecipient, listingExpiry } =
     event.args as {
       auctionId: bigint
       tokenId: bigint
@@ -79,6 +98,8 @@ on("SovereignAuctionHouseV2:AuctionCreated", async ({ event, context }) => {
       duration: bigint
       reservePrice: bigint
       tokenOwner: Hex
+      fundsRecipient: Hex
+      listingExpiry: bigint
     }
   const house = event.log.address as Hex
   await context.db.insert(pndAuctions).values({
@@ -98,6 +119,8 @@ on("SovereignAuctionHouseV2:AuctionCreated", async ({ event, context }) => {
     version: 2,
     standard: "erc721",
     quantity: 1n,
+    fundsRecipient,
+    listingExpiry,
     createdAtBlock: event.block.number,
     createdAtTime: event.block.timestamp,
     createdTxHash: event.transaction.hash,
@@ -105,16 +128,27 @@ on("SovereignAuctionHouseV2:AuctionCreated", async ({ event, context }) => {
 })
 
 on("SovereignAuctionHouseV2:Auction1155Created", async ({ event, context }) => {
-  const { auctionId, tokenId, tokenContract, quantity, duration, reservePrice, tokenOwner } =
-    event.args as {
-      auctionId: bigint
-      tokenId: bigint
-      tokenContract: Hex
-      quantity: bigint
-      duration: bigint
-      reservePrice: bigint
-      tokenOwner: Hex
-    }
+  const {
+    auctionId,
+    tokenId,
+    tokenContract,
+    quantity,
+    duration,
+    reservePrice,
+    tokenOwner,
+    fundsRecipient,
+    listingExpiry,
+  } = event.args as {
+    auctionId: bigint
+    tokenId: bigint
+    tokenContract: Hex
+    quantity: bigint
+    duration: bigint
+    reservePrice: bigint
+    tokenOwner: Hex
+    fundsRecipient: Hex
+    listingExpiry: bigint
+  }
   const house = event.log.address as Hex
   await context.db.insert(pndAuctions).values({
     id: compositeId(house, auctionId),
@@ -133,6 +167,8 @@ on("SovereignAuctionHouseV2:Auction1155Created", async ({ event, context }) => {
     version: 2,
     standard: "erc1155",
     quantity,
+    fundsRecipient,
+    listingExpiry,
     createdAtBlock: event.block.number,
     createdAtTime: event.block.timestamp,
     createdTxHash: event.transaction.hash,
@@ -210,28 +246,34 @@ on("SovereignAuctionHouseV2:AuctionDurationUpdated", async ({ event, context }) 
   await context.db.update(pndAuctions, { id }).set({ duration })
 })
 
-on("SovereignAuctionHouseV2:AuctionEnded", async ({ event, context }) => {
-  const { auctionId, winner, sellerProceeds, protocolFee } = event.args as {
+on("SovereignAuctionHouseV2:AuctionFundsRecipientUpdated", async ({ event, context }) => {
+  const { auctionId, fundsRecipient } = event.args as {
     auctionId: bigint
-    winner: Hex
-    sellerProceeds: bigint
-    protocolFee: bigint
+    fundsRecipient: Hex
   }
   const id = compositeId(event.log.address as Hex, auctionId)
   const existing = await context.db.find(pndAuctions, { id })
   if (!existing) return
-  await context.db.update(pndAuctions, { id }).set({
-    status: "settled",
-    winner,
-    sellerProceeds,
-    protocolFee,
-    settledAtBlock: event.block.number,
-    settledAtTime: event.block.timestamp,
-    lifecycleTxHash: event.transaction.hash,
-  })
+  await context.db.update(pndAuctions, { id }).set({ fundsRecipient })
 })
 
-on("SovereignAuctionHouseV2:AuctionEndedToEscrow", async ({ event, context }) => {
+on("SovereignAuctionHouseV2:AuctionListingExpiryUpdated", async ({ event, context }) => {
+  const { auctionId, listingExpiry } = event.args as {
+    auctionId: bigint
+    listingExpiry: bigint
+  }
+  const id = compositeId(event.log.address as Hex, auctionId)
+  const existing = await context.db.find(pndAuctions, { id })
+  if (!existing) return
+  await context.db.update(pndAuctions, { id }).set({ listingExpiry })
+})
+
+// Always fires on a successful delivery, whether that happens immediately
+// (endAuction) or later via a deferred retry (claimLot,
+// unwindStuckLot's retry-to-winner) — _finalizeSale emits this from every
+// success path, so this handler is the single place a row becomes
+// "settled".
+on("SovereignAuctionHouseV2:AuctionEnded", async ({ event, context }) => {
   const { auctionId, winner, sellerProceeds, protocolFee } = event.args as {
     auctionId: bigint
     tokenOwner: Hex
@@ -243,7 +285,7 @@ on("SovereignAuctionHouseV2:AuctionEndedToEscrow", async ({ event, context }) =>
   const existing = await context.db.find(pndAuctions, { id })
   if (!existing) return
   await context.db.update(pndAuctions, { id }).set({
-    status: "escrowed",
+    status: "settled",
     winner,
     sellerProceeds,
     protocolFee,
@@ -253,31 +295,93 @@ on("SovereignAuctionHouseV2:AuctionEndedToEscrow", async ({ event, context }) =>
   })
 })
 
-on("SovereignAuctionHouseV2:EscrowedLotDelivered", async ({ event, context }) => {
-  const { auctionId } = event.args as { auctionId: bigint; winner: Hex }
-  const id = compositeId(event.log.address as Hex, auctionId)
-  const existing = await context.db.find(pndAuctions, { id })
-  if (!existing) return
-  await context.db.update(pndAuctions, { id }).set({
-    status: "settled",
-    lifecycleTxHash: event.transaction.hash,
-  })
-})
-
-on("SovereignAuctionHouseV2:AuctionDeliveryFailed", async ({ event, context }) => {
-  const { auctionId } = event.args as {
+// Delivery to the winner failed during endAuction. Nobody is paid; the
+// bid and lot stay escrowed for a permissionless claimLot retry.
+on("SovereignAuctionHouseV2:DeliveryDeferred", async ({ event, context }) => {
+  const { auctionId, winner } = event.args as {
     auctionId: bigint
     winner: Hex
-    refundAmount: bigint
   }
   const id = compositeId(event.log.address as Hex, auctionId)
   const existing = await context.db.find(pndAuctions, { id })
   if (!existing) return
   await context.db.update(pndAuctions, { id }).set({
-    status: "failed",
-    settledAtBlock: event.block.number,
-    settledAtTime: event.block.timestamp,
-    lifecycleTxHash: event.transaction.hash,
+    status: "deferred",
+    winner,
+    deferredAtTime: event.block.timestamp,
+  })
+})
+
+// Fires alongside AuctionEnded in the same tx (claimLot or
+// unwindStuckLot's retry-to-winner both call _finalizeSale, which emits
+// AuctionEnded, before emitting this). Only records claim metadata — the
+// AuctionEnded handler above already moved status to "settled".
+on("SovereignAuctionHouseV2:LotClaimed", async ({ event, context }) => {
+  const { auctionId, recipient } = event.args as {
+    auctionId: bigint
+    winner: Hex
+    recipient: Hex
+  }
+  const id = compositeId(event.log.address as Hex, auctionId)
+  const existing = await context.db.find(pndAuctions, { id })
+  if (!existing) return
+  await context.db.update(pndAuctions, { id }).set({
+    status: "settled",
+    claimedAtBlock: event.block.number,
+    claimedAtTime: event.block.timestamp,
+    claimTxHash: event.transaction.hash,
+    claimRecipient: recipient,
+  })
+})
+
+// unwindStuckLot's retry-to-winner also failed: the sale unwinds. The
+// winner's full bid is credited to pendingRefunds; the lot returns to the
+// seller in the same call, or if that return also fails,
+// LotReturnDeferred fires in the same tx (before this event, per the
+// contract's emit order) and sets unwound_return_pending. Re-read the row
+// so that ordering is never clobbered back to "unwound" regardless of
+// which of the two fires first.
+on("SovereignAuctionHouseV2:LotUnwound", async ({ event, context }) => {
+  const { auctionId, winner, refundAmount } = event.args as {
+    auctionId: bigint
+    winner: Hex
+    refundAmount: bigint
+    tokenOwner: Hex
+  }
+  const id = compositeId(event.log.address as Hex, auctionId)
+  const existing = await context.db.find(pndAuctions, { id })
+  if (!existing) return
+  const status = resolveLotUnwoundStatus(existing.status)
+  await context.db.update(pndAuctions, { id }).set({
+    status,
+    winner,
+    refundAmount,
+  })
+})
+
+on("SovereignAuctionHouseV2:LotReturnDeferred", async ({ event, context }) => {
+  const { auctionId } = event.args as {
+    auctionId: bigint
+    tokenOwner: Hex
+  }
+  const id = compositeId(event.log.address as Hex, auctionId)
+  const existing = await context.db.find(pndAuctions, { id })
+  if (!existing) return
+  await context.db.update(pndAuctions, { id }).set({
+    status: "unwound_return_pending",
+  })
+})
+
+on("SovereignAuctionHouseV2:LotReturned", async ({ event, context }) => {
+  const { auctionId } = event.args as {
+    auctionId: bigint
+    tokenOwner: Hex
+  }
+  const id = compositeId(event.log.address as Hex, auctionId)
+  const existing = await context.db.find(pndAuctions, { id })
+  if (!existing) return
+  await context.db.update(pndAuctions, { id }).set({
+    status: "unwound",
   })
 })
 
