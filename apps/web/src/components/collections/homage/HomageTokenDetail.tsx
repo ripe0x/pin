@@ -3,7 +3,7 @@
 // Server component. Renders inside the terminal skin (`.dark .homage-terminal
 // .collection-homage-skin`, applied by the page) so it matches /mint/homage, the
 // collection page, and the redeem page. It deliberately drops the generic PND
-// token chrome (Mint Mark, a top-level seed card, "Standard: ERC721", the "pure
+// token chrome (derived provenance, a top-level seed card, "Standard: ERC721", the "pure
 // function of chain state" copy) and surfaces what a homage actually carries: the
 // source punk, its traits, and the homage's own derived color count. The seed and
 // contract plumbing collapse into one "Onchain details" disclosure at the bottom.
@@ -16,6 +16,7 @@ import {HomageRedeemLink} from "./HomageRedeemLink"
 import {CopyAddressButton} from "@/components/CopyAddressButton"
 import {PND_CHAIN_ID, evmNowAddressUrl, ipfsToHttp, shortAddress} from "@/lib/collection"
 import type {HomageTokenFacts} from "@/lib/homage/token-facts"
+import type {PreservationGrade} from "@/lib/preservation"
 
 const META = "text-[10px] font-mono uppercase tracking-wider text-gray-400"
 
@@ -40,6 +41,7 @@ export function HomageTokenDetail({
   renderer,
   isRendererLocked,
   onchainPfpSrc,
+  preservation,
 }: {
   collection: Address
   tokenId: bigint
@@ -52,6 +54,7 @@ export function HomageTokenDetail({
   renderer: Address
   isRendererLocked: boolean
   onchainPfpSrc: string | null
+  preservation: PreservationGrade | null
 }) {
   const id = tokenId.toString()
   const dash = "—"
@@ -197,6 +200,16 @@ export function HomageTokenDetail({
                 {isRendererLocked ? " · locked" : ""}
               </dd>
             </div>
+            {preservation && (
+              <div className="flex flex-col gap-1.5 pt-2">
+                <span className={META}>Preservation · {preservation.summary}</span>
+                {preservation.facts.map((f, i) => (
+                  <span key={i} className="text-[11px] font-mono text-fg-muted leading-relaxed">
+                    {f.label}
+                  </span>
+                ))}
+              </div>
+            )}
             <div className="flex flex-col gap-2 pt-1">
               <a
                 href={`https://opensea.io/assets/ethereum/${collection}/${id}`}

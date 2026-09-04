@@ -14,23 +14,46 @@
  * GET (no wallet) — gate summary { gated, root, cap, count }.
  */
 
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { isAddress, type Address } from "viem"
 import { allowlistCount, eligibilityFor, publishAllowlist } from "@/lib/allowlist"
 import { getMinterGate } from "@/lib/collection-onchain"
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit"
 
 const ZERO_ROOT = "0x" + "0".repeat(64)
+const MAX_BODY_BYTES = 1_000_000
 
 type Params = { params: Promise<{ address: string }> }
 
-export async function POST(req: Request, { params }: Params) {
+export async function POST(req: NextRequest, { params }: Params) {
   const { address } = await params
   if (!isAddress(address)) {
     return NextResponse.json({ error: "Bad collection address." }, { status: 400 })
   }
+  const contentLength = Number(req.headers.get("content-length") ?? "0")
+  if (Number.isFinite(contentLength) && contentLength > MAX_BODY_BYTES) {
+    return NextResponse.json({ error: "Allowlist payload is too large." }, { status: 413 })
+  }
+  const limit = checkRateLimit(
+    "collection-allowlist-publish",
+    getClientIp(req),
+    60 * 60_000,
+    10,
+  )
+  if (!limit.ok) {
+    return NextResponse.json(
+      { error: "Too many allowlist publishes. Try again later." },
+      { status: 429, headers: { "Retry-After": String(limit.retryAfter) } },
+    )
+  }
+
   let body: unknown
   try {
-    body = await req.json()
+    const raw = await req.text()
+    if (new TextEncoder().encode(raw).byteLength > MAX_BODY_BYTES) {
+      return NextResponse.json({ error: "Allowlist payload is too large." }, { status: 413 })
+    }
+    body = JSON.parse(raw)
   } catch {
     return NextResponse.json({ error: "Body must be JSON." }, { status: 400 })
   }

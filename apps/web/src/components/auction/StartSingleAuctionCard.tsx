@@ -28,7 +28,7 @@ export function StartSingleAuctionCard({
         </p>
         <p className="text-xs text-gray-500">
           {active
-            ? "Paste any ERC-721 you own, or pick from your indexed works."
+            ? "Paste any ERC-721 you own, or pick from work PND found."
             : "Available once your auction house is deployed."}
         </p>
       </div>

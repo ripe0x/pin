@@ -1,17 +1,17 @@
 export default function AboutPage() {
   return (
-    <div className="mx-auto max-w-2xl px-6 py-12 space-y-8">
+    <div className="mx-auto max-w-3xl px-6 py-12 space-y-12">
       <header className="space-y-5">
-        <h1 className="text-3xl font-semibold tracking-tight">What PND is</h1>
-        <p className="text-base text-fg-muted leading-relaxed">
-          PND helps artists preserve, publish, auction, and operate their
-          work with more control over the systems around it.
+        <p className="text-[11px] font-mono font-medium uppercase tracking-wider text-gray-500">
+          About PND
         </p>
-        <p className="text-base text-fg-muted leading-relaxed">
-          The work, the contract, the auction, and the provenance can all
-          live on Ethereum. PND exists so the layer between an artist and
-          that work (pinning, listing, bidding, settling, viewing) does
-          not have to depend on a single platform staying online.
+        <h1 className="text-3xl font-semibold tracking-tight sm:text-5xl">
+          A venue for artist-owned releases.
+        </h1>
+        <p className="max-w-2xl text-lg text-fg-muted leading-relaxed">
+          Artists can launch on PND, operate independently, or use the same
+          release tools on their own sites. Collectors get a clear place to
+          discover the work and a durable public record around it.
         </p>
       </header>
 
@@ -37,42 +37,59 @@ export default function AboutPage() {
 
       <section className="space-y-4">
         <h2 className="text-xl sm:text-2xl font-semibold tracking-tight pt-4">
-          What PND has shipped
+          What PND provides
         </h2>
         <p className="text-base text-fg-muted leading-relaxed">
-          PND has grown one tool at a time, in response to what artists
-          actually needed.
+          PND combines a public venue with infrastructure artists can carry
+          elsewhere. The public experience starts with the work, while the
+          underlying contracts and tools remain usable beyond this site.
         </p>
         <ul className="text-base text-fg-muted leading-relaxed space-y-3 list-none">
           <li>
-            <strong className="text-fg font-medium">Preserve.</strong> Pin
-            your own work to IPFS so the media is not tied to any single
-            host.
+            <strong className="text-fg font-medium">Releases.</strong>{" "}
+            Publish editions, generative work, and other bodies of work from
+            an artist-owned Surface contract.
           </li>
           <li>
-            <strong className="text-fg font-medium">Foundation tools.</strong>{" "}
-            Interact with existing Foundation auction contracts after the
-            original frontend was gone. Delist work where needed.
+            <strong className="text-fg font-medium">Auctions.</strong>{" "}
+            Deploy and operate an artist-owned auction house with no PND fee
+            and no PND-controlled upgrade path.
           </li>
           <li>
-            <strong className="text-fg font-medium">
-              Artist-owned auctions.
-            </strong>{" "}
-            Deploy your own auction contract that you control. Zero
-            platform fees. No upgrade path controlled by PND.
+            <strong className="text-fg font-medium">Public record.</strong>{" "}
+            Keep available, created, sold, transferred, and collected work
+            legible without forcing artists and collectors into separate identities.
           </li>
           <li>
-            <strong className="text-fg font-medium">A bidding frontend.</strong>{" "}
-            Browse, list, and bid through PND. Each artist also gets a
-            site that reads their auction contract directly.
+            <strong className="text-fg font-medium">Catalog.</strong>{" "}
+            Let an artist declare the contracts and tokens that belong to
+            their body of work through a general onchain registry.
           </li>
           <li>
-            <strong className="text-fg font-medium">Surface.</strong>{" "}
-            Publish editions and generative releases from a collection
-            contract you own. Collectors can mint through PND or through
-            a page the artist hosts themselves, on the same contracts.
+            <strong className="text-fg font-medium">Preservation.</strong>{" "}
+            Pin media and surface permanence information so the work is not
+            silently tied to one application host.
           </li>
         </ul>
+      </section>
+
+      <section className="space-y-4">
+        <h2 className="text-xl sm:text-2xl font-semibold tracking-tight pt-4">
+          Portability without a badge
+        </h2>
+        <p className="text-base text-fg-muted leading-relaxed">
+          The contracts and release tools do not depend on PND remaining the
+          primary interface. PND is building a shared release kit, exportable
+          configuration, and guided deployment paths so an artist can use the
+          same release on a site they control.
+        </p>
+        <p className="text-base text-fg-muted leading-relaxed">
+          PND does not label artists as “independent” or try to monitor what
+          they do after exporting. A site link is shown only when an artist
+          voluntarily provides one. Compatibility checks can confirm that a
+          submitted page resolves and references the expected collection, but
+          they cannot prove lasting ownership or permanence.
+        </p>
       </section>
 
       <section className="space-y-4">
@@ -94,20 +111,21 @@ export default function AboutPage() {
 
       <section className="space-y-4">
         <h2 className="text-xl sm:text-2xl font-semibold tracking-tight pt-4">
-          What PND is not trying to do
+          A venue, not a closed marketplace
         </h2>
         <p className="text-base text-fg-muted leading-relaxed">
-          PND is not trying to replace every platform.
+          PND can provide presentation, context, distribution, and collector
+          access while keeping the release infrastructure portable.
         </p>
         <p className="text-base text-fg-muted leading-relaxed">
-          Platforms can still provide taste, trust, curation, context,
-          distribution, and collector relationships. Those are real and
-          they take work to build.
+          Artists do not need to leave PND to demonstrate independence, and a
+          missing external site is not unfinished work. The exit path exists
+          because it is useful, not because PND needs to observe or score it.
         </p>
         <p className="text-base text-fg-muted leading-relaxed">
-          PND covers the layer underneath that. The pieces that should
-          keep working whether or not any particular platform stays
-          online.
+          Editorially presented releases and the complete permissionless
+          Surface record remain distinct. PND can exercise taste as a venue
+          without hiding the underlying public record.
         </p>
       </section>
 
@@ -116,8 +134,8 @@ export default function AboutPage() {
           The point
         </h2>
         <p className="text-base text-fg-muted leading-relaxed">
-          PND exists so artists are not dependent on a platform existing
-          forever to preserve, manage, sell, or move their work.
+          PND exists to give artists a strong place to launch, portable tools
+          to operate elsewhere, and a durable record that collectors can read.
         </p>
         <p className="text-base text-fg-muted leading-relaxed">
           The project is open source and built in public. It was created

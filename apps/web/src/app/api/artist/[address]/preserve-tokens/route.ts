@@ -27,7 +27,7 @@ export async function GET(
         headers: {
           "Cache-Control":
             tokens.length > 0
-              ? "public, max-age=86400, stale-while-revalidate=3600"
+              ? "public, max-age=0, s-maxage=300, stale-while-revalidate=600"
               : "no-store",
         },
       },

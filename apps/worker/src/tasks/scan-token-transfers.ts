@@ -1,255 +1,206 @@
 /**
- * For every contract in `artist_tokens`, scan ERC-721 Transfer events
- * from `worker_cursors.last_block` forward. Upsert ownership into
- * `token_owners`; append history rows to `token_transfers`.
- *
- * Critical optimization: for the first-time backfill of a contract,
- * cursor starts at MIN(mint_block) FROM artist_tokens WHERE contract=$1
- * — bounds the scan to "transfers of tokens we actually care about,"
- * not the contract's full deploy-to-head range. Foundation NFT shared
- * contract has ~5 years of transfers; this optimization is what makes
- * the first scan tractable.
- *
- * The web app reads token_owners directly. After this task has caught
- * up, every /collector/[address] inverse query is a Postgres point
- * lookup with zero external API calls.
- *
- * Block timestamps: every transfer/owner row carries the real block time,
- * resolved once per block (deduped + globally throttled). Rows this scanner
- * wrote before it resolved times were stored with block_time = 0; the inline
- * `backfillBlockTimes` step drains those to real values over subsequent ticks.
- * This is what makes the token page's provenance timeline show true dates
- * instead of the Unix epoch.
+ * Finalized ERC-721 ownership scanner. Historical contracts catch up in
+ * bounded individual lanes; caught-up contracts share multi-address log
+ * requests. A complete range and every affected cursor commit together.
  */
+import { getAddress, parseAbiItem, type Address } from "viem"
 import { sql } from "../db.ts"
+import { getFinalizedBoundary } from "../finality.ts"
+import { recordErc721Ownership, ZERO_ADDRESS } from "../ownership-store.ts"
 import { client } from "../rpc.ts"
 import { throttleRpc } from "../throttle.ts"
-import { parseAbiItem, getAddress, type Address } from "viem"
 import type { TaskResult } from "../scheduler.ts"
 
 const TRANSFER_EVENT = parseAbiItem(
   "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
 )
-// drpc free tier caps eth_getLogs at 10,000 blocks per call. Stay under
-// with margin.
-const MAX_BLOCKS_PER_SCAN = 9_500n
-// Per-task wall-time cap: process up to N chunks per contract per task
-// invocation, then let the next interval pick up where we left off.
-// Kept low so this task (which has the most contracts) doesn't starve
-// the others under drpc's free-tier budget.
-const MAX_CHUNKS_PER_CONTRACT = 10n
 const TASK = "scan-token-transfers"
-// One-time historical backfill of real block timestamps into rows this scanner
-// wrote with block_time = 0 before it resolved timestamps. Bounded per tick so
-// the drain spreads across many runs and never dominates the shared 2 req/s RPC
-// budget; a no-op once every row has a real time. Tunable — raising it drains
-// faster at the cost of a bigger per-tick RPC share. eth_getBlockByNumber is
-// served by the free public RPCs (Alchemy is only the last-resort backstop), so
-// the dollar cost of the drain is ~zero; this bound is purely about pacing.
-const MAX_BACKFILL_BLOCKS_PER_RUN = 100
+const MAX_BLOCKS_PER_SCAN = 9_500n
+const MAX_HISTORICAL_CHUNKS_PER_TICK = 20
+const ADDRESS_BATCH_SIZE = 75
 
-async function getContracts(): Promise<string[]> {
-  // Exclude shared-platform contracts (Foundation shared 1/1, SR V2
-  // shared). Those are single high-volume contracts shared by thousands
-  // of artists — scanning every Transfer on them to find our handful of
-  // known-artist tokens would be the exact unbounded scan v2 is built to
-  // avoid. Owner for those tokens is resolved inline at mint-discovery
-  // time (resolveNewTokenOwner); per-token transfer history isn't worth
-  // a full-contract scan.
-  const rows = (await sql`
-    SELECT DISTINCT lower(contract) AS contract FROM artist_tokens
-    WHERE platform NOT IN ('fnd-shared', 'srv2-shared')
-  `) as Array<{ contract: string }>
-  return rows.map((r) => r.contract)
+type ContractState = {
+  contract: string
+  earliestMintBlock: bigint
+  lastBlock: bigint | null
 }
 
-async function getCursor(contract: string): Promise<bigint | null> {
+async function getContractStates(): Promise<ContractState[]> {
   const rows = (await sql`
-    SELECT last_block::text AS last_block
-    FROM worker_cursors
-    WHERE task = ${TASK} AND scope = ${contract}
-    LIMIT 1
-  `) as Array<{ last_block: string }>
-  return rows[0] ? BigInt(rows[0].last_block) : null
+    SELECT lower(t.contract) AS contract,
+           MIN(t.mint_block)::text AS earliest_mint_block,
+           c.last_block::text AS last_block
+    FROM artist_tokens t
+    LEFT JOIN worker_cursors c
+      ON c.task = ${TASK} AND c.scope = lower(t.contract)
+    WHERE t.platform NOT IN ('fnd-shared', 'srv2-shared')
+    GROUP BY lower(t.contract), c.last_block
+    ORDER BY COALESCE(c.last_block, MIN(t.mint_block)) ASC, lower(t.contract)
+  `) as Array<{ contract: string; earliest_mint_block: string; last_block: string | null }>
+  return rows.map((row) => ({
+    contract: row.contract,
+    earliestMintBlock: BigInt(row.earliest_mint_block),
+    lastBlock: row.last_block === null ? null : BigInt(row.last_block),
+  }))
 }
 
-async function getEarliestMintBlock(contract: string): Promise<bigint> {
+async function getKnownTokens(states: ContractState[]): Promise<Map<string, Set<string>>> {
+  const contracts = states.map(({ contract }) => contract)
+  if (contracts.length === 0) return new Map()
   const rows = (await sql`
-    SELECT MIN(mint_block)::text AS min_block
+    SELECT lower(contract) AS contract, token_id
     FROM artist_tokens
-    WHERE lower(contract) = ${contract}
-  `) as Array<{ min_block: string | null }>
-  return rows[0]?.min_block ? BigInt(rows[0].min_block) : 0n
-}
-
-async function setCursor(contract: string, lastBlock: bigint): Promise<void> {
-  await sql`
-    INSERT INTO worker_cursors (task, scope, last_block, last_run_at)
-    VALUES (${TASK}, ${contract}, ${lastBlock.toString()}::bigint, NOW())
-    ON CONFLICT (task, scope) DO UPDATE SET
-      last_block = EXCLUDED.last_block, last_run_at = NOW()
-  `
-}
-
-async function tokenIsKnown(contract: string, tokenId: bigint): Promise<boolean> {
-  const rows = (await sql`
-    SELECT 1 FROM artist_tokens
-    WHERE lower(contract) = ${contract} AND token_id = ${tokenId.toString()}
-    LIMIT 1
-  `) as Array<{ "?column?": number }>
-  return rows.length > 0
-}
-
-/**
- * Resolve and persist real block timestamps for transfer/owner rows written
- * before this scanner carried block times (stored with block_time = 0 /
- * transferred_at_time = 0 to save an eth_getBlockByNumber). Processes a bounded
- * batch of DISTINCT zero-time blocks per call. Block timestamps are immutable,
- * so each block is resolved exactly once, ever, and that one timestamp fills
- * every transfer in the block plus the matching current-owner row. Both updates
- * are guarded on the 0 sentinel, so the drain is idempotent and never clobbers
- * a real time. Self-draining: returns 0 work once no zero-time rows remain.
- */
-async function backfillBlockTimes(
-  blockTimeFor: (bn: bigint) => Promise<bigint>,
-): Promise<number> {
-  const blocks = (await sql`
-    SELECT DISTINCT block_number::text AS block_number
-    FROM token_transfers
-    WHERE block_time = 0
-    ORDER BY block_number
-    LIMIT ${MAX_BACKFILL_BLOCKS_PER_RUN}
-  `) as Array<{ block_number: string }>
-
-  let rowsWritten = 0
-  for (const { block_number } of blocks) {
-    const bn = BigInt(block_number)
-    let ts: bigint
-    try {
-      ts = await blockTimeFor(bn)
-    } catch (err) {
-      console.error(`[${TASK}] backfill getBlock ${bn}:`, err)
-      continue
-    }
-    const updated = (await sql`
-      UPDATE token_transfers
-      SET block_time = ${ts.toString()}::bigint
-      WHERE block_number = ${bn.toString()}::bigint AND block_time = 0
-      RETURNING 1 AS n
-    `) as Array<{ n: number }>
-    rowsWritten += updated.length
-    await sql`
-      UPDATE token_owners
-      SET transferred_at_time = ${ts.toString()}::bigint
-      WHERE transferred_at_block = ${bn.toString()}::bigint
-        AND transferred_at_time = 0
-    `
+    WHERE lower(contract) = ANY(${contracts}::text[])
+  `) as Array<{ contract: string; token_id: string }>
+  const known = new Map<string, Set<string>>()
+  for (const row of rows) {
+    const tokens = known.get(row.contract) ?? new Set<string>()
+    tokens.add(row.token_id)
+    known.set(row.contract, tokens)
   }
-  return rowsWritten
+  return known
 }
 
 export async function scanTokenTransfers(): Promise<TaskResult> {
-  const contracts = await getContracts()
-  let rpcCalls = 0
+  const states = await getContractStates()
+  if (states.length === 0) return { scopeCount: 0, rpcCalls: 0, rowsWritten: 0 }
+  const knownTokens = await getKnownTokens(states)
+  const boundary = await getFinalizedBoundary(client)
+  const head = boundary.blockNumber
+  let rpcCalls = boundary.rpcCalls
   let rowsWritten = 0
 
-  // Resolve each distinct block's timestamp at most once (block times are
-  // immutable, so the cache is valid for the whole run). Shared by the
-  // historical backfill and the forward scan below — a block touched by both
-  // costs a single eth_getBlockByNumber.
-  const blockTimeCache = new Map<bigint, bigint>()
-  const blockTimeFor = async (bn: bigint): Promise<bigint> => {
-    const cached = blockTimeCache.get(bn)
+  const blockTimes = new Map<bigint, bigint>()
+  const blockTimeFor = async (blockNumber: bigint): Promise<bigint> => {
+    const cached = blockTimes.get(blockNumber)
     if (cached !== undefined) return cached
     await throttleRpc()
-    const blk = await client.getBlock({ blockNumber: bn })
+    const block = await client.getBlock({ blockNumber })
     rpcCalls += 1
-    blockTimeCache.set(bn, blk.timestamp)
-    return blk.timestamp
+    blockTimes.set(blockNumber, block.timestamp)
+    return block.timestamp
   }
 
-  // Drain a bounded batch of pre-existing zero-time rows before the forward
-  // scan. No-op once fully backfilled.
-  rowsWritten += await backfillBlockTimes(blockTimeFor)
+  const nextBlock = (state: ContractState) =>
+    state.lastBlock === null ? state.earliestMintBlock : state.lastBlock + 1n
+  const historical = states.filter((state) => head - nextBlock(state) >= MAX_BLOCKS_PER_SCAN)
+  const caughtUp = states.filter((state) => head - nextBlock(state) < MAX_BLOCKS_PER_SCAN)
 
-  const headBlock = await client.getBlockNumber()
-  rpcCalls += 1
+  for (const state of historical.slice(0, MAX_HISTORICAL_CHUNKS_PER_TICK)) {
+    const fromBlock = nextBlock(state)
+    if (fromBlock > head) continue
+    const toBlock = fromBlock + MAX_BLOCKS_PER_SCAN - 1n > head
+      ? head
+      : fromBlock + MAX_BLOCKS_PER_SCAN - 1n
+    const result = await scanRange(
+      [state],
+      fromBlock,
+      toBlock,
+      knownTokens,
+      blockTimeFor,
+    )
+    rpcCalls += result.rpcCalls
+    rowsWritten += result.rowsWritten
+  }
 
-  for (const contract of contracts) {
-    try {
-      let fromBlock = await getCursor(contract)
-      if (fromBlock === null) {
-        // First scan ever for this contract — start at the earliest
-        // known mint of tokens we care about. Side-steps a 5-year
-        // shared-contract scan.
-        fromBlock = await getEarliestMintBlock(contract)
-      } else {
-        fromBlock = fromBlock + 1n
-      }
+  for (let offset = 0; offset < caughtUp.length; offset += ADDRESS_BATCH_SIZE) {
+    const batch = caughtUp.slice(offset, offset + ADDRESS_BATCH_SIZE)
+    const active = batch.filter((state) => nextBlock(state) <= head)
+    if (active.length === 0) continue
+    const fromBlock = active.reduce(
+      (minimum, state) => nextBlock(state) < minimum ? nextBlock(state) : minimum,
+      nextBlock(active[0]),
+    )
+    const result = await scanRange(
+      active,
+      fromBlock,
+      head,
+      knownTokens,
+      blockTimeFor,
+    )
+    rpcCalls += result.rpcCalls
+    rowsWritten += result.rowsWritten
+  }
 
-      let cursor = fromBlock
-      while (cursor <= headBlock) {
-        const toBlock = cursor + MAX_BLOCKS_PER_SCAN > headBlock
-          ? headBlock
-          : cursor + MAX_BLOCKS_PER_SCAN
+  return { scopeCount: states.length, rpcCalls, rowsWritten }
+}
 
-        await throttleRpc()
-        const logs = await client.getLogs({
-          address: getAddress(contract) as Address,
-          event: TRANSFER_EVENT,
-          fromBlock: cursor,
-          toBlock,
-        })
-        rpcCalls += 1
+async function scanRange(
+  states: ContractState[],
+  fromBlock: bigint,
+  toBlock: bigint,
+  knownTokens: Map<string, Set<string>>,
+  blockTimeFor: (blockNumber: bigint) => Promise<bigint>,
+): Promise<{ rpcCalls: number; rowsWritten: number }> {
+  await throttleRpc()
+  const logs = await client.getLogs({
+    address: states.map(({ contract }) => getAddress(contract) as Address),
+    event: TRANSFER_EVENT,
+    fromBlock,
+    toBlock,
+  })
 
-        for (const log of logs) {
-          if (!log.args.tokenId) continue
-          const tokenId = log.args.tokenId
-          if (!(await tokenIsKnown(contract, tokenId))) continue
-          // Real block timestamp so provenance/history rows carry true dates.
-          // Deduped per block + globally throttled via blockTimeFor, so a block
-          // with many known-token transfers costs one eth_getBlockByNumber.
-          const blockTime = await blockTimeFor(log.blockNumber!)
-
-          await sql.begin(async (tx) => {
-            await tx`
-              INSERT INTO token_transfers
-                (contract, token_id, from_addr, to_addr, block_number, log_index, tx_hash, block_time)
-              VALUES
-                (${contract}, ${tokenId.toString()}, ${(log.args.from ?? "0x0000000000000000000000000000000000000000").toLowerCase()},
-                 ${(log.args.to ?? "0x0000000000000000000000000000000000000000").toLowerCase()},
-                 ${log.blockNumber!.toString()}::bigint, ${log.logIndex!}, ${log.transactionHash!}, ${blockTime.toString()}::bigint)
-              ON CONFLICT (contract, token_id, tx_hash, log_index) DO NOTHING
-            `
-            await tx`
-              INSERT INTO token_owners
-                (contract, token_id, owner, transferred_at_block, transferred_at_time, tx_hash)
-              VALUES
-                (${contract}, ${tokenId.toString()},
-                 ${(log.args.to ?? "0x0000000000000000000000000000000000000000").toLowerCase()},
-                 ${log.blockNumber!.toString()}::bigint, ${blockTime.toString()}::bigint, ${log.transactionHash!})
-              ON CONFLICT (contract, token_id) DO UPDATE SET
-                owner = EXCLUDED.owner,
-                transferred_at_block = EXCLUDED.transferred_at_block,
-                transferred_at_time = EXCLUDED.transferred_at_time,
-                tx_hash = EXCLUDED.tx_hash
-              WHERE token_owners.transferred_at_block <= EXCLUDED.transferred_at_block
-            `
-            rowsWritten += 1
-          })
-        }
-
-        cursor = toBlock + 1n
-        await setCursor(contract, toBlock)
-
-        // Cap per-task wall time — let the next interval pick up where
-        // we left off rather than blocking other tasks.
-        if (cursor > fromBlock + MAX_BLOCKS_PER_SCAN * MAX_CHUNKS_PER_CONTRACT) break
-      }
-    } catch (err) {
-      console.error(`[scan-token-transfers] ${contract}:`, err)
+  const relevant = logs.filter((log) => {
+    if (log.args.tokenId === undefined) return false
+    return knownTokens.get(log.address.toLowerCase())?.has(log.args.tokenId.toString()) ?? false
+  })
+  const times = new Map<bigint, bigint>()
+  for (const log of relevant) {
+    if (log.blockNumber === null) throw new Error("transfer log missing block number")
+    if (!times.has(log.blockNumber)) {
+      times.set(log.blockNumber, await blockTimeFor(log.blockNumber))
     }
   }
 
-  return { scopeCount: contracts.length, rpcCalls, rowsWritten }
+  let rowsWritten = 0
+  await sql.begin(async (tx) => {
+    for (const log of relevant) {
+      if (
+        log.args.tokenId === undefined || log.blockNumber === null ||
+        log.logIndex === null || !log.transactionHash
+      ) {
+        throw new Error("transfer log missing durable identity")
+      }
+      const contract = log.address.toLowerCase()
+      const tokenId = log.args.tokenId.toString()
+      const owner = (log.args.to ?? ZERO_ADDRESS).toLowerCase()
+      const blockTime = times.get(log.blockNumber)!
+      const inserted = await tx`
+        INSERT INTO token_transfers
+          (contract, token_id, from_addr, to_addr, block_number, log_index,
+           tx_hash, block_hash, block_time)
+        VALUES
+          (${contract}, ${tokenId}, ${(log.args.from ?? ZERO_ADDRESS).toLowerCase()},
+           ${owner}, ${log.blockNumber.toString()}::bigint, ${log.logIndex},
+           ${log.transactionHash}, ${log.blockHash ?? null},
+           ${blockTime.toString()}::bigint)
+        ON CONFLICT (contract, token_id, tx_hash, log_index) DO NOTHING
+        RETURNING 1
+      `
+      rowsWritten += inserted.count
+      await recordErc721Ownership(tx, {
+        contract,
+        tokenId,
+        owner,
+        source: "worker-transfer",
+        blockNumber: log.blockNumber,
+        logIndex: BigInt(log.logIndex),
+        txHash: log.transactionHash,
+        blockTime,
+        finalized: true,
+        coverageStatus: "complete",
+      })
+    }
+
+    for (const state of states) {
+      await tx`
+        INSERT INTO worker_cursors (task, scope, last_block, last_run_at)
+        VALUES (${TASK}, ${state.contract}, ${toBlock.toString()}::bigint, NOW())
+        ON CONFLICT (task, scope) DO UPDATE SET
+          last_block = GREATEST(worker_cursors.last_block, EXCLUDED.last_block),
+          last_run_at = NOW()
+      `
+    }
+  })
+  return { rpcCalls: 1, rowsWritten }
 }

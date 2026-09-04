@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit"
 
 // Punk holdings for one address, proxied from the CryptoPunks app's account API.
 // One upstream call returns every punk the address holds, raw and wrapped, with a
@@ -28,13 +29,20 @@ const UPSTREAM_UA =
 type OwnedPunk = { index: number; wrapped: boolean }
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ address: string }> },
 ) {
   const { address } = await params
 
   if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
     return NextResponse.json({ ok: false, punks: [] as OwnedPunk[], error: "bad address" }, { status: 400 })
+  }
+  const limit = checkRateLimit("owned-punks", getClientIp(req), 60_000, 30)
+  if (!limit.ok) {
+    return NextResponse.json(
+      { ok: false, punks: [] as OwnedPunk[], error: "rate-limited" },
+      { status: 429, headers: { "Retry-After": String(limit.retryAfter) } },
+    )
   }
 
   try {

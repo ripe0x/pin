@@ -12,7 +12,7 @@ export default function ArtistLoading() {
 
       {/* Intentionally no status message here. This file is the route-level
           loading fallback that flashes briefly during navigation BEFORE the
-          page component runs. The cache-aware "Indexing…" / "Loading artist."
+          page component runs. The cache-aware loading copy
           copy lives in the inner Suspense fallback inside page.tsx, where we
           have access to the address + can distinguish cold vs. warm cache. */}
 

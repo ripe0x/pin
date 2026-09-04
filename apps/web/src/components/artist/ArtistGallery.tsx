@@ -1,12 +1,10 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import Link from "next/link"
-import { useAccount } from "wagmi"
 import { useInfiniteQuery } from "@tanstack/react-query"
 import { formatEther } from "viem"
 import type { GalleryItem, GalleryPage } from "@/lib/artist-queries"
-import type { SovereignAuctionLite } from "@/lib/auctions"
+import type { WorkAvailability } from "@/lib/artist-availability"
 import { createProvider, type PinStatus } from "@/lib/pinning"
 import { useThumbnailMedia } from "@/lib/use-thumbnail-media"
 import { TokenPinStatus } from "@/components/preserve/TokenPinStatus"
@@ -21,18 +19,14 @@ export function ArtistGallery({
   artistAddress: string
   initialPage: GalleryPage
 }) {
-  // isOwner only feeds per-card pin-status affordances now — the
-  // deploy/list CTAs moved to /studio/[address]/auctions so the public
-  // gallery stays pure for everyone, including the artist.
-  const { address: connectedAddress } = useAccount()
-  const isOwner =
-    !!connectedAddress &&
-    connectedAddress.toLowerCase() === artistAddress.toLowerCase()
-
   const {
     data,
     fetchNextPage,
     hasNextPage,
+    isError,
+    error,
+    refetch,
+    isFetching,
     isFetchingNextPage,
   } = useInfiniteQuery<GalleryPage>({
     queryKey: ["artist-tokens", artistAddress.toLowerCase()],
@@ -55,13 +49,12 @@ export function ArtistGallery({
   // response somehow returning a token already shown on a prior page (e.g.
   // a CDN cache-key bug serving the same page twice).
   //
-  // Sort: works currently in a Sovereign auction cluster at the top in
-  // active → ending → listed order, then everything else. Within every
-  // bucket, newest mint first (discovery order from `ORDER BY mint_block
-  // DESC`).
+  // Availability ranking happens across the full inventory in SQL before
+  // pagination. Resorting loaded pages here would make the order jump as the
+  // user scrolls and could hide older available works behind newer pages.
   const items = useMemo<GalleryItem[]>(() => {
     const seen = new Set<string>()
-    const deduped = (data?.pages ?? [])
+    return (data?.pages ?? [])
       .flatMap((p) => p.tokens)
       .filter((item) => {
         const key = `${item.contract.toLowerCase()}:${item.tokenId}`
@@ -69,23 +62,10 @@ export function ArtistGallery({
         seen.add(key)
         return true
       })
-    const bucketRank = (item: GalleryItem) => {
-      if (!item.auction) return 3
-      if (item.auction.bucket === "active") return 0
-      if (item.auction.bucket === "ending") return 1
-      return 2
-    }
-    return deduped
-      .map((item, idx) => ({ item, idx }))
-      .sort((a, b) => {
-        const r = bucketRank(a.item) - bucketRank(b.item)
-        if (r !== 0) return r
-        // Within a bucket, preserve discovery order, which is mint-recency
-        // (newest first) from the `ORDER BY mint_block DESC` query.
-        return a.idx - b.idx
-      })
-      .map((entry) => entry.item)
   }, [data])
+
+  const firstPage = data?.pages[0] ?? initialPage
+  const loadedCount = items.length
 
   // Pin-status check across all loaded items. Re-runs as more pages load.
   const [pinStatuses, setPinStatuses] = useState<Map<string, PinStatus>>(
@@ -147,14 +127,18 @@ export function ArtistGallery({
     return () => observer.disconnect()
   }, [hasNextPage, isFetchingNextPage, fetchNextPage])
 
-  if (initialPage.total === 0) {
+  if (firstPage.total === 0) {
     return (
       <div className="space-y-6">
         <div className="text-center py-16 text-gray-400">
           <p className="text-lg">No works found</p>
           <p className="text-sm mt-1">
-            We don&apos;t see any works on supported platforms (Foundation,
-            Manifold, SuperRare, Sovereign, Transient) for this address yet.
+            No works were found for this address across Foundation,
+            Manifold, Mint, PND, SuperRare, or Transient Labs.
+          </p>
+          <p className="text-xs mt-3 text-gray-500">
+            This does not mean the artist has never created work. It means PND
+            has not found work from its supported sources yet.
           </p>
         </div>
       </div>
@@ -163,23 +147,52 @@ export function ArtistGallery({
 
   return (
     <div className="space-y-6">
-      <div className="columns-1 sm:columns-2 lg:columns-4 gap-6 [&>*]:mb-6 [&>*]:break-inside-avoid">
+      <GalleryCoverage
+        availableTotal={firstPage.availableTotal}
+        total={firstPage.total}
+        coverage={firstPage.coverage}
+      />
+
+      {isError ? (
+        <div className="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <p>{error instanceof Error ? error.message : "Some works could not be loaded."}</p>
+          <button
+            type="button"
+            onClick={() => void refetch()}
+            className="mt-2 underline underline-offset-2 disabled:opacity-50"
+            disabled={isFetching}
+          >
+            {isFetching ? "Retrying…" : "Retry"}
+          </button>
+        </div>
+      ) : null}
+
+      <div className="grid grid-cols-1 items-start gap-6 sm:grid-cols-2 lg:grid-cols-4">
         {items.map((item) => (
           <GalleryCard
             key={`${item.contract}:${item.tokenId}`}
             item={item}
             pinStatuses={pinStatuses}
             hasProvider={hasProvider}
-            isOwner={isOwner}
           />
         ))}
       </div>
       {hasNextPage && (
         <div
           ref={sentinelRef}
-          className="py-12 text-center text-sm text-gray-400"
+          className="py-8 text-center text-sm text-gray-500 space-y-2"
         >
-          {isFetchingNextPage ? "Loading more…" : ""}
+          <p>
+            Showing {loadedCount} of {firstPage.total} works
+          </p>
+          <button
+            type="button"
+            onClick={() => void fetchNextPage()}
+            disabled={isFetchingNextPage}
+            className="border border-gray-300 px-3 py-1.5 text-xs text-fg hover:border-gray-500 disabled:opacity-50"
+          >
+            {isFetchingNextPage ? "Loading more…" : "Load more"}
+          </button>
         </div>
       )}
     </div>
@@ -207,20 +220,55 @@ function GalleryCard({
   item,
   pinStatuses,
   hasProvider,
-  isOwner,
 }: {
   item: GalleryItem
   pinStatuses: Map<string, PinStatus>
   hasProvider: boolean
-  isOwner: boolean
 }) {
   const href = `/${item.contract}/${item.tokenId}`
   const pinStatus = hasProvider ? getItemPinStatus(item, pinStatuses) : null
-  const [ratio, setRatio] = useState<number | null>(null)
-  const { kind, imgSrc, imgRef, onImgError, videoSrc, onVideoError } =
-    useThumbnailMedia(item.imageUrl, 800)
+  const delivery = item.mediaDelivery
+  const derivativeUrl =
+    delivery?.status === "ready"
+      ? delivery.posterUrl ?? delivery.thumbnailUrl
+      : null
+  const sourceUrl = derivativeUrl ?? item.imageUrl
+  const media = useThumbnailMedia(sourceUrl, 800, delivery?.kind)
+  const [loaded, setLoaded] = useState(false)
+  const [measuredRatio, setMeasuredRatio] = useState<number | null>(null)
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const storedRatio =
+    delivery?.width && delivery.height ? delivery.width / delivery.height : null
+  const ratio = storedRatio ?? measuredRatio ?? 1
+  const explicitState = !sourceUrl
+    ? "No preview available"
+    : delivery?.status === "unsupported"
+        ? "Interactive media, open the work to view"
+        : null
+  const showMedia = !explicitState && media.kind !== "failed"
 
-  const isActive = item.auction?.bucket === "active"
+  useEffect(() => {
+    setLoaded(false)
+    setMeasuredRatio(null)
+    // SSR and the browser cache can complete media before React attaches the
+    // event handlers. Recover the real dimensions instead of leaving valid
+    // work permanently hidden behind its loading state.
+    const image = media.imgRef.current
+    if (media.kind === "image" && image?.complete && image.naturalWidth > 0) {
+      setLoaded(true)
+      if (image.naturalHeight > 0) {
+        setMeasuredRatio(image.naturalWidth / image.naturalHeight)
+      }
+    } else if (media.kind === "video" && (videoRef.current?.readyState ?? 0) >= 2) {
+      const video = videoRef.current
+      setLoaded(true)
+      if (video?.videoWidth && video.videoHeight) {
+        setMeasuredRatio(video.videoWidth / video.videoHeight)
+      }
+    }
+  }, [sourceUrl, media.kind, media.imgSrc, media.videoSrc, media.imgRef])
+
+  const isActive = item.availability?.status === "active"
 
   return (
     <TokenCard
@@ -228,16 +276,21 @@ function GalleryCard({
       title={item.title}
       isActive={isActive}
       meta={
-        item.auction ? (
-          <AuctionCaption auction={item.auction} />
-        ) : pinStatus ? (
-          <TokenPinStatus status={pinStatus} />
-        ) : undefined
+        <div className="space-y-1.5">
+          {item.availability ? (
+            <AvailabilityCaption availability={item.availability} />
+          ) : (
+            <p className="text-[10px] font-mono text-fg-subtle">
+              Created via {platformLabel(item.platform)} · not currently listed
+            </p>
+          )}
+          {pinStatus ? <TokenPinStatus status={pinStatus} /> : null}
+        </div>
       }
     >
       <div
         className="relative overflow-hidden bg-gray-100"
-        style={{ aspectRatio: ratio ?? 1 }}
+        style={{ aspectRatio: ratio }}
       >
         <PlatformChip platform={item.platform} />
         {item.muriUriCount != null && (
@@ -245,81 +298,169 @@ function GalleryCard({
             <MuriTileBadge uriCount={item.muriUriCount} />
           </div>
         )}
-        {kind === "failed" ? null : kind === "video" ? (
+        {showMedia && media.kind === "video" ? (
           <video
-            src={videoSrc}
-            className="block w-full h-auto"
+            ref={videoRef}
+            src={media.videoSrc}
+            aria-label={item.title}
+            className={`block h-auto w-full transition-opacity ${loaded ? "opacity-100" : "opacity-0"}`}
             muted
             playsInline
             preload="metadata"
-            onError={onVideoError}
-            onLoadedMetadata={(e) => {
-              const v = e.currentTarget
-              if (v.videoWidth && v.videoHeight) {
-                setRatio(v.videoWidth / v.videoHeight)
+            onError={() => {
+              setLoaded(false)
+              media.onVideoError()
+            }}
+            onLoadedData={(event) => {
+              const video = event.currentTarget
+              setLoaded(true)
+              if (video.videoWidth && video.videoHeight) {
+                setMeasuredRatio(video.videoWidth / video.videoHeight)
               }
             }}
           />
-        ) : (
+        ) : showMedia ? (
           <img
-            ref={imgRef}
-            src={imgSrc}
+            ref={media.imgRef}
+            src={media.imgSrc}
             alt={item.title}
-            className="block w-full h-auto"
-            // No loading="lazy": WebKit (iOS Safari) never loads lazy images
-            // inside a CSS multi-column (`columns-*`) container, so this
-            // masonry gallery renders blank on mobile Safari while working on
-            // desktop Chromium. Grid-based tiles elsewhere are unaffected.
+            width={delivery?.width ?? undefined}
+            height={delivery?.height ?? undefined}
+            className={`block h-auto w-full transition-opacity ${loaded ? "opacity-100" : "opacity-0"}`}
+            loading="lazy"
             decoding="async"
-            onError={onImgError}
+            onError={() => {
+              setLoaded(false)
+              media.onImgError()
+            }}
             onLoad={(e) => {
               const img = e.currentTarget
+              setLoaded(true)
               if (img.naturalWidth && img.naturalHeight) {
-                setRatio(img.naturalWidth / img.naturalHeight)
+                setMeasuredRatio(img.naturalWidth / img.naturalHeight)
               }
             }}
           />
-        )}
+        ) : null}
+        {!showMedia || !loaded ? (
+          <div
+            role="img"
+            aria-label={
+              explicitState ??
+              (media.kind === "failed"
+                ? `${item.title} preview unavailable`
+                : `${item.title} preview loading`)
+            }
+            className={`absolute inset-0 ${showMedia ? "skeleton" : "bg-gray-100"}`}
+          />
+        ) : null}
       </div>
     </TokenCard>
   )
 }
 
-// Auction status as a label/value row, borrowing the auction panel's
-// settlement/bid-history treatment: muted label on the left, fg value
-// (tabular-nums) on the right, with a live/upcoming dot and countdown
-// rendered as a subtle timestamp beside the label.
-function AuctionCaption({ auction }: { auction: SovereignAuctionLite }) {
-  if (auction.bucket === "listed") {
-    return (
+function AvailabilityCaption({
+  availability,
+}: {
+  availability: WorkAvailability
+}) {
+  const isAuction = availability.kind === "auction"
+  const isLive = availability.status === "active"
+  const label =
+    availability.status === "buy-now"
+      ? "Buy now"
+      : availability.status === "listed"
+        ? "Reserve"
+        : availability.status === "settling"
+          ? "Awaiting settlement"
+          : "Top bid"
+  const amount = availability.currentBid ?? availability.price
+  return (
+    <div className="space-y-1">
       <div className="flex items-baseline justify-between gap-2 text-[11px] font-mono">
-        <span className="text-fg-muted">Reserve</span>
+        <span className="inline-flex items-baseline gap-1.5 min-w-0 text-fg-muted">
+          {isAuction ? (
+            <span
+              className={`self-center h-1.5 w-1.5 shrink-0 rounded-full ${
+                isLive ? "bg-status-live animate-pulse" : "bg-status-upcoming"
+              }`}
+              aria-hidden
+            />
+          ) : null}
+          <span>{label}</span>
+          {isAuction && availability.status === "active" ? (
+            <span className="text-fg-subtle shrink-0 truncate">
+              {availability.endTime ? (
+                <LiveCountdown endTimeSec={Number(availability.endTime)} />
+              ) : null}
+            </span>
+          ) : null}
+        </span>
         <span className="tabular-nums text-fg shrink-0">
-          {formatEth(auction.reservePrice)} ETH
+          {formatEth(amount)} ETH
         </span>
       </div>
-    )
-  }
-  const isLive = auction.bucket === "active"
-  return (
-    <div className="flex items-baseline justify-between gap-2 text-[11px] font-mono">
-      <span className="inline-flex items-baseline gap-1.5 min-w-0 text-fg-muted">
-        <span
-          className={`self-center h-1.5 w-1.5 shrink-0 rounded-full ${
-            isLive ? "bg-status-live animate-pulse" : "bg-status-upcoming"
-          }`}
-          aria-hidden
-        />
-        <span>Top bid</span>
-        <span className="text-fg-subtle shrink-0 truncate">
-          {isLive ? <LiveCountdown endTimeSec={Number(auction.endTime)} /> : "ending"}
-        </span>
-      </span>
-      <span className="tabular-nums text-fg shrink-0">
-        {formatEth(auction.amount)} ETH
-      </span>
+      <p className="text-[10px] font-mono text-fg-subtle">
+        Available on {availabilitySourceLabel(availability.source)} ·{" "}
+        {freshnessLabel(availability)}
+      </p>
     </div>
   )
+}
+
+function GalleryCoverage({
+  availableTotal,
+  total,
+  coverage,
+}: {
+  availableTotal: number
+  total: number
+  coverage: GalleryPage["coverage"]
+}) {
+  return (
+    <div className="border-b border-gray-200 pb-4 space-y-1.5">
+      <p className="text-sm text-fg">
+        <span className="font-medium">{availableTotal} listed now</span>
+        <span className="text-gray-400"> · </span>
+        <span>{total} {total === 1 ? "work" : "works"}</span>
+      </p>
+      <p className="text-xs text-gray-500">
+        Sources checked: {coverage.indexedSources.join(", ")}.
+      </p>
+      <p className="text-xs text-gray-500">{coverage.note}</p>
+      {coverage.hiddenStaleSources.length > 0 ? (
+        <p className="text-xs text-amber-700">
+          Availability from {coverage.hiddenStaleSources.join(" and ")} is
+          temporarily hidden because its latest observation is more than 15
+          minutes old.
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+function availabilitySourceLabel(source: WorkAvailability["source"]): string {
+  if (source === "pnd") return "PND"
+  if (source === "foundation") return "Foundation"
+  if (source === "superrare") return "SuperRare"
+  return "Transient Labs"
+}
+
+function freshnessLabel(availability: WorkAvailability): string {
+  if (availability.freshness === "fresh") {
+    return "observed within 15 minutes"
+  }
+  return "onchain event state"
+}
+
+function platformLabel(platform: GalleryItem["platform"]): string {
+  if (platform === "foundation") return "Foundation"
+  if (platform === "superrareV2") return "SuperRare"
+  if (platform === "transient") return "Transient Labs"
+  if (platform === "manifold") return "Manifold"
+  if (platform === "mint") return "Mint"
+  if (platform === "sovereign") return "PND"
+  return "another supported source"
 }
 
 function LiveCountdown({ endTimeSec }: { endTimeSec: number }) {
@@ -351,4 +492,3 @@ function formatEth(wei: string, decimals = 4): string {
     return "0"
   }
 }
-

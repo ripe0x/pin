@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { ActivityRow } from "./ActivityRow"
+import { BidGroupRow, ListingGroupRow } from "./GroupedActivityRows"
 import { GroupedMintRow } from "./GroupedMintRow"
 import { appendFeedPage } from "@/lib/activity-grouping"
+import { groupSecondaryFeedItems } from "@/lib/activity-secondary-grouping"
 import {
   deserializeFeedItem,
   type EnrichedFeedItem,
@@ -109,14 +111,20 @@ export function ActivityFeedClient({ initial, initialCursor, hasMore }: Props) {
     return () => observer.disconnect()
   }, [state, loadMore])
 
+  const displayItems = groupSecondaryFeedItems(items)
+
   return (
     <>
       <ul className="border-b border-gray-200">
-        {items.map((item) =>
+        {displayItems.map((item) =>
           item.type === "event" ? (
             <ActivityRow key={item.event.id} event={item.event} />
-          ) : (
+          ) : item.type === "group" ? (
             <GroupedMintRow key={item.id} group={item} />
+          ) : item.type === "bid-group" ? (
+            <BidGroupRow key={item.key} group={item} />
+          ) : (
+            <ListingGroupRow key={item.key} group={item} />
           ),
         )}
       </ul>

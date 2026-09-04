@@ -1,4 +1,9 @@
 /**
+ * Legacy Surface SVG cache implementation, retained only to migrate any rows
+ * created during the migration-025 rollout. It is intentionally not scheduled:
+ * Surface capture belongs to RenderAssets and the client-side #271/#272 flow,
+ * while external delivery derivatives use derive-token-media.ts.
+ *
  * Capture static media for PND Surface System tokens
  * (contracts/src/surface/), v1 scope = SVG only.
  *
@@ -47,7 +52,7 @@ const BATCH_SIZE = Number(process.env.CAPTURE_BATCH_SIZE ?? "20")
 const RETRY_AFTER = process.env.CAPTURE_RETRY_AFTER ?? "1 day"
 const CAPTURE_HTML = process.env.CAPTURE_HTML === "1"
 
-const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
   /[^a-zA-Z0-9_]/g, "",
 )
 
@@ -156,7 +161,7 @@ async function captureOne(c: Candidate): Promise<{ rpc: number; wrote: boolean }
   let tokenUri: string
   try {
     await throttleRpc()
-    // Explicit gas ceiling: onchain-HTML tokenURIs (GenerativeRenderer over
+    // Explicit gas ceiling: onchain-HTML tokenURIs (ScriptyRenderer over
     // gzipped libs) measure 60-120M gas, beyond the default eth_call cap.
     const uriCall = await client.call({
       to: c.collection as Address,

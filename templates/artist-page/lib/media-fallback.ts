@@ -1,8 +1,8 @@
 /**
  * Multi-gateway fallback helpers for IPFS- and Arweave-hosted media.
  *
- * Standalone copy for this template — it deliberately carries no monorepo
- * (`@pin/*`) dependencies. Mirrors PND's `@pin/shared` gateway logic: a single
+ * This helper remains dependency-free and mirrors PND's `@pin/shared` gateway
+ * logic: a single
  * hard-coded gateway 404s a freshly-uploaded (or optimistically-served, not
  * yet L1-posted) bundle while other gateways already serve the byte-identical
  * file, so we always keep an ordered fallback list rather than trusting one

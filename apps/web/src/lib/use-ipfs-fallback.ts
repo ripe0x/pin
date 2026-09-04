@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { IPFS_GATEWAYS, ARWEAVE_GATEWAYS, extractArweavePath } from "@pin/shared"
 
 /**
@@ -23,6 +23,14 @@ export function useIpfsGatewayFallback(initialUrl: string) {
   // Track which gateway URLs we've already tried so we don't loop on a
   // gateway that 404s consistently.
   const tried = useRef<Set<string>>(new Set([initialUrl]))
+
+  // Cards can be reused after a query refresh. Reset both the displayed URL
+  // and the attempted-gateway set so a previous token's failure cannot poison
+  // the replacement image.
+  useEffect(() => {
+    setSrc(initialUrl)
+    tried.current = new Set([initialUrl])
+  }, [initialUrl])
 
   function rotate(candidates: string[]): boolean {
     for (const candidate of candidates) {

@@ -37,7 +37,19 @@ export type SellerListingsPayload = {
   buyNows: SerializedBuyNow[]
 }
 
+export type SellerListingsResolution = {
+  payload: SellerListingsPayload
+  complete: boolean
+}
+
 export const SELLER_LISTINGS_TTL_S = 60 * 60
+
+class PartialSellerListingsError extends Error {
+  constructor(readonly resolution: SellerListingsResolution) {
+    super("partial")
+    this.name = "PartialSellerListingsError"
+  }
+}
 
 // Each adapter gets a hard budget per request. Two reasons:
 //   1. Netlify functions cap at 10s on the default tier. If any adapter
@@ -87,6 +99,7 @@ async function buildPayload(sellerAddress: string): Promise<{
   const buyNows: SerializedBuyNow[] = []
   for (const r of results) {
     if (!r) continue
+    if (!r.complete) complete = false
     for (const a of r.auctions) auctions.push({ kind: "auction", ...a })
     for (const b of r.buyNows) buyNows.push({ kind: "buyNow", ...b })
   }
@@ -100,40 +113,48 @@ async function buildPayload(sellerAddress: string): Promise<{
 const cachedComplete = unstable_cache(
   (sellerAddress: string) =>
     pgCache<SellerListingsPayload>(
-      `seller-listings:${sellerAddress}`,
+      `seller-listings:v4:${sellerAddress}`,
       SELLER_LISTINGS_TTL_S,
       async () => {
         const result = await buildPayload(sellerAddress)
-        if (!result.complete) throw new Error("partial")
+        if (!result.complete) throw new PartialSellerListingsError(result)
         return result.payload
       },
     ),
-  ["seller-listings-v3"],
+  // v4 prevents pre-SuperRare complete-empty cache entries from surviving
+  // the adapter restoration for up to an hour.
+  ["seller-listings-v4"],
   { revalidate: SELLER_LISTINGS_TTL_S, tags: ["seller-listings"] },
 )
 
 /**
  * Resolve a seller's cancellable listings, complete or partial. Tries
- * the cache first; on a partial-result throw, re-runs buildPayload
- * uncached so the user still sees what did come back rather than 502'ing
- * the whole panel because one platform's RPC fan-out was slow.
+ * the cache first; a partial result is carried on the cache-bypass error so
+ * adapters run once. It is returned to the user but never persisted.
  *
- * Returns just the payload — the partial-vs-complete distinction is
- * absorbed here because no downstream caller currently surfaces it.
+ * Completeness stays attached through the route boundary. A partial payload
+ * can contain valid rows, but an empty partial payload is not evidence that
+ * the seller has nothing to cancel.
  */
-export async function getSellerListingsPayload(
+export async function getSellerListingsResolution(
   sellerAddress: string,
-): Promise<SellerListingsPayload> {
+): Promise<SellerListingsResolution> {
   const seller = sellerAddress.toLowerCase()
   try {
-    return await cachedComplete(seller)
+    return { payload: await cachedComplete(seller), complete: true }
   } catch (e) {
-    if (e instanceof Error && e.message === "partial") {
-      const { payload } = await buildPayload(seller)
-      return payload
+    if (e instanceof PartialSellerListingsError) {
+      return e.resolution
     }
     throw e
   }
+}
+
+/** Compatibility wrapper for server callers that only consume counts. */
+export async function getSellerListingsPayload(
+  sellerAddress: string,
+): Promise<SellerListingsPayload> {
+  return (await getSellerListingsResolution(sellerAddress)).payload
 }
 
 /**

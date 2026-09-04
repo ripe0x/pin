@@ -19,6 +19,8 @@
     "@pin/abi": "workspace:*",
     "@pin/addresses": "workspace:*",
     "@pin/shared": "workspace:*",
+    "@pin/surface-kit": "workspace:*",
+    "@pin/surface-react": "workspace:*",
     "@pin/token-metadata": "workspace:*",
     "@rainbow-me/rainbowkit": "^2.2.0",
     "@tanstack/react-query": "^5.62.0",

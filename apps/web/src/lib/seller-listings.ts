@@ -71,9 +71,9 @@ export type SellerListingMeta = {
  * panel components consume this rather than calling adapters directly.
  *
  * The `partial` flag is true when the route returned an incomplete
- * result — at least one platform adapter timed out or upstream RPC
+ * result — at least one indexed source was stale/incomplete or an adapter
  * failed. Callers should surface this so users know empty results may
- * be a scan failure, not an actual absence of listings. The route
+ * reflect missing coverage, not an actual absence of listings. The route
  * deliberately does NOT cache partial results, so the next refresh
  * runs fresh.
  */
@@ -203,4 +203,3 @@ export async function resolveListingMetadata(
 
   return out
 }
-

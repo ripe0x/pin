@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useIpfsGatewayFallback } from "@/lib/use-ipfs-fallback"
 
 const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
@@ -40,10 +40,14 @@ function classify(
 export function TokenMedia({
   imageUrl,
   animationUrl,
+  posterUrl,
+  mediaKind,
   title,
 }: {
   imageUrl: string
   animationUrl?: string | null
+  posterUrl?: string | null
+  mediaKind?: "image" | "video" | "animation" | "unknown" | null
   title: string
 }) {
   // Prefer animation_url when present — it's the dynamic version of the
@@ -52,7 +56,11 @@ export function TokenMedia({
   // accidentally end up in an iframe.
   const useAnimation = !!animationUrl
   const renderUrl = useAnimation ? animationUrl! : imageUrl
-  const { kind: initialKind, ambiguous } = classify(renderUrl, useAnimation)
+  const classified = classify(renderUrl, useAnimation)
+  const initialKind: MediaKind = mediaKind === "video" ? "video" : classified.kind
+  const ambiguous = mediaKind == null || mediaKind === "unknown"
+    ? classified.ambiguous
+    : false
 
   // Some tokens stuff a video into the `image` field with no animation_url
   // and no file extension — e.g. uri() => {"image":"ipfs://<mp4 cid>"}. That
@@ -70,28 +78,134 @@ export function TokenMedia({
   // Poster is only used by the (non-escalated) video branch; computing it
   // unconditionally keeps hook order stable.
   const poster = useIpfsGatewayFallback(imageUrl).src
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const imageRef = useRef<HTMLImageElement | null>(null)
+  const [videoVisible, setVideoVisible] = useState(false)
+  const [videoLoaded, setVideoLoaded] = useState(false)
+  const [videoFailed, setVideoFailed] = useState(false)
+  const [imageFailed, setImageFailed] = useState(false)
+
+  useEffect(() => {
+    setImageFailed(false)
+  }, [renderUrl])
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || kind !== "video") return
+    const observer = new IntersectionObserver(
+      ([entry]) => setVideoVisible(entry?.isIntersecting === true),
+      { rootMargin: "200px 0px", threshold: 0.05 },
+    )
+    observer.observe(video)
+    return () => observer.disconnect()
+  }, [kind])
+
+  useEffect(() => {
+    if (kind !== "image" || !ambiguous || escalated) return
+    // A few metadata providers return extension-less MP4 URLs in `image`.
+    // Safari can leave those as a permanently broken image without reliably
+    // firing onError. Check the decoded state after the request settles and
+    // switch to the video renderer when no image was produced.
+    const timer = window.setTimeout(() => {
+      const image = imageRef.current
+      if (image?.complete && image.naturalWidth === 0) setEscalated(true)
+    }, 2500)
+    return () => window.clearTimeout(timer)
+  }, [ambiguous, escalated, kind, media.src])
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || kind !== "video" || videoFailed) return
+    if (videoVisible) {
+      void video.play().catch(() => {
+        // Autoplay policy may require a gesture; controls remain available.
+      })
+    } else {
+      video.pause()
+    }
+  }, [kind, videoVisible, videoFailed])
 
   function handleImageError() {
     // Rotate to the next gateway first; only once every gateway has failed
     // do we conclude this isn't a loadable image and try it as a video.
     if (media.onError()) return
     if (ambiguous && !escalated) setEscalated(true)
+    else setImageFailed(true)
+  }
+
+  useEffect(() => {
+    if (kind !== "image" || imageFailed) return
+    const image = imageRef.current
+    // The request can fail before React hydrates and attaches onError. Catch
+    // that state explicitly so a dead source never remains a broken-image
+    // icon on the detail page.
+    if (image?.complete && image.naturalWidth === 0) handleImageError()
+  }, [imageFailed, kind, media.src])
+
+  if (!imageUrl && !animationUrl) {
+    return (
+      <div className="flex aspect-square min-h-48 min-w-48 items-center justify-center border border-gray-300 px-6 text-center text-xs font-mono text-fg-muted">
+        No media is available for this token yet.
+      </div>
+    )
   }
 
   if (kind === "video") {
     const v = escalated ? escalatedVideo : media
+    const resolvedPoster =
+      posterUrl ?? (useAnimation && imageUrl !== renderUrl ? poster : undefined)
+    function handleVideoError() {
+      setVideoLoaded(false)
+      if (!v.onError()) setVideoFailed(true)
+    }
     return (
-      <video
-        src={v.src}
-        poster={useAnimation ? poster : undefined}
-        className="max-h-[80vh] w-auto object-contain"
-        autoPlay
-        loop
-        muted
-        playsInline
-        controls
-        onError={v.onError}
-      />
+      <div className="relative flex min-h-48 max-h-[80vh] min-w-48 items-center justify-center bg-black text-white">
+        <video
+          ref={videoRef}
+          src={videoVisible && !videoFailed ? v.src : undefined}
+          poster={resolvedPoster}
+          className={`max-h-[80vh] w-auto object-contain ${videoLoaded || resolvedPoster ? "opacity-100" : "opacity-0"}`}
+          preload={videoVisible ? "metadata" : "none"}
+          loop
+          muted
+          playsInline
+          controls
+          onLoadedData={() => setVideoLoaded(true)}
+          onError={handleVideoError}
+        />
+        {!videoLoaded ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/40 px-6 text-center text-xs font-mono">
+            <span>
+              {videoFailed
+                ? "Video could not be loaded. The original source is still available."
+                : resolvedPoster
+                  ? "Loading video metadata…"
+                  : "Video preview has no poster. Loading starts when visible."}
+            </span>
+            {videoFailed ? (
+              <button
+                type="button"
+                className="border border-white/60 px-2 py-1 hover:border-white"
+                onClick={() => {
+                  setVideoFailed(false)
+                  setVideoLoaded(false)
+                  videoRef.current?.load()
+                }}
+              >
+                Retry
+              </button>
+            ) : null}
+            <a
+              href={v.src}
+              target="_blank"
+              rel="noreferrer"
+              className="underline underline-offset-2"
+            >
+              Open original media ↗
+            </a>
+          </div>
+        ) : null}
+      </div>
     )
   }
 
@@ -119,8 +233,29 @@ export function TokenMedia({
     )
   }
 
+  if (imageFailed) {
+    return (
+      <div
+        role="img"
+        aria-label={`${title} artwork unavailable`}
+        className="flex aspect-square min-h-48 min-w-48 flex-col items-center justify-center gap-3 border border-gray-300 px-6 text-center text-xs font-mono text-fg-muted"
+      >
+        <span>Artwork could not be loaded from its original source.</span>
+        <a
+          href={media.src}
+          target="_blank"
+          rel="noreferrer"
+          className="underline underline-offset-2"
+        >
+          Open original media ↗
+        </a>
+      </div>
+    )
+  }
+
   return (
     <img
+      ref={imageRef}
       src={media.src}
       alt={title}
       className="max-h-[80vh] w-auto object-contain"

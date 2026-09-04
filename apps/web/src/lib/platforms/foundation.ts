@@ -4,7 +4,7 @@ import { mainnet } from "viem/chains"
 import { getMainnetTransport } from "../alchemy-rpc"
 import type {
   PlatformAdapter, ArtistTokenRef, CollectorTokenRef,
-  AdapterLastSale, SellerListings, ActiveAuctionSummary,
+  AdapterLastSale, SellerListings, SellerListingsResult, ActiveAuctionSummary,
 } from "./types"
 import { sql } from "../db"
 import { getFoundationTokensFromIndexer } from "../indexer-queries"
@@ -40,7 +40,7 @@ function getReadClient() {
   return createPublicClient({ chain: mainnet, transport: getMainnetTransport() })
 }
 
-const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+const schema = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
   /[^a-zA-Z0-9_]/g, "",
 )
 
@@ -154,9 +154,9 @@ export const foundationAdapter: PlatformAdapter = {
     }))
   },
 
-  async getCancellableListingsForSeller(seller: Address): Promise<SellerListings | null> {
+  async getCancellableListingsForSeller(seller: Address): Promise<SellerListingsResult | null> {
     const lower = seller.toLowerCase()
-    if (!sql) return { auctions: [], buyNows: [] }
+    if (!sql) return { auctions: [], buyNows: [], complete: false }
 
     // One round-trip for both discovery sources (seed table + live Ponder
     // rows); deduped in JS because a post-startBlock listing could appear
@@ -203,7 +203,7 @@ export const foundationAdapter: PlatformAdapter = {
     }
 
     if (candAuctions.length === 0 && candBuyNows.length === 0) {
-      return { auctions: [], buyNows: [] }
+      return { auctions: [], buyNows: [], complete: true }
     }
 
     // On-chain verification: the static seed is frozen at dump time, so
@@ -266,6 +266,10 @@ export const foundationAdapter: PlatformAdapter = {
       })
     }
 
-    return { auctions, buyNows }
+    return {
+      auctions,
+      buyNows,
+      complete: results.every((result) => result.status === "success"),
+    }
   },
 }

@@ -8,12 +8,13 @@
  */
 import { sql } from "../db.ts"
 import { client } from "../rpc.ts"
-import { scanArtistTokensViaTransferFromZero } from "../scanners/transfer-from-zero.ts"
+import { getFinalizedBoundary } from "../finality.ts"
+import { scanArtistTokenTargetsViaTransferFromZero } from "../scanners/transfer-from-zero.ts"
 import type { TaskResult } from "../scheduler.ts"
 
 const PLATFORM = "fnd-collection"
 
-const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
   /[^a-zA-Z0-9_]/g, "",
 )
 
@@ -38,27 +39,22 @@ export async function scanFndCollections(): Promise<TaskResult> {
      JOIN known_artists k ON k.address = s.creator`,
   )) as Array<{ artist: string; contract: string; deploy_block: string }>
 
-  let totalScope = 0
-  let totalRpc = 0
-  let totalRows = 0
-
-  for (const t of targets) {
-    const r = await scanArtistTokensViaTransferFromZero({
-      sql,
-      client,
-      taskName: "scan-fnd-collections",
-      platform: PLATFORM,
-      artist: t.artist,
-      contract: t.contract,
-      contractDeployBlock: BigInt(t.deploy_block),
-    }).catch((err) => {
-      console.error(`[scan-fnd-collections] ${t.artist}/${t.contract}:`, err)
-      return { rpcCalls: 0, rowsWritten: 0 }
-    })
-    totalScope++
-    totalRpc += r.rpcCalls
-    totalRows += r.rowsWritten
+  const boundary = await getFinalizedBoundary(client)
+  const result = await scanArtistTokenTargetsViaTransferFromZero({
+    sql,
+    client,
+    taskName: "scan-fnd-collections",
+    platform: PLATFORM,
+    targets: targets.map((target) => ({
+      artist: target.artist,
+      contract: target.contract,
+      contractDeployBlock: BigInt(target.deploy_block),
+    })),
+    finalizedBlock: boundary.blockNumber,
+  })
+  return {
+    scopeCount: targets.length,
+    rpcCalls: boundary.rpcCalls + result.rpcCalls,
+    rowsWritten: result.rowsWritten,
   }
-
-  return { scopeCount: totalScope, rpcCalls: totalRpc, rowsWritten: totalRows }
 }

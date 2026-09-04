@@ -26,9 +26,7 @@ export async function SupportersList() {
         {supporters.map((s) => (
           <li key={s.address} className="break-inside-avoid">
             <a
-              href={`https://evm.now/address/${s.address}`}
-              target="_blank"
-              rel="noopener noreferrer"
+              href={`/profile/${s.address}`}
               title={s.address}
               className={`block truncate transition-colors hover:underline ${
                 s.ensName ? "text-gray-600" : "text-gray-500"
@@ -41,5 +39,21 @@ export async function SupportersList() {
         ))}
       </ul>
     </div>
+  )
+}
+
+/** Compact global-footer summary. The complete roster has its own page. */
+export async function SupportersSummary() {
+  const { supporters, totalSupporters, totalMints } =
+    await getFundingWorksSupporters()
+  if (supporters.length === 0) return null
+
+  return (
+    <p className="text-[11px] font-mono text-gray-500">
+      {totalSupporters} supporters. {totalMints} mints. Thank you.{" "}
+      <a href="/supporters" className="underline hover:text-fg">
+        See everyone →
+      </a>
+    </p>
   )
 }

@@ -2,15 +2,10 @@
 
 /**
  * Live mint CTA for a Surface. Honest pricing: for a fixed-price
- * collection the collector pays exactly price * quantity, shown up front. For
- * a collection with a price strategy (hasPriceStrategy), the price can change
- * block to block (e.g. a basefee-driven strategy), so this reads a live quote
- * via priceOf on the minter on a slow poll (12s — never tighter, this is a
- * paid RPC path) and sends that quoted value as msg.value. The minter accepts
- * `msg.value >= priceOf(...)` and pull-refunds any excess to the pending
- * withdrawal balance, so a quote that goes slightly stale between read and
- * broadcast still succeeds — it just leaves a small refund claimable via
- * WithdrawPanel instead of reverting.
+ * collection the collector pays exactly price * quantity, shown up front.
+ * The shared direct provider owns validation, the 12s mutable-state refresh,
+ * quotes, and transaction preparation. Every click re-quotes at the latest
+ * block and requires another confirmation if the displayed value moved.
  *
  * The fixed Referral Share is shown explicitly as a split out of the price,
  * paid to whoever hosts this mint (PND here, the artist on their own site). A
@@ -26,18 +21,26 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { encodeAbiParameters, formatEther, parseEventLogs } from "viem"
+import { formatEther, parseEventLogs } from "viem"
 import {
   useAccount,
   useBalance,
   useChainId,
-  useReadContract,
+  usePublicClient,
   useSwitchChain,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
-import { surfaceAbi, fixedPriceMinterAbi } from "@pin/abi"
+import { surfaceAbi } from "@pin/abi"
+import { useMintQuote, useReleaseState, useValidatedRelease } from "@pin/surface-react"
+import {
+  createDirectChainSurfaceProvider,
+  releaseAvailability,
+  type IdMode,
+  type ReleaseState,
+  type ValidatedRelease,
+} from "@pin/surface-kit"
 import {
   AllowlistChecker,
   EligibilityVerdict,
@@ -60,10 +63,7 @@ import {
   formatBps,
   hasPriceStrategy,
   isGasOnly,
-  isMintable,
-  lifecycleStatus,
   pndReferrerAddress,
-  shortAddress,
 } from "@/lib/collection"
 import type { WorkConfig } from "@/lib/collection"
 
@@ -71,6 +71,10 @@ import type { WorkConfig } from "@/lib/collection"
  *  (lib/collection.ts's MinterSaleConfig), plus the token-level cap/minted
  *  state the derived status also needs. */
 export type MintCollectionSnapshot = {
+  owner: `0x${string}`
+  renderer: `0x${string}`
+  idMode: IdMode
+  observedAtBlock: string
   price: string
   priceStrategy: `0x${string}`
   mintStart: string
@@ -83,6 +87,7 @@ export type MintCollectionSnapshot = {
    *  collection's cap does, and on an open-supply release it is the only
    *  thing that does. */
   maxMints: string
+  saleMinted: string
   minted: string
   referralShareBps: number
 }
@@ -116,102 +121,142 @@ export function MintCollectionCTA({
   const wrongNetwork = !!address && chainId !== PREFERRED_CHAIN.id
   const nowSec = useChainNowSec()
   const router = useRouter()
-
-  const storedPrice = BigInt(snapshot.price)
-  const supplyCap = BigInt(snapshot.supplyCap)
-  const maxMints = BigInt(snapshot.maxMints ?? "0")
-  // What is actually available: both ceilings apply on every mint, so the
-  // tighter of the two governs. Either may be 0, meaning it sets no limit;
-  // 0 here means neither does. An open-supply release run in batches has no
-  // collection cap at all, so the minter's ceiling is the edition size.
-  const effectiveCap =
-    supplyCap > 0n && maxMints > 0n
-      ? supplyCap < maxMints
-        ? supplyCap
-        : maxMints
-      : supplyCap > 0n
-        ? supplyCap
-        : maxMints
-  const minted = BigInt(snapshot.minted)
-  const mintEnd = BigInt(snapshot.mintEnd)
-  const mintStart = BigInt(snapshot.mintStart)
   const referrerAddr = referrer ?? pndReferrerAddress()
-  const strategy = hasPriceStrategy(snapshot.priceStrategy)
-  // No canonical minter on record: nothing here can drive a mint.
   const pooled = !minter
-
   const [amount, setAmount] = useState(1)
   const amountValid = Number.isInteger(amount) && amount >= 1
 
-  // Live price quote for strategy collections. 12s poll — this is a paid RPC
-  // read (priceOf on the minter), never tighten below this without checking
-  // the RPC budget. Fixed-price collections skip the read entirely
-  // (query.enabled).
-  const {
-    data: liveQuote,
-    refetch: refetchLiveQuote,
-  } = useReadContract({
-    address: minter ?? undefined,
-    abi: fixedPriceMinterAbi,
-    functionName: "priceOf",
-    args: [address ?? ZERO_ADDRESS, BigInt(amountValid ? amount : 1)],
-    query: {
-      enabled: strategy && !!minter,
-      refetchInterval: 12_000,
+  // PND and the artist template deliberately share this provider and React
+  // state boundary. The server snapshot gives an immediate, block-tagged
+  // first paint; bounded direct reads then refresh mutable protocol truth.
+  const publicClient = usePublicClient({ chainId: PREFERRED_CHAIN.id })
+  const provider = useMemo(
+    () => publicClient ? createDirectChainSurfaceProvider({ client: publicClient, source: "pnd-direct-rpc" }) : null,
+    [publicClient],
+  )
+  const releaseRef = useMemo(
+    () => ({ chainId: PREFERRED_CHAIN.id, collection, protocol: "surface@1" as const }),
+    [collection],
+  )
+  const initialRelease = useMemo<ValidatedRelease>(() => ({
+    ...releaseRef,
+    owner: snapshot.owner,
+    renderer: snapshot.renderer,
+    idMode: snapshot.idMode,
+    primaryMinter: minter,
+    validatedAtBlock: BigInt(snapshot.observedAtBlock),
+  }), [minter, releaseRef, snapshot.idMode, snapshot.observedAtBlock, snapshot.owner, snapshot.renderer])
+  const initialState = useMemo<ReleaseState | null>(() => {
+    if (!minter) return null
+    const value: ReleaseState = {
+      release: initialRelease,
+      account: undefined,
+      minted: BigInt(snapshot.minted),
+      supplyCap: BigInt(snapshot.supplyCap),
+      saleMinted: BigInt(snapshot.saleMinted),
+      saleSupplyCap: BigInt(snapshot.maxMints),
+      mintStart: BigInt(snapshot.mintStart),
+      mintEnd: BigInt(snapshot.mintEnd),
+      price: BigInt(snapshot.price),
+      priceStrategy: snapshot.priceStrategy,
+      allowlistRoot: snapshot.allowlistRoot,
+      walletCap: BigInt(snapshot.walletCap),
+      mintedByAccount: 0n,
+      referralShareBps: snapshot.referralShareBps,
+      lifecycle: SurfaceStatus.Closed,
+      blockNumber: BigInt(snapshot.observedAtBlock),
+    }
+    value.lifecycle = releaseAvailability(value, Math.floor(Date.now() / 1000)).lifecycle
+    return value
+  }, [initialRelease, minter, snapshot])
+  const validation = useValidatedRelease({
+    provider,
+    release: releaseRef,
+    initialResult: {
+      status: "available",
+      value: initialRelease,
+      evidence: { truth: "protocol", source: "pnd-server-first-paint", blockNumber: snapshot.observedAtBlock },
     },
+    refreshMs: 30_000,
+  })
+  const release = validation.value ?? initialRelease
+  const liveState = useReleaseState({
+    provider,
+    release,
+    account: address,
+    initialResult: initialState
+      ? {
+          status: "available",
+          value: initialState,
+          evidence: { truth: "protocol", source: "pnd-server-first-paint", blockNumber: snapshot.observedAtBlock },
+        }
+      : null,
+    refreshMs: 12_000,
+  })
+  const stateMatchesRelease = Boolean(
+    liveState.value
+      && liveState.value.release.collection.toLowerCase() === release.collection.toLowerCase()
+      && liveState.value.release.primaryMinter?.toLowerCase() === release.primaryMinter?.toLowerCase(),
+  )
+  const stateMatchesAccount = liveState.value?.account?.toLowerCase() === address?.toLowerCase()
+    || (!liveState.value?.account && !address)
+  const state = stateMatchesRelease && stateMatchesAccount ? liveState.value : null
+  const mintQuote = useMintQuote({
+    provider,
+    input: amountValid && state
+      ? {
+          release,
+          account: address,
+          quantity: BigInt(amount),
+          referrer: referrerAddr,
+          selection: undefined,
+        }
+      : null,
   })
 
   // Stale-price defense (exact-payment semantics, §6.3): a click on a
-  // strategy collection first re-reads the quote; if it moved since what's
-  // on screen, we show the new total and require a second click rather than
-  // ever sending a value the collector hasn't seen confirmed.
+  // collection always re-reads the shared quote immediately before writing.
+  // If it moved, show the new total and require a second click.
   const [priceConfirmPending, setPriceConfirmPending] = useState(false)
+  const [providerError, setProviderError] = useState<string | null>(null)
   useEffect(() => {
     setPriceConfirmPending(false)
+    setProviderError(null)
   }, [amount])
 
   // ── mint gate (allowlist + per-wallet cap, built into the minter) ───────
-  const allowlisted = !!minter && snapshot.allowlistRoot !== ZERO_ROOT
-  const walletCap = BigInt(snapshot.walletCap)
+  const allowlisted = !!state && state.allowlistRoot?.toLowerCase() !== ZERO_ROOT
+  const walletCap = state?.walletCap ?? 0n
   // Eligibility of the connected wallet (one API lookup per wallet; the
   // proof rides back with it and goes into `data` at mint time).
   const eligibility = useEligibility(collection, allowlisted ? address : undefined)
   const proof = eligibility && eligibility.eligible === true ? eligibility.proof ?? [] : null
-  // Per-wallet remaining allowance: derived from the minter's own
-  // mintedBy(address) counter (there's no dedicated "remaining" getter),
-  // one eth_call per connected wallet, only when a cap is actually set —
-  // this is mint-time correctness, not polling.
-  const { data: mintedByWallet } = useReadContract({
-    address: minter ?? undefined,
-    abi: fixedPriceMinterAbi,
-    functionName: "mintedBy",
-    args: [address ?? ZERO_ADDRESS],
-    query: { enabled: !!address && !!minter && walletCap > 0n, staleTime: 15_000 },
-  })
-  const walletRemaining =
-    walletCap > 0n && mintedByWallet !== undefined ? walletCap - (mintedByWallet as bigint) : null
-  const walletCapReached = walletRemaining !== null && walletRemaining <= 0n
-
-  const remaining = effectiveCap > 0n ? effectiveCap - minted : null
-  const capReached = remaining !== null && remaining <= 0n
-
-  const status = lifecycleStatus({ mintStart, mintEnd, supplyCap: effectiveCap }, minted, nowSec)
-  const ready = nowSec > 0 || (mintEnd === 0n && mintStart === 0n)
+  const availability = state
+    ? releaseAvailability(state, nowSec, {
+        quantity: BigInt(amountValid ? amount : 0),
+        allowlistProofAvailable: !allowlisted || Boolean(proof),
+      })
+    : null
+  const minted = state?.minted ?? BigInt(snapshot.minted)
+  const mintEnd = state?.mintEnd ?? BigInt(snapshot.mintEnd)
+  const mintStart = state?.mintStart ?? BigInt(snapshot.mintStart)
+  const remaining = availability?.remaining ?? null
+  const walletRemaining = availability?.walletRemaining ?? null
+  const walletCapReached = availability?.walletCapped ?? false
+  const status = availability?.lifecycle ?? SurfaceStatus.Closed
+  const ready = state !== null && (nowSec > 0 || (mintEnd === 0n && mintStart === 0n))
   const notStarted = mintStart > 0n && nowSec > 0 && BigInt(nowSec) < mintStart
-  const mintable =
-    ready &&
-    !notStarted &&
-    isMintable({ mintStart, mintEnd, supplyCap: effectiveCap }, minted, nowSec || Number(mintStart))
+  const saleOpen = ready
+    && validation.phase !== "blocked"
+    && liveState.phase !== "blocked"
+    && status === SurfaceStatus.Open
+    && !availability?.soldOut
+  const mintable = saleOpen && Boolean(availability?.mintable)
 
-  // For a strategy collection, `total` is the live quote for the current
-  // quantity (already scaled by quantity by priceOf itself). For a
-  // fixed-price collection it's simply price * quantity.
-  const total = strategy
-    ? (liveQuote as bigint | undefined) ?? 0n
-    : amountValid
-      ? storedPrice * BigInt(amount)
-      : storedPrice
-  const perTokenPrice = strategy ? (amountValid && amount > 0 ? total / BigInt(amount) : total) : storedPrice
+  const strategy = hasPriceStrategy(state?.priceStrategy ?? snapshot.priceStrategy)
+  const quote = mintQuote.value
+  const total = quote?.totalValue ?? 0n
+  const perTokenPrice = quote?.unitPrice ?? state?.price ?? BigInt(snapshot.price)
   const showSplit = !isGasOnly(total) && referrerAddr !== ZERO_ADDRESS
 
   const { data: balance } = useBalance({
@@ -238,8 +283,12 @@ export function MintCollectionCTA({
   // component tree so the minted-count header stops showing the pre-mint
   // number — don't wait for the collector to dismiss the reveal to fix that.
   useEffect(() => {
-    if (isSuccess) router.refresh()
-  }, [isSuccess, router])
+    if (isSuccess) {
+      router.refresh()
+      void validation.refresh()
+      void liveState.refresh()
+    }
+  }, [isSuccess, router]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // The reveal's inputs come straight from the receipt's Minted event —
   // no extra reads, no indexer round trip.
@@ -259,37 +308,43 @@ export function MintCollectionCTA({
   }, [receipt, collection])
 
   async function handleMint() {
-    if (!amountValid || !minter || !address) return
+    if (!amountValid || !minter || !address || !provider || !state || !mintable) return
+    setProviderError(null)
     // Allowlist gates verify a merkle proof from `data`; without one the
     // tx is doomed, so the button never enables in that state (belt) and we
     // bail here too (suspenders).
     if (allowlisted && !proof) return
-    let sendValue = total
-    if (strategy) {
-      // Re-quote immediately before writing. `total` here is a closed-over
-      // value from the render that produced this click handler — i.e. what
-      // the collector actually saw on screen.
-      const { data: fresh } = await refetchLiveQuote()
-      if (fresh !== undefined && fresh !== total) {
-        // The refetch above already updated the cached quote, so the next
-        // render shows the new total — require one more click at that price
-        // instead of sending the stale one.
-        setPriceConfirmPending(true)
-        return
-      }
-      sendValue = fresh ?? total
+    // Re-quote immediately before every write, including nominally fixed
+    // releases. The provider owns the block-scoped price boundary.
+    const fresh = await mintQuote.refresh()
+    if (fresh?.status !== "available" && fresh?.status !== "partial") {
+      setProviderError(fresh?.reason ?? "The current mint price could not be confirmed.")
+      return
+    }
+    if (!quote || fresh.value.totalValue !== quote.totalValue) {
+      setPriceConfirmPending(true)
+      return
     }
     setPriceConfirmPending(false)
-    const data =
-      allowlisted && proof
-        ? encodeAbiParameters([{ type: "bytes32[]" }], [proof])
-        : "0x"
+    const prepared = await provider.prepareMint({
+      release,
+      account: address,
+      quantity: BigInt(amount),
+      referrer: referrerAddr,
+      quote: fresh.value,
+      selection: allowlisted && proof ? { allowlistProof: proof } : undefined,
+    })
+    if (prepared.status !== "available" && prepared.status !== "partial") {
+      setProviderError(prepared.reason)
+      return
+    }
+    const request = prepared.value
     writeContract({
-      address: minter,
-      abi: fixedPriceMinterAbi,
-      functionName: "mint",
-      args: [address, BigInt(amount), referrerAddr, data],
-      value: sendValue,
+      address: request.target,
+      abi: request.abi,
+      functionName: request.functionName,
+      args: request.args,
+      value: request.value,
     })
   }
 
@@ -298,14 +353,10 @@ export function MintCollectionCTA({
   // collector signs it.
   const insufficientBalance = !!balance && !wrongNetwork && balance.value < total
 
-  const mintOrderFrom = Number(minted) + 1
-  const mintOrderTo = Number(minted) + amount
-  const isFirstEver = minted === 0n
-
   // Sold out and window-closed are both Closed onchain but read very
   // differently: one is the collection completing, the other is a window
   // that may reopen (settings are live until lockSupply/lockRenderer).
-  const soldOut = status === SurfaceStatus.Closed && capReached
+  const soldOut = availability?.soldOut ?? false
   const statusLabel = soldOut ? "Sold out" : COLLECTION_STATUS_LABEL[status]
   const statusDot =
     status === SurfaceStatus.Open
@@ -341,9 +392,8 @@ export function MintCollectionCTA({
               </span>
             </div>
             <span className="text-[10px] font-mono uppercase tracking-wider text-gray-400 tabular-nums">
-              {effectiveCap > 0n
-                ? `${Number(minted)} / ${Number(effectiveCap)} minted`
-                : `${Number(minted)} minted · open`}
+              {minted.toString()} minted
+              {remaining !== null && !soldOut ? ` · ${remaining.toString()} available` : ""}
             </span>
           </div>
 
@@ -365,9 +415,8 @@ export function MintCollectionCTA({
               </p>
               {strategy && (
                 <p className="text-[10px] font-mono text-gray-400">
-                  Live quote, updates automatically. The final amount may
-                  include an automatic refund if the price moves between quote
-                  and confirmation.
+                  Live quote from the collection&apos;s minter. The price is
+                  confirmed again before your wallet opens.
                 </p>
               )}
             </div>
@@ -394,6 +443,23 @@ export function MintCollectionCTA({
               )
             )}
           </div>
+
+          {(validation.phase === "blocked" || liveState.phase === "blocked") && (
+            <div className="rounded border border-gray-200 bg-surface-muted/40 px-3 py-2.5">
+              <p className="text-[11px] font-mono leading-relaxed text-gray-500" role="status">
+                {validation.message ?? liveState.message ?? "Current release state is unavailable."}
+              </p>
+              {(validation.retryable || liveState.retryable) && (
+                <button
+                  type="button"
+                  onClick={() => void (validation.phase === "blocked" ? validation.refresh() : liveState.refresh())}
+                  className="mt-2 text-[10px] font-mono uppercase tracking-wider underline hover:text-fg"
+                >
+                  Retry live state
+                </button>
+              )}
+            </div>
+          )}
 
           {isSuccess &&
             txHash &&
@@ -449,7 +515,12 @@ export function MintCollectionCTA({
               )}
             </p>
           )}
-          {mintable && !(isSuccess && txHash) && (
+          {providerError && (
+            <p className="text-[11px] font-mono text-red-500 break-words" role="alert">
+              {providerError}
+            </p>
+          )}
+          {saleOpen && !(isSuccess && txHash) && (
             <>
               <label className="block">
                 <span className="sr-only">Number of tokens to mint</span>
@@ -541,8 +612,9 @@ export function MintCollectionCTA({
                     onClick={handleMint}
                     disabled={
                       isPending ||
+                      !mintable ||
                       !amountValid ||
-                      (strategy && liveQuote === undefined) ||
+                      !quote ||
                       insufficientBalance ||
                       (allowlisted && !proof) ||
                       walletCapReached
@@ -565,6 +637,8 @@ export function MintCollectionCTA({
                                   ? "Insufficient balance"
                                   : priceConfirmPending
                                     ? "Price updated, confirm again"
+                                    : !quote
+                                      ? "Confirming current price…"
                                     : isGasOnly(total)
                                       ? "Mint (gas only)"
                                       : `Mint for ${formatEther(total)} ETH`}
@@ -590,7 +664,7 @@ export function MintCollectionCTA({
             </>
           )}
 
-          {!mintable && !(isSuccess && txHash) && ready && (
+          {!saleOpen && !(isSuccess && txHash) && ready && (
             <>
               {notStarted ? (
                 <>
@@ -604,15 +678,14 @@ export function MintCollectionCTA({
                 </>
               ) : soldOut ? (
                 <p className="text-[11px] font-mono text-gray-600 leading-relaxed">
-                  All {Number(effectiveCap)} are minted.
+                  This release is sold out.
                   {work && work.code.length > 0
                     ? " The full collection lives on this page, every token rendering live from its onchain seed."
                     : " The full collection lives on this page."}
                 </p>
               ) : (
                 <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
-                  The mint window has closed with {Number(minted)}
-                  {effectiveCap > 0n ? ` of ${Number(effectiveCap)}` : ""} minted.
+                  The mint window has closed with {minted.toString()} minted.
                   Sale settings stay live until locked, so the artist can
                   reopen it.
                 </p>
@@ -629,4 +702,3 @@ export function MintCollectionCTA({
     </section>
   )
 }
-

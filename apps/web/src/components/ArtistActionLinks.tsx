@@ -33,7 +33,7 @@ export function ArtistActionLinks({ onNavigate }: { onNavigate?: () => void }) {
             Your studio
           </Link>
           <Link
-            href={`/artist/${address.toLowerCase()}`}
+            href={`/profile/${address.toLowerCase()}`}
             role="menuitem"
             onClick={onNavigate}
             className={`border-b border-gray-200 ${item} font-medium`}

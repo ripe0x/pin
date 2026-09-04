@@ -15,6 +15,7 @@ const IMAGE_EXTENSIONS = [
 ]
 
 type MediaKind = "video" | "image" | "html"
+type LoadState = "loading" | "ready" | "failed"
 
 function extOf(url: string): string {
   const path = url.split("?")[0].split("#")[0].toLowerCase()
@@ -58,6 +59,7 @@ export function TokenMedia({
 }) {
   const [escalated, setEscalated] = useState(false)
   const [hydrated, setHydrated] = useState(false)
+  const [loadState, setLoadState] = useState<LoadState>("loading")
   const imageRef = useRef<HTMLImageElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const frameRef = useRef<HTMLIFrameElement>(null)
@@ -74,6 +76,10 @@ export function TokenMedia({
   const kind: MediaKind = escalated ? "video" : classification.kind
 
   useEffect(() => setHydrated(true), [])
+  useEffect(() => {
+    setEscalated(false)
+    setLoadState(renderUrl ? "loading" : "failed")
+  }, [renderUrl])
 
   // Recover image/video failures that fired before this component hydrated,
   // then apply the same hang timeout to every media kind.
@@ -100,7 +106,7 @@ export function TokenMedia({
         if (!entries.some((entry) => entry.isIntersecting)) return
         observer.disconnect()
         fallbackTimer = setTimeout(() => {
-          if (!loadFinished.current) media.onError()
+          if (!loadFinished.current && !media.onError()) setLoadState("failed")
         }, 7_000)
       },
       { rootMargin: "400px" },
@@ -124,10 +130,25 @@ export function TokenMedia({
 
   const { ambiguous } = classification
   const src = media.src ?? renderUrl
+  if (loadState === "failed") {
+    return (
+      <div className="flex h-full min-h-40 w-full items-center justify-center bg-gray-100 px-3 text-center text-[11px] font-mono uppercase tracking-wider text-gray-400">
+        Preview unavailable
+      </div>
+    )
+  }
+
+  const loading = loadState === "loading" ? (
+    <div className="absolute inset-0 z-10 flex items-center justify-center bg-gray-100 text-[11px] font-mono uppercase tracking-wider text-gray-400">
+      Loading preview…
+    </div>
+  ) : null
 
   if (kind === "video") {
     return (
-      <video
+      <div className="relative flex h-full min-h-40 w-full items-center justify-center overflow-hidden">
+        {loading}
+        <video
         ref={videoRef}
         src={src}
         poster={useAnimation && image ? image : undefined}
@@ -139,11 +160,13 @@ export function TokenMedia({
         controls
         onLoadedMetadata={() => {
           loadFinished.current = true
+          setLoadState("ready")
         }}
         onError={() => {
-          media.onError()
+          if (!media.onError()) setLoadState("failed")
         }}
-      />
+        />
+      </div>
     )
   }
 
@@ -155,7 +178,9 @@ export function TokenMedia({
       return <div className="aspect-square h-[80vh] max-h-[80vh] max-w-full bg-black" />
     }
     return (
-      <iframe
+      <div className="relative flex h-full min-h-40 w-full items-center justify-center overflow-hidden">
+        {loading}
+        <iframe
         ref={frameRef}
         src={src}
         title={title}
@@ -165,27 +190,38 @@ export function TokenMedia({
         className="aspect-square h-[80vh] max-h-[80vh] max-w-full bg-black"
         onLoad={() => {
           loadFinished.current = true
+          setLoadState("ready")
         }}
-      />
+        />
+      </div>
     )
   }
 
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
+    <div className="relative flex h-full min-h-40 w-full items-center justify-center overflow-hidden">
+      {loading}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
       ref={imageRef}
       src={src}
       alt={title}
       className="max-h-[80vh] w-auto object-contain"
       onLoad={() => {
         loadFinished.current = true
+        setLoadState("ready")
       }}
       onError={() => {
         // Rotate gateways first; only once they're exhausted treat an
         // extension-less image as a misclassified video.
         if (media.onError()) return
-        if (ambiguous && !escalated) setEscalated(true)
+        if (ambiguous && !escalated) {
+          setEscalated(true)
+          setLoadState("loading")
+          return
+        }
+        setLoadState("failed")
       }}
-    />
+      />
+    </div>
   )
 }

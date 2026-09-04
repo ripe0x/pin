@@ -38,7 +38,7 @@ export function HeaderSearch() {
     >
       <button
         type={open ? "submit" : "button"}
-        aria-label="Search artists"
+        aria-label="Search profiles"
         aria-expanded={open}
         onClick={() => {
           if (!open) setOpen(true)
@@ -57,7 +57,7 @@ export function HeaderSearch() {
           if (!query.trim()) setOpen(false)
         }}
         onKeyDown={onKeyDown}
-        placeholder="Find artist by address or ENS"
+        placeholder="Find a profile by address or ENS"
         tabIndex={open ? 0 : -1}
         className={`min-w-0 bg-transparent text-[11px] font-mono font-medium uppercase tracking-wider text-gray-600 outline-none placeholder:text-gray-400 placeholder:normal-case placeholder:tracking-normal placeholder:font-normal ${
           open ? "flex-1 opacity-100" : "w-0 opacity-0 pointer-events-none"

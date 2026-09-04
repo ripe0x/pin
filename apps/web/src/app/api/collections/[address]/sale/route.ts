@@ -6,16 +6,29 @@
  * minter's owner-only setters.
  */
 
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { isAddress, type Address } from "viem"
 import { getCollection } from "@/lib/collection-onchain"
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit"
 
 type Params = { params: Promise<{ address: string }> }
 
-export async function GET(_req: Request, { params }: Params) {
+export async function GET(req: NextRequest, { params }: Params) {
   const { address } = await params
   if (!isAddress(address)) {
     return NextResponse.json({ error: "Bad collection address." }, { status: 400 })
+  }
+  const limit = checkRateLimit(
+    "collection-sale-snapshot",
+    getClientIp(req),
+    60_000,
+    120,
+  )
+  if (!limit.ok) {
+    return NextResponse.json(
+      { error: "Too many sale requests. Try again shortly." },
+      { status: 429, headers: { "Retry-After": String(limit.retryAfter) } },
+    )
   }
   const c = await getCollection(address as Address)
   if (!c) {

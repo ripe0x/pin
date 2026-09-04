@@ -6,6 +6,7 @@ import { GodModePanel } from "@/components/GodModePanel"
 import { WalletButton } from "@/components/WalletButton"
 import { useArtistSearch } from "@/components/useArtistSearch"
 import { MenuIcon, SearchIcon } from "@/components/nav-icons"
+import Link from "next/link"
 
 /**
  * Mobile-only nav. Collapses the search, the "For artists" links, and the
@@ -59,11 +60,35 @@ export function MobileMenu() {
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Find artist by address or ENS"
+                placeholder="Find a profile by address or ENS"
                 className="min-w-0 flex-1 bg-transparent text-[11px] font-mono font-medium uppercase tracking-wider text-gray-600 outline-none placeholder:text-gray-400 placeholder:normal-case placeholder:tracking-normal placeholder:font-normal"
               />
             </div>
           </form>
+
+          <div className="border-t border-gray-200 py-2">
+            <p className="px-4 pb-1 text-[10px] font-mono font-medium uppercase tracking-wider text-gray-400">
+              Explore
+            </p>
+            <div role="menu" aria-label="Explore">
+              {[
+                ["Releases", "/collections"],
+                ["Auctions", "/auctions"],
+                ["Activity", "/activity"],
+                ["Catalog", "/catalog"],
+              ].map(([label, href]) => (
+                <Link
+                  key={href}
+                  href={href}
+                  role="menuitem"
+                  onClick={() => setOpen(false)}
+                  className="block px-4 py-2 text-xs font-mono text-fg transition-colors hover:bg-gray-100"
+                >
+                  {label}
+                </Link>
+              ))}
+            </div>
+          </div>
 
           {/* For artists */}
           <div className="border-t border-gray-200 py-2">

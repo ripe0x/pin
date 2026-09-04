@@ -22,7 +22,7 @@ import { getContractThumbnails } from "@/lib/catalog-thumbs"
  * chain.
  */
 export const revalidate = 3600
-import { AddressZorb } from "@/components/AddressZorb"
+import { IdentityAvatar } from "@/components/IdentityAvatar"
 import { CopyAddressButton } from "@/components/CopyAddressButton"
 import { CatalogSummary } from "@/components/catalog/CatalogSummary"
 import { ManageInStudioLink } from "@/components/catalog/ManageInStudioLink"
@@ -122,26 +122,19 @@ async function RecordBody({ address }: { address: Address }) {
     record.tokens.length === 0 &&
     record.tokenRanges.length === 0
 
-  const galleryUrl = `/artist/${address.toLowerCase()}`
+  const galleryUrl = `/profile/${address.toLowerCase()}`
   const truncatedAddress = `${address.slice(0, 6)}…${address.slice(-4)}`
 
   return (
     <div className="space-y-10">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6 min-w-0">
-          {identity.avatarUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={identity.avatarUrl}
-              alt={identity.displayName}
-              className="h-20 w-20 shrink-0 rounded-full object-cover"
-            />
-          ) : (
-            <AddressZorb
-              address={address}
-              className="h-20 w-20 shrink-0 rounded-full"
-            />
-          )}
+          <IdentityAvatar
+            address={address}
+            avatarUrl={identity.avatarUrl}
+            alt={identity.displayName}
+            className="h-20 w-20 shrink-0 rounded-full object-cover"
+          />
 
           <div className="space-y-3 min-w-0">
             <p className="text-[11px] font-mono font-medium uppercase tracking-wider text-gray-500">

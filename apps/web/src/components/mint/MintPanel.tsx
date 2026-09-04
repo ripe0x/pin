@@ -57,8 +57,10 @@ export function MintPanel({
   const isWritePending = m.busy === "confirm"
   const isTxPending = m.busy === "pending"
 
-  const { dot, label } = m.mintable
-    ? {
+  const { dot, label } = !m.snapshotAvailable
+    ? { dot: "bg-gray-400", label: "Mint status unavailable" }
+    : m.mintable
+      ? {
         dot: "bg-emerald-500 animate-pulse",
         label: m.activePhase ? `Live · ${m.activePhase.label}` : "Live",
       }
@@ -101,7 +103,9 @@ export function MintPanel({
             <div className="space-y-1">
               <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">Price</p>
               <p className="text-2xl font-mono font-medium tabular-nums tracking-tight leading-none">
-                {m.quoted && !m.quoteState.quote ? (
+                {!m.snapshotAvailable ? (
+                  <span className="text-sm font-mono text-gray-500">Price unavailable</span>
+                ) : m.quoted && !m.quoteState.quote ? (
                   <span className="text-sm font-mono text-gray-500">
                     {m.quoteState.status === "error" ? "Quote unavailable" : "Fetching quote…"}
                   </span>
@@ -131,7 +135,7 @@ export function MintPanel({
           </div>
 
           {/* Quote breakdown + manual refresh (2.2). */}
-          {m.quoted && m.quoteState.quote && (
+          {m.snapshotAvailable && m.quoted && m.quoteState.quote && (
             <div className="space-y-1.5">
               {m.quoteState.quote.breakdown.map((line) => (
                 <div key={line.label} className="flex items-baseline justify-between">
@@ -157,7 +161,7 @@ export function MintPanel({
               </div>
             </div>
           )}
-          {m.quoted && m.quoteState.status === "error" && (
+          {m.snapshotAvailable && m.quoted && m.quoteState.status === "error" && (
             <p className="text-[11px] font-mono text-red-500 break-words">
               Quote failed: {m.quoteState.error}{" "}
               <button
@@ -328,7 +332,17 @@ export function MintPanel({
             </>
           )}
 
-          {!m.mintable && !(m.isSuccess && m.txHash) && m.ready && (
+          {!m.snapshotAvailable && !(m.isSuccess && m.txHash) && (
+            <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
+              Live mint details could not be loaded. The mint is disabled until price, supply,
+              and schedule can be verified.{" "}
+              <button type="button" onClick={() => router.refresh()} className="underline hover:text-fg">
+                Try again
+              </button>
+            </p>
+          )}
+
+          {m.snapshotAvailable && !m.mintable && !(m.isSuccess && m.txHash) && m.ready && (
             <p className="text-[11px] font-mono text-gray-500 leading-relaxed">
               {m.notStarted
                 ? "This mint hasn't opened yet."

@@ -35,7 +35,7 @@ const SOVEREIGN_FACTORY = getAddressOrNull(
 const TL_AH = TL_AUCTION_HOUSE[MAINNET_CHAIN_ID]
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
-const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+const schema = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
   /[^a-zA-Z0-9_]/g, "",
 )
 

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import {
-  getSellerListingsPayload,
+  getSellerListingsResolution,
   type SellerListingsPayload,
 } from "@/lib/seller-listings-server"
 
@@ -26,6 +26,8 @@ export async function GET(
   if (!/^0x[0-9a-fA-F]{40}$/.test(address)) {
     return NextResponse.json({ error: "invalid address" }, { status: 400 })
   }
-  const data = await getSellerListingsPayload(address.toLowerCase())
-  return NextResponse.json(data)
+  const result = await getSellerListingsResolution(address.toLowerCase())
+  return NextResponse.json(result.payload, {
+    headers: result.complete ? undefined : { "x-seller-listings-partial": "1" },
+  })
 }

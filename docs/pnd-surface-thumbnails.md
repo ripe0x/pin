@@ -245,8 +245,10 @@ What this means concretely:
 - The Editions upload rails: the Irys→Arweave one-time path and the
   Storacha UCAN "sovereign connect" delegation, as fits.
 - RenderAssets + both bundled renderers' image resolution (shipped).
-- The worker's `sharp` SVG rasterize path in
-  `apps/worker/src/tasks/capture-collection-media.ts`, already built.
+- The legacy worker `sharp` SVG rasterizer is retained only for migration-025
+  rollout data and is no longer scheduled. Surface frames use this document's
+  RenderAssets/client-capture path; the external-media CDN cache must not
+  publish or stand in for Surface capture pointers.
 
 **New (small):**
 - A client-side capture util in the parity lib: grab the canvas from the
@@ -257,11 +259,11 @@ What this means concretely:
   template update.
 
 **Explicitly not built:**
-- A PND-hosted headless capture service. The worker's HTML path stays
-  parked behind `CAPTURE_HTML=1`; v1 adds no browser to the Railway
-  image. Revisit only on real demand for backfilling contract-direct
-  mints, and even then as an optional or paid capability, never a
-  protocol obligation.
+- A PND-hosted headless capture service. The Railway worker has no browser;
+  its `ffmpeg` binary is only for posters from bounded external video files.
+  Revisit headless Surface capture only on real demand for backfilling
+  contract-direct mints, and even then as an optional or paid capability,
+  never a protocol obligation.
 
 ## 8. Decisions resolved (formerly open)
 

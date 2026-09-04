@@ -2,5 +2,5 @@
 // the upstream `node scripts/emit-sovereign-abi.mjs` and copying the file here.
 export { sovereignAuctionHouseAbi } from "./sovereignAuctionHouse"
 export { sovereignAuctionHouseFactoryAbi } from "./sovereignAuctionHouseFactory"
-export { surfaceAbi } from "./surface"
+export { fixedPriceMinterAbi, surfaceAbi } from "@pin/abi"
 export { erc721Abi } from "./erc721"

@@ -93,7 +93,7 @@ export type ImportSource = {
   id: string
   /** The artist's on-chain address. URL key + Catalog.sol authority. */
   artistAddress: Address
-  /** Human-readable name for UI ("Bryan Brinkman", "Indexed by pnd"). */
+  /** Human-readable name for UI ("Bryan Brinkman", "Work PND found"). */
   displayName: string
   /** Link back to the artist's own registry page for credit. */
   sourceUrl: string

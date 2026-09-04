@@ -15,6 +15,7 @@ import { fetchMetadataForUri } from "@pin/token-metadata"
 import { pgCache } from "./pg-cache"
 import { getMainnetTransport } from "./alchemy-rpc"
 import { buildEscapeArtwork, isEscapeRenderer } from "./escape-render"
+import { assembleTokenAnimationUrl } from "./offchain-assembly"
 import {
   getCollectionAddressesFromIndexer,
   getCollectionPrimaryMinterFromIndexer,
@@ -76,12 +77,14 @@ type RawConfigReturn = readonly [Parameters<typeof decodeCollectionConfig>[0], b
 async function getMinterSaleConfig(
   client: ReturnType<typeof getClient>,
   minterAddr: Address,
+  blockNumber?: bigint,
 ): Promise<MinterSaleConfig | null> {
   const base = { address: minterAddr, abi: fixedPriceMinterAbi } as const
   try {
-    const [price, priceStrategy, mintStart, mintEnd, payout, maxMints, allowlistRoot, walletCap, referralShareBps] =
+    const [price, priceStrategy, mintStart, mintEnd, payout, maxMints, totalMinted, allowlistRoot, walletCap, referralShareBps] =
       await client.multicall({
         allowFailure: false,
+        blockNumber,
         contracts: [
           { ...base, functionName: "price" },
           { ...base, functionName: "priceStrategy" },
@@ -89,6 +92,7 @@ async function getMinterSaleConfig(
           { ...base, functionName: "mintEnd" },
           { ...base, functionName: "payoutRecipient" },
           { ...base, functionName: "maxMints" },
+          { ...base, functionName: "totalMinted" },
           { ...base, functionName: "allowlistRoot" },
           { ...base, functionName: "walletCap" },
           { ...base, functionName: "referralShareBps" },
@@ -101,6 +105,7 @@ async function getMinterSaleConfig(
       mintEnd: mintEnd as bigint,
       payout: payout as Address,
       maxMints: maxMints as bigint,
+      totalMinted: totalMinted as bigint,
       allowlistRoot: allowlistRoot as `0x${string}`,
       walletCap: walletCap as bigint,
       referralShareBps: Number(referralShareBps as number),
@@ -193,6 +198,57 @@ export async function getCollectionCover(address: Address): Promise<string> {
       })
       .then((uri) => (uri as string) ?? "")
       .catch(() => "")
+  })
+}
+
+// The minimal fragment for the preservation probe: ScriptyRenderer (and any
+// renderer that stores its work onchain) exposes `code()` returning CodeRef[].
+// A bespoke renderer without this getter reverts, which the probe reads as
+// "unknown" (null), never as "no onchain code".
+const rendererCodeAbi = [
+  {
+    type: "function",
+    name: "code",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [
+      {
+        type: "tuple[]",
+        components: [
+          { name: "store", type: "address" },
+          { name: "name", type: "string" },
+          { name: "kind", type: "uint8" },
+        ],
+      },
+    ],
+  },
+] as const
+
+/**
+ * Whether a renderer stores its work code onchain, for the preservation
+ * grade. true = `code()` returns a non-empty CodeRef list; false = it
+ * returns empty (a static-image renderer); null = the renderer has no
+ * `code()` getter (a bespoke renderer), so nothing is claimed either way.
+ *
+ * Long TTL: a renderer's onchain code is fixed for the renderer instance
+ * (ScriptyRenderer sets it in the constructor). One cached read per renderer
+ * per window, never per token render, per the preservation model's zero-
+ * per-render-RPC rule.
+ */
+export async function getRendererCodeOnchain(renderer: Address): Promise<boolean | null> {
+  if (!renderer || renderer.toLowerCase() === ZERO_ADDRESS) return null
+  return pgCache(`sc-code-onchain:${lc(renderer)}`, 3600, async () => {
+    const client = getClient()
+    try {
+      const refs = (await client.readContract({
+        address: renderer,
+        abi: rendererCodeAbi,
+        functionName: "code",
+      })) as readonly unknown[]
+      return refs.length > 0
+    } catch {
+      return null
+    }
   })
 }
 
@@ -316,9 +372,11 @@ export async function getCollection(address: Address): Promise<Collection | null
     const client = getClient()
     const base = { address, abi: surfaceAbi } as const
     try {
+      const blockNumber = await client.getBlockNumber()
       const [name, symbol, owner, rendererLocked, supplyLocked, renderer, idModeRaw, primaryMinterRaw, cfgRes] =
         await client.multicall({
           allowFailure: false,
+          blockNumber,
           contracts: [
             { ...base, functionName: "name" },
             { ...base, functionName: "symbol" },
@@ -350,6 +408,7 @@ export async function getCollection(address: Address): Promise<Collection | null
               abi: renderAssetsAbi,
               functionName: "coverOf",
               args: [address],
+              blockNumber,
             })
             .catch(() => "")
         : ""
@@ -360,7 +419,7 @@ export async function getCollection(address: Address): Promise<Collection | null
       // pooled "mints through its minter" notice).
       const pmChain = primaryMinterRaw as Address
       const primaryMinter = pmChain && pmChain.toLowerCase() !== ZERO_ADDRESS ? pmChain : null
-      const sale = primaryMinter ? await getMinterSaleConfig(client, primaryMinter) : null
+      const sale = primaryMinter ? await getMinterSaleConfig(client, primaryMinter, blockNumber) : null
 
       return {
         address,
@@ -373,12 +432,14 @@ export async function getCollection(address: Address): Promise<Collection | null
         cfg: decodeCollectionConfig(cfgRaw, Number(idModeRaw) as IdMode),
         primaryMinter,
         sale,
-        // Shared work-config read removed with the shared GenerativeRenderer;
-        // bring-your-own renderers own their config. Kept as an empty default
-        // so consumers that gate on work.code.length fall back to the cover.
+        // No shared work-config read: the removed shared renderer exposed one;
+        // a bring-your-own ScriptyRenderer fixes its code/deps in the
+        // constructor with no reader. Kept as an empty default so consumers
+        // that gate on work.code.length fall back to the cover.
         work: { code: [], deps: [], codeURI: "", codeHash: ("0x" + "0".repeat(64)) as `0x${string}`, injectionVersion: 1, renderParams: "" },
         cover: (cover as string) ?? "",
         minted: minted as bigint,
+        observedAtBlock: blockNumber,
       }
     } catch {
       return null
@@ -399,12 +460,12 @@ export type CollectionTokenView = {
    *  that doesn't emit metadata JSON still has something to show. */
   image: string
   /** Decoded from tokenURI. Present when the active renderer emits an
-   *  animation_url (e.g. GenerativeRenderer's built HTML document); null for
+   *  animation_url (e.g. ScriptyRenderer's built HTML document); null for
    *  a static-image renderer (e.g. DefaultRenderer). */
   animationUrl: string | null
 }
 
-/** Everything a token page needs: owner, seed, Mint Mark, art, tokenURI. */
+/** Everything a token page needs: owner, seed, derived provenance, art, tokenURI. */
 export async function getCollectionToken(
   address: Address,
   tokenId: bigint,
@@ -466,7 +527,7 @@ export async function getCollectionToken(
       }
 
       // tokenURI gets its own call with an explicit gas ceiling, NEVER the
-      // multicall: assembling a full onchain HTML document (GenerativeRenderer
+      // multicall: assembling a full onchain HTML document (ScriptyRenderer
       // over a gzipped p5) measures 60-120M gas, far beyond the ~30M default
       // eth_call cap and any multicall budget. Elevated-gas eth_call is the
       // standard way heavyweight onchain-HTML tokenURIs are served; consumers
@@ -495,7 +556,7 @@ export async function getCollectionToken(
       // Decode the already-fetched tokenURI (no extra RPC call) to recover
       // `image` / `animation_url` the same way every other token page on
       // this site does — see @pin/token-metadata's doc comment. A renderer
-      // that emits an animation_url (GenerativeRenderer) needs this to show
+      // that emits an animation_url (ScriptyRenderer) needs this to show
       // the live/generative work rather than just its poster image.
       let image = artwork
       let animationUrl: string | null = null
@@ -503,6 +564,23 @@ export async function getCollectionToken(
         const meta = await fetchMetadataForUri(rawTokenUri, tokenId, 8_000).catch(() => null)
         if (meta?.image) image = meta.image
         if (meta?.animation_url) animationUrl = meta.animation_url
+      }
+
+      // Generic offchain-assembly fallback: a ScriptyRenderer-shaped work whose
+      // onchain tokenURI is too large to eth_call (rawTokenUri null) is
+      // reassembled offchain, byte-identical, from its code refs (see
+      // lib/offchain-assembly.ts). Dormant for every renderer whose tokenURI
+      // resolves and for bespoke renderers (the probe returns false); the
+      // escape special-case above already returned. Generalizes that
+      // escape-specific hatch to any oversized ScriptyRenderer work.
+      if (!rawTokenUri && !animationUrl && collection && seedRes.status === "success") {
+        const assembled = await assembleTokenAnimationUrl(
+          address,
+          collection.renderer,
+          tokenId,
+          seedRes.result as `0x${string}`,
+        )
+        if (assembled) animationUrl = assembled
       }
 
       return {
@@ -617,21 +695,24 @@ export async function getCollectionMintHistory(
  *
  * The address list comes from the indexed SurfaceCreated table (a pure
  * SELECT — zero chain reads in the list path, per AGENTS.md); the
- * factory-enumeration read (totalSurfaces + allSurfaces multicall) is the
- * fallback for when the indexer is unavailable, and the primary path on a
- * fork/sepolia instance, where the indexed table describes mainnet, not
- * the local factory. Per-collection live state still comes from
- * getCollection()'s cached reads either way.
+ * Fork/sepolia enumerate the local factory directly. Mainnet does not fall
+ * back to chain discovery: doing so previously made a stale schema look
+ * healthy while hiding missing indexed rows.
  */
 export async function getRecentCollections(factory: Address, limit = 8): Promise<Collection[]> {
   if (!FORK_MODE && !USE_SEPOLIA) {
     const indexed = await getCollectionAddressesFromIndexer(limit)
-    if (indexed !== null) {
-      const collections = await Promise.all(
-        indexed.map((a) => getCollection(a as Address)),
-      )
-      return collections.filter((c): c is Collection => c !== null)
+    if (indexed === null) {
+      throw new Error("Mainnet collection index is unavailable")
     }
+    const collections = await Promise.all(
+      indexed.map((a) => getCollection(a as Address)),
+    )
+    const resolved = collections.filter((c): c is Collection => c !== null)
+    if (indexed.length > 0 && resolved.length === 0) {
+      throw new Error("Indexed collections could not be read from chain")
+    }
+    return resolved
   }
   return pgCache(`sc-recent:${lc(factory)}:${limit}`, 60, async () => {
     const client = getClient()

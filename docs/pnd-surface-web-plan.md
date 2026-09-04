@@ -1,5 +1,11 @@
 # Surface System: web/offchain implementation plan
 
+> **Historical implementation plan.** This document records the original
+> Surface web build and contains stale branch, package, and deployment state.
+> Use `docs/artist-independence-program.md` for the active portable-release and
+> venue plan, `docs/program-state.json` for delivery order, and current source
+> for shipped behavior.
+>
 > Companion to `docs/pnd-surface-system.md` (sections 5 and 8.4) and
 > `docs/pnd-surface-contracts-plan.md` (the contracts side, built on
 > branch `collection-contracts-v1`, PR #133). This plan covers the

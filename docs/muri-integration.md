@@ -27,7 +27,8 @@ Addresses live in `packages/addresses`; ABIs in `packages/abi`
 the discovery-vs-scanning rule in `AGENTS.md`), not the worker long tail.
 
 - Subscription + handlers: `apps/indexer/ponder.config.ts`,
-  `apps/indexer/src/MURI.ts` → `ponder_v1.muri_tokens` + `muri_contracts`.
+  `apps/indexer/src/MURI.ts` → versioned Ponder tables exposed through
+  `indexer_live.muri_tokens` + `muri_contracts`.
   Each data-changing event reads `getArtwork` once to keep URI counts
   authoritative (the `TokenDataInitialized` event carries no count). These are
   the only chain reads, and they're bounded to MURI events.

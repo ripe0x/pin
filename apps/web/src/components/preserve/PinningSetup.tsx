@@ -69,7 +69,9 @@ export function PinningSetup({
 
       <div className="space-y-3 border-t border-gray-200 pt-6">
         <div className="flex items-center justify-between">
-          <label className="text-sm font-medium">{info.name} API Key</label>
+          <label htmlFor="preserve-provider-key" className="text-sm font-medium">
+            {info.name} API Key
+          </label>
           <a
             href={info.signupUrl}
             target="_blank"
@@ -83,6 +85,7 @@ export function PinningSetup({
           {info.keyGuide}
         </div>
         <input
+          id="preserve-provider-key"
           type="password"
           value={apiKey}
           onChange={(e) => {

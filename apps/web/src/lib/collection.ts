@@ -17,14 +17,29 @@ import {
   SURFACE_FACTORY,
   getAddressOrNull,
 } from "@pin/addresses"
+import {
+  IdMode,
+  REFERRAL_SHARE_BPS,
+  SurfaceStatus,
+  ZERO_ADDRESS,
+  hasPriceStrategy,
+  isGasOnly,
+  isMintable,
+  lifecycleStatus,
+  sellsViaMinterOnly,
+} from "@pin/surface-kit"
 
-export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
-
-/** Referral-share cap and default, in bps. Must match
- *  FixedPriceMinter.MAX_REFERRAL_SHARE_BPS; the live per-minter value is
- *  referralShareBps() (owner/admin settable up to this cap) and is read into
- *  MinterSaleConfig. Used as the fallback where no live read is available. */
-export const REFERRAL_SHARE_BPS = 1000 // 10%
+export {
+  IdMode,
+  REFERRAL_SHARE_BPS,
+  SurfaceStatus,
+  ZERO_ADDRESS,
+  hasPriceStrategy,
+  isGasOnly,
+  isMintable,
+  lifecycleStatus,
+  sellsViaMinterOnly,
+}
 
 const FORK_MODE = process.env.NEXT_PUBLIC_USE_LOCAL_RPC === "1"
 // Must match wagmi.ts `forkChain` (31339) so wallet/link/chain checks agree.
@@ -68,17 +83,6 @@ export function pndReferrerAddress(): Address {
 
 // ── enums (mirror SurfaceTypes.sol) ──────────────────────────────────────────
 
-export enum SurfaceStatus {
-  Scheduled = 0,
-  Open = 1,
-  Closed = 2,
-}
-
-export enum IdMode {
-  Sequential = 0,
-  Pooled = 1,
-}
-
 export enum CodeKind {
   Script = 0,
   ScriptGzip = 1,
@@ -108,6 +112,12 @@ export type CodeRef = {
   kind: CodeKind
 }
 
+/** Offchain parity shape for the render lib's work input (code + deps +
+ *  injection version). No onchain source in the current architecture: the
+ *  shared work registry was removed with the shared renderer, and a
+ *  bring-your-own ScriptyRenderer fixes its code/deps in the constructor
+ *  (no `workOf` reader). getCollection() returns this as an empty default;
+ *  consumers gate on `code.length` and fall back to the cover. */
 export type WorkConfig = {
   code: CodeRef[]
   deps: CodeRef[]
@@ -145,6 +155,9 @@ export type MinterSaleConfig = {
   mintEnd: bigint
   payout: Address
   maxMints: bigint
+  /** Number minted through this minter. Distinct from collection-wide
+   * minted when an artist changes primary minters. */
+  totalMinted: bigint
   allowlistRoot: `0x${string}`
   walletCap: bigint
   referralShareBps: number
@@ -183,13 +196,18 @@ export type Collection = {
    *  null, or when it's set but doesn't implement this sale shape (a
    *  bring-your-own minter). */
   sale: MinterSaleConfig | null
-  /** What the work is, executably — read from the GenerativeRenderer's
-   *  work registry (renderer-land), empty for renderer-native works or
-   *  custom renderers. */
+  /** The work's executable code + deps as the offchain parity shape.
+   *  Empty in the current architecture (no shared work registry to read);
+   *  see WorkConfig. */
   work: WorkConfig
   /** Cover image from the RenderAssets registry ("" when unset). */
   cover: string
   minted: bigint
+  /** Block shared by the live collection, minter, and presentation reads
+   * used to assemble this snapshot. Client consumers may use it as an
+   * honest first-paint boundary before refreshing through the direct
+   * provider. */
+  observedAtBlock: bigint
 }
 
 /** The sale window a collection currently offers, folding in the "no
@@ -264,15 +282,6 @@ export function decodeCollectionConfig(raw: RawSurfaceConfig, idMode: IdMode): S
 
 // ── lifecycle + pricing helpers ──────────────────────────────────────────────
 
-export function isGasOnly(price: bigint): boolean {
-  return price === 0n
-}
-
-/** True when a price strategy contract is set (overrides the stored price). */
-export function hasPriceStrategy(priceStrategy: Address): boolean {
-  return priceStrategy.toLowerCase() !== ZERO_ADDRESS
-}
-
 /**
  * Formats a minter's stored fixed price. Only meaningful when
  * `!hasPriceStrategy(sale.priceStrategy)` — when a strategy is set, prices
@@ -308,20 +317,6 @@ export function formatBps(bps: number): string {
  * from the token entirely), so it's computed client/lib-side from the
  * minter's window (mintStart/mintEnd, via saleWindowOf) plus the token's own
  * cap state — never from stored state. */
-export function lifecycleStatus(cfg: SaleWindow, minted: bigint, nowSec: number): SurfaceStatus {
-  if (cfg.mintStart !== 0n && BigInt(nowSec) < cfg.mintStart) return SurfaceStatus.Scheduled
-  if (cfg.mintEnd !== 0n && BigInt(nowSec) >= cfg.mintEnd) return SurfaceStatus.Closed
-  if (cfg.supplyCap !== 0n && minted >= cfg.supplyCap) return SurfaceStatus.Closed
-  return SurfaceStatus.Open
-}
-
-export function isMintable(cfg: SaleWindow, minted: bigint, nowSec: number): boolean {
-  if (cfg.mintStart !== 0n && BigInt(nowSec) < cfg.mintStart) return false
-  if (cfg.mintEnd !== 0n && BigInt(nowSec) >= cfg.mintEnd) return false
-  if (cfg.supplyCap !== 0n && minted >= cfg.supplyCap) return false
-  return true
-}
-
 /** True when the collection sells exclusively through an authorized minter
  * extension with no direct buy flow on this page (pooled collections never
  * wire a canonical minter — createPooledSurface has no canonical-minter
@@ -329,10 +324,6 @@ export function isMintable(cfg: SaleWindow, minted: bigint, nowSec: number): boo
  * collections with no primary minter on record (bring-your-own, or not yet
  * indexed) hit the same notice — see the `primaryMinter === null` check at
  * call sites, which this idMode-only helper doesn't see. */
-export function sellsViaMinterOnly(idMode: IdMode): boolean {
-  return idMode === IdMode.Pooled
-}
-
 /** Canonical pnd: URN for a node, e.g. pnd:1:0xabc…:c (collection) or :t47 (token). */
 export function pndUrn(
   chainId: number,
@@ -365,6 +356,20 @@ export function evmNowAddressUrl(addr: string, chainId: number = PND_CHAIN_ID): 
 export function openSeaAddressUrl(addr: string, chainId: number = PND_CHAIN_ID): string {
   if (chainId === sepolia.id) return `https://testnets.opensea.io/assets/sepolia/${addr}`
   return `https://opensea.io/assets/ethereum/${addr}`
+}
+
+/**
+ * OpenSea item URL for a single token, chain-aware. Same
+ * assets/<chain>/<address>/<tokenId> path shape as the collection URL with the
+ * id appended; resolves to the token's own trading page.
+ */
+export function openSeaTokenUrl(
+  addr: string,
+  tokenId: string | bigint,
+  chainId: number = PND_CHAIN_ID,
+): string {
+  const base = chainId === sepolia.id ? "https://testnets.opensea.io/assets/sepolia" : "https://opensea.io/assets/ethereum"
+  return `${base}/${addr}/${tokenId.toString()}`
 }
 
 /**

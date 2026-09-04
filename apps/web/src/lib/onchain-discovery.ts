@@ -18,6 +18,10 @@ import { mainnet } from "viem/chains"
 import { sql } from "./db"
 import { pgCache } from "./pg-cache"
 import { getMainnetTransport } from "./alchemy-rpc"
+import {
+  toPreserveDiscoveredToken,
+  type IndexedPreserveTokenRow,
+} from "./preserve-token"
 
 export type TokenRef = {
   contract: `0x${string}`
@@ -59,7 +63,7 @@ export async function filterOutBurnedRefs(
 
 /**
  * Enriched token shape consumed by `<PreserveGrid>`, `<MoreFromContract>`,
- * `<WorkArtistCard>`. Preserves the v1 nested-metadata shape so components
+ * gallery cards. Preserves the v1 nested-metadata shape so components
  * don't need code changes — only the data wiring underneath changed.
  */
 export type DiscoveredToken = {
@@ -297,37 +301,65 @@ export async function resolveTokenMetadataDirect(
  */
 export async function discoverArtistTokenRefs(
   artistAddress: string,
+  opts?: { includeCourtesyChainReads?: boolean },
 ): Promise<TokenRef[]> {
   if (!sql) return []
   const artist = artistAddress.toLowerCase()
-  const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+  const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
     /[^a-zA-Z0-9_]/g, "",
   )
 
-  // UNION across worker-owned + Ponder-owned per-artist token sources.
+  // UNION across canonical many-to-many attribution + Ponder's shared tables
+  // during rollout. The worker mirror makes the Ponder arms redundant after
+  // sync; downstream dedup keeps the transition stable.
   // Each source contributes (contract, tokenId, platform). The reader
   // attaches creator = artist (the address whose page is being viewed)
   // — same convention v1 used.
-  const rows = (await sql.unsafe(
-    `SELECT lower(contract) AS contract, token_id, platform, mint_block, mint_log_index
-     FROM artist_tokens WHERE artist = $1
-     UNION ALL
-     SELECT lower(contract), token_id::text, 'fnd-shared' AS platform,
-            block_number AS mint_block, log_index AS mint_log_index
-     FROM ${INDEXER_SCHEMA}.fnd_artist_tokens WHERE lower(creator) = $1
-     UNION ALL
-     SELECT lower(contract), token_id::text, 'srv2-shared' AS platform,
-            block_number AS mint_block, log_index AS mint_log_index
-     FROM ${INDEXER_SCHEMA}.srv2_artist_tokens WHERE lower(creator) = $1
-     ORDER BY mint_block DESC, mint_log_index DESC`,
-    [artist],
-  )) as Array<{
+  type IndexedRow = {
     contract: string
     token_id: string
     platform: string
     mint_block: string
     mint_log_index: number
-  }>
+  }
+
+  let rows: IndexedRow[]
+  try {
+    rows = (await sql.unsafe(
+      `SELECT lower(contract) AS contract, token_id, platform, mint_block, mint_log_index
+       FROM work_attributions WHERE artist = $1
+       UNION ALL
+       SELECT lower(contract), token_id::text, 'fnd-shared' AS platform,
+              block_number AS mint_block, log_index AS mint_log_index
+       FROM ${INDEXER_SCHEMA}.fnd_artist_tokens WHERE lower(creator) = $1
+       UNION ALL
+       SELECT lower(contract), token_id::text, 'srv2-shared' AS platform,
+              block_number AS mint_block, log_index AS mint_log_index
+       FROM ${INDEXER_SCHEMA}.srv2_artist_tokens WHERE lower(creator) = $1
+       ORDER BY mint_block DESC, mint_log_index DESC`,
+      [artist],
+    )) as IndexedRow[]
+  } catch (error) {
+    // Migration 034 changes the canonical source from the one-artist
+    // artist_tokens table to many-to-many work_attributions. During a rolling
+    // deploy, keep serving the last durable model until that additive table
+    // exists instead of blanking the profile.
+    console.warn("[artist-discovery] attribution model unavailable; using legacy rows:", error)
+    rows = (await sql.unsafe(
+      `SELECT lower(contract) AS contract, token_id, platform, mint_block, mint_log_index
+       FROM artist_tokens WHERE artist = $1
+       UNION ALL
+       SELECT lower(contract), token_id::text, 'fnd-shared' AS platform,
+              block_number AS mint_block, log_index AS mint_log_index
+       FROM ${INDEXER_SCHEMA}.fnd_artist_tokens WHERE lower(creator) = $1
+       UNION ALL
+       SELECT lower(contract), token_id::text, 'srv2-shared' AS platform,
+              block_number AS mint_block, log_index AS mint_log_index
+       FROM ${INDEXER_SCHEMA}.srv2_artist_tokens WHERE lower(creator) = $1
+       ORDER BY mint_block DESC, mint_log_index DESC`,
+      [artist],
+    )) as IndexedRow[]
+  }
 
   const indexed = rows.map((r) => ({
     contract: r.contract as `0x${string}`,
@@ -346,16 +378,25 @@ export async function discoverArtistTokenRefs(
   // from the chain (one cached getLogs per collection). Indexed rows
   // win on dedup, so an artist's page upgrades in place when they get
   // admitted and the worker takes over.
-  const seeded = await discoverSeedTokenRefs(
-    artist,
-    new Set(indexed.map((r) => `${r.contract}:${r.tokenId}`)),
-    new Set(indexed.map((r) => r.contract as string)),
-  ).catch(() => [] as TokenRef[])
+  const seeded = opts?.includeCourtesyChainReads === false
+    ? []
+    : await discoverSeedTokenRefs(
+        artist,
+        new Set(indexed.map((r) => `${r.contract}:${r.tokenId}`)),
+        new Set(indexed.map((r) => r.contract as string)),
+      ).catch(() => [] as TokenRef[])
 
-  const merged = [...indexed, ...seeded].sort((a, b) => {
+  const candidates = [...indexed, ...seeded].sort((a, b) => {
     const ab = BigInt(a.mintBlock ?? 0)
     const bb = BigInt(b.mintBlock ?? 0)
     return ab === bb ? 0 : ab > bb ? -1 : 1
+  })
+  const seen = new Set<string>()
+  const merged = candidates.filter((ref) => {
+    const key = `${ref.contract.toLowerCase()}:${ref.tokenId}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
   })
 
   // Drop works that no longer exist on-chain so burned tokens don't sit in
@@ -650,13 +691,54 @@ async function readTokenCreatorOnchain(
   })
 }
 
+async function getIndexedCreator(
+  contract: string,
+  tokenId: string,
+  indexerSchema: string,
+): Promise<string | null> {
+  if (!sql) return null
+  let artistRows: Array<{ artist: string }>
+  try {
+    artistRows = (await sql.unsafe(
+      `SELECT artist FROM work_attributions
+         WHERE contract = $1 AND token_id = $2
+         ORDER BY
+           CASE WHEN evidence_status = 'indexed-mint' THEN 0 ELSE 1 END,
+           artist, source
+         LIMIT 1`,
+      [contract, tokenId],
+    )) as Array<{ artist: string }>
+  } catch {
+    artistRows = (await sql`
+      SELECT artist FROM artist_tokens
+      WHERE contract = ${contract} AND token_id = ${tokenId}
+      ORDER BY artist LIMIT 1
+    `) as Array<{ artist: string }>
+  }
+  if (artistRows[0]) return artistRows[0].artist
+
+  const fnd = (await sql.unsafe(
+    `SELECT lower(creator) AS creator FROM ${indexerSchema}.fnd_artist_tokens
+       WHERE lower(contract) = $1 AND token_id::text = $2 LIMIT 1`,
+    [contract, tokenId],
+  )) as Array<{ creator: string }>
+  if (fnd[0]) return fnd[0].creator
+
+  const sr = (await sql.unsafe(
+    `SELECT lower(creator) AS creator FROM ${indexerSchema}.srv2_artist_tokens
+       WHERE lower(contract) = $1 AND token_id::text = $2 LIMIT 1`,
+    [contract, tokenId],
+  )) as Array<{ creator: string }>
+  return sr[0]?.creator ?? null
+}
+
 export async function getTokenOnChainData(
   contract: string,
   tokenId: string,
 ): Promise<TokenOnChainData | null> {
   if (!sql) return null
   const c = contract.toLowerCase()
-  const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+  const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
     /[^a-zA-Z0-9_]/g, "",
   )
 
@@ -679,83 +761,27 @@ export async function getTokenOnChainData(
     }>>,
   ])
 
-  // Creator: try worker's artist_tokens first (covers all platforms),
-  // then Ponder's shared-contract tables.
-  let creator: string | null = null
-  const artistRow = (await sql.unsafe(
-    `SELECT artist FROM artist_tokens
-       WHERE contract = $1 AND token_id = $2 LIMIT 1`,
-    [c, tokenId],
-  )) as Array<{ artist: string }>
-  if (artistRow[0]) creator = artistRow[0].artist
-  else {
-    const fnd = (await sql.unsafe(
-      `SELECT lower(creator) AS creator FROM ${INDEXER_SCHEMA}.fnd_artist_tokens
-         WHERE lower(contract) = $1 AND token_id::text = $2 LIMIT 1`,
-      [c, tokenId],
-    )) as Array<{ creator: string }>
-    if (fnd[0]) creator = fnd[0].creator
-    else {
-      const sr = (await sql.unsafe(
-        `SELECT lower(creator) AS creator FROM ${INDEXER_SCHEMA}.srv2_artist_tokens
-           WHERE lower(contract) = $1 AND token_id::text = $2 LIMIT 1`,
-        [c, tokenId],
-      )) as Array<{ creator: string }>
-      if (sr[0]) creator = sr[0].creator
-    }
-  }
-  // Unindexed token (artist outside known_artists, contract in no
-  // discovery table): resolve attribution from the chain instead of
-  // silently dropping the byline.
-  if (!creator) {
-    creator = await readTokenCreatorOnchain(c, tokenId).catch(() => null)
-  }
-
-  // Unindexed token: no worker-scanned transfer history. Pull the
-  // token's own history from the chain (cached courtesy read) so the
-  // provenance timeline and owner/escrow line render instead of
-  // silently vanishing.
-  let chainTransfers: FallbackTransfer[] = []
-  if (transfers.length === 0) {
-    chainTransfers = await readTokenTransfersOnchain(c, tokenId).catch(() => [])
-  }
-
+  // Creator comes only from durable indexed evidence. Keep the legacy table
+  // readable while migration 034 rolls out, otherwise one missing additive
+  // table would discard the already-loaded owner and transfer history too.
+  const creator = await getIndexedCreator(c, tokenId, INDEXER_SCHEMA)
   if (
     owners.length === 0 &&
     transfers.length === 0 &&
-    chainTransfers.length === 0 &&
     !creator
   )
     return null
 
-  const mappedTransfers =
-    transfers.length > 0
-      ? transfers.map((t) => ({
+  const mappedTransfers = transfers.map((t) => ({
           from: t.from_addr,
           to: t.to_addr,
           blockNumber: BigInt(t.block_number),
           timestamp: Number(t.block_time),
           txHash: t.tx_hash,
         }))
-      : chainTransfers
-          .map((t) => ({
-            from: t.from,
-            to: t.to,
-            blockNumber: BigInt(t.blockNumber),
-            timestamp: t.timestamp,
-            txHash: t.txHash,
-          }))
-          // getLogs returns oldest-first; the pg path is newest-first
-          .reverse()
 
   return {
-    // chainTransfers are oldest-first, so the last one's `to` is the
-    // current holder — gives the owner/escrow section a value for
-    // unindexed tokens too.
-    owner:
-      owners[0]?.owner ??
-      chainTransfers[chainTransfers.length - 1]?.to ??
-      null,
+    owner: owners[0]?.owner ?? null,
     creator,
     transfers: mappedTransfers,
   }
@@ -792,13 +818,19 @@ export async function getErc1155TokenStats(
   tokenId: string,
 ): Promise<Erc1155TokenStats | null> {
   if (!sql) return null
+  const lowerContract = contract.toLowerCase()
   const rows = (await sql`
-    SELECT total_supply, owner_count
-    FROM token_1155_stats
-    WHERE contract = ${contract.toLowerCase()} AND token_id = ${tokenId}
+    SELECT s.total_supply, s.owner_count
+    FROM token_1155_stats s
+    WHERE s.contract = ${lowerContract} AND s.token_id = ${tokenId}
     LIMIT 1
   `) as Array<{ total_supply: string; owner_count: number }>
   if (rows.length === 0) return null
+  const indexerSchema = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
+    /[^a-zA-Z0-9_]/g,
+    "",
+  )
+  const creator = await getIndexedCreator(lowerContract, tokenId, indexerSchema)
 
   // Mint history — one row per mint event, recorded by the worker's
   // mint-clone scanner. from is always the zero address (these are mints),
@@ -810,7 +842,7 @@ export async function getErc1155TokenStats(
            block_time::text   AS block_time,
            tx_hash
     FROM token_1155_mints
-    WHERE contract = ${contract.toLowerCase()} AND token_id = ${tokenId}
+    WHERE contract = ${lowerContract} AND token_id = ${tokenId}
     ORDER BY block_number DESC, log_index DESC
     LIMIT 50
   `) as Array<{
@@ -832,7 +864,7 @@ export async function getErc1155TokenStats(
       txHash: m.tx_hash,
       amount: BigInt(m.amount),
     })),
-    creator: null,
+    creator,
   }
 }
 
@@ -847,17 +879,10 @@ export async function getErc1155TokenStats(
  */
 export async function discoverFoundationPinnedTokens(
   artistAddress: string,
-): Promise<Array<{
-  contract: string
-  tokenId: string
-  name: string | null
-  imageUrl: string | null
-  animationUrl: string | null
-  rawUri: string | null
-}>> {
+): Promise<DiscoveredToken[]> {
   if (!sql) return []
   const lower = artistAddress.toLowerCase()
-  const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+  const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
     /[^a-zA-Z0-9_]/g, "",
   )
 
@@ -872,28 +897,14 @@ export async function discoverFoundationPinnedTokens(
        WHERE artist = $1 AND platform = 'fnd-collection'
      )
      SELECT r.contract, r.token_id,
-            m.name, m.image_url, m.animation_url, m.raw_uri
+            m.name, m.description, m.image_url, m.animation_url, m.raw_uri
      FROM refs r
      LEFT JOIN token_metadata m
        ON m.contract = r.contract AND m.token_id = r.token_id`,
     [lower],
-  )) as Array<{
-    contract: string
-    token_id: string
-    name: string | null
-    image_url: string | null
-    animation_url: string | null
-    raw_uri: string | null
-  }>
+  )) as IndexedPreserveTokenRow[]
 
-  return rows.map((r) => ({
-    contract: r.contract,
-    tokenId: r.token_id,
-    name: r.name,
-    imageUrl: r.image_url,
-    animationUrl: r.animation_url,
-    rawUri: r.raw_uri,
-  }))
+  return rows.map((row) => toPreserveDiscoveredToken(row, lower))
 }
 
 /**

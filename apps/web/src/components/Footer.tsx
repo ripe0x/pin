@@ -1,11 +1,7 @@
 /**
  * Global site footer. Renders on every route.
  *
- * Top row carries the tagline + About / Sites / GitHub / Created-by
- * links. These previously lived inline on the home page (`app/page.tsx`)
- * and the archived index-prev landing; promoting them here gives every
- * route the same chrome and removes the link drift between the two
- * homes.
+ * Top row carries the tagline + About / Sites / GitHub / Created-by links.
  *
  * Below that, a small "Thank you. Supported by:" block lists every
  * unique address that has ever minted from the FundingWorksRipe
@@ -17,11 +13,11 @@
  *
  * Width: the outer <footer> is full-bleed so the top border spans the
  * page on wide token-detail routes (`max-w-[2000px]`) as well as the
- * narrower home (`max-w-3xl`). Content is centered inside an inner
+ * narrower content routes. Content is centered inside an inner
  * wrapper at `max-w-7xl` (1280px) for readable line lengths.
  */
 import { Suspense } from "react"
-import { SupportersList } from "./SupportersList"
+import { SupportersSummary } from "./SupportersList"
 import { ThemeToggle } from "./ThemeToggle"
 
 export function Footer() {
@@ -49,7 +45,7 @@ export function Footer() {
               <p className="text-[10px] font-mono text-gray-400">
                 PND logo by{" "}
                 <a
-                  href="/artist/0xc83e83677dd95618686ac9af2cd48972f1b72c22"
+                  href="/profile/0xc83e83677dd95618686ac9af2cd48972f1b72c22"
                   className="hover:text-fg transition-colors"
                 >
                   djkero
@@ -58,6 +54,9 @@ export function Footer() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs font-mono text-gray-400">
+            <a href="/collections" className="hover:text-fg transition-colors">
+              Releases
+            </a>
             <a href="/about" className="hover:text-fg transition-colors">
               About
             </a>
@@ -82,7 +81,7 @@ export function Footer() {
           </div>
         </div>
         <Suspense fallback={null}>
-          <SupportersList />
+          <SupportersSummary />
         </Suspense>
       </div>
     </footer>

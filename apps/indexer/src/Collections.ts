@@ -5,7 +5,10 @@ import {
   collectionTokens,
   collectionReferrals,
   collectionSales,
+  collectionSupplyConfigs,
   minters,
+  minterSaleConfigs,
+  tokenOwnership,
 } from "ponder:schema"
 
 /**
@@ -72,6 +75,116 @@ ponder.on("Surface:PrimaryMinterSet", async ({ event, context }) => {
   await context.db
     .update(collections, { collection })
     .set({ primaryMinter: hasPrimaryMinter ? minter : null })
+})
+
+ponder.on("Surface:SurfaceConfigured", async ({ event, context }) => {
+  const collection = event.log.address
+  await context.db
+    .insert(collectionSupplyConfigs)
+    .values({
+      collection,
+      supplyCap: event.args.supplyCap,
+      updatedAtBlock: event.block.number,
+      updatedAtTime: event.block.timestamp,
+    })
+    .onConflictDoUpdate({
+      supplyCap: event.args.supplyCap,
+      updatedAtBlock: event.block.number,
+      updatedAtTime: event.block.timestamp,
+    })
+})
+
+ponder.on("Surface:SupplyCapSet", async ({ event, context }) => {
+  const collection = event.log.address
+  await context.db
+    .insert(collectionSupplyConfigs)
+    .values({
+      collection,
+      supplyCap: event.args.supplyCap,
+      updatedAtBlock: event.block.number,
+      updatedAtTime: event.block.timestamp,
+    })
+    .onConflictDoUpdate({
+      supplyCap: event.args.supplyCap,
+      updatedAtBlock: event.block.number,
+      updatedAtTime: event.block.timestamp,
+    })
+})
+
+// ─── Canonical FixedPriceMinter release state ────────────────────────────
+
+ponder.on("FixedPriceMinter:MinterConfigured", async ({ event, context }) => {
+  const minter = event.log.address
+  const { collection, price, priceStrategy, mintStart, mintEnd, maxMints } =
+    event.args
+  await context.db
+    .insert(minterSaleConfigs)
+    .values({
+      minter,
+      collection,
+      price,
+      priceStrategy,
+      mintStart,
+      mintEnd,
+      maxMints,
+      updatedAtBlock: event.block.number,
+      updatedAtTime: event.block.timestamp,
+    })
+    .onConflictDoUpdate({
+      collection,
+      price,
+      priceStrategy,
+      mintStart,
+      mintEnd,
+      maxMints,
+      updatedAtBlock: event.block.number,
+      updatedAtTime: event.block.timestamp,
+    })
+})
+
+ponder.on("FixedPriceMinter:PriceSet", async ({ event, context }) => {
+  const minter = event.log.address
+  const existing = await context.db.find(minterSaleConfigs, { minter })
+  if (!existing) return
+  await context.db.update(minterSaleConfigs, { minter }).set({
+    price: event.args.price,
+    updatedAtBlock: event.block.number,
+    updatedAtTime: event.block.timestamp,
+  })
+})
+
+ponder.on("FixedPriceMinter:PriceStrategySet", async ({ event, context }) => {
+  const minter = event.log.address
+  const existing = await context.db.find(minterSaleConfigs, { minter })
+  if (!existing) return
+  await context.db.update(minterSaleConfigs, { minter }).set({
+    priceStrategy: event.args.strategy,
+    updatedAtBlock: event.block.number,
+    updatedAtTime: event.block.timestamp,
+  })
+})
+
+ponder.on("FixedPriceMinter:MintWindowSet", async ({ event, context }) => {
+  const minter = event.log.address
+  const existing = await context.db.find(minterSaleConfigs, { minter })
+  if (!existing) return
+  await context.db.update(minterSaleConfigs, { minter }).set({
+    mintStart: event.args.mintStart,
+    mintEnd: event.args.mintEnd,
+    updatedAtBlock: event.block.number,
+    updatedAtTime: event.block.timestamp,
+  })
+})
+
+ponder.on("FixedPriceMinter:MaxMintsSet", async ({ event, context }) => {
+  const minter = event.log.address
+  const existing = await context.db.find(minterSaleConfigs, { minter })
+  if (!existing) return
+  await context.db.update(minterSaleConfigs, { minter }).set({
+    maxMints: event.args.maxMints,
+    updatedAtBlock: event.block.number,
+    updatedAtTime: event.block.timestamp,
+  })
 })
 
 // ─── Per-collection state machine (via factory() child indexing) ────────
@@ -200,4 +313,30 @@ ponder.on("Surface:Burned", async ({ event, context }) => {
     updatedAtBlock: event.block.number,
     updatedAtTime: event.block.timestamp,
   })
+})
+
+// Current ownership is derived from the ERC-721 Transfer stream already
+// emitted by every factory-created Surface. `Minted.to` remains mint
+// provenance; it must not be repurposed as a live owner field.
+ponder.on("Surface:Transfer", async ({ event, context }) => {
+  const { to, tokenId } = event.args
+  const contract = event.log.address
+  const current = {
+    owner: to,
+    source: "ponder-surface",
+    coverageStatus: "complete",
+    lastBlock: event.block.number,
+    logIndex: event.log.logIndex,
+    blockTime: event.block.timestamp,
+    txHash: event.transaction.hash,
+  }
+  await context.db
+    .insert(tokenOwnership)
+    .values({
+      id: tokenRowId(contract, tokenId),
+      contract,
+      tokenId,
+      ...current,
+    })
+    .onConflictDoUpdate(current)
 })

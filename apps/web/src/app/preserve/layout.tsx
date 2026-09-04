@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 
 const description =
-  "Pin your collected and created NFTs to IPFS so the artwork stays available even if the original gateway disappears."
+  "Pin your Foundation works to IPFS so the artwork stays available even if the original gateway disappears."
 
 export const metadata: Metadata = {
   title: "Preserve",

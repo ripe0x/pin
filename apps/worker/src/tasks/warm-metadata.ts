@@ -20,7 +20,7 @@ const BATCH_SIZE = Number(process.env.WARMER_BATCH_SIZE ?? "50")
 const CONCURRENCY = Number(process.env.WARMER_CONCURRENCY ?? "4")
 const RETRY_AFTER = process.env.WARMER_RETRY_AFTER ?? "5 minutes"
 
-const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
   /[^a-zA-Z0-9_]/g, "",
 )
 
@@ -120,6 +120,7 @@ async function findCandidates(): Promise<Candidate[]> {
           AND NOT m.burned
           AND m.fetched_at < NOW() - INTERVAL '${RETRY_AFTER.replace(/'/g, "''")}'
         )
+     ORDER BY m.fetched_at ASC NULLS FIRST, d.contract, d.token_id
      LIMIT ${BATCH_SIZE}`,
   )) as Array<Candidate>
   return rows

@@ -9,6 +9,7 @@ import {
   fndBuyNows,
   fndCollections,
   fndSales,
+  tokenOwnership,
 } from "ponder:schema"
 
 /**
@@ -184,6 +185,32 @@ ponder.on("FoundationNFT:Minted", async ({ event, context }) => {
       blockTime: event.block.timestamp,
     })
     .onConflictDoNothing()
+})
+
+ponder.on("FoundationNFT:Transfer", async ({ event, context }) => {
+  const { to, tokenId } = event.args
+  const contract = event.log.address
+  const current = {
+    owner: to,
+    source: "ponder-foundation-shared",
+    // The subscription begins at PND's recent Foundation window rather than
+    // the contract's 2020 deployment, so older untouched tokens remain
+    // explicitly partial instead of looking exhaustive.
+    coverageStatus: "partial",
+    lastBlock: event.block.number,
+    logIndex: event.log.logIndex,
+    blockTime: event.block.timestamp,
+    txHash: event.transaction.hash,
+  }
+  await context.db
+    .insert(tokenOwnership)
+    .values({
+      id: `${contract.toLowerCase()}-${tokenId.toString()}`,
+      contract,
+      tokenId,
+      ...current,
+    })
+    .onConflictDoUpdate(current)
 })
 
 // ─── Foundation NFTMarket — reserve auctions ────────────────────────────

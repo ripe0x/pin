@@ -263,7 +263,7 @@ export function AuctionPanel({
             <p className="text-[11px] font-mono text-gray-500">
               Listed by{" "}
               <Link
-                href={`/artist/${auction.seller}`}
+                href={`/profile/${auction.seller}`}
                 className="text-gray-700 hover:underline"
               >
                 {auction.sellerDisplay}

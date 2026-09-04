@@ -87,6 +87,10 @@ export async function POST(req: NextRequest) {
   // Flush both layers: L1 (in-process unstable_cache) via tag, and L2
   // (Postgres pgCache) via the per-seller key.
   revalidateTag("seller-listings")
-  await pgCacheInvalidate(`seller-listings:${sellerLower}`)
+  await Promise.all([
+    pgCacheInvalidate(`seller-listings:v4:${sellerLower}`),
+    // Remove a legacy pre-SuperRare cache entry if one is still present.
+    pgCacheInvalidate(`seller-listings:${sellerLower}`),
+  ])
   return NextResponse.json({ ok: true, seller: sellerLower })
 }

@@ -1,10 +1,30 @@
 # PND v2
 
-Artist-owned auction infrastructure on Ethereum. Rebuild of [ripe0x/pin](https://github.com/ripe0x/pin) around one invariant:
+Artist-owned release, auction, preservation, and discovery infrastructure on
+Ethereum, with a first-party venue built on the same portable capabilities
+available to independent artist interfaces.
 
 > Token data is stored permanently in Postgres. The web app never refetches on cache miss. The web app never triggers a chain read for storable data. The worker keeps stored data fresh; the web reads.
 
-See `PLAN.md` for the full architectural rationale.
+## Start here
+
+- Contributors and agents: [`AGENTS.md`](AGENTS.md)
+- Active program and exact next actions: [`docs/program-state.json`](docs/program-state.json)
+- Artist-independence strategy and system plan: [`docs/artist-independence-program.md`](docs/artist-independence-program.md)
+- Agent operating model: [`docs/agent-control-plane.md`](docs/agent-control-plane.md)
+- Current runtime architecture: [`ARCHITECTURE.md`](ARCHITECTURE.md)
+- Documentation authority map: [`docs/README.md`](docs/README.md)
+
+`PLAN.md`, `CONTINUATION.md`, and `CUTOVER.md` are historical rationale, not
+current execution plans.
+
+For a compact local orientation:
+
+```bash
+pnpm agent:context
+pnpm agent:context -- --online # include referenced GitHub issue and PR state
+pnpm agent:overlap             # compare this branch with referenced open PRs
+```
 
 ## Topology
 

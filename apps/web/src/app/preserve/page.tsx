@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useRef } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { useAccount, useSignMessage } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import type { DiscoveredToken } from "@/lib/onchain-discovery"
@@ -457,10 +457,11 @@ export default function PreservePage() {
     }
   }
 
-  // Update step when wallet connects/disconnects
-  if (isConnected && step === "connect") {
-    setStep("discover")
-  }
+  // Reconnection happens after hydration. Move the transition out of render so
+  // React never has to restart this component because it set state mid-render.
+  useEffect(() => {
+    if (isConnected) setStep((current) => current === "connect" ? "discover" : current)
+  }, [isConnected])
 
   // How many CIDs still need pinning
   const unpinnedCount = tokens.reduce((n, ts) => {
@@ -533,9 +534,8 @@ export default function PreservePage() {
           <div className="space-y-2">
             <h3 className="text-lg font-medium">Discover your works</h3>
             <p className="text-sm text-gray-500">
-              We&apos;ll scan the Foundation contract to find all the works
-              minted from this address. This reads directly from the Ethereum
-              blockchain — no indexer or database needed.
+              PND will load the Foundation works it already knows about. This
+              does not scan Ethereum when you open the page.
             </p>
           </div>
 
@@ -549,8 +549,8 @@ export default function PreservePage() {
             className="w-full text-center text-[11px] font-mono font-medium uppercase tracking-wider py-3 bg-fg text-bg hover:opacity-80 transition-colors disabled:opacity-40"
           >
             {discovering
-              ? "Scanning the blockchain..."
-              : "Find My Foundation Works"}
+              ? "Loading Foundation works..."
+              : "Load My Foundation Works"}
           </button>
 
           {/* Custom address option — hidden by default */}
@@ -592,7 +592,8 @@ export default function PreservePage() {
 
           {discovering && (
             <p className="text-xs text-gray-400 text-center animate-pulse">
-              This may take a moment — scanning on-chain history.
+              Loading your Foundation works. Very recent mints may take a
+              little longer to appear.
             </p>
           )}
         </div>
@@ -643,7 +644,7 @@ export default function PreservePage() {
                     All your art is already pinned. Share your artist page:
                   </p>
                   <Link
-                    href={`/artist/${discoveredAddress}`}
+                    href={`/profile/${discoveredAddress}`}
                     className="inline-flex items-center text-[11px] font-mono font-medium uppercase tracking-wider px-6 py-3 bg-fg text-bg hover:opacity-80 transition-colors"
                   >
                     View Your Artist Page
@@ -741,7 +742,7 @@ export default function PreservePage() {
                 Your art is preserved. Share your artist page:
               </p>
               <Link
-                href={`/artist/${discoveredAddress}`}
+                href={`/profile/${discoveredAddress}`}
                 className="inline-flex items-center text-[11px] font-mono font-medium uppercase tracking-wider px-6 py-3 bg-fg text-bg hover:opacity-80 transition-colors"
               >
                 View Your Artist Page

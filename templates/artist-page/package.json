@@ -13,6 +13,9 @@
     "check": "npm run lint && npm run typecheck && npm test"
   },
   "dependencies": {
+    "@pin/abi": "workspace:*",
+    "@pin/surface-react": "workspace:*",
+    "@pin/surface-kit": "workspace:*",
     "@rainbow-me/rainbowkit": "2.2.11",
     "@tanstack/react-query": "5.102.3",
     "next": "15.5.24",
@@ -35,6 +38,7 @@
     "postcss": "8.5.26",
     "tailwindcss": "4.3.3",
     "typescript": "5.9.3",
+    "vite": "8.2.2",
     "vitest": "4.1.11"
   },
   "overrides": {

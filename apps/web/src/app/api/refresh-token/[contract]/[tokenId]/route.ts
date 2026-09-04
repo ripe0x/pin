@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from "next/server"
-import { isAddress } from "viem"
+import { isAddress, verifyMessage } from "viem"
 import { readTokenMetadata } from "@/lib/token-metadata-store"
 import { refreshTokenMetadata } from "@/lib/external-indexer"
+import {
+  buildTokenRefreshMessage,
+  isFreshRefreshNonce,
+} from "@/lib/refresh-auth"
+import { canRefreshTokenMetadata } from "@/lib/token-refresh-auth"
 
 /**
  * Per-token "Refresh metadata" endpoint. Backs the button on the token page,
- * which is shown only to the token's owner or creator (client-side gate, same
- * trust model as the "Refresh my work" button — PND has no wallet-signature
- * auth). The real abuse bound is the rate limit below.
+ * which is shown only to the token's owner or creator. The server verifies a
+ * wallet proof and authorizes it against indexed ownership/attribution facts.
  *
  * Flow: validate → rate-limit (once per token per hour, via the stored
  * `fetched_at`) → forward to the worker, which re-resolves tokenURI and
@@ -23,7 +27,7 @@ const TOKEN_ID_RE = /^[0-9]+$/
 const RATE_LIMIT_MINUTES = 60
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   context: { params: Promise<{ contract: string; tokenId: string }> },
 ) {
   const { contract: rawContract, tokenId: rawTokenId } = await context.params
@@ -35,6 +39,35 @@ export async function POST(
       { ok: false, error: "invalid contract or tokenId" },
       { status: 400 },
     )
+  }
+
+  const body = await req.json().catch(() => null) as {
+    signer?: unknown
+    nonce?: unknown
+    signature?: unknown
+  } | null
+  const signer = typeof body?.signer === "string" ? body.signer.toLowerCase() : ""
+  const nonce = typeof body?.nonce === "number" ? body.nonce : NaN
+  const signature = typeof body?.signature === "string" ? body.signature : ""
+  if (!isAddress(signer) || !isFreshRefreshNonce(nonce, Math.floor(Date.now() / 1000))) {
+    return NextResponse.json(
+      { ok: false, error: "invalid or stale refresh proof" },
+      { status: 400 },
+    )
+  }
+  if (!/^0x[0-9a-fA-F]+$/.test(signature)) {
+    return NextResponse.json({ ok: false, error: "invalid signature" }, { status: 400 })
+  }
+  const authenticated = await verifyMessage({
+    address: signer as `0x${string}`,
+    message: buildTokenRefreshMessage(signer, contract, tokenId, nonce),
+    signature: signature as `0x${string}`,
+  }).catch(() => false)
+  if (!authenticated) {
+    return NextResponse.json({ ok: false, error: "refresh proof does not match wallet" }, { status: 401 })
+  }
+  if (!(await canRefreshTokenMetadata(signer, contract, tokenId))) {
+    return NextResponse.json({ ok: false, error: "owner or creator access required" }, { status: 403 })
   }
 
   // Only allow refreshing tokens the site already knows about (have a row).

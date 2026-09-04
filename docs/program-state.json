@@ -1,0 +1,446 @@
+{
+  "schemaVersion": 1,
+  "programId": "artist-independence-portable-venue",
+  "title": "Artist independence and portable venue",
+  "updatedAt": "2026-09-01",
+  "canonicalDocs": {
+    "controlPlane": "docs/agent-control-plane.md",
+    "programSpec": "docs/artist-independence-program.md",
+    "architecture": "ARCHITECTURE.md",
+    "agentOnboarding": "AGENTS.md",
+    "docsIndex": "docs/README.md",
+    "workPacketTemplate": "docs/work-packet-template.md"
+  },
+  "decisions": [
+    "docs/decisions/0001-agent-control-plane.md",
+    "docs/decisions/0002-independence-is-capability.md",
+    "docs/decisions/0003-portable-core.md"
+  ],
+  "github": {
+    "repository": "ripe0x/pin",
+    "strategyIssue": 284,
+    "programIssue": 302,
+    "foundationIssue": 301,
+    "foundationPullRequest": 300
+  },
+  "invariants": [
+    {
+      "id": "INV-TRUTH-CLASSES",
+      "statement": "Protocol facts, indexed observations, artist declarations, and PND editorial decisions remain distinguishable.",
+      "source": "docs/artist-independence-program.md"
+    },
+    {
+      "id": "INV-WEB-STORED-READS",
+      "statement": "The web does not scan the chain for storable browse, profile, ownership, media, or historical data.",
+      "source": "ARCHITECTURE.md"
+    },
+    {
+      "id": "INV-INDEXER-WORKER-SPLIT",
+      "statement": "Ponder owns fixed shared contracts and discovery; the worker owns known-artist long-tail token scanning and enrichment.",
+      "source": "AGENTS.md"
+    },
+    {
+      "id": "INV-INDEPENDENCE-CAPABILITY",
+      "statement": "Independence is an available capability, not an automatically inferred or publicly scored artist state.",
+      "source": "docs/artist-independence-program.md"
+    },
+    {
+      "id": "INV-PORTABLE-CORE",
+      "statement": "Independent release minting and rendering do not require PND APIs or PND-hosted data.",
+      "source": "docs/artist-independence-program.md"
+    },
+    {
+      "id": "INV-CURATION-AUTHORED",
+      "statement": "Curation appears only through an explicitly authored object, never inferred wallet behavior.",
+      "source": "docs/artist-independence-program.md"
+    },
+    {
+      "id": "INV-COST-CEILING",
+      "statement": "Projected added recurring cost above ten US dollars per month requires explicit approval.",
+      "source": "docs/agent-control-plane.md"
+    },
+    {
+      "id": "INV-REAL-DATA-EVIDENCE",
+      "statement": "Performance, indexing, availability, media, and preview acceptance use representative live data, not dummy content.",
+      "source": "docs/agent-control-plane.md"
+    }
+  ],
+  "acceptanceGates": [
+    {
+      "id": "GATE-INDEXED-TRUTH",
+      "description": "Public claims map to durable evidence with coverage, freshness, and finality where applicable."
+    },
+    {
+      "id": "GATE-NO-REQUEST-SCAN",
+      "description": "No browse or profile path adds request-time historical or per-token chain scanning."
+    },
+    {
+      "id": "GATE-PARITY",
+      "description": "PND and artist interfaces pass the same shared release behavior tests."
+    },
+    {
+      "id": "GATE-PND-OFFLINE",
+      "description": "The artist template retains core rendering and transaction behavior with PND endpoints blocked."
+    },
+    {
+      "id": "GATE-LIVE-PREVIEW",
+      "description": "The integration preview uses representative live read-only production data and no dummy content."
+    },
+    {
+      "id": "GATE-MEDIA-STATES",
+      "description": "Image, video, HTML, loading, unavailable, and failed media states are explicitly reviewed."
+    },
+    {
+      "id": "GATE-RESPONSIVE",
+      "description": "The required desktop and 390px mobile route matrix passes without page-level overflow."
+    },
+    {
+      "id": "GATE-PERFORMANCE",
+      "description": "Representative mobile routes meet the documented Web Vitals targets or have an approved measured exception."
+    },
+    {
+      "id": "GATE-COST",
+      "description": "RPC, database, storage, and hosting effects are measured and remain inside the approved recurring-cost boundary."
+    },
+    {
+      "id": "GATE-ROLLOUT",
+      "description": "Migration, deployment, activation, rollback, and observation order are explicit."
+    },
+    {
+      "id": "GATE-DOCS",
+      "description": "Canonical docs, program state, decisions, and verification receipts match the shipped behavior."
+    }
+  ],
+  "risks": [
+    {
+      "id": "RISK-INDEXER-SPLIT-BRAIN",
+      "severity": "critical",
+      "issue": 295,
+      "affects": ["W0", "W5"],
+      "condition": "Netlify web and Railway readers do not share one validated indexer_live target.",
+      "control": "Complete the fresh versioned backfill and guarded alias cutover before activating dependent public claims."
+    },
+    {
+      "id": "RISK-SURFACE-UI-OVERLAP",
+      "severity": "high",
+      "issue": 301,
+      "affects": ["W0", "W1", "W2", "W3"],
+      "condition": "Open collection, gallery, preservation, management, and profile PRs modify shared Surface and navigation paths.",
+      "control": "Select shipping Surface work, then rebase and resolve overlapping paths once before creating new dependent worktrees."
+    },
+    {
+      "id": "RISK-AUCTION-LOCKED-BID",
+      "severity": "high",
+      "issue": 289,
+      "affects": ["W0", "W5"],
+      "condition": "An auction lot that refuses transfer can permanently lock a winning bid.",
+      "control": "Resolve or explicitly exclude the affected auction path before the integrated venue activation."
+    },
+    {
+      "id": "RISK-TEMPLATE-DRIFT",
+      "severity": "high",
+      "issue": 264,
+      "affects": ["W1", "W3"],
+      "condition": "The artist template and PND app carry copied render and transaction behavior that can diverge.",
+      "control": "Merge a shared provider-driven kernel and enforce parity plus PND-offline tests."
+    },
+    {
+      "id": "RISK-DOCUMENT-DRIFT",
+      "severity": "medium",
+      "issue": 140,
+      "affects": ["W0", "W1", "W2", "W3", "W4", "W5"],
+      "condition": "Historical Surface and Editions plans contain stale branch, contract, and deployment claims.",
+      "control": "Use the documentation registry and mark completed plans historical instead of treating them as active state."
+    }
+  ],
+  "workstreams": [
+    {
+      "id": "W0",
+      "title": "Trustworthy foundation",
+      "status": "in_progress",
+      "deliveryDependsOn": [],
+      "outcome": "Profiles, availability, media, feed, indexer, worker, and database behavior are reliable and cost-bounded enough for upper layers.",
+      "issues": [289, 294, 295, 296, 297, 298, 299, 301],
+      "pullRequests": [300],
+      "ownedPaths": [
+        "apps/indexer/**",
+        "apps/worker/**",
+        "db/migrations/**",
+        "apps/web/src/lib/reads.ts",
+        "apps/web/src/lib/v2-activity.ts",
+        "apps/web/src/lib/activity-grouping.ts",
+        "apps/web/src/components/profile/**",
+        "apps/web/src/app/profile/**"
+      ],
+      "acceptanceGateIds": [
+        "GATE-INDEXED-TRUTH",
+        "GATE-NO-REQUEST-SCAN",
+        "GATE-LIVE-PREVIEW",
+        "GATE-MEDIA-STATES",
+        "GATE-COST",
+        "GATE-ROLLOUT",
+        "GATE-DOCS"
+      ],
+      "milestones": [
+        {
+          "id": "W0.1",
+          "title": "Integrate the trustworthy foundation",
+          "status": "complete",
+          "dependsOn": [],
+          "workPacket": "docs/work-packets/W0.1-foundation-integration.md",
+          "nextAction": "Use the completed live-data receipt in docs/work-packets/W0.1-foundation-integration.md as the input to W0.2 and W1.2."
+        },
+        {
+          "id": "W0.2",
+          "title": "Cut over the indexed production foundation",
+          "status": "ready",
+          "dependsOn": ["W0.1"],
+          "nextAction": "Execute migrations, fresh Ponder backfill, guarded indexer_live switch, worker deploy, and web deploy in the documented order."
+        },
+        {
+          "id": "W0.3",
+          "title": "Observe reliability and cost",
+          "status": "proposed",
+          "dependsOn": ["W0.2"],
+          "nextAction": "Run the 24-hour and 7-day health, ownership, refresh, media, and cost checks before marking the foundation complete."
+        }
+      ],
+      "nextAction": "Execute W0.2 through a fresh versioned Ponder backfill, guarded indexer_live switch, worker deploy, and web deploy without bypassing issue #295."
+    },
+    {
+      "id": "W1",
+      "title": "Release specification and shared kernel",
+      "status": "complete",
+      "deliveryDependsOn": ["W0"],
+      "outcome": "PND and independent interfaces consume one versioned release model and one behavioral implementation.",
+      "issues": [263, 264, 270, 274, 284],
+      "pullRequests": [300],
+      "ownedPaths": [
+        "packages/abi/**",
+        "packages/addresses/**",
+        "packages/release-spec/**",
+        "packages/surface-kit/**",
+        "packages/surface-react/**",
+        "apps/web/src/lib/collection-render/**",
+        "templates/artist-page/lib/collection-render/**"
+      ],
+      "acceptanceGateIds": [
+        "GATE-PARITY",
+        "GATE-PND-OFFLINE",
+        "GATE-NO-REQUEST-SCAN",
+        "GATE-PERFORMANCE",
+        "GATE-DOCS"
+      ],
+      "milestones": [
+        {
+          "id": "W1.1",
+          "title": "Specify the portable release and provider boundary",
+          "status": "complete",
+          "dependsOn": [],
+          "workPacket": "docs/work-packets/W1.1-release-boundary.md",
+          "nextAction": "Use docs/portable-release-boundary.md as the accepted source for W1.2 extraction."
+        },
+        {
+          "id": "W1.2",
+          "title": "Extract the shared release kernel",
+          "status": "complete",
+          "dependsOn": ["W0.1", "W1.1"],
+          "workPacket": "docs/work-packets/W1.2-shared-release-kernel.md",
+          "nextAction": "Use the completed provider, React state boundary, fixtures, and offline gate as the input to W1.3."
+        },
+        {
+          "id": "W1.3",
+          "title": "Enforce PND and artist-interface parity",
+          "status": "complete",
+          "dependsOn": ["W1.2"],
+          "workPacket": "docs/work-packets/W1.3-release-parity.md",
+          "nextAction": "Use the completed shared provider, availability, quote, transaction, token-state, renderer-preview, parity, and PND-offline gates as the W2.2 and W3.2 foundation."
+        }
+      ],
+      "nextAction": "Keep the shared parity and PND-offline gates required while W2.2 and W3.2 build their assemblies."
+    },
+    {
+      "id": "W2",
+      "title": "Venue and editorial release system",
+      "status": "in_progress",
+      "deliveryDependsOn": ["W0", "W1"],
+      "outcome": "PND visibly operates a selective art-led venue while retaining a complete permissionless Surface record.",
+      "issues": [261, 262, 265, 268, 269, 270, 275, 284],
+      "pullRequests": [300],
+      "ownedPaths": [
+        "apps/web/src/app/page.tsx",
+        "apps/web/src/app/landing-v2/**",
+        "apps/web/src/components/home/**",
+        "apps/web/src/app/collections/**",
+        "apps/web/src/components/collections/**",
+        "apps/web/src/app/about/**",
+        "apps/web/src/app/log/**",
+        "apps/web/src/components/Navbar.tsx",
+        "apps/web/src/components/MobileMenu.tsx"
+      ],
+      "acceptanceGateIds": [
+        "GATE-LIVE-PREVIEW",
+        "GATE-MEDIA-STATES",
+        "GATE-RESPONSIVE",
+        "GATE-PERFORMANCE",
+        "GATE-INDEXED-TRUTH",
+        "GATE-DOCS"
+      ],
+      "milestones": [
+        {
+          "id": "W2.1",
+          "title": "Specify editorial release metadata and venue hierarchy",
+          "status": "complete",
+          "dependsOn": ["W1.1"],
+          "workPacket": "docs/work-packets/W2.1-editorial-venue.md",
+          "nextAction": "Use docs/editorial-venue-boundary.md as the accepted source for W2.2 and W4.1."
+        },
+        {
+          "id": "W2.2",
+          "title": "Build the connected venue assemblies",
+          "status": "ready",
+          "dependsOn": ["W0.1", "W1.3", "W2.1"],
+          "workPacket": "docs/work-packets/W2.2-connected-venue-assemblies.md",
+          "nextAction": "Implement the connected homepage and Releases assemblies first, then release pages, profiles, About, and journal against the same truth and media contracts."
+        }
+      ],
+      "nextAction": "Execute W2.2 from docs/work-packets/W2.2-connected-venue-assemblies.md without coupling it to W0.2's guarded production cutover."
+    },
+    {
+      "id": "W3",
+      "title": "Artist independence tools",
+      "status": "proposed",
+      "deliveryDependsOn": ["W0", "W1"],
+      "outcome": "Artists can inspect dependencies, export releases, deploy independent interfaces, and optionally publish destinations without unverifiable claims.",
+      "issues": [258, 260, 271, 272, 273, 274, 284],
+      "pullRequests": [283],
+      "ownedPaths": [
+        "apps/web/src/app/studio/**",
+        "apps/web/src/components/studio/**",
+        "apps/web/src/lib/studio-tools.ts",
+        "apps/web/src/app/sites/**",
+        "apps/web/src/components/sites/**",
+        "templates/artist-page/**"
+      ],
+      "acceptanceGateIds": [
+        "GATE-PARITY",
+        "GATE-PND-OFFLINE",
+        "GATE-LIVE-PREVIEW",
+        "GATE-RESPONSIVE",
+        "GATE-COST",
+        "GATE-DOCS"
+      ],
+      "milestones": [
+        {
+          "id": "W3.1",
+          "title": "Specify independence checks, export, and declarations",
+          "status": "proposed",
+          "dependsOn": ["W1.1"],
+          "nextAction": "Create the W3.1 work packet from the completed release boundary, then define private checks, export, deployment inputs, and site declarations."
+        },
+        {
+          "id": "W3.2",
+          "title": "Build Studio and the independent release interface",
+          "status": "proposed",
+          "dependsOn": ["W0.1", "W1.2", "W3.1"],
+          "nextAction": "Implement the Studio workflow and Surface-capable artist template with PND-optional providers."
+        }
+      ],
+      "nextAction": "Create the W3.1 independence-tools specification work packet."
+    },
+    {
+      "id": "W4",
+      "title": "Portable distribution network",
+      "status": "proposed",
+      "deliveryDependsOn": ["W1", "W2", "W3"],
+      "outcome": "Releases travel through portable feeds, assets, embeds, and artist-controlled communication channels.",
+      "issues": [284],
+      "pullRequests": [],
+      "ownedPaths": [
+        "packages/release-spec/**",
+        "packages/surface-react/**",
+        "apps/web/src/app/api/**",
+        "apps/web/src/app/log/**",
+        "templates/artist-page/**"
+      ],
+      "acceptanceGateIds": [
+        "GATE-PARITY",
+        "GATE-PND-OFFLINE",
+        "GATE-PERFORMANCE",
+        "GATE-COST",
+        "GATE-DOCS"
+      ],
+      "milestones": [
+        {
+          "id": "W4.1",
+          "title": "Specify portable feeds, assets, and embeds",
+          "status": "proposed",
+          "dependsOn": ["W1.1", "W2.1"],
+          "nextAction": "Choose the smallest feed and embed formats that preserve truth classes, referrals, and artist control."
+        },
+        {
+          "id": "W4.2",
+          "title": "Build portable distribution surfaces",
+          "status": "proposed",
+          "dependsOn": ["W1.3", "W2.2", "W3.2", "W4.1"],
+          "nextAction": "Implement launch packs, feeds, embeds, and artist-controlled communication adapters."
+        }
+      ],
+      "nextAction": "Create the W4.1 portable feeds, assets, and embeds work packet from the accepted release and venue boundaries."
+    },
+    {
+      "id": "W5",
+      "title": "Integration, activation, and observation",
+      "status": "proposed",
+      "deliveryDependsOn": ["W0", "W1", "W2", "W3", "W4"],
+      "outcome": "The connected program ships through one reviewed activation and passes production observation.",
+      "issues": [284, 301],
+      "pullRequests": [],
+      "ownedPaths": [
+        "apps/web/src/app/page.tsx",
+        "apps/web/src/components/Navbar.tsx",
+        "apps/web/src/components/MobileMenu.tsx",
+        "netlify.toml",
+        "DEPLOYMENT.md",
+        "docs/**"
+      ],
+      "acceptanceGateIds": [
+        "GATE-INDEXED-TRUTH",
+        "GATE-NO-REQUEST-SCAN",
+        "GATE-PARITY",
+        "GATE-PND-OFFLINE",
+        "GATE-LIVE-PREVIEW",
+        "GATE-MEDIA-STATES",
+        "GATE-RESPONSIVE",
+        "GATE-PERFORMANCE",
+        "GATE-COST",
+        "GATE-ROLLOUT",
+        "GATE-DOCS"
+      ],
+      "milestones": [
+        {
+          "id": "W5.1",
+          "title": "Verify one connected integration preview",
+          "status": "proposed",
+          "dependsOn": ["W0.1", "W1.3", "W2.2", "W3.2", "W4.2"],
+          "nextAction": "Deploy one Netlify preview on live read-only data and complete every acceptance gate."
+        },
+        {
+          "id": "W5.2",
+          "title": "Activate the coherent public experience",
+          "status": "proposed",
+          "dependsOn": ["W0.2", "W5.1"],
+          "nextAction": "Merge one activation PR that promotes the venue hierarchy and connected Studio flow."
+        },
+        {
+          "id": "W5.3",
+          "title": "Observe the activated system",
+          "status": "proposed",
+          "dependsOn": ["W5.2"],
+          "nextAction": "Complete 24-hour and 7-day reliability, cost, and user-path observation before closing the program."
+        }
+      ],
+      "nextAction": "Do not create the integration preview until W5.1 dependencies are complete."
+    }
+  ]
+}

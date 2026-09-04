@@ -32,7 +32,15 @@ const sql = postgres(url, {
   connect_timeout: 10,
 })
 
+const MIGRATION_LOCK = "pnd:db:migrate"
+let lockHeld = false
+
 try {
+  // Railway deploys can briefly overlap. A session advisory lock keeps two
+  // migration runners from both deciding the same filename is unapplied.
+  await sql`SELECT pg_advisory_lock(hashtext(${MIGRATION_LOCK}))`
+  lockHeld = true
+
   await sql`
     CREATE TABLE IF NOT EXISTS _migrations (
       filename    TEXT PRIMARY KEY,
@@ -69,5 +77,10 @@ try {
     console.log(`Applied ${appliedThisRun} migration(s).`)
   }
 } finally {
+  if (lockHeld) {
+    await sql`SELECT pg_advisory_unlock(hashtext(${MIGRATION_LOCK}))`.catch(
+      () => undefined,
+    )
+  }
   await sql.end()
 }

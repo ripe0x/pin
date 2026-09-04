@@ -16,6 +16,7 @@ import { getConfig } from "./config"
 import { getEnsName, getEnsText } from "./ens"
 import { formatAddress } from "./format"
 import { resolveMediaUrl } from "./media-fallback"
+import { remoteImageResponseIsUsable } from "./artist-image"
 
 export async function getArtistDisplayName(): Promise<string> {
   const cfg = getConfig()
@@ -34,12 +35,12 @@ export async function getArtistDisplayName(): Promise<string> {
  */
 export async function getArtistAvatarUrl(): Promise<string | null> {
   const cfg = getConfig()
-  if (cfg.artistAvatarUrl) return cfg.artistAvatarUrl
-  const ens = await getEnsName(cfg.artistAddress)
-  if (!ens) return null
-  const raw = await getEnsText(ens, "avatar")
+  const raw = cfg.artistAvatarUrl
+    ?? await getEnsName(cfg.artistAddress).then((ens) => ens ? getEnsText(ens, "avatar") : null)
   if (!raw) return null
-  return resolveAvatarUri(raw)
+  const resolved = resolveAvatarUri(raw)
+  if (!resolved) return null
+  return await isUsableAvatarUrl(resolved) ? resolved : null
 }
 
 /**
@@ -105,4 +106,20 @@ function resolveAvatarUri(raw: string): string | null {
   }
   // eip155:1/erc721:... or other exotic forms — skip for now.
   return null
+}
+
+async function isUsableAvatarUrl(url: string): Promise<boolean> {
+  if (url.startsWith("data:")) return true
+  if (!url.startsWith("http://") && !url.startsWith("https://")) return false
+  try {
+    const response = await fetch(url, {
+      method: "HEAD",
+      redirect: "follow",
+      signal: AbortSignal.timeout(2_500),
+      next: { revalidate: 21_600 },
+    })
+    return remoteImageResponseIsUsable(response.status, response.headers.get("content-type"))
+  } catch {
+    return false
+  }
 }

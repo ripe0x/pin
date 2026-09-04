@@ -5,7 +5,7 @@ import type {
 } from "./types"
 import { sql } from "../db"
 
-const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+const schema = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
   /[^a-zA-Z0-9_]/g, "",
 )
 

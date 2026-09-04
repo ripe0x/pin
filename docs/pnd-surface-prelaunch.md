@@ -128,7 +128,8 @@ fixed-contract case it blesses. Add a SurfaceCreated subscription
 for the factory (address <paste>, start block <deploy block>) to
 apps/indexer/ponder.config.ts with a handler in apps/indexer/src/
 writing one row per collection (owner, collection address, idMode,
-block/tx) to the ponder_v1 schema, following the existing pnd_*/fnd_*
+block/tx) to Ponder's versioned write schema, exposed through `indexer_live`,
+following the existing pnd_*/fnd_*
 handler patterns. The ABI is already exported from @pin/abi
 (surfaceFactoryAbi) and mirrored in apps/indexer/abis/. Verify
 against local dev: run the indexer, confirm the backfilled row count
@@ -148,7 +149,7 @@ indexing.
 ```
 Prompt: You are a hands-on implementer; do this yourself. In the pnd
 repo (~/foundation): wire the collection discovery surfaces in apps/web
-to the newly indexed collections table (ponder_v1, written by the
+to the newly indexed collections table (`indexer_live`, written by the
 SurfaceCreated handler). Read AGENTS.md + apps/web/src/lib/reads.ts
 first: web reads Postgres ONLY for storable data. List pages must be
 pure SELECTs — no chain reads in any list/render path; per-collection

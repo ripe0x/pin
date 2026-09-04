@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { ipfsToHttp } from "@pin/shared"
 import { useIpfsGatewayFallback } from "./use-ipfs-fallback"
 import { useOptimizedImage } from "./use-optimized-image"
 import { isAmbiguousMediaUrl, isVideoUrl } from "./media-url"
@@ -17,15 +18,29 @@ export type ThumbnailMediaKind = "image" | "video" | "failed"
  * image. Real images that 404 on one gateway still rotate through the
  * rest as images first.
  */
-export function useThumbnailMedia(url: string, width = 800) {
-  const img = useOptimizedImage(url, width)
+export function useThumbnailMedia(
+  url: string,
+  width = 800,
+  mediaKind?: string | null,
+) {
+  const resolvedUrl = ipfsToHttp(url)
+  const img = useOptimizedImage(resolvedUrl, width)
   // Fresh gateway cascade for the escalated <video> — the `img` cascade is
   // exhausted by the time we escalate.
-  const escalatedVideo = useIpfsGatewayFallback(url)
+  const escalatedVideo = useIpfsGatewayFallback(resolvedUrl)
   const [escalated, setEscalated] = useState(false)
+  const [videoFailed, setVideoFailed] = useState(false)
 
-  const knownVideo = isVideoUrl(url)
-  const ambiguous = isAmbiguousMediaUrl(url)
+  const knownVideo = mediaKind === "video" || isVideoUrl(resolvedUrl)
+  const ambiguous =
+    mediaKind == null || mediaKind === "unknown"
+      ? isAmbiguousMediaUrl(resolvedUrl)
+      : false
+
+  useEffect(() => {
+    setEscalated(false)
+    setVideoFailed(false)
+  }, [resolvedUrl, mediaKind])
 
   // Escalate once the image cascade is exhausted on an ambiguous URL.
   // Setting state during render (React-supported) re-renders immediately,
@@ -35,13 +50,25 @@ export function useThumbnailMedia(url: string, width = 800) {
   }
 
   const kind: ThumbnailMediaKind =
-    knownVideo || escalated ? "video" : img.failed ? "failed" : "image"
+    videoFailed
+      ? "failed"
+      : knownVideo || escalated
+        ? "video"
+        : img.failed
+          ? "failed"
+          : "image"
 
   // Known-extension video: reuse the optimized-image cascade (it passes
   // video URLs through unproxied). Escalated case: that cascade is spent,
   // so drive the video off the fresh gateway cascade.
-  const videoSrc = escalated ? escalatedVideo.src : img.src
-  const onVideoError = escalated ? escalatedVideo.onError : img.onError
+  const videoSrc = knownVideo || escalated ? escalatedVideo.src : img.src
+  const onVideoError = () => {
+    const rotated =
+      knownVideo || escalated
+        ? escalatedVideo.onError()
+        : (img.onError(), true)
+    if (!rotated) setVideoFailed(true)
+  }
 
   return {
     kind,

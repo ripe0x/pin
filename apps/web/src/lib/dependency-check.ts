@@ -188,7 +188,7 @@ async function tryIndexer<T>(
   }
 }
 
-const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(
   /[^a-zA-Z0-9_]/g, "",
 )
 
@@ -949,7 +949,7 @@ function buildNextSteps(args: {
     steps.push({
       id: "review-shared",
       title: "Check media and metadata locations for the largest contract groups",
-      href: `/artist/${args.artistAddress}`,
+      href: `/profile/${args.artistAddress}`,
       reason: `${sharedTokens} ${
         sharedTokens === 1 ? "token" : "tokens"
       } sit on shared or unknown contracts where the media and metadata sources are worth a closer look.`,

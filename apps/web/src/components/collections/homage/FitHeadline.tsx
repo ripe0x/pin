@@ -9,7 +9,7 @@
 import {useEffect, useRef} from "react"
 
 export function FitHeadline({text, className, max = 160}: {text: string; className?: string; max?: number}) {
-  const wrapRef = useRef<HTMLDivElement>(null)
+  const wrapRef = useRef<HTMLHeadingElement>(null)
   const textRef = useRef<HTMLSpanElement>(null)
 
   useEffect(() => {
@@ -36,10 +36,10 @@ export function FitHeadline({text, className, max = 160}: {text: string; classNa
   }, [text, max])
 
   return (
-    <div ref={wrapRef} className={className}>
+    <h1 ref={wrapRef} className={className}>
       <span ref={textRef} className="display block whitespace-nowrap" style={{lineHeight: 0.9}}>
         {text}
       </span>
-    </div>
+    </h1>
   )
 }

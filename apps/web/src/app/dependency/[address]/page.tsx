@@ -4,7 +4,7 @@ import { redirect } from "next/navigation"
 import type { Address } from "viem"
 import { resolveEnsAddress } from "@/lib/artist-queries"
 import { getDependencyReport } from "@/lib/dependency-check"
-import { AddressZorb } from "@/components/AddressZorb"
+import { IdentityAvatar } from "@/components/IdentityAvatar"
 import { InventoryTotals } from "@/components/dependency/InventoryTotals"
 import { ContractMapTable } from "@/components/dependency/ContractMapTable"
 import { DependencyReadCard } from "@/components/dependency/DependencyReadCard"
@@ -109,19 +109,12 @@ async function ScanBody({ address }: { address: Address }) {
   return (
     <div className="space-y-10">
       <div className="flex items-center gap-4">
-        {identity.avatarUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={identity.avatarUrl}
-            alt={identity.displayName}
-            className="h-14 w-14 rounded-full object-cover"
-          />
-        ) : (
-          <AddressZorb
-            address={identity.address as Address}
-            className="h-14 w-14 rounded-full"
-          />
-        )}
+        <IdentityAvatar
+          address={identity.address as Address}
+          avatarUrl={identity.avatarUrl}
+          alt={identity.displayName}
+          className="h-14 w-14 rounded-full object-cover"
+        />
         <div className="min-w-0">
           <div className="text-lg font-semibold truncate">
             {identity.displayName}

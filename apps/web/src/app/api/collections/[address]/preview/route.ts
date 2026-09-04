@@ -6,14 +6,15 @@
  * nothing.
  */
 
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { isAddress, type Address } from "viem"
 import { getCollection, getRendererPreview } from "@/lib/collection-onchain"
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit"
 
 const MAX_SEED_INDEX = 500
 
 export async function GET(
-  req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ address: string }> },
 ) {
   const { address } = await params
@@ -24,6 +25,18 @@ export async function GET(
   const i = Number(url.searchParams.get("i") ?? "0")
   if (!Number.isInteger(i) || i < 0 || i > MAX_SEED_INDEX) {
     return NextResponse.json({ error: "Bad seed index." }, { status: 400 })
+  }
+  const limit = checkRateLimit(
+    "collection-renderer-preview",
+    getClientIp(req),
+    60_000,
+    30,
+  )
+  if (!limit.ok) {
+    return NextResponse.json(
+      { error: "Too many preview requests. Try again shortly." },
+      { status: 429, headers: { "Retry-After": String(limit.retryAfter) } },
+    )
   }
   const c = await getCollection(address as Address)
   if (!c) return NextResponse.json({ error: "Not a collection." }, { status: 404 })
@@ -36,5 +49,10 @@ export async function GET(
   if (!preview) {
     return NextResponse.json({ error: "Previews not supported." }, { status: 404 })
   }
-  return NextResponse.json(preview)
+  return NextResponse.json({
+    ...preview,
+    image: preview.image?.trim().toLowerCase().startsWith("data:")
+      ? `/api/media/preview/${encodeURIComponent(address)}/${i}`
+      : preview.image,
+  })
 }

@@ -12,6 +12,7 @@
 import { useEffect, useState } from "react"
 import { usePublicClient } from "wagmi"
 import { mainnet, sepolia } from "wagmi/chains"
+export { formatWriteError } from "@pin/surface-kit"
 import { forkChain } from "@/lib/wagmi"
 
 // When the dev server is pointed at a local Anvil fork
@@ -39,103 +40,6 @@ export const PREFERRED_CHAIN_LABEL = FORK_MODE ? forkChain.name : USE_SEPOLIA ? 
 export function evmNowTxUrl(txHash: string, chainId: number): string {
   if (chainId === sepolia.id) return `https://sepolia.etherscan.io/tx/${txHash}`
   return `https://evm.now/tx/${txHash}?chainId=${chainId}`
-}
-
-/**
- * Surface protocol custom errors (contracts/src/surface/interfaces/
- * ISurfaceCore.sol) mapped to human copy. viem decodes a reverted custom error
- * onto `ContractFunctionRevertedError.data.errorName` when it can ABI-decode
- * the revert data; when the RPC doesn't preflight with `eth_call` before
- * broadcast, the same name still shows up literally inside `shortMessage` /
- * `metaMessages` (e.g. "Error: WrongPayment()") — the matcher below checks
- * both.
- */
-const COLLECTION_ERROR_COPY: Record<string, string> = {
-  WrongPayment: "The price changed since the page loaded. The quote has been refreshed, try again.",
-  Underpayment: "The price changed since the page loaded. The quote has been refreshed, try again.",
-  ExceedsCap: "Sold out during your transaction. Gas is consumed on failed transactions.",
-  MintNotStarted: "The mint window is not open.",
-  MintEnded: "The mint window is not open.",
-  HookRejected: "This mint has additional onchain conditions that were not met.",
-}
-
-/**
- * GateHook custom errors (contracts/src/surface/hooks/GateHook.sol) —
- * selector-identical to AllowlistHook.NotAllowlisted /
- * PerWalletCapHook.WalletCapExceeded, so this same copy applies regardless
- * of which reference hook a collection uses. Decoded the same way as
- * COLLECTION_ERROR_COPY (`data.errorName`, or the name appearing literally
- * in shortMessage/metaMessages when undecoded), so it's folded into the same
- * matching loop below rather than duplicating it.
- */
-const HOOK_REVERT_COPY: Record<string, string> = {
-  NotAllowlisted: "This wallet is not on the allowlist for this mint.",
-  WalletCapExceeded: "This wallet has reached its per-wallet mint limit.",
-}
-
-/**
- * Format a wagmi/viem write error for display. viem attaches the actual revert
- * reason on the error's `cause.cause...` chain (and a friendlier `shortMessage`
- * on the top-level error). The default Error.message is a multi-line block
- * whose first line is just "The contract function X reverted with the following
- * reason:" — useless without the next line. Walk the cause chain to find the
- * deepest message that contains the actual on-chain revert string (typically
- * prefixed `<func>::<reason>`).
- */
-export function formatWriteError(err: unknown, action: string): string {
-  if (!err || typeof err !== "object") return `${action} failed`
-  const e = err as {
-    message?: string
-    shortMessage?: string
-    cause?: unknown
-    metaMessages?: string[]
-  }
-  if (e.message?.includes("User rejected")) return "Transaction rejected"
-  if (e.message?.includes("insufficient funds")) return "Insufficient ETH balance"
-
-  // Walk the whole cause chain once, collecting every decoded error name and
-  // message-shaped string we see, so a known Surface protocol or hook
-  // revert maps to plain copy before falling back to the generic
-  // deepest-message walk below.
-  const seen: string[] = []
-  let node: unknown = err
-  for (let i = 0; i < 8 && node && typeof node === "object"; i++) {
-    const n = node as {
-      data?: { errorName?: string }
-      reason?: string
-      shortMessage?: string
-      message?: string
-      metaMessages?: string[]
-      cause?: unknown
-    }
-    if (n.data?.errorName) seen.push(n.data.errorName)
-    if (n.reason) seen.push(n.reason)
-    if (n.shortMessage) seen.push(n.shortMessage)
-    if (n.message) seen.push(n.message)
-    if (Array.isArray(n.metaMessages)) seen.push(...n.metaMessages)
-    node = n.cause
-  }
-  for (const [name, copy] of Object.entries({ ...COLLECTION_ERROR_COPY, ...HOOK_REVERT_COPY })) {
-    const nameBoundary = new RegExp(`\\b${name}\\b`)
-    if (seen.some((s) => s === name || nameBoundary.test(s))) return copy
-  }
-
-  // Walk cause chain for the deepest shortMessage / reason.
-  let deepest: string | undefined = e.shortMessage
-  let cur: unknown = e.cause
-  for (let i = 0; i < 6 && cur && typeof cur === "object"; i++) {
-    const c = cur as { shortMessage?: string; reason?: string; cause?: unknown }
-    if (c.shortMessage) deepest = c.shortMessage
-    if (c.reason) deepest = c.reason
-    cur = c.cause
-  }
-  // metaMessages often holds the reverted reason as a follow-on line.
-  if (!deepest && Array.isArray(e.metaMessages)) {
-    const reasonLine = e.metaMessages.find((m) => /::|reverted|require/i.test(m))
-    if (reasonLine) deepest = reasonLine.trim()
-  }
-  if (!deepest) deepest = e.message?.split("\n")[0]
-  return `${action} failed: ${deepest ?? "unknown error"}`
 }
 
 export function formatRemaining(secondsLeft: number): string {

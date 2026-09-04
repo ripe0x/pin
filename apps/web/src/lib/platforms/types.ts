@@ -129,6 +129,15 @@ export type SellerListings = {
 }
 
 /**
+ * Adapter result plus whether its discovery source was complete. An adapter
+ * may still return useful rows while incomplete; callers must preserve that
+ * state so an empty partial result is never presented as authoritative.
+ */
+export type SellerListingsResult = SellerListings & {
+  complete: boolean
+}
+
+/**
  * Summary row for an auction the home grid renders. Returned by
  * `getActiveAuctions` from any platform that has marketplace state.
  * `endTime` is unix-seconds; 0 means the auction has been created but
@@ -227,7 +236,7 @@ export interface PlatformAdapter {
    */
   getCancellableListingsForSeller?(
     seller: Address,
-  ): Promise<SellerListings | null>
+  ): Promise<SellerListingsResult | null>
 
   /**
    * Newest-first bid history for an auction id.

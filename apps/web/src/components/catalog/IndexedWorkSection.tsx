@@ -58,7 +58,7 @@ export function IndexedWorkSection({
       >
         <span className="text-sm">
           <span className="font-medium">
-            Pre-fill from your indexed work
+            Pre-fill from work PND found
           </span>
           <span className="text-gray-500 ml-2">
             {indexedCount} {indexedCount === 1 ? "entry" : "entries"} ready
@@ -74,10 +74,10 @@ export function IndexedWorkSection({
       <header className="flex items-start justify-between gap-4 mb-3">
         <div className="min-w-0 flex-1">
           <h2 className="text-sm font-semibold">
-            Pre-fill from your indexed work
+            Pre-fill from work PND found
           </h2>
           <p className="text-xs text-gray-500 mt-1">
-            We&rsquo;ve indexed your contracts and tokens across{" "}
+            PND found your contracts and tokens across{" "}
             <span className="relative inline-block group">
               <span
                 tabIndex={0}
@@ -91,7 +91,7 @@ export function IndexedWorkSection({
                 role="tooltip"
                 className="pointer-events-none absolute left-0 top-full z-10 mt-1.5 whitespace-nowrap rounded-md bg-fg px-2.5 py-1.5 text-[11px] font-medium text-bg shadow-md opacity-0 transition-opacity duration-100 group-hover:opacity-100 group-focus-within:opacity-100"
               >
-                Indexed: {INDEXED_PLATFORM_NAMES.join(", ")}
+                Sources: {INDEXED_PLATFORM_NAMES.join(", ")}
               </span>
             </span>
             . Select what you want to declare on Catalog — one signature
@@ -108,8 +108,8 @@ export function IndexedWorkSection({
       </header>
       <ImportPlanner
         artistAddress={artist}
-        sourceName="Your indexed work"
-        sourceUrl={`/artist/${artist.toLowerCase()}`}
+        sourceName="Work PND found"
+        sourceUrl={`/profile/${artist.toLowerCase()}`}
         plan={plan}
         fetchError={fetchError}
         embedded

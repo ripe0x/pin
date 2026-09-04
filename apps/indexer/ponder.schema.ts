@@ -168,6 +168,7 @@ export const fndSales = onchainTable(
   }),
   (table) => ({
     tokenTimeIdx: index().on(table.nftContract, table.tokenId, table.blockTime),
+    sellerTimeIdx: index().on(table.seller, table.blockTime),
   }),
 )
 
@@ -315,6 +316,31 @@ export const srv2ArtistTokens = onchainTable(
   }),
 )
 
+// Current ERC-721 ownership for the bounded Transfer streams Ponder already
+// follows: SuperRare V2, the recent Foundation shared-contract window, and
+// every PND Surface clone created by the fixed factory. The worker mirrors this
+// compact current-state table into public.token_ownership; no profile request
+// performs ownerOf or getLogs.
+export const tokenOwnership = onchainTable(
+  "token_ownership",
+  (t) => ({
+    id: t.text().primaryKey(), // `${contract}-${tokenId}`
+    contract: t.hex().notNull(),
+    tokenId: t.bigint().notNull(),
+    owner: t.hex().notNull(),
+    source: t.text().notNull(),
+    coverageStatus: t.text().notNull(),
+    lastBlock: t.bigint().notNull(),
+    logIndex: t.integer().notNull(),
+    blockTime: t.bigint().notNull(),
+    txHash: t.hex().notNull(),
+  }),
+  (table) => ({
+    ownerPositionIdx: index().on(table.owner, table.lastBlock, table.logIndex),
+    sourcePositionIdx: index().on(table.source, table.lastBlock, table.logIndex),
+  }),
+)
+
 // ─── MURI Protocol (on-chain media-permanence overlay) ───────────────────
 // Fixed shared singleton (0x0000000000C2A0B63ab4aA971B08B905E5875b01).
 // `muri_contracts` = which NFT contracts have registered with MURI (one row
@@ -424,6 +450,40 @@ export const minters = onchainTable("minters", (t) => ({
   minter: t.hex().primaryKey(),
   collection: t.hex().notNull(),
 }))
+
+// SurfaceConfigured is emitted during clone initialization, before the
+// factory's SurfaceCreated event inserts `collections`. Keep this independent
+// current-state row so event ordering cannot drop the initial scarcity cap.
+export const collectionSupplyConfigs = onchainTable(
+  "collection_supply_configs",
+  (t) => ({
+    collection: t.hex().primaryKey(),
+    supplyCap: t.bigint().notNull(),
+    updatedAtBlock: t.bigint().notNull(),
+    updatedAtTime: t.bigint().notNull(),
+  }),
+)
+
+// Current canonical FixedPriceMinter release state. These are fixed factory
+// children Ponder already watches, so profiles can surface PND-native open
+// releases without request-time config multicalls.
+export const minterSaleConfigs = onchainTable(
+  "minter_sale_configs",
+  (t) => ({
+    minter: t.hex().primaryKey(),
+    collection: t.hex().notNull(),
+    price: t.bigint().notNull(),
+    priceStrategy: t.hex().notNull(),
+    mintStart: t.bigint().notNull(),
+    mintEnd: t.bigint().notNull(),
+    maxMints: t.bigint().notNull(),
+    updatedAtBlock: t.bigint().notNull(),
+    updatedAtTime: t.bigint().notNull(),
+  }),
+  (table) => ({
+    collectionIdx: index().on(table.collection),
+  }),
+)
 
 // Current state per token. Pooled collections can burn-then-remint the
 // same tokenId as a new instance (see IPooledSurface.mintToId) — a

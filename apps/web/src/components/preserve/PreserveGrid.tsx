@@ -23,7 +23,10 @@ export function PreserveGrid({ tokens }: { tokens: TokenWithPinState[] }) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
       {tokens.map((item) => (
-        <PreserveCard key={item.token.tokenId} item={item} />
+        <PreserveCard
+          key={`${item.token.contract.toLowerCase()}:${item.token.tokenId}`}
+          item={item}
+        />
       ))}
     </div>
   )
@@ -31,38 +34,40 @@ export function PreserveGrid({ tokens }: { tokens: TokenWithPinState[] }) {
 
 function PreserveCard({ item }: { item: TokenWithPinState }) {
   const { token, metadataStatus, mediaStatus } = item
-  const imageUrl =
-    token.mediaHttpUrl ??
-    "https://placehold.co/400x500/F2F2F2/999999?text=NFT"
+  const imageUrl = token.mediaHttpUrl ?? ""
   const title = token.metadata?.name ?? `#${token.tokenId}`
 
   // Combined status: worst of the two
   const combinedStatus = worstStatus(metadataStatus, mediaStatus)
 
-  const { kind, imgSrc, imgRef, onImgError, videoSrc, onVideoError } =
-    useThumbnailMedia(imageUrl, 600)
+  const media = useThumbnailMedia(imageUrl, 600)
 
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden">
       <div className="relative bg-gray-100 aspect-square">
-        {kind === "failed" ? null : kind === "video" ? (
+        {imageUrl && media.kind === "video" ? (
           <video
-            src={videoSrc}
-            className="w-full h-full object-cover"
+            src={media.videoSrc}
+            aria-label={title}
+            className="h-full w-full object-cover"
             muted
             playsInline
             preload="metadata"
-            onError={onVideoError}
+            onError={media.onVideoError}
           />
-        ) : (
+        ) : imageUrl && media.kind === "image" ? (
           <img
-            ref={imgRef}
-            src={imgSrc}
+            ref={media.imgRef}
+            src={media.imgSrc}
             alt={title}
             className="w-full h-full object-cover"
             loading="lazy"
-            onError={onImgError}
+            onError={media.onImgError}
           />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center px-4 text-center text-[11px] font-mono text-fg-muted">
+            {imageUrl ? "Preview unavailable" : "No media source available"}
+          </div>
         )}
         {/* Pin status overlay */}
         <div className="absolute top-2 right-2">

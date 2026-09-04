@@ -1,6 +1,7 @@
 "use client"
 
 import { useTokenInfo } from "./useTokenInfo"
+import { useThumbnailMedia } from "@/lib/use-thumbnail-media"
 
 /**
  * Single-token preview card. Renders nothing when the inputs are
@@ -17,6 +18,7 @@ export function TokenPreview({
   tokenId: string | null
 }) {
   const { data, isLoading } = useTokenInfo(contract, tokenId)
+  const media = useThumbnailMedia(data?.image ?? "", 160)
 
   if (!tokenId || tokenId.trim() === "" || !contract.trim()) return null
 
@@ -39,12 +41,24 @@ export function TokenPreview({
 
   return (
     <div className="border border-gray-200 rounded-md p-3 flex items-center gap-3">
-      {data.image ? (
+      {data.image && media.kind === "video" ? (
+        <video
+          src={media.videoSrc}
+          aria-label={data.name ?? `Token #${tokenId}`}
+          className="h-12 w-12 rounded-md object-cover bg-gray-100 shrink-0"
+          muted
+          playsInline
+          preload="metadata"
+          onError={media.onVideoError}
+        />
+      ) : data.image && media.kind === "image" ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={data.image}
+          ref={media.imgRef}
+          src={media.imgSrc}
           alt={data.name ?? `Token #${tokenId}`}
           className="h-12 w-12 rounded-md object-cover bg-gray-100 shrink-0"
+          onError={media.onImgError}
         />
       ) : (
         <div className="h-12 w-12 rounded-md bg-gray-100 shrink-0" />

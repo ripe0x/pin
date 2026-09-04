@@ -4,7 +4,8 @@ import { sql } from "./db"
 /**
  * Read-side queries against the Homage tables Ponder writes (`homage_tokens`,
  * `homage_activity`, `homage_config`). Mirrors `indexer-queries.ts`: every
- * export has a hard timeout and returns an empty/null value on miss or failure.
+ * export is bounded by the shared Postgres client and returns an empty/null
+ * value on miss or failure.
  *
  * **These tables DO NOT EXIST in prod until the Homage indexer version deploys**
  * (the contract isn't live yet). Until then every read here hits a schema that
@@ -17,37 +18,35 @@ import { sql } from "./db"
  * Kill switch (identical to indexer-queries.ts):
  *   1. `DATABASE_URL` unset → `sql` is null → all return empty.
  *   2. `INDEXER_DISABLED=1` → all return empty even when DB is up.
- *   3. Per-query timeout → slow indexer reads bail to RPC fallback.
+ *   3. Shared connect/statement deadlines → slow reads fail to RPC fallback.
  */
 
 const INDEXER_DISABLED = process.env.INDEXER_DISABLED === "1"
-const QUERY_TIMEOUT_MS = 500
+const QUERY_TARGET_MS = 500
 
 /** Sanitized indexer schema name for safe interpolation into unsafe() SQL. */
 function indexerSchema(): string {
-  return (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(/[^a-zA-Z0-9_]/g, "")
+  return (process.env.INDEXER_SCHEMA ?? "indexer_live").replace(/[^a-zA-Z0-9_]/g, "")
 }
 
 /**
- * Race a query against a timeout. Returns `null` on timeout, DB error, or a
- * missing relation (pre-deploy). Same shape as indexer-queries.ts:withTimeout.
+ * Await the read so it cannot outlive the request. The shared client enforces
+ * the hard deadline; this helper maps timeout, DB error, or a missing relation
+ * to `null` for the additive fallback path.
  */
 async function withTimeout<T>(
   fn: () => Promise<T>,
-  timeoutMs = QUERY_TIMEOUT_MS,
+  targetMs = QUERY_TARGET_MS,
 ): Promise<T | null> {
-  let timer: NodeJS.Timeout | undefined
+  const started = Date.now()
   try {
-    return await Promise.race([
-      fn(),
-      new Promise<null>((resolve) => {
-        timer = setTimeout(() => resolve(null), timeoutMs)
-      }),
-    ])
+    return await fn()
   } catch {
     return null
   } finally {
-    if (timer) clearTimeout(timer)
+    if (process.env.NODE_ENV !== "production" && Date.now() - started > targetMs) {
+      console.warn(`[homage-query] exceeded ${targetMs}ms target`)
+    }
   }
 }
 

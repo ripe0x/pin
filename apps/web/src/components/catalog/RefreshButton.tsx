@@ -1,41 +1,48 @@
 "use client"
-import { useState } from "react"
-import { useAccount } from "wagmi"
 
-/**
- * "Refresh my work" icon button. Visible only when the connected wallet
- * address matches the page's artist. Clicking POSTs to
- * `/api/refresh-artist/[address]`, which incrementally scans Manifold /
- * SuperRare V2 / Transient Labs / Mint for new mints since the previous
- * scan and writes them to Postgres.
- *
- * Client-side address match is purely UX — hides the button from
- * collectors and crawlers. Cost protection lives on the server: the
- * route gates on `isKnownArtist` and rate-limits at 5 min per address.
- *
- * The button doesn't trigger a page re-render after completion — the
- * lazy_*_artist_tokens rows are server-side, and Next.js's ISR cache
- * won't pick them up until the page revalidates. We tell the user to
- * reload to see new work.
- */
+import { useEffect, useRef, useState } from "react"
+import { useRouter } from "next/navigation"
+import { useQueryClient } from "@tanstack/react-query"
+import { useAccount, useSignMessage } from "wagmi"
+import { buildArtistRefreshMessage } from "@/lib/refresh-auth"
+
+type SourceState = {
+  status: "pending" | "partial" | "complete" | "failed"
+  added?: number
+  indexedThroughBlock?: string | null
+  error?: string | null
+}
+
+type RefreshJob = {
+  id: string
+  status: "queued" | "running" | "partial" | "complete" | "failed"
+  result?: { sources?: Record<string, SourceState>; addedTotal?: number }
+  error?: string | null
+}
+
 type State =
   | { kind: "idle" }
-  | { kind: "loading" }
-  | {
-      kind: "ok"
-      durationMs: number
-      added: Counts
-      totals: Counts
-      caughtUp: boolean
-    }
+  | { kind: "working"; job: RefreshJob }
+  | { kind: "complete"; job: RefreshJob }
+  | { kind: "partial"; job: RefreshJob }
   | { kind: "rate-limited"; retryAfterSec: number }
   | { kind: "error"; message: string }
 
-type Counts = { manifold: number; srv2: number; tl: number; mint: number }
+const POLL_MS = 2_000
+const DEFAULT_SOURCES = ["Foundation", "Manifold", "Mint", "Transient Labs"]
 
+/** Owner-only control for the durable worker refresh queue. */
 export function RefreshButton({ artistAddress }: { artistAddress: string }) {
   const { address: connected } = useAccount()
+  const { signMessageAsync } = useSignMessage()
   const [state, setState] = useState<State>({ kind: "idle" })
+  const pollGeneration = useRef(0)
+  const router = useRouter()
+  const queryClient = useQueryClient()
+
+  useEffect(() => () => {
+    pollGeneration.current += 1
+  }, [])
 
   if (
     !connected ||
@@ -44,20 +51,61 @@ export function RefreshButton({ artistAddress }: { artistAddress: string }) {
     return null
   }
 
+  async function poll(jobId: string, generation: number): Promise<void> {
+    while (generation === pollGeneration.current) {
+      await new Promise((resolve) => setTimeout(resolve, POLL_MS))
+      if (generation !== pollGeneration.current) return
+      try {
+        const res = await fetch(
+          `/api/refresh-artist/${artistAddress}?jobId=${encodeURIComponent(jobId)}`,
+          { cache: "no-store" },
+        )
+        const json = (await res.json()) as
+          | { ok: true; job: RefreshJob }
+          | { ok: false; error: string }
+        if (!res.ok || !json.ok) {
+          throw new Error("error" in json ? json.error : "Refresh status failed")
+        }
+        const job = json.job
+        if (job.status === "complete" || job.status === "partial") {
+          setState({ kind: job.status, job })
+          await queryClient.invalidateQueries({
+            queryKey: ["artist-tokens", artistAddress.toLowerCase()],
+          })
+          router.refresh()
+          return
+        }
+        if (job.status === "failed") {
+          setState({ kind: "error", message: job.error ?? "Refresh failed" })
+          return
+        }
+        setState({ kind: "working", job })
+      } catch (error) {
+        setState({
+          kind: "error",
+          message: error instanceof Error ? error.message : "Refresh status failed",
+        })
+        return
+      }
+    }
+  }
+
   async function onClick() {
-    setState({ kind: "loading" })
+    pollGeneration.current += 1
+    const generation = pollGeneration.current
+    setState({ kind: "working", job: { id: "", status: "queued" } })
     try {
+      const nonce = Math.floor(Date.now() / 1000)
+      const signature = await signMessageAsync({
+        message: buildArtistRefreshMessage(artistAddress, nonce),
+      })
       const res = await fetch(`/api/refresh-artist/${artistAddress}`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nonce, signature }),
       })
       const json = (await res.json()) as
-        | {
-            ok: true
-            durationMs: number
-            totals: Counts
-            added: Counts
-            caughtUp: boolean
-          }
+        | { ok: true; job: RefreshJob }
         | { ok: false; error: string; retryAfter?: number }
       if (res.status === 429 && !json.ok) {
         setState({
@@ -73,24 +121,18 @@ export function RefreshButton({ artistAddress }: { artistAddress: string }) {
         })
         return
       }
-      setState({
-        kind: "ok",
-        durationMs: json.durationMs,
-        added: json.added,
-        totals: json.totals,
-        caughtUp: json.caughtUp,
-      })
-    } catch (err) {
+      setState({ kind: "working", job: json.job })
+      void poll(json.job.id, generation)
+    } catch (error) {
       setState({
         kind: "error",
-        message: err instanceof Error ? err.message : "Network error",
+        message: error instanceof Error ? error.message : "Network error",
       })
     }
   }
 
-  const disabled = state.kind === "loading"
-  const tooltip =
-    state.kind === "loading" ? "Refreshing…" : "Refresh my work"
+  const disabled = state.kind === "working"
+  const tooltip = disabled ? "Refreshing…" : "Refresh my work"
 
   return (
     <div className="flex flex-col items-end gap-2">
@@ -102,9 +144,11 @@ export function RefreshButton({ artistAddress }: { artistAddress: string }) {
         title={tooltip}
         className="inline-flex items-center justify-center h-9 w-9 rounded-full border border-gray-200 text-gray-500 hover:border-gray-400 hover:text-fg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        <RefreshIcon spinning={state.kind === "loading"} />
+        <RefreshIcon spinning={disabled} />
       </button>
-      <RefreshStatus state={state} />
+      <div aria-live="polite">
+        <RefreshStatus state={state} />
+      </div>
     </div>
   )
 }
@@ -132,12 +176,25 @@ function RefreshIcon({ spinning }: { spinning: boolean }) {
 }
 
 function RefreshStatus({ state }: { state: State }) {
-  if (state.kind === "idle" || state.kind === "loading") return null
+  if (state.kind === "idle") return null
+  if (state.kind === "working") {
+    const label = state.job.status === "running" ? "Checking supported sources" : "Refresh queued"
+    const reported = Object.entries(state.job.result?.sources ?? {})
+    const sources =
+      reported.length > 0
+        ? reported.map(([name, source]) => `${name}: ${source.status}`)
+        : DEFAULT_SOURCES.map((name) => `${name}: pending`)
+    return (
+      <span className="text-[11px] text-gray-500 text-right max-w-xs">
+        {label}. {sources.join(" · ")}
+      </span>
+    )
+  }
   if (state.kind === "rate-limited") {
     const min = Math.ceil(state.retryAfterSec / 60)
     return (
       <span className="text-[11px] text-gray-500 text-right max-w-xs">
-        Wait {min} minute{min === 1 ? "" : "s"} before refreshing again
+        Wait {min} minute{min === 1 ? "" : "s"} before refreshing again.
       </span>
     )
   }
@@ -148,63 +205,22 @@ function RefreshStatus({ state }: { state: State }) {
       </span>
     )
   }
-  // ok
-  const secs = Math.max(1, Math.round(state.durationMs / 1000))
-  const addedTotal =
-    state.added.manifold +
-    state.added.srv2 +
-    state.added.tl +
-    state.added.mint
-  const totalsTotal =
-    state.totals.manifold +
-    state.totals.srv2 +
-    state.totals.tl +
-    state.totals.mint
 
-  // Catching-up mode: bigger histories need multiple refresh clicks
-  // because each scan is bounded by MAX_BLOCKS_PER_SCAN. Tell the user
-  // to keep clicking until done.
-  if (!state.caughtUp) {
-    return (
-      <span className="text-[11px] text-amber-600 text-right max-w-xs">
-        Found {addedTotal} new piece{addedTotal === 1 ? "" : "s"} on Manifold /
-        SuperRare / Transient Labs / Mint so far in {secs}s. Still catching up
-        — click again to continue.
-      </span>
-    )
-  }
-
-  // Fully caught up. If we found something, surface it; otherwise just
-  // confirm the refresh completed.
-  if (addedTotal > 0) {
-    return (
-      <span className="text-[11px] text-gray-500 text-right max-w-xs">
-        Refreshed in {secs}s. Found {addedTotal} new piece
-        {addedTotal === 1 ? "" : "s"} on Manifold / SuperRare / Transient Labs
-        / Mint.{" "}
-        <button
-          type="button"
-          onClick={() => window.location.reload()}
-          className="underline hover:no-underline"
-        >
-          Reload
-        </button>{" "}
-        to see them.
-      </span>
-    )
-  }
-
-  // Be explicit about which platforms the button scans. The artist's
-  // gallery elsewhere on the site also includes Foundation + Sovereign
-  // tokens via Ponder, which are NOT part of the refresh — so the
-  // count here may legitimately differ from the gallery's count.
+  const sources = Object.entries(state.job.result?.sources ?? {})
+  const added =
+    state.job.result?.addedTotal ??
+    sources.reduce((sum, [, source]) => sum + (source.added ?? 0), 0)
   return (
-    <span className="text-[11px] text-gray-500 text-right max-w-xs">
-      Refreshed in {secs}s. No new pieces on Manifold / SuperRare / Transient
-      Labs / Mint since last scan
-      {totalsTotal > 0
-        ? ` (${totalsTotal} indexed from these four platforms).`
-        : "."}
+    <span
+      className={`text-[11px] text-right max-w-xs ${
+        state.kind === "partial" ? "text-amber-600" : "text-gray-500"
+      }`}
+    >
+      {state.kind === "partial" ? "Refresh completed with partial source coverage" : "Refresh complete"}.
+      {added > 0 ? ` Found ${added} new ${added === 1 ? "work" : "works"}.` : " No new work found."}
+      {sources.length > 0 ? (
+        <> {sources.map(([name, source]) => `${name}: ${source.status}`).join(" · ")}</>
+      ) : null}
     </span>
   )
 }

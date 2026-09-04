@@ -6,6 +6,8 @@
  * apps/web/src/lib/manifold-discovery.ts — ported here as the scanner.
  */
 import { sql } from "../db.ts"
+import { getFinalizedBoundary } from "../finality.ts"
+import { client } from "../rpc.ts"
 import { scanManifoldArtistTokens } from "../scanners/manifold.ts"
 import type { TaskResult } from "../scheduler.ts"
 
@@ -14,14 +16,12 @@ export async function scanManifold(): Promise<TaskResult> {
     SELECT address FROM known_artists
   `) as Array<{ address: string }>
 
-  let totalRpc = 0
+  const boundary = await getFinalizedBoundary(client)
+  let totalRpc = boundary.rpcCalls
   let totalRows = 0
 
   for (const { address } of artists) {
-    const r = await scanManifoldArtistTokens(address).catch((err) => {
-      console.error(`[scan-manifold] ${address}:`, err)
-      return { rpcCalls: 0, rowsWritten: 0 }
-    })
+    const r = await scanManifoldArtistTokens(address, boundary.blockNumber)
     totalRpc += r.rpcCalls
     totalRows += r.rowsWritten
   }

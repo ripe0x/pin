@@ -50,7 +50,7 @@ if (!DATABASE_URL) {
   console.error("DATABASE_URL not set (in env or apps/web/.env.local).")
   process.exit(1)
 }
-const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? envFile.INDEXER_SCHEMA ?? "ponder_v1")
+const INDEXER_SCHEMA = (process.env.INDEXER_SCHEMA ?? envFile.INDEXER_SCHEMA ?? "indexer_live")
   .replace(/[^a-zA-Z0-9_]/g, "")
 
 const ARTIST = (process.env.DRY_RUN_ARTIST ?? "0x8469b7b08d30c63fea3a248a198de9d634b63d70").toLowerCase()

@@ -479,7 +479,7 @@ function OffChainNotice({ offChain }: { offChain: SkippedWork[] }) {
         {offChain.length} {pluralize("work", "works", offChain.length)}{" "}
         won&rsquo;t be imported:
       </span>{" "}
-      {parts.join(", ")}. Catalog.sol only indexes EVM-chain (contract,
+      {parts.join(", ")}. Catalog.sol only accepts EVM-chain (contract,
       tokenId) pointers, so works without one — physical editions, Tezos /
       Flow / Bitcoin mints — stay only in the source registry. Expand
       &ldquo;Show skipped&rdquo; below to see the full list.
@@ -1115,7 +1115,7 @@ function ContractGroup({
               <>Full contract</>
             ) : (
               <>
-                {total} of your works indexed ·{" "}
+                {total} works found ·{" "}
                 {selectedCount} selected
               </>
             )}
