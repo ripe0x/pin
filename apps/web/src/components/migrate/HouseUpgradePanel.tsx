@@ -24,11 +24,14 @@ import type { HouseUpgradeListing } from "@/lib/indexer-queries"
  *   Phase 1: createAuctionHouse() on the V2 factory (skipped when already
  *            deployed), cancelAuction() on the V1 house per bidless
  *            listing, setApprovalForAll(v2House) per collection.
- *   Phase 2: bulkCreateAuctionsWithSettings() per collection, replaying
- *            reserve and duration for exactly the listings whose cancel
- *            completed in phase 1. Gating on phase 1 outcomes keeps a
- *            token that never returned to the wallet out of the relist
- *            call, which would revert the whole batch.
+ *   Phase 2: bulkCreateAuctions() per (collection, reserve, duration) group,
+ *            replaying reserve and duration for exactly the listings whose
+ *            cancel completed in phase 1. bulkCreateAuctions applies one
+ *            reserve/duration/listingExpiry terms set to every id in the
+ *            call, so listings that differ in either need separate calls
+ *            even within the same collection. Gating on phase 1 outcomes
+ *            keeps a token that never returned to the wallet out of the
+ *            relist call, which would revert the whole batch.
  *
  * The indexer supplies candidate listings; the V1 house's own auctions()
  * getter is then read for every row, and its values are the source of
@@ -49,6 +52,38 @@ type VerifiedListing = {
   reservePrice: bigint
   duration: bigint
   hasBid: boolean
+}
+
+// bulkCreateAuctions(tokenContract, tokenIds[], reservePrice, duration,
+// listingExpiry) applies ONE terms set to every id in the call. Group
+// listings so each group shares (contract, reserve, duration) exactly —
+// listingExpiry is always 0 here, there is no UI for it yet.
+type RelistGroup = {
+  key: string
+  contract: Address
+  reservePrice: bigint
+  duration: bigint
+  tokenIds: string[]
+}
+
+function groupForRelist(listings: VerifiedListing[]): RelistGroup[] {
+  const groups = new Map<string, RelistGroup>()
+  for (const l of listings) {
+    const key = `${l.tokenContract}-${l.reservePrice}-${l.duration}`
+    const g = groups.get(key)
+    if (g) {
+      g.tokenIds.push(l.tokenId)
+    } else {
+      groups.set(key, {
+        key,
+        contract: l.tokenContract as Address,
+        reservePrice: l.reservePrice,
+        duration: l.duration,
+        tokenIds: [l.tokenId],
+      })
+    }
+  }
+  return [...groups.values()]
 }
 
 const STATUS_LABEL: Record<ItemStatus["state"], string> = {
@@ -180,6 +215,7 @@ function Panel({ artistAddress }: Props) {
     () => [...new Set(movable.map((l) => l.tokenContract))],
     [movable],
   )
+  const relistGroups = useMemo(() => groupForRelist(movable), [movable])
 
   // One multicall for the per-collection approval state against the
   // target house, so already-approved collections skip their step.
@@ -298,32 +334,29 @@ function Panel({ artistAddress }: Props) {
     const returned = movable.filter(
       (l) => outcomes.get(`cancel-${l.auctionId}`)?.state === "done",
     )
-    if (returned.length > 0) {
-      const contracts = [...new Set(returned.map((l) => l.tokenContract))]
-      const relistCalls: PreparedCall[] = contracts.map((contract) => {
-        const lots = returned
-          .filter((l) => l.tokenContract === contract)
-          .map((l) => ({
-            tokenId: BigInt(l.tokenId),
-            reservePrice: l.reservePrice,
-            duration: l.duration,
-            fundsRecipient:
-              "0x0000000000000000000000000000000000000000" as Address,
-            listingExpiry: 0n,
-          }))
+    const returnedGroups = groupForRelist(returned)
+    if (returnedGroups.length > 0) {
+      const relistCalls: PreparedCall[] = returnedGroups.map((g) => {
+        const args = [
+          g.contract,
+          g.tokenIds.map((id) => BigInt(id)),
+          g.reservePrice,
+          g.duration,
+          0n,
+        ] as const
         return {
-          id: `relist-${contract}`,
+          id: `relist-${g.key}`,
           to: targetHouse,
           data: encodeFunctionData({
             abi: sovereignAuctionHouseV2Abi,
-            functionName: "bulkCreateAuctionsWithSettings",
-            args: [contract as Address, lots],
+            functionName: "bulkCreateAuctions",
+            args,
           }),
           write: {
             address: targetHouse,
             abi: sovereignAuctionHouseV2Abi,
-            functionName: "bulkCreateAuctionsWithSettings",
-            args: [contract as Address, lots],
+            functionName: "bulkCreateAuctions",
+            args,
           },
         }
       })
@@ -404,14 +437,14 @@ function Panel({ artistAddress }: Props) {
                 <StatusChip status={phase1.perItemStatus.get(`approve-${c}`)} />
               </li>
             ))}
-          {collections.map((c) => (
+          {relistGroups.map((g) => (
             <li
-              key={`r${c}`}
+              key={`r${g.key}`}
               className="text-xs text-gray-700 flex items-center gap-2"
             >
-              Relist up to {movable.filter((l) => l.tokenContract === c).length}{" "}
-              listing(s) from {c.slice(0, 8)}… on V2
-              <StatusChip status={phase2.perItemStatus.get(`relist-${c}`)} />
+              Relist {g.tokenIds.length} listing(s) from {g.contract.slice(0, 8)}…
+              on V2 ({formatEther(g.reservePrice)} ETH reserve)
+              <StatusChip status={phase2.perItemStatus.get(`relist-${g.key}`)} />
             </li>
           ))}
         </ul>
@@ -461,8 +494,8 @@ function Panel({ artistAddress }: Props) {
             : done
               ? "Run again"
               : phase1.mode === "batched"
-                ? `Upgrade (${phase1Calls.length + collections.length} calls, batched)`
-                : `Upgrade (${phase1Calls.length + collections.length} transactions)`}
+                ? `Upgrade (${phase1Calls.length + relistGroups.length} calls, batched)`
+                : `Upgrade (${phase1Calls.length + relistGroups.length} transactions)`}
         </button>
         {done && (
           <button

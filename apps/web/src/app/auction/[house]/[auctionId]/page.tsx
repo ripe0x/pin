@@ -4,7 +4,7 @@ import { cache } from "react"
 import Link from "next/link"
 import { ipfsToHttp } from "@pin/shared"
 import { AuctionPanel } from "@/components/auction/AuctionPanel"
-import { EscrowedLotCard } from "@/components/auction/EscrowedLotCard"
+import { DeferredLotCard } from "@/components/auction/DeferredLotCard"
 import { SettledAuctionSummary } from "@/components/auction/SettledAuctionSummary"
 import { TokenMedia } from "@/components/token/TokenMedia"
 import { getAuctionDetail } from "@/lib/auctions"
@@ -35,10 +35,10 @@ function shortDescription(
   if (detail.status === "settled" && detail.finalPriceWei != null) {
     return `Sold for ${formatEthAmount(detail.finalPriceWei)} ETH`
   }
-  if (detail.status === "escrowed" && detail.finalPriceWei != null) {
-    return `Sold for ${formatEthAmount(detail.finalPriceWei)} ETH, delivery pending`
+  if (detail.status === "deferred") {
+    return "Auction ended, delivery pending. Nobody has been paid yet."
   }
-  if (detail.status === "failed") {
+  if (detail.status === "unwound" || detail.status === "unwound_return_pending") {
     return "Auction unwound, winning bid refunded."
   }
   if (detail.status === "active" && detail.live) {
@@ -151,26 +151,19 @@ export default async function AuctionPage({ params }: { params: Params }) {
                   bids: detail.bids,
                 }}
               />
-            ) : detail.status === "escrowed" ? (
-              <EscrowedLotCard
+            ) : detail.status === "deferred" ||
+              detail.status === "unwound" ||
+              detail.status === "unwound_return_pending" ? (
+              <DeferredLotCard
                 houseAddress={detail.marketAddress}
                 auctionId={detail.auctionId}
+                status={detail.status}
+                winner={detail.winner}
                 winnerDisplay={detail.winnerDisplay || "the winner"}
+                sellerDisplay={detail.sellerDisplay}
+                deferredAtTime={detail.deferredAtTime}
+                refundAmount={detail.refundAmount}
               />
-            ) : detail.status === "failed" ? (
-              <div className="rounded-lg border border-gray-200 bg-surface p-5 space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-gray-400" />
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500">
-                    Auction unwound
-                  </span>
-                </div>
-                <p className="text-xs font-mono text-gray-500">
-                  Delivery could not complete, and both sides agreed to
-                  unwind. The winning bid was refunded and the lot is
-                  reserved for return to the seller.
-                </p>
-              </div>
             ) : (
               <div className="rounded-lg border border-gray-200 bg-surface p-5 space-y-2">
                 <div className="flex items-center gap-2">

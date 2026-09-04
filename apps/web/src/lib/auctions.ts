@@ -89,6 +89,10 @@ export type AuctionState = {
   tokenStandard: "erc721" | "erc1155"
   // ERC1155 lot size; 1 for ERC721.
   quantity: bigint
+  // V2 only: proceeds recipient recorded at listing time. Null for V1.
+  fundsRecipient: Address | null
+  // V2 only: no-bid listing close date (0n = none). 0n for V1.
+  listingExpiry: bigint
 }
 
 export type FoundationAuctionState = AuctionState & { source: "foundation" }
@@ -130,16 +134,52 @@ function hasV2AuctionColumns(): Promise<boolean> {
   return v2ColumnsPromise
 }
 
-type V2Cols = { version?: number; standard?: string; quantity?: string }
+type V2Cols = {
+  version?: number
+  standard?: string
+  quantity?: string
+  funds_recipient?: string | null
+  listing_expiry?: string | null
+}
 function v2ColFields(r: V2Cols): {
   houseVersion: 1 | 2
   tokenStandard: "erc721" | "erc1155"
   quantity: bigint
+  fundsRecipient: Address | null
+  listingExpiry: bigint
 } {
   return {
     houseVersion: r.version === 2 ? 2 : 1,
     tokenStandard: r.standard === "erc1155" ? "erc1155" : "erc721",
     quantity: BigInt(r.quantity ?? "1"),
+    fundsRecipient:
+      r.funds_recipient && r.funds_recipient !== ZERO_ADDRESS
+        ? (r.funds_recipient as Address)
+        : null,
+    listingExpiry: BigInt(r.listing_expiry ?? "0"),
+  }
+}
+
+// Detail-only V2 columns: only meaningful on the by-id lookup, since a
+// deferred/unwound row is never returned by the `status = 'active'`
+// token readers above.
+type V2DetailCols = {
+  deferred_at_time?: string | null
+  refund_amount?: string | null
+  claim_recipient?: string | null
+}
+function v2DetailColFields(r: V2DetailCols): {
+  deferredAtTime: number | null
+  refundAmount: bigint | null
+  claimRecipient: Address | null
+} {
+  return {
+    deferredAtTime: r.deferred_at_time ? Number(r.deferred_at_time) : null,
+    refundAmount: r.refund_amount ? BigInt(r.refund_amount) : null,
+    claimRecipient:
+      r.claim_recipient && r.claim_recipient !== ZERO_ADDRESS
+        ? (r.claim_recipient as Address)
+        : null,
   }
 }
 
@@ -175,7 +215,8 @@ async function readPndAuctionForToken(
             amount::text AS amount, reserve_price::text AS reserve,
             duration::text AS duration, end_time::text AS end_time,
             first_bid_time::text AS first_bid_time, status
-            ${v2Cols ? ", version, standard, quantity::text AS quantity" : ""}
+            ${v2Cols ? `, version, standard, quantity::text AS quantity,
+            funds_recipient, listing_expiry::text AS listing_expiry` : ""}
      FROM ${schema}.pnd_auctions
      WHERE lower(token_contract) = $1 AND token_id::text = $2
        AND status = 'active'
@@ -276,6 +317,8 @@ async function readFndAuctionForToken(
     houseVersion: 1 as const,
     tokenStandard: "erc721" as const,
     quantity: 1n,
+    fundsRecipient: null,
+    listingExpiry: 0n,
   }
 }
 
@@ -355,6 +398,8 @@ async function readFndSeedAuctionForToken(
     houseVersion: 1 as const,
     tokenStandard: "erc721" as const,
     quantity: 1n,
+    fundsRecipient: null,
+    listingExpiry: 0n,
   }
 }
 
@@ -389,14 +434,20 @@ export async function getSovereignAuctionByHouse(
 
 // ─── AuctionDetail: status-agnostic by-id lookup (per-auction page) ──────
 
-// "escrowed": V2 settlement paid out with the lot held for the winner
-// (claimEscrowedLot delivers it). "failed": V2 mutual-consent unwind.
+// V2-only statuses beyond the v1 set (active/settled/cancelled):
+// "deferred" — delivery to the winner failed at settlement; nobody is
+//   paid yet, and the lot is retryable via claimLot.
+// "unwound" — unwindStuckLot unwound the sale (winner refunded, lot back
+//   with the seller); terminal.
+// "unwound_return_pending" — unwound, but the lot's return to the seller
+//   also failed; awaiting returnUnwoundLot.
 export type AuctionDetailStatus =
   | "active"
   | "settled"
   | "cancelled"
-  | "escrowed"
-  | "failed"
+  | "deferred"
+  | "unwound"
+  | "unwound_return_pending"
 
 /**
  * Full state of ONE auction, looked up by its on-chain identity (house +
@@ -430,10 +481,25 @@ export type AuctionDetail = {
   houseVersion: 1 | 2
   tokenStandard: "erc721" | "erc1155"
   quantity: bigint
+  fundsRecipient: Address | null
+  listingExpiry: bigint
+  // V2 only: when this row is "deferred", the block time DeliveryDeferred
+  // fired.
+  deferredAtTime: number | null
+  // V2 only: when this row is "unwound" or "unwound_return_pending", the
+  // winner's bid amount credited to pendingRefunds.
+  refundAmount: bigint | null
+  // V2 only: set once claimLot/unwindStuckLot's retry delivers a
+  // previously deferred lot; the address delivery actually reached.
+  claimRecipient: Address | null
 }
 
 function mapPndStatus(s: string): AuctionDetailStatus {
-  return s === "settled" || s === "cancelled" || s === "escrowed" || s === "failed"
+  return s === "settled" ||
+    s === "cancelled" ||
+    s === "deferred" ||
+    s === "unwound" ||
+    s === "unwound_return_pending"
     ? s
     : "active"
 }
@@ -481,7 +547,10 @@ async function getPndAuctionDetailById(
             protocol_fee::text AS protocol_fee,
             settled_at_time::text AS settled_at_time,
             lifecycle_tx_hash, status
-            ${v2Cols ? ", version, standard, quantity::text AS quantity" : ""}
+            ${v2Cols ? `, version, standard, quantity::text AS quantity,
+            funds_recipient, listing_expiry::text AS listing_expiry,
+            deferred_at_time::text AS deferred_at_time,
+            refund_amount::text AS refund_amount, claim_recipient` : ""}
      FROM ${schema}.pnd_auctions
      WHERE lower(house) = $1 AND auction_id::text = $2 LIMIT 1`,
     [house.toLowerCase(), auctionId],
@@ -490,7 +559,7 @@ async function getPndAuctionDetailById(
     token_id: string; seller: string; winner: string | null;
     amount: string; seller_proceeds: string | null; protocol_fee: string | null;
     settled_at_time: string | null; lifecycle_tx_hash: string | null; status: string
-  } & V2Cols>
+  } & V2Cols & V2DetailCols>
   if (rows.length === 0) return null
   const r = rows[0]
   const status = mapPndStatus(r.status)
@@ -531,6 +600,7 @@ async function getPndAuctionDetailById(
     bids,
     live,
     ...v2ColFields(r),
+    ...v2DetailColFields(r),
   }
 }
 
@@ -596,6 +666,11 @@ async function getFndAuctionDetailById(
     houseVersion: 1 as const,
     tokenStandard: "erc721" as const,
     quantity: 1n,
+    fundsRecipient: null,
+    listingExpiry: 0n,
+    deferredAtTime: null,
+    refundAmount: null,
+    claimRecipient: null,
   }
 }
 

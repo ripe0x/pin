@@ -27,9 +27,11 @@ const DURATION_OPTIONS = [
  *      if already approved). ERC721 and ERC1155 share the
  *      setApprovalForAll/isApprovedForAll selectors, so the ERC721 ABI
  *      fragments serve both.
- *   2. createAuction(tokenId, contract, duration, reserve) on the artist's
- *      house, or create1155Auction(tokenId, contract, quantity, duration,
- *      reserve) for an ERC1155 lot. 1155 lots need a V2 house.
+ *   2. createAuction(tokenId, contract, duration, reserve, listingExpiry) on
+ *      the artist's house, or create1155Auction(tokenId, contract, quantity,
+ *      duration, reserve, listingExpiry) for an ERC1155 lot. 1155 lots need
+ *      a V2 house. listingExpiry is always 0 (no expiry) here — there is no
+ *      UI for it yet.
  *
  * Renders just the form fields + step buttons + tx feedback — no chrome. Used
  * inline on /auction/new and inside the modal wrapper on token detail pages.
@@ -116,6 +118,10 @@ export function AuctionTermsForm({
     })
   }
 
+  // listingExpiry: 0n (no expiry) — there is no UI for it yet. V2-only arg;
+  // V1's createAuction has no fifth parameter.
+  const NO_LISTING_EXPIRY = 0n
+
   function handleCreate() {
     if (!reserveValid || reserve.wei == null || !quantityValid) return
     if (is1155) {
@@ -130,14 +136,29 @@ export function AuctionTermsForm({
           quantity,
           BigInt(durationSec),
           reserve.wei,
+          NO_LISTING_EXPIRY,
+        ],
+      })
+      return
+    }
+    if (houseVersion === 2) {
+      writeCreate({
+        address: houseAddress,
+        abi: sovereignAuctionHouseV2Abi,
+        functionName: "createAuction",
+        args: [
+          BigInt(tokenId),
+          nftContract,
+          BigInt(durationSec),
+          reserve.wei,
+          NO_LISTING_EXPIRY,
         ],
       })
       return
     }
     writeCreate({
       address: houseAddress,
-      abi:
-        houseVersion === 2 ? sovereignAuctionHouseV2Abi : sovereignAuctionHouseAbi,
+      abi: sovereignAuctionHouseAbi,
       functionName: "createAuction",
       args: [
         BigInt(tokenId),

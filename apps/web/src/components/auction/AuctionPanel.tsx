@@ -41,8 +41,8 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
 // V2 houses share every V1 write signature used here (createBid,
 // endAuction, cancelAuction, setAuctionReservePrice); passing the
-// generation's own ABI makes V2 custom errors (ContractBidderNotSupported
-// etc.) decode in formatWriteError.
+// generation's own ABI makes V2's own custom errors (UnwindTooEarly etc.)
+// decode in formatWriteError.
 function sovereignAbiFor(auction: AuctionState): Abi {
   return (
     auction.houseVersion === 2 ? sovereignAuctionHouseV2Abi : sovereignAuctionHouseAbi
@@ -702,11 +702,9 @@ function BidSection({
         )}
       </div>
 
-      {auction.tokenStandard === "erc1155" && (
+      {auction.tokenStandard === "erc1155" && auction.quantity > 1n && (
         <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-          {auction.quantity > 1n ? `Lot of ${auction.quantity.toString()}. ` : ""}
-          Bids only from regular wallet addresses. Smart contract wallets can't
-          bid on this lot.
+          Lot of {auction.quantity.toString()}.
         </p>
       )}
 
