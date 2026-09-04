@@ -74,24 +74,32 @@ const HOOK_REVERT_COPY: Record<string, string> = {
 }
 
 /**
- * Sovereign auction house custom errors (V1 + V2). Matched the same way
- * as the maps above. ContractBidderNotSupported is V2's ERC1155 bid gate:
- * only code-free EOAs may bid on 1155 lots.
+ * Sovereign auction house custom errors (V1 + V2's full error set — see
+ * ISovereignAuctionHouseV2.sol). Matched the same way as the maps above.
  */
 const SOVEREIGN_ERROR_COPY: Record<string, string> = {
-  ContractBidderNotSupported:
-    "This lot only accepts bids from regular wallet addresses. Smart contract and delegated wallets can't bid here.",
-  BidBelowReserve: "Bid is below the reserve price.",
-  BidBelowMinimum: "Bid is below the minimum raise over the current bid.",
-  BidMustBePositive: "Bid amount must be greater than zero.",
-  AuctionExpired: "This auction has already ended.",
-  AuctionNotEnded: "The auction timer has not run out yet.",
-  AuctionHasNoBids: "No bids landed, so there is nothing to settle.",
+  AuctionAlreadyExistsForToken: "This token already has an active auction.",
+  AuctionAlreadySettled: "This auction has already settled.",
   AuctionAlreadyStarted:
     "A bid has landed, so this listing can no longer be changed or cancelled.",
-  DeliveryFailed:
-    "Token delivery failed, so nothing changed. The auction stays open; try again with more gas.",
-  EscrowedDeliveryDoesNotExist: "Nothing is held in escrow for this auction.",
+  AuctionDoesNotExist: "This auction does not exist.",
+  AuctionExpired: "This auction has already ended.",
+  AuctionHasNoBids: "No bids landed, so there is nothing to settle.",
+  AuctionNotEnded: "The auction timer has not run out yet.",
+  BidBelowMinimum: "Bid is below the minimum raise over the current bid.",
+  BidBelowReserve: "Bid is below the reserve price.",
+  BidMustBePositive: "Bid amount must be greater than zero.",
+  DeliveryFailed: "Token delivery failed, so nothing changed. This is retryable.",
+  EscrowFailed: "The token could not be moved into escrow.",
+  FundsRecipientRequired: "A payout recipient is required and cannot be the zero address.",
+  InsufficientGas:
+    "Not enough gas was provided to attempt delivery; retry with a higher gas limit.",
+  NoPendingDelivery: "There is no deferred delivery to claim for this lot.",
+  NoPendingReturn: "There is no pending lot return to deliver.",
+  NotWinner: "Only the winning bidder can redirect delivery.",
+  OnlySelf: "This action can only be triggered by the contract itself.",
+  OwnershipLocked: "House ownership cannot be transferred or renounced.",
+  UnwindTooEarly: "The 30-day delivery window has not passed yet.",
 }
 
 /**
