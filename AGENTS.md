@@ -21,7 +21,8 @@ apps/indexer  Ponder. DISCOVERY ONLY for the long tail (which artist
               deployed which contract): mint_creators, tl_creators,
               fnd_collections — plus fully-indexed fixed contracts
               (pnd_*, fnd_*, srv2_artist_tokens, catalog_*). Writes the
-              ponder_v1 schema.
+              schema named by INDEXER_SCHEMA (currently ponder_v2, see
+              "Production database" below, never hardcode a schema name).
 ```
 
 `git log` shows the v2 rebuild that established this split: PR #69
@@ -85,19 +86,36 @@ Full notes: `docs/muri-integration.md`.
 
 ## Production database
 
-- **Prod = the `maglev` Railway DB** (`maglev.proxy.rlwy.net`). Schemas:
-  `public` + `ponder_sync` + `ponder_v1`, with **`INDEXER_SCHEMA=ponder_v1`**.
-- `apps/web/.env.local` MUST point at maglev with `INDEXER_SCHEMA=ponder_v1`.
-  (Verified current: it does.)
-- **Dead stack — do not trust:** an OLD `switchback` Railway DB had
+- **Prod = the `maglev` Railway DB** (`maglev.proxy.rlwy.net`). Schemas on
+  maglev today: `public` + `ponder_sync` + `ponder_v1` + `ponder_v2`, with
+  **`INDEXER_SCHEMA=ponder_v2`**.
+- `apps/web/.env.local` should point at maglev with `INDEXER_SCHEMA=ponder_v2`.
+- **`ponder_v1` is dead.** It stopped receiving new blocks around
+  2026-07-15 (`_ponder_checkpoint.latest_checkpoint` decodes to block
+  25535538) when the indexer cut over to `ponder_v2`. It is kept only for
+  forensic comparison, never point `INDEXER_SCHEMA` at it. Netlify's
+  production context carried a stale `INDEXER_SCHEMA=ponder_v1` override
+  for weeks after this cutover with no error, silently serving frozen
+  auction/house/sale data. That incident is why `INDEXER_SCHEMA` now has a
+  single source of truth (`apps/web/src/lib/indexer-schema.ts`), a
+  freshness check (`GET /api/health/indexer`, also a banner in
+  `/studio/[address]` when the schema is over an hour stale), and a build
+  guard (`scripts/check-indexer-schema.mjs`, wired as the first step of
+  `apps/web`'s build script) that fails the Netlify build outright if the
+  configured schema does not exist or has not been written to in the last
+  6 hours.
+- **Bumping the schema again:** a schema-changing indexer release bumps
+  the version (`ponder_v2` to `ponder_v3`, next time), and the version
+  must be flipped in Netlify's production context specifically (not just
+  local `.env.local`), followed by a redeploy. Confirm the flip actually
+  applied by hitting `/api/health/indexer` on the deployed site, do not
+  assume the env var took effect from the Netlify UI alone.
+- **Dead stack, do not trust:** an OLD `switchback` Railway DB had its own
   `ponder_v2`/`ponder_v3` schemas and `lazy_*` public tables. That is the
-  pre-rebuild stack. maglev has **no** `lazy_*` tables and no v2/v3
-  schemas. If your local env points anywhere but maglev, you will
-  reconstruct the architecture wrong — this exact mistake cost a prior
-  session hours.
-- `ponder_v2`/`ponder_v3` would only ever be empty Ponder safe-redeploy
-  namespaces if they existed; they don't exist on maglev. The live
-  Ponder data is `ponder_v1`.
+  pre-rebuild stack and is unrelated to maglev's `ponder_v2` above. maglev
+  has no `lazy_*` tables. If your local env points anywhere but maglev,
+  you will reconstruct the architecture wrong, this exact mistake cost a
+  prior session hours.
 
 ## STALE TRAP: untracked `ponder/` directory
 

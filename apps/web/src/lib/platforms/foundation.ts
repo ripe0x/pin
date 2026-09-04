@@ -9,6 +9,7 @@ import type {
 import { sql } from "../db"
 import { getFoundationTokensFromIndexer } from "../indexer-queries"
 import { getLastSale as readLastSale } from "../reads"
+import { INDEXER_SCHEMA as schema } from "../indexer-schema"
 
 const FND_NFT_MARKET = "0xcDA72070E455bb31C7690a170224Ce43623d0B6f"
 
@@ -39,10 +40,6 @@ const nftMarketReadAbi = parseAbi([
 function getReadClient() {
   return createPublicClient({ chain: mainnet, transport: getMainnetTransport() })
 }
-
-const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-  /[^a-zA-Z0-9_]/g, "",
-)
 
 export const foundationAdapter: PlatformAdapter = {
   id: "foundation",

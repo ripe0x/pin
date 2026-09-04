@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build",
+    "build": "node ../../scripts/check-indexer-schema.mjs && next build",
     "start": "next start -p ${PORT:-3000}",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",

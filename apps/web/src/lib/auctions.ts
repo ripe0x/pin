@@ -15,6 +15,7 @@ import { pgCache } from "./pg-cache"
 import { loggingFallbackTransport } from "./rpc-log"
 import { resolveDisplayNames } from "./artist-queries"
 import { toFndAuctionLite } from "./fnd-auction-lite"
+import { INDEXER_SCHEMA as schema } from "./indexer-schema"
 
 /**
  * v2 auctions module. The v1 file (1134 lines) probed both Foundation
@@ -34,10 +35,6 @@ const SOVEREIGN_FACTORY = getAddressOrNull(
 )
 const TL_AH = TL_AUCTION_HOUSE[MAINNET_CHAIN_ID]
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
-
-const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
-  /[^a-zA-Z0-9_]/g, "",
-)
 
 function getClient(route?: string) {
   return createPublicClient({
