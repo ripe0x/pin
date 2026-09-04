@@ -43,7 +43,7 @@ export default function AuctionsGuidePage() {
         </p>
         <p className="text-base text-fg-muted leading-relaxed">
           One contract per owner. One auction per token at a time.
-          ETH-only. ERC-721 only.
+          ETH-only. ERC-721 today, plus ERC-1155 on the newer V2 contract.
         </p>
       </section>
 
@@ -139,6 +139,14 @@ export default function AuctionsGuidePage() {
           observer, or PND&rsquo;s frontend can call it on your behalf.
           Once settled, the slot is cleared and you can list the same
           token again later if you want.
+        </p>
+        <p className="text-base text-fg-muted leading-relaxed">
+          The V2 contract settles a little differently: it only pays you
+          once the NFT has actually reached the winner. If that delivery
+          fails, for example a paused collection or a wallet that
+          rejects the token, nobody is paid yet and the sale can be
+          retried until it goes through, so a bad delivery can never
+          take your NFT without paying you.
         </p>
       </section>
 

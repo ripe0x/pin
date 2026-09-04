@@ -31,3 +31,51 @@ Every event the Auctions contracts emit, grouped by contract. Signatures and fie
 ## SovereignAuctionHouseFactory
 
 **[`AuctionHouseCreated`](/docs/auctions/contracts/auction-house-factory#auctionhousecreated)** · Emitted once per successful `createAuctionHouse` call, with `owner` and `house` both indexed, and carrying the immutable `feeRecipient` and `protocolFeeBps` so an indexer can recover a house's fee terms without an extra read.
+
+## SovereignAuctionHouseV2
+
+**[`Auction1155Created`](/docs/auctions/contracts/sovereign-auction-house-v2#auction1155created)** · Emitted when an ERC1155 auction is registered and its lot escrowed.
+
+**[`AuctionBid`](/docs/auctions/contracts/sovereign-auction-house-v2#auctionbid)** · Emitted on every bid.
+
+**[`AuctionCanceled`](/docs/auctions/contracts/sovereign-auction-house-v2#auctioncanceled)** · Emitted when a pending auction is cancelled by its seller with `cancelAuction`, or expired by anyone with `expireAuction`, and its lot returned to the seller.
+
+**[`AuctionCreated`](/docs/auctions/contracts/sovereign-auction-house-v2#auctioncreated)** · Emitted when an ERC721 auction is registered and its token escrowed.
+
+**[`AuctionDurationUpdated`](/docs/auctions/contracts/sovereign-auction-house-v2#auctiondurationupdated)** · Emitted when the seller updates the duration before the first bid lands.
+
+**[`AuctionEnded`](/docs/auctions/contracts/sovereign-auction-house-v2#auctionended)** · Emitted when an auction finalizes, whether directly from `endAuction`, `claimLot`, or the retry-succeeds path of `unwindStuckLot`.
+
+**[`AuctionEndTimeUpdated`](/docs/auctions/contracts/sovereign-auction-house-v2#auctionendtimeupdated)** · Emitted when a late bid pushed the auction end time out.
+
+**[`AuctionFundsRecipientUpdated`](/docs/auctions/contracts/sovereign-auction-house-v2#auctionfundsrecipientupdated)** · Emitted when the seller redirects the sale proceeds before the first bid lands.
+
+**[`AuctionListingExpiryUpdated`](/docs/auctions/contracts/sovereign-auction-house-v2#auctionlistingexpiryupdated)** · Emitted when the seller sets or clears the no-bid listing expiry before the first bid lands.
+
+**[`AuctionReservePriceUpdated`](/docs/auctions/contracts/sovereign-auction-house-v2#auctionreservepriceupdated)** · Emitted when the seller updates the reserve before the first bid lands.
+
+**[`DeliveryDeferred`](/docs/auctions/contracts/sovereign-auction-house-v2#deliverydeferred)** · Emitted when `endAuction`'s delivery attempt fails and the lot is deferred.
+
+**[`Initialized`](/docs/auctions/contracts/sovereign-auction-house-v2#initialized)** · Standard OpenZeppelin Initializable event, emitted once when the clone is initialized.
+
+**[`LotClaimed`](/docs/auctions/contracts/sovereign-auction-house-v2#lotclaimed)** · Emitted when `claimLot` or the retry path of `unwindStuckLot` delivers a previously deferred lot.
+
+**[`LotReturnDeferred`](/docs/auctions/contracts/sovereign-auction-house-v2#lotreturndeferred)** · Emitted alongside `LotUnwound` when the attempt to return the lot to `tokenOwner` fails.
+
+**[`LotReturned`](/docs/auctions/contracts/sovereign-auction-house-v2#lotreturned)** · Emitted when `returnUnwoundLot` delivers a previously deferred return to `tokenOwner`.
+
+**[`LotUnwound`](/docs/auctions/contracts/sovereign-auction-house-v2#lotunwound)** · Emitted when `unwindStuckLot`'s retry to the winner still fails after `PENDING_DELIVERY_TIMEOUT` and the sale unwinds.
+
+**[`OwnershipTransferred`](/docs/auctions/contracts/sovereign-auction-house-v2#ownershiptransferred)** · Standard OpenZeppelin Ownable event, emitted once at init when the house's owner is set from the zero address.
+
+**[`RefundCredited`](/docs/auctions/contracts/sovereign-auction-house-v2#refundcredited)** · Emitted when an ETH amount is credited to a withdrawable `pendingRefunds` balance instead of being pushed.
+
+**[`RefundWithdrawn`](/docs/auctions/contracts/sovereign-auction-house-v2#refundwithdrawn)** · Emitted when `withdrawRefund` or `withdrawRefundTo` pays out a credited balance.
+
+**[`StuckERC1155Recovered`](/docs/auctions/contracts/sovereign-auction-house-v2#stuckerc1155recovered)** · Emitted when the house owner recovers misdirected ERC1155 units with `recoverStuckERC1155`.
+
+**[`StuckERC721Recovered`](/docs/auctions/contracts/sovereign-auction-house-v2#stuckerc721recovered)** · Emitted when the house owner recovers a misdirected ERC721 with `recoverStuckERC721`.
+
+## SovereignAuctionHouseV2Factory
+
+**[`AuctionHouseCreated`](/docs/auctions/contracts/auction-house-v2-factory#auctionhousecreated)** · Emitted once per successful `createAuctionHouse` call, with `owner` and `house` both indexed, and carrying the immutable `feeRecipient` and `protocolFeeBps` so an indexer can recover a house's fee terms without an extra read.

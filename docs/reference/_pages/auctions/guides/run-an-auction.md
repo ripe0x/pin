@@ -98,6 +98,12 @@ cast send <AUCTION_HOUSE_ADDRESS> "endAuction(uint256)" 0 \
 If a payout push to you fails, the proceeds are credited to your `pendingRefunds`
 balance and you claim them with `withdrawRefund`.
 
+This guide is for a V1 house, where settlement is unconditional: the NFT moves
+and you get paid in the same call, always. [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2)
+settles differently: `endAuction` pays you only after delivery to the winner is
+verified, and it also accepts ERC1155 lots via `create1155Auction`, not just
+ERC721.
+
 ## viem: create, then end
 
 ```ts

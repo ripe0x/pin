@@ -254,6 +254,18 @@
               "slug": "auction-house-factory",
               "path": "/docs/auctions/contracts/auction-house-factory",
               "description": "SovereignAuctionHouseFactory deploys one [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house) per owner as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs."
+            },
+            {
+              "title": "SovereignAuctionHouseV2",
+              "slug": "sovereign-auction-house-v2",
+              "path": "/docs/auctions/contracts/sovereign-auction-house-v2",
+              "description": "An onchain English auction house for ERC721 and ERC1155 tokens, denominated in ETH."
+            },
+            {
+              "title": "SovereignAuctionHouseV2Factory",
+              "slug": "auction-house-v2-factory",
+              "path": "/docs/auctions/contracts/auction-house-v2-factory",
+              "description": "SovereignAuctionHouseV2Factory deploys one [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2) per owner as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs."
             }
           ]
         },
