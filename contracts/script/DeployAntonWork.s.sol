@@ -54,8 +54,8 @@ contract DeployAntonWork is Script {
         sale.price = vm.envOr("ANTON_PRICE", uint256(0.001 ether)); // rest defaults to 0 (open, owner payout)
 
         (address collection, address minter) = SurfaceFactory(factory).createSurface(
-            vm.envOr("ANTON_NAME", string("untitled")),
-            vm.envOr("ANTON_SYMBOL", string("UNTITLED")),
+            vm.envOr("ANTON_NAME", string("Form of Solitude")),
+            vm.envOr("ANTON_SYMBOL", string("SOLITUDE")),
             owner,
             cfg,
             sale,

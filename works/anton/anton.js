@@ -1,20 +1,18 @@
 // Onchain generative work.
 //
-// Fully generative: everything (palette, tone, blob layout, flow, proportions)
-// derives from the token seed (window.tokenData.hash), so every token is its own
-// piece. Nothing is chosen or stored. The persistent and generative layers move
-// organically at their natural speed, per token, exactly as in the source.
+// Fully generative: palette, tone, blob layout, flow and proportions derive from
+// the token seed (window.tokenData.hash). Nothing is chosen or stored.
 //
-// Wallet-synced TIMING: the shape-morph and background-shift CADENCE is a
-// function of the owner + a shared wall-clock, so every token a wallet holds
-// changes on the same beat (even if each started at a different time), and a
-// transfer inherits the new owner's rhythm. The shape SEQUENCE and the colours
-// themselves are per-token (from the seed) — synced in when they change, not in
-// what they change to. The blobs are deliberately not synced at all.
+// Stateless animation: every animated value is a function of
+// syncTime = wall clock + owner offset, plus the seed. No per-frame state, so
+// playback is independent of frame rate, tab throttling and load time. The
+// owner offset is derived from the owner address, so every token a wallet
+// holds runs on the same timeline and a transfer moves the token onto the new
+// owner's timeline. What changes (shape sequence, colours, blob paths) is
+// per-token from the seed; when it changes is shared across the wallet.
 //
-// The canonical still (context "capture") is an owner-independent representative
-// frame — deterministic from the seed + palette + tone — so marketplace
-// thumbnails stay stable across transfers.
+// The canonical still (context "capture") is the frame at a fixed sync time with
+// no owner offset: deterministic from the seed, stable across transfers.
 (function () {
   "use strict";
 
@@ -73,7 +71,6 @@
   var paletteMode = PALETTE_KEYS[Number(seedBig % BigInt(PALETTE_KEYS.length))];
   var toneMode = TONE_KEYS[Number((seedBig >> 8n) % 2n)];
   var rng = mulberry32(xmur3(seedHash)());
-  function rand(min, max) { return min + rng() * (max - min); }
   function pickStepped(min, max, step) {
     var count = Math.floor((max - min) / step) + 1;
     return min + Math.floor(rng() * count) * step;
@@ -85,7 +82,6 @@
   var flowMode = rng() < 0.5 ? "downflow" : "upflow";
   var persistentColAALayerEnabled = rng() < 0.65;
   var MAX_LAYERS = persistentColAALayerEnabled ? 5 : 4;
-  var DYNAMIC_LAYER_SLOTS = 4;
   var flowOffset = pickStepped(300, 650, 25);
   var modeTau = pickStepped(2.2, 3.8, 0.2);
   var modeMaxIter = pickStepped(4, 8, 1);
@@ -93,35 +89,31 @@
   var modeCY = 1.0;
   var colAAPhase = Math.floor(rng() * 4) + 1;
   var rxyWarpAddMode = Math.floor(rng() * RXY_WARP_ADD_MODE_COUNT);
-  var seedWarpMode = Math.floor(rng() * RXY_WARP_MODE_COUNT); // pre-morph shape + capture still
+  var seedWarpMode = Math.floor(rng() * RXY_WARP_MODE_COUNT); // first entry of the warp ring
 
   var staticShapeParams = new Float32Array([0.52, 0.18, 1.0, 0.4, 0.52, 0.32, 0.5, 0.31]);
   var STATIC_COLS_COUNT = 3;
   var staticCols = new Float32Array(STATIC_COLS_COUNT * 3);
-  // Owner-independent representative static colours for the canonical still.
-  var pickStaticColor = createDeckPicker(activePalette, rng, 4);
-  var captureStatic = [];
-  for (var si = 0; si < STATIC_COLS_COUNT; si++) captureStatic.push(pickStaticColor().slice());
 
-  var pickDynamicColor = createDeckPicker(activePalette, rng, 4);
-
-  // Owner-derived offset so each wallet has its own rhythm; within a wallet all
-  // tokens share it, so they stay in sync.
-  var ownerPhaseSec = (xmur3(owner + ":phase")() % 100000) / 100000 * WARP_PERIOD;
+  // Owner offset in [0, 3600) s. Tokens with the same owner share it. Zero for
+  // the canonical still.
+  var isCapture = ctx === "capture";
+  var ownerOffset = isCapture ? 0 : (xmur3(owner + ":phase")() % 360000) / 100;
 
   // ── canvas + GL ─────────────────────────────────────────────────────────────
   var canvas = document.createElement("canvas");
   canvas.id = "gl";
   canvas.style.position = "fixed";
-  canvas.style.left = "50%";
-  canvas.style.top = "50%";
-  canvas.style.transform = "translate(-50%, -50%)";
+  canvas.style.left = "0";
+  canvas.style.top = "0";
+  canvas.style.width = "100%";
+  canvas.style.height = "100%";
   canvas.style.display = "block";
   document.body.appendChild(canvas);
   document.body.style.margin = "0";
   document.body.style.background = "#0f1534";
 
-  var glOpts = { preserveDrawingBuffer: ctx === "capture" };
+  var glOpts = { preserveDrawingBuffer: isCapture };
   var gl = canvas.getContext("webgl2", glOpts) || canvas.getContext("webgl", glOpts);
   if (!gl) throw new Error("WebGL not supported");
   if ("drawingBufferColorSpace" in gl) gl.drawingBufferColorSpace = "display-p3";
@@ -320,149 +312,151 @@
     rxyWarpAddMode: gl.getUniformLocation(prg, "u_rxyWarpAddMode")
   };
 
-  // ── layer simulation (ported from the source: stateful, organic) ────────────
-  function tintedColor(base, spread) {
+  // ── stateless animation ─────────────────────────────────────────────────────
+  // Every animated value is a pure function of syncTime (wall clock + owner
+  // offset) and the token seed. Nothing advances per frame, so playback does not
+  // depend on frame rate, tab throttling or load time, and every token a wallet
+  // holds sits at the same point of the shared timeline.
+  var TIME_WRAP = 65536; // seconds. Keeps u_time inside float32 precision.
+
+  function keyHash(tag, i, j) { return xmur3(seedHash + "|" + tag + "|" + i + "|" + j); }
+  function tintedColor(base, spread, r) {
     return [
-      Math.min(1, Math.max(0, base[0] + rand(-spread, spread))),
-      Math.min(1, Math.max(0, base[1] + rand(-spread, spread))),
-      Math.min(1, Math.max(0, base[2] + rand(-spread, spread)))
+      Math.min(1, Math.max(0, base[0] + (r() * 2 - 1) * spread)),
+      Math.min(1, Math.max(0, base[1] + (r() * 2 - 1) * spread)),
+      Math.min(1, Math.max(0, base[2] + (r() * 2 - 1) * spread))
     ];
   }
-  function pickDynamicColorRandom() { return tintedColor(pickDynamicColor(), 0.06); }
+  function paletteColor(r) { return activePalette[Math.floor(r() * activePalette.length)]; }
 
-  var layers = [];
-  for (var li = 0; li < MAX_LAYERS; li++) {
-    layers.push({ active: false, x: 0, y: 0, age: 0, scale: 1, sx: 0, sy: 0, speed: 0, k: 2, phase: 0, baseIntensity: 0.6, intensity: 0, color: [1, 1, 1], dirX: 1, nextDirChange: 0, nextColorChange: 0, colorMix: 1, fromColor: [1, 1, 1], toColor: [1, 1, 1] });
-  }
-  var persistentLayer = layers[MAX_LAYERS - 1];
-
-  function spawnLayer(index, immediate) {
-    var sx = flowMode === "upflow" ? rand(0.24, 0.4) : rand(0.28, 0.46);
-    var sy = flowMode === "upflow" ? rand(0.12, 0.24) : rand(0.16, 0.34);
-    var yJitter = rand(-0.03, 0.03);
-    var yStart = flowMode === "upflow" ? 0.24 + yJitter : (immediate ? 1.02 + yJitter : 1.0 + sy + rand(0.04, 0.24));
-    var l = layers[index];
-    l.active = true;
-    l.sx = sx; l.sy = sy;
-    l.x = rand(0.26, 0.74);
-    l.y = yStart;
-    l.age = 0;
-    l.scale = flowMode === "upflow" ? 0 : 1;
-    l.speed = flowMode === "upflow" ? rand(0.01, 0.021) : rand(0.016, 0.031);
-    l.k = rand(3.8, 6.2);
-    l.phase = rng() * 10;
-    l.baseIntensity = rand(0.44, 0.82);
-    l.intensity = 0;
-    l.color = pickDynamicColorRandom();
+  // ── dynamic blobs ───────────────────────────────────────────────────────────
+  // Each slot plays blobs back to back. A slot's period is the travel time at a
+  // speed drawn from the source range, so each slot keeps its own tempo. A blob's
+  // speed is then set so it crosses the frame within the period minus a spawn
+  // gap of 2.8 to 5.6 s (the source spawned into a free slot every 2.8 s).
+  var UPFLOW = flowMode === "upflow";
+  var DYN_SLOTS = UPFLOW ? 3 : 4; // source capped upflow at 3 active blobs
+  var SPAWN_GAP = 2.8;
+  var slots = [];
+  for (var s = 0; s < DYN_SLOTS; s++) {
+    var sr = mulberry32(keyHash("slot", s, 0)());
+    var tempo = UPFLOW ? 0.01 + sr() * 0.011 : 0.016 + sr() * 0.015;
+    var period = (UPFLOW ? 1.49 : 1.76) / tempo + SPAWN_GAP;
+    slots.push({ period: period, phase: sr() * period });
   }
 
-  function setupPersistentColAALayer() {
-    if (!persistentColAALayerEnabled) { persistentLayer.active = false; return; }
-    persistentLayer.active = true;
-    persistentLayer.x = rand(0.24, 0.76);
-    persistentLayer.y = rand(0.42, 0.74);
-    persistentLayer.age = 0;
-    persistentLayer.scale = 1;
-    persistentLayer.sx = rand(0.18, 0.28);
-    persistentLayer.sy = rand(0.1, 0.18);
-    persistentLayer.speed = rand(0.004, 0.008);
-    persistentLayer.k = rand(4.2, 6.0);
-    persistentLayer.phase = rng() * 10;
-    persistentLayer.baseIntensity = rand(0.4, 0.68);
-    persistentLayer.intensity = persistentLayer.baseIntensity;
-    persistentLayer.color = pickDynamicColorRandom();
-    persistentLayer.dirX = rng() < 0.5 ? -1 : 1;
-    persistentLayer.nextDirChange = rand(5, 12);
-    persistentLayer.nextColorChange = rand(6, 14);
-    persistentLayer.colorMix = 1;
-    persistentLayer.fromColor = persistentLayer.color.slice();
-    persistentLayer.toColor = persistentLayer.color.slice();
-  }
-
-  var spawnAccum = 0;
-  var SPAWN_EVERY = 2.8; // seconds, matching the source's setInterval(2800)
-  function initSim() {
-    for (var i = 0; i < MAX_LAYERS; i++) layers[i].active = false;
-    for (var s = 0; s < 2; s++) { spawnLayer(s, true); layers[s].x += s * 0.1; }
-    setupPersistentColAALayer();
-    spawnAccum = 0;
-  }
-
-  function trySpawn() {
-    if (flowMode === "upflow") {
-      var activeCount = 0;
-      for (var a = 0; a < DYNAMIC_LAYER_SLOTS; a++) if (layers[a].active) activeCount++;
-      if (activeCount >= 3) return;
+  function blobAt(i, T, out) {
+    var slot = slots[i];
+    var u = T - slot.phase;
+    var j = Math.floor(u / slot.period);
+    var local = u - j * slot.period;
+    var r = mulberry32(keyHash("blob", i, j)());
+    // Draw order matches the source's spawnLayer.
+    var sx = UPFLOW ? 0.24 + r() * 0.16 : 0.28 + r() * 0.18;
+    var sy = UPFLOW ? 0.12 + r() * 0.12 : 0.16 + r() * 0.18;
+    var yJitter = -0.03 + r() * 0.06;
+    var yStart = UPFLOW ? 0.24 + yJitter : 1.0 + sy + 0.04 + r() * 0.2;
+    var x = 0.26 + r() * 0.48;
+    var life = slot.period - SPAWN_GAP - r() * SPAWN_GAP;
+    var travel = UPFLOW ? 1.55 + sy - yStart : yStart + 0.1 + sy;
+    var speed = travel / life;
+    var k = 3.8 + r() * 2.4;
+    var phase = r() * 10;
+    var baseIntensity = 0.44 + r() * 0.38;
+    var color = tintedColor(paletteColor(r), 0.06, r);
+    if (local >= life) { out.active = false; return; }
+    var y, scale, intensity;
+    if (UPFLOW) {
+      y = yStart + speed * local;
+      var fadeInPos = smoothstep01(0.18, 0.44, y);
+      var fadeInTime = smoothstep01(0, 6, local);
+      var fadeOut = 1 - smoothstep01(1.08, 1.48, y);
+      var shrinkNearTop = 1 - smoothstep01(1.04, 1.42, y);
+      scale = Math.max(0, fadeInTime * shrinkNearTop);
+      intensity = baseIntensity * fadeInPos * fadeInTime * fadeOut;
+    } else {
+      y = yStart - speed * local;
+      scale = 1;
+      intensity = baseIntensity * (1 - smoothstep01(0.9, 1.08, y)) * smoothstep01(-0.02, 0.16, y + sy);
     }
-    for (var idx = 0; idx < DYNAMIC_LAYER_SLOTS; idx++) {
-      if (!layers[idx].active) { spawnLayer(idx, false); return; }
-    }
+    out.active = true; out.x = x; out.y = y; out.sx = sx * scale; out.sy = sy * scale;
+    out.k = k; out.phase = phase; out.intensity = intensity; out.color = color;
   }
 
-  function stepSim(dt) {
-    spawnAccum += dt;
-    while (spawnAccum >= SPAWN_EVERY) { spawnAccum -= SPAWN_EVERY; trySpawn(); }
-
-    for (var i = 0; i < DYNAMIC_LAYER_SLOTS; i++) {
-      var l = layers[i];
-      if (!l.active) continue;
-      if (flowMode === "upflow") {
-        l.age += dt; l.y += l.speed * dt;
-        var fadeInPos = smoothstep01(0.18, 0.44, l.y);
-        var fadeInTime = smoothstep01(0, 6, l.age);
-        var fadeOut = 1 - smoothstep01(1.08, 1.48, l.y);
-        var shrinkNearTop = 1 - smoothstep01(1.04, 1.42, l.y);
-        l.scale = Math.max(0, fadeInTime * shrinkNearTop);
-        l.intensity = l.baseIntensity * fadeInPos * fadeInTime * fadeOut;
-        if (l.y - l.sy > 1.55) l.active = false;
-      } else {
-        l.y -= l.speed * dt;
-        l.scale = 1;
-        var fIn = 1 - smoothstep01(0.9, 1.08, l.y);
-        var fOut = smoothstep01(-0.02, 0.16, l.y + l.sy);
-        l.intensity = l.baseIntensity * fIn * fOut;
-        if (l.y + l.sy < -0.1) l.active = false;
+  // ── persistent blob ─────────────────────────────────────────────────────────
+  // x follows a bounded random walk: direction may flip every 5 to 12 s and
+  // bounces off 0.16 / 0.84. It is precomputed as linear pieces over half a
+  // ring, then mirrored so the ring closes without a jump. Colour retargets on
+  // a fixed per-token cadence of 6 to 14 s and blends over 5 s.
+  var persistent = null;
+  if (persistentColAALayerEnabled) {
+    var pr = mulberry32(xmur3(seedHash + "|persistent")());
+    // Draw order matches the source's setupPersistentColAALayer.
+    var px = 0.24 + pr() * 0.52;
+    var py = 0.42 + pr() * 0.32;
+    var psx = 0.18 + pr() * 0.1;
+    var psy = 0.1 + pr() * 0.08;
+    var pspeed = 0.004 + pr() * 0.004;
+    var pk = 4.2 + pr() * 1.8;
+    var pphase = pr() * 10;
+    var pbase = 0.4 + pr() * 0.28;
+    var pdir = pr() < 0.5 ? -1 : 1;
+    var colorEvery = 6 + pr() * 8;
+    var pieces = [];
+    var pt = 0, pxw = px, dir = pdir;
+    for (var seg = 0; seg < 256; seg++) {
+      var end = pt + 5 + pr() * 7;
+      while (pt < end) {
+        var wall = dir > 0 ? 0.84 : 0.16;
+        var hit = pt + (wall - pxw) / (dir * pspeed);
+        var stop = Math.min(end, hit);
+        if (stop > pt) pieces.push({ t0: pt, x0: pxw, dir: dir, len: stop - pt });
+        pxw += dir * pspeed * (stop - pt);
+        pt = stop;
+        if (hit <= end) dir = -dir;
       }
+      if (pr() < 0.5) dir = -dir;
     }
+    var ring = 2 * pt;
+    for (var m = pieces.length - 1; m >= 0; m--) {
+      var p = pieces[m];
+      pieces.push({ t0: ring - (p.t0 + p.len), x0: p.x0 + p.dir * pspeed * p.len, dir: -p.dir, len: p.len });
+    }
+    persistent = { y: py, sx: psx, sy: psy, speed: pspeed, k: pk, phase: pphase, intensity: pbase, colorEvery: colorEvery, pieces: pieces, ring: ring };
+  }
 
-    if (persistentColAALayerEnabled && persistentLayer.active) {
-      var pl = persistentLayer;
-      pl.age += dt;
-      pl.x += pl.dirX * pl.speed * dt;
-      pl.intensity = pl.baseIntensity;
-      if (pl.x < 0.16) { pl.x = 0.16; pl.dirX = 1; }
-      else if (pl.x > 0.84) { pl.x = 0.84; pl.dirX = -1; }
-      pl.nextDirChange -= dt;
-      if (pl.nextDirChange <= 0) { pl.dirX *= rng() < 0.5 ? 1 : -1; pl.nextDirChange = rand(5, 12); }
-      pl.nextColorChange -= dt;
-      if (pl.nextColorChange <= 0) {
-        pl.fromColor = pl.color.slice(); pl.toColor = pickDynamicColorRandom(); pl.colorMix = 0; pl.nextColorChange = rand(6, 14);
-      }
-      if (pl.colorMix < 1) {
-        pl.colorMix = Math.min(1, pl.colorMix + dt / 5);
-        for (var c = 0; c < 3; c++) pl.color[c] = pl.fromColor[c] * (1 - pl.colorMix) + pl.toColor[c] * pl.colorMix;
-      }
-    }
+  function persistentColor(j) {
+    var r = mulberry32(keyHash("pcol", 0, j)());
+    return tintedColor(paletteColor(r), 0.06, r);
+  }
+
+  function persistentAt(T, out) {
+    var P = persistent;
+    var u = T - Math.floor(T / P.ring) * P.ring;
+    var lo = 0, hi = P.pieces.length - 1;
+    while (lo < hi) { var mid = (lo + hi + 1) >> 1; if (P.pieces[mid].t0 <= u) lo = mid; else hi = mid - 1; }
+    var p = P.pieces[lo];
+    var cj = Math.floor(T / P.colorEvery);
+    var mix = Math.min(1, (T - cj * P.colorEvery) / 5);
+    var from = persistentColor(cj - 1), to = persistentColor(cj);
+    out.active = true;
+    out.x = p.x0 + p.dir * P.speed * (u - p.t0);
+    out.y = P.y; out.sx = P.sx; out.sy = P.sy; out.k = P.k; out.phase = P.phase; out.intensity = P.intensity;
+    out.color = [from[0] * (1 - mix) + to[0] * mix, from[1] * (1 - mix) + to[1] * mix, from[2] * (1 - mix) + to[2] * mix];
   }
 
   // ── wallet-synced shape morph ───────────────────────────────────────────────
-  // A precomputed owner-specific ring of warp modes with NO equal-adjacent
-  // members (including the wrap seam), so every cycle morphs to a different
-  // shape, matching the source's do/while "never the same twice in a row",
-  // while staying O(1) per frame and jump-free over unbounded wall-clock time.
+  // A precomputed per-token ring of warp modes with no equal-adjacent members
+  // (including the wrap seam), so every cycle morphs to a different shape, in
+  // O(1) per frame over unbounded time.
   var WARP_SEQ_LEN = 512;
   var warpSeq = (function () {
     var seq = new Array(WARP_SEQ_LEN);
     seq[0] = seedWarpMode;
     for (var i = 1; i < WARP_SEQ_LEN; i++) {
-      // Sequence is per-token (from the seed): a wallet's tokens morph on the
-      // same TIMING (shared clock + owner phase, in shapeAt) but to DIFFERENT
-      // shapes.
       var step = 1 + (xmur3(seedHash + "|warp|" + i)() % (RXY_WARP_MODE_COUNT - 1));
-      seq[i] = (seq[i - 1] + step) % RXY_WARP_MODE_COUNT; // step >= 1 => != previous
+      seq[i] = (seq[i - 1] + step) % RXY_WARP_MODE_COUNT;
     }
-    // Close the ring: the last element must differ from both its neighbour and
-    // the first, so index (k % LEN) never repeats across the wrap.
     var last = seq[WARP_SEQ_LEN - 1];
     if (last === seq[0] || last === seq[WARP_SEQ_LEN - 2]) {
       for (var v = 0; v < RXY_WARP_MODE_COUNT; v++) {
@@ -472,32 +466,33 @@
     return seq;
   })();
 
-  // Returns { a, b, mix } at sync time ts: TIMING is wallet-synced (ts carries the
-  // owner phase), the shape SEQUENCE is per-token (warpSeq from the seed).
-  function shapeAt(ts) {
-    if (ts < WARP_INTERVAL) return { a: warpSeq[0], b: warpSeq[0], mix: 0 };
-    var k = Math.floor((ts - WARP_INTERVAL) / WARP_PERIOD);
-    var local = (ts - WARP_INTERVAL) - k * WARP_PERIOD;
+  // Returns { a, b, mix } at sync time T. Hold WARP_INTERVAL, blend WARP_DURATION.
+  function shapeAt(T) {
+    if (T < WARP_INTERVAL) return { a: warpSeq[0], b: warpSeq[0], mix: 0 };
+    var k = Math.floor((T - WARP_INTERVAL) / WARP_PERIOD);
+    var local = (T - WARP_INTERVAL) - k * WARP_PERIOD;
     var from = warpSeq[k % WARP_SEQ_LEN];
-    var to = warpSeq[(k + 1) % WARP_SEQ_LEN]; // always != from (ring property)
+    var to = warpSeq[(k + 1) % WARP_SEQ_LEN];
     if (local < WARP_DURATION) return { a: from, b: to, mix: smootherstep01(0, 1, local / WARP_DURATION) };
     return { a: to, b: to, mix: 0 };
   }
 
-  // ── background colour drift: wallet-synced TIMING, per-token colours ─────────
+  // ── background colour drift ─────────────────────────────────────────────────
+  // One static mass at a time retargets to a seed-chosen palette colour, cycling
+  // through the three masses, on the source cadence (60 s hold, 20 s blend).
   function seedPaletteColor(index, j) {
     return activePalette[xmur3(seedHash + "|bg|" + index + "|" + j)() % activePalette.length];
   }
-  function bgColorAt(index, ts) {
+  function bgColorAt(index, T) {
     var first = BG_SHIFT_DELAY + index * BG_SHIFT_STEP;
     var base = seedPaletteColor(index, 0);
-    if (ts < first) return base;
-    var j = Math.floor((ts - BG_SHIFT_DELAY) / BG_SHIFT_STEP / 3 - index / 3 + 1e-9);
+    if (T < first) return base;
+    var j = Math.floor((T - BG_SHIFT_DELAY) / BG_SHIFT_STEP / 3 - index / 3 + 1e-9);
     if (j < 0) return base;
     var s = BG_SHIFT_DELAY + (index + 3 * j) * BG_SHIFT_STEP;
     var to = seedPaletteColor(index, j + 1);
     var from = j === 0 ? base : seedPaletteColor(index, j);
-    var prog = (ts - s) / BG_SHIFT_DUR;
+    var prog = (T - s) / BG_SHIFT_DUR;
     if (prog >= 1) return to;
     var m = smootherstep01(0, 1, prog);
     return [from[0] * (1 - m) + to[0] * m, from[1] * (1 - m) + to[1] * m, from[2] * (1 - m) + to[2] * m];
@@ -507,53 +502,52 @@
   var layerData = new Float32Array(MAX_LAYERS * 4);
   var colorData = new Float32Array(MAX_LAYERS * 4);
   var paramData = new Float32Array(MAX_LAYERS * 2);
-  var FIXED_DT = 1 / 60;
-  var CAPTURE_SECONDS = 20; // representative settled still
-  var animTime = 0;
-  var lastMs = 0;
-  var isCapture = ctx === "capture";
+  var layer = { active: false, x: 0, y: 0, sx: 0, sy: 0, k: 2, phase: 0, intensity: 0, color: [0, 0, 0] };
+  // The canonical still is the frame at this fixed sync time with no owner
+  // offset, so it is deterministic from the seed and stable across transfers.
+  var CAPTURE_T = 1234.5;
 
-  function uploadLayers() {
+  function uploadLayers(T) {
     for (var i = 0; i < MAX_LAYERS; i++) {
-      var l = layers[i];
+      layer.active = false;
+      if (i < DYN_SLOTS) blobAt(i, T, layer);
+      else if (persistent && i === MAX_LAYERS - 1) persistentAt(T, layer);
       var b4 = i * 4, b2 = i * 2;
-      layerData[b4] = l.x;
-      layerData[b4 + 1] = l.y;
-      layerData[b4 + 2] = l.active ? l.sx * l.scale : 0;
-      layerData[b4 + 3] = l.active ? l.sy * l.scale : 0;
-      colorData[b4] = l.color[0];
-      colorData[b4 + 1] = l.color[1];
-      colorData[b4 + 2] = l.color[2];
-      colorData[b4 + 3] = l.active ? l.intensity : 0;
-      paramData[b2] = l.k;
-      paramData[b2 + 1] = l.phase;
+      layerData[b4] = layer.x;
+      layerData[b4 + 1] = layer.y;
+      layerData[b4 + 2] = layer.active ? layer.sx : 0;
+      layerData[b4 + 3] = layer.active ? layer.sy : 0;
+      colorData[b4] = layer.color[0];
+      colorData[b4 + 1] = layer.color[1];
+      colorData[b4 + 2] = layer.color[2];
+      colorData[b4 + 3] = layer.active ? layer.intensity : 0;
+      paramData[b2] = layer.k;
+      paramData[b2 + 1] = layer.phase;
     }
   }
 
-  function render() {
-    // shape + background: owner-synced live; owner-independent representative
-    // for the canonical still.
-    var warp, i;
-    if (isCapture) {
-      warp = { a: seedWarpMode, b: seedWarpMode, mix: 0 };
-      for (i = 0; i < STATIC_COLS_COUNT; i++) { staticCols[i * 3] = captureStatic[i][0]; staticCols[i * 3 + 1] = captureStatic[i][1]; staticCols[i * 3 + 2] = captureStatic[i][2]; }
-    } else {
-      var syncTime = Date.now() / 1000 + ownerPhaseSec;
-      warp = shapeAt(syncTime);
-      for (i = 0; i < STATIC_COLS_COUNT; i++) { var col = bgColorAt(i, syncTime); staticCols[i * 3] = col[0]; staticCols[i * 3 + 1] = col[1]; staticCols[i * 3 + 2] = col[2]; }
+  function render(T) {
+    var warp = shapeAt(T), i;
+    for (i = 0; i < STATIC_COLS_COUNT; i++) {
+      var col = bgColorAt(i, T);
+      staticCols[i * 3] = col[0]; staticCols[i * 3 + 1] = col[1]; staticCols[i * 3 + 2] = col[2];
     }
+    uploadLayers(T);
 
-    uploadLayers();
-
+    // Live: fill the viewport at any aspect (uv stretches with the canvas, as in
+    // the source). Capture: square, so stills are viewport-independent.
     var dpr = Math.min(window.devicePixelRatio || 1, 2);
-    var side = Math.min(window.innerWidth, window.innerHeight) || 512;
-    canvas.style.width = side + "px";
-    canvas.style.height = side + "px";
-    var px = Math.max(1, Math.floor(side * dpr));
-    if (canvas.width !== px || canvas.height !== px) { canvas.width = px; canvas.height = px; }
-    gl.viewport(0, 0, px, px);
-    gl.uniform2f(u.res, px, px);
-    gl.uniform1f(u.time, animTime);
+    var w = canvas.clientWidth, h = canvas.clientHeight;
+    if (isCapture) {
+      w = h = Math.min(window.innerWidth, window.innerHeight) || 512;
+      canvas.style.width = w + "px"; canvas.style.height = h + "px";
+      canvas.style.left = "50%"; canvas.style.top = "50%"; canvas.style.transform = "translate(-50%, -50%)";
+    }
+    var pw = Math.max(1, Math.floor(w * dpr)), ph = Math.max(1, Math.floor(h * dpr));
+    if (canvas.width !== pw || canvas.height !== ph) { canvas.width = pw; canvas.height = ph; }
+    gl.viewport(0, 0, pw, ph);
+    gl.uniform2f(u.res, pw, ph);
+    gl.uniform1f(u.time, T - Math.floor(T / TIME_WRAP) * TIME_WRAP);
     gl.uniform1f(u.tau, modeTau);
     gl.uniform1i(u.maxIter, modeMaxIter);
     gl.uniform1f(u.cX, modeCX);
@@ -574,25 +568,13 @@
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   }
 
-  function frame(nowMs) {
-    var now = nowMs * 0.001;
-    var dt = Math.min(0.05, Math.max(0, now - lastMs));
-    lastMs = now;
-    animTime += dt;
-    stepSim(dt);
-    render();
-    requestAnimationFrame(frame);
-  }
+  function syncTimeNow() { return Date.now() / 1000 + ownerOffset; }
+  function frame() { render(syncTimeNow()); requestAnimationFrame(frame); }
 
-  initSim();
   if (isCapture) {
-    // Deterministic still: step the sim with a fixed timestep to a settled
-    // frame, then render once. requestAnimationFrame is throttled offscreen.
-    var steps = Math.round(CAPTURE_SECONDS / FIXED_DT);
-    for (var f = 0; f < steps; f++) { animTime += FIXED_DT; stepSim(FIXED_DT); }
-    render();
+    render(CAPTURE_T);
   } else {
-    window.addEventListener("resize", render);
+    window.addEventListener("resize", function () { render(syncTimeNow()); });
     requestAnimationFrame(frame);
   }
 
@@ -625,17 +607,5 @@
   function smootherstep01(e0, e1, x) {
     var t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
     return t * t * t * (t * (t * 6 - 15) + 10);
-  }
-  function createDeckPicker(colors, r, maxRepeat) {
-    var deck = [];
-    function refill() { deck = []; for (var i = 0; i < colors.length; i++) for (var k = 0; k < maxRepeat; k++) deck.push(colors[i]); }
-    refill();
-    return function () {
-      if (deck.length === 0) refill();
-      var idx = Math.floor(r() * deck.length);
-      var c = deck[idx];
-      deck.splice(idx, 1);
-      return c;
-    };
   }
 })();
