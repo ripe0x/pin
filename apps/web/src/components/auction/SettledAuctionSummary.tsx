@@ -11,7 +11,13 @@ export function SettledAuctionSummary({
   auction,
   auctionHref,
 }: {
-  auction: SettledAuction
+  auction: SettledAuction & {
+    // V2-only ERC1155 lots. Both callers' `SettledAuction`-shaped objects
+    // carry these; optional here only so a caller with neither still
+    // type-checks.
+    tokenStandard?: "erc721" | "erc1155"
+    quantity?: bigint
+  }
   /**
    * When set, render a "View auction ↗" link to the full per-auction page.
    * Used on the token page's headline card; omitted on the auction page
@@ -56,6 +62,13 @@ export function SettledAuctionSummary({
                 </span>
               </p>
             )}
+            {auction.tokenStandard === "erc1155" &&
+              auction.quantity != null &&
+              auction.quantity > 1n && (
+                <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400 pt-1">
+                  Lot of {auction.quantity.toString()}
+                </p>
+              )}
           </div>
           <div className="text-right space-y-1">
             <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
