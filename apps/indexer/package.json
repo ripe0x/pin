@@ -8,7 +8,8 @@
     "start": "ponder start",
     "codegen": "ponder codegen",
     "lint": "tsc --noEmit",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test \"src/**/*.test.ts\""
   },
   "dependencies": {
     "hono": "^4.12.34",

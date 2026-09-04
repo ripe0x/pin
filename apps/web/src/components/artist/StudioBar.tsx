@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useIsStudioOwner } from "@/components/studio/useIsStudioOwner"
-import { useArtistHouse } from "@/components/auction/useArtistHouse"
+import { useResolvedArtistHouse } from "@/components/auction/useResolvedArtistHouse"
 import { fetchSellerCancellableListings } from "@/lib/seller-listings"
 import { studioToolHref } from "@/lib/studio-tools"
 
@@ -44,7 +44,7 @@ export function StudioBar({ artistAddress }: { artistAddress: string }) {
   }, [isOwner, artistAddress])
 
   const { factoryAddress, houseAddress, isLoading: houseLoading } =
-    useArtistHouse(isOwner ? artistAddress : undefined)
+    useResolvedArtistHouse(isOwner ? artistAddress : undefined)
 
   if (!isOwner) return null
 

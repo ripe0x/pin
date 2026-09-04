@@ -26,6 +26,7 @@ import { mainnet } from "viem/chains"
 import { sovereignAuctionHouseFactoryAbi } from "@pin/abi"
 import {
   SOVEREIGN_AUCTION_HOUSE_FACTORY,
+  SOVEREIGN_AUCTION_HOUSE_V2_FACTORY,
   MAINNET_CHAIN_ID,
   getAddressOrNull,
 } from "@pin/addresses"
@@ -34,6 +35,10 @@ import { getMainnetTransport } from "./alchemy-rpc"
 
 const SOVEREIGN_FACTORY = getAddressOrNull(
   SOVEREIGN_AUCTION_HOUSE_FACTORY,
+  MAINNET_CHAIN_ID,
+)
+const SOVEREIGN_V2_FACTORY = getAddressOrNull(
+  SOVEREIGN_AUCTION_HOUSE_V2_FACTORY,
   MAINNET_CHAIN_ID,
 )
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
@@ -54,9 +59,14 @@ async function readHouseFromPonder(
       /[^a-zA-Z0-9_]/g,
       "",
     )
+    // An artist can hold one house per factory generation. Prefer the
+    // newest: display reads should point at the V2 house once it exists.
+    // Against a pre-version-column schema this query errors and falls
+    // through to the on-chain read.
     const rows = (await sql.unsafe(
       `SELECT house FROM ${schema}.pnd_houses
        WHERE lower(owner) = $1
+       ORDER BY version DESC
        LIMIT 1`,
       [artistLower],
     )) as Array<{ house: string }>
@@ -74,18 +84,26 @@ async function readHouseFromPonder(
 async function readHouseOnChain(
   artistAddress: string,
 ): Promise<Address | null> {
-  if (!SOVEREIGN_FACTORY) return null
-  try {
-    const house = await getClient().readContract({
-      address: SOVEREIGN_FACTORY,
-      abi: sovereignAuctionHouseFactoryAbi,
-      functionName: "houseOf",
-      args: [artistAddress as Address],
-    })
-    return house === ZERO_ADDRESS ? null : house
-  } catch {
-    return null
+  // V2 factory first (same houseOf ABI), matching the version-DESC
+  // preference of the Ponder path. Folds to V1-only while the V2 factory
+  // address is unset.
+  const factories = [SOVEREIGN_V2_FACTORY, SOVEREIGN_FACTORY].filter(
+    (f): f is Address => f !== null,
+  )
+  for (const factoryAddress of factories) {
+    try {
+      const house = await getClient().readContract({
+        address: factoryAddress,
+        abi: sovereignAuctionHouseFactoryAbi,
+        functionName: "houseOf",
+        args: [artistAddress as Address],
+      })
+      if (house !== ZERO_ADDRESS) return house
+    } catch {
+      // Try the next generation's factory.
+    }
   }
+  return null
 }
 
 export const getSovereignHouseOf = unstable_cache(

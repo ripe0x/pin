@@ -70,6 +70,66 @@ async function withTimeout<T>(
   }
 }
 
+export type HouseUpgradeListing = {
+  auctionId: string
+  tokenContract: string
+  tokenId: string
+  reservePrice: string
+  duration: string
+  hasBid: boolean
+}
+
+/**
+ * Active listings on one sovereign house, for the V1 to V2 upgrade flow.
+ * `hasBid: false` rows are movable (cancel on V1, relist on V2);
+ * `hasBid: true` rows must settle on the V1 house first. bigint columns
+ * come back as decimal strings so the API route can JSON them untouched.
+ * 2s timeout: this backs an explicit user action on the upgrade page,
+ * not a primary render.
+ */
+export async function getHouseUpgradeListings(
+  house: string,
+): Promise<HouseUpgradeListing[] | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+
+  return withTimeout(async () => {
+    const schema = (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(
+      /[^a-zA-Z0-9_]/g,
+      "",
+    )
+    const rows = (await db.unsafe(
+      `SELECT auction_id::text AS auction_id,
+              lower(token_contract) AS token_contract,
+              token_id::text AS token_id,
+              reserve_price::text AS reserve_price,
+              duration::text AS duration,
+              first_bid_time::text AS first_bid_time
+       FROM ${schema}.pnd_auctions
+       WHERE lower(house) = $1
+         AND status = 'active'
+       ORDER BY auction_id ASC`,
+      [house.toLowerCase()],
+    )) as Array<{
+      auction_id: string
+      token_contract: string
+      token_id: string
+      reserve_price: string
+      duration: string
+      first_bid_time: string
+    }>
+
+    return rows.map((r) => ({
+      auctionId: r.auction_id,
+      tokenContract: r.token_contract,
+      tokenId: r.token_id,
+      reservePrice: r.reserve_price,
+      duration: r.duration,
+      hasBid: r.first_bid_time !== "0",
+    }))
+  }, 2_000)
+}
+
 /**
  * Number of active PND auctions (status = 'active') for a given seller.
  * Maps directly to `getActiveAuctionCount` in `apps/web/src/lib/auctions.ts`.
@@ -93,6 +153,35 @@ export type SettledAuction = {
   amount: bigint
   settledAtTime: number
   bids: SettledAuctionBid[]
+  // V2 only; erc721 / 1n for every V1 row.
+  tokenStandard: "erc721" | "erc1155"
+  quantity: bigint
+}
+
+// pnd_auctions gained version/standard/quantity/funds_recipient/
+// listing_expiry with the V2 indexer schema. Mirrors the same probe in
+// lib/auctions.ts (kept separate, that module's promise cache is private)
+// so a database not yet migrated to those columns degrades to V1 defaults
+// instead of erroring the whole query.
+let v2ColumnsPromise: Promise<boolean> | null = null
+function hasV2AuctionColumns(schema: string): Promise<boolean> {
+  if (!sql) return Promise.resolve(false)
+  const db = sql
+  if (!v2ColumnsPromise) {
+    v2ColumnsPromise = db
+      .unsafe(
+        `SELECT 1 FROM information_schema.columns
+         WHERE table_schema = $1 AND table_name = 'pnd_auctions'
+           AND column_name = 'version'`,
+        [schema],
+      )
+      .then((rows) => (rows as unknown[]).length > 0)
+      .catch(() => {
+        v2ColumnsPromise = null
+        return false
+      })
+  }
+  return v2ColumnsPromise
 }
 
 export async function getSettledAuctionForToken(
@@ -108,10 +197,12 @@ export async function getSettledAuctionForToken(
       /[^a-zA-Z0-9_]/g,
       "",
     )
+    const v2Cols = await hasV2AuctionColumns(schema)
 
     const rows = (await db.unsafe(
       `SELECT id, seller, winner, amount::text AS amount,
               settled_at_time::text AS settled_at_time
+              ${v2Cols ? ", standard, quantity::text AS quantity" : ""}
        FROM ${schema}.pnd_auctions
        WHERE token_contract = $1
          AND token_id = $2::numeric
@@ -125,6 +216,8 @@ export async function getSettledAuctionForToken(
       winner: string
       amount: string
       settled_at_time: string
+      standard: string | null
+      quantity: string | null
     }>
 
     if (rows.length === 0) return null
@@ -158,6 +251,8 @@ export async function getSettledAuctionForToken(
         blockTime: Number(b.block_time),
         txHash: b.tx_hash,
       })),
+      tokenStandard: row.standard === "erc1155" ? "erc1155" : "erc721",
+      quantity: BigInt(row.quantity ?? "1"),
     }
   })
 }

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { formatEther } from "viem"
+import { formatEther, isAddress as isValidAddress, type Abi } from "viem"
 import {
   useAccount,
   useBalance,
@@ -14,7 +14,13 @@ import {
   useWaitForTransactionReceipt,
 } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
-import { nftMarketAbi, sovereignAuctionHouseAbi, superrareBazaarAbi, transientAuctionHouseAbi } from "@pin/abi"
+import {
+  nftMarketAbi,
+  sovereignAuctionHouseAbi,
+  sovereignAuctionHouseV2Abi,
+  superrareBazaarAbi,
+  transientAuctionHouseAbi,
+} from "@pin/abi"
 import {
   PREFERRED_CHAIN,
   PREFERRED_CHAIN_LABEL,
@@ -25,6 +31,7 @@ import {
   TxSuccessBanner,
 } from "@/components/tx/tx-ui"
 import { useEthAmountInput } from "@/lib/useEthAmountInput"
+import { parseListingExpiry } from "@/lib/listing-expiry"
 import type {
   AuctionFees,
   AuctionState,
@@ -32,6 +39,16 @@ import type {
 } from "@/lib/auctions"
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
+
+// V2 houses share every V1 write signature used here (createBid,
+// endAuction, cancelAuction, setAuctionReservePrice); passing the
+// generation's own ABI makes V2's own custom errors (UnwindTooEarly etc.)
+// decode in formatWriteError.
+function sovereignAbiFor(auction: AuctionState): Abi {
+  return (
+    auction.houseVersion === 2 ? sovereignAuctionHouseV2Abi : sovereignAuctionHouseAbi
+  ) as Abi
+}
 
 // SuperRare Bazaar's MarketplaceSettings.getMarketplaceFeePercentage()
 // has returned 3 (i.e. 3%) for years. The fee is a buyer's premium —
@@ -226,7 +243,7 @@ export function AuctionPanel({
   // SettleSection + cancel set this to "settled" / "cancelled" via the
   // setter passed below.
   const [postWriteState, setPostWriteState] = useState<
-    null | "settled" | "cancelled"
+    null | "settled" | "cancelled" | "expired"
   >(null)
   const phase = postWriteState ? "settled" : rawPhase
 
@@ -242,6 +259,8 @@ export function AuctionPanel({
     phase === "settled"
       ? postWriteState === "cancelled"
         ? "Auction cancelled"
+        : postWriteState === "expired"
+        ? "Listing expired"
         : "Auction settled"
       : phase === "ended-unsettled"
       ? "Auction ended"
@@ -335,6 +354,15 @@ export function AuctionPanel({
           <SellerActions
             auction={auction}
             onCancelled={() => setPostWriteState("cancelled")}
+          />
+        )}
+
+        {/* Anyone may expire a past-expiry, unbid V2 listing, not gated to
+            the seller like SellerActions above. */}
+        {auction.awaitingFirstBid && phase !== "settled" && (
+          <ExpireListingAction
+            auction={auction}
+            onExpired={() => setPostWriteState("expired")}
           />
         )}
       </div>
@@ -609,7 +637,7 @@ function BidSection({
     } else {
       writeContract({
         address: auction.marketAddress,
-        abi: sovereignAuctionHouseAbi,
+        abi: sovereignAbiFor(auction),
         functionName: "createBid",
         args: [BigInt(auction.auctionId)],
         value: bid.wei,
@@ -685,6 +713,12 @@ function BidSection({
           </span>
         )}
       </div>
+
+      {auction.tokenStandard === "erc1155" && auction.quantity > 1n && (
+        <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+          Lot of {auction.quantity.toString()}.
+        </p>
+      )}
 
       <button
         onClick={handleBid}
@@ -779,7 +813,7 @@ function SettleSection({
     } else {
       writeContract({
         address: auction.marketAddress,
-        abi: sovereignAuctionHouseAbi,
+        abi: sovereignAbiFor(auction),
         functionName: "endAuction",
         args: [BigInt(auction.auctionId)],
       })
@@ -851,6 +885,76 @@ function SettleSection({
       {writeError && (
         <p className="text-[11px] font-mono text-red-500 break-words">
           {formatWriteError(writeError, "Settle")}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * `expireAuction` on a V2 listing whose optional listing expiry has passed
+ * with no bids, callable by anyone, not just the seller. Returns the token
+ * to the seller. Renders nothing outside that state.
+ */
+function ExpireListingAction({
+  auction,
+  onExpired,
+}: {
+  auction: AuctionState
+  onExpired?: () => void
+}) {
+  const nowSec = useChainNowSec()
+  const router = useRouter()
+  const { writeContract, data: txHash, isPending, error, reset } = useWriteContract()
+  const { isLoading: isMining, isSuccess } = useWaitForTransactionReceipt({
+    hash: txHash,
+  })
+  useRevalidateAuctionOnSuccess(isSuccess, auction, { autoRefresh: false })
+  useEffect(() => {
+    if (isSuccess) onExpired?.()
+  }, [isSuccess, onExpired])
+
+  if (auction.houseVersion !== 2 || auction.listingExpiry === 0n) return null
+  const expired = nowSec > 0 && nowSec >= Number(auction.listingExpiry)
+  if (!expired) return null
+
+  if (isSuccess && txHash) {
+    return (
+      <TxSuccessBanner
+        txHash={txHash}
+        chainId={PREFERRED_CHAIN.id}
+        message="Listing expired. Token returned to the seller."
+        onDismiss={() => {
+          reset()
+          router.refresh()
+        }}
+      />
+    )
+  }
+
+  return (
+    <div className="pt-2 border-t border-gray-100 space-y-1.5">
+      <button
+        onClick={() =>
+          writeContract({
+            address: auction.marketAddress,
+            abi: sovereignAbiFor(auction),
+            functionName: "expireAuction",
+            args: [BigInt(auction.auctionId)],
+          })
+        }
+        disabled={isPending || isMining}
+        className="block w-full text-center text-[11px] font-mono uppercase tracking-wider py-2 border border-gray-200 text-gray-500 hover:border-fg hover:text-fg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        {isPending ? "Confirm in wallet…" : isMining ? "Expiring…" : "Expire listing"}
+      </button>
+      <p className="text-[10px] font-mono text-gray-400 text-center">
+        No bids landed before the listing expiry. Anyone can close it and
+        return the token to the seller.
+      </p>
+      {error && (
+        <p className="text-[11px] font-mono text-red-500 break-words">
+          {formatWriteError(error, "Expire")}
         </p>
       )}
     </div>
@@ -975,7 +1079,7 @@ function SellerActions({
     } else {
       writeCancel({
         address: auction.marketAddress,
-        abi: sovereignAuctionHouseAbi,
+        abi: sovereignAbiFor(auction),
         functionName: "cancelAuction",
         args: [BigInt(auction.auctionId)],
       })
@@ -994,7 +1098,7 @@ function SellerActions({
     } else {
       writeUpdate({
         address: auction.marketAddress,
-        abi: sovereignAuctionHouseAbi,
+        abi: sovereignAbiFor(auction),
         functionName: "setAuctionReservePrice",
         args: [BigInt(auction.auctionId), reserve.wei],
       })
@@ -1082,6 +1186,239 @@ function SellerActions({
           )}
         </p>
       )}
+      {auction.houseVersion === 2 && auction.source === "sovereign" && (
+        <V2ListingControls auction={auction} />
+      )}
+    </div>
+  )
+}
+
+const V2_DURATION_OPTIONS = [
+  { label: "24 hours", seconds: 24 * 60 * 60 },
+  { label: "3 days", seconds: 3 * 24 * 60 * 60 },
+  { label: "7 days", seconds: 7 * 24 * 60 * 60 },
+] as const
+
+/** Inverse of the `<input type="datetime-local">` value, local wall clock,
+ *  minute precision, empty string for "no expiry" (0n). */
+function toDatetimeLocalValue(sec: bigint): string {
+  if (sec === 0n) return ""
+  const d = new Date(Number(sec) * 1000)
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/**
+ * V2-only pre-bid owner controls beyond reserve/cancel: duration, funds
+ * recipient, listing expiry. Nested inside SellerActions, so it inherits
+ * the same isSeller + awaitingFirstBid gate from its parent. Each field
+ * shows its current value and its own Save button, enabled only once the
+ * value changes and is valid.
+ */
+function V2ListingControls({ auction }: { auction: AuctionState }) {
+  const router = useRouter()
+  const nowSec = useChainNowSec()
+
+  const [durationSec, setDurationSec] = useState<number>(Number(auction.duration))
+  const durationDirty = durationSec !== Number(auction.duration)
+  const {
+    writeContract: writeDuration,
+    data: durationHash,
+    isPending: durationPending,
+    error: durationError,
+    reset: resetDuration,
+  } = useWriteContract()
+  const { isLoading: durationMining, isSuccess: durationSuccess } =
+    useWaitForTransactionReceipt({ hash: durationHash })
+
+  const currentRecipient = auction.fundsRecipient ?? auction.seller
+  const [recipientInput, setRecipientInput] = useState<string>(currentRecipient)
+  const trimmedRecipient = recipientInput.trim()
+  const recipientValid = trimmedRecipient !== "" && isValidAddress(trimmedRecipient)
+  const recipientDirty =
+    trimmedRecipient.toLowerCase() !== currentRecipient.toLowerCase()
+  const {
+    writeContract: writeRecipient,
+    data: recipientHash,
+    isPending: recipientPending,
+    error: recipientError,
+    reset: resetRecipient,
+  } = useWriteContract()
+  const { isLoading: recipientMining, isSuccess: recipientSuccess } =
+    useWaitForTransactionReceipt({ hash: recipientHash })
+
+  const [expiryInput, setExpiryInput] = useState(toDatetimeLocalValue(auction.listingExpiry))
+  const expiryParsed = parseListingExpiry(expiryInput, nowSec)
+  const expiryTargetSeconds = expiryParsed.seconds ?? 0n
+  const expiryDirty = expiryTargetSeconds !== auction.listingExpiry
+  const {
+    writeContract: writeExpiry,
+    data: expiryHash,
+    isPending: expiryPending,
+    error: expiryError,
+    reset: resetExpiry,
+  } = useWriteContract()
+  const { isLoading: expiryMining, isSuccess: expirySuccess } =
+    useWaitForTransactionReceipt({ hash: expiryHash })
+
+  useRevalidateAuctionOnSuccess(
+    durationSuccess || recipientSuccess || expirySuccess,
+    auction,
+    { autoRefresh: false },
+  )
+
+  const anySuccess = durationSuccess || recipientSuccess || expirySuccess
+  if (anySuccess) {
+    const hash = durationSuccess ? durationHash! : recipientSuccess ? recipientHash! : expiryHash!
+    const message = durationSuccess
+      ? "Duration updated."
+      : recipientSuccess
+        ? "Funds recipient updated."
+        : "Listing expiry updated."
+    return (
+      <TxSuccessBanner
+        txHash={hash}
+        chainId={PREFERRED_CHAIN.id}
+        message={message}
+        onDismiss={() => {
+          resetDuration()
+          resetRecipient()
+          resetExpiry()
+          router.refresh()
+        }}
+      />
+    )
+  }
+
+  const anyBusy =
+    durationPending || durationMining || recipientPending || recipientMining ||
+    expiryPending || expiryMining
+
+  return (
+    <div className="pt-2 border-t border-gray-100 space-y-3">
+      <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+        Listing settings
+      </p>
+
+      <div className="space-y-1.5">
+        <span className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+          Duration
+        </span>
+        <div className="grid grid-cols-3 gap-1.5">
+          {V2_DURATION_OPTIONS.map((opt) => (
+            <button
+              key={opt.seconds}
+              onClick={() => setDurationSec(opt.seconds)}
+              disabled={anyBusy}
+              className={`py-1.5 text-[11px] border rounded transition-colors ${
+                durationSec === opt.seconds
+                  ? "border-fg bg-fg text-bg"
+                  : "border-gray-200 hover:border-gray-400"
+              } disabled:opacity-40`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        {durationDirty && (
+          <button
+            onClick={() =>
+              writeDuration({
+                address: auction.marketAddress,
+                abi: sovereignAuctionHouseV2Abi,
+                functionName: "setAuctionDuration",
+                args: [BigInt(auction.auctionId), BigInt(durationSec)],
+              })
+            }
+            disabled={anyBusy}
+            className="text-[11px] font-mono uppercase tracking-wider text-gray-500 hover:text-fg transition-colors disabled:opacity-40"
+          >
+            {durationPending ? "Confirm…" : durationMining ? "Saving…" : "Save duration"}
+          </button>
+        )}
+        {durationError && (
+          <p className="text-[11px] font-mono text-red-500 break-words">
+            {formatWriteError(durationError, "Update")}
+          </p>
+        )}
+      </div>
+
+      <div className="space-y-1.5">
+        <span className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+          Funds recipient
+        </span>
+        <input
+          type="text"
+          value={recipientInput}
+          onChange={(e) => setRecipientInput(e.target.value)}
+          disabled={anyBusy}
+          className="w-full text-xs font-mono border border-gray-300 px-2 py-1.5 disabled:opacity-40"
+        />
+        {!recipientValid && (
+          <p className="text-[11px] font-mono text-red-500">Enter a valid address.</p>
+        )}
+        {recipientDirty && recipientValid && (
+          <button
+            onClick={() =>
+              writeRecipient({
+                address: auction.marketAddress,
+                abi: sovereignAuctionHouseV2Abi,
+                functionName: "setAuctionFundsRecipient",
+                args: [BigInt(auction.auctionId), trimmedRecipient as `0x${string}`],
+              })
+            }
+            disabled={anyBusy}
+            className="text-[11px] font-mono uppercase tracking-wider text-gray-500 hover:text-fg transition-colors disabled:opacity-40"
+          >
+            {recipientPending ? "Confirm…" : recipientMining ? "Saving…" : "Save recipient"}
+          </button>
+        )}
+        {recipientError && (
+          <p className="text-[11px] font-mono text-red-500 break-words">
+            {formatWriteError(recipientError, "Update")}
+          </p>
+        )}
+      </div>
+
+      <div className="space-y-1.5">
+        <span className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+          Listing expiry
+        </span>
+        <input
+          type="datetime-local"
+          value={expiryInput}
+          onChange={(e) => setExpiryInput(e.target.value)}
+          disabled={anyBusy}
+          className="w-full text-xs font-mono border border-gray-300 px-2 py-1.5 disabled:opacity-40"
+        />
+        <p className="text-[10px] font-mono text-gray-400">
+          Clear the field to remove the expiry.
+        </p>
+        {expiryParsed.error && (
+          <p className="text-[11px] font-mono text-red-500">{expiryParsed.error}</p>
+        )}
+        {expiryDirty && !expiryParsed.error && (
+          <button
+            onClick={() =>
+              writeExpiry({
+                address: auction.marketAddress,
+                abi: sovereignAuctionHouseV2Abi,
+                functionName: "setAuctionListingExpiry",
+                args: [BigInt(auction.auctionId), expiryTargetSeconds],
+              })
+            }
+            disabled={anyBusy}
+            className="text-[11px] font-mono uppercase tracking-wider text-gray-500 hover:text-fg transition-colors disabled:opacity-40"
+          >
+            {expiryPending ? "Confirm…" : expiryMining ? "Saving…" : "Save expiry"}
+          </button>
+        )}
+        {expiryError && (
+          <p className="text-[11px] font-mono text-red-500 break-words">
+            {formatWriteError(expiryError, "Update")}
+          </p>
+        )}
+      </div>
     </div>
   )
 }
