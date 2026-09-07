@@ -247,13 +247,13 @@
               "title": "SovereignAuctionHouse",
               "slug": "sovereign-auction-house",
               "path": "/docs/auctions/contracts/sovereign-auction-house",
-              "description": "An onchain English auction house for ERC721 tokens, denominated in ETH."
+              "description": "Superseded by [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2)."
             },
             {
               "title": "SovereignAuctionHouseFactory",
               "slug": "auction-house-factory",
               "path": "/docs/auctions/contracts/auction-house-factory",
-              "description": "SovereignAuctionHouseFactory deploys one [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house) per owner as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs."
+              "description": "Superseded by [SovereignAuctionHouseV2Factory](/docs/auctions/contracts/auction-house-v2-factory)."
             },
             {
               "title": "SovereignAuctionHouseV2",
