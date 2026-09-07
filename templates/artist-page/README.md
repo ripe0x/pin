@@ -48,7 +48,7 @@ The deploy form asks for two things:
 
 | Variable | Required | What to put |
 |---|---|---|
-| `NEXT_PUBLIC_ARTIST_ADDRESS` | **Yes** | Your Ethereum wallet address (`0x…`). The page surfaces auctions from this wallet's SovereignAuctionHouse. It does not mirror the wallet's NFT holdings or PND catalog grid. |
+| `NEXT_PUBLIC_ARTIST_ADDRESS` | **Yes** | Your Ethereum wallet address (`0x…`). The page surfaces auctions from this wallet's SovereignAuctionHouse (checks both the V1 and V2 factories, and shows both if you've migrated). It does not mirror the wallet's NFT holdings or PND catalog grid. |
 | `NEXT_PUBLIC_RPC_URL` | No, but recommended | Your own RPC URL (Alchemy, Infura, etc). Makes the page noticeably faster. Leave blank to use the bundled defaults. See [Add your own RPC key](#add-your-own-rpc-key-recommended) below. |
 | `NEXT_PUBLIC_COLLECTION_ADDRESS` | No | Optional PND Surface collection address. When set, the homepage adds a live mint card and recent-mints grid. |
 
@@ -188,9 +188,13 @@ NEXT_PUBLIC_ARTIST_ADDRESS=0x0000000000000000000000000000000000000001 npm run bu
 
 ## Troubleshooting
 
-**"Auction house not deployed"** — your wallet hasn't deployed a `SovereignAuctionHouse` yet. Deploy one in the main app first, then your auctions will show up here.
+**"Auction house not deployed"**: your wallet hasn't deployed a `SovereignAuctionHouse` on either factory generation (V1 or V2) yet. Deploy one in the main app first, then your auctions will show up here.
 
-**Past auctions take a long time to load** — first load scans on-chain events from your house's deploy block. Subsequent visits hit the cache. If it's persistently slow, [add an RPC key](#add-your-own-rpc-key-recommended).
+**I migrated from V1 to V2, where did my old auctions go?**: nowhere. The page reads both houses: settled and cancelled auctions from your V1 house stay visible in your history, and new listings show up on whichever house currently holds them. Nothing needs to be re-created.
+
+**A V2 auction shows "Delivery deferred" or "Settlement outcome pending"**: the winner's token or 1155 quantity failed to deliver when the auction settled (a paused collection, a receiver that reverted). Nobody has been paid yet. Anyone can retry delivery from the auction page; after 30 days anyone can unwind the sale instead, refunding the winner in full and returning the lot to the seller.
+
+**Past auctions take a long time to load**: first load scans onchain events from your house's deploy block. Subsequent visits hit the cache. If it's persistently slow, [add an RPC key](#add-your-own-rpc-key-recommended).
 
 **An auction's image isn't loading** — the page reads `tokenURI` directly from the NFT contract and races public IPFS gateways for IPFS-hosted images. For brand-new pieces, gateways may be slow on first request. The image will appear once one responds.
 
@@ -217,6 +221,7 @@ components/
   AuctionCardImage.tsx           # Native-aspect-ratio image renderer
   TokenMedia.tsx                 # Sticky-column media for detail page
   BidForm.tsx                    # Live bid + settle controls (client)
+  DeferredLotCard.tsx            # V2 deferred-delivery / unwind claim controls (client)
   CollectionMintCard.tsx         # Optional Surface mint transaction UI
   BidHistory.tsx
   SettledSummary.tsx             # Past-auction summary panel
@@ -227,12 +232,13 @@ lib/
   artist.ts                      # Display name / avatar / bio / links resolution (env → ENS → fallback)
   ens.ts                         # Cached ENS name + text record reads
   rpc.ts                         # Public RPC failover + dynamic getLogs chunking
-  auctions.ts                    # House resolution + auction list + bid history
-  metadata.ts                    # On-chain tokenURI + IPFS gateway race
+  auction-status.ts              # Auction types + event ABIs + pure decode/derivation (no server-only)
+  auctions.ts                    # House resolution (V1 + V2) + auction list + bid history
+  metadata.ts                    # Onchain tokenURI + IPFS gateway race
   safe-fetch.ts                  # Size-bounded, SSRF-guarded metadata fetches
   format.ts                      # ETH / address / time / display formatting
   wagmi-config.ts                # Browser-side wagmi + RainbowKit config
-  abi/                           # Vendored ABIs (SovereignAuctionHouse, Factory, ERC721)
+  abi/                           # Vendored ABIs (SovereignAuctionHouse + Factory, V1 and V2, ERC721)
 ```
 
 ---
