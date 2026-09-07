@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useAccount, usePublicClient } from "wagmi"
 import { encodeFunctionData, erc721Abi, formatEther, type Address } from "viem"
@@ -14,6 +15,7 @@ import { useArtistHouseV2 } from "@/components/auction/useArtistHouseV2"
 import { StatusChip } from "@/components/auction/tx"
 import { useBatchedCalls, type PreparedCall } from "@/lib/useBatchedCalls"
 import type { HouseUpgradeListing } from "@/lib/indexer-queries"
+import { studioToolHref } from "@/lib/studio-tools"
 
 /**
  * V1 to V2 house upgrade, two phases:
@@ -287,6 +289,9 @@ function Panel({ artistAddress }: Props) {
 
   const running = phase1.status === "running" || phase2.status === "running"
   const done = phase1.status === "done" && phase2.status !== "running"
+  // V2 house exists and every movable listing is gone: the upgrade is
+  // complete, whether this session ran it or a prior one did.
+  const upgraded = !!v2.houseAddress && movable.length === 0 && !running
 
   const onRun = useCallback(async () => {
     if (!targetHouse) return
@@ -383,7 +388,7 @@ function Panel({ artistAddress }: Props) {
         </p>
       )}
 
-      <div className="mb-4">
+      <div className="mb-4" hidden={upgraded && !done}>
         <h3 className="text-xs font-semibold text-gray-900 mb-1">Steps</h3>
         <ul className="space-y-1">
           {!v2.houseAddress && (
@@ -459,7 +464,25 @@ function Panel({ artistAddress }: Props) {
         </p>
       ) : null}
 
-      <div className="flex items-center gap-3">
+      {upgraded ? (
+        <div className="text-sm text-gray-700 space-y-2">
+          <p>
+            Your V2 house is live at{" "}
+            <code className="text-xs break-all">{v2.houseAddress}</code>.
+            {inFlight.length > 0
+              ? " The listings above finish on V1."
+              : " Nothing left to move."}
+          </p>
+          <Link
+            href={studioToolHref(artistAddress, "auctions")}
+            className="inline-block underline"
+          >
+            List work on your V2 house →
+          </Link>
+        </div>
+      ) : null}
+
+      <div className="flex items-center gap-3" hidden={upgraded && !done}>
         <button
           className="text-sm px-3 py-1.5 rounded bg-gray-900 text-white disabled:opacity-40"
           disabled={!isOwner || phase1Calls.length === 0 || running}
