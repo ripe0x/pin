@@ -41,8 +41,8 @@ Machine-readable addresses + ABIs: https://pnd.ripe.wtf/protocol-manifest.json (
 
 - [Overview](https://pnd.ripe.wtf/docs/auctions/overview): The PND Sovereign Auction House: a per-owner, onchain English-auction house for any ERC721.
 - [Auction lifecycle](https://pnd.ripe.wtf/docs/auctions/concepts/auction-lifecycle): The full path an auction takes: create and escrow, bid, extend, end, or cancel, plus refunds and the fee math.
-- [SovereignAuctionHouse](https://pnd.ripe.wtf/docs/auctions/contracts/sovereign-auction-house): An onchain English auction house for ERC721 tokens, denominated in ETH.
-- [SovereignAuctionHouseFactory](https://pnd.ripe.wtf/docs/auctions/contracts/auction-house-factory): SovereignAuctionHouseFactory deploys one [SovereignAuctionHouse](/docs/auctions/contracts/sovereign-auction-house) per owner as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs.
+- [SovereignAuctionHouse](https://pnd.ripe.wtf/docs/auctions/contracts/sovereign-auction-house): Superseded by [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2).
+- [SovereignAuctionHouseFactory](https://pnd.ripe.wtf/docs/auctions/contracts/auction-house-factory): Superseded by [SovereignAuctionHouseV2Factory](/docs/auctions/contracts/auction-house-v2-factory).
 - [SovereignAuctionHouseV2](https://pnd.ripe.wtf/docs/auctions/contracts/sovereign-auction-house-v2): An onchain English auction house for ERC721 and ERC1155 tokens, denominated in ETH.
 - [SovereignAuctionHouseV2Factory](https://pnd.ripe.wtf/docs/auctions/contracts/auction-house-v2-factory): SovereignAuctionHouseV2Factory deploys one [SovereignAuctionHouseV2](/docs/auctions/contracts/sovereign-auction-house-v2) per owner as an immutable EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, what deploys is what runs.
 - [Deploy an auction house](https://pnd.ripe.wtf/docs/auctions/guides/deploy-an-auction-house): Call the factory to deploy your own per-owner auction house, and predict its address ahead of time.

@@ -21,6 +21,10 @@ balance sweep of every house.
 | ETH held by any house | **0** across all 96 (no live bids, no unclaimed `pendingRefunds`) |
 | Historical auctions | 97 settled, 102 cancelled |
 
+Remeasured 2026-09-07 (`ponder_v3.pnd_houses` / `pnd_auctions`, post PR #308):
+97 V1 houses, 1 V2 house, 132 active V1 listings across 34 owners, 0 active
+listings with bids.
+
 Consequences:
 
 - Every active listing is pre-bid, so every one is cancellable by its
@@ -118,12 +122,24 @@ Consequences:
   the hazard needs a bid plus a collection-side refusal, unchanged from
   the risk accepted at v1 launch.)
 
+### Standalone artist-site template
+
+`templates/artist-page` still only ships the V1 auction ABIs
+(`lib/abi/sovereignAuctionHouse.ts`, `lib/abi/sovereignAuctionHouseFactory.ts`)
+and has no V2 house resolution. Updating the template to resolve a V2 house
+(falling back to V1 for existing auctions, matching the `apps/web` pattern)
+is in progress in a separate PR, not part of #308.
+
 ### Docs / manifest
 
-- `contracts/deployments.mainnet.json`: `auctionHouseFactory` and
-  `auctionHouseImplementation` point to the v2 addresses; v1 addresses
-  move to explicit `auctionHouseFactoryV1` / `auctionHouseImplementationV1`
-  keys so verification pages and history keep resolving.
+- Decision (implemented): `contracts/deployments.mainnet.json` keeps the v1
+  keys (`auctionHouseFactory`, `auctionHouseImplementation`) unchanged and
+  adds `auctionHouseV2Factory` / `auctionHouseV2Implementation` alongside
+  them. The originally planned rename to `*V1` keys was dropped: the
+  mainnet-deployment drift test
+  (`contracts/test/AuctionV2MainnetDeployment.t.sol`) and the docs generator
+  already key off the unrenamed v1 names, and renaming them would touch
+  both for no behavior change.
 - Regenerate reference docs (`pnpm generate:docs`) and
   `protocol-manifest.json`; the SovereignAuctionHouse prose must describe
   the two-step settle/claim flow.
@@ -158,23 +174,41 @@ Phase 1, mainnet deploy: DONE 2026-09-02 from commit `49a5a696`.
    `contracts/test/AuctionV2MainnetDeployment.t.sol`. Indexer start block
    for the V2 factory: 25901772.
 
-Phase 2, indexer: config + schema + handlers as above, deploy to Railway.
-Backfill for the v2 factory is tiny (starts at its deploy block).
+Phase 2, indexer: DONE via PR #308 (merged 2026-09-04). Config, schema, and
+handlers as above are live. Schema is `ponder_v3` (Railway service
+`indexer-v3`); `pnd_houses.version` distinguishes 1 and 2. Backfill for the
+v2 factory was tiny, starting at its deploy block.
 
-Phase 3, web: constants, deploy CTA cutover, claim UI, migration flow,
-docs regen. Netlify deploys from `main` on merge.
+Phase 3, web: DONE via PR #308 (admin + collector UI for ERC721 and ERC1155,
+the V1-to-V2 upgrade flow at `/studio/[address]/migrate`), PR #307
+(reference docs), and PR #306 (manifest record). Netlify production deploys
+from `main` and is on the merged state.
 
-Phase 4, fleet wind-down (owner-driven, no deadline):
+Phase 4, fleet wind-down (owner-driven, no deadline): IN PROGRESS.
 
-1. Migrate PND's own house first as the dogfood run.
-2. In-app migration prompt for the 34 owners with active listings; plain
-   deploy CTA for the rest.
-3. Track progress with an indexer query (active v1 auctions remaining,
-   v2 houses created). Nothing forces completion: a v1 house keeps
-   working, and an unbid listing holds no ETH.
+1. DONE 2026-09-07: migrated PND's own house as the dogfood run. V2 house
+   `0x2b06e62ea47fa419e83bb7912e9ddb1cfc91cc1f`, tx
+   [`0x2827da9d7bd9e98144a7826dd377c429d69f21795d6fa213d72515c65943b369`](https://evm.now/tx/0x2827da9d7bd9e98144a7826dd377c429d69f21795d6fa213d72515c65943b369?chainId=1).
+2. The in-app upgrade panel for owners with active listings shipped in
+   #308. Outreach to the 34 affected owners is out-of-band (not driven by
+   this repo).
+3. Tracking query, run against `ponder_v3`:
 
-Phase 5, deprecation: web no longer offers v1 deploys (done in phase 3),
-docs mark v1 as superseded, v1 indexing continues indefinitely.
+   ```sql
+   select h.version, a.status, count(*)
+   from ponder_v3.pnd_auctions a
+   join ponder_v3.pnd_houses h on h.house = a.house
+   group by 1, 2 order by 1, 2;
+   ```
+
+   State measured 2026-09-07: 97 V1 houses, 1 V2 house, 132 active V1
+   listings across 34 owners, 0 active listings with bids. Nothing forces
+   completion: a v1 house keeps working, and an unbid listing holds no ETH.
+
+Phase 5, deprecation: web no longer offers v1 deploys (done in phase 3, this
+change adds the superseded banner to the V1 SovereignAuctionHouse and
+SovereignAuctionHouseFactory reference pages), v1 indexing continues
+indefinitely.
 
 ## Open decisions
 
