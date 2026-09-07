@@ -106,7 +106,9 @@ export async function POST(request: Request) {
   // Refresh just this token's metadata, and the page being viewed so the
   // change shows promptly. The home grid picks it up on its normal cycle.
   revalidateTag(tokenMetadataTag(contract, tokenId))
-  if (auctionId && /^\d+$/.test(auctionId)) {
+  // A route id is a bare number (V1) or a `v2-` prefixed number (V2), see
+  // auctionRouteId in lib/auctions.ts.
+  if (auctionId && /^(v2-)?\d+$/.test(auctionId)) {
     revalidatePath(`/auction/${auctionId}`)
   }
 

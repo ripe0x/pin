@@ -7,16 +7,30 @@ import {
   useAccount,
   useBalance,
   useReadContract,
+  useReadContracts,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi"
 import { ConnectButton as RKConnectButton } from "@rainbow-me/rainbowkit"
-import { sovereignAuctionHouseAbi } from "@/lib/abi"
+import { sovereignAuctionHouseAbi, sovereignAuctionHouseV2Abi } from "@/lib/abi"
 import { ZERO_ADDRESS } from "@/lib/config"
 import { displayFor, formatEth } from "@/lib/format"
+import type { HouseVersion, TokenStandard } from "@/lib/auctions"
+
+// Mirrors `uint16 public constant MIN_BID_INCREMENT_BPS = 500;`, identical
+// on both house versions. V1 exposes a `getMinBidAmount` view that applies
+// this onchain; V2 doesn't, so the increment is computed here instead.
+const MIN_BID_INCREMENT_BPS = 500n
+
+function computeMinBid(amount: bigint, reservePrice: bigint): bigint {
+  if (amount === 0n) return reservePrice
+  const increment = (amount * MIN_BID_INCREMENT_BPS) / 10_000n
+  return amount + (increment === 0n ? 1n : increment)
+}
 
 type Props = {
   houseAddress: Address
+  houseVersion: HouseVersion
   auctionId: string
   /** Server-rendered initial state for fast first paint. */
   initial: {
@@ -26,6 +40,9 @@ type Props = {
     bidder: Address
     firstBidTime: string
     tokenOwner: Address
+    standard: TokenStandard
+    quantity: string
+    listingExpiry: string
   }
   /** Pre-resolved ENS map for any addresses we'll display. */
   ensMap?: Map<string, string>
@@ -35,11 +52,21 @@ type Props = {
  * Live bid + settle panel. Mirrors PND's bid panel chrome from
  * `SettledAuctionSummary` (status header + big tabular-nums price) so
  * pre-bid, mid-auction, and settled all read as one visual family.
+ *
+ * Only renders for auction status "live" or "upcoming". The caller routes
+ * "deferred"/"unwound_return_pending" to DeferredLotCard and
+ * "settled"/"cancelled"/"unwound" to SettledSummary instead. A V2 auction
+ * can still transition into "deferred" while this panel is mounted (its
+ * settlement delivery fails after someone calls endAuction); the poll below
+ * detects that and refreshes the page so the server re-renders the correct
+ * panel.
  */
-export function BidForm({ houseAddress, auctionId, initial, ensMap }: Props) {
+export function BidForm({ houseAddress, houseVersion, auctionId, initial, ensMap }: Props) {
   const { address: connected, isConnected } = useAccount()
   const router = useRouter()
   const refreshedFinalState = useRef(false)
+  const refreshedDeferredState = useRef(false)
+  const abi = houseVersion === 2 ? sovereignAuctionHouseV2Abi : sovereignAuctionHouseAbi
 
   // No `initialData` here on purpose: seeding the query with the
   // server-rendered tuple makes react-query treat it as already-fetched and
@@ -49,7 +76,7 @@ export function BidForm({ houseAddress, auctionId, initial, ensMap }: Props) {
   // `initial.*` values below only until the first fetch resolves.
   const auctionRead = useReadContract({
     address: houseAddress,
-    abi: sovereignAuctionHouseAbi,
+    abi,
     functionName: "auctions",
     args: [BigInt(auctionId)],
     query: {
@@ -62,36 +89,81 @@ export function BidForm({ houseAddress, auctionId, initial, ensMap }: Props) {
     },
   })
 
-  const tuple = auctionRead.data as readonly [
-    bigint, Address, bigint, bigint, bigint, Address, bigint, Address, bigint,
-  ] | undefined
-  const amount = tuple?.[3] ?? BigInt(initial.amount)
-  const reservePrice = tuple?.[4] ?? BigInt(initial.reservePrice)
-  const tokenOwner = (tuple?.[5] ?? initial.tokenOwner) as Address
-  const endTime = tuple?.[6] ?? BigInt(initial.endTime)
-  const bidder = (tuple?.[7] ?? initial.bidder) as Address
-  const firstBidTime = tuple?.[2] ?? BigInt(initial.firstBidTime)
+  // V1's tuple is [tokenId, tokenContract, firstBidTime, amount,
+  // reservePrice, tokenOwner, endTime, bidder, duration]. V2 inserts
+  // fundsRecipient before endTime and appends quantity + standard, so
+  // endTime/bidder shift by one index.
+  const tuple = auctionRead.data as readonly unknown[] | undefined
+  const amount = (tuple?.[3] as bigint | undefined) ?? BigInt(initial.amount)
+  const reservePrice = (tuple?.[4] as bigint | undefined) ?? BigInt(initial.reservePrice)
+  const tokenOwner = ((tuple?.[5] as Address | undefined) ?? initial.tokenOwner) as Address
+  const endTime =
+    (tuple?.[houseVersion === 2 ? 7 : 6] as bigint | undefined) ?? BigInt(initial.endTime)
+  const bidder = ((tuple?.[houseVersion === 2 ? 8 : 7] as Address | undefined) ??
+    initial.bidder) as Address
+  const firstBidTime = (tuple?.[2] as bigint | undefined) ?? BigInt(initial.firstBidTime)
 
-  const minBidRead = useReadContract({
+  const minBidReadV1 = useReadContract({
     address: houseAddress,
     abi: sovereignAuctionHouseAbi,
     functionName: "getMinBidAmount",
     args: [BigInt(auctionId)],
-    query: { refetchInterval: 12_000, refetchIntervalInBackground: true },
+    query: {
+      enabled: houseVersion === 1,
+      refetchInterval: 12_000,
+      refetchIntervalInBackground: true,
+    },
   })
   const minBidWei =
-    (minBidRead.data as readonly [boolean, bigint] | undefined)?.[1] ??
-    (amount === 0n ? reservePrice : amount)
+    houseVersion === 2
+      ? computeMinBid(amount, reservePrice)
+      : ((minBidReadV1.data as readonly [boolean, bigint] | undefined)?.[1] ??
+        computeMinBid(amount, reservePrice))
   const refetchAuction = auctionRead.refetch
-  const refetchMinBid = minBidRead.refetch
+  const refetchMinBid = minBidReadV1.refetch
 
-  // Both settlement and cancellation delete the auction storage. A zero
-  // owner therefore means only "finalized"; lifecycle events on the server
-  // are the source of truth for which final state it reached.
+  // V2 only: a settlement delivery failure leaves `tokenOwner` populated
+  // (unlike V1, where settling always deletes storage), so it never reads as
+  // finalized here. Poll both flags in one multicall and hand off to
+  // DeferredLotCard via a server refresh once either is set.
+  const deferralFlags = useReadContracts({
+    contracts: [
+      {
+        address: houseAddress,
+        abi: sovereignAuctionHouseV2Abi,
+        functionName: "pendingDelivery",
+        args: [BigInt(auctionId)],
+      },
+      {
+        address: houseAddress,
+        abi: sovereignAuctionHouseV2Abi,
+        functionName: "pendingReturn",
+        args: [BigInt(auctionId)],
+      },
+    ],
+    query: {
+      enabled: houseVersion === 2,
+      refetchInterval: 12_000,
+      refetchIntervalInBackground: true,
+    },
+  })
+  const isDeferred =
+    houseVersion === 2 &&
+    (deferralFlags.data?.[0]?.result === true || deferralFlags.data?.[1]?.result === true)
+
+  // Both settlement and cancellation delete the auction storage on V1. On
+  // V2 the same is true once settlement actually completes; a deferred or
+  // return-pending auction keeps its storage, which is why `isDeferred` is
+  // checked separately above.
   const isFinalized = tokenOwner === ZERO_ADDRESS
   const awaitingFirstBid = firstBidTime === 0n || bidder === ZERO_ADDRESS
   const nowSec = useNowSec()
   const ended = !awaitingFirstBid && endTime > 0n && BigInt(nowSec) >= endTime
+  const listingExpired =
+    houseVersion === 2 &&
+    awaitingFirstBid &&
+    initial.listingExpiry !== "0" &&
+    nowSec >= Number(initial.listingExpiry)
 
   const { writeContract, data: txHash, isPending, error: writeError } =
     useWriteContract()
@@ -112,11 +184,38 @@ export function BidForm({ houseAddress, auctionId, initial, ensMap }: Props) {
     router.refresh()
   }, [isFinalized, router])
 
+  useEffect(() => {
+    if (!isDeferred || refreshedDeferredState.current) return
+    refreshedDeferredState.current = true
+    router.refresh()
+  }, [isDeferred, router])
+
   if (isFinalized) {
     return (
       <Panel statusDot="bg-status-upcoming" statusLabel="Auction complete">
         <p className="text-[11px] font-mono text-gray-500">
           Refreshing the final on-chain result…
+        </p>
+      </Panel>
+    )
+  }
+
+  if (isDeferred) {
+    return (
+      <Panel statusDot="bg-status-upcoming" statusLabel="Settlement outcome pending">
+        <p className="text-[11px] font-mono text-gray-500">
+          Delivery failed at settlement. Refreshing…
+        </p>
+      </Panel>
+    )
+  }
+
+  if (listingExpired) {
+    return (
+      <Panel statusDot="bg-gray-400" statusLabel="Listing expired">
+        <p className="text-[11px] font-mono text-gray-500">
+          This listing&rsquo;s no-bid window closed with no bids. The token stays
+          escrowed until the seller cancels or relists it.
         </p>
       </Panel>
     )
@@ -128,6 +227,7 @@ export function BidForm({ houseAddress, auctionId, initial, ensMap }: Props) {
         <PriceRow
           label="Final bid"
           amountWei={amount}
+          quantity={initial.standard === "erc1155" ? initial.quantity : undefined}
           subtext={
             bidder !== ZERO_ADDRESS
               ? `by ${displayFor(bidder, ensMap)}`
@@ -136,6 +236,7 @@ export function BidForm({ houseAddress, auctionId, initial, ensMap }: Props) {
         />
         <SettleButton
           houseAddress={houseAddress}
+          abi={abi}
           auctionId={auctionId}
           isConnected={isConnected}
           isPending={isPending}
@@ -164,12 +265,14 @@ export function BidForm({ houseAddress, auctionId, initial, ensMap }: Props) {
       <PriceRow
         label={awaitingFirstBid ? "Reserve price" : "Current bid"}
         amountWei={awaitingFirstBid ? reservePrice : amount}
+        quantity={initial.standard === "erc1155" ? initial.quantity : undefined}
         subtext={
           showBidder ? `by ${displayFor(bidder, ensMap)}` : undefined
         }
       />
       <BidInput
         houseAddress={houseAddress}
+        abi={abi}
         auctionId={auctionId}
         minBidWei={minBidWei}
         isConnected={isConnected}
@@ -226,17 +329,27 @@ function Panel({
 function PriceRow({
   label,
   amountWei,
+  quantity,
   subtext,
 }: {
   label: string
   amountWei: bigint
+  /** ERC1155 lot size. Omitted (undefined) for ERC721. */
+  quantity?: string
   subtext?: string
 }) {
   return (
     <div className="space-y-1">
-      <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-        {label}
-      </p>
+      <div className="flex items-baseline justify-between">
+        <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+          {label}
+        </p>
+        {quantity ? (
+          <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+            Qty {quantity}
+          </p>
+        ) : null}
+      </div>
       <p className="text-2xl font-mono font-medium tabular-nums tracking-tight leading-none">
         {formatEth(amountWei.toString())}{" "}
         <span className="text-sm font-mono text-gray-500">ETH</span>
@@ -261,9 +374,11 @@ function ErrorLine({ error }: { error: Error }) {
 }
 
 type WriteContractFn = ReturnType<typeof useWriteContract>["writeContract"]
+type HouseAbi = typeof sovereignAuctionHouseAbi | typeof sovereignAuctionHouseV2Abi
 
 function BidInput({
   houseAddress,
+  abi,
   auctionId,
   minBidWei,
   isConnected,
@@ -273,6 +388,7 @@ function BidInput({
   writeContract,
 }: {
   houseAddress: Address
+  abi: HouseAbi
   auctionId: string
   minBidWei: bigint
   isConnected: boolean
@@ -308,7 +424,7 @@ function BidInput({
     if (tooLow || insufficient) return
     writeContract({
       address: houseAddress,
-      abi: sovereignAuctionHouseAbi,
+      abi,
       functionName: "createBid",
       args: [BigInt(auctionId)],
       value: parsed,
@@ -370,6 +486,7 @@ function BidInput({
 
 function SettleButton({
   houseAddress,
+  abi,
   auctionId,
   isConnected,
   isPending,
@@ -377,6 +494,7 @@ function SettleButton({
   writeContract,
 }: {
   houseAddress: Address
+  abi: HouseAbi
   auctionId: string
   isConnected: boolean
   isPending: boolean
@@ -406,7 +524,7 @@ function SettleButton({
       onClick={() =>
         writeContract({
           address: houseAddress,
-          abi: sovereignAuctionHouseAbi,
+          abi,
           functionName: "endAuction",
           args: [BigInt(auctionId)],
         })

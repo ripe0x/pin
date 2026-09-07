@@ -31,6 +31,26 @@ export function SettledSummary({ auction, bids, ensMap, settledAtTime }: Props) 
     )
   }
 
+  if (auction.status === "unwound") {
+    const winnerDisplay = auction.winner ? displayFor(auction.winner, ensMap) : "the winner"
+    return (
+      <div className="rounded-lg border border-gray-200 bg-surface p-5 space-y-2">
+        <div className="flex items-center gap-2">
+          <span className="inline-block h-1.5 w-1.5 rounded-full bg-gray-400" />
+          <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500">
+            Auction unwound
+          </span>
+        </div>
+        <p className="text-xs font-mono text-gray-500">
+          Delivery to {winnerDisplay} could not complete. Nobody was paid: the
+          winning bid was refunded
+          {auction.refundAmount ? ` (${formatEth(auction.refundAmount)} ETH)` : ""} and
+          the lot was returned to the seller.
+        </p>
+      </div>
+    )
+  }
+
   const winnerDisplay = auction.winner
     ? displayFor(auction.winner, ensMap)
     : null
@@ -48,9 +68,16 @@ export function SettledSummary({ auction, bids, ensMap, settledAtTime }: Props) 
 
         <div className="flex items-end justify-between gap-6">
           <div className="space-y-1">
-            <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
-              Winning bid
-            </p>
+            <div className="flex items-baseline gap-2">
+              <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+                Winning bid
+              </p>
+              {auction.standard === "erc1155" ? (
+                <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+                  · Qty {auction.quantity}
+                </p>
+              ) : null}
+            </div>
             <p className="text-2xl font-mono font-medium tabular-nums tracking-tight leading-none">
               {auction.finalPrice ? formatEth(auction.finalPrice) : "—"}{" "}
               <span className="text-sm font-mono text-gray-500">ETH</span>

@@ -14,15 +14,19 @@
 import { AuctionCardImage } from "./AuctionCardImage"
 import { LiveCountdown } from "./LiveCountdown"
 import Link from "next/link"
-import type { AuctionSummary } from "@/lib/auctions"
+import { auctionRouteId, type AuctionSummary } from "@/lib/auctions"
 import { getTokenMetadata } from "@/lib/metadata"
 import { formatEth } from "@/lib/format"
 
-type Bucket = "active" | "ending" | "listed" | "settled" | "cancelled"
+type Bucket = "active" | "ending" | "listed" | "settled" | "cancelled" | "attention"
 
 function bucketFor(auction: AuctionSummary): Bucket {
   if (auction.status === "settled") return "settled"
   if (auction.status === "cancelled") return "cancelled"
+  if (auction.status === "deferred" || auction.status === "unwound_return_pending") {
+    return "attention"
+  }
+  if (auction.status === "unwound") return "cancelled"
   if (auction.status === "upcoming") return "listed"
   if (auction.amount === "0" || auction.firstBidTime === "0") return "listed"
   const endTime = Number(auction.endTime)
@@ -41,12 +45,19 @@ export async function AuctionCard({ auction }: { auction: AuctionSummary }) {
     <div
       className="group relative border border-gray-200 transition-colors hover:border-gray-400"
     >
-      <Link href={`/auction/${auction.auctionId}`} className="block">
+      <Link href={`/auction/${auctionRouteId(auction)}`} className="block">
         <AuctionCardImage src={image} alt={title} />
         <div className="px-3 py-2.5 bg-surface-muted border-t border-gray-100 space-y-2">
-          <p className="text-[11px] font-mono text-fg tracking-tight truncate leading-none group-hover:underline underline-offset-2">
-            {title}
-          </p>
+          <div className="flex items-baseline justify-between gap-2">
+            <p className="text-[11px] font-mono text-fg tracking-tight truncate leading-none group-hover:underline underline-offset-2">
+              {title}
+            </p>
+            {auction.standard === "erc1155" ? (
+              <span className="text-[10px] font-mono text-gray-400 shrink-0">
+                x{auction.quantity}
+              </span>
+            ) : null}
+          </div>
           <StatusCaption auction={auction} bucket={bucket} />
         </div>
       </Link>
@@ -70,6 +81,9 @@ function StatusCaption({
   }
   if (bucket === "cancelled") {
     return <Caption muted>Cancelled</Caption>
+  }
+  if (bucket === "attention") {
+    return <Caption muted>Needs attention</Caption>
   }
   if (bucket === "listed") {
     return (

@@ -1,13 +1,14 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { BidForm } from "@/components/BidForm"
+import { DeferredLotCard } from "@/components/DeferredLotCard"
 import { RefreshMetadataButton } from "@/components/RefreshMetadataButton"
 import { BidHistory } from "@/components/BidHistory"
 import { SettledSummary } from "@/components/SettledSummary"
 import { TokenMedia } from "@/components/TokenMedia"
 import { Provenance } from "@/components/Provenance"
 import { Footer } from "@/components/Footer"
-import { getArtistHouse, getAuctionById, getBidHistory } from "@/lib/auctions"
+import { getAuctionById, getBidHistory } from "@/lib/auctions"
 import { getTokenMetadata } from "@/lib/metadata"
 import { getTokenOwner, getTokenProvenance } from "@/lib/token"
 import { getArtistDisplayName } from "@/lib/artist"
@@ -48,21 +49,21 @@ export async function generateMetadata({
 }
 
 export default async function AuctionPage({ params }: { params: Params }) {
-  const { auctionId } = await params
+  const { auctionId: routeId } = await params
   const cfg = getConfig()
-  const [house, auction, displayName] = await Promise.all([
-    getArtistHouse(),
-    getAuctionById(auctionId),
+  const [auction, displayName] = await Promise.all([
+    getAuctionById(routeId),
     getArtistDisplayName(),
   ])
-  if (!house || !auction) notFound()
+  if (!auction) notFound()
+  const house = auction.house
 
   // Fetch all the per-page data in parallel — token metadata, bid history,
   // current owner, and provenance timeline. Each is independently cached
   // via unstable_cache so re-renders are cheap.
   const [metadata, bids, currentOwner, provenance] = await Promise.all([
     getTokenMetadata(auction.tokenContract, auction.tokenId),
-    getBidHistory(auctionId),
+    getBidHistory(house, auction.houseVersion, auction.auctionId),
     getTokenOwner(auction.tokenContract, auction.tokenId),
     getTokenProvenance(auction.tokenContract, auction.tokenId, house),
   ])
@@ -85,7 +86,11 @@ export default async function AuctionPage({ params }: { params: Params }) {
   const image = metadata?.image ?? null
   const animationUrl = metadata?.animationUrl ?? null
   const isHistorical =
-    auction.status === "settled" || auction.status === "cancelled"
+    auction.status === "settled" ||
+    auction.status === "cancelled" ||
+    auction.status === "unwound"
+  const isPendingLot =
+    auction.status === "deferred" || auction.status === "unwound_return_pending"
   const settledAtTime = bids.length > 0 ? bids[0].blockTime : null
   // Caps display name for the creator caption — mirrors PND's mono-caps treatment.
   const creatorCaption = displayName.toUpperCase()
@@ -124,7 +129,7 @@ export default async function AuctionPage({ params }: { params: Params }) {
             </section>
           ) : null}
 
-          {/* Auction state — settled summary or live bid panel. */}
+          {/* Auction state: settled summary, pending-lot card, or live bid panel. */}
           {isHistorical ? (
             <section className="py-5 border-b border-gray-100">
               <SettledSummary
@@ -134,11 +139,24 @@ export default async function AuctionPage({ params }: { params: Params }) {
                 settledAtTime={settledAtTime}
               />
             </section>
+          ) : isPendingLot ? (
+            <section className="py-5 border-b border-gray-100">
+              <DeferredLotCard
+                houseAddress={house}
+                auctionId={auction.auctionId}
+                status={auction.status as "deferred" | "unwound_return_pending"}
+                winner={auction.winner ?? null}
+                deferredAt={auction.deferredAt ?? null}
+                refundAmount={auction.refundAmount ?? null}
+                ensMap={ensMap}
+              />
+            </section>
           ) : (
             <>
               <section className="py-5 border-b border-gray-100">
                 <BidForm
                   houseAddress={house}
+                  houseVersion={auction.houseVersion}
                   auctionId={auction.auctionId}
                   ensMap={ensMap}
                   initial={{
@@ -148,6 +166,9 @@ export default async function AuctionPage({ params }: { params: Params }) {
                     bidder: auction.bidder,
                     firstBidTime: auction.firstBidTime,
                     tokenOwner: auction.tokenOwner,
+                    standard: auction.standard,
+                    quantity: auction.quantity,
+                    listingExpiry: auction.listingExpiry,
                   }}
                 />
               </section>
@@ -236,6 +257,14 @@ export default async function AuctionPage({ params }: { params: Params }) {
                 Token ID
               </dt>
               <dd className="text-[10px] font-mono">{auction.tokenId}</dd>
+              {auction.standard === "erc1155" ? (
+                <>
+                  <dt className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
+                    Quantity
+                  </dt>
+                  <dd className="text-[10px] font-mono">{auction.quantity}</dd>
+                </>
+              ) : null}
               <dt className="text-[10px] font-mono uppercase tracking-wider text-gray-400">
                 House
               </dt>
@@ -256,7 +285,7 @@ export default async function AuctionPage({ params }: { params: Params }) {
               <RefreshMetadataButton
                 tokenContract={auction.tokenContract}
                 tokenId={auction.tokenId}
-                auctionId={auction.auctionId}
+                auctionId={routeId}
               />
             </div>
           </section>

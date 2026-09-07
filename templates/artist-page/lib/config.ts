@@ -22,6 +22,17 @@ export const SOVEREIGN_FACTORY_ADDRESS: Address =
 // existed before the factory was deployed.
 export const SOVEREIGN_FACTORY_DEPLOY_BLOCK = 24_973_294n
 
+// SovereignAuctionHouseV2Factory mainnet deploy address. An artist may hold
+// a house on either factory generation, or both during a migration (a V1
+// house with settled history plus a V2 house for new listings), see
+// lib/auctions.ts for how both are resolved and merged.
+export const SOVEREIGN_V2_FACTORY_ADDRESS: Address =
+  "0x77aB853543286C9Cdd7dd6c01222A7cC4Ac93d63"
+
+// Earliest block the V2 factory existed. Bounds the V2 house-creation and
+// event scans the same way SOVEREIGN_FACTORY_DEPLOY_BLOCK bounds the V1 ones.
+export const SOVEREIGN_V2_FACTORY_DEPLOY_BLOCK = 25_901_772n
+
 // Sentinel "no project ID provided" value. The template's default zero-config
 // posture is: no WalletConnect mobile support — `lib/wagmi-config.ts`
 // detects this sentinel and ships a connector list that doesn't need a
@@ -120,6 +131,8 @@ export type AppConfig = {
   walletConnectProjectId: string
   factoryAddress: Address
   factoryDeployBlock: bigint
+  v2FactoryAddress: Address
+  v2FactoryDeployBlock: bigint
   /**
    * The artist's Surface, if they've deployed one. Null means
    * "no collection configured" — all collection-mint UI (CollectionMintCard,
@@ -169,6 +182,8 @@ export function getConfig(): AppConfig {
       DEFAULT_WALLETCONNECT_PROJECT_ID,
     factoryAddress: SOVEREIGN_FACTORY_ADDRESS,
     factoryDeployBlock: SOVEREIGN_FACTORY_DEPLOY_BLOCK,
+    v2FactoryAddress: SOVEREIGN_V2_FACTORY_ADDRESS,
+    v2FactoryDeployBlock: SOVEREIGN_V2_FACTORY_DEPLOY_BLOCK,
     collectionAddress: readCollectionAddress(),
   }
   return _config
