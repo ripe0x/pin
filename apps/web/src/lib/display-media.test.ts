@@ -73,6 +73,21 @@ test("a pending or failed delivery falls through to metadata", () => {
   })
 })
 
+test("a probed video kind settles an extension-less URL as video before a poster exists", () => {
+  const media = chooseDisplayMedia(
+    { imageUrl: "https://nft-cdn.example/eth-mainnet/0e2f9b0b", animationUrl: null },
+    readyDelivery({ status: "pending", kind: "video", thumbnailUrl: null }),
+    ref,
+  )
+  assert.deepEqual(media, {
+    kind: "video",
+    src: "https://nft-cdn.example/eth-mainnet/0e2f9b0b",
+    poster: null,
+    width: null,
+    height: null,
+  })
+})
+
 test("an inline image data URI routes through the token media API", () => {
   const media = chooseDisplayMedia(
     { imageUrl: "data:image/svg+xml;base64,AAAA", animationUrl: null },

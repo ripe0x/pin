@@ -66,6 +66,10 @@ export function chooseDisplayMedia(
   if (!uri) return { kind: "none" }
   const trimmed = uri.trim()
   const lower = trimmed.toLowerCase()
+  // The worker probes the real content type. A record that knows the
+  // source is a video settles the kind server-side even before a poster
+  // exists, so an extension-less URL is never rendered as an image first.
+  const knownVideo = delivery?.kind === "video"
 
   if (lower.startsWith("data:")) {
     const mime = lower.slice("data:".length).split(/[;,]/, 1)[0]
@@ -76,13 +80,13 @@ export function chooseDisplayMedia(
   }
 
   if (lower.startsWith("http://") || lower.startsWith("https://")) {
-    return isVideoUrl(trimmed)
+    return knownVideo || isVideoUrl(trimmed)
       ? { kind: "video", src: trimmed, poster: null, width: null, height: null }
       : { kind: "image", src: trimmed, width: null, height: null }
   }
 
   const resolved = resolveRemoteUri(trimmed)
-  return isVideoUrl(resolved)
+  return knownVideo || isVideoUrl(resolved)
     ? { kind: "video", src: resolved, poster: null, width: null, height: null }
     : { kind: "image", src: resolved, width: null, height: null }
 }

@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect, useRef, useState, type ReactNode } from "react"
-import { useOptimizedImage } from "@/lib/use-optimized-image"
+import { useEffect, useRef, useState, type ReactNode, type SyntheticEvent } from "react"
 import { useIpfsGatewayFallback } from "@/lib/use-ipfs-fallback"
+import { useThumbnailMedia } from "@/lib/use-thumbnail-media"
 import type { DisplayMedia } from "@/lib/display-media"
 
 type Props = {
@@ -13,10 +13,14 @@ type Props = {
 
 /**
  * Renders a `DisplayMedia` resolved server-side by `getDisplayMedia`.
- * Image and video-with-poster both render an `<img>` through the same
- * proxy-resize + gateway-rotation cascade `useOptimizedImage` already
- * gives every other grid thumbnail; video-without-poster falls back to a
- * native `<video>` element with its own gateway rotation.
+ *
+ * image: `<img>` through the proxy-resize and gateway-rotation cascade.
+ * A URL with no file extension can turn out to be a video (some CDNs
+ * serve mp4 from the metadata `image` field); when the image cascade
+ * fails on such a URL the element escalates to a video still.
+ * video with poster: the poster as an `<img>` with a play glyph.
+ * video without poster: a paused first frame from the video itself.
+ * none: a labelled placeholder.
  */
 export function Artwork({ media, alt, className }: Props) {
   if (media.kind === "none") return <Placeholder alt={alt} className={className} />
@@ -37,8 +41,6 @@ function Placeholder({ alt, className }: { alt: string; className?: string }) {
   )
 }
 
-/** Image, or a video's stored poster shown as a still with an overlay
- * (e.g. a play glyph). Both go through the same proxy/gateway cascade. */
 function ImageArtwork({
   src,
   alt,
@@ -50,31 +52,46 @@ function ImageArtwork({
   className?: string
   overlay?: ReactNode
 }) {
-  const img = useOptimizedImage(src, 720)
+  const media = useThumbnailMedia(src, 720)
   const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
     setLoaded(false)
-    // Cached media can finish before React hydrates and attaches onLoad.
-    // Recover that success state so a real image never sits behind the
-    // loading skeleton forever.
-    if (img.ref.current?.complete && img.ref.current.naturalWidth > 0) {
+    // A cached image can finish before React attaches onLoad. Read the
+    // element state once on mount so a loaded image never keeps the
+    // skeleton.
+    if (media.imgRef.current?.complete && media.imgRef.current.naturalWidth > 0) {
       setLoaded(true)
     }
-  }, [src, img.src])
+  }, [src, media.imgSrc])
 
-  if (img.failed) return <Placeholder alt={alt} className={className} />
+  if (media.kind === "failed") return <Placeholder alt={alt} className={className} />
+  if (media.kind === "video") {
+    return (
+      <VideoStill
+        src={media.videoSrc}
+        alt={alt}
+        className={className}
+        onSourceError={() => {
+          // The escalated cascade reports whether it rotated; the plain
+          // image cascade returns nothing and tracks failure itself.
+          const rotated = media.onVideoError() as unknown
+          return rotated === undefined ? true : rotated === true
+        }}
+      />
+    )
+  }
 
   return (
     <div className={cx("relative h-full w-full overflow-hidden bg-gray-100", className)}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        ref={img.ref}
-        src={img.src}
+        ref={media.imgRef}
+        src={media.imgSrc}
         alt={alt}
         loading="lazy"
         decoding="async"
-        onError={img.onError}
+        onError={media.onImgError}
         onLoad={() => setLoaded(true)}
         className={`h-full w-full object-cover transition-[opacity,transform] duration-500 group-hover:scale-[1.015] ${
           loaded ? "" : "animate-pulse"
@@ -86,18 +103,49 @@ function ImageArtwork({
   )
 }
 
-/** Video with no stored poster: a native <video> element with its own
- * gateway rotation, first frame as the still. Never an empty gray box. */
+/** Video without a stored poster, with gateway rotation on its source. */
 function VideoArtwork({ src, alt, className }: { src: string; alt: string; className?: string }) {
   const { src: videoSrc, onError } = useIpfsGatewayFallback(src)
+  return <VideoStill src={videoSrc} alt={alt} className={className} onSourceError={onError} />
+}
+
+/**
+ * A still frame taken from the video itself. The element autoplays muted
+ * and pauses on the first playing frame, which paints a frame in every
+ * browser (Safari paints nothing for a paused video that never played)
+ * while downloading only the head of the file. `onSourceError` returns
+ * true when it swapped in another source; false means give up.
+ */
+function VideoStill({
+  src,
+  alt,
+  className,
+  onSourceError,
+}: {
+  src: string
+  alt: string
+  className?: string
+  onSourceError: () => boolean
+}) {
   const [loaded, setLoaded] = useState(false)
   const [failed, setFailed] = useState(false)
   const videoRef = useRef<HTMLVideoElement | null>(null)
 
   useEffect(() => {
     setLoaded(false)
-    if ((videoRef.current?.readyState ?? 0) >= 2) setLoaded(true)
-  }, [src, videoSrc])
+    setFailed(false)
+    const video = videoRef.current
+    if (!video) return
+    if (video.readyState >= 2) setLoaded(true)
+    // Reload after a source swap; autoplay only fires on the initial load.
+    video.load()
+  }, [src])
+
+  const holdFirstFrame = (event: SyntheticEvent<HTMLVideoElement>) => {
+    const video = event.currentTarget
+    video.pause()
+    setLoaded(true)
+  }
 
   if (failed) return <Placeholder alt={alt} className={className} />
 
@@ -105,16 +153,19 @@ function VideoArtwork({ src, alt, className }: { src: string; alt: string; class
     <div className={cx("relative h-full w-full overflow-hidden bg-gray-100", className)}>
       <video
         ref={videoRef}
-        src={videoSrc}
+        src={src}
         aria-label={alt}
+        autoPlay
         muted
         playsInline
+        disablePictureInPicture
         preload="metadata"
+        onPlaying={holdFirstFrame}
+        onLoadedData={() => setLoaded(true)}
         onError={() => {
           setLoaded(false)
-          if (!onError()) setFailed(true)
+          if (!onSourceError()) setFailed(true)
         }}
-        onLoadedData={() => setLoaded(true)}
         className={`h-full w-full object-cover transition-[opacity,transform] duration-500 group-hover:scale-[1.015] ${
           loaded ? "" : "animate-pulse"
         }`}
