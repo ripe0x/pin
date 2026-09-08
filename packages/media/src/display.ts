@@ -1,5 +1,6 @@
 import { arweaveToHttp, ipfsToHttp } from "@pin/shared"
 import type { MediaRecord } from "./record.ts"
+import { isVideoUrl } from "./media-url.ts"
 
 export type DisplayMedia =
   | { kind: "image"; src: string; width: number | null; height: number | null }
@@ -22,15 +23,6 @@ export type ChooseDisplayMediaOptions = {
   inlineUrl: (ref: DisplayRef) => string
 }
 
-const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
-
-function isVideoUrl(url: string): boolean {
-  const path = url.split("?")[0].split("#")[0].toLowerCase()
-  const dot = path.lastIndexOf(".")
-  const slash = path.lastIndexOf("/")
-  const ext = dot > slash ? path.slice(dot) : ""
-  return VIDEO_EXTENSIONS.includes(ext)
-}
 
 /** Resolve an `ar://` or `ipfs://` metadata URI to an https gateway URL. */
 function resolveRemoteUri(uri: string): string {

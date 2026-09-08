@@ -108,7 +108,7 @@ Two entrypoints:
   `decodeInlineMedia` (kept here rather than the pure entry because it
   needs `Buffer`).
 
-`bin/pnd-media.mjs` (published as `pnd-media`) runs the CLI:
+`bin/pnd-media.mjs` (run with `pnpm --filter @pnd/media exec pnd-media`; the package is private, not published) runs the CLI:
 
 ```
 pnd-media derive --input <json> --out <dir> --public-base <url-or-path> --manifest <path>
