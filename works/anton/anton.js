@@ -3,16 +3,18 @@
 // Fully generative: palette, tone, blob layout, flow and proportions derive from
 // the token seed (window.tokenData.hash). Nothing is chosen or stored.
 //
-// Stateless animation: every animated value is a function of
+// Synced animation: every animated value is a function of
 // syncTime = wall clock + owner offset, plus the seed. No per-frame state, so
-// playback is independent of frame rate, tab throttling and load time. The
-// owner offset is derived from the owner address, so every token a wallet
-// holds runs on the same timeline and a transfer moves the token onto the new
-// owner's timeline. What changes (shape sequence, colours, blob paths) is
-// per-token from the seed; when it changes is shared across the wallet.
+// playback is independent of frame rate and tab throttling. The owner offset is
+// derived from the owner address, so every token a wallet holds runs on the same
+// timeline and a transfer moves the token onto the new owner's timeline. What
+// changes (shape sequence, colours, blob paths) is per-token from the seed; when
+// it changes is shared across the wallet.
 //
-// The canonical still (context "capture") is the frame at a fixed sync time with
-// no owner offset: deterministic from the seed, stable across transfers.
+// Determined opening: a token loads on its fixed frame at CAPTURE_T (same every
+// load), holds briefly, then its shape and colour params interpolate to the live
+// synced values, so the forms morph into the shared timeline. See the draw
+// section. The canonical still (context "capture") is that same CAPTURE_T frame.
 (function () {
   "use strict";
 
@@ -312,11 +314,13 @@
     rxyWarpAddMode: gl.getUniformLocation(prg, "u_rxyWarpAddMode")
   };
 
-  // ── stateless animation ─────────────────────────────────────────────────────
+  // ── synced animation ────────────────────────────────────────────────────────
   // Every animated value is a pure function of syncTime (wall clock + owner
   // offset) and the token seed. Nothing advances per frame, so playback does not
-  // depend on frame rate, tab throttling or load time, and every token a wallet
-  // holds sits at the same point of the shared timeline.
+  // depend on frame rate or tab throttling, and every token a wallet holds sits
+  // at the same point of the shared timeline. The determined opening (draw
+  // section) blends this live state in from the CAPTURE_T frame over the first
+  // few seconds after load.
   var TIME_WRAP = 65536; // seconds. Keeps u_time inside float32 precision.
 
   function keyHash(tag, i, j) { return xmur3(seedHash + "|" + tag + "|" + i + "|" + j); }
@@ -503,37 +507,38 @@
   var colorData = new Float32Array(MAX_LAYERS * 4);
   var paramData = new Float32Array(MAX_LAYERS * 2);
   var layer = { active: false, x: 0, y: 0, sx: 0, sy: 0, k: 2, phase: 0, intensity: 0, color: [0, 0, 0] };
-  // The canonical still is the frame at this fixed sync time with no owner
-  // offset, so it is deterministic from the seed and stable across transfers.
-  var CAPTURE_T = 1234.5;
+  // The determined opening frame and the canonical still are both the frame at
+  // this fixed time with no owner offset: deterministic from the seed. Chosen in
+  // a warp hold window (not a morph), so the opening shape is a single clean mode.
+  var CAPTURE_T = 1236.5;
 
-  function uploadLayers(T) {
+  function fillLayers(T, L, C, P) {
     for (var i = 0; i < MAX_LAYERS; i++) {
       layer.active = false;
+      layer.x = 0.5; layer.y = 1.5; // offscreen default so inactive slots have a defined position to blend from
       if (i < DYN_SLOTS) blobAt(i, T, layer);
       else if (persistent && i === MAX_LAYERS - 1) persistentAt(T, layer);
       var b4 = i * 4, b2 = i * 2;
-      layerData[b4] = layer.x;
-      layerData[b4 + 1] = layer.y;
-      layerData[b4 + 2] = layer.active ? layer.sx : 0;
-      layerData[b4 + 3] = layer.active ? layer.sy : 0;
-      colorData[b4] = layer.color[0];
-      colorData[b4 + 1] = layer.color[1];
-      colorData[b4 + 2] = layer.color[2];
-      colorData[b4 + 3] = layer.active ? layer.intensity : 0;
-      paramData[b2] = layer.k;
-      paramData[b2 + 1] = layer.phase;
+      L[b4] = layer.x;
+      L[b4 + 1] = layer.y;
+      L[b4 + 2] = layer.active ? layer.sx : 0;
+      L[b4 + 3] = layer.active ? layer.sy : 0;
+      C[b4] = layer.color[0];
+      C[b4 + 1] = layer.color[1];
+      C[b4 + 2] = layer.color[2];
+      C[b4 + 3] = layer.active ? layer.intensity : 0;
+      P[b2] = layer.k;
+      P[b2 + 1] = layer.phase;
+    }
+  }
+  function fillCols(T, arr) {
+    for (var i = 0; i < STATIC_COLS_COUNT; i++) {
+      var col = bgColorAt(i, T);
+      arr[i * 3] = col[0]; arr[i * 3 + 1] = col[1]; arr[i * 3 + 2] = col[2];
     }
   }
 
-  function render(T) {
-    var warp = shapeAt(T), i;
-    for (i = 0; i < STATIC_COLS_COUNT; i++) {
-      var col = bgColorAt(i, T);
-      staticCols[i * 3] = col[0]; staticCols[i * 3 + 1] = col[1]; staticCols[i * 3 + 2] = col[2];
-    }
-    uploadLayers(T);
-
+  function sizeCanvas() {
     // Live: fill the viewport at any aspect (uv stretches with the canvas, as in
     // the source). Capture: square, so stills are viewport-independent.
     var dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -547,7 +552,13 @@
     if (canvas.width !== pw || canvas.height !== ph) { canvas.width = pw; canvas.height = ph; }
     gl.viewport(0, 0, pw, ph);
     gl.uniform2f(u.res, pw, ph);
-    gl.uniform1f(u.time, T - Math.floor(T / TIME_WRAP) * TIME_WRAP);
+  }
+
+  // Uploads the current layerData/colorData/paramData/staticCols with the given
+  // warp and field time, and draws one frame.
+  function paint(warp, fieldTime) {
+    sizeCanvas();
+    gl.uniform1f(u.time, fieldTime - Math.floor(fieldTime / TIME_WRAP) * TIME_WRAP);
     gl.uniform1f(u.tau, modeTau);
     gl.uniform1i(u.maxIter, modeMaxIter);
     gl.uniform1f(u.cX, modeCX);
@@ -568,13 +579,69 @@
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   }
 
+  // Draws the fully synced frame at sync time T (also used for the capture still).
+  function render(T) {
+    fillCols(T, staticCols);
+    fillLayers(T, layerData, colorData, paramData);
+    paint(shapeAt(T), T);
+  }
+
+  // ── determined start → synced animation ──────────────────────────────────────
+  // A token opens on its determined frame (shapes and colours at CAPTURE_T),
+  // holds for HOLD seconds, then over RAMP seconds the shape and colour params
+  // interpolate to the live synced values, so the forms morph into place rather
+  // than cross-fading pixels. The background field cannot morph (it has no
+  // per-shape position), so it holds on the determined frame through HOLD, then
+  // runs on live synced time.
+  var HOLD = 1.0;
+  var RAMP = 1.6;
+  var loadStart = Date.now();
+  var startLayers = new Float32Array(MAX_LAYERS * 4);
+  var startColors = new Float32Array(MAX_LAYERS * 4);
+  var startParams = new Float32Array(MAX_LAYERS * 2);
+  var startCols = new Float32Array(STATIC_COLS_COUNT * 3);
+  fillLayers(CAPTURE_T, startLayers, startColors, startParams);
+  fillCols(CAPTURE_T, startCols);
+  var startWarp = shapeAt(CAPTURE_T); // single mode: CAPTURE_T sits in a warp hold
+
+  function lerpInto(dst, a, b, w) {
+    for (var i = 0; i < dst.length; i++) dst[i] = a[i] + (b[i] - a[i]) * w;
+  }
+
+  function drawLive() {
+    var elapsed = (Date.now() - loadStart) / 1000;
+    var liveT = syncTimeNow();
+    if (elapsed > HOLD + RAMP) { render(liveT); return; }
+
+    var w = elapsed <= HOLD ? 0 : Math.min(1, (elapsed - HOLD) / RAMP);
+    w = w * w * (3 - 2 * w); // smoothstep
+
+    // Fill live target into the working buffers, then blend back toward the
+    // determined start by (1 - w). At w = 0 the buffers equal the start frame.
+    fillCols(liveT, staticCols);
+    fillLayers(liveT, layerData, colorData, paramData);
+    lerpInto(staticCols, startCols, staticCols, w);
+    lerpInto(layerData, startLayers, layerData, w);
+    lerpInto(colorData, startColors, colorData, w);
+    lerpInto(paramData, startParams, paramData, w);
+
+    // Warp morphs from the determined start mode to the live mode.
+    var liveWarp = shapeAt(liveT);
+    var liveMode = liveWarp.mix < 0.5 ? liveWarp.a : liveWarp.b;
+    var warp = { a: startWarp.a, b: liveMode, mix: w };
+
+    // Field: determined during the hold, live once the morph begins.
+    var fieldTime = elapsed <= HOLD ? CAPTURE_T : liveT;
+    paint(warp, fieldTime);
+  }
+
   function syncTimeNow() { return Date.now() / 1000 + ownerOffset; }
-  function frame() { render(syncTimeNow()); requestAnimationFrame(frame); }
+  function frame() { drawLive(); requestAnimationFrame(frame); }
 
   if (isCapture) {
     render(CAPTURE_T);
   } else {
-    window.addEventListener("resize", function () { render(syncTimeNow()); });
+    window.addEventListener("resize", function () { drawLive(); });
     requestAnimationFrame(frame);
   }
 
