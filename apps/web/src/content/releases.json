@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "releases": [
+    {
+      "collection": "0xd938ff57d2c7111880a4ea5c8e6a92796c72a76e",
+      "slug": "homage",
+      "featured": true,
+      "featureOrder": 1,
+      "editorialSummary": "Ten thousand generative artworks, one for every CryptoPunk. Each is composed from the punk's onchain data and its live market state, rendered fully onchain."
+    }
+  ]
+}

@@ -335,6 +335,7 @@ export async function getTokenAuctionSales(
 
 export type ActivePndAuction = {
   house: string
+  auctionId: string
   tokenContract: string
   tokenId: string
   seller: string
@@ -343,6 +344,9 @@ export type ActivePndAuction = {
   endTime: number
   firstBidTime: number
   createdAtTime: number
+  // V2-only; "erc721" / 1n for every V1 row (see hasV2AuctionColumns).
+  tokenStandard: "erc721" | "erc1155"
+  quantity: bigint
 }
 
 /**
@@ -361,13 +365,16 @@ export async function getActivePndAuctions(
   // first uncached load is fine. The hero still streams immediately.
   return withTimeout(async () => {
     const schema = INDEXER_SCHEMA
+    const v2Cols = await hasV2AuctionColumns(schema)
 
     const rows = (await db.unsafe(
-      `SELECT house, token_contract, token_id::text AS token_id, seller,
+      `SELECT id::text AS auction_id, house, token_contract,
+              token_id::text AS token_id, seller,
               amount::text AS amount, reserve_price::text AS reserve_price,
               end_time::text AS end_time,
               first_bid_time::text AS first_bid_time,
               created_at_time::text AS created_at_time
+              ${v2Cols ? ", standard, quantity::text AS quantity" : ""}
        FROM ${schema}.pnd_auctions
        WHERE status = 'active'
        ORDER BY
@@ -376,6 +383,7 @@ export async function getActivePndAuctions(
        LIMIT $1`,
       [limit],
     )) as Array<{
+      auction_id: string
       house: string
       token_contract: string
       token_id: string
@@ -385,10 +393,13 @@ export async function getActivePndAuctions(
       end_time: string
       first_bid_time: string
       created_at_time: string
+      standard: string | null
+      quantity: string | null
     }>
 
     return rows.map((r) => ({
       house: r.house,
+      auctionId: r.auction_id,
       tokenContract: r.token_contract,
       tokenId: r.token_id,
       seller: r.seller,
@@ -397,6 +408,8 @@ export async function getActivePndAuctions(
       endTime: Number(r.end_time),
       firstBidTime: Number(r.first_bid_time),
       createdAtTime: Number(r.created_at_time),
+      tokenStandard: r.standard === "erc1155" ? "erc1155" : "erc721",
+      quantity: BigInt(r.quantity ?? "1"),
     }))
   }, 2_000)
 }
@@ -734,9 +747,14 @@ export async function getActivityFeed(
   limit = 50,
   cursor: ActivityCursor | null = null,
   timeoutMs = 3_000,
+  // "pnd" keeps only PND's own contracts (auction houses and Surface
+  // collections) and drops the Foundation and Mint protocol branches.
+  // "all" (default) keeps the full record.
+  sources: "pnd" | "all" = "all",
 ): Promise<ActivityEvent[] | null> {
   if (INDEXER_DISABLED || !sql) return null
   const db = sql
+  const includeThirdParty = sources !== "pnd"
 
   return withTimeout(async () => {
     const schema = INDEXER_SCHEMA
@@ -817,9 +835,12 @@ export async function getActivityFeed(
       return existing ? `WHERE ${existing} ${branch}` : `WHERE 1=1 ${branch}`
     }
 
-    const rows = (await db.unsafe(
-      `WITH events AS (
-         (SELECT
+    // Each branch is built independently, then joined with UNION ALL.
+    // Third-party branches are conditionally omitted (sources: "pnd") without
+    // fragile leading/trailing separator bookkeeping.
+    const branches: string[] = []
+
+    branches.push(`(SELECT
             'house.deployed'::text AS kind,
             ('house:' || house)::text AS id,
             created_at_time::text AS block_time,
@@ -838,11 +859,10 @@ export async function getActivityFeed(
           FROM ${schema}.pnd_houses
           ${where(null, "created_at_time")}
           ORDER BY created_at_time DESC
-          LIMIT ${PER_SUBQUERY_LIMIT})
+          LIMIT ${PER_SUBQUERY_LIMIT})`)
 
-         UNION ALL
-
-         (SELECT
+    if (includeThirdParty) {
+      branches.push(`(SELECT
             'collection.deployed'::text,
             ('coll:' || collection)::text,
             created_at_time::text,
@@ -861,11 +881,10 @@ export async function getActivityFeed(
           FROM ${schema}.fnd_collections
           ${where(null, "created_at_time")}
           ORDER BY created_at_time DESC
-          LIMIT ${PER_SUBQUERY_LIMIT})
+          LIMIT ${PER_SUBQUERY_LIMIT})`)
+    }
 
-         UNION ALL
-
-         (SELECT
+    branches.push(`(SELECT
             'auction.opened'::text,
             ('pnd-open:' || id)::text,
             created_at_time::text,
@@ -884,11 +903,10 @@ export async function getActivityFeed(
           FROM ${schema}.pnd_auctions
           ${where(PND_NOT_QUICK_CANCEL, "created_at_time")}
           ORDER BY created_at_time DESC
-          LIMIT ${PER_SUBQUERY_LIMIT})
+          LIMIT ${PER_SUBQUERY_LIMIT})`)
 
-         UNION ALL
-
-         (SELECT
+    if (includeThirdParty) {
+      branches.push(`(SELECT
             'auction.opened'::text,
             ('fnd-open:' || auction_id)::text,
             created_at_time::text,
@@ -907,11 +925,10 @@ export async function getActivityFeed(
           FROM ${schema}.fnd_auctions
           ${where(FND_NOT_QUICK_CANCEL, "created_at_time")}
           ORDER BY created_at_time DESC
-          LIMIT ${PER_SUBQUERY_LIMIT})
+          LIMIT ${PER_SUBQUERY_LIMIT})`)
+    }
 
-         UNION ALL
-
-         (SELECT
+    branches.push(`(SELECT
             'auction.settled'::text,
             ('pnd-settle:' || id)::text,
             settled_at_time::text,
@@ -930,11 +947,10 @@ export async function getActivityFeed(
           FROM ${schema}.pnd_auctions
           ${where("status = 'settled' AND settled_at_time IS NOT NULL", "settled_at_time")}
           ORDER BY settled_at_time DESC
-          LIMIT ${PER_SUBQUERY_LIMIT})
+          LIMIT ${PER_SUBQUERY_LIMIT})`)
 
-         UNION ALL
-
-         (SELECT
+    if (includeThirdParty) {
+      branches.push(`(SELECT
             CASE WHEN source = 'auction'
                  THEN 'auction.settled'
                  ELSE 'sale.buyNow' END,
@@ -955,11 +971,9 @@ export async function getActivityFeed(
           FROM ${schema}.fnd_sales
           ${where(null, "block_time")}
           ORDER BY block_time DESC
-          LIMIT ${PER_SUBQUERY_LIMIT})
+          LIMIT ${PER_SUBQUERY_LIMIT})`)
 
-         UNION ALL
-
-         (SELECT
+      branches.push(`(SELECT
             'mint'::text,
             ('mint:' || t.id)::text,
             t.block_time::text,
@@ -980,20 +994,19 @@ export async function getActivityFeed(
             ON m.contract = lower(t.contract) AND m.token_id = t.token_id::text
           ${where(mintNotBroken("t.block_time"), "t.block_time")}
           ORDER BY t.block_time DESC
-          LIMIT ${PER_SUBQUERY_LIMIT})
+          LIMIT ${PER_SUBQUERY_LIMIT})`)
+    }
 
-         UNION ALL
-
-         -- Mint protocol (mint.vv.xyz) editions. Worker-scanned into
-         -- public.artist_tokens (platform='mint'), gated on known_artists. Same
-         -- connection reaches public directly; mint_time is the first mint's
-         -- block time (precomputed so this branch is a partial-index scan). The
-         -- lateral join surfaces the first mint's recipient as the counterparty
-         -- (the collector who minted) — the row reads "<minter> minted <token>
-         -- by <artist>", with the artist (creator) as the trailing credit. The
-         -- lateral is a single indexed lookup per row (token_1155_mints is keyed
-         -- on (contract, token_id, block_number)).
-         (SELECT
+    // Mint protocol (mint.vv.xyz) editions. Worker-scanned into
+    // public.artist_tokens (platform='mint'), gated on known_artists. Same
+    // connection reaches public directly; mint_time is the first mint's
+    // block time (precomputed so this branch is a partial-index scan). The
+    // lateral join surfaces the first mint's recipient as the counterparty
+    // (the collector who minted), so the row reads "<minter> minted <token>
+    // by <artist>", with the artist (creator) as the trailing credit. The
+    // lateral is a single indexed lookup per row (token_1155_mints is keyed
+    // on (contract, token_id, block_number)).
+    if (includeThirdParty) branches.push(`(SELECT
             'mint'::text,
             ('vvmint:' || at.contract || ':' || at.token_id)::text,
             at.mint_time::text,
@@ -1023,11 +1036,9 @@ export async function getActivityFeed(
             AND ${mintNotBroken("at.mint_time")}
             ${branchFilter("at.mint_time")}
           ORDER BY at.mint_time DESC
-          LIMIT ${PER_SUBQUERY_LIMIT})
+          LIMIT ${PER_SUBQUERY_LIMIT})`)
 
-         UNION ALL
-
-         (SELECT
+    branches.push(`(SELECT
             (CASE WHEN pb.first_bid THEN 'auction.firstBid'
                   ELSE 'auction.bid' END)::text,
             ('pnd-bid:' || pb.id)::text,
@@ -1048,11 +1059,10 @@ export async function getActivityFeed(
           JOIN ${schema}.pnd_auctions pa ON pa.id = pb.auction_id
           ${where(null, "pb.block_time")}
           ORDER BY pb.block_time DESC
-          LIMIT ${PER_SUBQUERY_LIMIT})
+          LIMIT ${PER_SUBQUERY_LIMIT})`)
 
-         UNION ALL
-
-         (SELECT
+    if (includeThirdParty) {
+      branches.push(`(SELECT
             (CASE WHEN sub.rn = 1 THEN 'auction.firstBid'
                   ELSE 'auction.bid' END)::text,
             ('fnd-bid:' || sub.id)::text,
@@ -1079,15 +1089,13 @@ export async function getActivityFeed(
           JOIN ${schema}.fnd_auctions fa ON fa.auction_id = sub.auction_id
           ${where(null, "sub.block_time")}
           ORDER BY sub.block_time DESC
-          LIMIT ${PER_SUBQUERY_LIMIT})
-${
-  surfaceLive
-    ? `
-         UNION ALL
+          LIMIT ${PER_SUBQUERY_LIMIT})`)
+    }
 
-         -- Surface collection deploys. Name/symbol are on the row (from the
-         -- SurfaceCreated event), so no contract read is needed to render.
-         (SELECT
+    if (surfaceLive) {
+      // Surface collection deploys. Name/symbol are on the row (from the
+      // SurfaceCreated event), so no contract read is needed to render.
+      branches.push(`(SELECT
             'collection.deployed'::text,
             ('surf:' || collection)::text,
             created_at_time::text,
@@ -1106,19 +1114,17 @@ ${
           FROM ${schema}.collections
           ${where(null, "created_at_time")}
           ORDER BY created_at_time DESC
-          LIMIT ${PER_SUBQUERY_LIMIT})
+          LIMIT ${PER_SUBQUERY_LIMIT})`)
 
-         UNION ALL
-
-         -- Surface mints: one row per Minted call (a call can cover a
-         -- contiguous range, carried in quantity). Indexed for every
-         -- factory-deployed collection regardless of which interface drove
-         -- the mint, so self-hosted activity appears here too. The lateral
-         -- pulls the canonical minter's Sold record from the same tx for
-         -- the paid amount ((collection, block_number) is indexed on
-         -- collection_sales); free mints and custom minters have no Sold
-         -- row and surface with a null amount.
-         (SELECT
+      // Surface mints: one row per Minted call (a call can cover a
+      // contiguous range, carried in quantity). Indexed for every
+      // factory-deployed collection regardless of which interface drove
+      // the mint, so self-hosted activity appears here too. The lateral
+      // pulls the canonical minter's Sold record from the same tx for
+      // the paid amount ((collection, block_number) is indexed on
+      // collection_sales); free mints and custom minters have no Sold
+      // row and surface with a null amount.
+      branches.push(`(SELECT
             'mint'::text,
             ('surfmint:' || cm.id)::text,
             cm.block_time::text,
@@ -1146,9 +1152,12 @@ ${
           ) cs ON true
           ${where(null, "cm.block_time")}
           ORDER BY cm.block_time DESC
-          LIMIT ${PER_SUBQUERY_LIMIT})`
-    : ""
-}
+          LIMIT ${PER_SUBQUERY_LIMIT})`)
+    }
+
+    const rows = (await db.unsafe(
+      `WITH events AS (
+         ${branches.join("\n\n         UNION ALL\n\n         ")}
        )
        SELECT * FROM events
        ${
