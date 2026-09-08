@@ -1250,7 +1250,11 @@ export async function getTokenImagesFromMetadata(
   return map
 }
 
-export type TokenMetadataMedia = { imageUrl: string | null; animationUrl: string | null }
+export type TokenMetadataMedia = {
+  name: string | null
+  imageUrl: string | null
+  animationUrl: string | null
+}
 
 /** Batch read of `token_metadata.image_url` + `animation_url`, unlike
  * `getTokenImagesFromMetadata` this keeps rows whose only media is an
@@ -1262,7 +1266,7 @@ export async function getTokenMediaFromMetadata(
   const contracts = pairs.map((p) => p.contract.toLowerCase())
   const tokenIds = pairs.map((p) => p.tokenId)
   const rows = (await sql`
-    SELECT contract, token_id, image_url, animation_url
+    SELECT contract, token_id, name, image_url, animation_url
       FROM token_metadata
      WHERE (contract, token_id) IN (
        SELECT * FROM unnest(${contracts}::text[], ${tokenIds}::text[])
@@ -1272,12 +1276,14 @@ export async function getTokenMediaFromMetadata(
   `.catch(() => [])) as Array<{
     contract: string
     token_id: string
+    name: string | null
     image_url: string | null
     animation_url: string | null
   }>
   const map = new Map<string, TokenMetadataMedia>()
   for (const r of rows) {
     map.set(`${r.contract.toLowerCase()}:${r.token_id}`, {
+      name: r.name,
       imageUrl: r.image_url,
       animationUrl: r.animation_url,
     })

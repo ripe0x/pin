@@ -1,48 +1,18 @@
 import Link from "next/link"
 import { formatEther } from "viem"
 import { Artwork } from "@/components/media/Artwork"
-import { getActivePndAuctions, type ActivePndAuction } from "@/lib/indexer-queries"
-import { resolveTokenMetadataDirect } from "@/lib/onchain-discovery"
-import { getDisplayMedia, type DisplayMedia } from "@/lib/display-media"
+import { getAuctionShelf, type AuctionShelfCard } from "@/lib/landing-auctions"
 
 const MAX_ITEMS = 6
-const NO_ARTWORK: DisplayMedia = { kind: "none" }
-
-type AuctionCardData = {
-  auction: ActivePndAuction
-  title: string | null
-  artwork: DisplayMedia
-}
 
 /** Live PND auctions across every artist-owned house. Surface releases
  * have their own venue section above this one. */
 export async function AvailableNow() {
-  const indexedAuctions = await getActivePndAuctions(MAX_ITEMS).catch(() => null)
+  const shelf = await getAuctionShelf().catch(() => null)
   const now = Math.floor(Date.now() / 1000)
-
-  const activeAuctions = (indexedAuctions ?? []).filter(
-    (auction) => auction.endTime === 0 || auction.endTime > now,
-  )
-  const auctionArtwork = await getDisplayMedia(
-    activeAuctions.map((a) => ({ contract: a.tokenContract, tokenId: a.tokenId })),
-  ).catch(() => new Map<string, DisplayMedia>())
-  const auctionCards = await Promise.all(
-    activeAuctions.map(async (auction): Promise<AuctionCardData> => {
-      const meta = await resolveTokenMetadataDirect(
-        auction.tokenContract,
-        auction.tokenId,
-      ).catch(() => null)
-      return {
-        auction,
-        title: meta?.name ?? null,
-        artwork:
-          auctionArtwork.get(`${auction.tokenContract.toLowerCase()}:${auction.tokenId}`) ??
-          NO_ARTWORK,
-      }
-    }),
-  )
-
-  const items = auctionCards.slice(0, MAX_ITEMS)
+  const items = (shelf ?? [])
+    .filter((auction) => auction.endTime === 0 || auction.endTime > now)
+    .slice(0, MAX_ITEMS)
 
   return (
     <section aria-labelledby="available-now" className="space-y-5">
@@ -63,14 +33,14 @@ export async function AvailableNow() {
       {items.length > 0 ? (
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {items.map((item) => (
-              <AuctionCard
-                key={`auction:${item.auction.house}:${item.auction.auctionId}`}
-                card={item}
-                now={now}
-              />
+            <AuctionCard
+              key={`auction:${item.house}:${item.auctionId}`}
+              card={item}
+              now={now}
+            />
           ))}
         </ul>
-      ) : indexedAuctions === null ? (
+      ) : shelf === null ? (
         <div className="rounded-md border border-gray-200 p-5">
           <p className="text-sm text-fg-muted">
             Live availability is temporarily unavailable. Browse artist
@@ -79,9 +49,7 @@ export async function AvailableNow() {
         </div>
       ) : (
         <div className="rounded-md border border-gray-200 p-5">
-          <p className="text-sm text-fg-muted">
-            No auctions are open right now.
-          </p>
+          <p className="text-sm text-fg-muted">No auctions are open right now.</p>
         </div>
       )}
 
@@ -94,27 +62,22 @@ export async function AvailableNow() {
   )
 }
 
-function AuctionCard({ card, now }: { card: AuctionCardData; now: number }) {
-  const { auction, title, artwork } = card
-  const hasBid = auction.firstBidTime > 0
-  const price = hasBid ? auction.amount : auction.reservePrice
+function AuctionCard({ card, now }: { card: AuctionShelfCard; now: number }) {
   const status =
-    auction.endTime === 0
+    card.endTime === 0
       ? "Waiting for first bid"
-      : `Ends ${formatEndsIn(auction.endTime - now)}`
-  const quantityLabel =
-    auction.tokenStandard === "erc1155" && auction.quantity > 1n
-      ? ` · ${auction.quantity} editions`
-      : ""
+      : `Ends ${formatEndsIn(card.endTime - now)}`
+  const quantity = BigInt(card.quantity)
+  const quantityLabel = quantity > 1n ? ` · ${quantity} editions` : ""
 
   return (
     <li>
       <Link
-        href={`/auction/${auction.house}/${auction.auctionId}`}
+        href={`/auction/${card.house}/${card.auctionId}`}
         className="group block h-full overflow-hidden rounded-md border border-gray-200 bg-surface transition-colors hover:border-gray-400"
       >
         <div className="aspect-[4/3] overflow-hidden bg-gray-100">
-          <Artwork media={artwork} alt={title ?? `Token #${auction.tokenId}`} />
+          <Artwork media={card.artwork} alt={card.title ?? `Token #${card.tokenId}`} />
         </div>
         <div className="space-y-3 p-4">
           <div className="flex items-center justify-between gap-3">
@@ -126,18 +89,20 @@ function AuctionCard({ card, now }: { card: AuctionCardData; now: number }) {
           </div>
           <div>
             <h3 className="truncate text-base font-medium tracking-tight">
-              {title ?? `Token #${auction.tokenId}`}
+              {card.title ?? `Token #${card.tokenId}`}
             </h3>
             <p className="mt-1 truncate text-xs font-mono text-gray-500">
-              by {shortAddress(auction.seller)}
+              by {card.sellerLabel}
             </p>
           </div>
           <div className="flex items-end justify-between gap-3 border-t border-gray-200 pt-3">
             <div>
               <p className="text-[10px] font-mono uppercase tracking-wider text-gray-500">
-                {hasBid ? "Current bid" : "Reserve"}
+                {card.hasBid ? "Current bid" : "Reserve"}
               </p>
-              <p className="mt-0.5 text-sm font-mono tabular-nums">{formatEth(price)}</p>
+              <p className="mt-0.5 text-sm font-mono tabular-nums">
+                {formatEth(BigInt(card.priceWei))}
+              </p>
             </div>
             <p className="text-right text-[11px] font-mono text-gray-600">
               {status}
@@ -154,10 +119,6 @@ function formatEth(wei: bigint): string {
   const value = Number(formatEther(wei))
   const digits = value >= 1 ? 3 : 4
   return `${value.toLocaleString("en-US", { maximumFractionDigits: digits })} ETH`
-}
-
-function shortAddress(address: string): string {
-  return `${address.slice(0, 6)}…${address.slice(-4)}`
 }
 
 function formatEndsIn(seconds: number): string {

@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { Suspense } from "react"
 import { formatEther } from "viem"
+import { AvailableNow } from "@/components/home/landing-v2/AvailableNow"
 import { LatestActivity } from "@/components/home/landing-v2/LatestActivity"
 import { LandingProfileSearch } from "@/components/home/landing-v2/ProfileSearch"
 import { ReleaseVenue } from "@/components/home/landing-v2/ReleaseVenue"
@@ -64,7 +65,15 @@ export default function HomePage() {
       </header>
 
       <Suspense fallback={<VenueSkeleton />}>
-        <ReleaseVenue />
+        <ReleaseVenue part="featured" />
+      </Suspense>
+
+      <Suspense fallback={<ShelfSkeleton label="Loading auctions" />}>
+        <AvailableNow />
+      </Suspense>
+
+      <Suspense fallback={null}>
+        <ReleaseVenue part="recent" />
       </Suspense>
 
       <div className="grid gap-14 lg:grid-cols-[minmax(0,1.45fr)_minmax(260px,0.55fr)] lg:items-start">
@@ -181,6 +190,19 @@ function VenueSkeleton() {
     <section className="space-y-5" aria-label="Loading releases">
       <div className="h-8 w-56 skeleton rounded-sm" />
       <div className="aspect-[16/9] skeleton rounded-md md:aspect-[2/1]" />
+    </section>
+  )
+}
+
+function ShelfSkeleton({ label }: { label: string }) {
+  return (
+    <section className="space-y-5" aria-label={label}>
+      <div className="h-8 w-56 skeleton rounded-sm" />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="aspect-[4/3] skeleton rounded-md" />
+        <div className="aspect-[4/3] skeleton rounded-md" />
+        <div className="aspect-[4/3] skeleton rounded-md" />
+      </div>
     </section>
   )
 }

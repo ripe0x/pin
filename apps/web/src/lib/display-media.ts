@@ -38,7 +38,7 @@ function resolveRemoteUri(uri: string): string {
  * synchronous so it unit-tests without a database.
  */
 export function chooseDisplayMedia(
-  meta: TokenMetadataMedia | null,
+  meta: Pick<TokenMetadataMedia, "imageUrl" | "animationUrl"> | null,
   delivery: MediaDelivery | null,
   ref: Ref,
 ): DisplayMedia {
