@@ -1,35 +1,45 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { chooseDisplayMedia } from "./display-media"
+import { chooseDisplayMedia } from "./display.ts"
+import type { MediaRecord } from "./record.ts"
 
 const ref = { contract: "0xabc", tokenId: "1" }
+const opts = { inlineUrl: (r: typeof ref) => `/api/media/token/${r.contract}/${r.tokenId}` }
 
-function readyDelivery(overrides: Record<string, unknown> = {}) {
+function readyRecord(overrides: Partial<MediaRecord> = {}): MediaRecord {
   return {
-    status: "ready" as const,
-    kind: "image" as const,
-    originalUrl: "ipfs://source",
+    contract: "0xabc",
+    tokenId: "1",
+    sourceUrl: "ipfs://source",
     resolvedUrl: null,
+    kind: "image",
+    status: "ready",
     thumbnailUrl: "https://media.example/thumb.webp",
     posterUrl: null,
     width: 800,
     height: 600,
+    durationMs: null,
     mimeType: "image/jpeg",
     sourceBytes: 1000,
     derivativeBytes: 100,
-    sha256: null,
-    attempts: 1,
+    sourceSha256: null,
+    derivativeSha256: null,
+    preferredGateway: null,
+    attemptCount: 1,
     lastError: null,
+    lastAttemptAt: null,
+    lastSuccessAt: null,
     nextAttemptAt: null,
     ...overrides,
   }
 }
 
-test("a ready image delivery wins over raw metadata", () => {
+test("a ready image record wins over raw metadata", () => {
   const media = chooseDisplayMedia(
     { imageUrl: "ipfs://source", animationUrl: null },
-    readyDelivery(),
+    readyRecord(),
     ref,
+    opts,
   )
   assert.deepEqual(media, {
     kind: "image",
@@ -39,16 +49,17 @@ test("a ready image delivery wins over raw metadata", () => {
   })
 })
 
-test("a ready video delivery returns its poster and resolved source", () => {
+test("a ready video record returns its poster and resolved source", () => {
   const media = chooseDisplayMedia(
     { imageUrl: null, animationUrl: "ipfs://clip" },
-    readyDelivery({
+    readyRecord({
       kind: "video",
       thumbnailUrl: null,
       posterUrl: "https://media.example/poster.webp",
       resolvedUrl: "https://dweb.link/ipfs/clip",
     }),
     ref,
+    opts,
   )
   assert.deepEqual(media, {
     kind: "video",
@@ -59,11 +70,12 @@ test("a ready video delivery returns its poster and resolved source", () => {
   })
 })
 
-test("a pending or failed delivery falls through to metadata", () => {
+test("a pending or failed record falls through to metadata", () => {
   const media = chooseDisplayMedia(
     { imageUrl: "https://cdn.example/art.png", animationUrl: null },
-    readyDelivery({ status: "pending" }),
+    readyRecord({ status: "pending" }),
     ref,
+    opts,
   )
   assert.deepEqual(media, {
     kind: "image",
@@ -76,8 +88,9 @@ test("a pending or failed delivery falls through to metadata", () => {
 test("a probed video kind settles an extension-less URL as video before a poster exists", () => {
   const media = chooseDisplayMedia(
     { imageUrl: "https://nft-cdn.example/eth-mainnet/0e2f9b0b", animationUrl: null },
-    readyDelivery({ status: "pending", kind: "video", thumbnailUrl: null }),
+    readyRecord({ status: "pending", kind: "video", thumbnailUrl: null, posterUrl: null }),
     ref,
+    opts,
   )
   assert.deepEqual(media, {
     kind: "video",
@@ -88,11 +101,12 @@ test("a probed video kind settles an extension-less URL as video before a poster
   })
 })
 
-test("an inline image data URI routes through the token media API", () => {
+test("an inline image data URI routes through the caller's inline URL", () => {
   const media = chooseDisplayMedia(
     { imageUrl: "data:image/svg+xml;base64,AAAA", animationUrl: null },
     null,
     ref,
+    opts,
   )
   assert.deepEqual(media, {
     kind: "image",
@@ -107,6 +121,7 @@ test("an inline HTML animation is not displayable, so it is dropped", () => {
     { imageUrl: null, animationUrl: "data:text/html;base64,AAAA" },
     null,
     ref,
+    opts,
   )
   assert.deepEqual(media, { kind: "none" })
 })
@@ -116,6 +131,7 @@ test("ipfs:// metadata resolves to a gateway URL", () => {
     { imageUrl: "ipfs://bafy-image", animationUrl: null },
     null,
     ref,
+    opts,
   )
   assert.equal(media.kind, "image")
   assert.equal((media as { src: string }).src, "https://dweb.link/ipfs/bafy-image")
@@ -126,6 +142,7 @@ test("a remote video URL is classified by extension", () => {
     { imageUrl: "https://cdn.example/work.webm", animationUrl: null },
     null,
     ref,
+    opts,
   )
   assert.deepEqual(media, {
     kind: "video",
@@ -136,10 +153,10 @@ test("a remote video URL is classified by extension", () => {
   })
 })
 
-test("no metadata and no delivery yields none", () => {
+test("no metadata and no record yields none", () => {
   assert.deepEqual(
-    chooseDisplayMedia({ imageUrl: null, animationUrl: null }, null, ref),
+    chooseDisplayMedia({ imageUrl: null, animationUrl: null }, null, ref, opts),
     { kind: "none" },
   )
-  assert.deepEqual(chooseDisplayMedia(null, null, ref), { kind: "none" })
+  assert.deepEqual(chooseDisplayMedia(null, null, ref, opts), { kind: "none" })
 })

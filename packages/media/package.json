@@ -1,0 +1,25 @@
+{
+  "name": "@pnd/media",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./node": "./src/node/index.ts"
+  },
+  "bin": {
+    "pnd-media": "./bin/pnd-media.mjs"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test \"src/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@pin/shared": "workspace:*",
+    "sharp": "^0.35.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}

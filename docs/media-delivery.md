@@ -18,20 +18,30 @@ problems at once:
 
 ## The layer
 
+The reusable core (fetching, classification, thumbnail/poster derivation,
+and the display resolver) lives in `packages/media` (`@pnd/media`), a
+workspace package with no PND-specific assumptions: no database, no fixed
+bucket, no fixed routes. It runs the same in PND's worker, in a standalone
+CLI, or embedded in an artist's own site build. See "The `@pnd/media`
+package" below.
+
 Worker: `derive-token-media` (`apps/worker/src/tasks/derive-token-media.ts`)
-scans known artists' non-Surface tokens, fetches the source media, and
-writes a bounded delivery derivative:
+scans known artists' non-Surface tokens and calls `@pnd/media/node`'s
+`deriveMedia` for each one:
 
 - images resize to an 800px WebP thumbnail
 - videos get a WebP poster frame extracted with ffmpeg/ffprobe
-- both upload to S3-compatible object storage (`apps/worker/src/media/object-storage.ts`,
-  a hand-rolled SigV4 PUT so no AWS SDK dependency)
+- both upload through an `s3Store` (`@pnd/media/node`, a hand-rolled SigV4
+  PUT so no AWS SDK dependency)
 - the result is recorded in `token_media_delivery`
   (`db/migrations/027_media_delivery.sql`)
 
 Canonical art is never touched. The derivative is a disposable cache
 entry keyed by source URL; PND Surface tokens are excluded because
-their captures belong to RenderAssets, a separate pipeline.
+their captures belong to RenderAssets, a separate pipeline. Everything
+PND-specific (the candidate query, the `token_media_delivery` upsert, the
+scheduler result) stays in the worker task; the fetch/derive/store
+mechanics are the package's job.
 
 Web reads the derivative table through `apps/web/src/lib/media-delivery.ts`
 (`getMediaDeliveries`, a batch read keyed by `contract:tokenId`) and
@@ -68,6 +78,58 @@ The activity feed (`apps/web/src/lib/v2-activity.ts`) batches
 `data:` candidate through the token media route
 (`apps/web/src/lib/activity-media.ts`), preferring a ready delivery's
 thumbnail or poster over the raw metadata URI.
+
+## The `@pnd/media` package
+
+Two entrypoints:
+
+- `@pnd/media` (`packages/media/src/index.ts`) is browser-safe and pure:
+  no Node built-ins. `MediaRecord` is the delivery-state shape (source
+  URL, resolved URL, kind, status, thumbnail/poster URL, dimensions,
+  hashes, retry state); `recordKey(contract, tokenId)` keys one.
+  `chooseDisplayMedia(meta, record, ref, opts)` is the display resolver:
+  a ready record wins, else the metadata's image or animation URL, else
+  nothing. `opts.inlineUrl(ref)` supplies the URL that serves an inline
+  `data:` image outside page HTML, so the package carries no PND route.
+  `MediaManifest` plus `parseManifest` and `manifestLookup` are how a
+  static site carries its records without a database: a JSON file keyed
+  by `recordKey`, read at build or request time in place of a Postgres
+  read. `derivativeKey(prefix, sha256, ext)` builds a content-addressed
+  object key.
+- `@pnd/media/node` (`packages/media/src/node/index.ts`) has the I/O:
+  `resolvePublicHttpUrl`/`safeFetch`/`readBounded` (SSRF-safe fetching
+  that pins the validated address into the socket, rejects private/
+  loopback hosts, and bounds every read), `decodeDataUri`,
+  `loadMediaSource`/`classifyMedia`/`deriveImageThumbnail`
+  (sharp)/`deriveVideoPoster` (ffmpeg/ffprobe)/`deriveMedia` (the full
+  load+classify+derive+hash pipeline), a `MediaStore` interface with two
+  adapters (`s3Store`/`mediaStoreFromEnv` for S3-compatible object
+  storage, `fileStore` for a local directory plus a public base URL), and
+  `decodeInlineMedia` (kept here rather than the pure entry because it
+  needs `Buffer`).
+
+`bin/pnd-media.mjs` (published as `pnd-media`) runs the CLI:
+
+```
+pnd-media derive --input <json> --out <dir> --public-base <url-or-path> --manifest <path>
+```
+
+`--input` is a JSON array of `{contract, tokenId, sourceUrl}`. Each item
+derives through `fileStore` at concurrency 2, merges into the manifest at
+`--manifest` (created if absent), and writes it back. A per-item failure
+is recorded as a `failed` record; it never aborts the run.
+
+An artist site build runs this against its own token list, writes the
+derivatives under `public/media`, and ships the manifest alongside the
+build. At request or render time, `manifestLookup(manifest)` gives a
+`(ref) => MediaRecord | null` to pass into `chooseDisplayMedia`, no
+database required.
+
+Next steps, not yet built: a Storacha (artist-pinned) `MediaStore`
+adapter, so an artist's derivatives land on their own storage instead of
+a local directory; and wiring the CLI plus a manifest into
+`templates/artist-page/`'s build so a deployed artist site gets delivery
+derivatives without running PND's worker.
 
 ## Env vars
 
