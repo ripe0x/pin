@@ -56,7 +56,7 @@ export function AvailableArtwork({ src, alt }: Props) {
           }}
           onLoadedData={() => setLoaded(true)}
           className={`h-full w-full object-cover transition-[opacity,transform] duration-500 group-hover:scale-[1.015] ${
-            loaded ? "opacity-100" : "opacity-0"
+            loaded ? "" : "animate-pulse"
           }`}
         />
       ) : (
@@ -73,7 +73,7 @@ export function AvailableArtwork({ src, alt }: Props) {
           }}
           onLoad={() => setLoaded(true)}
           className={`h-full w-full object-cover transition-[opacity,transform] duration-500 group-hover:scale-[1.015] ${
-            loaded ? "opacity-100" : "opacity-0"
+            loaded ? "" : "animate-pulse"
           }`}
         />
       )}

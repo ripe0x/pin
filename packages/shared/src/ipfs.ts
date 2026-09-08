@@ -5,10 +5,10 @@
  * the web app, indexer, and API routes.
  */
 
-/** Public IPFS gateways, ordered by reliability. cloudflare-ipfs.com was
- * discontinued — `curl https://cloudflare-ipfs.com/...` returns nothing. */
+/** Public IPFS gateways, ordered by reliability. cloudflare-ipfs.com is
+ * discontinued (returns nothing) and nftstorage.link is retired (302 to
+ * ipfs.io, which image proxies do not follow), so neither is listed. */
 export const IPFS_GATEWAYS = [
-  "https://nftstorage.link",
   "https://dweb.link",
   "https://ipfs.io",
   "https://w3s.link",
