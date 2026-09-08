@@ -1201,6 +1201,29 @@ export async function getActivityFeed(
  * time. Used to give Surface mint rows a per-token thumbnail once the
  * worker has warmed the token's small onchain `image` (an SVG data URI).
  */
+/**
+ * Latest non-burned token id per Surface collection, keyed by lowercase
+ * collection address. One query over collection_tokens; collections with
+ * no live token are absent from the map.
+ */
+export async function getLatestCollectionTokenIds(
+  collections: string[],
+): Promise<Map<string, string>> {
+  if (INDEXER_DISABLED || !sql || collections.length === 0) return new Map()
+  const db = sql
+  const schema = INDEXER_SCHEMA
+  const addrs = collections.map((c) => c.toLowerCase())
+  const rows = (await db.unsafe(
+    `SELECT DISTINCT ON (lower(collection)) lower(collection) AS collection,
+            token_id::text AS token_id
+       FROM ${schema}.collection_tokens
+      WHERE lower(collection) = ANY($1::text[]) AND burned = false
+      ORDER BY lower(collection), updated_at_time DESC, token_id DESC`,
+    [addrs],
+  )) as Array<{ collection: string; token_id: string }>
+  return new Map(rows.map((r) => [r.collection, r.token_id]))
+}
+
 export async function getTokenImagesFromMetadata(
   pairs: Array<{ contract: string; tokenId: string }>,
 ): Promise<Map<string, string>> {

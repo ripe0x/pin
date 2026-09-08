@@ -14,6 +14,7 @@ import {
   type Collection,
 } from "@/lib/collection"
 import { getActivePndAuctions, type ActivePndAuction } from "@/lib/indexer-queries"
+import { getCollectionArtwork } from "@/lib/collection-artwork"
 import { resolveTokenMetadataDirect } from "@/lib/onchain-discovery"
 
 const MAX_ITEMS = 6
@@ -32,9 +33,12 @@ type Props = {
   // Recent collections already fetched by the caller. ReleaseVenue passes
   // its own list so the two sections share one fetch.
   collections?: Collection[] | null
+  // Display image per collection (lowercase address), from the caller when
+  // it already resolved them.
+  artwork?: Map<string, string>
 }
 
-export async function AvailableNow({ collections: given }: Props = {}) {
+export async function AvailableNow({ collections: given, artwork: givenArtwork }: Props = {}) {
   const factory = surfaceFactory()
   const [collections, indexedAuctions] = await Promise.all([
     given !== undefined
@@ -51,6 +55,7 @@ export async function AvailableNow({ collections: given }: Props = {}) {
       (c) => lifecycleStatus(saleWindowOf(c), c.minted, now) === SurfaceStatus.Open,
     )
     .slice(0, 4)
+  const artwork = givenArtwork ?? (await getCollectionArtwork(openReleases))
 
   const activeAuctions = (indexedAuctions ?? []).filter(
     (auction) => auction.endTime === 0 || auction.endTime > now,
@@ -94,7 +99,11 @@ export async function AvailableNow({ collections: given }: Props = {}) {
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {items.map((item) =>
             item.type === "release" ? (
-              <ReleaseCard key={`release:${item.value.address}`} release={item.value} />
+              <ReleaseCard
+                key={`release:${item.value.address}`}
+                release={item.value}
+                artwork={artwork.get(item.value.address.toLowerCase()) ?? null}
+              />
             ) : (
               <AuctionCard
                 key={`auction:${item.value.auction.house}:${item.value.auction.auctionId}`}
@@ -131,7 +140,7 @@ export async function AvailableNow({ collections: given }: Props = {}) {
   )
 }
 
-function ReleaseCard({ release }: { release: Collection }) {
+function ReleaseCard({ release, artwork }: { release: Collection; artwork: string | null }) {
   const priceStrategy = release.sale?.priceStrategy ?? ZERO_ADDRESS
   const priceLabel = hasPriceStrategy(priceStrategy)
     ? "Live price"
@@ -148,7 +157,7 @@ function ReleaseCard({ release }: { release: Collection }) {
         className="group block h-full overflow-hidden rounded-md border border-gray-200 bg-surface transition-colors hover:border-gray-400"
       >
         <div className="aspect-[4/3] overflow-hidden bg-gray-100">
-          <AvailableArtwork src={release.cover || null} alt={release.name} />
+          <AvailableArtwork src={artwork} alt={release.name} />
         </div>
         <div className="space-y-3 p-4">
           <div className="flex items-center justify-between gap-3">

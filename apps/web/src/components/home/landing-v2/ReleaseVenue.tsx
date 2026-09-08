@@ -13,6 +13,7 @@ import {
   surfaceFactory,
   type Collection,
 } from "@/lib/collection"
+import { getCollectionArtwork } from "@/lib/collection-artwork"
 import { readEnsIdentities, type StoredEnsIdentity } from "@/lib/ens-identity-store"
 import {
   featuredReleaseEditorial,
@@ -52,7 +53,11 @@ export async function ReleaseVenue() {
 
   if (releases.length === 0) return <AvailableNow collections={recent} />
 
-  const identities = await readEnsIdentities(releases.map((r) => r.owner))
+  const [identities, artwork] = await Promise.all([
+    readEnsIdentities(releases.map((r) => r.owner)),
+    getCollectionArtwork(releases),
+  ])
+  const art = (release: Collection) => artwork.get(release.address.toLowerCase()) ?? null
   const now = Math.floor(Date.now() / 1000)
   const withStatus = (list: Collection[]) =>
     list.map((release) => ({
@@ -74,12 +79,12 @@ export async function ReleaseVenue() {
   const featured =
     programmedFeature?.item ??
     recentWithStatus.find(
-      (item) => item.status === SurfaceStatus.Open && item.release.cover,
+      (item) => item.status === SurfaceStatus.Open && art(item.release),
     ) ??
     recentWithStatus.find(
-      (item) => item.status === SurfaceStatus.Scheduled && item.release.cover,
+      (item) => item.status === SurfaceStatus.Scheduled && art(item.release),
     ) ??
-    recentWithStatus.find((item) => item.release.cover) ??
+    recentWithStatus.find((item) => art(item.release)) ??
     allWithStatus[0]
 
   const upcoming = recentWithStatus
@@ -101,6 +106,7 @@ export async function ReleaseVenue() {
     <div className="space-y-20">
       <FeaturedRelease
         release={featured.release}
+        artwork={art(featured.release)}
         status={featured.status}
         identity={identities.get(featured.release.owner.toLowerCase())}
         editorial={
@@ -117,11 +123,12 @@ export async function ReleaseVenue() {
           title="Upcoming"
           items={upcoming}
           identities={identities}
+          artwork={artwork}
           now={now}
         />
       ) : null}
 
-      <AvailableNow collections={recent} />
+      <AvailableNow collections={recent} artwork={artwork} />
 
       {recentShelf.length > 0 ? (
         <ReleaseShelf
@@ -130,6 +137,7 @@ export async function ReleaseVenue() {
           title="Recent releases"
           items={recentShelf}
           identities={identities}
+          artwork={artwork}
           now={now}
         />
       ) : null}
@@ -139,6 +147,7 @@ export async function ReleaseVenue() {
 
 function FeaturedRelease({
   release,
+  artwork,
   status,
   identity,
   editorial,
@@ -146,6 +155,7 @@ function FeaturedRelease({
   now,
 }: {
   release: Collection
+  artwork: string | null
   status: SurfaceStatus
   identity?: StoredEnsIdentity
   editorial: ReleaseEditorial | null
@@ -173,7 +183,7 @@ function FeaturedRelease({
         className="group grid overflow-hidden rounded-md border border-gray-200 bg-surface transition-colors hover:border-gray-400 md:grid-cols-[minmax(0,1.5fr)_minmax(280px,0.65fr)]"
       >
         <div className="aspect-[4/3] overflow-hidden bg-gray-100 md:aspect-auto md:min-h-[440px]">
-          <AvailableArtwork src={release.cover || null} alt={release.name} />
+          <AvailableArtwork src={artwork} alt={release.name} />
         </div>
         <div className="flex flex-col justify-between gap-10 p-6 sm:p-8">
           <div className="space-y-5">
@@ -202,6 +212,7 @@ function ReleaseShelf({
   title,
   items,
   identities,
+  artwork,
   now,
 }: {
   id: string
@@ -209,6 +220,7 @@ function ReleaseShelf({
   title: string
   items: Array<{ release: Collection; status: SurfaceStatus }>
   identities: Map<string, StoredEnsIdentity>
+  artwork: Map<string, string>
   now: number
 }) {
   return (
@@ -227,7 +239,10 @@ function ReleaseShelf({
               className="group block h-full overflow-hidden rounded-md border border-gray-200 bg-surface transition-colors hover:border-gray-400"
             >
               <div className="aspect-[4/3] overflow-hidden bg-gray-100">
-                <AvailableArtwork src={release.cover || null} alt={release.name} />
+                <AvailableArtwork
+                  src={artwork.get(release.address.toLowerCase()) ?? null}
+                  alt={release.name}
+                />
               </div>
               <div className="space-y-4 p-4">
                 <ReleaseState status={status} release={release} now={now} />
