@@ -1,13 +1,17 @@
 import assert from "node:assert/strict"
+import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import test from "node:test"
 import {
   buildSignedPutRequest,
-  mediaObjectStorageFromEnv,
-  objectKeyFor,
-  type MediaObjectStorage,
-} from "./object-storage.ts"
+  fileStore,
+  s3ConfigFromEnv,
+  type S3StoreConfig,
+} from "./store.ts"
+import { derivativeKey } from "../derivative.ts"
 
-const storage: MediaObjectStorage = {
+const config: S3StoreConfig = {
   endpoint: new URL("https://example.r2.cloudflarestorage.com"),
   bucket: "pnd-media",
   publicBaseUrl: "https://media.example.test",
@@ -17,17 +21,14 @@ const storage: MediaObjectStorage = {
   prefix: "media-cache/v1",
 }
 
-test("object keys are content-addressed and path-safe", () => {
+test("derivativeKey object keys are content-addressed and path-safe", () => {
   const hash = "a".repeat(64)
-  assert.equal(
-    objectKeyFor(storage, hash, ".webp"),
-    `media-cache/v1/aa/${hash}.webp`,
-  )
+  assert.equal(derivativeKey(config.prefix, hash, ".webp"), `media-cache/v1/aa/${hash}.webp`)
 })
 
 test("signed PUT request is deterministic and signs content type", () => {
   const request = buildSignedPutRequest(
-    storage,
+    config,
     "media-cache/v1/aa/file name.webp",
     Buffer.from("image"),
     "image/webp",
@@ -43,24 +44,18 @@ test("signed PUT request is deterministic and signs content type", () => {
     request.headers.authorization,
     /SignedHeaders=cache-control;content-type;host;x-amz-content-sha256;x-amz-date/,
   )
-  assert.equal(
-    request.headers["cache-control"],
-    "public, max-age=31536000, immutable",
-  )
+  assert.equal(request.headers["cache-control"], "public, max-age=31536000, immutable")
 })
 
 test("partial storage configuration fails closed", () => {
-  assert.throws(
-    () => mediaObjectStorageFromEnv({ MEDIA_OBJECT_BUCKET: "only-one" }),
-    /must be set together/,
-  )
-  assert.equal(mediaObjectStorageFromEnv({}), null)
+  assert.throws(() => s3ConfigFromEnv({ MEDIA_OBJECT_BUCKET: "only-one" }), /must be set together/)
+  assert.equal(s3ConfigFromEnv({}), null)
 })
 
 test("public delivery URL must be HTTPS", () => {
   assert.throws(
     () =>
-      mediaObjectStorageFromEnv({
+      s3ConfigFromEnv({
         MEDIA_OBJECT_ENDPOINT: "https://objects.example.test",
         MEDIA_OBJECT_BUCKET: "media",
         MEDIA_OBJECT_PUBLIC_BASE_URL: "http://media.example.test",
@@ -69,4 +64,18 @@ test("public delivery URL must be HTTPS", () => {
       }),
     /PUBLIC_BASE_URL must use https/,
   )
+})
+
+test("fileStore writes bytes under dir and returns a publicBase URL", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pnd-media-store-"))
+  try {
+    const store = fileStore({ dir, publicBase: "https://artist.example/media" })
+    const key = derivativeKey("media", "b".repeat(64), "webp")
+    const { url } = await store.put(key, Buffer.from("hello"), "image/webp")
+    assert.equal(url, `https://artist.example/media/${key}`)
+    const written = await readFile(join(dir, key))
+    assert.equal(written.toString(), "hello")
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
 })

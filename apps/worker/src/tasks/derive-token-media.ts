@@ -3,33 +3,24 @@
  * token media. Canonical art stays at its original URI. PND Surface contracts
  * are excluded because their permanent captures belong to RenderAssets and
  * the client-side #271/#272 pipeline.
+ *
+ * Fetching, classification and the actual thumbnail/poster derivation live
+ * in `@pnd/media/node`, reusable outside PND's own worker and database.
+ * This file owns only what is PND-specific: the candidate query, the
+ * `token_media_delivery` upsert, and the scheduler result.
  */
-import { createHash } from "node:crypto"
-import { lookup } from "node:dns/promises"
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
-import http from "node:http"
-import https from "node:https"
-import { Readable } from "node:stream"
-import { isIP } from "node:net"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
-import { spawn } from "node:child_process"
-import sharp from "sharp"
+import { extractArweavePath, extractCid } from "@pin/shared"
+import { derivativeKey } from "@pnd/media"
 import {
-  arweavePathToFallbackUrls,
-  extractArweavePath,
-  extractCid,
-  ipfsCidToFallbackUrls,
-  ipfsToHttp,
-} from "@pin/shared"
+  UnsupportedMediaError,
+  deriveMedia,
+  s3ConfigFromEnv,
+  s3Store,
+  type MediaStore,
+  type S3StoreConfig,
+} from "@pnd/media/node"
 import { sql } from "../db.ts"
 import { INDEXER_SCHEMA } from "../indexer-schema.ts"
-import {
-  mediaObjectStorageFromEnv,
-  objectKeyFor,
-  putMediaObject,
-  type MediaObjectStorage,
-} from "../media/object-storage.ts"
 import type { TaskResult } from "../scheduler.ts"
 
 const TASK = "derive-token-media"
@@ -44,29 +35,16 @@ const MAX_PIXELS = Math.min(
   100_000_000,
 )
 const OUTPUT_WIDTH = Math.min(Number(process.env.MEDIA_DERIVE_WIDTH ?? "800"), 1600)
-const FETCH_TIMEOUT_MS = 20_000
-const DECODE_TIMEOUT_MS = 25_000
+const DERIVE_OPTIONS = {
+  maxInputBytes: MAX_INPUT_BYTES,
+  maxPixels: MAX_PIXELS,
+  outputWidth: OUTPUT_WIDTH,
+}
 
 type Candidate = {
   contract: string
   tokenId: string
   sourceUrl: string
-}
-
-type LoadedSource = {
-  bytes: Buffer
-  mime: string
-  resolvedUrl: string | null
-  preferredGateway: string | null
-}
-
-type Derivative = {
-  bytes: Buffer
-  width: number
-  height: number
-  durationMs: number | null
-  kind: "image" | "video"
-  mime: "image/webp"
 }
 
 async function tableExists(schema: string, table: string): Promise<boolean> {
@@ -128,193 +106,7 @@ async function findCandidates(): Promise<Candidate[]> {
   )) as Candidate[]
 }
 
-function isPrivateIp(address: string): boolean {
-  const normalized = address.toLowerCase()
-  if (normalized === "::1" || normalized === "::" || normalized.startsWith("fe80:")) {
-    return true
-  }
-  if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true
-  const mapped = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/)?.[1]
-  const v4 = mapped ?? (isIP(normalized) === 4 ? normalized : null)
-  if (!v4) return false
-  const [a, b] = v4.split(".").map(Number)
-  return (
-    a === 0 ||
-    a === 10 ||
-    a === 127 ||
-    (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    a >= 224
-  )
-}
-
-type PublicTarget = { url: URL; address: string; family: 4 | 6 }
-
-/**
- * Validates scheme, credentials and host, resolves the host once, and
- * returns the address the connection must use. The same address is pinned
- * into the socket lookup below, so a host cannot answer the validation
- * lookup with a public address and the connection lookup with a private
- * one.
- */
-async function resolvePublicHttpUrl(value: string): Promise<PublicTarget> {
-  const url = new URL(value)
-  if (url.protocol !== "https:" && url.protocol !== "http:") {
-    throw new UnsupportedMediaError(`unsupported source scheme ${url.protocol}`)
-  }
-  if (url.username || url.password) throw new Error("credentialed media URL rejected")
-  const host = url.hostname.replace(/^\[|\]$/g, "")
-  const literal = isIP(host)
-  const addresses = literal
-    ? [{ address: host, family: literal }]
-    : await lookup(host, { all: true, verbatim: true })
-  if (addresses.length === 0 || addresses.some((row) => isPrivateIp(row.address))) {
-    throw new Error("non-public media host rejected")
-  }
-  const chosen = addresses[0]
-  return { url, address: chosen.address, family: chosen.family === 6 ? 6 : 4 }
-}
-
-/**
- * One HTTP request to a validated target. The socket connects to the
- * pre-resolved address while TLS SNI and the Host header keep the original
- * hostname. Redirects are not followed here; safeFetch re-validates each
- * hop. The stream is exposed as a web Response so callers read it the same
- * way as fetch output.
- */
-function requestPinned(target: PublicTarget, init: RequestInit): Promise<Response> {
-  const { url, address, family } = target
-  const client = url.protocol === "https:" ? https : http
-  const headers: Record<string, string> = {
-    accept: "*/*",
-    "user-agent": "pnd-media-derive/1",
-  }
-  for (const [key, value] of Object.entries((init.headers as Record<string, string>) ?? {})) {
-    headers[key.toLowerCase()] = value
-  }
-  return new Promise((resolve, reject) => {
-    const req = client.request(
-      {
-        protocol: url.protocol,
-        hostname: url.hostname,
-        port: url.port || undefined,
-        path: `${url.pathname}${url.search}`,
-        method: init.method ?? "GET",
-        headers,
-        servername: isIP(url.hostname) ? undefined : url.hostname,
-        // net.connect asks for a list when autoSelectFamily is on; answer both
-        // shapes with the one validated address.
-        lookup: (_host, opts, cb) =>
-          opts.all
-            ? (cb as unknown as (e: null, r: Array<{ address: string; family: number }>) => void)(
-                null,
-                [{ address, family }],
-              )
-            : cb(null, address, family),
-        timeout: FETCH_TIMEOUT_MS,
-      },
-      (res) => {
-        const responseHeaders = new Headers()
-        for (const [key, value] of Object.entries(res.headers)) {
-          if (value === undefined) continue
-          responseHeaders.set(key, Array.isArray(value) ? value.join(", ") : value)
-        }
-        const status = res.statusCode ?? 0
-        const body =
-          init.method === "HEAD" || status === 204 || status === 304
-            ? null
-            : (Readable.toWeb(res) as ReadableStream<Uint8Array>)
-        if (body === null) res.resume()
-        resolve(new Response(body, { status, headers: responseHeaders }))
-      },
-    )
-    req.on("timeout", () => req.destroy(new Error("media fetch timed out")))
-    req.on("error", reject)
-    req.end()
-  })
-}
-
-async function safeFetch(
-  initialUrl: string,
-  init: RequestInit,
-  redirects = 3,
-): Promise<{ response: Response; url: string }> {
-  let current = initialUrl
-  for (let i = 0; i <= redirects; i++) {
-    const target = await resolvePublicHttpUrl(current)
-    const response = await requestPinned(target, init)
-    if (response.status < 300 || response.status >= 400) {
-      return { response, url: current }
-    }
-    const location = response.headers.get("location")
-    await response.body?.cancel()
-    if (!location || i === redirects) throw new Error("media redirect limit exceeded")
-    current = new URL(location, current).toString()
-  }
-  throw new Error("media redirect limit exceeded")
-}
-
-async function readBounded(response: Response, limit: number): Promise<Buffer> {
-  const length = Number(response.headers.get("content-length") ?? "0")
-  if (length > limit) {
-    await response.body?.cancel()
-    throw new Error(`media exceeds ${limit} byte input ceiling`)
-  }
-  if (!response.body) return Buffer.alloc(0)
-  const reader = response.body.getReader()
-  const chunks: Buffer[] = []
-  let total = 0
-  try {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      total += value.byteLength
-      if (total > limit) throw new Error(`media exceeds ${limit} byte input ceiling`)
-      chunks.push(Buffer.from(value))
-    }
-  } finally {
-    await reader.cancel().catch(() => undefined)
-  }
-  return Buffer.concat(chunks, total)
-}
-
-async function consumeProbePrefix(response: Response, limit: number): Promise<void> {
-  if (!response.body) return
-  const reader = response.body.getReader()
-  let total = 0
-  try {
-    while (total < limit) {
-      const { done, value } = await reader.read()
-      if (done) break
-      total += value.byteLength
-    }
-  } finally {
-    await reader.cancel().catch(() => undefined)
-  }
-}
-
-function decodeDataUri(uri: string): { bytes: Buffer; mime: string } {
-  const comma = uri.indexOf(",")
-  if (comma < 0) throw new UnsupportedMediaError("malformed data URI")
-  const meta = uri.slice(5, comma)
-  const mime = meta.split(";")[0].toLowerCase() || "application/octet-stream"
-  const body = uri.slice(comma + 1)
-  const bytes = /;base64(?:;|$)/i.test(meta)
-    ? Buffer.from(body, "base64")
-    : Buffer.from(decodeURIComponent(body))
-  if (bytes.length > MAX_INPUT_BYTES) throw new Error("inline media exceeds input ceiling")
-  return { bytes, mime }
-}
-
-function sourceCandidates(sourceUrl: string): string[] {
-  const cidPath = extractCid(sourceUrl)
-  if (cidPath) return ipfsCidToFallbackUrls(cidPath)
-  const arweavePath = extractArweavePath(sourceUrl)
-  if (arweavePath) return arweavePathToFallbackUrls(arweavePath)
-  return [ipfsToHttp(sourceUrl)]
-}
-
+/** Path used as this row's cache-sharing key: a bare CID/Arweave path, or the URL's path+query+hash. */
 function exactSourcePath(sourceUrl: string): string | null {
   const contentPath = extractCid(sourceUrl) ?? extractArweavePath(sourceUrl)
   if (contentPath) return contentPath
@@ -324,178 +116,6 @@ function exactSourcePath(sourceUrl: string): string | null {
   } catch {
     return null
   }
-}
-
-async function probeAndLoad(sourceUrl: string): Promise<LoadedSource> {
-  if (sourceUrl.startsWith("data:")) {
-    const decoded = decodeDataUri(sourceUrl)
-    return {
-      ...decoded,
-      resolvedUrl: null,
-      preferredGateway: null,
-    }
-  }
-
-  const errors: string[] = []
-  for (const candidate of sourceCandidates(sourceUrl)) {
-    try {
-      let mime = ""
-      const head = await safeFetch(candidate, { method: "HEAD" }).catch(() => null)
-      if (head?.response.ok) {
-        mime = head.response.headers.get("content-type")?.split(";")[0].toLowerCase() ?? ""
-        const length = Number(head.response.headers.get("content-length") ?? "0")
-        if (length > MAX_INPUT_BYTES) throw new Error("media exceeds input ceiling")
-      } else {
-        const ranged = await safeFetch(candidate, {
-          headers: { Range: "bytes=0-65535", Accept: "image/*,video/*;q=0.9,*/*;q=0.1" },
-        })
-        if (!ranged.response.ok) throw new Error(`probe returned ${ranged.response.status}`)
-        mime = ranged.response.headers.get("content-type")?.split(";")[0].toLowerCase() ?? ""
-        const contentRange = ranged.response.headers.get("content-range")
-        const total = Number(contentRange?.match(/\/(\d+)$/)?.[1] ?? "0")
-        if (total > MAX_INPUT_BYTES) throw new Error("media exceeds input ceiling")
-        await consumeProbePrefix(ranged.response, 65_536)
-      }
-      const loaded = await safeFetch(candidate, {
-        headers: { Accept: "image/*,video/*;q=0.9,*/*;q=0.1" },
-      })
-      if (!loaded.response.ok) throw new Error(`download returned ${loaded.response.status}`)
-      const responseMime =
-        loaded.response.headers.get("content-type")?.split(";")[0].toLowerCase() ?? ""
-      const bytes = await readBounded(loaded.response, MAX_INPUT_BYTES)
-      return {
-        bytes,
-        mime: responseMime || mime || "application/octet-stream",
-        resolvedUrl: loaded.url,
-        preferredGateway: new URL(loaded.url).origin,
-      }
-    } catch (error) {
-      if (error instanceof UnsupportedMediaError) throw error
-      errors.push(`${candidate}: ${(error as Error).message}`)
-    }
-  }
-  throw new Error(errors.join("; ").slice(0, 600) || "media unavailable")
-}
-
-function classify(
-  mime: string,
-  sourceUrl: string,
-  bytes: Buffer,
-): "image" | "video" {
-  if (mime.startsWith("image/")) return "image"
-  if (mime.startsWith("video/")) return "video"
-  const prefix = bytes.subarray(0, 256)
-  const ascii = prefix.toString("utf8").trimStart().toLowerCase()
-  if (
-    prefix.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) ||
-    prefix.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff])) ||
-    prefix.subarray(0, 6).toString("ascii").startsWith("GIF8") ||
-    (prefix.subarray(0, 4).toString("ascii") === "RIFF" &&
-      prefix.subarray(8, 12).toString("ascii") === "WEBP") ||
-    (prefix.subarray(4, 8).toString("ascii") === "ftyp" &&
-      /^(avif|avis|heic|heix|mif1)$/.test(prefix.subarray(8, 12).toString("ascii"))) ||
-    ascii.startsWith("<svg") ||
-    ascii.startsWith("<?xml")
-  ) {
-    return "image"
-  }
-  if (
-    prefix.subarray(4, 8).toString("ascii") === "ftyp" ||
-    prefix.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]))
-  ) {
-    return "video"
-  }
-  const pathname = sourceUrl.split(/[?#]/)[0].toLowerCase()
-  if (/\.(png|jpe?g|gif|webp|avif|svg)$/.test(pathname)) return "image"
-  if (/\.(mp4|mov|webm|ogv)$/.test(pathname)) return "video"
-  if (mime.includes("html") || mime.startsWith("audio/")) {
-    throw new UnsupportedMediaError(`unsupported media type ${mime}`)
-  }
-  throw new UnsupportedMediaError(`unrecognized media type ${mime}`)
-}
-
-async function imageDerivative(source: Buffer): Promise<Derivative> {
-  const pipeline = sharp(source, { limitInputPixels: MAX_PIXELS, animated: false })
-    .rotate()
-    .resize({ width: OUTPUT_WIDTH, height: OUTPUT_WIDTH, fit: "inside", withoutEnlargement: true })
-    .webp({ quality: 80, effort: 4 })
-    .timeout({ seconds: Math.ceil(DECODE_TIMEOUT_MS / 1_000) })
-  const result = await pipeline.toBuffer({ resolveWithObject: true })
-  return {
-    bytes: result.data,
-    width: result.info.width,
-    height: result.info.height,
-    durationMs: null,
-    kind: "image",
-    mime: "image/webp",
-  }
-}
-
-async function runProcess(
-  command: string,
-  args: string[],
-): Promise<{ stdout: string; stderr: string }> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] })
-    let stdout = ""
-    let stderr = ""
-    child.stdout.on("data", (chunk) => {
-      stdout = (stdout + chunk.toString()).slice(-20_000)
-    })
-    child.stderr.on("data", (chunk) => {
-      stderr = (stderr + chunk.toString()).slice(-2_000)
-    })
-    const timer = setTimeout(() => child.kill("SIGKILL"), DECODE_TIMEOUT_MS)
-    child.once("error", reject)
-    child.once("exit", (code, signal) => {
-      clearTimeout(timer)
-      if (code === 0) resolve({ stdout, stderr })
-      else reject(new Error(`${command} failed (${signal ?? code}): ${stderr}`))
-    })
-  })
-}
-
-async function videoDerivative(source: Buffer): Promise<Derivative> {
-  const dir = await mkdtemp(join(tmpdir(), "pnd-media-"))
-  const input = join(dir, "source")
-  const output = join(dir, "poster.webp")
-  try {
-    await writeFile(input, source)
-    const probe = await runProcess("ffprobe", [
-      "-v", "error", "-select_streams", "v:0",
-      "-show_entries", "format=duration:stream=width,height",
-      "-of", "json", input,
-    ])
-    const probeJson = JSON.parse(probe.stdout) as {
-      streams?: Array<{ width?: number; height?: number }>
-      format?: { duration?: string }
-    }
-    await runProcess("ffmpeg", [
-      "-v", "error", "-ss", "0", "-i", input, "-frames:v", "1",
-      "-vf", `scale=${OUTPUT_WIDTH}:${OUTPUT_WIDTH}:force_original_aspect_ratio=decrease`,
-      "-c:v", "libwebp", "-quality", "80", "-y", output,
-    ])
-    const bytes = await readFile(output)
-    const info = await sharp(bytes).metadata()
-    if (!info.width || !info.height) throw new Error("poster dimensions unavailable")
-    const seconds = Number(probeJson.format?.duration ?? "")
-    return {
-      bytes,
-      width: info.width,
-      height: info.height,
-      durationMs: Number.isFinite(seconds) && seconds >= 0 ? Math.round(seconds * 1000) : null,
-      kind: "video",
-      mime: "image/webp",
-    }
-  } finally {
-    await rm(dir, { recursive: true, force: true })
-  }
-}
-
-class UnsupportedMediaError extends Error {}
-
-function hash(bytes: Uint8Array): string {
-  return createHash("sha256").update(bytes).digest("hex")
 }
 
 async function markAttempt(candidate: Candidate): Promise<number> {
@@ -555,31 +175,25 @@ async function reuseExactSource(candidate: Candidate): Promise<boolean> {
 
 async function processCandidate(
   candidate: Candidate,
-  storage: MediaObjectStorage,
+  storageConfig: S3StoreConfig,
+  store: MediaStore,
 ): Promise<void> {
   const attempt = await markAttempt(candidate)
   if (await reuseExactSource(candidate)) return
   try {
-    const source = await probeAndLoad(candidate.sourceUrl)
-    const kind = classify(source.mime, candidate.sourceUrl, source.bytes)
-    const derivative =
-      kind === "image"
-        ? await imageDerivative(source.bytes)
-        : await videoDerivative(source.bytes)
-    const sourceHash = hash(source.bytes)
-    const derivativeHash = hash(derivative.bytes)
-    const key = objectKeyFor(storage, derivativeHash, "webp")
-    const url = await putMediaObject(storage, key, derivative.bytes, derivative.mime)
+    const derived = await deriveMedia(candidate.sourceUrl, DERIVE_OPTIONS)
+    const key = derivativeKey(storageConfig.prefix, derived.sha256, "webp")
+    const { url } = await store.put(key, derived.bytes, derived.mime)
     await sql`
       UPDATE token_media_delivery SET
-        status = 'ready', media_kind = ${derivative.kind},
-        resolved_url = ${source.resolvedUrl}, preferred_gateway = ${source.preferredGateway},
-        thumbnail_url = ${derivative.kind === "image" ? url : null},
-        poster_url = ${derivative.kind === "video" ? url : null},
-        width = ${derivative.width}, height = ${derivative.height},
-        duration_ms = ${derivative.durationMs}, mime_type = ${source.mime},
-        source_bytes = ${source.bytes.length}, derivative_bytes = ${derivative.bytes.length},
-        source_sha256 = ${sourceHash}, derivative_sha256 = ${derivativeHash},
+        status = 'ready', media_kind = ${derived.kind},
+        resolved_url = ${derived.resolvedUrl}, preferred_gateway = ${derived.preferredGateway},
+        thumbnail_url = ${derived.kind === "image" ? url : null},
+        poster_url = ${derived.kind === "video" ? url : null},
+        width = ${derived.width}, height = ${derived.height},
+        duration_ms = ${derived.durationMs}, mime_type = ${derived.sourceMime},
+        source_bytes = ${derived.sourceBytes}, derivative_bytes = ${derived.bytes.length},
+        source_sha256 = ${derived.sourceSha256}, derivative_sha256 = ${derived.sha256},
         last_success_at = NOW(), next_attempt_at = NULL, last_error = NULL,
         updated_at = NOW()
       WHERE contract = ${candidate.contract} AND token_id = ${candidate.tokenId}
@@ -602,14 +216,15 @@ async function processCandidate(
 }
 
 export async function deriveTokenMedia(): Promise<TaskResult> {
-  const storage = mediaObjectStorageFromEnv()
-  if (!storage) {
+  const storageConfig = s3ConfigFromEnv()
+  if (!storageConfig) {
     console.log(`[${TASK}] media object storage not configured, skipping`)
     return { scopeCount: 0, rpcCalls: 0, rowsWritten: 0 }
   }
+  const store = s3Store(storageConfig)
   const candidates = await findCandidates()
   for (const candidate of candidates) {
-    await processCandidate(candidate, storage)
+    await processCandidate(candidate, storageConfig, store)
   }
   return { scopeCount: candidates.length, rpcCalls: 0, rowsWritten: candidates.length }
 }
