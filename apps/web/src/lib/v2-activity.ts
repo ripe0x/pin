@@ -1,9 +1,10 @@
 import "server-only"
-import { ipfsToHttp } from "@pin/shared"
 import { resolveTokenMetadataDirect } from "./onchain-discovery"
 import { getArtistIdentity } from "./artist-queries"
 import { getCollectionCover } from "./collection-onchain"
 import { getTokenImagesFromMetadata, type ActivityEvent } from "./indexer-queries"
+import { getMediaDeliveries, type MediaDelivery } from "./media-delivery"
+import { mediaForActivityFeed } from "./activity-media"
 import {
   GROUP_MINTER_SAMPLE,
   groupFeedEvents,
@@ -47,8 +48,6 @@ export {
  * actor's avatar/zorb — all Postgres reads, no chain call.
  */
 
-const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".ogv"]
-
 function truncateAddress(address: string): string {
   return `${address.slice(0, 6)}...${address.slice(-4)}`
 }
@@ -76,17 +75,23 @@ function isSurfaceEvent(event: ActivityEvent): boolean {
   )
 }
 
-function mediaFromUri(uri: string | null | undefined): {
-  mediaUrl: string | null
-  isVideo: boolean
-} {
-  const mediaUrl = uri ? ipfsToHttp(uri) : null
-  const isVideo = mediaUrl
-    ? VIDEO_EXTENSIONS.some((ext) =>
-        mediaUrl.split("?")[0].toLowerCase().endsWith(ext),
-      )
-    : false
-  return { mediaUrl, isVideo }
+/** Route inline `data:` media through the compact API route instead of
+ * serializing it into the feed's HTML/RSC payload. */
+function tokenMediaUrl(contract: string, tokenId: string): string {
+  return `/api/media/token/${encodeURIComponent(contract)}/${encodeURIComponent(tokenId)}`
+}
+
+/** Final URI for a feed row, preferring a ready delivery derivative over
+ * the raw candidate (worker-warmed image, collection cover, or tokenURI
+ * metadata). */
+function resolveMediaUri(
+  candidate: string | null,
+  delivery: MediaDelivery | undefined,
+): string | null {
+  if (delivery?.status === "ready") {
+    return delivery.thumbnailUrl ?? delivery.posterUrl ?? candidate
+  }
+  return candidate
 }
 
 type Identity = { displayName: string; avatarUrl: string | null } | null
@@ -167,14 +172,35 @@ export async function enrichFeedPage(
     Array.from(surfacePairs.values()),
   ).catch(() => new Map<string, string>())
 
+  // ── Delivery derivatives ──
+  // Non-Surface tokens only: derive-token-media excludes Surface contracts
+  // (their captures belong to RenderAssets). A ready delivery's thumbnail
+  // or poster replaces the raw tokenURI image so inline `data:` media never
+  // reaches this page's HTML.
+  const mediaPairs = new Map<string, { contract: string; tokenId: string }>()
+  for (const item of items) {
+    const events = item.type === "event" ? [item.event] : item.events
+    for (const e of events) {
+      if (!isSurfaceEvent(e) && e.tokenContract && e.tokenId) {
+        mediaPairs.set(surfaceImageKey(e.tokenContract, e.tokenId), {
+          contract: e.tokenContract,
+          tokenId: e.tokenId,
+        })
+      }
+    }
+  }
+  const deliveries = await getMediaDeliveries(
+    Array.from(mediaPairs.values()),
+  ).catch(() => new Map<string, MediaDelivery>())
+
   return Promise.all(
     items.map(async (item) =>
       item.type === "event"
         ? {
             type: "event" as const,
-            event: await enrichEvent(item.event, identities, covers, surfaceImages),
+            event: await enrichEvent(item.event, identities, covers, surfaceImages, deliveries),
           }
-        : enrichRun(item.events, identities, covers, surfaceImages),
+        : enrichRun(item.events, identities, covers, surfaceImages, deliveries),
     ),
   )
 }
@@ -221,6 +247,7 @@ async function enrichEvent(
   identities: Map<string, Identity>,
   covers: Map<string, string>,
   surfaceImages: Map<string, string>,
+  deliveries: Map<string, MediaDelivery>,
 ): Promise<EnrichedActivityEvent> {
   const surface = isSurfaceEvent(event)
 
@@ -244,9 +271,21 @@ async function enrichEvent(
         ? `#${event.tokenId}`
         : null
 
-  const { mediaUrl, isVideo } = surface
-    ? mediaFromUri(surfaceMediaUri(event, covers, surfaceImages))
-    : mediaFromUri(meta?.image)
+  const candidate = surface
+    ? surfaceMediaUri(event, covers, surfaceImages)
+    : (meta?.image ?? meta?.animation_url ?? null)
+  const delivery =
+    !surface && event.tokenContract && event.tokenId
+      ? deliveries.get(surfaceImageKey(event.tokenContract, event.tokenId))
+      : undefined
+  const uri = resolveMediaUri(candidate, delivery)
+  const inlineUrl =
+    uri?.trim().toLowerCase().startsWith("data:") &&
+    event.tokenContract &&
+    event.tokenId
+      ? tokenMediaUrl(event.tokenContract, event.tokenId)
+      : null
+  const { mediaUrl, isVideo } = mediaForActivityFeed(uri, inlineUrl)
 
   const artistId = identities.get(event.artist.toLowerCase())
 
@@ -277,6 +316,7 @@ async function enrichRun(
   identities: Map<string, Identity>,
   covers: Map<string, string>,
   surfaceImages: Map<string, string>,
+  deliveries: Map<string, MediaDelivery>,
 ): Promise<EnrichedMintGroup> {
   const newest = events[0]
   const oldest = events[events.length - 1]
@@ -297,7 +337,7 @@ async function enrichRun(
           surfaceImageKey(withImg.tokenContract!, withImg.tokenId!),
         )!
       : covers.get(newest.collection!.toLowerCase()) || null
-    media = mediaFromUri(uri)
+    media = mediaForActivityFeed(uri)
   } else {
     const meta =
       newest.tokenContract && newest.tokenId
@@ -306,7 +346,19 @@ async function enrichRun(
             newest.tokenId,
           ).catch(() => null)
         : null
-    media = mediaFromUri(meta?.image)
+    const mediaContract = newest.tokenContract ?? null
+    const mediaTokenId = newest.tokenId ?? null
+    const candidate = meta?.image ?? meta?.animation_url ?? null
+    const delivery =
+      mediaContract && mediaTokenId
+        ? deliveries.get(surfaceImageKey(mediaContract, mediaTokenId))
+        : undefined
+    const uri = resolveMediaUri(candidate, delivery)
+    const inlineUrl =
+      uri?.trim().toLowerCase().startsWith("data:") && mediaContract && mediaTokenId
+        ? tokenMediaUrl(mediaContract, mediaTokenId)
+        : null
+    media = mediaForActivityFeed(uri, inlineUrl)
   }
 
   const minters: MinterRef[] = sampleMinters(events).map((addr) => {

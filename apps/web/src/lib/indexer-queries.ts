@@ -1250,6 +1250,41 @@ export async function getTokenImagesFromMetadata(
   return map
 }
 
+export type TokenMetadataMedia = { imageUrl: string | null; animationUrl: string | null }
+
+/** Batch read of `token_metadata.image_url` + `animation_url`, unlike
+ * `getTokenImagesFromMetadata` this keeps rows whose only media is an
+ * `animation_url` so callers can fall back to it. */
+export async function getTokenMediaFromMetadata(
+  pairs: Array<{ contract: string; tokenId: string }>,
+): Promise<Map<string, TokenMetadataMedia>> {
+  if (INDEXER_DISABLED || !sql || pairs.length === 0) return new Map()
+  const contracts = pairs.map((p) => p.contract.toLowerCase())
+  const tokenIds = pairs.map((p) => p.tokenId)
+  const rows = (await sql`
+    SELECT contract, token_id, image_url, animation_url
+      FROM token_metadata
+     WHERE (contract, token_id) IN (
+       SELECT * FROM unnest(${contracts}::text[], ${tokenIds}::text[])
+     )
+       AND (image_url IS NOT NULL OR animation_url IS NOT NULL)
+       AND COALESCE(burned, false) = false
+  `.catch(() => [])) as Array<{
+    contract: string
+    token_id: string
+    image_url: string | null
+    animation_url: string | null
+  }>
+  const map = new Map<string, TokenMetadataMedia>()
+  for (const r of rows) {
+    map.set(`${r.contract.toLowerCase()}:${r.token_id}`, {
+      imageUrl: r.image_url,
+      animationUrl: r.animation_url,
+    })
+  }
+  return map
+}
+
 // ─── Dependency-check helpers ────────────────────────────────────────────
 //
 // Used by `apps/web/src/lib/dependency-check.ts` to assemble the scan

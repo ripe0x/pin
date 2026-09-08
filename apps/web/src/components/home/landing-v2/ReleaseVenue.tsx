@@ -1,6 +1,6 @@
 import Link from "next/link"
 import type { Address } from "viem"
-import { AvailableArtwork } from "./AvailableArtwork"
+import { Artwork } from "@/components/media/Artwork"
 import { AvailableNow } from "./AvailableNow"
 import { getCollection, getRecentCollections } from "@/lib/collection-onchain"
 import {
@@ -15,6 +15,7 @@ import {
 } from "@/lib/collection"
 import { getCollectionArtwork } from "@/lib/collection-artwork"
 import { readEnsIdentities, type StoredEnsIdentity } from "@/lib/ens-identity-store"
+import type { DisplayMedia } from "@/lib/display-media"
 import {
   featuredReleaseEditorial,
   getReleaseEditorial,
@@ -51,13 +52,15 @@ export async function ReleaseVenue() {
   }
   const releases = Array.from(byAddress.values())
 
-  if (releases.length === 0) return <AvailableNow collections={recent} />
+  if (releases.length === 0) return <AvailableNow />
 
   const [identities, artwork] = await Promise.all([
     readEnsIdentities(releases.map((r) => r.owner)),
     getCollectionArtwork(releases),
   ])
-  const art = (release: Collection) => artwork.get(release.address.toLowerCase()) ?? null
+  const art = (release: Collection): DisplayMedia =>
+    artwork.get(release.address.toLowerCase()) ?? { kind: "none" }
+  const hasArt = (release: Collection) => art(release).kind !== "none"
   const now = Math.floor(Date.now() / 1000)
   const withStatus = (list: Collection[]) =>
     list.map((release) => ({
@@ -79,12 +82,12 @@ export async function ReleaseVenue() {
   const featured =
     programmedFeature?.item ??
     recentWithStatus.find(
-      (item) => item.status === SurfaceStatus.Open && art(item.release),
+      (item) => item.status === SurfaceStatus.Open && hasArt(item.release),
     ) ??
     recentWithStatus.find(
-      (item) => item.status === SurfaceStatus.Scheduled && art(item.release),
+      (item) => item.status === SurfaceStatus.Scheduled && hasArt(item.release),
     ) ??
-    recentWithStatus.find((item) => art(item.release)) ??
+    recentWithStatus.find((item) => hasArt(item.release)) ??
     allWithStatus[0]
 
   const upcoming = recentWithStatus
@@ -128,7 +131,7 @@ export async function ReleaseVenue() {
         />
       ) : null}
 
-      <AvailableNow collections={recent} artwork={artwork} />
+      <AvailableNow />
 
       {recentShelf.length > 0 ? (
         <ReleaseShelf
@@ -155,7 +158,7 @@ function FeaturedRelease({
   now,
 }: {
   release: Collection
-  artwork: string | null
+  artwork: DisplayMedia
   status: SurfaceStatus
   identity?: StoredEnsIdentity
   editorial: ReleaseEditorial | null
@@ -183,7 +186,7 @@ function FeaturedRelease({
         className="group grid overflow-hidden rounded-md border border-gray-200 bg-surface transition-colors hover:border-gray-400 md:grid-cols-[minmax(0,1.5fr)_minmax(280px,0.65fr)]"
       >
         <div className="aspect-[4/3] overflow-hidden bg-gray-100 md:aspect-auto md:min-h-[440px]">
-          <AvailableArtwork src={artwork} alt={release.name} />
+          <Artwork media={artwork} alt={release.name} />
         </div>
         <div className="flex flex-col justify-between gap-10 p-6 sm:p-8">
           <div className="space-y-5">
@@ -220,7 +223,7 @@ function ReleaseShelf({
   title: string
   items: Array<{ release: Collection; status: SurfaceStatus }>
   identities: Map<string, StoredEnsIdentity>
-  artwork: Map<string, string>
+  artwork: Map<string, DisplayMedia>
   now: number
 }) {
   return (
@@ -239,8 +242,8 @@ function ReleaseShelf({
               className="group block h-full overflow-hidden rounded-md border border-gray-200 bg-surface transition-colors hover:border-gray-400"
             >
               <div className="aspect-[4/3] overflow-hidden bg-gray-100">
-                <AvailableArtwork
-                  src={artwork.get(release.address.toLowerCase()) ?? null}
+                <Artwork
+                  media={artwork.get(release.address.toLowerCase()) ?? { kind: "none" }}
                   alt={release.name}
                 />
               </div>

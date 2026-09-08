@@ -1,65 +1,31 @@
 import Link from "next/link"
 import { formatEther } from "viem"
-import { ipfsToHttp } from "@pin/shared"
-import { AvailableArtwork } from "./AvailableArtwork"
-import { getRecentCollections } from "@/lib/collection-onchain"
-import {
-  SurfaceStatus,
-  ZERO_ADDRESS,
-  formatPriceLabel,
-  hasPriceStrategy,
-  lifecycleStatus,
-  saleWindowOf,
-  surfaceFactory,
-  type Collection,
-} from "@/lib/collection"
+import { Artwork } from "@/components/media/Artwork"
 import { getActivePndAuctions, type ActivePndAuction } from "@/lib/indexer-queries"
-import { getCollectionArtwork } from "@/lib/collection-artwork"
 import { resolveTokenMetadataDirect } from "@/lib/onchain-discovery"
+import { getDisplayMedia, type DisplayMedia } from "@/lib/display-media"
 
 const MAX_ITEMS = 6
+const NO_ARTWORK: DisplayMedia = { kind: "none" }
 
 type AuctionCardData = {
   auction: ActivePndAuction
   title: string | null
-  mediaUrl: string | null
+  artwork: DisplayMedia
 }
 
-type AvailableItem =
-  | { type: "release"; value: Collection }
-  | { type: "auction"; value: AuctionCardData }
-
-type Props = {
-  // Recent collections already fetched by the caller. ReleaseVenue passes
-  // its own list so the two sections share one fetch.
-  collections?: Collection[] | null
-  // Display image per collection (lowercase address), from the caller when
-  // it already resolved them.
-  artwork?: Map<string, string>
-}
-
-export async function AvailableNow({ collections: given, artwork: givenArtwork }: Props = {}) {
-  const factory = surfaceFactory()
-  const [collections, indexedAuctions] = await Promise.all([
-    given !== undefined
-      ? Promise.resolve(given)
-      : factory
-        ? getRecentCollections(factory, 12).catch(() => null)
-        : Promise.resolve(null),
-    getActivePndAuctions(6).catch(() => null),
-  ])
+/** Live PND auctions across every artist-owned house. Surface releases
+ * have their own venue section above this one. */
+export async function AvailableNow() {
+  const indexedAuctions = await getActivePndAuctions(MAX_ITEMS).catch(() => null)
   const now = Math.floor(Date.now() / 1000)
-
-  const openReleases = (collections ?? [])
-    .filter(
-      (c) => lifecycleStatus(saleWindowOf(c), c.minted, now) === SurfaceStatus.Open,
-    )
-    .slice(0, 4)
-  const artwork = givenArtwork ?? (await getCollectionArtwork(openReleases))
 
   const activeAuctions = (indexedAuctions ?? []).filter(
     (auction) => auction.endTime === 0 || auction.endTime > now,
   )
+  const auctionArtwork = await getDisplayMedia(
+    activeAuctions.map((a) => ({ contract: a.tokenContract, tokenId: a.tokenId })),
+  ).catch(() => new Map<string, DisplayMedia>())
   const auctionCards = await Promise.all(
     activeAuctions.map(async (auction): Promise<AuctionCardData> => {
       const meta = await resolveTokenMetadataDirect(
@@ -69,15 +35,14 @@ export async function AvailableNow({ collections: given, artwork: givenArtwork }
       return {
         auction,
         title: meta?.name ?? null,
-        mediaUrl: meta?.image ? ipfsToHttp(meta.image) : null,
+        artwork:
+          auctionArtwork.get(`${auction.tokenContract.toLowerCase()}:${auction.tokenId}`) ??
+          NO_ARTWORK,
       }
     }),
   )
 
-  const items: AvailableItem[] = [
-    ...openReleases.map((value) => ({ type: "release" as const, value })),
-    ...auctionCards.map((value) => ({ type: "auction" as const, value })),
-  ].slice(0, MAX_ITEMS)
+  const items = auctionCards.slice(0, MAX_ITEMS)
 
   return (
     <section aria-labelledby="available-now" className="space-y-5">
@@ -97,23 +62,15 @@ export async function AvailableNow({ collections: given, artwork: givenArtwork }
 
       {items.length > 0 ? (
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {items.map((item) =>
-            item.type === "release" ? (
-              <ReleaseCard
-                key={`release:${item.value.address}`}
-                release={item.value}
-                artwork={artwork.get(item.value.address.toLowerCase()) ?? null}
-              />
-            ) : (
+          {items.map((item) => (
               <AuctionCard
-                key={`auction:${item.value.auction.house}:${item.value.auction.auctionId}`}
-                card={item.value}
+                key={`auction:${item.auction.house}:${item.auction.auctionId}`}
+                card={item}
                 now={now}
               />
-            ),
-          )}
+          ))}
         </ul>
-      ) : collections === null && indexedAuctions === null ? (
+      ) : indexedAuctions === null ? (
         <div className="rounded-md border border-gray-200 p-5">
           <p className="text-sm text-fg-muted">
             Live availability is temporarily unavailable. Browse artist
@@ -123,15 +80,12 @@ export async function AvailableNow({ collections: given, artwork: givenArtwork }
       ) : (
         <div className="rounded-md border border-gray-200 p-5">
           <p className="text-sm text-fg-muted">
-            No PND-native releases or auctions are open right now.
+            No auctions are open right now.
           </p>
         </div>
       )}
 
       <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs font-mono">
-        <Link href="/collections" className="underline underline-offset-4 hover:text-gray-600">
-          All releases
-        </Link>
         <Link href="/auctions" className="underline underline-offset-4 hover:text-gray-600">
           All auctions
         </Link>
@@ -140,54 +94,8 @@ export async function AvailableNow({ collections: given, artwork: givenArtwork }
   )
 }
 
-function ReleaseCard({ release, artwork }: { release: Collection; artwork: string | null }) {
-  const priceStrategy = release.sale?.priceStrategy ?? ZERO_ADDRESS
-  const priceLabel = hasPriceStrategy(priceStrategy)
-    ? "Live price"
-    : formatPriceLabel(release.sale?.price ?? 0n)
-  const cap = smallestPositive(release.cfg.supplyCap, release.sale?.maxMints ?? 0n)
-  const quantity = cap > 0n
-    ? `${Number(release.minted)} / ${Number(cap)} minted`
-    : `${Number(release.minted)} minted`
-
-  return (
-    <li>
-      <Link
-        href={`/collections/${release.address}`}
-        className="group block h-full overflow-hidden rounded-md border border-gray-200 bg-surface transition-colors hover:border-gray-400"
-      >
-        <div className="aspect-[4/3] overflow-hidden bg-gray-100">
-          <AvailableArtwork src={artwork} alt={release.name} />
-        </div>
-        <div className="space-y-3 p-4">
-          <div className="flex items-center justify-between gap-3">
-            <span className="inline-flex items-center gap-1.5 text-[10px] font-mono font-medium uppercase tracking-wider text-status-available">
-              <span className="h-1.5 w-1.5 rounded-full bg-status-available" aria-hidden="true" />
-              Open release
-            </span>
-            <span className="text-[10px] font-mono text-gray-500">PND Surface</span>
-          </div>
-          <div>
-            <h3 className="truncate text-base font-medium tracking-tight">{release.name}</h3>
-            <p className="mt-1 truncate text-xs font-mono text-gray-500">
-              by {shortAddress(release.owner)}
-            </p>
-          </div>
-          <div className="flex items-end justify-between gap-3 border-t border-gray-200 pt-3">
-            <div>
-              <p className="text-[10px] font-mono uppercase tracking-wider text-gray-500">Price</p>
-              <p className="mt-0.5 text-sm font-mono tabular-nums">{priceLabel}</p>
-            </div>
-            <p className="text-right text-[11px] font-mono text-gray-600">{quantity}</p>
-          </div>
-        </div>
-      </Link>
-    </li>
-  )
-}
-
 function AuctionCard({ card, now }: { card: AuctionCardData; now: number }) {
-  const { auction, title, mediaUrl } = card
+  const { auction, title, artwork } = card
   const hasBid = auction.firstBidTime > 0
   const price = hasBid ? auction.amount : auction.reservePrice
   const status =
@@ -206,7 +114,7 @@ function AuctionCard({ card, now }: { card: AuctionCardData; now: number }) {
         className="group block h-full overflow-hidden rounded-md border border-gray-200 bg-surface transition-colors hover:border-gray-400"
       >
         <div className="aspect-[4/3] overflow-hidden bg-gray-100">
-          <AvailableArtwork src={mediaUrl} alt={title ?? `Token #${auction.tokenId}`} />
+          <Artwork media={artwork} alt={title ?? `Token #${auction.tokenId}`} />
         </div>
         <div className="space-y-3 p-4">
           <div className="flex items-center justify-between gap-3">
@@ -240,12 +148,6 @@ function AuctionCard({ card, now }: { card: AuctionCardData; now: number }) {
       </Link>
     </li>
   )
-}
-
-function smallestPositive(a: bigint, b: bigint): bigint {
-  if (a === 0n) return b
-  if (b === 0n) return a
-  return a < b ? a : b
 }
 
 function formatEth(wei: bigint): string {

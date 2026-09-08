@@ -10,6 +10,12 @@
 # with the service var RAILWAY_DOCKERFILE_PATH=apps/worker/Dockerfile.
 FROM node:22-slim
 
+# Video poster extraction for the bounded external-media derivative worker.
+# No browser/headless renderer is installed; Surface captures stay client-side.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 # pnpm via npm (not corepack — node 18's corepack had a broken signing key,
 # and a global npm install lands on PATH in a real node image).
 RUN npm install -g pnpm@9.14.2

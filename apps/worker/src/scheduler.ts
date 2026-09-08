@@ -33,6 +33,7 @@ import { scanTlActiveAuctions } from "./tasks/scan-tl-active-auctions.ts"
 import { scanPndAuctionTokens } from "./tasks/scan-pnd-auction-tokens.ts"
 import { probeCidAvailability } from "./tasks/probe-cid-availability.ts"
 import { captureCollectionMedia } from "./tasks/capture-collection-media.ts"
+import { deriveTokenMedia } from "./tasks/derive-token-media.ts"
 
 type TaskName =
   | "seed-known-artists"
@@ -52,6 +53,7 @@ type TaskName =
   | "probe-cid-availability"
   | "ponder-drift-check"
   | "capture-collection-media"
+  | "derive-token-media"
 
 export type TaskResult = {
   rpcCalls?: number
@@ -94,6 +96,7 @@ const tasks: Task[] = [
   // is ready. Generous interval: capture is not time-sensitive, and each
   // run is bounded by CAPTURE_BATCH_SIZE.
   { name: "capture-collection-media", intervalMs: 10 * MIN, fn: captureCollectionMedia, dependsOnPonder: true },
+  { name: "derive-token-media", intervalMs: 5 * MIN, fn: deriveTokenMedia, dependsOnPonder: true },
 ]
 
 const runState = new Map<TaskName, { running: boolean; lastRun: Date | null }>()
