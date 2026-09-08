@@ -13,6 +13,8 @@ import type { MetadataRoute } from "next"
  *  - /studio — owner workspaces (also noindex'd at the layout); no
  *    crawlable content, and every page would cost a per-address
  *    identity resolve.
+ *  - /index-prev, the retired landing page (also noindex'd on the
+ *    page itself); kept reachable but not for search.
  *
  * crawlDelay paces the polite crawlers across the ~49k artist URLs so
  * a full-site sweep trickles instead of bursting. Impolite bots ignore
@@ -24,7 +26,7 @@ export default function robots(): MetadataRoute.Robots {
     rules: [
       {
         userAgent: "*",
-        disallow: ["/api/", "/studio", "/*?page="],
+        disallow: ["/api/", "/studio", "/index-prev", "/*?page="],
         crawlDelay: 2,
       },
     ],

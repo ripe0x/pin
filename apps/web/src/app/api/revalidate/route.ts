@@ -152,6 +152,8 @@ async function handleRevalidation(req: NextRequest, authenticated: boolean) {
   revalidateTag("erc1155-stats")
   revalidateTag("last-sale")
   revalidateTag("ens")
+  revalidateTag("landing-venue")
+  revalidateTag("landing-auctions")
 
   // Also flush the L2 (Postgres) entries that back the same data — without
   // this, a fresh render after a Refresh click would still hit stale rows
