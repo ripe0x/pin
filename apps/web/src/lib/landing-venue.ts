@@ -1,7 +1,11 @@
 import "server-only"
 import { unstable_cache } from "next/cache"
 import type { Address } from "viem"
-import { getCollection, getRecentCollections } from "./collection-onchain"
+import {
+  getCollection,
+  getContractDescription,
+  getRecentCollections,
+} from "./collection-onchain"
 import {
   SurfaceStatus,
   ZERO_ADDRESS,
@@ -128,13 +132,18 @@ async function buildVenueModel(): Promise<VenueModel | null> {
 
   const editorial =
     programmedPick?.editorial ?? getReleaseEditorial(featuredRelease.address)
+  // Prefer the release's own description (its contractURI metadata) over
+  // editorial copy. One pgCached read for the featured collection only.
+  const contractDescription = await getContractDescription(
+    featuredRelease.address as Address,
+  ).catch(() => null)
   const featuredKey = featuredRelease.address.toLowerCase()
   const others = recentReleases.filter((r) => r.address.toLowerCase() !== featuredKey)
 
   return {
     featured: {
       ...featuredRelease,
-      summary: editorial?.editorialSummary ?? null,
+      summary: contractDescription ?? editorial?.editorialSummary ?? null,
       programmed: programmedPick !== undefined,
     },
     upcoming: others.filter((r) => statusOf(r) === SurfaceStatus.Scheduled).slice(0, SHELF_LIMIT),
