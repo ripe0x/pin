@@ -3,18 +3,15 @@
 // Fully generative: palette, tone, blob layout, flow and proportions derive from
 // the token seed (window.tokenData.hash). Nothing is chosen or stored.
 //
-// Synced animation: every animated value is a function of
-// syncTime = wall clock + owner offset, plus the seed. No per-frame state, so
-// playback is independent of frame rate and tab throttling. The owner offset is
-// derived from the owner address, so every token a wallet holds runs on the same
-// timeline and a transfer moves the token onto the new owner's timeline. What
-// changes (shape sequence, colours, blob paths) is per-token from the seed; when
-// it changes is shared across the wallet.
-//
-// Determined opening: a token loads on its fixed frame at CAPTURE_T (same every
-// load), holds briefly, then its shape and colour params interpolate to the live
-// synced values, so the forms morph into the shared timeline. See the draw
-// section. The canonical still (context "capture") is that same CAPTURE_T frame.
+// Two clocks. eventTime = wall clock + owner offset drives only discrete event
+// starts (warp mode change, background mass colour retarget) on a fixed grid,
+// so every token a wallet holds fires the same event at the same wall-clock
+// instant; a transfer moves the token onto the new owner's grid. motionTime =
+// CAPTURE_T + seconds elapsed since load drives all continuous motion (blob
+// paths, the shader's u_time) at the piece's native pace, independent of the
+// owner. A token opens with motionTime at CAPTURE_T, the home warp mode and the
+// base mass colours, then runs forward with no transition. The canonical still
+// (context "capture") renders that same opening state.
 (function () {
   "use strict";
 
@@ -314,13 +311,16 @@
     rxyWarpAddMode: gl.getUniformLocation(prg, "u_rxyWarpAddMode")
   };
 
-  // ── synced animation ────────────────────────────────────────────────────────
-  // Every animated value is a pure function of syncTime (wall clock + owner
-  // offset) and the token seed. Nothing advances per frame, so playback does not
-  // depend on frame rate or tab throttling, and every token a wallet holds sits
-  // at the same point of the shared timeline. The determined opening (draw
-  // section) blends this live state in from the CAPTURE_T frame over the first
-  // few seconds after load.
+  // ── clocks ──────────────────────────────────────────────────────────────────
+  // eventTime = wall clock + owner offset. Drives only the discrete events
+  // below (warp mode start, background mass colour retarget start) on a fixed
+  // grid, so every token a wallet holds fires the same event at the same
+  // instant.
+  //
+  // motionTime = CAPTURE_T + seconds elapsed since load. Drives all continuous
+  // motion (blob paths, persistent blob, shader time) at the piece's native
+  // pace. It does not depend on the owner, so a transfer changes future event
+  // timing but never disturbs motion in progress.
   var TIME_WRAP = 65536; // seconds. Keeps u_time inside float32 precision.
 
   function keyHash(tag, i, j) { return xmur3(seedHash + "|" + tag + "|" + i + "|" + j); }
@@ -449,6 +449,22 @@
     out.color = [from[0] * (1 - mix) + to[0] * mix, from[1] * (1 - mix) + to[1] * mix, from[2] * (1 - mix) + to[2] * mix];
   }
 
+  // ── event grid ──────────────────────────────────────────────────────────────
+  // Counts shared-grid ticks (instants offset + n * period, integer n) that
+  // fall strictly after loadEventTime and at or before eventTime. k is that
+  // count; local is seconds since the k-th tick, 0 when k is 0. A tick that
+  // falls before or at loadEventTime does not count, so a token that loads
+  // mid-blend on the shared grid holds its home state until the next tick
+  // rather than starting a partial morph. O(1) per call. Clamped to k >= 0 so
+  // a wall clock adjustment cannot produce a negative tick count.
+  function tickState(offset, period, loadEventTime, eventTime) {
+    var nLoad = Math.floor((loadEventTime - offset) / period);
+    var nNow = Math.floor((eventTime - offset) / period);
+    var k = Math.max(0, nNow - nLoad);
+    var local = k > 0 ? (eventTime - offset) - nNow * period : 0;
+    return { k: k, local: local };
+  }
+
   // ── wallet-synced shape morph ───────────────────────────────────────────────
   // A precomputed per-token ring of warp modes with no equal-adjacent members
   // (including the wrap seam), so every cycle morphs to a different shape, in
@@ -470,35 +486,37 @@
     return seq;
   })();
 
-  // Returns { a, b, mix } at sync time T. Hold WARP_INTERVAL, blend WARP_DURATION.
-  function shapeAt(T) {
-    if (T < WARP_INTERVAL) return { a: warpSeq[0], b: warpSeq[0], mix: 0 };
-    var k = Math.floor((T - WARP_INTERVAL) / WARP_PERIOD);
-    var local = (T - WARP_INTERVAL) - k * WARP_PERIOD;
-    var from = warpSeq[k % WARP_SEQ_LEN];
-    var to = warpSeq[(k + 1) % WARP_SEQ_LEN];
-    if (local < WARP_DURATION) return { a: from, b: to, mix: smootherstep01(0, 1, local / WARP_DURATION) };
+  // Returns { a, b, mix } at eventTime for a token that loaded at
+  // loadEventTime. Before the token's first grid tick this is the home mode
+  // (warpSeq[0], mix 0). At and after each tick it blends from the previous
+  // mode to the next over WARP_DURATION, then holds the new mode.
+  function warpAt(loadEventTime, eventTime) {
+    var ts = tickState(WARP_INTERVAL, WARP_PERIOD, loadEventTime, eventTime);
+    if (ts.k === 0) return { a: warpSeq[0], b: warpSeq[0], mix: 0 };
+    var from = warpSeq[(ts.k - 1) % WARP_SEQ_LEN];
+    var to = warpSeq[ts.k % WARP_SEQ_LEN];
+    if (ts.local < WARP_DURATION) return { a: from, b: to, mix: smootherstep01(0, 1, ts.local / WARP_DURATION) };
     return { a: to, b: to, mix: 0 };
   }
 
   // ── background colour drift ─────────────────────────────────────────────────
-  // One static mass at a time retargets to a seed-chosen palette colour, cycling
-  // through the three masses, on the source cadence (60 s hold, 20 s blend).
+  // Each of the STATIC_COLS_COUNT masses retargets to a seed-chosen palette
+  // colour on its own grid (offset staggered by index, one shared period across
+  // all three masses so they take turns), blending over BG_SHIFT_DUR then
+  // holding.
   function seedPaletteColor(index, j) {
     return activePalette[xmur3(seedHash + "|bg|" + index + "|" + j)() % activePalette.length];
   }
-  function bgColorAt(index, T) {
-    var first = BG_SHIFT_DELAY + index * BG_SHIFT_STEP;
+  function bgColorAt(index, loadEventTime, eventTime) {
+    var offset = BG_SHIFT_DELAY + index * BG_SHIFT_STEP;
+    var period = 3 * BG_SHIFT_STEP;
+    var ts = tickState(offset, period, loadEventTime, eventTime);
     var base = seedPaletteColor(index, 0);
-    if (T < first) return base;
-    var j = Math.floor((T - BG_SHIFT_DELAY) / BG_SHIFT_STEP / 3 - index / 3 + 1e-9);
-    if (j < 0) return base;
-    var s = BG_SHIFT_DELAY + (index + 3 * j) * BG_SHIFT_STEP;
-    var to = seedPaletteColor(index, j + 1);
-    var from = j === 0 ? base : seedPaletteColor(index, j);
-    var prog = (T - s) / BG_SHIFT_DUR;
-    if (prog >= 1) return to;
-    var m = smootherstep01(0, 1, prog);
+    if (ts.k === 0) return base;
+    var from = ts.k === 1 ? base : seedPaletteColor(index, ts.k - 1);
+    var to = seedPaletteColor(index, ts.k);
+    if (ts.local >= BG_SHIFT_DUR) return to;
+    var m = smootherstep01(0, 1, ts.local / BG_SHIFT_DUR);
     return [from[0] * (1 - m) + to[0] * m, from[1] * (1 - m) + to[1] * m, from[2] * (1 - m) + to[2] * m];
   }
 
@@ -507,9 +525,9 @@
   var colorData = new Float32Array(MAX_LAYERS * 4);
   var paramData = new Float32Array(MAX_LAYERS * 2);
   var layer = { active: false, x: 0, y: 0, sx: 0, sy: 0, k: 2, phase: 0, intensity: 0, color: [0, 0, 0] };
-  // The determined opening frame and the canonical still are both the frame at
-  // this fixed time with no owner offset: deterministic from the seed. Chosen in
-  // a warp hold window (not a morph), so the opening shape is a single clean mode.
+  // motionTime a token opens on and the canonical still renders. Fixes which
+  // blob configuration and field phase the opening frame shows; unrelated to
+  // the event grid.
   var CAPTURE_T = 1236.5;
 
   function fillLayers(T, L, C, P) {
@@ -531,9 +549,9 @@
       P[b2 + 1] = layer.phase;
     }
   }
-  function fillCols(T, arr) {
+  function fillBgCols(loadEventTime, eventTime, arr) {
     for (var i = 0; i < STATIC_COLS_COUNT; i++) {
-      var col = bgColorAt(i, T);
+      var col = bgColorAt(i, loadEventTime, eventTime);
       arr[i * 3] = col[0]; arr[i * 3 + 1] = col[1]; arr[i * 3 + 2] = col[2];
     }
   }
@@ -555,10 +573,10 @@
   }
 
   // Uploads the current layerData/colorData/paramData/staticCols with the given
-  // warp and field time, and draws one frame.
-  function paint(warp, fieldTime) {
+  // warp and motion time, and draws one frame.
+  function paint(warp, motionTime) {
     sizeCanvas();
-    gl.uniform1f(u.time, fieldTime - Math.floor(fieldTime / TIME_WRAP) * TIME_WRAP);
+    gl.uniform1f(u.time, motionTime - Math.floor(motionTime / TIME_WRAP) * TIME_WRAP);
     gl.uniform1f(u.tau, modeTau);
     gl.uniform1i(u.maxIter, modeMaxIter);
     gl.uniform1f(u.cX, modeCX);
@@ -579,69 +597,37 @@
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   }
 
-  // Draws the fully synced frame at sync time T (also used for the capture still).
-  function render(T) {
-    fillCols(T, staticCols);
-    fillLayers(T, layerData, colorData, paramData);
-    paint(shapeAt(T), T);
-  }
-
-  // ── determined start → synced animation ──────────────────────────────────────
-  // A token opens on its determined frame (shapes and colours at CAPTURE_T),
-  // holds for HOLD seconds, then over RAMP seconds the shape and colour params
-  // interpolate to the live synced values, so the forms morph into place rather
-  // than cross-fading pixels. The background field cannot morph (it has no
-  // per-shape position), so it holds on the determined frame through HOLD, then
-  // runs on live synced time.
-  var HOLD = 1.0;
-  var RAMP = 1.6;
+  // ── live playback ───────────────────────────────────────────────────────────
+  // loadStart is the wall-clock instant motionTime is anchored to; loadEventTime
+  // is eventTime at that same instant, used to count grid ticks since load. Both
+  // are fixed once at script start.
   var loadStart = Date.now();
-  var startLayers = new Float32Array(MAX_LAYERS * 4);
-  var startColors = new Float32Array(MAX_LAYERS * 4);
-  var startParams = new Float32Array(MAX_LAYERS * 2);
-  var startCols = new Float32Array(STATIC_COLS_COUNT * 3);
-  fillLayers(CAPTURE_T, startLayers, startColors, startParams);
-  fillCols(CAPTURE_T, startCols);
-  var startWarp = shapeAt(CAPTURE_T); // single mode: CAPTURE_T sits in a warp hold
-
-  function lerpInto(dst, a, b, w) {
-    for (var i = 0; i < dst.length; i++) dst[i] = a[i] + (b[i] - a[i]) * w;
-  }
+  var loadEventTime = loadStart / 1000 + ownerOffset;
 
   function drawLive() {
-    var elapsed = (Date.now() - loadStart) / 1000;
-    var liveT = syncTimeNow();
-    if (elapsed > HOLD + RAMP) { render(liveT); return; }
-
-    var w = elapsed <= HOLD ? 0 : Math.min(1, (elapsed - HOLD) / RAMP);
-    w = w * w * (3 - 2 * w); // smoothstep
-
-    // Fill live target into the working buffers, then blend back toward the
-    // determined start by (1 - w). At w = 0 the buffers equal the start frame.
-    fillCols(liveT, staticCols);
-    fillLayers(liveT, layerData, colorData, paramData);
-    lerpInto(staticCols, startCols, staticCols, w);
-    lerpInto(layerData, startLayers, layerData, w);
-    lerpInto(colorData, startColors, colorData, w);
-    lerpInto(paramData, startParams, paramData, w);
-
-    // Warp morphs from the determined start mode to the live mode.
-    var liveWarp = shapeAt(liveT);
-    var liveMode = liveWarp.mix < 0.5 ? liveWarp.a : liveWarp.b;
-    var warp = { a: startWarp.a, b: liveMode, mix: w };
-
-    // Field: determined during the hold, live once the morph begins.
-    var fieldTime = elapsed <= HOLD ? CAPTURE_T : liveT;
-    paint(warp, fieldTime);
+    var now = Date.now();
+    var eventTime = now / 1000 + ownerOffset;
+    var motionTime = CAPTURE_T + (now - loadStart) / 1000;
+    fillBgCols(loadEventTime, eventTime, staticCols);
+    fillLayers(motionTime, layerData, colorData, paramData);
+    paint(warpAt(loadEventTime, eventTime), motionTime);
   }
-
-  function syncTimeNow() { return Date.now() / 1000 + ownerOffset; }
   function frame() { drawLive(); requestAnimationFrame(frame); }
 
+  // Renders the opening state through the live code path (warpAt, fillBgCols)
+  // with equal load and event times, which is the k = 0 base case: the home
+  // warp mode and the base mass colours. This keeps the still and the opening
+  // frame from diverging.
+  function drawCapture() {
+    fillLayers(CAPTURE_T, layerData, colorData, paramData);
+    fillBgCols(0, 0, staticCols);
+    paint(warpAt(0, 0), CAPTURE_T);
+  }
+
   if (isCapture) {
-    render(CAPTURE_T);
+    drawCapture();
   } else {
-    window.addEventListener("resize", function () { drawLive(); });
+    window.addEventListener("resize", drawLive);
     requestAnimationFrame(frame);
   }
 
