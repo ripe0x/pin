@@ -24,11 +24,8 @@ export default function HomePage() {
       <header className="border-b border-gray-200 pb-14">
         <div className="max-w-4xl space-y-7">
           <div className="space-y-4">
-            <p className="text-[11px] font-mono font-medium uppercase tracking-wider text-gray-500">
-              PND on Ethereum
-            </p>
             <h1 className="max-w-3xl text-4xl font-semibold leading-[1.05] tracking-[-0.035em] sm:text-5xl lg:text-6xl">
-              A venue for artist-owned releases.
+              Artist-owned releases
             </h1>
             <p className="max-w-2xl text-base leading-relaxed text-fg-muted sm:text-lg">
               Artists can launch here, operate independently, or use the same

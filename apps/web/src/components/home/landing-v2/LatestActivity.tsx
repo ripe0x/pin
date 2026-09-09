@@ -84,16 +84,13 @@ export async function LatestActivity() {
 
 function ActivityHeading() {
   return (
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-      <div>
-        <p className="text-[11px] font-mono font-medium uppercase tracking-wider text-gray-500">
-          Historical evidence
-        </p>
-        <h2 id="latest-activity" className="mt-1 text-2xl font-semibold tracking-tight">
-          Latest activity
-        </h2>
-      </div>
-      <p className="text-xs font-mono text-gray-500">Observed on Ethereum</p>
+    <div>
+      <p className="text-[11px] font-mono font-medium uppercase tracking-wider text-gray-500">
+        Historical evidence
+      </p>
+      <h2 id="latest-activity" className="mt-1 text-2xl font-semibold tracking-tight">
+        Latest activity
+      </h2>
     </div>
   )
 }
