@@ -1,8 +1,11 @@
 import type { Metadata } from "next"
+import { Suspense } from "react"
+import { AuctionCard } from "@/components/auction/AuctionCard"
+import { getOpenAuctions } from "@/lib/landing-auctions"
 
-const TITLE = "Artist-owned auction contracts"
+const TITLE = "Open auctions"
 const DESCRIPTION =
-  "How PND's artist-owned auction contracts work: who deploys them, who owns them, how listing, bidding, and settlement work, and what happens if PND disappears."
+  "Every open auction across PND's artist-owned houses, plus how the contracts work: who deploys them, who owns them, and what happens if PND disappears."
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -11,13 +14,36 @@ export const metadata: Metadata = {
   twitter: { card: "summary_large_image", title: TITLE, description: DESCRIPTION },
 }
 
-export default function AuctionsGuidePage() {
+// Listings read live production data; keep the shell dynamic so a stale
+// build artifact never freezes them.
+export const dynamic = "force-dynamic"
+
+export default function AuctionsPage() {
   return (
-    <div className="mx-auto max-w-2xl px-6 py-12 space-y-8">
+    <div className="px-6 py-12">
+      <section aria-labelledby="open-auctions" className="mx-auto max-w-6xl space-y-6">
+        <header className="space-y-3">
+          <p className="text-[11px] font-mono font-medium uppercase tracking-wider text-status-available">
+            Live availability
+          </p>
+          <h1 id="open-auctions" className="text-3xl font-semibold tracking-tight">
+            Open auctions
+          </h1>
+          <p className="max-w-2xl text-base text-fg-muted leading-relaxed">
+            Every auction currently open across PND&rsquo;s artist-owned
+            houses, soonest to end first.
+          </p>
+        </header>
+        <Suspense fallback={<ListingSkeleton />}>
+          <OpenAuctionsList />
+        </Suspense>
+      </section>
+
+      <div className="mx-auto mt-20 max-w-2xl space-y-8 border-t border-gray-200 pt-12">
       <header className="space-y-5">
-        <h1 className="text-3xl font-semibold tracking-tight">
-          Artist-owned auction contracts
-        </h1>
+        <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight">
+          How artist-owned auctions work
+        </h2>
         <p className="text-base text-fg-muted leading-relaxed">
           PND lets an artist deploy and run their own onchain auction
           contract. This is a plain-language guide to how that works.
@@ -264,6 +290,51 @@ export default function AuctionsGuidePage() {
           .
         </p>
       </section>
+      </div>
     </div>
+  )
+}
+
+async function OpenAuctionsList() {
+  const shelf = await getOpenAuctions().catch(() => null)
+  const now = Math.floor(Date.now() / 1000)
+  const items = shelf ?? []
+
+  if (shelf === null) {
+    return (
+      <div className="rounded-md border border-gray-200 p-5">
+        <p className="text-sm text-fg-muted">
+          Live availability is temporarily unavailable. Try again shortly.
+        </p>
+      </div>
+    )
+  }
+  if (items.length === 0) {
+    return (
+      <div className="rounded-md border border-gray-200 p-5">
+        <p className="text-sm text-fg-muted">No auctions are open right now.</p>
+      </div>
+    )
+  }
+  return (
+    <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {items.map((item) => (
+        <AuctionCard
+          key={`auction:${item.house}:${item.auctionId}`}
+          card={item}
+          now={now}
+        />
+      ))}
+    </ul>
+  )
+}
+
+function ListingSkeleton() {
+  return (
+    <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="Loading auctions">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <li key={i} className="aspect-[4/3] skeleton rounded-md" />
+      ))}
+    </ul>
   )
 }

@@ -67,7 +67,7 @@ function FeaturedRelease({
         href={`/collections/${release.address}`}
         className="group grid overflow-hidden rounded-md border border-gray-200 bg-surface transition-colors hover:border-gray-400 md:grid-cols-[minmax(0,1.5fr)_minmax(280px,0.65fr)]"
       >
-        <div className="aspect-[4/3] overflow-hidden bg-gray-100 md:aspect-auto md:min-h-[440px]">
+        <div className="aspect-square overflow-hidden bg-gray-100">
           <Artwork media={release.artwork} alt={release.name} />
         </div>
         <div className="flex flex-col justify-between gap-10 p-6 sm:p-8">
@@ -117,7 +117,7 @@ function ReleaseShelf({
               href={`/collections/${release.address}`}
               className="group block h-full overflow-hidden rounded-md border border-gray-200 bg-surface transition-colors hover:border-gray-400"
             >
-              <div className="aspect-[4/3] overflow-hidden bg-gray-100">
+              <div className="aspect-square overflow-hidden bg-gray-100">
                 <Artwork media={release.artwork} alt={release.name} />
               </div>
               <div className="space-y-4 p-4">
