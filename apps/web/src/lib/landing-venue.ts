@@ -128,7 +128,8 @@ async function buildVenueModel(): Promise<VenueModel | null> {
 
   const editorial =
     programmedPick?.editorial ?? getReleaseEditorial(featuredRelease.address)
-  const others = recentReleases.filter((r) => r.address !== featuredRelease.address)
+  const featuredKey = featuredRelease.address.toLowerCase()
+  const others = recentReleases.filter((r) => r.address.toLowerCase() !== featuredKey)
 
   return {
     featured: {
@@ -137,7 +138,14 @@ async function buildVenueModel(): Promise<VenueModel | null> {
       programmed: programmedPick !== undefined,
     },
     upcoming: others.filter((r) => statusOf(r) === SurfaceStatus.Scheduled).slice(0, SHELF_LIMIT),
-    recent: others.filter((r) => statusOf(r) !== SurfaceStatus.Scheduled).slice(0, SHELF_LIMIT),
+    // Recent row leads with the featured release, then the most recent
+    // non-scheduled releases, so the featured also appears in the list.
+    // featuredRelease can be a programmed pick absent from recentReleases,
+    // so prepend it rather than relying on it being in `others`.
+    recent: [
+      featuredRelease,
+      ...others.filter((r) => statusOf(r) !== SurfaceStatus.Scheduled),
+    ].slice(0, SHELF_LIMIT),
   }
 }
 
