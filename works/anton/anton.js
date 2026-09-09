@@ -6,12 +6,17 @@
 // Two clocks. eventTime = wall clock + owner offset drives only discrete event
 // starts (warp mode change, background mass colour retarget) on a fixed grid,
 // so every token a wallet holds fires the same event at the same wall-clock
-// instant; a transfer moves the token onto the new owner's grid. motionTime =
-// CAPTURE_T + seconds elapsed since load drives all continuous motion (blob
-// paths, the shader's u_time) at the piece's native pace, independent of the
-// owner. A token opens with motionTime at CAPTURE_T, the home warp mode and the
-// base mass colours, then runs forward with no transition. The canonical still
-// (context "capture") renders that same opening state.
+// instant; a transfer moves the token onto the new owner's grid. The first
+// shared event on each grid fires no sooner than FIRST_EVENT_LEAD seconds
+// after load. motionTime = openingTime + seconds elapsed since load drives all
+// continuous motion (blob paths, the shader's u_time) at the piece's native
+// pace, independent of the owner. openingTime is chosen once per seed by
+// scanning a fixed window of the motion timeline and picking the instant with
+// the least short-term change in blob intensity, size and colour, so a token
+// opens on a calm frame instead of mid-fade. A token opens with motionTime at
+// openingTime, the home warp mode and the base mass colours, then runs forward
+// with no transition. The canonical still (context "capture") renders that
+// same opening state.
 (function () {
   "use strict";
 
@@ -315,13 +320,15 @@
   // eventTime = wall clock + owner offset. Drives only the discrete events
   // below (warp mode start, background mass colour retarget start) on a fixed
   // grid, so every token a wallet holds fires the same event at the same
-  // instant.
+  // instant. The first counted tick on each grid is the first grid instant
+  // more than FIRST_EVENT_LEAD seconds after load.
   //
-  // motionTime = CAPTURE_T + seconds elapsed since load. Drives all continuous
-  // motion (blob paths, persistent blob, shader time) at the piece's native
-  // pace. It does not depend on the owner, so a transfer changes future event
-  // timing but never disturbs motion in progress.
+  // motionTime = openingTime + seconds elapsed since load. Drives all
+  // continuous motion (blob paths, persistent blob, shader time) at the
+  // piece's native pace. It does not depend on the owner, so a transfer
+  // changes future event timing but never disturbs motion in progress.
   var TIME_WRAP = 65536; // seconds. Keeps u_time inside float32 precision.
+  var FIRST_EVENT_LEAD = 6.0; // seconds. Minimum delay before the first counted grid tick.
 
   function keyHash(tag, i, j) { return xmur3(seedHash + "|" + tag + "|" + i + "|" + j); }
   function tintedColor(base, spread, r) {
@@ -451,14 +458,15 @@
 
   // ── event grid ──────────────────────────────────────────────────────────────
   // Counts shared-grid ticks (instants offset + n * period, integer n) that
-  // fall strictly after loadEventTime and at or before eventTime. k is that
-  // count; local is seconds since the k-th tick, 0 when k is 0. A tick that
-  // falls before or at loadEventTime does not count, so a token that loads
-  // mid-blend on the shared grid holds its home state until the next tick
-  // rather than starting a partial morph. O(1) per call. Clamped to k >= 0 so
-  // a wall clock adjustment cannot produce a negative tick count.
+  // fall strictly after loadEventTime + FIRST_EVENT_LEAD and at or before
+  // eventTime. k is that count; local is seconds since the k-th tick, 0 when k
+  // is 0. A tick that falls at or before loadEventTime + FIRST_EVENT_LEAD does
+  // not count, so a token holds its home state for at least FIRST_EVENT_LEAD
+  // seconds after load and, on the shared grid, until the next tick rather
+  // than starting a partial morph. O(1) per call. Clamped to k >= 0 so a wall
+  // clock adjustment cannot produce a negative tick count.
   function tickState(offset, period, loadEventTime, eventTime) {
-    var nLoad = Math.floor((loadEventTime - offset) / period);
+    var nLoad = Math.floor((loadEventTime + FIRST_EVENT_LEAD - offset) / period);
     var nNow = Math.floor((eventTime - offset) / period);
     var k = Math.max(0, nNow - nLoad);
     var local = k > 0 ? (eventTime - offset) - nNow * period : 0;
@@ -525,15 +533,11 @@
   var colorData = new Float32Array(MAX_LAYERS * 4);
   var paramData = new Float32Array(MAX_LAYERS * 2);
   var layer = { active: false, x: 0, y: 0, sx: 0, sy: 0, k: 2, phase: 0, intensity: 0, color: [0, 0, 0] };
-  // motionTime a token opens on and the canonical still renders. Fixes which
-  // blob configuration and field phase the opening frame shows; unrelated to
-  // the event grid.
-  var CAPTURE_T = 1236.5;
 
   function fillLayers(T, L, C, P) {
     for (var i = 0; i < MAX_LAYERS; i++) {
       layer.active = false;
-      layer.x = 0.5; layer.y = 1.5; // offscreen default so inactive slots have a defined position to blend from
+      layer.x = 0.5; layer.y = 1.5; // offscreen default position; an inactive slot writes zero for size, intensity, colour and params
       if (i < DYN_SLOTS) blobAt(i, T, layer);
       else if (persistent && i === MAX_LAYERS - 1) persistentAt(T, layer);
       var b4 = i * 4, b2 = i * 2;
@@ -541,12 +545,12 @@
       L[b4 + 1] = layer.y;
       L[b4 + 2] = layer.active ? layer.sx : 0;
       L[b4 + 3] = layer.active ? layer.sy : 0;
-      C[b4] = layer.color[0];
-      C[b4 + 1] = layer.color[1];
-      C[b4 + 2] = layer.color[2];
+      C[b4] = layer.active ? layer.color[0] : 0;
+      C[b4 + 1] = layer.active ? layer.color[1] : 0;
+      C[b4 + 2] = layer.active ? layer.color[2] : 0;
       C[b4 + 3] = layer.active ? layer.intensity : 0;
-      P[b2] = layer.k;
-      P[b2 + 1] = layer.phase;
+      P[b2] = layer.active ? layer.k : 0;
+      P[b2 + 1] = layer.active ? layer.phase : 0;
     }
   }
   function fillBgCols(loadEventTime, eventTime, arr) {
@@ -555,6 +559,48 @@
       arr[i * 3] = col[0]; arr[i * 3 + 1] = col[1]; arr[i * 3 + 2] = col[2];
     }
   }
+
+  // ── opening instant ──────────────────────────────────────────────────────────
+  // openingTime is the motionTime a token opens on and the canonical still
+  // renders: fixed per seed, chosen once at load. Scans SCAN_COUNT candidate
+  // instants spaced SCAN_STEP apart starting at SCAN_START and picks the one
+  // with the least short-term change over the next SCAN_HORIZON seconds,
+  // measured as the summed absolute change in each layer's intensity, size
+  // (sx, sy) and colour (r, g, b) between T and T + SCAN_HORIZON / 2 and
+  // between T + SCAN_HORIZON / 2 and T + SCAN_HORIZON. Position (x, y) is
+  // excluded because slow drift is normal motion, not an event. A candidate
+  // with no dynamic blob at intensity >= 0.3 is penalised so an empty frame is
+  // chosen only when nothing else is available in the window. Ties go to the
+  // smaller T. Pure function of the seed: the same seed gives the same
+  // openingTime on every load.
+  var SCAN_START = 0, SCAN_STEP = 1.0, SCAN_COUNT = 600, SCAN_HORIZON = 8;
+  var openingTime = (function () {
+    var l0 = new Float32Array(MAX_LAYERS * 4), c0 = new Float32Array(MAX_LAYERS * 4), p0 = new Float32Array(MAX_LAYERS * 2);
+    var l1 = new Float32Array(MAX_LAYERS * 4), c1 = new Float32Array(MAX_LAYERS * 4), p1 = new Float32Array(MAX_LAYERS * 2);
+    var l2 = new Float32Array(MAX_LAYERS * 4), c2 = new Float32Array(MAX_LAYERS * 4), p2 = new Float32Array(MAX_LAYERS * 2);
+    var best = 0, bestActivity = Infinity;
+    for (var i = 0; i < SCAN_COUNT; i++) {
+      var T = SCAN_START + i * SCAN_STEP;
+      fillLayers(T, l0, c0, p0);
+      fillLayers(T + SCAN_HORIZON / 2, l1, c1, p1);
+      fillLayers(T + SCAN_HORIZON, l2, c2, p2);
+      var activity = 0;
+      for (var j = 0; j < MAX_LAYERS; j++) {
+        var b4 = j * 4;
+        activity +=
+          Math.abs(c1[b4 + 3] - c0[b4 + 3]) + Math.abs(l1[b4 + 2] - l0[b4 + 2]) + Math.abs(l1[b4 + 3] - l0[b4 + 3]) +
+          Math.abs(c1[b4] - c0[b4]) + Math.abs(c1[b4 + 1] - c0[b4 + 1]) + Math.abs(c1[b4 + 2] - c0[b4 + 2]);
+        activity +=
+          Math.abs(c2[b4 + 3] - c1[b4 + 3]) + Math.abs(l2[b4 + 2] - l1[b4 + 2]) + Math.abs(l2[b4 + 3] - l1[b4 + 3]) +
+          Math.abs(c2[b4] - c1[b4]) + Math.abs(c2[b4 + 1] - c1[b4 + 1]) + Math.abs(c2[b4 + 2] - c1[b4 + 2]);
+      }
+      var hasBlob = false;
+      for (var s = 0; s < DYN_SLOTS; s++) { if (c0[s * 4 + 3] >= 0.3) { hasBlob = true; break; } }
+      if (!hasBlob) activity += 1.0;
+      if (activity < bestActivity) { bestActivity = activity; best = T; }
+    }
+    return best;
+  })();
 
   function sizeCanvas() {
     // Live: fill the viewport at any aspect (uv stretches with the canvas, as in
@@ -607,7 +653,7 @@
   function drawLive() {
     var now = Date.now();
     var eventTime = now / 1000 + ownerOffset;
-    var motionTime = CAPTURE_T + (now - loadStart) / 1000;
+    var motionTime = openingTime + (now - loadStart) / 1000;
     fillBgCols(loadEventTime, eventTime, staticCols);
     fillLayers(motionTime, layerData, colorData, paramData);
     paint(warpAt(loadEventTime, eventTime), motionTime);
@@ -619,9 +665,9 @@
   // warp mode and the base mass colours. This keeps the still and the opening
   // frame from diverging.
   function drawCapture() {
-    fillLayers(CAPTURE_T, layerData, colorData, paramData);
+    fillLayers(openingTime, layerData, colorData, paramData);
     fillBgCols(0, 0, staticCols);
-    paint(warpAt(0, 0), CAPTURE_T);
+    paint(warpAt(0, 0), openingTime);
   }
 
   if (isCapture) {
