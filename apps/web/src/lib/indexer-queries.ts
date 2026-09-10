@@ -368,7 +368,7 @@ export async function getActivePndAuctions(
     const v2Cols = await hasV2AuctionColumns(schema)
 
     const rows = (await db.unsafe(
-      `SELECT id::text AS auction_id, house, token_contract,
+      `SELECT auction_id::text AS auction_id, house, token_contract,
               token_id::text AS token_id, seller,
               amount::text AS amount, reserve_price::text AS reserve_price,
               end_time::text AS end_time,
