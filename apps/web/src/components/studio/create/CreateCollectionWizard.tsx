@@ -19,6 +19,7 @@ import { useAccount, useChainId, useSwitchChain } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { PREFERRED_CHAIN, PREFERRED_CHAIN_LABEL } from "@/components/tx/tx-ui"
 import { useEthAmountInput } from "@/lib/useEthAmountInput"
+import { defaultRendererAddress } from "@/lib/collection"
 import type { FactoryStatus } from "@/lib/collection-onchain"
 import { initialWizardState, stepsForPreset, type StepId, type WizardState } from "./types"
 import { Stepper } from "./Stepper"
@@ -140,7 +141,7 @@ export function CreateCollectionWizard({
       <div className="rounded-lg border border-gray-200 bg-surface p-5">
         {step === "preset" && (
           <PresetStep
-            editionAvailable={factoryStatus.defaultRendererSet}
+            editionAvailable={defaultRendererAddress(chainId) !== null}
             onSelect={(preset) => {
               set("preset", preset)
               goTo("config")

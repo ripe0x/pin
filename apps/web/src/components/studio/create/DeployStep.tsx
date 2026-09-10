@@ -9,8 +9,11 @@
  * SaleConfig the factory hands to the canonical FixedPriceMinter clone it
  * wires in the same transaction:
  *
- *   EDITION:   Sequential id mode, renderer = zero (DefaultRenderer, the
- *              factory's baked-in default); optional cover to RenderAssets.
+ *   EDITION:   Sequential id mode, renderer = the deployed DefaultRenderer
+ *              singleton, passed explicitly (the factory's own
+ *              defaultRenderer() is immutable and permanently zero on the
+ *              live factory, so there is no fallback to rely on); optional
+ *              cover to RenderAssets.
  *   RENDERER:  renderer = the artist-supplied address (bring-your-own).
  *
  * Economics (price/window/payout) are preset-independent and now live
@@ -32,6 +35,7 @@ import {
   ZERO_ADDRESS,
   surfaceFactory,
   renderAssetsAddress,
+  defaultRendererAddress,
 } from "@/lib/collection"
 import { studioToolHref } from "@/lib/studio-tools"
 import { validateCollaborators } from "./SharedFields"
@@ -99,10 +103,15 @@ export function DeployStep({
   const collabCheck = validateCollaborators(state.collaborators)
 
   function buildCfg() {
+    // canDeploy already requires a resolved DefaultRenderer for the Edition
+    // preset before submit() calls this, so the non-null assertion here
+    // never fires on an unconfigured chain.
     const rendererAddr =
       state.preset === "renderer"
         ? (state.customRenderer as Address)
-        : (ZERO_ADDRESS as Address)
+        : state.preset === "edition"
+          ? (defaultRendererAddress(chainId) as Address)
+          : (ZERO_ADDRESS as Address)
 
     // Thin-token rearchitecture: SurfaceConfig carries only the token's own
     // structural facts now (supply cap, royalty, renderer, locks). Sale
@@ -143,7 +152,8 @@ export function DeployStep({
     !!factory &&
     !!address &&
     state.preset !== "generative" &&
-    (state.preset !== "renderer" || !!state.customRenderer)
+    (state.preset !== "renderer" || !!state.customRenderer) &&
+    (state.preset !== "edition" || !!defaultRendererAddress(chainId))
 
   function submit() {
     if (!canDeploy || !factory || !address) return
