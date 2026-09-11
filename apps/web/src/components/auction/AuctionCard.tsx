@@ -18,7 +18,7 @@ export function AuctionCard({ card, now }: { card: AuctionShelfCard; now: number
         href={`/${card.tokenContract}/${card.tokenId}`}
         className="group block h-full overflow-hidden rounded-md border border-gray-200 bg-surface transition-colors hover:border-gray-400"
       >
-        <div className="aspect-[4/3] overflow-hidden bg-gray-100">
+        <div className="aspect-square overflow-hidden bg-gray-100">
           <Artwork media={card.artwork} alt={card.title ?? `Token #${card.tokenId}`} />
         </div>
         <div className="space-y-3 p-4">

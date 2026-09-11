@@ -196,9 +196,9 @@ function ShelfSkeleton({ label }: { label: string }) {
     <section className="space-y-5" aria-label={label}>
       <div className="h-8 w-56 skeleton rounded-sm" />
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <div className="aspect-[4/3] skeleton rounded-md" />
-        <div className="aspect-[4/3] skeleton rounded-md" />
-        <div className="aspect-[4/3] skeleton rounded-md" />
+        <div className="aspect-square skeleton rounded-md" />
+        <div className="aspect-square skeleton rounded-md" />
+        <div className="aspect-square skeleton rounded-md" />
       </div>
     </section>
   )

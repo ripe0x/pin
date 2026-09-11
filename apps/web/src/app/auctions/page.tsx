@@ -333,7 +333,7 @@ function ListingSkeleton() {
   return (
     <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="Loading auctions">
       {Array.from({ length: 6 }).map((_, i) => (
-        <li key={i} className="aspect-[4/3] skeleton rounded-md" />
+        <li key={i} className="aspect-square skeleton rounded-md" />
       ))}
     </ul>
   )
