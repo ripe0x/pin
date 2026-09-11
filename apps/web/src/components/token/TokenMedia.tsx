@@ -41,11 +41,19 @@ export function TokenMedia({
   imageUrl,
   animationUrl,
   title,
+  fit = "viewport",
 }: {
   imageUrl: string
   animationUrl?: string | null
   title: string
+  /**
+   * "viewport" (default): size to intrinsic media, capped at 80vh — the
+   * token-page layout. "fill": stretch to the parent box (h-full w-full),
+   * for a fixed-aspect cell such as the landing hero.
+   */
+  fit?: "viewport" | "fill"
 }) {
+  const fill = fit === "fill"
   // Prefer animation_url when present — it's the dynamic version of the
   // work. Fall back to imageUrl for the static-image case. HTML rendering
   // is only allowed via animation_url so a poster-less imageUrl doesn't
@@ -84,7 +92,7 @@ export function TokenMedia({
       <video
         src={v.src}
         poster={useAnimation ? poster : undefined}
-        className="max-h-[80vh] w-auto object-contain"
+        className={fill ? "h-full w-full object-cover" : "max-h-[80vh] w-auto object-contain"}
         autoPlay
         loop
         muted
@@ -114,7 +122,11 @@ export function TokenMedia({
         allow="autoplay"
         loading="lazy"
         referrerPolicy="no-referrer"
-        className="aspect-square h-[80vh] max-h-[80vh] max-w-full bg-black"
+        className={
+          fill
+            ? "h-full w-full border-0 bg-black"
+            : "aspect-square h-[80vh] max-h-[80vh] max-w-full bg-black"
+        }
       />
     )
   }
@@ -123,7 +135,7 @@ export function TokenMedia({
     <img
       src={media.src}
       alt={title}
-      className="max-h-[80vh] w-auto object-contain"
+      className={fill ? "h-full w-full object-cover" : "max-h-[80vh] w-auto object-contain"}
       onError={handleImageError}
     />
   )

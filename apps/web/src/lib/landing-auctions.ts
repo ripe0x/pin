@@ -16,6 +16,12 @@ export type AuctionShelfCard = {
   tokenContract: string
   tokenId: string
   title: string | null
+  /** Metadata image URL (raw, may be ipfs://); the hero's static fallback. */
+  imageUrl: string | null
+  /** Metadata animation_url (raw, may be ipfs://); the hero plays it when set. */
+  animationUrl: string | null
+  /** Token metadata description; shown under the byline on the hero. */
+  description: string | null
   /** Seller address, for the byline avatar fallback (zorb). */
   seller: string
   /** ENS name when resolved, else a truncated address. */
@@ -55,6 +61,7 @@ async function toShelfCards(live: ActiveAuction[]): Promise<AuctionShelfCard[]> 
   ])
   return live.map((a) => {
     const key = `${a.tokenContract.toLowerCase()}:${a.tokenId}`
+    const tokenMeta = meta.get(key)
     const hasBid = a.firstBidTime > 0
     const identity = identities.get(a.seller.toLowerCase())
     return {
@@ -62,7 +69,10 @@ async function toShelfCards(live: ActiveAuction[]): Promise<AuctionShelfCard[]> 
       auctionId: a.auctionId,
       tokenContract: a.tokenContract,
       tokenId: a.tokenId,
-      title: meta.get(key)?.name ?? null,
+      title: tokenMeta?.name ?? null,
+      imageUrl: tokenMeta?.imageUrl ?? null,
+      animationUrl: tokenMeta?.animationUrl ?? null,
+      description: tokenMeta?.description ?? null,
       seller: a.seller,
       sellerLabel:
         identity?.ensName ?? `${a.seller.slice(0, 6)}…${a.seller.slice(-4)}`,

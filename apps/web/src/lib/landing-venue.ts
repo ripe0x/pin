@@ -19,6 +19,10 @@ import {
 import { getCollectionArtwork } from "./collection-artwork"
 import type { DisplayMedia } from "./display-media"
 import { readEnsIdentities } from "./ens-identity-store"
+import {
+  getLatestCollectionTokenIds,
+  getTokenMediaFromMetadata,
+} from "./indexer-queries"
 import { featuredReleaseEditorial, getReleaseEditorial } from "./release-editorial"
 
 /**
@@ -42,6 +46,10 @@ export type VenueRelease = {
   cap: string
   priceLabel: string
   artwork: DisplayMedia
+  /** Latest token's metadata media (raw URIs). Populated for the featured
+   * release only, so its hero can play an animation_url. */
+  imageUrl?: string | null
+  animationUrl?: string | null
 }
 
 export type VenueModel = {
@@ -140,10 +148,27 @@ async function buildVenueModel(): Promise<VenueModel | null> {
   const featuredKey = featuredRelease.address.toLowerCase()
   const others = recentReleases.filter((r) => r.address.toLowerCase() !== featuredKey)
 
+  // Latest token's media for the featured release only, so its hero can play
+  // an animation_url. Two Postgres reads, gated to the one featured address.
+  const latestTokenId = (
+    await getLatestCollectionTokenIds([featuredRelease.address]).catch(
+      () => new Map<string, string>(),
+    )
+  ).get(featuredKey)
+  const featuredMedia = latestTokenId
+    ? (
+        await getTokenMediaFromMetadata([
+          { contract: featuredRelease.address, tokenId: latestTokenId },
+        ]).catch(() => new Map())
+      ).get(`${featuredKey}:${latestTokenId}`)
+    : null
+
   return {
     featured: {
       ...featuredRelease,
       summary: contractDescription ?? editorial?.editorialSummary ?? null,
+      imageUrl: featuredMedia?.imageUrl ?? null,
+      animationUrl: featuredMedia?.animationUrl ?? null,
       programmed: programmedPick !== undefined,
     },
     upcoming: others.filter((r) => statusOf(r) === SurfaceStatus.Scheduled).slice(0, SHELF_LIMIT),
