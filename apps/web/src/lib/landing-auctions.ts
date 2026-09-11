@@ -10,6 +10,8 @@ import { getActivePndAuctions, getTokenMediaFromMetadata } from "./indexer-queri
 export type AuctionShelfCard = {
   house: string
   auctionId: string
+  /** NFT contract address; the token page lives at `/<tokenContract>/<tokenId>`. */
+  tokenContract: string
   tokenId: string
   title: string | null
   sellerLabel: string
@@ -49,6 +51,7 @@ async function toShelfCards(live: ActiveAuction[]): Promise<AuctionShelfCard[]> 
     return {
       house: a.house,
       auctionId: a.auctionId,
+      tokenContract: a.tokenContract,
       tokenId: a.tokenId,
       title: meta.get(key)?.name ?? null,
       sellerLabel: `${a.seller.slice(0, 6)}…${a.seller.slice(-4)}`,

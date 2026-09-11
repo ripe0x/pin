@@ -15,7 +15,7 @@ export function AuctionCard({ card, now }: { card: AuctionShelfCard; now: number
   return (
     <li>
       <Link
-        href={`/auction/${card.house}/${card.auctionId}`}
+        href={`/${card.tokenContract}/${card.tokenId}`}
         className="group block h-full overflow-hidden rounded-md border border-gray-200 bg-surface transition-colors hover:border-gray-400"
       >
         <div className="aspect-[4/3] overflow-hidden bg-gray-100">
