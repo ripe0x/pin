@@ -51,17 +51,18 @@ capturer-writable. Emits `CapturerSet`.
 ### setCaptureTemplate
 
 ```solidity
-function setCaptureTemplate(address collection, string template) external
+function setCaptureTemplate(address collection, string template, uint256 maxTokenId) external
 ```
 
 **Access:** collection owner, admin, or granted capturer (else `NotCaptureAuthorized`)
 
-Sets the collection's capture URI template ("" clears it). Every `{id}` in the
-template resolves to the token id at read time, so one write covers every token
-(for example a manifest at `ar://<manifest>/{id}.png`). A per-token capture
-overrides the template. To prompt marketplaces to re-fetch, follow with the
-collection's ERC-4906 `notifyMetadataUpdate` (owner or admin). Emits
-`CaptureTemplateSet`.
+Sets the collection's capture URI template and its coverage bound ("" clears
+both). Every `{id}` in the template resolves to the token id at read time (for
+example a manifest at `ar://<manifest>/{id}.png`). The template applies to
+token ids up to and including `maxTokenId`; higher ids resolve to the cover. A
+per-token capture overrides the template regardless of the bound. To prompt
+marketplaces to re-fetch, follow with the collection's ERC-4906
+`notifyMetadataUpdate` (owner or admin). Emits `CaptureTemplateSet`.
 
 ### setCaptures
 
@@ -95,7 +96,8 @@ function imageFor(address collection, uint256 tokenId) external view returns (st
 
 The image the bundled renderers serve for a token, resolved in order: the
 token's capture if one exists, else the collection's template with `{id}`
-replaced by the token id, else the collection cover, else "".
+replaced by the token id when the id is within `templateMaxTokenIdOf`, else
+the collection cover, else "".
 
 ### isCapturer
 
@@ -105,6 +107,15 @@ function isCapturer(address, address) external view returns (bool)
 
 True if the account holds a capturer grant for the collection (owners and
 admins do not appear here; their authority comes from the collection itself).
+
+### templateMaxTokenIdOf
+
+```solidity
+function templateMaxTokenIdOf(address) external view returns (uint256)
+```
+
+The highest token id the collection's template covers. Ids above this fall
+back to the cover.
 
 ### templateOf
 
@@ -138,11 +149,11 @@ Emitted per token when captures are set. Indexed by `collection` and
 ### CaptureTemplateSet
 
 ```solidity
-event CaptureTemplateSet(address indexed collection, string template)
+event CaptureTemplateSet(address indexed collection, string template, uint256 maxTokenId)
 ```
 
-Emitted when a collection's capture template changes. Indexed by
-`collection`.
+Emitted when a collection's capture template or its coverage bound changes.
+Indexed by `collection`.
 
 ### CoverSet
 

@@ -57,7 +57,7 @@ contract RenderAssetsTest is Test {
         assertEq(assets.imageFor(c, 7), "ipfs://cover", "cover is the floor");
 
         vm.prank(artist);
-        assets.setCaptureTemplate(c, "ar://manifest/{id}.png");
+        assets.setCaptureTemplate(c, "ar://manifest/{id}.png", 100);
         assertEq(assets.imageFor(c, 7), "ar://manifest/7.png", "template beats cover, id substituted");
 
         _setCapture(artist, 7, "ar://explicit-frame");
@@ -69,10 +69,40 @@ contract RenderAssetsTest is Test {
         address c = address(collection);
         vm.startPrank(artist);
         assets.setCover(c, "ipfs://cover");
-        assets.setCaptureTemplate(c, "ar://manifest/{id}.png");
-        assets.setCaptureTemplate(c, "");
+        assets.setCaptureTemplate(c, "ar://manifest/{id}.png", 100);
+        assets.setCaptureTemplate(c, "", 0);
         vm.stopPrank();
         assertEq(assets.imageFor(c, 1), "ipfs://cover", "cleared template falls back to the cover");
+        assertEq(assets.templateMaxTokenIdOf(c), 0, "clearing the template resets the bound");
+    }
+
+    function test_imageFor_templateBound_respected() public {
+        address c = address(collection);
+        vm.startPrank(artist);
+        assets.setCover(c, "ipfs://cover");
+        assets.setCaptureTemplate(c, "ar://manifest/{id}.png", 10);
+        vm.stopPrank();
+        assertEq(assets.imageFor(c, 10), "ar://manifest/10.png", "id == bound resolves the template");
+        assertEq(assets.imageFor(c, 11), "ipfs://cover", "id == bound + 1 falls back to the cover");
+    }
+
+    function test_imageFor_templateBoundZero_alwaysCover() public {
+        address c = address(collection);
+        vm.startPrank(artist);
+        assets.setCover(c, "ipfs://cover");
+        assets.setCaptureTemplate(c, "ar://manifest/{id}.png", 0);
+        vm.stopPrank();
+        assertEq(assets.imageFor(c, 1), "ipfs://cover", "bound zero: every minted id falls back to the cover");
+        assertEq(assets.imageFor(c, 2), "ipfs://cover", "bound zero: every other id falls back to the cover");
+    }
+
+    function test_imageFor_captureBeatsTemplate_regardlessOfBound() public {
+        address c = address(collection);
+        vm.startPrank(artist);
+        assets.setCaptureTemplate(c, "ar://manifest/{id}.png", 0);
+        vm.stopPrank();
+        _setCapture(artist, 5, "ar://explicit-frame");
+        assertEq(assets.imageFor(c, 5), "ar://explicit-frame", "explicit capture wins even outside the bound");
     }
 
     // ── write auth: admins ───────────────────────────────────────────────────
@@ -82,7 +112,7 @@ contract RenderAssetsTest is Test {
         vm.prank(admin);
         assets.setCover(c, "ipfs://by-admin");
         vm.prank(admin);
-        assets.setCaptureTemplate(c, "ar://t/{id}");
+        assets.setCaptureTemplate(c, "ar://t/{id}", 50);
         _setCapture(admin, 1, "ar://f1");
         vm.prank(admin);
         assets.setCapturer(c, capturer, true);
@@ -103,7 +133,7 @@ contract RenderAssetsTest is Test {
         assets.setCapturer(c, stranger, true);
         vm.expectRevert(RenderAssets.NotCaptureAuthorized.selector);
         vm.prank(stranger);
-        assets.setCaptureTemplate(c, "x");
+        assets.setCaptureTemplate(c, "x", 1);
         uint256[] memory ids = new uint256[](1);
         string[] memory uris = new string[](1);
         vm.expectRevert(RenderAssets.NotCaptureAuthorized.selector);
@@ -124,8 +154,9 @@ contract RenderAssetsTest is Test {
         _setCapture(capturer, 3, "ar://frame3");
         assertEq(assets.imageFor(c, 3), "ar://frame3");
         vm.prank(capturer);
-        assets.setCaptureTemplate(c, "ar://m/{id}.png");
+        assets.setCaptureTemplate(c, "ar://m/{id}.png", 20);
         assertEq(assets.templateOf(c), "ar://m/{id}.png");
+        assertEq(assets.templateMaxTokenIdOf(c), 20);
 
         // Out of scope: the cover and the capturer roster itself.
         vm.expectRevert(RenderAssets.NotSurfaceAdmin.selector);
@@ -146,7 +177,7 @@ contract RenderAssetsTest is Test {
 
         vm.expectRevert(RenderAssets.NotCaptureAuthorized.selector);
         vm.prank(capturer);
-        assets.setCaptureTemplate(c, "x");
+        assets.setCaptureTemplate(c, "x", 1);
     }
 
     function test_capturer_grantIsPerSurface() public {
@@ -171,7 +202,7 @@ contract RenderAssetsTest is Test {
 
         vm.expectRevert(RenderAssets.NotCaptureAuthorized.selector);
         vm.prank(capturer);
-        assets.setCaptureTemplate(address(other), "x");
+        assets.setCaptureTemplate(address(other), "x", 1);
     }
 
     function test_setCaptures_lengthMismatchReverts() public {
@@ -190,9 +221,9 @@ contract RenderAssetsTest is Test {
         assets.setCover(c, "ipfs://cover");
 
         vm.expectEmit(true, false, false, true, address(assets));
-        emit RenderAssets.CaptureTemplateSet(c, "ar://m/{id}");
+        emit RenderAssets.CaptureTemplateSet(c, "ar://m/{id}", 30);
         vm.prank(artist);
-        assets.setCaptureTemplate(c, "ar://m/{id}");
+        assets.setCaptureTemplate(c, "ar://m/{id}", 30);
 
         uint256[] memory ids = new uint256[](1);
         ids[0] = 5;

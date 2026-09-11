@@ -35,8 +35,9 @@ cover/captures/template/capturer) is shipped; this is the offchain half.
   upload where it earned the share).
 - [ ] Studio backfill page: list capture-less tokens from the indexer →
   render client-side → upload frames → publish manifest → one
-  `setCaptureTemplate` tx. Consider a capturer-key flow so automation
-  never holds an admin key.
+  `setCaptureTemplate` tx with the bound raised to the new last minted
+  id. Consider a capturer-key flow so automation never holds an admin
+  key.
 - [ ] Mirror the capture spec into `injection-convention.md` v2.
 
 ## Preservation

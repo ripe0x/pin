@@ -81,6 +81,11 @@ export const renderAssetsAbi = [
         "name": "template",
         "type": "string",
         "internalType": "string"
+      },
+      {
+        "name": "maxTokenId",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [],
@@ -152,6 +157,25 @@ export const renderAssetsAbi = [
   },
   {
     "type": "function",
+    "name": "templateMaxTokenIdOf",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "templateOf",
     "inputs": [
       {
@@ -209,6 +233,12 @@ export const renderAssetsAbi = [
         "type": "string",
         "indexed": false,
         "internalType": "string"
+      },
+      {
+        "name": "maxTokenId",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false

@@ -76,7 +76,7 @@ contract ScriptyRendererImageTest is Test {
         assertTrue(LibString.contains(json, '"image":"ipfs://scripty-cover"'), "cover floor via RenderAssets");
 
         vm.prank(artist);
-        assets.setCaptureTemplate(address(collection), "ar://m/{id}.png");
+        assets.setCaptureTemplate(address(collection), "ar://m/{id}.png", 1);
         json = _json(wired.tokenURI(address(collection), 1));
         assertTrue(LibString.contains(json, '"image":"ar://m/1.png"'), "template rung resolves");
         assertTrue(LibString.contains(json, '"animation_url":"data:text/html;base64,'), "animation_url intact");

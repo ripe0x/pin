@@ -32,8 +32,12 @@ contract RenderAssets {
 
     /// @notice Capture URI template per collection ("" = none). Each "{id}" in
     ///         it resolves to the token id, so a single write covers every
-    ///         token's capture.
+    ///         token up to `templateMaxTokenIdOf`.
     mapping(address => string) public templateOf;
+
+    /// @notice Highest token id the collection's template covers. Ids above
+    ///         this fall back to the cover.
+    mapping(address => uint256) public templateMaxTokenIdOf;
 
     /// @notice Per-token capture URI ("" = none; fall back to the template,
     ///         then the cover).
@@ -51,7 +55,7 @@ contract RenderAssets {
 
     event CoverSet(address indexed collection, string uri);
     event CaptureSet(address indexed collection, uint256 indexed tokenId, string uri);
-    event CaptureTemplateSet(address indexed collection, string template);
+    event CaptureTemplateSet(address indexed collection, string template, uint256 maxTokenId);
     event CapturerSet(address indexed collection, address indexed account, bool allowed);
 
     /// @dev Same authority root as the collection's own setters: owner or admin.
@@ -90,16 +94,19 @@ contract RenderAssets {
         emit CapturerSet(collection, account, allowed);
     }
 
-    /// @notice Set the capture template ("" clears it). A single write updates
-    ///         every token that has no explicit capture. To prompt marketplaces
-    ///         to re-fetch, follow with the collection's ERC-4906
-    ///         `notifyMetadataUpdate`.
-    function setCaptureTemplate(address collection, string calldata template)
+    /// @notice Set the capture template and its coverage bound ("" clears
+    ///         both). The template applies to token ids up to and including
+    ///         `maxTokenId`; higher ids resolve to the cover. To prompt
+    ///         marketplaces to re-fetch, follow with the collection's
+    ///         ERC-4906 `notifyMetadataUpdate`.
+    function setCaptureTemplate(address collection, string calldata template, uint256 maxTokenId)
         external
         onlyCaptureAuthorized(collection)
     {
+        uint256 bound = bytes(template).length > 0 ? maxTokenId : 0;
         templateOf[collection] = template;
-        emit CaptureTemplateSet(collection, template);
+        templateMaxTokenIdOf[collection] = bound;
+        emit CaptureTemplateSet(collection, template, bound);
     }
 
     /// @notice Set per-token captures; a single token is a batch of one.
@@ -118,12 +125,13 @@ contract RenderAssets {
     }
 
     /// @notice Resolution order: the token's explicit capture if set, else the
-    ///         template resolved for this id, else the collection cover, else "".
+    ///         template resolved for this id when the id is within
+    ///         `templateMaxTokenIdOf`, else the collection cover, else "".
     function imageFor(address collection, uint256 tokenId) external view returns (string memory) {
         string memory capture = _captures[collection][tokenId];
         if (bytes(capture).length > 0) return capture;
         string memory template = templateOf[collection];
-        if (bytes(template).length > 0) {
+        if (bytes(template).length > 0 && tokenId <= templateMaxTokenIdOf[collection]) {
             return LibString.replace(template, ID_PLACEHOLDER, tokenId.toString());
         }
         return coverOf[collection];

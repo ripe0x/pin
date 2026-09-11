@@ -125,14 +125,17 @@ outside the core. `imageFor(collection, tokenId)` resolves down a ladder:
 
 1. **Per-token capture** — `setCaptures(collection, tokenIds, uris)`,
    explicit frames, one string per token. The override rung.
-2. **Capture template** — `setCaptureTemplate(collection, template)`,
-   a URI with `{id}` resolved to the token id at read time, e.g.
-   `ar://<manifest>/{id}.png`. **One small transaction covers a whole
-   drop's thumbnails**: upload the frames, publish a manifest, point the
-   template at it. Refreshes are one transaction regardless of
-   collection size (a new manifest can reference all previously uploaded
-   frames plus the new ones). This rung exists so per-token thumbnails
-   never cost per-token gas.
+2. **Capture template** — `setCaptureTemplate(collection, template,
+   maxTokenId)`, a URI with `{id}` resolved to the token id at read
+   time, e.g. `ar://<manifest>/{id}.png`, covering ids up to and
+   including `maxTokenId` (higher ids fall back to the cover). **One
+   small transaction covers a whole drop's thumbnails**: upload the
+   frames, publish a manifest, point the template at it with the bound
+   set to the drop's last minted id. Refreshes are one transaction
+   regardless of collection size (a new manifest can reference all
+   previously uploaded frames plus the new ones, with the bound raised
+   to match). This rung exists so per-token thumbnails never cost
+   per-token gas.
 3. **Collection cover** — `setCover(collection, uri)`. The floor, set at
    deploy so `image` resolves from the first block.
 4. `""` — nothing set. `DefaultRenderer` emits an empty image;
@@ -211,8 +214,9 @@ What this means concretely:
 3. **Backfill, occasionally**: a studio page lists tokens with no
    capture yet (the indexer knows), renders each client-side via the
    parity renderer, uploads the frames, publishes an updated manifest,
-   and the artist signs **one** `setCaptureTemplate` transaction. No
-   cron. No server. Signing can also be delegated to a capturer key.
+   and the artist signs **one** `setCaptureTemplate` transaction with the
+   bound raised to the new last minted id. No cron. No server. Signing
+   can also be delegated to a capturer key.
 
 ## 6. By liveness tier, and honest limits
 
