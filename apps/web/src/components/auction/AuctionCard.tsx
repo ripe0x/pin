@@ -1,5 +1,7 @@
 import Link from "next/link"
 import { formatEther } from "viem"
+import { AddressZorb } from "@/components/AddressZorb"
+import { OptimizedImage } from "@/components/OptimizedImage"
 import { Artwork } from "@/components/media/Artwork"
 import type { AuctionShelfCard } from "@/lib/landing-auctions"
 
@@ -33,8 +35,20 @@ export function AuctionCard({ card, now }: { card: AuctionShelfCard; now: number
             <h3 className="truncate text-base font-medium tracking-tight">
               {card.title ?? `Token #${card.tokenId}`}
             </h3>
-            <p className="mt-1 truncate text-xs font-mono text-gray-500">
-              by {card.sellerLabel}
+            <p className="mt-1 flex items-center gap-1.5 text-xs font-mono text-gray-500">
+              <span className="h-4 w-4 shrink-0 overflow-hidden rounded-full">
+                {card.sellerAvatarUrl ? (
+                  <OptimizedImage
+                    src={card.sellerAvatarUrl}
+                    alt={card.sellerLabel}
+                    width={32}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <AddressZorb address={card.seller} className="h-full w-full" />
+                )}
+              </span>
+              <span className="truncate">by {card.sellerLabel}</span>
             </p>
           </div>
           <div className="flex items-end justify-between gap-3 border-t border-gray-200 pt-3">
