@@ -1,17 +1,30 @@
 import Link from "next/link"
 import { AuctionCard } from "@/components/auction/AuctionCard"
-import { getAuctionShelf } from "@/lib/landing-auctions"
+import { getAuctionShelf, getFeaturedAuction } from "@/lib/landing-auctions"
 
 const MAX_ITEMS = 6
 
 /** Live PND auctions across every artist-owned house. Surface releases
  * have their own venue section above this one. */
 export async function AvailableNow() {
-  const shelf = await getAuctionShelf().catch(() => null)
   const now = Math.floor(Date.now() / 1000)
+  // getFeaturedAuction reuses the same cached shelf, so this is one build.
+  const [shelf, featured] = await Promise.all([
+    getAuctionShelf().catch(() => null),
+    getFeaturedAuction().catch(() => null),
+  ])
+  // Drop whatever the venue hero already features, so a live lot never shows
+  // as both the hero and the first card here.
+  const featuredKey = featured
+    ? `${featured.card.house}:${featured.card.auctionId}`
+    : null
   const items = (shelf ?? [])
     .filter((auction) => auction.endTime === 0 || auction.endTime > now)
+    .filter((auction) => `${auction.house}:${auction.auctionId}` !== featuredKey)
     .slice(0, MAX_ITEMS)
+
+  // The only live lot is already the hero above; skip an empty section.
+  if (items.length === 0 && featured && shelf !== null) return null
 
   return (
     <section aria-labelledby="available-now" className="space-y-5">
