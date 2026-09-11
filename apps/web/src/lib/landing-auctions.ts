@@ -1,5 +1,6 @@
 import "server-only"
 import { unstable_cache } from "next/cache"
+import { getAuctionForToken, type AuctionState } from "./auctions"
 import { getDisplayMedia, type DisplayMedia } from "./display-media"
 import { getActivePndAuctions, getTokenMediaFromMetadata } from "./indexer-queries"
 
@@ -78,7 +79,9 @@ async function buildAuctionShelf(): Promise<AuctionShelfCard[]> {
   // order, then distribute only the not-yet-bid lots across sellers.
   const bidding = open.filter((a) => a.endTime > 0)
   const awaitingBid = distributeBySeller(open.filter((a) => a.endTime === 0))
-  return toShelfCards([...bidding, ...awaitingBid].slice(0, MAX_ITEMS))
+  // One spare beyond MAX_ITEMS: the venue hero claims the top live lot, and
+  // AvailableNow drops it, so the spare keeps the shelf at MAX_ITEMS.
+  return toShelfCards([...bidding, ...awaitingBid].slice(0, MAX_ITEMS + 1))
 }
 
 async function buildOpenAuctions(): Promise<AuctionShelfCard[]> {
@@ -124,3 +127,24 @@ export const getOpenAuctions = unstable_cache(buildOpenAuctions, ["open-auctions
   revalidate: 30,
   tags: ["landing-auctions"],
 })
+
+/**
+ * The top live auction for the landing hero: the soonest-ending lot with a
+ * running clock (a bid has landed), paired with its full AuctionState for the
+ * bid panel. Null when nothing is actively bidding. Composes the cached shelf
+ * with the pgCached per-token auction read, so it adds no fresh query. Not
+ * itself unstable_cache'd: AuctionState carries bigints and is not JSON-safe.
+ */
+export async function getFeaturedAuction(): Promise<
+  { card: AuctionShelfCard; auction: AuctionState } | null
+> {
+  const shelf = await getAuctionShelf().catch(() => null)
+  if (!shelf) return null
+  const now = Math.floor(Date.now() / 1000)
+  const top = shelf.find((c) => c.endTime > now)
+  if (!top) return null
+  const auction = await getAuctionForToken(top.tokenContract, top.tokenId).catch(
+    () => null,
+  )
+  return auction ? { card: top, auction } : null
+}
