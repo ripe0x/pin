@@ -1252,6 +1252,7 @@ export async function getTokenImagesFromMetadata(
 
 export type TokenMetadataMedia = {
   name: string | null
+  description: string | null
   imageUrl: string | null
   animationUrl: string | null
 }
@@ -1266,7 +1267,7 @@ export async function getTokenMediaFromMetadata(
   const contracts = pairs.map((p) => p.contract.toLowerCase())
   const tokenIds = pairs.map((p) => p.tokenId)
   const rows = (await sql`
-    SELECT contract, token_id, name, image_url, animation_url
+    SELECT contract, token_id, name, description, image_url, animation_url
       FROM token_metadata
      WHERE (contract, token_id) IN (
        SELECT * FROM unnest(${contracts}::text[], ${tokenIds}::text[])
@@ -1277,6 +1278,7 @@ export async function getTokenMediaFromMetadata(
     contract: string
     token_id: string
     name: string | null
+    description: string | null
     image_url: string | null
     animation_url: string | null
   }>
@@ -1284,6 +1286,7 @@ export async function getTokenMediaFromMetadata(
   for (const r of rows) {
     map.set(`${r.contract.toLowerCase()}:${r.token_id}`, {
       name: r.name,
+      description: r.description,
       imageUrl: r.image_url,
       animationUrl: r.animation_url,
     })

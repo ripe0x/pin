@@ -1,5 +1,9 @@
 import Link from "next/link"
+import { ipfsToHttp } from "@pin/shared"
+import { AddressZorb } from "@/components/AddressZorb"
+import { OptimizedImage } from "@/components/OptimizedImage"
 import { AuctionPanel } from "@/components/auction/AuctionPanel"
+import { TokenMedia } from "@/components/token/TokenMedia"
 import { Artwork } from "@/components/media/Artwork"
 import { SurfaceStatus } from "@/lib/collection"
 import {
@@ -79,19 +83,51 @@ function FeaturedAuction({
         </Link>
       </div>
       <div className="grid overflow-hidden rounded-md border border-gray-200 bg-surface md:grid-cols-[minmax(0,1.5fr)_minmax(320px,0.65fr)]">
-        <Link href={tokenHref} className="block aspect-square overflow-hidden bg-gray-100">
-          <Artwork media={card.artwork} alt={title} />
-        </Link>
+        {card.animationUrl ? (
+          // Interactive/animated media plays inline (iframe/video), so it is
+          // not wrapped in the token link; the title below still links out.
+          <div className="aspect-square overflow-hidden bg-gray-100">
+            <TokenMedia
+              imageUrl={card.imageUrl ? ipfsToHttp(card.imageUrl) : ""}
+              animationUrl={ipfsToHttp(card.animationUrl)}
+              title={title}
+              fit="fill"
+            />
+          </div>
+        ) : (
+          <Link href={tokenHref} className="block aspect-square overflow-hidden bg-gray-100">
+            <Artwork media={card.artwork} alt={title} />
+          </Link>
+        )}
         <div className="flex flex-col gap-6 p-6 sm:p-8">
-          <div>
+          <div className="space-y-3">
             <h3 className="text-2xl font-semibold tracking-tight sm:text-3xl">
               <Link href={tokenHref} className="hover:underline">
                 {title}
               </Link>
             </h3>
-            <p className="mt-2 text-sm font-mono text-gray-500">by {card.sellerLabel}</p>
+            <div className="flex items-center gap-2 text-sm font-mono text-gray-500">
+              <span className="h-5 w-5 shrink-0 overflow-hidden rounded-full">
+                {card.sellerAvatarUrl ? (
+                  <OptimizedImage
+                    src={card.sellerAvatarUrl}
+                    alt={card.sellerLabel}
+                    width={40}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <AddressZorb address={card.seller} className="h-full w-full" />
+                )}
+              </span>
+              <span className="truncate">by {auction.sellerDisplay || card.sellerLabel}</span>
+            </div>
+            {card.description ? (
+              <p className="line-clamp-4 text-sm leading-relaxed text-fg-muted">
+                {card.description}
+              </p>
+            ) : null}
           </div>
-          <AuctionPanel auction={auction} />
+          <AuctionPanel auction={auction} showSeller={false} />
         </div>
       </div>
     </section>
@@ -121,18 +157,35 @@ function FeaturedRelease({
         </Link>
       </div>
 
-      <Link
-        href={`/collections/${release.address}`}
-        className="group grid overflow-hidden rounded-md border border-gray-200 bg-surface transition-colors hover:border-gray-400 md:grid-cols-[minmax(0,1.5fr)_minmax(280px,0.65fr)]"
-      >
-        <div className="aspect-square overflow-hidden bg-gray-100">
-          <Artwork media={release.artwork} alt={release.name} />
-        </div>
+      <div className="grid overflow-hidden rounded-md border border-gray-200 bg-surface md:grid-cols-[minmax(0,1.5fr)_minmax(280px,0.65fr)]">
+        {release.animationUrl ? (
+          // Interactive/animated media plays inline, so it is not wrapped in
+          // the collection link; the title below still links out.
+          <div className="aspect-square overflow-hidden bg-gray-100">
+            <TokenMedia
+              imageUrl={release.imageUrl ? ipfsToHttp(release.imageUrl) : ""}
+              animationUrl={ipfsToHttp(release.animationUrl)}
+              title={release.name}
+              fit="fill"
+            />
+          </div>
+        ) : (
+          <Link
+            href={`/collections/${release.address}`}
+            className="block aspect-square overflow-hidden bg-gray-100"
+          >
+            <Artwork media={release.artwork} alt={release.name} />
+          </Link>
+        )}
         <div className="flex flex-col justify-between gap-10 p-6 sm:p-8">
           <div className="space-y-5">
             <ReleaseState release={release} now={now} />
             <div>
-              <h3 className="text-2xl font-semibold tracking-tight sm:text-3xl">{release.name}</h3>
+              <h3 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+                <Link href={`/collections/${release.address}`} className="hover:underline">
+                  {release.name}
+                </Link>
+              </h3>
               <p className="mt-2 text-sm font-mono text-gray-500">by {release.artistLabel}</p>
             </div>
             <p className="text-sm leading-relaxed text-fg-muted">
@@ -142,7 +195,7 @@ function FeaturedRelease({
           </div>
           <ReleaseFacts release={release} />
         </div>
-      </Link>
+      </div>
     </section>
   )
 }

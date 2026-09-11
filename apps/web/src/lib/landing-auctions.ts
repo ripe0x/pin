@@ -2,6 +2,7 @@ import "server-only"
 import { unstable_cache } from "next/cache"
 import { getAuctionForToken, type AuctionState } from "./auctions"
 import { getDisplayMedia, type DisplayMedia } from "./display-media"
+import { readEnsIdentities } from "./ens-identity-store"
 import { getActivePndAuctions, getTokenMediaFromMetadata } from "./indexer-queries"
 
 /**
@@ -15,7 +16,18 @@ export type AuctionShelfCard = {
   tokenContract: string
   tokenId: string
   title: string | null
+  /** Metadata image URL (raw, may be ipfs://); the hero's static fallback. */
+  imageUrl: string | null
+  /** Metadata animation_url (raw, may be ipfs://); the hero plays it when set. */
+  animationUrl: string | null
+  /** Token metadata description; shown under the byline on the hero. */
+  description: string | null
+  /** Seller address, for the byline avatar fallback (zorb). */
+  seller: string
+  /** ENS name when resolved, else a truncated address. */
   sellerLabel: string
+  /** ENS avatar URL when set, else null (byline falls back to a zorb). */
+  sellerAvatarUrl: string | null
   hasBid: boolean
   /** Wei as a decimal string: the current bid when there is one, else the reserve. */
   priceWei: string
@@ -42,20 +54,29 @@ const ALL_OPEN_LIMIT = 200
 /** Enrich raw active auctions with artwork + title into JSON-safe cards. */
 async function toShelfCards(live: ActiveAuction[]): Promise<AuctionShelfCard[]> {
   const refs = live.map((a) => ({ contract: a.tokenContract, tokenId: a.tokenId }))
-  const [artwork, meta] = await Promise.all([
+  const [artwork, meta, identities] = await Promise.all([
     getDisplayMedia(refs).catch(() => new Map<string, DisplayMedia>()),
     getTokenMediaFromMetadata(refs).catch(() => new Map()),
+    readEnsIdentities(live.map((a) => a.seller)).catch(() => new Map()),
   ])
   return live.map((a) => {
     const key = `${a.tokenContract.toLowerCase()}:${a.tokenId}`
+    const tokenMeta = meta.get(key)
     const hasBid = a.firstBidTime > 0
+    const identity = identities.get(a.seller.toLowerCase())
     return {
       house: a.house,
       auctionId: a.auctionId,
       tokenContract: a.tokenContract,
       tokenId: a.tokenId,
-      title: meta.get(key)?.name ?? null,
-      sellerLabel: `${a.seller.slice(0, 6)}…${a.seller.slice(-4)}`,
+      title: tokenMeta?.name ?? null,
+      imageUrl: tokenMeta?.imageUrl ?? null,
+      animationUrl: tokenMeta?.animationUrl ?? null,
+      description: tokenMeta?.description ?? null,
+      seller: a.seller,
+      sellerLabel:
+        identity?.ensName ?? `${a.seller.slice(0, 6)}…${a.seller.slice(-4)}`,
+      sellerAvatarUrl: identity?.avatarUrl ?? null,
       hasBid,
       priceWei: (hasBid ? a.amount : a.reservePrice).toString(),
       endTime: a.endTime,

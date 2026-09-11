@@ -208,6 +208,7 @@ function getPhase(auction: AuctionState, nowSec: number): Phase {
 export function AuctionPanel({
   auction,
   creator,
+  showSeller = true,
 }: {
   auction: AuctionState
   /**
@@ -218,6 +219,12 @@ export function AuctionPanel({
    * artist is the seller.
    */
   creator?: string
+  /**
+   * Hide the "Listed by <seller>" line. Set false where the surrounding UI
+   * already names the seller (e.g. the landing hero byline), so it isn't
+   * shown twice.
+   */
+  showSeller?: boolean
 }) {
   const sellerIsCreator =
     !!creator && auction.seller.toLowerCase() === creator.toLowerCase()
@@ -278,7 +285,7 @@ export function AuctionPanel({
               {headerLabel}
             </span>
           </div>
-          {auction.sellerDisplay && (
+          {showSeller && auction.sellerDisplay && (
             <p className="text-[11px] font-mono text-gray-500">
               Listed by{" "}
               <Link
