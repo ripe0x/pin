@@ -17,6 +17,8 @@ import {ISurfaceCore} from "../src/surface/interfaces/ISurfaceCore.sol";
 ///
 ///         PRIVATE_KEY   deployer/signer (owner or admin of the collection)
 ///         ANTON_COLLECTION  existing Surface collection to repoint
+///         RENDER_ASSETS     deployed RenderAssets singleton (see
+///                           DeployRenderModules.s.sol); required, non-zero
 contract SwapAntonRenderer is Script {
     address constant SCRIPTY_BUILDER_V2 = 0xD7587F110E08F4D120A231bA97d3B577A81Df022;
     address constant ETHFS_V2_FILE_STORAGE = 0x8FAA1AAb9DA8c75917C43Fb24fDdb513edDC3245;
@@ -25,6 +27,8 @@ contract SwapAntonRenderer is Script {
     function run() external {
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address collection = vm.envAddress("ANTON_COLLECTION");
+        address renderAssets = vm.envAddress("RENDER_ASSETS");
+        require(renderAssets != address(0), "RENDER_ASSETS not set");
         // Scripty stores serve base64 TEXT (the EthFS convention).
         bytes memory scriptB64 = bytes(Base64.encode(vm.readFileBinary("script/anton.js.gz")));
 
@@ -36,7 +40,7 @@ contract SwapAntonRenderer is Script {
         code[0] = CodeRef({store: store, name: "anton.js", kind: CodeKind.ScriptGzip});
         address renderer = address(
             new AntonRenderer(
-                SCRIPTY_BUILDER_V2, ETHFS_V2_FILE_STORAGE, GUNZIP_FILE, code, new CodeRef[](0), 1, address(0)
+                SCRIPTY_BUILDER_V2, ETHFS_V2_FILE_STORAGE, GUNZIP_FILE, code, new CodeRef[](0), 1, renderAssets
             )
         );
 
@@ -46,6 +50,7 @@ contract SwapAntonRenderer is Script {
 
         console2.log("new AntonScriptStore:", store);
         console2.log("new AntonRenderer:   ", renderer);
+        console2.log("renderAssets:        ", renderAssets);
         console2.log("collection:          ", collection);
     }
 }
