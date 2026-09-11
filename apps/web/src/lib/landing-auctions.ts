@@ -64,17 +64,21 @@ async function toShelfCards(live: ActiveAuction[]): Promise<AuctionShelfCard[]> 
   })
 }
 
-const isLive = (a: ActiveAuction, now: number) =>
+const isOpen = (a: ActiveAuction, now: number) =>
   a.endTime === 0 || a.endTime > now
 
 async function buildAuctionShelf(): Promise<AuctionShelfCard[]> {
   const auctions = await getActivePndAuctions(CANDIDATE_POOL)
   if (auctions === null) throw new Error("auction index unavailable")
   const now = Math.floor(Date.now() / 1000)
-  const live = distributeBySeller(
-    auctions.filter((a) => isLive(a, now)),
-  ).slice(0, MAX_ITEMS)
-  return toShelfCards(live)
+  const open = auctions.filter((a) => isOpen(a, now))
+  // A running clock (endTime > 0) means a bid has landed; those lots are all
+  // worth showing, so never let the per-seller round-robin drop a bidding lot
+  // in favour of a still-unbid one. Keep every bidding lot in soonest-ending
+  // order, then distribute only the not-yet-bid lots across sellers.
+  const bidding = open.filter((a) => a.endTime > 0)
+  const awaitingBid = distributeBySeller(open.filter((a) => a.endTime === 0))
+  return toShelfCards([...bidding, ...awaitingBid].slice(0, MAX_ITEMS))
 }
 
 async function buildOpenAuctions(): Promise<AuctionShelfCard[]> {
@@ -83,7 +87,7 @@ async function buildOpenAuctions(): Promise<AuctionShelfCard[]> {
   const now = Math.floor(Date.now() / 1000)
   // Keep the query's soonest-ending order; the full listing is a browse
   // surface, not the curated home shelf, so no per-seller round-robin.
-  return toShelfCards(auctions.filter((a) => isLive(a, now)))
+  return toShelfCards(auctions.filter((a) => isOpen(a, now)))
 }
 
 /**
