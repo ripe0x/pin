@@ -268,8 +268,9 @@ contract ScriptyRenderer is IRenderer, IPreviewRenderer {
     ///      work code SHOULD tolerate additions and treat a missing/"token"
     ///      context as the canonical render.
     function _contextJs(address collection, uint256 tokenId, bytes32 seed, string memory context)
-        private
+        internal
         view
+        virtual
         returns (bytes memory)
     {
         return abi.encodePacked(
@@ -329,8 +330,15 @@ contract ScriptyRenderer is IRenderer, IPreviewRenderer {
     }
 
     /// @dev Provenance traits (Mint Order in Sequential mode + Seed), then the
-    ///      work's own seed-derived traits from `_workTraits`.
-    function _attributes(ISurfaceView c, uint256 tokenId, bytes32 seed) private view returns (bytes memory) {
+    ///      work's own seed-derived traits from `_workTraits`. A chain-live work
+    ///      whose traits derive from mutable state rather than the seed overrides
+    ///      this whole method.
+    function _attributes(ISurfaceView c, uint256 tokenId, bytes32 seed)
+        internal
+        view
+        virtual
+        returns (bytes memory)
+    {
         bytes memory order = c.idMode() == IdMode.Sequential
             ? abi.encodePacked('{"trait_type":"Mint Order","value":', tokenId.toString(), "},")
             : bytes("");
