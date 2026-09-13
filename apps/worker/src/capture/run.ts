@@ -86,16 +86,39 @@ function estimateUploadBytes(
 }
 
 /**
- * Fails fast if the loaded Irys balance can't cover the estimated upload,
+ * Fails fast if the payer's Irys balance can't cover the estimated upload,
  * before any rendering or uploading happens. Skipped in --dry-run, which
  * prints the estimate only since nothing will actually be uploaded.
+ *
+ * When `paidBy` is set, checks the approved balance that address has
+ * granted to the signer (`irys.approval.getApprovedBalanceFrom`) instead of
+ * the signer's own loaded balance -- that's the balance uploads draw from
+ * once `paidBy` is passed on the upload itself.
  */
-async function checkIrysBalance(irys: IrysUploader, bytes: number, dryRun: boolean): Promise<void> {
+export async function checkIrysBalance(irys: IrysUploader, bytes: number, dryRun: boolean, paidBy?: string): Promise<void> {
   if (dryRun) {
     console.log(`[capture-thumbnails] dry-run estimate: ~${bytes} bytes to upload this run (no balance check)`)
     return
   }
   const price = await irys.getPrice(bytes)
+  if (paidBy) {
+    const approval = await irys.approval.getApprovedBalanceFrom(paidBy)
+    if (price.isGreaterThan(approval.amount)) {
+      const required = irys.utils.fromAtomic(price).toString()
+      const approved = irys.utils.fromAtomic(approval.amount).toString()
+      throw new Error(
+        `insufficient Irys approval for ~${bytes} bytes: need ${required} ${irys.token}, ${paidBy} has approved ` +
+          `${approved} ${irys.token} to this uploader (${irys.address}). Ask ${paidBy} to increase the Irys ` +
+          `balance approval for this uploader address (create an approval naming ${irys.address} as the ` +
+          "approved spender).",
+      )
+    }
+    console.log(
+      `[capture-thumbnails] Irys approval check passed: paidBy=${paidBy} need ~${irys.utils.fromAtomic(price)} ` +
+        `${irys.token}, approved ${irys.utils.fromAtomic(approval.amount)} ${irys.token}`,
+    )
+    return
+  }
   const balance = await irys.getLoadedBalance()
   if (balance.isLessThan(price)) {
     const required = irys.utils.fromAtomic(price).toString()
@@ -165,6 +188,7 @@ export async function runCapture(env: CaptureEnv, flags: CaptureFlags): Promise<
     template: prior?.template,
     templateMaxTokenId: prior?.templateMaxTokenId,
     templateTxHash: prior?.templateTxHash,
+    paidBy: env.paidBy ?? null,
     dryRun: flags.dryRun || undefined,
     updatedAt: new Date().toISOString(),
     tokens: prior?.tokens ?? [],
@@ -200,7 +224,7 @@ export async function runCapture(env: CaptureEnv, flags: CaptureFlags): Promise<
 
   // 2. Balance precheck, before any render or upload.
   const estimatedBytes = estimateUploadBytes(toCapture.length, record.tokens, coverBytes.length, !!record.coverItemId)
-  await checkIrysBalance(irys, estimatedBytes, flags.dryRun)
+  await checkIrysBalance(irys, estimatedBytes, flags.dryRun, env.paidBy)
 
   // Cover image: signed once, id reused across runs via the record.
   let coverItemId = record.coverItemId
@@ -211,7 +235,7 @@ export async function runCapture(env: CaptureEnv, flags: CaptureFlags): Promise<
       { name: "Sha256", value: coverSha256 },
       ...commonTags(env),
     ])
-    if (!flags.dryRun) await uploadSignedItem(irys, signedCover)
+    if (!flags.dryRun) await uploadSignedItem(irys, signedCover, env.paidBy)
     coverItemId = signedCover.itemId
     coverUploadedThisRun = true
     persist({ coverItemId })
@@ -247,7 +271,7 @@ export async function runCapture(env: CaptureEnv, flags: CaptureFlags): Promise<
         { name: "Sha256", value: sha256 },
         ...commonTags(env),
       ])
-      if (!flags.dryRun) await uploadSignedItem(irys, signed)
+      if (!flags.dryRun) await uploadSignedItem(irys, signed, env.paidBy)
       const tokenRecord: CapturedTokenRecord = {
         tokenId: token.tokenId,
         seed: token.seed,
@@ -302,7 +326,7 @@ export async function runCapture(env: CaptureEnv, flags: CaptureFlags): Promise<
     { name: "Content-Type", value: "application/x.arweave-manifest+json" },
     ...commonTags(env),
   ])
-  if (!flags.dryRun) await uploadSignedItem(irys, signedManifest)
+  if (!flags.dryRun) await uploadSignedItem(irys, signedManifest, env.paidBy)
   const manifestId = signedManifest.itemId
 
   console.log(`[capture-thumbnails] manifest id=${manifestId}`)
@@ -414,6 +438,26 @@ export async function runFund(
   await irys.fund(amountAtomic.toString())
   const after = await irys.getLoadedBalance()
   console.log(`[capture-thumbnails fund] balance after: ${irys.utils.fromAtomic(after)} ${irys.token}`)
+}
+
+/** Prints the Irys balance approvals granted TO this signer -- one line per
+ *  payer, showing the approved amount and expiry -- so an operator can
+ *  confirm an artist's approval landed before a paid-by run. Read-only: no
+ *  upload, no chain write. */
+export async function runApprovals(rpcUrl: string, storageNetwork: IrysNetwork, capturerPk: `0x${string}`): Promise<void> {
+  const irys = await buildIrysUploader({ rpcUrl, storageNetwork }, capturerPk)
+  const approvals = await irys.approval.getApprovals({})
+  if (approvals.length === 0) {
+    console.log(`[capture-thumbnails approvals] no approvals found for uploader ${irys.address}`)
+    return
+  }
+  for (const a of approvals) {
+    const amount = irys.utils.fromAtomic(a.amount).toString()
+    const expiry = a.expiresBy ? new Date(a.expiresBy).toISOString() : "never"
+    console.log(
+      `[capture-thumbnails approvals] payer=${a.payingAddress} amount=${amount} ${a.token} expiresBy=${expiry}`,
+    )
+  }
 }
 
 /**

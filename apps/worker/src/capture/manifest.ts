@@ -43,6 +43,9 @@ export interface CaptureManifestRecord {
   templateMaxTokenId?: number
   /** Tx hash of the setCaptureTemplate write that set `template` onchain. */
   templateTxHash?: string
+  /** Address whose approved Irys balance paid for this run's uploads, or
+   *  null when the signer's own balance paid. */
+  paidBy?: string | null
   dryRun?: boolean
   updatedAt: string
   tokens: CapturedTokenRecord[]

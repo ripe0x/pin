@@ -10,18 +10,25 @@
  * Usage: pnpm --filter @pin/worker capture:thumbnails -- [run] [--dry-run]
  *          [--force] [--tokens 1-5]
  *        pnpm --filter @pin/worker capture:thumbnails -- fund <amount-in-eth>
+ *        pnpm --filter @pin/worker capture:thumbnails -- approvals
  *        pnpm --filter @pin/worker capture:thumbnails -- refresh [--from a] [--to b]
  *
  * Required env for `run` (see apps/worker/src/capture/config.ts):
  *   CAPTURE_CHAIN, CAPTURE_RPC_URL, CAPTURE_COLLECTION, CAPTURE_RENDER_ASSETS,
  *   CAPTURE_FRAME_BASE_URL, CAPTURE_COVER_PATH, CAPTURE_IRYS_NETWORK,
- *   CAPTURE_OUT_DIR. CAPTURER_PK is required unless --dry-run.
+ *   CAPTURE_OUT_DIR. CAPTURER_PK is required unless --dry-run. CAPTURE_PAID_BY
+ *   is optional; when set, uploads are charged to that address's approved
+ *   Irys balance instead of CAPTURER_PK's own balance.
  *
  * CAPTURE_IRYS_NETWORK ("devnet" or "mainnet") is independent of CAPTURE_CHAIN:
  * a sepolia collection can use a real mainnet Arweave upload for cents.
  *
  * `fund` funds the Irys balance for CAPTURER_PK instead of running a batch.
  * Required env: CAPTURE_RPC_URL, CAPTURE_IRYS_NETWORK, CAPTURER_PK.
+ *
+ * `approvals` prints the Irys balance approvals granted to CAPTURER_PK by
+ * other addresses (payer, amount, expiry), read-only. Required env:
+ * CAPTURE_RPC_URL, CAPTURE_IRYS_NETWORK, CAPTURER_PK.
  *
  * `refresh` re-emits ERC-4906 notifyMetadataUpdate over [from, to] (default
  * 1..the current onchain coverage bound). Run this from the collection's
@@ -31,7 +38,7 @@
  * CAPTURER_PK.
  */
 import { loadCaptureEnv, loadFundEnv, loadRefreshEnv, parseCaptureFlags, parseRefreshFlags } from "../capture/config.ts"
-import { runCapture, runFund, runRefresh } from "../capture/run.ts"
+import { runApprovals, runCapture, runFund, runRefresh } from "../capture/run.ts"
 
 async function main(): Promise<void> {
   const [sub, ...rest] = process.argv.slice(2)
@@ -40,6 +47,11 @@ async function main(): Promise<void> {
     if (!amount) throw new Error("usage: capture-thumbnails fund <amount-in-eth>, e.g. fund 0.01")
     const { rpcUrl, storageNetwork, capturerPk } = loadFundEnv()
     await runFund(rpcUrl, storageNetwork, capturerPk, amount)
+    return
+  }
+  if (sub === "approvals") {
+    const { rpcUrl, storageNetwork, capturerPk } = loadFundEnv()
+    await runApprovals(rpcUrl, storageNetwork, capturerPk)
     return
   }
   if (sub === "refresh") {

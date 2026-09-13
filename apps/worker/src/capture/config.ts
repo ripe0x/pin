@@ -26,6 +26,11 @@ export interface CaptureEnv {
   /** Required outside --dry-run; a dry run signs with an in-memory
    *  throwaway key instead. */
   capturerPk: `0x${string}` | undefined
+  /** When set, every Irys upload is paid from this address's approved
+   *  balance instead of CAPTURER_PK's own loaded balance. The address must
+   *  have created an Irys balance approval naming CAPTURER_PK's address as
+   *  the approved spender. */
+  paidBy: Address | undefined
 }
 
 export interface TokenRange {
@@ -54,6 +59,13 @@ function isAddress(v: string): v is Address {
 
 function requireAddress(name: string): Address {
   const v = requireEnv(name)
+  if (!isAddress(v)) throw new Error(`${name} is not a 20-byte hex address: ${v}`)
+  return v
+}
+
+function optionalAddress(name: string): Address | undefined {
+  const v = process.env[name]
+  if (!v) return undefined
   if (!isAddress(v)) throw new Error(`${name} is not a 20-byte hex address: ${v}`)
   return v
 }
@@ -97,6 +109,7 @@ export function loadCaptureEnv(): CaptureEnv {
     storageNetwork,
     outDir: process.env.CAPTURE_OUT_DIR || DEFAULT_OUT_DIR,
     capturerPk: capturerPkRaw as `0x${string}` | undefined,
+    paidBy: optionalAddress("CAPTURE_PAID_BY"),
   }
 }
 

@@ -41,7 +41,10 @@ export async function signItem(irys: IrysUploader, data: Buffer, tags: Tag[]): P
 }
 
 /** Posts an already-signed item to the bundler node. Real network upload;
- *  never called in --dry-run. */
-export async function uploadSignedItem(irys: IrysUploader, signed: SignedItem): Promise<void> {
-  await irys.uploader.uploadTransaction(signed.item)
+ *  never called in --dry-run. `paidBy`, when set, charges the upload to
+ *  that address's approved Irys balance (SDK option `UploadOptions.paidBy`,
+ *  sent as the `x-irys-paid-by` header) instead of the signer's own
+ *  balance. */
+export async function uploadSignedItem(irys: IrysUploader, signed: SignedItem, paidBy?: string): Promise<void> {
+  await irys.uploader.uploadTransaction(signed.item, paidBy ? { paidBy } : undefined)
 }

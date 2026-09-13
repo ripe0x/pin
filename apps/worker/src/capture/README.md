@@ -67,10 +67,14 @@ Required for the default `run` subcommand:
   `setCaptureTemplate`/`notifyMetadataUpdate`. Required outside
   `--dry-run`. Never commit a real value; keep it in your shell env or
   `.env`, never in a file that gets staged.
+- `CAPTURE_PAID_BY` -- optional address. When set, every upload this run
+  makes (cover, tokens, manifest) is charged to that address's approved
+  Irys balance instead of `CAPTURER_PK`'s own balance. See "Paying from an
+  artist's Irys balance" below.
 
 The `refresh` subcommand needs only `CAPTURE_CHAIN`, `CAPTURE_RPC_URL`,
-`CAPTURE_COLLECTION`, `CAPTURE_RENDER_ASSETS`, `CAPTURER_PK`. The `fund`
-subcommand needs only `CAPTURE_RPC_URL`, `CAPTURE_IRYS_NETWORK`,
+`CAPTURE_COLLECTION`, `CAPTURE_RENDER_ASSETS`, `CAPTURER_PK`. The `fund` and
+`approvals` subcommands need only `CAPTURE_RPC_URL`, `CAPTURE_IRYS_NETWORK`,
 `CAPTURER_PK`.
 
 `CAPTURE_IRYS_NETWORK` is independent of `CAPTURE_CHAIN`: a sepolia
@@ -83,6 +87,7 @@ signer, not tied to which chain the collection is deployed on.
 ```
 pnpm --filter @pin/worker capture:thumbnails -- [run] [--dry-run] [--force] [--tokens 1-5]
 pnpm --filter @pin/worker capture:thumbnails -- fund <amount-in-eth>
+pnpm --filter @pin/worker capture:thumbnails -- approvals
 pnpm --filter @pin/worker capture:thumbnails -- refresh [--from a] [--to b]
 ```
 
@@ -94,6 +99,9 @@ pnpm --filter @pin/worker capture:thumbnails -- refresh [--from a] [--to b]
   discovered tokens are considered.
 - `fund` tops up the Irys balance for `CAPTURER_PK` from its onchain ETH,
   in the amount given (e.g. `fund 0.01`).
+- `approvals` prints the Irys balance approvals granted to `CAPTURER_PK` by
+  other addresses: payer, approved amount, and expiry. Read-only. Run this
+  before a `CAPTURE_PAID_BY` run to confirm the artist's approval landed.
 - `refresh` re-emits `notifyMetadataUpdate(from, to)` on the collection
   without touching captures or the template. Defaults to `1..` the
   collection's current onchain `templateMaxTokenIdOf`. Run this after
@@ -186,9 +194,26 @@ CAPTURER_PK=$CAPTURER_PK \
 pnpm --filter @pin/worker capture:thumbnails -- refresh
 ```
 
-## Next change
+## Paying from an artist's Irys balance
 
-`setCaptureTemplate` and the Irys upload are both paid by `CAPTURER_PK`
-directly. The planned next step is `paidBy`: billing uploads against an
-artist's own approved Irys balance instead, so the capturer key never
-needs to hold funds.
+`setCaptureTemplate` and `notifyMetadataUpdate` are always broadcast from
+`CAPTURER_PK` and paid for in the chain's own gas token. Irys uploads are
+different: set `CAPTURE_PAID_BY` to an artist's address and every upload
+this run makes (cover, tokens, manifest) is charged to that address's
+approved Irys balance instead of `CAPTURER_PK`'s own balance, using the
+Irys SDK's `paidBy` upload option. The balance precheck before rendering
+also switches to checking the approved balance from that address, and
+fails with the approver's address, the approved amount, and the required
+amount if the approval is missing or too small.
+
+Steps for the artist granting the approval, on their own Irys account:
+
+1. Fund their own Irys balance (`irys.fund(amount)`, or the Irys CLI/site).
+2. Create a balance approval naming `CAPTURER_PK`'s address as the approved
+   spender, with an amount and optional expiry
+   (`irys.approval.createApproval({ approvedAddress, amount, expiresInSeconds })`).
+3. Revoke the approval at any time
+   (`irys.approval.revokeApproval({ approvedAddress })`).
+
+Run `capture:thumbnails -- approvals` from `CAPTURER_PK` to confirm the
+approval landed before starting a `CAPTURE_PAID_BY` run.
