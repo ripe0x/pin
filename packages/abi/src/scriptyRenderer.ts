@@ -72,6 +72,28 @@ export const scriptyRendererAbi = [
         "name": "renderAssets_",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "metadataText_",
+        "type": "tuple",
+        "internalType": "struct MetadataText",
+        "components": [
+          {
+            "name": "tokenDescription",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "collectionDescription",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "externalUrl",
+            "type": "string",
+            "internalType": "string"
+          }
+        ]
       }
     ],
     "stateMutability": "nonpayable"
