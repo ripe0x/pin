@@ -1497,6 +1497,28 @@ export async function getCollectionPrimaryMinterFromIndexer(
   })
 }
 
+/**
+ * A collection's deploy block from the discovery table (`createdAtBlock`,
+ * set once from `SurfaceCreated`). Used to bound the admin-history getLogs
+ * scan in collection-onchain.ts's getCollectionAuthority to exactly this
+ * collection's lifetime, since the indexer does not (yet) track
+ * AdminSet directly. Null when the indexer doesn't have this collection.
+ */
+export async function getCollectionCreatedBlockFromIndexer(
+  collection: string,
+): Promise<bigint | null> {
+  if (INDEXER_DISABLED || !sql) return null
+  const db = sql
+  return withTimeout(async () => {
+    const rows = (await db.unsafe(
+      `SELECT created_at_block FROM ${indexerSchema()}.collections WHERE collection = $1 LIMIT 1`,
+      [collection.toLowerCase()],
+    )) as Array<{ created_at_block: string | number | bigint | null }>
+    const raw = rows[0]?.created_at_block
+    return raw === null || raw === undefined ? null : BigInt(raw)
+  })
+}
+
 const indexerSchema = () =>
   (process.env.INDEXER_SCHEMA ?? "ponder_v1").replace(/[^a-zA-Z0-9_]/g, "")
 

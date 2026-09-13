@@ -24,7 +24,6 @@
  *   }
  */
 
-import { MAINNET_CHAIN_ID } from "@pin/addresses"
 import { surfaceFactory } from "./collection"
 
 export type StudioTool = {
@@ -48,7 +47,11 @@ export const STUDIO_TOOLS: StudioTool[] = [
     id: "create",
     label: "Create a collection",
     description: "Deploy a collection contract onchain, configured through a step-by-step form.",
-    available: () => surfaceFactory(MAINNET_CHAIN_ID) !== null,
+    // surfaceFactory() defaults to the build's own chain (PND_CHAIN_ID:
+    // mainnet, or sepolia under NEXT_PUBLIC_USE_SEPOLIA) rather than a
+    // hardcoded mainnet check, so a sepolia rehearsal build sees its own
+    // factory without needing the mainnet one deployed.
+    available: () => surfaceFactory() !== null,
   },
   {
     id: "listings",
@@ -82,11 +85,11 @@ export const STUDIO_TOOLS: StudioTool[] = [
     // Allowlist + wallet-cap config live on the collection's own canonical
     // FixedPriceMinter clone (thin-token rearchitecture — there's no
     // separate GateHook to deploy anymore), so this tool ships dark until
-    // Surface itself is live on mainnet, same gate as the collections
+    // Surface itself is live on the build's own chain (mainnet, or sepolia
+    // under NEXT_PUBLIC_USE_SEPOLIA), same gate as the collections
     // surfaces; live in dev via the harness's NEXT_PUBLIC_SURFACE_FACTORY
     // override (see scripts/dev-collections.sh).
-    available: () =>
-      surfaceFactory(MAINNET_CHAIN_ID) !== null || process.env.NEXT_PUBLIC_SURFACE_FACTORY !== undefined,
+    available: () => surfaceFactory() !== null || process.env.NEXT_PUBLIC_SURFACE_FACTORY !== undefined,
   },
   {
     id: "sale",
@@ -95,9 +98,19 @@ export const STUDIO_TOOLS: StudioTool[] = [
       "Edit a collection's price, mint window, max mints, payout, and referral share on its canonical minter — reopen a window or raise the cap for the next batch.",
     // Same gate as the mint-gate/collections surfaces: price/window/etc. live
     // on the collection's canonical FixedPriceMinter, so this ships dark until
-    // Surface is live on mainnet (or a dev/sepolia factory override is set).
-    available: () =>
-      surfaceFactory(MAINNET_CHAIN_ID) !== null || process.env.NEXT_PUBLIC_SURFACE_FACTORY !== undefined,
+    // Surface is live on the build's own chain (or a dev/sepolia factory
+    // override is set).
+    available: () => surfaceFactory() !== null || process.env.NEXT_PUBLIC_SURFACE_FACTORY !== undefined,
+  },
+  {
+    id: "admins",
+    label: "Admins",
+    description:
+      "Delegate management to another wallet, and lock the renderer once the artwork is final.",
+    // Same gate as sale/mint-gate: addAdmin/removeAdmin/lockRenderer live on
+    // the collection core itself, so this ships dark until Surface is live
+    // on the build's own chain (or a dev/sepolia factory override is set).
+    available: () => surfaceFactory() !== null || process.env.NEXT_PUBLIC_SURFACE_FACTORY !== undefined,
   },
 ]
 

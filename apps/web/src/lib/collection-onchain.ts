@@ -17,11 +17,13 @@ import { getMainnetTransport } from "./alchemy-rpc"
 import { buildEscapeArtwork, isEscapeRenderer } from "./escape-render"
 import {
   getCollectionAddressesFromIndexer,
+  getCollectionCreatedBlockFromIndexer,
   getCollectionPrimaryMinterFromIndexer,
   isCollectionInIndexer,
 } from "./indexer-queries"
 import {
   decodeCollectionConfig,
+  PND_CHAIN_ID,
   renderAssetsAddress,
   surfaceFactory,
   type Collection,
@@ -119,7 +121,7 @@ async function getMinterSaleConfig(
  * The primary minter address itself is NOT a live chain read even though
  * the token exposes primaryMinter(): the indexed row (seeded from
  * SurfaceCreated, kept current by PrimaryMinterSet) is already the same
- * value at far lower cost — this is one of the few Postgres reads in an
+ * value at far lower cost, one of the few Postgres reads in an
  * otherwise RPC-cached file, not a new RPC call (see AGENTS.md).
  */
 export type FactoryStatus = {
@@ -127,7 +129,7 @@ export type FactoryStatus = {
   configured: boolean
   paused: boolean
   deprecated: boolean
-  /** False means the factory's own defaultRenderer() is unset (0x0) — a
+  /** False means the factory's own defaultRenderer() is unset (0x0): a
    *  collection deployed with cfg.renderer left zero (the Edition preset's
    *  approach) reverts RendererRequired at init regardless of pause state. */
   defaultRendererSet: boolean
@@ -143,7 +145,7 @@ export type FactoryStatus = {
  *
  * Fails closed: an unconfigured factory or a failed read both come back as
  * `paused: true` so the wizard blocks rather than offering a deploy path
- * built on unconfirmed state. 60s TTL — pause flips are a deliberate,
+ * built on unconfirmed state. 60s TTL: pause flips are a deliberate,
  * infrequent deployer action, not something needing sub-30s freshness.
  */
 export async function getFactoryStatus(): Promise<FactoryStatus> {
@@ -199,11 +201,11 @@ export async function getCollectionCover(address: Address): Promise<string> {
 /**
  * Batch view detection (docs/pnd-surface-second-launch.md "Architecture"):
  * is `renderer` an IBatchRenderRouter? A single cached ERC-165
- * supportsInterface staticcall, generic and interface-driven — no
+ * supportsInterface staticcall, generic and interface-driven, with no
  * per-address registry the way detectHomageMinter is. Any future
  * router-backed launch lights up automatically once its renderer address
  * is set on the collection, with no frontend change. False on any read
- * failure (a plain IRenderer with no supportsInterface, or an RPC error) —
+ * failure (a plain IRenderer with no supportsInterface, or an RPC error);
  * detection fails closed to the default grid.
  */
 export async function isBatchRenderRouter(renderer: Address): Promise<boolean> {
@@ -234,7 +236,7 @@ export type RenderRouterBatch = {
 
 /**
  * A batch router's full batch list: one batchCount read plus one
- * multicalled batchAt per index. Cached — batches change only when the
+ * multicalled batchAt per index. Cached: batches change only when the
  * artist calls addBatch for the next release (see the launch doc's "later
  * batches" step), so a 5-minute TTL is generous, not tight.
  */
@@ -273,7 +275,7 @@ export async function getRouterBatches(renderer: Address): Promise<RenderRouterB
 /**
  * Membership gate: is `address` a Surface deployed by our factory? The
  * indexed SurfaceCreated set answers first (a SELECT, no RPC); one cached
- * factory isSurface() read covers the two cases the table can't — the
+ * factory isSurface() read covers the two cases the table can't: the
  * indexer being unavailable, and the indexing lag right after a create
  * (the artist lands on their new collection page before Ponder's next
  * poll). On a fork/sepolia instance the table describes mainnet, so the
@@ -299,14 +301,14 @@ export async function isFactoryCollection(address: Address): Promise<boolean> {
       })) as boolean
       return ok
     } catch {
-      return null // read failed — unknown, distinct from a confirmed "no"
+      return null // read failed: unknown, distinct from a confirmed "no"
     }
   })
   return live === true
 }
 
 export async function getCollection(address: Address): Promise<Collection | null> {
-  // Membership gate first (indexed set, RPC fallback — see
+  // Membership gate first (indexed set, RPC fallback, see
   // isFactoryCollection): an arbitrary pasted address that merely
   // implements the Surface read surface must not render as a collection
   // page, and a non-member costs one SELECT instead of a speculative
@@ -355,7 +357,7 @@ export async function getCollection(address: Address): Promise<Collection | null
         : ""
 
       // primaryMinter is read live above (was an indexer-only read, which left
-      // the mint UI blind on chains with no indexer — fork/sepolia — and during
+      // the mint UI blind on chains with no indexer (fork/sepolia) and during
       // the indexer lag right after a mainnet deploy; both fell through to the
       // pooled "mints through its minter" notice).
       const pmChain = primaryMinterRaw as Address
@@ -429,7 +431,7 @@ export async function getCollectionToken(
           : null
       const collection = ownerRes.status === "success" ? await getCollection(address) : null
       // Static image from renderer-land: the capture if one exists, else the
-      // cover — the same resolution the bundled renderers apply.
+      // cover, at the same resolution the bundled renderers apply.
       const assets = renderAssetsAddress()
       const artwork = assets
         ? await client
@@ -494,7 +496,7 @@ export async function getCollectionToken(
 
       // Decode the already-fetched tokenURI (no extra RPC call) to recover
       // `image` / `animation_url` the same way every other token page on
-      // this site does — see @pin/token-metadata's doc comment. A renderer
+      // this site does; see @pin/token-metadata's doc comment. A renderer
       // that emits an animation_url (GenerativeRenderer) needs this to show
       // the live/generative work rather than just its poster image.
       let image = artwork
@@ -539,7 +541,7 @@ export type CollectionMintHistoryResult =
  * Recent mint history for a collection, newest first, one row per mint
  * transaction (a batch mint groups its contiguous ids into one row) carrying
  * the minter, mint time, and mint tx. Read from Transfer(from=0) logs over a
- * bounded recent window, one getBlock per unique block for timestamps —
+ * bounded recent window, one getBlock per unique block for timestamps,
  * matching the Homage mint-feed chain-scan (lib/homage/collection.server.ts).
  * Works without an indexer (fork/sepolia); on mainnet the indexer will carry
  * full history past the window.
@@ -585,7 +587,7 @@ export async function getCollectionMintHistory(
       }
       // getContractEvents returns ascending; newest tx first.
       const accs = Array.from(byTx.values()).reverse().slice(0, limit)
-      // Timestamps aren't in the log — one getBlock per unique block.
+      // Timestamps aren't in the log; one getBlock per unique block.
       const uniqueBlocks = Array.from(new Set(accs.map((a) => a.blockNumber)))
       const blocks = await Promise.all(
         uniqueBlocks.map((bn) => client.getBlock({ blockNumber: bn }).catch(() => null)),
@@ -616,7 +618,7 @@ export async function getCollectionMintHistory(
  * Recent collections, newest first. For the landing.
  *
  * The address list comes from the indexed SurfaceCreated table (a pure
- * SELECT — zero chain reads in the list path, per AGENTS.md); the
+ * SELECT, zero chain reads in the list path, per AGENTS.md); the
  * factory-enumeration read (totalSurfaces + allSurfaces multicall) is the
  * fallback for when the indexer is unavailable, and the primary path on a
  * fork/sepolia instance, where the indexed table describes mainnet, not
@@ -707,9 +709,9 @@ export async function getCurrentPrice(
  * Only the two fields the eligibility UI needs, read directly rather than
  * through the full getCollection() multicall (used by the allowlist API
  * route, which doesn't need identity/renderer/cover). Null when there's no
- * primary minter on record (bring-your-own minter, or not yet indexed) —
+ * primary minter on record (bring-your-own minter, or not yet indexed):
  * same "nothing to gate on" case the old GateHook lookup's zero-hook branch
- * covered. Config-class freshness (20s) — an artist flipping a gate mid-drop
+ * covered. Config-class freshness (20s): an artist flipping a gate mid-drop
  * propagates on the same cadence as every other sale setting.
  */
 export type MinterGate = {
@@ -743,7 +745,138 @@ export async function getMinterGate(address: Address): Promise<MinterGate | null
   })
 }
 
-/** Minimal ABI for the OPTIONAL IPreviewRenderer extension — declared
+/**
+ * SurfaceFactory's mainnet deploy block, mirrored from
+ * apps/indexer/ponder.config.ts's SURFACE_FACTORY_DEPLOY_BLOCK (apps/web
+ * can't import indexer code, so this is a deliberate duplicate; bump it
+ * alongside that constant if the factory is ever redeployed). Used only as
+ * the getCollectionAuthority admin-log scan's preferred lower bound when
+ * the indexer doesn't have this collection's own creation block yet.
+ */
+const SURFACE_FACTORY_DEPLOY_BLOCK_MAINNET = 25_590_436n
+
+// eth_getLogs range per call, and how many chunks the scan below will make.
+// 40_000 stays under the tightest cap seen among this app's fallback RPCs
+// (publicnode's sepolia endpoint rejects ranges over 50_000); chunking
+// beats a single wide call because free-tier providers reject an
+// over-range request outright rather than truncating it. The chunk count
+// is capped so a collection with no indexed creation block (the common
+// sepolia case, since Ponder doesn't index sepolia) can't turn one page load
+// into an unbounded number of RPC calls: the scan covers the most recent
+// CHUNK_BLOCKS * MAX_CHUNKS blocks and no further back.
+const ADMIN_LOG_CHUNK_BLOCKS = 40_000n
+const ADMIN_LOG_MAX_CHUNKS = 10
+
+export type CollectionAuthority = {
+  owner: Address
+  admins: Address[]
+  rendererLocked: boolean
+}
+
+/**
+ * AdminSet(account, allowed) logs for `address` between `fromBlock` and
+ * `latest`, fetched in fixed-size chunks so no single eth_getLogs call
+ * exceeds a free-tier provider's range cap. See ADMIN_LOG_CHUNK_BLOCKS.
+ */
+async function getAdminSetLogs(
+  client: ReturnType<typeof getClient>,
+  address: Address,
+  fromBlock: bigint,
+  latest: bigint,
+) {
+  const logs: { args: { account?: Address; allowed?: boolean } }[] = []
+  for (let start = fromBlock; start <= latest; start += ADMIN_LOG_CHUNK_BLOCKS) {
+    const end = start + ADMIN_LOG_CHUNK_BLOCKS - 1n > latest ? latest : start + ADMIN_LOG_CHUNK_BLOCKS - 1n
+    const chunk = await client.getContractEvents({
+      address,
+      abi: surfaceAbi,
+      eventName: "AdminSet",
+      fromBlock: start,
+      toBlock: end,
+    })
+    logs.push(...chunk)
+  }
+  return logs
+}
+
+// Hard cap on candidates verified by the isAdmin multicall below. AdminSet
+// logs only ever grow with real wallet transactions, so a collection with
+// more than this many distinct accounts ever granted admin is not expected;
+// the cap bounds the multicall size rather than reflecting a real limit.
+const ADMIN_CANDIDATE_CAP = 50
+
+/**
+ * A collection's owner, live admin set, and renderer-lock state, for the
+ * studio Admins tool. owner() and isRendererLocked() are single view reads;
+ * the admin set has no onchain getter beyond isAdmin(candidate) for one
+ * address at a time, so candidates are reconstructed from AdminSet(account,
+ * allowed) logs, folding to each account's most recent value, then confirmed
+ * with one multicall of isAdmin(account) per candidate (capped at
+ * ADMIN_CANDIDATE_CAP). The confirmation step matters because a grant
+ * becomes invalid when the granting owner transfers ownership (SurfaceCore's
+ * _isAdmin checks the stored grantedBy against the current owner), and the
+ * contract emits no event for that transfer, so the log alone would show a
+ * stale admin as still active. The scan prefers the indexer's recorded
+ * creation block as its lower bound; without one (the common case on
+ * sepolia, which Ponder doesn't index) it covers only the most recent
+ * ADMIN_LOG_CHUNK_BLOCKS * ADMIN_LOG_MAX_CHUNKS blocks, so an admin grant
+ * older than that window won't show. Follow-up: the indexer doesn't handle
+ * AdminSet yet, see apps/indexer/src/Collections.ts, so this always reads
+ * the chain instead of a Postgres row; indexing it would remove the getLogs
+ * call (and this window limit) entirely.
+ */
+export async function getCollectionAuthority(address: Address): Promise<CollectionAuthority | null> {
+  return pgCache(`sc-authority:${lc(address)}`, 30, async () => {
+    const client = getClient()
+    try {
+      const [owner, rendererLocked] = await client.multicall({
+        allowFailure: false,
+        contracts: [
+          { address, abi: surfaceAbi, functionName: "owner" },
+          { address, abi: surfaceAbi, functionName: "isRendererLocked" },
+        ],
+      })
+      const createdAtBlock = await getCollectionCreatedBlockFromIndexer(address)
+      const latest = await client.getBlockNumber()
+      // The factory deploy block only matters as a floor until the chain
+      // moves far enough that the fixed recent window's floor overtakes it.
+      const preferred = createdAtBlock ?? (PND_CHAIN_ID === mainnet.id ? SURFACE_FACTORY_DEPLOY_BLOCK_MAINNET : 0n)
+      const windowFloor = latest > ADMIN_LOG_CHUNK_BLOCKS * BigInt(ADMIN_LOG_MAX_CHUNKS)
+        ? latest - ADMIN_LOG_CHUNK_BLOCKS * BigInt(ADMIN_LOG_MAX_CHUNKS)
+        : 0n
+      const fromBlock = preferred < latest ? (preferred > windowFloor ? preferred : windowFloor) : windowFloor
+      const logs = await getAdminSetLogs(client, address, fromBlock, latest)
+      const state = new Map<string, boolean>()
+      for (const lg of logs) {
+        const { account, allowed } = lg.args
+        if (!account || allowed === undefined) continue
+        state.set(account.toLowerCase(), allowed)
+      }
+      const candidates = Array.from(state.entries())
+        .filter(([, allowed]) => allowed)
+        .map(([a]) => a as Address)
+        .slice(0, ADMIN_CANDIDATE_CAP)
+      let admins: Address[] = []
+      if (candidates.length > 0) {
+        const confirmations = await client.multicall({
+          allowFailure: true,
+          contracts: candidates.map((account) => ({
+            address,
+            abi: surfaceAbi,
+            functionName: "isAdmin" as const,
+            args: [account] as const,
+          })),
+        })
+        admins = candidates.filter((_, i) => confirmations[i]?.status === "success" && confirmations[i]?.result === true)
+      }
+      return { owner: owner as Address, admins, rendererLocked: rendererLocked as boolean }
+    } catch {
+      return null
+    }
+  })
+}
+
+/** Minimal ABI for the OPTIONAL IPreviewRenderer extension, declared
  *  standalone so any renderer address can be probed, not just ours. */
 const previewRendererAbi = [
   {
@@ -779,7 +912,7 @@ function onchainExploreSeed(collection: Address, i: number): `0x${string}` {
  * implement previews (detection is this try/catch, per repo convention).
  *
  * Same dedicated high-gas call path as tokenURI (never multicalled):
- * scripty-class renderers can cost 60-120M gas per call. Long TTL — a
+ * scripty-class renderers can cost 60-120M gas per call. Long TTL: a
  * preview for a fixed seed only changes if the renderer/work changes.
  */
 export async function getRendererPreview(
@@ -789,7 +922,7 @@ export async function getRendererPreview(
   seedIndex: number,
 ): Promise<OnchainPreview | null> {
   // Long TTL: a preview for a fixed (collection, renderer, seedIndex) is
-  // immutable — the seed and the renderer bytecode fully determine it, and
+  // immutable: the seed and the renderer bytecode fully determine it, and
   // the renderer address is in the key, so a renderer swap gets fresh keys.
   // Caching a day keeps a large sample pool essentially free to serve.
   return pgCache(`sc-prev:${lc(collection)}:${lc(renderer)}:${seedIndex}`, 86_400, async () => {
@@ -861,7 +994,7 @@ const rendererTokenUriAbi = [
  * A renderer's output for one id, read from the renderer directly
  * (renderer.tokenURI(collection, id)) instead of the collection's
  * tokenURI(id). The collection reverts for an unminted id (ERC721), but a
- * renderer returns art for any id in range — so this serves an edition's
+ * renderer returns art for any id in range, so this serves an edition's
  * shared artwork (and a batch's card art) before any mint. Same dedicated
  * high-gas path as tokenURI (scripty-class renderers cost 60-120M gas);
  * cached.
@@ -968,7 +1101,7 @@ export async function getAttribution(_collection: Address): Promise<CreatorEntry
 
 /** The collection's own description from its contractURI() metadata (a data-URI
  *  JSON), or null. Used to feed the "About this work" copy from the contract
- *  instead of hardcoded text. Cached — collection metadata is near-static. */
+ *  instead of hardcoded text. Cached: collection metadata is near-static. */
 export async function getContractDescription(address: Address): Promise<string | null> {
   return pgCache(`contract-desc:${lc(address)}`, 3600, async () => {
     try {
