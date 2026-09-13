@@ -1,45 +1,47 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity ^0.8.24;
 
-import {Script, console2} from "forge-std/Script.sol";
-import {Base64} from "solady/utils/Base64.sol";
+import {console2} from "forge-std/Script.sol";
 
 import {Surface} from "../src/surface/Surface.sol";
 import {PooledSurface} from "../src/surface/PooledSurface.sol";
 import {FixedPriceMinter} from "../src/surface/minters/FixedPriceMinter.sol";
 import {SurfaceFactory, SaleConfig} from "../src/surface/SurfaceFactory.sol";
 import {SurfaceConfig} from "../src/surface/SurfaceTypes.sol";
-import {CodeKind, CodeRef} from "../src/surface/templates/CodeTypes.sol";
 
-import {AntonScriptStore} from "../src/surface/works/anton/AntonScriptStore.sol";
-import {AntonRenderer} from "../src/surface/works/anton/AntonRenderer.sol";
+import {AntonDeploy} from "./AntonDeploy.sol";
 
-/// @notice Deploys the anton work as a Surface collection. Fully generative:
-///         the script store + renderer, then `createSurface` (which bundles the
-///         stock fixed-price minter — no custom minter, no per-token params).
-///         Placeholder config is env-overridable.
+/// @notice Full local/rehearsal path for the anton work: store + renderer,
+///         then `createSurface` (which bundles the stock fixed-price minter —
+///         no custom minter, no per-token params). Placeholder config is
+///         env-overridable. On mainnet, use DeployAntonRenderer instead; the
+///         artist creates the collection from their own wallet in the studio.
 ///
 ///         Requires the scripty v2 builder + EthFS at their deterministic
 ///         addresses (mainnet or a fork). Run against a local anvil fork first:
 ///
 ///           anvil --fork-url https://ethereum-rpc.publicnode.com --port 8545
-///           PRIVATE_KEY=<key> forge script script/DeployAntonWork.s.sol \
+///           PRIVATE_KEY=<key> RENDER_ASSETS=<addr> forge script script/DeployAntonWork.s.sol \
 ///             --rpc-url http://localhost:8545 --broadcast
-contract DeployAntonWork is Script {
-    address constant SCRIPTY_BUILDER_V2 = 0xD7587F110E08F4D120A231bA97d3B577A81Df022;
-    address constant ETHFS_V2_FILE_STORAGE = 0x8FAA1AAb9DA8c75917C43Fb24fDdb513edDC3245;
-    string constant GUNZIP_FILE = "gunzipScripts-0.0.1.js";
-
+///
+///         PRIVATE_KEY    deployer/signer
+///         RENDER_ASSETS  deployed RenderAssets singleton; required, non-zero
+///         ANTON_OWNER    collection owner; defaults to the signer
+///         ANTON_FACTORY  canonical SurfaceFactory; unset deploys a fresh one
+///         ANTON_SUPPLY   supply cap; defaults to 999
+///         ANTON_ROYALTY_BPS  royalty bps; defaults to 500
+///         ANTON_PRICE    mint price in wei; defaults to 0.001 ether
+///         ANTON_NAME     collection name; defaults to "Form of Solitude"
+///         ANTON_SYMBOL   collection symbol; defaults to "SOLITUDE"
+contract DeployAntonWork is AntonDeploy {
     function run() external {
         uint256 pk = vm.envUint("PRIVATE_KEY");
-        address owner = vm.addr(pk);
-        // Scripty stores serve base64 TEXT (the EthFS convention).
-        bytes memory scriptB64 = bytes(Base64.encode(vm.readFileBinary("script/anton.js.gz")));
+        address owner = vm.envOr("ANTON_OWNER", vm.addr(pk));
+        address renderAssets = vm.envAddress("RENDER_ASSETS");
 
         vm.startBroadcast(pk);
 
-        address store = address(new AntonScriptStore(scriptB64));
-        address renderer = _deployRenderer(store);
+        (address store, address renderer) = deployAntonRenderer(renderAssets);
         address factory = _factory();
 
         SurfaceConfig memory cfg = SurfaceConfig({
@@ -70,16 +72,6 @@ contract DeployAntonWork is Script {
         console2.log("collection:      ", collection);
         console2.log("minter (stock):  ", minter);
         console2.log("owner:           ", owner);
-    }
-
-    function _deployRenderer(address store) internal returns (address) {
-        CodeRef[] memory code = new CodeRef[](1);
-        code[0] = CodeRef({store: store, name: "anton.js", kind: CodeKind.ScriptGzip});
-        return address(
-            new AntonRenderer(
-                SCRIPTY_BUILDER_V2, ETHFS_V2_FILE_STORAGE, GUNZIP_FILE, code, new CodeRef[](0), 1, address(0)
-            )
-        );
     }
 
     function _factory() internal returns (address) {

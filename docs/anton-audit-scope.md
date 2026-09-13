@@ -56,9 +56,29 @@ Plus one shared change, in scope for the diff:
 
 ## Deployment shape (for context)
 
-`AntonScriptStore` → `AntonRenderer` (wired to scripty + EthFS gunzip, no deps)
-→ `createSurface` (renderer set in cfg; stock `FixedPriceMinter` bundled,
-`price`/window/royalty configured). Optionally `lockRenderer` for presentation
-permanence (the renderer reads the owner, so "permanent" means the code + rules,
-not a fixed image). See `contracts/script/DeployAntonWork.s.sol`. Proven end to
-end on a mainnet fork and on sepolia (`works/anton/DEPLOYMENTS.md`).
+`AntonScriptStore` and `AntonRenderer` (wired to scripty + EthFS gunzip, no
+deps) share one deploy step, `AntonDeploy.deployAntonRenderer`, used by all
+three anton scripts in `contracts/script/`:
+
+- `AntonDeploy.sol`, a shared abstract helper, not run directly. Deploys
+  `AntonScriptStore` from `script/anton.js.gz`, then `AntonRenderer` bound to
+  scripty, EthFS gunzip, and a caller-supplied `RenderAssets` address.
+- `DeployAntonRenderer.s.sol`, the mainnet step. Deploys the store and
+  renderer only. The artist then creates the collection from their own
+  wallet in the studio, pasting the renderer address, then calls `addAdmin`
+  for the deployer; the admin configures `RenderAssets` (capturer, cover) and
+  locks the renderer.
+- `DeployAntonWork.s.sol`, the local/rehearsal path. Deploys the store and
+  renderer, then calls `createSurface` directly so a fork or testnet run
+  produces a full collection in one step.
+- `SwapAntonRenderer.s.sol`, which repoints an existing collection at a
+  freshly deployed store and renderer, for a render-code update after launch.
+
+Mainnet sequence: `DeployRenderModules.s.sol` deploys the `RenderAssets`
+singleton once (or reuses an existing one) → `DeployAntonRenderer.s.sol`
+deploys the anton store and renderer against it → the artist creates the
+collection in the studio with the renderer address → the artist grants the
+deployer (or configurer) admin via `addAdmin` → the admin runs
+`ConfigureAntonAssets.s.sol` to grant a capturer and set the cover on
+`RenderAssets`, then locks the renderer. Proven end to end on a mainnet fork
+and on sepolia (`works/anton/DEPLOYMENTS.md`).
