@@ -16,13 +16,22 @@ work adds no minter and no per-token storage.
 | `AntonRenderer.sol` | chain-live `ScriptyRenderer` fork | view-only `tokenURI` / `previewURI` |
 | `AntonScriptStore.sol` | SSTORE2 store serving `base64(gzip(anton.js))` | immutable, `getContent` |
 
-Plus one shared change, in scope for the diff:
+Plus shared changes, in scope for the diff:
 
 - `contracts/src/surface/templates/ScriptyRenderer.sol` — `_contextJs` and
   `_attributes` changed from `private` to `internal virtual` so a chain-live
   fork can extend them. Additive; base behavior and `ExampleScriptyWork`
   unchanged (full suite green). Confirm no behavioral change to existing
   subclasses.
+- `contracts/src/surface/templates/ScriptyRenderer.sol` — a `MetadataText`
+  struct (token description, collection description, external URL) added to
+  the constructor, stored once with no setter. `tokenURI` includes
+  `description`/`external_url` and `contractURI` includes
+  `description`/`external_link` only when the corresponding field is
+  non-empty. `AntonRenderer` forwards the struct unchanged. Values are read
+  from `contracts/script/anton-metadata.json` at deploy time (`AntonDeploy`);
+  the checked-in file ships placeholder text that must be replaced before
+  mainnet deploy.
 
 ## Out of scope
 
@@ -39,20 +48,30 @@ Plus one shared change, in scope for the diff:
 2. Palette/tone traits are derived from the seed exactly as `anton.js` derives
    them (`palette = seed % 10`, `tone = (seed >> 8) % 2`) — a mismatch is a
    correctness bug (traits disagree with the render), not a security one.
+   `tokenURI` attributes are exactly Palette and Tone; `AntonRenderer`
+   overrides the base's Mint Order and Seed provenance traits and does not
+   publish them.
 3. No field injected into the rendered JSON/HTML can break out of its string
-   context (all injected values are numeric or hex; `name` is `escapeJSON`'d by
-   the base).
+   context. The render-context fields (hash, tokenId, collection, chainId,
+   version, context, owner) are numeric or hex. `name` and the artist-supplied
+   metadata text (token description, collection description, external URL) are
+   `escapeJSON`'d by the base.
 4. `AntonScriptStore` is immutable; `getContent` ignores `name` (single file).
 
 ## Specific items to review
 
 - **`AntonRenderer`** JSON/HTML assembly for injection safety across all injected
-  fields; the seed→trait derivation matching the JS; and that the inherited
-  `previewURI` (not faithful for this chain-live work) can't mislead — it returns
-  a document with owner defaulted to zero for a nonexistent id.
+  fields; the seed→trait derivation matching the JS; that `_attributes` emits
+  exactly Palette and Tone; and that the inherited `previewURI` (not faithful
+  for this chain-live work) can't mislead — it returns a document with owner
+  defaulted to zero for a nonexistent id.
 - **`AntonScriptStore`** immutability and correct SSTORE2 round-trip of the
   base64 payload.
 - The `ScriptyRenderer` visibility change (additive `virtual`).
+- The `ScriptyRenderer` metadata-text constructor addition: escaping of the
+  token description, collection description, and external URL; that each
+  field is set once with no setter; and that `AntonDeploy` reads them from
+  `script/anton-metadata.json` rather than an env var.
 
 ## Deployment shape (for context)
 
@@ -62,7 +81,10 @@ three anton scripts in `contracts/script/`:
 
 - `AntonDeploy.sol`, a shared abstract helper, not run directly. Deploys
   `AntonScriptStore` from `script/anton.js.gz`, then `AntonRenderer` bound to
-  scripty, EthFS gunzip, and a caller-supplied `RenderAssets` address.
+  scripty, EthFS gunzip, and a caller-supplied `RenderAssets` address. Metadata
+  text (token description, collection description, external URL) is read from
+  `script/anton-metadata.json`; the checked-in file holds placeholder text that
+  must be replaced before a mainnet deploy.
 - `DeployAntonRenderer.s.sol`, the mainnet step. Deploys the store and
   renderer only. The artist then creates the collection from their own
   wallet in the studio, pasting the renderer address, then calls `addAdmin`

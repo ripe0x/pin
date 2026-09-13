@@ -11,7 +11,7 @@ import {SurfaceFactory} from "../../../src/surface/SurfaceFactory.sol";
 import {FixedPriceMinter} from "../../../src/surface/minters/FixedPriceMinter.sol";
 import {RenderAssets} from "../../../src/surface/renderers/RenderAssets.sol";
 import {ScriptyRenderer} from "../../../src/surface/templates/ScriptyRenderer.sol";
-import {CodeKind, CodeRef} from "../../../src/surface/templates/CodeTypes.sol";
+import {CodeKind, CodeRef, MetadataText} from "../../../src/surface/templates/CodeTypes.sol";
 import {HTMLRequest} from "../../../src/surface/templates/vendor/scripty/core/ScriptyStructs.sol";
 import {SurfaceConfig} from "../../../src/surface/SurfaceTypes.sol";
 import {MockRenderer} from "../mocks/SurfaceMocks.sol";
@@ -25,18 +25,26 @@ contract MockScriptyBuilder {
     }
 }
 
-/// @notice ScriptyRenderer's static-image wiring: with a RenderAssets
-///         registry the metadata `image` resolves through the capture ladder;
-///         without one there is no image at all and `animation_url` stands
-///         alone. contractURI carries the cover the same way.
+/// @notice ScriptyRenderer's static-image and metadata-text wiring. With a
+///         RenderAssets registry the metadata `image` resolves through the
+///         capture ladder; without one there is no image at all and
+///         `animation_url` stands alone. contractURI carries the cover the
+///         same way. `description` (tokenURI/contractURI) and `external_url`/
+///         `external_link` are included only when set at construction.
 contract ScriptyRendererImageTest is Test {
     RenderAssets internal assets;
     Surface internal collection;
     ScriptyRenderer internal wired;
     ScriptyRenderer internal unwired;
+    ScriptyRenderer internal withText;
+    ScriptyRenderer internal withEscapedText;
 
     address internal artist = makeAddr("artist");
     address internal collector = makeAddr("collector");
+
+    function _noText() internal pure returns (MetadataText memory) {
+        return MetadataText({tokenDescription: "", collectionDescription: "", externalUrl: ""});
+    }
 
     function setUp() public {
         assets = new RenderAssets();
@@ -46,8 +54,36 @@ contract ScriptyRendererImageTest is Test {
         CodeRef[] memory deps = new CodeRef[](0);
         address builder = address(new MockScriptyBuilder());
 
-        wired = new ScriptyRenderer(builder, address(0), "", code, deps, 1, address(assets));
-        unwired = new ScriptyRenderer(builder, address(0), "", code, deps, 1, address(0));
+        wired = new ScriptyRenderer(builder, address(0), "", code, deps, 1, address(assets), _noText());
+        unwired = new ScriptyRenderer(builder, address(0), "", code, deps, 1, address(0), _noText());
+        withText = new ScriptyRenderer(
+            builder,
+            address(0),
+            "",
+            code,
+            deps,
+            1,
+            address(assets),
+            MetadataText({
+                tokenDescription: "A token description.",
+                collectionDescription: "A collection description.",
+                externalUrl: "https://example.com/anton"
+            })
+        );
+        withEscapedText = new ScriptyRenderer(
+            builder,
+            address(0),
+            "",
+            code,
+            deps,
+            1,
+            address(0),
+            MetadataText({
+                tokenDescription: 'Line one "quoted"\nLine two.',
+                collectionDescription: "",
+                externalUrl: ""
+            })
+        );
 
         Surface impl = new Surface();
         SurfaceFactory factory = new SurfaceFactory(
@@ -94,6 +130,42 @@ contract ScriptyRendererImageTest is Test {
 
         string memory bare = _json(unwired.contractURI(address(collection)));
         assertFalse(LibString.contains(bare, '"image"'), "unwired contractURI has no image");
+    }
+
+    function test_tokenURI_descriptionAndExternalUrl_presentWhenSet() public view {
+        string memory json = _json(withText.tokenURI(address(collection), 1));
+        assertTrue(LibString.contains(json, '"description":"A token description."'), "token description present");
+        assertTrue(LibString.contains(json, '"external_url":"https://example.com/anton"'), "external_url present");
+    }
+
+    function test_tokenURI_descriptionAndExternalUrl_absentWhenUnset() public view {
+        string memory json = _json(wired.tokenURI(address(collection), 1));
+        assertFalse(LibString.contains(json, '"description"'), "no description key when unset");
+        assertFalse(LibString.contains(json, '"external_url"'), "no external_url key when unset");
+    }
+
+    function test_contractURI_descriptionAndExternalLink_presentWhenSet() public view {
+        string memory json = _json(withText.contractURI(address(collection)));
+        assertTrue(
+            LibString.contains(json, '"description":"A collection description."'), "collection description present"
+        );
+        assertTrue(LibString.contains(json, '"external_link":"https://example.com/anton"'), "external_link present");
+    }
+
+    function test_contractURI_descriptionAndExternalLink_absentWhenUnset() public view {
+        string memory json = _json(unwired.contractURI(address(collection)));
+        assertFalse(LibString.contains(json, '"description"'), "no description key when unset");
+        assertFalse(LibString.contains(json, '"external_link"'), "no external_link key when unset");
+    }
+
+    /// @dev A quote and a newline in the description must not break the
+    ///      surrounding JSON. vm.parseJsonString reverts on malformed JSON, so
+    ///      a successful parse that round-trips the original text proves the
+    ///      escaping held.
+    function test_tokenURI_escapesQuoteAndNewlineInDescription() public view {
+        string memory json = _json(withEscapedText.tokenURI(address(collection), 1));
+        string memory decoded = vm.parseJsonString(json, ".description");
+        assertEq(decoded, "Line one \"quoted\"\nLine two.");
     }
 
     /// @dev previewURI needs no token: id 999 was never minted (tokenSeed is

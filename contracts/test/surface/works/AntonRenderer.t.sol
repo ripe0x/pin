@@ -7,7 +7,7 @@ import {LibString} from "solady/utils/LibString.sol";
 import {ERC721} from "openzeppelin-contracts/contracts/token/ERC721/ERC721.sol";
 
 import {AntonRenderer} from "../../../src/surface/works/anton/AntonRenderer.sol";
-import {CodeKind, CodeRef} from "../../../src/surface/templates/CodeTypes.sol";
+import {CodeKind, CodeRef, MetadataText} from "../../../src/surface/templates/CodeTypes.sol";
 import {HTMLRequest, HTMLTag} from "../../../src/surface/templates/vendor/scripty/core/ScriptyStructs.sol";
 import {IdMode} from "../../../src/surface/SurfaceTypes.sol";
 
@@ -57,7 +57,10 @@ contract AntonRendererTest is Test {
         col = new MockCollection();
         CodeRef[] memory code = new CodeRef[](1);
         code[0] = CodeRef({store: address(this), name: "anton.js", kind: CodeKind.Script});
-        renderer = new AntonRenderer(address(new EchoBuilder()), address(0), "", code, new CodeRef[](0), 1, address(0));
+        MetadataText memory noText = MetadataText({tokenDescription: "", collectionDescription: "", externalUrl: ""});
+        renderer = new AntonRenderer(
+            address(new EchoBuilder()), address(0), "", code, new CodeRef[](0), 1, address(0), noText
+        );
     }
 
     function _json(uint256 id) internal view returns (string memory) {
@@ -75,8 +78,19 @@ contract AntonRendererTest is Test {
         string memory json = _json(id);
         assertTrue(_has(json, '"trait_type":"Palette","value":"J"'), "palette");
         assertTrue(_has(json, '"trait_type":"Tone","value":"sun"'), "tone");
-        assertTrue(_has(json, '"trait_type":"Mint Order","value":1'), "order");
-        assertTrue(_has(json, '"trait_type":"Seed"'), "seed");
+        assertFalse(_has(json, "Mint Order"), "no mint order trait");
+        assertFalse(_has(json, '"trait_type":"Seed"'), "no seed trait");
+    }
+
+    function test_attributes_exactlyPaletteAndTone() public {
+        uint256 id = col.mint(collector, bytes32(uint256(0x405)));
+        string memory json = _json(id);
+        // The attributes array is exactly [Palette, Tone] in that order, no
+        // Mint Order or Seed entries.
+        assertTrue(
+            _has(json, ',"attributes":[{"trait_type":"Palette","value":"J"},{"trait_type":"Tone","value":"sun"}]}'),
+            "attributes array is exactly Palette+Tone"
+        );
     }
 
     function test_context_carriesOwner_noParams() public {
@@ -98,5 +112,37 @@ contract AntonRendererTest is Test {
     function test_preview_unmintedToken_doesNotRevert() public view {
         string memory uri = renderer.previewURI(address(col), 999, bytes32(uint256(7)));
         assertTrue(bytes(uri).length > 0);
+    }
+
+    /// @dev Metadata text forwards unchanged through AntonRenderer's
+    ///      constructor into the inherited tokenURI/contractURI.
+    function test_metadataText_forwardsToTokenAndContractUri() public {
+        CodeRef[] memory code = new CodeRef[](1);
+        code[0] = CodeRef({store: address(this), name: "anton.js", kind: CodeKind.Script});
+        AntonRenderer r = new AntonRenderer(
+            address(new EchoBuilder()),
+            address(0),
+            "",
+            code,
+            new CodeRef[](0),
+            1,
+            address(0),
+            MetadataText({
+                tokenDescription: "An anton token.",
+                collectionDescription: "The anton collection.",
+                externalUrl: "https://example.com/anton"
+            })
+        );
+        uint256 id = col.mint(collector, bytes32(uint256(1)));
+
+        string memory tokenJson =
+            string(Base64.decode(LibString.slice(r.tokenURI(address(col), id), bytes("data:application/json;base64,").length)));
+        assertTrue(_has(tokenJson, '"description":"An anton token."'), "token description");
+        assertTrue(_has(tokenJson, '"external_url":"https://example.com/anton"'), "token external_url");
+
+        string memory collectionJson =
+            string(Base64.decode(LibString.slice(r.contractURI(address(col)), bytes("data:application/json;base64,").length)));
+        assertTrue(_has(collectionJson, '"description":"The anton collection."'), "collection description");
+        assertTrue(_has(collectionJson, '"external_link":"https://example.com/anton"'), "collection external_link");
     }
 }

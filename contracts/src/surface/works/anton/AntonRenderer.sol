@@ -6,8 +6,7 @@ import {IERC721} from "openzeppelin-contracts/contracts/token/ERC721/IERC721.sol
 
 import {ScriptyRenderer} from "../../templates/ScriptyRenderer.sol";
 import {ISurfaceView} from "../../interfaces/IRenderer.sol";
-import {IdMode} from "../../SurfaceTypes.sol";
-import {CodeRef} from "../../templates/CodeTypes.sol";
+import {CodeRef, MetadataText} from "../../templates/CodeTypes.sol";
 
 /// @title AntonRenderer
 /// @notice The anton work's renderer. A chain-live ScriptyRenderer: everything
@@ -36,8 +35,13 @@ contract AntonRenderer is ScriptyRenderer {
         CodeRef[] memory code_,
         CodeRef[] memory deps_,
         uint8 injectionVersion_,
-        address renderAssets_
-    ) ScriptyRenderer(scriptyBuilder_, gunzipStore_, gunzipFile_, code_, deps_, injectionVersion_, renderAssets_) {
+        address renderAssets_,
+        MetadataText memory metadataText_
+    )
+        ScriptyRenderer(
+            scriptyBuilder_, gunzipStore_, gunzipFile_, code_, deps_, injectionVersion_, renderAssets_, metadataText_
+        )
+    {
         _paletteNames = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"];
         _toneNames = ["sun", "moon"];
     }
@@ -70,29 +74,19 @@ contract AntonRenderer is ScriptyRenderer {
         );
     }
 
-    /// @dev Seed-derived traits: Mint Order (Sequential), Seed, Palette, Tone.
-    function _attributes(ISurfaceView c, uint256 tokenId, bytes32 seed)
-        internal
-        view
-        override
-        returns (bytes memory)
-    {
+    /// @dev Attributes: Palette and Tone, derived from the seed. Overrides the
+    ///      base's Mint Order and Seed provenance traits, which this work does
+    ///      not publish.
+    function _attributes(
+        ISurfaceView, /* c */
+        uint256, /* tokenId */
+        bytes32 seed
+    ) internal view override returns (bytes memory) {
         uint256 s = uint256(seed);
         string memory palette = _paletteNames[s % _paletteNames.length];
         string memory tone = _toneNames[(s >> 8) % _toneNames.length];
-        bytes memory order = c.idMode() == IdMode.Sequential
-            ? abi.encodePacked('{"trait_type":"Mint Order","value":', tokenId.toString(), "},")
-            : bytes("");
         return abi.encodePacked(
-            "[",
-            order,
-            '{"trait_type":"Seed","value":"',
-            s.toHexString(32),
-            '"},{"trait_type":"Palette","value":"',
-            palette,
-            '"},{"trait_type":"Tone","value":"',
-            tone,
-            '"}]'
+            '[{"trait_type":"Palette","value":"', palette, '"},{"trait_type":"Tone","value":"', tone, '"}]'
         );
     }
 
