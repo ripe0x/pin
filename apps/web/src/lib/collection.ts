@@ -13,6 +13,7 @@
 import { type Address, formatEther, isAddress } from "viem"
 import { foundry, mainnet, sepolia } from "wagmi/chains"
 import {
+  DEFAULT_RENDERER,
   RENDER_ASSETS,
   SURFACE_FACTORY,
   getAddressOrNull,
@@ -48,6 +49,19 @@ export function renderAssetsAddress(chainId: number = PND_CHAIN_ID): Address | n
   const env = process.env.NEXT_PUBLIC_RENDER_ASSETS
   if (env && isAddress(env)) return env as Address
   return getAddressOrNull(RENDER_ASSETS, chainId)
+}
+
+/**
+ * The DefaultRenderer singleton address (env override for local dev wins).
+ * The factory's own `defaultRenderer()` is immutable and permanently zero on
+ * the live factory, so the Edition preset can't rely on the factory's
+ * fallback — it passes this address explicitly as `cfg.renderer` instead.
+ * Null here means Edition has nothing to deploy against yet.
+ */
+export function defaultRendererAddress(chainId: number = PND_CHAIN_ID): Address | null {
+  const env = process.env.NEXT_PUBLIC_DEFAULT_RENDERER
+  if (env && isAddress(env)) return env as Address
+  return getAddressOrNull(DEFAULT_RENDERER, chainId)
 }
 
 /**
