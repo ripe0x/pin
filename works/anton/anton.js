@@ -63,19 +63,21 @@
   var params = td.params || {};
   var backgroundOnly = params.bgOnly === true || params.bgOnly === 1 || params.bgOnly === "1";
   // Diagnostic view: 0 normal render, 1 shape (warp boundary only), 2 colour
-  // (the three mass colours as flat bands). Selected via params.view.
-  var viewMode = params.view === "shape" ? 1 : params.view === "colour" ? 2 : 0;
-  var viewLabel = viewMode === 1 ? "shape" : viewMode === 2 ? "colour" : "full";
+  // (the three mass colours as flat bands), 3 triptych (full | shape | colour
+  // side by side in one canvas). Selected via params.view.
+  var viewMode = params.view === "shape" ? 1 : params.view === "colour" ? 2 : params.view === "triptych" ? 3 : 0;
+  var viewLabel = viewMode === 1 ? "shape" : viewMode === 2 ? "colour" : viewMode === 3 ? "triptych" : "full";
 
   // ── host notification ───────────────────────────────────────────────────────
   // Posts a message to window.parent at the frame a shape morph or a mass
   // colour shift begins, and once on the first live frame. Message shape:
   // { source: "anton", kind, tokenId, at, ...detail }. kind is "ready"
   // (detail: openingTime, firstEventLead, warpPeriod, view), "shape" (detail: from,
-  // to, warp mode indices) or "colour" (detail: mass, from, to, each an
-  // [r, g, b] triple rounded to 3 decimals). Runs only in an embedded frame
-  // (window.parent !== window) and only outside the capture context. Rendering
-  // does not read anything back from this channel or depend on it.
+  // to, warp mode indices), "colour" (detail: mass, from, to, each an
+  // [r, g, b] triple rounded to 3 decimals), or "view" (detail: view, the new
+  // view label, sent in reply to a host view switch). Runs only in an embedded
+  // frame (window.parent !== window) and only outside the capture context.
+  // Rendering does not read anything back from this channel or depend on it.
   function notifyHost(kind, detail) {
     // Capture context has no host to notify; the canonical still never posts.
     if (isCapture) return;
@@ -127,6 +129,26 @@
   // the canonical still.
   var isCapture = ctx === "capture";
   var ownerOffset = isCapture ? 0 : (xmur3(owner + ":phase")() % 360000) / 100;
+
+  // ── host view control ────────────────────────────────────────────────────────
+  // The host may post {source: "anton-host", view} to switch the diagnostic
+  // view at runtime, view is one of "full", "shape", "colour", "triptych".
+  // Any other message is ignored. The artwork answers with a "view" message.
+  // Switching the view changes only viewMode/viewLabel; the clocks, event
+  // indices and openingTime are untouched, so the next frame renders in the
+  // new mode with playback otherwise unaffected. Live context only, never in
+  // capture.
+  if (!isCapture && typeof window !== "undefined") {
+    window.addEventListener("message", function (e) {
+      var data = e.data;
+      if (!data || typeof data !== "object" || data.source !== "anton-host") return;
+      var v = data.view;
+      if (v !== "full" && v !== "shape" && v !== "colour" && v !== "triptych") return;
+      viewMode = v === "shape" ? 1 : v === "colour" ? 2 : v === "triptych" ? 3 : 0;
+      viewLabel = v;
+      notifyHost("view", { view: viewLabel });
+    });
+  }
 
   // ── canvas + GL ─────────────────────────────────────────────────────────────
   var canvas = document.createElement("canvas");
@@ -206,6 +228,8 @@
     "return offset;}" +
     "void main(){" +
     "vec2 uv=gl_FragCoord.xy/u_res.xy;" +
+    "int sub=u_view;" +
+    "if(u_view==3){float panel=floor(uv.x*3.0);uv.x=uv.x*3.0-panel;sub=int(panel);}" +
     "vec2 xy=uv;vec2 xy2=uv;vec2 uvDiag=uv;" +
     "uvDiag.y+=sin(uv.x*5.6+0.8)*0.020;" +
     "float time=u_time*0.05+10.0;" +
@@ -239,8 +263,8 @@
     "float r=length(rxy-center);" +
     "float h0r=cos((3.2)*r);" +
     "h00=h0r;" +
-    "if(u_view==1){gl_FragColor=vec4(vec3(step(h00,xy.y)),1.0);return;}" +
-    "if(u_view==2){vec3 band=u_staticCols[2];if(xy.x<1.0/3.0){band=u_staticCols[0];}else if(xy.x<2.0/3.0){band=u_staticCols[1];}gl_FragColor=vec4(band,1.0);return;}" +
+    "if(sub==1){gl_FragColor=vec4(vec3(step(h00,xy.y)),1.0);return;}" +
+    "if(sub==2){vec3 band=u_staticCols[2];if(xy.x<1.0/3.0){band=u_staticCols[0];}else if(xy.x<2.0/3.0){band=u_staticCols[1];}gl_FragColor=vec4(band,1.0);return;}" +
     "float h=0.085;" +
     "vec3 cmix=mix(bg1,cm,xy.x/h);" +
     "vec3 cmixA=mix(cd,bg1,xy.x);" +
