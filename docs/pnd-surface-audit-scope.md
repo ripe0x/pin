@@ -265,3 +265,77 @@ code must be `main`'s tip, not the baseline commit. The full diff is
   vendored Surface copy tracks this baseline (permanence PR #13). Homage-side
   findings from the prior reviews (M-02, M-03, L-01..L-03) live in that repo.
 - Deploy scripts and the offchain web/indexer, which carry no value.
+
+## Surface v2 scope (separate engagement, not yet externally reviewed)
+
+v2 is a parallel, sequential-only art protocol beside v1 in
+`contracts/src/surface/v2/`, described in `docs/pnd-surface-v2-plan.md`. v1
+stays untouched and byte-matches its deployed mainnet bytecode under the
+default profile; v2 has no mainnet address yet.
+
+**Files in scope:**
+
+- `contracts/src/surface/v2/SurfaceV2.sol`: the merged concrete core.
+  Sequential ids only, mints-ever cap, one-way locks (renderer, supply,
+  minter, royalty), `seal()` renounce, minter-supplied seeds, `seedSource`
+  fallback, `SelfCustodyRejected` transfer guard.
+- `contracts/src/surface/v2/SurfaceFactoryV2.sol`: sequential-only factory,
+  `createSurface`/`createSurfaceCustom`, `deprecate`, `setPaused`.
+- `contracts/src/surface/v2/minters/FixedPriceMinterV2.sol`: exact-payment
+  fixed price minter, window, Merkle allowlist, per-wallet cap, referral
+  split, pull payment, stored payout recipient.
+- `contracts/src/surface/v2/interfaces/ISurfaceV2.sol`,
+  `contracts/src/surface/v2/interfaces/ISeedSourceV2.sol`.
+
+**Sizes.** `SurfaceV2` runtime 15,599 bytes, under the 23,576-byte internal
+gate the v1 files use, enforced by `test/surface/v2/SurfaceV2Size.t.sol`.
+
+**Test count.** 792 tests passing at commit `2b7285fe`, across
+`contracts/test/surface/v2/`.
+
+**Compat proofs.** Three suites prove v2 works against the unmodified v1
+surrounding stack rather than a parallel reimplementation:
+
+- `test/surface/v2/SurfaceV2RendererCompat.t.sol`: v1's `DefaultRenderer`
+  and `RenderAssets` render a v2 collection with no modification.
+- `test/surface/v2/SurfaceV2ScriptyCompat.t.sol`: v1's `ScriptyRenderer`
+  stack renders a v2 collection with no modification.
+- `test/surface/v2/SurfaceV2V1MinterCompat.t.sol`: v1's own
+  `FixedPriceMinter` can drive a v2 collection through the shared
+  `ISurfaceV2`/`IMinter` read surface.
+- `test/surface/v2/DeploySurfaceV2.t.sol`: the deploy script itself,
+  exercised as a fork/deploy test against every environment guard.
+
+**Internal audit.** `docs/pnd-surface-v2-audit-2026-09-14.md` covers a
+single-pass internal review of the five files above: one Medium and one
+Low finding, both resolved in commit `2ac736b9`; two informational leads
+accepted as design tradeoffs with operational guidance recorded there.
+
+**What remains for an external auditor.** The internal pass is not a
+substitute for external review; v2 carries the same deploy gate v1 did.
+The invariants an external engagement should confirm, from
+`docs/pnd-surface-v2-plan.md`:
+
+- Sequential ids: token id equals mint order, monotonic, never reused after
+  a burn.
+- Mints-ever cap: `_mintedEver` bounds total mints, checked on every mint
+  path (`mintTo`, `mintToSeeded`), never bypassable through a granted
+  minter.
+- Seal semantics: `seal()` engages every un-engaged lock, then renounces
+  ownership in the same transaction; a collection sealed with zero granted
+  minters ends minting.
+- Seed derivation: the default seed formula
+  (`keccak256(abi.encode(block.prevrandao, address(this), tokenId))`), the
+  `seedSource` fallback path, and a minter-supplied seed's precedence over
+  both.
+- Self-custody guard: `_update` rejects `to == address(this)` on mint,
+  transfer and safe transfer alike, with no effect on burns.
+- Admin invalidation: `_admins[account]` stores the granting owner, so an
+  ownership transfer or renounce invalidates every existing grant with no
+  bypass.
+- Royalty cap and lock: the 50% royalty cap enforced identically at
+  `initialize` and `setRoyalty`; `lockRoyalty()`/`seal()` snapshot a zero
+  receiver to a fixed address before engaging the lock.
+- Exact payment and pull payouts in `FixedPriceMinterV2`: `price * quantity
+  == msg.value` or revert, and the referral/artist split conserves the
+  total in `_pending` at settlement time.
