@@ -54,6 +54,46 @@ contract SurfaceV2SealTest is SurfaceV2Base {
         assertTrue(c.isRoyaltyLocked());
     }
 
+    /// @dev A zero receiver locked with lockRoyalty() is snapshotted to the
+    ///      owner at lock time. A later ownership transfer does not move the
+    ///      royalty payee.
+    function test_lockRoyalty_zeroReceiver_snapshotsOwner_survivesTransfer() public {
+        SurfaceV2 c = _collection(_freeConfig());
+        vm.prank(artist);
+        c.lockRoyalty();
+
+        (address receiverBefore,) = c.royaltyInfo(1, 10_000);
+        assertEq(receiverBefore, artist);
+
+        address buyer = makeAddr("buyer");
+        vm.prank(artist);
+        c.transferOwnership(buyer);
+        vm.prank(buyer);
+        c.acceptOwnership();
+
+        (address receiverAfter,) = c.royaltyInfo(1, 10_000);
+        assertEq(receiverAfter, artist, "locked payee does not follow ownership transfer");
+    }
+
+    /// @dev A receiver already set to an explicit address at lock time is
+    ///      left as stored: no resolution, no extra RoyaltySet emission.
+    function test_lockRoyalty_explicitReceiver_unchanged() public {
+        SurfaceV2 c = _collection(_freeConfig());
+        address payee = makeAddr("payee");
+        vm.startPrank(artist);
+        c.setRoyalty(250, payee);
+        c.lockRoyalty();
+        vm.stopPrank();
+
+        (address receiver,) = c.royaltyInfo(1, 10_000);
+        assertEq(receiver, payee);
+
+        vm.prank(artist);
+        c.transferOwnership(makeAddr("buyer"));
+        (receiver,) = c.royaltyInfo(1, 10_000);
+        assertEq(receiver, payee, "explicit receiver stays fixed regardless of ownership");
+    }
+
     // ── seal(): owner-only ────────────────────────────────────────────────────
 
     function test_seal_ownerOnly() public {
@@ -146,6 +186,20 @@ contract SurfaceV2SealTest is SurfaceV2Base {
         assertFalse(c.isMinter(address(this)));
         vm.expectRevert(ISurfaceV2.NotMinter.selector);
         c.mintTo(collector, 1);
+    }
+
+    /// @dev seal() engages the royalty lock the same way lockRoyalty() does:
+    ///      a zero receiver is snapshotted to the pre-seal owner, so
+    ///      royaltyInfo keeps paying that address after ownership renounces
+    ///      to address(0).
+    function test_seal_zeroReceiver_snapshotsPreSealOwner() public {
+        SurfaceV2 c = _collection(_freeConfig());
+        vm.prank(artist);
+        c.seal();
+
+        (address receiver,) = c.royaltyInfo(1, 10_000);
+        assertEq(receiver, artist, "payee resolves to the owner at seal time");
+        assertEq(c.owner(), address(0));
     }
 
     /// @dev A minter granted before seal() keeps its authority after.

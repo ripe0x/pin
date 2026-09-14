@@ -87,7 +87,11 @@ contract FixedPriceMinterV2 is Initializable, ReentrancyGuardUpgradeable, IMinte
     ///         integration-facing name.
     uint256 public totalMinted;
     /// @notice Tokens minted to `to` through this clone, for the wallet cap.
-    ///         Counted after the collection mint call succeeds.
+    ///         Accumulates on every mint regardless of whether walletCap is
+    ///         set at mint time, so a cap applied after an uncapped window
+    ///         bounds the wallet's true total instead of only the mints
+    ///         counted after the cap was set. Counted after the collection
+    ///         mint call succeeds.
     mapping(address => uint256) public mintedBy;
 
     // Pull-payment balances: mints accrue here, recipients claim via
@@ -235,9 +239,7 @@ contract FixedPriceMinterV2 is Initializable, ReentrancyGuardUpgradeable, IMinte
         uint256 firstTokenId = ISurfaceV2(collection).mintTo(to, quantity);
 
         totalMinted = mintedSoFar + quantity;
-        if (cap != 0) {
-            mintedBy[to] = mintedByRecipient + quantity;
-        }
+        mintedBy[to] = mintedByRecipient + quantity;
 
         _settle(required, referrer);
 

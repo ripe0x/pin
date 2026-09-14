@@ -329,12 +329,13 @@ contract SurfaceV2 is ERC721Upgradeable, Ownable2StepUpgradeable, ReentrancyGuar
         emit RoyaltySet(royaltyBps, royaltyReceiver);
     }
 
-    /// @notice One-way, optional: lock the royalty (bps and receiver)
-    ///         permanently.
+    /// @notice One-way, optional: lock the royalty bps and receiver. If the
+    ///         receiver is still the zero sentinel, this snapshots the
+    ///         current owner() as the receiver first, so the locked payee is
+    ///         a fixed address rather than a live read of owner().
     function lockRoyalty() external onlyOwnerOrAdmin {
         if (_royaltyLocked) revert RoyaltyIsLocked();
-        _royaltyLocked = true;
-        emit RoyaltyLocked();
+        _engageRoyaltyLock();
     }
 
     /// @notice Update the supply cap (0 = no cap). A cap below current usage
@@ -490,10 +491,25 @@ contract SurfaceV2 is ERC721Upgradeable, Ownable2StepUpgradeable, ReentrancyGuar
             emit MinterLocked();
         }
         if (!_royaltyLocked) {
-            _royaltyLocked = true;
-            emit RoyaltyLocked();
+            _engageRoyaltyLock();
         }
         _transferOwnership(address(0));
+    }
+
+    /// @dev Shared lock path for lockRoyalty() and seal(). A zero receiver
+    ///      resolves to owner() on every royaltyInfo() call, so a lock
+    ///      engaged while the receiver is still zero snapshots owner() into
+    ///      _cfg.royaltyReceiver first: the locked payee is a fixed address,
+    ///      not a live read that would keep following a later ownership
+    ///      transfer. A nonzero receiver is left as stored.
+    function _engageRoyaltyLock() internal {
+        if (_cfg.royaltyReceiver == address(0)) {
+            address resolved = owner();
+            _cfg.royaltyReceiver = resolved;
+            emit RoyaltySet(_cfg.royaltyBps, resolved);
+        }
+        _royaltyLocked = true;
+        emit RoyaltyLocked();
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -587,9 +603,13 @@ contract SurfaceV2 is ERC721Upgradeable, Ownable2StepUpgradeable, ReentrancyGuar
         return IRenderer(renderer()).contractURI(address(this));
     }
 
-    /// @dev A renounced collection with no explicit royaltyReceiver resolves
-    ///      to owner() == address(0). A nonzero amount there would send a
-    ///      marketplace's royalty payment to the zero address, so the
+    /// @dev A zero royaltyReceiver resolves to the live owner(). Once
+    ///      lockRoyalty() or seal() has engaged the lock, a zero receiver has
+    ///      already been snapshotted to a fixed address (see
+    ///      _engageRoyaltyLock), so this live read only ever applies before a
+    ///      lock. A renounced, unlocked collection with no explicit receiver
+    ///      resolves to owner() == address(0); a nonzero amount there would
+    ///      send a marketplace's royalty payment to the zero address, so the
     ///      function returns zero instead.
     function royaltyInfo(uint256, uint256 salePrice) external view returns (address receiver, uint256 royaltyAmount) {
         receiver = _cfg.royaltyReceiver == address(0) ? owner() : _cfg.royaltyReceiver;

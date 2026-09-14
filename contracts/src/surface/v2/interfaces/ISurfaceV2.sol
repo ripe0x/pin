@@ -152,8 +152,10 @@ interface ISurfaceV2 {
     ///         presentation permanence; a mutable renderer behind a locked
     ///         pointer remains changeable within that renderer.
     function lockRenderer() external;
-    /// @notice One-way, optional: locks the royalty (bps and receiver)
-    ///         permanently. Reverts RoyaltyIsLocked once engaged.
+    /// @notice One-way, optional: locks the royalty bps and receiver. A
+    ///         receiver still at the zero sentinel is snapshotted to the
+    ///         current owner() first, so the locked payee is a fixed
+    ///         address. Reverts RoyaltyIsLocked once engaged.
     function lockRoyalty() external;
     /// @notice Owner-only, one transaction: engages every un-engaged lock
     ///         (renderer, supply, minter, royalty), then renounces

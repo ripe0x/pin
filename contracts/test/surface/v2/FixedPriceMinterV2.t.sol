@@ -387,6 +387,40 @@ contract FixedPriceMinterV2Test is FactoryMinterV2Base {
         m.mint{value: PRICE}(collector, 1, address(0), "");
     }
 
+    /// @dev mintedBy accumulates on every mint regardless of walletCap, so a
+    ///      cap set after an uncapped window bounds the wallet's true total
+    ///      rather than only the mints counted after the cap was set.
+    function test_walletCap_appliedAfterUncappedWindow_boundsTrueTotal() public {
+        FixedPriceMinterV2InitParams memory p = _minterParams(address(0), PRICE);
+        (, FixedPriceMinterV2 m) = _collectionWithConfiguredMinter(p);
+
+        vm.deal(collector, PRICE * 50);
+        vm.prank(collector);
+        m.mint{value: PRICE * 50}(collector, 50, address(0), "");
+        assertEq(m.mintedBy(collector), 50, "uncapped mints still accumulate");
+
+        vm.prank(artist);
+        m.setWalletCap(5);
+
+        vm.deal(collector, PRICE);
+        vm.prank(collector);
+        vm.expectRevert(abi.encodeWithSelector(IMinter.WalletCapExceeded.selector, uint256(5), uint256(51)));
+        m.mint{value: PRICE}(collector, 1, address(0), "");
+    }
+
+    /// @dev mintedBy is a running total of every mint through this clone,
+    ///      not gated on walletCap being nonzero at mint time.
+    function test_mintedBy_accumulates_whileUncapped() public {
+        FixedPriceMinterV2InitParams memory p = _minterParams(address(0), PRICE);
+        (, FixedPriceMinterV2 m) = _collectionWithConfiguredMinter(p);
+        assertEq(m.walletCap(), 0);
+
+        vm.deal(collector, PRICE * 3);
+        vm.prank(collector);
+        m.mint{value: PRICE * 3}(collector, 3, address(0), "");
+        assertEq(m.mintedBy(collector), 3);
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // AND-composition: allowlisted but over cap still reverts
     // ─────────────────────────────────────────────────────────────────────────
