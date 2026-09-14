@@ -5,6 +5,11 @@
  * BASE_CHAIN_ID carries no Surface addresses either version, so it stands
  * in for "unconfigured" without disturbing the real mainnet constants.
  */
+import { execFileSync } from "node:child_process"
+import { rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { BASE_CHAIN_ID, MAINNET_CHAIN_ID } from "@pin/addresses"
@@ -70,4 +75,36 @@ test("both: v1 and v2 overrides resolve independently", () => {
     assert.equal(surfaceFactory(BASE_CHAIN_ID), v1Addr)
     assert.equal(surfaceFactoryV2(BASE_CHAIN_ID), DEV_ADDR)
   })
+})
+
+// PND_CHAIN_ID must honor the same NEXT_PUBLIC_FORK_CHAIN_ID override as
+// wagmi.ts's forkChain. Regression: FORK_CHAIN_ID was hardcoded 31339, so a
+// developer forking anvil at 31337 got a chain-id mismatch (getAddressOrNull
+// looked up the wrong chain and returned null). Module-level constants bind at
+// load and the runner already imported this module with env unset, so a
+// same-process re-import returns the cached instance — evaluate in a child tsx
+// process with the env set. (An eval/`-e` entry collapses the TS namespace to
+// its default export, so probe through a real file importing by absolute path.)
+test("PND_CHAIN_ID honors NEXT_PUBLIC_FORK_CHAIN_ID under fork mode", () => {
+  const modUrl = new URL("./collection.ts", import.meta.url)
+  const probe = join(tmpdir(), `collection-fork-probe-${process.pid}.ts`)
+  writeFileSync(
+    probe,
+    `import { PND_CHAIN_ID } from ${JSON.stringify(fileURLToPath(modUrl))}\n` +
+      "process.stdout.write(String(PND_CHAIN_ID))\n",
+  )
+  try {
+    const out = execFileSync("npx", ["tsx", probe], {
+      cwd: fileURLToPath(new URL("../../", import.meta.url)), // apps/web
+      env: {
+        ...process.env,
+        NEXT_PUBLIC_USE_LOCAL_RPC: "1",
+        NEXT_PUBLIC_FORK_CHAIN_ID: "31337",
+      },
+      encoding: "utf8",
+    })
+    assert.equal(out.trim(), "31337")
+  } finally {
+    rmSync(probe, { force: true })
+  }
 })
