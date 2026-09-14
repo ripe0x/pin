@@ -114,11 +114,13 @@ contract DeploySurfaceV2 is Script {
 
         _requirePostflight(d, expectedDeployer, landPaused);
         // `forge script` runs every cheatcode in this function, including
-        // vm.writeJson, during a plain simulation too, before --broadcast
-        // ever sends a transaction. vm.isContext reports the actual forge
-        // execution mode, so the record is written only when this run is a
-        // real broadcast, never a dry run or a resume-in-progress replay.
-        if (vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)) _writeRecord(d);
+        // vm.writeJson, during a plain simulation. The record is written
+        // when the run broadcasts or resumes a broadcast, the two modes
+        // that land transactions.
+        if (
+            vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)
+                || vm.isContext(VmSafe.ForgeContext.ScriptResume)
+        ) _writeRecord(d);
         _log(d);
     }
 
