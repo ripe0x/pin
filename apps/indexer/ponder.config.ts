@@ -137,24 +137,35 @@ export const SOVEREIGN_V2_WIRED = Boolean(
 // SurfaceFactoryV2/SurfaceV2/FixedPriceMinterV2 are declared ONCE each,
 // unconditionally, using Ponder's per-chain `chain: { mainnet: {...},
 // sepolia: {...} }` override so the SAME contract name resolves on
-// whichever network has a real deployment. A network with no deployment
-// yet points at the zero address (never emits a log, so it costs one
-// empty eth_getLogs range, nothing else) rather than being omitted.
+// whichever network has a real deployment. A network with NO deployment
+// yet has its key OMITTED from that chain map (not pointed at the zero
+// address): Ponder's `flattenSources` (build/config.js) does
+// `Object.entries(source.chain).map(...)`, so a missing chain key
+// contributes no source at all for that chain, no `eth_getLogs` call,
+// no `ponder_sync.factories` row. Pointing an undeployed network at the
+// zero address instead would still run a full genesis-to-head scan
+// (Ponder's single-address historical sync has no zero-address short-
+// circuit), on both chains, on every startup, burning paid mainnet RPC
+// for a contract that will never emit a log. If every network is
+// undeployed, the resulting `chain: {}` is empty; `flattenSources`
+// still runs (`Object.entries({}).map(...)` is `[]`), so the contract
+// contributes zero sources rather than erroring, confirmed against
+// Ponder 0.16.6's source and a live `ponder dev` run below.
 //
-// This is load-bearing for typing, not style: `createConfig`'s
-// `contracts` type parameter is declared `const`, and Ponder's
-// EventNames/Event type utilities never resolve a real event-args type
-// for an OPTIONALLY-present contract key (verified empirically: a key
-// included via `...(cond ? {A: {...}} : {})` always resolves to `never`
-// for every ponder.on(...) call in the whole file, not just the
-// conditional one, regardless of how the condition is written). Every
-// contract below is therefore an unconditionally-present key; only leaf
-// values (address, startBlock, rpc URL) vary. This is also why v1's
-// contracts (below) are one flat object with no wrapping condition.
+// The KEY ITSELF (`SurfaceFactoryV2` etc.) stays unconditional: this is
+// load-bearing for typing, not style. `createConfig`'s `contracts` type
+// parameter is declared `const`, and Ponder's EventNames/Event type
+// utilities never resolve a real event-args type when the CONTRACT KEY
+// is optionally present (verified empirically: a key included via
+// `...(cond ? {A: {...}} : {})` at the top level of `contracts` makes
+// every ponder.on(...) call in the whole file resolve to `never`, not
+// just the conditional one). A conditional spread INSIDE `chain: {...}`
+// does not have this problem: the contract key is still always there,
+// only which networks it runs on varies, so typing stays real. This is
+// also why v1's contracts (below) are one flat object with no wrapping
+// condition: they have no per-network variance at all.
 const mainnetSurfaceV2 = readSurfaceV2Deployment("mainnet")
 const sepoliaSurfaceV2 = readSurfaceV2Deployment("sepolia")
-
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const
 
 const surfaceCreatedEvent = parseAbiItem(
   "event SurfaceCreated(address indexed owner, address indexed collection, address primaryMinter, uint8 idMode, string name, string symbol)",
@@ -359,61 +370,85 @@ export default createConfig({
 
     // ── PND Surface System v2 ─────────────────────────────────────────
     // See the comment above `mainnetSurfaceV2`/`sepoliaSurfaceV2`: each
-    // network gets a real address once deployed there, the zero address
-    // otherwise, never an omitted key.
+    // network's key is present only once that network has a real
+    // deployment; an undeployed network is omitted, not zero-addressed.
     SurfaceFactoryV2: {
       abi: surfaceFactoryV2Abi,
       chain: {
-        mainnet: {
-          address: mainnetSurfaceV2?.surfaceFactoryV2 ?? ZERO_ADDRESS,
-          startBlock: mainnetSurfaceV2?.factoryDeployBlock ?? 1,
-        },
-        sepolia: {
-          address: sepoliaSurfaceV2?.surfaceFactoryV2 ?? ZERO_ADDRESS,
-          startBlock: sepoliaSurfaceV2?.factoryDeployBlock ?? 1,
-        },
+        ...(mainnetSurfaceV2
+          ? {
+              mainnet: {
+                address: mainnetSurfaceV2.surfaceFactoryV2,
+                startBlock: mainnetSurfaceV2.factoryDeployBlock,
+              },
+            }
+          : {}),
+        ...(sepoliaSurfaceV2
+          ? {
+              sepolia: {
+                address: sepoliaSurfaceV2.surfaceFactoryV2,
+                startBlock: sepoliaSurfaceV2.factoryDeployBlock,
+              },
+            }
+          : {}),
       },
     },
     SurfaceV2: {
       abi: surfaceV2Abi,
       chain: {
-        mainnet: {
-          address: factory({
-            address: mainnetSurfaceV2?.surfaceFactoryV2 ?? ZERO_ADDRESS,
-            event: surfaceCreatedEvent,
-            parameter: "collection",
-          }),
-          startBlock: mainnetSurfaceV2?.factoryDeployBlock ?? 1,
-        },
-        sepolia: {
-          address: factory({
-            address: sepoliaSurfaceV2?.surfaceFactoryV2 ?? ZERO_ADDRESS,
-            event: surfaceCreatedEvent,
-            parameter: "collection",
-          }),
-          startBlock: sepoliaSurfaceV2?.factoryDeployBlock ?? 1,
-        },
+        ...(mainnetSurfaceV2
+          ? {
+              mainnet: {
+                address: factory({
+                  address: mainnetSurfaceV2.surfaceFactoryV2,
+                  event: surfaceCreatedEvent,
+                  parameter: "collection",
+                }),
+                startBlock: mainnetSurfaceV2.factoryDeployBlock,
+              },
+            }
+          : {}),
+        ...(sepoliaSurfaceV2
+          ? {
+              sepolia: {
+                address: factory({
+                  address: sepoliaSurfaceV2.surfaceFactoryV2,
+                  event: surfaceCreatedEvent,
+                  parameter: "collection",
+                }),
+                startBlock: sepoliaSurfaceV2.factoryDeployBlock,
+              },
+            }
+          : {}),
       },
     },
     FixedPriceMinterV2: {
       abi: fixedPriceMinterV2Abi,
       chain: {
-        mainnet: {
-          address: factory({
-            address: mainnetSurfaceV2?.surfaceFactoryV2 ?? ZERO_ADDRESS,
-            event: surfaceCreatedEvent,
-            parameter: "primaryMinter",
-          }),
-          startBlock: mainnetSurfaceV2?.factoryDeployBlock ?? 1,
-        },
-        sepolia: {
-          address: factory({
-            address: sepoliaSurfaceV2?.surfaceFactoryV2 ?? ZERO_ADDRESS,
-            event: surfaceCreatedEvent,
-            parameter: "primaryMinter",
-          }),
-          startBlock: sepoliaSurfaceV2?.factoryDeployBlock ?? 1,
-        },
+        ...(mainnetSurfaceV2
+          ? {
+              mainnet: {
+                address: factory({
+                  address: mainnetSurfaceV2.surfaceFactoryV2,
+                  event: surfaceCreatedEvent,
+                  parameter: "primaryMinter",
+                }),
+                startBlock: mainnetSurfaceV2.factoryDeployBlock,
+              },
+            }
+          : {}),
+        ...(sepoliaSurfaceV2
+          ? {
+              sepolia: {
+                address: factory({
+                  address: sepoliaSurfaceV2.surfaceFactoryV2,
+                  event: surfaceCreatedEvent,
+                  parameter: "primaryMinter",
+                }),
+                startBlock: sepoliaSurfaceV2.factoryDeployBlock,
+              },
+            }
+          : {}),
       },
     },
 

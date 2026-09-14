@@ -13,15 +13,18 @@ specific to the v4 change: Surface v2 support.
 - `apps/indexer/ponder.config.ts` adds `SurfaceFactoryV2`, `SurfaceV2`,
   and `FixedPriceMinterV2` to `contracts`. Each is declared once, with
   Ponder's per-chain `chain: { mainnet: {...}, sepolia: {...} }`
-  override: the address comes from `contracts/deployments.mainnet.json`
-  and `contracts/deployments.sepolia.json`'s `surfaceFactoryV2`/
-  `factoryDeployBlock` keys, and falls back to the zero address on
-  whichever network has no deployment recorded yet. The zero address
-  never emits a log, so an undeployed network costs one empty
-  `eth_getLogs` range, never a missing contract. `chains.sepolia` is
-  always configured too (`SEPOLIA_RPC_URL`, falling back to a free
-  public RPC when unset), so the sepolia rehearsal deploy is indexed by
-  the same `ponder_v4` schema as mainnet, not a separate run.
+  override: a network's key is present, with the real address and
+  block from `contracts/deployments.mainnet.json` or
+  `contracts/deployments.sepolia.json`'s `surfaceFactoryV2`/
+  `factoryDeployBlock`, only once that network has a deployment
+  recorded. A network with no deployment yet has its key omitted
+  entirely, not pointed at a placeholder address: Ponder's
+  `flattenSources` builds one source per key present in `chain`, so an
+  omitted network gets no source, no `eth_getLogs` call, and no
+  `ponder_sync.factories` row. `chains.sepolia` is always configured
+  (`SEPOLIA_RPC_URL`, falling back to a free public RPC when unset), so
+  the sepolia rehearsal deploy is indexed by the same `ponder_v4`
+  schema as mainnet, not a separate run, once it is deployed there.
 - `apps/indexer/ponder.schema.ts` adds three columns to `collections`:
   `protocolVersion` (integer, 1 for a v1 factory collection, 2 for v2),
   `royaltyLocked` (boolean), `ownerRenounced` (boolean). Every existing
@@ -132,11 +135,10 @@ same decayed-watch-set failure mode the v1 factories can hit: run
 the count. Repeat the same two queries with the sepolia deploy record
 and `chain_id = 11155111` to check the rehearsal deploy's watch set too.
 
-Until a network's deploy record has no `surfaceFactoryV2`, its
-`ponder_sync.factories` row still exists (Ponder always configures the
-contract, per the always-declared design above) but points at the zero
-address, so its `factory_addresses` count is always 0 and there is
-nothing to compare there yet.
+Until a network's deploy record has a `surfaceFactoryV2`, that
+network's key is omitted from the contract's `chain: {...}` map (see
+"What changed" above), so it has no `ponder_sync.factories` row at all
+on that chain, and there is nothing to compare there yet.
 
 ## Readiness check
 

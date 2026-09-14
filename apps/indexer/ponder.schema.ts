@@ -594,12 +594,12 @@ export const collectionReferrals = onchainTable(
 // regardless; they stay empty until the env wires the contracts in.
 //
 //   homage_tokens   : per-punkId current state. Ids CHURN (redeem returns
-//                      an id to the pool); `outstanding` + `holder` carry
-//                      the live state, one row per punkId ever seen.
+//                     an id to the pool); `outstanding` + `holder` carry
+//                     the live state, one row per punkId ever seen.
 //   homage_activity : append-only mint/claim/redeem/transfer log.
 //   homage_config   : one row per minter contract mirroring the owner-set
-//                      schedule + fee knobs (all null until each setter's
-//                      event is indexed).
+//                     schedule + fee knobs (all null until each setter's
+//                     event is indexed).
 
 export const homageTokens = onchainTable(
   "homage_tokens",

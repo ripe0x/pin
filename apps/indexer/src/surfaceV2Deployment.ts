@@ -9,12 +9,13 @@ import { fileURLToPath } from "node:url"
  *
  * Returns null when v2 has no factory recorded for that network yet.
  * ponder.config.ts calls this once per network (mainnet, sepolia) and
- * falls back to the zero address when null, so the SurfaceFactoryV2/
- * SurfaceV2/FixedPriceMinterV2 contracts stay unconditionally present
- * in `contracts` on every network: the zero address never emits a log,
- * so an undeployed network costs one empty eth_getLogs range, not a
- * missing key. See ponder.config.ts's per-chain `chain: {mainnet, sepolia}`
- * declarations for those three contracts.
+ * omits that network's key from the contract's `chain: {...}` map on
+ * null, rather than pointing it at the zero address: Ponder's
+ * `flattenSources` builds one source per key actually present in
+ * `chain`, so an omitted network gets no source, no `eth_getLogs` call,
+ * and no `ponder_sync.factories` row. See ponder.config.ts's per-chain
+ * `chain: {mainnet, sepolia}` declarations for
+ * SurfaceFactoryV2/SurfaceV2/FixedPriceMinterV2.
  */
 
 export type SurfaceV2Deployment = {
@@ -24,6 +25,11 @@ export type SurfaceV2Deployment = {
 }
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
+
+const NETWORK_CHAIN_ID: Record<"mainnet" | "sepolia", number> = {
+  mainnet: 1,
+  sepolia: 11_155_111,
+}
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..")
 
@@ -46,8 +52,19 @@ export function readSurfaceV2Deployment(
   const deployBlock = record.factoryDeployBlock
   if (typeof deployBlock !== "number") return null
 
+  const chainId = record.chainId
+  const expectedChainId = NETWORK_CHAIN_ID[network]
+  if (chainId !== expectedChainId) {
+    console.warn(
+      `[surfaceV2Deployment] contracts/deployments.${network}.json has chainId ` +
+        `${String(chainId)}, expected ${expectedChainId} for network "${network}". ` +
+        "Ignoring this record (treating Surface v2 as undeployed on this network).",
+    )
+    return null
+  }
+
   return {
-    chainId: record.chainId as number,
+    chainId,
     surfaceFactoryV2: factory as `0x${string}`,
     factoryDeployBlock: deployBlock,
   }
