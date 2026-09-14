@@ -1,5 +1,5 @@
 {
-  "_note": "Addresses for the PND onchain-protocol reference. Two kinds of key: shared singletons (one canonical instance) and `*Implementation` keys (the shared logic contract that per-owner EIP-1167 clones delegatecall to, shown at the top of each clone's page). The Surface core (`surfaceFactory`, `sequentialImplementation`, `pooledImplementation`, `minterImplementation`) deployed to mainnet 2026-07-22 from commit fa5af29 (DeploySurfaceSystem.s.sol); the factory lands paused. `defaultRenderer` and `renderAssets` are the deferred render modules (DeployRenderModules.s.sol) and stay empty until a collection needs them. Fill an empty value and re-run `pnpm generate:docs` to resolve its address. The Sovereign Auction House V2 pair (`auctionHouseV2Factory`, `auctionHouseV2Implementation`) deployed 2026-09-02 from commit 49a5a696 (DeployAuctionV2.s.sol) with 0 bps protocol fee and a zero fee recipient; the v1 pair stays live for existing houses and is indexed indefinitely.",
+  "_note": "Addresses for the PND onchain-protocol reference. Two kinds of key: shared singletons (one canonical instance) and `*Implementation` keys (the shared logic contract that per-owner EIP-1167 clones delegatecall to, shown at the top of each clone's page). The Surface core (`surfaceFactory`, `sequentialImplementation`, `pooledImplementation`, `minterImplementation`) deployed to mainnet 2026-07-22 from commit fa5af29 (DeploySurfaceSystem.s.sol); the factory lands paused. `defaultRenderer` and `renderAssets` are the deferred render modules (DeployRenderModules.s.sol) and stay empty until a collection needs them. Fill an empty value and re-run `pnpm generate:docs` to resolve its address. The Sovereign Auction House V2 pair (`auctionHouseV2Factory`, `auctionHouseV2Implementation`) deployed 2026-09-02 from commit 49a5a696 (DeployAuctionV2.s.sol) with 0 bps protocol fee and a zero fee recipient; the v1 pair stays live for existing houses and is indexed indefinitely. `surfaceFactoryV2`, `sequentialImplementationV2`, and `minterImplementationV2` are the Surface v2 art-core singletons (contracts/src/surface/v2/); v2 is not yet deployed to mainnet, so these stay empty until launch. The v1 Surface pair stays live for existing collections; v2 does not replace it.",
   "chainId": 1,
   "surfaceFactory": "0xdB81d3F33EF3D84685486916E0d372E247558094",
   "defaultRenderer": "",
@@ -11,5 +11,8 @@
   "auctionHouseFactory": "0xaE712abcA452901A74D1FBC0c3919F2cc060EF9f",
   "auctionHouseImplementation": "0xC70D8a99b915BeDA52C5A952E29FFE152CbfCB34",
   "auctionHouseV2Factory": "0x77aB853543286C9Cdd7dd6c01222A7cC4Ac93d63",
-  "auctionHouseV2Implementation": "0x88b48793f38EF7370F2e7BC12E2f73DC565C117F"
+  "auctionHouseV2Implementation": "0x88b48793f38EF7370F2e7BC12E2f73DC565C117F",
+  "surfaceFactoryV2": "",
+  "sequentialImplementationV2": "",
+  "minterImplementationV2": ""
 }

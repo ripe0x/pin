@@ -140,6 +140,24 @@
               "slug": "i-preview-renderer",
               "path": "/docs/surface/contracts/i-preview-renderer",
               "description": "An optional extension a renderer implements to render the output for a caller-supplied seed with no token existing."
+            },
+            {
+              "title": "SurfaceV2",
+              "slug": "surface-v2",
+              "path": "/docs/surface/contracts/surface-v2",
+              "description": "Second generation of the sequential-id ERC721 collection: the token core of the Surface v2 art protocol."
+            },
+            {
+              "title": "SurfaceFactoryV2",
+              "slug": "factory-v2",
+              "path": "/docs/surface/contracts/factory-v2",
+              "description": "Deploys one [SurfaceV2](/docs/surface/contracts/surface-v2) collection per call as an EIP-1167 clone of a fixed implementation: no proxy admin, no upgrade path, and one collection form (sequential ids)."
+            },
+            {
+              "title": "FixedPriceMinterV2",
+              "slug": "fixed-price-minter-v2",
+              "path": "/docs/surface/contracts/fixed-price-minter-v2",
+              "description": "Exact-payment fixed-price minter for a [SurfaceV2](/docs/surface/contracts/surface-v2) collection, deployed as one EIP-1167 clone per collection."
             }
           ]
         },

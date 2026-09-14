@@ -99,3 +99,89 @@ Every event the Surface contracts emit, grouped by contract. Signatures and fiel
 **[`CaptureTemplateSet`](/docs/surface/contracts/render-assets#capturetemplateset)** · Emitted when a collection's capture template changes.
 
 **[`CoverSet`](/docs/surface/contracts/render-assets#coverset)** · Emitted when a collection's cover image changes.
+
+## SurfaceV2
+
+**[`AdminSet`](/docs/surface/contracts/surface-v2#adminset)** · Emitted when an admin key is granted (`allowed = true`) or revoked.
+
+**[`Approval`](/docs/surface/contracts/surface-v2#approval)** · Standard ERC721 single-token approval event.
+
+**[`ApprovalForAll`](/docs/surface/contracts/surface-v2#approvalforall)** · Standard ERC721 operator approval event.
+
+**[`BatchMetadataUpdate`](/docs/surface/contracts/surface-v2#batchmetadataupdate)** · ERC-4906 range refresh, emitted by `setRenderer` and `setSupplyCap` (all tokens) and by `notifyMetadataUpdate` (a renderer- or admin-chosen range).
+
+**[`Burned`](/docs/surface/contracts/surface-v2#burned)** · Emitted when a token is burned.
+
+**[`ContractURIUpdated`](/docs/surface/contracts/surface-v2#contracturiupdated)** · ERC-7572 contract-level refresh, emitted by `setRenderer` alongside the token-range refresh.
+
+**[`CreatorListed`](/docs/surface/contracts/surface-v2#creatorlisted)** · Emitted when the owner lists or unlists a creator, including each creator seeded at init.
+
+**[`Initialized`](/docs/surface/contracts/surface-v2#initialized)** · OpenZeppelin Initializable event, emitted once when the clone is initialized.
+
+**[`MetadataUpdate`](/docs/surface/contracts/surface-v2#metadataupdate)** · ERC-4906 single-token refresh, declared for interface completeness; range refreshes use `BatchMetadataUpdate`.
+
+**[`Minted`](/docs/surface/contracts/surface-v2#minted)** · Emitted once per mint call, from `mintTo` or `mintToSeeded`.
+
+**[`MinterLocked`](/docs/surface/contracts/surface-v2#minterlocked)** · Emitted once when `lockMinter` runs, or when `seal` engages it.
+
+**[`MinterSet`](/docs/surface/contracts/surface-v2#minterset)** · Emitted when a minter is granted or revoked, and once per initial minter at init.
+
+**[`OwnershipTransferred`](/docs/surface/contracts/surface-v2#ownershiptransferred)** · Standard Ownable event, emitted at init when the first owner is set, when `acceptOwnership` completes a transfer, and when `renounceOwnership` or `seal` sets the owner to zero.
+
+**[`OwnershipTransferStarted`](/docs/surface/contracts/surface-v2#ownershiptransferstarted)** · Standard Ownable2Step event, emitted by `transferOwnership` when a pending owner is recorded.
+
+**[`PrimaryMinterSet`](/docs/surface/contracts/surface-v2#primaryminterset)** · Emitted whenever the frontend-discovery pointer changes: `setPrimaryMinter`, a revoke of the current primary clearing it to zero, or the value seeded at init.
+
+**[`RendererLocked`](/docs/surface/contracts/surface-v2#rendererlocked)** · Emitted once when `lockRenderer` runs, for a lock set at init, or when `seal` engages it.
+
+**[`RendererSet`](/docs/surface/contracts/surface-v2#rendererset)** · Emitted when the renderer pointer changes.
+
+**[`RoyaltyLocked`](/docs/surface/contracts/surface-v2#royaltylocked)** · Emitted once when `lockRoyalty` runs, or when `seal` engages it.
+
+**[`RoyaltySet`](/docs/surface/contracts/surface-v2#royaltyset)** · Emitted when the royalty changes with `setRoyalty`, or when `lockRoyalty`/ `seal` snapshots a zero receiver to `owner()`.
+
+**[`StrayETHRescued`](/docs/surface/contracts/surface-v2#strayethrescued)** · Emitted when `rescueStrayETH` sweeps force-fed ETH.
+
+**[`SupplyCapSet`](/docs/surface/contracts/surface-v2#supplycapset)** · Emitted when the supply cap changes with `setSupplyCap`.
+
+**[`SupplyLocked`](/docs/surface/contracts/surface-v2#supplylocked)** · Emitted once when `lockSupply` runs, for a lock set at init, or when `seal` engages it.
+
+**[`SurfaceConfigured`](/docs/surface/contracts/surface-v2#surfaceconfigured)** · Emitted once at init with the id mode (always Sequential) and supply cap.
+
+**[`Transfer`](/docs/surface/contracts/surface-v2#transfer)** · Standard ERC721 transfer event, emitted on mint (from the zero address), transfer, and burn (to the zero address).
+
+## SurfaceFactoryV2
+
+**[`Deprecated`](/docs/surface/contracts/factory-v2#deprecated)** · Emitted once when the deployer deprecates the factory, carrying the successor address (zero if none).
+
+**[`PausedSet`](/docs/surface/contracts/factory-v2#pausedset)** · Emitted when the deployer pauses or resumes new deploys, with the new `paused` state.
+
+**[`SurfaceCreated`](/docs/surface/contracts/factory-v2#surfacecreated)** · Emitted once per successful create call, with `owner` and `collection` indexed.
+
+## FixedPriceMinterV2
+
+**[`AllowlistRootSet`](/docs/surface/contracts/fixed-price-minter-v2#allowlistrootset)** · Emitted when the allowlist root changes with `setAllowlistRoot`.
+
+**[`Initialized`](/docs/surface/contracts/fixed-price-minter-v2#initialized)** · OpenZeppelin Initializable event, emitted once when the clone is initialized.
+
+**[`MaxMintsSet`](/docs/surface/contracts/fixed-price-minter-v2#maxmintsset)** · Emitted when the sale ceiling changes with `setMaxMints`.
+
+**[`MinterConfigured`](/docs/surface/contracts/fixed-price-minter-v2#minterconfigured)** · Emitted at `initialize` with the collection binding and the opening sale config.
+
+**[`MintWindowSet`](/docs/surface/contracts/fixed-price-minter-v2#mintwindowset)** · Emitted when the window changes with `setMintWindow`.
+
+**[`PayoutRecipientSet`](/docs/surface/contracts/fixed-price-minter-v2#payoutrecipientset)** · Emitted when the payout address changes with `setPayoutRecipient`.
+
+**[`PriceSet`](/docs/surface/contracts/fixed-price-minter-v2#priceset)** · Emitted when the fixed price changes with `setPrice`.
+
+**[`ReferralPaid`](/docs/surface/contracts/fixed-price-minter-v2#referralpaid)** · Emitted when a nonzero referral cut is credited.
+
+**[`ReferralShareSet`](/docs/surface/contracts/fixed-price-minter-v2#referralshareset)** · Emitted when the referral share changes with `setReferralShareBps`.
+
+**[`Sold`](/docs/surface/contracts/fixed-price-minter-v2#sold)** · Emitted once per `mint` call.
+
+**[`StrayETHRescued`](/docs/surface/contracts/fixed-price-minter-v2#strayethrescued)** · Emitted when `rescueStrayETH` sweeps unowed ETH.
+
+**[`WalletCapSet`](/docs/surface/contracts/fixed-price-minter-v2#walletcapset)** · Emitted when the per-recipient cap changes with `setWalletCap`.
+
+**[`Withdrawn`](/docs/surface/contracts/fixed-price-minter-v2#withdrawn)** · Emitted when a pull-payment balance is paid out.
