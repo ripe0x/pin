@@ -2,10 +2,19 @@
   "_note": "Sepolia rehearsal deploy of the Surface core, used to dress-rehearse the artist deploy-page flow before a mainnet broadcast (see docs/pnd-surface-second-launch.md). Deployed 2026-07-25 from DeploySurfaceSystemSepolia.s.sol, deployer ripe0x.eth (0xCB43078C32423F5348Cab5885911C3B5faE217F9). The factory lands paused; call setPaused(false) to open it for a rehearsal. `defaultRenderer` and `renderAssets` are intentionally empty: the rehearsal uses the RENDERER preset (bring-your-own IRenderer in cfg.renderer), which needs neither. Catalog shares the canonical CREATE2 address across chains. All five verified on sepolia.etherscan.io.",
   "chainId": 11155111,
   "surfaceFactory": "0xAB8F7b96e6c8f850B6089447F903dbC4aE6e4ac0",
-  "defaultRenderer": "",
-  "renderAssets": "",
+  "defaultRenderer": "0x29Ed24f394a794415A5545481842f0bb37a3bB93",
+  "renderAssets": "0xB9B5B2A6763901430B85ca00480E15Ed50065e60",
   "sequentialImplementation": "0x5f572e96cac60AeAc739796CF4d999dD15C070B8",
   "pooledImplementation": "0xf978f81fE162dE3e70A2a914bAF8687488d15F1e",
   "minterImplementation": "0x18d93633a9630b5275A38c4457a18e0cCBD93a0f",
-  "catalog": "0x6F0441B2f096d4db71C322F700dCeF0E88CFCcBC"
+  "catalog": "0x6F0441B2f096d4db71C322F700dCeF0E88CFCcBC",
+  "deployedAt": 1789409424,
+  "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+  "surfaceFactoryV2": "0x48Fa2D562650F962acad67C5dE9C7a1ED6ed61DE",
+  "sequentialImplementationV2": "0xd83BA4c85bf30f4353C5Fa1d6cbbbf44f3bde9db",
+  "minterImplementationV2": "0x8c664D62B0bF29b43FA8f4d3F91b735B241791e2",
+  "factoryDeployBlock": 11704552,
+  "txHashes": {
+    "surfaceFactoryV2": "0xf7d7b7f5a18a00279a92977b2f890f626f24c0c44cdd686012ad73c9e8eaa638"
+  }
 }
