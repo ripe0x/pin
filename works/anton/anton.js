@@ -63,8 +63,9 @@
   var params = td.params || {};
   var backgroundOnly = params.bgOnly === true || params.bgOnly === 1 || params.bgOnly === "1";
   // Diagnostic view: 0 normal render, 1 shape (warp boundary only), 2 colour
-  // (the three mass colours as flat bands), 3 triptych (full | shape | colour
-  // side by side in one canvas). Selected via params.view.
+  // (the three mass colours as flat bands, each showing a progress wipe while
+  // it retargets), 3 triptych (full | shape | colour side by side in one
+  // canvas). Selected via params.view.
   var viewMode = params.view === "shape" ? 1 : params.view === "colour" ? 2 : params.view === "triptych" ? 3 : 0;
   var viewLabel = viewMode === 1 ? "shape" : viewMode === 2 ? "colour" : viewMode === 3 ? "triptych" : "full";
 
@@ -124,6 +125,11 @@
   var staticShapeParams = new Float32Array([0.52, 0.18, 1.0, 0.4, 0.52, 0.32, 0.5, 0.31]);
   var STATIC_COLS_COUNT = 3;
   var staticCols = new Float32Array(STATIC_COLS_COUNT * 3);
+  // Colour-view wipe uniforms: from/to palette colours per mass and the blend
+  // fraction (1 when solid, either not shifted or shift complete).
+  var massFromCols = new Float32Array(STATIC_COLS_COUNT * 3);
+  var massToCols = new Float32Array(STATIC_COLS_COUNT * 3);
+  var massMix = new Float32Array(STATIC_COLS_COUNT);
 
   // Owner offset in [0, 3600) s. Tokens with the same owner share it. Zero for
   // the canonical still.
@@ -192,6 +198,9 @@
     "uniform vec2 u_layerParams[MAX_LAYERS];" +
     "uniform vec4 u_staticShapeParams[2];" +
     "uniform vec3 u_staticCols[3];" +
+    "uniform vec3 u_massFrom[3];" +
+    "uniform vec3 u_massTo[3];" +
+    "uniform float u_massMix[3];" +
     "uniform vec3 u_paletteA;" +
     "uniform float u_bgOnly;" +
     "uniform int u_view;" +
@@ -264,7 +273,14 @@
     "float h0r=cos((3.2)*r);" +
     "h00=h0r;" +
     "if(sub==1){gl_FragColor=vec4(vec3(step(h00,xy.y)),1.0);return;}" +
-    "if(sub==2){vec3 band=u_staticCols[2];if(xy.x<1.0/3.0){band=u_staticCols[0];}else if(xy.x<2.0/3.0){band=u_staticCols[1];}gl_FragColor=vec4(band,1.0);return;}" +
+    "if(sub==2){" +
+    "vec3 band=u_staticCols[2];float bandMix=u_massMix[2];vec3 bandFrom=u_massFrom[2];vec3 bandTo=u_massTo[2];" +
+    "if(xy.x<1.0/3.0){band=u_staticCols[0];bandMix=u_massMix[0];bandFrom=u_massFrom[0];bandTo=u_massTo[0];}" +
+    "else if(xy.x<2.0/3.0){band=u_staticCols[1];bandMix=u_massMix[1];bandFrom=u_massFrom[1];bandTo=u_massTo[1];}" +
+    "if(bandMix<1.0){" +
+    "band=uv.y>bandMix?bandFrom:bandTo;" +
+    "if(abs(uv.y-bandMix)<0.004){band=vec3(1.0);}}" +
+    "gl_FragColor=vec4(band,1.0);return;}" +
     "float h=0.085;" +
     "vec3 cmix=mix(bg1,cm,xy.x/h);" +
     "vec3 cmixA=mix(cd,bg1,xy.x);" +
@@ -358,6 +374,9 @@
     layerParams: gl.getUniformLocation(prg, "u_layerParams"),
     staticShapeParams: gl.getUniformLocation(prg, "u_staticShapeParams"),
     staticCols: gl.getUniformLocation(prg, "u_staticCols[0]"),
+    massFrom: gl.getUniformLocation(prg, "u_massFrom[0]"),
+    massTo: gl.getUniformLocation(prg, "u_massTo[0]"),
+    massMix: gl.getUniformLocation(prg, "u_massMix[0]"),
     paletteA: gl.getUniformLocation(prg, "u_paletteA"),
     bgOnly: gl.getUniformLocation(prg, "u_bgOnly"),
     view: gl.getUniformLocation(prg, "u_view"),
@@ -569,16 +588,19 @@
   function seedPaletteColor(index, j) {
     return activePalette[xmur3(seedHash + "|bg|" + index + "|" + j)() % activePalette.length];
   }
-  // Returns { col, j, from, to }: col is the render colour, j is the grid tick
-  // index from tickState, from/to are the two palette colours j is blending
-  // between (both the base colour when j is 0). j and to feed the
-  // host-notification code so it can detect a new retarget without a second
-  // tickState call. The returned object is bgScratch[index], mutated in place
-  // each call; col is a scratch array, from/to stay references into the
-  // palette so no colour data is copied per frame.
+  // Returns { col, j, from, to, mix }: col is the render colour, j is the
+  // grid tick index from tickState, from/to are the two palette colours j is
+  // blending between (both the base colour when j is 0). mix is the raw
+  // (non-eased) blend fraction used for the colour-view wipe: 0 at the tick,
+  // rising linearly to 1 as the blend completes, held at 1 before the first
+  // tick and after completion. j and to feed the host-notification code so
+  // it can detect a new retarget without a second tickState call. The
+  // returned object is bgScratch[index], mutated in place each call; col is
+  // a scratch array, from/to stay references into the palette so no colour
+  // data is copied per frame.
   var bgScratch = [];
   for (var bgScratchI = 0; bgScratchI < STATIC_COLS_COUNT; bgScratchI++) {
-    bgScratch.push({ col: [0, 0, 0], j: 0, from: null, to: null });
+    bgScratch.push({ col: [0, 0, 0], j: 0, from: null, to: null, mix: 0 });
   }
   function bgColorAt(index, loadEventTime, eventTime) {
     var offset = BG_SHIFT_DELAY + index * BG_SHIFT_STEP;
@@ -590,6 +612,7 @@
     if (ts.k === 0) {
       out.col[0] = base[0]; out.col[1] = base[1]; out.col[2] = base[2];
       out.from = base; out.to = base;
+      out.mix = 0;
       return out;
     }
     var from = ts.k === 1 ? base : seedPaletteColor(index, ts.k - 1);
@@ -597,12 +620,14 @@
     out.from = from; out.to = to;
     if (ts.local >= BG_SHIFT_DUR) {
       out.col[0] = to[0]; out.col[1] = to[1]; out.col[2] = to[2];
+      out.mix = 1;
       return out;
     }
     var m = smootherstep01(0, 1, ts.local / BG_SHIFT_DUR);
     out.col[0] = from[0] * (1 - m) + to[0] * m;
     out.col[1] = from[1] * (1 - m) + to[1] * m;
     out.col[2] = from[2] * (1 - m) + to[2] * m;
+    out.mix = Math.min(1, ts.local / BG_SHIFT_DUR);
     return out;
   }
 
@@ -631,14 +656,20 @@
       P[b2 + 1] = layer.active ? layer.phase : 0;
     }
   }
-  // Fills arr with the three masses' render colours and returns the matching
-  // bgColorAt() result objects (j, from, to) for the host-notification code.
+  // Fills arr with the three masses' render colours, and the module-level
+  // massFromCols/massToCols/massMix uniform arrays for the colour-view wipe,
+  // then returns the matching bgColorAt() result objects (j, from, to) for
+  // the host-notification code. u_massMix is set to 1 (solid, no wipe) when
+  // j is 0, since a mass with no shift yet has no from/to to wipe between.
   // The returned array is bgResultsScratch, reused and overwritten each call.
   var bgResultsScratch = new Array(STATIC_COLS_COUNT);
   function fillBgCols(loadEventTime, eventTime, arr) {
     for (var i = 0; i < STATIC_COLS_COUNT; i++) {
       var res = bgColorAt(i, loadEventTime, eventTime);
       arr[i * 3] = res.col[0]; arr[i * 3 + 1] = res.col[1]; arr[i * 3 + 2] = res.col[2];
+      massFromCols[i * 3] = res.from[0]; massFromCols[i * 3 + 1] = res.from[1]; massFromCols[i * 3 + 2] = res.from[2];
+      massToCols[i * 3] = res.to[0]; massToCols[i * 3 + 1] = res.to[1]; massToCols[i * 3 + 2] = res.to[2];
+      massMix[i] = res.j === 0 ? 1 : res.mix;
       bgResultsScratch[i] = res;
     }
     return bgResultsScratch;
@@ -717,6 +748,9 @@
     gl.uniform2fv(u.layerParams, paramData);
     gl.uniform4fv(u.staticShapeParams, staticShapeParams);
     gl.uniform3fv(u.staticCols, staticCols);
+    gl.uniform3fv(u.massFrom, massFromCols);
+    gl.uniform3fv(u.massTo, massToCols);
+    gl.uniform1fv(u.massMix, massMix);
     gl.uniform3fv(u.paletteA, new Float32Array(paletteABase));
     gl.uniform1f(u.bgOnly, backgroundOnly ? 1 : 0);
     gl.uniform1i(u.view, viewMode);
