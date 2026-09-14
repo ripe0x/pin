@@ -65,9 +65,10 @@
   // Diagnostic view: 0 normal render, 1 shape (warp boundary only), 2 colour
   // (the three mass colours as flat bands, each showing a progress wipe while
   // it retargets), 3 triptych (full | shape | colour side by side in one
-  // canvas). Selected via params.view.
-  var viewMode = params.view === "shape" ? 1 : params.view === "colour" ? 2 : params.view === "triptych" ? 3 : 0;
-  var viewLabel = viewMode === 1 ? "shape" : viewMode === 2 ? "colour" : viewMode === 3 ? "triptych" : "full";
+  // canvas, horizontal thirds), 4 stack (full | shape | colour top to bottom
+  // in one canvas, vertical thirds). Selected via params.view.
+  var viewMode = params.view === "shape" ? 1 : params.view === "colour" ? 2 : params.view === "triptych" ? 3 : params.view === "stack" ? 4 : 0;
+  var viewLabel = viewMode === 1 ? "shape" : viewMode === 2 ? "colour" : viewMode === 3 ? "triptych" : viewMode === 4 ? "stack" : "full";
 
   // ── host notification ───────────────────────────────────────────────────────
   // Posts a message to window.parent at the frame a shape morph or a mass
@@ -138,19 +139,19 @@
 
   // ── host view control ────────────────────────────────────────────────────────
   // The host may post {source: "anton-host", view} to switch the diagnostic
-  // view at runtime, view is one of "full", "shape", "colour", "triptych".
-  // Any other message is ignored. The artwork answers with a "view" message.
-  // Switching the view changes only viewMode/viewLabel; the clocks, event
-  // indices and openingTime are untouched, so the next frame renders in the
-  // new mode with playback otherwise unaffected. Live context only, never in
-  // capture.
+  // view at runtime, view is one of "full", "shape", "colour", "triptych",
+  // "stack". Any other message is ignored. The artwork answers with a "view"
+  // message. Switching the view changes only viewMode/viewLabel; the clocks,
+  // event indices and openingTime are untouched, so the next frame renders in
+  // the new mode with playback otherwise unaffected. Live context only, never
+  // in capture.
   if (!isCapture && typeof window !== "undefined") {
     window.addEventListener("message", function (e) {
       var data = e.data;
       if (!data || typeof data !== "object" || data.source !== "anton-host") return;
       var v = data.view;
-      if (v !== "full" && v !== "shape" && v !== "colour" && v !== "triptych") return;
-      viewMode = v === "shape" ? 1 : v === "colour" ? 2 : v === "triptych" ? 3 : 0;
+      if (v !== "full" && v !== "shape" && v !== "colour" && v !== "triptych" && v !== "stack") return;
+      viewMode = v === "shape" ? 1 : v === "colour" ? 2 : v === "triptych" ? 3 : v === "stack" ? 4 : 0;
       viewLabel = v;
       notifyHost("view", { view: viewLabel });
     });
@@ -239,6 +240,7 @@
     "vec2 uv=gl_FragCoord.xy/u_res.xy;" +
     "int sub=u_view;" +
     "if(u_view==3){float panel=floor(uv.x*3.0);uv.x=uv.x*3.0-panel;sub=int(panel);}" +
+    "if(u_view==4){float panel=clamp(floor((1.0-uv.y)*3.0),0.0,2.0);uv.y=uv.y*3.0-(2.0-panel);sub=int(panel);}" +
     "vec2 xy=uv;vec2 xy2=uv;vec2 uvDiag=uv;" +
     "uvDiag.y+=sin(uv.x*5.6+0.8)*0.020;" +
     "float time=u_time*0.05+10.0;" +
