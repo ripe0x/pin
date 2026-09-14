@@ -115,6 +115,15 @@ export const STUDIO_TOOLS: StudioTool[] = [
     // canonical minter, routed by protocolVersion at the panel.
     available: anySurfaceFactoryLive,
   },
+  {
+    id: "collections",
+    label: "Collection settings",
+    description:
+      "Manage a collection contract itself: swap or lock the renderer, set or lock the supply cap, grant extension minters, edit the cover and attribution roster. Locks are one-way.",
+    // Same gate as mint-gate/sale: works against a v1 or v2 collection,
+    // routed by protocolVersion at the panel, not here.
+    available: anySurfaceFactoryLive,
+  },
 ]
 
 export function studioTools(): StudioTool[] {

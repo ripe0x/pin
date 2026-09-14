@@ -55,11 +55,11 @@ test("both -> live", () => {
   })
 })
 
-test("mainnet default (v1 already deployed) keeps create/mint-gate/sale visible", () => {
+test("mainnet default (v1 already deployed) keeps create/mint-gate/sale/collections visible", () => {
   withEnv({ [ENV_V1]: undefined, [ENV_V2]: undefined }, () => {
     assert.equal(anySurfaceFactoryLive(MAINNET_CHAIN_ID), true)
     const ids = studioTools().map((t) => t.id)
-    for (const id of ["create", "mint-gate", "sale"]) {
+    for (const id of ["create", "mint-gate", "sale", "collections"]) {
       assert.ok(ids.includes(id), `${id} should be visible`)
     }
   })
@@ -67,5 +67,14 @@ test("mainnet default (v1 already deployed) keeps create/mint-gate/sale visible"
 
 test("STUDIO_TOOLS still lists every always-on tool untouched", () => {
   const ids = STUDIO_TOOLS.map((t) => t.id)
-  assert.deepEqual(ids, ["create", "listings", "auctions", "catalog", "site", "mint-gate", "sale"])
+  assert.deepEqual(ids, ["create", "listings", "auctions", "catalog", "site", "mint-gate", "sale", "collections"])
+})
+
+test("collections is gated by the exact same function as mint-gate/sale (any v1 or v2 factory)", () => {
+  const collections = STUDIO_TOOLS.find((t) => t.id === "collections")
+  const mintGate = STUDIO_TOOLS.find((t) => t.id === "mint-gate")
+  const sale = STUDIO_TOOLS.find((t) => t.id === "sale")
+  assert.equal(collections?.available, anySurfaceFactoryLive)
+  assert.equal(collections?.available, mintGate?.available)
+  assert.equal(collections?.available, sale?.available)
 })

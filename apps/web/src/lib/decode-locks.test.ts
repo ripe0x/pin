@@ -3,14 +3,13 @@
  * multicall. A v2 row with a successful permanence() call takes every flag
  * from that tuple; a v1 row (or a v2 row whose permanence() call itself
  * failed, e.g. an older v2 implementation) falls back to the individual
- * isRendererLocked/isSupplyLocked reads with isRoyaltyLocked/sealed false,
- * without throwing.
+ * isRendererLocked/isSupplyLocked/isMinterLocked reads, without throwing.
  */
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { decodeLocks, type MulticallEntry, type PermanenceTuple } from "./collection.ts"
 
-const individual = { isRendererLocked: false, isSupplyLocked: true }
+const individual = { isRendererLocked: false, isSupplyLocked: true, isMinterLocked: false }
 
 test("v2 row with a permanence tuple maps all five flags", () => {
   const permanence: MulticallEntry<PermanenceTuple> = {
@@ -21,6 +20,7 @@ test("v2 row with a permanence tuple maps all five flags", () => {
   assert.deepEqual(locks, {
     isRendererLocked: true,
     isSupplyLocked: true,
+    isMinterLocked: true,
     isRoyaltyLocked: true,
     sealed: true,
   })
@@ -32,6 +32,7 @@ test("v1 row (permanence call fails) maps sealed=false and isRoyaltyLocked=false
   assert.deepEqual(locks, {
     isRendererLocked: individual.isRendererLocked,
     isSupplyLocked: individual.isSupplyLocked,
+    isMinterLocked: individual.isMinterLocked,
     isRoyaltyLocked: false,
     sealed: false,
   })
@@ -44,6 +45,7 @@ test("v2 row whose permanence() call itself failed also falls back cleanly, no t
   assert.deepEqual(locks, {
     isRendererLocked: individual.isRendererLocked,
     isSupplyLocked: individual.isSupplyLocked,
+    isMinterLocked: individual.isMinterLocked,
     isRoyaltyLocked: false,
     sealed: false,
   })
